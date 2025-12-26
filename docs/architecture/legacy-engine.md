@@ -42,3 +42,4 @@ organization rather than endpoint-first routing.
 - Battle and war resolution: `docs/architecture/legacy-engine-war.md`
 - Command catalog: `docs/architecture/legacy-commands.md`
 - Scenario system and rule sets: `docs/architecture/legacy-scenarios.md`
+- Inheritance points (유산 포인트): `docs/architecture/legacy-inherit-points.md`
