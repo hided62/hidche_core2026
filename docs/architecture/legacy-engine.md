@@ -45,3 +45,14 @@ organization rather than endpoint-first routing.
 - Command catalog: `docs/architecture/legacy-commands.md`
 - Scenario system and rule sets: `docs/architecture/legacy-scenarios.md`
 - Inheritance points (유산 포인트): `docs/architecture/legacy-inherit-points.md`
+- Event system (dynamic/static): `docs/architecture/legacy-engine-events.md`
+- Economy and monthly updates: `docs/architecture/legacy-engine-economy.md`
+- Auctions and betting: `docs/architecture/legacy-engine-auction.md`
+- Items, specials, and traits: `docs/architecture/legacy-engine-items.md`
+- City data and helpers: `docs/architecture/legacy-engine-city.md`
+- Diplomacy and messaging: `docs/architecture/legacy-engine-diplomacy.md`
+- Constraint system: `docs/architecture/legacy-engine-constraints.md`
+- Game constants and unit sets: `docs/architecture/legacy-engine-constants.md`
+- Server environment tools: `docs/architecture/legacy-engine-server-env.md`
+- Logging and versioning: `docs/architecture/legacy-engine-logging.md`
+- General pools: `docs/architecture/legacy-engine-pools.md`
