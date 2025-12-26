@@ -21,8 +21,6 @@ Move items into the main docs once they are finalized.
 
 ## Trigger System
 
-- Trigger evaluation order and priority conflicts
-- Composition rules across traits, specials, and scenario effects
 - Example trigger sets per scenario or rule pack
 
 ## Data and Profiles
@@ -34,6 +32,11 @@ Move items into the main docs once they are finalized.
 
 - [AI suggestion] Expand monthly pipeline details (`preUpdateMonthly`, `postUpdateMonthly`, `turnDate`, `checkStatistic`) with concrete side effects and tables touched.
 - [AI suggestion] Document `ConquerCity()` resolution paths (nation collapse, officer handling, reward/penalty rules).
-- [AI suggestion] Clarify command prefix semantics (`che_`, `cr_`, `event_`) and add per-command effect summaries.
+- [AI suggestion] Add per-command effect summaries (inputs, resource deltas, logs).
 - [AI suggestion] Document `event` table schema and the static event handler map (`GameConst::$staticEventHandlers`) with command hook examples.
 - [AI suggestion] Document auction scheduling (`registerAuction` call sites) and lifecycle timing rules.
+- [AI suggestion] Document scenario-specific unit/map overrides and per-map city deltas.
+- [AI suggestion] Document per-command `Constraint` env payload keys and lifecycle.
+- [AI suggestion] Document `MessageType` values and message table schema used by diplomacy/mailbox flows.
+- [AI suggestion] Document `PenaltyKey` effects and the `GeneralBase` / `LazyVarAndAuxUpdater` state conventions.
+- [AI suggestion] Document personality/special selection RNG thresholds and scenario overrides.

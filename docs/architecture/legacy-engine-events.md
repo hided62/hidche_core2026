@@ -13,6 +13,19 @@ references include `legacy/hwe/sammo/TurnExecutionHelper.php`,
 - `StaticEventHandler::handleEvent(...)`
   - Invoked by many commands and API handlers to run per-action static hooks.
 
+## Event Table Schema
+
+`event` rows are stored in the legacy DB schema (`legacy/hwe/sql/schema.sql`):
+
+- `id`: auto-increment primary key
+- `target`: enum of `PRE_MONTH`, `MONTH`, `OCCUPY_CITY`, `DESTROY_NATION`, `UNITED`
+- `priority`: higher first (default 1000)
+- `condition`: JSON array (condition DSL)
+- `action`: JSON array (action DSL)
+
+Indexes: `(target, priority, id)` for dispatch ordering. Both `condition` and
+`action` are JSON-validated by DB constraints.
+
 ## Event Table Dispatch
 
 `runEventHandler()` drives the dynamic event pipeline:
@@ -71,6 +84,18 @@ Static events are hooks triggered directly by commands/APIs:
 - These hooks are used to extend command behavior without modifying the
   command code itself (e.g., troop join/exit side effects).
 
+### Static Handler Map Sources
+
+`GameConst::$staticEventHandlers` defaults to an empty array in
+`legacy/hwe/sammo/GameConstBase.php`. Scenario JSON can override it:
+
+- `legacy/hwe/scenario/scenario_911.json` (only observed override in repo)
+  - `sammo\\API\\Troop\\JoinTroop` → `event_부대탑승즉시이동`
+  - `sammo\\Command\\Nation\\che_발령` → `event_부대발령즉시집합`
+
+Static handler names should map to classes in `legacy/hwe/sammo/StaticEvent/`
+(class name matches handler key).
+
 ## RNG Notes
 
 Dynamic event actions can use deterministic RNG by constructing
@@ -81,6 +106,5 @@ Examples include `RandomizeCityTradeRate` and `UpdateNationLevel`.
 
 - `Event\Engine` is a stub with a TODO; it is not currently used in the main
   turn pipeline.
-- The full mapping of `GameConst::$staticEventHandlers` to events should be
-  extracted from scenario configs and command usage when documenting specific
-  rule packs.
+- Verify whether any runtime code injects additional static handlers beyond
+  scenario JSON overrides.

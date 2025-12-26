@@ -74,6 +74,96 @@ After `processWar_NG()`:
 - Update `diplomacy.dead` for both sides
 - If city conquered: call `ConquerCity()`
 
+## Conflict Tracking (`city.conflict`)
+
+City conflict tracks which nations contributed to siege damage, used to
+resolve post-war ownership when multiple attackers participate.
+
+Source: `WarUnitCity::addConflict()` in `legacy/hwe/sammo/WarUnitCity.php`.
+
+- `city.conflict` is a JSON map `{ nationID: deadContribution }`.
+- Contribution amount is based on city `dead` (minimum 1).
+- First/last hit bonus: if no conflict exists yet or city HP is 0, `dead` is
+  multiplied by 1.05 ("선타, 막타 보너스").
+- Contributions are sorted descending via `arsort()` after updates.
+- `addConflict()` returns `true` when a new nation enters the conflict, which
+  triggers the global "분쟁" log in `processWar()`.
+- `getConquerNation()` returns the first key of the sorted map to select the
+  final owner.
+- `DeleteConflict($nation)` removes a nation from all city conflicts, used on
+  nation deletion and on the `che_방랑` flow.
+
+## City Conquest Resolution (`ConquerCity`)
+
+`ConquerCity()` finalizes city ownership, handles nation collapse, and applies
+post-siege side effects. It is deterministic with the conquest RNG seed noted
+below.
+
+### Common Flow
+
+- Logs conquest to attacker (general/nation/global) and defender nation history.
+- Runs `EventTarget::OCCUPY_CITY` handlers via `TurnExecutionHelper::runEventHandler()`.
+- Calls `onArbitraryAction(..., 'ConquerCity')` for each defender general in
+  the city, then persists them.
+
+### Nation Collapse Path
+
+Triggered when the defender nation owns exactly one city (the captured city):
+
+- Calls `deleteNation()` using the defender lord (officer level 12).
+- All defender generals lose 20–50% of gold and rice, -10% experience, and
+  -50% dedication, with action logs. Loss amounts are aggregated.
+- Optionally issues scout messages to fleeing generals (when `join_mode` allows).
+- NPC defenders (NPC type 2–8 except 5) can auto-queue `che_임관` to the
+  attacker nation with a random delay (0–12 turns), gated by
+  `GameConst::$joinRuinedNPCProp`.
+- Attacker reward:
+  - Half of defender nation gold/rice above base (`GameConst::$basegold`,
+    `GameConst::$baserice`) plus half of the aggregated general losses.
+  - Credited to attacker nation and logged to all chiefs (officer level >= 5).
+- Runs `EventTarget::DESTROY_NATION` handlers.
+
+### Nation Survives Path
+
+If the defender nation still has other cities:
+
+- Demotes city officers (태수/군사/종사) to general:
+  - `officer_level = 1`, `officer_city = 0`.
+- If the city was the capital:
+  - Picks a new capital via `findNextCapital()` (closest distance, highest pop).
+  - Logs an emergency relocation message to global and all nation generals.
+  - Sets `nation.capital` to new city and halves nation gold/rice.
+  - Marks new capital as supply city; moves chiefs to it.
+  - Applies 20% morale loss to all generals (`atmos *= 0.8`).
+  - Refreshes cached nation static info.
+
+### Final Ownership + City Reset
+
+`getConquerNation()` inspects `city.conflict` to decide final owner. If the
+attacker loses arbitration, the city is transferred to the conflict winner
+and logs are emitted for both nations.
+
+City stats are reset after ownership is settled:
+
+- `supply = 1`, `term = 0`, `conflict = {}`, `nation = conquerNation`,
+  `officer_set = 0`.
+- `agri/comm/secu` multiplied by 0.7.
+- `def/wall` reset:
+  - If `level > 3`: both set to `GameConst::$defaultCityWall`.
+  - Else: set to `def_max/2`, `wall_max/2`.
+- Frontline status recalculated for all nearby nations (`SetNationFront()`).
+
+### Deterministic RNG
+
+Conquest RNG seed:
+`hiddenSeed + 'ConquerCity' + year + month + attackerNationID + attackerID + cityID`.
+
+Used for:
+
+- Defender general loss ratios (20–50%).
+- Scout message chance and NPC auto-join chance.
+- Randomized join turn delay (0–12).
+
 ## `WarUnitGeneral` Highlights
 
 - Train/atmos bonuses depend on city level and attacker/defender role.
@@ -105,5 +195,5 @@ After `processWar_NG()`:
 
 ## Open Questions / Follow-ups
 
-- Detailed conquest outcomes (nation collapse, officer handling) extend beyond
-  the summary here; see `ConquerCity()` in `legacy/hwe/process_war.php`.
+- No automatic decay for `city.conflict` is visible; confirm if any scheduled
+  cleanup exists outside explicit reset paths.
