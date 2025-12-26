@@ -28,3 +28,9 @@ Move items into the main docs once they are finalized.
 
 - "Next-turn intent" (예턴) data schema and lifecycle
 - Profile selection workflow and deployment mapping
+
+## Legacy Engine Docs
+
+- [AI suggestion] Expand monthly pipeline details (`preUpdateMonthly`, `postUpdateMonthly`, `turnDate`, `checkStatistic`) with concrete side effects and tables touched.
+- [AI suggestion] Document `ConquerCity()` resolution paths (nation collapse, officer handling, reward/penalty rules).
+- [AI suggestion] Clarify command prefix semantics (`che_`, `cr_`, `event_`) and add per-command effect summaries.

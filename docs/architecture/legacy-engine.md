@@ -34,3 +34,11 @@ organization rather than endpoint-first routing.
 - "attempt" then "execute" phases
 - Common trigger categories (traits, specials, scenario effects)
 - How triggers combine when multiple sources apply
+
+## Detailed Notes
+
+- Turn execution pipeline: `docs/architecture/legacy-engine-execution.md`
+- General model and action stack: `docs/architecture/legacy-engine-general.md`
+- Battle and war resolution: `docs/architecture/legacy-engine-war.md`
+- Command catalog: `docs/architecture/legacy-commands.md`
+- Scenario system and rule sets: `docs/architecture/legacy-scenarios.md`
