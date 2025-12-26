@@ -52,10 +52,18 @@
 These are placeholders to align teams; adjust once packages exist.
 - `pnpm install`: install all workspace dependencies.
 - `pnpm -r lint`: lint all packages.
-- `pnpm -r test`: run all unit tests.
+- `pnpm -r test`: run all unit tests (Vitest where configured).
 - `pnpm -r build`: build all packages/apps.
 - `pnpm -r dev`: run dev servers where applicable.
+- `pnpm --filter ./app/game-frontend dev`: run a single app by filter.
+- `pnpm --filter ./app/game-api dev`: run a single service by filter.
 - `pnpm --filter ./app/game-engine dev`: run a single service by filter.
+
+## Build Profiles (Proposal)
+- Server builds should accept a profile (scenario, server variant) as an explicit input.
+- Recommended pattern: a `tools/build-scripts` runner invoked by pnpm, e.g. `pnpm build:server --profile che`.
+- Prefer environment variables for CI/CD (`PROFILE=che pnpm build:server`) and a small wrapper script for local usage.
+- Build output stays in `/dist/{serverName}` per profile to keep deployments predictable.
 
 ## Server Profiles (Planned)
 - `che`, `kwe`, `pwe`, `twe`, `nya`, `pya`
@@ -73,18 +81,6 @@ These are placeholders to align teams; adjust once packages exist.
 - Seed composition should include a hidden base seed plus action context (action type, time, actor, target) so results can be re-validated later.
 - Do not introduce ad-hoc randomness in game logic; allow non-deterministic randomness only for non-gameplay, cosmetic, or UI-only cases.
 
-## Build, Test, and Development Commands
-Run commands from `legacy/` unless noted.
-- `composer install` installs PHP dependencies.
-- `npm install` installs frontend/tooling dependencies.
-- `npm run build` builds production JS/CSS via webpack.
-- `npm run buildDev` builds development assets.
-- `npm run watch` or `npm run watchProd` runs webpack in watch mode.
-- `npm run lint` lints `legacy/hwe/ts` with ESLint.
-- `npm test` runs all tests (`phpunit` + `mocha`).
-- `vendor/bin/phpunit --bootstrap vendor/autoload.php tests` runs PHP tests only.
-- `npm run test-ts` runs TypeScript tests only.
-
 ## Coding Style & Naming Conventions
 - Follow repo lint/format configuration once it exists; keep diffs consistent within a file.
 - Indentation: 4 spaces for TypeScript, JSON, and Vue SFCs.
@@ -93,6 +89,7 @@ Run commands from `legacy/` unless noted.
 - Use `camelCase` for variables/functions and `PascalCase` for classes/types.
 - Legacy concepts may use Korean identifiers; preserve Korean naming when it improves maintainability.
 - Hybrid naming is acceptable (e.g., `use전투규칙`, `use도시상태`) when the prefix is conventional but the domain term is Korean.
+- For classes, commands, and domain logic, add clear Korean comments to support Korean readers and future maintainers.
 
 ## Commit & Pull Request Guidelines
 - Git history is minimal and does not define a strict convention; use short, imperative messages (e.g., "Fix map cache loading").
