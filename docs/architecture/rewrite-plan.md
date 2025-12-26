@@ -23,6 +23,11 @@ Vue 3 frontends.
 - Data: PostgreSQL, Redis sessions
 - Testing: Vitest
 
+## Legacy Data Migration
+
+- Legacy data is for migration only; the rewrite runtime does not depend on it.
+- Once DB migration is complete, legacy data can be retired.
+
 ## Profiles (Planned)
 
 - `che`, `kwe`, `pwe`, `twe`, `nya`, `pya`

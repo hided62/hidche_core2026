@@ -20,6 +20,8 @@ deployments predictable.
 - Turn daemon responsibilities: scheduling, turn resolution, state persistence
 - API server responsibilities: query/command intake, validation, response shaping
 - Concurrency model between daemon and API server
+- Communication channel: Redis Stream or Redis pub/sub
+- Client updates: SSE between API server and frontend where appropriate
 
 ## Engine Runtime Flow (Draft)
 
@@ -38,13 +40,16 @@ deployments predictable.
 
 ### API Server Flow
 
-- The API server validates queries/commands and writes them to Redis Streams.
+- The API server validates queries/commands and writes them to Redis Streams
+  or Redis pub/sub.
 - After a request is processed, the API server returns the result to clients.
 - Read-only queries may access the DBMS directly.
+- The API server may use SSE to stream live updates to the frontend.
 
 ### Queue and Rate Limits
 
-- API server requests are delivered to the daemon via Redis Streams.
+- API server requests are delivered to the daemon via Redis Streams or
+  Redis pub/sub.
 - Redis Stream mutation requests are rate-limited per user.
   - Each user can have up to 30 pending mutation requests.
   - Additional requests are rejected once the limit is exceeded.

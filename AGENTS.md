@@ -3,6 +3,8 @@
 ## Project Goal (Rewrite)
 - This repository is transitioning from the legacy PHP codebase to a TypeScript-based monorepo using pnpm workspaces.
 - The legacy game remains the current active source under `legacy/` while the rewrite is prepared alongside it.
+- Legacy data under `legacy/` is for migration only; once DB migration is complete,
+  the runtime will no longer depend on legacy data.
 
 ## Project Structure & Module Organization
 - `legacy/` contains the application source. This is the active codebase.
@@ -32,6 +34,9 @@
 
 ## Planned Runtime & Tooling
 - Backend: Node.js + Fastify, with Prisma ORM.
+- Turn daemon: turn scheduler/resolver service for game ticks.
+- Turn daemon and API server communicate via Redis Stream or Redis pub/sub.
+- API server and frontend may use SSE for live updates.
 - API: tRPC + zod.
 - Frontend: Vue 3, Pinia, Vue Router, TailwindCSS, Vite.
 - Data: PostgreSQL; sessions backed by Redis.

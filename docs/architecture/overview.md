@@ -11,6 +11,11 @@ monorepo plan is prepared alongside it.
 - Legacy frontend: Vue/TypeScript under `legacy/hwe/ts/`
 - Rewrite (planned): pnpm workspace monorepo under `packages/` and `app/`
 
+## Legacy Data Migration Policy
+
+- Data under `legacy/` is migration-only and not used by the rewrite at runtime.
+- After DB migration completes, legacy data is no longer required.
+
 ## Data and State
 
 - PHP engine owns authoritative gameplay state today
