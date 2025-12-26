@@ -28,3 +28,7 @@ monorepo plan is prepared alongside it.
 This document links to detailed runtime behavior in `docs/architecture/runtime.md`.
 Use that document for turn daemon scheduling, API request handling, and
 persistence sequencing.
+
+## Documentation TODOs
+
+- Pending follow-ups: `docs/architecture/todo.md`.

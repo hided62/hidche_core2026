@@ -93,3 +93,7 @@ These are placeholders to align teams; adjust once packages exist.
 - Legacy engine map: `docs/architecture/legacy-engine.md`.
 - TypeScript rewrite plan: `docs/architecture/rewrite-plan.md`.
 - Runtime and build profiles: `docs/architecture/runtime.md`.
+
+## Documentation Workflow
+- When AI proposes future improvements or expansions, record them in
+  `docs/architecture/todo.md` with an "AI suggestion" label.
