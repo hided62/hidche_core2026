@@ -10,6 +10,7 @@ Move items into the main docs once they are finalized.
 - In-memory state lifecycle and DBMS flush checkpoints
 - Recovery behavior after partial flush or crash
 - Observability: metrics, logs, and alerts for turn processing
+- [AI suggestion] Define a stable in-memory AI state contract (snapshot + delta invalidation rules) aligned with `GeneralAI` inputs.
 
 ## Game Logic and Testing
 
