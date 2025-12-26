@@ -39,6 +39,7 @@ organization rather than endpoint-first routing.
 
 - Turn execution pipeline: `docs/architecture/legacy-engine-execution.md`
 - General model and action stack: `docs/architecture/legacy-engine-general.md`
+- Trigger system (iAction + trigger callers): `docs/architecture/legacy-engine-triggers.md`
 - Battle and war resolution: `docs/architecture/legacy-engine-war.md`
 - Command catalog: `docs/architecture/legacy-commands.md`
 - Scenario system and rule sets: `docs/architecture/legacy-scenarios.md`
