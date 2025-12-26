@@ -64,6 +64,8 @@ These are placeholders to align teams; adjust once packages exist.
 - Recommended pattern: a `tools/build-scripts` runner invoked by pnpm, e.g. `pnpm build:server --profile che`.
 - Prefer environment variables for CI/CD (`PROFILE=che pnpm build:server`) and a small wrapper script for local usage.
 - Build output stays in `/dist/{serverName}` per profile to keep deployments predictable.
+- Profile selection can target different git branches or specific commits; server operators decide the compatibility baseline.
+- Profiles should allow scenario selection and include the matching unit pack in the build output.
 
 ## Server Profiles (Planned)
 - `che`, `kwe`, `pwe`, `twe`, `nya`, `pya`
