@@ -18,14 +18,13 @@ export function convertBytesLikeToUint8Array(
         return new Uint8Array(data);
     }
     if (data instanceof DataView) {
-        const view = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-        return new Uint8Array(view) as Uint8Array<ArrayBuffer>;
+        return new Uint8Array<ArrayBuffer>(data.buffer, data.byteOffset, data.byteLength);
     }
     if (typeof (data) === 'string') {
         if (encodeUTF8) {
-            return (new TextEncoder()).encode(data) as Uint8Array<ArrayBuffer>;
+            return (new TextEncoder()).encode(data);
         }
-        return new Uint8Array(data.split('').map((s) => s.codePointAt(0) as number)) as Uint8Array<ArrayBuffer>;
+        return new Uint8Array(data.split('').map((s) => s.codePointAt(0) as number));
     }
     throw new Error('Unsupported BytesLike');
 }
