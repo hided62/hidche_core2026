@@ -42,6 +42,7 @@ monorepo plan is prepared alongside it.
 - No ad-hoc randomness for gameplay; use deterministic RNG
 - Keep domain logic independent of endpoints or UI
 - Prefer clear Korean comments in core gameplay logic for maintainers
+- Test strategy and layering: `docs/testing-policy.md`
 
 ## Runtime Processing (Outline)
 
