@@ -36,12 +36,29 @@ Idle -> Running -> Flushing -> Idle
 
 ## Main Loop Sketch
 
+The daemon interleaves API request handling between scheduled turn executions.
+API requests are drained until the next turn time is reached; once the turn
+starts, incoming requests are queued and processed after the run.
+
 ```ts
 while (!stopping) {
-    await waitForNextTrigger(nextTurnTime, wakeSignal);
+    const signal = await waitForNextSignal(nextTurnTime, wakeSignal);
+    if (signal.type === 'pause') {
+        paused = true;
+    }
+    if (signal.type === 'resume') {
+        paused = false;
+    }
     if (paused || running) {
         continue;
     }
+
+    await drainApiRequestsUntil(nextTurnTime);
+
+    if (now() < nextTurnTime && signal.type !== 'run') {
+        continue;
+    }
+
     running = true;
     try {
         await runUntil(now(), budget);
@@ -52,6 +69,10 @@ while (!stopping) {
     }
 }
 ```
+
+- `drainApiRequestsUntil()` processes queued user/admin requests and applies
+  them to in-memory state until the next scheduled turn time is reached.
+- During `running`, new API requests are enqueued and handled after the run.
 
 ## Run Budget and Checkpoints
 
