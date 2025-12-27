@@ -4,7 +4,7 @@ import { RandUtil } from '../src/util/RandUtil.js';
 import { convertBytesLikeToArrayBuffer } from '../src/util/convertBytesLikeToArrayBuffer.js';
 import { convertBytesLikeToUint8Array as toBytes } from '../src/util/convertBytesLikeToUint8Array.js';
 
-type Bytes = ArrayBuffer | DataView | Uint8Array<ArrayBuffer>;
+type Bytes = ArrayBuffer | DataView<ArrayBuffer> | Uint8Array<ArrayBuffer>;
 type MaybeBytes = Bytes | string;
 
 const range = (count: number): number[] => Array.from({ length: count }, (_, idx) => idx);
@@ -25,7 +25,7 @@ function fillBlock(
         throw new Error('filler must have length');
     }
 
-    const buffer = new Uint8Array<ArrayBuffer>(length);
+    const buffer = new Uint8Array(length);
     buffer.set(u8Body, 0);
     let bufferIdx = u8Body.byteLength;
 
