@@ -51,6 +51,8 @@ Unit availability is controlled by `GameUnitConstraint` implementations:
 
 - `ReqTech`, `ReqCities`, `ReqRegions`, `ReqMinRelYear`, `Impossible`, etc.
 - Each constraint exposes `test(...)` and `getInfo()` for UI display.
+- `ReqNationAux` gates unit availability by `nation.aux` flags (e.g. research
+  unlocks like `can_화시병사용`), which are written by nation commands.
 
 ## Open Questions / Follow-ups
 

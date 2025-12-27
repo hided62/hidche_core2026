@@ -27,6 +27,10 @@ Constraints declare required inputs using bit flags:
 `Constraint::checkInputValues()` enforces these expectations and throws if
 inputs are missing or malformed.
 
+Some constraints expect `general.aux` to be preloaded as `auxVar`. Command
+evaluation calls `General::unpackAux()` before constraint checks to satisfy
+these requirements.
+
 ## Constraint Helper DSL
 
 `ConstraintHelper` provides factory-style helpers used in command definitions:

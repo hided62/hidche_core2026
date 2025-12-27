@@ -76,8 +76,12 @@ For each general with `turntime < targetDate` (ordered by `turntime, no`):
    - Updates `killturn` based on NPC status, autorun, or `휴식`.
 8. **Queue maintenance & turntime**
    - `pullNationCommand()` / `pullGeneralCommand()` advance queues.
-   - `updateTurnTime()` handles deletion/retirement and sets next `turntime`.
-   - Persist via `General::applyDB()`.
+    - `updateTurnTime()` handles deletion/retirement and sets next `turntime`.
+    - Persist via `General::applyDB()`.
+9. **LastTurn persistence**
+   - General `LastTurn` lives in `general.last_turn` JSON.
+   - Nation `LastTurn` is stored in `nation_env` under `turn_last_{officer_level}`.
+   - `LastTurn.term` only advances when the same command + arg repeats across turns.
 
 ## Command Semantics (BaseCommand)
 
@@ -99,6 +103,16 @@ For each general with `turntime < targetDate` (ordered by `turntime, no`):
   `rebirth()` are invoked.
 - **Scheduling**: next `turntime` is `addTurn(current, turnterm)` with
   optional `nextTurnTimeBase` override (aux var).
+
+## killturn, block, autorun
+
+- `killturn` acts as an inactivity counter; it is reset to `game_env.killturn`
+  when a non-rest player action completes, and decremented for NPCs, autorun,
+  rest commands, or block states.
+- `block >= 2` forces `killturn` decrement and logs a block message.
+- When `killturn <= 0`, the general is converted to NPC (owner removed) or
+  deleted depending on NPC type and `deadyear`.
+- `autorun_limit` is stored in general `aux` and used to decide AI takeover.
 
 ## Deterministic RNG Seeds
 

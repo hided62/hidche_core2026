@@ -9,6 +9,7 @@ exposes trigger hooks. The main reference is `legacy/hwe/sammo/General.php`.
 - `last_turn` is parsed into `LastTurn`, and a separate `resultTurn` is
   maintained for updates.
 - `penalty` JSON is decoded into `PenaltyKey -> value` map.
+- `aux` JSON is lazily decoded and only written when aux values change.
 - Rank data is tracked with:
   - `rankVarRead` (current read view)
   - `rankVarIncrease` (increment queue)
@@ -52,6 +53,16 @@ Convenience wrappers:
 - `LastTurn` holds `{ command, arg, term, seq }` and is used by
   `BaseCommand::addTermStack()` to advance multi-turn commands.
 - `applyDB()` persists updated fields and writes `last_turn` if it changed.
+
+## Aux and Penalty Behavior
+
+- `aux` is loaded on demand (`unpackAux()`), and `setAuxVar()` writes through to
+  `general.aux` only when values changed.
+- Setting an aux value to `null` deletes the key from JSON.
+- Command constraints that require aux values trigger `General::unpackAux()`
+  before evaluation.
+- `penalty` is used in both `General` logic (AI and permission checks) and
+  API flows (messages, nation tools); runtime expiration is not automatic.
 
 ## Trigger and Modifier Hooks
 
