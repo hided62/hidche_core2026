@@ -34,6 +34,9 @@ This document links to detailed runtime behavior in `docs/architecture/runtime.m
 Use that document for turn daemon scheduling, API request handling, and
 persistence sequencing.
 
+The turn daemon lifecycle and control contract are documented in
+`docs/architecture/turn-daemon-lifecycle.md`.
+
 ## Documentation TODOs
 
 - Pending follow-ups: `docs/architecture/todo.md`.

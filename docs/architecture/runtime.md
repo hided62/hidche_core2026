@@ -23,6 +23,9 @@ deployments predictable.
 - Communication channel: Redis Stream or Redis pub/sub
 - Client updates: SSE between API server and frontend where appropriate
 
+Detailed lifecycle and control flow are defined in
+`docs/architecture/turn-daemon-lifecycle.md`.
+
 ## Engine Runtime Flow (Draft)
 
 ### Turn Daemon Loop
@@ -37,6 +40,27 @@ deployments predictable.
   - When the next turn start time arrives, the daemon starts turn processing
     immediately even if requests remain queued.
 - While the daemon is resolving a turn, the API server queues incoming requests.
+
+### Daemon Control Contract (Draft)
+
+API server commands are delivered to the daemon over the control channel
+(Redis Stream or in-process). The daemon replies with status and run events.
+
+```ts
+export type RunReason = 'schedule' | 'manual' | 'poke';
+
+export type DaemonCommand =
+    | { type: 'run'; reason: RunReason; targetTime?: string; budget?: TurnRunBudget }
+    | { type: 'pause'; reason?: string }
+    | { type: 'resume'; reason?: string }
+    | { type: 'getStatus'; requestId: string };
+
+export type DaemonEvent =
+    | { type: 'status'; requestId?: string; status: TurnDaemonStatus }
+    | { type: 'runStarted'; at: string; reason: RunReason }
+    | { type: 'runCompleted'; at: string; result: TurnRunResult }
+    | { type: 'runFailed'; at: string; error: string };
+```
 
 ### API Server Flow
 

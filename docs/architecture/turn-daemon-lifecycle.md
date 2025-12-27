@@ -1,0 +1,213 @@
+# Turn Daemon Lifecycle
+
+This document defines the lifecycle of the turn daemon for the rewrite when a
+single daemon instance is responsible for turn resolution and all triggers come
+from the API server.
+
+## Assumptions
+
+- One daemon process per server profile.
+- API server is the only ingress for user/admin requests.
+- The daemon is the only component that mutates gameplay state.
+
+## Responsibilities
+
+- Maintain authoritative in-memory state.
+- Execute turn resolution when scheduled.
+- Flush state changes and checkpoints to the DBMS.
+- Expose status for ops and admin tooling.
+
+## Trigger Sources
+
+- Scheduled tick: next turn time is reached.
+- API poke: user/admin request asks the daemon to run now.
+- Admin control: pause/resume or manual catch-up.
+
+## State Model
+
+```
+Idle -> Running -> Flushing -> Idle
+   \-> Paused (admin)
+   \-> Stopping (shutdown)
+```
+
+- `running` flag prevents re-entrant execution when multiple triggers arrive.
+- `pendingReason` tracks why a run was requested (schedule, manual, poke).
+
+## Main Loop Sketch
+
+```ts
+while (!stopping) {
+    await waitForNextTrigger(nextTurnTime, wakeSignal);
+    if (paused || running) {
+        continue;
+    }
+    running = true;
+    try {
+        await runUntil(now(), budget);
+        await flushChanges();
+        publishTurnEvents();
+    } finally {
+        running = false;
+    }
+}
+```
+
+## Run Budget and Checkpoints
+
+Replace PHP `max_execution_time` with explicit limits to allow partial progress:
+
+- `budgetMs`: max wall-clock time per run.
+- `maxGenerals`: max generals processed per run.
+- `catchUpCap`: max turns (or months) processed in one run.
+
+When a limit is hit, persist a checkpoint so the next run resumes safely.
+Minimum checkpoint data:
+
+- `game_env.turntime` (last fully processed general turn time)
+- optional cursor (last processed general id) if you batch within a turntime
+- last known year/month if monthly transitions are mid-flight
+
+## API Server Interaction
+
+- API server enqueues mutations and pokes the daemon.
+- Read-only queries can read from DBMS or a read model.
+- During `running`, incoming requests are queued and processed after the run.
+
+## Status and Admin Controls
+
+Expose a status endpoint to replace `proc.php` output:
+
+- `running`, `paused`, `lastRunAt`, `lastDurationMs`
+- `lastTurnTime`, `nextTurnTime`
+- `pendingReason`, `queueDepth`
+
+Admin controls should toggle `paused`, trigger manual run, and request catch-up.
+
+### Suggested Status Endpoint (Draft)
+
+`GET /admin/turn-daemon/status`
+
+```json
+{
+    "profile": "che",
+    "state": "idle",
+    "running": false,
+    "paused": false,
+    "lastRunAt": "2026-01-01T12:00:00Z",
+    "lastDurationMs": 842,
+    "lastTurnTime": "2026-01-01 12:00:00",
+    "nextTurnTime": "2026-01-01 12:10:00",
+    "pendingReason": "schedule",
+    "queueDepth": 3,
+    "checkpoint": {
+        "turnTime": "2026-01-01 12:00:00",
+        "generalId": 1201,
+        "year": 12,
+        "month": 3
+    }
+}
+```
+
+### Suggested Admin Endpoints (Draft)
+
+`POST /admin/turn-daemon/run`
+
+```json
+{
+    "reason": "manual",
+    "targetTime": "2026-01-01 12:10:00",
+    "budgetMs": 2500,
+    "catchUpCap": 3
+}
+```
+
+`POST /admin/turn-daemon/pause`
+
+```json
+{
+    "reason": "maintenance"
+}
+```
+
+`POST /admin/turn-daemon/resume`
+
+```json
+{
+    "reason": "maintenance complete"
+}
+```
+
+### Daemon Control Contract (Draft)
+
+API server to daemon control messages (Redis Stream or in-process channel):
+
+```ts
+export type RunReason = 'schedule' | 'manual' | 'poke';
+
+export type DaemonCommand =
+    | { type: 'run'; reason: RunReason; targetTime?: string; budget?: TurnRunBudget }
+    | { type: 'pause'; reason?: string }
+    | { type: 'resume'; reason?: string }
+    | { type: 'getStatus'; requestId: string };
+
+export type DaemonEvent =
+    | { type: 'status'; requestId?: string; status: TurnDaemonStatus }
+    | { type: 'runStarted'; at: string; reason: RunReason }
+    | { type: 'runCompleted'; at: string; result: TurnRunResult }
+    | { type: 'runFailed'; at: string; error: string };
+```
+
+## Recovery and Shutdown
+
+- On startup, load `game_env.turntime` and catch up to `now`.
+- On shutdown, stop accepting new triggers, finish the current run, flush, then
+  exit cleanly.
+
+## TypeScript Sketch (Draft)
+
+```ts
+export type TurnDaemonState = 'idle' | 'running' | 'flushing' | 'paused' | 'stopping';
+
+export interface TurnRunBudget {
+    budgetMs: number;
+    maxGenerals: number;
+    catchUpCap: number;
+}
+
+export interface TurnCheckpoint {
+    turnTime: string;
+    generalId?: number;
+    year: number;
+    month: number;
+}
+
+export interface TurnRunResult {
+    lastTurnTime: string;
+    processedGenerals: number;
+    processedTurns: number;
+    durationMs: number;
+    partial: boolean;
+    checkpoint?: TurnCheckpoint;
+}
+
+export interface TurnDaemonStatus {
+    state: TurnDaemonState;
+    running: boolean;
+    paused: boolean;
+    lastRunAt?: string;
+    lastDurationMs?: number;
+    lastTurnTime?: string;
+    nextTurnTime?: string;
+    pendingReason?: RunReason;
+    queueDepth: number;
+    checkpoint?: TurnCheckpoint;
+}
+
+export interface TurnRunner {
+    getStatus(): Promise<TurnDaemonStatus>;
+    requestRun(reason: RunReason, targetTime?: string, budget?: TurnRunBudget): Promise<void>;
+    pause(reason?: string): Promise<void>;
+    resume(reason?: string): Promise<void>;
+}
+```

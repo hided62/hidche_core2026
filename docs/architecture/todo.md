@@ -8,6 +8,9 @@ Move items into the main docs once they are finalized.
 - Turn daemon scheduling details and preemption rules
 - Turn daemon vs API server priority policy under load
 - In-memory state lifecycle and DBMS flush checkpoints
+- [AI suggestion] Specify the turn daemon main loop (distributed lock, `runUntil(now)` catch-up, checkpoint/resume cursor, release lock) and define a status/health endpoint for ops.
+- [AI suggestion] Define tick budget settings (wall time, max generals, catch-up cap) to replace PHP `max_execution_time` behavior and clarify partial progress persistence.
+- [AI suggestion] Define admin controls (pause/resume, manual run, force-catch-up) and their interaction with the lock/state.
 - [AI suggestion] Define a constraint evaluation contract with explicit data requirements and a tri-state result (allow/deny/unknown) to support DB-backed prechecks vs in-memory full checks.
 - Recovery behavior after partial flush or crash
 - Observability: metrics, logs, and alerts for turn processing
