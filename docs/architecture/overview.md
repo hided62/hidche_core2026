@@ -28,6 +28,8 @@ monorepo plan is prepared alongside it.
 - PHP engine owns authoritative gameplay state today
 - Scenario and unit pack data are loaded from `legacy/hwe/scenario/`
 - Deterministic RNG is required for gameplay outcomes
+- Build/runtime profiles are server+scenario pairs; scenario selection is required
+  because it drives unit sets and DB settings.
 
 ## Legacy Docs
 

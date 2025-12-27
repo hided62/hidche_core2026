@@ -6,7 +6,7 @@ from the API server.
 
 ## Assumptions
 
-- One daemon process per server profile.
+- One daemon process per server+scenario profile.
 - API server is the only ingress for user/admin requests.
 - The daemon is the only component that mutates gameplay state.
 
@@ -111,7 +111,7 @@ Admin controls should toggle `paused`, trigger manual run, and request catch-up.
 
 ```json
 {
-    "profile": "che",
+    "profile": "che:default",
     "state": "idle",
     "running": false,
     "paused": false,

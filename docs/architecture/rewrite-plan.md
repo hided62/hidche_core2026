@@ -10,8 +10,8 @@ Vue 3 frontends.
 - `/app/gateway-frontend`: gateway UI
 - `/app/gateway-api`: gateway service
 - `/app/game-frontend`: game UI
-- `/app/game-api`: game backend per server profile
-- `/app/game-engine`: turn daemon per server profile
+- `/app/game-api`: game backend per server+scenario profile
+- `/app/game-engine`: turn daemon per server+scenario profile
 - `/tools/build-scripts`: build and deployment scripts
 
 ## Runtime Stack (Planned)
@@ -43,4 +43,5 @@ The shared constraint contract (daemon vs API precheck split) is documented in
 
 ## Profiles (Planned)
 
-- `che`, `kwe`, `pwe`, `twe`, `nya`, `pya`
+- Profiles are server+scenario pairs; scenario selection is required for build/runtime.
+- Server IDs: `che`, `kwe`, `pwe`, `twe`, `nya`, `pya`

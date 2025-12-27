@@ -11,7 +11,9 @@ fields. Use this as the starting point for Prisma models and migrations.
 - Keep JSONB values as objects (not arrays or scalars).
 - Use partial or expression indexes when a JSONB key becomes a hot filter.
 - If multiple server profiles live in one database, add `server_id` to every
-  table and index it; otherwise, use one database per profile.
+  table and index it; otherwise, use one database per profile. Scenario
+  selection is still required at build/runtime, but does not change the DB
+  partitioning baseline.
 
 ## Meta Policy (Reset)
 

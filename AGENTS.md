@@ -34,8 +34,8 @@
 - `/app/gateway-frontend`: Gateway UI application.
 - `/app/gateway-api`: Gateway backend service.
 - `/app/game-frontend`: Game UI application.
-- `/app/game-api`: Game backend service per server profile.
-- `/app/game-engine`: Game engine / turn daemon per server profile.
+- `/app/game-api`: Game backend service per server+scenario profile.
+- `/app/game-engine`: Game engine / turn daemon per server+scenario profile.
 - `/tools/build-scripts`: build and deployment scripts.
 
 ## Planned Runtime & Tooling
@@ -48,7 +48,7 @@
 - Data: PostgreSQL; sessions backed by Redis.
 - Testing: Vitest.
 - Package manager: pnpm (workspace-based monorepo).
-- Build output: server builds emitted to `/dist/{serverName}` per profile.
+- Build output: server builds emitted to `/dist/{profileName}` per profile.
 
 ## Suggested Monorepo Scripts (Proposal)
 These are placeholders to align teams; adjust once packages exist.
@@ -62,15 +62,17 @@ These are placeholders to align teams; adjust once packages exist.
 - `pnpm --filter ./app/game-engine dev`: run a single service by filter.
 
 ## Build Profiles (Proposal)
-- Server builds should accept a profile (scenario, server variant) as an explicit input.
-- Recommended pattern: a `tools/build-scripts` runner invoked by pnpm, e.g. `pnpm build:server --profile che`.
-- Prefer environment variables for CI/CD (`PROFILE=che pnpm build:server`) and a small wrapper script for local usage.
-- Build output stays in `/dist/{serverName}` per profile to keep deployments predictable.
+- A build profile is a server+scenario pair; scenario selection is required even if a default exists.
+- Server builds should accept a profile (server variant) plus an explicit scenario file input.
+- Recommended pattern: a `tools/build-scripts` runner invoked by pnpm, e.g. `pnpm build:server --profile che --scenario default`.
+- Prefer environment variables for CI/CD (`PROFILE=che SCENARIO=default pnpm build:server`) and a small wrapper script for local usage.
+- Build output stays in `/dist/{profileName}` per profile to keep deployments predictable.
 - Profile selection can target different git branches or specific commits; server operators decide the compatibility baseline.
-- Profiles should allow scenario selection and include the matching unit pack in the build output.
+- The scenario file determines unit sets and DB settings that must be prepared before build output is emitted.
 
 ## Server Profiles (Planned)
-- `che`, `kwe`, `pwe`, `twe`, `nya`, `pya`
+- Server IDs: `che`, `kwe`, `pwe`, `twe`, `nya`, `pya`
+- Each build/run profile combines a server ID with a scenario selection.
 
 ## Game Domain Notes (Behavioral Context)
 - Turn-based multiplayer loop with configurable tick length (historically 120/60/30/20/10/5/2/1 min; experimental day/night schedules).

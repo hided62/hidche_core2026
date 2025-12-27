@@ -1,13 +1,14 @@
 # Runtime and Build Profiles
 
-Build outputs should be emitted to `/dist/{serverName}` per profile to keep
-deployments predictable.
+Build outputs should be emitted to `/dist/{profileName}` per profile to keep
+deployments predictable. Profiles are server+scenario pairs, and scenario
+selection is required because it drives unit sets and DB settings.
 
 ## Suggested Build Pattern
 
 - Wrapper script under `tools/build-scripts`
-- `pnpm build:server --profile che`
-- CI-friendly: `PROFILE=che pnpm build:server`
+- `pnpm build:server --profile che --scenario default`
+- CI-friendly: `PROFILE=che SCENARIO=default pnpm build:server`
 
 ## Deterministic RNG Policy
 
@@ -44,7 +45,7 @@ replay while pub/sub keeps live updates simple and low-latency.
 
 ### Operational Notes
 
-- Stream keys should be namespaced per server profile.
+- Stream keys should be namespaced per server+scenario profile.
 - Use bounded stream length (`MAXLEN`) to cap storage.
 - API server should guard against duplicate processing by `requestId`.
 - When the daemon is busy, API queues new mutations to stream and responds
@@ -70,10 +71,10 @@ also supports local ID/password login for users who cannot use Kakao.
 
 - Gateway handles login and owns primary sessions in Redis.
 - Game servers may run different branches; treat Gateway as a central SSO
-  authority that issues session tokens for each server profile.
+  authority that issues session tokens for each server+scenario profile.
 - API servers validate tokens against Redis and accept sessions issued by
   Gateway without re-authentication.
-- Session tokens should be scoped by server profile to avoid cross-server leaks.
+- Session tokens should be scoped by server+scenario profile to avoid cross-server leaks.
 
 ### Operational Notes
 

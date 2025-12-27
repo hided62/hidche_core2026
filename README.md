@@ -6,7 +6,7 @@
 ## 목표
 - 레거시 PHP 기반 런타임을 TypeScript 기반 모노레포로 전환
 - 게임 로직을 순수 모듈로 분리하고 API/엔진/프론트를 서비스 단위로 구성
-- 프로파일(시나리오/서버 변형)별 빌드 및 배포 흐름 정립
+- 서버+시나리오 프로파일별 빌드 및 배포 흐름 정립
 
 ## 구조
 - `legacy/`: 현재 운영 중인 PHP 런타임
@@ -28,12 +28,14 @@
   - `pnpm -r build`
   - `pnpm -r dev`
 - 서버 빌드
-  - `pnpm build:server -- --profile <profile>`
-  - 예: `pnpm build:server -- --profile che`
+  - `pnpm build:server -- --profile <server> --scenario <scenario>`
+  - 예: `pnpm build:server -- --profile che --scenario default`
 
 ## 빌드 프로파일(예정)
-- `che`, `kwe`, `pwe`, `twe`, `nya`, `pya`
-- 빌드 출력: `/dist/{serverName}`
+- 프로파일은 서버+시나리오 조합이며, 시나리오 파일 지정은 필수(기본값은 별도 정의).
+- 시나리오 파일에 따라 유닛 세트, DB 세팅 등의 사전 준비가 달라짐.
+- 서버 ID: `che`, `kwe`, `pwe`, `twe`, `nya`, `pya`
+- 빌드 출력: `/dist/{profileName}`
 
 ## 난수 정책 (Verifiable RNG)
 게임 로직에 영향을 주는 모든 난수는 재현 가능해야 합니다.
