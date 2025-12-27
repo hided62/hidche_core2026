@@ -8,6 +8,7 @@ Move items into the main docs once they are finalized.
 - Turn daemon scheduling details and preemption rules
 - Turn daemon vs API server priority policy under load
 - In-memory state lifecycle and DBMS flush checkpoints
+- [AI suggestion] Define a constraint evaluation contract with explicit data requirements and a tri-state result (allow/deny/unknown) to support DB-backed prechecks vs in-memory full checks.
 - Recovery behavior after partial flush or crash
 - Observability: metrics, logs, and alerts for turn processing
 - [AI suggestion] Define a stable in-memory AI state contract (snapshot + delta invalidation rules) aligned with `GeneralAI` inputs.
