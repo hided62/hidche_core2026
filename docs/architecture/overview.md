@@ -22,6 +22,11 @@ monorepo plan is prepared alongside it.
 - Scenario and unit pack data are loaded from `legacy/hwe/scenario/`
 - Deterministic RNG is required for gameplay outcomes
 
+## Legacy Docs
+
+- Legacy entities and DB schema overview: `docs/architecture/legacy-entities.md`
+- Legacy engine map: `docs/architecture/legacy-engine.md`
+
 ## Cross-Cutting Policies
 
 - No ad-hoc randomness for gameplay; use deterministic RNG

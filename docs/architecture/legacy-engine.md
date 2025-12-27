@@ -37,6 +37,7 @@ organization rather than endpoint-first routing.
 
 ## Detailed Notes
 
+- Entity and schema overview: `docs/architecture/legacy-entities.md`
 - Turn execution pipeline: `docs/architecture/legacy-engine-execution.md`
 - General model and action stack: `docs/architecture/legacy-engine-general.md`
 - General AI behavior and policy model: `docs/architecture/legacy-engine-ai.md`
