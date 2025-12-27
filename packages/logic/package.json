@@ -18,12 +18,9 @@
         "test": "vitest run --config vitest.config.ts"
     },
     "dependencies": {
-        "js-sha512": "^0.8.0"
+        "js-sha512": "^0.9.0"
     },
     "devDependencies": {
-        "chai": "^4.3.10",
-        "chai-bytes": "^0.1.2",
-        "lodash-es": "^4.17.21",
-        "vitest": "^2.0.5"
+        "vitest": "^4.0.16"
     }
 }

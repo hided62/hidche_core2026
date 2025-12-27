@@ -121,7 +121,7 @@ export class LiteHashDRBG implements RNG {
         return maxInt;
     }
 
-    public nextBytes(bytes: number, baseBytes?: number): Uint8Array {
+    public nextBytes(bytes: number, baseBytes?: number): Uint8Array<ArrayBuffer> {
         bytes |= 0;
         if (bytes <= 0) {
             throw new Error(`${bytes} <= 0`);
@@ -171,7 +171,7 @@ export class LiteHashDRBG implements RNG {
         return result;
     }
 
-    public nextBits(bits: number, baseBytes?: number): Uint8Array {
+    public nextBits(bits: number, baseBytes?: number): Uint8Array<ArrayBuffer> {
         bits |= 0;
         const bytes = (bits + 7) >> 3;
         const headBits = bits & 0x7;

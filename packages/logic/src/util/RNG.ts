@@ -5,8 +5,8 @@ export interface RNG {
      */
     getMaxInt(): number;
 
-    nextBytes(bytes: number): Uint8Array;
-    nextBits(bits: number): Uint8Array;
+    nextBytes(bytes: number): Uint8Array<ArrayBuffer>;
+    nextBits(bits: number): Uint8Array<ArrayBuffer>;
 
     nextInt(max?: number): number;
     nextFloat1(): number;
