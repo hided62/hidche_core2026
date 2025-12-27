@@ -1,5 +1,5 @@
-import type { GeneralTriggerState } from '../domain/entities';
-import { type GeneralActionContext, GeneralTriggerCaller } from './general';
+import type { GeneralTriggerState } from '../domain/entities.js';
+import { type GeneralActionContext, GeneralTriggerCaller } from './general.js';
 
 export interface GeneralActionModule<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     getName?(): string;

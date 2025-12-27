@@ -1,4 +1,4 @@
-import type { RNG } from './RNG';
+import type { RNG } from './RNG.js';
 
 // RNG 유틸리티 모음
 export class RandUtil {
@@ -25,8 +25,8 @@ export class RandUtil {
     }
 
     public nextBit(): boolean {
-        const view = new DataView(this.rng.nextBits(1) as ArrayBufferLike);
-        return view.getUint8(0) != 0;
+        const bits = this.rng.nextBits(1);
+        return bits[0]! != 0;
     }
 
     public nextBool(prob = 0.5): boolean {
@@ -57,7 +57,10 @@ export class RandUtil {
             if (srcIdx === destIdx) {
                 continue;
             }
-            [result[srcIdx], result[destIdx]] = [result[destIdx], result[srcIdx]];
+            const srcValue = result[srcIdx]!;
+            const destValue = result[destIdx]!;
+            result[srcIdx] = destValue;
+            result[destIdx] = srcValue;
         }
 
         return result;
@@ -71,14 +74,15 @@ export class RandUtil {
                 throw new Error('Empty items');
             }
             const idx = this.rng.nextInt(items.length - 1);
-            return items[idx];
+            return items[idx]!;
         }
 
         if (items instanceof Set) {
             return this.choice(Array.from(items.values()));
         }
 
-        return items[this.choice(Array.from(Object.keys(items)))];
+        const key = this.choice(Array.from(Object.keys(items))) as keyof typeof items;
+        return items[key]!;
     }
 
     public choiceUsingWeight(items: Record<string | number, number>): string | number {

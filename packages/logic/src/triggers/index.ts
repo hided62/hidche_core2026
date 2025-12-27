@@ -1,3 +1,3 @@
-export * from './core';
-export * from './general';
-export * from './general-action';
+export * from './core.js';
+export * from './general.js';
+export * from './general-action.js';

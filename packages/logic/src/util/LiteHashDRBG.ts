@@ -1,9 +1,9 @@
-import type { RNG } from './RNG';
+import type { RNG } from './RNG.js';
 
 import { sha512 } from 'js-sha512';
 
-import { convertBytesLikeToUint8Array } from './convertBytesLikeToUint8Array';
-import type { BytesLike } from './BytesLike';
+import { convertBytesLikeToUint8Array } from './convertBytesLikeToUint8Array.js';
+import type { BytesLike } from './BytesLike.js';
 
 const maxRngSupportBit = 53;
 const maxInt = 0x1f_ffff_ffff_ffff; //      NOTE: b 0, 10000110011, 11...11
@@ -111,7 +111,7 @@ export class LiteHashDRBG implements RNG {
 
     protected genNextBlock(): void {
         this.hq.setUint32(this.hqIdxPos, this.stateIdx, true);
-        const digest = sha512.arrayBuffer(this.hq.buffer);
+        const digest = sha512.arrayBuffer(this.hq.buffer as ArrayBuffer);
         this.buffer = digest;
         this.bufferIdx = 0;
         this.stateIdx += 1;
@@ -181,7 +181,7 @@ export class LiteHashDRBG implements RNG {
             return result;
         }
 
-        result[bytes - 1] &= 0xff >> (8 - headBits);
+        result[bytes - 1]! &= 0xff >> (8 - headBits);
         return result;
     }
 

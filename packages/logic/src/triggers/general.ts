@@ -1,7 +1,7 @@
-import type { General, GeneralTriggerState } from '../domain/entities';
-import type { RandomGenerator } from '../ports/rng';
-import type { WorldStateRepository } from '../ports/world';
-import { TriggerCaller, type Trigger } from './core';
+import type { General, GeneralTriggerState } from '../domain/entities.js';
+import type { RandomGenerator } from '../ports/rng.js';
+import type { WorldStateRepository } from '../ports/world.js';
+import { TriggerCaller, type Trigger } from './core.js';
 
 export interface GeneralActionLogSink {
     push(message: string): void;

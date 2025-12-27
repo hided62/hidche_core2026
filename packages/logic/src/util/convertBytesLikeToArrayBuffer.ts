@@ -1,11 +1,22 @@
-import type { BytesLike } from './BytesLike';
+import type { BytesLike } from './BytesLike.js';
 
 export function convertBytesLikeToArrayBuffer(data: BytesLike, encodeUTF8 = true): ArrayBuffer {
     if (data instanceof ArrayBuffer) {
         return data;
     }
     if (data instanceof Uint8Array) {
-        return data.buffer;
+        if (
+            data.byteOffset === 0
+            && data.byteLength === data.buffer.byteLength
+            && data.buffer instanceof ArrayBuffer
+        ) {
+            return data.buffer;
+        }
+        return data.slice().buffer;
+    }
+    if (data instanceof DataView) {
+        const view = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+        return view.slice().buffer;
     }
     if (typeof (data) === 'string') {
         if (encodeUTF8) {
@@ -13,5 +24,5 @@ export function convertBytesLikeToArrayBuffer(data: BytesLike, encodeUTF8 = true
         }
         return new Uint8Array(data.split('').map((s) => s.codePointAt(0) as number)).buffer;
     }
-    return data.buffer;
+    throw new Error('Unsupported BytesLike');
 }

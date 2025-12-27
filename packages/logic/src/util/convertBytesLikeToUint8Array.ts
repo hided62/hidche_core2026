@@ -1,4 +1,4 @@
-import type { BytesLike } from './BytesLike';
+import type { BytesLike } from './BytesLike.js';
 
 export function convertBytesLikeToUint8Array(data: BytesLike, encodeUTF8 = true): Uint8Array {
     if (data instanceof Uint8Array) {

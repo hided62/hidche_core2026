@@ -1,9 +1,9 @@
 import chai, { assert } from 'chai';
 import chaiBytes from 'chai-bytes';
-import { bufferByteSize, LiteHashDRBG } from '../src/util/LiteHashDRBG';
-import { RandUtil } from '../src/util/RandUtil';
-import { convertBytesLikeToArrayBuffer } from '../src/util/convertBytesLikeToArrayBuffer';
-import { convertBytesLikeToUint8Array as toBytes } from '../src/util/convertBytesLikeToUint8Array';
+import { bufferByteSize, LiteHashDRBG } from '../src/util/LiteHashDRBG.js';
+import { RandUtil } from '../src/util/RandUtil.js';
+import { convertBytesLikeToArrayBuffer } from '../src/util/convertBytesLikeToArrayBuffer.js';
+import { convertBytesLikeToUint8Array as toBytes } from '../src/util/convertBytesLikeToUint8Array.js';
 import _ from 'lodash-es';
 
 chai.use(chaiBytes);

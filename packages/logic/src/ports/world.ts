@@ -7,7 +7,7 @@ import type {
     GeneralId,
     Nation,
     NationId,
-} from '../domain/entities';
+} from '../domain/entities.js';
 
 export interface GeneralRepository<GeneralType extends General = General> {
     getById(id: GeneralId): Promise<GeneralType | null>;
