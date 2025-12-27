@@ -33,6 +33,7 @@ monorepo plan is prepared alongside it.
 
 - Legacy entities and DB schema overview: `docs/architecture/legacy-entities.md`
 - Legacy engine map: `docs/architecture/legacy-engine.md`
+- Postgres schema proposal (rewrite): `docs/architecture/postgres-schema.md`
 
 ## Cross-Cutting Policies
 
