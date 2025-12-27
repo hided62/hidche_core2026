@@ -23,8 +23,63 @@ deployments predictable.
 - Communication channel: Redis Stream or Redis pub/sub
 - Client updates: SSE between API server and frontend where appropriate
 
+## Redis Communication Recommendation (Draft)
+
+Use Redis Streams for daemon control and mutation requests, and Redis pub/sub
+for transient fan-out events. Streams provide durability, backpressure, and
+replay while pub/sub keeps live updates simple and low-latency.
+
+### Recommended Split
+
+- Redis Streams:
+  - API server -> daemon: mutation requests, turn-run commands.
+  - Daemon -> API server: run status events, job results, error reports.
+  - Use consumer groups for daemon workers and API server listeners.
+  - Require `requestId` for correlation and idempotency.
+  - Ack on success; move failed items to a dead-letter stream after retry.
+- Redis pub/sub:
+  - Daemon -> API server: low-stakes live update signals (run started/ended).
+  - API server -> frontend: SSE fan-out triggered by pub/sub updates.
+  - Do not use pub/sub for data that must be replayed or audited.
+
+### Operational Notes
+
+- Stream keys should be namespaced per server profile.
+- Use bounded stream length (`MAXLEN`) to cap storage.
+- API server should guard against duplicate processing by `requestId`.
+- When the daemon is busy, API queues new mutations to stream and responds
+  with an accepted status to clients.
+
 Detailed lifecycle and control flow are defined in
 `docs/architecture/turn-daemon-lifecycle.md`.
+
+## Authentication and Session Management (Draft)
+
+Login uses Kakao OAuth as the primary identity provider because it leverages
+Korean real-name verification and helps prevent multi-account abuse. The system
+also supports local ID/password login for users who cannot use Kakao.
+
+### Login Options
+
+- Kakao login button (OAuth flow via Gateway).
+- Local login with ID/password (managed by Gateway).
+- Passkey is a possible future option; define later if required.
+- Auto-login should be supported when an active session exists.
+
+### Session and SSO-Like Behavior
+
+- Gateway handles login and owns primary sessions in Redis.
+- Game servers may run different branches; treat Gateway as a central SSO
+  authority that issues session tokens for each server profile.
+- API servers validate tokens against Redis and accept sessions issued by
+  Gateway without re-authentication.
+- Session tokens should be scoped by server profile to avoid cross-server leaks.
+
+### Operational Notes
+
+- Prefer HTTP-only secure cookies for session tokens where possible.
+- Provide a logout flow that revokes tokens in Redis.
+- Track last-login and session metadata for audit and abuse detection.
 
 ## Engine Runtime Flow (Draft)
 

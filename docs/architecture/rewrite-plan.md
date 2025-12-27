@@ -23,6 +23,14 @@ Vue 3 frontends.
 - Data: PostgreSQL, Redis sessions
 - Testing: Vitest
 
+## Frontend Direction
+
+- Gateway and game apps are separate SPAs (`/app/gateway-frontend`, `/app/game-frontend`).
+- UI visuals should stay close to the legacy look, but layout changes are allowed
+  as long as required information is preserved.
+- Prefer client-driven rendering: fetch most data via API and let the client own
+  data shaping and presentation unless the data must be hidden.
+
 ## Constraint Evaluation Contract
 
 The shared constraint contract (daemon vs API precheck split) is documented in
