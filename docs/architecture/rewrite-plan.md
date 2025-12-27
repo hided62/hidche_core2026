@@ -23,6 +23,11 @@ Vue 3 frontends.
 - Data: PostgreSQL, Redis sessions
 - Testing: Vitest
 
+## Constraint Evaluation Contract
+
+The shared constraint contract (daemon vs API precheck split) is documented in
+`docs/architecture/rewrite-constraints.md`.
+
 ## Legacy Data Migration
 
 - Legacy data is for migration only; the rewrite runtime does not depend on it.
