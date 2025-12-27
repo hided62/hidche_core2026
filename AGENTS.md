@@ -6,6 +6,12 @@
 - Legacy data under `legacy/` is for migration only; once DB migration is complete,
   the runtime will no longer depend on legacy data.
 
+## Project Naming
+- Official name: 삼국지 모의전투 HiDCHe
+- Common nicknames: 삼모, 삼모전, 힏체섭
+- Short forms in code/docs: sammo, hidche
+- TypeScript rewrite working name: sammo-ts
+
 ## Project Structure & Module Organization
 - `legacy/` contains the application source. This is the active codebase.
 - PHP entry points live under `legacy/` and `legacy/hwe/` (for example `legacy/index.php`, `legacy/hwe/index.php`).

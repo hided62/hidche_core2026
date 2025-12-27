@@ -4,6 +4,13 @@ This repository contains both the active legacy PHP game and an in-progress
 TypeScript rewrite. The legacy engine remains the source of truth while the
 monorepo plan is prepared alongside it.
 
+## Project Naming
+
+- Official name: 삼국지 모의전투 HiDCHe
+- Common nicknames: 삼모, 삼모전, 힏체섭
+- Short forms in code/docs: sammo, hidche
+- TypeScript rewrite working name: sammo-ts
+
 ## Layers
 
 - Legacy runtime: PHP entry points under `legacy/` and `legacy/hwe/`
