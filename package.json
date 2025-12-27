@@ -1,0 +1,16 @@
+{
+    "name": "sammo-ts",
+    "private": true,
+    "version": "0.0.0",
+    "scripts": {
+        "lint": "pnpm -r lint",
+        "test": "pnpm -r test",
+        "build": "pnpm -r build",
+        "dev": "pnpm -r dev",
+        "build:server": "pnpm --filter ./tools/build-scripts build:server --"
+    },
+    "devDependencies": {
+        "@types/node": "^20.14.9",
+        "typescript": "^5.5.4"
+    }
+}
