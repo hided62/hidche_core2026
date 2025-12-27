@@ -1,2 +1,2 @@
-export * from './infra/postgres';
-export * from './infra/redis';
+export * from './infra/postgres.js';
+export * from './infra/redis.js';
