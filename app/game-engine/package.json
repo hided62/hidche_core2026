@@ -7,6 +7,9 @@
         "build": "tsc -p tsconfig.json",
         "dev": "node -e \"console.log('dev not configured')\"",
         "lint": "node -e \"console.log('lint not configured')\"",
-        "test": "node -e \"console.log('test not configured')\""
+        "test": "vitest run --config vitest.config.ts"
+    },
+    "devDependencies": {
+        "vitest": "^4.0.16"
     }
 }

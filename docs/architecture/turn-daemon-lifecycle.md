@@ -185,6 +185,13 @@ export type DaemonEvent =
 - On shutdown, stop accepting new triggers, finish the current run, flush, then
   exit cleanly.
 
+## Testing with a Controlled Clock
+
+- Turn daemon tests should use a controllable `Clock` implementation (예: `ManualClock`) to
+  advance time deterministically without relying on wall-clock time.
+- 기준 시간은 DB에 저장된 `game_env.turntime`을 우선으로 삼고, 테스트에서도 동일한 기준을
+  사용해 스케줄 계산과 체크포인트 동작을 검증한다.
+
 ## TypeScript Sketch (Draft)
 
 ```ts
