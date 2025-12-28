@@ -1,6 +1,7 @@
 {
     "name": "sammo-ts",
     "private": true,
+    "type": "module",
     "version": "0.0.0",
     "scripts": {
         "lint": "pnpm -r lint",
@@ -11,6 +12,7 @@
     },
     "devDependencies": {
         "@types/node": "^20.14.9",
+        "tsdown": "^0.18.3",
         "typescript": "^5.5.4"
     }
 }
