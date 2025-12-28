@@ -3,8 +3,8 @@ services:
     image: postgres:18
     container_name: sammo_postgres
     environment:
-      POSTGRES_DB: sammo
-      POSTGRES_USER: sammo
+      POSTGRES_DB: ${POSTGRES_DB:-sammo}
+      POSTGRES_USER: ${POSTGRES_USER:-sammo}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
       TZ: Asia/Seoul
     ports:
