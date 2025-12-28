@@ -23,9 +23,11 @@ export interface TurnScheduleContext {
     schedule: TurnSchedule;
 }
 
-export interface GeneralPatchEffect {
+export interface GeneralPatchEffect<
+    TriggerState extends GeneralTriggerState = GeneralTriggerState
+> {
     type: 'general:patch';
-    patch: Partial<General>;
+    patch: Partial<General<TriggerState>>;
 }
 
 export interface CityPatchEffect {
@@ -48,22 +50,28 @@ export interface NextTurnOverrideEffect {
     nextTurnAt: Date;
 }
 
-export type GeneralActionEffect =
-    | GeneralPatchEffect
+export type GeneralActionEffect<
+    TriggerState extends GeneralTriggerState = GeneralTriggerState
+> =
+    | GeneralPatchEffect<TriggerState>
     | CityPatchEffect
     | NationPatchEffect
     | LogEffect
     | NextTurnOverrideEffect;
 
-export interface GeneralActionOutcome {
-    effects: GeneralActionEffect[];
+export interface GeneralActionOutcome<
+    TriggerState extends GeneralTriggerState = GeneralTriggerState
+> {
+    effects: GeneralActionEffect<TriggerState>[];
 }
 
 export interface GeneralActionResolver<
     TriggerState extends GeneralTriggerState = GeneralTriggerState
 > {
     key: string;
-    resolve(context: GeneralActionResolveContext<TriggerState>): GeneralActionOutcome;
+    resolve(
+        context: GeneralActionResolveContext<TriggerState>
+    ): GeneralActionOutcome<TriggerState>;
 }
 
 export interface GeneralActionResolution {
@@ -93,10 +101,10 @@ const mergeRole = (
     },
 });
 
-const mergeTriggerState = (
-    base: GeneralTriggerState,
-    patch: Partial<GeneralTriggerState>
-): GeneralTriggerState => ({
+const mergeTriggerState = <TriggerState extends GeneralTriggerState>(
+    base: TriggerState,
+    patch: Partial<TriggerState>
+): TriggerState => ({
     ...base,
     ...patch,
     flags: { ...base.flags, ...(patch.flags ?? {}) },
@@ -105,7 +113,10 @@ const mergeTriggerState = (
     meta: { ...base.meta, ...(patch.meta ?? {}) },
 });
 
-const applyGeneralPatch = (base: General, patch: Partial<General>): General => ({
+const applyGeneralPatch = <TriggerState extends GeneralTriggerState>(
+    base: General<TriggerState>,
+    patch: Partial<General<TriggerState>>
+): General<TriggerState> => ({
     ...base,
     ...patch,
     stats: patch.stats ? mergeStats(base.stats, patch.stats) : base.stats,
@@ -173,12 +184,16 @@ export const resolveGeneralAction = <
         nextTurnAtOverride ??
         getNextTurnAt(scheduleContext.now, scheduleContext.schedule);
 
-    return {
+    const resolution: GeneralActionResolution = {
         general: nextGeneral,
-        city: nextCity,
         nation: nextNation,
         nextTurnAt,
         logs,
         effects: outcome.effects,
     };
+    if (nextCity) {
+        resolution.city = nextCity;
+    }
+
+    return resolution;
 };

@@ -1,6 +1,9 @@
 import type { CommandResolver as CommandResolverType } from './che_상업투자.js';
 
 export type DomesticCommandKey = 'che_상업투자';
+type CommandResolverCtor = typeof CommandResolverType;
+type CommandResolverArgs = ConstructorParameters<CommandResolverCtor>;
+type CommandResolverInstance = InstanceType<CommandResolverCtor>;
 
 export type DomesticCommandImporter = () => Promise<{
     CommandResolver: typeof CommandResolverType;
@@ -28,7 +31,10 @@ export class DomesticCommandLoader {
         return importer();
     }
 
-    async create(key: DomesticCommandKey, ...args: unknown[]): Promise<unknown> {
+    async create(
+        key: DomesticCommandKey,
+        ...args: CommandResolverArgs
+    ): Promise<CommandResolverInstance> {
         const { CommandResolver } = await this.load(key);
         return new CommandResolver(...args);
     }
