@@ -61,6 +61,11 @@ export interface ScenarioGeneral {
     deathYear: number;
     personality: string | null;
     special: string | null;
+    specialWar?: string | null;
+    horse?: string | null;
+    weapon?: string | null;
+    book?: string | null;
+    item?: string | null;
     text: string | null;
 }
 

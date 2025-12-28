@@ -116,6 +116,11 @@ export interface GeneralSeed {
     affinity: number | null;
     personality: string | null;
     special: string | null;
+    specialWar: string | null;
+    horse: string | null;
+    weapon: string | null;
+    book: string | null;
+    item: string | null;
     picture: number | string | null;
     npcType: number;
     text: string | null;

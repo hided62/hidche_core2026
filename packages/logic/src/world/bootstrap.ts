@@ -294,6 +294,21 @@ const buildGeneralSeeds = (
         if (row.picture !== null) {
             seedMeta.picture = row.picture;
         }
+        if (row.specialWar !== null && row.specialWar !== undefined) {
+            seedMeta.specialWar = row.specialWar;
+        }
+        if (row.horse !== null && row.horse !== undefined) {
+            seedMeta.horse = row.horse;
+        }
+        if (row.weapon !== null && row.weapon !== undefined) {
+            seedMeta.weapon = row.weapon;
+        }
+        if (row.book !== null && row.book !== undefined) {
+            seedMeta.book = row.book;
+        }
+        if (row.item !== null && row.item !== undefined) {
+            seedMeta.item = row.item;
+        }
         if (row.text !== null) {
             seedMeta.text = row.text;
         }
@@ -310,6 +325,11 @@ const buildGeneralSeeds = (
             affinity: row.affinity,
             personality: row.personality,
             special: row.special,
+            specialWar: row.specialWar ?? null,
+            horse: row.horse ?? null,
+            weapon: row.weapon ?? null,
+            book: row.book ?? null,
+            item: row.item ?? null,
             picture: row.picture,
             npcType,
             text: row.text,
@@ -326,6 +346,15 @@ const buildGeneralSeeds = (
         addTriggerMeta(generalMeta, 'personality', row.personality ?? undefined);
         addTriggerMeta(generalMeta, 'special', row.special ?? undefined);
         addTriggerMeta(generalMeta, 'picture', row.picture ?? undefined);
+        addTriggerMeta(
+            generalMeta,
+            'specialWar',
+            row.specialWar ?? undefined
+        );
+        addTriggerMeta(generalMeta, 'horse', row.horse ?? undefined);
+        addTriggerMeta(generalMeta, 'weapon', row.weapon ?? undefined);
+        addTriggerMeta(generalMeta, 'book', row.book ?? undefined);
+        addTriggerMeta(generalMeta, 'item', row.item ?? undefined);
         addTriggerMeta(generalMeta, 'birthYear', birthYear);
         addTriggerMeta(generalMeta, 'deathYear', deathYear);
         addTriggerMeta(generalMeta, 'text', row.text ?? undefined);
@@ -340,6 +369,17 @@ const buildGeneralSeeds = (
             experience: 0,
             dedication: 0,
             officerLevel,
+            role: {
+                personality: row.personality,
+                specialDomestic: row.special,
+                specialWar: row.specialWar ?? null,
+                items: {
+                    horse: row.horse ?? null,
+                    weapon: row.weapon ?? null,
+                    book: row.book ?? null,
+                    item: row.item ?? null,
+                },
+            },
             injury: 0,
             gold: defaultGold,
             rice: defaultRice,

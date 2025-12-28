@@ -117,6 +117,8 @@ describe('scenario bootstrap', () => {
         expect(result.seed.cities[0]?.nationId).toBe(1);
         expect(result.snapshot.generals[0]?.cityId).toBe(1);
         expect(result.snapshot.generals[0]?.crewTypeId).toBe(1200);
+        expect(result.snapshot.generals[0]?.role.specialDomestic).toBe('Special');
+        expect(result.snapshot.generals[0]?.role.specialWar).toBeNull();
         expect(result.seed.generals[0]?.npcType).toBe(2);
         expect(result.snapshot.scenarioMeta?.title).toBe('Test Scenario');
     });

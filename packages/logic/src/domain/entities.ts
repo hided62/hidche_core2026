@@ -22,6 +22,21 @@ export interface GeneralTriggerState {
     meta: Record<string, TriggerValue>;
 }
 
+export interface GeneralItemSlots {
+    horse: string | null;
+    weapon: string | null;
+    book: string | null;
+    item: string | null;
+}
+
+export interface GeneralRole {
+    // General.php의 raw 컬럼을 그대로 유지하는 역할 데이터.
+    personality: string | null;
+    specialDomestic: string | null;
+    specialWar: string | null;
+    items: GeneralItemSlots;
+}
+
 export interface General<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     id: GeneralId;
     name: string;
@@ -32,6 +47,7 @@ export interface General<TriggerState extends GeneralTriggerState = GeneralTrigg
     experience: number;
     dedication: number;
     officerLevel: number;
+    role: GeneralRole;
     injury: number;
     gold: number;
     rice: number;

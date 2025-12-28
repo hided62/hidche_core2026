@@ -210,6 +210,11 @@ const parseGeneralRow = (
         personality,
         special,
         text,
+        specialWar,
+        horse,
+        weapon,
+        book,
+        item,
     ] = values;
 
     if (typeof name !== 'string') {
@@ -236,6 +241,11 @@ const parseGeneralRow = (
         deathYear: asNumber(deathYear, 0),
         personality: asNullableString(personality),
         special: asNullableString(special),
+        specialWar: asNullableString(specialWar),
+        horse: asNullableString(horse),
+        weapon: asNullableString(weapon),
+        book: asNullableString(book),
+        item: asNullableString(item),
         text: asNullableString(text),
     };
 };
