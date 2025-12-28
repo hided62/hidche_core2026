@@ -1,4 +1,4 @@
-import { createClient, type RedisClientOptions, type RedisClientType } from 'redis';
+import { createClient, type RedisClientOptions } from 'redis';
 
 export interface RedisConfig {
     url: string;
@@ -7,7 +7,7 @@ export interface RedisConfig {
 }
 
 export interface RedisConnector {
-    readonly client: RedisClientType;
+    readonly client: ReturnType<typeof createClient>;
     connect(): Promise<void>;
     disconnect(): Promise<void>;
 }
@@ -37,7 +37,11 @@ export const createRedisConnector = (config: RedisConfig): RedisConnector => {
 
     return {
         client,
-        connect: () => client.connect(),
-        disconnect: () => client.quit(),
+        connect: async () => {
+            await client.connect();
+        },
+        disconnect: async () => {
+            await client.quit();
+        },
     };
 };

@@ -1,8 +1,8 @@
-import { PrismaClient, type PrismaClientOptions } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 
 export interface PostgresConfig {
     url: string;
-    log?: PrismaClientOptions['log'];
+    log?: Prisma.PrismaClientOptions['log'];
 }
 
 export interface PostgresConnector {
