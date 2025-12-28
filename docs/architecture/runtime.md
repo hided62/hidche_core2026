@@ -9,6 +9,7 @@ selection is required because it drives unit sets and DB settings.
 - Wrapper script under `tools/build-scripts`
 - `pnpm build:server --profile che --scenario default`
 - CI-friendly: `PROFILE=che SCENARIO=default pnpm build:server`
+- Build tooling: use `tsdown` for backend/libs, and Vite for frontend apps.
 
 ## Deterministic RNG Policy
 
