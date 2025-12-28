@@ -12,7 +12,7 @@
         }
     },
     "scripts": {
-        "build": "tsc -p tsconfig.json",
+        "build": "tsc -b tsconfig.build.json",
         "dev": "node -e \"console.log('dev not configured')\"",
         "lint": "node -e \"console.log('lint not configured')\"",
         "test": "vitest run --config vitest.config.ts"
@@ -21,6 +21,7 @@
         "@sammo-ts/common": "workspace:*"
     },
     "devDependencies": {
+        "vite-tsconfig-paths": "^4.3.2",
         "vitest": "^4.0.16"
     }
 }

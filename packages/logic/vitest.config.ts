@@ -1,13 +1,14 @@
 import path from 'node:path';
 
 import { defineConfig } from 'vitest/config';
+import tsconfigPaths from 'vite-tsconfig-paths';
 
 export default defineConfig({
-    resolve: {
-        alias: {
-            '@sammo-ts/common': path.resolve(__dirname, '../common/src/index.ts'),
-        },
-    },
+    plugins: [
+        tsconfigPaths({
+            projects: [path.resolve(__dirname, '../../tsconfig.base.json')],
+        }),
+    ],
     test: {
         environment: 'node',
         globals: true,

@@ -4,6 +4,15 @@
         "module": "NodeNext",
         "moduleResolution": "NodeNext",
         "lib": ["ES2022"],
+        "baseUrl": ".",
+        "paths": {
+            "@sammo-ts/common": ["packages/common/src/index.ts"],
+            "@sammo-ts/common/*": ["packages/common/src/*"],
+            "@sammo-ts/infra": ["packages/infra/src/index.ts"],
+            "@sammo-ts/infra/*": ["packages/infra/src/*"],
+            "@sammo-ts/logic": ["packages/logic/src/index.ts"],
+            "@sammo-ts/logic/*": ["packages/logic/src/*"]
+        },
         "strict": true,
         "esModuleInterop": true,
         "forceConsistentCasingInFileNames": true,
