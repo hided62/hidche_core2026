@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ManualClock, StepClock } from '../src/lifecycle/clock.js';
+
+import { ManualClock, StepClock } from '../src/time/Clock.js';
 
 describe('ManualClock', () => {
     it('returns current time without advancing', () => {
@@ -35,6 +36,12 @@ describe('StepClock', () => {
         const clock = new StepClock(50, 1000);
         await clock.sleepMs(200);
         expect(clock.nowMs()).toBe(1250);
+    });
+
+    it('advances manually', () => {
+        const clock = new StepClock(10, 0);
+        clock.advanceMs(50);
+        expect(clock.nowMs()).toBe(60);
     });
 
     it('rejects non-positive step', () => {

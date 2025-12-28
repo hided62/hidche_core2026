@@ -43,10 +43,7 @@ export type TurnDaemonCommand =
     | { type: 'resume'; reason?: string }
     | { type: 'shutdown'; reason?: string };
 
-export interface Clock {
-    nowMs(): number;
-    sleepMs(ms: number): Promise<void>;
-}
+export type { Clock } from '@sammo-ts/common';
 
 export interface TurnSchedule {
     getNextTurnTime(lastTurnTime: Date): Date;

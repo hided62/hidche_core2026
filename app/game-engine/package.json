@@ -9,6 +9,9 @@
         "lint": "node -e \"console.log('lint not configured')\"",
         "test": "vitest run --config vitest.config.ts"
     },
+    "dependencies": {
+        "@sammo-ts/common": "workspace:*"
+    },
     "devDependencies": {
         "vitest": "^4.0.16"
     }
