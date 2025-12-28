@@ -33,6 +33,8 @@ Move items into the main docs once they are finalized.
 - Profile selection workflow and deployment mapping
 - [AI suggestion] Define a scenario bootstrap pipeline that turns scenario/map/unit set inputs into a world snapshot or DB seed payload.
 - [AI suggestion] Implement a DB-backed world loader for turn daemon startup (nation/city/general + scenario config).
+- [AI suggestion] Add map/unit set loaders that normalize legacy `CityConstBase`/`GameUnitConstBase` into `MapDefinition`/`UnitSetDefinition` inputs.
+- [AI suggestion] Add a DB seed writer that converts `WorldSeedPayload` into DB inserts with defaults and audit logs.
 
 ## Legacy Engine Docs
 
