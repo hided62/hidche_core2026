@@ -10,7 +10,7 @@ services:
     ports:
       - "127.0.0.1:15432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata18:/var/lib/postgresql
 
   redis:
     image: redis:8
@@ -22,5 +22,5 @@ services:
       - redisdata:/data
 
 volumes:
-  pgdata:
+  pgdata18:
   redisdata:
