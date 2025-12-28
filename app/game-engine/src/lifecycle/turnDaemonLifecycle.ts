@@ -6,7 +6,7 @@ import type {
     TurnDaemonStatus,
     TurnRunBudget,
     TurnRunResult,
-    TurnSchedule,
+    NextTickTimeResolver,
     TurnStateStore,
     TurnProcessor,
     Clock,
@@ -27,7 +27,7 @@ export interface TurnDaemonLifecycleOptions {
 export interface TurnDaemonLifecycleDeps {
     clock: Clock;
     controlQueue: TurnDaemonControlQueue;
-    schedule: TurnSchedule;
+    getNextTickTime: NextTickTimeResolver;
     stateStore: TurnStateStore;
     processor: TurnProcessor;
     hooks?: TurnDaemonHooks;
@@ -37,7 +37,7 @@ export class TurnDaemonLifecycle {
     // 턴 데몬의 생명주기를 관리하는 루프.
     private readonly clock: Clock;
     private readonly controlQueue: TurnDaemonControlQueue;
-    private readonly schedule: TurnSchedule;
+    private readonly getNextTickTime: NextTickTimeResolver;
     private readonly stateStore: TurnStateStore;
     private readonly processor: TurnProcessor;
     private readonly hooks?: TurnDaemonHooks;
@@ -51,7 +51,7 @@ export class TurnDaemonLifecycle {
     constructor(deps: TurnDaemonLifecycleDeps, options: TurnDaemonLifecycleOptions) {
         this.clock = deps.clock;
         this.controlQueue = deps.controlQueue;
-        this.schedule = deps.schedule;
+        this.getNextTickTime = deps.getNextTickTime;
         this.stateStore = deps.stateStore;
         this.processor = deps.processor;
         this.hooks = deps.hooks;
@@ -120,16 +120,16 @@ export class TurnDaemonLifecycle {
                 continue;
             }
 
-            const nextTurnTime = this.getNextTurnTime();
-            if (!nextTurnTime) {
+            const nextRunTime = await this.resolveNextRunTime();
+            if (!nextRunTime) {
                 await this.clock.sleepMs(200);
                 continue;
             }
 
             const nowMs = this.clock.nowMs();
-            const nextTurnMs = nextTurnTime.getTime();
+            const nextTurnMs = nextRunTime.getTime();
             if (nowMs >= nextTurnMs) {
-                await this.runOnce({ reason: 'schedule', targetTime: nextTurnTime });
+                await this.runOnce({ reason: 'schedule', targetTime: nextRunTime });
                 continue;
             }
 
@@ -145,14 +145,25 @@ export class TurnDaemonLifecycle {
         const checkpoint = await this.stateStore.loadCheckpoint();
         this.status.lastTurnTime = lastTurnTime.toISOString();
         this.status.checkpoint = checkpoint;
-        this.status.nextTurnTime = this.schedule.getNextTurnTime(lastTurnTime).toISOString();
+        await this.resolveNextRunTime();
     }
 
-    private getNextTurnTime(): Date | null {
+    private async resolveNextRunTime(): Promise<Date | null> {
         if (!this.status.lastTurnTime) {
+            this.status.nextTurnTime = undefined;
             return null;
         }
-        return this.schedule.getNextTurnTime(new Date(this.status.lastTurnTime));
+
+        const lastTurnTime = new Date(this.status.lastTurnTime);
+        const nextGeneralTurnTime = await this.stateStore.loadNextGeneralTurnTime();
+        const nextTickTime = this.getNextTickTime(lastTurnTime);
+        // 가장 빠른 장수 턴과 현재 틱 경계 중 먼저 오는 시각을 선택한다.
+        const nextTurnTime = nextGeneralTurnTime && nextGeneralTurnTime.getTime() <= nextTickTime.getTime()
+            ? nextGeneralTurnTime
+            : nextTickTime;
+
+        this.status.nextTurnTime = nextTurnTime.toISOString();
+        return nextTurnTime;
     }
 
     private async drainCommands(): Promise<void> {
@@ -219,16 +230,15 @@ export class TurnDaemonLifecycle {
         await this.stateStore.saveCheckpoint(result.checkpoint);
         await this.hooks?.flushChanges?.(result);
         await this.hooks?.publishEvents?.(result);
-        this.applyRunResult(result, startMs);
+        await this.applyRunResult(result, startMs);
         this.status.state = 'idle';
     }
 
-    private applyRunResult(result: TurnRunResult, startMs: number): void {
+    private async applyRunResult(result: TurnRunResult, startMs: number): Promise<void> {
         this.status.lastRunAt = new Date(startMs).toISOString();
         this.status.lastDurationMs = Math.max(0, this.clock.nowMs() - startMs);
         this.status.lastTurnTime = result.lastTurnTime;
         this.status.checkpoint = result.checkpoint;
-        const nextTurnTime = this.schedule.getNextTurnTime(new Date(result.lastTurnTime));
-        this.status.nextTurnTime = nextTurnTime.toISOString();
+        await this.resolveNextRunTime();
     }
 }

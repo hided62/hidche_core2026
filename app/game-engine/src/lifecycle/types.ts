@@ -45,9 +45,7 @@ export type TurnDaemonCommand =
 
 export type { Clock } from '@sammo-ts/common';
 
-export interface TurnSchedule {
-    getNextTurnTime(lastTurnTime: Date): Date;
-}
+export type NextTickTimeResolver = (lastTurnTime: Date) => Date;
 
 export interface TurnProcessor {
     run(targetTime: Date, budget: TurnRunBudget, checkpoint?: TurnCheckpoint): Promise<TurnRunResult>;
@@ -55,6 +53,8 @@ export interface TurnProcessor {
 
 export interface TurnStateStore {
     loadLastTurnTime(): Promise<Date>;
+    // 월드에서 관리하는 턴 대기열의 선두(가장 이른 장수 턴 시간)를 조회한다.
+    loadNextGeneralTurnTime(): Promise<Date | null>;
     saveLastTurnTime(turnTime: Date): Promise<void>;
     loadCheckpoint(): Promise<TurnCheckpoint | undefined>;
     saveCheckpoint(checkpoint?: TurnCheckpoint): Promise<void>;
