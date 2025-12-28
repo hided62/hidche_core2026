@@ -19,8 +19,10 @@ const commonRequire = createRequire(COMMON_PACKAGE_JSON);
 const { PrismaClient } = commonRequire('@prisma/client');
 const { createClient } = commonRequire('redis');
 
-const parseEnvFile = (rawText) => {
-    const env = {};
+type EnvMap = Record<string, string | undefined>;
+
+const parseEnvFile = (rawText: string): EnvMap => {
+    const env: EnvMap = {};
     const lines = rawText.split(/\r?\n/);
     for (const line of lines) {
         const trimmed = line.trim();
@@ -44,14 +46,15 @@ const parseEnvFile = (rawText) => {
     return env;
 };
 
-const loadEnvFile = async (envFile) => {
+const loadEnvFile = async (envFile: string): Promise<EnvMap> => {
     const text = await fs.readFile(envFile, 'utf8');
     return parseEnvFile(text);
 };
 
-const maskUrlPassword = (url) => url.replace(/:(?:[^@]+)@/, ':***@');
+const maskUrlPassword = (url: string): string =>
+    url.replace(/:(?:[^@]+)@/, ':***@');
 
-const resolveDatabaseUrl = (env) => {
+const resolveDatabaseUrl = (env: EnvMap): string => {
     if (process.env.DATABASE_URL) {
         return process.env.DATABASE_URL;
     }
@@ -66,7 +69,7 @@ const resolveDatabaseUrl = (env) => {
     return `postgresql://${user}:${password}@${host}:${port}/${dbName}?schema=public`;
 };
 
-const resolveRedisUrl = (env) => {
+const resolveRedisUrl = (env: EnvMap): string => {
     if (process.env.REDIS_URL) {
         return process.env.REDIS_URL;
     }
@@ -80,7 +83,7 @@ const resolveRedisUrl = (env) => {
     return `redis://:${password}@${host}:${port}/${db}`;
 };
 
-const testPostgres = async (databaseUrl) => {
+const testPostgres = async (databaseUrl: string): Promise<void> => {
     const prisma = new PrismaClient({
         datasources: {
             db: {
@@ -94,21 +97,30 @@ const testPostgres = async (databaseUrl) => {
     await prisma.$disconnect();
 };
 
-const testRedis = async (redisUrl) => {
+const testRedis = async (redisUrl: string): Promise<void> => {
     const client = createClient({ url: redisUrl });
     await client.connect();
     await client.ping();
     await client.quit();
 };
 
-const main = async () => {
+const isNodeError = (value: unknown): value is NodeJS.ErrnoException =>
+    typeof value === 'object' &&
+    value !== null &&
+    'code' in value &&
+    typeof (value as NodeJS.ErrnoException).code === 'string';
+
+const formatError = (error: unknown): string =>
+    error instanceof Error ? error.message : String(error);
+
+const main = async (): Promise<void> => {
     const envFile = process.env.SAMMO_ENV_FILE ?? DEFAULT_ENV_FILE;
-    let env = {};
+    let env: EnvMap = {};
 
     try {
         env = await loadEnvFile(envFile);
     } catch (error) {
-        if (error?.code !== 'ENOENT') {
+        if (!isNodeError(error) || error.code !== 'ENOENT') {
             throw error;
         }
     }
@@ -120,14 +132,14 @@ const main = async () => {
     console.log(`DATABASE_URL: ${maskUrlPassword(databaseUrl)}`);
     console.log(`REDIS_URL: ${maskUrlPassword(redisUrl)}`);
 
-    const errors = [];
+    const errors: string[] = [];
 
     try {
         await testPostgres(databaseUrl);
         console.log('Postgres connection: OK');
     } catch (error) {
         console.error('Postgres connection: FAILED');
-        console.error(error?.message ?? error);
+        console.error(formatError(error));
         errors.push('postgres');
     }
 
@@ -136,7 +148,7 @@ const main = async () => {
         console.log('Redis connection: OK');
     } catch (error) {
         console.error('Redis connection: FAILED');
-        console.error(error?.message ?? error);
+        console.error(formatError(error));
         errors.push('redis');
     }
 
