@@ -1,5 +1,5 @@
 {
-    "name": "@sammo-ts/common",
+    "name": "@sammo-ts/infra",
     "private": true,
     "version": "0.0.0",
     "type": "module",
@@ -11,6 +11,11 @@
         "lint": "node -e \"console.log('lint not configured')\"",
         "test": "node -e \"console.log('test not configured')\""
     },
-    "dependencies": {},
-    "devDependencies": {}
+    "dependencies": {
+        "@prisma/client": "^5.18.0",
+        "redis": "^4.7.0"
+    },
+    "devDependencies": {
+        "prisma": "^5.18.0"
+    }
 }

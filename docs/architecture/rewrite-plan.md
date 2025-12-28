@@ -5,7 +5,8 @@ Vue 3 frontends.
 
 ## Planned Layout
 
-- `/packages/common`: shared utilities and type definitions
+- `/packages/common`: shared utilities and type definitions (no infra)
+- `/packages/infra`: Prisma/Redis connectors and other runtime infra
 - `/packages/logic`: pure game logic with DI and interfaces
 - `/app/gateway-frontend`: gateway UI
 - `/app/gateway-api`: gateway service
