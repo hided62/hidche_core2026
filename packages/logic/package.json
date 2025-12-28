@@ -18,7 +18,8 @@
         "test": "vitest run --config vitest.config.ts"
     },
     "dependencies": {
-        "@sammo-ts/common": "workspace:*"
+        "@sammo-ts/common": "workspace:*",
+        "zod": "^4.2.1"
     },
     "devDependencies": {
         "tsdown": "^0.18.3",

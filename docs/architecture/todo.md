@@ -31,6 +31,8 @@ Move items into the main docs once they are finalized.
 
 - "Next-turn intent" (예턴) data schema and lifecycle
 - Profile selection workflow and deployment mapping
+- [AI suggestion] Define a scenario bootstrap pipeline that turns scenario/map/unit set inputs into a world snapshot or DB seed payload.
+- [AI suggestion] Implement a DB-backed world loader for turn daemon startup (nation/city/general + scenario config).
 
 ## Legacy Engine Docs
 

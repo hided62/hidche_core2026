@@ -29,6 +29,9 @@ importers:
       '@sammo-ts/common':
         specifier: workspace:*
         version: link:../../packages/common
+      '@sammo-ts/logic':
+        specifier: workspace:*
+        version: link:../../packages/logic
     devDependencies:
       tsdown:
         specifier: ^0.18.3
@@ -81,6 +84,9 @@ importers:
       '@sammo-ts/common':
         specifier: workspace:*
         version: link:../common
+      zod:
+        specifier: ^4.2.1
+        version: 4.2.1
     devDependencies:
       tsdown:
         specifier: ^0.18.3
@@ -957,6 +963,9 @@ packages:
   yallist@4.0.0:
     resolution: {integrity: sha512-3wdGidZyq5PB084XLES5TpOSRA3wjXAlIWMhum2kRcv/41Sn2emQ0dycQW4uZXLejwKvg6EsvbdlVL+FYEct7A==}
 
+  zod@4.2.1:
+    resolution: {integrity: sha512-0wZ1IRqGGhMP76gLqz8EyfBXKk0J2qo2+H3fi4mcUP/KtTocoX08nmIAHl1Z2kJIZbZee8KOpBCSNPRgauucjw==}
+
 snapshots:
 
   '@babel/generator@7.28.5':
@@ -1647,3 +1656,5 @@ snapshots:
       stackback: 0.0.2
 
   yallist@4.0.0: {}
+
+  zod@4.2.1: {}
