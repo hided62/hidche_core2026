@@ -10,6 +10,17 @@ import {
     GeneralActionPipeline,
     type GeneralActionModule,
 } from '../../triggers/general-action.js';
+import type {
+    GeneralActionOutcome,
+    GeneralActionResolver,
+    GeneralActionResolveContext,
+    GeneralActionEffect,
+} from '../engine.js';
+import {
+    createCityPatchEffect,
+    createGeneralPatchEffect,
+    createLogEffect,
+} from '../engine.js';
 
 export type DomesticCriticalPick = 'fail' | 'normal' | 'success';
 
@@ -51,6 +62,9 @@ export interface CommerceInvestmentResult {
 const DEFAULT_TRUST = 50;
 const DEFAULT_FRONT_DEBUFF = 0.5;
 const DEFAULT_FRONT_STATES = [1, 3];
+const ACTION_NAME = '상업 투자';
+const CITY_KEY = 'commerce';
+const STAT_EXP_KEY = 'intel_exp';
 
 const getMetaNumber = (
     meta: Record<string, unknown>,
@@ -83,6 +97,15 @@ const pickByWeight = (
         }
     }
     return 'normal';
+};
+
+const addMetaNumber = (
+    meta: Record<string, unknown>,
+    key: string,
+    delta: number
+): Record<string, unknown> => {
+    const current = getMetaNumber(meta, key) ?? 0;
+    return { ...meta, [key]: current + delta };
 };
 
 // 상업 투자 결과치를 계산하는 경로를 제공한다.
@@ -224,5 +247,79 @@ export class CommandResolver<
             costRice,
             appliedFrontDebuff,
         };
+    }
+}
+
+export class ActionResolver<
+    TriggerState extends GeneralTriggerState = GeneralTriggerState
+> implements GeneralActionResolver<TriggerState> {
+    readonly key = 'che_상업투자';
+    private readonly command: CommandResolver<TriggerState>;
+
+    constructor(
+        modules: Array<GeneralActionModule<TriggerState> | null | undefined>,
+        env: InvestmentEnvironment
+    ) {
+        this.command = new CommandResolver(modules, env);
+    }
+
+    resolve(
+        context: GeneralActionResolveContext<TriggerState>
+    ): GeneralActionOutcome<TriggerState> {
+        const general = context.general;
+        const city = context.city;
+        if (!city) {
+            throw new Error('Commerce investment requires a city context.');
+        }
+
+        const result = this.command.resolve(
+            {
+                ...context,
+                city,
+                nation: context.nation ?? null,
+            },
+            context.rng
+        );
+
+        const updatedCommerce = clamp(
+            city.commerce + result.score,
+            0,
+            city.commerceMax
+        );
+
+        const nextGold = Math.max(0, general.gold - result.costGold);
+        const nextRice = Math.max(0, general.rice - result.costRice);
+        const nextExperience = general.experience + result.exp;
+        const nextDedication = general.dedication + result.dedication;
+
+        const metaWithStatExp = addMetaNumber(general.meta, STAT_EXP_KEY, 1);
+        const metaUpdated =
+            result.pick === 'success'
+                ? { ...metaWithStatExp, max_domestic_critical: result.score }
+                : { ...metaWithStatExp, max_domestic_critical: 0 };
+
+        const effects: Array<GeneralActionEffect<TriggerState>> = [
+            createCityPatchEffect({
+                [CITY_KEY]: updatedCommerce,
+            } as Partial<City>),
+            createGeneralPatchEffect({
+                gold: nextGold,
+                rice: nextRice,
+                experience: nextExperience,
+                dedication: nextDedication,
+                meta: metaUpdated,
+            }),
+        ];
+
+        const pickLabel =
+            result.pick === 'success'
+                ? '성공'
+                : result.pick === 'fail'
+                    ? '실패'
+                    : '완료';
+        const logMessage = `${ACTION_NAME} ${pickLabel}: +${Math.round(result.score)}`;
+        effects.push(createLogEffect(logMessage));
+
+        return { effects };
     }
 }

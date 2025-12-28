@@ -4,7 +4,10 @@ import type {
     General,
     GeneralRole,
     GeneralTriggerState,
+    CityId,
+    GeneralId,
     Nation,
+    NationId,
     StatBlock,
 } from '../domain/entities.js';
 import type { GeneralActionContext } from '../triggers/general.js';
@@ -81,6 +84,14 @@ export interface GeneralActionResolution {
     nextTurnAt: Date;
     logs: string[];
     effects: GeneralActionEffect[];
+    dirty?: {
+        general: boolean;
+        city: boolean;
+        nation: boolean;
+        generalId?: GeneralId;
+        cityId?: CityId;
+        nationId?: NationId;
+    };
 }
 
 const mergeStats = (base: StatBlock, patch: Partial<StatBlock>): StatBlock => ({
@@ -139,6 +150,39 @@ const applyNationPatch = (base: Nation, patch: Partial<Nation>): Nation => ({
     meta: patch.meta ? { ...base.meta, ...patch.meta } : base.meta,
 });
 
+export const createGeneralPatchEffect = <
+    TriggerState extends GeneralTriggerState = GeneralTriggerState
+>(
+    patch: Partial<General<TriggerState>>
+): GeneralPatchEffect<TriggerState> => ({
+    type: 'general:patch',
+    patch,
+});
+
+export const createCityPatchEffect = (patch: Partial<City>): CityPatchEffect => ({
+    type: 'city:patch',
+    patch,
+});
+
+export const createNationPatchEffect = (
+    patch: Partial<Nation>
+): NationPatchEffect => ({
+    type: 'nation:patch',
+    patch,
+});
+
+export const createLogEffect = (message: string): LogEffect => ({
+    type: 'log',
+    message,
+});
+
+export const createNextTurnOverrideEffect = (
+    nextTurnAt: Date
+): NextTurnOverrideEffect => ({
+    type: 'schedule:override',
+    nextTurnAt,
+});
+
 // 행동 결과를 Effect로 모아 상태/턴 계산을 수행한다.
 export const resolveGeneralAction = <
     TriggerState extends GeneralTriggerState = GeneralTriggerState
@@ -153,20 +197,35 @@ export const resolveGeneralAction = <
     let nextCity = context.city;
     let nextNation = context.nation ?? null;
     let nextTurnAtOverride: Date | null = null;
+    const dirty: NonNullable<GeneralActionResolution['dirty']> = {
+        general: false,
+        city: false,
+        nation: false,
+        generalId: context.general.id,
+    };
+    if (context.city) {
+        dirty.cityId = context.city.id;
+    }
+    if (context.nation) {
+        dirty.nationId = context.nation.id;
+    }
 
     for (const effect of outcome.effects) {
         switch (effect.type) {
             case 'general:patch':
                 nextGeneral = applyGeneralPatch(nextGeneral, effect.patch);
+                dirty.general = true;
                 break;
             case 'city:patch':
                 if (nextCity) {
                     nextCity = applyCityPatch(nextCity, effect.patch);
+                    dirty.city = true;
                 }
                 break;
             case 'nation:patch':
                 if (nextNation) {
                     nextNation = applyNationPatch(nextNation, effect.patch);
+                    dirty.nation = true;
                 }
                 break;
             case 'log':
@@ -193,6 +252,9 @@ export const resolveGeneralAction = <
     };
     if (nextCity) {
         resolution.city = nextCity;
+    }
+    if (dirty.general || dirty.city || dirty.nation) {
+        resolution.dirty = dirty;
     }
 
     return resolution;
