@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ConstantRNG, MidpointRNG, SequenceRNG, SineRNG } from '@sammo-ts/common';
+
+import { ConstantRNG, MidpointRNG, SequenceRNG, SineRNG } from '../src/index.js';
 
 const toArray = (bytes: Uint8Array): number[] => Array.from(bytes);
 

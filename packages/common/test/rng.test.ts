@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
+
 import {
     bufferByteSize,
     convertBytesLikeToArrayBuffer,
     convertBytesLikeToUint8Array as toBytes,
     LiteHashDRBG,
     RandUtil,
-} from '@sammo-ts/common';
+} from '../src/index.js';
 
 type Bytes = ArrayBuffer | DataView<ArrayBuffer> | Uint8Array<ArrayBuffer>;
 type MaybeBytes = Bytes | string;
