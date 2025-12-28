@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 import type {
     ScenarioConfig,
     ScenarioDefaults,
@@ -24,12 +26,6 @@ const FALLBACK_STAT: ScenarioStatBlock = {
 const isRecord = (value: unknown): value is UnknownRecord =>
     typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const asArray = (value: unknown): unknown[] =>
-    Array.isArray(value) ? value : [];
-
-const asRecord = (value: unknown): UnknownRecord =>
-    isRecord(value) ? value : {};
-
 const asNumber = (value: unknown, fallback: number): number =>
     typeof value === 'number' ? value : fallback;
 
@@ -43,13 +39,71 @@ const asNullableString = (value: unknown): string | null =>
     typeof value === 'string' ? value : null;
 
 const asStringArray = (value: unknown): string[] =>
-    asArray(value).filter((item): item is string => typeof item === 'string');
+    Array.isArray(value)
+        ? value.filter((item): item is string => typeof item === 'string')
+        : [];
+
+const recordSchema = z.record(z.string(), z.unknown());
+const rowArraySchema = z.array(z.unknown());
+const statSchema = z
+    .object({
+        total: z.number().optional(),
+        min: z.number().optional(),
+        max: z.number().optional(),
+        npcTotal: z.number().optional(),
+        npcMax: z.number().optional(),
+        npcMin: z.number().optional(),
+        chiefMin: z.number().optional(),
+    })
+    .partial();
+
+const mapSchema = z.preprocess(
+    (value) => (isRecord(value) ? value : undefined),
+    recordSchema.optional()
+);
+
+const scenarioDefaultsSchema = z
+    .object({
+        stat: z.preprocess(
+            (value) => (isRecord(value) ? value : undefined),
+            statSchema.optional()
+        ),
+        iconPath: z.string().optional(),
+    })
+    .passthrough();
+
+const scenarioSchema = z
+    .object({
+        title: z.string(),
+        startYear: z.number().optional(),
+        life: z.number().optional(),
+        fiction: z.number().optional(),
+        history: z.array(z.string()).optional(),
+        iconPath: z.string().optional(),
+        stat: z.preprocess(
+            (value) => (isRecord(value) ? value : undefined),
+            statSchema.optional()
+        ),
+        map: mapSchema,
+        const: mapSchema,
+        nation: z.array(rowArraySchema).optional(),
+        diplomacy: z.array(rowArraySchema).optional(),
+        general: z.array(rowArraySchema).optional(),
+        general_ex: z.array(rowArraySchema).optional(),
+        general_neutral: z.array(rowArraySchema).optional(),
+        cities: z.array(z.unknown()).optional(),
+        events: z.array(z.unknown()).optional(),
+        initialEvents: z.array(z.unknown()).optional(),
+        initialActions: z.array(z.unknown()).optional(),
+        ignoreDefaultEvents: z.boolean().optional(),
+    })
+    .passthrough();
 
 const parseScenarioStatBlock = (
     value: unknown,
     fallback: ScenarioStatBlock
 ): ScenarioStatBlock => {
-    const data = asRecord(value);
+    const data = isRecord(value) ? value : {};
     return {
         total: asNumber(data.total, fallback.total),
         min: asNumber(data.min, fallback.min),
@@ -76,15 +130,9 @@ const parseScenarioEnvironment = (
     return { mapName, unitSet, scenarioEffect };
 };
 
-const ensureTitle = (value: unknown): string => {
-    if (typeof value !== 'string') {
-        throw new Error('Scenario title must be a string.');
-    }
-    return value;
-};
-
 const parseNationRow = (row: unknown, index: number): ScenarioNation => {
-    if (!Array.isArray(row)) {
+    const parsed = rowArraySchema.safeParse(row);
+    if (!parsed.success) {
         throw new Error(`Scenario nation row ${index} is not an array.`);
     }
     const [
@@ -97,7 +145,7 @@ const parseNationRow = (row: unknown, index: number): ScenarioNation => {
         type,
         level,
         cities,
-    ] = row;
+    ] = parsed.data;
 
     const nationName = asString(name, '');
     if (!nationName) {
@@ -119,10 +167,11 @@ const parseNationRow = (row: unknown, index: number): ScenarioNation => {
 };
 
 const parseDiplomacyRow = (row: unknown, index: number): ScenarioDiplomacy => {
-    if (!Array.isArray(row)) {
+    const parsed = rowArraySchema.safeParse(row);
+    if (!parsed.success) {
         throw new Error(`Scenario diplomacy row ${index} is not an array.`);
     }
-    const [fromNationId, toNationId, state, durationMonths] = row;
+    const [fromNationId, toNationId, state, durationMonths] = parsed.data;
     return {
         fromNationId: asNumber(fromNationId, 0),
         toNationId: asNumber(toNationId, 0),
@@ -136,10 +185,11 @@ const parseGeneralRow = (
     index: number,
     label: string
 ): ScenarioGeneral => {
-    if (!Array.isArray(row)) {
+    const parsed = rowArraySchema.safeParse(row);
+    if (!parsed.success) {
         throw new Error(`Scenario ${label} row ${index} is not an array.`);
     }
-    const values = [...row];
+    const values = [...parsed.data];
     while (values.length < 14) {
         values.push(null);
     }
@@ -200,7 +250,7 @@ const parseDiplomacyRows = (rows: unknown[]): ScenarioDiplomacy[] =>
 
 export const parseScenarioDefaults = (raw: unknown): ScenarioDefaults => {
     // 기본 시나리오 설정값을 안전하게 읽는다.
-    const data = asRecord(raw);
+    const data = scenarioDefaultsSchema.parse(raw);
     const stat = parseScenarioStatBlock(data.stat, FALLBACK_STAT);
     const iconPath = asString(data.iconPath, '.');
     return { stat, iconPath };
@@ -211,10 +261,10 @@ export const parseScenarioDefinition = (
     defaults: ScenarioDefaults
 ): ScenarioDefinition => {
     // 시나리오 JSON을 런타임에서 쓰는 구조로 정규화한다.
-    const data = asRecord(raw);
+    const data = scenarioSchema.parse(raw);
     const stat = parseScenarioStatBlock(data.stat, defaults.stat);
-    const mapConfig = asRecord(data.map);
-    const constConfig = asRecord(data.const);
+    const mapConfig = data.map ?? {};
+    const constConfig = data.const ?? {};
     const config: ScenarioConfig = {
         stat,
         iconPath: asString(data.iconPath, defaults.iconPath),
@@ -223,25 +273,23 @@ export const parseScenarioDefinition = (
         environment: parseScenarioEnvironment(mapConfig, constConfig),
     };
 
-    const title = ensureTitle(data.title);
+    const title = data.title;
     const startYear =
         typeof data.startYear === 'number' ? data.startYear : null;
     const life = typeof data.life === 'number' ? data.life : null;
     const fiction = typeof data.fiction === 'number' ? data.fiction : null;
-    const history = asStringArray(data.history);
+    const history = data.history ?? [];
     const ignoreDefaultEvents = Boolean(data.ignoreDefaultEvents);
-    const nations = parseNationRows(asArray(data.nation));
-    const diplomacy = parseDiplomacyRows(asArray(data.diplomacy));
-    const generals = parseGeneralRows(asArray(data.general), 'general');
-    const generalsEx = parseGeneralRows(asArray(data.general_ex), 'general_ex');
+    const nations = parseNationRows(data.nation ?? []);
+    const diplomacy = parseDiplomacyRows(data.diplomacy ?? []);
+    const generals = parseGeneralRows(data.general ?? [], 'general');
+    const generalsEx = parseGeneralRows(data.general_ex ?? [], 'general_ex');
     const generalsNeutral = parseGeneralRows(
-        asArray(data.general_neutral),
+        data.general_neutral ?? [],
         'general_neutral'
     );
-    const events = asArray(data.events);
-    const initialEvents = asArray(
-        data.initialEvents ?? data.initialActions ?? []
-    );
+    const events = data.events ?? [];
+    const initialEvents = data.initialEvents ?? data.initialActions ?? [];
 
     return {
         title,
@@ -255,7 +303,7 @@ export const parseScenarioDefinition = (
         generals,
         generalsEx,
         generalsNeutral,
-        cities: asArray(data.cities),
+        cities: data.cities ?? [],
         events,
         initialEvents,
         ignoreDefaultEvents,

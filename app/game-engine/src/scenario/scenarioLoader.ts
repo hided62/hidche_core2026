@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
     parseScenarioDefaults,
@@ -8,8 +9,18 @@ import {
     type ScenarioDefinition,
 } from '@sammo-ts/logic';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const DEFAULT_SCENARIO_ROOT = path.resolve(
+    __dirname,
+    '..',
+    '..',
+    'resources',
+    'scenario'
+);
+
 export interface ScenarioLoaderOptions {
-    scenarioRoot: string;
+    scenarioRoot?: string;
     defaultsFileName?: string;
 }
 
@@ -18,18 +29,25 @@ const readJsonFile = async (filePath: string): Promise<unknown> => {
     return JSON.parse(raw) as unknown;
 };
 
+const resolveScenarioRoot = (options?: ScenarioLoaderOptions): string =>
+    options?.scenarioRoot ?? DEFAULT_SCENARIO_ROOT;
+
 export const resolveScenarioDefaultsPath = (
-    options: ScenarioLoaderOptions
+    options?: ScenarioLoaderOptions
 ): string =>
     path.resolve(
-        options.scenarioRoot,
-        options.defaultsFileName ?? 'default.json'
+        resolveScenarioRoot(options),
+        options?.defaultsFileName ?? 'default.json'
     );
 
 export const resolveScenarioPath = (
-    options: ScenarioLoaderOptions,
+    options: ScenarioLoaderOptions | undefined,
     scenarioId: number
-): string => path.resolve(options.scenarioRoot, `scenario_${scenarioId}.json`);
+): string =>
+    path.resolve(
+        resolveScenarioRoot(options),
+        `scenario_${scenarioId}.json`
+    );
 
 export const loadScenarioDefaults = async (
     defaultsPath: string
@@ -50,7 +68,7 @@ export const loadScenarioDefinition = async (
 
 export const loadScenarioDefinitionById = async (
     scenarioId: number,
-    options: ScenarioLoaderOptions
+    options?: ScenarioLoaderOptions
 ): Promise<ScenarioDefinition> => {
     // 시나리오 번호로 파일을 찾고 파싱한다.
     const defaultsPath = resolveScenarioDefaultsPath(options);
