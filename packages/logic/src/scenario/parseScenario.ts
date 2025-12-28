@@ -124,7 +124,11 @@ const parseScenarioEnvironment = (
             ? merged.scenarioEffect
             : undefined;
 
-    return { mapName, unitSet, scenarioEffect };
+    const result: ScenarioEnvironment = { mapName, unitSet };
+    if (scenarioEffect !== undefined) {
+        result.scenarioEffect = scenarioEffect;
+    }
+    return result;
 };
 
 const parseNationRow = (row: unknown, index: number): ScenarioNation => {
