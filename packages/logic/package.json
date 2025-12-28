@@ -16,7 +16,7 @@
         "dev": "tsdown -c ../../tsdown.config.ts -F @sammo-ts/logic --watch",
         "lint": "node -e \"console.log('lint not configured')\"",
         "test": "vitest run --config vitest.config.ts",
-        "typecheck": "tsc -p tsconfig.build.json --noEmit"
+        "typecheck": "tsc --noEmit"
     },
     "dependencies": {
         "@sammo-ts/common": "workspace:*",

@@ -1,10 +1,13 @@
 {
-    "extends": "../../tsconfig.base.json",
+    "extends": "../../tsconfig.paths.json",
     "compilerOptions": {
-        "baseUrl": "../..",
         "outDir": "dist",
         "rootDir": "src",
         "composite": true
     },
-    "include": ["src"]
+    "include": ["src"],
+    "references": [
+        { "path": "../../packages/common" },
+        { "path": "../../packages/logic" }
+    ]
 }

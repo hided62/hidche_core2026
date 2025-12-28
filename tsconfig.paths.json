@@ -1,0 +1,14 @@
+{
+    "extends": "./tsconfig.base.json",
+    "compilerOptions": {
+        "baseUrl": ".",
+        "paths": {
+            "@sammo-ts/common": ["packages/common/src/index.ts"],
+            "@sammo-ts/common/*": ["packages/common/src/*"],
+            "@sammo-ts/infra": ["packages/infra/src/index.ts"],
+            "@sammo-ts/infra/*": ["packages/infra/src/*"],
+            "@sammo-ts/logic": ["packages/logic/src/index.ts"],
+            "@sammo-ts/logic/*": ["packages/logic/src/*"]
+        }
+    }
+}

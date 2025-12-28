@@ -1,0 +1,14 @@
+{
+    "extends": "./tsconfig.paths.json",
+    "files": [],
+    "references": [
+        { "path": "./packages/common" },
+        { "path": "./packages/infra" },
+        { "path": "./packages/logic" },
+        { "path": "./app/game-api" },
+        { "path": "./app/game-engine" },
+        { "path": "./app/game-frontend" },
+        { "path": "./app/gateway-api" },
+        { "path": "./app/gateway-frontend" }
+    ]
+}
