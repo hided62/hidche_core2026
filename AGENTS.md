@@ -61,6 +61,10 @@ These are placeholders to align teams; adjust once packages exist.
 - `pnpm --filter ./app/game-api dev`: run a single service by filter.
 - `pnpm --filter ./app/game-engine dev`: run a single service by filter.
 
+## Development Checklist (AI)
+- After code changes, verify TypeScript type checks (prefer `pnpm -r build` or the package `tsc`).
+- When changes require unit tests, run the relevant tests.
+
 ## Build Profiles (Proposal)
 - A build profile is a server+scenario pair; scenario selection is required even if a default exists.
 - Server builds should accept a profile (server variant) plus an explicit scenario file input.
