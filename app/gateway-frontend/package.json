@@ -7,6 +7,7 @@
         "build": "tsc -p tsconfig.json",
         "dev": "node -e \"console.log('dev not configured')\"",
         "lint": "node -e \"console.log('lint not configured')\"",
-        "test": "node -e \"console.log('test not configured')\""
+        "test": "node -e \"console.log('test not configured')\"",
+        "typecheck": "tsc -p tsconfig.json --noEmit"
     }
 }

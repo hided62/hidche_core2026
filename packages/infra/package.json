@@ -9,7 +9,8 @@
         "build": "tsdown -c ../../tsdown.config.ts -F @sammo-ts/infra",
         "dev": "tsdown -c ../../tsdown.config.ts -F @sammo-ts/infra --watch",
         "lint": "node -e \"console.log('lint not configured')\"",
-        "test": "node -e \"console.log('test not configured')\""
+        "test": "node -e \"console.log('test not configured')\"",
+        "typecheck": "tsc -p tsconfig.json --noEmit"
     },
     "dependencies": {
         "@prisma/client": "^5.18.0",

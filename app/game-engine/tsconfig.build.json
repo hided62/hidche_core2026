@@ -6,6 +6,7 @@
     },
     "include": [
         "src",
-        "../common/src"
+        "../../packages/common/src",
+        "../../packages/logic/src"
     ]
 }

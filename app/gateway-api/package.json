@@ -7,7 +7,8 @@
         "build": "tsdown -c ../../tsdown.config.ts -F @sammo-ts/gateway-api",
         "dev": "tsdown -c ../../tsdown.config.ts -F @sammo-ts/gateway-api --watch",
         "lint": "node -e \"console.log('lint not configured')\"",
-        "test": "node -e \"console.log('test not configured')\""
+        "test": "node -e \"console.log('test not configured')\"",
+        "typecheck": "tsc -p tsconfig.json --noEmit"
     },
     "devDependencies": {
         "tsdown": "^0.18.3"
