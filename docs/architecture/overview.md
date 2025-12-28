@@ -40,6 +40,7 @@ monorepo plan is prepared alongside it.
 ## Cross-Cutting Policies
 
 - No ad-hoc randomness for gameplay; use deterministic RNG
+- External JSON/data inputs must be validated with zod; name zod schemas with a `z` prefix.
 - Keep domain logic independent of endpoints or UI
 - Prefer clear Korean comments in core gameplay logic for maintainers
 - Test strategy and layering: `docs/testing-policy.md`
