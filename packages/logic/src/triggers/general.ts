@@ -1,5 +1,5 @@
 import type { General, GeneralTriggerState } from '../domain/entities.js';
-import type { RandomGenerator } from '../ports/rng.js';
+import type { RandomGenerator } from '@sammo-ts/common';
 import type { WorldStateRepository } from '../ports/world.js';
 import { TriggerCaller, type Trigger } from './core.js';
 
