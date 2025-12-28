@@ -28,6 +28,7 @@ export interface ScenarioBootstrapOptions {
     neutralNationColor?: string;
     defaultGeneralGold?: number;
     defaultGeneralRice?: number;
+    defaultCrewTypeId?: number;
     nationTypePrefix?: string;
     mapDefaults?: Partial<MapDefaults>;
 }
@@ -63,6 +64,7 @@ const DEFAULT_NEUTRAL_NATION_NAME = '재야';
 const DEFAULT_NEUTRAL_NATION_COLOR = '#000000';
 const DEFAULT_GENERAL_GOLD = 1000;
 const DEFAULT_GENERAL_RICE = 1000;
+const DEFAULT_CREWTYPE_ID = 1100;
 const DEFAULT_CITY_TRUST = 50;
 const DEFAULT_CITY_TRADE = 100;
 const DEFAULT_CITY_SUPPLY_STATE = 1;
@@ -233,6 +235,7 @@ const buildGeneralSeeds = (
     cityByName: Map<string, { id: number }>,
     nationNameToId: Map<string, number>,
     warnings: ScenarioBootstrapWarning[],
+    defaultCrewTypeId: number,
     options?: ScenarioBootstrapOptions
 ): {
     seeds: GeneralSeed[];
@@ -310,12 +313,14 @@ const buildGeneralSeeds = (
             picture: row.picture,
             npcType,
             text: row.text,
+            crewTypeId: defaultCrewTypeId,
             meta: seedMeta,
         };
         seeds.push(seed);
 
         const generalMeta: Record<string, TriggerValue> = {
             npcType,
+            crewTypeId: defaultCrewTypeId,
         };
         addTriggerMeta(generalMeta, 'affinity', row.affinity);
         addTriggerMeta(generalMeta, 'personality', row.personality ?? undefined);
@@ -339,6 +344,7 @@ const buildGeneralSeeds = (
             gold: defaultGold,
             rice: defaultRice,
             crew: 0,
+            crewTypeId: defaultCrewTypeId,
             train: 0,
             age,
             npcState: npcType,
@@ -503,6 +509,10 @@ export const buildScenarioBootstrap = (
     }
 
     const mapDefaults = resolveMapDefaults(map, options);
+    const defaultCrewTypeId =
+        unitSet?.defaultCrewTypeId ??
+        options?.defaultCrewTypeId ??
+        DEFAULT_CREWTYPE_ID;
     const seedCities: CitySeed[] = [];
     const domainCities: City[] = [];
 
@@ -580,6 +590,7 @@ export const buildScenarioBootstrap = (
         cityByName,
         nationNameToId,
         warnings,
+        defaultCrewTypeId,
         options
     );
     allGeneralSeeds.push(...generalResult.seeds);
@@ -595,6 +606,7 @@ export const buildScenarioBootstrap = (
         cityByName,
         nationNameToId,
         warnings,
+        defaultCrewTypeId,
         options
     );
     allGeneralSeeds.push(...generalExResult.seeds);
@@ -610,6 +622,7 @@ export const buildScenarioBootstrap = (
         cityByName,
         nationNameToId,
         warnings,
+        defaultCrewTypeId,
         options
     );
     allGeneralSeeds.push(...generalNeutralResult.seeds);

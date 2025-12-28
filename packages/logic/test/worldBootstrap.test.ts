@@ -105,6 +105,7 @@ describe('scenario bootstrap', () => {
         const unitSet: UnitSetDefinition = {
             id: 'test-unit',
             name: 'test-unit',
+            defaultCrewTypeId: 1200,
         };
 
         const result = buildScenarioBootstrap({ scenario, map, unitSet });
@@ -115,6 +116,7 @@ describe('scenario bootstrap', () => {
         expect(result.snapshot.cities[0]?.nationId).toBe(1);
         expect(result.seed.cities[0]?.nationId).toBe(1);
         expect(result.snapshot.generals[0]?.cityId).toBe(1);
+        expect(result.snapshot.generals[0]?.crewTypeId).toBe(1200);
         expect(result.seed.generals[0]?.npcType).toBe(2);
         expect(result.snapshot.scenarioMeta?.title).toBe('Test Scenario');
     });

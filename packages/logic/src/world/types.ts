@@ -55,6 +55,7 @@ export interface MapDefinition {
 export interface UnitSetDefinition {
     id: string;
     name: string;
+    defaultCrewTypeId?: number;
     meta?: Record<string, unknown>;
 }
 
@@ -118,6 +119,7 @@ export interface GeneralSeed {
     picture: number | string | null;
     npcType: number;
     text: string | null;
+    crewTypeId: number;
     meta: Record<string, unknown>;
 }
 

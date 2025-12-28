@@ -36,6 +36,7 @@ export interface General<TriggerState extends GeneralTriggerState = GeneralTrigg
     gold: number;
     rice: number;
     crew: number;
+    crewTypeId: number;
     train: number;
     age: number;
     npcState: number;
