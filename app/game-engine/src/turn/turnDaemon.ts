@@ -67,13 +67,16 @@ export const createTurnDaemonRuntime = async (
     });
 
     const tickMinutes = resolveTickMinutes(state.tickSeconds, options.tickMinutes);
+    const resolvedState = options.tickMinutes
+        ? { ...state, tickSeconds: tickMinutes * 60 }
+        : state;
     const schedule = options.schedule ?? buildFixedSchedule(tickMinutes);
     const worldOptions: InMemoryTurnWorldOptions = {
         schedule,
         generalTurnHandler: options.generalTurnHandler,
         calendarHandler: options.calendarHandler,
     };
-    const world = new InMemoryTurnWorld(state, snapshot, worldOptions);
+    const world = new InMemoryTurnWorld(resolvedState, snapshot, worldOptions);
 
     const stateStore = new InMemoryTurnStateStore(world);
     const processor = new InMemoryTurnProcessor(world, { tickMinutes });

@@ -1,3 +1,8 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { runTurnDaemonCli } from './turn/cli.js';
+
 export * from './lifecycle/types.js';
 export * from './lifecycle/clock.js';
 export * from './lifecycle/inMemoryControlQueue.js';
@@ -14,3 +19,18 @@ export * from './turn/inMemoryStateStore.js';
 export * from './turn/inMemoryTurnProcessor.js';
 export * from './turn/databaseHooks.js';
 export * from './turn/turnDaemon.js';
+export * from './turn/cli.js';
+
+const isMain = (): boolean => {
+    if (!process.argv[1]) {
+        return false;
+    }
+    return fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+};
+
+if (isMain()) {
+    runTurnDaemonCli().catch((error) => {
+        console.error('[turn-daemon] failed to start', error);
+        process.exitCode = 1;
+    });
+}

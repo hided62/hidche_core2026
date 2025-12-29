@@ -1,4 +1,10 @@
-import type { Prisma } from '@prisma/client';
+import type {
+    City as PrismaCity,
+    Diplomacy as PrismaDiplomacy,
+    General as PrismaGeneral,
+    Nation as PrismaNation,
+    Prisma,
+} from '@prisma/client';
 
 import { createPostgresConnector } from '@sammo-ts/infra';
 import type {
@@ -9,6 +15,7 @@ import type {
     ScenarioMeta,
     TriggerValue,
 } from '@sammo-ts/logic';
+import { z } from 'zod';
 
 import { getNextTickTime } from '../lifecycle/getNextTickTime.js';
 import type { MapLoaderOptions } from '../scenario/mapLoader.js';
@@ -38,12 +45,43 @@ const normalizeCode = (value: string | null | undefined): string | null => {
     return value;
 };
 
+const zScenarioStatBlock = z.object({
+    total: z.number(),
+    min: z.number(),
+    max: z.number(),
+    npcTotal: z.number(),
+    npcMax: z.number(),
+    npcMin: z.number(),
+    chiefMin: z.number(),
+});
+
+const zScenarioEnvironment = z.object({
+    mapName: z.string(),
+    unitSet: z.string(),
+    scenarioEffect: z.union([z.string(), z.null()]).optional(),
+});
+
+const zScenarioConfig = z.object({
+    stat: zScenarioStatBlock,
+    iconPath: z.string(),
+    map: z.record(z.string(), z.unknown()),
+    const: z.record(z.string(), z.unknown()),
+    environment: zScenarioEnvironment,
+});
+
+const zScenarioMeta = z.object({
+    title: z.string(),
+    startYear: z.number().nullable(),
+    life: z.number().nullable(),
+    fiction: z.number().nullable(),
+    history: z.array(z.string()),
+    ignoreDefaultEvents: z.boolean(),
+});
+
 const parseScenarioMeta = (meta: JsonRecord): ScenarioMeta | undefined => {
     const raw = meta.scenarioMeta;
-    if (isRecord(raw)) {
-        return raw as ScenarioMeta;
-    }
-    return undefined;
+    const parsed = zScenarioMeta.safeParse(raw);
+    return parsed.success ? parsed.data : undefined;
 };
 
 const parseLastTurnTime = (meta: JsonRecord): Date | null => {
@@ -83,10 +121,15 @@ const alignToPreviousTick = (base: Date, tickMinutes: number): Date => {
     return new Date(nextTick.getTime() - tickMinutes * 60_000);
 };
 
-const mapScenarioConfig = (raw: Prisma.JsonValue): ScenarioConfig =>
-    raw as ScenarioConfig;
+const mapScenarioConfig = (raw: Prisma.JsonValue): ScenarioConfig => {
+    const parsed = zScenarioConfig.safeParse(raw);
+    if (!parsed.success) {
+        throw new Error(`world_state.config is invalid: ${parsed.error.message}`);
+    }
+    return parsed.data;
+};
 
-const mapGeneralRow = (row: Prisma.General): TurnGeneral => ({
+const mapGeneralRow = (row: PrismaGeneral): TurnGeneral => ({
     id: row.id,
     name: row.name,
     nationId: row.nationId,
@@ -130,7 +173,7 @@ const mapGeneralRow = (row: Prisma.General): TurnGeneral => ({
     recentWarTime: row.recentWarTime ?? null,
 });
 
-const mapCityRow = (row: Prisma.City): City => ({
+const mapCityRow = (row: PrismaCity): City => ({
     id: row.id,
     name: row.name,
     nationId: row.nationId,
@@ -152,7 +195,7 @@ const mapCityRow = (row: Prisma.City): City => ({
     meta: asTriggerRecord(row.meta),
 });
 
-const mapNationRow = (row: Prisma.Nation): Nation => ({
+const mapNationRow = (row: PrismaNation): Nation => ({
     id: row.id,
     name: row.name,
     color: row.color,
@@ -166,7 +209,7 @@ const mapNationRow = (row: Prisma.Nation): Nation => ({
     meta: asTriggerRecord(row.meta),
 });
 
-const mapDiplomacyRow = (row: Prisma.Diplomacy): ScenarioDiplomacy => ({
+const mapDiplomacyRow = (row: PrismaDiplomacy): ScenarioDiplomacy => ({
     fromNationId: row.srcNationId,
     toNationId: row.destNationId,
     state: row.stateCode,
