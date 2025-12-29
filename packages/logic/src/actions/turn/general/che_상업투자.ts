@@ -4,23 +4,39 @@ import type {
     General,
     GeneralTriggerState,
     Nation,
-} from '../../domain/entities.js';
-import type { GeneralActionContext } from '../../triggers/general.js';
+} from '../../../domain/entities.js';
+import type {
+    Constraint,
+    ConstraintContext,
+    RequirementKey,
+    StateView,
+} from '../../../constraints/types.js';
+import {
+    notBeNeutral,
+    notWanderingNation,
+    occupiedCity,
+    remainCityCapacity,
+    reqGeneralGold,
+    reqGeneralRice,
+    suppliedCity,
+} from '../../../constraints/presets.js';
+import type { GeneralActionContext } from '../../../triggers/general.js';
 import {
     GeneralActionPipeline,
     type GeneralActionModule,
-} from '../../triggers/general-action.js';
+} from '../../../triggers/general-action.js';
+import type { GeneralActionDefinition } from '../../definition.js';
 import type {
     GeneralActionOutcome,
     GeneralActionResolver,
     GeneralActionResolveContext,
     GeneralActionEffect,
-} from '../engine.js';
+} from '../../engine.js';
 import {
     createCityPatchEffect,
     createGeneralPatchEffect,
     createLogEffect,
-} from '../engine.js';
+} from '../../engine.js';
 
 export type DomesticCriticalPick = 'fail' | 'normal' | 'success';
 
@@ -58,6 +74,8 @@ export interface CommerceInvestmentResult {
     costRice: number;
     appliedFrontDebuff: boolean;
 }
+
+export interface CommerceInvestmentArgs {}
 
 const DEFAULT_TRUST = 50;
 const DEFAULT_FRONT_DEBUFF = 0.5;
@@ -106,6 +124,38 @@ const addMetaNumber = (
 ): Record<string, unknown> => {
     const current = getMetaNumber(meta, key) ?? 0;
     return { ...meta, [key]: current + delta };
+};
+
+const buildDomesticContextFromView = <
+    TriggerState extends GeneralTriggerState = GeneralTriggerState
+>(
+    ctx: ConstraintContext,
+    view: StateView
+): DomesticActionContext<TriggerState> | null => {
+    const general = view.get({
+        kind: 'general',
+        id: ctx.actorId,
+    }) as General<TriggerState> | null;
+    if (!general) {
+        return null;
+    }
+    const cityId = ctx.cityId ?? general.cityId;
+    const city = view.get({ kind: 'city', id: cityId }) as City | null;
+    if (!city) {
+        return null;
+    }
+    const nationId = ctx.nationId ?? general.nationId;
+    const nation =
+        nationId !== undefined
+            ? ((view.get({ kind: 'nation', id: nationId }) as Nation | null) ??
+                null)
+            : null;
+
+    return {
+        general,
+        city,
+        nation,
+    };
 };
 
 // 상업 투자 결과치를 계산하는 경로를 제공한다.
@@ -252,7 +302,7 @@ export class CommandResolver<
 
 export class ActionResolver<
     TriggerState extends GeneralTriggerState = GeneralTriggerState
-> implements GeneralActionResolver<TriggerState> {
+> implements GeneralActionResolver<TriggerState, CommerceInvestmentArgs> {
     readonly key = 'che_상업투자';
     private readonly command: CommandResolver<TriggerState>;
 
@@ -264,8 +314,10 @@ export class ActionResolver<
     }
 
     resolve(
-        context: GeneralActionResolveContext<TriggerState>
+        context: GeneralActionResolveContext<TriggerState>,
+        _args: CommerceInvestmentArgs
     ): GeneralActionOutcome<TriggerState> {
+        void _args;
         const general = context.general;
         const city = context.city;
         if (!city) {
@@ -321,5 +373,67 @@ export class ActionResolver<
         effects.push(createLogEffect(logMessage));
 
         return { effects };
+    }
+}
+
+export class ActionDefinition<
+    TriggerState extends GeneralTriggerState = GeneralTriggerState
+> implements GeneralActionDefinition<TriggerState, CommerceInvestmentArgs> {
+    public readonly key = 'che_상업투자';
+    public readonly name = ACTION_NAME;
+    private readonly command: CommandResolver<TriggerState>;
+    private readonly resolver: ActionResolver<TriggerState>;
+
+    constructor(
+        modules: Array<GeneralActionModule<TriggerState> | null | undefined>,
+        env: InvestmentEnvironment
+    ) {
+        this.command = new CommandResolver(modules, env);
+        this.resolver = new ActionResolver(modules, env);
+    }
+
+    parseArgs(_raw: unknown): CommerceInvestmentArgs | null {
+        void _raw;
+        return {};
+    }
+
+    buildConstraints(
+        ctx: ConstraintContext,
+        _args: CommerceInvestmentArgs
+    ): Constraint[] {
+        void _args;
+        const requirements: RequirementKey[] = [];
+        if (ctx.cityId !== undefined) {
+            requirements.push({ kind: 'city', id: ctx.cityId });
+        }
+        if (ctx.nationId !== undefined) {
+            requirements.push({ kind: 'nation', id: ctx.nationId });
+        }
+
+        const getCost = (context: ConstraintContext, view: StateView): number => {
+            const domesticContext =
+                buildDomesticContextFromView<TriggerState>(context, view);
+            if (!domesticContext) {
+                return 0;
+            }
+            return this.command.getCost(domesticContext).gold;
+        };
+
+        return [
+            notBeNeutral(),
+            notWanderingNation(),
+            occupiedCity(),
+            suppliedCity(),
+            reqGeneralGold(getCost, requirements),
+            reqGeneralRice(() => 0, requirements),
+            remainCityCapacity(CITY_KEY, ACTION_NAME),
+        ];
+    }
+
+    resolve(
+        context: GeneralActionResolveContext<TriggerState>,
+        args: CommerceInvestmentArgs
+    ): GeneralActionOutcome<TriggerState> {
+        return this.resolver.resolve(context, args);
     }
 }

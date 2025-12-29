@@ -1,0 +1,505 @@
+import type { RandomGenerator } from '@sammo-ts/common';
+import type {
+    City,
+    General,
+    GeneralTriggerState,
+    Nation,
+    TriggerValue,
+} from '../../../domain/entities.js';
+import type { Constraint, ConstraintContext } from '../../../constraints/types.js';
+import {
+    disallowDiplomacyBetweenStatus,
+    existsDestCity,
+    notBeNeutral,
+    notNeutralDestCity,
+    notOccupiedDestCity,
+    occupiedCity,
+    reqGeneralGold,
+    reqGeneralRice,
+    suppliedCity,
+} from '../../../constraints/presets.js';
+import type { GeneralActionContext } from '../../../triggers/general.js';
+import {
+    GeneralActionPipeline,
+    type GeneralActionModule,
+} from '../../../triggers/general-action.js';
+import type { GeneralActionDefinition } from '../../definition.js';
+import type {
+    GeneralActionEffect,
+    GeneralActionOutcome,
+    GeneralActionResolveContext,
+    GeneralActionResolver,
+} from '../../engine.js';
+import {
+    createCityPatchEffect,
+    createGeneralPatchEffect,
+    createLogEffect,
+} from '../../engine.js';
+import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
+
+export interface FireAttackArgs {
+    destCityId: number;
+}
+
+export interface FireAttackEnvironment {
+    develCost: number;
+    sabotageDefaultProb: number;
+    sabotageProbCoefByStat: number;
+    sabotageDefenceCoefByGeneralCount: number;
+    sabotageDamageMin: number;
+    sabotageDamageMax: number;
+    maxSuccessProbability?: number;
+    statKey?: 'leadership' | 'strength' | 'intelligence';
+    getDistance?: (sourceCityId: number, destCityId: number) => number | null;
+    getDefenceCorrection?: (
+        context: FireAttackContext,
+        defender: General
+    ) => number;
+    getInjuryProbability?: (
+        context: FireAttackContext,
+        defender: General
+    ) => number;
+}
+
+export interface FireAttackContext<
+    TriggerState extends GeneralTriggerState = GeneralTriggerState
+> extends GeneralActionContext<TriggerState> {
+    general: General<TriggerState>;
+    city: City;
+    nation?: Nation | null;
+    destCity: City;
+    destNation?: Nation | null;
+    destGenerals: General<TriggerState>[];
+}
+
+export interface FireAttackResolveContext<
+    TriggerState extends GeneralTriggerState = GeneralTriggerState
+> extends GeneralActionResolveContext<TriggerState> {
+    destCity: City;
+    destNation?: Nation | null;
+    destGenerals: General<TriggerState>[];
+}
+
+export interface FireAttackResult<
+    TriggerState extends GeneralTriggerState = GeneralTriggerState
+> {
+    success: boolean;
+    probability: number;
+    distance: number;
+    costGold: number;
+    costRice: number;
+    exp: number;
+    dedication: number;
+    agriDamage: number;
+    commDamage: number;
+    injuryCount: number;
+    injuredGenerals: Array<{
+        id: number;
+        patch: Partial<General<TriggerState>>;
+    }>;
+}
+
+const ACTION_NAME = '화계';
+const ACTION_KEY = '계략';
+const STAT_EXP_KEY = 'intel_exp';
+const DEFAULT_MAX_PROB = 0.5;
+const INJURY_MAX = 80;
+const CITY_STATE_BURNING = 32;
+
+const clamp = (value: number, min: number, max: number): number =>
+    Math.min(Math.max(value, min), max);
+
+const randomRangeInt = (
+    rng: RandomGenerator,
+    min: number,
+    max: number
+): number => rng.nextInt(min, max + 1);
+
+const getStatValue = (
+    general: General,
+    statKey: 'leadership' | 'strength' | 'intelligence'
+): number => {
+    if (statKey === 'leadership') {
+        return general.stats.leadership;
+    }
+    if (statKey === 'strength') {
+        return general.stats.strength;
+    }
+    return general.stats.intelligence;
+};
+
+const addMetaNumber = (
+    meta: Record<string, TriggerValue>,
+    key: string,
+    delta: number
+): Record<string, TriggerValue> => {
+    const current = typeof meta[key] === 'number' ? (meta[key] as number) : 0;
+    return { ...meta, [key]: current + delta };
+};
+
+// 화계 성공/실패 및 피해량 계산을 담당한다.
+export class CommandResolver<
+    TriggerState extends GeneralTriggerState = GeneralTriggerState
+> {
+    private readonly pipeline: GeneralActionPipeline<TriggerState>;
+    private readonly env: FireAttackEnvironment;
+    private readonly statKey: 'leadership' | 'strength' | 'intelligence';
+
+    constructor(
+        modules: Array<GeneralActionModule<TriggerState> | null | undefined>,
+        env: FireAttackEnvironment
+    ) {
+        this.pipeline = new GeneralActionPipeline(modules);
+        this.env = env;
+        this.statKey = env.statKey ?? 'intelligence';
+    }
+
+    getCost(): { gold: number; rice: number } {
+        const cost = this.env.develCost * 5;
+        return { gold: cost, rice: cost };
+    }
+
+    private calcAttackProb(
+        context: FireAttackContext<TriggerState>
+    ): number {
+        const stat = getStatValue(context.general, this.statKey);
+        let prob = stat / this.env.sabotageProbCoefByStat;
+        return this.pipeline.onCalcDomestic(
+            context,
+            ACTION_KEY,
+            'success',
+            prob
+        );
+    }
+
+    private calcDefenceProb(
+        context: FireAttackContext<TriggerState>
+    ): number {
+        const destNationId = context.destCity.nationId;
+        let maxStat = 0;
+        let probCorrection = 0;
+        let affectCount = 0;
+
+        for (const defender of context.destGenerals) {
+            if (defender.nationId !== destNationId) {
+                continue;
+            }
+            affectCount += 1;
+            maxStat = Math.max(
+                maxStat,
+                getStatValue(defender, this.statKey)
+            );
+            probCorrection +=
+                this.env.getDefenceCorrection?.(context, defender) ?? 0;
+        }
+
+        let prob = maxStat / this.env.sabotageProbCoefByStat;
+        prob += probCorrection;
+        prob +=
+            (Math.log2(affectCount + 1) - 1.25) *
+            this.env.sabotageDefenceCoefByGeneralCount;
+
+        prob += context.destCity.security / context.destCity.securityMax / 5;
+        prob += context.destCity.supplyState ? 0.1 : 0;
+
+        return prob;
+    }
+
+    resolve(
+        context: FireAttackContext<TriggerState>,
+        rng: RandomGenerator
+    ): FireAttackResult<TriggerState> {
+        const { gold: costGold, rice: costRice } = this.getCost();
+        const distance =
+            this.env.getDistance?.(context.general.cityId, context.destCity.id) ??
+            99;
+
+        const attackProb = this.calcAttackProb(context);
+        const defenceProb = this.calcDefenceProb(context);
+        let probability =
+            this.env.sabotageDefaultProb + attackProb - defenceProb;
+        probability /= distance;
+        probability = clamp(
+            probability,
+            0,
+            this.env.maxSuccessProbability ?? DEFAULT_MAX_PROB
+        );
+
+        const success = rng.nextBool(probability);
+        const expRange: [number, number] = success ? [201, 300] : [1, 100];
+        const dedRange: [number, number] = success ? [141, 210] : [1, 70];
+        const exp = randomRangeInt(rng, expRange[0], expRange[1]);
+        const dedication = randomRangeInt(rng, dedRange[0], dedRange[1]);
+
+        if (!success) {
+            return {
+                success,
+                probability,
+                distance,
+                costGold,
+                costRice,
+                exp,
+                dedication,
+                agriDamage: 0,
+                commDamage: 0,
+                injuryCount: 0,
+                injuredGenerals: [],
+            };
+        }
+
+        const agriDamage = clamp(
+            randomRangeInt(
+                rng,
+                this.env.sabotageDamageMin,
+                this.env.sabotageDamageMax
+            ),
+            0,
+            context.destCity.agriculture
+        );
+        const commDamage = clamp(
+            randomRangeInt(
+                rng,
+                this.env.sabotageDamageMin,
+                this.env.sabotageDamageMax
+            ),
+            0,
+            context.destCity.commerce
+        );
+
+        const injuryProbDefault = 0.3;
+        const injuredGenerals: Array<{
+            id: number;
+            patch: Partial<General<TriggerState>>;
+        }> = [];
+        for (const defender of context.destGenerals) {
+            if (defender.nationId !== context.destCity.nationId) {
+                continue;
+            }
+            const injuryProb =
+                this.env.getInjuryProbability?.(context, defender) ??
+                injuryProbDefault;
+            if (!rng.nextBool(injuryProb)) {
+                continue;
+            }
+            const injuryAmount = randomRangeInt(rng, 1, 16);
+            injuredGenerals.push({
+                id: defender.id,
+                patch: {
+                    injury: clamp(
+                        defender.injury + injuryAmount,
+                        0,
+                        INJURY_MAX
+                    ),
+                    crew: Math.floor(defender.crew * 0.98),
+                    train: Math.floor(defender.train * 0.98),
+                },
+            });
+        }
+
+        return {
+            success,
+            probability,
+            distance,
+            costGold,
+            costRice,
+            exp,
+            dedication,
+            agriDamage,
+            commDamage,
+            injuryCount: injuredGenerals.length,
+            injuredGenerals,
+        };
+    }
+}
+
+export class ActionResolver<
+    TriggerState extends GeneralTriggerState = GeneralTriggerState
+> implements GeneralActionResolver<TriggerState, FireAttackArgs> {
+    readonly key = 'che_화계';
+    private readonly command: CommandResolver<TriggerState>;
+
+    constructor(
+        modules: Array<GeneralActionModule<TriggerState> | null | undefined>,
+        env: FireAttackEnvironment
+    ) {
+        this.command = new CommandResolver(modules, env);
+    }
+
+    resolve(
+        context: FireAttackResolveContext<TriggerState>,
+        _args: FireAttackArgs
+    ): GeneralActionOutcome<TriggerState> {
+        void _args;
+        const city = context.city;
+        if (!city) {
+            throw new Error('Fire attack requires a city context.');
+        }
+
+        const result = this.command.resolve(
+            {
+                ...context,
+                city,
+                nation: context.nation ?? null,
+                destCity: context.destCity,
+                destNation: context.destNation ?? null,
+                destGenerals: context.destGenerals,
+            },
+            context.rng
+        );
+
+        const effects: Array<GeneralActionEffect<TriggerState>> = [];
+
+        const nextGold = Math.max(0, context.general.gold - result.costGold);
+        const nextRice = Math.max(0, context.general.rice - result.costRice);
+        const nextExperience = context.general.experience + result.exp;
+        const nextDedication = context.general.dedication + result.dedication;
+
+        const metaWithStatExp = addMetaNumber(
+            context.general.meta,
+            STAT_EXP_KEY,
+            1
+        );
+        const metaUpdated = result.success
+            ? addMetaNumber(metaWithStatExp, 'firenum', 1)
+            : metaWithStatExp;
+
+        effects.push(
+            createGeneralPatchEffect({
+                gold: nextGold,
+                rice: nextRice,
+                experience: nextExperience,
+                dedication: nextDedication,
+                meta: metaUpdated,
+            })
+        );
+
+        if (!result.success) {
+            effects.push(
+                createLogEffect(
+                    `<G><b>${context.destCity.name}</b></>에 ${ACTION_NAME} 실패했습니다.`,
+                    {
+                        format: LogFormat.MONTH,
+                    }
+                )
+            );
+            return { effects };
+        }
+
+        const updatedCityMeta: Record<string, TriggerValue> = {
+            ...context.destCity.meta,
+            state: CITY_STATE_BURNING,
+        };
+
+        effects.push(
+            createCityPatchEffect(
+                {
+                    agriculture: context.destCity.agriculture - result.agriDamage,
+                    commerce: context.destCity.commerce - result.commDamage,
+                    meta: updatedCityMeta,
+                },
+                context.destCity.id
+            )
+        );
+
+        effects.push(
+            createLogEffect(
+                `<G><b>${context.destCity.name}</b></>이 불타고 있습니다.`,
+                {
+                    scope: LogScope.SYSTEM,
+                    category: LogCategory.SUMMARY,
+                    format: LogFormat.MONTH,
+                }
+            )
+        );
+        effects.push(
+            createLogEffect(
+                `<G><b>${context.destCity.name}</b></>에 ${ACTION_NAME} 성공했습니다.`,
+                {
+                    format: LogFormat.MONTH,
+                }
+            )
+        );
+        effects.push(
+            createLogEffect(
+                `도시의 농업이 <C>${result.agriDamage}</>, 상업이 <C>${result.commDamage}</>만큼 감소하고, 장수 <C>${result.injuryCount}</>명이 부상 당했습니다.`,
+                {
+                    format: LogFormat.PLAIN,
+                }
+            )
+        );
+
+        for (const injured of result.injuredGenerals) {
+            effects.push(
+                createGeneralPatchEffect(injured.patch, injured.id)
+            );
+            effects.push(
+                createLogEffect(
+                    `<M>${ACTION_KEY}</>로 인해 <R>부상</>을 당했습니다.`,
+                    {
+                        generalId: injured.id,
+                        format: LogFormat.MONTH,
+                    }
+                )
+            );
+        }
+
+        return { effects };
+    }
+}
+
+export class ActionDefinition<
+    TriggerState extends GeneralTriggerState = GeneralTriggerState
+> implements GeneralActionDefinition<TriggerState, FireAttackArgs, FireAttackResolveContext<TriggerState>> {
+    public readonly key = 'che_화계';
+    public readonly name = ACTION_NAME;
+    private readonly command: CommandResolver<TriggerState>;
+    private readonly resolver: ActionResolver<TriggerState>;
+
+    constructor(
+        modules: Array<GeneralActionModule<TriggerState> | null | undefined>,
+        env: FireAttackEnvironment
+    ) {
+        this.command = new CommandResolver(modules, env);
+        this.resolver = new ActionResolver(modules, env);
+    }
+
+    parseArgs(raw: unknown): FireAttackArgs | null {
+        if (!raw || typeof raw !== 'object') {
+            return null;
+        }
+        const destCityId = (raw as { destCityId?: unknown }).destCityId;
+        if (typeof destCityId !== 'number' || Number.isNaN(destCityId)) {
+            return null;
+        }
+        return { destCityId };
+    }
+
+    buildConstraints(
+        _ctx: ConstraintContext,
+        _args: FireAttackArgs
+    ): Constraint[] {
+        void _ctx;
+        void _args;
+        const { gold, rice } = this.command.getCost();
+        return [
+            notBeNeutral(),
+            occupiedCity(),
+            suppliedCity(),
+            existsDestCity(),
+            notOccupiedDestCity(),
+            notNeutralDestCity(),
+            reqGeneralGold(() => gold),
+            reqGeneralRice(() => rice),
+            disallowDiplomacyBetweenStatus({
+                7: '불가침국입니다.',
+            }),
+        ];
+    }
+
+    resolve(
+        context: FireAttackResolveContext<TriggerState>,
+        args: FireAttackArgs
+    ): GeneralActionOutcome<TriggerState> {
+        return this.resolver.resolve(context, args);
+    }
+}

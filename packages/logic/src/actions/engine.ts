@@ -37,16 +37,19 @@ export interface GeneralPatchEffect<
 > {
     type: 'general:patch';
     patch: Partial<General<TriggerState>>;
+    targetId?: GeneralId;
 }
 
 export interface CityPatchEffect {
     type: 'city:patch';
     patch: Partial<City>;
+    targetId?: CityId;
 }
 
 export interface NationPatchEffect {
     type: 'nation:patch';
     patch: Partial<Nation>;
+    targetId?: NationId;
 }
 
 export interface LogEffect {
@@ -75,11 +78,13 @@ export interface GeneralActionOutcome<
 }
 
 export interface GeneralActionResolver<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
+    Args = unknown
 > {
     key: string;
     resolve(
-        context: GeneralActionResolveContext<TriggerState>
+        context: GeneralActionResolveContext<TriggerState>,
+        args: Args
     ): GeneralActionOutcome<TriggerState>;
 }
 
@@ -90,6 +95,11 @@ export interface GeneralActionResolution {
     nextTurnAt: Date;
     logs: LogEntryDraft[];
     effects: GeneralActionEffect[];
+    patches?: {
+        generals: Array<{ id: GeneralId; patch: Partial<General> }>;
+        cities: Array<{ id: CityId; patch: Partial<City> }>;
+        nations: Array<{ id: NationId; patch: Partial<Nation> }>;
+    };
     dirty?: {
         general: boolean;
         city: boolean;
@@ -159,22 +169,30 @@ const applyNationPatch = (base: Nation, patch: Partial<Nation>): Nation => ({
 export const createGeneralPatchEffect = <
     TriggerState extends GeneralTriggerState = GeneralTriggerState
 >(
-    patch: Partial<General<TriggerState>>
+    patch: Partial<General<TriggerState>>,
+    targetId?: GeneralId
 ): GeneralPatchEffect<TriggerState> => ({
     type: 'general:patch',
     patch,
+    ...(targetId !== undefined ? { targetId } : {}),
 });
 
-export const createCityPatchEffect = (patch: Partial<City>): CityPatchEffect => ({
+export const createCityPatchEffect = (
+    patch: Partial<City>,
+    targetId?: CityId
+): CityPatchEffect => ({
     type: 'city:patch',
     patch,
+    ...(targetId !== undefined ? { targetId } : {}),
 });
 
 export const createNationPatchEffect = (
-    patch: Partial<Nation>
+    patch: Partial<Nation>,
+    targetId?: NationId
 ): NationPatchEffect => ({
     type: 'nation:patch',
     patch,
+    ...(targetId !== undefined ? { targetId } : {}),
 });
 
 export const createLogEffect = (
@@ -208,18 +226,25 @@ export const createNextTurnOverrideEffect = (
 
 // 행동 결과를 Effect로 모아 상태/턴 계산을 수행한다.
 export const resolveGeneralAction = <
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
+    Args = unknown
 >(
-    resolver: GeneralActionResolver<TriggerState>,
+    resolver: GeneralActionResolver<TriggerState, Args>,
     context: GeneralActionResolveContext<TriggerState>,
-    scheduleContext: TurnScheduleContext
+    scheduleContext: TurnScheduleContext,
+    args: Args
 ): GeneralActionResolution => {
-    const outcome = resolver.resolve(context);
+    const outcome = resolver.resolve(context, args);
     const logs: LogEntryDraft[] = [];
     let nextGeneral = context.general;
     let nextCity = context.city;
     let nextNation = context.nation ?? null;
     let nextTurnAtOverride: Date | null = null;
+    const patches: NonNullable<GeneralActionResolution['patches']> = {
+        generals: [],
+        cities: [],
+        nations: [],
+    };
     const dirty: NonNullable<GeneralActionResolution['dirty']> = {
         general: false,
         city: false,
@@ -236,19 +261,49 @@ export const resolveGeneralAction = <
     for (const effect of outcome.effects) {
         switch (effect.type) {
             case 'general:patch':
-                nextGeneral = applyGeneralPatch(nextGeneral, effect.patch);
-                dirty.general = true;
+                if (
+                    effect.targetId === undefined ||
+                    effect.targetId === context.general.id
+                ) {
+                    nextGeneral = applyGeneralPatch(nextGeneral, effect.patch);
+                    dirty.general = true;
+                } else {
+                    patches.generals.push({
+                        id: effect.targetId,
+                        patch: effect.patch as Partial<General>,
+                    });
+                }
                 break;
             case 'city:patch':
-                if (nextCity) {
-                    nextCity = applyCityPatch(nextCity, effect.patch);
-                    dirty.city = true;
+                if (
+                    effect.targetId === undefined ||
+                    effect.targetId === nextCity?.id
+                ) {
+                    if (nextCity) {
+                        nextCity = applyCityPatch(nextCity, effect.patch);
+                        dirty.city = true;
+                    }
+                } else {
+                    patches.cities.push({
+                        id: effect.targetId,
+                        patch: effect.patch,
+                    });
                 }
                 break;
             case 'nation:patch':
-                if (nextNation) {
-                    nextNation = applyNationPatch(nextNation, effect.patch);
-                    dirty.nation = true;
+                if (
+                    effect.targetId === undefined ||
+                    effect.targetId === nextNation?.id
+                ) {
+                    if (nextNation) {
+                        nextNation = applyNationPatch(nextNation, effect.patch);
+                        dirty.nation = true;
+                    }
+                } else {
+                    patches.nations.push({
+                        id: effect.targetId,
+                        patch: effect.patch,
+                    });
                 }
                 break;
             case 'log':
@@ -308,6 +363,13 @@ export const resolveGeneralAction = <
     }
     if (dirty.general || dirty.city || dirty.nation) {
         resolution.dirty = dirty;
+    }
+    if (
+        patches.generals.length > 0 ||
+        patches.cities.length > 0 ||
+        patches.nations.length > 0
+    ) {
+        resolution.patches = patches;
     }
 
     return resolution;
