@@ -19,6 +19,7 @@
         "redis": "^4.7.0"
     },
     "devDependencies": {
+        "@types/pg": "^8.15.5",
         "dotenv": "^17.2.3",
         "prisma": "^7.2.0",
         "tsdown": "^0.18.3"
