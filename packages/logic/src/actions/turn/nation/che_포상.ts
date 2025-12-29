@@ -32,6 +32,7 @@ import {
     createNationPatchEffect,
 } from '../../engine.js';
 import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
+import { JosaUtil } from '@sammo-ts/common';
 
 export interface AwardArgs {
     isGold: boolean;
@@ -148,9 +149,10 @@ export class ActionResolver<
             } as Partial<Nation>, nation.id),
         ];
 
+        const amountJosa = JosaUtil.pick(amountText, '을');
         effects.push(
             createLogEffect(
-                `${label} ${amountText} 포상으로 받았습니다.`,
+                `${label} ${amountText}${amountJosa} 포상으로 받았습니다.`,
                 {
                     scope: LogScope.GENERAL,
                     category: LogCategory.ACTION,
@@ -161,7 +163,7 @@ export class ActionResolver<
         );
         effects.push(
             createLogEffect(
-                `<Y>${context.destGeneral.name}</>에게 ${label} ${amountText} 수여했습니다.`,
+                `<Y>${context.destGeneral.name}</>에게 ${label} ${amountText}${amountJosa} 수여했습니다.`,
                 {
                     scope: LogScope.GENERAL,
                     category: LogCategory.ACTION,

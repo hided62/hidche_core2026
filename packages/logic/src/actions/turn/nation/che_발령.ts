@@ -27,6 +27,7 @@ import type {
 } from '../../engine.js';
 import { createGeneralPatchEffect, createLogEffect } from '../../engine.js';
 import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
+import { JosaUtil } from '@sammo-ts/common';
 
 export interface AssignmentArgs {
     destGeneralId: number;
@@ -103,6 +104,8 @@ export class ActionResolver<
         const cityName = this.env.formatCityName
             ? this.env.formatCityName(destCity)
             : destCity.name;
+        const cityJosa = JosaUtil.pick(cityName, '로');
+        const generalJosa = JosaUtil.pick(destGeneral.name, '을');
         const yearMonth = resolveLastAssignment(context);
 
         const effects: Array<GeneralActionEffect<TriggerState>> = [
@@ -117,7 +120,7 @@ export class ActionResolver<
 
         effects.push(
             createLogEffect(
-                `<Y>${context.general.name}</>에 의해 <G><b>${cityName}</b></>로 발령됐습니다.`,
+                `<Y>${context.general.name}</>에 의해 <G><b>${cityName}</b></>${cityJosa} 발령됐습니다.`,
                 {
                     scope: LogScope.GENERAL,
                     category: LogCategory.ACTION,
@@ -128,7 +131,7 @@ export class ActionResolver<
         );
         effects.push(
             createLogEffect(
-                `<Y>${destGeneral.name}</>을 <G><b>${cityName}</b></>로 발령했습니다.`,
+                `<Y>${destGeneral.name}</>${generalJosa} <G><b>${cityName}</b></>${cityJosa} 발령했습니다.`,
                 {
                     scope: LogScope.GENERAL,
                     category: LogCategory.ACTION,
