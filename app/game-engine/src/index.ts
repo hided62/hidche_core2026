@@ -4,3 +4,6 @@ export * from './lifecycle/inMemoryControlQueue.js';
 export * from './lifecycle/turnDaemonLifecycle.js';
 export * from './lifecycle/getNextTickTime.js';
 export * from './scenario/scenarioLoader.js';
+export * from './scenario/databaseUrl.js';
+export * from './scenario/legacyMapLoader.js';
+export * from './scenario/scenarioSeeder.js';

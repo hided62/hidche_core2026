@@ -4,7 +4,132 @@ generator client {
 
 datasource db {
     provider = "postgresql"
-    url      = env("DATABASE_URL")
 }
 
-// TODO: Translate docs/architecture/postgres-schema.md into Prisma models.
+model WorldState {
+    id           Int      @id @default(autoincrement())
+    scenarioCode String   @map("scenario_code")
+    currentYear  Int      @map("current_year")
+    currentMonth Int      @map("current_month")
+    tickSeconds  Int      @map("tick_seconds")
+    config       Json     @default(dbgenerated("'{}'::jsonb"))
+    meta         Json     @default(dbgenerated("'{}'::jsonb"))
+    updatedAt    DateTime @updatedAt @map("updated_at")
+
+    @@map("world_state")
+}
+
+model Nation {
+    id            Int     @id
+    name          String
+    color         String
+    capitalCityId Int?    @map("capital_city_id")
+    gold          Int     @default(0)
+    rice          Int     @default(0)
+    tech          Float   @default(0)
+    level         Int     @default(0)
+    typeCode      String  @default("che_중립") @map("type_code")
+    meta          Json    @default(dbgenerated("'{}'::jsonb"))
+
+    @@map("nation")
+}
+
+model City {
+    id             Int  @id
+    name           String
+    level          Int
+    nationId       Int  @default(0) @map("nation_id")
+    supplyState    Int  @default(1) @map("supply_state")
+    frontState     Int  @default(0) @map("front_state")
+    population     Int  @map("pop")
+    populationMax  Int  @map("pop_max")
+    agriculture    Int  @map("agri")
+    agricultureMax Int  @map("agri_max")
+    commerce       Int  @map("comm")
+    commerceMax    Int  @map("comm_max")
+    security       Int  @map("secu")
+    securityMax    Int  @map("secu_max")
+    trust          Int  @default(0)
+    trade          Int  @default(100)
+    defence        Int  @map("def")
+    defenceMax     Int  @map("def_max")
+    wall           Int  @map("wall")
+    wallMax        Int  @map("wall_max")
+    region         Int
+    conflict       Json @default(dbgenerated("'{}'::jsonb"))
+    meta           Json @default(dbgenerated("'{}'::jsonb"))
+
+    @@map("city")
+}
+
+model General {
+    id            Int      @id
+    name          String
+    nationId      Int      @default(0) @map("nation_id")
+    cityId        Int      @default(0) @map("city_id")
+    troopId       Int      @default(0) @map("troop_id")
+    npcState      Int      @default(0) @map("npc_state")
+    affinity      Int?
+    bornYear      Int      @default(180) @map("born_year")
+    deadYear      Int      @default(300) @map("dead_year")
+    picture       String?
+    imageServer   Int      @default(0) @map("image_server")
+    leadership    Int      @default(50)
+    strength      Int      @default(50)
+    intel         Int      @default(50)
+    injury        Int      @default(0)
+    experience    Int      @default(0)
+    dedication    Int      @default(0)
+    officerLevel  Int      @default(0) @map("officer_level")
+    gold          Int      @default(1000)
+    rice          Int      @default(1000)
+    crew          Int      @default(0)
+    crewTypeId    Int      @default(0) @map("crew_type_id")
+    train         Int      @default(0)
+    atmos         Int      @default(0)
+    weaponCode    String   @default("None") @map("weapon_code")
+    bookCode      String   @default("None") @map("book_code")
+    horseCode     String   @default("None") @map("horse_code")
+    itemCode      String   @default("None") @map("item_code")
+    turnTime      DateTime @map("turn_time")
+    recentWarTime DateTime? @map("recent_war_time")
+    age           Int      @default(20)
+    startAge      Int      @default(20) @map("start_age")
+    personalCode  String   @default("None") @map("personal_code")
+    specialCode   String   @default("None") @map("special_code")
+    special2Code  String   @default("None") @map("special2_code")
+    lastTurn      Json     @default(dbgenerated("'{}'::jsonb")) @map("last_turn")
+    meta          Json     @default(dbgenerated("'{}'::jsonb"))
+    penalty       Json     @default(dbgenerated("'{}'::jsonb"))
+    createdAt     DateTime @default(now()) @map("created_at")
+    updatedAt     DateTime @default(now()) @map("updated_at")
+
+    @@map("general")
+}
+
+model Diplomacy {
+    id           Int      @id @default(autoincrement())
+    srcNationId  Int      @map("src_nation_id")
+    destNationId Int      @map("dest_nation_id")
+    stateCode    Int      @map("state_code")
+    term         Int      @default(0)
+    isDead       Boolean  @default(false) @map("is_dead")
+    isShowing    Boolean  @default(true) @map("is_showing")
+    meta         Json     @default(dbgenerated("'{}'::jsonb"))
+    createdAt    DateTime @default(now()) @map("created_at")
+
+    @@unique([srcNationId, destNationId])
+    @@map("diplomacy")
+}
+
+model Event {
+    id         Int      @id @default(autoincrement())
+    targetCode String   @map("target_code")
+    priority   Int      @default(0)
+    condition  Json     @default(dbgenerated("'{}'::jsonb"))
+    action     Json     @default(dbgenerated("'{}'::jsonb"))
+    meta       Json     @default(dbgenerated("'{}'::jsonb"))
+    createdAt  DateTime @default(now()) @map("created_at")
+
+    @@map("event")
+}

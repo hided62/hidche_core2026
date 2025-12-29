@@ -1,0 +1,268 @@
+import type { Prisma } from '@prisma/client';
+
+import { createPostgresConnector } from '@sammo-ts/infra';
+import {
+    buildScenarioBootstrap,
+    type ScenarioBootstrapWarning,
+    type WorldSeedPayload,
+} from '@sammo-ts/logic';
+
+import type { LegacyMapLoaderOptions } from './legacyMapLoader.js';
+import { loadLegacyMapDefinition } from './legacyMapLoader.js';
+import type { ScenarioLoaderOptions } from './scenarioLoader.js';
+import { loadScenarioDefinitionById } from './scenarioLoader.js';
+
+const DEFAULT_TICK_SECONDS = 120 * 60;
+const DEFAULT_GENERAL_GOLD = 1000;
+const DEFAULT_GENERAL_RICE = 1000;
+
+export interface ScenarioSeedOptions {
+    scenarioId: number;
+    databaseUrl: string;
+    scenarioOptions?: ScenarioLoaderOptions;
+    mapOptions?: LegacyMapLoaderOptions;
+    resetTables?: boolean;
+    now?: Date;
+    tickSeconds?: number;
+    includeNeutralNationInSeed?: boolean;
+    defaultGeneralGold?: number;
+    defaultGeneralRice?: number;
+}
+
+export interface ScenarioSeedResult {
+    seed: WorldSeedPayload;
+    warnings: ScenarioBootstrapWarning[];
+}
+
+const asJson = (value: unknown): Prisma.InputJsonValue =>
+    value as Prisma.InputJsonValue;
+
+const resolveGeneralAge = (
+    startYear: number | null,
+    birthYear: number
+): number => {
+    if (startYear === null || birthYear <= 0) {
+        return 20;
+    }
+    return Math.max(startYear - birthYear, 0);
+};
+
+const buildEventRows = (
+    rows: unknown[],
+    targetOverride?: string
+): Prisma.EventCreateManyInput[] => {
+    const result: Prisma.EventCreateManyInput[] = [];
+
+    for (const row of rows) {
+        if (!Array.isArray(row)) {
+            continue;
+        }
+        if (targetOverride) {
+            const [condition, ...actions] = row;
+            result.push({
+                targetCode: targetOverride,
+                priority: 0,
+                condition: asJson(condition ?? null),
+                action: asJson(actions),
+                meta: asJson({ source: targetOverride }),
+            });
+            continue;
+        }
+
+        const [target, priority, condition, ...actions] = row;
+        if (typeof target !== 'string' || typeof priority !== 'number') {
+            continue;
+        }
+        result.push({
+            targetCode: target,
+            priority,
+            condition: asJson(condition ?? null),
+            action: asJson(actions),
+            meta: asJson({ source: 'scenario' }),
+        });
+    }
+
+    return result;
+};
+
+// 시나리오 초기 데이터를 로드해 DB에 저장한다.
+export const seedScenarioToDatabase = async (
+    options: ScenarioSeedOptions
+): Promise<ScenarioSeedResult> => {
+    const scenario = await loadScenarioDefinitionById(
+        options.scenarioId,
+        options.scenarioOptions
+    );
+    const map = await loadLegacyMapDefinition(
+        scenario.config.environment.mapName,
+        options.mapOptions
+    );
+
+    const { seed, warnings } = buildScenarioBootstrap({
+        scenario,
+        map,
+        options: {
+            includeNeutralNationInSeed:
+                options.includeNeutralNationInSeed ?? true,
+        },
+    });
+
+    const connector = createPostgresConnector({ url: options.databaseUrl });
+    const now = options.now ?? new Date();
+    const tickSeconds = options.tickSeconds ?? DEFAULT_TICK_SECONDS;
+    const generalGold = options.defaultGeneralGold ?? DEFAULT_GENERAL_GOLD;
+    const generalRice = options.defaultGeneralRice ?? DEFAULT_GENERAL_RICE;
+
+    await connector.connect();
+    try {
+        const prisma = connector.prisma;
+
+        if (options.resetTables ?? true) {
+            await prisma.event.deleteMany();
+            await prisma.diplomacy.deleteMany();
+            await prisma.general.deleteMany();
+            await prisma.city.deleteMany();
+            await prisma.nation.deleteMany();
+            await prisma.worldState.deleteMany();
+        }
+
+        await prisma.worldState.create({
+            data: {
+                scenarioCode: String(options.scenarioId),
+                currentYear: scenario.startYear ?? 0,
+                currentMonth: 1,
+                tickSeconds,
+                config: asJson(seed.scenarioConfig),
+                meta: asJson({
+                    scenarioId: options.scenarioId,
+                    scenarioMeta: seed.scenarioMeta,
+                }),
+            },
+        });
+
+        if (seed.nations.length > 0) {
+            await prisma.nation.createMany({
+                data: seed.nations.map((nation) => ({
+                    id: nation.id,
+                    name: nation.name,
+                    color: nation.color,
+                    capitalCityId: nation.capitalCityId ?? null,
+                    gold: nation.gold,
+                    rice: nation.rice,
+                    tech: nation.tech,
+                    level: nation.level,
+                    typeCode: nation.typeCode,
+                    meta: asJson({
+                        infoText: nation.infoText,
+                        cityIds: nation.cityIds,
+                    }),
+                })),
+            });
+        }
+
+        if (seed.cities.length > 0) {
+            await prisma.city.createMany({
+                data: seed.cities.map((city) => ({
+                    id: city.id,
+                    name: city.name,
+                    level: city.level,
+                    nationId: city.nationId,
+                    supplyState: city.supplyState,
+                    frontState: city.frontState,
+                    population: city.population,
+                    populationMax: city.populationMax,
+                    agriculture: city.agriculture,
+                    agricultureMax: city.agricultureMax,
+                    commerce: city.commerce,
+                    commerceMax: city.commerceMax,
+                    security: city.security,
+                    securityMax: city.securityMax,
+                    trust: city.trust,
+                    trade: city.trade,
+                    defence: city.defence,
+                    defenceMax: city.defenceMax,
+                    wall: city.wall,
+                    wallMax: city.wallMax,
+                    region: city.region,
+                    conflict: asJson({}),
+                    meta: asJson({
+                        position: city.position,
+                        connections: city.connections,
+                        ...city.meta,
+                    }),
+                })),
+            });
+        }
+
+        if (seed.generals.length > 0) {
+            await prisma.general.createMany({
+                data: seed.generals.map((general) => ({
+                    id: general.id,
+                    name: general.name,
+                    nationId: general.nationId,
+                    cityId: general.cityId,
+                    npcState: general.npcType,
+                    affinity: general.affinity,
+                    bornYear: general.birthYear,
+                    deadYear: general.deathYear,
+                    picture:
+                        general.picture === null
+                            ? null
+                            : String(general.picture),
+                    leadership: general.stats.leadership,
+                    strength: general.stats.strength,
+                    intel: general.stats.intelligence,
+                    officerLevel: general.officerLevel,
+                    gold: generalGold,
+                    rice: generalRice,
+                    crewTypeId: general.crewTypeId,
+                    horseCode: general.horse ?? 'None',
+                    weaponCode: general.weapon ?? 'None',
+                    bookCode: general.book ?? 'None',
+                    itemCode: general.item ?? 'None',
+                    turnTime: now,
+                    age: resolveGeneralAge(
+                        scenario.startYear ?? null,
+                        general.birthYear
+                    ),
+                    personalCode: general.personality ?? 'None',
+                    specialCode: general.special ?? 'None',
+                    special2Code: general.specialWar ?? 'None',
+                    lastTurn: asJson({}),
+                    meta: asJson({
+                        npcType: general.npcType,
+                        crewTypeId: general.crewTypeId,
+                        ...general.meta,
+                    }),
+                    penalty: asJson({}),
+                })),
+            });
+        }
+
+        if (seed.diplomacy.length > 0) {
+            await prisma.diplomacy.createMany({
+                data: seed.diplomacy.map((row) => ({
+                    srcNationId: row.fromNationId,
+                    destNationId: row.toNationId,
+                    stateCode: row.state,
+                    term: row.durationMonths,
+                    meta: asJson({}),
+                })),
+            });
+        }
+
+        const eventRows = [
+            ...buildEventRows(seed.events),
+            ...buildEventRows(seed.initialEvents, 'initial'),
+        ];
+        if (eventRows.length > 0) {
+            await prisma.event.createMany({
+                data: eventRows,
+            });
+        }
+    } finally {
+        await connector.disconnect();
+    }
+
+    return { seed, warnings };
+};

@@ -7,17 +7,19 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const DEFAULT_ENV_FILE = path.resolve(__dirname, '..', '..', '.env.ci');
-const COMMON_PACKAGE_JSON = path.resolve(
+const INFRA_PACKAGE_JSON = path.resolve(
     __dirname,
     '..',
     '..',
     'packages',
-    'common',
+    'infra',
     'package.json'
 );
-const commonRequire = createRequire(COMMON_PACKAGE_JSON);
-const { PrismaClient } = commonRequire('@prisma/client');
-const { createClient } = commonRequire('redis');
+const infraRequire = createRequire(INFRA_PACKAGE_JSON);
+const { PrismaClient } = infraRequire('@prisma/client');
+const { PrismaPg } = infraRequire('@prisma/adapter-pg');
+const { Pool } = infraRequire('pg');
+const { createClient } = infraRequire('redis');
 
 type EnvMap = Record<string, string | undefined>;
 
@@ -84,17 +86,17 @@ const resolveRedisUrl = (env: EnvMap): string => {
 };
 
 const testPostgres = async (databaseUrl: string): Promise<void> => {
-    const prisma = new PrismaClient({
-        datasources: {
-            db: {
-                url: databaseUrl,
-            },
-        },
-    });
+    const pool = new Pool({ connectionString: databaseUrl });
+    const adapter = new PrismaPg(pool);
+    const prisma = new PrismaClient({ adapter });
 
-    await prisma.$connect();
-    await prisma.$queryRawUnsafe('SELECT 1');
-    await prisma.$disconnect();
+    try {
+        await prisma.$connect();
+        await prisma.$queryRawUnsafe('SELECT 1');
+    } finally {
+        await prisma.$disconnect();
+        await pool.end();
+    }
 };
 
 const testRedis = async (redisUrl: string): Promise<void> => {
