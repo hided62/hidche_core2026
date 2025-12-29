@@ -1,5 +1,5 @@
 import { createPostgresConnector } from '@sammo-ts/infra';
-
+import { describe, expect, test } from 'vitest';
 import { resolveDatabaseUrl } from '../src/scenario/databaseUrl.js';
 import { seedScenarioToDatabase } from '../src/scenario/scenarioSeeder.js';
 
