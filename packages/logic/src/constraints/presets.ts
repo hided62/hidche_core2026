@@ -1,4 +1,4 @@
-import type { City, General, Nation } from '../domain/entities.js';
+import type { City, General, Nation, TriggerValue } from '../domain/entities.js';
 import type {
     Constraint,
     ConstraintContext,
@@ -78,6 +78,14 @@ const readNation = (
     return view.get(req) as Nation | null;
 };
 
+const readMetaNumber = (
+    meta: Record<string, TriggerValue>,
+    key: string
+): number | null => {
+    const value = meta[key];
+    return typeof value === 'number' ? value : null;
+};
+
 const readDiplomacyState = (
     view: StateView,
     srcNationId: number,
@@ -127,6 +135,25 @@ export const notBeNeutral = (): Constraint => ({
     },
 });
 
+export const beChief = (): Constraint => ({
+    name: 'BeChief',
+    requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
+    test: (ctx, view) => {
+        const req: RequirementKey = { kind: 'general', id: ctx.actorId };
+        if (!view.has(req)) {
+            return unknownOrDeny(ctx, [req], '장수 정보가 없습니다.');
+        }
+        const general = view.get(req) as General | null;
+        if (!general) {
+            return unknownOrDeny(ctx, [req], '장수 정보가 없습니다.');
+        }
+        if (general.officerLevel > 4) {
+            return allow();
+        }
+        return { kind: 'deny', reason: '수뇌가 아닙니다.' };
+    },
+});
+
 export const notWanderingNation = (): Constraint => ({
     name: 'NotWanderingNation',
     requires: (ctx) =>
@@ -146,6 +173,63 @@ export const notWanderingNation = (): Constraint => ({
             return allow();
         }
         return { kind: 'deny', reason: '방랑군은 불가능합니다.' };
+    },
+});
+
+export const availableStrategicCommand = (
+    allowTurnCnt = 0
+): Constraint => ({
+    name: 'AvailableStrategicCommand',
+    requires: (ctx) => {
+        const reqs: RequirementKey[] = [{ kind: 'general', id: ctx.actorId }];
+        if (ctx.nationId !== undefined) {
+            reqs.push({ kind: 'nation', id: ctx.nationId });
+        }
+        return reqs;
+    },
+    test: (ctx, view) => {
+        const generalReq: RequirementKey = { kind: 'general', id: ctx.actorId };
+        if (!view.has(generalReq)) {
+            return unknownOrDeny(ctx, [generalReq], '장수 정보가 없습니다.');
+        }
+        const general = view.get(generalReq) as General | null;
+        if (!general) {
+            return unknownOrDeny(ctx, [generalReq], '장수 정보가 없습니다.');
+        }
+        const nationId = ctx.nationId ?? general.nationId;
+        if (!nationId) {
+            return unknownOrDeny(ctx, [], '국가 정보가 없습니다.');
+        }
+        const nationReq: RequirementKey = { kind: 'nation', id: nationId };
+        if (!view.has(nationReq)) {
+            return unknownOrDeny(ctx, [nationReq], '국가 정보가 없습니다.');
+        }
+        const nation = view.get(nationReq) as Nation | null;
+        if (!nation) {
+            return unknownOrDeny(ctx, [nationReq], '국가 정보가 없습니다.');
+        }
+        const limit = readMetaNumber(nation.meta, 'strategic_cmd_limit');
+        if (limit === null) {
+            return unknownOrDeny(ctx, [nationReq], '전략기한 정보가 없습니다.');
+        }
+        if (limit <= allowTurnCnt) {
+            return allow();
+        }
+        return { kind: 'deny', reason: '전략기한이 남았습니다.' };
+    },
+});
+
+export const notOpeningPart = (
+    relYear: number,
+    openingPartYear: number
+): Constraint => ({
+    name: 'NotOpeningPart',
+    requires: () => [],
+    test: (_ctx) => {
+        if (relYear >= openingPartYear) {
+            return allow();
+        }
+        return { kind: 'deny', reason: '초반 제한 중에는 불가능합니다.' };
     },
 });
 

@@ -1,8 +1,14 @@
-export type GeneralTurnCommandKey = 'che_상업투자' | 'che_화계';
+export type GeneralTurnCommandKey =
+    | 'che_상업투자'
+    | 'che_화계'
+    | 'che_인재탐색'
+    | 'che_의병모집';
 
 export type GeneralTurnCommandModule =
     | typeof import('./che_상업투자.js')
-    | typeof import('./che_화계.js');
+    | typeof import('./che_화계.js')
+    | typeof import('./che_인재탐색.js')
+    | typeof import('./che_의병모집.js');
 
 export type GeneralTurnCommandImporter = () => Promise<GeneralTurnCommandModule>;
 
@@ -12,6 +18,8 @@ const defaultImporters: Record<
 > = {
     che_상업투자: async () => import('./che_상업투자.js'),
     che_화계: async () => import('./che_화계.js'),
+    che_인재탐색: async () => import('./che_인재탐색.js'),
+    che_의병모집: async () => import('./che_의병모집.js'),
 };
 
 export class GeneralTurnCommandLoader {
@@ -43,3 +51,13 @@ export {
     ActionResolver as FireAttackActionResolver,
     CommandResolver as FireAttackCommandResolver,
 } from './che_화계.js';
+export {
+    ActionDefinition as TalentScoutActionDefinition,
+    ActionResolver as TalentScoutActionResolver,
+    CommandResolver as TalentScoutCommandResolver,
+} from './che_인재탐색.js';
+export {
+    ActionDefinition as VolunteerRecruitActionDefinition,
+    ActionResolver as VolunteerRecruitActionResolver,
+    CommandResolver as VolunteerRecruitCommandResolver,
+} from './che_의병모집.js';

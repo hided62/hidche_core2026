@@ -40,6 +40,13 @@ export interface GeneralPatchEffect<
     targetId?: GeneralId;
 }
 
+export interface GeneralAddEffect<
+    TriggerState extends GeneralTriggerState = GeneralTriggerState
+> {
+    type: 'general:add';
+    general: General<TriggerState>;
+}
+
 export interface CityPatchEffect {
     type: 'city:patch';
     patch: Partial<City>;
@@ -66,6 +73,7 @@ export type GeneralActionEffect<
     TriggerState extends GeneralTriggerState = GeneralTriggerState
 > =
     | GeneralPatchEffect<TriggerState>
+    | GeneralAddEffect<TriggerState>
     | CityPatchEffect
     | NationPatchEffect
     | LogEffect
@@ -95,6 +103,9 @@ export interface GeneralActionResolution {
     nextTurnAt: Date;
     logs: LogEntryDraft[];
     effects: GeneralActionEffect[];
+    created?: {
+        generals: General[];
+    };
     patches?: {
         generals: Array<{ id: GeneralId; patch: Partial<General> }>;
         cities: Array<{ id: CityId; patch: Partial<City> }>;
@@ -177,6 +188,15 @@ export const createGeneralPatchEffect = <
     ...(targetId !== undefined ? { targetId } : {}),
 });
 
+export const createGeneralAddEffect = <
+    TriggerState extends GeneralTriggerState = GeneralTriggerState
+>(
+    general: General<TriggerState>
+): GeneralAddEffect<TriggerState> => ({
+    type: 'general:add',
+    general,
+});
+
 export const createCityPatchEffect = (
     patch: Partial<City>,
     targetId?: CityId
@@ -240,6 +260,7 @@ export const resolveGeneralAction = <
     let nextCity = context.city;
     let nextNation = context.nation ?? null;
     let nextTurnAtOverride: Date | null = null;
+    const createdGenerals: General[] = [];
     const patches: NonNullable<GeneralActionResolution['patches']> = {
         generals: [],
         cities: [],
@@ -273,6 +294,9 @@ export const resolveGeneralAction = <
                         patch: effect.patch as Partial<General>,
                     });
                 }
+                break;
+            case 'general:add':
+                createdGenerals.push(effect.general as General);
                 break;
             case 'city:patch':
                 if (
@@ -370,6 +394,11 @@ export const resolveGeneralAction = <
         patches.nations.length > 0
     ) {
         resolution.patches = patches;
+    }
+    if (createdGenerals.length > 0) {
+        resolution.created = {
+            generals: createdGenerals,
+        };
     }
 
     return resolution;
