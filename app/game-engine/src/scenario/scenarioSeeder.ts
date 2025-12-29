@@ -7,8 +7,8 @@ import {
     type WorldSeedPayload,
 } from '@sammo-ts/logic';
 
-import type { LegacyMapLoaderOptions } from './legacyMapLoader.js';
-import { loadLegacyMapDefinition } from './legacyMapLoader.js';
+import type { MapLoaderOptions } from './mapLoader.js';
+import { loadMapDefinitionByName } from './mapLoader.js';
 import type { ScenarioLoaderOptions } from './scenarioLoader.js';
 import { loadScenarioDefinitionById } from './scenarioLoader.js';
 
@@ -20,7 +20,7 @@ export interface ScenarioSeedOptions {
     scenarioId: number;
     databaseUrl: string;
     scenarioOptions?: ScenarioLoaderOptions;
-    mapOptions?: LegacyMapLoaderOptions;
+    mapOptions?: MapLoaderOptions;
     resetTables?: boolean;
     now?: Date;
     tickSeconds?: number;
@@ -93,7 +93,7 @@ export const seedScenarioToDatabase = async (
         options.scenarioId,
         options.scenarioOptions
     );
-    const map = await loadLegacyMapDefinition(
+    const map = await loadMapDefinitionByName(
         scenario.config.environment.mapName,
         options.mapOptions
     );

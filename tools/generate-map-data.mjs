@@ -2,38 +2,45 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type {
-    MapCityDefinition,
-    MapCityStats,
-    MapDefinition,
-} from '@sammo-ts/logic';
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DEFAULT_LEGACY_MAP_ROOT = path.resolve(
+const LEGACY_MAP_ROOT = path.resolve(
     __dirname,
-    '..',
-    '..',
-    '..',
     '..',
     'legacy',
     'hwe',
     'scenario',
     'map'
 );
-const DEFAULT_LEGACY_BASE_FILE = path.resolve(
+const LEGACY_BASE_FILE = path.resolve(
     __dirname,
-    '..',
-    '..',
-    '..',
     '..',
     'legacy',
     'hwe',
     'sammo',
     'CityConstBase.php'
 );
+const OUTPUT_ROOT = path.resolve(
+    __dirname,
+    '..',
+    'app',
+    'game-engine',
+    'resources',
+    'map'
+);
 
-const LEVEL_MAP: Record<string, number> = {
+const MAP_NAMES = [
+    'che',
+    'miniche',
+    'miniche_b',
+    'miniche_clean',
+    'cr',
+    'chess',
+    'ludo_rathowm',
+    'pokemon_v1',
+];
+
+const LEVEL_MAP = {
     '수': 1,
     '진': 2,
     '관': 3,
@@ -44,13 +51,12 @@ const LEVEL_MAP: Record<string, number> = {
     '특': 8,
 };
 
-const LEVEL_LABELS: Record<number, string> = Object.entries(LEVEL_MAP)
-    .reduce<Record<number, string>>((acc, [label, value]) => {
-        acc[value] = label;
-        return acc;
-    }, {});
+const LEVEL_LABELS = Object.entries(LEVEL_MAP).reduce((acc, [label, value]) => {
+    acc[value] = label;
+    return acc;
+}, {});
 
-const REGION_MAP: Record<string, number> = {
+const DEFAULT_REGION_MAP = {
     '하북': 1,
     '중원': 2,
     '서북': 3,
@@ -66,7 +72,7 @@ const BUILD_INIT_COMMON = {
     trade: 100,
 };
 
-const BUILD_INIT: Record<string, MapCityStats> = {
+const BUILD_INIT = {
     '수': {
         population: 5000,
         agriculture: 100,
@@ -136,28 +142,7 @@ const BUILD_INIT: Record<string, MapCityStats> = {
 const DEFAULT_SUPPLY_STATE = 1;
 const DEFAULT_FRONT_STATE = 0;
 
-interface LegacyCityRow {
-    id: number;
-    name: string;
-    level: string | number;
-    population: number;
-    agriculture: number;
-    commerce: number;
-    security: number;
-    defence: number;
-    wall: number;
-    region: string | number;
-    positionX: number;
-    positionY: number;
-    connectionNames: string[];
-}
-
-export interface LegacyMapLoaderOptions {
-    mapRoot?: string;
-    baseFilePath?: string;
-}
-
-const readFileOrNull = async (filePath: string): Promise<string | null> => {
+const readFileOrNull = async (filePath) => {
     try {
         return await fs.readFile(filePath, 'utf8');
     } catch {
@@ -165,7 +150,7 @@ const readFileOrNull = async (filePath: string): Promise<string | null> => {
     }
 };
 
-const extractPhpArray = (source: string, marker: string): string | null => {
+const extractPhpArray = (source, marker) => {
     const markerIndex = source.indexOf(marker);
     if (markerIndex < 0) {
         return null;
@@ -176,7 +161,7 @@ const extractPhpArray = (source: string, marker: string): string | null => {
     }
 
     let depth = 0;
-    let inString: '"' | "'" | null = null;
+    let inString = null;
 
     for (let i = start; i < source.length; i += 1) {
         const char = source[i];
@@ -211,19 +196,19 @@ const extractPhpArray = (source: string, marker: string): string | null => {
     return null;
 };
 
-const stripPhpComments = (source: string): string =>
+const stripPhpComments = (source) =>
     source
         .replace(/\/\*[\s\S]*?\*\//g, '')
         .replace(/\/\/.*$/gm, '')
         .replace(/#.*$/gm, '');
 
-const normalizePhpArray = (source: string): string =>
+const normalizePhpArray = (source) =>
     stripPhpComments(source)
         .replace(/\bNULL\b/gi, 'null')
         .replace(/'/g, '"')
         .replace(/,(\s*[\]\}])/g, '$1');
 
-const parseLegacyCityRows = (value: unknown): LegacyCityRow[] => {
+const parseLegacyCityRows = (value) => {
     if (!Array.isArray(value)) {
         throw new Error('Legacy map data is not an array.');
     }
@@ -251,40 +236,9 @@ const parseLegacyCityRows = (value: unknown): LegacyCityRow[] => {
         if (typeof id !== 'number' || typeof name !== 'string') {
             throw new Error(`Legacy map row ${index} has invalid id/name.`);
         }
-        if (
-            typeof level !== 'string' &&
-            typeof level !== 'number'
-        ) {
-            throw new Error(`Legacy map row ${index} has invalid level.`);
-        }
-        const stats = [
-            population,
-            agriculture,
-            commerce,
-            security,
-            defence,
-            wall,
-        ];
-        if (stats.some((value) => typeof value !== 'number')) {
-            throw new Error(`Legacy map row ${index} has invalid stats.`);
-        }
-        if (
-            typeof region !== 'string' &&
-            typeof region !== 'number'
-        ) {
-            throw new Error(`Legacy map row ${index} has invalid region.`);
-        }
-        if (
-            typeof positionX !== 'number' ||
-            typeof positionY !== 'number'
-        ) {
-            throw new Error(`Legacy map row ${index} has invalid position.`);
-        }
 
         const connectionNames = Array.isArray(connections)
-            ? connections.filter(
-                (value): value is string => typeof value === 'string'
-            )
+            ? connections.filter((value) => typeof value === 'string')
             : [];
 
         return {
@@ -305,7 +259,7 @@ const parseLegacyCityRows = (value: unknown): LegacyCityRow[] => {
     });
 };
 
-const resolveLevelLabel = (level: string | number): string => {
+const resolveLevelLabel = (level) => {
     if (typeof level === 'string') {
         return level;
     }
@@ -316,7 +270,7 @@ const resolveLevelLabel = (level: string | number): string => {
     return label;
 };
 
-const resolveLevelValue = (level: string | number): number => {
+const resolveLevelValue = (level) => {
     if (typeof level === 'number') {
         return level;
     }
@@ -327,21 +281,18 @@ const resolveLevelValue = (level: string | number): number => {
     return value;
 };
 
-const resolveRegionValue = (region: string | number): number => {
+const resolveRegionValue = (region, regionMap) => {
     if (typeof region === 'number') {
         return region;
     }
-    const value = REGION_MAP[region];
+    const value = regionMap[region];
     if (!value) {
         throw new Error(`Unknown region label: ${region}`);
     }
     return value;
 };
 
-const buildCityDefinition = (
-    row: LegacyCityRow,
-    nameToId: Map<string, number>
-): MapCityDefinition => {
+const buildCityDefinition = (row, nameToId, regionMap) => {
     const levelLabel = resolveLevelLabel(row.level);
     const initial = BUILD_INIT[levelLabel];
     if (!initial) {
@@ -350,13 +301,13 @@ const buildCityDefinition = (
 
     const connections = row.connectionNames
         .map((name) => nameToId.get(name))
-        .filter((value): value is number => typeof value === 'number');
+        .filter((value) => typeof value === 'number');
 
     return {
         id: row.id,
         name: row.name,
         level: resolveLevelValue(row.level),
-        region: resolveRegionValue(row.region),
+        region: resolveRegionValue(row.region, regionMap),
         position: {
             x: row.positionX,
             y: row.positionY,
@@ -378,41 +329,60 @@ const buildCityDefinition = (
     };
 };
 
-export const loadLegacyMapDefinition = async (
-    mapName: string,
-    options?: LegacyMapLoaderOptions
-): Promise<MapDefinition> => {
-    const mapRoot = options?.mapRoot ?? DEFAULT_LEGACY_MAP_ROOT;
-    const baseFilePath = options?.baseFilePath ?? DEFAULT_LEGACY_BASE_FILE;
-    const mapFilePath = path.resolve(mapRoot, `${mapName}.php`);
+const parseRegionMap = (source) => {
+    const raw = extractPhpArray(source, 'public static $regionMap');
+    if (!raw) {
+        return null;
+    }
+    const normalized = normalizePhpArray(raw);
+    const regex = /"([^"]+)"\s*=>\s*(\d+)/g;
+    const regionMap = {};
+    let match = regex.exec(normalized);
+    while (match) {
+        const [, key, value] = match;
+        regionMap[key] = Number(value);
+        match = regex.exec(normalized);
+    }
+    return Object.keys(regionMap).length > 0 ? regionMap : null;
+};
 
+const loadLegacyMapRows = async (mapName) => {
+    const mapFilePath = path.resolve(LEGACY_MAP_ROOT, `${mapName}.php`);
     const [mapSource, baseSource] = await Promise.all([
         readFileOrNull(mapFilePath),
-        readFileOrNull(baseFilePath),
+        readFileOrNull(LEGACY_BASE_FILE),
     ]);
 
     if (!baseSource) {
-        throw new Error(`Legacy base map file is missing: ${baseFilePath}`);
+        throw new Error(`Legacy base map file is missing: ${LEGACY_BASE_FILE}`);
     }
 
-    const mapInitCity =
+    const initCitySource =
         (mapSource
             ? extractPhpArray(mapSource, 'protected static $initCity')
             : null) ??
         extractPhpArray(baseSource, 'protected static $initCity');
 
-    if (!mapInitCity) {
+    if (!initCitySource) {
         throw new Error(`Legacy map data not found for ${mapName}.`);
     }
 
-    const parsed = JSON.parse(normalizePhpArray(mapInitCity)) as unknown;
+    const parsed = JSON.parse(normalizePhpArray(initCitySource));
     const rows = parseLegacyCityRows(parsed);
+    const baseRegionMap = parseRegionMap(baseSource) ?? DEFAULT_REGION_MAP;
+    const regionMap = mapSource
+        ? parseRegionMap(mapSource) ?? baseRegionMap
+        : baseRegionMap;
+    return { rows, regionMap };
+};
+
+const buildMapDefinition = (mapName, rows, regionMap) => {
     const nameToId = new Map(rows.map((row) => [row.name, row.id]));
 
     return {
         id: mapName,
         name: mapName,
-        cities: rows.map((row) => buildCityDefinition(row, nameToId)),
+        cities: rows.map((row) => buildCityDefinition(row, nameToId, regionMap)),
         defaults: {
             trust: BUILD_INIT_COMMON.trust,
             trade: BUILD_INIT_COMMON.trade,
@@ -425,3 +395,26 @@ export const loadLegacyMapDefinition = async (
         },
     };
 };
+
+const ensureOutputRoot = async () => {
+    await fs.mkdir(OUTPUT_ROOT, { recursive: true });
+};
+
+const writeMapDefinition = async (mapName, definition) => {
+    const filePath = path.resolve(OUTPUT_ROOT, `map_${mapName}.json`);
+    const payload = `${JSON.stringify(definition, null, 4)}\n`;
+    await fs.writeFile(filePath, payload, 'utf8');
+};
+
+const main = async () => {
+    await ensureOutputRoot();
+
+    for (const mapName of MAP_NAMES) {
+        const { rows, regionMap } = await loadLegacyMapRows(mapName);
+        const definition = buildMapDefinition(mapName, rows, regionMap);
+        await writeMapDefinition(mapName, definition);
+        console.log(`Generated map_${mapName}.json (${rows.length} cities)`);
+    }
+};
+
+await main();
