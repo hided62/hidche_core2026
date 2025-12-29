@@ -40,11 +40,34 @@ const readCity = (view: StateView, id?: number): City | null => {
     return view.get(req) as City | null;
 };
 
+const readDestGeneral = (
+    ctx: ConstraintContext,
+    view: StateView
+): General | null => {
+    const destGeneralId = resolveDestGeneralId(ctx);
+    if (destGeneralId === undefined) {
+        return null;
+    }
+    const req: RequirementKey = { kind: 'destGeneral', id: destGeneralId };
+    if (!view.has(req)) {
+        return null;
+    }
+    return view.get(req) as General | null;
+};
+
 const resolveDestCityId = (ctx: ConstraintContext): number | undefined => {
     if (ctx.destCityId !== undefined) {
         return ctx.destCityId;
     }
     const raw = ctx.args?.destCityId;
+    return typeof raw === 'number' ? raw : undefined;
+};
+
+const resolveDestGeneralId = (ctx: ConstraintContext): number | undefined => {
+    if (ctx.destGeneralId !== undefined) {
+        return ctx.destGeneralId;
+    }
+    const raw = ctx.args?.destGeneralId;
     return typeof raw === 'number' ? raw : undefined;
 };
 
@@ -135,6 +158,12 @@ export const notBeNeutral = (): Constraint => ({
     },
 });
 
+export const alwaysFail = (reason: string): Constraint => ({
+    name: 'AlwaysFail',
+    requires: () => [],
+    test: () => ({ kind: 'deny', reason }),
+});
+
 export const beChief = (): Constraint => ({
     name: 'BeChief',
     requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
@@ -219,6 +248,78 @@ export const availableStrategicCommand = (
     },
 });
 
+export const reqNationGold = (
+    getRequiredGold: (ctx: ConstraintContext, view: StateView) => number,
+    requirements: RequirementKey[] = []
+): Constraint => ({
+    name: 'ReqNationGold',
+    requires: (ctx) => {
+        const reqs: RequirementKey[] = [...requirements];
+        if (ctx.nationId !== undefined) {
+            reqs.push({ kind: 'nation', id: ctx.nationId });
+        }
+        return reqs;
+    },
+    test: (ctx, view) => {
+        const nationId = ctx.nationId;
+        if (nationId === undefined) {
+            return unknownOrDeny(ctx, [], '국가 정보가 없습니다.');
+        }
+        const nationReq: RequirementKey = { kind: 'nation', id: nationId };
+        const missing = [nationReq, ...requirements].filter(
+            (req) => !view.has(req)
+        );
+        if (missing.length > 0) {
+            return unknownOrDeny(ctx, missing, '국가 정보가 없습니다.');
+        }
+        const nation = view.get(nationReq) as Nation | null;
+        if (!nation) {
+            return unknownOrDeny(ctx, [nationReq], '국가 정보가 없습니다.');
+        }
+        const required = getRequiredGold(ctx, view);
+        if (nation.gold >= required) {
+            return allow();
+        }
+        return { kind: 'deny', reason: '자금이 모자랍니다.' };
+    },
+});
+
+export const reqNationRice = (
+    getRequiredRice: (ctx: ConstraintContext, view: StateView) => number,
+    requirements: RequirementKey[] = []
+): Constraint => ({
+    name: 'ReqNationRice',
+    requires: (ctx) => {
+        const reqs: RequirementKey[] = [...requirements];
+        if (ctx.nationId !== undefined) {
+            reqs.push({ kind: 'nation', id: ctx.nationId });
+        }
+        return reqs;
+    },
+    test: (ctx, view) => {
+        const nationId = ctx.nationId;
+        if (nationId === undefined) {
+            return unknownOrDeny(ctx, [], '국가 정보가 없습니다.');
+        }
+        const nationReq: RequirementKey = { kind: 'nation', id: nationId };
+        const missing = [nationReq, ...requirements].filter(
+            (req) => !view.has(req)
+        );
+        if (missing.length > 0) {
+            return unknownOrDeny(ctx, missing, '국가 정보가 없습니다.');
+        }
+        const nation = view.get(nationReq) as Nation | null;
+        if (!nation) {
+            return unknownOrDeny(ctx, [nationReq], '국가 정보가 없습니다.');
+        }
+        const required = getRequiredRice(ctx, view);
+        if (nation.rice >= required) {
+            return allow();
+        }
+        return { kind: 'deny', reason: '군량이 모자랍니다.' };
+    },
+});
+
 export const notOpeningPart = (
     relYear: number,
     openingPartYear: number
@@ -272,6 +373,45 @@ export const occupiedCity = (
     },
 });
 
+export const occupiedDestCity = (): Constraint => ({
+    name: 'OccupiedDestCity',
+    requires: (ctx) => {
+        const reqs: RequirementKey[] = [{ kind: 'general', id: ctx.actorId }];
+        const destCityId = resolveDestCityId(ctx);
+        if (destCityId !== undefined) {
+            reqs.push({ kind: 'destCity', id: destCityId });
+        }
+        return reqs;
+    },
+    test: (ctx, view) => {
+        const generalReq: RequirementKey = { kind: 'general', id: ctx.actorId };
+        if (!view.has(generalReq)) {
+            return unknownOrDeny(ctx, [generalReq], '장수 정보가 없습니다.');
+        }
+        const general = view.get(generalReq) as General | null;
+        if (!general) {
+            return unknownOrDeny(ctx, [generalReq], '장수 정보가 없습니다.');
+        }
+        const destCity = readDestCity(ctx, view);
+        if (!destCity) {
+            const destCityId = resolveDestCityId(ctx);
+            if (destCityId === undefined) {
+                return unknownOrDeny(ctx, [], '도시 정보가 없습니다.');
+            }
+            const req: RequirementKey = {
+                kind: 'destCity',
+                id: destCityId,
+            };
+            return unknownOrDeny(ctx, [req], '도시 정보가 없습니다.');
+        }
+        const baseNationId = ctx.nationId ?? general.nationId;
+        if (destCity.nationId === baseNationId) {
+            return allow();
+        }
+        return { kind: 'deny', reason: '아국이 아닙니다.' };
+    },
+});
+
 export const suppliedCity = (): Constraint => ({
     name: 'SuppliedCity',
     requires: (ctx) =>
@@ -286,6 +426,37 @@ export const suppliedCity = (): Constraint => ({
             return unknownOrDeny(ctx, [req], '도시 정보가 없습니다.');
         }
         if (city.supplyState) {
+            return allow();
+        }
+        return { kind: 'deny', reason: '고립된 도시입니다.' };
+    },
+});
+
+export const suppliedDestCity = (): Constraint => ({
+    name: 'SuppliedDestCity',
+    requires: (ctx) =>
+        resolveDestCityId(ctx) !== undefined
+            ? [
+                  {
+                      kind: 'destCity',
+                      id: resolveDestCityId(ctx) ?? 0,
+                  },
+              ]
+            : [],
+    test: (ctx, view) => {
+        const destCity = readDestCity(ctx, view);
+        if (!destCity) {
+            const destCityId = resolveDestCityId(ctx);
+            if (destCityId === undefined) {
+                return unknownOrDeny(ctx, [], '도시 정보가 없습니다.');
+            }
+            const req: RequirementKey = {
+                kind: 'destCity',
+                id: destCityId,
+            };
+            return unknownOrDeny(ctx, [req], '도시 정보가 없습니다.');
+        }
+        if (destCity.supplyState) {
             return allow();
         }
         return { kind: 'deny', reason: '고립된 도시입니다.' };
@@ -399,6 +570,72 @@ export const existsDestCity = (): Constraint => ({
             return { kind: 'deny', reason: '도시 정보가 없습니다.' };
         }
         return allow();
+    },
+});
+
+export const existsDestGeneral = (): Constraint => ({
+    name: 'ExistsDestGeneral',
+    requires: (ctx) =>
+        resolveDestGeneralId(ctx) !== undefined
+            ? [
+                  {
+                      kind: 'destGeneral',
+                      id: resolveDestGeneralId(ctx) ?? 0,
+                  },
+              ]
+            : [],
+    test: (ctx, view) => {
+        const destGeneralId = resolveDestGeneralId(ctx);
+        if (destGeneralId === undefined) {
+            return unknownOrDeny(ctx, [], '장수 정보가 없습니다.');
+        }
+        const req: RequirementKey = { kind: 'destGeneral', id: destGeneralId };
+        if (!view.has(req)) {
+            return unknownOrDeny(ctx, [req], '장수 정보가 없습니다.');
+        }
+        const general = view.get(req) as General | null;
+        if (!general) {
+            return { kind: 'deny', reason: '장수 정보가 없습니다.' };
+        }
+        return allow();
+    },
+});
+
+export const friendlyDestGeneral = (): Constraint => ({
+    name: 'FriendlyDestGeneral',
+    requires: (ctx) => {
+        const reqs: RequirementKey[] = [{ kind: 'general', id: ctx.actorId }];
+        const destGeneralId = resolveDestGeneralId(ctx);
+        if (destGeneralId !== undefined) {
+            reqs.push({ kind: 'destGeneral', id: destGeneralId });
+        }
+        return reqs;
+    },
+    test: (ctx, view) => {
+        const generalReq: RequirementKey = { kind: 'general', id: ctx.actorId };
+        if (!view.has(generalReq)) {
+            return unknownOrDeny(ctx, [generalReq], '장수 정보가 없습니다.');
+        }
+        const general = view.get(generalReq) as General | null;
+        if (!general) {
+            return unknownOrDeny(ctx, [generalReq], '장수 정보가 없습니다.');
+        }
+        const destGeneral = readDestGeneral(ctx, view);
+        if (!destGeneral) {
+            const destGeneralId = resolveDestGeneralId(ctx);
+            if (destGeneralId === undefined) {
+                return unknownOrDeny(ctx, [], '장수 정보가 없습니다.');
+            }
+            const req: RequirementKey = {
+                kind: 'destGeneral',
+                id: destGeneralId,
+            };
+            return unknownOrDeny(ctx, [req], '장수 정보가 없습니다.');
+        }
+        if (destGeneral.nationId === general.nationId) {
+            return allow();
+        }
+        return { kind: 'deny', reason: '아군이 아닙니다.' };
     },
 });
 
