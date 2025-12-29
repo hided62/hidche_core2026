@@ -1,4 +1,4 @@
-import type { City, Nation, TurnSchedule } from '@sammo-ts/logic';
+import type { City, LogEntryDraft, Nation, TurnSchedule } from '@sammo-ts/logic';
 import { getNextTurnAt } from '@sammo-ts/logic';
 
 import type { TurnCheckpoint } from '../lifecycle/types.js';
@@ -17,7 +17,7 @@ export interface GeneralTurnResult {
     city?: City;
     nation?: Nation | null;
     nextTurnAt?: Date;
-    logs?: string[];
+    logs?: LogEntryDraft[];
 }
 
 export interface GeneralTurnHandler {
@@ -85,7 +85,7 @@ export class InMemoryTurnWorld {
     private readonly dirtyGeneralIds = new Set<number>();
     private readonly dirtyCityIds = new Set<number>();
     private readonly dirtyNationIds = new Set<number>();
-    private readonly logs: string[] = [];
+    private readonly logs: LogEntryDraft[] = [];
     private checkpoint?: TurnCheckpoint;
     private state: TurnWorldState;
 
@@ -242,7 +242,7 @@ export class InMemoryTurnWorld {
         generals: TurnGeneral[];
         cities: City[];
         nations: Nation[];
-        logs: string[];
+        logs: LogEntryDraft[];
     } {
         const generals = Array.from(this.dirtyGeneralIds)
             .map((id) => this.generals.get(id))

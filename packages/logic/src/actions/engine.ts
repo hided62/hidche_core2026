@@ -12,6 +12,12 @@ import type {
 } from '../domain/entities.js';
 import type { GeneralActionContext } from '../triggers/general.js';
 import { getNextTurnAt, type TurnSchedule } from '../turn/calendar.js';
+import {
+    LogCategory,
+    type LogEntryDraft,
+    LogFormat,
+    LogScope,
+} from '../logging/types.js';
 
 export interface GeneralActionResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState
@@ -45,7 +51,7 @@ export interface NationPatchEffect {
 
 export interface LogEffect {
     type: 'log';
-    message: string;
+    entry: LogEntryDraft;
 }
 
 export interface NextTurnOverrideEffect {
@@ -82,7 +88,7 @@ export interface GeneralActionResolution {
     city?: City;
     nation?: Nation | null;
     nextTurnAt: Date;
-    logs: string[];
+    logs: LogEntryDraft[];
     effects: GeneralActionEffect[];
     dirty?: {
         general: boolean;
@@ -171,9 +177,26 @@ export const createNationPatchEffect = (
     patch,
 });
 
-export const createLogEffect = (message: string): LogEffect => ({
+export const createLogEffect = (
+    message: string,
+    options: Partial<Omit<LogEntryDraft, 'text'>> = {}
+): LogEffect => ({
     type: 'log',
-    message,
+    entry: {
+        scope: options.scope ?? LogScope.GENERAL,
+        category: options.category ?? LogCategory.ACTION,
+        text: message,
+        ...(options.generalId !== undefined
+            ? { generalId: options.generalId }
+            : {}),
+        ...(options.nationId !== undefined
+            ? { nationId: options.nationId }
+            : {}),
+        ...(options.userId !== undefined ? { userId: options.userId } : {}),
+        ...(options.subType !== undefined ? { subType: options.subType } : {}),
+        ...(options.meta !== undefined ? { meta: options.meta } : {}),
+        format: options.format ?? LogFormat.MONTH,
+    },
 });
 
 export const createNextTurnOverrideEffect = (
@@ -192,7 +215,7 @@ export const resolveGeneralAction = <
     scheduleContext: TurnScheduleContext
 ): GeneralActionResolution => {
     const outcome = resolver.resolve(context);
-    const logs: string[] = [];
+    const logs: LogEntryDraft[] = [];
     let nextGeneral = context.general;
     let nextCity = context.city;
     let nextNation = context.nation ?? null;
@@ -229,7 +252,37 @@ export const resolveGeneralAction = <
                 }
                 break;
             case 'log':
-                logs.push(effect.message);
+                // 로그 대상이 비어 있으면 현재 장수/국가 기준으로 보정한다.
+                switch (effect.entry.scope) {
+                    case LogScope.GENERAL:
+                        logs.push({
+                            ...effect.entry,
+                            generalId:
+                                effect.entry.generalId ?? context.general.id,
+                        });
+                        break;
+                    case LogScope.NATION:
+                        if (effect.entry.nationId !== undefined) {
+                            logs.push(effect.entry);
+                            break;
+                        }
+                        if (context.nation?.id !== undefined) {
+                            logs.push({
+                                ...effect.entry,
+                                nationId: context.nation.id,
+                            });
+                        }
+                        break;
+                    case LogScope.USER:
+                        if (effect.entry.userId) {
+                            logs.push(effect.entry);
+                        }
+                        break;
+                    case LogScope.SYSTEM:
+                    default:
+                        logs.push(effect.entry);
+                        break;
+                }
                 break;
             case 'schedule:override':
                 nextTurnAtOverride = effect.nextTurnAt;

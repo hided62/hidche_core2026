@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client';
 
 import { createPostgresConnector } from '@sammo-ts/infra';
+import { finalizeLogEntry, type LogEntryDraft } from '@sammo-ts/logic';
 
 import type { TurnDaemonHooks } from '../lifecycle/types.js';
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
@@ -85,6 +86,34 @@ const buildNationUpdate = (
     meta: asJson(nation.meta),
 });
 
+const buildLogCreateData = (
+    entry: LogEntryDraft,
+    context: { year: number; month: number; at: Date }
+): Prisma.LogEntryCreateManyInput | null => {
+    const record = finalizeLogEntry(entry, {
+        year: context.year,
+        month: context.month,
+        at: context.at,
+    });
+    if (!record) {
+        return null;
+    }
+
+    return {
+        scope: record.scope,
+        category: record.category,
+        subType: record.subType ?? null,
+        year: record.year,
+        month: record.month,
+        text: record.text,
+        generalId: record.generalId ?? null,
+        nationId: record.nationId ?? null,
+        userId: record.userId ?? null,
+        meta: asJson(record.meta ?? {}),
+        createdAt: record.createdAt,
+    };
+};
+
 export const createDatabaseTurnHooks = async (
     databaseUrl: string,
     world: InMemoryTurnWorld
@@ -130,7 +159,22 @@ export const createDatabaseTurnHooks = async (
             ]);
 
             if (logs.length > 0) {
-                // TODO: API 서버 연동 전까지는 로그를 별도 처리하지 않는다.
+                const logContext = {
+                    year: state.currentYear,
+                    month: state.currentMonth,
+                    at: state.lastTurnTime,
+                };
+                const payload = logs
+                    .map((entry) => buildLogCreateData(entry, logContext))
+                    .filter(
+                        (entry): entry is Prisma.LogEntryCreateManyInput =>
+                            Boolean(entry)
+                    );
+                if (payload.length > 0) {
+                    await connector.prisma.logEntry.createMany({
+                        data: payload,
+                    });
+                }
             }
         },
     };

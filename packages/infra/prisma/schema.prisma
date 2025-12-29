@@ -6,6 +6,22 @@ datasource db {
     provider = "postgresql"
 }
 
+enum LogScope {
+    SYSTEM
+    NATION
+    GENERAL
+    USER
+}
+
+enum LogCategory {
+    HISTORY
+    SUMMARY
+    ACTION
+    BATTLE_BRIEF
+    BATTLE_DETAIL
+    USER
+}
+
 model WorldState {
     id           Int      @id @default(autoincrement())
     scenarioCode String   @map("scenario_code")
@@ -132,4 +148,25 @@ model Event {
     createdAt  DateTime @default(now()) @map("created_at")
 
     @@map("event")
+}
+
+model LogEntry {
+    id        Int         @id @default(autoincrement())
+    scope     LogScope
+    category  LogCategory
+    subType   String?     @map("sub_type")
+    year      Int
+    month     Int
+    text      String
+    generalId Int?        @map("general_id")
+    nationId  Int?        @map("nation_id")
+    userId    Int?        @map("user_id")
+    meta      Json        @default(dbgenerated("'{}'::jsonb"))
+    createdAt DateTime    @default(now()) @map("created_at")
+
+    @@index([scope, category, id])
+    @@index([generalId, category, id])
+    @@index([nationId, category, id])
+    @@index([userId, category, id])
+    @@map("log_entry")
 }
