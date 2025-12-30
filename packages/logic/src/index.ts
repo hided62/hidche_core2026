@@ -3,6 +3,7 @@ export type { RandomGenerator } from '@sammo-ts/common';
 export * from './actions/index.js';
 export * from './constraints/index.js';
 export * from './logging/index.js';
+export * from './messages/index.js';
 export * from './ports/world.js';
 export * from './ports/worldSnapshot.js';
 export * from './scenario/index.js';

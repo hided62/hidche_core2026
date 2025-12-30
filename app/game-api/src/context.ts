@@ -1,4 +1,5 @@
 import type { GameSessionTokenPayload } from '@sammo-ts/common';
+import type { Prisma } from '@prisma/client';
 
 import type { TurnDaemonTransport } from './daemon/transport.js';
 
@@ -100,6 +101,7 @@ export interface NationRow {
 }
 
 export interface DatabaseClient {
+    $queryRaw<T = unknown>(query: Prisma.Sql): Promise<T>;
     worldState: {
         findFirst(args?: unknown): Promise<WorldStateRow | null>;
     };
