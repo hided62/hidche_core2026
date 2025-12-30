@@ -9,7 +9,7 @@ import {
 } from '@sammo-ts/infra';
 
 import { resolveGameApiConfigFromEnv } from './config.js';
-import { createGameApiContext } from './context.js';
+import { createGameApiContext, type DatabaseClient } from './context.js';
 import { buildTurnDaemonStreamKeys } from './daemon/streamKeys.js';
 import { RedisTurnDaemonTransport } from './daemon/redisTransport.js';
 import { InMemoryFlushStore, RedisGatewayFlushSubscriber } from './auth/flushStore.js';
@@ -75,7 +75,7 @@ export const createGameApiServer = async () => {
                 const token = extractBearerToken(req.headers.authorization);
                 const auth = token ? tokenVerifier.verify(token) : null;
                 return createGameApiContext({
-                    db: postgres.prisma,
+                    db: postgres.prisma as unknown as DatabaseClient,
                     turnDaemon,
                     profile: {
                         id: config.profile,

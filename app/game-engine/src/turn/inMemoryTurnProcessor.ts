@@ -6,9 +6,11 @@ import type {
 } from '../lifecycle/types.js';
 import { getNextTickTime } from '../lifecycle/getNextTickTime.js';
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
+import type { TurnGeneral } from './types.js';
 
 export interface InMemoryTurnProcessorOptions {
     tickMinutes?: number;
+    beforeExecuteGeneral?: (general: TurnGeneral) => Promise<void>;
 }
 
 const resolveTickMinutes = (
@@ -26,10 +28,14 @@ export class InMemoryTurnProcessor implements TurnProcessor {
     // 인메모리 월드로 턴을 실행하고 월/연 갱신까지 처리한다.
     private readonly world: InMemoryTurnWorld;
     private readonly tickMinutes: number;
+    private readonly beforeExecuteGeneral?: (
+        general: TurnGeneral
+    ) => Promise<void>;
 
     constructor(world: InMemoryTurnWorld, options: InMemoryTurnProcessorOptions = {}) {
         this.world = world;
         this.tickMinutes = resolveTickMinutes(world, options.tickMinutes);
+        this.beforeExecuteGeneral = options.beforeExecuteGeneral;
     }
 
     async run(
@@ -57,6 +63,9 @@ export class InMemoryTurnProcessor implements TurnProcessor {
                 break;
             }
             const executedAt = new Date(general.turnTime.getTime());
+            if (this.beforeExecuteGeneral) {
+                await this.beforeExecuteGeneral(general);
+            }
             this.world.executeGeneralTurn(general);
             processedGenerals += 1;
             nextCheckpoint = {

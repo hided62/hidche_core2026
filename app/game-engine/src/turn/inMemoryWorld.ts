@@ -18,6 +18,14 @@ export interface GeneralTurnResult {
     nation?: Nation | null;
     nextTurnAt?: Date;
     logs?: LogEntryDraft[];
+    patches?: {
+        generals: Array<{ id: number; patch: Partial<TurnGeneral> }>;
+        cities: Array<{ id: number; patch: Partial<City> }>;
+        nations: Array<{ id: number; patch: Partial<Nation> }>;
+    };
+    created?: {
+        generals: TurnGeneral[];
+    };
 }
 
 export interface GeneralTurnHandler {
@@ -74,6 +82,65 @@ const shouldProcessByCheckpoint = (
     return general.id > checkpoint.generalId;
 };
 
+const mergeStats = (
+    base: TurnGeneral['stats'],
+    patch: Partial<TurnGeneral['stats']>
+): TurnGeneral['stats'] => ({
+    leadership: patch.leadership ?? base.leadership,
+    strength: patch.strength ?? base.strength,
+    intelligence: patch.intelligence ?? base.intelligence,
+});
+
+const mergeRole = (
+    base: TurnGeneral['role'],
+    patch: Partial<TurnGeneral['role']>
+): TurnGeneral['role'] => ({
+    ...base,
+    ...patch,
+    items: {
+        ...base.items,
+        ...(patch.items ?? {}),
+    },
+});
+
+const mergeTriggerState = (
+    base: TurnGeneral['triggerState'],
+    patch: Partial<TurnGeneral['triggerState']>
+): TurnGeneral['triggerState'] => ({
+    ...base,
+    ...patch,
+    flags: { ...base.flags, ...(patch.flags ?? {}) },
+    counters: { ...base.counters, ...(patch.counters ?? {}) },
+    modifiers: { ...base.modifiers, ...(patch.modifiers ?? {}) },
+    meta: { ...base.meta, ...(patch.meta ?? {}) },
+});
+
+const applyGeneralPatch = (
+    base: TurnGeneral,
+    patch: Partial<TurnGeneral>
+): TurnGeneral => ({
+    ...base,
+    ...patch,
+    stats: patch.stats ? mergeStats(base.stats, patch.stats) : base.stats,
+    role: patch.role ? mergeRole(base.role, patch.role) : base.role,
+    triggerState: patch.triggerState
+        ? mergeTriggerState(base.triggerState, patch.triggerState)
+        : base.triggerState,
+    meta: patch.meta ? { ...base.meta, ...patch.meta } : base.meta,
+});
+
+const applyCityPatch = (base: City, patch: Partial<City>): City => ({
+    ...base,
+    ...patch,
+    meta: patch.meta ? { ...base.meta, ...patch.meta } : base.meta,
+});
+
+const applyNationPatch = (base: Nation, patch: Partial<Nation>): Nation => ({
+    ...base,
+    ...patch,
+    meta: patch.meta ? { ...base.meta, ...patch.meta } : base.meta,
+});
+
 export class InMemoryTurnWorld {
     // DB에서 읽어온 월드 상태를 메모리에 고정해 턴 처리를 담당한다.
     private readonly schedule: TurnSchedule;
@@ -85,6 +152,7 @@ export class InMemoryTurnWorld {
     private readonly dirtyGeneralIds = new Set<number>();
     private readonly dirtyCityIds = new Set<number>();
     private readonly dirtyNationIds = new Set<number>();
+    private readonly createdGeneralIds = new Set<number>();
     private readonly logs: LogEntryDraft[] = [];
     private checkpoint?: TurnCheckpoint;
     private state: TurnWorldState;
@@ -116,6 +184,34 @@ export class InMemoryTurnWorld {
 
     getState(): TurnWorldState {
         return { ...this.state };
+    }
+
+    getGeneralById(id: number): TurnGeneral | null {
+        return this.generals.get(id) ?? null;
+    }
+
+    getCityById(id: number): City | null {
+        return this.cities.get(id) ?? null;
+    }
+
+    getNationById(id: number): Nation | null {
+        return this.nations.get(id) ?? null;
+    }
+
+    listGenerals(): TurnGeneral[] {
+        return Array.from(this.generals.values()).map((general) => ({
+            ...general,
+        }));
+    }
+
+    listCities(): City[] {
+        return Array.from(this.cities.values()).map((city) => ({ ...city }));
+    }
+
+    listNations(): Nation[] {
+        return Array.from(this.nations.values()).map((nation) => ({
+            ...nation,
+        }));
     }
 
     setLastTurnTime(turnTime: Date): void {
@@ -199,6 +295,48 @@ export class InMemoryTurnWorld {
         if (result.logs && result.logs.length > 0) {
             this.logs.push(...result.logs);
         }
+        if (result.patches) {
+            for (const patch of result.patches.generals) {
+                const target = this.generals.get(patch.id);
+                if (!target) {
+                    continue;
+                }
+                this.generals.set(
+                    patch.id,
+                    applyGeneralPatch(target, patch.patch)
+                );
+                this.dirtyGeneralIds.add(patch.id);
+            }
+            for (const patch of result.patches.cities) {
+                const target = this.cities.get(patch.id);
+                if (!target) {
+                    continue;
+                }
+                this.cities.set(patch.id, applyCityPatch(target, patch.patch));
+                this.dirtyCityIds.add(patch.id);
+            }
+            for (const patch of result.patches.nations) {
+                const target = this.nations.get(patch.id);
+                if (!target) {
+                    continue;
+                }
+                this.nations.set(
+                    patch.id,
+                    applyNationPatch(target, patch.patch)
+                );
+                this.dirtyNationIds.add(patch.id);
+            }
+        }
+        if (result.created) {
+            for (const createdGeneral of result.created.generals) {
+                if (this.generals.has(createdGeneral.id)) {
+                    continue;
+                }
+                this.generals.set(createdGeneral.id, { ...createdGeneral });
+                this.dirtyGeneralIds.add(createdGeneral.id);
+                this.createdGeneralIds.add(createdGeneral.id);
+            }
+        }
 
         return nextTurnAt;
     }
@@ -243,8 +381,12 @@ export class InMemoryTurnWorld {
         cities: City[];
         nations: Nation[];
         logs: LogEntryDraft[];
+        createdGenerals: TurnGeneral[];
     } {
         const generals = Array.from(this.dirtyGeneralIds)
+            .map((id) => this.generals.get(id))
+            .filter((general): general is TurnGeneral => Boolean(general));
+        const createdGenerals = Array.from(this.createdGeneralIds)
             .map((id) => this.generals.get(id))
             .filter((general): general is TurnGeneral => Boolean(general));
         const cities = Array.from(this.dirtyCityIds)
@@ -258,7 +400,8 @@ export class InMemoryTurnWorld {
         this.dirtyGeneralIds.clear();
         this.dirtyCityIds.clear();
         this.dirtyNationIds.clear();
+        this.createdGeneralIds.clear();
 
-        return { generals, cities, nations, logs };
+        return { generals, cities, nations, logs, createdGenerals };
     }
 }

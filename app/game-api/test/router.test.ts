@@ -28,6 +28,16 @@ const buildContext = (options?: {
         nation: {
             findUnique: async () => null,
         },
+        generalTurn: {
+            findMany: async () => [],
+            deleteMany: async () => ({}),
+            createMany: async () => ({}),
+        },
+        nationTurn: {
+            findMany: async () => [],
+            deleteMany: async () => ({}),
+            createMany: async () => ({}),
+        },
     };
     return {
         db,

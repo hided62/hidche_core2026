@@ -147,6 +147,31 @@ model General {
     @@map("general")
 }
 
+model GeneralTurn {
+    id         Int      @id @default(autoincrement())
+    generalId  Int      @map("general_id")
+    turnIdx    Int      @map("turn_idx")
+    actionCode String   @map("action_code")
+    arg        Json     @default(dbgenerated("'{}'::jsonb"))
+    createdAt  DateTime @default(now()) @map("created_at")
+
+    @@unique([generalId, turnIdx])
+    @@map("general_turn")
+}
+
+model NationTurn {
+    id           Int      @id @default(autoincrement())
+    nationId     Int      @map("nation_id")
+    officerLevel Int      @map("officer_level")
+    turnIdx      Int      @map("turn_idx")
+    actionCode   String   @map("action_code")
+    arg          Json     @default(dbgenerated("'{}'::jsonb"))
+    createdAt    DateTime @default(now()) @map("created_at")
+
+    @@unique([nationId, officerLevel, turnIdx])
+    @@map("nation_turn")
+}
+
 model Diplomacy {
     id           Int      @id @default(autoincrement())
     srcNationId  Int      @map("src_nation_id")

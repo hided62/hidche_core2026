@@ -48,6 +48,23 @@ export interface GeneralRow {
     meta: unknown;
 }
 
+export interface GeneralTurnRow {
+    id: number;
+    generalId: number;
+    turnIdx: number;
+    actionCode: string;
+    arg: unknown;
+}
+
+export interface NationTurnRow {
+    id: number;
+    nationId: number;
+    officerLevel: number;
+    turnIdx: number;
+    actionCode: string;
+    arg: unknown;
+}
+
 export interface CityRow {
     id: number;
     name: string;
@@ -94,6 +111,39 @@ export interface DatabaseClient {
     };
     nation: {
         findUnique(args: { where: { id: number } }): Promise<NationRow | null>;
+    };
+    generalTurn: {
+        findMany(args: {
+            where: { generalId: number };
+            orderBy?: { turnIdx: 'asc' | 'desc' }[];
+        }): Promise<GeneralTurnRow[]>;
+        deleteMany(args: { where: { generalId: number } }): Promise<unknown>;
+        createMany(args: {
+            data: Array<{
+                generalId: number;
+                turnIdx: number;
+                actionCode: string;
+                arg: unknown;
+            }>;
+        }): Promise<unknown>;
+    };
+    nationTurn: {
+        findMany(args: {
+            where: { nationId: number; officerLevel: number };
+            orderBy?: { turnIdx: 'asc' | 'desc' }[];
+        }): Promise<NationTurnRow[]>;
+        deleteMany(args: {
+            where: { nationId: number; officerLevel: number };
+        }): Promise<unknown>;
+        createMany(args: {
+            data: Array<{
+                nationId: number;
+                officerLevel: number;
+                turnIdx: number;
+                actionCode: string;
+                arg: unknown;
+            }>;
+        }): Promise<unknown>;
     };
 }
 

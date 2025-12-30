@@ -5,6 +5,7 @@ import { finalizeLogEntry, type LogEntryDraft } from '@sammo-ts/logic';
 
 import type { TurnDaemonHooks } from '../lifecycle/types.js';
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
+import type { InMemoryReservedTurnStore } from './reservedTurnStore.js';
 
 export interface DatabaseTurnHooks {
     hooks: TurnDaemonHooks;
@@ -38,6 +39,40 @@ const buildGeneralUpdate = (
     train: general.train,
     age: general.age,
     npcState: general.npcState,
+    horseCode: toCode(general.role.items.horse),
+    weaponCode: toCode(general.role.items.weapon),
+    bookCode: toCode(general.role.items.book),
+    itemCode: toCode(general.role.items.item),
+    personalCode: toCode(general.role.personality),
+    specialCode: toCode(general.role.specialDomestic),
+    special2Code: toCode(general.role.specialWar),
+    meta: asJson(general.meta),
+    turnTime: general.turnTime,
+    recentWarTime: general.recentWarTime ?? null,
+});
+
+const buildGeneralCreate = (
+    general: ReturnType<InMemoryTurnWorld['consumeDirtyState']>['generals'][number]
+): Prisma.GeneralCreateManyInput => ({
+    id: general.id,
+    name: general.name,
+    nationId: general.nationId,
+    cityId: general.cityId,
+    troopId: general.troopId,
+    npcState: general.npcState,
+    leadership: general.stats.leadership,
+    strength: general.stats.strength,
+    intel: general.stats.intelligence,
+    experience: general.experience,
+    dedication: general.dedication,
+    officerLevel: general.officerLevel,
+    injury: general.injury,
+    gold: general.gold,
+    rice: general.rice,
+    crew: general.crew,
+    crewTypeId: general.crewTypeId,
+    train: general.train,
+    age: general.age,
     horseCode: toCode(general.role.items.horse),
     weaponCode: toCode(general.role.items.weapon),
     bookCode: toCode(general.role.items.book),
@@ -116,7 +151,8 @@ const buildLogCreateData = (
 
 export const createDatabaseTurnHooks = async (
     databaseUrl: string,
-    world: InMemoryTurnWorld
+    world: InMemoryTurnWorld,
+    options?: { reservedTurns?: InMemoryReservedTurnStore }
 ): Promise<DatabaseTurnHooks> => {
     // 턴 처리 결과를 DB에 반영하는 훅을 만든다.
     const connector = createPostgresConnector({ url: databaseUrl });
@@ -125,7 +161,8 @@ export const createDatabaseTurnHooks = async (
     const hooks: TurnDaemonHooks = {
         flushChanges: async () => {
             const state = world.getState();
-            const { generals, cities, nations, logs } = world.consumeDirtyState();
+            const { generals, cities, nations, logs, createdGenerals } =
+                world.consumeDirtyState();
 
             await connector.prisma.worldState.update({
                 where: { id: state.id },
@@ -137,13 +174,25 @@ export const createDatabaseTurnHooks = async (
                 },
             });
 
+            const createdIds = new Set(
+                createdGenerals.map((general) => general.id)
+            );
+
+            if (createdGenerals.length > 0) {
+                await connector.prisma.general.createMany({
+                    data: createdGenerals.map(buildGeneralCreate),
+                });
+            }
+
             await Promise.all([
-                ...generals.map((general) =>
-                    connector.prisma.general.update({
-                        where: { id: general.id },
-                        data: buildGeneralUpdate(general),
-                    })
-                ),
+                ...generals
+                    .filter((general) => !createdIds.has(general.id))
+                    .map((general) =>
+                        connector.prisma.general.update({
+                            where: { id: general.id },
+                            data: buildGeneralUpdate(general),
+                        })
+                    ),
                 ...cities.map((city) =>
                     connector.prisma.city.update({
                         where: { id: city.id },
@@ -175,6 +224,9 @@ export const createDatabaseTurnHooks = async (
                         data: payload,
                     });
                 }
+            }
+            if (options?.reservedTurns) {
+                await options.reservedTurns.flushChanges();
             }
         },
     };

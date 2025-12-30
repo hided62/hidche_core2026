@@ -20,6 +20,8 @@ import type {
 import { InMemoryTurnWorld } from './inMemoryWorld.js';
 import { InMemoryTurnProcessor } from './inMemoryTurnProcessor.js';
 import { InMemoryTurnStateStore } from './inMemoryStateStore.js';
+import { createReservedTurnHandler } from './reservedTurnHandler.js';
+import { createReservedTurnStore } from './reservedTurnStore.js';
 import { loadTurnWorldFromDatabase } from './worldLoader.js';
 
 export interface TurnDaemonRuntimeOptions {
@@ -71,24 +73,63 @@ export const createTurnDaemonRuntime = async (
         ? { ...state, tickSeconds: tickMinutes * 60 }
         : state;
     const schedule = options.schedule ?? buildFixedSchedule(tickMinutes);
+    const reservedTurnStoreHandle = options.generalTurnHandler
+        ? null
+        : await createReservedTurnStore({
+              databaseUrl: options.databaseUrl,
+          });
+    let worldRef: InMemoryTurnWorld | null = null;
     const worldOptions: InMemoryTurnWorldOptions = {
         schedule,
-        generalTurnHandler: options.generalTurnHandler,
+        generalTurnHandler:
+            options.generalTurnHandler ??
+            createReservedTurnHandler({
+                reservedTurns: reservedTurnStoreHandle!.store,
+                scenarioConfig: snapshot.scenarioConfig,
+                scenarioMeta: snapshot.scenarioMeta,
+                diplomacy: snapshot.diplomacy,
+                getWorld: () => worldRef,
+            }),
         calendarHandler: options.calendarHandler,
     };
     const world = new InMemoryTurnWorld(resolvedState, snapshot, worldOptions);
+    worldRef = world;
 
     const stateStore = new InMemoryTurnStateStore(world);
-    const processor = new InMemoryTurnProcessor(world, { tickMinutes });
+    const processor = new InMemoryTurnProcessor(world, {
+        tickMinutes,
+        beforeExecuteGeneral: reservedTurnStoreHandle
+            ? async (general) => {
+                  await reservedTurnStoreHandle.store.refreshGeneralTurns(
+                      general.id
+                  );
+                  if (general.nationId > 0 && general.officerLevel >= 5) {
+                      await reservedTurnStoreHandle.store.refreshNationTurns(
+                          general.nationId,
+                          general.officerLevel
+                      );
+                  }
+              }
+            : undefined,
+    });
     const controlQueue = options.controlQueue ?? new InMemoryControlQueue();
     const clock = options.clock ?? new SystemClock();
 
     let hooks: TurnDaemonHooks | undefined;
     let close = async () => {};
     if (options.enableDatabaseFlush ?? true) {
-        const dbHooks = await createDatabaseTurnHooks(options.databaseUrl, world);
+        const dbHooks = await createDatabaseTurnHooks(options.databaseUrl, world, {
+            reservedTurns: reservedTurnStoreHandle?.store,
+        });
         hooks = dbHooks.hooks;
-        close = dbHooks.close;
+        close = async () => {
+            await dbHooks.close();
+            if (reservedTurnStoreHandle) {
+                await reservedTurnStoreHandle.close();
+            }
+        };
+    } else if (reservedTurnStoreHandle) {
+        close = async () => reservedTurnStoreHandle.close();
     }
 
     const defaultBudget: TurnRunBudget = options.defaultBudget ?? {
