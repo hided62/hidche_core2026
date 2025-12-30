@@ -1,4 +1,4 @@
-import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken.js';
+import type { GameSessionTokenPayload } from '@sammo-ts/common';
 
 import type { TurnDaemonTransport } from './daemon/transport.js';
 

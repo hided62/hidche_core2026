@@ -4,10 +4,7 @@ import { TRPCError } from '@trpc/server';
 import { addHours, addSeconds, isAfter, isValid, parseISO } from 'date-fns';
 import { z } from 'zod';
 
-import {
-    decryptGameSessionToken,
-    encryptGameSessionToken,
-} from '@sammo-ts/common/auth/gameToken.js';
+import { decryptGameSessionToken, encryptGameSessionToken } from '@sammo-ts/common';
 
 import { procedure, router } from './trpc.js';
 import { toPublicUser } from './auth/userRepository.js';

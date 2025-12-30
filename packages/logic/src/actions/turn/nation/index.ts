@@ -1,9 +1,13 @@
 export type NationTurnCommandKey = '휴식' | 'che_포상' | 'che_발령';
 
+import type * as NationRestModule from './휴식.js';
+import type * as AwardModule from './che_포상.js';
+import type * as AssignmentModule from './che_발령.js';
+
 export type NationTurnCommandModule =
-    | typeof import('./휴식.js')
-    | typeof import('./che_포상.js')
-    | typeof import('./che_발령.js');
+    | typeof NationRestModule
+    | typeof AwardModule
+    | typeof AssignmentModule;
 
 export type NationTurnCommandImporter = () => Promise<NationTurnCommandModule>;
 

@@ -1,5 +1,5 @@
-import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken.js';
-import { decryptGameSessionToken } from '@sammo-ts/common/auth/gameToken.js';
+import type { GameSessionTokenPayload } from '@sammo-ts/common';
+import { decryptGameSessionToken } from '@sammo-ts/common';
 import { isAfter, isValid, parseISO } from 'date-fns';
 
 import type { FlushStore } from './flushStore.js';
