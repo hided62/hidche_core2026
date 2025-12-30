@@ -7,6 +7,11 @@ export interface GatewayApiConfig {
     sessionTtlSeconds: number;
     gameSessionTtlSeconds: number;
     gameTokenSecret: string;
+    oauthSessionTtlSeconds: number;
+    kakaoRestKey: string;
+    kakaoAdminKey?: string;
+    kakaoRedirectUri: string;
+    publicBaseUrl: string;
 }
 
 const parseNumber = (value: string | undefined, fallback: number, label: string): number => {
@@ -27,6 +32,12 @@ export const resolveGatewayApiConfigFromEnv = (
     if (!secret) {
         throw new Error('GAME_TOKEN_SECRET is required for gateway token encryption.');
     }
+    const kakaoRestKey = env.KAKAO_REST_KEY ?? '';
+    const kakaoRedirectUri = env.KAKAO_REDIRECT_URI ?? '';
+    if (!kakaoRestKey || !kakaoRedirectUri) {
+        throw new Error('KAKAO_REST_KEY and KAKAO_REDIRECT_URI are required.');
+    }
+    const publicBaseUrl = env.GATEWAY_PUBLIC_URL ?? kakaoRedirectUri;
     const redisKeyPrefix = env.GATEWAY_REDIS_PREFIX ?? 'sammo:gateway';
     return {
         host: env.GATEWAY_API_HOST ?? '0.0.0.0',
@@ -41,5 +52,14 @@ export const resolveGatewayApiConfigFromEnv = (
             'GAME_SESSION_TTL_SECONDS'
         ),
         gameTokenSecret: secret,
+        oauthSessionTtlSeconds: parseNumber(
+            env.OAUTH_SESSION_TTL_SECONDS,
+            10 * 60,
+            'OAUTH_SESSION_TTL_SECONDS'
+        ),
+        kakaoRestKey,
+        kakaoAdminKey: env.KAKAO_ADMIN_KEY,
+        kakaoRedirectUri,
+        publicBaseUrl,
     };
 };

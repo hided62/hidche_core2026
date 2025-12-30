@@ -15,6 +15,9 @@ export * from './auth/inMemorySessionService.js';
 export * from './auth/redisSessionService.js';
 export * from './auth/redisKeys.js';
 export * from './auth/flushPublisher.js';
+export * from './auth/kakaoClient.js';
+export * from './auth/oauthSessionStore.js';
+export * from './auth/postgresUserRepository.js';
 
 const isMain = (): boolean => {
     if (!process.argv[1]) {

@@ -22,6 +22,30 @@ enum LogCategory {
     USER
 }
 
+enum OAuthType {
+    NONE
+    KAKAO
+}
+
+model AppUser {
+    id           String    @id @default(uuid())
+    loginId      String    @unique @map("login_id")
+    displayName  String    @map("display_name")
+    passwordHash String    @map("password_hash")
+    passwordSalt String    @map("password_salt")
+    roles        Json      @default(dbgenerated("'[]'::jsonb"))
+    sanctions    Json      @default(dbgenerated("'{}'::jsonb"))
+    oauthType    OAuthType @default(NONE) @map("oauth_type")
+    oauthId      String?   @unique @map("oauth_id")
+    email        String?   @unique
+    oauthInfo    Json      @default(dbgenerated("'{}'::jsonb")) @map("oauth_info")
+    createdAt    DateTime  @default(now()) @map("created_at")
+    updatedAt    DateTime  @updatedAt @map("updated_at")
+    lastLoginAt  DateTime? @map("last_login_at")
+
+    @@map("app_user")
+}
+
 model WorldState {
     id           Int      @id @default(autoincrement())
     scenarioCode String   @map("scenario_code")
