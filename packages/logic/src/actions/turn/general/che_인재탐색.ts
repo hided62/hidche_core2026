@@ -31,6 +31,7 @@ import {
 } from '../../engine.js';
 import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
 import { buildRecruitmentGeneral } from './recruitment.js';
+import { JosaUtil } from '@sammo-ts/common';
 
 export interface TalentScoutArgs {}
 
@@ -394,22 +395,24 @@ export class ActionResolver<
         });
 
         effects.push(createGeneralAddEffect(newGeneral));
+        const nameObjJosa = JosaUtil.pick(name, '을');
+        const nameSubjJosa = JosaUtil.pick(name, '이');
         effects.push(
-            createLogEffect(`인재 <Y>${name}</>를 발견했습니다.`, {
+            createLogEffect(`인재 <Y>${name}</>${nameObjJosa} 발견했습니다.`, {
                 scope: LogScope.GENERAL,
                 category: LogCategory.ACTION,
                 format: LogFormat.MONTH,
             })
         );
         effects.push(
-            createLogEffect(`인재 <Y>${name}</>가 등장했습니다.`, {
+            createLogEffect(`인재 <Y>${name}</>${nameSubjJosa} 등장했습니다.`, {
                 scope: LogScope.SYSTEM,
                 category: LogCategory.SUMMARY,
                 format: LogFormat.MONTH,
             })
         );
         effects.push(
-            createLogEffect(`인재 <Y>${name}</>를 발견했습니다.`, {
+            createLogEffect(`인재 <Y>${name}</>${nameObjJosa} 발견했습니다.`, {
                 scope: LogScope.GENERAL,
                 category: LogCategory.HISTORY,
                 format: LogFormat.YEAR_MONTH,

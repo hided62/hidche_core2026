@@ -33,6 +33,7 @@ import {
 } from '../../engine.js';
 import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
 import { buildRecruitmentGeneral } from './recruitment.js';
+import { JosaUtil } from '@sammo-ts/common';
 
 export interface VolunteerRecruitArgs {}
 
@@ -275,9 +276,12 @@ export class ActionResolver<
         );
 
         if (nation?.id) {
+            const generalName = context.general.name;
+            const generalJosa = JosaUtil.pick(generalName, '이');
+            const actionJosa = JosaUtil.pick(ACTION_NAME, '을');
             effects.push(
                 createLogEffect(
-                    `<Y>${context.general.name}</>이 <M>${ACTION_NAME}</>을 발동했습니다.`,
+                    `<Y>${generalName}</>${generalJosa} <M>${ACTION_NAME}</>${actionJosa} 발동했습니다.`,
                     {
                         scope: LogScope.NATION,
                         category: LogCategory.HISTORY,
