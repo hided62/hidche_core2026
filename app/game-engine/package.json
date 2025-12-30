@@ -12,15 +12,15 @@
         "typecheck": "tsc -b"
     },
     "dependencies": {
+        "@prisma/client": "^7.2.0",
         "@sammo-ts/common": "workspace:*",
         "@sammo-ts/infra": "workspace:*",
         "@sammo-ts/logic": "workspace:*",
-        "@prisma/client": "^7.2.0",
         "zod": "^4.2.1"
     },
     "devDependencies": {
         "tsdown": "^0.18.3",
-        "vite-tsconfig-paths": "^4.3.2",
+        "vite-tsconfig-paths": "^6.0.3",
         "vitest": "^4.0.16"
     }
 }

@@ -12,7 +12,7 @@
         "build:server": "pnpm --filter ./tools/build-scripts build:server --"
     },
     "devDependencies": {
-        "@types/node": "^20.14.9",
+        "@types/node": "^25.0.3",
         "tsdown": "^0.18.3",
         "typescript": "^5.5.4"
     }
