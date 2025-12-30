@@ -83,3 +83,71 @@ export interface WarBattleOutcome<
     conquered: boolean;
     reports: WarUnitReport[];
 }
+
+export interface WarAftermathConfig {
+    initialNationGenLimit: number;
+    techLevelIncYear: number;
+    initialAllowedTechLevel: number;
+    maxTechLevel: number;
+    defaultCityWall: number;
+    baseGold: number;
+    baseRice: number;
+    castleCrewTypeId: number;
+}
+
+export interface WarAftermathTechContext {
+    side: 'attacker' | 'defender';
+    nation: Nation;
+    attackerReport: WarUnitReport;
+    baseGain?: number;
+}
+
+export interface WarDiplomacyDelta {
+    fromNationId: number;
+    toNationId: number;
+    deadDelta: number;
+}
+
+export interface ConquerCityOutcome<
+    TriggerState extends GeneralTriggerState = GeneralTriggerState
+> {
+    conquerNationId: number;
+    nationCollapsed: boolean;
+    collapseRewardGold: number;
+    collapseRewardRice: number;
+    logs: LogEntryDraft[];
+    nations: Nation[];
+    cities: City[];
+    generals: General<TriggerState>[];
+}
+
+export interface WarAftermathInput<
+    TriggerState extends GeneralTriggerState = GeneralTriggerState
+> {
+    battle: WarBattleOutcome<TriggerState>;
+    attackerNation: Nation;
+    defenderNation: Nation | null;
+    attackerCity: City;
+    defenderCity: City;
+    nations: Nation[];
+    cities: City[];
+    generals: General<TriggerState>[];
+    unitSet: UnitSetDefinition;
+    config: WarAftermathConfig;
+    time: WarTimeContext;
+    hiddenSeed?: string;
+    rng?: RandUtil;
+    calcNationTechGain?: (context: WarAftermathTechContext) => number;
+}
+
+export interface WarAftermathOutcome<
+    TriggerState extends GeneralTriggerState = GeneralTriggerState
+> {
+    nations: Nation[];
+    cities: City[];
+    generals: General<TriggerState>[];
+    diplomacyDeltas: WarDiplomacyDelta[];
+    logs: LogEntryDraft[];
+    conquered: boolean;
+    conquest?: ConquerCityOutcome<TriggerState>;
+}

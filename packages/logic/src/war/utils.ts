@@ -154,3 +154,23 @@ export const sortConflict = (
 
     return ordered;
 };
+
+export const simpleSerialize = (...values: Array<string | number>): string => {
+    const result: string[] = [];
+    for (const value of values) {
+        if (typeof value === 'string') {
+            result.push(`str(${value.length},${value})`);
+            continue;
+        }
+        if (Number.isInteger(value)) {
+            result.push(`int(${value})`);
+            continue;
+        }
+        const floatValue = value.toLocaleString('en-US', {
+            maximumFractionDigits: 6,
+            useGrouping: false,
+        });
+        result.push(`float(${floatValue})`);
+    }
+    return result.join('|');
+};

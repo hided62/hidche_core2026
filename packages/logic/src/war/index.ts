@@ -1,6 +1,7 @@
 export * from './types.js';
 export * from './actions.js';
 export * from './engine.js';
+export * from './aftermath.js';
 export * from './units.js';
 export * from './triggers.js';
 export * from './triggersChePilsal.js';
