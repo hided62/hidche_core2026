@@ -18,9 +18,82 @@ export interface WorldStateRow {
     updatedAt: Date;
 }
 
+export interface GeneralRow {
+    id: number;
+    name: string;
+    nationId: number;
+    cityId: number;
+    troopId: number;
+    leadership: number;
+    strength: number;
+    intel: number;
+    experience: number;
+    dedication: number;
+    officerLevel: number;
+    personalCode: string;
+    specialCode: string;
+    special2Code: string;
+    horseCode: string;
+    weaponCode: string;
+    bookCode: string;
+    itemCode: string;
+    injury: number;
+    gold: number;
+    rice: number;
+    crew: number;
+    crewTypeId: number;
+    train: number;
+    age: number;
+    npcState: number;
+    meta: unknown;
+}
+
+export interface CityRow {
+    id: number;
+    name: string;
+    nationId: number;
+    level: number;
+    population: number;
+    populationMax: number;
+    agriculture: number;
+    agricultureMax: number;
+    commerce: number;
+    commerceMax: number;
+    security: number;
+    securityMax: number;
+    supplyState: number;
+    frontState: number;
+    defence: number;
+    defenceMax: number;
+    wall: number;
+    wallMax: number;
+    meta: unknown;
+}
+
+export interface NationRow {
+    id: number;
+    name: string;
+    color: string;
+    capitalCityId: number | null;
+    gold: number;
+    rice: number;
+    level: number;
+    typeCode: string;
+    meta: unknown;
+}
+
 export interface DatabaseClient {
     worldState: {
         findFirst(args?: unknown): Promise<WorldStateRow | null>;
+    };
+    general: {
+        findUnique(args: { where: { id: number } }): Promise<GeneralRow | null>;
+    };
+    city: {
+        findUnique(args: { where: { id: number } }): Promise<CityRow | null>;
+    };
+    nation: {
+        findUnique(args: { where: { id: number } }): Promise<NationRow | null>;
     };
 }
 

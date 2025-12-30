@@ -1,7 +1,9 @@
+import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import type { WorldStateRow } from './context.js';
-import { procedure, router } from './trpc.js';
+import { authedProcedure, procedure, router } from './trpc.js';
+import { buildTurnCommandTable } from './turns/commandTable.js';
 
 const zRunReason = z.enum(['schedule', 'manual', 'poke']);
 
@@ -34,6 +36,54 @@ export const appRouter = router({
             const state = await ctx.db.worldState.findFirst();
             return state ? toWorldStateSnapshot(state) : null;
         }),
+    }),
+    turns: router({
+        getCommandTable: authedProcedure
+            .input(
+                z.object({
+                    generalId: z.number().int().positive(),
+                })
+            )
+            .query(async ({ ctx, input }) => {
+                const [worldState, general] = await Promise.all([
+                    ctx.db.worldState.findFirst(),
+                    ctx.db.general.findUnique({ where: { id: input.generalId } }),
+                ]);
+
+                if (!worldState) {
+                    throw new TRPCError({
+                        code: 'PRECONDITION_FAILED',
+                        message: 'World state is not initialized.',
+                    });
+                }
+
+                if (!general) {
+                    throw new TRPCError({
+                        code: 'NOT_FOUND',
+                        message: 'General not found.',
+                    });
+                }
+
+                const [city, nation] = await Promise.all([
+                    general.cityId > 0
+                        ? ctx.db.city.findUnique({
+                              where: { id: general.cityId },
+                          })
+                        : null,
+                    general.nationId > 0
+                        ? ctx.db.nation.findUnique({
+                              where: { id: general.nationId },
+                          })
+                        : null,
+                ]);
+
+                return buildTurnCommandTable({
+                    worldState,
+                    general,
+                    city,
+                    nation,
+                });
+            }),
     }),
     turnDaemon: router({
         run: procedure

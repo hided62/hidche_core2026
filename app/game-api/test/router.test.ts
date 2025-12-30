@@ -19,6 +19,15 @@ const buildContext = (options?: {
         worldState: {
             findFirst: async () => options?.state ?? null,
         },
+        general: {
+            findUnique: async () => null,
+        },
+        city: {
+            findUnique: async () => null,
+        },
+        nation: {
+            findUnique: async () => null,
+        },
     };
     return {
         db,

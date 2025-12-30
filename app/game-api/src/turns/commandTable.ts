@@ -1,0 +1,626 @@
+import type {
+    City,
+    Constraint,
+    ConstraintContext,
+    General,
+    GeneralActionDefinition,
+    Nation,
+    RequirementKey,
+    StateView,
+    TriggerValue,
+} from '@sammo-ts/logic';
+import {
+    AssignmentActionDefinition,
+    AwardActionDefinition,
+    CommerceInvestmentActionDefinition,
+    evaluateConstraints,
+    FireAttackActionDefinition,
+    NationRestActionDefinition,
+    RestActionDefinition,
+    TalentScoutActionDefinition,
+    VolunteerRecruitActionDefinition,
+} from '@sammo-ts/logic';
+
+import type {
+    CityRow,
+    GeneralRow,
+    NationRow,
+    WorldStateRow,
+} from '../context.js';
+
+type AvailabilityStatus = 'available' | 'blocked' | 'needsInput' | 'unknown';
+
+export interface TurnCommandAvailability {
+    key: string;
+    name: string;
+    reqArg: boolean;
+    possible: boolean;
+    status: AvailabilityStatus;
+    reason?: string;
+}
+
+export interface TurnCommandGroup {
+    category: string;
+    values: TurnCommandAvailability[];
+}
+
+export interface TurnCommandTable {
+    general: TurnCommandGroup[];
+    nation: TurnCommandGroup[];
+}
+
+interface CommandEnv {
+    develCost: number;
+    sabotageDefaultProb: number;
+    sabotageProbCoefByStat: number;
+    sabotageDefenceCoefByGeneralCount: number;
+    sabotageDamageMin: number;
+    sabotageDamageMax: number;
+    openingPartYear: number;
+    maxGeneral: number;
+    defaultNpcGold: number;
+    defaultNpcRice: number;
+    defaultCrewTypeId: number;
+    defaultSpecialDomestic: string | null;
+    defaultSpecialWar: string | null;
+    initialNationGenLimit: number;
+    baseGold: number;
+    baseRice: number;
+    maxResourceActionAmount: number;
+}
+
+interface AvailabilityCore {
+    possible: boolean;
+    status: AvailabilityStatus;
+    reason?: string;
+}
+
+interface CommandEntry {
+    category: string;
+    definition: GeneralActionDefinition;
+    reqArg: boolean;
+    args: unknown;
+    evaluate?: (ctx: ConstraintContext, view: StateView) => AvailabilityCore;
+}
+
+const INPUT_REQUIREMENT_KINDS = new Set<RequirementKey['kind']>([
+    'destGeneral',
+    'destCity',
+    'destNation',
+    'diplomacy',
+    'arg',
+]);
+
+const AVAILABILITY_PRIORITY: Record<AvailabilityStatus, number> = {
+    available: 3,
+    needsInput: 2,
+    unknown: 1,
+    blocked: 0,
+};
+
+const DEFAULT_GENERAL_GOLD = 1000;
+const DEFAULT_GENERAL_RICE = 1000;
+const DEFAULT_CREW_TYPE_ID = 1100;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+    value !== null && typeof value === 'object' && !Array.isArray(value);
+
+const asRecord = (value: unknown): Record<string, unknown> =>
+    isRecord(value) ? value : {};
+
+const asTriggerRecord = (value: unknown): Record<string, TriggerValue> =>
+    isRecord(value) ? (value as Record<string, TriggerValue>) : {};
+
+const normalizeCode = (value: string | null | undefined): string | null => {
+    if (!value || value === 'None') {
+        return null;
+    }
+    return value;
+};
+
+class MemoryStateView implements StateView {
+    private readonly store = new Map<string, unknown>();
+
+    has(req: RequirementKey): boolean {
+        return this.store.has(this.getKey(req));
+    }
+
+    get(req: RequirementKey): unknown | null {
+        return this.store.get(this.getKey(req)) ?? null;
+    }
+
+    set(req: RequirementKey, value: unknown): void {
+        this.store.set(this.getKey(req), value);
+    }
+
+    private getKey(req: RequirementKey): string {
+        switch (req.kind) {
+            case 'general':
+                return `general:${req.id}`;
+            case 'city':
+                return `city:${req.id}`;
+            case 'nation':
+                return `nation:${req.id}`;
+            case 'destGeneral':
+                return `destGeneral:${req.id}`;
+            case 'destCity':
+                return `destCity:${req.id}`;
+            case 'destNation':
+                return `destNation:${req.id}`;
+            case 'diplomacy':
+                return `diplomacy:${req.srcNationId}:${req.destNationId}`;
+            case 'arg':
+                return `arg:${req.key}`;
+            case 'env':
+                return `env:${req.key}`;
+            default:
+                return 'unknown';
+        }
+    }
+}
+
+const resolveNumber = (
+    source: Record<string, unknown>,
+    keys: string[],
+    fallback: number
+): number => {
+    for (const key of keys) {
+        const value = source[key];
+        if (typeof value === 'number' && Number.isFinite(value)) {
+            return value;
+        }
+    }
+    return fallback;
+};
+
+const resolveOptionalString = (
+    source: Record<string, unknown>,
+    keys: string[]
+): string | null => {
+    for (const key of keys) {
+        const value = source[key];
+        if (typeof value === 'string') {
+            return normalizeCode(value);
+        }
+    }
+    return null;
+};
+
+const buildCommandEnv = (worldState: WorldStateRow): CommandEnv => {
+    const config = asRecord(worldState.config);
+    const constValues = asRecord(config.const);
+
+    return {
+        develCost: resolveNumber(
+            constValues,
+            ['develCost', 'develcost', 'develrate'],
+            0
+        ),
+        sabotageDefaultProb: resolveNumber(
+            constValues,
+            ['sabotageDefaultProb'],
+            0
+        ),
+        sabotageProbCoefByStat: resolveNumber(
+            constValues,
+            ['sabotageProbCoefByStat'],
+            0
+        ),
+        sabotageDefenceCoefByGeneralCount: resolveNumber(
+            constValues,
+            ['sabotageDefenceCoefByGeneralCount'],
+            0
+        ),
+        sabotageDamageMin: resolveNumber(
+            constValues,
+            ['sabotageDamageMin'],
+            0
+        ),
+        sabotageDamageMax: resolveNumber(
+            constValues,
+            ['sabotageDamageMax'],
+            0
+        ),
+        openingPartYear: resolveNumber(
+            constValues,
+            ['openingPartYear'],
+            0
+        ),
+        maxGeneral: resolveNumber(
+            constValues,
+            ['defaultMaxGeneral', 'maxGeneral'],
+            0
+        ),
+        defaultNpcGold: resolveNumber(
+            constValues,
+            ['defaultNpcGold', 'defaultGold'],
+            DEFAULT_GENERAL_GOLD
+        ),
+        defaultNpcRice: resolveNumber(
+            constValues,
+            ['defaultNpcRice', 'defaultRice'],
+            DEFAULT_GENERAL_RICE
+        ),
+        defaultCrewTypeId: resolveNumber(
+            constValues,
+            ['defaultCrewTypeId'],
+            DEFAULT_CREW_TYPE_ID
+        ),
+        defaultSpecialDomestic: resolveOptionalString(
+            constValues,
+            ['defaultSpecialDomestic']
+        ),
+        defaultSpecialWar: resolveOptionalString(
+            constValues,
+            ['defaultSpecialWar']
+        ),
+        initialNationGenLimit: resolveNumber(
+            constValues,
+            ['initialNationGenLimit'],
+            0
+        ),
+        baseGold: resolveNumber(constValues, ['baseGold', 'basegold'], 0),
+        baseRice: resolveNumber(constValues, ['baseRice', 'baserice'], 0),
+        maxResourceActionAmount: resolveNumber(
+            constValues,
+            ['maxResourceActionAmount'],
+            0
+        ),
+    };
+};
+
+const buildConstraintEnv = (
+    worldState: WorldStateRow
+): Record<string, unknown> => {
+    const meta = asRecord(worldState.meta);
+    const scenarioMeta = asRecord(meta.scenarioMeta);
+    const startYear =
+        typeof scenarioMeta.startYear === 'number'
+            ? scenarioMeta.startYear
+            : undefined;
+    const relYear =
+        typeof startYear === 'number'
+            ? worldState.currentYear - startYear
+            : undefined;
+
+    return {
+        currentYear: worldState.currentYear,
+        currentMonth: worldState.currentMonth,
+        year: worldState.currentYear,
+        month: worldState.currentMonth,
+        startYear,
+        relYear,
+    };
+};
+
+const mapGeneralRow = (row: GeneralRow): General => ({
+    id: row.id,
+    name: row.name,
+    nationId: row.nationId,
+    cityId: row.cityId,
+    troopId: row.troopId,
+    stats: {
+        leadership: row.leadership,
+        strength: row.strength,
+        intelligence: row.intel,
+    },
+    experience: row.experience,
+    dedication: row.dedication,
+    officerLevel: row.officerLevel,
+    role: {
+        personality: normalizeCode(row.personalCode),
+        specialDomestic: normalizeCode(row.specialCode),
+        specialWar: normalizeCode(row.special2Code),
+        items: {
+            horse: normalizeCode(row.horseCode),
+            weapon: normalizeCode(row.weaponCode),
+            book: normalizeCode(row.bookCode),
+            item: normalizeCode(row.itemCode),
+        },
+    },
+    injury: row.injury,
+    gold: row.gold,
+    rice: row.rice,
+    crew: row.crew,
+    crewTypeId: row.crewTypeId,
+    train: row.train,
+    age: row.age,
+    npcState: row.npcState,
+    triggerState: {
+        flags: {},
+        counters: {},
+        modifiers: {},
+        meta: {},
+    },
+    meta: asTriggerRecord(row.meta),
+});
+
+const mapCityRow = (row: CityRow): City => ({
+    id: row.id,
+    name: row.name,
+    nationId: row.nationId,
+    level: row.level,
+    population: row.population,
+    populationMax: row.populationMax,
+    agriculture: row.agriculture,
+    agricultureMax: row.agricultureMax,
+    commerce: row.commerce,
+    commerceMax: row.commerceMax,
+    security: row.security,
+    securityMax: row.securityMax,
+    supplyState: row.supplyState,
+    frontState: row.frontState,
+    defence: row.defence,
+    defenceMax: row.defenceMax,
+    wall: row.wall,
+    wallMax: row.wallMax,
+    meta: asTriggerRecord(row.meta),
+});
+
+const mapNationRow = (row: NationRow): Nation => ({
+    id: row.id,
+    name: row.name,
+    color: row.color,
+    capitalCityId: row.capitalCityId,
+    chiefGeneralId: null,
+    gold: row.gold,
+    rice: row.rice,
+    power: 0,
+    level: row.level,
+    typeCode: row.typeCode,
+    meta: asTriggerRecord(row.meta),
+});
+
+const buildStateView = (
+    general: General,
+    city: City | null,
+    nation: Nation | null
+): StateView => {
+    const view = new MemoryStateView();
+    view.set({ kind: 'general', id: general.id }, general);
+    if (city) {
+        view.set({ kind: 'city', id: city.id }, city);
+    }
+    if (nation) {
+        view.set({ kind: 'nation', id: nation.id }, nation);
+    }
+    return view;
+};
+
+const evaluateAvailability = (
+    constraints: Constraint[],
+    ctx: ConstraintContext,
+    view: StateView,
+    reqArg: boolean
+): AvailabilityCore => {
+    const result = evaluateConstraints(constraints, ctx, view);
+    if (result.kind === 'allow') {
+        return { possible: true, status: 'available' };
+    }
+    if (result.kind === 'deny') {
+        return {
+            possible: false,
+            status: 'blocked',
+            reason: result.reason,
+        };
+    }
+    const missingKinds = new Set(result.missing.map((req) => req.kind));
+    const inputOnlyMissing =
+        missingKinds.size === 0
+            ? reqArg
+            : Array.from(missingKinds).every((kind) =>
+                  INPUT_REQUIREMENT_KINDS.has(kind)
+              );
+    if (inputOnlyMissing) {
+        return {
+            possible: true,
+            status: 'needsInput',
+            reason: '대상 선택 필요',
+        };
+    }
+    return {
+        possible: false,
+        status: 'unknown',
+        reason: '정보 부족',
+    };
+};
+
+const evaluateDefinition = (
+    definition: GeneralActionDefinition,
+    ctx: ConstraintContext,
+    view: StateView,
+    reqArg: boolean,
+    args: unknown
+): AvailabilityCore => {
+    const constraints = definition.buildConstraints(ctx, args);
+    return evaluateAvailability(constraints, ctx, view, reqArg);
+};
+
+const pickAvailability = (
+    lhs: AvailabilityCore,
+    rhs: AvailabilityCore
+): AvailabilityCore =>
+    AVAILABILITY_PRIORITY[lhs.status] >= AVAILABILITY_PRIORITY[rhs.status]
+        ? lhs
+        : rhs;
+
+const buildEntries = (env: CommandEnv): {
+    general: CommandEntry[];
+    nation: CommandEntry[];
+} => {
+    const emptyModules: [] = [];
+
+    const generalEntries: CommandEntry[] = [
+        {
+            category: '개인',
+            definition: new RestActionDefinition(),
+            reqArg: false,
+            args: {},
+        },
+        {
+            category: '내정',
+            definition: new CommerceInvestmentActionDefinition(emptyModules, {
+                develCost: env.develCost,
+            }),
+            reqArg: false,
+            args: {},
+        },
+        {
+            category: '계략',
+            definition: new FireAttackActionDefinition(emptyModules, {
+                develCost: env.develCost,
+                sabotageDefaultProb: env.sabotageDefaultProb,
+                sabotageProbCoefByStat: env.sabotageProbCoefByStat,
+                sabotageDefenceCoefByGeneralCount:
+                    env.sabotageDefenceCoefByGeneralCount,
+                sabotageDamageMin: env.sabotageDamageMin,
+                sabotageDamageMax: env.sabotageDamageMax,
+            }),
+            reqArg: true,
+            args: { destCityId: 0 },
+        },
+        {
+            category: '인사',
+            definition: new TalentScoutActionDefinition(emptyModules, {
+                develCost: env.develCost,
+                maxGeneral: env.maxGeneral,
+                defaultNpcGold: env.defaultNpcGold,
+                defaultNpcRice: env.defaultNpcRice,
+                defaultCrewTypeId: env.defaultCrewTypeId,
+                defaultSpecialDomestic: env.defaultSpecialDomestic,
+                defaultSpecialWar: env.defaultSpecialWar,
+            }),
+            reqArg: false,
+            args: {},
+        },
+        {
+            category: '전략',
+            definition: new VolunteerRecruitActionDefinition(emptyModules, {
+                openingPartYear: env.openingPartYear,
+                initialNationGenLimit: env.initialNationGenLimit,
+                defaultNpcGold: env.defaultNpcGold,
+                defaultNpcRice: env.defaultNpcRice,
+                defaultCrewTypeId: env.defaultCrewTypeId,
+                defaultSpecialDomestic: env.defaultSpecialDomestic,
+                defaultSpecialWar: env.defaultSpecialWar,
+            }),
+            reqArg: false,
+            args: {},
+        },
+    ];
+
+    const awardDefinition = new AwardActionDefinition({
+        baseGold: env.baseGold,
+        baseRice: env.baseRice,
+        maxAmount: env.maxResourceActionAmount,
+    });
+    const assignmentDefinition = new AssignmentActionDefinition({});
+
+    const nationEntries: CommandEntry[] = [
+        {
+            category: '휴식',
+            definition: new NationRestActionDefinition(),
+            reqArg: false,
+            args: {},
+        },
+        {
+            category: '인사',
+            definition: assignmentDefinition,
+            reqArg: true,
+            args: { destGeneralId: 0, destCityId: 0 },
+        },
+        {
+            category: '인사',
+            definition: awardDefinition,
+            reqArg: true,
+            args: { isGold: true, amount: 1, destGeneralId: 0 },
+            evaluate: (ctx, view) => {
+                const gold = evaluateDefinition(
+                    awardDefinition,
+                    ctx,
+                    view,
+                    true,
+                    { isGold: true, amount: 1, destGeneralId: 0 }
+                );
+                const rice = evaluateDefinition(
+                    awardDefinition,
+                    ctx,
+                    view,
+                    true,
+                    { isGold: false, amount: 1, destGeneralId: 0 }
+                );
+                return pickAvailability(gold, rice);
+            },
+        },
+    ];
+
+    return { general: generalEntries, nation: nationEntries };
+};
+
+const buildGroups = (
+    entries: CommandEntry[],
+    ctx: ConstraintContext,
+    view: StateView
+): TurnCommandGroup[] => {
+    const groups = new Map<string, TurnCommandAvailability[]>();
+
+    for (const entry of entries) {
+        const availability = entry.evaluate
+            ? entry.evaluate(ctx, view)
+            : evaluateDefinition(
+                  entry.definition,
+                  ctx,
+                  view,
+                  entry.reqArg,
+                  entry.args
+              );
+        const value: TurnCommandAvailability = {
+            key: entry.definition.key,
+            name: entry.definition.name,
+            reqArg: entry.reqArg,
+            ...availability,
+        };
+
+        const list = groups.get(entry.category);
+        if (list) {
+            list.push(value);
+        } else {
+            groups.set(entry.category, [value]);
+        }
+    }
+
+    return Array.from(groups.entries()).map(([category, values]) => ({
+        category,
+        values,
+    }));
+};
+
+export const buildTurnCommandTable = (options: {
+    worldState: WorldStateRow;
+    general: GeneralRow;
+    city: CityRow | null;
+    nation: NationRow | null;
+}): TurnCommandTable => {
+    // 턴 입력 화면에서 쓰는 사전 판단이므로 최소 정보로 가능/불가만 계산한다.
+    const general = mapGeneralRow(options.general);
+    const city = options.city ? mapCityRow(options.city) : null;
+    const nation = options.nation ? mapNationRow(options.nation) : null;
+    const view = buildStateView(general, city, nation);
+
+    const ctx: ConstraintContext = {
+        actorId: general.id,
+        cityId: city?.id,
+        nationId: nation?.id,
+        args: {},
+        env: buildConstraintEnv(options.worldState),
+        mode: 'precheck',
+    };
+
+    const env = buildCommandEnv(options.worldState);
+    const entries = buildEntries(env);
+
+    return {
+        general: buildGroups(entries.general, ctx, view),
+        nation: buildGroups(entries.nation, ctx, view),
+    };
+};

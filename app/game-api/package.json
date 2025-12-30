@@ -18,6 +18,7 @@
     "dependencies": {
         "@fastify/cors": "^10.0.1",
         "@sammo-ts/common": "workspace:*",
+        "@sammo-ts/logic": "workspace:*",
         "@sammo-ts/infra": "workspace:*",
         "@trpc/server": "^11.4.4",
         "fastify": "^5.3.3",

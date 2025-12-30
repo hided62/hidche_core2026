@@ -8,6 +8,7 @@
     "include": ["src"],
     "references": [
         { "path": "../../packages/common" },
-        { "path": "../../packages/infra" }
+        { "path": "../../packages/infra" },
+        { "path": "../../packages/logic" }
     ]
 }
