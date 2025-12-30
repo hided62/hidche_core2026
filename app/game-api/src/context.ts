@@ -1,5 +1,5 @@
 import type { GameSessionTokenPayload } from '@sammo-ts/common';
-import type { Prisma } from '@prisma/client';
+import type { DatabaseClient as InfraDatabaseClient } from '@sammo-ts/infra';
 
 import type { TurnDaemonTransport } from './daemon/transport.js';
 
@@ -100,54 +100,14 @@ export interface NationRow {
     meta: unknown;
 }
 
-export interface DatabaseClient {
-    $queryRaw<T = unknown>(query: Prisma.Sql): Promise<T>;
-    worldState: {
-        findFirst(args?: unknown): Promise<WorldStateRow | null>;
-    };
-    general: {
-        findUnique(args: { where: { id: number } }): Promise<GeneralRow | null>;
-    };
-    city: {
-        findUnique(args: { where: { id: number } }): Promise<CityRow | null>;
-    };
-    nation: {
-        findUnique(args: { where: { id: number } }): Promise<NationRow | null>;
-    };
-    generalTurn: {
-        findMany(args: {
-            where: { generalId: number };
-            orderBy?: { turnIdx: 'asc' | 'desc' }[];
-        }): Promise<GeneralTurnRow[]>;
-        deleteMany(args: { where: { generalId: number } }): Promise<unknown>;
-        createMany(args: {
-            data: Array<{
-                generalId: number;
-                turnIdx: number;
-                actionCode: string;
-                arg: unknown;
-            }>;
-        }): Promise<unknown>;
-    };
-    nationTurn: {
-        findMany(args: {
-            where: { nationId: number; officerLevel: number };
-            orderBy?: { turnIdx: 'asc' | 'desc' }[];
-        }): Promise<NationTurnRow[]>;
-        deleteMany(args: {
-            where: { nationId: number; officerLevel: number };
-        }): Promise<unknown>;
-        createMany(args: {
-            data: Array<{
-                nationId: number;
-                officerLevel: number;
-                turnIdx: number;
-                actionCode: string;
-                arg: unknown;
-            }>;
-        }): Promise<unknown>;
-    };
-}
+export type DatabaseClient = InfraDatabaseClient<
+    WorldStateRow,
+    GeneralRow,
+    CityRow,
+    NationRow,
+    GeneralTurnRow,
+    NationTurnRow
+>;
 
 export interface GameApiContext {
     db: DatabaseClient;
