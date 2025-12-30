@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 
 import { TRPCError } from '@trpc/server';
+import { addHours, addSeconds, isAfter, isValid, parseISO } from 'date-fns';
 import { z } from 'zod';
 
 import {
@@ -18,11 +19,8 @@ const zProfile = z.string().min(1).max(64);
 const zOAuthMode = z.enum(['login', 'change_pw']);
 
 const parseDate = (value: string): Date | null => {
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) {
-        return null;
-    }
-    return parsed;
+    const parsed = parseISO(value);
+    return isValid(parsed) ? parsed : null;
 };
 
 export const appRouter = router({
@@ -67,11 +65,13 @@ export const appRouter = router({
                     });
                 }
                 const token = await ctx.kakaoClient.exchangeCode(input.code);
-                const accessTokenValidUntil = new Date(
-                    Date.now() + token.accessTokenExpiresIn * 1000
+                const tokenIssuedAt = new Date();
+                const accessTokenValidUntil = addSeconds(
+                    tokenIssuedAt,
+                    token.accessTokenExpiresIn
                 ).toISOString();
                 const refreshTokenValidUntil = token.refreshTokenExpiresIn
-                    ? new Date(Date.now() + token.refreshTokenExpiresIn * 1000).toISOString()
+                    ? addSeconds(tokenIssuedAt, token.refreshTokenExpiresIn).toISOString()
                     : undefined;
 
                 const signupResult = await ctx.kakaoClient.signup(token.accessToken);
@@ -117,7 +117,8 @@ export const appRouter = router({
                     const nextPasswordChange = existing.oauthInfo?.nextPasswordChange
                         ? parseDate(existing.oauthInfo.nextPasswordChange)
                         : null;
-                    if (nextPasswordChange && Date.now() < nextPasswordChange.getTime()) {
+                    const now = new Date();
+                    if (nextPasswordChange && isAfter(nextPasswordChange, now)) {
                         throw new TRPCError({
                             code: 'TOO_MANY_REQUESTS',
                             message: '비밀번호 초기화는 잠시 후 다시 시도해주세요.',
@@ -129,7 +130,7 @@ export const appRouter = router({
                         `임시 비밀번호는 ${tempPassword} 입니다. 로그인 후 바로 다른 비밀번호로 변경해주세요.`,
                         ctx.publicBaseUrl
                     );
-                    const nextChange = new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString();
+                    const nextChange = addHours(now, 4).toISOString();
                     await ctx.users.updatePassword(existing.id, tempPassword);
                     await ctx.users.updateOAuthInfo(existing.id, {
                         ...oauthInfo,
@@ -321,7 +322,7 @@ export const appRouter = router({
                     version: 1,
                     profile: gameSession.profile,
                     issuedAt: now.toISOString(),
-                    expiresAt: new Date(now.getTime() + 1000 * ctx.gameSessionTtlSeconds).toISOString(),
+                    expiresAt: addSeconds(now, ctx.gameSessionTtlSeconds).toISOString(),
                     sessionId: gameSession.gameToken,
                     user: {
                         id: gameSession.userId,
@@ -366,7 +367,7 @@ export const appRouter = router({
                     return null;
                 }
                 const expiresAt = parseDate(payload.expiresAt);
-                if (!expiresAt || Date.now() > expiresAt.getTime()) {
+                if (!expiresAt || isAfter(new Date(), expiresAt)) {
                     return null;
                 }
                 return {

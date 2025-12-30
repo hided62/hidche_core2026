@@ -1,5 +1,6 @@
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken.js';
 import { decryptGameSessionToken } from '@sammo-ts/common/auth/gameToken.js';
+import { isAfter, isValid, parseISO } from 'date-fns';
 
 import type { FlushStore } from './flushStore.js';
 
@@ -8,11 +9,8 @@ export interface GameTokenVerifier {
 }
 
 const parseDate = (value: string): Date | null => {
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) {
-        return null;
-    }
-    return parsed;
+    const parsed = parseISO(value);
+    return isValid(parsed) ? parsed : null;
 };
 
 export const createGameTokenVerifier = (options: {
@@ -34,7 +32,7 @@ export const createGameTokenVerifier = (options: {
             if (!expiresAt || !issuedAt) {
                 return null;
             }
-            if (Date.now() > expiresAt.getTime()) {
+            if (isAfter(new Date(), expiresAt)) {
                 return null;
             }
             const flushedAt = options.flushStore.getFlushedAt(payload.user.id);
