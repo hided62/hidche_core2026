@@ -1,4 +1,10 @@
-import type { City, LogEntryDraft, Nation, TurnSchedule } from '@sammo-ts/logic';
+import type {
+    City,
+    LogEntryDraft,
+    Nation,
+    Troop,
+    TurnSchedule,
+} from '@sammo-ts/logic';
 import { getNextTurnAt } from '@sammo-ts/logic';
 
 import type { TurnCheckpoint } from '../lifecycle/types.js';
@@ -22,9 +28,11 @@ export interface GeneralTurnResult {
         generals: Array<{ id: number; patch: Partial<TurnGeneral> }>;
         cities: Array<{ id: number; patch: Partial<City> }>;
         nations: Array<{ id: number; patch: Partial<Nation> }>;
+        troops: Array<{ id: number; patch: Partial<Troop> }>;
     };
     created?: {
         generals: TurnGeneral[];
+        troops?: Troop[];
     };
 }
 
@@ -141,6 +149,11 @@ const applyNationPatch = (base: Nation, patch: Partial<Nation>): Nation => ({
     meta: patch.meta ? { ...base.meta, ...patch.meta } : base.meta,
 });
 
+const applyTroopPatch = (base: Troop, patch: Partial<Troop>): Troop => ({
+    ...base,
+    ...patch,
+});
+
 export class InMemoryTurnWorld {
     // DB에서 읽어온 월드 상태를 메모리에 고정해 턴 처리를 담당한다.
     private readonly schedule: TurnSchedule;
@@ -149,10 +162,13 @@ export class InMemoryTurnWorld {
     private readonly generals = new Map<number, TurnGeneral>();
     private readonly cities = new Map<number, City>();
     private readonly nations = new Map<number, Nation>();
+    private readonly troops = new Map<number, Troop>();
     private readonly dirtyGeneralIds = new Set<number>();
     private readonly dirtyCityIds = new Set<number>();
     private readonly dirtyNationIds = new Set<number>();
+    private readonly dirtyTroopIds = new Set<number>();
     private readonly createdGeneralIds = new Set<number>();
+    private readonly createdTroopIds = new Set<number>();
     private readonly logs: LogEntryDraft[] = [];
     private checkpoint?: TurnCheckpoint;
     private state: TurnWorldState;
@@ -180,6 +196,9 @@ export class InMemoryTurnWorld {
         for (const nation of snapshot.nations) {
             this.nations.set(nation.id, { ...nation });
         }
+        for (const troop of snapshot.troops) {
+            this.troops.set(troop.id, { ...troop });
+        }
     }
 
     getState(): TurnWorldState {
@@ -198,6 +217,10 @@ export class InMemoryTurnWorld {
         return this.nations.get(id) ?? null;
     }
 
+    getTroopById(id: number): Troop | null {
+        return this.troops.get(id) ?? null;
+    }
+
     listGenerals(): TurnGeneral[] {
         return Array.from(this.generals.values()).map((general) => ({
             ...general,
@@ -211,6 +234,12 @@ export class InMemoryTurnWorld {
     listNations(): Nation[] {
         return Array.from(this.nations.values()).map((nation) => ({
             ...nation,
+        }));
+    }
+
+    listTroops(): Troop[] {
+        return Array.from(this.troops.values()).map((troop) => ({
+            ...troop,
         }));
     }
 
@@ -326,6 +355,14 @@ export class InMemoryTurnWorld {
                 );
                 this.dirtyNationIds.add(patch.id);
             }
+            for (const patch of result.patches.troops) {
+                const target = this.troops.get(patch.id);
+                if (!target) {
+                    continue;
+                }
+                this.troops.set(patch.id, applyTroopPatch(target, patch.patch));
+                this.dirtyTroopIds.add(patch.id);
+            }
         }
         if (result.created) {
             for (const createdGeneral of result.created.generals) {
@@ -335,6 +372,16 @@ export class InMemoryTurnWorld {
                 this.generals.set(createdGeneral.id, { ...createdGeneral });
                 this.dirtyGeneralIds.add(createdGeneral.id);
                 this.createdGeneralIds.add(createdGeneral.id);
+            }
+            if (result.created.troops) {
+                for (const createdTroop of result.created.troops) {
+                    if (this.troops.has(createdTroop.id)) {
+                        continue;
+                    }
+                    this.troops.set(createdTroop.id, { ...createdTroop });
+                    this.dirtyTroopIds.add(createdTroop.id);
+                    this.createdTroopIds.add(createdTroop.id);
+                }
             }
         }
 
@@ -380,8 +427,10 @@ export class InMemoryTurnWorld {
         generals: TurnGeneral[];
         cities: City[];
         nations: Nation[];
+        troops: Troop[];
         logs: LogEntryDraft[];
         createdGenerals: TurnGeneral[];
+        createdTroops: Troop[];
     } {
         const generals = Array.from(this.dirtyGeneralIds)
             .map((id) => this.generals.get(id))
@@ -395,13 +444,29 @@ export class InMemoryTurnWorld {
         const nations = Array.from(this.dirtyNationIds)
             .map((id) => this.nations.get(id))
             .filter((nation): nation is Nation => Boolean(nation));
+        const troops = Array.from(this.dirtyTroopIds)
+            .map((id) => this.troops.get(id))
+            .filter((troop): troop is Troop => Boolean(troop));
+        const createdTroops = Array.from(this.createdTroopIds)
+            .map((id) => this.troops.get(id))
+            .filter((troop): troop is Troop => Boolean(troop));
         const logs = this.logs.splice(0, this.logs.length);
 
         this.dirtyGeneralIds.clear();
         this.dirtyCityIds.clear();
         this.dirtyNationIds.clear();
+        this.dirtyTroopIds.clear();
         this.createdGeneralIds.clear();
+        this.createdTroopIds.clear();
 
-        return { generals, cities, nations, logs, createdGenerals };
+        return {
+            generals,
+            cities,
+            nations,
+            troops,
+            logs,
+            createdGenerals,
+            createdTroops,
+        };
     }
 }

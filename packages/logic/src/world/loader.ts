@@ -1,4 +1,4 @@
-import type { City, General, Nation } from '../domain/entities.js';
+import type { City, General, Nation, Troop } from '../domain/entities.js';
 import type { ScenarioConfig, ScenarioDiplomacy } from '../scenario/types.js';
 import type { ScenarioConfigSource, WorldStateSnapshotSource } from '../ports/worldSnapshot.js';
 import type {
@@ -11,9 +11,15 @@ import type {
 export interface WorldSnapshotLoadInput<
     GeneralType extends General = General,
     CityType extends City = City,
-    NationType extends Nation = Nation
+    NationType extends Nation = Nation,
+    TroopType extends Troop = Troop
 > {
-    worldSource: WorldStateSnapshotSource<GeneralType, CityType, NationType>;
+    worldSource: WorldStateSnapshotSource<
+        GeneralType,
+        CityType,
+        NationType,
+        TroopType
+    >;
     scenarioConfig?: ScenarioConfig;
     scenarioMeta?: ScenarioMeta;
     scenarioSource?: ScenarioConfigSource;
@@ -28,9 +34,15 @@ export interface WorldSnapshotLoadInput<
 export const loadWorldSnapshot = async <
     GeneralType extends General,
     CityType extends City,
-    NationType extends Nation
+    NationType extends Nation,
+    TroopType extends Troop
 >(
-    input: WorldSnapshotLoadInput<GeneralType, CityType, NationType>
+    input: WorldSnapshotLoadInput<
+        GeneralType,
+        CityType,
+        NationType,
+        TroopType
+    >
 ): Promise<WorldSnapshot> => {
     const { worldSource, scenarioSource } = input;
 
@@ -47,10 +59,11 @@ export const loadWorldSnapshot = async <
             ? await scenarioSource.loadScenarioMeta()
             : undefined);
 
-    const [generals, cities, nations] = await Promise.all([
+    const [generals, cities, nations, troops] = await Promise.all([
         worldSource.listGenerals(),
         worldSource.listCities(),
         worldSource.listNations(),
+        worldSource.listTroops(),
     ]);
 
     return {
@@ -61,6 +74,7 @@ export const loadWorldSnapshot = async <
         nations,
         cities,
         generals,
+        troops,
         diplomacy: input.diplomacy ?? [],
         events: input.events ?? [],
         initialEvents: input.initialEvents ?? [],

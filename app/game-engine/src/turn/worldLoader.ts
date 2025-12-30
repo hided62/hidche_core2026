@@ -4,6 +4,7 @@ import type {
     General as PrismaGeneral,
     Nation as PrismaNation,
     Prisma,
+    Troop as PrismaTroop,
 } from '@prisma/client';
 
 import { createPostgresConnector } from '@sammo-ts/infra';
@@ -13,6 +14,7 @@ import type {
     ScenarioConfig,
     ScenarioDiplomacy,
     ScenarioMeta,
+    Troop,
     TriggerValue,
 } from '@sammo-ts/logic';
 import { z } from 'zod';
@@ -216,6 +218,12 @@ const mapDiplomacyRow = (row: PrismaDiplomacy): ScenarioDiplomacy => ({
     durationMonths: row.term,
 });
 
+const mapTroopRow = (row: PrismaTroop): Troop => ({
+    id: row.troopLeaderId,
+    nationId: row.nationId,
+    name: row.name,
+});
+
 export const loadTurnWorldFromDatabase = async (
     options: TurnWorldLoaderOptions
 ): Promise<TurnWorldLoadResult> => {
@@ -233,12 +241,14 @@ export const loadTurnWorldFromDatabase = async (
             cityRows,
             nationRows,
             diplomacyRows,
+            troopRows,
             eventRows,
         ] = await Promise.all([
             prisma.general.findMany(),
             prisma.city.findMany(),
             prisma.nation.findMany(),
             prisma.diplomacy.findMany(),
+            prisma.troop.findMany(),
             prisma.event.findMany({
                 orderBy: [{ priority: 'desc' }, { id: 'asc' }],
             }),
@@ -248,6 +258,7 @@ export const loadTurnWorldFromDatabase = async (
         const cities = cityRows.map(mapCityRow);
         const nations = nationRows.map(mapNationRow);
         const diplomacy = diplomacyRows.map(mapDiplomacyRow);
+        const troops = troopRows.map(mapTroopRow);
 
         const scenarioConfig = mapScenarioConfig(worldState.config);
         const mapName = scenarioConfig.environment?.mapName ?? 'che';
@@ -305,6 +316,7 @@ export const loadTurnWorldFromDatabase = async (
                 nations,
                 cities,
                 generals,
+                troops,
                 diplomacy,
                 events,
                 initialEvents,

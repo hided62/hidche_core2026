@@ -1,4 +1,10 @@
-import type { City, General, Nation, StatBlock } from '../domain/entities.js';
+import type {
+    City,
+    General,
+    Nation,
+    StatBlock,
+    Troop,
+} from '../domain/entities.js';
 import type {
     ScenarioConfig,
     ScenarioDiplomacy,
@@ -136,6 +142,7 @@ export interface WorldSeedPayload {
     nations: NationSeed[];
     cities: CitySeed[];
     generals: GeneralSeed[];
+    troops: Troop[];
     diplomacy: ScenarioDiplomacy[];
     events: unknown[];
     initialEvents: unknown[];
@@ -149,6 +156,7 @@ export interface WorldSnapshot {
     nations: Nation[];
     cities: City[];
     generals: General[];
+    troops: Troop[];
     diplomacy: ScenarioDiplomacy[];
     events: unknown[];
     initialEvents: unknown[];

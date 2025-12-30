@@ -6,6 +6,7 @@ import type {
     ScenarioConfig,
     ScenarioDiplomacy,
     ScenarioMeta,
+    Troop,
     UnitSetDefinition,
     WorldSnapshot,
 } from '@sammo-ts/logic';
@@ -25,7 +26,10 @@ export interface TurnGeneral extends General {
 }
 
 export interface TurnWorldSnapshot
-    extends Omit<WorldSnapshot, 'generals' | 'cities' | 'nations'> {
+    extends Omit<
+        WorldSnapshot,
+        'generals' | 'cities' | 'nations' | 'troops'
+    > {
     scenarioConfig: ScenarioConfig;
     scenarioMeta?: ScenarioMeta;
     map: MapDefinition;
@@ -36,6 +40,7 @@ export interface TurnWorldSnapshot
     generals: TurnGeneral[];
     cities: City[];
     nations: Nation[];
+    troops: Troop[];
 }
 
 export interface TurnWorldLoadResult {

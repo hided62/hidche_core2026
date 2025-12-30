@@ -121,6 +121,7 @@ export const seedScenarioToDatabase = async (
             await prisma.event.deleteMany();
             await prisma.diplomacy.deleteMany();
             await prisma.general.deleteMany();
+            await prisma.troop.deleteMany();
             await prisma.city.deleteMany();
             await prisma.nation.deleteMany();
             await prisma.worldState.deleteMany();
@@ -235,6 +236,16 @@ export const seedScenarioToDatabase = async (
                         ...general.meta,
                     }),
                     penalty: asJson({}),
+                })),
+            });
+        }
+
+        if (seed.troops.length > 0) {
+            await prisma.troop.createMany({
+                data: seed.troops.map((troop) => ({
+                    troopLeaderId: troop.id,
+                    nationId: troop.nationId,
+                    name: troop.name,
                 })),
             });
         }

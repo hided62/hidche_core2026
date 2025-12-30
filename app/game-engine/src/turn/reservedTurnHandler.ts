@@ -8,6 +8,7 @@ import type {
     ScenarioConfig,
     ScenarioDiplomacy,
     ScenarioMeta,
+    Troop,
 } from '@sammo-ts/logic';
 import {
     AssignmentActionDefinition,
@@ -605,6 +606,7 @@ export const createReservedTurnHandler = (options: {
                 generals: [] as Array<{ id: number; patch: Partial<TurnGeneral> }>,
                 cities: [] as Array<{ id: number; patch: Partial<City> }>,
                 nations: [] as Array<{ id: number; patch: Partial<Nation> }>,
+                troops: [] as Array<{ id: number; patch: Partial<Troop> }>,
             };
             const created: TurnGeneral[] = [];
 

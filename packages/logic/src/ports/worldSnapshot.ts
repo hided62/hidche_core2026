@@ -1,4 +1,4 @@
-import type { City, General, Nation } from '../domain/entities.js';
+import type { City, General, Nation, Troop } from '../domain/entities.js';
 import type { ScenarioConfig } from '../scenario/types.js';
 import type { ScenarioMeta } from '../world/types.js';
 
@@ -6,11 +6,13 @@ import type { ScenarioMeta } from '../world/types.js';
 export interface WorldStateSnapshotSource<
     GeneralType extends General = General,
     CityType extends City = City,
-    NationType extends Nation = Nation
+    NationType extends Nation = Nation,
+    TroopType extends Troop = Troop
 > {
     listGenerals(): Promise<GeneralType[]>;
     listCities(): Promise<CityType[]>;
     listNations(): Promise<NationType[]>;
+    listTroops(): Promise<TroopType[]>;
 }
 
 export interface ScenarioConfigSource {

@@ -121,6 +121,21 @@ const buildNationUpdate = (
     meta: asJson(nation.meta),
 });
 
+const buildTroopUpdate = (
+    troop: ReturnType<InMemoryTurnWorld['consumeDirtyState']>['troops'][number]
+): Prisma.TroopUpdateInput => ({
+    nationId: troop.nationId,
+    name: troop.name,
+});
+
+const buildTroopCreate = (
+    troop: ReturnType<InMemoryTurnWorld['consumeDirtyState']>['troops'][number]
+): Prisma.TroopCreateManyInput => ({
+    troopLeaderId: troop.id,
+    nationId: troop.nationId,
+    name: troop.name,
+});
+
 const buildLogCreateData = (
     entry: LogEntryDraft,
     context: { year: number; month: number; at: Date }
@@ -161,8 +176,15 @@ export const createDatabaseTurnHooks = async (
     const hooks: TurnDaemonHooks = {
         flushChanges: async () => {
             const state = world.getState();
-            const { generals, cities, nations, logs, createdGenerals } =
-                world.consumeDirtyState();
+            const {
+                generals,
+                cities,
+                nations,
+                troops,
+                logs,
+                createdGenerals,
+                createdTroops,
+            } = world.consumeDirtyState();
 
             await connector.prisma.worldState.update({
                 where: { id: state.id },
@@ -177,10 +199,18 @@ export const createDatabaseTurnHooks = async (
             const createdIds = new Set(
                 createdGenerals.map((general) => general.id)
             );
+            const createdTroopIds = new Set(
+                createdTroops.map((troop) => troop.id)
+            );
 
             if (createdGenerals.length > 0) {
                 await connector.prisma.general.createMany({
                     data: createdGenerals.map(buildGeneralCreate),
+                });
+            }
+            if (createdTroops.length > 0) {
+                await connector.prisma.troop.createMany({
+                    data: createdTroops.map(buildTroopCreate),
                 });
             }
 
@@ -205,6 +235,14 @@ export const createDatabaseTurnHooks = async (
                         data: buildNationUpdate(nation),
                     })
                 ),
+                ...troops
+                    .filter((troop) => !createdTroopIds.has(troop.id))
+                    .map((troop) =>
+                        connector.prisma.troop.update({
+                            where: { troopLeaderId: troop.id },
+                            data: buildTroopUpdate(troop),
+                        })
+                    ),
             ]);
 
             if (logs.length > 0) {

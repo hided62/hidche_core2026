@@ -3,6 +3,7 @@
 export type GeneralId = number;
 export type CityId = number;
 export type NationId = number;
+export type TroopId = number;
 
 export type ColorCode = string;
 
@@ -94,4 +95,10 @@ export interface Nation {
     level: number;
     typeCode: string;
     meta: Record<string, TriggerValue>;
+}
+
+export interface Troop {
+    id: TroopId;
+    nationId: NationId;
+    name: string;
 }

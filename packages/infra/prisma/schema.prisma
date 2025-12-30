@@ -147,6 +147,14 @@ model General {
     @@map("general")
 }
 
+model Troop {
+    troopLeaderId Int    @id @map("troop_leader")
+    nationId      Int    @map("nation")
+    name          String
+
+    @@map("troop")
+}
+
 model GeneralTurn {
     id         Int      @id @default(autoincrement())
     generalId  Int      @map("general_id")
