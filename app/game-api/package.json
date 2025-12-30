@@ -7,10 +7,19 @@
         "build": "tsdown -c ../../tsdown.config.ts -F @sammo-ts/game-api",
         "dev": "tsdown -c ../../tsdown.config.ts -F @sammo-ts/game-api --watch",
         "lint": "node -e \"console.log('lint not configured')\"",
-        "test": "node -e \"console.log('test not configured')\"",
+        "test": "vitest run --config vitest.config.ts",
         "typecheck": "tsc --noEmit"
     },
     "devDependencies": {
-        "tsdown": "^0.18.3"
+        "tsdown": "^0.18.3",
+        "vite-tsconfig-paths": "^6.0.0",
+        "vitest": "^4.0.16"
+    },
+    "dependencies": {
+        "@fastify/cors": "^10.0.1",
+        "@sammo-ts/infra": "workspace:*",
+        "@trpc/server": "^11.4.4",
+        "fastify": "^5.3.3",
+        "zod": "^4.2.1"
     }
 }
