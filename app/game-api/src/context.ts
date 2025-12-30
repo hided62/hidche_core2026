@@ -44,6 +44,7 @@ export interface GeneralRow {
     crew: number;
     crewTypeId: number;
     train: number;
+    atmos: number;
     age: number;
     npcState: number;
     meta: unknown;
@@ -79,12 +80,15 @@ export interface CityRow {
     commerceMax: number;
     security: number;
     securityMax: number;
+    trust: number;
+    trade: number;
     supplyState: number;
     frontState: number;
     defence: number;
     defenceMax: number;
     wall: number;
     wallMax: number;
+    region: number;
     meta: unknown;
 }
 
@@ -95,6 +99,7 @@ export interface NationRow {
     capitalCityId: number | null;
     gold: number;
     rice: number;
+    tech: number;
     level: number;
     typeCode: string;
     meta: unknown;

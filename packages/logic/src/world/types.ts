@@ -62,7 +62,42 @@ export interface UnitSetDefinition {
     id: string;
     name: string;
     defaultCrewTypeId?: number;
+    armTypes?: Record<string, string>;
+    crewTypes?: CrewTypeDefinition[];
     meta?: Record<string, unknown>;
+}
+
+export type CrewTypeRequirement =
+    | { type: 'ReqTech'; tech: number }
+    | { type: 'ReqRegions'; regions: string[] }
+    | { type: 'ReqCities'; cities: string[] }
+    | { type: 'ReqCitiesWithCityLevel'; level: number; cities: string[] }
+    | { type: 'ReqHighLevelCities'; level: number; count: number }
+    | { type: 'ReqNationAux'; key: string; op: string; value: number | string }
+    | { type: 'ReqMinRelYear'; year: number }
+    | { type: 'ReqChief' }
+    | { type: 'ReqNotChief' }
+    | { type: 'Impossible' }
+    | { type: string; [key: string]: unknown };
+
+export interface CrewTypeDefinition {
+    id: number;
+    armType: number;
+    name: string;
+    attack: number;
+    defence: number;
+    speed: number;
+    avoid: number;
+    magicCoef: number;
+    cost: number;
+    rice: number;
+    requirements: CrewTypeRequirement[];
+    attackCoef: Record<string, number>;
+    defenceCoef: Record<string, number>;
+    info: string[];
+    initSkillTrigger: string[] | null;
+    phaseSkillTrigger: string[] | null;
+    iActionList: string[] | null;
 }
 
 export interface NationSeed {

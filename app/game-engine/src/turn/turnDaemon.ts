@@ -88,6 +88,8 @@ export const createTurnDaemonRuntime = async (
                 scenarioConfig: snapshot.scenarioConfig,
                 scenarioMeta: snapshot.scenarioMeta,
                 diplomacy: snapshot.diplomacy,
+                map: snapshot.map,
+                unitSet: snapshot.unitSet,
                 getWorld: () => worldRef,
             }),
         calendarHandler: options.calendarHandler,

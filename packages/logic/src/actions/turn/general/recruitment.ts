@@ -22,6 +22,7 @@ export interface GeneralRecruitmentInput<
     experience: number;
     dedication: number;
     crewTypeId: number;
+    atmos?: number;
     role: {
         personality: string | null;
         specialDomestic: string | null;
@@ -75,6 +76,7 @@ export const buildRecruitmentGeneral = <
     crew: 0,
     crewTypeId: input.crewTypeId,
     train: 0,
+    atmos: input.atmos ?? 0,
     age: input.age,
     npcState: input.npcState,
     triggerState:

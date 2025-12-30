@@ -4,11 +4,13 @@ import type {
     GeneralActionDefinition,
     GeneralActionResolveContext,
     LogEntryDraft,
+    MapDefinition,
     Nation,
     ScenarioConfig,
     ScenarioDiplomacy,
     ScenarioMeta,
     Troop,
+    UnitSetDefinition,
 } from '@sammo-ts/logic';
 import {
     AssignmentActionDefinition,
@@ -17,6 +19,7 @@ import {
     evaluateConstraints,
     FireAttackActionDefinition,
     NationRestActionDefinition,
+    RecruitActionDefinition,
     resolveGeneralAction,
     RestActionDefinition,
     TalentScoutActionDefinition,
@@ -110,7 +113,10 @@ const resolveOptionalString = (
     return null;
 };
 
-const buildCommandEnv = (config: ScenarioConfig): CommandEnv => {
+const buildCommandEnv = (
+    config: ScenarioConfig,
+    unitSet?: UnitSetDefinition
+): CommandEnv => {
     const constValues = asRecord(config.const);
 
     return {
@@ -167,7 +173,7 @@ const buildCommandEnv = (config: ScenarioConfig): CommandEnv => {
         defaultCrewTypeId: resolveNumber(
             constValues,
             ['defaultCrewTypeId'],
-            DEFAULT_CREW_TYPE_ID
+            unitSet?.defaultCrewTypeId ?? DEFAULT_CREW_TYPE_ID
         ),
         defaultSpecialDomestic: resolveOptionalString(
             constValues,
@@ -422,6 +428,7 @@ const buildGeneralDefinitions = (
     definitions.set('che_화계', new FireAttackActionDefinition([], env));
     definitions.set('che_인재탐색', new TalentScoutActionDefinition([], env));
     definitions.set('che_의병모집', new VolunteerRecruitActionDefinition([], env));
+    definitions.set('che_징병', new RecruitActionDefinition([], {}));
     definitions.set('휴식', new RestActionDefinition());
     return definitions;
 };
@@ -468,6 +475,8 @@ const buildActionContext = (
     options: {
         world: TurnWorldState;
         scenarioMeta?: ScenarioMeta;
+        map?: MapDefinition;
+        unitSet?: UnitSetDefinition;
         worldRef: InMemoryTurnWorld | null;
         actionArgs: Record<string, unknown>;
         createGeneralId: () => number;
@@ -535,6 +544,18 @@ const buildActionContext = (
                 destGeneralTurnTime: destGeneral.turnTime,
             };
         }
+        case 'che_징병':
+            if (!options.map || !options.unitSet) {
+                return null;
+            }
+            return {
+                ...base,
+                map: options.map,
+                unitSet: options.unitSet,
+                cities: options.worldRef?.listCities() ?? [],
+                currentYear: options.world.currentYear,
+                startYear: resolveStartYear(options.world, options.scenarioMeta),
+            };
         default:
             return base;
     }
@@ -573,9 +594,11 @@ export const createReservedTurnHandler = (options: {
     scenarioConfig: ScenarioConfig;
     scenarioMeta?: ScenarioMeta;
     diplomacy: ScenarioDiplomacy[];
+    map?: MapDefinition;
+    unitSet?: UnitSetDefinition;
     getWorld: () => InMemoryTurnWorld | null;
 }): GeneralTurnHandler => {
-    const env = buildCommandEnv(options.scenarioConfig);
+    const env = buildCommandEnv(options.scenarioConfig, options.unitSet);
     const generalDefinitions = buildGeneralDefinitions(env);
     const nationDefinitions = buildNationDefinitions(env);
     const generalFallback = generalDefinitions.get(DEFAULT_ACTION)!;
@@ -597,10 +620,12 @@ export const createReservedTurnHandler = (options: {
     return {
         execute(context): GeneralTurnResult {
             const worldRef = options.getWorld();
-            const constraintEnv = resolveConstraintEnv(
-                context.world,
-                options.scenarioMeta
-            );
+            const constraintEnv = {
+                ...resolveConstraintEnv(context.world, options.scenarioMeta),
+                ...(options.map ? { map: options.map } : {}),
+                ...(options.unitSet ? { unitSet: options.unitSet } : {}),
+                cities: worldRef?.listCities() ?? [],
+            };
             const logs: LogEntryDraft[] = [];
             const patches = {
                 generals: [] as Array<{ id: number; patch: Partial<TurnGeneral> }>,
@@ -694,6 +719,8 @@ export const createReservedTurnHandler = (options: {
                 let specificContext = buildActionContext(actionKey, baseContext, {
                     world: context.world,
                     scenarioMeta: options.scenarioMeta,
+                    map: options.map,
+                    unitSet: options.unitSet,
                     worldRef,
                     actionArgs: actionArgsRecord,
                     createGeneralId,

@@ -18,6 +18,14 @@ const asJson = (value: unknown): Prisma.InputJsonValue =>
 const toCode = (value: string | null | undefined): string =>
     value && value !== 'None' ? value : 'None';
 
+const readMetaNumber = (
+    meta: Record<string, unknown>,
+    key: string
+): number | null => {
+    const value = meta[key];
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
+};
+
 const buildGeneralUpdate = (
     general: ReturnType<InMemoryTurnWorld['consumeDirtyState']>['generals'][number]
 ): Prisma.GeneralUpdateInput => ({
@@ -37,6 +45,7 @@ const buildGeneralUpdate = (
     crew: general.crew,
     crewTypeId: general.crewTypeId,
     train: general.train,
+    atmos: general.atmos,
     age: general.age,
     npcState: general.npcState,
     horseCode: toCode(general.role.items.horse),
@@ -72,6 +81,7 @@ const buildGeneralCreate = (
     crew: general.crew,
     crewTypeId: general.crewTypeId,
     train: general.train,
+    atmos: general.atmos,
     age: general.age,
     horseCode: toCode(general.role.items.horse),
     weaponCode: toCode(general.role.items.weapon),
@@ -87,26 +97,45 @@ const buildGeneralCreate = (
 
 const buildCityUpdate = (
     city: ReturnType<InMemoryTurnWorld['consumeDirtyState']>['cities'][number]
-): Prisma.CityUpdateInput => ({
-    name: city.name,
-    nationId: city.nationId,
-    level: city.level,
-    population: city.population,
-    populationMax: city.populationMax,
-    agriculture: city.agriculture,
-    agricultureMax: city.agricultureMax,
-    commerce: city.commerce,
-    commerceMax: city.commerceMax,
-    security: city.security,
-    securityMax: city.securityMax,
-    supplyState: city.supplyState,
-    frontState: city.frontState,
-    defence: city.defence,
-    defenceMax: city.defenceMax,
-    wall: city.wall,
-    wallMax: city.wallMax,
-    meta: asJson(city.meta),
-});
+): Prisma.CityUpdateInput => {
+    const meta = city.meta as Record<string, unknown>;
+    const trust = readMetaNumber(meta, 'trust');
+    const trade = readMetaNumber(meta, 'trade');
+    const region = readMetaNumber(meta, 'region');
+
+    const data: Prisma.CityUpdateInput = {
+        name: city.name,
+        nationId: city.nationId,
+        level: city.level,
+        population: city.population,
+        populationMax: city.populationMax,
+        agriculture: city.agriculture,
+        agricultureMax: city.agricultureMax,
+        commerce: city.commerce,
+        commerceMax: city.commerceMax,
+        security: city.security,
+        securityMax: city.securityMax,
+        supplyState: city.supplyState,
+        frontState: city.frontState,
+        defence: city.defence,
+        defenceMax: city.defenceMax,
+        wall: city.wall,
+        wallMax: city.wallMax,
+        meta: asJson(city.meta),
+    };
+
+    if (trust !== null) {
+        data.trust = trust;
+    }
+    if (trade !== null) {
+        data.trade = trade;
+    }
+    if (region !== null) {
+        data.region = region;
+    }
+
+    return data;
+};
 
 const buildNationUpdate = (
     nation: ReturnType<InMemoryTurnWorld['consumeDirtyState']>['nations'][number]

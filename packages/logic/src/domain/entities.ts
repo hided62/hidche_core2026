@@ -55,6 +55,7 @@ export interface General<TriggerState extends GeneralTriggerState = GeneralTrigg
     crew: number;
     crewTypeId: number;
     train: number;
+    atmos: number;
     age: number;
     npcState: number;
     triggerState: TriggerState;

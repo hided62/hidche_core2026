@@ -386,6 +386,7 @@ const buildGeneralSeeds = (
             crew: 0,
             crewTypeId: defaultCrewTypeId,
             train: 0,
+            atmos: 0,
             age,
             npcState: npcType,
             triggerState: createEmptyTriggerState(),

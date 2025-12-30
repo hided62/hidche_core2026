@@ -11,6 +11,8 @@ import type { MapLoaderOptions } from './mapLoader.js';
 import { loadMapDefinitionByName } from './mapLoader.js';
 import type { ScenarioLoaderOptions } from './scenarioLoader.js';
 import { loadScenarioDefinitionById } from './scenarioLoader.js';
+import type { UnitSetLoaderOptions } from './unitSetLoader.js';
+import { loadUnitSetDefinitionByName } from './unitSetLoader.js';
 
 const DEFAULT_TICK_SECONDS = 120 * 60;
 const DEFAULT_GENERAL_GOLD = 1000;
@@ -21,6 +23,7 @@ export interface ScenarioSeedOptions {
     databaseUrl: string;
     scenarioOptions?: ScenarioLoaderOptions;
     mapOptions?: MapLoaderOptions;
+    unitSetOptions?: UnitSetLoaderOptions;
     resetTables?: boolean;
     now?: Date;
     tickSeconds?: number;
@@ -97,10 +100,15 @@ export const seedScenarioToDatabase = async (
         scenario.config.environment.mapName,
         options.mapOptions
     );
+    const unitSet = await loadUnitSetDefinitionByName(
+        scenario.config.environment.unitSet,
+        options.unitSetOptions
+    );
 
     const { seed, warnings } = buildScenarioBootstrap({
         scenario,
         map,
+        unitSet,
         options: {
             includeNeutralNationInSeed:
                 options.includeNeutralNationInSeed ?? true,

@@ -22,11 +22,14 @@ import { z } from 'zod';
 import { getNextTickTime } from '../lifecycle/getNextTickTime.js';
 import type { MapLoaderOptions } from '../scenario/mapLoader.js';
 import { loadMapDefinitionByName } from '../scenario/mapLoader.js';
+import type { UnitSetLoaderOptions } from '../scenario/unitSetLoader.js';
+import { loadUnitSetDefinitionByName } from '../scenario/unitSetLoader.js';
 import type { TurnGeneral, TurnWorldLoadResult } from './types.js';
 
 interface TurnWorldLoaderOptions {
     databaseUrl: string;
     mapOptions?: MapLoaderOptions;
+    unitSetOptions?: UnitSetLoaderOptions;
 }
 
 type JsonRecord = Record<string, unknown>;
@@ -162,6 +165,7 @@ const mapGeneralRow = (row: PrismaGeneral): TurnGeneral => ({
     crew: row.crew,
     crewTypeId: row.crewTypeId,
     train: row.train,
+    atmos: row.atmos,
     age: row.age,
     npcState: row.npcState,
     triggerState: {
@@ -194,7 +198,12 @@ const mapCityRow = (row: PrismaCity): City => ({
     defenceMax: row.defenceMax,
     wall: row.wall,
     wallMax: row.wallMax,
-    meta: asTriggerRecord(row.meta),
+    meta: {
+        ...asTriggerRecord(row.meta),
+        trust: row.trust,
+        trade: row.trade,
+        region: row.region,
+    },
 });
 
 const mapNationRow = (row: PrismaNation): Nation => ({
@@ -208,7 +217,10 @@ const mapNationRow = (row: PrismaNation): Nation => ({
     power: 0,
     level: row.level,
     typeCode: row.typeCode,
-    meta: asTriggerRecord(row.meta),
+    meta: {
+        ...asTriggerRecord(row.meta),
+        tech: row.tech,
+    },
 });
 
 const mapDiplomacyRow = (row: PrismaDiplomacy): ScenarioDiplomacy => ({
@@ -263,6 +275,11 @@ export const loadTurnWorldFromDatabase = async (
         const scenarioConfig = mapScenarioConfig(worldState.config);
         const mapName = scenarioConfig.environment?.mapName ?? 'che';
         const map = await loadMapDefinitionByName(mapName, options.mapOptions);
+        const unitSetName = scenarioConfig.environment?.unitSet ?? 'che';
+        const unitSet = await loadUnitSetDefinitionByName(
+            unitSetName,
+            options.unitSetOptions
+        );
 
         const meta = asRecord(worldState.meta);
         const scenarioMeta = parseScenarioMeta(meta);
@@ -313,6 +330,7 @@ export const loadTurnWorldFromDatabase = async (
                 scenarioConfig,
                 ...(scenarioMeta ? { scenarioMeta } : {}),
                 map,
+                unitSet,
                 nations,
                 cities,
                 generals,

@@ -16,6 +16,7 @@ import {
     evaluateConstraints,
     FireAttackActionDefinition,
     NationRestActionDefinition,
+    RecruitActionDefinition,
     RestActionDefinition,
     TalentScoutActionDefinition,
     VolunteerRecruitActionDefinition,
@@ -324,6 +325,7 @@ const mapGeneralRow = (row: GeneralRow): General => ({
     crew: row.crew,
     crewTypeId: row.crewTypeId,
     train: row.train,
+    atmos: row.atmos,
     age: row.age,
     npcState: row.npcState,
     triggerState: {
@@ -354,7 +356,12 @@ const mapCityRow = (row: CityRow): City => ({
     defenceMax: row.defenceMax,
     wall: row.wall,
     wallMax: row.wallMax,
-    meta: asTriggerRecord(row.meta),
+    meta: {
+        ...asTriggerRecord(row.meta),
+        trust: row.trust,
+        trade: row.trade,
+        region: row.region,
+    },
 });
 
 const mapNationRow = (row: NationRow): Nation => ({
@@ -368,7 +375,10 @@ const mapNationRow = (row: NationRow): Nation => ({
     power: 0,
     level: row.level,
     typeCode: row.typeCode,
-    meta: asTriggerRecord(row.meta),
+    meta: {
+        ...asTriggerRecord(row.meta),
+        tech: row.tech,
+    },
 });
 
 const buildStateView = (
@@ -463,6 +473,12 @@ const buildEntries = (env: CommandEnv): {
                 develCost: env.develCost,
             }),
             reqArg: false,
+            args: {},
+        },
+        {
+            category: '내정',
+            definition: new RecruitActionDefinition(emptyModules, {}),
+            reqArg: true,
             args: {},
         },
         {

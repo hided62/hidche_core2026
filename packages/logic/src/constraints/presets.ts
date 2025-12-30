@@ -139,6 +139,22 @@ const readDiplomacyState = (
     return null;
 };
 
+const readMetaNumberFromUnknown = (
+    meta: Record<string, unknown>,
+    key: string
+): number | null => {
+    const value = meta[key];
+    return typeof value === 'number' ? value : null;
+};
+
+const parsePercent = (value: string): number | null => {
+    const match = /^(\d+(?:\.\d+)?)%$/.exec(value);
+    if (!match) {
+        return null;
+    }
+    return Number(match[1]) / 100;
+};
+
 export const notBeNeutral = (): Constraint => ({
     name: 'NotBeNeutral',
     requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
@@ -542,6 +558,106 @@ export const remainCityCapacity = (
             return allow();
         }
         return { kind: 'deny', reason: `${label}이 충분합니다.` };
+    },
+});
+
+export const reqCityCapacity = (
+    key: string,
+    label: string,
+    required: number | string
+): Constraint => ({
+    name: 'ReqCityCapacity',
+    requires: (ctx) =>
+        ctx.cityId !== undefined ? [{ kind: 'city', id: ctx.cityId }] : [],
+    test: (ctx, view) => {
+        const city = readCity(view, ctx.cityId);
+        if (!city) {
+            if (ctx.cityId === undefined) {
+                return unknownOrDeny(ctx, [], '도시 정보가 없습니다.');
+            }
+            const req: RequirementKey = { kind: 'city', id: ctx.cityId };
+            return unknownOrDeny(ctx, [req], '도시 정보가 없습니다.');
+        }
+        const record = city as unknown as Record<string, number | undefined>;
+        const current = record[key];
+        if (current === undefined) {
+            return unknownOrDeny(ctx, [], '도시 정보가 없습니다.');
+        }
+        if (typeof required === 'string') {
+            const ratio = parsePercent(required);
+            const maxKey = `${key}Max`;
+            const max = record[maxKey];
+            if (ratio === null || max === undefined) {
+                return unknownOrDeny(ctx, [], '도시 정보가 없습니다.');
+            }
+            if (current >= max * ratio) {
+                return allow();
+            }
+        } else if (current >= required) {
+            return allow();
+        }
+        return { kind: 'deny', reason: `${label}이 부족합니다.` };
+    },
+});
+
+export const reqCityTrust = (minTrust: number): Constraint => ({
+    name: 'ReqCityTrust',
+    requires: (ctx) =>
+        ctx.cityId !== undefined ? [{ kind: 'city', id: ctx.cityId }] : [],
+    test: (ctx, view) => {
+        const city = readCity(view, ctx.cityId);
+        if (!city) {
+            if (ctx.cityId === undefined) {
+                return unknownOrDeny(ctx, [], '도시 정보가 없습니다.');
+            }
+            const req: RequirementKey = { kind: 'city', id: ctx.cityId };
+            return unknownOrDeny(ctx, [req], '도시 정보가 없습니다.');
+        }
+        const trust =
+            readMetaNumberFromUnknown(
+                city.meta as Record<string, unknown>,
+                'trust'
+            ) ?? null;
+        if (trust === null) {
+            return unknownOrDeny(ctx, [], '민심 정보가 없습니다.');
+        }
+        if (trust >= minTrust) {
+            return allow();
+        }
+        return { kind: 'deny', reason: '민심이 낮아 주민들이 도망갑니다.' };
+    },
+});
+
+export const reqGeneralCrewMargin = (
+    getCrewTypeId: (ctx: ConstraintContext, view: StateView) => number | null,
+    requirements: RequirementKey[] = []
+): Constraint => ({
+    name: 'ReqGeneralCrewMargin',
+    requires: (ctx) => [{ kind: 'general', id: ctx.actorId }, ...requirements],
+    test: (ctx, view) => {
+        const generalReq: RequirementKey = { kind: 'general', id: ctx.actorId };
+        const missing = [generalReq, ...requirements].filter(
+            (req) => !view.has(req)
+        );
+        if (missing.length > 0) {
+            return unknownOrDeny(ctx, missing, '장수 정보가 없습니다.');
+        }
+        const general = view.get(generalReq) as General | null;
+        if (!general) {
+            return unknownOrDeny(ctx, [generalReq], '장수 정보가 없습니다.');
+        }
+        const crewTypeId = getCrewTypeId(ctx, view);
+        if (crewTypeId === null) {
+            return unknownOrDeny(ctx, requirements, '병종 정보가 없습니다.');
+        }
+        if (crewTypeId !== general.crewTypeId) {
+            return allow();
+        }
+        const maxCrew = general.stats.leadership * 100;
+        if (maxCrew > general.crew) {
+            return allow();
+        }
+        return { kind: 'deny', reason: '이미 많은 병력을 보유하고 있습니다.' };
     },
 });
 
