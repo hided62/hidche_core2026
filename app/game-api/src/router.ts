@@ -27,6 +27,8 @@ import {
     insertMessage,
     type MessageView,
 } from './messages/store.js';
+import { buildBattleSimJobPayload } from './battleSim/environment.js';
+import type { BattleSimRequestPayload } from './battleSim/types.js';
 
 const zRunReason = z.enum(['schedule', 'manual', 'poke']);
 const zMessageType = z.enum(['private', 'public', 'national', 'diplomacy']);
@@ -35,6 +37,97 @@ const zTurnRunBudget = z.object({
     budgetMs: z.number().int().positive(),
     maxGenerals: z.number().int().positive(),
     catchUpCap: z.number().int().positive(),
+});
+
+const zBattleSimGeneral = z.object({
+    no: z.number().int().positive(),
+    name: z.string().min(1),
+    nation: z.number().int().positive(),
+    turntime: z.string().min(1),
+    personal: z.string().nullable(),
+    special2: z.string().nullable(),
+    crew: z.number().int().min(0),
+    crewtype: z.number().int().positive(),
+    atmos: z.number().int().min(0),
+    train: z.number().int().min(0),
+    intel: z.number().int().min(0),
+    intel_exp: z.number().int().min(0),
+    book: z.string().nullable(),
+    strength: z.number().int().min(0),
+    strength_exp: z.number().int().min(0),
+    weapon: z.string().nullable(),
+    injury: z.number().int().min(0),
+    leadership: z.number().int().min(0),
+    leadership_exp: z.number().int().min(0),
+    horse: z.string().nullable(),
+    item: z.string().nullable(),
+    explevel: z.number().int().min(0),
+    experience: z.number().int().min(0),
+    dedication: z.number().int().min(0),
+    officer_level: z.number().int().min(1),
+    officer_city: z.number().int().positive(),
+    gold: z.number().int().min(0),
+    rice: z.number().int().min(0),
+    dex1: z.number().int().min(0),
+    dex2: z.number().int().min(0),
+    dex3: z.number().int().min(0),
+    dex4: z.number().int().min(0),
+    dex5: z.number().int().min(0),
+    recent_war: z.string().nullable(),
+    warnum: z.number().int().min(0),
+    killnum: z.number().int().min(0),
+    killcrew: z.number().int().min(0),
+    inheritBuff: z.union([z.record(z.string(), z.number()), z.array(z.number())]).optional(),
+});
+
+const zBattleSimCity = z.object({
+    city: z.number().int().positive(),
+    nation: z.number().int().min(0),
+    supply: z.number().int().min(0),
+    name: z.string().min(1),
+    pop: z.number().min(0),
+    agri: z.number().min(0),
+    comm: z.number().min(0),
+    secu: z.number().min(0),
+    def: z.number().min(0),
+    wall: z.number().min(0),
+    trust: z.number().min(0),
+    level: z.number().int().min(1),
+    pop_max: z.number().min(0),
+    agri_max: z.number().min(0),
+    comm_max: z.number().min(0),
+    secu_max: z.number().min(0),
+    def_max: z.number().min(0),
+    wall_max: z.number().min(0),
+    dead: z.number().min(0),
+    state: z.number().int().min(0),
+    conflict: z.string(),
+});
+
+const zBattleSimNation = z.object({
+    type: z.string().min(1),
+    tech: z.number().min(0),
+    level: z.number().int().min(1),
+    capital: z.number().int().min(0),
+    nation: z.number().int().min(0),
+    name: z.string().min(1),
+    gold: z.number().min(0),
+    rice: z.number().min(0),
+    gennum: z.number().int().min(1),
+});
+
+const zBattleSimRequest: z.ZodType<BattleSimRequestPayload> = z.object({
+    action: z.enum(['reorder', 'battle']),
+    seed: z.string().optional(),
+    repeatCnt: z.number().int().min(1).max(1000),
+    year: z.number().int().min(0),
+    month: z.number().int().min(1).max(12),
+    attackerGeneral: zBattleSimGeneral,
+    attackerCity: zBattleSimCity,
+    attackerNation: zBattleSimNation,
+    defenderGenerals: z.array(zBattleSimGeneral),
+    defenderCity: zBattleSimCity,
+    defenderNation: zBattleSimNation,
 });
 
 const buildShiftAmountSchema = (maxTurns: number) =>
@@ -63,6 +156,39 @@ export const appRouter = router({
             profile: ctx.profile.name,
             now: new Date().toISOString(),
         })),
+    }),
+    battle: router({
+        simulate: procedure
+            .input(zBattleSimRequest)
+            .mutation(async ({ ctx, input }) => {
+                const worldState = await ctx.db.worldState.findFirst();
+                if (!worldState) {
+                    throw new TRPCError({
+                        code: 'PRECONDITION_FAILED',
+                        message: 'World state is not initialized.',
+                    });
+                }
+
+                const payload = await buildBattleSimJobPayload(
+                    worldState,
+                    input,
+                    ctx.profile.id
+                );
+                return ctx.battleSim.simulate(payload);
+            }),
+        getSimulation: procedure
+            .input(
+                z.object({
+                    jobId: z.string().min(1),
+                })
+            )
+            .query(async ({ ctx, input }) => {
+                const result = await ctx.battleSim.getSimulationResult(input.jobId);
+                if (!result) {
+                    return { status: 'queued', jobId: input.jobId };
+                }
+                return { status: 'completed', jobId: input.jobId, payload: result };
+            }),
     }),
     world: router({
         getState: procedure.query(async ({ ctx }) => {

@@ -2,6 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { runGameApiServer } from './server.js';
+import { runBattleSimWorker } from './battleSim/worker.js';
 
 export * from './config.js';
 export * from './context.js';
@@ -14,6 +15,12 @@ export * from './daemon/inMemoryTransport.js';
 export * from './daemon/redisTransport.js';
 export * from './auth/flushStore.js';
 export * from './auth/tokenVerifier.js';
+export * from './battleSim/types.js';
+export * from './battleSim/transport.js';
+export * from './battleSim/redisTransport.js';
+export * from './battleSim/inMemoryTransport.js';
+export * from './battleSim/keys.js';
+export * from './battleSim/worker.js';
 
 const isMain = (): boolean => {
     if (!process.argv[1]) {
@@ -23,7 +30,10 @@ const isMain = (): boolean => {
 };
 
 if (isMain()) {
-    runGameApiServer().catch((error) => {
+    const role = process.env.GAME_API_ROLE ?? 'server';
+    const run =
+        role === 'battle-sim-worker' ? runBattleSimWorker : runGameApiServer;
+    run().catch((error) => {
         console.error('[game-api] failed to start', error);
         process.exitCode = 1;
     });

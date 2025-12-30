@@ -2,6 +2,7 @@ import type { GameSessionTokenPayload } from '@sammo-ts/common';
 import type { DatabaseClient as InfraDatabaseClient } from '@sammo-ts/infra';
 
 import type { TurnDaemonTransport } from './daemon/transport.js';
+import type { BattleSimTransport } from './battleSim/transport.js';
 
 export interface GameProfile {
     id: string;
@@ -117,6 +118,7 @@ export type DatabaseClient = InfraDatabaseClient<
 export interface GameApiContext {
     db: DatabaseClient;
     turnDaemon: TurnDaemonTransport;
+    battleSim: BattleSimTransport;
     profile: GameProfile;
     auth: GameSessionTokenPayload | null;
 }
@@ -124,12 +126,14 @@ export interface GameApiContext {
 export const createGameApiContext = (options: {
     db: DatabaseClient;
     turnDaemon: TurnDaemonTransport;
+    battleSim: BattleSimTransport;
     profile: GameProfile;
     auth: GameSessionTokenPayload | null;
 }): GameApiContext => {
     return {
         db: options.db,
         turnDaemon: options.turnDaemon,
+        battleSim: options.battleSim,
         profile: options.profile,
         auth: options.auth,
     };

@@ -237,6 +237,17 @@ export abstract class WarUnit<
             (this.hasActivatedSkill(skillName) ? 1 : 0);
     }
 
+    public getActivatedSkillLog(): Record<string, number> {
+        const snapshot: Record<string, number> = { ...this.logActivatedSkill };
+        for (const [skillName, active] of Object.entries(this.activatedSkill)) {
+            if (!active) {
+                continue;
+            }
+            snapshot[skillName] = (snapshot[skillName] ?? 0) + 1;
+        }
+        return snapshot;
+    }
+
     public activateSkill(...skillNames: string[]): void {
         for (const skillName of skillNames) {
             this.activatedSkill[skillName] = true;

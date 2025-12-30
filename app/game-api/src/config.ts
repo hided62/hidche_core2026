@@ -6,6 +6,8 @@ export interface GameApiConfig {
     scenario: string;
     profileName: string;
     daemonRequestTimeoutMs: number;
+    battleSimRequestTimeoutMs: number;
+    battleSimResultTtlSeconds: number;
     gameTokenSecret: string;
     flushChannel: string;
 }
@@ -44,6 +46,16 @@ export const resolveGameApiConfigFromEnv = (
             env.DAEMON_REQUEST_TIMEOUT_MS,
             5000,
             'DAEMON_REQUEST_TIMEOUT_MS'
+        ),
+        battleSimRequestTimeoutMs: parseNumber(
+            env.BATTLE_SIM_REQUEST_TIMEOUT_MS,
+            8000,
+            'BATTLE_SIM_REQUEST_TIMEOUT_MS'
+        ),
+        battleSimResultTtlSeconds: parseNumber(
+            env.BATTLE_SIM_RESULT_TTL_SECONDS,
+            60,
+            'BATTLE_SIM_RESULT_TTL_SECONDS'
         ),
         gameTokenSecret: secret,
         flushChannel: `${gatewayPrefix}:flush`,

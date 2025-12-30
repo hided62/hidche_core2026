@@ -15,6 +15,8 @@ import { RedisTurnDaemonTransport } from './daemon/redisTransport.js';
 import { InMemoryFlushStore, RedisGatewayFlushSubscriber } from './auth/flushStore.js';
 import { createGameTokenVerifier } from './auth/tokenVerifier.js';
 import { appRouter } from './router.js';
+import { buildBattleSimQueueKeys } from './battleSim/keys.js';
+import { RedisBattleSimTransport } from './battleSim/redisTransport.js';
 
 const extractBearerToken = (value: string | string[] | undefined): string | null => {
     if (!value) {
@@ -42,6 +44,11 @@ export const createGameApiServer = async () => {
     const turnDaemon = new RedisTurnDaemonTransport(redis.client, {
         keys: buildTurnDaemonStreamKeys(config.profileName),
         requestTimeoutMs: config.daemonRequestTimeoutMs,
+    });
+    const battleSim = new RedisBattleSimTransport(redis.client, {
+        keys: buildBattleSimQueueKeys(config.profileName),
+        requestTimeoutMs: config.battleSimRequestTimeoutMs,
+        resultTtlSeconds: config.battleSimResultTtlSeconds,
     });
     const flushStore = new InMemoryFlushStore();
     const flushSubscriberClient = redis.client.duplicate();
@@ -77,6 +84,7 @@ export const createGameApiServer = async () => {
                 return createGameApiContext({
                     db: postgres.prisma as unknown as DatabaseClient,
                     turnDaemon,
+                    battleSim,
                     profile: {
                         id: config.profile,
                         scenario: config.scenario,

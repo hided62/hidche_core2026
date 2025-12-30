@@ -73,6 +73,12 @@ export interface WarUnitReport {
     dead: number;
 }
 
+export interface WarBattleMetrics {
+    attackerPhase: number;
+    attackerActivatedSkills: Record<string, number>;
+    defenderActivatedSkills: Array<Record<string, number>>;
+}
+
 export interface WarBattleOutcome<
     TriggerState extends GeneralTriggerState = GeneralTriggerState
 > {
@@ -82,6 +88,7 @@ export interface WarBattleOutcome<
     logs: LogEntryDraft[];
     conquered: boolean;
     reports: WarUnitReport[];
+    metrics?: WarBattleMetrics;
 }
 
 export interface WarAftermathConfig {

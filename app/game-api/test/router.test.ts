@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { GameApiContext, GameProfile, WorldStateRow } from '../src/context.js';
+import { InMemoryBattleSimTransport } from '../src/battleSim/inMemoryTransport.js';
 import { InMemoryTurnDaemonTransport } from '../src/daemon/inMemoryTransport.js';
 import { appRouter } from '../src/router.js';
 
@@ -13,8 +14,10 @@ const profile: GameProfile = {
 const buildContext = (options?: {
     state?: WorldStateRow | null;
     transport?: InMemoryTurnDaemonTransport;
+    battleSim?: InMemoryBattleSimTransport;
 }): GameApiContext => {
     const transport = options?.transport ?? new InMemoryTurnDaemonTransport();
+    const battleSim = options?.battleSim ?? new InMemoryBattleSimTransport();
     const db = {
         worldState: {
             findFirst: async () => options?.state ?? null,
@@ -42,6 +45,7 @@ const buildContext = (options?: {
     return {
         db,
         turnDaemon: transport,
+        battleSim,
         profile,
         auth: null,
     };

@@ -143,7 +143,7 @@ const isSupplyCity = (city: City): boolean => {
     return city.supplyState > 0;
 };
 
-const extractBattleOrder = (
+export const computeBattleOrder = (
     defender: WarUnit,
     attacker: WarUnitGeneral
 ): number => {
@@ -300,7 +300,7 @@ export const resolveWarBattle = <
             defenderLogger,
             createPipeline(defender)
         );
-        if (extractBattleOrder(unit, attackerUnit) <= 0) {
+        if (computeBattleOrder(unit, attackerUnit) <= 0) {
             continue;
         }
         defenderUnits.push(unit);
@@ -309,15 +309,15 @@ export const resolveWarBattle = <
 
     if (
         defenderGenerals.length > 0 &&
-        extractBattleOrder(cityUnit, attackerUnit) > 0
+        computeBattleOrder(cityUnit, attackerUnit) > 0
     ) {
         defenderUnits.push(cityUnit);
     }
 
     defenderUnits.sort(
         (lhs, rhs) =>
-            extractBattleOrder(rhs, attackerUnit) -
-            extractBattleOrder(lhs, attackerUnit)
+            computeBattleOrder(rhs, attackerUnit) -
+            computeBattleOrder(lhs, attackerUnit)
     );
 
     const iter = defenderUnits.values();
@@ -335,7 +335,7 @@ export const resolveWarBattle = <
             return null;
         }
         const candidate = next.value as WarUnit<TriggerState>;
-        if (extractBattleOrder(candidate, attackerUnit) <= 0) {
+        if (computeBattleOrder(candidate, attackerUnit) <= 0) {
             return null;
         }
         return candidate;
@@ -641,5 +641,79 @@ export const resolveWarBattle = <
         logs,
         conquered: conquerCity,
         reports,
+        metrics: {
+            attackerPhase: attackerUnit.getPhase(),
+            attackerActivatedSkills: attackerUnit.getActivatedSkillLog(),
+            defenderActivatedSkills: defenderUnits.map((unit) =>
+                unit.getActivatedSkillLog()
+            ),
+        },
     };
+};
+
+export const resolveDefenderOrder = <
+    TriggerState extends GeneralTriggerState = GeneralTriggerState
+>(
+    input: WarBattleInput<TriggerState>
+): number[] => {
+    const rng =
+        input.rng ??
+        new RandUtil(
+            LiteHashDRBG.build(input.seed ?? '')
+        );
+    const loggerFactory = input.loggerFactory ?? defaultLoggerFactory;
+
+    const crewTypeIndex = buildWarCrewTypeIndex(input.unitSet);
+    const attackerPipeline = createPipeline(input.attacker);
+    const attackerLogger =
+        input.attacker.logger ??
+        loggerFactory({
+            generalId: input.attacker.general.id,
+            nationId: input.attacker.general.nationId,
+        });
+
+    const attackerUnit = new WarUnitGeneral(
+        rng,
+        input.config,
+        input.attacker.general,
+        input.attacker.city,
+        input.attacker.nation,
+        true,
+        resolveCrewType(crewTypeIndex, input.attacker.general.crewTypeId),
+        attackerLogger,
+        attackerPipeline
+    );
+
+    const defenderUnits: WarUnitGeneral<TriggerState>[] = [];
+    for (const defender of input.defenders) {
+        const defenderLogger =
+            defender.logger ??
+            loggerFactory({
+                generalId: defender.general.id,
+                nationId: defender.general.nationId,
+            });
+        const unit = new WarUnitGeneral(
+            rng,
+            input.config,
+            defender.general,
+            input.defenderCity,
+            defender.nation,
+            false,
+            resolveCrewType(crewTypeIndex, defender.general.crewTypeId),
+            defenderLogger,
+            createPipeline(defender)
+        );
+        if (computeBattleOrder(unit, attackerUnit) <= 0) {
+            continue;
+        }
+        defenderUnits.push(unit);
+    }
+
+    defenderUnits.sort(
+        (lhs, rhs) =>
+            computeBattleOrder(rhs, attackerUnit) -
+            computeBattleOrder(lhs, attackerUnit)
+    );
+
+    return defenderUnits.map((unit) => unit.getGeneral().id);
 };
