@@ -1,6 +1,9 @@
-import type { Prisma } from '@prisma/client';
-
-import { createPostgresConnector } from '@sammo-ts/infra';
+import {
+    createPostgresConnector,
+    type InputJsonValue,
+    type TurnEngineDatabaseClient,
+    type TurnEngineEventCreateManyInput,
+} from '@sammo-ts/infra';
 import {
     buildScenarioBootstrap,
     type ScenarioBootstrapWarning,
@@ -37,8 +40,7 @@ export interface ScenarioSeedResult {
     warnings: ScenarioBootstrapWarning[];
 }
 
-const asJson = (value: unknown): Prisma.InputJsonValue =>
-    value as Prisma.InputJsonValue;
+const asJson = (value: unknown): InputJsonValue => value as InputJsonValue;
 
 const resolveGeneralAge = (
     startYear: number | null,
@@ -53,8 +55,8 @@ const resolveGeneralAge = (
 const buildEventRows = (
     rows: unknown[],
     targetOverride?: string
-): Prisma.EventCreateManyInput[] => {
-    const result: Prisma.EventCreateManyInput[] = [];
+): TurnEngineEventCreateManyInput[] => {
+    const result: TurnEngineEventCreateManyInput[] = [];
 
     for (const row of rows) {
         if (!Array.isArray(row)) {
@@ -123,7 +125,7 @@ export const seedScenarioToDatabase = async (
 
     await connector.connect();
     try {
-        const prisma = connector.prisma;
+        const prisma = connector.prisma as TurnEngineDatabaseClient;
 
         if (options.resetTables ?? true) {
             await prisma.event.deleteMany();

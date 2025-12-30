@@ -6,11 +6,31 @@ import { seedScenarioToDatabase } from '../src/scenario/scenarioSeeder.js';
 const scenarioId = 1010;
 const databaseUrl = await resolveDatabaseUrl();
 
+type ScenarioSeederPrismaClient = {
+    $queryRawUnsafe(query: string): Promise<unknown>;
+    nation: {
+        count(): Promise<number>;
+    };
+    city: {
+        count(): Promise<number>;
+    };
+    general: {
+        count(): Promise<number>;
+    };
+    diplomacy: {
+        count(): Promise<number>;
+        findFirst(args: {
+            where: { srcNationId: number; destNationId: number };
+        }): Promise<{ stateCode: string } | null>;
+    };
+};
+
 const canConnectToDatabase = async (url: string): Promise<boolean> => {
     const connector = createPostgresConnector({ url });
     try {
         await connector.connect();
-        await connector.prisma.$queryRawUnsafe('SELECT 1');
+        const prisma = connector.prisma as ScenarioSeederPrismaClient;
+        await prisma.$queryRawUnsafe('SELECT 1');
         return true;
     } catch {
         return false;
@@ -32,7 +52,7 @@ describeDb('scenario database seed', () => {
         const connector = createPostgresConnector({ url: databaseUrl });
         await connector.connect();
         try {
-            const prisma = connector.prisma;
+            const prisma = connector.prisma as ScenarioSeederPrismaClient;
             const [
                 nationCount,
                 cityCount,

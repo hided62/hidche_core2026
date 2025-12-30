@@ -1,13 +1,13 @@
-import type {
-    City as PrismaCity,
-    Diplomacy as PrismaDiplomacy,
-    General as PrismaGeneral,
-    Nation as PrismaNation,
-    Prisma,
-    Troop as PrismaTroop,
-} from '@prisma/client';
-
-import { createPostgresConnector } from '@sammo-ts/infra';
+import {
+    createPostgresConnector,
+    type JsonValue,
+    type TurnEngineCityRow,
+    type TurnEngineDatabaseClient,
+    type TurnEngineDiplomacyRow,
+    type TurnEngineGeneralRow,
+    type TurnEngineNationRow,
+    type TurnEngineTroopRow,
+} from '@sammo-ts/infra';
 import type {
     City,
     Nation,
@@ -126,7 +126,7 @@ const alignToPreviousTick = (base: Date, tickMinutes: number): Date => {
     return new Date(nextTick.getTime() - tickMinutes * 60_000);
 };
 
-const mapScenarioConfig = (raw: Prisma.JsonValue): ScenarioConfig => {
+const mapScenarioConfig = (raw: JsonValue): ScenarioConfig => {
     const parsed = zScenarioConfig.safeParse(raw);
     if (!parsed.success) {
         throw new Error(`world_state.config is invalid: ${parsed.error.message}`);
@@ -134,7 +134,7 @@ const mapScenarioConfig = (raw: Prisma.JsonValue): ScenarioConfig => {
     return parsed.data;
 };
 
-const mapGeneralRow = (row: PrismaGeneral): TurnGeneral => ({
+const mapGeneralRow = (row: TurnEngineGeneralRow): TurnGeneral => ({
     id: row.id,
     name: row.name,
     nationId: row.nationId,
@@ -179,7 +179,7 @@ const mapGeneralRow = (row: PrismaGeneral): TurnGeneral => ({
     recentWarTime: row.recentWarTime ?? null,
 });
 
-const mapCityRow = (row: PrismaCity): City => ({
+const mapCityRow = (row: TurnEngineCityRow): City => ({
     id: row.id,
     name: row.name,
     nationId: row.nationId,
@@ -206,7 +206,7 @@ const mapCityRow = (row: PrismaCity): City => ({
     },
 });
 
-const mapNationRow = (row: PrismaNation): Nation => ({
+const mapNationRow = (row: TurnEngineNationRow): Nation => ({
     id: row.id,
     name: row.name,
     color: row.color,
@@ -223,14 +223,14 @@ const mapNationRow = (row: PrismaNation): Nation => ({
     },
 });
 
-const mapDiplomacyRow = (row: PrismaDiplomacy): ScenarioDiplomacy => ({
+const mapDiplomacyRow = (row: TurnEngineDiplomacyRow): ScenarioDiplomacy => ({
     fromNationId: row.srcNationId,
     toNationId: row.destNationId,
     state: row.stateCode,
     durationMonths: row.term,
 });
 
-const mapTroopRow = (row: PrismaTroop): Troop => ({
+const mapTroopRow = (row: TurnEngineTroopRow): Troop => ({
     id: row.troopLeaderId,
     nationId: row.nationId,
     name: row.name,
@@ -242,7 +242,7 @@ export const loadTurnWorldFromDatabase = async (
     const connector = createPostgresConnector({ url: options.databaseUrl });
     await connector.connect();
     try {
-        const prisma = connector.prisma;
+        const prisma = connector.prisma as TurnEngineDatabaseClient;
         const worldState = await prisma.worldState.findFirst();
         if (!worldState) {
             throw new Error('world_state row is required to start turn daemon.');

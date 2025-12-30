@@ -1,6 +1,8 @@
-import type { Prisma } from '@prisma/client';
-
-import { createPostgresConnector } from '@sammo-ts/infra';
+import {
+    createPostgresConnector,
+    type InputJsonValue,
+    type TurnEngineDatabaseClient,
+} from '@sammo-ts/infra';
 
 export interface ReservedTurnEntry {
     action: string;
@@ -22,8 +24,7 @@ const DEFAULT_TURN_ACTION = '휴식';
 const DEFAULT_GENERAL_TURNS = 30;
 const DEFAULT_NATION_TURNS = 12;
 
-const asJson = (value: unknown): Prisma.InputJsonValue =>
-    value as Prisma.InputJsonValue;
+const asJson = (value: unknown): InputJsonValue => value as InputJsonValue;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
     value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -81,50 +82,10 @@ const buildTurnListFromRows = (
 const buildNationKey = (nationId: number, officerLevel: number): string =>
     `${nationId}:${officerLevel}`;
 
-interface PrismaReservedTurnClient {
-    generalTurn: {
-        findMany(args?: unknown): Promise<
-            Array<{
-                generalId: number;
-                turnIdx: number;
-                actionCode: string;
-                arg: unknown;
-            }>
-        >;
-        deleteMany(args: { where: { generalId: number } }): Promise<unknown>;
-        createMany(args: {
-            data: Array<{
-                generalId: number;
-                turnIdx: number;
-                actionCode: string;
-                arg: Prisma.InputJsonValue;
-            }>;
-        }): Promise<unknown>;
-    };
-    nationTurn: {
-        findMany(args?: unknown): Promise<
-            Array<{
-                nationId: number;
-                officerLevel: number;
-                turnIdx: number;
-                actionCode: string;
-                arg: unknown;
-            }>
-        >;
-        deleteMany(args: {
-            where: { nationId: number; officerLevel: number };
-        }): Promise<unknown>;
-        createMany(args: {
-            data: Array<{
-                nationId: number;
-                officerLevel: number;
-                turnIdx: number;
-                actionCode: string;
-                arg: Prisma.InputJsonValue;
-            }>;
-        }): Promise<unknown>;
-    };
-}
+type ReservedTurnDatabaseClient = Pick<
+    TurnEngineDatabaseClient,
+    'generalTurn' | 'nationTurn'
+>;
 
 export class InMemoryReservedTurnStore {
     private readonly generalTurns = new Map<number, ReservedTurnEntry[]>();
@@ -135,7 +96,7 @@ export class InMemoryReservedTurnStore {
     private readonly maxNationTurns: number;
 
     constructor(
-        private readonly prisma: PrismaClientOrAdapter,
+        private readonly prisma: ReservedTurnDatabaseClient,
         options: { maxGeneralTurns: number; maxNationTurns: number }
     ) {
         this.maxGeneralTurns = options.maxGeneralTurns;
@@ -305,18 +266,13 @@ export class InMemoryReservedTurnStore {
     }
 }
 
-type PrismaClientOrAdapter = ReturnType<
-    typeof createPostgresConnector
->['prisma'] &
-    PrismaReservedTurnClient;
-
 export const createReservedTurnStore = async (
     options: ReservedTurnStoreOptions
 ): Promise<ReservedTurnStoreHandle> => {
     const connector = createPostgresConnector({ url: options.databaseUrl });
     await connector.connect();
     const store = new InMemoryReservedTurnStore(
-        connector.prisma as PrismaClientOrAdapter,
+        connector.prisma as ReservedTurnDatabaseClient,
         {
             maxGeneralTurns: options.maxGeneralTurns ?? DEFAULT_GENERAL_TURNS,
             maxNationTurns: options.maxNationTurns ?? DEFAULT_NATION_TURNS,

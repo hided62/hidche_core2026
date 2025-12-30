@@ -1,6 +1,16 @@
-import type { Prisma } from '@prisma/client';
-
-import { createPostgresConnector } from '@sammo-ts/infra';
+import {
+    createPostgresConnector,
+    type InputJsonValue,
+    type TurnEngineCityUpdateInput,
+    type TurnEngineDatabaseClient,
+    type TurnEngineGeneralCreateManyInput,
+    type TurnEngineGeneralUpdateInput,
+    type TurnEngineLogEntryCreateManyInput,
+    type TurnEngineNationUpdateInput,
+    type TurnEngineTroopCreateManyInput,
+    type TurnEngineTroopUpdateInput,
+    type TurnEngineWorldStateUpdateInput,
+} from '@sammo-ts/infra';
 import { finalizeLogEntry, type LogEntryDraft } from '@sammo-ts/logic';
 
 import type { TurnDaemonHooks } from '../lifecycle/types.js';
@@ -12,8 +22,7 @@ export interface DatabaseTurnHooks {
     close(): Promise<void>;
 }
 
-const asJson = (value: unknown): Prisma.InputJsonValue =>
-    value as Prisma.InputJsonValue;
+const asJson = (value: unknown): InputJsonValue => value as InputJsonValue;
 
 const toCode = (value: string | null | undefined): string =>
     value && value !== 'None' ? value : 'None';
@@ -28,7 +37,7 @@ const readMetaNumber = (
 
 const buildGeneralUpdate = (
     general: ReturnType<InMemoryTurnWorld['consumeDirtyState']>['generals'][number]
-): Prisma.GeneralUpdateInput => ({
+): TurnEngineGeneralUpdateInput => ({
     name: general.name,
     nationId: general.nationId,
     cityId: general.cityId,
@@ -62,7 +71,7 @@ const buildGeneralUpdate = (
 
 const buildGeneralCreate = (
     general: ReturnType<InMemoryTurnWorld['consumeDirtyState']>['generals'][number]
-): Prisma.GeneralCreateManyInput => ({
+): TurnEngineGeneralCreateManyInput => ({
     id: general.id,
     name: general.name,
     nationId: general.nationId,
@@ -97,13 +106,13 @@ const buildGeneralCreate = (
 
 const buildCityUpdate = (
     city: ReturnType<InMemoryTurnWorld['consumeDirtyState']>['cities'][number]
-): Prisma.CityUpdateInput => {
+): TurnEngineCityUpdateInput => {
     const meta = city.meta as Record<string, unknown>;
     const trust = readMetaNumber(meta, 'trust');
     const trade = readMetaNumber(meta, 'trade');
     const region = readMetaNumber(meta, 'region');
 
-    const data: Prisma.CityUpdateInput = {
+    const data: TurnEngineCityUpdateInput = {
         name: city.name,
         nationId: city.nationId,
         level: city.level,
@@ -139,7 +148,7 @@ const buildCityUpdate = (
 
 const buildNationUpdate = (
     nation: ReturnType<InMemoryTurnWorld['consumeDirtyState']>['nations'][number]
-): Prisma.NationUpdateInput => ({
+): TurnEngineNationUpdateInput => ({
     name: nation.name,
     color: nation.color,
     capitalCityId: nation.capitalCityId,
@@ -152,14 +161,14 @@ const buildNationUpdate = (
 
 const buildTroopUpdate = (
     troop: ReturnType<InMemoryTurnWorld['consumeDirtyState']>['troops'][number]
-): Prisma.TroopUpdateInput => ({
+): TurnEngineTroopUpdateInput => ({
     nationId: troop.nationId,
     name: troop.name,
 });
 
 const buildTroopCreate = (
     troop: ReturnType<InMemoryTurnWorld['consumeDirtyState']>['troops'][number]
-): Prisma.TroopCreateManyInput => ({
+): TurnEngineTroopCreateManyInput => ({
     troopLeaderId: troop.id,
     nationId: troop.nationId,
     name: troop.name,
@@ -168,7 +177,7 @@ const buildTroopCreate = (
 const buildLogCreateData = (
     entry: LogEntryDraft,
     context: { year: number; month: number; at: Date }
-): Prisma.LogEntryCreateManyInput | null => {
+): TurnEngineLogEntryCreateManyInput | null => {
     const record = finalizeLogEntry(entry, {
         year: context.year,
         month: context.month,
@@ -201,6 +210,7 @@ export const createDatabaseTurnHooks = async (
     // 턴 처리 결과를 DB에 반영하는 훅을 만든다.
     const connector = createPostgresConnector({ url: databaseUrl });
     await connector.connect();
+    const prisma = connector.prisma as TurnEngineDatabaseClient;
 
     const hooks: TurnDaemonHooks = {
         flushChanges: async () => {
@@ -215,14 +225,15 @@ export const createDatabaseTurnHooks = async (
                 createdTroops,
             } = world.consumeDirtyState();
 
-            await connector.prisma.worldState.update({
+            const worldStateUpdate: TurnEngineWorldStateUpdateInput = {
+                currentYear: state.currentYear,
+                currentMonth: state.currentMonth,
+                tickSeconds: state.tickSeconds,
+                meta: asJson(state.meta),
+            };
+            await prisma.worldState.update({
                 where: { id: state.id },
-                data: {
-                    currentYear: state.currentYear,
-                    currentMonth: state.currentMonth,
-                    tickSeconds: state.tickSeconds,
-                    meta: asJson(state.meta),
-                },
+                data: worldStateUpdate,
             });
 
             const createdIds = new Set(
@@ -233,12 +244,12 @@ export const createDatabaseTurnHooks = async (
             );
 
             if (createdGenerals.length > 0) {
-                await connector.prisma.general.createMany({
+                await prisma.general.createMany({
                     data: createdGenerals.map(buildGeneralCreate),
                 });
             }
             if (createdTroops.length > 0) {
-                await connector.prisma.troop.createMany({
+                await prisma.troop.createMany({
                     data: createdTroops.map(buildTroopCreate),
                 });
             }
@@ -247,19 +258,19 @@ export const createDatabaseTurnHooks = async (
                 ...generals
                     .filter((general) => !createdIds.has(general.id))
                     .map((general) =>
-                        connector.prisma.general.update({
+                        prisma.general.update({
                             where: { id: general.id },
                             data: buildGeneralUpdate(general),
                         })
                     ),
                 ...cities.map((city) =>
-                    connector.prisma.city.update({
+                    prisma.city.update({
                         where: { id: city.id },
                         data: buildCityUpdate(city),
                     })
                 ),
                 ...nations.map((nation) =>
-                    connector.prisma.nation.update({
+                    prisma.nation.update({
                         where: { id: nation.id },
                         data: buildNationUpdate(nation),
                     })
@@ -267,7 +278,7 @@ export const createDatabaseTurnHooks = async (
                 ...troops
                     .filter((troop) => !createdTroopIds.has(troop.id))
                     .map((troop) =>
-                        connector.prisma.troop.update({
+                        prisma.troop.update({
                             where: { troopLeaderId: troop.id },
                             data: buildTroopUpdate(troop),
                         })
@@ -283,11 +294,13 @@ export const createDatabaseTurnHooks = async (
                 const payload = logs
                     .map((entry) => buildLogCreateData(entry, logContext))
                     .filter(
-                        (entry): entry is Prisma.LogEntryCreateManyInput =>
+                        (
+                            entry
+                        ): entry is TurnEngineLogEntryCreateManyInput =>
                             Boolean(entry)
                     );
                 if (payload.length > 0) {
-                    await connector.prisma.logEntry.createMany({
+                    await prisma.logEntry.createMany({
                         data: payload,
                     });
                 }

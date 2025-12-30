@@ -1,14 +1,23 @@
-import { Prisma, PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 
+export type PostgresLogLevel = 'query' | 'info' | 'warn' | 'error';
+
+export type PostgresLogOption =
+    | PostgresLogLevel
+    | {
+          emit: 'stdout' | 'event';
+          level: PostgresLogLevel;
+      };
+
 export interface PostgresConfig {
     url: string;
-    log?: Prisma.PrismaClientOptions['log'];
+    log?: PostgresLogOption[];
 }
 
-export interface PostgresConnector {
-    readonly prisma: PrismaClient;
+export interface PostgresConnector<TClient = unknown> {
+    readonly prisma: TClient;
     connect(): Promise<void>;
     disconnect(): Promise<void>;
 }

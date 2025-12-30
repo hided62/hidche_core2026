@@ -1,6 +1,7 @@
 import fastify from 'fastify';
 import cors from '@fastify/cors';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
+import type { PrismaClient } from '@prisma/client';
 import {
     createPostgresConnector,
     createRedisConnector,
@@ -24,7 +25,9 @@ export const createGatewayApiServer = async () => {
     await postgres.connect();
     await redis.connect();
 
-    const users = createPostgresUserRepository(postgres.prisma);
+    const users = createPostgresUserRepository(
+        postgres.prisma as PrismaClient
+    );
     const sessions = new RedisGatewaySessionService(redis.client, {
         keyPrefix: config.redisKeyPrefix,
         sessionTtlSeconds: config.sessionTtlSeconds,
