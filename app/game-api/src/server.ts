@@ -101,6 +101,7 @@ export const createGameApiServer = async () => {
         profile: config.profileName,
     }));
 
+
     app.addHook('onClose', async () => {
         await flushSubscriber.stop();
         await flushSubscriberClient.quit();

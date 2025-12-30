@@ -6,6 +6,8 @@
     "scripts": {
         "build": "tsdown -c ../../tsdown.config.ts -F @sammo-ts/game-api",
         "dev": "tsdown -c ../../tsdown.config.ts -F @sammo-ts/game-api --watch",
+        "worker": "GAME_API_ROLE=battle-sim-worker node dist/index.js",
+        "worker:dev": "GAME_API_ROLE=battle-sim-worker tsdown -c ../../tsdown.config.ts -F @sammo-ts/game-api --watch",
         "lint": "node -e \"console.log('lint not configured')\"",
         "test": "vitest run --config vitest.config.ts",
         "typecheck": "tsc --noEmit"
