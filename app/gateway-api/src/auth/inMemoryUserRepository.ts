@@ -22,6 +22,8 @@ export const createInMemoryUserRepository = (
                 id: randomUUID(),
                 username: input.username,
                 displayName: input.displayName ?? input.username,
+                roles: ['user'],
+                sanctions: {},
                 passwordSalt: salt,
                 passwordHash: hasher.hash(input.password, salt),
                 createdAt: new Date().toISOString(),

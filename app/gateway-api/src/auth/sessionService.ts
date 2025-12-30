@@ -1,10 +1,13 @@
-import type { UserRecord } from './userRepository.js';
+import type { UserRecord, UserSanctions } from './userRepository.js';
 
 export interface GatewaySessionInfo {
     sessionToken: string;
     userId: string;
     username: string;
     displayName: string;
+    roles: string[];
+    sanctions: UserSanctions;
+    createdAt: string;
     issuedAt: string;
 }
 
@@ -15,6 +18,9 @@ export interface GameSessionInfo {
     userId: string;
     username: string;
     displayName: string;
+    roles: string[];
+    sanctions: UserSanctions;
+    createdAt: string;
     issuedAt: string;
 }
 

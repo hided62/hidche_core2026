@@ -23,6 +23,9 @@ importers:
       '@fastify/cors':
         specifier: ^10.0.1
         version: 10.1.0
+      '@sammo-ts/common':
+        specifier: workspace:*
+        version: link:../../packages/common
       '@sammo-ts/infra':
         specifier: workspace:*
         version: link:../../packages/infra
@@ -84,6 +87,9 @@ importers:
       '@fastify/cors':
         specifier: ^10.0.1
         version: 10.1.0
+      '@sammo-ts/common':
+        specifier: workspace:*
+        version: link:../../packages/common
       '@sammo-ts/infra':
         specifier: workspace:*
         version: link:../../packages/infra

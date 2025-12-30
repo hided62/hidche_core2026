@@ -1,4 +1,4 @@
-import fastify from 'fastify';
+import fastify, { type FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import {
@@ -12,7 +12,24 @@ import { resolveGameApiConfigFromEnv } from './config.js';
 import { createGameApiContext } from './context.js';
 import { buildTurnDaemonStreamKeys } from './daemon/streamKeys.js';
 import { RedisTurnDaemonTransport } from './daemon/redisTransport.js';
+import { InMemoryFlushStore, RedisGatewayFlushSubscriber } from './auth/flushStore.js';
+import { createGameTokenVerifier } from './auth/tokenVerifier.js';
 import { appRouter } from './router.js';
+
+const extractBearerToken = (value: string | string[] | undefined): string | null => {
+    if (!value) {
+        return null;
+    }
+    const header = Array.isArray(value) ? value[0] : value;
+    if (!header) {
+        return null;
+    }
+    const prefix = 'Bearer ';
+    if (header.startsWith(prefix)) {
+        return header.slice(prefix.length).trim();
+    }
+    return header.trim();
+};
 
 export const createGameApiServer = async () => {
     const config = resolveGameApiConfigFromEnv();
@@ -25,6 +42,20 @@ export const createGameApiServer = async () => {
     const turnDaemon = new RedisTurnDaemonTransport(redis.client, {
         keys: buildTurnDaemonStreamKeys(config.profileName),
         requestTimeoutMs: config.daemonRequestTimeoutMs,
+    });
+    const flushStore = new InMemoryFlushStore();
+    const flushSubscriberClient = redis.client.duplicate();
+    await flushSubscriberClient.connect();
+    const flushSubscriber = new RedisGatewayFlushSubscriber(
+        flushSubscriberClient,
+        config.flushChannel,
+        flushStore
+    );
+    await flushSubscriber.start();
+    const tokenVerifier = createGameTokenVerifier({
+        secret: config.gameTokenSecret,
+        profileName: config.profileName,
+        flushStore,
     });
 
     const app = fastify({
@@ -40,8 +71,10 @@ export const createGameApiServer = async () => {
         prefix: config.trpcPath,
         trpcOptions: {
             router: appRouter,
-            createContext: () =>
-                createGameApiContext({
+            createContext: ({ req }: { req: FastifyRequest }) => {
+                const token = extractBearerToken(req.headers.authorization);
+                const auth = token ? tokenVerifier.verify(token) : null;
+                return createGameApiContext({
                     db: postgres.prisma,
                     turnDaemon,
                     profile: {
@@ -49,7 +82,9 @@ export const createGameApiServer = async () => {
                         scenario: config.scenario,
                         name: config.profileName,
                     },
-                }),
+                    auth,
+                });
+            },
         },
     });
 
@@ -59,6 +94,8 @@ export const createGameApiServer = async () => {
     }));
 
     app.addHook('onClose', async () => {
+        await flushSubscriber.stop();
+        await flushSubscriberClient.quit();
         await redis.disconnect();
         await postgres.disconnect();
     });

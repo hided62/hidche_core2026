@@ -41,6 +41,9 @@ export class InMemoryGatewaySessionService implements GatewaySessionService {
             userId: user.id,
             username: user.username,
             displayName: user.displayName,
+            roles: user.roles,
+            sanctions: user.sanctions,
+            createdAt: user.createdAt,
             issuedAt: new Date().toISOString(),
         };
         this.sessions.set(sessionToken, {
@@ -95,6 +98,9 @@ export class InMemoryGatewaySessionService implements GatewaySessionService {
             userId: session.userId,
             username: session.username,
             displayName: session.displayName,
+            roles: session.roles,
+            sanctions: session.sanctions,
+            createdAt: session.createdAt,
             issuedAt: new Date().toISOString(),
         };
         const key = buildGameKey(profile, gameToken);

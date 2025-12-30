@@ -24,6 +24,7 @@ const buildContext = (options?: {
         db,
         turnDaemon: transport,
         profile,
+        auth: null,
     };
 };
 

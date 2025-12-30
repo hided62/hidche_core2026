@@ -12,6 +12,8 @@ export * from './daemon/streamKeys.js';
 export * from './daemon/transport.js';
 export * from './daemon/inMemoryTransport.js';
 export * from './daemon/redisTransport.js';
+export * from './auth/flushStore.js';
+export * from './auth/tokenVerifier.js';
 
 const isMain = (): boolean => {
     if (!process.argv[1]) {

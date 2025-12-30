@@ -1,12 +1,25 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import {
+    decryptGameSessionToken,
+    encryptGameSessionToken,
+} from '@sammo-ts/common/auth/gameToken.js';
+
 import { procedure, router } from './trpc.js';
 import { toPublicUser } from './auth/userRepository.js';
 
 const zUsername = z.string().min(2).max(32);
 const zPassword = z.string().min(6).max(128);
 const zProfile = z.string().min(1).max(64);
+
+const parseDate = (value: string): Date | null => {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+        return null;
+    }
+    return parsed;
+};
 
 export const appRouter = router({
     health: router({
@@ -105,7 +118,11 @@ export const appRouter = router({
                 })
             )
             .mutation(async ({ ctx, input }) => {
+                const session = await ctx.sessions.getSession(input.sessionToken);
                 await ctx.sessions.revokeSession(input.sessionToken, { revokeGames: true });
+                if (session) {
+                    await ctx.flushPublisher.publishUserFlush(session.userId, 'logout');
+                }
                 return { ok: true };
             }),
         issueGameSession: procedure
@@ -126,11 +143,39 @@ export const appRouter = router({
                         message: 'Session is not valid.',
                     });
                 }
+                const now = new Date();
+                const payload = {
+                    version: 1,
+                    profile: gameSession.profile,
+                    issuedAt: now.toISOString(),
+                    expiresAt: new Date(now.getTime() + 1000 * ctx.gameSessionTtlSeconds).toISOString(),
+                    sessionId: gameSession.gameToken,
+                    user: {
+                        id: gameSession.userId,
+                        username: gameSession.username,
+                        displayName: gameSession.displayName,
+                        roles: gameSession.roles,
+                        createdAt: gameSession.createdAt,
+                    },
+                    sanctions: gameSession.sanctions,
+                } as const;
+                const gameToken = encryptGameSessionToken(payload, ctx.gameTokenSecret);
                 return {
                     profile: gameSession.profile,
-                    gameToken: gameSession.gameToken,
-                    issuedAt: gameSession.issuedAt,
+                    gameToken,
+                    issuedAt: payload.issuedAt,
                 };
+            }),
+        flushUser: procedure
+            .input(
+                z.object({
+                    userId: z.string().min(1),
+                    reason: z.string().min(1).optional(),
+                })
+            )
+            .mutation(async ({ ctx, input }) => {
+                await ctx.flushPublisher.publishUserFlush(input.userId, input.reason);
+                return { ok: true };
             }),
         validateGameSession: procedure
             .input(
@@ -140,26 +185,26 @@ export const appRouter = router({
                 })
             )
             .query(async ({ ctx, input }) => {
-                const gameSession = await ctx.sessions.getGameSession(
-                    input.profile,
-                    input.gameToken
-                );
-                if (!gameSession) {
+                const payload = decryptGameSessionToken(input.gameToken, ctx.gameTokenSecret);
+                if (!payload) {
                     return null;
                 }
-                const session = await ctx.sessions.getSession(gameSession.sessionToken);
-                if (!session) {
+                if (payload.profile !== input.profile) {
+                    return null;
+                }
+                const expiresAt = parseDate(payload.expiresAt);
+                if (!expiresAt || Date.now() > expiresAt.getTime()) {
                     return null;
                 }
                 return {
-                    profile: gameSession.profile,
-                    sessionToken: gameSession.sessionToken,
+                    profile: payload.profile,
+                    sessionToken: payload.sessionId,
                     user: {
-                        id: gameSession.userId,
-                        username: gameSession.username,
-                        displayName: gameSession.displayName,
+                        id: payload.user.id,
+                        username: payload.user.username,
+                        displayName: payload.user.displayName,
                     },
-                    issuedAt: gameSession.issuedAt,
+                    issuedAt: payload.issuedAt,
                 };
             }),
     }),

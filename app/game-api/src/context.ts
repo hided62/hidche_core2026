@@ -1,3 +1,5 @@
+import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken.js';
+
 import type { TurnDaemonTransport } from './daemon/transport.js';
 
 export interface GameProfile {
@@ -26,16 +28,19 @@ export interface GameApiContext {
     db: DatabaseClient;
     turnDaemon: TurnDaemonTransport;
     profile: GameProfile;
+    auth: GameSessionTokenPayload | null;
 }
 
 export const createGameApiContext = (options: {
     db: DatabaseClient;
     turnDaemon: TurnDaemonTransport;
     profile: GameProfile;
+    auth: GameSessionTokenPayload | null;
 }): GameApiContext => {
     return {
         db: options.db,
         turnDaemon: options.turnDaemon,
         profile: options.profile,
+        auth: options.auth,
     };
 };

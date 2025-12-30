@@ -11,7 +11,18 @@ const buildCaller = () => {
         sessionTtlSeconds: 3600,
         gameSessionTtlSeconds: 600,
     });
-    return appRouter.createCaller(createGatewayApiContext({ users, sessions }));
+    const flushPublisher = {
+        publishUserFlush: async () => {},
+    };
+    return appRouter.createCaller(
+        createGatewayApiContext({
+            users,
+            sessions,
+            flushPublisher,
+            gameTokenSecret: 'test-secret',
+            gameSessionTtlSeconds: 600,
+        })
+    );
 };
 
 describe('gateway auth flow', () => {

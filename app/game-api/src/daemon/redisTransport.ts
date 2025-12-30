@@ -1,7 +1,5 @@
 import { randomUUID } from 'node:crypto';
 
-import type { RedisClientType } from 'redis';
-
 import type { TurnDaemonStreamKeys } from './streamKeys.js';
 import type { TurnDaemonTransport } from './transport.js';
 import type {
@@ -14,6 +12,14 @@ import type {
 interface RedisTurnDaemonTransportOptions {
     keys: TurnDaemonStreamKeys;
     requestTimeoutMs: number;
+}
+
+interface RedisClientLike {
+    xAdd(stream: string, id: string, message: Record<string, string>): Promise<string>;
+    xRead(
+        streams: { key: string; id: string },
+        options?: { BLOCK?: number; COUNT?: number }
+    ): Promise<unknown>;
 }
 
 type RedisStreamReadResponse = Array<{
@@ -50,11 +56,11 @@ const parseEventEnvelope = (raw: string): TurnDaemonEventEnvelope | null => {
 
 // 턴 데몬 제어 스트림을 Redis로 구현한 전송기.
 export class RedisTurnDaemonTransport implements TurnDaemonTransport {
-    private readonly client: RedisClientType;
+    private readonly client: RedisClientLike;
     private readonly keys: TurnDaemonStreamKeys;
     private readonly requestTimeoutMs: number;
 
-    constructor(client: RedisClientType, options: RedisTurnDaemonTransportOptions) {
+    constructor(client: RedisClientLike, options: RedisTurnDaemonTransportOptions) {
         this.client = client;
         this.keys = options.keys;
         this.requestTimeoutMs = options.requestTimeoutMs;

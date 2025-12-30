@@ -14,6 +14,7 @@ export * from './auth/sessionService.js';
 export * from './auth/inMemorySessionService.js';
 export * from './auth/redisSessionService.js';
 export * from './auth/redisKeys.js';
+export * from './auth/flushPublisher.js';
 
 const isMain = (): boolean => {
     if (!process.argv[1]) {

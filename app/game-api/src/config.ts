@@ -6,6 +6,8 @@ export interface GameApiConfig {
     scenario: string;
     profileName: string;
     daemonRequestTimeoutMs: number;
+    gameTokenSecret: string;
+    flushChannel: string;
 }
 
 const parseNumber = (value: string | undefined, fallback: number, label: string): number => {
@@ -25,6 +27,11 @@ export const resolveGameApiConfigFromEnv = (
     const profile = env.PROFILE ?? env.SERVER_PROFILE ?? 'che';
     const scenario = env.SCENARIO ?? 'default';
     const profileName = `${profile}:${scenario}`;
+    const secret = env.GAME_TOKEN_SECRET ?? env.GATEWAY_TOKEN_SECRET ?? '';
+    if (!secret) {
+        throw new Error('GAME_TOKEN_SECRET is required for game token verification.');
+    }
+    const gatewayPrefix = env.GATEWAY_REDIS_PREFIX ?? 'sammo:gateway';
 
     return {
         host: env.GAME_API_HOST ?? '0.0.0.0',
@@ -38,5 +45,7 @@ export const resolveGameApiConfigFromEnv = (
             5000,
             'DAEMON_REQUEST_TIMEOUT_MS'
         ),
+        gameTokenSecret: secret,
+        flushChannel: `${gatewayPrefix}:flush`,
     };
 };

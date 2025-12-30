@@ -5,6 +5,7 @@ import { createRedisConnector, resolveRedisConfigFromEnv } from '@sammo-ts/infra
 
 import { resolveGatewayApiConfigFromEnv } from './config.js';
 import { createGatewayApiContext } from './context.js';
+import { RedisGatewayFlushPublisher } from './auth/flushPublisher.js';
 import { createInMemoryUserRepository } from './auth/inMemoryUserRepository.js';
 import { RedisGatewaySessionService } from './auth/redisSessionService.js';
 import { appRouter } from './router.js';
@@ -20,6 +21,7 @@ export const createGatewayApiServer = async () => {
         sessionTtlSeconds: config.sessionTtlSeconds,
         gameSessionTtlSeconds: config.gameSessionTtlSeconds,
     });
+    const flushPublisher = new RedisGatewayFlushPublisher(redis.client, config.flushChannel);
 
     const app = fastify({
         logger: true,
@@ -38,6 +40,9 @@ export const createGatewayApiServer = async () => {
                 createGatewayApiContext({
                     users,
                     sessions,
+                    flushPublisher,
+                    gameTokenSecret: config.gameTokenSecret,
+                    gameSessionTtlSeconds: config.gameSessionTtlSeconds,
                 }),
         },
     });

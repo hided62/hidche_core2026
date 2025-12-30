@@ -62,6 +62,9 @@ export class RedisGatewaySessionService implements GatewaySessionService {
             userId: user.id,
             username: user.username,
             displayName: user.displayName,
+            roles: user.roles,
+            sanctions: user.sanctions,
+            createdAt: user.createdAt,
             issuedAt: new Date().toISOString(),
         };
         await this.client.set(this.keys.sessionKey(sessionToken), JSON.stringify(info), {
@@ -114,6 +117,9 @@ export class RedisGatewaySessionService implements GatewaySessionService {
             userId: session.userId,
             username: session.username,
             displayName: session.displayName,
+            roles: session.roles,
+            sanctions: session.sanctions,
+            createdAt: session.createdAt,
             issuedAt: new Date().toISOString(),
         };
         const gameKey = this.keys.gameSessionKey(profile, gameToken);
