@@ -11,6 +11,7 @@
 ## 구조
 - `legacy/`: 현재 운영 중인 PHP 런타임
 - `packages/common`: 공유 유틸 및 타입 정의
+- `packages/infra`: Prisma/Redis 커넥터 등 런타임 인프라
 - `packages/logic`: 순수 게임 로직 (DI/인터페이스 기반)
 - `app/gateway-frontend`: 게이트웨이 UI
 - `app/gateway-api`: 게이트웨이 API
@@ -40,7 +41,7 @@
 
 ## 난수 정책 (Verifiable RNG)
 게임 로직에 영향을 주는 모든 난수는 재현 가능해야 합니다.
-가능하면 기존 구현을 재사용합니다: `legacy/hwe/ts/util/LiteHashDRBG.ts`, `legacy/hwe/ts/util/RNG.ts`.
+현 구현을 사용합니다: `packages/common/src/util/LiteHashDRBG.ts`, `packages/common/src/util/RNG.ts`.
 
 ## 문서
 - `docs/architecture/overview.md`

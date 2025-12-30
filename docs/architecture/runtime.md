@@ -17,6 +17,13 @@ selection is required because it drives unit sets and DB settings.
 - Prefer `legacy/hwe/ts/util/LiteHashDRBG.ts` and `legacy/hwe/ts/util/RNG.ts`
 - Seed composition should include hidden base seed plus action context
 
+## Current Implementation Status
+
+- Turn daemon lifecycle + in-memory state live in `app/game-engine` with DB flush hooks.
+- Control queue is in-process only; Redis transport exists on API side but is not wired into the daemon.
+- API server already exposes turn-daemon commands (run/pause/resume/status) via tRPC.
+- API server writes reserved turns and messages directly to the DB; daemon focuses on world state/logs.
+
 ## Turn Daemon and API Server Behavior (Outline)
 
 - Turn daemon responsibilities: scheduling, turn resolution, state persistence
@@ -97,6 +104,9 @@ also supports local ID/password login for users who cannot use Kakao.
   - When the next turn start time arrives, the daemon starts turn processing
     immediately even if requests remain queued.
 - While the daemon is resolving a turn, the API server queues incoming requests.
+
+Note: the current implementation does not yet process API mutation requests
+between turns; only control commands are handled by the in-process queue.
 
 ### Daemon Control Contract (Draft)
 

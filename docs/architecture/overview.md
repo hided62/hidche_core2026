@@ -16,7 +16,14 @@ monorepo plan is prepared alongside it.
 - Legacy runtime: PHP entry points under `legacy/` and `legacy/hwe/`
 - Legacy engine core: domain logic under `legacy/hwe/sammo/`
 - Legacy frontend: Vue/TypeScript under `legacy/hwe/ts/`
-- Rewrite (planned): pnpm workspace monorepo under `packages/` and `app/`
+- Rewrite (in progress): pnpm workspace monorepo under `packages/` and `app/`
+
+## Current Implementation Notes
+
+- `packages/infra` is live with Prisma/Postgres connectors used by game services.
+- `app/game-engine` implements an in-memory turn daemon with DB flush hooks.
+- `app/game-api` exposes tRPC endpoints for reserved turns, messages, and battle sims.
+- Gateway/game frontends are still placeholders (not part of current runtime).
 
 ## Legacy Data Migration Policy
 

@@ -8,7 +8,14 @@ from the API server.
 
 - One daemon process per server+scenario profile.
 - API server is the only ingress for user/admin requests.
-- The daemon is the only component that mutates gameplay state.
+- The daemon owns world-state mutations; the API server mutates reserved turns and messages.
+
+## Current Implementation Status
+
+- The daemon loop handles scheduled runs plus in-process control queue commands
+  (run/pause/resume/shutdown). It does not drain API mutation requests between turns.
+- `getStatus` is supported by API transports but not yet handled by the daemon loop.
+- API server currently writes reserved turns and messages directly to the DB.
 
 ## Responsibilities
 
@@ -39,6 +46,8 @@ Idle -> Running -> Flushing -> Idle
 The daemon interleaves API request handling between scheduled turn executions.
 API requests are drained until the next turn time is reached; once the turn
 starts, incoming requests are queued and processed after the run.
+Current implementation does not yet drain API requests between turns; this
+section is the intended target behavior.
 
 ```ts
 while (!stopping) {

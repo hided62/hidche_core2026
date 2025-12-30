@@ -15,6 +15,12 @@ Vue 3 frontends.
 - `/app/game-engine`: turn daemon per server+scenario profile
 - `/tools/build-scripts`: build and deployment scripts
 
+## Current Implementation Notes
+
+- `packages/infra` is live and used by game-api/game-engine services.
+- `app/game-api` and `app/game-engine` have initial implementations (tRPC endpoints, turn daemon loop).
+- Frontend apps remain placeholders while backend/runtime stabilizes.
+
 ## Runtime Stack (Planned)
 
 - Backend: Node.js + Fastify

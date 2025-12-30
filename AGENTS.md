@@ -30,6 +30,7 @@
 
 ## Planned Monorepo Layout (TypeScript Rewrite)
 - `/packages/common`: shared utilities and type definitions.
+- `/packages/infra`: Prisma/Redis connectors and other runtime infra.
 - `/packages/logic`: pure game logic with DI/interfaces for external dependencies.
 - `/app/gateway-frontend`: Gateway UI application.
 - `/app/gateway-api`: Gateway backend service.
