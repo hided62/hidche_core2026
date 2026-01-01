@@ -15,6 +15,8 @@ import type {
 } from '../../engine.js';
 import { createGeneralPatchEffect, createLogEffect } from '../../engine.js';
 import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
+import type { TurnCommandEnv } from '../commandEnv.js';
+import type { GeneralTurnCommandSpec } from './index.js';
 
 export interface BoostMoraleArgs {}
 
@@ -89,3 +91,15 @@ export class ActionDefinition<
         };
     }
 }
+
+export const commandSpec: GeneralTurnCommandSpec = {
+    key: 'che_사기진작',
+    category: '군사',
+    reqArg: false,
+    args: {},
+    createDefinition: (env: TurnCommandEnv) =>
+        new ActionDefinition({
+            atmosDelta: env.atmosDelta,
+            maxAtmosByCommand: env.maxAtmosByCommand,
+        }),
+};

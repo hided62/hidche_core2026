@@ -28,6 +28,8 @@ import type {
 import { createGeneralPatchEffect, createLogEffect } from '../../engine.js';
 import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
 import { JosaUtil } from '@sammo-ts/common';
+import type { TurnCommandEnv } from '../commandEnv.js';
+import type { NationTurnCommandSpec } from './index.js';
 
 export interface AssignmentArgs {
     destGeneralId: number;
@@ -206,3 +208,11 @@ export class ActionDefinition<
         return this.resolver.resolve(context, args);
     }
 }
+
+export const commandSpec: NationTurnCommandSpec = {
+    key: 'che_발령',
+    category: '인사',
+    reqArg: true,
+    args: { destGeneralId: 0, destCityId: 0 },
+    createDefinition: (_env: TurnCommandEnv) => new ActionDefinition({}),
+};

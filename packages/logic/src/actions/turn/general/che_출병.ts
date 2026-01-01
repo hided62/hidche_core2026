@@ -14,6 +14,8 @@ import type {
 } from '../../engine.js';
 import { createLogEffect } from '../../engine.js';
 import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
+import type { TurnCommandEnv } from '../commandEnv.js';
+import type { GeneralTurnCommandSpec } from './index.js';
 
 export interface DispatchArgs {
     destCityId: number;
@@ -69,3 +71,11 @@ export class ActionDefinition<
         };
     }
 }
+
+export const commandSpec: GeneralTurnCommandSpec = {
+    key: 'che_출병',
+    category: '군사',
+    reqArg: true,
+    args: { destCityId: 0 },
+    createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
+};

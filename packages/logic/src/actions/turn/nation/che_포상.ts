@@ -32,6 +32,8 @@ import {
     createNationPatchEffect,
 } from '../../engine.js';
 import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
+import type { TurnCommandEnv } from '../commandEnv.js';
+import type { NationTurnCommandSpec } from './index.js';
 import { JosaUtil } from '@sammo-ts/common';
 
 export interface AwardArgs {
@@ -266,3 +268,21 @@ export class ActionDefinition<
         return this.resolver.resolve(context, args);
     }
 }
+
+export const commandSpec: NationTurnCommandSpec = {
+    key: 'che_포상',
+    category: '인사',
+    reqArg: true,
+    args: { isGold: true, amount: 1, destGeneralId: 0 },
+    createDefinition: (env: TurnCommandEnv) => {
+        const maxAmount =
+            env.maxResourceActionAmount > 0
+                ? env.maxResourceActionAmount
+                : Math.max(env.baseGold, env.baseRice, 1000);
+        return new ActionDefinition({
+            baseGold: env.baseGold,
+            baseRice: env.baseRice,
+            maxAmount,
+        });
+    },
+};

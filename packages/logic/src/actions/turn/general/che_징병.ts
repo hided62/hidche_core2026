@@ -36,6 +36,8 @@ import {
     createLogEffect,
 } from '../../engine.js';
 import type { MapDefinition, UnitSetDefinition } from '../../../world/types.js';
+import type { TurnCommandEnv } from '../commandEnv.js';
+import type { GeneralTurnCommandSpec } from './index.js';
 import {
     type CrewTypeAvailabilityContext,
     findCrewTypeById,
@@ -600,3 +602,11 @@ export class ActionDefinition<
         return this.resolver.resolve(context, args);
     }
 }
+
+export const commandSpec: GeneralTurnCommandSpec = {
+    key: 'che_징병',
+    category: '내정',
+    reqArg: true,
+    args: {},
+    createDefinition: (_env: TurnCommandEnv) => new ActionDefinition([], {}),
+};

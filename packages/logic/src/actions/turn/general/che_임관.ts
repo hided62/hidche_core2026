@@ -11,6 +11,8 @@ import type {
 } from '../../engine.js';
 import { createLogEffect } from '../../engine.js';
 import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
+import type { TurnCommandEnv } from '../commandEnv.js';
+import type { GeneralTurnCommandSpec } from './index.js';
 
 export interface AppointmentArgs {
     destNationId: number;
@@ -63,3 +65,11 @@ export class ActionDefinition<
         };
     }
 }
+
+export const commandSpec: GeneralTurnCommandSpec = {
+    key: 'che_임관',
+    category: '전략',
+    reqArg: true,
+    args: { destNationId: 0 },
+    createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
+};

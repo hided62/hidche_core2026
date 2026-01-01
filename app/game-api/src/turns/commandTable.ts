@@ -4,36 +4,18 @@ import type {
     ConstraintContext,
     General,
     GeneralActionDefinition,
+    GeneralTurnCommandSpec,
     Nation,
+    NationTurnCommandSpec,
     RequirementKey,
     StateView,
+    TurnCommandEnv,
     TriggerValue,
 } from '@sammo-ts/logic';
 import {
-    AppointmentActionDefinition,
-    AssignmentActionDefinition,
-    BoostMoraleActionDefinition,
-    AwardActionDefinition,
-    CommerceInvestmentActionDefinition,
-    DeclarationActionDefinition,
-    DefenceUpgradeActionDefinition,
-    DispatchActionDefinition,
     evaluateConstraints,
-    FireAttackActionDefinition,
-    FarmingActionDefinition,
-    FoundingActionDefinition,
-    NationRestActionDefinition,
-    RecoveryActionDefinition,
-    ResidentsSelectionActionDefinition,
-    RecruitActionDefinition,
-    RestActionDefinition,
-    SecurityUpgradeActionDefinition,
-    TechResearchActionDefinition,
-    TalentScoutActionDefinition,
-    TrainingActionDefinition,
-    UprisingActionDefinition,
-    VolunteerRecruitActionDefinition,
-    WallRepairActionDefinition,
+    loadGeneralTurnCommandSpecs,
+    loadNationTurnCommandSpecs,
 } from '@sammo-ts/logic';
 
 import type {
@@ -42,6 +24,7 @@ import type {
     NationRow,
     WorldStateRow,
 } from '../context.js';
+import { loadTurnCommandProfile } from './turnCommandProfile.js';
 
 type AvailabilityStatus = 'available' | 'blocked' | 'needsInput' | 'unknown';
 
@@ -64,30 +47,7 @@ export interface TurnCommandTable {
     nation: TurnCommandGroup[];
 }
 
-interface CommandEnv {
-    develCost: number;
-    trainDelta: number;
-    atmosDelta: number;
-    maxTrainByCommand: number;
-    maxAtmosByCommand: number;
-    sabotageDefaultProb: number;
-    sabotageProbCoefByStat: number;
-    sabotageDefenceCoefByGeneralCount: number;
-    sabotageDamageMin: number;
-    sabotageDamageMax: number;
-    openingPartYear: number;
-    maxGeneral: number;
-    defaultNpcGold: number;
-    defaultNpcRice: number;
-    defaultCrewTypeId: number;
-    defaultSpecialDomestic: string | null;
-    defaultSpecialWar: string | null;
-    initialNationGenLimit: number;
-    maxTechLevel: number;
-    baseGold: number;
-    baseRice: number;
-    maxResourceActionAmount: number;
-}
+type CommandEnv = TurnCommandEnv;
 
 interface AvailabilityCore {
     possible: boolean;
@@ -482,226 +442,47 @@ const pickAvailability = (
         ? lhs
         : rhs;
 
-const buildEntries = (env: CommandEnv): {
-    general: CommandEntry[];
-    nation: CommandEntry[];
-} => {
-    const emptyModules: [] = [];
+type TurnCommandSpec = GeneralTurnCommandSpec | NationTurnCommandSpec;
 
-    const generalEntries: CommandEntry[] = [
-        {
-            category: '개인',
-            definition: new RestActionDefinition(),
-            reqArg: false,
-            args: {},
-        },
-        {
-            category: '개인',
-            definition: new RecoveryActionDefinition(),
-            reqArg: false,
-            args: {},
-        },
-        {
-            category: '전략',
-            definition: new UprisingActionDefinition(),
-            reqArg: false,
-            args: {},
-        },
-        {
-            category: '전략',
-            definition: new AppointmentActionDefinition(),
-            reqArg: true,
-            args: { destNationId: 0 },
-        },
-        {
-            category: '전략',
-            definition: new FoundingActionDefinition(),
-            reqArg: false,
-            args: {},
-        },
-        {
-            category: '군사',
-            definition: new TrainingActionDefinition({
-                trainDelta: env.trainDelta,
-                maxTrainByCommand: env.maxTrainByCommand,
-            }),
-            reqArg: false,
-            args: {},
-        },
-        {
-            category: '군사',
-            definition: new BoostMoraleActionDefinition({
-                atmosDelta: env.atmosDelta,
-                maxAtmosByCommand: env.maxAtmosByCommand,
-            }),
-            reqArg: false,
-            args: {},
-        },
-        {
-            category: '군사',
-            definition: new DispatchActionDefinition(),
-            reqArg: true,
-            args: { destCityId: 0 },
-        },
-        {
-            category: '내정',
-            definition: new ResidentsSelectionActionDefinition({
-                develCost: env.develCost,
-            }),
-            reqArg: false,
-            args: {},
-        },
-        {
-            category: '내정',
-            definition: new FarmingActionDefinition({
-                develCost: env.develCost,
-            }),
-            reqArg: false,
-            args: {},
-        },
-        {
-            category: '내정',
-            definition: new CommerceInvestmentActionDefinition(emptyModules, {
-                develCost: env.develCost,
-            }),
-            reqArg: false,
-            args: {},
-        },
-        {
-            category: '내정',
-            definition: new TechResearchActionDefinition({
-                costGold: env.develCost,
-                maxTechLevel: env.maxTechLevel,
-            }),
-            reqArg: false,
-            args: {},
-        },
-        {
-            category: '내정',
-            definition: new SecurityUpgradeActionDefinition({
-                develCost: env.develCost,
-            }),
-            reqArg: false,
-            args: {},
-        },
-        {
-            category: '내정',
-            definition: new DefenceUpgradeActionDefinition({
-                develCost: env.develCost,
-            }),
-            reqArg: false,
-            args: {},
-        },
-        {
-            category: '내정',
-            definition: new WallRepairActionDefinition({
-                develCost: env.develCost,
-            }),
-            reqArg: false,
-            args: {},
-        },
-        {
-            category: '내정',
-            definition: new RecruitActionDefinition(emptyModules, {}),
-            reqArg: true,
-            args: {},
-        },
-        {
-            category: '계략',
-            definition: new FireAttackActionDefinition(emptyModules, {
-                develCost: env.develCost,
-                sabotageDefaultProb: env.sabotageDefaultProb,
-                sabotageProbCoefByStat: env.sabotageProbCoefByStat,
-                sabotageDefenceCoefByGeneralCount:
-                    env.sabotageDefenceCoefByGeneralCount,
-                sabotageDamageMin: env.sabotageDamageMin,
-                sabotageDamageMax: env.sabotageDamageMax,
-            }),
-            reqArg: true,
-            args: { destCityId: 0 },
-        },
-        {
-            category: '인사',
-            definition: new TalentScoutActionDefinition(emptyModules, {
-                develCost: env.develCost,
-                maxGeneral: env.maxGeneral,
-                defaultNpcGold: env.defaultNpcGold,
-                defaultNpcRice: env.defaultNpcRice,
-                defaultCrewTypeId: env.defaultCrewTypeId,
-                defaultSpecialDomestic: env.defaultSpecialDomestic,
-                defaultSpecialWar: env.defaultSpecialWar,
-            }),
-            reqArg: false,
-            args: {},
-        },
-        {
-            category: '전략',
-            definition: new VolunteerRecruitActionDefinition(emptyModules, {
-                openingPartYear: env.openingPartYear,
-                initialNationGenLimit: env.initialNationGenLimit,
-                defaultNpcGold: env.defaultNpcGold,
-                defaultNpcRice: env.defaultNpcRice,
-                defaultCrewTypeId: env.defaultCrewTypeId,
-                defaultSpecialDomestic: env.defaultSpecialDomestic,
-                defaultSpecialWar: env.defaultSpecialWar,
-            }),
-            reqArg: false,
-            args: {},
-        },
-    ];
+const buildEntries = (
+    env: CommandEnv,
+    specs: TurnCommandSpec[]
+): CommandEntry[] => {
+    const entries: CommandEntry[] = [];
 
-    const awardDefinition = new AwardActionDefinition({
-        baseGold: env.baseGold,
-        baseRice: env.baseRice,
-        maxAmount: env.maxResourceActionAmount,
-    });
-    const assignmentDefinition = new AssignmentActionDefinition({});
+    for (const spec of specs) {
+        const definition = spec.createDefinition(env);
+        const entry: CommandEntry = {
+            category: spec.category,
+            definition,
+            reqArg: spec.reqArg,
+            args: spec.args,
+        };
 
-    const nationEntries: CommandEntry[] = [
-        {
-            category: '휴식',
-            definition: new NationRestActionDefinition(),
-            reqArg: false,
-            args: {},
-        },
-        {
-            category: '외교',
-            definition: new DeclarationActionDefinition(),
-            reqArg: true,
-            args: { destNationId: 0 },
-        },
-        {
-            category: '인사',
-            definition: assignmentDefinition,
-            reqArg: true,
-            args: { destGeneralId: 0, destCityId: 0 },
-        },
-        {
-            category: '인사',
-            definition: awardDefinition,
-            reqArg: true,
-            args: { isGold: true, amount: 1, destGeneralId: 0 },
-            evaluate: (ctx, view) => {
+        if (spec.key === 'che_포상') {
+            entry.evaluate = (ctx, view) => {
                 const gold = evaluateDefinition(
-                    awardDefinition,
+                    definition,
                     ctx,
                     view,
                     true,
                     { isGold: true, amount: 1, destGeneralId: 0 }
                 );
                 const rice = evaluateDefinition(
-                    awardDefinition,
+                    definition,
                     ctx,
                     view,
                     true,
                     { isGold: false, amount: 1, destGeneralId: 0 }
                 );
                 return pickAvailability(gold, rice);
-            },
-        },
-    ];
+            };
+        }
 
-    return { general: generalEntries, nation: nationEntries };
+        entries.push(entry);
+    }
+
+    return entries;
 };
 
 const buildGroups = (
@@ -742,12 +523,12 @@ const buildGroups = (
     }));
 };
 
-export const buildTurnCommandTable = (options: {
+export const buildTurnCommandTable = async (options: {
     worldState: WorldStateRow;
     general: GeneralRow;
     city: CityRow | null;
     nation: NationRow | null;
-}): TurnCommandTable => {
+}): Promise<TurnCommandTable> => {
     // 턴 입력 화면에서 쓰는 사전 판단이므로 최소 정보로 가능/불가만 계산한다.
     const general = mapGeneralRow(options.general);
     const city = options.city ? mapCityRow(options.city) : null;
@@ -764,10 +545,16 @@ export const buildTurnCommandTable = (options: {
     };
 
     const env = buildCommandEnv(options.worldState);
-    const entries = buildEntries(env);
+    const commandProfile = await loadTurnCommandProfile();
+    const [generalSpecs, nationSpecs] = await Promise.all([
+        loadGeneralTurnCommandSpecs(commandProfile.general),
+        loadNationTurnCommandSpecs(commandProfile.nation),
+    ]);
+    const generalEntries = buildEntries(env, generalSpecs);
+    const nationEntries = buildEntries(env, nationSpecs);
 
     return {
-        general: buildGroups(entries.general, ctx, view),
-        nation: buildGroups(entries.nation, ctx, view),
+        general: buildGroups(generalEntries, ctx, view),
+        nation: buildGroups(nationEntries, ctx, view),
     };
 };

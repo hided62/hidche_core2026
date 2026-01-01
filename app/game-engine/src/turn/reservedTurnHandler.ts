@@ -1,6 +1,5 @@
 import type {
     City,
-    General,
     GeneralActionDefinition,
     GeneralActionResolveContext,
     LogEntryDraft,
@@ -10,34 +9,13 @@ import type {
     ScenarioDiplomacy,
     ScenarioMeta,
     Troop,
+    TurnCommandProfile,
     UnitSetDefinition,
 } from '@sammo-ts/logic';
 import {
-    AppointmentActionDefinition,
-    AssignmentActionDefinition,
-    BoostMoraleActionDefinition,
-    AwardActionDefinition,
-    CommerceInvestmentActionDefinition,
-    DeclarationActionDefinition,
-    DefenceUpgradeActionDefinition,
-    DispatchActionDefinition,
+    DEFAULT_TURN_COMMAND_PROFILE,
     evaluateConstraints,
-    FireAttackActionDefinition,
-    FarmingActionDefinition,
-    FoundingActionDefinition,
-    NationRestActionDefinition,
-    RecoveryActionDefinition,
-    ResidentsSelectionActionDefinition,
-    RecruitActionDefinition,
     resolveGeneralAction,
-    RestActionDefinition,
-    SecurityUpgradeActionDefinition,
-    TechResearchActionDefinition,
-    TalentScoutActionDefinition,
-    TrainingActionDefinition,
-    UprisingActionDefinition,
-    VolunteerRecruitActionDefinition,
-    WallRepairActionDefinition,
 } from '@sammo-ts/logic';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic';
 import { LiteHashDRBG } from '@sammo-ts/common';
@@ -49,47 +27,13 @@ import type { InMemoryTurnWorld } from './inMemoryWorld.js';
 import type { TurnGeneral, TurnWorldState } from './types.js';
 import type { ReservedTurnEntry } from './reservedTurnStore.js';
 import type { InMemoryReservedTurnStore } from './reservedTurnStore.js';
+import {
+    buildCommandEnv,
+    buildReservedTurnDefinitions,
+} from './reservedTurnCommands.js';
+import type { ActionContextBase } from './reservedTurnActionContext.js';
+import { buildActionContext } from './reservedTurnActionContext.js';
 
-interface CommandEnv {
-    develCost: number;
-    trainDelta: number;
-    atmosDelta: number;
-    maxTrainByCommand: number;
-    maxAtmosByCommand: number;
-    sabotageDefaultProb: number;
-    sabotageProbCoefByStat: number;
-    sabotageDefenceCoefByGeneralCount: number;
-    sabotageDamageMin: number;
-    sabotageDamageMax: number;
-    openingPartYear: number;
-    maxGeneral: number;
-    defaultNpcGold: number;
-    defaultNpcRice: number;
-    defaultCrewTypeId: number;
-    defaultSpecialDomestic: string | null;
-    defaultSpecialWar: string | null;
-    initialNationGenLimit: number;
-    maxTechLevel: number;
-    baseGold: number;
-    baseRice: number;
-    maxResourceActionAmount: number;
-}
-
-interface WorldSummary {
-    totalGeneralCount: number;
-    totalNpcCount: number;
-    averageStats?: General['stats'];
-}
-
-interface NationSummary {
-    averageStats?: General['stats'];
-    averageExperience?: number;
-    averageDedication?: number;
-}
-
-const DEFAULT_GENERAL_GOLD = 1000;
-const DEFAULT_GENERAL_RICE = 1000;
-const DEFAULT_CREW_TYPE_ID = 1100;
 const DEFAULT_ACTION = '휴식';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -97,134 +41,6 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const asRecord = (value: unknown): Record<string, unknown> =>
     isRecord(value) ? value : {};
-
-const normalizeCode = (value: string | null | undefined): string | null => {
-    if (!value || value === 'None') {
-        return null;
-    }
-    return value;
-};
-
-const resolveNumber = (
-    source: Record<string, unknown>,
-    keys: string[],
-    fallback: number
-): number => {
-    for (const key of keys) {
-        const value = source[key];
-        if (typeof value === 'number' && Number.isFinite(value)) {
-            return value;
-        }
-    }
-    return fallback;
-};
-
-const resolveOptionalString = (
-    source: Record<string, unknown>,
-    keys: string[]
-): string | null => {
-    for (const key of keys) {
-        const value = source[key];
-        if (typeof value === 'string') {
-            return normalizeCode(value);
-        }
-    }
-    return null;
-};
-
-const buildCommandEnv = (
-    config: ScenarioConfig,
-    unitSet?: UnitSetDefinition
-): CommandEnv => {
-    const constValues = asRecord(config.const);
-
-    return {
-        develCost: resolveNumber(
-            constValues,
-            ['develCost', 'develcost', 'develrate'],
-            0
-        ),
-        trainDelta: resolveNumber(constValues, ['trainDelta'], 0),
-        atmosDelta: resolveNumber(constValues, ['atmosDelta'], 0),
-        maxTrainByCommand: resolveNumber(constValues, ['maxTrainByCommand'], 0),
-        maxAtmosByCommand: resolveNumber(
-            constValues,
-            ['maxAtmosByCommand'],
-            0
-        ),
-        sabotageDefaultProb: resolveNumber(
-            constValues,
-            ['sabotageDefaultProb'],
-            0
-        ),
-        sabotageProbCoefByStat: resolveNumber(
-            constValues,
-            ['sabotageProbCoefByStat'],
-            0
-        ),
-        sabotageDefenceCoefByGeneralCount: resolveNumber(
-            constValues,
-            ['sabotageDefenceCoefByGeneralCount'],
-            0
-        ),
-        sabotageDamageMin: resolveNumber(
-            constValues,
-            ['sabotageDamageMin'],
-            0
-        ),
-        sabotageDamageMax: resolveNumber(
-            constValues,
-            ['sabotageDamageMax'],
-            0
-        ),
-        openingPartYear: resolveNumber(
-            constValues,
-            ['openingPartYear'],
-            0
-        ),
-        maxGeneral: resolveNumber(
-            constValues,
-            ['defaultMaxGeneral', 'maxGeneral'],
-            0
-        ),
-        defaultNpcGold: resolveNumber(
-            constValues,
-            ['defaultNpcGold', 'defaultGold'],
-            DEFAULT_GENERAL_GOLD
-        ),
-        defaultNpcRice: resolveNumber(
-            constValues,
-            ['defaultNpcRice', 'defaultRice'],
-            DEFAULT_GENERAL_RICE
-        ),
-        defaultCrewTypeId: resolveNumber(
-            constValues,
-            ['defaultCrewTypeId'],
-            unitSet?.defaultCrewTypeId ?? DEFAULT_CREW_TYPE_ID
-        ),
-        defaultSpecialDomestic: resolveOptionalString(
-            constValues,
-            ['defaultSpecialDomestic']
-        ),
-        defaultSpecialWar: resolveOptionalString(
-            constValues,
-            ['defaultSpecialWar']
-        ),
-        initialNationGenLimit: resolveNumber(
-            constValues,
-            ['initialNationGenLimit'],
-            0
-        ),
-        maxTechLevel: resolveNumber(constValues, ['maxTechLevel'], 0),
-        baseGold: resolveNumber(constValues, ['baseGold', 'basegold'], 0),
-        baseRice: resolveNumber(constValues, ['baseRice', 'baserice'], 0),
-        maxResourceActionAmount: resolveNumber(
-            constValues,
-            ['maxResourceActionAmount'],
-            0
-        ),
-    };
-};
 
 const resolveConstraintEnv = (
     world: TurnWorldState,
@@ -259,93 +75,6 @@ const buildDiplomacyMap = (
     return map;
 };
 
-const buildWorldSummary = (
-    world: InMemoryTurnWorld | null
-): WorldSummary => {
-    if (!world) {
-        return { totalGeneralCount: 0, totalNpcCount: 0 };
-    }
-    const generals = world.listGenerals();
-    if (generals.length === 0) {
-        return { totalGeneralCount: 0, totalNpcCount: 0 };
-    }
-    const total = generals.length;
-    const npcCount = generals.filter((general) => general.npcState > 0).length;
-    const statSum = generals.reduce(
-        (acc, general) => ({
-            leadership: acc.leadership + general.stats.leadership,
-            strength: acc.strength + general.stats.strength,
-            intelligence: acc.intelligence + general.stats.intelligence,
-        }),
-        { leadership: 0, strength: 0, intelligence: 0 }
-    );
-    return {
-        totalGeneralCount: total,
-        totalNpcCount: npcCount,
-        averageStats: {
-            leadership: statSum.leadership / total,
-            strength: statSum.strength / total,
-            intelligence: statSum.intelligence / total,
-        },
-    };
-};
-
-const buildNationSummary = (
-    world: InMemoryTurnWorld | null,
-    nationId: number
-): NationSummary => {
-    if (!world || nationId <= 0) {
-        return {};
-    }
-    const generals = world.listGenerals().filter(
-        (general) => general.nationId === nationId
-    );
-    if (generals.length === 0) {
-        return {};
-    }
-    const total = generals.length;
-    const statSum = generals.reduce(
-        (acc, general) => ({
-            leadership: acc.leadership + general.stats.leadership,
-            strength: acc.strength + general.stats.strength,
-            intelligence: acc.intelligence + general.stats.intelligence,
-        }),
-        { leadership: 0, strength: 0, intelligence: 0 }
-    );
-    const expSum = generals.reduce((acc, general) => acc + general.experience, 0);
-    const dedSum = generals.reduce((acc, general) => acc + general.dedication, 0);
-    return {
-        averageStats: {
-            leadership: statSum.leadership / total,
-            strength: statSum.strength / total,
-            intelligence: statSum.intelligence / total,
-        },
-        averageExperience: expSum / total,
-        averageDedication: dedSum / total,
-    };
-};
-
-const buildAverageNationGeneralCount = (world: InMemoryTurnWorld | null): number => {
-    if (!world) {
-        return 0;
-    }
-    const generals = world.listGenerals();
-    const nations = world.listNations();
-    if (nations.length === 0) {
-        return generals.length;
-    }
-    return generals.length / nations.length;
-};
-
-const resolveStartYear = (
-    world: TurnWorldState,
-    scenarioMeta?: ScenarioMeta
-): number => {
-    if (typeof scenarioMeta?.startYear === 'number') {
-        return scenarioMeta.startYear;
-    }
-    return world.currentYear;
-};
 
 const buildSeedBase = (world: TurnWorldState): string => {
     const meta = asRecord(world.meta);
@@ -445,196 +174,12 @@ class WorldStateView implements StateView {
     }
 }
 
-const buildGeneralDefinitions = (
-    env: CommandEnv
-): Map<string, GeneralActionDefinition> => {
-    const definitions = new Map<string, GeneralActionDefinition>();
-    definitions.set('che_거병', new UprisingActionDefinition());
-    definitions.set('che_임관', new AppointmentActionDefinition());
-    definitions.set('che_건국', new FoundingActionDefinition());
-    definitions.set(
-        'che_훈련',
-        new TrainingActionDefinition({
-            trainDelta: env.trainDelta,
-            maxTrainByCommand: env.maxTrainByCommand,
-        })
-    );
-    definitions.set(
-        'che_사기진작',
-        new BoostMoraleActionDefinition({
-            atmosDelta: env.atmosDelta,
-            maxAtmosByCommand: env.maxAtmosByCommand,
-        })
-    );
-    definitions.set('che_요양', new RecoveryActionDefinition());
-    definitions.set('che_출병', new DispatchActionDefinition());
-    definitions.set(
-        'che_주민선정',
-        new ResidentsSelectionActionDefinition({ develCost: env.develCost })
-    );
-    definitions.set(
-        'che_농지개간',
-        new FarmingActionDefinition({ develCost: env.develCost })
-    );
-    definitions.set(
-        'che_상업투자',
-        new CommerceInvestmentActionDefinition([], env)
-    );
-    definitions.set(
-        'che_기술연구',
-        new TechResearchActionDefinition({
-            costGold: env.develCost,
-            maxTechLevel: env.maxTechLevel,
-        })
-    );
-    definitions.set(
-        'che_치안강화',
-        new SecurityUpgradeActionDefinition({ develCost: env.develCost })
-    );
-    definitions.set(
-        'che_수비강화',
-        new DefenceUpgradeActionDefinition({ develCost: env.develCost })
-    );
-    definitions.set(
-        'che_성벽보수',
-        new WallRepairActionDefinition({ develCost: env.develCost })
-    );
-    definitions.set('che_화계', new FireAttackActionDefinition([], env));
-    definitions.set('che_인재탐색', new TalentScoutActionDefinition([], env));
-    definitions.set('che_의병모집', new VolunteerRecruitActionDefinition([], env));
-    definitions.set('che_징병', new RecruitActionDefinition([], {}));
-    definitions.set('휴식', new RestActionDefinition());
-    return definitions;
-};
-
-const buildNationDefinitions = (
-    env: CommandEnv
-): Map<string, GeneralActionDefinition> => {
-    const definitions = new Map<string, GeneralActionDefinition>();
-    const maxAmount =
-        env.maxResourceActionAmount > 0
-            ? env.maxResourceActionAmount
-            : Math.max(env.baseGold, env.baseRice, 1000);
-    definitions.set('휴식', new NationRestActionDefinition());
-    definitions.set('che_선전포고', new DeclarationActionDefinition());
-    definitions.set(
-        'che_포상',
-        new AwardActionDefinition({
-            baseGold: env.baseGold,
-            baseRice: env.baseRice,
-            maxAmount,
-        })
-    );
-    definitions.set('che_발령', new AssignmentActionDefinition({}));
-    return definitions;
-};
+ 
 
 const extractArgsRecord = (value: unknown): Record<string, unknown> =>
     isRecord(value) ? value : {};
 
-const resolveTurnTermMinutes = (world: TurnWorldState): number =>
-    Math.max(1, Math.round(world.tickSeconds / 60));
-
-type ActionContextBase = {
-    general: TurnGeneral;
-    city?: City;
-    nation?: Nation | null;
-    rng: DeterministicRandom;
-};
-
-type ActionResolveContext = ActionContextBase & Record<string, unknown>;
-
-const buildActionContext = (
-    key: string,
-    base: ActionContextBase,
-    options: {
-        world: TurnWorldState;
-        scenarioMeta?: ScenarioMeta;
-        map?: MapDefinition;
-        unitSet?: UnitSetDefinition;
-        worldRef: InMemoryTurnWorld | null;
-        actionArgs: Record<string, unknown>;
-        createGeneralId: () => number;
-    }
-): ActionResolveContext | null => {
-    switch (key) {
-        case 'che_인재탐색':
-            return {
-                ...base,
-                currentYear: options.world.currentYear,
-                worldSummary: buildWorldSummary(options.worldRef),
-                createGeneralId: options.createGeneralId,
-            };
-        case 'che_의병모집': {
-            const nationSummary = buildNationSummary(
-                options.worldRef,
-                (base.general as TurnGeneral).nationId
-            );
-            return {
-                ...base,
-                currentYear: options.world.currentYear,
-                startYear: resolveStartYear(options.world, options.scenarioMeta),
-                averageNationGeneralCount: buildAverageNationGeneralCount(
-                    options.worldRef
-                ),
-                nationAverageStats: nationSummary.averageStats,
-                nationAverageExperience: nationSummary.averageExperience,
-                nationAverageDedication: nationSummary.averageDedication,
-                createGeneralId: options.createGeneralId,
-            };
-        }
-        case 'che_포상': {
-            const destGeneralId = options.actionArgs.destGeneralId;
-            if (typeof destGeneralId !== 'number') {
-                return null;
-            }
-            const destGeneral = options.worldRef?.getGeneralById(destGeneralId);
-            if (!destGeneral) {
-                return null;
-            }
-            return {
-                ...base,
-                destGeneral,
-            };
-        }
-        case 'che_발령': {
-            const destGeneralId = options.actionArgs.destGeneralId;
-            const destCityId = options.actionArgs.destCityId;
-            if (typeof destGeneralId !== 'number' || typeof destCityId !== 'number') {
-                return null;
-            }
-            const destGeneral = options.worldRef?.getGeneralById(destGeneralId);
-            const destCity = options.worldRef?.getCityById(destCityId);
-            if (!destGeneral || !destCity) {
-                return null;
-            }
-            return {
-                ...base,
-                destGeneral,
-                destCity,
-                currentYear: options.world.currentYear,
-                currentMonth: options.world.currentMonth,
-                turnTermMinutes: resolveTurnTermMinutes(options.world),
-                generalTurnTime: (base.general as TurnGeneral).turnTime,
-                destGeneralTurnTime: destGeneral.turnTime,
-            };
-        }
-        case 'che_징병':
-            if (!options.map || !options.unitSet) {
-                return null;
-            }
-            return {
-                ...base,
-                map: options.map,
-                unitSet: options.unitSet,
-                cities: options.worldRef?.listCities() ?? [],
-                currentYear: options.world.currentYear,
-                startYear: resolveStartYear(options.world, options.scenarioMeta),
-            };
-        default:
-            return base;
-    }
-};
+ 
 
 const buildConstraintContext = (
     general: TurnGeneral,
@@ -664,7 +209,7 @@ const resolveDefinition = (
     fallback: GeneralActionDefinition
 ): GeneralActionDefinition => definitions.get(actionKey) ?? fallback;
 
-export const createReservedTurnHandler = (options: {
+export const createReservedTurnHandler = async (options: {
     reservedTurns: InMemoryReservedTurnStore;
     scenarioConfig: ScenarioConfig;
     scenarioMeta?: ScenarioMeta;
@@ -672,10 +217,17 @@ export const createReservedTurnHandler = (options: {
     map?: MapDefinition;
     unitSet?: UnitSetDefinition;
     getWorld: () => InMemoryTurnWorld | null;
-}): GeneralTurnHandler => {
+    commandProfile?: TurnCommandProfile;
+}): Promise<GeneralTurnHandler> => {
     const env = buildCommandEnv(options.scenarioConfig, options.unitSet);
-    const generalDefinitions = buildGeneralDefinitions(env);
-    const nationDefinitions = buildNationDefinitions(env);
+    const commandProfile =
+        options.commandProfile ?? DEFAULT_TURN_COMMAND_PROFILE;
+    const { general: generalDefinitions, nation: nationDefinitions } =
+        await buildReservedTurnDefinitions({
+            env,
+            commandProfile,
+            defaultActionKey: DEFAULT_ACTION,
+        });
     const generalFallback = generalDefinitions.get(DEFAULT_ACTION)!;
     const nationFallback = nationDefinitions.get(DEFAULT_ACTION)!;
     const diplomacyMap = buildDiplomacyMap(options.diplomacy);

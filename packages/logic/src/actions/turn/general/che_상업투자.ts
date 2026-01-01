@@ -37,6 +37,8 @@ import {
     createGeneralPatchEffect,
     createLogEffect,
 } from '../../engine.js';
+import type { TurnCommandEnv } from '../commandEnv.js';
+import type { GeneralTurnCommandSpec } from './index.js';
 
 export type DomesticCriticalPick = 'fail' | 'normal' | 'success';
 
@@ -437,3 +439,11 @@ export class ActionDefinition<
         return this.resolver.resolve(context, args);
     }
 }
+
+export const commandSpec: GeneralTurnCommandSpec = {
+    key: 'che_상업투자',
+    category: '내정',
+    reqArg: false,
+    args: {},
+    createDefinition: (env: TurnCommandEnv) => new ActionDefinition([], env),
+};

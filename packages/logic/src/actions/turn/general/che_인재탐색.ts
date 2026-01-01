@@ -32,6 +32,8 @@ import {
 import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
 import { buildRecruitmentGeneral } from './recruitment.js';
 import { JosaUtil } from '@sammo-ts/common';
+import type { TurnCommandEnv } from '../commandEnv.js';
+import type { GeneralTurnCommandSpec } from './index.js';
 
 export interface TalentScoutArgs {}
 
@@ -468,3 +470,11 @@ export class ActionDefinition<
         return this.resolver.resolve(context, args);
     }
 }
+
+export const commandSpec: GeneralTurnCommandSpec = {
+    key: 'che_인재탐색',
+    category: '인사',
+    reqArg: false,
+    args: {},
+    createDefinition: (env: TurnCommandEnv) => new ActionDefinition([], env),
+};

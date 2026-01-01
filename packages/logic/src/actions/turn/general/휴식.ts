@@ -12,6 +12,8 @@ import type {
 } from '../../engine.js';
 import { createLogEffect } from '../../engine.js';
 import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
+import type { TurnCommandEnv } from '../commandEnv.js';
+import type { GeneralTurnCommandSpec } from './index.js';
 
 export interface RestArgs {}
 
@@ -66,3 +68,11 @@ export class ActionDefinition<
         return this.resolver.resolve(context, args);
     }
 }
+
+export const commandSpec: GeneralTurnCommandSpec = {
+    key: '휴식',
+    category: '개인',
+    reqArg: false,
+    args: {},
+    createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
+};

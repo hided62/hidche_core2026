@@ -1,13 +1,35 @@
+import type { GeneralActionDefinition } from '../../definition.js';
+import type { TurnCommandEnv } from '../commandEnv.js';
+import type * as NationRestModule from './휴식.js';
+import type * as AwardModule from './che_포상.js';
+import type * as AssignmentModule from './che_발령.js';
+import type * as DeclarationModule from './che_선전포고.js';
+
 export type NationTurnCommandKey =
     | '휴식'
     | 'che_포상'
     | 'che_발령'
     | 'che_선전포고';
 
-import type * as NationRestModule from './휴식.js';
-import type * as AwardModule from './che_포상.js';
-import type * as AssignmentModule from './che_발령.js';
-import type * as DeclarationModule from './che_선전포고.js';
+export const NATION_TURN_COMMAND_KEYS: NationTurnCommandKey[] = [
+    '휴식',
+    'che_포상',
+    'che_발령',
+    'che_선전포고',
+];
+
+export const isNationTurnCommandKey = (
+    value: string
+): value is NationTurnCommandKey =>
+    (NATION_TURN_COMMAND_KEYS as string[]).includes(value);
+
+export interface NationTurnCommandSpec {
+    key: NationTurnCommandKey;
+    category: string;
+    reqArg: boolean;
+    args: Record<string, unknown>;
+    createDefinition(env: TurnCommandEnv): GeneralActionDefinition;
+}
 
 export type NationTurnCommandModule =
     | typeof NationRestModule
@@ -45,6 +67,26 @@ export class NationTurnCommandLoader {
         return importer();
     }
 }
+
+export const loadNationTurnCommandSpecs = async (
+    keys: NationTurnCommandKey[],
+    loader: NationTurnCommandLoader = new NationTurnCommandLoader()
+): Promise<NationTurnCommandSpec[]> => {
+    const specs: NationTurnCommandSpec[] = [];
+    const seen = new Set<string>();
+    for (const key of keys) {
+        if (seen.has(key)) {
+            continue;
+        }
+        seen.add(key);
+        const module = await loader.load(key);
+        if (!('commandSpec' in module)) {
+            throw new Error(`Missing commandSpec for nation command: ${key}`);
+        }
+        specs.push(module.commandSpec);
+    }
+    return specs;
+};
 
 export {
     ActionDefinition as NationRestActionDefinition,

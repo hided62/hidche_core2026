@@ -15,6 +15,8 @@ import type {
 } from '../../engine.js';
 import { createGeneralPatchEffect, createLogEffect } from '../../engine.js';
 import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
+import type { TurnCommandEnv } from '../commandEnv.js';
+import type { GeneralTurnCommandSpec } from './index.js';
 
 export interface RecoveryArgs {}
 
@@ -77,3 +79,11 @@ export class ActionDefinition<
         };
     }
 }
+
+export const commandSpec: GeneralTurnCommandSpec = {
+    key: 'che_요양',
+    category: '개인',
+    reqArg: false,
+    args: {},
+    createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
+};

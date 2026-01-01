@@ -10,6 +10,8 @@ import type {
     GeneralActionOutcome,
     GeneralActionResolveContext,
 } from '../../engine.js';
+import type { TurnCommandEnv } from '../commandEnv.js';
+import type { NationTurnCommandSpec } from './index.js';
 
 export interface NationRestArgs {}
 
@@ -56,3 +58,11 @@ export class ActionDefinition<
         return this.resolver.resolve(context, args);
     }
 }
+
+export const commandSpec: NationTurnCommandSpec = {
+    key: '휴식',
+    category: '휴식',
+    reqArg: false,
+    args: {},
+    createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
+};

@@ -26,6 +26,8 @@ import {
     createNationPatchEffect,
 } from '../../engine.js';
 import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
+import type { TurnCommandEnv } from '../commandEnv.js';
+import type { GeneralTurnCommandSpec } from './index.js';
 
 export interface TechResearchArgs {}
 
@@ -127,3 +129,15 @@ export class ActionDefinition<
         };
     }
 }
+
+export const commandSpec: GeneralTurnCommandSpec = {
+    key: 'che_기술연구',
+    category: '내정',
+    reqArg: false,
+    args: {},
+    createDefinition: (env: TurnCommandEnv) =>
+        new ActionDefinition({
+            costGold: env.develCost,
+            maxTechLevel: env.maxTechLevel,
+        }),
+};

@@ -14,6 +14,8 @@ import type {
 } from '../../engine.js';
 import { createLogEffect } from '../../engine.js';
 import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
+import type { TurnCommandEnv } from '../commandEnv.js';
+import type { NationTurnCommandSpec } from './index.js';
 
 export interface DeclareWarArgs {
     destNationId: number;
@@ -72,3 +74,11 @@ export class ActionDefinition<
         };
     }
 }
+
+export const commandSpec: NationTurnCommandSpec = {
+    key: 'che_선전포고',
+    category: '외교',
+    reqArg: true,
+    args: { destNationId: 0 },
+    createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
+};

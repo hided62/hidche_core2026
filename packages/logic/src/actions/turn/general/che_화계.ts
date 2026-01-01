@@ -36,6 +36,8 @@ import {
     createLogEffect,
 } from '../../engine.js';
 import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
+import type { TurnCommandEnv } from '../commandEnv.js';
+import type { GeneralTurnCommandSpec } from './index.js';
 
 export interface FireAttackArgs {
     destCityId: number;
@@ -503,3 +505,11 @@ export class ActionDefinition<
         return this.resolver.resolve(context, args);
     }
 }
+
+export const commandSpec: GeneralTurnCommandSpec = {
+    key: 'che_화계',
+    category: '계략',
+    reqArg: true,
+    args: { destCityId: 0 },
+    createDefinition: (env: TurnCommandEnv) => new ActionDefinition([], env),
+};

@@ -8,6 +8,8 @@ import type {
 } from '../../engine.js';
 import { createGeneralPatchEffect, createLogEffect } from '../../engine.js';
 import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
+import type { TurnCommandEnv } from '../commandEnv.js';
+import type { GeneralTurnCommandSpec } from './index.js';
 
 export interface FoundingArgs {}
 
@@ -53,3 +55,11 @@ export class ActionDefinition<
         };
     }
 }
+
+export const commandSpec: GeneralTurnCommandSpec = {
+    key: 'che_건국',
+    category: '전략',
+    reqArg: false,
+    args: {},
+    createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
+};

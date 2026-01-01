@@ -1,4 +1,4 @@
-import type { TurnSchedule } from '@sammo-ts/logic';
+import type { TurnCommandProfile, TurnSchedule } from '@sammo-ts/logic';
 
 import { SystemClock } from '../lifecycle/clock.js';
 import { getNextTickTime } from '../lifecycle/getNextTickTime.js';
@@ -23,6 +23,7 @@ import { InMemoryTurnStateStore } from './inMemoryStateStore.js';
 import { createGatewayProfileGate } from './gatewayProfileGate.js';
 import { createReservedTurnHandler } from './reservedTurnHandler.js';
 import { createReservedTurnStore } from './reservedTurnStore.js';
+import { loadTurnCommandProfile } from './turnCommandProfile.js';
 import { loadTurnWorldFromDatabase } from './worldLoader.js';
 
 export interface TurnDaemonRuntimeOptions {
@@ -39,6 +40,8 @@ export interface TurnDaemonRuntimeOptions {
     calendarHandler?: TurnCalendarHandler;
     enableDatabaseFlush?: boolean;
     pauseGateIntervalMs?: number;
+    commandProfile?: TurnCommandProfile;
+    commandProfilePath?: string;
 }
 
 export interface TurnDaemonRuntime {
@@ -81,12 +84,19 @@ export const createTurnDaemonRuntime = async (
         : await createReservedTurnStore({
               databaseUrl: options.databaseUrl,
           });
+    const commandProfile =
+        options.commandProfile ??
+        (options.commandProfilePath
+            ? await loadTurnCommandProfile({
+                  filePath: options.commandProfilePath,
+              })
+            : await loadTurnCommandProfile());
     let worldRef: InMemoryTurnWorld | null = null;
     const worldOptions: InMemoryTurnWorldOptions = {
         schedule,
         generalTurnHandler:
             options.generalTurnHandler ??
-            createReservedTurnHandler({
+            (await createReservedTurnHandler({
                 reservedTurns: reservedTurnStoreHandle!.store,
                 scenarioConfig: snapshot.scenarioConfig,
                 scenarioMeta: snapshot.scenarioMeta,
@@ -94,7 +104,8 @@ export const createTurnDaemonRuntime = async (
                 map: snapshot.map,
                 unitSet: snapshot.unitSet,
                 getWorld: () => worldRef,
-            }),
+                commandProfile,
+            })),
         calendarHandler: options.calendarHandler,
     };
     const world = new InMemoryTurnWorld(resolvedState, snapshot, worldOptions);

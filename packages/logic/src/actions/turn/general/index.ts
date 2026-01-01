@@ -1,3 +1,25 @@
+import type { GeneralActionDefinition } from '../../definition.js';
+import type { TurnCommandEnv } from '../commandEnv.js';
+import type * as UprisingModule from './che_거병.js';
+import type * as AppointmentModule from './che_임관.js';
+import type * as FoundingModule from './che_건국.js';
+import type * as TrainingModule from './che_훈련.js';
+import type * as BoostMoraleModule from './che_사기진작.js';
+import type * as RecoveryModule from './che_요양.js';
+import type * as DispatchModule from './che_출병.js';
+import type * as ResidentsSelectionModule from './che_주민선정.js';
+import type * as FarmingModule from './che_농지개간.js';
+import type * as CommerceInvestmentModule from './che_상업투자.js';
+import type * as TechResearchModule from './che_기술연구.js';
+import type * as SecurityUpgradeModule from './che_치안강화.js';
+import type * as DefenceUpgradeModule from './che_수비강화.js';
+import type * as WallRepairModule from './che_성벽보수.js';
+import type * as FireAttackModule from './che_화계.js';
+import type * as TalentScoutModule from './che_인재탐색.js';
+import type * as VolunteerRecruitModule from './che_의병모집.js';
+import type * as RecruitModule from './che_징병.js';
+import type * as RestModule from './휴식.js';
+
 export type GeneralTurnCommandKey =
     | 'che_거병'
     | 'che_임관'
@@ -19,25 +41,40 @@ export type GeneralTurnCommandKey =
     | 'che_징병'
     | '휴식';
 
-import type * as UprisingModule from './che_거병.js';
-import type * as AppointmentModule from './che_임관.js';
-import type * as FoundingModule from './che_건국.js';
-import type * as TrainingModule from './che_훈련.js';
-import type * as BoostMoraleModule from './che_사기진작.js';
-import type * as RecoveryModule from './che_요양.js';
-import type * as DispatchModule from './che_출병.js';
-import type * as ResidentsSelectionModule from './che_주민선정.js';
-import type * as FarmingModule from './che_농지개간.js';
-import type * as CommerceInvestmentModule from './che_상업투자.js';
-import type * as TechResearchModule from './che_기술연구.js';
-import type * as SecurityUpgradeModule from './che_치안강화.js';
-import type * as DefenceUpgradeModule from './che_수비강화.js';
-import type * as WallRepairModule from './che_성벽보수.js';
-import type * as FireAttackModule from './che_화계.js';
-import type * as TalentScoutModule from './che_인재탐색.js';
-import type * as VolunteerRecruitModule from './che_의병모집.js';
-import type * as RecruitModule from './che_징병.js';
-import type * as RestModule from './휴식.js';
+export const GENERAL_TURN_COMMAND_KEYS: GeneralTurnCommandKey[] = [
+    'che_거병',
+    'che_임관',
+    'che_건국',
+    'che_훈련',
+    'che_사기진작',
+    'che_요양',
+    'che_출병',
+    'che_주민선정',
+    'che_농지개간',
+    'che_상업투자',
+    'che_기술연구',
+    'che_치안강화',
+    'che_수비강화',
+    'che_성벽보수',
+    'che_화계',
+    'che_인재탐색',
+    'che_의병모집',
+    'che_징병',
+    '휴식',
+];
+
+export const isGeneralTurnCommandKey = (
+    value: string
+): value is GeneralTurnCommandKey =>
+    (GENERAL_TURN_COMMAND_KEYS as string[]).includes(value);
+
+export interface GeneralTurnCommandSpec {
+    key: GeneralTurnCommandKey;
+    category: string;
+    reqArg: boolean;
+    args: Record<string, unknown>;
+    createDefinition(env: TurnCommandEnv): GeneralActionDefinition;
+}
 
 export type GeneralTurnCommandModule =
     | typeof UprisingModule
@@ -105,6 +142,26 @@ export class GeneralTurnCommandLoader {
         return importer();
     }
 }
+
+export const loadGeneralTurnCommandSpecs = async (
+    keys: GeneralTurnCommandKey[],
+    loader: GeneralTurnCommandLoader = new GeneralTurnCommandLoader()
+): Promise<GeneralTurnCommandSpec[]> => {
+    const specs: GeneralTurnCommandSpec[] = [];
+    const seen = new Set<string>();
+    for (const key of keys) {
+        if (seen.has(key)) {
+            continue;
+        }
+        seen.add(key);
+        const module = await loader.load(key);
+        if (!('commandSpec' in module)) {
+            throw new Error(`Missing commandSpec for general command: ${key}`);
+        }
+        specs.push(module.commandSpec);
+    }
+    return specs;
+};
 
 export {
     ActionDefinition as UprisingActionDefinition,
