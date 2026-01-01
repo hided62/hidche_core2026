@@ -27,6 +27,22 @@ enum OAuthType {
     KAKAO
 }
 
+enum GatewayProfileStatus {
+    COMPLETED
+    RESERVED
+    RUNNING
+    STOPPED
+    DISABLED
+}
+
+enum GatewayBuildStatus {
+    IDLE
+    QUEUED
+    RUNNING
+    FAILED
+    SUCCEEDED
+}
+
 model AppUser {
     id           String    @id @default(uuid())
     loginId      String    @unique @map("login_id")
@@ -44,6 +60,27 @@ model AppUser {
     lastLoginAt  DateTime? @map("last_login_at")
 
     @@map("app_user")
+}
+
+model GatewayProfile {
+    profileName      String             @id @map("profile_name")
+    profile          String
+    scenario         String
+    apiPort          Int                @map("api_port")
+    status           GatewayProfileStatus
+    buildStatus      GatewayBuildStatus @default(IDLE) @map("build_status")
+    scheduledStartAt DateTime?          @map("scheduled_start_at")
+    buildRequestedAt DateTime?          @map("build_requested_at")
+    buildStartedAt   DateTime?          @map("build_started_at")
+    buildCompletedAt DateTime?          @map("build_completed_at")
+    buildError       String?            @map("build_error")
+    lastError        String?            @map("last_error")
+    meta             Json               @default(dbgenerated("'{}'::jsonb"))
+    createdAt        DateTime           @default(now()) @map("created_at")
+    updatedAt        DateTime           @updatedAt @map("updated_at")
+
+    @@unique([profile, scenario])
+    @@map("gateway_profile")
 }
 
 model WorldState {

@@ -14,7 +14,6 @@ Move items into the main docs once they are finalized.
 - [AI suggestion] Implement diplomacy/state transitions and monthly/command-based updates beyond read-only maps.
 - [AI suggestion] Integrate war/battle pipeline into turn processing (troop movement/war resolution hooks, not just isolated sim jobs).
 - [AI suggestion] Expand turn command catalog beyond the current subset (general/nation commands).
-- [AI suggestion] Replace in-memory control queue with distributed control/lock primitives for multi-instance daemon operation.
 
 ## Runtime and Operations (Lower Priority)
 
@@ -23,6 +22,8 @@ Move items into the main docs once they are finalized.
 - Document existing status/health endpoint requirements for ops and the current daemon loop behavior.
 - Document tick budget settings (wall time, max generals, catch-up cap) and partial progress persistence.
 - Document admin controls (pause/resume/manual run) and how they interact with lock/state.
+- [AI suggestion] Define gateway admin build/daemon control approach (direct orchestration vs supervisor like systemd/pm2), security model, audit logging, and safe rollback/stop/start workflows.
+- [AI suggestion] Specify single-host gateway orchestration: boot reconciliation from DB (완료/예약/가동중/정지됨/비활성화), desired-state mapping, and pm2-managed process lifecycles for api/daemon.
 - Turn daemon vs API server priority policy under load
 - Recovery behavior after partial flush or crash
 - Observability: metrics, logs, and alerts for turn processing

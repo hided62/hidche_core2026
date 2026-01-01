@@ -9,6 +9,7 @@ import { decryptGameSessionToken, encryptGameSessionToken } from '@sammo-ts/comm
 import { procedure, router } from './trpc.js';
 import { toPublicUser } from './auth/userRepository.js';
 import type { UserOAuthInfo } from './auth/userRepository.js';
+import { adminRouter } from './adminRouter.js';
 
 const zUsername = z.string().min(2).max(32);
 const zPassword = z.string().min(6).max(128);
@@ -27,6 +28,7 @@ export const appRouter = router({
             now: new Date().toISOString(),
         })),
     }),
+    admin: adminRouter,
     auth: router({
         kakaoStart: procedure
             .input(

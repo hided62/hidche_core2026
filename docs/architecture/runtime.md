@@ -17,6 +17,47 @@ selection is required because it drives unit sets and DB settings.
 - Prefer `legacy/hwe/ts/util/LiteHashDRBG.ts` and `legacy/hwe/ts/util/RNG.ts`
 - Seed composition should include hidden base seed plus action context
 
+## Gateway Orchestration (Single Host Draft)
+
+Gateway API is the single source of truth for profile state and reconciles
+PM2-managed processes on boot and on a short interval. The DB owns the desired
+state; PM2 is treated as the actuator. The runtime state is grouped so that
+`game-api` + `turn-daemon` are either on together or off together.
+
+### DB-Owned Profile State
+
+Profiles are tracked by `profileName` (= `${profile}:${scenario}`).
+Gateway loads the profile table on boot, then reconciles PM2 to match.
+
+- `완료됨` (COMPLETED): build output exists; processes should be off.
+- `예약됨` (RESERVED): start is scheduled for a timestamp; processes off.
+- `가동중` (RUNNING): both `game-api` and `turn-daemon` should be on.
+- `정지됨` (STOPPED): processes off; may be resumed later.
+- `비활성화` (DISABLED): excluded from orchestration; start forbidden.
+
+### Boot Reconciliation
+
+1) Load profile rows from DB.
+2) List PM2 processes and map `profileName -> running state`.
+3) For each profile:
+   - If desired `RUNNING` and any process is missing, start missing processes.
+   - If desired not `RUNNING` and any process is running, stop both processes.
+4) Persist errors to DB for audit.
+
+### Internal Scheduler (Gateway Cron)
+
+Gateway runs a lightweight cron loop (setInterval) that:
+- Promotes `RESERVED` profiles whose `scheduledStartAt <= now` to `RUNNING`.
+- Triggers a reconcile immediately after promotion.
+- Optionally drains a build queue (see build workflow).
+
+### Build Workflow (Admin)
+
+- Admin triggers a build request for a profile.
+- Gateway queues a build job, runs `pnpm --filter @sammo-ts/game-api build`
+  and `pnpm --filter @sammo-ts/game-engine build`, then marks build success/failure.
+- On success, profile status remains `COMPLETED` (or stays `RUNNING` if already on).
+
 ## Current Implementation Status
 
 - Turn daemon lifecycle + in-memory state live in `app/game-engine` with DB flush hooks.

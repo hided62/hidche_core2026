@@ -36,6 +36,26 @@ const buildCaller = () => {
         }),
         sendTalkMessage: async () => {},
     };
+    const profiles = {
+        listProfiles: async () => [],
+        getProfile: async () => null,
+        upsertProfile: async () => {
+            throw new Error('not used');
+        },
+        updateStatus: async () => null,
+        updateBuildStatus: async () => null,
+        listReservedToStart: async () => [],
+        findQueuedBuild: async () => null,
+        updateLastError: async () => {},
+    };
+    const orchestrator = {
+        start: () => {},
+        stop: async () => {},
+        reconcileNow: async () => {},
+        runScheduleNow: async () => {},
+        runBuildQueueNow: async () => {},
+        listRuntimeStates: async () => [],
+    };
     const caller = appRouter.createCaller(
         createGatewayApiContext({
             users,
@@ -46,6 +66,9 @@ const buildCaller = () => {
             kakaoClient,
             oauthSessions,
             publicBaseUrl: 'http://localhost',
+            profiles,
+            orchestrator,
+            requestHeaders: {},
         })
     );
     return { caller, oauthSessions };

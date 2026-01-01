@@ -12,6 +12,12 @@ export interface GatewayApiConfig {
     kakaoAdminKey?: string;
     kakaoRedirectUri: string;
     publicBaseUrl: string;
+    adminToken?: string;
+    orchestratorEnabled: boolean;
+    orchestratorReconcileIntervalMs: number;
+    orchestratorScheduleIntervalMs: number;
+    orchestratorBuildIntervalMs: number;
+    workspaceRootHint: string;
 }
 
 const parseNumber = (value: string | undefined, fallback: number, label: string): number => {
@@ -23,6 +29,20 @@ const parseNumber = (value: string | undefined, fallback: number, label: string)
         throw new Error(`${label} must be a number.`);
     }
     return parsed;
+};
+
+const parseBoolean = (value: string | undefined, fallback: boolean): boolean => {
+    if (!value) {
+        return fallback;
+    }
+    const normalized = value.trim().toLowerCase();
+    if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) {
+        return true;
+    }
+    if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) {
+        return false;
+    }
+    return fallback;
 };
 
 export const resolveGatewayApiConfigFromEnv = (
@@ -61,5 +81,23 @@ export const resolveGatewayApiConfigFromEnv = (
         kakaoAdminKey: env.KAKAO_ADMIN_KEY,
         kakaoRedirectUri,
         publicBaseUrl,
+        adminToken: env.GATEWAY_ADMIN_TOKEN,
+        orchestratorEnabled: parseBoolean(env.GATEWAY_ORCHESTRATOR_ENABLED, true),
+        orchestratorReconcileIntervalMs: parseNumber(
+            env.GATEWAY_ORCHESTRATOR_RECONCILE_MS,
+            15000,
+            'GATEWAY_ORCHESTRATOR_RECONCILE_MS'
+        ),
+        orchestratorScheduleIntervalMs: parseNumber(
+            env.GATEWAY_ORCHESTRATOR_SCHEDULE_MS,
+            5000,
+            'GATEWAY_ORCHESTRATOR_SCHEDULE_MS'
+        ),
+        orchestratorBuildIntervalMs: parseNumber(
+            env.GATEWAY_ORCHESTRATOR_BUILD_MS,
+            10000,
+            'GATEWAY_ORCHESTRATOR_BUILD_MS'
+        ),
+        workspaceRootHint: env.GATEWAY_WORKSPACE_ROOT ?? process.cwd(),
     };
 };
