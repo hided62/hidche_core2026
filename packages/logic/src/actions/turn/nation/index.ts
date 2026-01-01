@@ -5,18 +5,26 @@ import type * as AwardModule from './che_포상.js';
 import type * as AssignmentModule from './che_발령.js';
 import type * as DeclarationModule from './che_선전포고.js';
 
-export type NationTurnCommandKey =
-    | '휴식'
-    | 'che_포상'
-    | 'che_발령'
-    | 'che_선전포고';
 
-export const NATION_TURN_COMMAND_KEYS: NationTurnCommandKey[] = [
-    '휴식',
-    'che_포상',
-    'che_발령',
-    'che_선전포고',
-];
+
+export type NationTurnCommandModule =
+    | typeof NationRestModule
+    | typeof AwardModule
+    | typeof AssignmentModule
+    | typeof DeclarationModule;
+
+export type NationTurnCommandImporter = () => Promise<NationTurnCommandModule>;
+
+const defaultImporters = {
+    휴식: async () => import('./휴식.js'),
+    che_포상: async () => import('./che_포상.js'),
+    che_발령: async () => import('./che_발령.js'),
+    che_선전포고: async () => import('./che_선전포고.js'),
+} as const satisfies Record<string, NationTurnCommandImporter>;
+
+export type NationTurnCommandKey = keyof typeof defaultImporters;
+
+export const NATION_TURN_COMMAND_KEYS: readonly NationTurnCommandKey[] = [...Object.keys(defaultImporters)] as NationTurnCommandKey[];
 
 export const isNationTurnCommandKey = (
     value: string
@@ -31,23 +39,6 @@ export interface NationTurnCommandSpec {
     createDefinition(env: TurnCommandEnv): GeneralActionDefinition;
 }
 
-export type NationTurnCommandModule =
-    | typeof NationRestModule
-    | typeof AwardModule
-    | typeof AssignmentModule
-    | typeof DeclarationModule;
-
-export type NationTurnCommandImporter = () => Promise<NationTurnCommandModule>;
-
-const defaultImporters: Record<
-    NationTurnCommandKey,
-    NationTurnCommandImporter
-> = {
-    휴식: async () => import('./휴식.js'),
-    che_포상: async () => import('./che_포상.js'),
-    che_발령: async () => import('./che_발령.js'),
-    che_선전포고: async () => import('./che_선전포고.js'),
-};
 
 export class NationTurnCommandLoader {
     constructor(
@@ -55,7 +46,7 @@ export class NationTurnCommandLoader {
             NationTurnCommandKey,
             NationTurnCommandImporter
         > = defaultImporters
-    ) {}
+    ) { }
 
     async load(
         key: NationTurnCommandKey

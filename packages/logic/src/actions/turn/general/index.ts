@@ -20,62 +20,6 @@ import type * as VolunteerRecruitModule from './che_의병모집.js';
 import type * as RecruitModule from './che_징병.js';
 import type * as RestModule from './휴식.js';
 
-export type GeneralTurnCommandKey =
-    | 'che_거병'
-    | 'che_임관'
-    | 'che_건국'
-    | 'che_훈련'
-    | 'che_사기진작'
-    | 'che_요양'
-    | 'che_출병'
-    | 'che_주민선정'
-    | 'che_농지개간'
-    | 'che_상업투자'
-    | 'che_기술연구'
-    | 'che_치안강화'
-    | 'che_수비강화'
-    | 'che_성벽보수'
-    | 'che_화계'
-    | 'che_인재탐색'
-    | 'che_의병모집'
-    | 'che_징병'
-    | '휴식';
-
-export const GENERAL_TURN_COMMAND_KEYS: GeneralTurnCommandKey[] = [
-    'che_거병',
-    'che_임관',
-    'che_건국',
-    'che_훈련',
-    'che_사기진작',
-    'che_요양',
-    'che_출병',
-    'che_주민선정',
-    'che_농지개간',
-    'che_상업투자',
-    'che_기술연구',
-    'che_치안강화',
-    'che_수비강화',
-    'che_성벽보수',
-    'che_화계',
-    'che_인재탐색',
-    'che_의병모집',
-    'che_징병',
-    '휴식',
-];
-
-export const isGeneralTurnCommandKey = (
-    value: string
-): value is GeneralTurnCommandKey =>
-    (GENERAL_TURN_COMMAND_KEYS as string[]).includes(value);
-
-export interface GeneralTurnCommandSpec {
-    key: GeneralTurnCommandKey;
-    category: string;
-    reqArg: boolean;
-    args: Record<string, unknown>;
-    createDefinition(env: TurnCommandEnv): GeneralActionDefinition;
-}
-
 export type GeneralTurnCommandModule =
     | typeof UprisingModule
     | typeof AppointmentModule
@@ -99,10 +43,7 @@ export type GeneralTurnCommandModule =
 
 export type GeneralTurnCommandImporter = () => Promise<GeneralTurnCommandModule>;
 
-const defaultImporters: Record<
-    GeneralTurnCommandKey,
-    GeneralTurnCommandImporter
-> = {
+const defaultImporters = {
     che_거병: async () => import('./che_거병.js'),
     che_임관: async () => import('./che_임관.js'),
     che_건국: async () => import('./che_건국.js'),
@@ -122,7 +63,27 @@ const defaultImporters: Record<
     che_의병모집: async () => import('./che_의병모집.js'),
     che_징병: async () => import('./che_징병.js'),
     휴식: async () => import('./휴식.js'),
-};
+} as const satisfies Record<string, GeneralTurnCommandImporter>;
+
+export type GeneralTurnCommandKey = keyof typeof defaultImporters;
+
+
+export const GENERAL_TURN_COMMAND_KEYS: readonly GeneralTurnCommandKey[] = [
+    ...Object.keys(defaultImporters),
+] as GeneralTurnCommandKey[];
+
+export const isGeneralTurnCommandKey = (
+    value: string
+): value is GeneralTurnCommandKey =>
+    (GENERAL_TURN_COMMAND_KEYS as string[]).includes(value);
+
+export interface GeneralTurnCommandSpec {
+    key: GeneralTurnCommandKey;
+    category: string;
+    reqArg: boolean;
+    args: Record<string, unknown>;
+    createDefinition(env: TurnCommandEnv): GeneralActionDefinition;
+}
 
 export class GeneralTurnCommandLoader {
     constructor(
@@ -130,7 +91,7 @@ export class GeneralTurnCommandLoader {
             GeneralTurnCommandKey,
             GeneralTurnCommandImporter
         > = defaultImporters
-    ) {}
+    ) { }
 
     async load(
         key: GeneralTurnCommandKey
