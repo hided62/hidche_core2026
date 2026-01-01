@@ -21,6 +21,7 @@ import { GatewayOrchestrator } from './orchestrator/gatewayOrchestrator.js';
 import { Pm2ProcessManager } from './orchestrator/pm2ProcessManager.js';
 import { PnpmBuildRunner } from './orchestrator/buildRunner.js';
 import { resolveWorkspaceRoot } from './orchestrator/workspaceRoot.js';
+import { GitWorkspaceManager } from './orchestrator/workspaceManager.js';
 import { appRouter } from './router.js';
 
 const buildEnvMap = (env: NodeJS.ProcessEnv): Record<string, string> => {
@@ -64,10 +65,16 @@ export const createGatewayApiServer = async () => {
     const processManager = new Pm2ProcessManager();
     const buildRunner = new PnpmBuildRunner();
     const baseEnv = buildEnvMap(process.env);
+    const workspaceManager = new GitWorkspaceManager({
+        repoRoot: workspaceRoot,
+        worktreeRoot: config.worktreeRoot,
+        baseEnv,
+    });
     const orchestrator = new GatewayOrchestrator({
         repository: profiles,
         processManager,
         buildRunner,
+        workspaceManager,
         processConfig: {
             workspaceRoot,
             redisKeyPrefix: config.redisKeyPrefix,

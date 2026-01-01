@@ -98,6 +98,7 @@ export const adminRouter = router({
             .input(
                 z.object({
                     profileName: z.string().min(1),
+                    commitSha: z.string().min(7).max(64),
                 })
             )
             .mutation(async ({ ctx, input }) => {
@@ -108,6 +109,7 @@ export const adminRouter = router({
                     {
                         requestedAt,
                         error: null,
+                        commitSha: input.commitSha,
                     }
                 );
                 return result;
@@ -125,6 +127,13 @@ export const adminRouter = router({
         reconcileNow: adminProcedure.mutation(async ({ ctx }) => {
             await ctx.orchestrator.reconcileNow();
             return { ok: true };
+        }),
+        cleanupWorkspaces: adminProcedure.mutation(async ({ ctx }) => {
+            const result = await ctx.orchestrator.cleanupStaleWorkspaces();
+            return {
+                removed: result.removed,
+                skipped: result.skipped,
+            };
         }),
     }),
 });

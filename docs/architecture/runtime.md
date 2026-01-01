@@ -54,8 +54,14 @@ Gateway runs a lightweight cron loop (setInterval) that:
 ### Build Workflow (Admin)
 
 - Admin triggers a build request for a profile.
-- Gateway queues a build job, runs `pnpm --filter @sammo-ts/game-api build`
-  and `pnpm --filter @sammo-ts/game-engine build`, then marks build success/failure.
+- Gateway queues a build job with `(profileName, commitSha)` and prepares a
+  per-commit workspace (`/var/sammo/workspaces/{commitSha}` recommended).
+- Workspace is backed by `git worktree` and is reused across builds for the same commit.
+- Each workspace stores `lastUsedAt` in DB so cleanup can remove stale worktrees.
+- Cleanup is invoked manually by admin API and removes worktrees unused for 6+ months.
+- Build runs `pnpm install` when workspace is created, then executes
+  `pnpm --filter @sammo-ts/game-api build` and
+  `pnpm --filter @sammo-ts/game-engine build`, then marks build success/failure.
 - On success, profile status remains `COMPLETED` (or stays `RUNNING` if already on).
 
 ## Current Implementation Status

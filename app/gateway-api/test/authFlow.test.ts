@@ -47,6 +47,8 @@ const buildCaller = () => {
         listReservedToStart: async () => [],
         findQueuedBuild: async () => null,
         updateLastError: async () => {},
+        updateWorkspaceUsage: async () => {},
+        clearWorkspaceUsage: async () => {},
     };
     const orchestrator = {
         start: () => {},
@@ -54,6 +56,10 @@ const buildCaller = () => {
         reconcileNow: async () => {},
         runScheduleNow: async () => {},
         runBuildQueueNow: async () => {},
+        cleanupStaleWorkspaces: async () => ({
+            removed: [],
+            skipped: [],
+        }),
         listRuntimeStates: async () => [],
     };
     const caller = appRouter.createCaller(

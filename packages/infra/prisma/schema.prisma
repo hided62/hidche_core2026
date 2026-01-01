@@ -69,6 +69,9 @@ model GatewayProfile {
     apiPort          Int                @map("api_port")
     status           GatewayProfileStatus
     buildStatus      GatewayBuildStatus @default(IDLE) @map("build_status")
+    buildCommitSha   String?            @map("build_commit_sha")
+    buildWorkspace   String?            @map("build_workspace")
+    buildLastUsedAt  DateTime?          @map("build_last_used_at")
     scheduledStartAt DateTime?          @map("scheduled_start_at")
     buildRequestedAt DateTime?          @map("build_requested_at")
     buildStartedAt   DateTime?          @map("build_started_at")

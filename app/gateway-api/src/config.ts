@@ -1,3 +1,5 @@
+import path from 'node:path';
+
 export interface GatewayApiConfig {
     host: string;
     port: number;
@@ -18,6 +20,7 @@ export interface GatewayApiConfig {
     orchestratorScheduleIntervalMs: number;
     orchestratorBuildIntervalMs: number;
     workspaceRootHint: string;
+    worktreeRoot: string;
 }
 
 const parseNumber = (value: string | undefined, fallback: number, label: string): number => {
@@ -99,5 +102,8 @@ export const resolveGatewayApiConfigFromEnv = (
             'GATEWAY_ORCHESTRATOR_BUILD_MS'
         ),
         workspaceRootHint: env.GATEWAY_WORKSPACE_ROOT ?? process.cwd(),
+        worktreeRoot:
+            env.GATEWAY_WORKTREE_ROOT ??
+            path.resolve(env.GATEWAY_WORKSPACE_ROOT ?? process.cwd(), '.worktrees'),
     };
 };

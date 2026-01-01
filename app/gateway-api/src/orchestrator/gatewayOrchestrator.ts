@@ -7,6 +7,7 @@ import type {
     GatewayProfileRepository,
     GatewayProfileStatus,
 } from './profileRepository.js';
+import type { GitWorkspaceManager } from './workspaceManager.js';
 
 export interface GatewayProcessConfig {
     workspaceRoot: string;
@@ -19,6 +20,7 @@ export interface GatewayOrchestratorOptions {
     repository: GatewayProfileRepository;
     processManager: ProcessManager;
     buildRunner: BuildRunner;
+    workspaceManager: GitWorkspaceManager;
     processConfig: GatewayProcessConfig;
     reconcileIntervalMs: number;
     scheduleIntervalMs: number;
@@ -41,6 +43,10 @@ export interface GatewayOrchestratorHandle {
     reconcileNow(): Promise<void>;
     runScheduleNow(): Promise<void>;
     runBuildQueueNow(): Promise<void>;
+    cleanupStaleWorkspaces(): Promise<{
+        removed: string[];
+        skipped: string[];
+    }>;
     listRuntimeStates(profileNames: string[]): Promise<ProfileRuntimeSnapshot[]>;
 }
 
@@ -123,6 +129,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     private readonly repository: GatewayProfileRepository;
     private readonly processManager: ProcessManager;
     private readonly buildRunner: BuildRunner;
+    private readonly workspaceManager: GitWorkspaceManager;
     private readonly processConfig: GatewayProcessConfig;
     private readonly reconcileIntervalMs: number;
     private readonly scheduleIntervalMs: number;
@@ -139,6 +146,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         this.repository = options.repository;
         this.processManager = options.processManager;
         this.buildRunner = options.buildRunner;
+        this.workspaceManager = options.workspaceManager;
         this.processConfig = options.processConfig;
         this.reconcileIntervalMs = options.reconcileIntervalMs;
         this.scheduleIntervalMs = options.scheduleIntervalMs;
@@ -242,25 +250,54 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             if (!queued) {
                 return;
             }
+            if (!queued.buildCommitSha) {
+                await this.repository.updateBuildStatus(queued.profileName, 'FAILED', {
+                    completedAt: this.now().toISOString(),
+                    error: 'Missing build commit SHA.',
+                });
+                return;
+            }
             const startedAt = this.now().toISOString();
             await this.repository.updateBuildStatus(queued.profileName, 'RUNNING', {
                 startedAt,
                 error: null,
             });
-            const result = await this.buildRunner.run([
+            const workspace = await this.workspaceManager.prepare(queued.buildCommitSha);
+            const lastUsedAt = this.now().toISOString();
+            await this.repository.updateWorkspaceUsage(
+                queued.profileName,
+                workspace.root,
+                lastUsedAt
+            );
+            const commands: Array<{
+                command: string;
+                args: string[];
+                cwd: string;
+                env?: Record<string, string>;
+            }> = [];
+            if (workspace.needsInstall) {
+                commands.push({
+                    command: 'pnpm',
+                    args: ['install'],
+                    cwd: workspace.root,
+                    env: this.processConfig.baseEnv,
+                });
+            }
+            commands.push(
                 {
                     command: 'pnpm',
                     args: ['--filter', '@sammo-ts/game-api', 'build'],
-                    cwd: this.processConfig.workspaceRoot,
+                    cwd: workspace.root,
                     env: this.processConfig.baseEnv,
                 },
                 {
                     command: 'pnpm',
                     args: ['--filter', '@sammo-ts/game-engine', 'build'],
-                    cwd: this.processConfig.workspaceRoot,
+                    cwd: workspace.root,
                     env: this.processConfig.baseEnv,
-                },
-            ]);
+                }
+            );
+            const result = await this.buildRunner.run(commands);
             const completedAt = this.now().toISOString();
             if (result.ok) {
                 await this.repository.updateBuildStatus(queued.profileName, 'SUCCEEDED', {
@@ -283,6 +320,62 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         } finally {
             this.buildInFlight = false;
         }
+    }
+
+    async cleanupStaleWorkspaces(): Promise<{ removed: string[]; skipped: string[] }> {
+        const profiles = await this.repository.listProfiles();
+        const cutoff = this.computeCutoffDate(6);
+        const workspaceMap = new Map<
+            string,
+            { profileNames: string[]; lastUsedAt?: Date; hasActiveBuild: boolean }
+        >();
+        for (const profile of profiles) {
+            const workspace = profile.buildWorkspace;
+            if (!workspace) {
+                continue;
+            }
+            const entry = workspaceMap.get(workspace) ?? {
+                profileNames: [],
+                lastUsedAt: undefined,
+                hasActiveBuild: false,
+            };
+            entry.profileNames.push(profile.profileName);
+            if (profile.buildLastUsedAt) {
+                const usedAt = new Date(profile.buildLastUsedAt);
+                if (!entry.lastUsedAt || usedAt > entry.lastUsedAt) {
+                    entry.lastUsedAt = usedAt;
+                }
+            }
+            if (profile.buildStatus === 'RUNNING' || profile.buildStatus === 'QUEUED') {
+                entry.hasActiveBuild = true;
+            }
+            workspaceMap.set(workspace, entry);
+        }
+
+        const removed: string[] = [];
+        const skipped: string[] = [];
+        for (const [workspace, entry] of workspaceMap.entries()) {
+            if (!entry.lastUsedAt || entry.hasActiveBuild) {
+                skipped.push(workspace);
+                continue;
+            }
+            if (entry.lastUsedAt > cutoff) {
+                skipped.push(workspace);
+                continue;
+            }
+            await this.workspaceManager.remove(workspace);
+            await this.repository.clearWorkspaceUsage(entry.profileNames);
+            removed.push(workspace);
+        }
+
+        return { removed, skipped };
+    }
+
+    private computeCutoffDate(months: number): Date {
+        const date = this.now();
+        const cutoff = new Date(date);
+        cutoff.setMonth(cutoff.getMonth() - months);
+        return cutoff;
     }
 
     private async startProfile(profile: GatewayProfileRecord): Promise<void> {

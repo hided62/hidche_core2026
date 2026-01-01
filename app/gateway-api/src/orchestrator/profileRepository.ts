@@ -25,6 +25,9 @@ export interface GatewayProfileRecord {
     apiPort: number;
     status: GatewayProfileStatus;
     buildStatus: GatewayBuildStatus;
+    buildCommitSha?: string;
+    buildWorkspace?: string;
+    buildLastUsedAt?: string;
     scheduledStartAt?: string;
     buildRequestedAt?: string;
     buildStartedAt?: string;
@@ -62,11 +65,20 @@ export interface GatewayProfileRepository {
             startedAt?: string | null;
             completedAt?: string | null;
             error?: string | null;
+            commitSha?: string | null;
+            workspace?: string | null;
+            lastUsedAt?: string | null;
         }
     ): Promise<GatewayProfileRecord | null>;
     listReservedToStart(now: Date): Promise<GatewayProfileRecord[]>;
     findQueuedBuild(): Promise<GatewayProfileRecord | null>;
     updateLastError(profileName: string, lastError: string | null): Promise<void>;
+    updateWorkspaceUsage(
+        profileName: string,
+        workspace: string,
+        lastUsedAt: string
+    ): Promise<void>;
+    clearWorkspaceUsage(profileNames: string[]): Promise<void>;
 }
 
 const toIso = (value: Date | null): string | undefined =>
@@ -79,6 +91,9 @@ const mapProfile = (row: {
     apiPort: number;
     status: GatewayProfileStatus;
     buildStatus: GatewayBuildStatus;
+    buildCommitSha: string | null;
+    buildWorkspace: string | null;
+    buildLastUsedAt: Date | null;
     scheduledStartAt: Date | null;
     buildRequestedAt: Date | null;
     buildStartedAt: Date | null;
@@ -95,6 +110,9 @@ const mapProfile = (row: {
     apiPort: row.apiPort,
     status: row.status,
     buildStatus: row.buildStatus,
+    buildCommitSha: row.buildCommitSha ?? undefined,
+    buildWorkspace: row.buildWorkspace ?? undefined,
+    buildLastUsedAt: toIso(row.buildLastUsedAt),
     scheduledStartAt: toIso(row.scheduledStartAt),
     buildRequestedAt: toIso(row.buildRequestedAt),
     buildStartedAt: toIso(row.buildStartedAt),
@@ -185,6 +203,16 @@ export const createGatewayProfileRepository = (
             where: { profileName },
             data: {
                 buildStatus: status,
+                buildCommitSha:
+                    fields?.commitSha === undefined ? undefined : fields.commitSha,
+                buildWorkspace:
+                    fields?.workspace === undefined ? undefined : fields.workspace,
+                buildLastUsedAt:
+                    fields?.lastUsedAt === undefined
+                        ? undefined
+                        : fields?.lastUsedAt
+                          ? new Date(fields.lastUsedAt)
+                          : null,
                 buildRequestedAt:
                     fields?.requestedAt === undefined
                         ? undefined
@@ -230,6 +258,33 @@ export const createGatewayProfileRepository = (
         await prisma.gatewayProfile.update({
             where: { profileName },
             data: { lastError },
+        });
+    },
+    async updateWorkspaceUsage(
+        profileName: string,
+        workspace: string,
+        lastUsedAt: string
+    ): Promise<void> {
+        await prisma.gatewayProfile.update({
+            where: { profileName },
+            data: {
+                buildWorkspace: workspace,
+                buildLastUsedAt: new Date(lastUsedAt),
+            },
+        });
+    },
+    async clearWorkspaceUsage(profileNames: string[]): Promise<void> {
+        if (!profileNames.length) {
+            return;
+        }
+        await prisma.gatewayProfile.updateMany({
+            where: {
+                profileName: { in: profileNames },
+            },
+            data: {
+                buildWorkspace: null,
+                buildLastUsedAt: null,
+            },
         });
     },
 });
