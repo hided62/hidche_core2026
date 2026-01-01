@@ -1,0 +1,79 @@
+import type {
+    General,
+    GeneralTriggerState,
+} from '../../../domain/entities.js';
+import type {
+    Constraint,
+    ConstraintContext,
+    StateView,
+} from '../../../constraints/types.js';
+import { notBeNeutral, reqGeneralGold } from '../../../constraints/presets.js';
+import type { GeneralActionDefinition } from '../../definition.js';
+import type {
+    GeneralActionOutcome,
+    GeneralActionResolveContext,
+} from '../../engine.js';
+import { createGeneralPatchEffect, createLogEffect } from '../../engine.js';
+import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
+
+export interface RecoveryArgs {}
+
+export interface RecoveryEnvironment {
+    injuryDelta?: number;
+    costGold?: number;
+}
+
+const ACTION_NAME = '요양';
+const DEFAULT_INJURY_DELTA = 10;
+
+export class ActionDefinition<
+    TriggerState extends GeneralTriggerState = GeneralTriggerState
+> implements GeneralActionDefinition<TriggerState, RecoveryArgs> {
+    public readonly key = 'che_요양';
+    public readonly name = ACTION_NAME;
+    private readonly env: RecoveryEnvironment;
+
+    constructor(env: RecoveryEnvironment = {}) {
+        this.env = env;
+    }
+
+    parseArgs(_raw: unknown): RecoveryArgs | null {
+        void _raw;
+        return {};
+    }
+
+    buildConstraints(
+        _ctx: ConstraintContext,
+        _args: RecoveryArgs
+    ): Constraint[] {
+        const getRequiredGold = (_context: ConstraintContext, _view: StateView): number =>
+            this.env.costGold ?? 0;
+        return [notBeNeutral(), reqGeneralGold(getRequiredGold)];
+    }
+
+    resolve(
+        context: GeneralActionResolveContext<TriggerState>,
+        _args: RecoveryArgs
+    ): GeneralActionOutcome<TriggerState> {
+        const general = context.general;
+        const delta = this.env.injuryDelta ?? DEFAULT_INJURY_DELTA;
+        const nextInjury = Math.max(0, general.injury - delta);
+        const applied = general.injury - nextInjury;
+        const costGold = this.env.costGold ?? 0;
+        const patch: Partial<General<TriggerState>> = {
+            injury: nextInjury,
+            gold: Math.max(0, general.gold - costGold),
+        };
+
+        return {
+            effects: [
+                createGeneralPatchEffect<TriggerState>(patch, general.id),
+                createLogEffect(`${ACTION_NAME}으로 부상이 ${applied} 회복되었습니다.`, {
+                    scope: LogScope.GENERAL,
+                    category: LogCategory.ACTION,
+                    format: LogFormat.MONTH,
+                }),
+            ],
+        };
+    }
+}

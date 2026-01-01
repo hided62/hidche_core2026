@@ -13,16 +13,29 @@ import type {
     UnitSetDefinition,
 } from '@sammo-ts/logic';
 import {
+    AppointmentActionDefinition,
     AssignmentActionDefinition,
+    BoostMoraleActionDefinition,
     AwardActionDefinition,
     CommerceInvestmentActionDefinition,
+    DeclarationActionDefinition,
+    DefenceUpgradeActionDefinition,
+    DispatchActionDefinition,
     evaluateConstraints,
     FireAttackActionDefinition,
+    FarmingActionDefinition,
+    FoundingActionDefinition,
     NationRestActionDefinition,
+    RecoveryActionDefinition,
+    ResidentsSelectionActionDefinition,
     RecruitActionDefinition,
     resolveGeneralAction,
     RestActionDefinition,
+    SecurityUpgradeActionDefinition,
+    TechResearchActionDefinition,
     TalentScoutActionDefinition,
+    TrainingActionDefinition,
+    UprisingActionDefinition,
     VolunteerRecruitActionDefinition,
 } from '@sammo-ts/logic';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic';
@@ -38,6 +51,10 @@ import type { InMemoryReservedTurnStore } from './reservedTurnStore.js';
 
 interface CommandEnv {
     develCost: number;
+    trainDelta: number;
+    atmosDelta: number;
+    maxTrainByCommand: number;
+    maxAtmosByCommand: number;
     sabotageDefaultProb: number;
     sabotageProbCoefByStat: number;
     sabotageDefenceCoefByGeneralCount: number;
@@ -51,6 +68,7 @@ interface CommandEnv {
     defaultSpecialDomestic: string | null;
     defaultSpecialWar: string | null;
     initialNationGenLimit: number;
+    maxTechLevel: number;
     baseGold: number;
     baseRice: number;
     maxResourceActionAmount: number;
@@ -125,6 +143,14 @@ const buildCommandEnv = (
             ['develCost', 'develcost', 'develrate'],
             0
         ),
+        trainDelta: resolveNumber(constValues, ['trainDelta'], 0),
+        atmosDelta: resolveNumber(constValues, ['atmosDelta'], 0),
+        maxTrainByCommand: resolveNumber(constValues, ['maxTrainByCommand'], 0),
+        maxAtmosByCommand: resolveNumber(
+            constValues,
+            ['maxAtmosByCommand'],
+            0
+        ),
         sabotageDefaultProb: resolveNumber(
             constValues,
             ['sabotageDefaultProb'],
@@ -188,6 +214,7 @@ const buildCommandEnv = (
             ['initialNationGenLimit'],
             0
         ),
+        maxTechLevel: resolveNumber(constValues, ['maxTechLevel'], 0),
         baseGold: resolveNumber(constValues, ['baseGold', 'basegold'], 0),
         baseRice: resolveNumber(constValues, ['baseRice', 'baserice'], 0),
         maxResourceActionAmount: resolveNumber(
@@ -421,9 +448,55 @@ const buildGeneralDefinitions = (
     env: CommandEnv
 ): Map<string, GeneralActionDefinition> => {
     const definitions = new Map<string, GeneralActionDefinition>();
+    definitions.set('che_거병', new UprisingActionDefinition());
+    definitions.set('che_임관', new AppointmentActionDefinition());
+    definitions.set('che_건국', new FoundingActionDefinition());
+    definitions.set(
+        'che_훈련',
+        new TrainingActionDefinition({
+            trainDelta: env.trainDelta,
+            maxTrainByCommand: env.maxTrainByCommand,
+        })
+    );
+    definitions.set(
+        'che_사기진작',
+        new BoostMoraleActionDefinition({
+            atmosDelta: env.atmosDelta,
+            maxAtmosByCommand: env.maxAtmosByCommand,
+        })
+    );
+    definitions.set('che_요양', new RecoveryActionDefinition());
+    definitions.set('che_출병', new DispatchActionDefinition());
+    definitions.set(
+        'che_주민선정',
+        new ResidentsSelectionActionDefinition({ develCost: env.develCost })
+    );
+    definitions.set(
+        'che_농지개간',
+        new FarmingActionDefinition({ develCost: env.develCost })
+    );
     definitions.set(
         'che_상업투자',
         new CommerceInvestmentActionDefinition([], env)
+    );
+    definitions.set(
+        'che_기술연구',
+        new TechResearchActionDefinition({
+            costGold: env.develCost,
+            maxTechLevel: env.maxTechLevel,
+        })
+    );
+    definitions.set(
+        'che_치안강화',
+        new SecurityUpgradeActionDefinition({ develCost: env.develCost })
+    );
+    definitions.set(
+        'che_수비강화',
+        new DefenceUpgradeActionDefinition({ develCost: env.develCost })
+    );
+    definitions.set(
+        'che_성벽보수',
+        new WallRepairActionDefinition({ develCost: env.develCost })
     );
     definitions.set('che_화계', new FireAttackActionDefinition([], env));
     definitions.set('che_인재탐색', new TalentScoutActionDefinition([], env));
@@ -442,6 +515,7 @@ const buildNationDefinitions = (
             ? env.maxResourceActionAmount
             : Math.max(env.baseGold, env.baseRice, 1000);
     definitions.set('휴식', new NationRestActionDefinition());
+    definitions.set('che_선전포고', new DeclarationActionDefinition());
     definitions.set(
         'che_포상',
         new AwardActionDefinition({

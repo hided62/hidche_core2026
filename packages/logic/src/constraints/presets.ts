@@ -174,6 +174,25 @@ export const notBeNeutral = (): Constraint => ({
     },
 });
 
+export const beNeutral = (): Constraint => ({
+    name: 'BeNeutral',
+    requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
+    test: (ctx, view) => {
+        const req: RequirementKey = { kind: 'general', id: ctx.actorId };
+        if (!view.has(req)) {
+            return unknownOrDeny(ctx, [req], '장수 정보가 없습니다.');
+        }
+        const general = view.get(req) as General | null;
+        if (!general) {
+            return unknownOrDeny(ctx, [req], '장수 정보가 없습니다.');
+        }
+        if (general.nationId === 0) {
+            return allow();
+        }
+        return { kind: 'deny', reason: '이미 국가에 속해 있습니다.' };
+    },
+});
+
 export const alwaysFail = (reason: string): Constraint => ({
     name: 'AlwaysFail',
     requires: () => [],
@@ -561,6 +580,36 @@ export const remainCityCapacity = (
     },
 });
 
+export const remainCityCapacityByMax = (
+    key: string,
+    maxKey: string,
+    label: string
+): Constraint => ({
+    name: 'RemainCityCapacityByMax',
+    requires: (ctx) =>
+        ctx.cityId !== undefined ? [{ kind: 'city', id: ctx.cityId }] : [],
+    test: (ctx, view) => {
+        const city = readCity(view, ctx.cityId);
+        if (!city) {
+            if (ctx.cityId === undefined) {
+                return unknownOrDeny(ctx, [], '도시 정보가 없습니다.');
+            }
+            const req: RequirementKey = { kind: 'city', id: ctx.cityId };
+            return unknownOrDeny(ctx, [req], '도시 정보가 없습니다.');
+        }
+        const record = city as unknown as Record<string, number | undefined>;
+        const current = record[key];
+        const max = record[maxKey];
+        if (current === undefined || max === undefined) {
+            return unknownOrDeny(ctx, [], '도시 정보가 없습니다.');
+        }
+        if (current < max) {
+            return allow();
+        }
+        return { kind: 'deny', reason: `${label}이 충분합니다.` };
+    },
+});
+
 export const reqCityCapacity = (
     key: string,
     label: string,
@@ -684,6 +733,34 @@ export const existsDestCity = (): Constraint => ({
         const city = view.get(req) as City | null;
         if (!city) {
             return { kind: 'deny', reason: '도시 정보가 없습니다.' };
+        }
+        return allow();
+    },
+});
+
+export const existsDestNation = (): Constraint => ({
+    name: 'ExistsDestNation',
+    requires: (ctx) =>
+        resolveDestNationId(ctx) !== undefined
+            ? [
+                  {
+                      kind: 'destNation',
+                      id: resolveDestNationId(ctx) ?? 0,
+                  },
+              ]
+            : [],
+    test: (ctx, view) => {
+        const destNationId = resolveDestNationId(ctx);
+        if (destNationId === undefined) {
+            return unknownOrDeny(ctx, [], '국가 정보가 없습니다.');
+        }
+        const req: RequirementKey = { kind: 'destNation', id: destNationId };
+        if (!view.has(req)) {
+            return unknownOrDeny(ctx, [req], '국가 정보가 없습니다.');
+        }
+        const nation = view.get(req) as Nation | null;
+        if (!nation) {
+            return unknownOrDeny(ctx, [req], '국가 정보가 없습니다.');
         }
         return allow();
     },

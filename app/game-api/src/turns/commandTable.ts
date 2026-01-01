@@ -10,15 +10,28 @@ import type {
     TriggerValue,
 } from '@sammo-ts/logic';
 import {
+    AppointmentActionDefinition,
     AssignmentActionDefinition,
+    BoostMoraleActionDefinition,
     AwardActionDefinition,
     CommerceInvestmentActionDefinition,
+    DeclarationActionDefinition,
+    DefenceUpgradeActionDefinition,
+    DispatchActionDefinition,
     evaluateConstraints,
     FireAttackActionDefinition,
+    FarmingActionDefinition,
+    FoundingActionDefinition,
     NationRestActionDefinition,
+    RecoveryActionDefinition,
+    ResidentsSelectionActionDefinition,
     RecruitActionDefinition,
     RestActionDefinition,
+    SecurityUpgradeActionDefinition,
+    TechResearchActionDefinition,
     TalentScoutActionDefinition,
+    TrainingActionDefinition,
+    UprisingActionDefinition,
     VolunteerRecruitActionDefinition,
 } from '@sammo-ts/logic';
 
@@ -52,6 +65,10 @@ export interface TurnCommandTable {
 
 interface CommandEnv {
     develCost: number;
+    trainDelta: number;
+    atmosDelta: number;
+    maxTrainByCommand: number;
+    maxAtmosByCommand: number;
     sabotageDefaultProb: number;
     sabotageProbCoefByStat: number;
     sabotageDefenceCoefByGeneralCount: number;
@@ -65,6 +82,7 @@ interface CommandEnv {
     defaultSpecialDomestic: string | null;
     defaultSpecialWar: string | null;
     initialNationGenLimit: number;
+    maxTechLevel: number;
     baseGold: number;
     baseRice: number;
     maxResourceActionAmount: number;
@@ -197,6 +215,14 @@ const buildCommandEnv = (worldState: WorldStateRow): CommandEnv => {
             ['develCost', 'develcost', 'develrate'],
             0
         ),
+        trainDelta: resolveNumber(constValues, ['trainDelta'], 0),
+        atmosDelta: resolveNumber(constValues, ['atmosDelta'], 0),
+        maxTrainByCommand: resolveNumber(constValues, ['maxTrainByCommand'], 0),
+        maxAtmosByCommand: resolveNumber(
+            constValues,
+            ['maxAtmosByCommand'],
+            0
+        ),
         sabotageDefaultProb: resolveNumber(
             constValues,
             ['sabotageDefaultProb'],
@@ -260,6 +286,7 @@ const buildCommandEnv = (worldState: WorldStateRow): CommandEnv => {
             ['initialNationGenLimit'],
             0
         ),
+        maxTechLevel: resolveNumber(constValues, ['maxTechLevel'], 0),
         baseGold: resolveNumber(constValues, ['baseGold', 'basegold'], 0),
         baseRice: resolveNumber(constValues, ['baseRice', 'baserice'], 0),
         maxResourceActionAmount: resolveNumber(
@@ -468,8 +495,105 @@ const buildEntries = (env: CommandEnv): {
             args: {},
         },
         {
+            category: '개인',
+            definition: new RecoveryActionDefinition(),
+            reqArg: false,
+            args: {},
+        },
+        {
+            category: '전략',
+            definition: new UprisingActionDefinition(),
+            reqArg: false,
+            args: {},
+        },
+        {
+            category: '전략',
+            definition: new AppointmentActionDefinition(),
+            reqArg: true,
+            args: { destNationId: 0 },
+        },
+        {
+            category: '전략',
+            definition: new FoundingActionDefinition(),
+            reqArg: false,
+            args: {},
+        },
+        {
+            category: '군사',
+            definition: new TrainingActionDefinition({
+                trainDelta: env.trainDelta,
+                maxTrainByCommand: env.maxTrainByCommand,
+            }),
+            reqArg: false,
+            args: {},
+        },
+        {
+            category: '군사',
+            definition: new BoostMoraleActionDefinition({
+                atmosDelta: env.atmosDelta,
+                maxAtmosByCommand: env.maxAtmosByCommand,
+            }),
+            reqArg: false,
+            args: {},
+        },
+        {
+            category: '군사',
+            definition: new DispatchActionDefinition(),
+            reqArg: true,
+            args: { destCityId: 0 },
+        },
+        {
+            category: '내정',
+            definition: new ResidentsSelectionActionDefinition({
+                develCost: env.develCost,
+            }),
+            reqArg: false,
+            args: {},
+        },
+        {
+            category: '내정',
+            definition: new FarmingActionDefinition({
+                develCost: env.develCost,
+            }),
+            reqArg: false,
+            args: {},
+        },
+        {
             category: '내정',
             definition: new CommerceInvestmentActionDefinition(emptyModules, {
+                develCost: env.develCost,
+            }),
+            reqArg: false,
+            args: {},
+        },
+        {
+            category: '내정',
+            definition: new TechResearchActionDefinition({
+                costGold: env.develCost,
+                maxTechLevel: env.maxTechLevel,
+            }),
+            reqArg: false,
+            args: {},
+        },
+        {
+            category: '내정',
+            definition: new SecurityUpgradeActionDefinition({
+                develCost: env.develCost,
+            }),
+            reqArg: false,
+            args: {},
+        },
+        {
+            category: '내정',
+            definition: new DefenceUpgradeActionDefinition({
+                develCost: env.develCost,
+            }),
+            reqArg: false,
+            args: {},
+        },
+        {
+            category: '내정',
+            definition: new WallRepairActionDefinition({
                 develCost: env.develCost,
             }),
             reqArg: false,
@@ -538,6 +662,12 @@ const buildEntries = (env: CommandEnv): {
             definition: new NationRestActionDefinition(),
             reqArg: false,
             args: {},
+        },
+        {
+            category: '외교',
+            definition: new DeclarationActionDefinition(),
+            reqArg: true,
+            args: { destNationId: 0 },
         },
         {
             category: '인사',
