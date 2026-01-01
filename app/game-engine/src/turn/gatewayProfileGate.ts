@@ -1,5 +1,4 @@
 import { createPostgresConnector } from '@sammo-ts/infra';
-import type { PrismaClient } from '@prisma/client';
 
 export interface GatewayProfileGateOptions {
     databaseUrl: string;
@@ -18,12 +17,23 @@ const DEFAULT_CACHE_MS = 2000;
 const isRunningStatus = (status: string | null | undefined): boolean =>
     status === 'RUNNING';
 
+type GatewayProfileRow = {
+    status: string | null;
+};
+
+type GatewayProfileClient = {
+    findUnique(args: unknown): Promise<GatewayProfileRow | null>;
+    update(args: unknown): Promise<void>;
+};
+
 export const createGatewayProfileGate = async (
     options: GatewayProfileGateOptions
 ): Promise<GatewayProfileGate> => {
     const connector = createPostgresConnector({ url: options.databaseUrl });
     await connector.connect();
-    const prisma = connector.prisma as PrismaClient;
+    const prisma = connector.prisma as unknown as {
+        gatewayProfile: GatewayProfileClient;
+    };
     let lastCheckedAt = 0;
     let cachedPause = false;
 

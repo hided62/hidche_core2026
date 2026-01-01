@@ -33,6 +33,7 @@ import {
     TrainingActionDefinition,
     UprisingActionDefinition,
     VolunteerRecruitActionDefinition,
+    WallRepairActionDefinition,
 } from '@sammo-ts/logic';
 
 import type {

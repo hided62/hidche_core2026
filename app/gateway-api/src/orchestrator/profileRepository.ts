@@ -95,7 +95,7 @@ export interface GatewayProfileRepository {
 const toIso = (value: Date | null): string | undefined =>
     value ? value.toISOString() : undefined;
 
-const mapProfile = (row: {
+type GatewayProfileRow = {
     profileName: string;
     profile: string;
     scenario: string;
@@ -116,7 +116,18 @@ const mapProfile = (row: {
     meta: Prisma.JsonValue;
     createdAt: Date;
     updatedAt: Date;
-}): GatewayProfileRecord => ({
+};
+
+type GatewayProfileClient = {
+    findMany(args: unknown): Promise<GatewayProfileRow[]>;
+    findUnique(args: unknown): Promise<GatewayProfileRow | null>;
+    findFirst(args: unknown): Promise<GatewayProfileRow | null>;
+    upsert(args: unknown): Promise<GatewayProfileRow>;
+    update(args: unknown): Promise<GatewayProfileRow>;
+    updateMany(args: unknown): Promise<unknown>;
+};
+
+const mapProfile = (row: GatewayProfileRow): GatewayProfileRecord => ({
     profileName: row.profileName,
     profile: row.profile,
     scenario: row.scenario,
@@ -146,20 +157,23 @@ export const createGatewayProfileRepository = (
     prisma: PrismaClient
 ): GatewayProfileRepository => ({
     async listProfiles(): Promise<GatewayProfileRecord[]> {
-        const rows = await prisma.gatewayProfile.findMany({
+        const gatewayProfile = prisma.gatewayProfile as unknown as GatewayProfileClient;
+        const rows = await gatewayProfile.findMany({
             orderBy: [{ profile: 'asc' }, { scenario: 'asc' }],
         });
         return rows.map(mapProfile);
     },
     async getProfile(profileName: string): Promise<GatewayProfileRecord | null> {
-        const row = await prisma.gatewayProfile.findUnique({
+        const gatewayProfile = prisma.gatewayProfile as unknown as GatewayProfileClient;
+        const row = await gatewayProfile.findUnique({
             where: { profileName },
         });
         return row ? mapProfile(row) : null;
     },
     async upsertProfile(input: GatewayProfileUpsertInput): Promise<GatewayProfileRecord> {
+        const gatewayProfile = prisma.gatewayProfile as unknown as GatewayProfileClient;
         const profileName = buildProfileName(input.profile, input.scenario);
-        const row = await prisma.gatewayProfile.upsert({
+        const row = await gatewayProfile.upsert({
             where: { profileName },
             create: {
                 profileName,
@@ -211,7 +225,8 @@ export const createGatewayProfileRepository = (
             scheduledStartAt?: string | null;
         }
     ): Promise<GatewayProfileRecord | null> {
-        const row = await prisma.gatewayProfile.update({
+        const gatewayProfile = prisma.gatewayProfile as unknown as GatewayProfileClient;
+        const row = await gatewayProfile.update({
             where: { profileName },
             data: {
                 status,
@@ -245,9 +260,13 @@ export const createGatewayProfileRepository = (
             startedAt?: string | null;
             completedAt?: string | null;
             error?: string | null;
+            commitSha?: string | null;
+            workspace?: string | null;
+            lastUsedAt?: string | null;
         }
     ): Promise<GatewayProfileRecord | null> {
-        const row = await prisma.gatewayProfile.update({
+        const gatewayProfile = prisma.gatewayProfile as unknown as GatewayProfileClient;
+        const row = await gatewayProfile.update({
             where: { profileName },
             data: {
                 buildStatus: status,
@@ -285,7 +304,8 @@ export const createGatewayProfileRepository = (
         return row ? mapProfile(row) : null;
     },
     async listReservedToStart(now: Date): Promise<GatewayProfileRecord[]> {
-        const rows = await prisma.gatewayProfile.findMany({
+        const gatewayProfile = prisma.gatewayProfile as unknown as GatewayProfileClient;
+        const rows = await gatewayProfile.findMany({
             where: {
                 status: 'RESERVED',
                 preopenAt: {
@@ -296,14 +316,16 @@ export const createGatewayProfileRepository = (
         return rows.map(mapProfile);
     },
     async findQueuedBuild(): Promise<GatewayProfileRecord | null> {
-        const row = await prisma.gatewayProfile.findFirst({
+        const gatewayProfile = prisma.gatewayProfile as unknown as GatewayProfileClient;
+        const row = await gatewayProfile.findFirst({
             where: { buildStatus: 'QUEUED' },
             orderBy: { buildRequestedAt: 'asc' },
         });
         return row ? mapProfile(row) : null;
     },
     async updateLastError(profileName: string, lastError: string | null): Promise<void> {
-        await prisma.gatewayProfile.update({
+        const gatewayProfile = prisma.gatewayProfile as unknown as GatewayProfileClient;
+        await gatewayProfile.update({
             where: { profileName },
             data: { lastError },
         });
@@ -313,7 +335,8 @@ export const createGatewayProfileRepository = (
         workspace: string,
         lastUsedAt: string
     ): Promise<void> {
-        await prisma.gatewayProfile.update({
+        const gatewayProfile = prisma.gatewayProfile as unknown as GatewayProfileClient;
+        await gatewayProfile.update({
             where: { profileName },
             data: {
                 buildWorkspace: workspace,
@@ -325,7 +348,8 @@ export const createGatewayProfileRepository = (
         if (!profileNames.length) {
             return;
         }
-        await prisma.gatewayProfile.updateMany({
+        const gatewayProfile = prisma.gatewayProfile as unknown as GatewayProfileClient;
+        await gatewayProfile.updateMany({
             where: {
                 profileName: { in: profileNames },
             },

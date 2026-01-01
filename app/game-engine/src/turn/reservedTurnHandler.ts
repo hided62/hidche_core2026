@@ -37,6 +37,7 @@ import {
     TrainingActionDefinition,
     UprisingActionDefinition,
     VolunteerRecruitActionDefinition,
+    WallRepairActionDefinition,
 } from '@sammo-ts/logic';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic';
 import { LiteHashDRBG } from '@sammo-ts/common';
