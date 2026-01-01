@@ -20,12 +20,14 @@ import type {
 import { InMemoryTurnWorld } from './inMemoryWorld.js';
 import { InMemoryTurnProcessor } from './inMemoryTurnProcessor.js';
 import { InMemoryTurnStateStore } from './inMemoryStateStore.js';
+import { createGatewayProfileGate } from './gatewayProfileGate.js';
 import { createReservedTurnHandler } from './reservedTurnHandler.js';
 import { createReservedTurnStore } from './reservedTurnStore.js';
 import { loadTurnWorldFromDatabase } from './worldLoader.js';
 
 export interface TurnDaemonRuntimeOptions {
     profile: string;
+    profileName?: string;
     databaseUrl: string;
     defaultBudget?: TurnRunBudget;
     clock?: Clock;
@@ -36,6 +38,7 @@ export interface TurnDaemonRuntimeOptions {
     generalTurnHandler?: GeneralTurnHandler;
     calendarHandler?: TurnCalendarHandler;
     enableDatabaseFlush?: boolean;
+    pauseGateIntervalMs?: number;
 }
 
 export interface TurnDaemonRuntime {
@@ -119,19 +122,55 @@ export const createTurnDaemonRuntime = async (
 
     let hooks: TurnDaemonHooks | undefined;
     let close = async () => {};
+    let pauseGate: (() => Promise<boolean>) | undefined;
+    const gatewayGate =
+        options.profileName
+            ? await createGatewayProfileGate({
+                  databaseUrl: options.databaseUrl,
+                  profileName: options.profileName,
+                  cacheMs: options.pauseGateIntervalMs,
+              })
+            : null;
+    if (gatewayGate) {
+        pauseGate = gatewayGate.shouldPause;
+    }
     if (options.enableDatabaseFlush ?? true) {
         const dbHooks = await createDatabaseTurnHooks(options.databaseUrl, world, {
             reservedTurns: reservedTurnStoreHandle?.store,
         });
-        hooks = dbHooks.hooks;
+        hooks = {
+            ...dbHooks.hooks,
+            onRunError: async (error) => {
+                await dbHooks.hooks.onRunError?.(error);
+                await gatewayGate?.markPaused(error);
+            },
+        };
         close = async () => {
             await dbHooks.close();
             if (reservedTurnStoreHandle) {
                 await reservedTurnStoreHandle.close();
             }
+            await gatewayGate?.close();
         };
     } else if (reservedTurnStoreHandle) {
-        close = async () => reservedTurnStoreHandle.close();
+        hooks = {
+            onRunError: async (error) => {
+                await gatewayGate?.markPaused(error);
+            },
+        };
+        close = async () => {
+            await reservedTurnStoreHandle.close();
+            await gatewayGate?.close();
+        };
+    } else if (gatewayGate) {
+        hooks = {
+            onRunError: async (error) => {
+                await gatewayGate?.markPaused(error);
+            },
+        };
+        close = async () => {
+            await gatewayGate.close();
+        };
     }
 
     const defaultBudget: TurnRunBudget = options.defaultBudget ?? {
@@ -149,6 +188,7 @@ export const createTurnDaemonRuntime = async (
             stateStore,
             processor,
             hooks,
+            pauseGate,
         },
         { profile: options.profile, defaultBudget }
     );

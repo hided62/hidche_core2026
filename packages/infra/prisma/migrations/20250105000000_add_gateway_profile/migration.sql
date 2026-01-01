@@ -1,8 +1,10 @@
 -- Create enums for gateway profile tracking
 CREATE TYPE "GatewayProfileStatus" AS ENUM (
-    'COMPLETED',
     'RESERVED',
+    'PREOPEN',
     'RUNNING',
+    'PAUSED',
+    'COMPLETED',
     'STOPPED',
     'DISABLED'
 );
@@ -26,6 +28,8 @@ CREATE TABLE "gateway_profile" (
     "build_commit_sha" TEXT,
     "build_workspace" TEXT,
     "build_last_used_at" TIMESTAMP(3),
+    "preopen_at" TIMESTAMP(3),
+    "open_at" TIMESTAMP(3),
     "scheduled_start_at" TIMESTAMP(3),
     "build_requested_at" TIMESTAMP(3),
     "build_started_at" TIMESTAMP(3),
@@ -39,4 +43,3 @@ CREATE TABLE "gateway_profile" (
     CONSTRAINT "gateway_profile_pkey" PRIMARY KEY ("profile_name"),
     CONSTRAINT "gateway_profile_profile_scenario_key" UNIQUE ("profile", "scenario")
 );
-

@@ -28,6 +28,7 @@ export interface TurnDaemonStatus {
     state: TurnDaemonState;
     running: boolean;
     paused: boolean;
+    lastError?: string;
     lastRunAt?: string;
     lastDurationMs?: number;
     lastTurnTime?: string;

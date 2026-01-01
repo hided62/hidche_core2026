@@ -58,7 +58,10 @@ export const adminRouter = router({
                     scenario: z.string().min(1).max(64),
                     apiPort: z.number().int().min(1).max(65535),
                     status: zProfileStatus.optional(),
+                    preopenAt: z.string().datetime().optional(),
+                    openAt: z.string().datetime().optional(),
                     scheduledStartAt: z.string().datetime().optional(),
+                    buildCommitSha: z.string().min(7).max(64).optional(),
                 })
             )
             .mutation(async ({ ctx, input }) => {
@@ -68,7 +71,10 @@ export const adminRouter = router({
                     scenario: input.scenario,
                     apiPort: input.apiPort,
                     status,
+                    preopenAt: input.preopenAt,
+                    openAt: input.openAt,
                     scheduledStartAt: input.scheduledStartAt,
+                    buildCommitSha: input.buildCommitSha,
                 });
             }),
         setStatus: adminProcedure
@@ -76,21 +82,34 @@ export const adminRouter = router({
                 z.object({
                     profileName: z.string().min(1),
                     status: zProfileStatus,
+                    preopenAt: z.string().datetime().optional(),
+                    openAt: z.string().datetime().optional(),
                     scheduledStartAt: z.string().datetime().optional(),
+                    buildCommitSha: z.string().min(7).max(64).optional(),
                 })
             )
             .mutation(async ({ ctx, input }) => {
-                if (input.status === 'RESERVED' && !input.scheduledStartAt) {
+                if (input.status === 'RESERVED' && (!input.preopenAt || !input.openAt)) {
                     throw new TRPCError({
                         code: 'BAD_REQUEST',
-                        message: 'scheduledStartAt is required for RESERVED status.',
+                        message: 'preopenAt and openAt are required for RESERVED status.',
                     });
                 }
                 const result = await ctx.profiles.updateStatus(
                     input.profileName,
                     input.status,
-                    input.status === 'RESERVED' ? input.scheduledStartAt : null
+                    {
+                        preopenAt: input.preopenAt,
+                        openAt: input.openAt,
+                        scheduledStartAt:
+                            input.status === 'RESERVED' ? input.scheduledStartAt : null,
+                    }
                 );
+                if (input.buildCommitSha) {
+                    await ctx.profiles.updateBuildStatus(input.profileName, 'IDLE', {
+                        commitSha: input.buildCommitSha,
+                    });
+                }
                 await ctx.orchestrator.reconcileNow();
                 return result;
             }),

@@ -1,9 +1,11 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
 
 export const GATEWAY_PROFILE_STATUSES = [
-    'COMPLETED',
     'RESERVED',
+    'PREOPEN',
     'RUNNING',
+    'PAUSED',
+    'COMPLETED',
     'STOPPED',
     'DISABLED',
 ] as const;
@@ -28,6 +30,8 @@ export interface GatewayProfileRecord {
     buildCommitSha?: string;
     buildWorkspace?: string;
     buildLastUsedAt?: string;
+    preopenAt?: string;
+    openAt?: string;
     scheduledStartAt?: string;
     buildRequestedAt?: string;
     buildStartedAt?: string;
@@ -44,7 +48,10 @@ export interface GatewayProfileUpsertInput {
     scenario: string;
     apiPort: number;
     status?: GatewayProfileStatus;
+    preopenAt?: string;
+    openAt?: string;
     scheduledStartAt?: string;
+    buildCommitSha?: string;
     meta?: Prisma.JsonObject;
 }
 
@@ -55,7 +62,11 @@ export interface GatewayProfileRepository {
     updateStatus(
         profileName: string,
         status: GatewayProfileStatus,
-        scheduledStartAt?: string | null
+        schedule?: {
+            preopenAt?: string | null;
+            openAt?: string | null;
+            scheduledStartAt?: string | null;
+        }
     ): Promise<GatewayProfileRecord | null>;
     updateBuildStatus(
         profileName: string,
@@ -94,6 +105,8 @@ const mapProfile = (row: {
     buildCommitSha: string | null;
     buildWorkspace: string | null;
     buildLastUsedAt: Date | null;
+    preopenAt: Date | null;
+    openAt: Date | null;
     scheduledStartAt: Date | null;
     buildRequestedAt: Date | null;
     buildStartedAt: Date | null;
@@ -113,6 +126,8 @@ const mapProfile = (row: {
     buildCommitSha: row.buildCommitSha ?? undefined,
     buildWorkspace: row.buildWorkspace ?? undefined,
     buildLastUsedAt: toIso(row.buildLastUsedAt),
+    preopenAt: toIso(row.preopenAt),
+    openAt: toIso(row.openAt),
     scheduledStartAt: toIso(row.scheduledStartAt),
     buildRequestedAt: toIso(row.buildRequestedAt),
     buildStartedAt: toIso(row.buildStartedAt),
@@ -152,19 +167,36 @@ export const createGatewayProfileRepository = (
                 scenario: input.scenario,
                 apiPort: input.apiPort,
                 status: input.status ?? 'STOPPED',
+                preopenAt: input.preopenAt ? new Date(input.preopenAt) : null,
+                openAt: input.openAt ? new Date(input.openAt) : null,
                 scheduledStartAt: input.scheduledStartAt
                     ? new Date(input.scheduledStartAt)
                     : null,
+                buildCommitSha: input.buildCommitSha ?? null,
                 meta: (input.meta ?? {}) as Prisma.JsonObject,
             },
             update: {
                 apiPort: input.apiPort,
                 status: input.status,
+                preopenAt: input.preopenAt
+                    ? new Date(input.preopenAt)
+                    : input.preopenAt === null
+                      ? null
+                      : undefined,
+                openAt: input.openAt
+                    ? new Date(input.openAt)
+                    : input.openAt === null
+                      ? null
+                      : undefined,
                 scheduledStartAt: input.scheduledStartAt
                     ? new Date(input.scheduledStartAt)
                     : input.scheduledStartAt === null
                       ? null
                       : undefined,
+                buildCommitSha:
+                    input.buildCommitSha === undefined
+                        ? undefined
+                        : input.buildCommitSha,
                 meta: input.meta ? (input.meta as Prisma.JsonObject) : undefined,
             },
         });
@@ -173,17 +205,33 @@ export const createGatewayProfileRepository = (
     async updateStatus(
         profileName: string,
         status: GatewayProfileStatus,
-        scheduledStartAt?: string | null
+        schedule?: {
+            preopenAt?: string | null;
+            openAt?: string | null;
+            scheduledStartAt?: string | null;
+        }
     ): Promise<GatewayProfileRecord | null> {
         const row = await prisma.gatewayProfile.update({
             where: { profileName },
             data: {
                 status,
-                scheduledStartAt:
-                    scheduledStartAt === undefined
+                preopenAt:
+                    schedule?.preopenAt === undefined
                         ? undefined
-                        : scheduledStartAt
-                          ? new Date(scheduledStartAt)
+                        : schedule?.preopenAt
+                          ? new Date(schedule.preopenAt)
+                          : null,
+                openAt:
+                    schedule?.openAt === undefined
+                        ? undefined
+                        : schedule?.openAt
+                          ? new Date(schedule.openAt)
+                          : null,
+                scheduledStartAt:
+                    schedule?.scheduledStartAt === undefined
+                        ? undefined
+                        : schedule?.scheduledStartAt
+                          ? new Date(schedule.scheduledStartAt)
                           : null,
             },
         });
@@ -240,7 +288,7 @@ export const createGatewayProfileRepository = (
         const rows = await prisma.gatewayProfile.findMany({
             where: {
                 status: 'RESERVED',
-                scheduledStartAt: {
+                preopenAt: {
                     lte: now,
                 },
             },

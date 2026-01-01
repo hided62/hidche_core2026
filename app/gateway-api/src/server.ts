@@ -16,20 +16,8 @@ import { KakaoOAuthClient } from './auth/kakaoClient.js';
 import { RedisOAuthSessionStore } from './auth/oauthSessionStore.js';
 import { createPostgresUserRepository } from './auth/postgresUserRepository.js';
 import { RedisGatewaySessionService } from './auth/redisSessionService.js';
-import { createGatewayProfileRepository } from './orchestrator/profileRepository.js';
-import { GatewayOrchestrator } from './orchestrator/gatewayOrchestrator.js';
-import { Pm2ProcessManager } from './orchestrator/pm2ProcessManager.js';
-import { PnpmBuildRunner } from './orchestrator/buildRunner.js';
-import { resolveWorkspaceRoot } from './orchestrator/workspaceRoot.js';
-import { GitWorkspaceManager } from './orchestrator/workspaceManager.js';
+import { createGatewayOrchestrator } from './orchestrator/orchestratorFactory.js';
 import { appRouter } from './router.js';
-
-const buildEnvMap = (env: NodeJS.ProcessEnv): Record<string, string> => {
-    const entries = Object.entries(env).filter(
-        (entry): entry is [string, string] => typeof entry[1] === 'string'
-    );
-    return Object.fromEntries(entries);
-};
 
 export const createGatewayApiServer = async () => {
     const config = resolveGatewayApiConfigFromEnv();
@@ -58,33 +46,11 @@ export const createGatewayApiServer = async () => {
         config.oauthSessionTtlSeconds
     );
 
-    const profiles = createGatewayProfileRepository(
-        postgres.prisma as PrismaClient
+    const { orchestrator, profiles } = createGatewayOrchestrator(
+        postgres.prisma as PrismaClient,
+        config,
+        process.env
     );
-    const workspaceRoot = resolveWorkspaceRoot(config.workspaceRootHint);
-    const processManager = new Pm2ProcessManager();
-    const buildRunner = new PnpmBuildRunner();
-    const baseEnv = buildEnvMap(process.env);
-    const workspaceManager = new GitWorkspaceManager({
-        repoRoot: workspaceRoot,
-        worktreeRoot: config.worktreeRoot,
-        baseEnv,
-    });
-    const orchestrator = new GatewayOrchestrator({
-        repository: profiles,
-        processManager,
-        buildRunner,
-        workspaceManager,
-        processConfig: {
-            workspaceRoot,
-            redisKeyPrefix: config.redisKeyPrefix,
-            gameTokenSecret: config.gameTokenSecret,
-            baseEnv,
-        },
-        reconcileIntervalMs: config.orchestratorReconcileIntervalMs,
-        scheduleIntervalMs: config.orchestratorScheduleIntervalMs,
-        buildIntervalMs: config.orchestratorBuildIntervalMs,
-    });
 
     const app = fastify({
         logger: true,
@@ -120,10 +86,6 @@ export const createGatewayApiServer = async () => {
     app.get('/healthz', async () => ({
         ok: true,
     }));
-
-    if (config.orchestratorEnabled) {
-        orchestrator.start();
-    }
 
     app.addHook('onClose', async () => {
         await orchestrator.stop();

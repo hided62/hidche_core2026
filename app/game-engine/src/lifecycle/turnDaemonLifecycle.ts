@@ -31,6 +31,7 @@ export interface TurnDaemonLifecycleDeps {
     stateStore: TurnStateStore;
     processor: TurnProcessor;
     hooks?: TurnDaemonHooks;
+    pauseGate?: () => Promise<boolean>;
 }
 
 export class TurnDaemonLifecycle {
@@ -41,12 +42,15 @@ export class TurnDaemonLifecycle {
     private readonly stateStore: TurnStateStore;
     private readonly processor: TurnProcessor;
     private readonly hooks?: TurnDaemonHooks;
+    private readonly pauseGate?: () => Promise<boolean>;
     private readonly options: TurnDaemonLifecycleOptions;
 
     private status: TurnDaemonStatus;
     private pendingRun: PendingRun | null = null;
     private stopping = false;
     private loopPromise: Promise<void> | null = null;
+    private manualPaused = false;
+    private errorPaused = false;
 
     constructor(deps: TurnDaemonLifecycleDeps, options: TurnDaemonLifecycleOptions) {
         this.clock = deps.clock;
@@ -55,6 +59,7 @@ export class TurnDaemonLifecycle {
         this.stateStore = deps.stateStore;
         this.processor = deps.processor;
         this.hooks = deps.hooks;
+        this.pauseGate = deps.pauseGate;
         this.options = options;
         this.status = {
             state: 'idle',
@@ -109,9 +114,23 @@ export class TurnDaemonLifecycle {
             if (this.stopping) {
                 break;
             }
+            const gatePaused = (await this.pauseGate?.()) ?? false;
+            if (this.errorPaused && !gatePaused) {
+                this.errorPaused = false;
+                this.status.lastError = undefined;
+            }
+            this.status.paused = this.manualPaused || gatePaused || this.errorPaused;
             if (this.status.paused) {
-                await this.waitForResume();
+                this.status.state = 'paused';
+                if (this.manualPaused) {
+                    await this.waitForResume();
+                } else {
+                    await this.clock.sleepMs(500);
+                }
                 continue;
+            }
+            if (this.status.state === 'paused') {
+                this.status.state = 'idle';
             }
 
             if (this.pendingRun) {
@@ -186,11 +205,13 @@ export class TurnDaemonLifecycle {
     private async handleCommand(command: TurnDaemonCommand): Promise<void> {
         switch (command.type) {
             case 'pause':
+                this.manualPaused = true;
                 this.status.paused = true;
                 this.status.state = 'paused';
                 return;
             case 'resume':
-                this.status.paused = false;
+                this.manualPaused = false;
+                this.status.paused = this.errorPaused;
                 this.status.state = 'idle';
                 return;
             case 'shutdown':
@@ -221,6 +242,15 @@ export class TurnDaemonLifecycle {
 
         try {
             result = await this.processor.run(targetTime, budget, checkpoint);
+        } catch (error) {
+            this.status.running = false;
+            this.status.state = 'paused';
+            this.status.paused = true;
+            this.errorPaused = true;
+            this.status.lastError =
+                error instanceof Error ? error.message : 'Unknown turn daemon error.';
+            await this.hooks?.onRunError?.(error);
+            return;
         } finally {
             this.status.running = false;
         }

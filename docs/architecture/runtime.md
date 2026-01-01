@@ -20,7 +20,8 @@ selection is required because it drives unit sets and DB settings.
 ## Gateway Orchestration (Single Host Draft)
 
 Gateway API is the single source of truth for profile state and reconciles
-PM2-managed processes on boot and on a short interval. The DB owns the desired
+PM2-managed processes on boot and on a short interval. The orchestrator runs
+as a separate process (`GATEWAY_ROLE=orchestrator`). The DB owns the desired
 state; PM2 is treated as the actuator. The runtime state is grouped so that
 `game-api` + `turn-daemon` are either on together or off together.
 
@@ -29,10 +30,12 @@ state; PM2 is treated as the actuator. The runtime state is grouped so that
 Profiles are tracked by `profileName` (= `${profile}:${scenario}`).
 Gateway loads the profile table on boot, then reconciles PM2 to match.
 
-- `완료됨` (COMPLETED): build output exists; processes should be off.
-- `예약됨` (RESERVED): start is scheduled for a timestamp; processes off.
+- `예약됨` (RESERVED): preopen/open timestamps are set; processes off.
+- `가오픈` (PREOPEN): build done; API+daemon on, daemon paused.
 - `가동중` (RUNNING): both `game-api` and `turn-daemon` should be on.
 - `정지됨` (STOPPED): processes off; may be resumed later.
+- `정지(오류)` (PAUSED): fatal error; daemon paused but process remains on.
+- `천하통일` (COMPLETED): game finished; API on, daemon paused.
 - `비활성화` (DISABLED): excluded from orchestration; start forbidden.
 
 ### Boot Reconciliation
@@ -40,29 +43,30 @@ Gateway loads the profile table on boot, then reconciles PM2 to match.
 1) Load profile rows from DB.
 2) List PM2 processes and map `profileName -> running state`.
 3) For each profile:
-   - If desired `RUNNING` and any process is missing, start missing processes.
-   - If desired not `RUNNING` and any process is running, stop both processes.
+   - If desired `RUNNING/PREOPEN/PAUSED/COMPLETED` and any process is missing, start.
+   - If desired `RESERVED/STOPPED/DISABLED` and any process is running, stop both.
 4) Persist errors to DB for audit.
 
 ### Internal Scheduler (Gateway Cron)
 
 Gateway runs a lightweight cron loop (setInterval) that:
-- Promotes `RESERVED` profiles whose `scheduledStartAt <= now` to `RUNNING`.
-- Triggers a reconcile immediately after promotion.
+- When `RESERVED` and `preopenAt <= now`, queue a build for the reserved commit.
+- When build succeeds, status becomes `PREOPEN` (daemon paused).
+- When `openAt <= now`, status becomes `RUNNING` and daemon resumes.
 - Optionally drains a build queue (see build workflow).
 
 ### Build Workflow (Admin)
 
 - Admin triggers a build request for a profile.
 - Gateway queues a build job with `(profileName, commitSha)` and prepares a
-  per-commit workspace (`/var/sammo/workspaces/{commitSha}` recommended).
+  per-commit workspace (`/.worktrees/{commitSha}` by default).
 - Workspace is backed by `git worktree` and is reused across builds for the same commit.
 - Each workspace stores `lastUsedAt` in DB so cleanup can remove stale worktrees.
 - Cleanup is invoked manually by admin API and removes worktrees unused for 6+ months.
 - Build runs `pnpm install` when workspace is created, then executes
   `pnpm --filter @sammo-ts/game-api build` and
   `pnpm --filter @sammo-ts/game-engine build`, then marks build success/failure.
-- On success, profile status remains `COMPLETED` (or stays `RUNNING` if already on).
+- On success, status moves to `PREOPEN` for reserved builds or stays unchanged for manual builds.
 
 ## Current Implementation Status
 

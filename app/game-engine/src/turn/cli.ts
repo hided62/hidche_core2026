@@ -6,6 +6,8 @@ import { createTurnDaemonRuntime } from './turnDaemon.js';
 
 export interface TurnDaemonCliOptions {
     profile?: string;
+    profileName?: string;
+    scenario?: string;
     databaseUrl?: string;
     tickMinutes?: number;
     schedule?: TurnSchedule;
@@ -71,6 +73,11 @@ export const runTurnDaemonCli = async (
     const env = options.env ?? process.env;
     const profile =
         options.profile ?? env.TURN_PROFILE ?? env.PROFILE ?? 'che';
+    const scenario = options.scenario ?? env.TURN_SCENARIO ?? env.SCENARIO;
+    const profileName =
+        options.profileName ??
+        env.TURN_PROFILE_NAME ??
+        (scenario ? `${profile}:${scenario}` : profile);
     const databaseUrl =
         options.databaseUrl ?? (await resolveDatabaseUrl({ env }));
     const budget = buildBudgetOverride(env, options.budget);
@@ -80,14 +87,17 @@ export const runTurnDaemonCli = async (
         options.enableDatabaseFlush ??
         parseBoolean(env.TURN_FLUSH_DB) ??
         true;
+    const pauseGateIntervalMs = parseNumber(env.TURN_PAUSE_GATE_MS);
 
     const runtime = await createTurnDaemonRuntime({
         profile,
+        profileName,
         databaseUrl,
         defaultBudget: budget,
         tickMinutes,
         schedule: options.schedule,
         enableDatabaseFlush,
+        pauseGateIntervalMs,
     });
 
     let closed = false;

@@ -28,6 +28,7 @@ export interface TurnDaemonStatus {
     state: TurnDaemonState;
     running: boolean;
     paused: boolean;
+    lastError?: string;
     lastRunAt?: string;
     lastDurationMs?: number;
     lastTurnTime?: string;
@@ -70,4 +71,5 @@ export interface TurnDaemonControlQueue {
 export interface TurnDaemonHooks {
     flushChanges?(result: TurnRunResult): Promise<void>;
     publishEvents?(result: TurnRunResult): Promise<void>;
+    onRunError?(error: unknown): Promise<void>;
 }

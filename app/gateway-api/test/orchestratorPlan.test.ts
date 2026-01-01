@@ -12,6 +12,15 @@ describe('planProfileReconcile', () => {
         ).toEqual({ shouldStart: true, shouldStop: false });
     });
 
+    it('starts processes for preopen profiles', () => {
+        expect(
+            planProfileReconcile('PREOPEN', {
+                apiRunning: false,
+                daemonRunning: false,
+            })
+        ).toEqual({ shouldStart: true, shouldStop: false });
+    });
+
     it('does nothing when running profile is healthy', () => {
         expect(
             planProfileReconcile('RUNNING', {

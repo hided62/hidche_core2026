@@ -28,9 +28,11 @@ enum OAuthType {
 }
 
 enum GatewayProfileStatus {
-    COMPLETED
     RESERVED
+    PREOPEN
     RUNNING
+    PAUSED
+    COMPLETED
     STOPPED
     DISABLED
 }
@@ -72,6 +74,8 @@ model GatewayProfile {
     buildCommitSha   String?            @map("build_commit_sha")
     buildWorkspace   String?            @map("build_workspace")
     buildLastUsedAt  DateTime?          @map("build_last_used_at")
+    preopenAt        DateTime?          @map("preopen_at")
+    openAt           DateTime?          @map("open_at")
     scheduledStartAt DateTime?          @map("scheduled_start_at")
     buildRequestedAt DateTime?          @map("build_requested_at")
     buildStartedAt   DateTime?          @map("build_started_at")

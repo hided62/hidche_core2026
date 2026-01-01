@@ -54,7 +54,12 @@ export const planProfileReconcile = (
     status: GatewayProfileStatus,
     runtime: ProfileRuntimeState
 ): { shouldStart: boolean; shouldStop: boolean } => {
-    if (status === 'RUNNING') {
+    if (
+        status === 'RUNNING' ||
+        status === 'PREOPEN' ||
+        status === 'PAUSED' ||
+        status === 'COMPLETED'
+    ) {
         return {
             shouldStart: !(runtime.apiRunning && runtime.daemonRunning),
             shouldStop: false,
@@ -94,6 +99,7 @@ const buildProcessDefinitions = (
         TURN_PROFILE: profile.profile,
         PROFILE: profile.profile,
         SCENARIO: profile.scenario,
+        TURN_PROFILE_NAME: profile.profileName,
     };
     return {
         api: {
@@ -221,18 +227,41 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             const now = this.now();
             const due = await this.repository.listReservedToStart(now);
             for (const profile of due) {
-                try {
-                    await this.repository.updateStatus(
-                        profile.profileName,
-                        'RUNNING',
-                        null
-                    );
-                    await this.startProfile(profile);
-                } catch (error) {
+                if (!profile.preopenAt || !profile.openAt) {
                     await this.repository.updateLastError(
                         profile.profileName,
-                        error instanceof Error ? error.message : 'Failed to start scheduled profile.'
+                        'Reserved profile is missing preopen/open schedule.'
                     );
+                    continue;
+                }
+                if (!profile.buildCommitSha) {
+                    await this.repository.updateLastError(
+                        profile.profileName,
+                        'Reserved profile is missing build commit SHA.'
+                    );
+                    continue;
+                }
+                const queued =
+                    profile.buildStatus === 'QUEUED' || profile.buildStatus === 'RUNNING';
+                if (!queued) {
+                    await this.repository.updateBuildStatus(profile.profileName, 'QUEUED', {
+                        requestedAt: now.toISOString(),
+                        error: null,
+                        commitSha: profile.buildCommitSha,
+                    });
+                }
+            }
+            const profiles = await this.repository.listProfiles();
+            for (const profile of profiles) {
+                if (
+                    profile.status === 'PREOPEN' &&
+                    profile.openAt &&
+                    new Date(profile.openAt) <= now
+                ) {
+                    await this.repository.updateStatus(profile.profileName, 'RUNNING', {
+                        preopenAt: profile.preopenAt ?? null,
+                        openAt: profile.openAt ?? null,
+                    });
                 }
             }
         } finally {
@@ -304,12 +333,24 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                     completedAt,
                     error: null,
                 });
-                if (queued.status !== 'RUNNING' && queued.status !== 'DISABLED') {
+                if (queued.status === 'RESERVED') {
                     await this.repository.updateStatus(
                         queued.profileName,
-                        'COMPLETED',
-                        queued.scheduledStartAt ? queued.scheduledStartAt : null
+                        queued.openAt && new Date(queued.openAt) <= this.now()
+                            ? 'RUNNING'
+                            : 'PREOPEN',
+                        {
+                            preopenAt: queued.preopenAt ?? null,
+                            openAt: queued.openAt ?? null,
+                        }
                     );
+                } else if (queued.status === 'PREOPEN' && queued.openAt) {
+                    if (new Date(queued.openAt) <= this.now()) {
+                        await this.repository.updateStatus(queued.profileName, 'RUNNING', {
+                            preopenAt: queued.preopenAt ?? null,
+                            openAt: queued.openAt ?? null,
+                        });
+                    }
                 }
             } else {
                 await this.repository.updateBuildStatus(queued.profileName, 'FAILED', {

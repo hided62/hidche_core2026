@@ -23,6 +23,16 @@ export interface GatewayApiConfig {
     worktreeRoot: string;
 }
 
+export interface GatewayOrchestratorConfig {
+    redisKeyPrefix: string;
+    gameTokenSecret: string;
+    orchestratorReconcileIntervalMs: number;
+    orchestratorScheduleIntervalMs: number;
+    orchestratorBuildIntervalMs: number;
+    workspaceRootHint: string;
+    worktreeRoot: string;
+}
+
 const parseNumber = (value: string | undefined, fallback: number, label: string): number => {
     if (!value) {
         return fallback;
@@ -85,7 +95,40 @@ export const resolveGatewayApiConfigFromEnv = (
         kakaoRedirectUri,
         publicBaseUrl,
         adminToken: env.GATEWAY_ADMIN_TOKEN,
-        orchestratorEnabled: parseBoolean(env.GATEWAY_ORCHESTRATOR_ENABLED, true),
+        orchestratorEnabled: parseBoolean(env.GATEWAY_ORCHESTRATOR_ENABLED, false),
+        orchestratorReconcileIntervalMs: parseNumber(
+            env.GATEWAY_ORCHESTRATOR_RECONCILE_MS,
+            15000,
+            'GATEWAY_ORCHESTRATOR_RECONCILE_MS'
+        ),
+        orchestratorScheduleIntervalMs: parseNumber(
+            env.GATEWAY_ORCHESTRATOR_SCHEDULE_MS,
+            5000,
+            'GATEWAY_ORCHESTRATOR_SCHEDULE_MS'
+        ),
+        orchestratorBuildIntervalMs: parseNumber(
+            env.GATEWAY_ORCHESTRATOR_BUILD_MS,
+            10000,
+            'GATEWAY_ORCHESTRATOR_BUILD_MS'
+        ),
+        workspaceRootHint: env.GATEWAY_WORKSPACE_ROOT ?? process.cwd(),
+        worktreeRoot:
+            env.GATEWAY_WORKTREE_ROOT ??
+            path.resolve(env.GATEWAY_WORKSPACE_ROOT ?? process.cwd(), '.worktrees'),
+    };
+};
+
+export const resolveGatewayOrchestratorConfigFromEnv = (
+    env: NodeJS.ProcessEnv = process.env
+): GatewayOrchestratorConfig => {
+    const secret = env.GAME_TOKEN_SECRET ?? env.GATEWAY_TOKEN_SECRET ?? '';
+    if (!secret) {
+        throw new Error('GAME_TOKEN_SECRET is required for game server processes.');
+    }
+    const redisKeyPrefix = env.GATEWAY_REDIS_PREFIX ?? 'sammo:gateway';
+    return {
+        redisKeyPrefix,
+        gameTokenSecret: secret,
         orchestratorReconcileIntervalMs: parseNumber(
             env.GATEWAY_ORCHESTRATOR_RECONCILE_MS,
             15000,
