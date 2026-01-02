@@ -20,6 +20,7 @@
     },
     "dependencies": {
         "@sammo-ts/common": "workspace:*",
+        "immer": "^11.1.3",
         "zod": "^4.2.1"
     },
     "devDependencies": {

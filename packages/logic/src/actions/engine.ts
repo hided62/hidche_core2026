@@ -1,14 +1,13 @@
 import type { RandomGenerator } from '@sammo-ts/common';
+import { enablePatches, produceWithPatches, type Draft, castDraft } from 'immer';
 import type {
     City,
     General,
-    GeneralRole,
     GeneralTriggerState,
     CityId,
     GeneralId,
     Nation,
     NationId,
-    StatBlock,
 } from '../domain/entities.js';
 import type { GeneralActionContext } from '../triggers/general.js';
 import { getNextTurnAt, type TurnSchedule } from '../turn/calendar.js';
@@ -18,6 +17,16 @@ import {
     LogFormat,
     LogScope,
 } from '../logging/types.js';
+
+enablePatches();
+
+export interface WorldState<
+    TriggerState extends GeneralTriggerState = GeneralTriggerState
+> {
+    general: General<TriggerState>;
+    city?: City;
+    nation?: Nation | null;
+}
 
 export interface GeneralActionResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState
@@ -121,61 +130,105 @@ export interface GeneralActionResolution {
     };
 }
 
-const mergeStats = (base: StatBlock, patch: Partial<StatBlock>): StatBlock => ({
-    leadership: patch.leadership ?? base.leadership,
-    strength: patch.strength ?? base.strength,
-    intelligence: patch.intelligence ?? base.intelligence,
-});
-
-const mergeRole = (
-    base: GeneralRole,
-    patch: Partial<GeneralRole>
-): GeneralRole => ({
-    ...base,
-    ...patch,
-    items: {
-        ...base.items,
-        ...(patch.items ?? {}),
-    },
-});
-
-const mergeTriggerState = <TriggerState extends GeneralTriggerState>(
-    base: TriggerState,
-    patch: Partial<TriggerState>
-): TriggerState => ({
-    ...base,
-    ...patch,
-    flags: { ...base.flags, ...(patch.flags ?? {}) },
-    counters: { ...base.counters, ...(patch.counters ?? {}) },
-    modifiers: { ...base.modifiers, ...(patch.modifiers ?? {}) },
-    meta: { ...base.meta, ...(patch.meta ?? {}) },
-});
-
-const applyGeneralPatch = <TriggerState extends GeneralTriggerState>(
-    base: General<TriggerState>,
-    patch: Partial<General<TriggerState>>
-): General<TriggerState> => ({
-    ...base,
-    ...patch,
-    stats: patch.stats ? mergeStats(base.stats, patch.stats) : base.stats,
-    role: patch.role ? mergeRole(base.role, patch.role) : base.role,
-    triggerState: patch.triggerState
-        ? mergeTriggerState(base.triggerState, patch.triggerState)
-        : base.triggerState,
-    meta: patch.meta ? { ...base.meta, ...patch.meta } : base.meta,
-});
-
-const applyCityPatch = (base: City, patch: Partial<City>): City => ({
-    ...base,
-    ...patch,
-    meta: patch.meta ? { ...base.meta, ...patch.meta } : base.meta,
-});
-
-const applyNationPatch = (base: Nation, patch: Partial<Nation>): Nation => ({
-    ...base,
-    ...patch,
-    meta: patch.meta ? { ...base.meta, ...patch.meta } : base.meta,
-});
+/**
+ * Immer Draft에 Effect를 적용한다.
+ * 기존 Effect 기반 코드를 유지하면서 Draft에 즉시 반영하기 위함.
+ */
+export const applyEffectToDraft = <
+    TriggerState extends GeneralTriggerState = GeneralTriggerState
+>(
+    draft: Draft<WorldState<TriggerState>>,
+    effect: GeneralActionEffect<TriggerState>,
+    context: { generalId: GeneralId; cityId?: CityId; nationId?: NationId }
+): void => {
+    const generalDraft = draft.general as any;
+    switch (effect.type) {
+        case 'general:patch':
+            if (
+                effect.targetId === undefined ||
+                effect.targetId === context.generalId
+            ) {
+                Object.assign(generalDraft, effect.patch);
+                if (effect.patch.stats) {
+                    generalDraft.stats = {
+                        ...generalDraft.stats,
+                        ...effect.patch.stats,
+                    };
+                }
+                if (effect.patch.role) {
+                    generalDraft.role = {
+                        ...generalDraft.role,
+                        ...effect.patch.role,
+                        items: {
+                            ...generalDraft.role.items,
+                            ...(effect.patch.role.items ?? {}),
+                        },
+                    };
+                }
+                if (effect.patch.triggerState) {
+                    generalDraft.triggerState = {
+                        ...generalDraft.triggerState,
+                        ...effect.patch.triggerState,
+                        flags: {
+                            ...generalDraft.triggerState.flags,
+                            ...(effect.patch.triggerState.flags ?? {}),
+                        },
+                        counters: {
+                            ...generalDraft.triggerState.counters,
+                            ...(effect.patch.triggerState.counters ?? {}),
+                        },
+                        modifiers: {
+                            ...generalDraft.triggerState.modifiers,
+                            ...(effect.patch.triggerState.modifiers ?? {}),
+                        },
+                        meta: {
+                            ...generalDraft.triggerState.meta,
+                            ...(effect.patch.triggerState.meta ?? {}),
+                        },
+                    };
+                }
+                if (effect.patch.meta) {
+                    generalDraft.meta = {
+                        ...generalDraft.meta,
+                        ...effect.patch.meta,
+                    };
+                }
+            }
+            break;
+        case 'city:patch':
+            if (
+                draft.city &&
+                (effect.targetId === undefined ||
+                    effect.targetId === context.cityId)
+            ) {
+                Object.assign(draft.city, effect.patch);
+                if (effect.patch.meta) {
+                    draft.city.meta = {
+                        ...draft.city.meta,
+                        ...effect.patch.meta,
+                    };
+                }
+            }
+            break;
+        case 'nation:patch':
+            if (
+                draft.nation &&
+                (effect.targetId === undefined ||
+                    effect.targetId === context.nationId)
+            ) {
+                Object.assign(draft.nation, effect.patch);
+                if (effect.patch.meta) {
+                    draft.nation.meta = {
+                        ...draft.nation.meta,
+                        ...effect.patch.meta,
+                    };
+                }
+            }
+            break;
+        default:
+            break;
+    }
+};
 
 export const createGeneralPatchEffect = <
     TriggerState extends GeneralTriggerState = GeneralTriggerState
@@ -254,11 +307,7 @@ export const resolveGeneralAction = <
     scheduleContext: TurnScheduleContext,
     args: Args
 ): GeneralActionResolution => {
-    const outcome = resolver.resolve(context, args);
     const logs: LogEntryDraft[] = [];
-    let nextGeneral = context.general;
-    let nextCity = context.city;
-    let nextNation = context.nation ?? null;
     let nextTurnAtOverride: Date | null = null;
     const createdGenerals: General[] = [];
     const patches: NonNullable<GeneralActionResolution['patches']> = {
@@ -266,124 +315,142 @@ export const resolveGeneralAction = <
         cities: [],
         nations: [],
     };
+
+    const [nextWorld, worldPatches] = produceWithPatches(
+        {
+            general: context.general,
+            city: context.city,
+            nation: context.nation,
+        } as WorldState<TriggerState>,
+        (draft) => {
+            const outcome = resolver.resolve(
+                {
+                    ...context,
+                    general: castDraft(draft.general),
+                    city: castDraft(draft.city),
+                    nation: castDraft(draft.nation),
+                } as GeneralActionResolveContext<TriggerState>,
+                args
+            );
+
+            for (const effect of outcome.effects) {
+                switch (effect.type) {
+                    case 'log':
+                        // 로그 대상이 비어 있으면 현재 장수/국가 기준으로 보정한다.
+                        switch (effect.entry.scope) {
+                            case LogScope.GENERAL:
+                                logs.push({
+                                    ...effect.entry,
+                                    generalId:
+                                        effect.entry.generalId ??
+                                        context.general.id,
+                                });
+                                break;
+                            case LogScope.NATION:
+                                if (effect.entry.nationId !== undefined) {
+                                    logs.push(effect.entry);
+                                    break;
+                                }
+                                if (context.nation?.id !== undefined) {
+                                    logs.push({
+                                        ...effect.entry,
+                                        nationId: context.nation.id,
+                                    });
+                                }
+                                break;
+                            case LogScope.USER:
+                                if (effect.entry.userId) {
+                                    logs.push(effect.entry);
+                                }
+                                break;
+                            case LogScope.SYSTEM:
+                            default:
+                                logs.push(effect.entry);
+                                break;
+                        }
+                        break;
+                    case 'schedule:override':
+                        nextTurnAtOverride = effect.nextTurnAt;
+                        break;
+                    case 'general:add':
+                        createdGenerals.push(effect.general as General);
+                        break;
+                    case 'general:patch':
+                    case 'city:patch':
+                    case 'nation:patch':
+                        applyEffectToDraft(draft, effect, {
+                            generalId: context.general.id,
+                            ...(context.city?.id !== undefined
+                                ? { cityId: context.city.id }
+                                : {}),
+                            ...(context.nation?.id !== undefined
+                                ? { nationId: context.nation.id }
+                                : {}),
+                        });
+                        // 타겟이 다른 경우 patches에 추가 (applyEffectToDraft에서 처리되지 않은 경우)
+                        if (
+                            effect.type === 'general:patch' &&
+                            effect.targetId !== undefined &&
+                            effect.targetId !== context.general.id
+                        ) {
+                            patches.generals.push({
+                                id: effect.targetId,
+                                patch: effect.patch as Partial<General>,
+                            });
+                        } else if (
+                            effect.type === 'city:patch' &&
+                            effect.targetId !== undefined &&
+                            effect.targetId !== context.city?.id
+                        ) {
+                            patches.cities.push({
+                                id: effect.targetId,
+                                patch: effect.patch,
+                            });
+                        } else if (
+                            effect.type === 'nation:patch' &&
+                            effect.targetId !== undefined &&
+                            effect.targetId !== context.nation?.id
+                        ) {
+                            patches.nations.push({
+                                id: effect.targetId,
+                                patch: effect.patch,
+                            });
+                        }
+                        break;
+                }
+            }
+        }
+    );
+
+    const nextTurnAt =
+        nextTurnAtOverride ??
+        getNextTurnAt(scheduleContext.now, scheduleContext.schedule);
+
     const dirty: NonNullable<GeneralActionResolution['dirty']> = {
         general: false,
         city: false,
         nation: false,
         generalId: context.general.id,
     };
-    if (context.city) {
-        dirty.cityId = context.city.id;
-    }
-    if (context.nation) {
-        dirty.nationId = context.nation.id;
-    }
+    if (context.city) dirty.cityId = context.city.id;
+    if (context.nation) dirty.nationId = context.nation.id;
 
-    for (const effect of outcome.effects) {
-        switch (effect.type) {
-            case 'general:patch':
-                if (
-                    effect.targetId === undefined ||
-                    effect.targetId === context.general.id
-                ) {
-                    nextGeneral = applyGeneralPatch(nextGeneral, effect.patch);
-                    dirty.general = true;
-                } else {
-                    patches.generals.push({
-                        id: effect.targetId,
-                        patch: effect.patch as Partial<General>,
-                    });
-                }
-                break;
-            case 'general:add':
-                createdGenerals.push(effect.general as General);
-                break;
-            case 'city:patch':
-                if (
-                    effect.targetId === undefined ||
-                    effect.targetId === nextCity?.id
-                ) {
-                    if (nextCity) {
-                        nextCity = applyCityPatch(nextCity, effect.patch);
-                        dirty.city = true;
-                    }
-                } else {
-                    patches.cities.push({
-                        id: effect.targetId,
-                        patch: effect.patch,
-                    });
-                }
-                break;
-            case 'nation:patch':
-                if (
-                    effect.targetId === undefined ||
-                    effect.targetId === nextNation?.id
-                ) {
-                    if (nextNation) {
-                        nextNation = applyNationPatch(nextNation, effect.patch);
-                        dirty.nation = true;
-                    }
-                } else {
-                    patches.nations.push({
-                        id: effect.targetId,
-                        patch: effect.patch,
-                    });
-                }
-                break;
-            case 'log':
-                // 로그 대상이 비어 있으면 현재 장수/국가 기준으로 보정한다.
-                switch (effect.entry.scope) {
-                    case LogScope.GENERAL:
-                        logs.push({
-                            ...effect.entry,
-                            generalId:
-                                effect.entry.generalId ?? context.general.id,
-                        });
-                        break;
-                    case LogScope.NATION:
-                        if (effect.entry.nationId !== undefined) {
-                            logs.push(effect.entry);
-                            break;
-                        }
-                        if (context.nation?.id !== undefined) {
-                            logs.push({
-                                ...effect.entry,
-                                nationId: context.nation.id,
-                            });
-                        }
-                        break;
-                    case LogScope.USER:
-                        if (effect.entry.userId) {
-                            logs.push(effect.entry);
-                        }
-                        break;
-                    case LogScope.SYSTEM:
-                    default:
-                        logs.push(effect.entry);
-                        break;
-                }
-                break;
-            case 'schedule:override':
-                nextTurnAtOverride = effect.nextTurnAt;
-                break;
-            default:
-                break;
-        }
+    // worldPatches를 분석하여 dirty 설정
+    for (const patch of worldPatches) {
+        if (patch.path[0] === 'general') dirty.general = true;
+        if (patch.path[0] === 'city') dirty.city = true;
+        if (patch.path[0] === 'nation') dirty.nation = true;
     }
-
-    const nextTurnAt =
-        nextTurnAtOverride ??
-        getNextTurnAt(scheduleContext.now, scheduleContext.schedule);
 
     const resolution: GeneralActionResolution = {
-        general: nextGeneral,
-        nation: nextNation,
+        general: nextWorld.general as General,
+        nation: nextWorld.nation as Nation | null,
         nextTurnAt,
         logs,
-        effects: outcome.effects,
+        effects: [], // 이제 effects는 직접 사용되지 않음 (이미 반영됨)
     };
-    if (nextCity) {
-        resolution.city = nextCity;
+    if (nextWorld.city) {
+        resolution.city = nextWorld.city as City;
     }
     if (dirty.general || dirty.city || dirty.nation) {
         resolution.dirty = dirty;
