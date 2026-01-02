@@ -329,12 +329,14 @@ export const createReservedTurnHandler = async (options: {
                 };
                 let specificContext = buildActionContext(actionKey, baseContext, {
                     world: context.world,
+                    scenarioConfig: options.scenarioConfig,
                     scenarioMeta: options.scenarioMeta,
                     map: options.map,
                     unitSet: options.unitSet,
                     worldRef,
                     actionArgs: actionArgsRecord,
                     createGeneralId,
+                    seedBase,
                 });
                 if (!specificContext && actionKey !== fallbackDefinition.key) {
                     definition = fallbackDefinition;

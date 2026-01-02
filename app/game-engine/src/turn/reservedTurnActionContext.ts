@@ -3,7 +3,11 @@ import type {
     General,
     MapDefinition,
     Nation,
+    ScenarioConfig,
     ScenarioMeta,
+    WarAftermathConfig,
+    WarEngineConfig,
+    WarTimeContext,
     UnitSetDefinition,
 } from '@sammo-ts/logic';
 
@@ -39,12 +43,14 @@ export type ActionResolveContext = ActionContextBase & Record<string, unknown>;
 
 export interface ActionContextOptions {
     world: TurnWorldState;
+    scenarioConfig: ScenarioConfig;
     scenarioMeta?: ScenarioMeta;
     map?: MapDefinition;
     unitSet?: UnitSetDefinition;
     worldRef: InMemoryTurnWorld | null;
     actionArgs: Record<string, unknown>;
     createGeneralId: () => number;
+    seedBase: string;
 }
 
 type ActionContextBuilder = (
@@ -141,6 +147,166 @@ const resolveStartYear = (
 const resolveTurnTermMinutes = (world: TurnWorldState): number =>
     Math.max(1, Math.round(world.tickSeconds / 60));
 
+const DEFAULT_WAR_CONFIG = {
+    armPerPhase: 500,
+    maxTrainByCommand: 100,
+    maxAtmosByCommand: 100,
+    maxTrainByWar: 110,
+    maxAtmosByWar: 150,
+};
+
+const DEFAULT_AFTER_CONFIG = {
+    techLevelIncYear: 5,
+    initialAllowedTechLevel: 1,
+    defaultCityWall: 1000,
+};
+
+const asRecord = (value: unknown): Record<string, unknown> =>
+    value && typeof value === 'object' && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : {};
+
+const resolveNumber = (
+    record: Record<string, unknown>,
+    keys: string[],
+    fallback: number
+): number => {
+    for (const key of keys) {
+        const value = record[key];
+        if (typeof value === 'number' && Number.isFinite(value)) {
+            return value;
+        }
+    }
+    return fallback;
+};
+
+const resolveCastleCrewTypeId = (
+    unitSet: UnitSetDefinition,
+    fallback: number
+): number => {
+    const crewTypes = unitSet.crewTypes ?? [];
+    const byName = crewTypes.find((crewType) => crewType.name.includes('성벽'));
+    if (byName) {
+        return byName.id;
+    }
+    const byRequirement = crewTypes.find((crewType) =>
+        crewType.requirements.some(
+            (requirement) => requirement.type === 'Impossible'
+        )
+    );
+    if (byRequirement) {
+        return byRequirement.id;
+    }
+    if (typeof unitSet.defaultCrewTypeId === 'number') {
+        return unitSet.defaultCrewTypeId;
+    }
+    return crewTypes[0]?.id ?? fallback;
+};
+
+const resolveCastleArmType = (
+    unitSet: UnitSetDefinition,
+    castleCrewTypeId: number
+): number => {
+    const crewTypes = unitSet.crewTypes ?? [];
+    return (
+        crewTypes.find((crewType) => crewType.id === castleCrewTypeId)?.armType ??
+        0
+    );
+};
+
+const buildWarConfig = (
+    scenarioConfig: ScenarioConfig,
+    unitSet: UnitSetDefinition
+): WarEngineConfig => {
+    const constValues = asRecord(scenarioConfig.const);
+    const castleCrewTypeId = resolveNumber(
+        constValues,
+        ['castleCrewTypeId'],
+        resolveCastleCrewTypeId(unitSet, 0)
+    );
+    const castleArmType = resolveCastleArmType(unitSet, castleCrewTypeId);
+
+    return {
+        armPerPhase: resolveNumber(
+            constValues,
+            ['armPerPhase', 'armperphase'],
+            DEFAULT_WAR_CONFIG.armPerPhase
+        ),
+        maxTrainByCommand: resolveNumber(
+            constValues,
+            ['maxTrainByCommand'],
+            DEFAULT_WAR_CONFIG.maxTrainByCommand
+        ),
+        maxAtmosByCommand: resolveNumber(
+            constValues,
+            ['maxAtmosByCommand'],
+            DEFAULT_WAR_CONFIG.maxAtmosByCommand
+        ),
+        maxTrainByWar: resolveNumber(
+            constValues,
+            ['maxTrainByWar'],
+            DEFAULT_WAR_CONFIG.maxTrainByWar
+        ),
+        maxAtmosByWar: resolveNumber(
+            constValues,
+            ['maxAtmosByWar'],
+            DEFAULT_WAR_CONFIG.maxAtmosByWar
+        ),
+        castleCrewTypeId,
+        armTypes: {
+            footman: 1,
+            archer: 2,
+            cavalry: 3,
+            wizard: 4,
+            siege: 5,
+            misc: 6,
+            castle: castleArmType,
+        },
+    };
+};
+
+const buildWarAftermathConfig = (
+    scenarioConfig: ScenarioConfig,
+    castleCrewTypeId: number
+): WarAftermathConfig => {
+    const constValues = asRecord(scenarioConfig.const);
+    return {
+        initialNationGenLimit: resolveNumber(
+            constValues,
+            ['initialNationGenLimit'],
+            0
+        ),
+        techLevelIncYear: resolveNumber(
+            constValues,
+            ['techLevelIncYear'],
+            DEFAULT_AFTER_CONFIG.techLevelIncYear
+        ),
+        initialAllowedTechLevel: resolveNumber(
+            constValues,
+            ['initialAllowedTechLevel'],
+            DEFAULT_AFTER_CONFIG.initialAllowedTechLevel
+        ),
+        maxTechLevel: resolveNumber(constValues, ['maxTechLevel'], 0),
+        defaultCityWall: resolveNumber(
+            constValues,
+            ['defaultCityWall'],
+            DEFAULT_AFTER_CONFIG.defaultCityWall
+        ),
+        baseGold: resolveNumber(constValues, ['baseGold', 'basegold'], 0),
+        baseRice: resolveNumber(constValues, ['baseRice', 'baserice'], 0),
+        castleCrewTypeId,
+    };
+};
+
+const buildWarTime = (
+    world: TurnWorldState,
+    scenarioMeta?: ScenarioMeta
+): WarTimeContext => ({
+    year: world.currentYear,
+    month: world.currentMonth,
+    startYear: resolveStartYear(world, scenarioMeta),
+});
+
 // 커맨드별로 필요한 컨텍스트 확장 데이터를 구성한다.
 const ACTION_CONTEXT_BUILDERS: Record<string, ActionContextBuilder> = {
     che_인재탐색: (base, options) => ({
@@ -221,6 +387,41 @@ const ACTION_CONTEXT_BUILDERS: Record<string, ActionContextBuilder> = {
         currentYear: options.world.currentYear,
         currentMonth: options.world.currentMonth,
     }),
+    che_출병: (base, options) => {
+        if (!options.unitSet || !options.worldRef) {
+            return null;
+        }
+        const destCityId = options.actionArgs.destCityId;
+        if (typeof destCityId !== 'number') {
+            return null;
+        }
+        const destCity = options.worldRef.getCityById(destCityId);
+        if (!destCity) {
+            return null;
+        }
+        const destNation =
+            destCity.nationId > 0
+                ? options.worldRef.getNationById(destCity.nationId)
+                : null;
+        const warConfig = buildWarConfig(options.scenarioConfig, options.unitSet);
+        const aftermathConfig = buildWarAftermathConfig(
+            options.scenarioConfig,
+            warConfig.castleCrewTypeId
+        );
+        return {
+            ...base,
+            destCity,
+            destNation,
+            cities: options.worldRef.listCities(),
+            nations: options.worldRef.listNations(),
+            generals: options.worldRef.listGenerals(),
+            unitSet: options.unitSet,
+            time: buildWarTime(options.world, options.scenarioMeta),
+            seedBase: options.seedBase,
+            warConfig,
+            aftermathConfig,
+        };
+    },
 };
 
 export const buildActionContext = (
