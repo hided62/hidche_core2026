@@ -24,6 +24,7 @@ import type {
     GeneralActionEffect,
     GeneralActionOutcome,
     GeneralActionResolveContext,
+    GeneralActionResolver,
 } from '../../engine.js';
 import {
     createGeneralAddEffect,
@@ -230,7 +231,8 @@ export class CommandResolver<
 // 의병모집 실행 결과를 계산한다.
 export class ActionResolver<
     TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+> implements GeneralActionResolver<TriggerState, VolunteerRecruitArgs> {
+    readonly key = 'che_의병모집';
     private readonly env: VolunteerRecruitEnvironment;
     private readonly command: CommandResolver<TriggerState>;
 

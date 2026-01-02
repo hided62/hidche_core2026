@@ -1,49 +1,42 @@
-import type { GeneralActionDefinition } from '../../definition.js';
-import type { TurnCommandEnv } from '../commandEnv.js';
-import type * as NationRestModule from './휴식.js';
-import type * as AwardModule from './che_포상.js';
-import type * as AssignmentModule from './che_발령.js';
-import type * as DeclarationModule from './che_선전포고.js';
-import type * as NonAggressionProposalModule from './che_불가침제의.js';
-import type * as VolunteerRecruitModule from './che_의병모집.js';
+import type { TurnCommandModule, TurnCommandSpecBase } from '../commandModule.js';
 
+export const NATION_TURN_COMMAND_KEYS = [
+    '휴식',
+    'che_포상',
+    'che_발령',
+    'che_선전포고',
+    'che_불가침제의',
+    'che_의병모집',
+] as const;
 
+export type NationTurnCommandKey =
+    (typeof NATION_TURN_COMMAND_KEYS)[number];
+
+export type NationTurnCommandSpec =
+    TurnCommandSpecBase<NationTurnCommandKey>;
 
 export type NationTurnCommandModule =
-    | typeof NationRestModule
-    | typeof AwardModule
-    | typeof AssignmentModule
-    | typeof DeclarationModule
-    | typeof NonAggressionProposalModule
-    | typeof VolunteerRecruitModule;
+    TurnCommandModule<NationTurnCommandSpec>;
 
 export type NationTurnCommandImporter = () => Promise<NationTurnCommandModule>;
 
-const defaultImporters = {
+const defaultImporters: Record<
+    NationTurnCommandKey,
+    NationTurnCommandImporter
+> = {
     휴식: async () => import('./휴식.js'),
     che_포상: async () => import('./che_포상.js'),
     che_발령: async () => import('./che_발령.js'),
     che_선전포고: async () => import('./che_선전포고.js'),
     che_불가침제의: async () => import('./che_불가침제의.js'),
     che_의병모집: async () => import('./che_의병모집.js'),
-} as const satisfies Record<string, NationTurnCommandImporter>;
-
-export type NationTurnCommandKey = keyof typeof defaultImporters;
-
-export const NATION_TURN_COMMAND_KEYS: readonly NationTurnCommandKey[] = [...Object.keys(defaultImporters)] as NationTurnCommandKey[];
+};
 
 export const isNationTurnCommandKey = (
     value: string
 ): value is NationTurnCommandKey =>
-    (NATION_TURN_COMMAND_KEYS as string[]).includes(value);
+    NATION_TURN_COMMAND_KEYS.includes(value as NationTurnCommandKey);
 
-export interface NationTurnCommandSpec {
-    key: NationTurnCommandKey;
-    category: string;
-    reqArg: boolean;
-    args: Record<string, unknown>;
-    createDefinition(env: TurnCommandEnv): GeneralActionDefinition;
-}
 
 
 export class NationTurnCommandLoader {
@@ -84,28 +77,3 @@ export const loadNationTurnCommandSpecs = async (
     }
     return specs;
 };
-
-export {
-    ActionDefinition as NationRestActionDefinition,
-    ActionResolver as NationRestActionResolver,
-} from './휴식.js';
-export {
-    ActionDefinition as AwardActionDefinition,
-    ActionResolver as AwardActionResolver,
-    CommandResolver as AwardCommandResolver,
-} from './che_포상.js';
-export {
-    ActionDefinition as AssignmentActionDefinition,
-    ActionResolver as AssignmentActionResolver,
-} from './che_발령.js';
-export {
-    ActionDefinition as DeclarationActionDefinition,
-} from './che_선전포고.js';
-export {
-    ActionDefinition as NonAggressionProposalActionDefinition,
-} from './che_불가침제의.js';
-export {
-    ActionDefinition as VolunteerRecruitActionDefinition,
-    ActionResolver as VolunteerRecruitActionResolver,
-    CommandResolver as VolunteerRecruitCommandResolver,
-} from './che_의병모집.js';

@@ -9,6 +9,7 @@ import type { GeneralActionDefinition } from '../../definition.js';
 import type {
     GeneralActionOutcome,
     GeneralActionResolveContext,
+    GeneralActionResolver,
 } from '../../engine.js';
 import type { TurnCommandEnv } from '../commandEnv.js';
 import type { NationTurnCommandSpec } from './index.js';
@@ -19,7 +20,9 @@ const ACTION_NAME = '휴식';
 
 export class ActionResolver<
     TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+> implements GeneralActionResolver<TriggerState, NationRestArgs> {
+    readonly key = '휴식';
+
     resolve(
         _context: GeneralActionResolveContext<TriggerState>,
         _args: NationRestArgs

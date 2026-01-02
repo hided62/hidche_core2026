@@ -28,6 +28,7 @@ import type { GeneralActionDefinition } from '../../definition.js';
 import type {
     GeneralActionOutcome,
     GeneralActionResolveContext,
+    GeneralActionResolver,
 } from '../../engine.js';
 import type { MapDefinition, UnitSetDefinition } from '../../../world/types.js';
 import type { TurnCommandEnv } from '../commandEnv.js';
@@ -326,7 +327,8 @@ export class CommandResolver<
 
 export class ActionResolver<
     TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+> implements GeneralActionResolver<TriggerState, RecruitArgs> {
+    readonly key = 'che_징병';
     // 징병 실행 결과를 계산하고 효과로 변환한다.
     private readonly env: RecruitEnvironment;
     private readonly command: CommandResolver<TriggerState>;

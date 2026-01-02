@@ -22,6 +22,7 @@ import type { GeneralActionDefinition } from '../../definition.js';
 import type {
     GeneralActionOutcome,
     GeneralActionResolveContext,
+    GeneralActionResolver,
 } from '../../engine.js';
 import {
     createGeneralAddEffect,
@@ -281,7 +282,8 @@ export class CommandResolver<
 // 인재탐색 실행 결과를 계산한다.
 export class ActionResolver<
     TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+> implements GeneralActionResolver<TriggerState, TalentScoutArgs> {
+    readonly key = 'che_인재탐색';
     private readonly env: TalentScoutEnvironment;
     private readonly command: CommandResolver<TriggerState>;
 

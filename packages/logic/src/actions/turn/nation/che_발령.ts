@@ -24,6 +24,7 @@ import type {
     GeneralActionEffect,
     GeneralActionOutcome,
     GeneralActionResolveContext,
+    GeneralActionResolver,
 } from '../../engine.js';
 import { createGeneralPatchEffect, createLogEffect } from '../../engine.js';
 import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
@@ -89,7 +90,8 @@ const addMetaValue = (
 // 발령 결과를 계산한다.
 export class ActionResolver<
     TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+> implements GeneralActionResolver<TriggerState, AssignmentArgs> {
+    readonly key = 'che_발령';
     private readonly env: AssignmentEnvironment;
 
     constructor(env: AssignmentEnvironment) {

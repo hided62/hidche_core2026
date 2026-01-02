@@ -25,6 +25,7 @@ import type {
     GeneralActionEffect,
     GeneralActionOutcome,
     GeneralActionResolveContext,
+    GeneralActionResolver,
 } from '../../engine.js';
 import {
     createGeneralPatchEffect,
@@ -109,7 +110,8 @@ export class CommandResolver {
 // 포상 결과를 계산한다.
 export class ActionResolver<
     TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+> implements GeneralActionResolver<TriggerState, AwardArgs> {
+    readonly key = 'che_포상';
     private readonly env: AwardEnvironment;
     private readonly command: CommandResolver;
 
