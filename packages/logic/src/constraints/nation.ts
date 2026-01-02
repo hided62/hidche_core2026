@@ -1,5 +1,12 @@
 import type { General, Nation } from '../domain/entities.js';
-import { allow, readMetaNumber, readNation, resolveDestNationId, unknownOrDeny } from './helpers.js';
+import {
+    allow,
+    readGeneral,
+    readMetaNumber,
+    readNation,
+    resolveDestNationId,
+    unknownOrDeny,
+} from './helpers.js';
 import type { Constraint, ConstraintContext, RequirementKey, StateView } from './types.js';
 
 export const notWanderingNation = (): Constraint => ({
@@ -162,6 +169,45 @@ export const existsDestNation = (): Constraint => ({
         const nation = view.get(req) as Nation | null;
         if (!nation) {
             return unknownOrDeny(ctx, [req], '국가 정보가 없습니다.');
+        }
+        return allow();
+    },
+});
+
+export const differentDestNation = (): Constraint => ({
+    name: 'DifferentDestNation',
+    requires: (ctx) => {
+        const reqs: RequirementKey[] = [];
+        if (ctx.nationId !== undefined) {
+            reqs.push({ kind: 'nation', id: ctx.nationId });
+        } else {
+            reqs.push({ kind: 'general', id: ctx.actorId });
+        }
+        const destNationId = resolveDestNationId(ctx);
+        if (destNationId !== undefined) {
+            reqs.push({ kind: 'destNation', id: destNationId });
+        }
+        return reqs;
+    },
+    test: (ctx, view) => {
+        const destNationId = resolveDestNationId(ctx);
+        if (destNationId === undefined) {
+            return unknownOrDeny(ctx, [], '국가 정보가 없습니다.');
+        }
+        let baseNationId = ctx.nationId;
+        if (baseNationId === undefined) {
+            const general = readGeneral(ctx, view);
+            if (!general) {
+                const req: RequirementKey = {
+                    kind: 'general',
+                    id: ctx.actorId,
+                };
+                return unknownOrDeny(ctx, [req], '국가 정보가 없습니다.');
+            }
+            baseNationId = general.nationId;
+        }
+        if (baseNationId === destNationId) {
+            return { kind: 'deny', reason: '같은 국가입니다.' };
         }
         return allow();
     },

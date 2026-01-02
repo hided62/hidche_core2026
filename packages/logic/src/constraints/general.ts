@@ -1,5 +1,11 @@
 import type { General } from '../domain/entities.js';
-import { allow, readDestGeneral, resolveDestGeneralId, unknownOrDeny } from './helpers.js';
+import {
+    allow,
+    readDestGeneral,
+    resolveDestGeneralId,
+    resolveDestNationId,
+    unknownOrDeny,
+} from './helpers.js';
 import type { Constraint, ConstraintContext, RequirementKey, StateView } from './types.js';
 
 export const notBeNeutral = (): Constraint => ({
@@ -167,6 +173,47 @@ export const existsDestGeneral = (): Constraint => ({
         const general = view.get(req) as General | null;
         if (!general) {
             return { kind: 'deny', reason: '장수 정보가 없습니다.' };
+        }
+        return allow();
+    },
+});
+
+export const destGeneralInDestNation = (): Constraint => ({
+    name: 'DestGeneralInDestNation',
+    requires: (ctx) => {
+        const reqs: RequirementKey[] = [];
+        const destGeneralId = resolveDestGeneralId(ctx);
+        if (destGeneralId !== undefined) {
+            reqs.push({ kind: 'destGeneral', id: destGeneralId });
+        }
+        const destNationId = resolveDestNationId(ctx);
+        if (destNationId !== undefined) {
+            reqs.push({ kind: 'destNation', id: destNationId });
+        }
+        return reqs;
+    },
+    test: (ctx, view) => {
+        const destGeneral = readDestGeneral(ctx, view);
+        if (!destGeneral) {
+            const destGeneralId = resolveDestGeneralId(ctx);
+            if (destGeneralId === undefined) {
+                return unknownOrDeny(ctx, [], '장수 정보가 없습니다.');
+            }
+            const req: RequirementKey = {
+                kind: 'destGeneral',
+                id: destGeneralId,
+            };
+            return unknownOrDeny(ctx, [req], '장수 정보가 없습니다.');
+        }
+        const destNationId = resolveDestNationId(ctx);
+        if (destNationId === undefined) {
+            return unknownOrDeny(ctx, [], '국가 정보가 없습니다.');
+        }
+        if (destGeneral.nationId !== destNationId) {
+            return {
+                kind: 'deny',
+                reason: '제의 장수가 국가 소속이 아닙니다.',
+            };
         }
         return allow();
     },

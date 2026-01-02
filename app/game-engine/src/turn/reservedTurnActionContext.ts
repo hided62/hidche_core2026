@@ -216,6 +216,11 @@ const ACTION_CONTEXT_BUILDERS: Record<string, ActionContextBuilder> = {
             startYear: resolveStartYear(options.world, options.scenarioMeta),
         };
     },
+    che_불가침제의: (base, options) => ({
+        ...base,
+        currentYear: options.world.currentYear,
+        currentMonth: options.world.currentMonth,
+    }),
 };
 
 export const buildActionContext = (

@@ -1,0 +1,170 @@
+import type { GeneralTriggerState } from '../../../domain/entities.js';
+import type { Constraint, ConstraintContext } from '../../../constraints/types.js';
+import {
+    beChief,
+    differentDestNation,
+    disallowDiplomacyBetweenStatus,
+    existsDestNation,
+    notBeNeutral,
+} from '../../../constraints/presets.js';
+import { allow, unknownOrDeny } from '../../../constraints/helpers.js';
+import type { GeneralActionDefinition } from '../../definition.js';
+import type {
+    GeneralActionOutcome,
+    GeneralActionResolveContext,
+} from '../../engine.js';
+import { createLogEffect } from '../../engine.js';
+import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
+import type { TurnCommandEnv } from '../commandEnv.js';
+import type { NationTurnCommandSpec } from './index.js';
+
+export interface NonAggressionProposalArgs {
+    destNationId: number;
+    year: number;
+    month: number;
+}
+
+const ACTION_NAME = '불가침 제의';
+const MIN_TERM_MONTHS = 6;
+
+const parseNationId = (raw: unknown): number | null => {
+    if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+        return null;
+    }
+    return raw > 0 ? Math.floor(raw) : null;
+};
+
+const parseYear = (raw: unknown): number | null => {
+    if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+        return null;
+    }
+    return raw >= 0 ? Math.floor(raw) : null;
+};
+
+const parseMonth = (raw: unknown): number | null => {
+    if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+        return null;
+    }
+    const month = Math.floor(raw);
+    return month >= 1 && month <= 12 ? month : null;
+};
+
+const resolveMonthIndex = (year: number, month: number): number =>
+    year * 12 + month - 1;
+
+const requireMinimumTerm = (minMonths: number): Constraint => ({
+    name: 'RequireNonAggressionMinimumTerm',
+    requires: () => [
+        { kind: 'arg', key: 'year' },
+        { kind: 'arg', key: 'month' },
+        { kind: 'env', key: 'year' },
+        { kind: 'env', key: 'month' },
+    ],
+    test: (ctx) => {
+        const yearValue = typeof ctx.args.year === 'number' ? ctx.args.year : null;
+        const monthValue = typeof ctx.args.month === 'number' ? ctx.args.month : null;
+        const envYearValue = typeof ctx.env.year === 'number' ? ctx.env.year : null;
+        const envMonthValue =
+            typeof ctx.env.month === 'number' ? ctx.env.month : null;
+        const missing = [];
+
+        if (yearValue === null) {
+            missing.push({ kind: 'arg', key: 'year' } as const);
+        }
+        if (monthValue === null) {
+            missing.push({ kind: 'arg', key: 'month' } as const);
+        }
+        if (envYearValue === null) {
+            missing.push({ kind: 'env', key: 'year' } as const);
+        }
+        if (envMonthValue === null) {
+            missing.push({ kind: 'env', key: 'month' } as const);
+        }
+
+        if (
+            missing.length > 0 ||
+            yearValue === null ||
+            monthValue === null ||
+            envYearValue === null ||
+            envMonthValue === null
+        ) {
+            return unknownOrDeny(ctx, missing, '기한 정보가 없습니다.');
+        }
+
+        const currentMonth = resolveMonthIndex(envYearValue, envMonthValue);
+        const targetMonth = resolveMonthIndex(yearValue, monthValue);
+        if (targetMonth < currentMonth + minMonths) {
+            return {
+                kind: 'deny',
+                reason: `기한은 ${minMonths}개월 이상이어야 합니다.`,
+            };
+        }
+        return allow();
+    },
+});
+
+// 불가침 제의를 처리하는 국가 커맨드.
+export class ActionDefinition<
+    TriggerState extends GeneralTriggerState = GeneralTriggerState
+> implements GeneralActionDefinition<TriggerState, NonAggressionProposalArgs> {
+    public readonly key = 'che_불가침제의';
+    public readonly name = ACTION_NAME;
+
+    parseArgs(raw: unknown): NonAggressionProposalArgs | null {
+        const data = raw as {
+            destNationId?: unknown;
+            year?: unknown;
+            month?: unknown;
+        };
+        const destNationId = parseNationId(data?.destNationId);
+        const year = parseYear(data?.year);
+        const month = parseMonth(data?.month);
+        if (destNationId === null || year === null || month === null) {
+            return null;
+        }
+        return { destNationId, year, month };
+    }
+
+    buildConstraints(
+        _ctx: ConstraintContext,
+        _args: NonAggressionProposalArgs
+    ): Constraint[] {
+        return [
+            beChief(),
+            notBeNeutral(),
+            existsDestNation(),
+            differentDestNation(),
+            requireMinimumTerm(MIN_TERM_MONTHS),
+            disallowDiplomacyBetweenStatus({
+                0: '아국과 이미 교전중입니다.',
+                1: '아국과 이미 선포중입니다.',
+            }),
+        ];
+    }
+
+    resolve(
+        _context: GeneralActionResolveContext<TriggerState>,
+        args: NonAggressionProposalArgs
+    ): GeneralActionOutcome<TriggerState> {
+        return {
+            effects: [
+                createLogEffect(
+                    `${ACTION_NAME}을 준비했습니다. (국가 ${args.destNationId})`,
+                    {
+                        scope: LogScope.GENERAL,
+                        category: LogCategory.ACTION,
+                        format: LogFormat.MONTH,
+                    }
+                ),
+            ],
+        };
+    }
+}
+
+export const commandSpec: NationTurnCommandSpec = {
+    key: 'che_불가침제의',
+    category: '외교',
+    reqArg: true,
+    args: { destNationId: 0, year: 0, month: 0 },
+    createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
+};
