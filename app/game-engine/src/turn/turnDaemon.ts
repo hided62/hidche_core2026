@@ -100,7 +100,6 @@ export const createTurnDaemonRuntime = async (
                 reservedTurns: reservedTurnStoreHandle!.store,
                 scenarioConfig: snapshot.scenarioConfig,
                 scenarioMeta: snapshot.scenarioMeta,
-                diplomacy: snapshot.diplomacy,
                 map: snapshot.map,
                 unitSet: snapshot.unitSet,
                 getWorld: () => worldRef,

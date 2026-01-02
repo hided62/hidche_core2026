@@ -260,13 +260,46 @@ export const seedScenarioToDatabase = async (
             });
         }
 
-        if (seed.diplomacy.length > 0) {
+        const diplomacyMap = new Map<
+            string,
+            { srcNationId: number; destNationId: number; state: number; term: number }
+        >();
+        const nationIds = seed.nations.map((nation) => nation.id);
+        for (const srcNationId of nationIds) {
+            for (const destNationId of nationIds) {
+                if (srcNationId === destNationId) {
+                    continue;
+                }
+                diplomacyMap.set(`${srcNationId}:${destNationId}`, {
+                    srcNationId,
+                    destNationId,
+                    state: 2,
+                    term: 0,
+                });
+            }
+        }
+        for (const row of seed.diplomacy) {
+            diplomacyMap.set(`${row.fromNationId}:${row.toNationId}`, {
+                srcNationId: row.fromNationId,
+                destNationId: row.toNationId,
+                state: row.state,
+                term: row.durationMonths,
+            });
+            diplomacyMap.set(`${row.toNationId}:${row.fromNationId}`, {
+                srcNationId: row.toNationId,
+                destNationId: row.fromNationId,
+                state: row.state,
+                term: row.durationMonths,
+            });
+        }
+        const diplomacyRows = Array.from(diplomacyMap.values());
+        if (diplomacyRows.length > 0) {
             await prisma.diplomacy.createMany({
-                data: seed.diplomacy.map((row) => ({
-                    srcNationId: row.fromNationId,
-                    destNationId: row.toNationId,
+                data: diplomacyRows.map((row) => ({
+                    srcNationId: row.srcNationId,
+                    destNationId: row.destNationId,
                     stateCode: row.state,
-                    term: row.durationMonths,
+                    term: row.term,
                     meta: asJson({}),
                 })),
             });

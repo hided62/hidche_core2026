@@ -3,6 +3,8 @@ import {
     type InputJsonValue,
     type TurnEngineCityUpdateInput,
     type TurnEngineDatabaseClient,
+    type TurnEngineDiplomacyCreateManyInput,
+    type TurnEngineDiplomacyUpdateInput,
     type TurnEngineGeneralCreateManyInput,
     type TurnEngineGeneralUpdateInput,
     type TurnEngineLogEntryCreateManyInput,
@@ -16,6 +18,7 @@ import { finalizeLogEntry, type LogEntryDraft } from '@sammo-ts/logic';
 import type { TurnDaemonHooks } from '../lifecycle/types.js';
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
 import type { InMemoryReservedTurnStore } from './reservedTurnStore.js';
+import { buildDiplomacyMeta } from './diplomacy.js';
 
 export interface DatabaseTurnHooks {
     hooks: TurnDaemonHooks;
@@ -174,6 +177,28 @@ const buildTroopCreate = (
     name: troop.name,
 });
 
+const buildDiplomacyCreate = (
+    entry: ReturnType<
+        InMemoryTurnWorld['consumeDirtyState']
+    >['diplomacy'][number]
+): TurnEngineDiplomacyCreateManyInput => ({
+    srcNationId: entry.fromNationId,
+    destNationId: entry.toNationId,
+    stateCode: entry.state,
+    term: entry.term,
+    meta: asJson(buildDiplomacyMeta(entry)),
+});
+
+const buildDiplomacyUpdate = (
+    entry: ReturnType<
+        InMemoryTurnWorld['consumeDirtyState']
+    >['diplomacy'][number]
+): TurnEngineDiplomacyUpdateInput => ({
+    stateCode: entry.state,
+    term: entry.term,
+    meta: asJson(buildDiplomacyMeta(entry)),
+});
+
 const buildLogCreateData = (
     entry: LogEntryDraft,
     context: { year: number; month: number; at: Date }
@@ -220,9 +245,11 @@ export const createDatabaseTurnHooks = async (
                 cities,
                 nations,
                 troops,
+                diplomacy,
                 logs,
                 createdGenerals,
                 createdTroops,
+                createdDiplomacy,
             } = world.consumeDirtyState();
 
             const worldStateUpdate: TurnEngineWorldStateUpdateInput = {
@@ -242,6 +269,11 @@ export const createDatabaseTurnHooks = async (
             const createdTroopIds = new Set(
                 createdTroops.map((troop) => troop.id)
             );
+            const createdDiplomacyKeys = new Set(
+                createdDiplomacy.map(
+                    (entry) => `${entry.fromNationId}:${entry.toNationId}`
+                )
+            );
 
             if (createdGenerals.length > 0) {
                 await prisma.general.createMany({
@@ -251,6 +283,11 @@ export const createDatabaseTurnHooks = async (
             if (createdTroops.length > 0) {
                 await prisma.troop.createMany({
                     data: createdTroops.map(buildTroopCreate),
+                });
+            }
+            if (createdDiplomacy.length > 0) {
+                await prisma.diplomacy.createMany({
+                    data: createdDiplomacy.map(buildDiplomacyCreate),
                 });
             }
 
@@ -281,6 +318,22 @@ export const createDatabaseTurnHooks = async (
                         prisma.troop.update({
                             where: { troopLeaderId: troop.id },
                             data: buildTroopUpdate(troop),
+                        })
+                    ),
+                ...diplomacy
+                    .filter(
+                        (entry) =>
+                            !createdDiplomacyKeys.has(
+                                `${entry.fromNationId}:${entry.toNationId}`
+                            )
+                    )
+                    .map((entry) =>
+                        prisma.diplomacy.update({
+                            where: {
+                                srcNationId: entry.fromNationId,
+                                destNationId: entry.toNationId,
+                            },
+                            data: buildDiplomacyUpdate(entry),
                         })
                     ),
             ]);

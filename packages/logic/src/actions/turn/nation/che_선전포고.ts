@@ -2,6 +2,7 @@ import type { GeneralTriggerState } from '../../../domain/entities.js';
 import type { Constraint, ConstraintContext } from '../../../constraints/types.js';
 import {
     beChief,
+    disallowDiplomacyBetweenStatus,
     existsDestNation,
     notBeNeutral,
     occupiedCity,
@@ -12,7 +13,7 @@ import type {
     GeneralActionOutcome,
     GeneralActionResolveContext,
 } from '../../engine.js';
-import { createLogEffect } from '../../engine.js';
+import { createDiplomacyPatchEffect, createLogEffect } from '../../engine.js';
 import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
 import type { TurnCommandEnv } from '../commandEnv.js';
 import type { NationTurnCommandSpec } from './index.js';
@@ -22,6 +23,9 @@ export interface DeclareWarArgs {
 }
 
 const ACTION_NAME = '선전포고';
+// legacy 규칙: 선전포고 상태는 24턴 유지.
+const DIPLOMACY_DECLARE = 1;
+const DECLARE_TERM = 24;
 
 const parseNationId = (raw: unknown): number | null => {
     if (typeof raw !== 'number' || !Number.isFinite(raw)) {
@@ -52,18 +56,45 @@ export class ActionDefinition<
             suppliedCity(),
             beChief(),
             existsDestNation(),
+            disallowDiplomacyBetweenStatus({
+                0: '아국과 이미 교전중입니다.',
+                1: '아국과 이미 선포중입니다.',
+                7: '불가침국입니다.',
+            }),
         ];
     }
 
     resolve(
-        _context: GeneralActionResolveContext<TriggerState>,
+        context: GeneralActionResolveContext<TriggerState>,
         args: DeclareWarArgs
     ): GeneralActionOutcome<TriggerState> {
-        void _context;
+        const nationId = context.nation?.id;
+        if (nationId === undefined || nationId <= 0) {
+            return {
+                effects: [
+                    createLogEffect(
+                        `${ACTION_NAME}을 준비했지만 국가 정보가 없습니다.`,
+                        {
+                            scope: LogScope.GENERAL,
+                            category: LogCategory.ACTION,
+                            format: LogFormat.MONTH,
+                        }
+                    ),
+                ],
+            };
+        }
         return {
             effects: [
+                createDiplomacyPatchEffect(nationId, args.destNationId, {
+                    state: DIPLOMACY_DECLARE,
+                    term: DECLARE_TERM,
+                }),
+                createDiplomacyPatchEffect(args.destNationId, nationId, {
+                    state: DIPLOMACY_DECLARE,
+                    term: DECLARE_TERM,
+                }),
                 createLogEffect(
-                    `${ACTION_NAME}을 준비했습니다. (국가 ${args.destNationId})`,
+                    `${ACTION_NAME}을 실행했습니다. (국가 ${args.destNationId})`,
                     {
                         scope: LogScope.GENERAL,
                         category: LogCategory.ACTION,

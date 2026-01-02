@@ -21,7 +21,7 @@ type ScenarioSeederPrismaClient = {
         count(): Promise<number>;
         findFirst(args: {
             where: { srcNationId: number; destNationId: number };
-        }): Promise<{ stateCode: string } | null>;
+        }): Promise<{ stateCode: number; term: number } | null>;
     };
 };
 
@@ -68,7 +68,9 @@ describeDb('scenario database seed', () => {
             expect(nationCount).toBe(seed.nations.length);
             expect(cityCount).toBe(seed.cities.length);
             expect(generalCount).toBe(seed.generals.length);
-            expect(diplomacyCount).toBe(seed.diplomacy.length);
+            expect(diplomacyCount).toBe(
+                seed.nations.length * Math.max(0, seed.nations.length - 1)
+            );
             expect(generalCount).toBeGreaterThan(0);
 
             if (seed.diplomacy.length > 0) {
@@ -82,6 +84,18 @@ describeDb('scenario database seed', () => {
                 expect(row).not.toBeNull();
                 if (row) {
                     expect(row.stateCode).toBe(sample.state);
+                    expect(row.term).toBe(sample.durationMonths);
+                }
+                const reverse = await prisma.diplomacy.findFirst({
+                    where: {
+                        srcNationId: sample.toNationId,
+                        destNationId: sample.fromNationId,
+                    },
+                });
+                expect(reverse).not.toBeNull();
+                if (reverse) {
+                    expect(reverse.stateCode).toBe(sample.state);
+                    expect(reverse.term).toBe(sample.durationMonths);
                 }
             }
         } finally {

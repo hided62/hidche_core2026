@@ -95,6 +95,7 @@ export interface TurnEngineDiplomacyRow {
     destNationId: number;
     stateCode: number;
     term: number;
+    meta: JsonValue;
 }
 
 export interface TurnEngineTroopRow {
@@ -307,6 +308,12 @@ export interface TurnEngineDiplomacyCreateManyInput {
     meta: InputJsonValue;
 }
 
+export interface TurnEngineDiplomacyUpdateInput {
+    stateCode: number;
+    term: number;
+    meta: InputJsonValue;
+}
+
 export interface TurnEngineEventCreateManyInput {
     targetCode: string;
     priority: number;
@@ -378,6 +385,10 @@ export interface TurnEngineDatabaseClient {
         findMany(args?: unknown): Promise<TurnEngineDiplomacyRow[]>;
         createMany(args: {
             data: TurnEngineDiplomacyCreateManyInput[];
+        }): Promise<unknown>;
+        update(args: {
+            where: { srcNationId: number; destNationId: number };
+            data: TurnEngineDiplomacyUpdateInput;
         }): Promise<unknown>;
         deleteMany(args?: unknown): Promise<unknown>;
     };

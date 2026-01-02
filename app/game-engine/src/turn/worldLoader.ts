@@ -12,7 +12,6 @@ import type {
     City,
     Nation,
     ScenarioConfig,
-    ScenarioDiplomacy,
     ScenarioMeta,
     Troop,
     TriggerValue,
@@ -24,7 +23,8 @@ import type { MapLoaderOptions } from '../scenario/mapLoader.js';
 import { loadMapDefinitionByName } from '../scenario/mapLoader.js';
 import type { UnitSetLoaderOptions } from '../scenario/unitSetLoader.js';
 import { loadUnitSetDefinitionByName } from '../scenario/unitSetLoader.js';
-import type { TurnGeneral, TurnWorldLoadResult } from './types.js';
+import type { TurnDiplomacy, TurnGeneral, TurnWorldLoadResult } from './types.js';
+import { readDiplomacyMeta } from './diplomacy.js';
 
 interface TurnWorldLoaderOptions {
     databaseUrl: string;
@@ -223,12 +223,17 @@ const mapNationRow = (row: TurnEngineNationRow): Nation => ({
     },
 });
 
-const mapDiplomacyRow = (row: TurnEngineDiplomacyRow): ScenarioDiplomacy => ({
-    fromNationId: row.srcNationId,
-    toNationId: row.destNationId,
-    state: row.stateCode,
-    durationMonths: row.term,
-});
+const mapDiplomacyRow = (row: TurnEngineDiplomacyRow): TurnDiplomacy => {
+    const { meta, dead } = readDiplomacyMeta(asRecord(row.meta));
+    return {
+        fromNationId: row.srcNationId,
+        toNationId: row.destNationId,
+        state: row.stateCode,
+        term: row.term,
+        dead,
+        meta,
+    };
+};
 
 const mapTroopRow = (row: TurnEngineTroopRow): Troop => ({
     id: row.troopLeaderId,

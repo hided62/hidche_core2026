@@ -4,7 +4,6 @@ import type {
     MapDefinition,
     Nation,
     ScenarioConfig,
-    ScenarioDiplomacy,
     ScenarioMeta,
     Troop,
     UnitSetDefinition,
@@ -25,16 +24,25 @@ export interface TurnGeneral extends General {
     recentWarTime?: Date | null;
 }
 
+export interface TurnDiplomacy {
+    fromNationId: number;
+    toNationId: number;
+    state: number;
+    term: number;
+    dead: number;
+    meta: Record<string, unknown>;
+}
+
 export interface TurnWorldSnapshot
     extends Omit<
         WorldSnapshot,
-        'generals' | 'cities' | 'nations' | 'troops'
+        'generals' | 'cities' | 'nations' | 'troops' | 'diplomacy'
     > {
     scenarioConfig: ScenarioConfig;
     scenarioMeta?: ScenarioMeta;
     map: MapDefinition;
     unitSet?: UnitSetDefinition;
-    diplomacy: ScenarioDiplomacy[];
+    diplomacy: TurnDiplomacy[];
     events: unknown[];
     initialEvents: unknown[];
     generals: TurnGeneral[];

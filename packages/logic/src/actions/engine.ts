@@ -76,6 +76,19 @@ export interface NationPatchEffect {
     targetId?: NationId;
 }
 
+export interface DiplomacyPatchEffect {
+    type: 'diplomacy:patch';
+    srcNationId: NationId;
+    destNationId: NationId;
+    patch: {
+        state?: number;
+        term?: number;
+        dead?: number;
+        deadDelta?: number;
+        meta?: Record<string, unknown>;
+    };
+}
+
 export interface LogEffect {
     type: 'log';
     entry: LogEntryDraft;
@@ -93,6 +106,7 @@ export type GeneralActionEffect<
     | GeneralAddEffect<TriggerState>
     | CityPatchEffect
     | NationPatchEffect
+    | DiplomacyPatchEffect
     | LogEffect
     | NextTurnOverrideEffect;
 
@@ -176,6 +190,17 @@ export const createNationPatchEffect = (
     ...(targetId !== undefined ? { targetId } : {}),
 });
 
+export const createDiplomacyPatchEffect = (
+    srcNationId: NationId,
+    destNationId: NationId,
+    patch: DiplomacyPatchEffect['patch']
+): DiplomacyPatchEffect => ({
+    type: 'diplomacy:patch',
+    srcNationId,
+    destNationId,
+    patch,
+});
+
 export const createLogEffect = (
     message: string,
     options: Partial<Omit<LogEntryDraft, 'text'>> = {}
@@ -224,6 +249,7 @@ export const resolveGeneralAction = <
         nations: [],
     };
 
+    const pendingEffects: GeneralActionEffect[] = [];
     const [nextWorld, worldPatches] = produceWithPatches(
         {
             general: context.general,
@@ -296,6 +322,9 @@ export const resolveGeneralAction = <
                     case 'general:add':
                         createdGenerals.push(effect.general as General);
                         break;
+                    case 'diplomacy:patch':
+                        pendingEffects.push(effect);
+                        break;
                     case 'general:patch':
                     case 'city:patch':
                     case 'nation:patch':
@@ -359,7 +388,7 @@ export const resolveGeneralAction = <
         nation: nextWorld.nation as Nation | null,
         nextTurnAt,
         logs,
-        effects: [], // 이제 effects는 직접 사용되지 않음 (이미 반영됨)
+        effects: pendingEffects,
     };
     if (nextWorld.city) {
         resolution.city = nextWorld.city as City;

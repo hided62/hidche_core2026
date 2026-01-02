@@ -8,7 +8,19 @@ import type {
 import { getNextTurnAt } from '@sammo-ts/logic';
 
 import type { TurnCheckpoint } from '../lifecycle/types.js';
-import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from './types.js';
+import type {
+    TurnDiplomacy,
+    TurnGeneral,
+    TurnWorldSnapshot,
+    TurnWorldState,
+} from './types.js';
+import {
+    applyDiplomacyPatch as applyDiplomacyPatchToEntry,
+    buildDefaultDiplomacy,
+    buildDiplomacyKey,
+    processDiplomacyMonth,
+    type DiplomacyPatch,
+} from './diplomacy.js';
 
 export interface GeneralTurnContext {
     general: TurnGeneral;
@@ -163,12 +175,15 @@ export class InMemoryTurnWorld {
     private readonly cities = new Map<number, City>();
     private readonly nations = new Map<number, Nation>();
     private readonly troops = new Map<number, Troop>();
+    private readonly diplomacy = new Map<string, TurnDiplomacy>();
     private readonly dirtyGeneralIds = new Set<number>();
     private readonly dirtyCityIds = new Set<number>();
     private readonly dirtyNationIds = new Set<number>();
     private readonly dirtyTroopIds = new Set<number>();
+    private readonly dirtyDiplomacyKeys = new Set<string>();
     private readonly createdGeneralIds = new Set<number>();
     private readonly createdTroopIds = new Set<number>();
+    private readonly createdDiplomacyKeys = new Set<string>();
     private readonly logs: LogEntryDraft[] = [];
     private checkpoint?: TurnCheckpoint;
     private state: TurnWorldState;
@@ -199,6 +214,17 @@ export class InMemoryTurnWorld {
         for (const troop of snapshot.troops) {
             this.troops.set(troop.id, { ...troop });
         }
+        for (const entry of snapshot.diplomacy) {
+            const key = buildDiplomacyKey(
+                entry.fromNationId,
+                entry.toNationId
+            );
+            this.diplomacy.set(key, {
+                ...entry,
+                meta: { ...entry.meta },
+            });
+        }
+        this.ensureDiplomacyMatrix();
     }
 
     getState(): TurnWorldState {
@@ -241,6 +267,47 @@ export class InMemoryTurnWorld {
         return Array.from(this.troops.values()).map((troop) => ({
             ...troop,
         }));
+    }
+
+    getDiplomacyEntry(
+        srcNationId: number,
+        destNationId: number
+    ): TurnDiplomacy | null {
+        const entry = this.diplomacy.get(
+            buildDiplomacyKey(srcNationId, destNationId)
+        );
+        if (!entry) {
+            return null;
+        }
+        return {
+            ...entry,
+            meta: { ...entry.meta },
+        };
+    }
+
+    listDiplomacy(): TurnDiplomacy[] {
+        return Array.from(this.diplomacy.values()).map((entry) => ({
+            ...entry,
+            meta: { ...entry.meta },
+        }));
+    }
+
+    applyDiplomacyPatch(input: {
+        srcNationId: number;
+        destNationId: number;
+        patch: DiplomacyPatch;
+    }): void {
+        const key = buildDiplomacyKey(input.srcNationId, input.destNationId);
+        const existed = this.diplomacy.has(key);
+        const base =
+            this.diplomacy.get(key) ??
+            buildDefaultDiplomacy(input.srcNationId, input.destNationId);
+        const next = applyDiplomacyPatchToEntry(base, input.patch);
+        this.diplomacy.set(key, next);
+        this.dirtyDiplomacyKeys.add(key);
+        if (!existed) {
+            this.createdDiplomacyKeys.add(key);
+        }
     }
 
     setLastTurnTime(turnTime: Date): void {
@@ -417,6 +484,7 @@ export class InMemoryTurnWorld {
             currentMonth: nextMonth,
             turnTime,
         };
+        this.advanceDiplomacyMonth();
         this.calendarHandler?.onMonthChanged?.(context);
         if (nextYear !== previousYear) {
             this.calendarHandler?.onYearChanged?.(context);
@@ -428,9 +496,11 @@ export class InMemoryTurnWorld {
         cities: City[];
         nations: Nation[];
         troops: Troop[];
+        diplomacy: TurnDiplomacy[];
         logs: LogEntryDraft[];
         createdGenerals: TurnGeneral[];
         createdTroops: Troop[];
+        createdDiplomacy: TurnDiplomacy[];
     } {
         const generals = Array.from(this.dirtyGeneralIds)
             .map((id) => this.generals.get(id))
@@ -447,26 +517,93 @@ export class InMemoryTurnWorld {
         const troops = Array.from(this.dirtyTroopIds)
             .map((id) => this.troops.get(id))
             .filter((troop): troop is Troop => Boolean(troop));
+        const diplomacy = Array.from(this.dirtyDiplomacyKeys)
+            .map((key) => this.diplomacy.get(key))
+            .filter((entry): entry is TurnDiplomacy => Boolean(entry));
         const createdTroops = Array.from(this.createdTroopIds)
             .map((id) => this.troops.get(id))
             .filter((troop): troop is Troop => Boolean(troop));
+        const createdDiplomacy = Array.from(this.createdDiplomacyKeys)
+            .map((key) => this.diplomacy.get(key))
+            .filter((entry): entry is TurnDiplomacy => Boolean(entry));
         const logs = this.logs.splice(0, this.logs.length);
 
         this.dirtyGeneralIds.clear();
         this.dirtyCityIds.clear();
         this.dirtyNationIds.clear();
         this.dirtyTroopIds.clear();
+        this.dirtyDiplomacyKeys.clear();
         this.createdGeneralIds.clear();
         this.createdTroopIds.clear();
+        this.createdDiplomacyKeys.clear();
 
         return {
             generals,
             cities,
             nations,
             troops,
+            diplomacy,
             logs,
             createdGenerals,
             createdTroops,
+            createdDiplomacy,
         };
+    }
+
+    private ensureDiplomacyMatrix(): void {
+        const nationIds = Array.from(this.nations.keys());
+        for (const srcNationId of nationIds) {
+            for (const destNationId of nationIds) {
+                if (srcNationId === destNationId) {
+                    continue;
+                }
+                const key = buildDiplomacyKey(srcNationId, destNationId);
+                if (this.diplomacy.has(key)) {
+                    continue;
+                }
+                const entry = buildDefaultDiplomacy(srcNationId, destNationId);
+                this.diplomacy.set(key, entry);
+                this.dirtyDiplomacyKeys.add(key);
+                this.createdDiplomacyKeys.add(key);
+            }
+        }
+    }
+
+    private advanceDiplomacyMonth(): void {
+        if (this.diplomacy.size === 0) {
+            return;
+        }
+        const generalCounts = new Map<number, number>();
+        for (const general of this.generals.values()) {
+            const nationId = general.nationId;
+            if (nationId <= 0) {
+                continue;
+            }
+            generalCounts.set(nationId, (generalCounts.get(nationId) ?? 0) + 1);
+        }
+
+        const updated = processDiplomacyMonth(
+            this.listDiplomacy(),
+            generalCounts
+        );
+        for (const entry of updated) {
+            const key = buildDiplomacyKey(
+                entry.fromNationId,
+                entry.toNationId
+            );
+            const prev = this.diplomacy.get(key);
+            if (
+                !prev ||
+                prev.state !== entry.state ||
+                prev.term !== entry.term ||
+                prev.dead !== entry.dead
+            ) {
+                this.diplomacy.set(key, entry);
+                this.dirtyDiplomacyKeys.add(key);
+                if (!prev) {
+                    this.createdDiplomacyKeys.add(key);
+                }
+            }
+        }
     }
 }
