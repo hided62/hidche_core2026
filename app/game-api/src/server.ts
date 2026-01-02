@@ -83,6 +83,7 @@ export const createGameApiServer = async () => {
                 const auth = token ? tokenVerifier.verify(token) : null;
                 return createGameApiContext({
                     db: postgres.prisma as unknown as DatabaseClient,
+                    redis: redis.client,
                     turnDaemon,
                     battleSim,
                     profile: {

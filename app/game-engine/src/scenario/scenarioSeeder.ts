@@ -199,6 +199,7 @@ export const seedScenarioToDatabase = async (
                     meta: asJson({
                         position: city.position,
                         connections: city.connections,
+                        state: city.state,
                         ...city.meta,
                     }),
                 })),

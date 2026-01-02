@@ -559,11 +559,17 @@ export const buildScenarioBootstrap = (
 
     for (const city of map.cities) {
         const nationId = cityOwnership.get(city.id) ?? 0;
+        const rawCityMeta = city.meta ?? {};
+        const state =
+            typeof rawCityMeta.state === 'number' && Number.isFinite(rawCityMeta.state)
+                ? Math.floor(rawCityMeta.state)
+                : 0;
         const seed: CitySeed = {
             id: city.id,
             name: city.name,
             nationId,
             level: city.level,
+            state,
             population: city.initial.population,
             populationMax: city.max.population,
             agriculture: city.initial.agriculture,
@@ -583,11 +589,14 @@ export const buildScenarioBootstrap = (
             region: city.region,
             position: city.position,
             connections: city.connections,
-            meta: city.meta ?? {},
+            meta: {
+                ...rawCityMeta,
+                state,
+            },
         };
         seedCities.push(seed);
 
-        const cityMeta: Record<string, TriggerValue> = {
+        const cityTriggerMeta: Record<string, TriggerValue> = {
             region: city.region,
             trust: seed.trust,
             trade: seed.trade,
@@ -600,6 +609,7 @@ export const buildScenarioBootstrap = (
             name: seed.name,
             nationId: seed.nationId,
             level: seed.level,
+            state,
             population: seed.population,
             populationMax: seed.populationMax,
             agriculture: seed.agriculture,
@@ -614,7 +624,7 @@ export const buildScenarioBootstrap = (
             defenceMax: seed.defenceMax,
             wall: seed.wall,
             wallMax: seed.wallMax,
-            meta: cityMeta,
+            meta: cityTriggerMeta,
         });
     }
 

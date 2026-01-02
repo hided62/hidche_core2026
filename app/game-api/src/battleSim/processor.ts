@@ -49,6 +49,7 @@ const mapCityPayload = (payload: BattleSimJobPayload['attackerCity']): City => (
     name: payload.name,
     nationId: payload.nation,
     level: payload.level,
+    state: payload.state,
     population: payload.pop,
     populationMax: payload.pop_max,
     agriculture: payload.agri,

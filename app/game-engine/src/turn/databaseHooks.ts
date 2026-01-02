@@ -110,7 +110,10 @@ const buildGeneralCreate = (
 const buildCityUpdate = (
     city: ReturnType<InMemoryTurnWorld['consumeDirtyState']>['cities'][number]
 ): TurnEngineCityUpdateInput => {
-    const meta = city.meta as Record<string, unknown>;
+    const meta = {
+        ...(city.meta as Record<string, unknown>),
+        state: city.state,
+    };
     const trust = readMetaNumber(meta, 'trust');
     const trade = readMetaNumber(meta, 'trade');
     const region = readMetaNumber(meta, 'region');
@@ -133,7 +136,7 @@ const buildCityUpdate = (
         defenceMax: city.defenceMax,
         wall: city.wall,
         wallMax: city.wallMax,
-        meta: asJson(city.meta),
+        meta: asJson(meta),
     };
 
     if (trust !== null) {

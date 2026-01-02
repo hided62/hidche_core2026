@@ -325,32 +325,40 @@ const mapGeneralRow = (row: GeneralRow): General => ({
     meta: asTriggerRecord(row.meta),
 });
 
-const mapCityRow = (row: CityRow): City => ({
-    id: row.id,
-    name: row.name,
-    nationId: row.nationId,
-    level: row.level,
-    population: row.population,
-    populationMax: row.populationMax,
-    agriculture: row.agriculture,
-    agricultureMax: row.agricultureMax,
-    commerce: row.commerce,
-    commerceMax: row.commerceMax,
-    security: row.security,
-    securityMax: row.securityMax,
-    supplyState: row.supplyState,
-    frontState: row.frontState,
-    defence: row.defence,
-    defenceMax: row.defenceMax,
-    wall: row.wall,
-    wallMax: row.wallMax,
-    meta: {
-        ...asTriggerRecord(row.meta),
-        trust: row.trust,
-        trade: row.trade,
-        region: row.region,
-    },
-});
+const mapCityRow = (row: CityRow): City => {
+    const meta = asTriggerRecord(row.meta);
+    const state =
+        typeof meta.state === 'number' && Number.isFinite(meta.state)
+            ? Math.floor(meta.state)
+            : 0;
+    return {
+        id: row.id,
+        name: row.name,
+        nationId: row.nationId,
+        level: row.level,
+        state,
+        population: row.population,
+        populationMax: row.populationMax,
+        agriculture: row.agriculture,
+        agricultureMax: row.agricultureMax,
+        commerce: row.commerce,
+        commerceMax: row.commerceMax,
+        security: row.security,
+        securityMax: row.securityMax,
+        supplyState: row.supplyState,
+        frontState: row.frontState,
+        defence: row.defence,
+        defenceMax: row.defenceMax,
+        wall: row.wall,
+        wallMax: row.wallMax,
+        meta: {
+            ...meta,
+            trust: row.trust,
+            trade: row.trade,
+            region: row.region,
+        },
+    };
+};
 
 const mapNationRow = (row: NationRow): Nation => ({
     id: row.id,

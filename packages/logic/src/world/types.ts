@@ -120,6 +120,7 @@ export interface CitySeed {
     name: string;
     nationId: number;
     level: number;
+    state: number;
     population: number;
     populationMax: number;
     agriculture: number;

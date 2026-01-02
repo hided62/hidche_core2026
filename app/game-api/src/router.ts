@@ -29,6 +29,7 @@ import {
 } from './messages/store.js';
 import { buildBattleSimJobPayload } from './battleSim/environment.js';
 import { zBattleSimJobId, zBattleSimRequest } from './battleSim/schema.js';
+import { loadWorldMap } from './maps/worldMap.js';
 
 const zRunReason = z.enum(['schedule', 'manual', 'poke']);
 const zMessageType = z.enum(['private', 'public', 'national', 'diplomacy']);
@@ -101,6 +102,25 @@ export const appRouter = router({
             const state = await ctx.db.worldState.findFirst();
             return state ? toWorldStateSnapshot(state) : null;
         }),
+        getMap: procedure
+            .input(
+                z.object({
+                    generalId: z.number().int().positive().optional(),
+                    neutralView: z.boolean().optional(),
+                    showMe: z.boolean().optional(),
+                    useCache: z.boolean().optional(),
+                })
+            )
+            .query(async ({ ctx, input }) => {
+                const map = await loadWorldMap(ctx, input);
+                if (!map) {
+                    throw new TRPCError({
+                        code: 'PRECONDITION_FAILED',
+                        message: 'World state is not initialized.',
+                    });
+                }
+                return map;
+            }),
     }),
     turns: router({
         getCommandTable: authedProcedure

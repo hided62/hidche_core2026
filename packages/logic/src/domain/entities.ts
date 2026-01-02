@@ -67,6 +67,7 @@ export interface City {
     name: string;
     nationId: NationId;
     level: number;
+    state: number;
     population: number;
     populationMax: number;
     agriculture: number;
