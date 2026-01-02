@@ -27,9 +27,6 @@ import type {
 } from '../../engine.js';
 import {
     createGeneralAddEffect,
-    createGeneralPatchEffect,
-    createLogEffect,
-    createNationPatchEffect,
 } from '../../engine.js';
 import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
 import { buildRecruitmentGeneral } from './recruitment.js';
@@ -250,47 +247,34 @@ export class ActionResolver<
         _args: VolunteerRecruitArgs
     ): GeneralActionOutcome<TriggerState> {
         void _args;
-        const effects: Array<GeneralActionEffect<TriggerState>> = [];
-        const nation = context.nation ?? null;
+        const general = context.general;
+        const nation = context.nation;
 
         const expGain = 5 * (DEFAULT_PRE_TURN + 1);
         const dedGain = 5 * (DEFAULT_PRE_TURN + 1);
-        effects.push(
-            createGeneralPatchEffect({
-                experience: context.general.experience + expGain,
-                dedication: context.general.dedication + dedGain,
-            })
-        );
 
-        effects.push(
-            createLogEffect(`${ACTION_NAME} 발동!`, {
-                scope: LogScope.GENERAL,
-                category: LogCategory.ACTION,
-                format: LogFormat.MONTH,
-            })
-        );
-        effects.push(
-            createLogEffect(`${ACTION_NAME} 발동`, {
-                scope: LogScope.GENERAL,
-                category: LogCategory.HISTORY,
-                format: LogFormat.YEAR_MONTH,
-            })
-        );
+        // 직접 수정 (Immer Draft)
+        general.experience += expGain;
+        general.dedication += dedGain;
 
-        if (nation?.id) {
-            const generalName = context.general.name;
+        context.addLog(`${ACTION_NAME} 발동!`);
+        context.addLog(`${ACTION_NAME} 발동`, {
+            category: LogCategory.HISTORY,
+            format: LogFormat.YEAR_MONTH,
+        });
+
+        if (nation) {
+            const generalName = general.name;
             const generalJosa = JosaUtil.pick(generalName, '이');
             const actionJosa = JosaUtil.pick(ACTION_NAME, '을');
-            effects.push(
-                createLogEffect(
-                    `<Y>${generalName}</>${generalJosa} <M>${ACTION_NAME}</>${actionJosa} 발동했습니다.`,
-                    {
-                        scope: LogScope.NATION,
-                        category: LogCategory.HISTORY,
-                        nationId: nation.id,
-                        format: LogFormat.YEAR_MONTH,
-                    }
-                )
+            context.addLog(
+                `<Y>${generalName}</>${generalJosa} <M>${ACTION_NAME}</>${actionJosa} 발동했습니다.`,
+                {
+                    scope: LogScope.NATION,
+                    category: LogCategory.HISTORY,
+                    nationId: nation.id,
+                    format: LogFormat.YEAR_MONTH,
+                }
             );
         }
 
@@ -310,15 +294,14 @@ export class ActionResolver<
         const globalDelay = this.command.getGlobalDelay(context);
 
         if (nation) {
-            effects.push(
-                createNationPatchEffect({
-                    meta: {
-                        gennum: nextGennum,
-                        strategic_cmd_limit: globalDelay,
-                    },
-                }, nation.id)
-            );
+            nation.meta = {
+                ...nation.meta as object,
+                gennum: nextGennum,
+                strategic_cmd_limit: globalDelay,
+            };
         }
+
+        const effects: Array<GeneralActionEffect<TriggerState>> = [];
 
         const baseAge = this.env.npcAge ?? DEFAULT_NPC_AGE;
         const deathYears = this.env.npcDeathYears ?? DEFAULT_NPC_DEATH_YEARS;

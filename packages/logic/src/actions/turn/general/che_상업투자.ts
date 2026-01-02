@@ -30,12 +30,6 @@ import type {
     GeneralActionOutcome,
     GeneralActionResolver,
     GeneralActionResolveContext,
-    GeneralActionEffect,
-} from '../../engine.js';
-import {
-    createCityPatchEffect,
-    createGeneralPatchEffect,
-    createLogEffect,
 } from '../../engine.js';
 import type { TurnCommandEnv } from '../commandEnv.js';
 import type { GeneralTurnCommandSpec } from './index.js';
@@ -335,35 +329,23 @@ export class ActionResolver<
             context.rng
         );
 
-        const updatedCommerce = clamp(
+        // 직접 수정 (Immer Draft)
+        city.commerce = clamp(
             city.commerce + result.score,
             0,
             city.commerceMax
         );
 
-        const nextGold = Math.max(0, general.gold - result.costGold);
-        const nextRice = Math.max(0, general.rice - result.costRice);
-        const nextExperience = general.experience + result.exp;
-        const nextDedication = general.dedication + result.dedication;
+        general.gold = Math.max(0, general.gold - result.costGold);
+        general.rice = Math.max(0, general.rice - result.costRice);
+        general.experience += result.exp;
+        general.dedication += result.dedication;
 
         const metaWithStatExp = addMetaNumber(general.meta, STAT_EXP_KEY, 1);
-        const metaUpdated =
+        general.meta =
             result.pick === 'success'
                 ? { ...metaWithStatExp, max_domestic_critical: result.score }
                 : { ...metaWithStatExp, max_domestic_critical: 0 };
-
-        const effects: Array<GeneralActionEffect<TriggerState>> = [
-            createCityPatchEffect({
-                [CITY_KEY]: updatedCommerce,
-            } as Partial<City>),
-            createGeneralPatchEffect({
-                gold: nextGold,
-                rice: nextRice,
-                experience: nextExperience,
-                dedication: nextDedication,
-                meta: metaUpdated,
-            }),
-        ];
 
         const pickLabel =
             result.pick === 'success'
@@ -372,9 +354,9 @@ export class ActionResolver<
                     ? '실패'
                     : '완료';
         const logMessage = `${ACTION_NAME} ${pickLabel}: +${Math.round(result.score)}`;
-        effects.push(createLogEffect(logMessage));
+        context.addLog(logMessage);
 
-        return { effects };
+        return { effects: [] };
     }
 }
 

@@ -26,14 +26,8 @@ import {
 } from '../../../triggers/general-action.js';
 import type { GeneralActionDefinition } from '../../definition.js';
 import type {
-    GeneralActionEffect,
     GeneralActionOutcome,
     GeneralActionResolveContext,
-} from '../../engine.js';
-import {
-    createCityPatchEffect,
-    createGeneralPatchEffect,
-    createLogEffect,
 } from '../../engine.js';
 import type { MapDefinition, UnitSetDefinition } from '../../../world/types.js';
 import type { TurnCommandEnv } from '../commandEnv.js';
@@ -351,16 +345,14 @@ export class ActionResolver<
     ): GeneralActionOutcome<TriggerState> {
         const { general, city } = context;
         if (!city) {
-            return {
-                effects: [createLogEffect('도시 정보가 없습니다.')],
-            };
+            context.addLog('도시 정보가 없습니다.');
+            return { effects: [] };
         }
 
         const crewType = findCrewTypeById(context.unitSet, args.crewType);
         if (!crewType) {
-            return {
-                effects: [createLogEffect('병종 정보가 없습니다.')],
-            };
+            context.addLog('병종 정보가 없습니다.');
+            return { effects: [] };
         }
 
         const availabilityContext: CrewTypeAvailabilityContext = {
@@ -376,9 +368,8 @@ export class ActionResolver<
             availabilityContext.startYear = context.startYear;
         }
         if (!isCrewTypeAvailable(context.unitSet, crewType.id, availabilityContext)) {
-            return {
-                effects: [createLogEffect('현재 선택할 수 없는 병종입니다.')],
-            };
+            context.addLog('현재 선택할 수 없는 병종입니다.');
+            return { effects: [] };
         }
 
         const plan = this.command.getCost(
@@ -435,30 +426,26 @@ export class ActionResolver<
         const expGain = Math.round(appliedCrew / 100);
         const dedGain = Math.round(appliedCrew / 100);
 
-        const metaUpdated = addMetaNumber(general.meta, 'leadership_exp', 1);
+        // 직접 수정 (Immer Draft)
+        city.population = nextPopulation;
+        city.meta = {
+            ...city.meta as object,
+            trust: nextTrust,
+        };
 
-        const effects: Array<GeneralActionEffect<TriggerState>> = [
-            createCityPatchEffect({
-                population: nextPopulation,
-                meta: {
-                    trust: nextTrust,
-                },
-            }),
-            createGeneralPatchEffect({
-                crewTypeId: nextCrewTypeId,
-                crew: nextCrew,
-                train: nextTrain,
-                atmos: nextAtmos,
-                gold: nextGold,
-                rice: nextRice,
-                experience: general.experience + expGain,
-                dedication: general.dedication + dedGain,
-                meta: metaUpdated,
-            }),
-            createLogEffect(logMessage),
-        ];
+        general.crewTypeId = nextCrewTypeId;
+        general.crew = nextCrew;
+        general.train = nextTrain;
+        general.atmos = nextAtmos;
+        general.gold = nextGold;
+        general.rice = nextRice;
+        general.experience += expGain;
+        general.dedication += dedGain;
+        general.meta = addMetaNumber(general.meta, 'leadership_exp', 1);
 
-        return { effects };
+        context.addLog(logMessage);
+
+        return { effects: [] };
     }
 }
 

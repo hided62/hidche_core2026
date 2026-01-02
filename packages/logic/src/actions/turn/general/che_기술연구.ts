@@ -1,5 +1,4 @@
 import type {
-    General,
     GeneralTriggerState,
     Nation,
 } from '../../../domain/entities.js';
@@ -20,12 +19,6 @@ import type {
     GeneralActionOutcome,
     GeneralActionResolveContext,
 } from '../../engine.js';
-import {
-    createGeneralPatchEffect,
-    createLogEffect,
-    createNationPatchEffect,
-} from '../../engine.js';
-import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
 import type { TurnCommandEnv } from '../commandEnv.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 
@@ -84,17 +77,10 @@ export class ActionDefinition<
         _args: TechResearchArgs
     ): GeneralActionOutcome<TriggerState> {
         const general = context.general;
-        const nation = context.nation ?? null;
+        const nation = context.nation;
         if (!nation) {
-            return {
-                effects: [
-                    createLogEffect('국가 정보를 찾지 못했습니다.', {
-                        scope: LogScope.GENERAL,
-                        category: LogCategory.ACTION,
-                        format: LogFormat.MONTH,
-                    }),
-                ],
-            };
+            context.addLog('국가 정보를 찾지 못했습니다.');
+            return { effects: [] };
         }
 
         const delta = this.env.techDelta ?? DEFAULT_TECH_DELTA;
@@ -107,26 +93,14 @@ export class ActionDefinition<
         const nextTech = Math.min(currentTech + delta, maxTech);
         const applied = nextTech - currentTech;
         const costGold = this.env.costGold ?? 0;
-        const generalPatch: Partial<General<TriggerState>> = {
-            gold: Math.max(0, general.gold - costGold),
-        };
 
-        return {
-            effects: [
-                createNationPatchEffect(
-                    {
-                        meta: { ...nation.meta, tech: nextTech },
-                    } as Partial<Nation>,
-                    nation.id
-                ),
-                createGeneralPatchEffect<TriggerState>(generalPatch, general.id),
-                createLogEffect(`${ACTION_NAME}로 기술이 ${applied} 상승했습니다.`, {
-                    scope: LogScope.GENERAL,
-                    category: LogCategory.ACTION,
-                    format: LogFormat.MONTH,
-                }),
-            ],
-        };
+        // 직접 수정 (Immer Draft)
+        nation.meta = { ...nation.meta, tech: nextTech };
+        general.gold = Math.max(0, general.gold - costGold);
+
+        context.addLog(`${ACTION_NAME}로 기술이 ${applied} 상승했습니다.`);
+
+        return { effects: [] };
     }
 }
 

@@ -1,5 +1,5 @@
 import type { RandomGenerator } from '@sammo-ts/common';
-import { enablePatches, produceWithPatches, type Draft, castDraft } from 'immer';
+import { enablePatches, produceWithPatches, castDraft } from 'immer';
 import type {
     City,
     General,
@@ -34,7 +34,15 @@ export interface GeneralActionResolveContext<
     rng: RandomGenerator;
     city?: City;
     nation?: Nation | null;
+    addLog(
+        message: string,
+        options?: Partial<Omit<LogEntryDraft, 'text'>>
+    ): void;
 }
+
+export type GeneralActionResolveInputContext<
+    TriggerState extends GeneralTriggerState = GeneralTriggerState
+> = Omit<GeneralActionResolveContext<TriggerState>, 'addLog'>;
 
 export interface TurnScheduleContext {
     now: Date;
@@ -130,106 +138,6 @@ export interface GeneralActionResolution {
     };
 }
 
-/**
- * Immer Draft에 Effect를 적용한다.
- * 기존 Effect 기반 코드를 유지하면서 Draft에 즉시 반영하기 위함.
- */
-export const applyEffectToDraft = <
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
->(
-    draft: Draft<WorldState<TriggerState>>,
-    effect: GeneralActionEffect<TriggerState>,
-    context: { generalId: GeneralId; cityId?: CityId; nationId?: NationId }
-): void => {
-    const generalDraft = draft.general as any;
-    switch (effect.type) {
-        case 'general:patch':
-            if (
-                effect.targetId === undefined ||
-                effect.targetId === context.generalId
-            ) {
-                Object.assign(generalDraft, effect.patch);
-                if (effect.patch.stats) {
-                    generalDraft.stats = {
-                        ...generalDraft.stats,
-                        ...effect.patch.stats,
-                    };
-                }
-                if (effect.patch.role) {
-                    generalDraft.role = {
-                        ...generalDraft.role,
-                        ...effect.patch.role,
-                        items: {
-                            ...generalDraft.role.items,
-                            ...(effect.patch.role.items ?? {}),
-                        },
-                    };
-                }
-                if (effect.patch.triggerState) {
-                    generalDraft.triggerState = {
-                        ...generalDraft.triggerState,
-                        ...effect.patch.triggerState,
-                        flags: {
-                            ...generalDraft.triggerState.flags,
-                            ...(effect.patch.triggerState.flags ?? {}),
-                        },
-                        counters: {
-                            ...generalDraft.triggerState.counters,
-                            ...(effect.patch.triggerState.counters ?? {}),
-                        },
-                        modifiers: {
-                            ...generalDraft.triggerState.modifiers,
-                            ...(effect.patch.triggerState.modifiers ?? {}),
-                        },
-                        meta: {
-                            ...generalDraft.triggerState.meta,
-                            ...(effect.patch.triggerState.meta ?? {}),
-                        },
-                    };
-                }
-                if (effect.patch.meta) {
-                    generalDraft.meta = {
-                        ...generalDraft.meta,
-                        ...effect.patch.meta,
-                    };
-                }
-            }
-            break;
-        case 'city:patch':
-            if (
-                draft.city &&
-                (effect.targetId === undefined ||
-                    effect.targetId === context.cityId)
-            ) {
-                Object.assign(draft.city, effect.patch);
-                if (effect.patch.meta) {
-                    draft.city.meta = {
-                        ...draft.city.meta,
-                        ...effect.patch.meta,
-                    };
-                }
-            }
-            break;
-        case 'nation:patch':
-            if (
-                draft.nation &&
-                (effect.targetId === undefined ||
-                    effect.targetId === context.nationId)
-            ) {
-                Object.assign(draft.nation, effect.patch);
-                if (effect.patch.meta) {
-                    draft.nation.meta = {
-                        ...draft.nation.meta,
-                        ...effect.patch.meta,
-                    };
-                }
-            }
-            break;
-        default:
-            break;
-    }
-};
-
 export const createGeneralPatchEffect = <
     TriggerState extends GeneralTriggerState = GeneralTriggerState
 >(
@@ -303,7 +211,7 @@ export const resolveGeneralAction = <
     Args = unknown
 >(
     resolver: GeneralActionResolver<TriggerState, Args>,
-    context: GeneralActionResolveContext<TriggerState>,
+    context: GeneralActionResolveInputContext<TriggerState>,
     scheduleContext: TurnScheduleContext,
     args: Args
 ): GeneralActionResolution => {
@@ -323,12 +231,56 @@ export const resolveGeneralAction = <
             nation: context.nation,
         } as WorldState<TriggerState>,
         (draft) => {
+            const addLog = (
+                message: string,
+                options: Partial<Omit<LogEntryDraft, 'text'>> = {}
+            ) => {
+                const entry: LogEntryDraft = {
+                    scope: options.scope ?? LogScope.GENERAL,
+                    category: options.category ?? LogCategory.ACTION,
+                    text: message,
+                    format: options.format ?? LogFormat.MONTH,
+                    ...options,
+                };
+
+                switch (entry.scope) {
+                    case LogScope.GENERAL:
+                        logs.push({
+                            ...entry,
+                            generalId: entry.generalId ?? context.general.id,
+                        });
+                        break;
+                    case LogScope.NATION:
+                        if (entry.nationId !== undefined) {
+                            logs.push(entry);
+                            break;
+                        }
+                        if (context.nation?.id !== undefined) {
+                            logs.push({
+                                ...entry,
+                                nationId: context.nation.id,
+                            });
+                        }
+                        break;
+                    case LogScope.USER:
+                        if (entry.userId) {
+                            logs.push(entry);
+                        }
+                        break;
+                    case LogScope.SYSTEM:
+                    default:
+                        logs.push(entry);
+                        break;
+                }
+            };
+
             const outcome = resolver.resolve(
                 {
                     ...context,
                     general: castDraft(draft.general),
                     city: castDraft(draft.city),
                     nation: castDraft(draft.nation),
+                    addLog,
                 } as GeneralActionResolveContext<TriggerState>,
                 args
             );
@@ -336,38 +288,7 @@ export const resolveGeneralAction = <
             for (const effect of outcome.effects) {
                 switch (effect.type) {
                     case 'log':
-                        // 로그 대상이 비어 있으면 현재 장수/국가 기준으로 보정한다.
-                        switch (effect.entry.scope) {
-                            case LogScope.GENERAL:
-                                logs.push({
-                                    ...effect.entry,
-                                    generalId:
-                                        effect.entry.generalId ??
-                                        context.general.id,
-                                });
-                                break;
-                            case LogScope.NATION:
-                                if (effect.entry.nationId !== undefined) {
-                                    logs.push(effect.entry);
-                                    break;
-                                }
-                                if (context.nation?.id !== undefined) {
-                                    logs.push({
-                                        ...effect.entry,
-                                        nationId: context.nation.id,
-                                    });
-                                }
-                                break;
-                            case LogScope.USER:
-                                if (effect.entry.userId) {
-                                    logs.push(effect.entry);
-                                }
-                                break;
-                            case LogScope.SYSTEM:
-                            default:
-                                logs.push(effect.entry);
-                                break;
-                        }
+                        addLog(effect.entry.text, effect.entry);
                         break;
                     case 'schedule:override':
                         nextTurnAtOverride = effect.nextTurnAt;
@@ -378,16 +299,7 @@ export const resolveGeneralAction = <
                     case 'general:patch':
                     case 'city:patch':
                     case 'nation:patch':
-                        applyEffectToDraft(draft, effect, {
-                            generalId: context.general.id,
-                            ...(context.city?.id !== undefined
-                                ? { cityId: context.city.id }
-                                : {}),
-                            ...(context.nation?.id !== undefined
-                                ? { nationId: context.nation.id }
-                                : {}),
-                        });
-                        // 타겟이 다른 경우 patches에 추가 (applyEffectToDraft에서 처리되지 않은 경우)
+                        // 타겟이 다른 경우 patches에 추가
                         if (
                             effect.type === 'general:patch' &&
                             effect.targetId !== undefined &&

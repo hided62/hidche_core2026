@@ -10,8 +10,7 @@ import type {
     GeneralActionOutcome,
     GeneralActionResolveContext,
 } from '../../engine.js';
-import { createLogEffect } from '../../engine.js';
-import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
+import { LogCategory, LogFormat } from '../../../logging/types.js';
 import type { TurnCommandEnv } from '../commandEnv.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 
@@ -23,20 +22,14 @@ export class ActionResolver<
     TriggerState extends GeneralTriggerState = GeneralTriggerState
 > {
     resolve(
-        _context: GeneralActionResolveContext<TriggerState>,
+        context: GeneralActionResolveContext<TriggerState>,
         _args: RestArgs
     ): GeneralActionOutcome<TriggerState> {
-        void _context;
-        void _args;
-        return {
-            effects: [
-                createLogEffect('아무것도 실행하지 않았습니다.', {
-                    scope: LogScope.GENERAL,
-                    category: LogCategory.ACTION,
-                    format: LogFormat.MONTH,
-                }),
-            ],
-        };
+        context.addLog('아무것도 실행하지 않았습니다.', {
+            category: LogCategory.ACTION,
+            format: LogFormat.MONTH,
+        });
+        return { effects: [] };
     }
 }
 

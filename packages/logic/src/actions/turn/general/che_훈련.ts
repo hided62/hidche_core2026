@@ -1,5 +1,4 @@
 import type {
-    General,
     GeneralTriggerState,
 } from '../../../domain/entities.js';
 import type {
@@ -13,8 +12,6 @@ import type {
     GeneralActionOutcome,
     GeneralActionResolveContext,
 } from '../../engine.js';
-import { createGeneralPatchEffect, createLogEffect } from '../../engine.js';
-import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
 import type { TurnCommandEnv } from '../commandEnv.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 
@@ -74,21 +71,14 @@ export class ActionDefinition<
         const nextTrain = clamp(general.train + delta, 0, maxTrain);
         const applied = nextTrain - general.train;
         const costGold = this.env.costGold ?? 0;
-        const patch: Partial<General<TriggerState>> = {
-            train: nextTrain,
-            gold: Math.max(0, general.gold - costGold),
-        };
 
-        return {
-            effects: [
-                createGeneralPatchEffect<TriggerState>(patch, general.id),
-                createLogEffect(`${ACTION_NAME}을 통해 훈련도가 ${applied} 증가했습니다.`, {
-                    scope: LogScope.GENERAL,
-                    category: LogCategory.ACTION,
-                    format: LogFormat.MONTH,
-                }),
-            ],
-        };
+        // 직접 수정 (Immer Draft)
+        general.train = nextTrain;
+        general.gold = Math.max(0, general.gold - costGold);
+
+        context.addLog(`${ACTION_NAME}을 통해 훈련도가 ${applied} 증가했습니다.`);
+
+        return { effects: [] };
     }
 }
 

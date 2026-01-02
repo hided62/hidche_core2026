@@ -9,8 +9,7 @@ import type {
     GeneralActionOutcome,
     GeneralActionResolveContext,
 } from '../../engine.js';
-import { createLogEffect } from '../../engine.js';
-import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
+import { LogCategory, LogFormat } from '../../../logging/types.js';
 import type { TurnCommandEnv } from '../commandEnv.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 
@@ -47,22 +46,17 @@ export class ActionDefinition<
     }
 
     resolve(
-        _context: GeneralActionResolveContext<TriggerState>,
+        context: GeneralActionResolveContext<TriggerState>,
         args: AppointmentArgs
     ): GeneralActionOutcome<TriggerState> {
-        void _context;
-        return {
-            effects: [
-                createLogEffect(
-                    `${ACTION_NAME}을 신청했습니다. (국가 ${args.destNationId})`,
-                    {
-                        scope: LogScope.GENERAL,
-                        category: LogCategory.ACTION,
-                        format: LogFormat.MONTH,
-                    }
-                ),
-            ],
-        };
+        context.addLog(
+            `${ACTION_NAME}을 신청했습니다. (국가 ${args.destNationId})`,
+            {
+                category: LogCategory.ACTION,
+                format: LogFormat.MONTH,
+            }
+        );
+        return { effects: [] };
     }
 }
 

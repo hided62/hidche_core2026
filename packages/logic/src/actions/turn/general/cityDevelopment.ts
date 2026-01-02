@@ -1,6 +1,5 @@
 import type {
     City,
-    General,
     GeneralTriggerState,
 } from '../../../domain/entities.js';
 import type {
@@ -21,12 +20,6 @@ import type {
     GeneralActionOutcome,
     GeneralActionResolveContext,
 } from '../../engine.js';
-import {
-    createCityPatchEffect,
-    createGeneralPatchEffect,
-    createLogEffect,
-} from '../../engine.js';
-import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
 
 export interface CityDevelopmentArgs {}
 
@@ -98,53 +91,28 @@ export class CityDevelopmentActionDefinition<
         const general = context.general;
         const city = context.city;
         if (!city) {
-            return {
-                effects: [
-                    createLogEffect('도시 정보를 찾지 못했습니다.', {
-                        scope: LogScope.GENERAL,
-                        category: LogCategory.ACTION,
-                        format: LogFormat.MONTH,
-                    }),
-                ],
-            };
+            context.addLog('도시 정보를 찾지 못했습니다.');
+            return { effects: [] };
         }
 
         const baseAmount = this.env.amount ?? this.config.baseAmount;
         const current = readNumber(city[this.config.statKey]);
         const max = readNumber(city[this.config.maxKey]);
         if (current === null || max === null) {
-            return {
-                effects: [
-                    createLogEffect('도시 정보를 찾지 못했습니다.', {
-                        scope: LogScope.GENERAL,
-                        category: LogCategory.ACTION,
-                        format: LogFormat.MONTH,
-                    }),
-                ],
-            };
+            context.addLog('도시 정보를 찾지 못했습니다.');
+            return { effects: [] };
         }
 
         const nextValue = clamp(current + baseAmount, 0, max);
         const costGold = this.env.develCost ?? 0;
-        const generalPatch: Partial<General<TriggerState>> = {
-            gold: Math.max(0, general.gold - costGold),
-        };
+
+        // 직접 수정 (Immer Draft)
+        (city as any)[this.config.statKey] = nextValue;
+        general.gold = Math.max(0, general.gold - costGold);
 
         const logMessage = `${this.config.label}이 ${nextValue - current} 증가했습니다.`;
+        context.addLog(logMessage);
 
-        return {
-            effects: [
-                createCityPatchEffect(
-                    { [this.config.statKey]: nextValue } as Partial<City>,
-                    city.id
-                ),
-                createGeneralPatchEffect<TriggerState>(generalPatch, general.id),
-                createLogEffect(logMessage, {
-                    scope: LogScope.GENERAL,
-                    category: LogCategory.ACTION,
-                    format: LogFormat.MONTH,
-                }),
-            ],
-        };
+        return { effects: [] };
     }
 }

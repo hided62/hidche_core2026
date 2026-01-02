@@ -6,8 +6,7 @@ import type {
     GeneralActionOutcome,
     GeneralActionResolveContext,
 } from '../../engine.js';
-import { createGeneralPatchEffect, createLogEffect } from '../../engine.js';
-import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
+import { LogCategory, LogFormat } from '../../../logging/types.js';
 import type { TurnCommandEnv } from '../commandEnv.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 
@@ -35,24 +34,19 @@ export class ActionDefinition<
         _args: FoundingArgs
     ): GeneralActionOutcome<TriggerState> {
         const general = context.general;
-        const meta = {
-            ...general.meta,
+
+        // 직접 수정 (Immer Draft)
+        general.meta = {
+            ...general.meta as object,
             founding: true as TriggerValue,
         };
 
-        return {
-            effects: [
-                createGeneralPatchEffect<TriggerState>(
-                    { meta } as Partial<typeof general>,
-                    general.id
-                ),
-                createLogEffect(`${ACTION_NAME}을 준비했습니다.`, {
-                    scope: LogScope.GENERAL,
-                    category: LogCategory.ACTION,
-                    format: LogFormat.MONTH,
-                }),
-            ],
-        };
+        context.addLog(`${ACTION_NAME}을 준비했습니다.`, {
+            category: LogCategory.ACTION,
+            format: LogFormat.MONTH,
+        });
+
+        return { effects: [] };
     }
 }
 

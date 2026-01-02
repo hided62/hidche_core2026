@@ -1,5 +1,4 @@
 import type {
-    General,
     GeneralTriggerState,
 } from '../../../domain/entities.js';
 import type {
@@ -13,8 +12,6 @@ import type {
     GeneralActionOutcome,
     GeneralActionResolveContext,
 } from '../../engine.js';
-import { createGeneralPatchEffect, createLogEffect } from '../../engine.js';
-import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
 import type { TurnCommandEnv } from '../commandEnv.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 
@@ -62,21 +59,14 @@ export class ActionDefinition<
         const nextInjury = Math.max(0, general.injury - delta);
         const applied = general.injury - nextInjury;
         const costGold = this.env.costGold ?? 0;
-        const patch: Partial<General<TriggerState>> = {
-            injury: nextInjury,
-            gold: Math.max(0, general.gold - costGold),
-        };
 
-        return {
-            effects: [
-                createGeneralPatchEffect<TriggerState>(patch, general.id),
-                createLogEffect(`${ACTION_NAME}으로 부상이 ${applied} 회복되었습니다.`, {
-                    scope: LogScope.GENERAL,
-                    category: LogCategory.ACTION,
-                    format: LogFormat.MONTH,
-                }),
-            ],
-        };
+        // 직접 수정 (Immer Draft)
+        general.injury = nextInjury;
+        general.gold = Math.max(0, general.gold - costGold);
+
+        context.addLog(`${ACTION_NAME}으로 부상이 ${applied} 회복되었습니다.`);
+
+        return { effects: [] };
     }
 }
 

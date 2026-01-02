@@ -369,7 +369,7 @@ export const createReservedTurnHandler = async (options: {
 
                 const resolution = resolveGeneralAction(
                     definition,
-                    actionContext as GeneralActionResolveContext,
+                    actionContext,
                     {
                         now: currentGeneral.turnTime,
                         schedule: context.schedule,

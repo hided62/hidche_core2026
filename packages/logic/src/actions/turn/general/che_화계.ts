@@ -33,7 +33,6 @@ import type {
 import {
     createCityPatchEffect,
     createGeneralPatchEffect,
-    createLogEffect,
 } from '../../engine.js';
 import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
 import type { TurnCommandEnv } from '../commandEnv.js';
@@ -332,6 +331,7 @@ export class ActionResolver<
         _args: FireAttackArgs
     ): GeneralActionOutcome<TriggerState> {
         void _args;
+        const general = context.general;
         const city = context.city;
         if (!city) {
             throw new Error('Fire attack requires a city context.');
@@ -351,13 +351,13 @@ export class ActionResolver<
 
         const effects: Array<GeneralActionEffect<TriggerState>> = [];
 
-        const nextGold = Math.max(0, context.general.gold - result.costGold);
-        const nextRice = Math.max(0, context.general.rice - result.costRice);
-        const nextExperience = context.general.experience + result.exp;
-        const nextDedication = context.general.dedication + result.dedication;
+        const nextGold = Math.max(0, general.gold - result.costGold);
+        const nextRice = Math.max(0, general.rice - result.costRice);
+        const nextExperience = general.experience + result.exp;
+        const nextDedication = general.dedication + result.dedication;
 
         const metaWithStatExp = addMetaNumber(
-            context.general.meta,
+            general.meta,
             STAT_EXP_KEY,
             1
         );
@@ -365,26 +365,21 @@ export class ActionResolver<
             ? addMetaNumber(metaWithStatExp, 'firenum', 1)
             : metaWithStatExp;
 
-        effects.push(
-            createGeneralPatchEffect({
-                gold: nextGold,
-                rice: nextRice,
-                experience: nextExperience,
-                dedication: nextDedication,
-                meta: metaUpdated,
-            })
-        );
+        // 직접 수정 (Immer Draft)
+        general.gold = nextGold;
+        general.rice = nextRice;
+        general.experience = nextExperience;
+        general.dedication = nextDedication;
+        general.meta = metaUpdated;
 
         if (!result.success) {
-            effects.push(
-                createLogEffect(
-                    `<G><b>${context.destCity.name}</b></>에 ${ACTION_NAME} 실패했습니다.`,
-                    {
-                        format: LogFormat.MONTH,
-                    }
-                )
+            context.addLog(
+                `<G><b>${context.destCity.name}</b></>에 ${ACTION_NAME} 실패했습니다.`,
+                {
+                    format: LogFormat.MONTH,
+                }
             );
-            return { effects };
+            return { effects: [] };
         }
 
         const updatedCityMeta: Record<string, TriggerValue> = {
@@ -392,6 +387,7 @@ export class ActionResolver<
             state: CITY_STATE_BURNING,
         };
 
+        // 타겟 도시는 Draft가 아니므로 Effect 반환
         effects.push(
             createCityPatchEffect(
                 {
@@ -403,45 +399,38 @@ export class ActionResolver<
             )
         );
 
-        effects.push(
-            createLogEffect(
-                `<G><b>${context.destCity.name}</b></>이 불타고 있습니다.`,
-                {
-                    scope: LogScope.SYSTEM,
-                    category: LogCategory.SUMMARY,
-                    format: LogFormat.MONTH,
-                }
-            )
+        context.addLog(
+            `<G><b>${context.destCity.name}</b></>이 불타고 있습니다.`,
+            {
+                scope: LogScope.SYSTEM,
+                category: LogCategory.SUMMARY,
+                format: LogFormat.MONTH,
+            }
         );
-        effects.push(
-            createLogEffect(
-                `<G><b>${context.destCity.name}</b></>에 ${ACTION_NAME} 성공했습니다.`,
-                {
-                    format: LogFormat.MONTH,
-                }
-            )
+        context.addLog(
+            `<G><b>${context.destCity.name}</b></>에 ${ACTION_NAME} 성공했습니다.`,
+            {
+                format: LogFormat.MONTH,
+            }
         );
-        effects.push(
-            createLogEffect(
-                `도시의 농업이 <C>${result.agriDamage}</>, 상업이 <C>${result.commDamage}</>만큼 감소하고, 장수 <C>${result.injuryCount}</>명이 부상 당했습니다.`,
-                {
-                    format: LogFormat.PLAIN,
-                }
-            )
+        context.addLog(
+            `도시의 농업이 <C>${result.agriDamage}</>, 상업이 <C>${result.commDamage}</>만큼 감소하고, 장수 <C>${result.injuryCount}</>명이 부상 당했습니다.`,
+            {
+                format: LogFormat.PLAIN,
+            }
         );
 
         for (const injured of result.injuredGenerals) {
+            // 타겟 장수는 Draft가 아니므로 Effect 반환
             effects.push(
                 createGeneralPatchEffect(injured.patch, injured.id)
             );
-            effects.push(
-                createLogEffect(
-                    `<M>${ACTION_KEY}</>로 인해 <R>부상</>을 당했습니다.`,
-                    {
-                        generalId: injured.id,
-                        format: LogFormat.MONTH,
-                    }
-                )
+            context.addLog(
+                `<M>${ACTION_KEY}</>로 인해 <R>부상</>을 당했습니다.`,
+                {
+                    generalId: injured.id,
+                    format: LogFormat.MONTH,
+                }
             );
         }
 

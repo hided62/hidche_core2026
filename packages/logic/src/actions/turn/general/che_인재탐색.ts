@@ -20,14 +20,11 @@ import {
 } from '../../../triggers/general-action.js';
 import type { GeneralActionDefinition } from '../../definition.js';
 import type {
-    GeneralActionEffect,
     GeneralActionOutcome,
     GeneralActionResolveContext,
 } from '../../engine.js';
 import {
     createGeneralAddEffect,
-    createGeneralPatchEffect,
-    createLogEffect,
 } from '../../engine.js';
 import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
 import { buildRecruitmentGeneral } from './recruitment.js';
@@ -301,40 +298,35 @@ export class ActionResolver<
         _args: TalentScoutArgs
     ): GeneralActionOutcome<TriggerState> {
         void _args;
+        const general = context.general;
         const { gold: reqGold, rice: reqRice } = this.command.getCost();
         const prop = this.command.calcFoundProp(context);
         const found = context.rng.nextBool(prop);
 
-        const statKey = pickStatExpKey(context.rng, context.general);
+        const statKey = pickStatExpKey(context.rng, general);
         const metaAfter =
             found
-                ? addMetaNumber(context.general.meta, statKey, 3)
-                : addMetaNumber(context.general.meta, statKey, 1);
+                ? addMetaNumber(general.meta, statKey, 3)
+                : addMetaNumber(general.meta, statKey, 1);
 
-        const nextGold = Math.max(0, context.general.gold - reqGold);
-        const nextRice = Math.max(0, context.general.rice - reqRice);
+        const nextGold = Math.max(0, general.gold - reqGold);
+        const nextRice = Math.max(0, general.rice - reqRice);
         const expGain = found ? 200 : 100;
         const dedGain = found ? 300 : 70;
 
-        const effects: Array<GeneralActionEffect<TriggerState>> = [
-            createGeneralPatchEffect({
-                gold: nextGold,
-                rice: nextRice,
-                experience: context.general.experience + expGain,
-                dedication: context.general.dedication + dedGain,
-                meta: metaAfter,
-            }),
-        ];
+        // 직접 수정 (Immer Draft)
+        general.gold = nextGold;
+        general.rice = nextRice;
+        general.experience += expGain;
+        general.dedication += dedGain;
+        general.meta = metaAfter;
 
         if (!found) {
-            effects.push(
-                createLogEffect('인재를 찾을 수 없었습니다.', {
-                    scope: LogScope.GENERAL,
-                    category: LogCategory.ACTION,
-                    format: LogFormat.MONTH,
-                })
-            );
-            return { effects };
+            context.addLog('인재를 찾을 수 없었습니다.', {
+                category: LogCategory.ACTION,
+                format: LogFormat.MONTH,
+            });
+            return { effects: [] };
         }
 
         const candidate = resolveCandidate(context, context.rng, this.env);
@@ -396,32 +388,25 @@ export class ActionResolver<
             meta,
         });
 
-        effects.push(createGeneralAddEffect(newGeneral));
         const nameObjJosa = JosaUtil.pick(name, '을');
         const nameSubjJosa = JosaUtil.pick(name, '이');
-        effects.push(
-            createLogEffect(`인재 <Y>${name}</>${nameObjJosa} 발견했습니다.`, {
-                scope: LogScope.GENERAL,
-                category: LogCategory.ACTION,
-                format: LogFormat.MONTH,
-            })
-        );
-        effects.push(
-            createLogEffect(`인재 <Y>${name}</>${nameSubjJosa} 등장했습니다.`, {
-                scope: LogScope.SYSTEM,
-                category: LogCategory.SUMMARY,
-                format: LogFormat.MONTH,
-            })
-        );
-        effects.push(
-            createLogEffect(`인재 <Y>${name}</>${nameObjJosa} 발견했습니다.`, {
-                scope: LogScope.GENERAL,
-                category: LogCategory.HISTORY,
-                format: LogFormat.YEAR_MONTH,
-            })
-        );
+        context.addLog(`인재 <Y>${name}</>${nameObjJosa} 발견했습니다.`, {
+            category: LogCategory.ACTION,
+            format: LogFormat.MONTH,
+        });
+        context.addLog(`인재 <Y>${name}</>${nameSubjJosa} 등장했습니다.`, {
+            scope: LogScope.SYSTEM,
+            category: LogCategory.SUMMARY,
+            format: LogFormat.MONTH,
+        });
+        context.addLog(`인재 <Y>${name}</>${nameObjJosa} 발견했습니다.`, {
+            category: LogCategory.HISTORY,
+            format: LogFormat.YEAR_MONTH,
+        });
 
-        return { effects };
+        return {
+            effects: [createGeneralAddEffect(newGeneral)],
+        };
     }
 }
 
