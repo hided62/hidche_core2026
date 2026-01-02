@@ -1,9 +1,12 @@
 import type { City, General } from '../domain/entities.js';
+import type { MapDefinition } from '../world/types.js';
 import {
     allow,
     parsePercent,
     readCity,
     readDestCity,
+    readDiplomacyState,
+    readGeneral,
     readMetaNumberFromUnknown,
     resolveDestCityId,
     unknownOrDeny,
@@ -360,5 +363,162 @@ export const notNeutralDestCity = (): Constraint => ({
             return allow();
         }
         return { kind: 'deny', reason: '공백지입니다.' };
+    },
+});
+
+export const notSameDestCity = (): Constraint => ({
+    name: 'NotSameDestCity',
+    requires: (ctx) => {
+        const reqs: RequirementKey[] = [{ kind: 'general', id: ctx.actorId }];
+        const destCityId = resolveDestCityId(ctx);
+        if (destCityId !== undefined) {
+            reqs.push({ kind: 'destCity', id: destCityId });
+        }
+        return reqs;
+    },
+    test: (ctx, view) => {
+        const general = readGeneral(ctx, view);
+        if (!general) {
+            const req: RequirementKey = { kind: 'general', id: ctx.actorId };
+            return unknownOrDeny(ctx, [req], '장수 정보가 없습니다.');
+        }
+        const destCityId = resolveDestCityId(ctx);
+        if (destCityId === undefined) {
+            return unknownOrDeny(ctx, [], '도시 정보가 없습니다.');
+        }
+        if (general.cityId !== destCityId) {
+            return allow();
+        }
+        return { kind: 'deny', reason: '같은 도시입니다.' };
+    },
+});
+
+const buildMapIndex = (map: MapDefinition): Map<number, number[]> => {
+    const index = new Map<number, number[]>();
+    for (const city of map.cities) {
+        index.set(city.id, Array.from(city.connections ?? []));
+    }
+    return index;
+};
+
+const hasRouteToDest = (
+    mapIndex: Map<number, number[]>,
+    allowedCityIds: Set<number>,
+    fromCityId: number,
+    toCityId: number
+): boolean => {
+    if (fromCityId === toCityId) {
+        return true;
+    }
+    if (!allowedCityIds.has(toCityId)) {
+        return false;
+    }
+    const queue: number[] = [fromCityId];
+    const visited = new Set<number>();
+    while (queue.length > 0) {
+        const current = queue.shift();
+        if (current === undefined) {
+            continue;
+        }
+        if (visited.has(current)) {
+            continue;
+        }
+        visited.add(current);
+        const neighbors = mapIndex.get(current) ?? [];
+        for (const next of neighbors) {
+            if (!allowedCityIds.has(next)) {
+                continue;
+            }
+            if (next === toCityId) {
+                return true;
+            }
+            if (!visited.has(next)) {
+                queue.push(next);
+            }
+        }
+    }
+    return false;
+};
+
+export const hasRouteWithEnemy = (): Constraint => ({
+    name: 'HasRouteWithEnemy',
+    requires: (ctx) => {
+        const reqs: RequirementKey[] = [
+            { kind: 'general', id: ctx.actorId },
+        ];
+        const destCityId = resolveDestCityId(ctx);
+        if (destCityId !== undefined) {
+            reqs.push({ kind: 'destCity', id: destCityId });
+        }
+        reqs.push({ kind: 'env', key: 'map' });
+        reqs.push({ kind: 'env', key: 'cities' });
+        reqs.push({ kind: 'env', key: 'nations' });
+        return reqs;
+    },
+    test: (ctx, view) => {
+        const general = readGeneral(ctx, view);
+        if (!general) {
+            const req: RequirementKey = { kind: 'general', id: ctx.actorId };
+            return unknownOrDeny(ctx, [req], '장수 정보가 없습니다.');
+        }
+        const destCity = readDestCity(ctx, view);
+        if (!destCity) {
+            const destCityId = resolveDestCityId(ctx);
+            if (destCityId === undefined) {
+                return unknownOrDeny(ctx, [], '도시 정보가 없습니다.');
+            }
+            const req: RequirementKey = { kind: 'destCity', id: destCityId };
+            return unknownOrDeny(ctx, [req], '도시 정보가 없습니다.');
+        }
+        const map = view.get({ kind: 'env', key: 'map' }) as MapDefinition | null;
+        const cities = view.get({ kind: 'env', key: 'cities' }) as City[] | null;
+        const nations = view.get({ kind: 'env', key: 'nations' }) as
+            | Array<{ id: number }>
+            | null;
+        if (!map || !cities || !nations) {
+            return unknownOrDeny(ctx, [], '경로 정보가 없습니다.');
+        }
+
+        const allowedNationIds = new Set<number>();
+        allowedNationIds.add(general.nationId);
+        allowedNationIds.add(0);
+        for (const nation of nations) {
+            const state = readDiplomacyState(
+                view,
+                general.nationId,
+                nation.id
+            );
+            if (state === 0) {
+                allowedNationIds.add(nation.id);
+            }
+        }
+
+        if (
+            destCity.nationId !== 0 &&
+            destCity.nationId !== general.nationId &&
+            !allowedNationIds.has(destCity.nationId)
+        ) {
+            return { kind: 'deny', reason: '교전중인 국가가 아닙니다.' };
+        }
+
+        const allowedCityIds = new Set<number>();
+        for (const city of cities) {
+            if (allowedNationIds.has(city.nationId)) {
+                allowedCityIds.add(city.id);
+            }
+        }
+        if (!allowedCityIds.has(destCity.id)) {
+            return { kind: 'deny', reason: '경로에 도달할 방법이 없습니다.' };
+        }
+
+        const mapIndex = buildMapIndex(map);
+        if (!mapIndex.has(general.cityId)) {
+            return unknownOrDeny(ctx, [], '경로 정보가 없습니다.');
+        }
+
+        if (!hasRouteToDest(mapIndex, allowedCityIds, general.cityId, destCity.id)) {
+            return { kind: 'deny', reason: '경로에 도달할 방법이 없습니다.' };
+        }
+        return allow();
     },
 });

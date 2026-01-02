@@ -4,14 +4,24 @@ import type {
     GeneralTriggerState,
     Nation,
 } from '../../../domain/entities.js';
-import type { Constraint, ConstraintContext } from '../../../constraints/types.js';
+import type {
+    Constraint,
+    ConstraintContext,
+    StateView,
+} from '../../../constraints/types.js';
 import {
     existsDestCity,
+    hasRouteWithEnemy,
     notBeNeutral,
     notOccupiedDestCity,
+    notOpeningPart,
+    notSameDestCity,
     occupiedCity,
+    reqGeneralCrew,
+    reqGeneralRice,
     suppliedCity,
 } from '../../../constraints/presets.js';
+import { readGeneral } from '../../../constraints/helpers.js';
 import type { GeneralActionDefinition } from '../../definition.js';
 import type {
     GeneralActionEffect,
@@ -24,6 +34,7 @@ import {
     createGeneralPatchEffect,
     createNationPatchEffect,
 } from '../../engine.js';
+import { JosaUtil, LiteHashDRBG } from '@sammo-ts/common';
 import type { TurnCommandEnv } from '../commandEnv.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import type {
@@ -33,8 +44,14 @@ import type {
 } from '../../../war/types.js';
 import { resolveWarAftermath } from '../../../war/aftermath.js';
 import { resolveWarBattle } from '../../../war/engine.js';
-import { simpleSerialize } from '../../../war/utils.js';
-import type { UnitSetDefinition } from '../../../world/types.js';
+import {
+    increaseMetaNumber,
+    simpleSerialize,
+} from '../../../war/utils.js';
+import type {
+    MapDefinition,
+    UnitSetDefinition,
+} from '../../../world/types.js';
 
 export interface DispatchArgs {
     destCityId: number;
@@ -49,6 +66,8 @@ export interface DispatchResolveContext<
     nations: Nation[];
     generals: General<TriggerState>[];
     unitSet: UnitSetDefinition;
+    map?: MapDefinition;
+    diplomacy?: Array<{ fromNationId: number; toNationId: number; state: number }>;
     time: WarTimeContext;
     seedBase: string;
     warConfig: WarEngineConfig;
@@ -62,6 +81,144 @@ const parseCityId = (raw: unknown): number | null => {
         return null;
     }
     return raw > 0 ? Math.floor(raw) : null;
+};
+
+const toHex = (bytes: Uint8Array): string =>
+    Array.from(bytes)
+        .map((value) => value.toString(16).padStart(2, '0'))
+        .join('');
+
+const buildAllowedNationIds = (
+    attackerNationId: number,
+    diplomacy: Array<{ fromNationId: number; toNationId: number; state: number }>
+): number[] => {
+    const allowed = new Set<number>([attackerNationId, 0]);
+    for (const entry of diplomacy) {
+        if (entry.fromNationId === attackerNationId && entry.state === 0) {
+            allowed.add(entry.toNationId);
+        }
+    }
+    return Array.from(allowed);
+};
+
+const buildMapIndex = (map: MapDefinition): Map<number, number[]> => {
+    const index = new Map<number, number[]>();
+    for (const city of map.cities) {
+        index.set(city.id, Array.from(city.connections ?? []));
+    }
+    return index;
+};
+
+const searchDistanceListToDest = (
+    fromCityId: number,
+    toCityId: number,
+    mapIndex: Map<number, number[]>,
+    allowedCityIds: Map<number, number>
+): Map<number, Array<[number, number]>> => {
+    if (!allowedCityIds.has(toCityId)) {
+        return new Map();
+    }
+    const remainFromCities = new Set<number>();
+    const fromNeighbors = mapIndex.get(fromCityId) ?? [];
+    for (const cityId of fromNeighbors) {
+        if (allowedCityIds.has(cityId)) {
+            remainFromCities.add(cityId);
+        }
+    }
+    const result = new Map<number, Array<[number, number]>>();
+    const queue: Array<[number, number]> = [[toCityId, 0]];
+    const visited = new Set<number>();
+
+    while (remainFromCities.size > 0 && queue.length > 0) {
+        const next = queue.shift();
+        if (!next) {
+            continue;
+        }
+        const [cityId, dist] = next;
+        if (visited.has(cityId)) {
+            continue;
+        }
+        visited.add(cityId);
+        if (remainFromCities.has(cityId)) {
+            remainFromCities.delete(cityId);
+            const nationId = allowedCityIds.get(cityId) ?? 0;
+            const list = result.get(dist);
+            if (list) {
+                list.push([cityId, nationId]);
+            } else {
+                result.set(dist, [[cityId, nationId]]);
+            }
+        }
+        const neighbors = mapIndex.get(cityId) ?? [];
+        for (const neighbor of neighbors) {
+            if (!allowedCityIds.has(neighbor)) {
+                continue;
+            }
+            if (!visited.has(neighbor)) {
+                queue.push([neighbor, dist + 1]);
+            }
+        }
+    }
+
+    return result;
+};
+
+const pickCandidateCity = (
+    rng: DispatchResolveContext['rng'],
+    distanceList: Map<number, Array<[number, number]>>,
+    attackerNationId: number
+): { cityId: number; isEnemy: boolean; minDist: number } | null => {
+    const distances = Array.from(distanceList.keys()).sort((a, b) => a - b);
+    const minDist = distances[0];
+    if (minDist === undefined) {
+        return null;
+    }
+    const candidates: Array<[number, number]> = [];
+    for (const dist of distances) {
+        if (dist > minDist + 1) {
+            break;
+        }
+        for (const entry of distanceList.get(dist) ?? []) {
+            if (entry[1] !== attackerNationId) {
+                candidates.push(entry);
+            }
+        }
+    }
+    if (candidates.length > 0) {
+        const index = rng.nextInt(0, candidates.length);
+        const [cityId] = candidates[index] ?? candidates[0]!;
+        return { cityId, isEnemy: true, minDist };
+    }
+    const fallback = distanceList.get(minDist) ?? [];
+    const friendly = fallback.filter(
+        ([, nationId]) => nationId === attackerNationId
+    );
+    if (friendly.length === 0) {
+        return null;
+    }
+    const index = rng.nextInt(0, friendly.length);
+    const [cityId] = friendly[index] ?? friendly[0]!;
+    return { cityId, isEnemy: false, minDist };
+};
+
+const getRequiredRice = (ctx: ConstraintContext, view: StateView): number => {
+    const general = readGeneral(ctx, view);
+    if (!general) {
+        return 0;
+    }
+    return Math.round(general.crew / 100);
+};
+
+const resolveCrewTypeArm = (
+    unitSet: UnitSetDefinition,
+    crewTypeId: number
+): number | null => {
+    const crewTypes = unitSet.crewTypes ?? [];
+    const crewType = crewTypes.find((entry) => entry.id === crewTypeId);
+    if (!crewType) {
+        return null;
+    }
+    return crewType.armType;
 };
 
 const cloneGeneral = <TriggerState extends GeneralTriggerState>(
@@ -116,12 +273,22 @@ export class ActionDefinition<
     }
 
     buildConstraints(_ctx: ConstraintContext, _args: DispatchArgs): Constraint[] {
+        const relYear = typeof _ctx.env.relYear === 'number' ? _ctx.env.relYear : 0;
+        const openingPartYear =
+            typeof _ctx.env.openingPartYear === 'number'
+                ? _ctx.env.openingPartYear
+                : 0;
         return [
+            notOpeningPart(relYear, openingPartYear),
+            notSameDestCity(),
             notBeNeutral(),
             occupiedCity(),
             suppliedCity(),
+            reqGeneralCrew(),
+            reqGeneralRice(getRequiredRice),
             existsDestCity(),
             notOccupiedDestCity(),
+            hasRouteWithEnemy(),
         ];
     }
 
@@ -139,17 +306,104 @@ export class ActionDefinition<
             throw new Error('Dispatch requires a nation context.');
         }
 
-        const destCity = context.destCity;
+        const finalTargetCity = context.destCity;
         const unitSet = context.unitSet;
         const time = context.time;
-        const seed = simpleSerialize(
+        const diplomacy = context.diplomacy ?? [];
+        const allowedNationIds = buildAllowedNationIds(
+            attackerNation.id,
+            diplomacy
+        );
+        const mapIndex = context.map ? buildMapIndex(context.map) : null;
+
+        let defenderCityId = finalTargetCity.id;
+        let minDist = 0;
+        let isEnemyTarget = finalTargetCity.nationId !== attackerNation.id;
+
+        if (mapIndex) {
+            const allowedCityIds = new Map<number, number>();
+            for (const city of context.cities) {
+                if (allowedNationIds.includes(city.nationId)) {
+                    allowedCityIds.set(city.id, city.nationId);
+                }
+            }
+            const distanceList = searchDistanceListToDest(
+                attackerCity.id,
+                finalTargetCity.id,
+                mapIndex,
+                allowedCityIds
+            );
+            const picked = pickCandidateCity(
+                context.rng,
+                distanceList,
+                attackerNation.id
+            );
+            if (!picked) {
+                context.addLog('경로에 도달할 방법이 없습니다.');
+                return { effects: [] };
+            }
+            defenderCityId = picked.cityId;
+            minDist = picked.minDist;
+            isEnemyTarget = picked.isEnemy;
+        }
+
+        const destCity =
+            defenderCityId === finalTargetCity.id
+                ? finalTargetCity
+                : context.cities.find((city) => city.id === defenderCityId) ??
+                  finalTargetCity;
+
+        if (!isEnemyTarget && destCity.nationId === attackerNation.id) {
+            const josaRo = JosaUtil.pick(destCity.name, '로');
+            if (finalTargetCity.id === destCity.id) {
+                context.addLog(
+                    `본국입니다. <G><b>${destCity.name}</b></>${josaRo} 이동합니다.`
+                );
+            } else {
+                const targetName = finalTargetCity.name;
+                const josaRoTarget = JosaUtil.pick(targetName, '로');
+                context.addLog(
+                    `가까운 경로에 적군 도시가 없습니다. <G><b>${destCity.name}</b></>${josaRo} 이동합니다.`
+                );
+                context.addLog(
+                    `<G><b>${targetName}</b></>${josaRoTarget} 가는 도중 <G><b>${destCity.name}</b></>을 거치기로 합니다.`
+                );
+            }
+            return { effects: [] };
+        }
+
+        if (finalTargetCity.id !== destCity.id) {
+            const josaRo = JosaUtil.pick(finalTargetCity.name, '로');
+            const josaUl = JosaUtil.pick(destCity.name, '을');
+            if (minDist === 0) {
+                context.addLog(
+                    `<G><b>${finalTargetCity.name}</b></>${josaRo} 가기 위해 <G><b>${destCity.name}</b></>${josaUl} 거쳐야 합니다.`
+                );
+            } else {
+                context.addLog(
+                    `<G><b>${finalTargetCity.name}</b></>${josaRo} 가는 도중 <G><b>${destCity.name}</b></>${josaUl} 거치기로 합니다.`
+                );
+            }
+        }
+
+        const preSeed = simpleSerialize(
             context.seedBase,
-            this.key,
+            'war',
             time.year,
             time.month,
             context.general.id,
             destCity.id
         );
+        const seed = toHex(LiteHashDRBG.build(preSeed).nextBytes(16));
+
+        const armType = resolveCrewTypeArm(unitSet, context.general.crewTypeId);
+        if (armType !== null) {
+            increaseMetaNumber(
+                context.general.meta,
+                `dex${armType}`,
+                context.general.crew / 100
+            );
+        }
 
         const cities = context.cities.map(cloneCity);
         const nations = context.nations.map(cloneNation);

@@ -42,7 +42,8 @@ const asRecord = (value: unknown): Record<string, unknown> =>
 
 const resolveConstraintEnv = (
     world: TurnWorldState,
-    scenarioMeta?: ScenarioMeta
+    scenarioMeta: ScenarioMeta | undefined,
+    openingPartYear: number
 ): Record<string, unknown> => {
     const startYear =
         typeof scenarioMeta?.startYear === 'number'
@@ -60,6 +61,7 @@ const resolveConstraintEnv = (
         month: world.currentMonth,
         startYear,
         relYear,
+        openingPartYear,
     };
 };
 
@@ -233,10 +235,15 @@ export const createReservedTurnHandler = async (options: {
         execute(context): GeneralTurnResult {
             const worldRef = options.getWorld();
             const constraintEnv = {
-                ...resolveConstraintEnv(context.world, options.scenarioMeta),
+                ...resolveConstraintEnv(
+                    context.world,
+                    options.scenarioMeta,
+                    env.openingPartYear
+                ),
                 ...(options.map ? { map: options.map } : {}),
                 ...(options.unitSet ? { unitSet: options.unitSet } : {}),
                 cities: worldRef?.listCities() ?? [],
+                nations: worldRef?.listNations() ?? [],
             };
             const logs: LogEntryDraft[] = [];
             const patches = {

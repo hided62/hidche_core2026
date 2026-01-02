@@ -403,6 +403,7 @@ const ACTION_CONTEXT_BUILDERS: Record<string, ActionContextBuilder> = {
             destCity.nationId > 0
                 ? options.worldRef.getNationById(destCity.nationId)
                 : null;
+        const diplomacy = options.worldRef.listDiplomacy();
         const warConfig = buildWarConfig(options.scenarioConfig, options.unitSet);
         const aftermathConfig = buildWarAftermathConfig(
             options.scenarioConfig,
@@ -416,6 +417,8 @@ const ACTION_CONTEXT_BUILDERS: Record<string, ActionContextBuilder> = {
             nations: options.worldRef.listNations(),
             generals: options.worldRef.listGenerals(),
             unitSet: options.unitSet,
+            map: options.map,
+            diplomacy,
             time: buildWarTime(options.world, options.scenarioMeta),
             seedBase: options.seedBase,
             warConfig,

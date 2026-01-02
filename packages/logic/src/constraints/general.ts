@@ -117,6 +117,25 @@ export const reqGeneralRice = (
     },
 });
 
+export const reqGeneralCrew = (): Constraint => ({
+    name: 'ReqGeneralCrew',
+    requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
+    test: (ctx, view) => {
+        const generalReq: RequirementKey = { kind: 'general', id: ctx.actorId };
+        if (!view.has(generalReq)) {
+            return unknownOrDeny(ctx, [generalReq], '장수 정보가 없습니다.');
+        }
+        const general = view.get(generalReq) as General | null;
+        if (!general) {
+            return unknownOrDeny(ctx, [generalReq], '장수 정보가 없습니다.');
+        }
+        if (general.crew > 0) {
+            return allow();
+        }
+        return { kind: 'deny', reason: '병사가 모자랍니다.' };
+    },
+});
+
 export const reqGeneralCrewMargin = (
     getCrewTypeId: (ctx: ConstraintContext, view: StateView) => number | null,
     requirements: RequirementKey[] = []
