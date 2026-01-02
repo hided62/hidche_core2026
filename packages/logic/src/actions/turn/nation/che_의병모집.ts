@@ -29,10 +29,10 @@ import {
     createGeneralAddEffect,
 } from '../../engine.js';
 import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
-import { buildRecruitmentGeneral } from './recruitment.js';
+import { buildRecruitmentGeneral } from '../general/recruitment.js';
 import { JosaUtil } from '@sammo-ts/common';
 import type { TurnCommandEnv } from '../commandEnv.js';
-import type { GeneralTurnCommandSpec } from './index.js';
+import type { NationTurnCommandSpec } from './index.js';
 
 export interface VolunteerRecruitArgs {}
 
@@ -417,7 +417,7 @@ export class ActionDefinition<
     }
 }
 
-export const commandSpec: GeneralTurnCommandSpec = {
+export const commandSpec: NationTurnCommandSpec = {
     key: 'che_의병모집',
     category: '전략',
     reqArg: false,

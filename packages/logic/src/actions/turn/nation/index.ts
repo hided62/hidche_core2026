@@ -5,6 +5,7 @@ import type * as AwardModule from './che_포상.js';
 import type * as AssignmentModule from './che_발령.js';
 import type * as DeclarationModule from './che_선전포고.js';
 import type * as NonAggressionProposalModule from './che_불가침제의.js';
+import type * as VolunteerRecruitModule from './che_의병모집.js';
 
 
 
@@ -13,7 +14,8 @@ export type NationTurnCommandModule =
     | typeof AwardModule
     | typeof AssignmentModule
     | typeof DeclarationModule
-    | typeof NonAggressionProposalModule;
+    | typeof NonAggressionProposalModule
+    | typeof VolunteerRecruitModule;
 
 export type NationTurnCommandImporter = () => Promise<NationTurnCommandModule>;
 
@@ -23,6 +25,7 @@ const defaultImporters = {
     che_발령: async () => import('./che_발령.js'),
     che_선전포고: async () => import('./che_선전포고.js'),
     che_불가침제의: async () => import('./che_불가침제의.js'),
+    che_의병모집: async () => import('./che_의병모집.js'),
 } as const satisfies Record<string, NationTurnCommandImporter>;
 
 export type NationTurnCommandKey = keyof typeof defaultImporters;
@@ -101,3 +104,8 @@ export {
 export {
     ActionDefinition as NonAggressionProposalActionDefinition,
 } from './che_불가침제의.js';
+export {
+    ActionDefinition as VolunteerRecruitActionDefinition,
+    ActionResolver as VolunteerRecruitActionResolver,
+    CommandResolver as VolunteerRecruitCommandResolver,
+} from './che_의병모집.js';

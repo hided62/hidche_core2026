@@ -16,7 +16,6 @@ import type * as DefenceUpgradeModule from './che_수비강화.js';
 import type * as WallRepairModule from './che_성벽보수.js';
 import type * as FireAttackModule from './che_화계.js';
 import type * as TalentScoutModule from './che_인재탐색.js';
-import type * as VolunteerRecruitModule from './che_의병모집.js';
 import type * as RecruitModule from './che_징병.js';
 import type * as RestModule from './휴식.js';
 
@@ -37,7 +36,6 @@ export type GeneralTurnCommandModule =
     | typeof WallRepairModule
     | typeof FireAttackModule
     | typeof TalentScoutModule
-    | typeof VolunteerRecruitModule
     | typeof RecruitModule
     | typeof RestModule;
 
@@ -60,7 +58,6 @@ const defaultImporters = {
     che_성벽보수: async () => import('./che_성벽보수.js'),
     che_화계: async () => import('./che_화계.js'),
     che_인재탐색: async () => import('./che_인재탐색.js'),
-    che_의병모집: async () => import('./che_의병모집.js'),
     che_징병: async () => import('./che_징병.js'),
     휴식: async () => import('./휴식.js'),
 } as const satisfies Record<string, GeneralTurnCommandImporter>;
@@ -178,11 +175,6 @@ export {
     ActionResolver as TalentScoutActionResolver,
     CommandResolver as TalentScoutCommandResolver,
 } from './che_인재탐색.js';
-export {
-    ActionDefinition as VolunteerRecruitActionDefinition,
-    ActionResolver as VolunteerRecruitActionResolver,
-    CommandResolver as VolunteerRecruitCommandResolver,
-} from './che_의병모집.js';
 export {
     ActionDefinition as RecruitActionDefinition,
     ActionResolver as RecruitActionResolver,
