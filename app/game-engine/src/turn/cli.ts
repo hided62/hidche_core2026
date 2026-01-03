@@ -14,6 +14,7 @@ export interface TurnDaemonCliOptions {
     schedule?: TurnSchedule;
     budget?: Partial<TurnRunBudget>;
     enableDatabaseFlush?: boolean;
+    adminActionIntervalMs?: number;
     env?: NodeJS.ProcessEnv;
 }
 
@@ -97,6 +98,8 @@ export const runTurnDaemonCli = async (
         parseBoolean(env.TURN_FLUSH_DB) ??
         true;
     const pauseGateIntervalMs = parseNumber(env.TURN_PAUSE_GATE_MS);
+    const adminActionIntervalMs =
+        options.adminActionIntervalMs ?? parseNumber(env.TURN_ADMIN_ACTION_MS);
 
     const runtime = await createTurnDaemonRuntime({
         profile,
@@ -108,6 +111,7 @@ export const runTurnDaemonCli = async (
         schedule: options.schedule,
         enableDatabaseFlush,
         pauseGateIntervalMs,
+        adminActionIntervalMs,
     });
 
     let closed = false;

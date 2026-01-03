@@ -20,6 +20,7 @@ import type {
 import { InMemoryTurnWorld } from './inMemoryWorld.js';
 import { InMemoryTurnProcessor } from './inMemoryTurnProcessor.js';
 import { InMemoryTurnStateStore } from './inMemoryStateStore.js';
+import { createGatewayAdminActionConsumer } from './gatewayAdminActions.js';
 import { createGatewayProfileGate } from './gatewayProfileGate.js';
 import { createReservedTurnHandler } from './reservedTurnHandler.js';
 import { createReservedTurnStore } from './reservedTurnStore.js';
@@ -43,6 +44,7 @@ export interface TurnDaemonRuntimeOptions {
     pauseGateIntervalMs?: number;
     commandProfile?: TurnCommandProfile;
     commandProfilePath?: string;
+    adminActionIntervalMs?: number;
 }
 
 export interface TurnDaemonRuntime {
@@ -134,6 +136,9 @@ export const createTurnDaemonRuntime = async (
     let hooks: TurnDaemonHooks | undefined;
     let close = async () => {};
     let pauseGate: (() => Promise<boolean>) | undefined;
+    let adminActionConsumer: Awaited<
+        ReturnType<typeof createGatewayAdminActionConsumer>
+    > | null = null;
     const gatewayGate =
         options.profileName
             ? await createGatewayProfileGate({
@@ -145,6 +150,32 @@ export const createTurnDaemonRuntime = async (
             : null;
     if (gatewayGate) {
         pauseGate = gatewayGate.shouldPause;
+    }
+    if (options.profileName) {
+        adminActionConsumer = await createGatewayAdminActionConsumer({
+            databaseUrl: options.databaseUrl,
+            gatewayDatabaseUrl: options.gatewayDatabaseUrl,
+            profileName: options.profileName,
+            pollIntervalMs: options.adminActionIntervalMs,
+            handler: async (action) => {
+                const reason = action.reason ?? `admin:${action.action ?? 'action'}`;
+                switch (action.action) {
+                    case 'RESUME':
+                        controlQueue.enqueue({ type: 'resume', reason });
+                        return { status: 'APPLIED', detail: 'resume queued' };
+                    case 'PAUSE':
+                        controlQueue.enqueue({ type: 'pause', reason });
+                        return { status: 'APPLIED', detail: 'pause queued' };
+                    case 'STOP':
+                    case 'SHUTDOWN':
+                        controlQueue.enqueue({ type: 'shutdown', reason });
+                        return { status: 'APPLIED', detail: 'shutdown queued' };
+                    default:
+                        return { status: 'IGNORED', detail: 'not implemented' };
+                }
+            },
+        });
+        adminActionConsumer.start();
     }
     if (options.enableDatabaseFlush ?? true) {
         const dbHooks = await createDatabaseTurnHooks(options.databaseUrl, world, {
@@ -163,6 +194,7 @@ export const createTurnDaemonRuntime = async (
                 await reservedTurnStoreHandle.close();
             }
             await gatewayGate?.close();
+            await adminActionConsumer?.stop();
         };
     } else if (reservedTurnStoreHandle) {
         hooks = {
@@ -173,6 +205,7 @@ export const createTurnDaemonRuntime = async (
         close = async () => {
             await reservedTurnStoreHandle.close();
             await gatewayGate?.close();
+            await adminActionConsumer?.stop();
         };
     } else if (gatewayGate) {
         hooks = {
@@ -182,6 +215,11 @@ export const createTurnDaemonRuntime = async (
         };
         close = async () => {
             await gatewayGate.close();
+            await adminActionConsumer?.stop();
+        };
+    } else if (adminActionConsumer) {
+        close = async () => {
+            await adminActionConsumer?.stop();
         };
     }
 
