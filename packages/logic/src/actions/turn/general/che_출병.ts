@@ -52,6 +52,12 @@ import type {
     MapDefinition,
     UnitSetDefinition,
 } from '../../../world/types.js';
+import type { ActionContextBuilder } from '../actionContext.js';
+import {
+    buildWarAftermathConfig,
+    buildWarConfig,
+    buildWarTime,
+} from '../actionContextHelpers.js';
 
 export interface DispatchArgs {
     destCityId: number;
@@ -528,6 +534,46 @@ export class ActionDefinition<
         return { effects };
     }
 }
+
+// 예약 턴 실행에 필요한 전투 컨텍스트를 구성한다.
+export const actionContextBuilder: ActionContextBuilder = (base, options) => {
+    if (!options.unitSet || !options.worldRef) {
+        return null;
+    }
+    const destCityId = options.actionArgs.destCityId;
+    if (typeof destCityId !== 'number') {
+        return null;
+    }
+    const destCity = options.worldRef.getCityById(destCityId);
+    if (!destCity) {
+        return null;
+    }
+    const destNation =
+        destCity.nationId > 0
+            ? options.worldRef.getNationById(destCity.nationId)
+            : null;
+    const diplomacy = options.worldRef.listDiplomacy();
+    const warConfig = buildWarConfig(options.scenarioConfig, options.unitSet);
+    const aftermathConfig = buildWarAftermathConfig(
+        options.scenarioConfig,
+        warConfig.castleCrewTypeId
+    );
+    return {
+        ...base,
+        destCity,
+        destNation,
+        cities: options.worldRef.listCities(),
+        nations: options.worldRef.listNations(),
+        generals: options.worldRef.listGenerals(),
+        unitSet: options.unitSet,
+        map: options.map,
+        diplomacy,
+        time: buildWarTime(options.world, options.scenarioMeta),
+        seedBase: options.seedBase,
+        warConfig,
+        aftermathConfig,
+    };
+};
 
 export const commandSpec: GeneralTurnCommandSpec = {
     key: 'che_출병',

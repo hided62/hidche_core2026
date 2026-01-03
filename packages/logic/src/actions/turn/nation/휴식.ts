@@ -12,6 +12,7 @@ import type {
     GeneralActionResolver,
 } from '../../engine.js';
 import type { TurnCommandEnv } from '../commandEnv.js';
+import { defaultActionContextBuilder } from '../actionContext.js';
 import type { NationTurnCommandSpec } from './index.js';
 
 export interface NationRestArgs {}
@@ -61,6 +62,9 @@ export class ActionDefinition<
         return this.resolver.resolve(context, args);
     }
 }
+
+// 예약 턴 실행은 기본 컨텍스트만 사용한다.
+export const actionContextBuilder = defaultActionContextBuilder;
 
 export const commandSpec: NationTurnCommandSpec = {
     key: '휴식',

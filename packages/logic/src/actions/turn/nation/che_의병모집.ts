@@ -32,6 +32,12 @@ import {
 import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
 import { buildRecruitmentGeneral } from '../general/recruitment.js';
 import { JosaUtil } from '@sammo-ts/common';
+import type { ActionContextBuilder } from '../actionContext.js';
+import {
+    buildAverageNationGeneralCount,
+    buildNationSummary,
+    resolveStartYear,
+} from '../actionContextHelpers.js';
 import type { TurnCommandEnv } from '../commandEnv.js';
 import type { NationTurnCommandSpec } from './index.js';
 
@@ -418,6 +424,26 @@ export class ActionDefinition<
         return this.resolver.resolve(context, args);
     }
 }
+
+// 예약 턴 실행에 필요한 국가 평균 정보를 구성한다.
+export const actionContextBuilder: ActionContextBuilder = (base, options) => {
+    const nationSummary = buildNationSummary(
+        options.worldRef,
+        base.general.nationId
+    );
+    return {
+        ...base,
+        currentYear: options.world.currentYear,
+        startYear: resolveStartYear(options.world, options.scenarioMeta),
+        averageNationGeneralCount: buildAverageNationGeneralCount(
+            options.worldRef
+        ),
+        nationAverageStats: nationSummary.averageStats,
+        nationAverageExperience: nationSummary.averageExperience,
+        nationAverageDedication: nationSummary.averageDedication,
+        createGeneralId: options.createGeneralId,
+    };
+};
 
 export const commandSpec: NationTurnCommandSpec = {
     key: 'che_의병모집',

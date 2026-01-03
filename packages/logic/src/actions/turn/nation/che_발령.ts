@@ -29,6 +29,8 @@ import type {
 import { createGeneralPatchEffect, createLogEffect } from '../../engine.js';
 import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
 import { JosaUtil } from '@sammo-ts/common';
+import type { ActionContextBuilder } from '../actionContext.js';
+import { resolveTurnTermMinutes } from '../actionContextHelpers.js';
 import type { TurnCommandEnv } from '../commandEnv.js';
 import type { NationTurnCommandSpec } from './index.js';
 
@@ -210,6 +212,30 @@ export class ActionDefinition<
         return this.resolver.resolve(context, args);
     }
 }
+
+// 예약 턴 실행에 필요한 대상 장수/도시 컨텍스트를 구성한다.
+export const actionContextBuilder: ActionContextBuilder = (base, options) => {
+    const destGeneralId = options.actionArgs.destGeneralId;
+    const destCityId = options.actionArgs.destCityId;
+    if (typeof destGeneralId !== 'number' || typeof destCityId !== 'number') {
+        return null;
+    }
+    const destGeneral = options.worldRef?.getGeneralById(destGeneralId);
+    const destCity = options.worldRef?.getCityById(destCityId);
+    if (!destGeneral || !destCity) {
+        return null;
+    }
+    return {
+        ...base,
+        destGeneral,
+        destCity,
+        currentYear: options.world.currentYear,
+        currentMonth: options.world.currentMonth,
+        turnTermMinutes: resolveTurnTermMinutes(options.world),
+        generalTurnTime: base.general.turnTime,
+        destGeneralTurnTime: destGeneral.turnTime,
+    };
+};
 
 export const commandSpec: NationTurnCommandSpec = {
     key: 'che_발령',

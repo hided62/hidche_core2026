@@ -1,4 +1,6 @@
 import type {
+    ActionContextBase,
+    ActionContextBuilder,
     City,
     GeneralActionDefinition,
     LogEntryDraft,
@@ -12,6 +14,9 @@ import type {
 } from '@sammo-ts/logic';
 import {
     DEFAULT_TURN_COMMAND_PROFILE,
+    GeneralTurnCommandLoader,
+    NationTurnCommandLoader,
+    defaultActionContextBuilder,
     evaluateConstraints,
     resolveGeneralAction,
 } from '@sammo-ts/logic';
@@ -29,7 +34,6 @@ import {
     buildCommandEnv,
     buildReservedTurnDefinitions,
 } from './reservedTurnCommands.js';
-import type { ActionContextBase } from './reservedTurnActionContext.js';
 import { buildActionContext } from './reservedTurnActionContext.js';
 
 const DEFAULT_ACTION = '휴식';
@@ -219,6 +223,41 @@ export const createReservedTurnHandler = async (options: {
     const generalFallback = generalDefinitions.get(DEFAULT_ACTION)!;
     const nationFallback = nationDefinitions.get(DEFAULT_ACTION)!;
 
+    const actionContextBuilders = new Map<string, ActionContextBuilder>();
+    const seenActionKeys = new Set<string>();
+    const applyActionContextBuilder = (module: {
+        commandSpec: { key: string };
+        actionContextBuilder?: ActionContextBuilder;
+    }): void => {
+        actionContextBuilders.set(
+            module.commandSpec.key,
+            module.actionContextBuilder ?? defaultActionContextBuilder
+        );
+    };
+    const generalModuleLoader = new GeneralTurnCommandLoader();
+    const nationModuleLoader = new NationTurnCommandLoader();
+    for (const key of commandProfile.general) {
+        if (seenActionKeys.has(key)) {
+            continue;
+        }
+        seenActionKeys.add(key);
+        const module = await generalModuleLoader.load(key);
+        applyActionContextBuilder(module);
+    }
+    for (const key of commandProfile.nation) {
+        if (seenActionKeys.has(key)) {
+            continue;
+        }
+        seenActionKeys.add(key);
+        const module = await nationModuleLoader.load(key);
+        applyActionContextBuilder(module);
+    }
+    if (!actionContextBuilders.has(DEFAULT_ACTION)) {
+        applyActionContextBuilder(
+            await generalModuleLoader.load(DEFAULT_ACTION)
+        );
+    }
+
     let nextGeneralId: number | null = null;
     const createGeneralId = (): number => {
         if (nextGeneralId === null) {
@@ -344,7 +383,7 @@ export const createReservedTurnHandler = async (options: {
                     actionArgs: actionArgsRecord,
                     createGeneralId,
                     seedBase,
-                });
+                }, actionContextBuilders);
                 if (!specificContext && actionKey !== fallbackDefinition.key) {
                     definition = fallbackDefinition;
                     actionArgs = definition.parseArgs({}) ?? {};

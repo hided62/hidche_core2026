@@ -30,6 +30,8 @@ import {
 import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
 import { buildRecruitmentGeneral } from './recruitment.js';
 import { JosaUtil } from '@sammo-ts/common';
+import type { ActionContextBuilder } from '../actionContext.js';
+import { buildWorldSummary } from '../actionContextHelpers.js';
 import type { TurnCommandEnv } from '../commandEnv.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 
@@ -457,6 +459,14 @@ export class ActionDefinition<
         return this.resolver.resolve(context, args);
     }
 }
+
+// 예약 턴 실행에 필요한 월드 요약/생성기를 주입한다.
+export const actionContextBuilder: ActionContextBuilder = (base, options) => ({
+    ...base,
+    currentYear: options.world.currentYear,
+    worldSummary: buildWorldSummary(options.worldRef),
+    createGeneralId: options.createGeneralId,
+});
 
 export const commandSpec: GeneralTurnCommandSpec = {
     key: 'che_인재탐색',

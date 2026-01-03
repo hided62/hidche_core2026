@@ -1,5 +1,6 @@
 import type { GeneralActionDefinition } from '../definition.js';
 import type { GeneralActionResolver } from '../engine.js';
+import type { ActionContextBuilder } from './actionContext.js';
 import type { TurnCommandEnv } from './commandEnv.js';
 
 export interface TurnCommandSpecBase<TKey extends string = string> {
@@ -15,4 +16,5 @@ export interface TurnCommandModule<TSpec extends TurnCommandSpecBase = TurnComma
     ActionDefinition: new (...args: any[]) => GeneralActionDefinition;
     ActionResolver?: new (...args: any[]) => GeneralActionResolver;
     CommandResolver?: new (...args: any[]) => unknown;
+    actionContextBuilder?: ActionContextBuilder;
 }

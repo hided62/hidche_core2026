@@ -1,6 +1,7 @@
 import type { GeneralTriggerState } from '../../../domain/entities.js';
 import { CityDevelopmentActionDefinition } from './cityDevelopment.js';
 import type { TurnCommandEnv } from '../commandEnv.js';
+import { defaultActionContextBuilder } from '../actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 
 export class ActionDefinition<
@@ -20,6 +21,9 @@ export class ActionDefinition<
         );
     }
 }
+
+// 예약 턴 실행은 기본 컨텍스트만 사용한다.
+export const actionContextBuilder = defaultActionContextBuilder;
 
 export const commandSpec: GeneralTurnCommandSpec = {
     key: 'che_농지개간',

@@ -36,6 +36,7 @@ import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
 import type { TurnCommandEnv } from '../commandEnv.js';
 import type { NationTurnCommandSpec } from './index.js';
 import { JosaUtil } from '@sammo-ts/common';
+import type { ActionContextBuilder } from '../actionContext.js';
 
 export interface AwardArgs {
     isGold: boolean;
@@ -270,6 +271,22 @@ export class ActionDefinition<
         return this.resolver.resolve(context, args);
     }
 }
+
+// 예약 턴 실행에 필요한 대상 장수를 주입한다.
+export const actionContextBuilder: ActionContextBuilder = (base, options) => {
+    const destGeneralId = options.actionArgs.destGeneralId;
+    if (typeof destGeneralId !== 'number') {
+        return null;
+    }
+    const destGeneral = options.worldRef?.getGeneralById(destGeneralId);
+    if (!destGeneral) {
+        return null;
+    }
+    return {
+        ...base,
+        destGeneral,
+    };
+};
 
 export const commandSpec: NationTurnCommandSpec = {
     key: 'che_포상',

@@ -16,6 +16,7 @@ import type {
 import { createLogEffect } from '../../engine.js';
 import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
 import type { TurnCommandEnv } from '../commandEnv.js';
+import { defaultActionContextBuilder } from '../actionContext.js';
 import type { NationTurnCommandSpec } from './index.js';
 
 export interface NonAggressionCancelProposalArgs {
@@ -85,6 +86,9 @@ export class ActionDefinition<
         };
     }
 }
+
+// 예약 턴 실행은 기본 컨텍스트만 사용한다.
+export const actionContextBuilder = defaultActionContextBuilder;
 
 export const commandSpec: NationTurnCommandSpec = {
     key: 'che_불가침파기제의',

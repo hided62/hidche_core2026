@@ -15,6 +15,7 @@ import type {
 } from '../../engine.js';
 import { createLogEffect } from '../../engine.js';
 import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
+import type { ActionContextBuilder } from '../actionContext.js';
 import type { TurnCommandEnv } from '../commandEnv.js';
 import type { NationTurnCommandSpec } from './index.js';
 
@@ -160,6 +161,13 @@ export class ActionDefinition<
         };
     }
 }
+
+// 예약 턴 실행에 필요한 날짜 정보를 제공한다.
+export const actionContextBuilder: ActionContextBuilder = (base, options) => ({
+    ...base,
+    currentYear: options.world.currentYear,
+    currentMonth: options.world.currentMonth,
+});
 
 export const commandSpec: NationTurnCommandSpec = {
     key: 'che_불가침제의',

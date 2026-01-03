@@ -8,6 +8,7 @@ import type {
 } from '../../engine.js';
 import { LogCategory, LogFormat } from '../../../logging/types.js';
 import type { TurnCommandEnv } from '../commandEnv.js';
+import { defaultActionContextBuilder } from '../actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 
 export interface UprisingArgs {}
@@ -49,6 +50,9 @@ export class ActionDefinition<
         return { effects: [] };
     }
 }
+
+// 예약 턴 실행은 기본 컨텍스트만 사용한다.
+export const actionContextBuilder = defaultActionContextBuilder;
 
 export const commandSpec: GeneralTurnCommandSpec = {
     key: 'che_거병',

@@ -31,6 +31,8 @@ import type {
     GeneralActionResolver,
 } from '../../engine.js';
 import type { MapDefinition, UnitSetDefinition } from '../../../world/types.js';
+import type { ActionContextBuilder } from '../actionContext.js';
+import { resolveStartYear } from '../actionContextHelpers.js';
 import type { TurnCommandEnv } from '../commandEnv.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import {
@@ -591,6 +593,21 @@ export class ActionDefinition<
         return this.resolver.resolve(context, args);
     }
 }
+
+// 예약 턴 실행에 필요한 지도/연도 컨텍스트를 구성한다.
+export const actionContextBuilder: ActionContextBuilder = (base, options) => {
+    if (!options.map || !options.unitSet) {
+        return null;
+    }
+    return {
+        ...base,
+        map: options.map,
+        unitSet: options.unitSet,
+        cities: options.worldRef?.listCities() ?? [],
+        currentYear: options.world.currentYear,
+        startYear: resolveStartYear(options.world, options.scenarioMeta),
+    };
+};
 
 export const commandSpec: GeneralTurnCommandSpec = {
     key: 'che_징병',
