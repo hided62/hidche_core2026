@@ -3,6 +3,8 @@
     "private": true,
     "version": "0.0.0",
     "type": "module",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
     "scripts": {
         "build": "tsdown -c ../../tsdown.config.ts -F @sammo-ts/game-engine",
         "dev": "tsdown -c ../../tsdown.config.ts -F @sammo-ts/game-engine --watch",

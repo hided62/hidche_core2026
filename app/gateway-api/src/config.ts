@@ -19,6 +19,7 @@ export interface GatewayApiConfig {
     orchestratorReconcileIntervalMs: number;
     orchestratorScheduleIntervalMs: number;
     orchestratorBuildIntervalMs: number;
+    orchestratorAdminIntervalMs: number;
     workspaceRootHint: string;
     worktreeRoot: string;
 }
@@ -30,6 +31,7 @@ export interface GatewayOrchestratorConfig {
     orchestratorReconcileIntervalMs: number;
     orchestratorScheduleIntervalMs: number;
     orchestratorBuildIntervalMs: number;
+    orchestratorAdminIntervalMs: number;
     workspaceRootHint: string;
     worktreeRoot: string;
 }
@@ -120,6 +122,11 @@ export const resolveGatewayApiConfigFromEnv = (
             10000,
             'GATEWAY_ORCHESTRATOR_BUILD_MS'
         ),
+        orchestratorAdminIntervalMs: parseNumber(
+            env.GATEWAY_ORCHESTRATOR_ADMIN_MS,
+            5000,
+            'GATEWAY_ORCHESTRATOR_ADMIN_MS'
+        ),
         workspaceRootHint: env.GATEWAY_WORKSPACE_ROOT ?? process.cwd(),
         worktreeRoot:
             env.GATEWAY_WORKTREE_ROOT ??
@@ -153,6 +160,11 @@ export const resolveGatewayOrchestratorConfigFromEnv = (
             env.GATEWAY_ORCHESTRATOR_BUILD_MS,
             10000,
             'GATEWAY_ORCHESTRATOR_BUILD_MS'
+        ),
+        orchestratorAdminIntervalMs: parseNumber(
+            env.GATEWAY_ORCHESTRATOR_ADMIN_MS,
+            5000,
+            'GATEWAY_ORCHESTRATOR_ADMIN_MS'
         ),
         workspaceRootHint: env.GATEWAY_WORKSPACE_ROOT ?? process.cwd(),
         worktreeRoot:

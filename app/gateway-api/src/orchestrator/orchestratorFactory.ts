@@ -47,6 +47,7 @@ export const createGatewayOrchestrator = (
         reconcileIntervalMs: config.orchestratorReconcileIntervalMs,
         scheduleIntervalMs: config.orchestratorScheduleIntervalMs,
         buildIntervalMs: config.orchestratorBuildIntervalMs,
+        adminActionIntervalMs: config.orchestratorAdminIntervalMs,
     });
     return { orchestrator, profiles };
 };

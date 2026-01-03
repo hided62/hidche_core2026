@@ -1,5 +1,8 @@
 import path from 'node:path';
 
+import { seedScenarioToDatabase } from '@sammo-ts/game-engine';
+import { createGamePostgresConnector, resolvePostgresConfigFromEnv } from '@sammo-ts/infra';
+
 import type { BuildRunner } from './buildRunner.js';
 import type { ProcessManager } from './processManager.js';
 import type {
@@ -25,6 +28,7 @@ export interface GatewayOrchestratorOptions {
     reconcileIntervalMs: number;
     scheduleIntervalMs: number;
     buildIntervalMs: number;
+    adminActionIntervalMs: number;
     now?: () => Date;
 }
 
@@ -69,6 +73,61 @@ export const planProfileReconcile = (
         shouldStart: false,
         shouldStop: runtime.apiRunning || runtime.daemonRunning,
     };
+};
+
+type GatewayAdminActionStatus = 'REQUESTED' | 'APPLIED' | 'FAILED' | 'IGNORED';
+
+interface GatewayAdminActionRecord {
+    action?: string;
+    requestedAt?: string;
+    durationMinutes?: number | null;
+    scheduledAt?: string | null;
+    reason?: string | null;
+    status?: GatewayAdminActionStatus | string | null;
+    handledAt?: string | null;
+    handler?: string | null;
+    detail?: string | null;
+}
+
+interface GatewayAdminActionResult {
+    status: GatewayAdminActionStatus;
+    detail?: string;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+    Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+const normalizeMeta = (value: unknown): Record<string, unknown> =>
+    isRecord(value) ? value : {};
+
+const normalizeStatus = (value: unknown): GatewayAdminActionStatus | null => {
+    if (typeof value === 'string') {
+        return value as GatewayAdminActionStatus;
+    }
+    return null;
+};
+
+const buildActionKey = (action: GatewayAdminActionRecord): string =>
+    [
+        action.action ?? '',
+        action.requestedAt ?? '',
+        action.scheduledAt ?? '',
+        action.reason ?? '',
+    ].join('|');
+
+const parseScenarioId = (
+    value: string | number | null | undefined
+): number | null => {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return Math.floor(value);
+    }
+    if (typeof value === 'string') {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) {
+            return Math.floor(parsed);
+        }
+    }
+    return null;
 };
 
 const buildProcessName = (profileName: string, role: 'api' | 'daemon'): string =>
@@ -140,13 +199,17 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     private readonly reconcileIntervalMs: number;
     private readonly scheduleIntervalMs: number;
     private readonly buildIntervalMs: number;
+    private readonly adminActionIntervalMs: number;
     private readonly now: () => Date;
     private reconcileTimer?: NodeJS.Timeout;
     private scheduleTimer?: NodeJS.Timeout;
     private buildTimer?: NodeJS.Timeout;
+    private adminActionTimer?: NodeJS.Timeout;
     private reconcileInFlight = false;
     private scheduleInFlight = false;
     private buildInFlight = false;
+    private adminActionInFlight = false;
+    private readonly resetInFlight = new Set<string>();
 
     constructor(options: GatewayOrchestratorOptions) {
         this.repository = options.repository;
@@ -157,11 +220,13 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         this.reconcileIntervalMs = options.reconcileIntervalMs;
         this.scheduleIntervalMs = options.scheduleIntervalMs;
         this.buildIntervalMs = options.buildIntervalMs;
+        this.adminActionIntervalMs = options.adminActionIntervalMs;
         this.now = options.now ?? (() => new Date());
     }
 
     start(): void {
         void this.reconcileNow();
+        void this.runAdminActionsNow();
         this.reconcileTimer = setInterval(
             () => void this.reconcileNow(),
             this.reconcileIntervalMs
@@ -174,6 +239,10 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             () => void this.runBuildQueueNow(),
             this.buildIntervalMs
         );
+        this.adminActionTimer = setInterval(
+            () => void this.runAdminActionsNow(),
+            this.adminActionIntervalMs
+        );
     }
 
     async stop(): Promise<void> {
@@ -185,6 +254,9 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         }
         if (this.buildTimer) {
             clearInterval(this.buildTimer);
+        }
+        if (this.adminActionTimer) {
+            clearInterval(this.adminActionTimer);
         }
     }
 
@@ -291,42 +363,10 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 startedAt,
                 error: null,
             });
-            const workspace = await this.workspaceManager.prepare(queued.buildCommitSha);
-            const lastUsedAt = this.now().toISOString();
-            await this.repository.updateWorkspaceUsage(
+            const result = await this.runBuildCommands(
                 queued.profileName,
-                workspace.root,
-                lastUsedAt
+                queued.buildCommitSha
             );
-            const commands: Array<{
-                command: string;
-                args: string[];
-                cwd: string;
-                env?: Record<string, string>;
-            }> = [];
-            if (workspace.needsInstall) {
-                commands.push({
-                    command: 'pnpm',
-                    args: ['install'],
-                    cwd: workspace.root,
-                    env: this.processConfig.baseEnv,
-                });
-            }
-            commands.push(
-                {
-                    command: 'pnpm',
-                    args: ['--filter', '@sammo-ts/game-api', 'build'],
-                    cwd: workspace.root,
-                    env: this.processConfig.baseEnv,
-                },
-                {
-                    command: 'pnpm',
-                    args: ['--filter', '@sammo-ts/game-engine', 'build'],
-                    cwd: workspace.root,
-                    env: this.processConfig.baseEnv,
-                }
-            );
-            const result = await this.buildRunner.run(commands);
             const completedAt = this.now().toISOString();
             if (result.ok) {
                 await this.repository.updateBuildStatus(queued.profileName, 'SUCCEEDED', {
@@ -361,6 +401,254 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         } finally {
             this.buildInFlight = false;
         }
+    }
+
+    private async runAdminActionsNow(): Promise<void> {
+        if (this.adminActionInFlight) {
+            return;
+        }
+        this.adminActionInFlight = true;
+        try {
+            const profiles = await this.repository.listProfiles();
+            for (const profile of profiles) {
+                await this.handleProfileAdminActions(profile);
+            }
+        } finally {
+            this.adminActionInFlight = false;
+        }
+    }
+
+    private async handleProfileAdminActions(
+        profile: GatewayProfileRecord
+    ): Promise<void> {
+        const meta = normalizeMeta(profile.meta);
+        const rawActions = Array.isArray(meta.adminActions)
+            ? meta.adminActions
+            : [];
+        if (!rawActions.length) {
+            return;
+        }
+        const pending = rawActions.filter((entry): entry is GatewayAdminActionRecord => {
+            if (!isRecord(entry)) {
+                return false;
+            }
+            if (!entry.action || typeof entry.action !== 'string') {
+                return false;
+            }
+            const status = normalizeStatus(entry.status) ?? 'REQUESTED';
+            return status === 'REQUESTED';
+        });
+        if (!pending.length) {
+            return;
+        }
+
+        const updates = new Map<
+            string,
+            { status: GatewayAdminActionStatus; detail?: string; handledAt: string }
+        >();
+
+        for (const action of pending) {
+            if (action.action !== 'RESET_NOW' && action.action !== 'RESET_SCHEDULED') {
+                continue;
+            }
+            const key = buildActionKey(action);
+            const result = await this.handleResetAction(profile, action);
+            if (result.status !== 'REQUESTED') {
+                updates.set(key, {
+                    status: result.status,
+                    detail: result.detail,
+                    handledAt: this.now().toISOString(),
+                });
+            }
+        }
+
+        if (!updates.size) {
+            return;
+        }
+
+        const nextActions = rawActions.map((entry) => {
+            if (!isRecord(entry)) {
+                return entry;
+            }
+            const action = entry as GatewayAdminActionRecord;
+            const key = buildActionKey(action);
+            const update = updates.get(key);
+            if (!update) {
+                return entry;
+            }
+            return {
+                ...action,
+                status: update.status,
+                handledAt: update.handledAt,
+                handler: action.handler ?? 'orchestrator',
+                detail: update.detail ?? action.detail ?? null,
+            };
+        });
+
+        await this.repository.updateMeta(profile.profileName, {
+            ...meta,
+            adminActions: nextActions,
+            adminActionsUpdatedAt: this.now().toISOString(),
+        });
+    }
+
+    private async handleResetAction(
+        profile: GatewayProfileRecord,
+        action: GatewayAdminActionRecord
+    ): Promise<GatewayAdminActionResult> {
+        // 리셋 요청을 빌드+재기동 흐름으로 처리한다.
+        if (this.resetInFlight.has(profile.profileName)) {
+            return { status: 'REQUESTED', detail: 'reset already in progress' };
+        }
+        if (action.action === 'RESET_SCHEDULED') {
+            if (!action.scheduledAt) {
+                return { status: 'FAILED', detail: 'scheduledAt is required' };
+            }
+            const scheduledAt = new Date(action.scheduledAt);
+            if (Number.isNaN(scheduledAt.getTime())) {
+                return { status: 'FAILED', detail: 'scheduledAt is invalid' };
+            }
+            if (scheduledAt.getTime() > this.now().getTime()) {
+                return { status: 'REQUESTED', detail: 'waiting for schedule' };
+            }
+        }
+
+        const commitSha = profile.buildCommitSha;
+        if (!commitSha) {
+            return { status: 'FAILED', detail: 'buildCommitSha is missing' };
+        }
+        if (this.buildInFlight) {
+            return { status: 'REQUESTED', detail: 'build already in progress' };
+        }
+        this.buildInFlight = true;
+        this.resetInFlight.add(profile.profileName);
+        try {
+            const seedInfo = await this.resolveResetSeedInfo(profile);
+            if (!seedInfo.scenarioId) {
+                return { status: 'FAILED', detail: 'scenarioId is missing' };
+            }
+            const seedTime =
+                action.scheduledAt && action.action === 'RESET_SCHEDULED'
+                    ? new Date(action.scheduledAt)
+                    : this.now();
+            const startedAt = this.now().toISOString();
+            await this.repository.updateStatus(profile.profileName, 'STOPPED');
+            await this.stopProfile(profile);
+            await this.repository.updateBuildStatus(profile.profileName, 'RUNNING', {
+                requestedAt: startedAt,
+                startedAt,
+                error: null,
+                commitSha,
+            });
+            const result = await this.runBuildCommands(profile.profileName, commitSha);
+            const completedAt = this.now().toISOString();
+            if (!result.ok) {
+                await this.repository.updateBuildStatus(profile.profileName, 'FAILED', {
+                    completedAt,
+                    error: result.output.slice(-4000),
+                });
+                return { status: 'FAILED', detail: 'build failed' };
+            }
+            await seedScenarioToDatabase({
+                databaseUrl: seedInfo.databaseUrl,
+                scenarioId: seedInfo.scenarioId,
+                tickSeconds: seedInfo.tickSeconds,
+                now: seedTime,
+            });
+            await this.repository.updateBuildStatus(profile.profileName, 'SUCCEEDED', {
+                completedAt,
+                error: null,
+            });
+            await this.repository.updateStatus(profile.profileName, 'RUNNING');
+            await this.startProfile(profile);
+            return { status: 'APPLIED', detail: 'reset completed via rebuild' };
+        } catch (error) {
+            const detail = error instanceof Error ? error.message : String(error);
+            await this.repository.updateBuildStatus(profile.profileName, 'FAILED', {
+                completedAt: this.now().toISOString(),
+                error: detail,
+            });
+            return { status: 'FAILED', detail };
+        } finally {
+            this.buildInFlight = false;
+            this.resetInFlight.delete(profile.profileName);
+        }
+    }
+
+    private async resolveResetSeedInfo(
+        profile: GatewayProfileRecord
+    ): Promise<{ databaseUrl: string; scenarioId: number | null; tickSeconds?: number }> {
+        const databaseUrl = resolvePostgresConfigFromEnv({
+            env: this.processConfig.baseEnv ?? process.env,
+            schema: profile.profile,
+        }).url;
+        let scenarioId = parseScenarioId(profile.scenario);
+        let tickSeconds: number | undefined;
+        const connector = createGamePostgresConnector({ url: databaseUrl });
+        await connector.connect();
+        try {
+            const prisma = connector.prisma as unknown as {
+                worldState: {
+                    findFirst: (args: unknown) => Promise<{
+                        scenarioCode: string | null;
+                        tickSeconds: number | null;
+                    } | null>;
+                };
+            };
+            const row = await prisma.worldState.findFirst({
+                select: { scenarioCode: true, tickSeconds: true },
+            });
+            if (row) {
+                const resolvedScenario = parseScenarioId(row.scenarioCode);
+                if (resolvedScenario !== null) {
+                    scenarioId = resolvedScenario;
+                }
+                if (typeof row.tickSeconds === 'number' && Number.isFinite(row.tickSeconds)) {
+                    tickSeconds = row.tickSeconds;
+                }
+            }
+        } finally {
+            await connector.disconnect();
+        }
+        return { databaseUrl, scenarioId, tickSeconds };
+    }
+
+    private async runBuildCommands(
+        profileName: string,
+        commitSha: string
+    ): Promise<Awaited<ReturnType<BuildRunner['run']>>> {
+        const workspace = await this.workspaceManager.prepare(commitSha);
+        const lastUsedAt = this.now().toISOString();
+        await this.repository.updateWorkspaceUsage(profileName, workspace.root, lastUsedAt);
+        const commands: Array<{
+            command: string;
+            args: string[];
+            cwd: string;
+            env?: Record<string, string>;
+        }> = [];
+        if (workspace.needsInstall) {
+            commands.push({
+                command: 'pnpm',
+                args: ['install'],
+                cwd: workspace.root,
+                env: this.processConfig.baseEnv,
+            });
+        }
+        commands.push(
+            {
+                command: 'pnpm',
+                args: ['--filter', '@sammo-ts/game-api', 'build'],
+                cwd: workspace.root,
+                env: this.processConfig.baseEnv,
+            },
+            {
+                command: 'pnpm',
+                args: ['--filter', '@sammo-ts/game-engine', 'build'],
+                cwd: workspace.root,
+                env: this.processConfig.baseEnv,
+            }
+        );
+        return this.buildRunner.run(commands);
     }
 
     async cleanupStaleWorkspaces(): Promise<{ removed: string[]; skipped: string[] }> {
