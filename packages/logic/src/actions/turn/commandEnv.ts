@@ -1,4 +1,4 @@
-import type { GeneralActionModule } from '../../triggers/general-action.js';
+import type { GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
 
 export interface TurnCommandEnv {
     develCost: number;

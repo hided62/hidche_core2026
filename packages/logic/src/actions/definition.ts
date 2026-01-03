@@ -1,9 +1,9 @@
-import type { Constraint, ConstraintContext } from '../constraints/types.js';
+import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import type {
     GeneralActionOutcome,
     GeneralActionResolveContext,
 } from './engine.js';
-import type { GeneralTriggerState } from '../domain/entities.js';
+import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 
 export interface GeneralActionDefinition<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,

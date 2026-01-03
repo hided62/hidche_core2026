@@ -7,7 +7,7 @@ import type {
     GeneralId,
     Nation,
     NationId,
-} from '../domain/entities.js';
+} from '@sammo-ts/logic/domain/entities.js';
 
 export interface GeneralRepository<GeneralType extends General = General> {
     getById(id: GeneralId): Promise<GeneralType | null>;

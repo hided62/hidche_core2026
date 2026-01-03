@@ -5,8 +5,8 @@ import type {
     General,
     GeneralTriggerState,
     Nation,
-} from '../domain/entities.js';
-import type { ActionLogger } from '../logging/actionLogger.js';
+} from '@sammo-ts/logic/domain/entities.js';
+import type { ActionLogger } from '@sammo-ts/logic/logging/actionLogger.js';
 import type { WarUnit } from './units.js';
 import { WarTriggerCaller } from './triggers.js';
 

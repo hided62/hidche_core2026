@@ -4,13 +4,13 @@ import type {
     GeneralTriggerState,
     Nation,
     TriggerValue,
-} from '../../../domain/entities.js';
+} from '@sammo-ts/logic/domain/entities.js';
 import type {
     Constraint,
     ConstraintContext,
     RequirementKey,
     StateView,
-} from '../../../constraints/types.js';
+} from '@sammo-ts/logic/constraints/types.js';
 import {
     notBeNeutral,
     occupiedCity,
@@ -19,28 +19,28 @@ import {
     reqGeneralCrewMargin,
     reqGeneralGold,
     reqGeneralRice,
-} from '../../../constraints/presets.js';
+} from '@sammo-ts/logic/constraints/presets.js';
 import {
     GeneralActionPipeline,
     type GeneralActionModule,
-} from '../../../triggers/general-action.js';
-import type { GeneralActionDefinition } from '../../definition.js';
+} from '@sammo-ts/logic/triggers/general-action.js';
+import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionOutcome,
     GeneralActionResolveContext,
     GeneralActionResolver,
-} from '../../engine.js';
-import type { MapDefinition, UnitSetDefinition } from '../../../world/types.js';
-import type { ActionContextBuilder } from '../actionContext.js';
-import { resolveStartYear } from '../actionContextHelpers.js';
-import type { TurnCommandEnv } from '../commandEnv.js';
+} from '@sammo-ts/logic/actions/engine.js';
+import type { MapDefinition, UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
+import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
+import { resolveStartYear } from '@sammo-ts/logic/actions/turn/actionContextHelpers.js';
+import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import {
     type CrewTypeAvailabilityContext,
     findCrewTypeById,
     getTechCost,
     isCrewTypeAvailable,
-} from '../../../world/unitSet.js';
+} from '@sammo-ts/logic/world/unitSet.js';
 
 export interface RecruitArgs {
     crewType: number;

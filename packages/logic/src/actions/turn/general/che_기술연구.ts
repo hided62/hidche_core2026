@@ -1,26 +1,26 @@
 import type {
     GeneralTriggerState,
     Nation,
-} from '../../../domain/entities.js';
+} from '@sammo-ts/logic/domain/entities.js';
 import type {
     Constraint,
     ConstraintContext,
     StateView,
-} from '../../../constraints/types.js';
+} from '@sammo-ts/logic/constraints/types.js';
 import {
     notBeNeutral,
     notWanderingNation,
     occupiedCity,
     reqGeneralGold,
     suppliedCity,
-} from '../../../constraints/presets.js';
-import type { GeneralActionDefinition } from '../../definition.js';
+} from '@sammo-ts/logic/constraints/presets.js';
+import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionOutcome,
     GeneralActionResolveContext,
-} from '../../engine.js';
-import type { TurnCommandEnv } from '../commandEnv.js';
-import { defaultActionContextBuilder } from '../actionContext.js';
+} from '@sammo-ts/logic/actions/engine.js';
+import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
+import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 
 export interface TechResearchArgs {}

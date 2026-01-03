@@ -1,5 +1,5 @@
-import type { GeneralTriggerState } from '../../../domain/entities.js';
-import type { Constraint, ConstraintContext } from '../../../constraints/types.js';
+import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
+import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
     beChief,
     destGeneralInDestNation,
@@ -9,15 +9,15 @@ import {
     notBeNeutral,
     occupiedCity,
     suppliedCity,
-} from '../../../constraints/presets.js';
-import { allow, unknownOrDeny } from '../../../constraints/helpers.js';
-import type { GeneralActionDefinition } from '../../definition.js';
+} from '@sammo-ts/logic/constraints/presets.js';
+import { allow, unknownOrDeny } from '@sammo-ts/logic/constraints/helpers.js';
+import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionOutcome,
     GeneralActionResolveContext,
-} from '../../engine.js';
-import { createDiplomacyPatchEffect, createLogEffect } from '../../engine.js';
-import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
+} from '@sammo-ts/logic/actions/engine.js';
+import { createDiplomacyPatchEffect, createLogEffect } from '@sammo-ts/logic/actions/engine.js';
+import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 
 export interface NonAggressionAcceptArgs {
     destNationId: number;

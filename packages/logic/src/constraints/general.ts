@@ -1,4 +1,4 @@
-import type { General } from '../domain/entities.js';
+import type { General } from '@sammo-ts/logic/domain/entities.js';
 import {
     allow,
     readDestGeneral,

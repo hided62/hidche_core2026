@@ -5,34 +5,34 @@ import type {
     GeneralTriggerState,
     StatBlock,
     TriggerValue,
-} from '../../../domain/entities.js';
+} from '@sammo-ts/logic/domain/entities.js';
 import type {
     Constraint,
     ConstraintContext,
-} from '../../../constraints/types.js';
+} from '@sammo-ts/logic/constraints/types.js';
 import {
     reqGeneralGold,
     reqGeneralRice,
-} from '../../../constraints/presets.js';
+} from '@sammo-ts/logic/constraints/presets.js';
 import {
     GeneralActionPipeline,
     type GeneralActionModule,
-} from '../../../triggers/general-action.js';
-import type { GeneralActionDefinition } from '../../definition.js';
+} from '@sammo-ts/logic/triggers/general-action.js';
+import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionOutcome,
     GeneralActionResolveContext,
     GeneralActionResolver,
-} from '../../engine.js';
+} from '@sammo-ts/logic/actions/engine.js';
 import {
     createGeneralAddEffect,
-} from '../../engine.js';
-import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
+} from '@sammo-ts/logic/actions/engine.js';
+import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import { buildRecruitmentGeneral } from './recruitment.js';
 import { JosaUtil } from '@sammo-ts/common';
-import type { ActionContextBuilder } from '../actionContext.js';
-import { buildWorldSummary } from '../actionContextHelpers.js';
-import type { TurnCommandEnv } from '../commandEnv.js';
+import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
+import { buildWorldSummary } from '@sammo-ts/logic/actions/turn/actionContextHelpers.js';
+import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 
 export interface TalentScoutArgs {}

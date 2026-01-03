@@ -4,11 +4,11 @@ import type {
     Nation,
     StatBlock,
     Troop,
-} from '../domain/entities.js';
+} from '@sammo-ts/logic/domain/entities.js';
 import type {
     ScenarioConfig,
     ScenarioDiplomacy,
-} from '../scenario/types.js';
+} from '@sammo-ts/logic/scenario/types.js';
 
 export interface ScenarioMeta {
     title: string;

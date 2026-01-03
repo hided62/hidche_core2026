@@ -1,12 +1,12 @@
 import type {
     City,
     GeneralTriggerState,
-} from '../../../domain/entities.js';
+} from '@sammo-ts/logic/domain/entities.js';
 import type {
     Constraint,
     ConstraintContext,
     StateView,
-} from '../../../constraints/types.js';
+} from '@sammo-ts/logic/constraints/types.js';
 import {
     notBeNeutral,
     notWanderingNation,
@@ -14,12 +14,12 @@ import {
     remainCityCapacityByMax,
     reqGeneralGold,
     suppliedCity,
-} from '../../../constraints/presets.js';
-import type { GeneralActionDefinition } from '../../definition.js';
+} from '@sammo-ts/logic/constraints/presets.js';
+import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionOutcome,
     GeneralActionResolveContext,
-} from '../../engine.js';
+} from '@sammo-ts/logic/actions/engine.js';
 
 export interface CityDevelopmentArgs {}
 

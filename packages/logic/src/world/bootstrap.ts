@@ -4,11 +4,11 @@ import type {
     GeneralTriggerState,
     Nation,
     TriggerValue,
-} from '../domain/entities.js';
+} from '@sammo-ts/logic/domain/entities.js';
 import type {
     ScenarioDefinition,
     ScenarioGeneral,
-} from '../scenario/types.js';
+} from '@sammo-ts/logic/scenario/types.js';
 import type {
     CitySeed,
     GeneralSeed,

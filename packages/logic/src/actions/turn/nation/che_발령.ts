@@ -3,11 +3,11 @@ import type {
     General,
     GeneralTriggerState,
     TriggerValue,
-} from '../../../domain/entities.js';
+} from '@sammo-ts/logic/domain/entities.js';
 import type {
     Constraint,
     ConstraintContext,
-} from '../../../constraints/types.js';
+} from '@sammo-ts/logic/constraints/types.js';
 import {
     alwaysFail,
     beChief,
@@ -18,20 +18,20 @@ import {
     occupiedDestCity,
     suppliedCity,
     suppliedDestCity,
-} from '../../../constraints/presets.js';
-import type { GeneralActionDefinition } from '../../definition.js';
+} from '@sammo-ts/logic/constraints/presets.js';
+import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionEffect,
     GeneralActionOutcome,
     GeneralActionResolveContext,
     GeneralActionResolver,
-} from '../../engine.js';
-import { createGeneralPatchEffect, createLogEffect } from '../../engine.js';
-import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
+} from '@sammo-ts/logic/actions/engine.js';
+import { createGeneralPatchEffect, createLogEffect } from '@sammo-ts/logic/actions/engine.js';
+import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import { JosaUtil } from '@sammo-ts/common';
-import type { ActionContextBuilder } from '../actionContext.js';
-import { resolveTurnTermMinutes } from '../actionContextHelpers.js';
-import type { TurnCommandEnv } from '../commandEnv.js';
+import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
+import { resolveTurnTermMinutes } from '@sammo-ts/logic/actions/turn/actionContextHelpers.js';
+import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { NationTurnCommandSpec } from './index.js';
 
 export interface AssignmentArgs {

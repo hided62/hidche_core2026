@@ -1,9 +1,9 @@
-import type { GeneralTriggerState } from '../../domain/entities.js';
-import type { GeneralActionContext } from '../general.js';
-import type { GeneralActionModule } from '../general-action.js';
-import type { WarActionContext, WarActionModule } from '../../war/actions.js';
-import type { WarUnit } from '../../war/units.js';
-import type { WarTriggerCaller } from '../../war/triggers.js';
+import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
+import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
+import type { GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
+import type { WarActionContext, WarActionModule } from '@sammo-ts/logic/war/actions.js';
+import type { WarUnit } from '@sammo-ts/logic/war/units.js';
+import type { WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
 import type {
     SpecialActionKind,
     SpecialActionModule,

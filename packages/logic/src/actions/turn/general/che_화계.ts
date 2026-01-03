@@ -5,8 +5,8 @@ import type {
     GeneralTriggerState,
     Nation,
     TriggerValue,
-} from '../../../domain/entities.js';
-import type { Constraint, ConstraintContext } from '../../../constraints/types.js';
+} from '@sammo-ts/logic/domain/entities.js';
+import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
     disallowDiplomacyBetweenStatus,
     existsDestCity,
@@ -17,26 +17,26 @@ import {
     reqGeneralGold,
     reqGeneralRice,
     suppliedCity,
-} from '../../../constraints/presets.js';
-import type { GeneralActionContext } from '../../../triggers/general.js';
+} from '@sammo-ts/logic/constraints/presets.js';
+import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
 import {
     GeneralActionPipeline,
     type GeneralActionModule,
-} from '../../../triggers/general-action.js';
-import type { GeneralActionDefinition } from '../../definition.js';
+} from '@sammo-ts/logic/triggers/general-action.js';
+import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionEffect,
     GeneralActionOutcome,
     GeneralActionResolveContext,
     GeneralActionResolver,
-} from '../../engine.js';
+} from '@sammo-ts/logic/actions/engine.js';
 import {
     createCityPatchEffect,
     createGeneralPatchEffect,
-} from '../../engine.js';
-import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
-import type { TurnCommandEnv } from '../commandEnv.js';
-import { defaultActionContextBuilder } from '../actionContext.js';
+} from '@sammo-ts/logic/actions/engine.js';
+import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
+import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
+import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 
 export interface FireAttackArgs {

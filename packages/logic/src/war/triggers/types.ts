@@ -1,5 +1,5 @@
-import type { WarTriggerCaller } from '../triggers.js';
-import type { WarUnit } from '../units.js';
+import type { WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
+import type { WarUnit } from '@sammo-ts/logic/war/units.js';
 
 export interface WarTriggerModule {
     key: string;

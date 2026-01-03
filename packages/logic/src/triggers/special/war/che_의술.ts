@@ -1,8 +1,8 @@
-import { GeneralTriggerCaller } from '../../general.js';
-import type { WarActionContext } from '../../../war/actions.js';
-import { CheUisulCityHealTrigger } from '../../generalTriggers/che_도시치료.js';
-import { triggerModule as cheUisulTriggerModule } from '../../../war/triggers/che_의술.js';
-import type { SpecialActionModule } from '../types.js';
+import { GeneralTriggerCaller } from '@sammo-ts/logic/triggers/general.js';
+import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
+import { CheUisulCityHealTrigger } from '@sammo-ts/logic/triggers/generalTriggers/che_도시치료.js';
+import { triggerModule as cheUisulTriggerModule } from '@sammo-ts/logic/war/triggers/che_의술.js';
+import type { SpecialActionModule } from '@sammo-ts/logic/triggers/special/types.js';
 
 // 전투 특기: 의술
 export const specialModule: SpecialActionModule = {

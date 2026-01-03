@@ -1,4 +1,4 @@
-import type { General, Nation } from '../domain/entities.js';
+import type { General, Nation } from '@sammo-ts/logic/domain/entities.js';
 import {
     allow,
     readGeneral,

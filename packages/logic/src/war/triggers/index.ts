@@ -1,5 +1,5 @@
 import type { WarTriggerModule, WarTriggerModuleExport } from './types.js';
-import type { WarTriggerRegistry } from '../triggers.js';
+import type { WarTriggerRegistry } from '@sammo-ts/logic/war/triggers.js';
 
 export const WAR_TRIGGER_KEYS = [
     'che_필살',

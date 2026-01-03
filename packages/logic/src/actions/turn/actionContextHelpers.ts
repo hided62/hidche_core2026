@@ -1,8 +1,8 @@
-import type { General } from '../../domain/entities.js';
-import type { ScenarioConfig } from '../../scenario/types.js';
-import type { ScenarioMeta } from '../../world/types.js';
-import type { WarAftermathConfig, WarEngineConfig, WarTimeContext } from '../../war/types.js';
-import type { UnitSetDefinition } from '../../world/types.js';
+import type { General } from '@sammo-ts/logic/domain/entities.js';
+import type { ScenarioConfig } from '@sammo-ts/logic/scenario/types.js';
+import type { ScenarioMeta } from '@sammo-ts/logic/world/types.js';
+import type { WarAftermathConfig, WarEngineConfig, WarTimeContext } from '@sammo-ts/logic/war/types.js';
+import type { UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
 import type {
     ActionContextWorldRef,
     ActionContextWorldState,

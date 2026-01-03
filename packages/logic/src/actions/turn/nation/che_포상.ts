@@ -2,13 +2,13 @@ import type {
     General,
     GeneralTriggerState,
     Nation,
-} from '../../../domain/entities.js';
+} from '@sammo-ts/logic/domain/entities.js';
 import type {
     Constraint,
     ConstraintContext,
     RequirementKey,
     StateView,
-} from '../../../constraints/types.js';
+} from '@sammo-ts/logic/constraints/types.js';
 import {
     alwaysFail,
     beChief,
@@ -19,24 +19,24 @@ import {
     reqNationGold,
     reqNationRice,
     suppliedCity,
-} from '../../../constraints/presets.js';
-import type { GeneralActionDefinition } from '../../definition.js';
+} from '@sammo-ts/logic/constraints/presets.js';
+import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionEffect,
     GeneralActionOutcome,
     GeneralActionResolveContext,
     GeneralActionResolver,
-} from '../../engine.js';
+} from '@sammo-ts/logic/actions/engine.js';
 import {
     createGeneralPatchEffect,
     createLogEffect,
     createNationPatchEffect,
-} from '../../engine.js';
-import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
-import type { TurnCommandEnv } from '../commandEnv.js';
+} from '@sammo-ts/logic/actions/engine.js';
+import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
+import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { NationTurnCommandSpec } from './index.js';
 import { JosaUtil } from '@sammo-ts/common';
-import type { ActionContextBuilder } from '../actionContext.js';
+import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 
 export interface AwardArgs {
     isGold: boolean;

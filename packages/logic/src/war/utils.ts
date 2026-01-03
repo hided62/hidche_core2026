@@ -1,4 +1,4 @@
-import type { TriggerValue } from '../domain/entities.js';
+import type { TriggerValue } from '@sammo-ts/logic/domain/entities.js';
 
 const DEX_LEVEL_THRESHOLDS = [
     0,

@@ -1,4 +1,4 @@
-import type { City, General, Nation, TriggerValue } from '../domain/entities.js';
+import type { City, General, Nation, TriggerValue } from '@sammo-ts/logic/domain/entities.js';
 import type {
     ConstraintContext,
     ConstraintResult,

@@ -1,4 +1,4 @@
-import type { SpecialActionModule } from '../types.js';
+import type { SpecialActionModule } from '@sammo-ts/logic/triggers/special/types.js';
 
 // 내정 특기: 발명
 export const specialModule: SpecialActionModule = {

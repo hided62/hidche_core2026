@@ -1,7 +1,7 @@
-import { LogFormat } from '../../logging/types.js';
-import { TriggerPriority } from '../../triggers/core.js';
-import { BaseWarUnitTrigger, WarTriggerCaller } from '../triggers.js';
-import { WarUnitGeneral, type WarUnit } from '../units.js';
+import { LogFormat } from '@sammo-ts/logic/logging/types.js';
+import { TriggerPriority } from '@sammo-ts/logic/triggers/core.js';
+import { BaseWarUnitTrigger, WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
+import { WarUnitGeneral, type WarUnit } from '@sammo-ts/logic/war/units.js';
 import type { WarTriggerModule } from './types.js';
 
 // 의술: 치료 시도

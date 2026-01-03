@@ -1,7 +1,7 @@
-import type { City, General, Nation } from '../../domain/entities.js';
-import type { ScenarioConfig } from '../../scenario/types.js';
-import type { ScenarioMeta } from '../../world/types.js';
-import type { MapDefinition, UnitSetDefinition } from '../../world/types.js';
+import type { City, General, Nation } from '@sammo-ts/logic/domain/entities.js';
+import type { ScenarioConfig } from '@sammo-ts/logic/scenario/types.js';
+import type { ScenarioMeta } from '@sammo-ts/logic/world/types.js';
+import type { MapDefinition, UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
 
 export interface ActionRandomSource {
     nextFloat(): number;

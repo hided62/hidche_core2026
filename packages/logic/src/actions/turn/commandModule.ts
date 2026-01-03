@@ -1,5 +1,5 @@
-import type { GeneralActionDefinition } from '../definition.js';
-import type { GeneralActionResolver } from '../engine.js';
+import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
+import type { GeneralActionResolver } from '@sammo-ts/logic/actions/engine.js';
 import type { ActionContextBuilder } from './actionContext.js';
 import type { TurnCommandEnv } from './commandEnv.js';
 

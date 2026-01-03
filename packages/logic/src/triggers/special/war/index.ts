@@ -1,7 +1,7 @@
 import type {
     SpecialActionModule,
     SpecialActionModuleExport,
-} from '../types.js';
+} from '@sammo-ts/logic/triggers/special/types.js';
 
 export const WAR_SPECIAL_KEYS = [
     'che_의술',

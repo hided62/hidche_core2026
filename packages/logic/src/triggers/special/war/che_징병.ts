@@ -1,6 +1,6 @@
-import type { GeneralActionContext } from '../../general.js';
-import type { WarActionContext } from '../../../war/actions.js';
-import type { SpecialActionModule } from '../types.js';
+import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
+import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
+import type { SpecialActionModule } from '@sammo-ts/logic/triggers/special/types.js';
 
 const RECRUIT_TRAIN = 70;
 const CONSCRIPT_TRAIN = 84;

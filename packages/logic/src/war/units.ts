@@ -7,10 +7,10 @@ import type {
     Nation,
     StatBlock,
     TriggerValue,
-} from '../domain/entities.js';
-import type { ActionLogger } from '../logging/actionLogger.js';
-import { LogFormat } from '../logging/types.js';
-import { getTechAbility, getTechCost } from '../world/unitSet.js';
+} from '@sammo-ts/logic/domain/entities.js';
+import type { ActionLogger } from '@sammo-ts/logic/logging/actionLogger.js';
+import { LogFormat } from '@sammo-ts/logic/logging/types.js';
+import { getTechAbility, getTechCost } from '@sammo-ts/logic/world/unitSet.js';
 import { WarActionPipeline, type WarActionContext } from './actions.js';
 import type { WarEngineConfig } from './types.js';
 import { WarCrewType } from './crewType.js';

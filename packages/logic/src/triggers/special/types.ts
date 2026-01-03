@@ -1,6 +1,6 @@
-import type { GeneralTriggerState } from '../../domain/entities.js';
-import type { GeneralActionModule } from '../general-action.js';
-import type { WarActionModule } from '../../war/actions.js';
+import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
+import type { GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
+import type { WarActionModule } from '@sammo-ts/logic/war/actions.js';
 
 export type SpecialActionKind = 'domestic' | 'war';
 

@@ -3,12 +3,12 @@ import type {
     General,
     GeneralTriggerState,
     Nation,
-} from '../../../domain/entities.js';
+} from '@sammo-ts/logic/domain/entities.js';
 import type {
     Constraint,
     ConstraintContext,
     StateView,
-} from '../../../constraints/types.js';
+} from '@sammo-ts/logic/constraints/types.js';
 import {
     existsDestCity,
     hasRouteWithEnemy,
@@ -20,44 +20,44 @@ import {
     reqGeneralCrew,
     reqGeneralRice,
     suppliedCity,
-} from '../../../constraints/presets.js';
-import { readGeneral } from '../../../constraints/helpers.js';
-import type { GeneralActionDefinition } from '../../definition.js';
+} from '@sammo-ts/logic/constraints/presets.js';
+import { readGeneral } from '@sammo-ts/logic/constraints/helpers.js';
+import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionEffect,
     GeneralActionOutcome,
     GeneralActionResolveContext,
-} from '../../engine.js';
+} from '@sammo-ts/logic/actions/engine.js';
 import {
     createCityPatchEffect,
     createDiplomacyPatchEffect,
     createGeneralPatchEffect,
     createNationPatchEffect,
-} from '../../engine.js';
+} from '@sammo-ts/logic/actions/engine.js';
 import { JosaUtil, LiteHashDRBG } from '@sammo-ts/common';
-import type { TurnCommandEnv } from '../commandEnv.js';
+import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import type {
     WarAftermathConfig,
     WarEngineConfig,
     WarTimeContext,
-} from '../../../war/types.js';
-import { resolveWarAftermath } from '../../../war/aftermath.js';
-import { resolveWarBattle } from '../../../war/engine.js';
+} from '@sammo-ts/logic/war/types.js';
+import { resolveWarAftermath } from '@sammo-ts/logic/war/aftermath.js';
+import { resolveWarBattle } from '@sammo-ts/logic/war/engine.js';
 import {
     increaseMetaNumber,
     simpleSerialize,
-} from '../../../war/utils.js';
+} from '@sammo-ts/logic/war/utils.js';
 import type {
     MapDefinition,
     UnitSetDefinition,
-} from '../../../world/types.js';
-import type { ActionContextBuilder } from '../actionContext.js';
+} from '@sammo-ts/logic/world/types.js';
+import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import {
     buildWarAftermathConfig,
     buildWarConfig,
     buildWarTime,
-} from '../actionContextHelpers.js';
+} from '@sammo-ts/logic/actions/turn/actionContextHelpers.js';
 
 export interface DispatchArgs {
     destCityId: number;

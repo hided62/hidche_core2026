@@ -4,7 +4,7 @@ import type {
     GeneralTriggerState,
     StatBlock,
     TriggerValue,
-} from '../../../domain/entities.js';
+} from '@sammo-ts/logic/domain/entities.js';
 
 export interface GeneralRecruitmentInput<
     TriggerState extends GeneralTriggerState = GeneralTriggerState

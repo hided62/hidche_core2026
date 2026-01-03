@@ -1,4 +1,4 @@
-import type { TurnCommandModule, TurnCommandSpecBase } from '../commandModule.js';
+import type { TurnCommandModule, TurnCommandSpecBase } from '@sammo-ts/logic/actions/turn/commandModule.js';
 
 export const GENERAL_TURN_COMMAND_KEYS = [
     'che_거병',

@@ -1,6 +1,6 @@
-import type { City, General, Nation, Troop } from '../domain/entities.js';
-import type { ScenarioConfig } from '../scenario/types.js';
-import type { ScenarioMeta } from '../world/types.js';
+import type { City, General, Nation, Troop } from '@sammo-ts/logic/domain/entities.js';
+import type { ScenarioConfig } from '@sammo-ts/logic/scenario/types.js';
+import type { ScenarioMeta } from '@sammo-ts/logic/world/types.js';
 
 // DB에서 월드 상태를 로드할 때 사용하는 조회 인터페이스.
 export interface WorldStateSnapshotSource<

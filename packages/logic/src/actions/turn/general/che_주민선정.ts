@@ -1,7 +1,7 @@
-import type { GeneralTriggerState } from '../../../domain/entities.js';
+import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import { CityDevelopmentActionDefinition } from './cityDevelopment.js';
-import type { TurnCommandEnv } from '../commandEnv.js';
-import { defaultActionContextBuilder } from '../actionContext.js';
+import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
+import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 
 export class ActionDefinition<

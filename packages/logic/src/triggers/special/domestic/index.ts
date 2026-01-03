@@ -1,7 +1,7 @@
 import type {
     SpecialActionModule,
     SpecialActionModuleExport,
-} from '../types.js';
+} from '@sammo-ts/logic/triggers/special/types.js';
 
 export const DOMESTIC_SPECIAL_KEYS = [
     'che_인덕',

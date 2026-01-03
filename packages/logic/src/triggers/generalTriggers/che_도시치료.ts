@@ -1,11 +1,11 @@
 import { JosaUtil } from '@sammo-ts/common';
 
-import type { General, GeneralTriggerState } from '../../domain/entities.js';
-import { TriggerPriority } from '../core.js';
+import type { General, GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
+import { TriggerPriority } from '@sammo-ts/logic/triggers/core.js';
 import {
     BaseGeneralTrigger,
     type GeneralTriggerContext,
-} from '../general.js';
+} from '@sammo-ts/logic/triggers/general.js';
 
 const HEAL_PROBABILITY = 0.5;
 const MIN_HEAL_INJURY = 10;

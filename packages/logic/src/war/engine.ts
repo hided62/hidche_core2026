@@ -8,10 +8,10 @@ import type {
     City,
     General,
     GeneralTriggerState,
-} from '../domain/entities.js';
-import { ActionLogger } from '../logging/actionLogger.js';
-import { LogFormat } from '../logging/types.js';
-import { buildCrewTypeIndex as buildCrewTypeDefinitionIndex } from '../world/unitSet.js';
+} from '@sammo-ts/logic/domain/entities.js';
+import { ActionLogger } from '@sammo-ts/logic/logging/actionLogger.js';
+import { LogFormat } from '@sammo-ts/logic/logging/types.js';
+import { buildCrewTypeIndex as buildCrewTypeDefinitionIndex } from '@sammo-ts/logic/world/unitSet.js';
 import { WarActionPipeline } from './actions.js';
 import { WarCrewType } from './crewType.js';
 import {

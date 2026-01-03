@@ -1,22 +1,22 @@
-import type { GeneralTriggerState } from '../../../domain/entities.js';
-import type { Constraint, ConstraintContext } from '../../../constraints/types.js';
+import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
+import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
     beChief,
     differentDestNation,
     disallowDiplomacyBetweenStatus,
     existsDestNation,
     notBeNeutral,
-} from '../../../constraints/presets.js';
-import { allow, unknownOrDeny } from '../../../constraints/helpers.js';
-import type { GeneralActionDefinition } from '../../definition.js';
+} from '@sammo-ts/logic/constraints/presets.js';
+import { allow, unknownOrDeny } from '@sammo-ts/logic/constraints/helpers.js';
+import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionOutcome,
     GeneralActionResolveContext,
-} from '../../engine.js';
-import { createLogEffect } from '../../engine.js';
-import { LogCategory, LogFormat, LogScope } from '../../../logging/types.js';
-import type { ActionContextBuilder } from '../actionContext.js';
-import type { TurnCommandEnv } from '../commandEnv.js';
+} from '@sammo-ts/logic/actions/engine.js';
+import { createLogEffect } from '@sammo-ts/logic/actions/engine.js';
+import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
+import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
+import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { NationTurnCommandSpec } from './index.js';
 
 export interface NonAggressionProposalArgs {

@@ -9,14 +9,14 @@ import type {
     General,
     GeneralTriggerState,
     Nation,
-} from '../domain/entities.js';
-import { ActionLogger } from '../logging/actionLogger.js';
-import { LogFormat, type LogEntryDraft } from '../logging/types.js';
+} from '@sammo-ts/logic/domain/entities.js';
+import { ActionLogger } from '@sammo-ts/logic/logging/actionLogger.js';
+import { LogFormat, type LogEntryDraft } from '@sammo-ts/logic/logging/types.js';
 import {
     buildCrewTypeIndex,
     getTechCost,
     getTechLevel,
-} from '../world/unitSet.js';
+} from '@sammo-ts/logic/world/unitSet.js';
 import type { WarUnitReport } from './types.js';
 import type {
     ConquerCityOutcome,

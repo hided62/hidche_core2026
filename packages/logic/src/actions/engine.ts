@@ -8,15 +8,15 @@ import type {
     GeneralId,
     Nation,
     NationId,
-} from '../domain/entities.js';
-import type { GeneralActionContext } from '../triggers/general.js';
-import { getNextTurnAt, type TurnSchedule } from '../turn/calendar.js';
+} from '@sammo-ts/logic/domain/entities.js';
+import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
+import { getNextTurnAt, type TurnSchedule } from '@sammo-ts/logic/turn/calendar.js';
 import {
     LogCategory,
     type LogEntryDraft,
     LogFormat,
     LogScope,
-} from '../logging/types.js';
+} from '@sammo-ts/logic/logging/types.js';
 
 enablePatches();
 

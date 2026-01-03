@@ -1,4 +1,4 @@
-import type { GeneralTriggerState } from '../domain/entities.js';
+import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import { type GeneralActionContext, GeneralTriggerCaller } from './general.js';
 
 export interface GeneralActionModule<TriggerState extends GeneralTriggerState = GeneralTriggerState> {

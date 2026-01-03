@@ -1,4 +1,4 @@
-import type { CrewTypeDefinition } from '../world/types.js';
+import type { CrewTypeDefinition } from '@sammo-ts/logic/world/types.js';
 
 // 전투 계산에 필요한 병종 정보 래퍼.
 export class WarCrewType {

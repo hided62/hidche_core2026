@@ -1,5 +1,5 @@
-import type { City, General } from '../domain/entities.js';
-import type { MapDefinition } from '../world/types.js';
+import type { City, General } from '@sammo-ts/logic/domain/entities.js';
+import type { MapDefinition } from '@sammo-ts/logic/world/types.js';
 import {
     allow,
     parsePercent,

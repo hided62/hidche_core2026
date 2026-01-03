@@ -5,10 +5,10 @@ import type {
     General,
     GeneralTriggerState,
     Nation,
-} from '../domain/entities.js';
-import type { ActionLogger } from '../logging/actionLogger.js';
-import type { LogEntryDraft } from '../logging/types.js';
-import type { UnitSetDefinition } from '../world/types.js';
+} from '@sammo-ts/logic/domain/entities.js';
+import type { ActionLogger } from '@sammo-ts/logic/logging/actionLogger.js';
+import type { LogEntryDraft } from '@sammo-ts/logic/logging/types.js';
+import type { UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
 import type { WarActionModule } from './actions.js';
 import type { WarTriggerRegistry } from './triggers.js';
 

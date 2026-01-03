@@ -1,6 +1,6 @@
-import type { City, General, Nation, Troop } from '../domain/entities.js';
-import type { ScenarioConfig, ScenarioDiplomacy } from '../scenario/types.js';
-import type { ScenarioConfigSource, WorldStateSnapshotSource } from '../ports/worldSnapshot.js';
+import type { City, General, Nation, Troop } from '@sammo-ts/logic/domain/entities.js';
+import type { ScenarioConfig, ScenarioDiplomacy } from '@sammo-ts/logic/scenario/types.js';
+import type { ScenarioConfigSource, WorldStateSnapshotSource } from '@sammo-ts/logic/ports/worldSnapshot.js';
 import type {
     MapDefinition,
     ScenarioMeta,

@@ -4,13 +4,13 @@ import type {
     General,
     GeneralTriggerState,
     Nation,
-} from '../../../domain/entities.js';
+} from '@sammo-ts/logic/domain/entities.js';
 import type {
     Constraint,
     ConstraintContext,
     RequirementKey,
     StateView,
-} from '../../../constraints/types.js';
+} from '@sammo-ts/logic/constraints/types.js';
 import {
     notBeNeutral,
     notWanderingNation,
@@ -19,20 +19,20 @@ import {
     reqGeneralGold,
     reqGeneralRice,
     suppliedCity,
-} from '../../../constraints/presets.js';
-import type { GeneralActionContext } from '../../../triggers/general.js';
+} from '@sammo-ts/logic/constraints/presets.js';
+import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
 import {
     GeneralActionPipeline,
     type GeneralActionModule,
-} from '../../../triggers/general-action.js';
-import type { GeneralActionDefinition } from '../../definition.js';
+} from '@sammo-ts/logic/triggers/general-action.js';
+import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionOutcome,
     GeneralActionResolver,
     GeneralActionResolveContext,
-} from '../../engine.js';
-import type { TurnCommandEnv } from '../commandEnv.js';
-import { defaultActionContextBuilder } from '../actionContext.js';
+} from '@sammo-ts/logic/actions/engine.js';
+import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
+import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 
 export type DomesticCriticalPick = 'fail' | 'normal' | 'success';

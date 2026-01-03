@@ -1,6 +1,6 @@
 import type { RandUtil } from '@sammo-ts/common';
 
-import { TriggerCaller, type Trigger } from '../triggers/core.js';
+import { TriggerCaller, type Trigger } from '@sammo-ts/logic/triggers/core.js';
 import type { WarUnit } from './units.js';
 
 export interface WarTriggerContext {
