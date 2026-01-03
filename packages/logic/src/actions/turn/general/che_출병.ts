@@ -44,6 +44,7 @@ import type {
 } from '@sammo-ts/logic/war/types.js';
 import { resolveWarAftermath } from '@sammo-ts/logic/war/aftermath.js';
 import { resolveWarBattle } from '@sammo-ts/logic/war/engine.js';
+import type { WarActionModule } from '@sammo-ts/logic/war/actions.js';
 import {
     increaseMetaNumber,
     simpleSerialize,
@@ -268,6 +269,11 @@ export class ActionDefinition<
         > {
     public readonly key = 'che_출병';
     public readonly name = ACTION_NAME;
+    private readonly warModules: Array<WarActionModule<TriggerState>>;
+
+    constructor(modules: Array<WarActionModule<TriggerState> | null | undefined> = []) {
+        this.warModules = modules.filter(Boolean) as Array<WarActionModule<TriggerState>>;
+    }
 
     parseArgs(raw: unknown): DispatchArgs | null {
         const data = raw as { destCityId?: unknown };
@@ -439,11 +445,13 @@ export class ActionDefinition<
                 general: context.general,
                 city: attackerCity,
                 nation: attackerNation,
+                modules: this.warModules,
             },
             defenders: defenderGenerals.map((general) => ({
                 general,
                 city: defenderCity,
                 nation: defenderNation,
+                modules: this.warModules,
             })),
             defenderCity,
             defenderNation,
@@ -580,5 +588,6 @@ export const commandSpec: GeneralTurnCommandSpec = {
     category: '군사',
     reqArg: true,
     args: { destCityId: 0 },
-    createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
+    createDefinition: (env: TurnCommandEnv) =>
+        new ActionDefinition(env.warActionModules ?? []),
 };

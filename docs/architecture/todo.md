@@ -40,6 +40,7 @@ Move items into the main docs once they are finalized.
 ## Trigger System
 
 - Example trigger sets per scenario or rule pack
+- [AI suggestion] Define item/equipment effect modeling for war triggers (equip vs carry, stacking, consumable/breakable) and hook into WarActionPipeline/trigger registry.
 
 ## Data and Profiles (Lower Priority)
 

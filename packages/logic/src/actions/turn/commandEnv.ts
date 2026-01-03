@@ -1,4 +1,5 @@
 import type { GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
+import type { WarActionModule } from '@sammo-ts/logic/war/actions.js';
 
 export interface TurnCommandEnv {
     develCost: number;
@@ -24,4 +25,5 @@ export interface TurnCommandEnv {
     baseRice: number;
     maxResourceActionAmount: number;
     generalActionModules?: Array<GeneralActionModule>;
+    warActionModules?: Array<WarActionModule>;
 }

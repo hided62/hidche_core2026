@@ -8,11 +8,16 @@ import {
     LogScope,
     resolveDefenderOrder,
     resolveWarBattle,
+    createItemActionModules,
+    createItemModuleRegistry,
+    ITEM_KEYS,
+    loadItemModules,
     type City,
     type General,
     type Nation,
     type UnitSetDefinition,
     type WarBattleOutcome,
+    type WarActionModule,
 } from '@sammo-ts/logic';
 
 import {
@@ -23,6 +28,10 @@ import {
 import { convertLog } from './logFormatter.js';
 
 const DEFAULT_GENERAL_AGE = 20;
+
+const itemWarModules: WarActionModule[] = createItemActionModules(
+    createItemModuleRegistry(await loadItemModules([...ITEM_KEYS]))
+).war;
 
 const normalizeItemCode = (value: string | null): string | null =>
     value === 'None' ? null : value;
@@ -324,11 +333,13 @@ export const processBattleSimJob = (payload: BattleSimJobPayload): BattleSimResu
                 general: attackerGeneral,
                 city: attackerCity,
                 nation: attackerNation,
+                modules: itemWarModules,
             },
             defenders: defenderGenerals.map((general) => ({
                 general,
                 city: defenderCity,
                 nation: defenderNation,
+                modules: itemWarModules,
             })),
             defenderCity,
             defenderNation,

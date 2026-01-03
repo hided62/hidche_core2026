@@ -10,6 +10,10 @@ import type {
 import {
     loadGeneralTurnCommandSpecs,
     loadNationTurnCommandSpecs,
+    createItemActionModules,
+    createItemModuleRegistry,
+    ITEM_KEYS,
+    loadItemModules,
 } from '@sammo-ts/logic';
 
 const DEFAULT_GENERAL_GOLD = 1000;
@@ -158,6 +162,18 @@ export const buildReservedTurnDefinitions = async (options: {
     general: Map<string, GeneralActionDefinition>;
     nation: Map<string, GeneralActionDefinition>;
 }> => {
+    const itemModules = await loadItemModules([...ITEM_KEYS]);
+    const itemRegistry = createItemModuleRegistry(itemModules);
+    const itemActionModules = createItemActionModules(itemRegistry);
+    options.env.generalActionModules = [
+        ...(options.env.generalActionModules ?? []),
+        ...itemActionModules.general,
+    ];
+    options.env.warActionModules = [
+        ...(options.env.warActionModules ?? []),
+        ...itemActionModules.war,
+    ];
+
     const generalSpecs = await loadGeneralTurnCommandSpecs(
         options.commandProfile.general
     );
