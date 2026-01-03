@@ -12,6 +12,14 @@ export const createInMemoryUserRepository = (
     const usersByEmail = new Map<string, UserRecord>();
 
     return {
+        async findById(id: string): Promise<UserRecord | null> {
+            for (const user of usersByName.values()) {
+                if (user.id === id) {
+                    return user;
+                }
+            }
+            return null;
+        },
         async findByUsername(username: string): Promise<UserRecord | null> {
             return usersByName.get(username) ?? null;
         },

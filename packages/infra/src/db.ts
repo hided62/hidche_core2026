@@ -15,12 +15,20 @@ export interface DatabaseClient<
     };
     general: {
         findUnique(args: { where: { id: number } }): Promise<GeneralRow | null>;
+        findFirst(args: {
+            where: { userId?: string; npcState?: number | { gt: number } };
+            select?: { name?: boolean; picture?: boolean };
+        }): Promise<GeneralRow | null>;
+        count(args?: {
+            where?: { npcState?: number | { gt: number } };
+        }): Promise<number>;
     };
     city: {
         findUnique(args: { where: { id: number } }): Promise<CityRow | null>;
     };
     nation: {
         findUnique(args: { where: { id: number } }): Promise<NationRow | null>;
+        count(args?: { where?: { level?: { gt: number } } }): Promise<number>;
     };
     generalTurn: {
         findMany(args: {

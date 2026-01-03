@@ -6,6 +6,7 @@ import type { OAuthSessionStore } from './auth/oauthSessionStore.js';
 import type { GatewayProfileRepository } from './orchestrator/profileRepository.js';
 import type { GatewayOrchestratorHandle } from './orchestrator/gatewayOrchestrator.js';
 import type { GatewayProfileStatusService } from './lobby/profileStatusService.js';
+import type { PrismaClient } from '@prisma/client';
 
 export interface GatewayApiContext {
     users: UserRepository;
@@ -21,6 +22,7 @@ export interface GatewayApiContext {
     profileStatus: GatewayProfileStatusService;
     adminToken?: string;
     requestHeaders: Record<string, string | string[] | undefined>;
+    prisma: PrismaClient;
 }
 
 export const createGatewayApiContext = (options: {
@@ -37,6 +39,7 @@ export const createGatewayApiContext = (options: {
     profileStatus: GatewayProfileStatusService;
     adminToken?: string;
     requestHeaders?: Record<string, string | string[] | undefined>;
+    prisma: PrismaClient;
 }): GatewayApiContext => ({
     users: options.users,
     sessions: options.sessions,
@@ -51,4 +54,5 @@ export const createGatewayApiContext = (options: {
     profileStatus: options.profileStatus,
     adminToken: options.adminToken,
     requestHeaders: options.requestHeaders ?? {},
+    prisma: options.prisma,
 });

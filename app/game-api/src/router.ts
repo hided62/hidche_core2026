@@ -68,6 +68,53 @@ export const appRouter = router({
             now: new Date().toISOString(),
         })),
     }),
+    lobby: router({
+        info: procedure.query(async ({ ctx }) => {
+            const worldState = await ctx.db.worldState.findFirst();
+            if (!worldState) {
+                throw new TRPCError({
+                    code: 'NOT_FOUND',
+                    message: 'World state not found',
+                });
+            }
+
+            const userCnt = await ctx.db.general.count({ where: { npcState: 0 } });
+            const npcCnt = await ctx.db.general.count({ where: { npcState: { gt: 0 } } });
+            const nationCnt = await ctx.db.nation.count({ where: { level: { gt: 0 } } });
+
+            // myGeneral info if authenticated
+            let myGeneral = null;
+            if (ctx.auth?.user.id) {
+                const general = await ctx.db.general.findFirst({
+                    where: { userId: ctx.auth.user.id },
+                    select: { name: true, picture: true }
+                });
+                if (general) {
+                    myGeneral = {
+                        name: (general as any).name,
+                        picture: (general as any).picture,
+                    };
+                }
+            }
+
+            return {
+                year: worldState.currentYear,
+                month: worldState.currentMonth,
+                userCnt,
+                maxUserCnt: (worldState.config as any).maxUserCnt ?? 500,
+                npcCnt,
+                nationCnt,
+                turnTerm: worldState.tickSeconds / 60,
+                fictionMode: (worldState.config as any).fictionMode ?? '사실',
+                starttime: (worldState.meta as any).starttime ?? '',
+                opentime: (worldState.meta as any).opentime ?? '',
+                turntime: (worldState.meta as any).turntime ?? '',
+                otherTextInfo: (worldState.meta as any).otherTextInfo ?? '',
+                isUnited: (worldState.meta as any).isUnited ?? 0,
+                myGeneral,
+            };
+        }),
+    }),
     battle: router({
         simulate: procedure
             .input(zBattleSimRequest)

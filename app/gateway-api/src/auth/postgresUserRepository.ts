@@ -56,6 +56,14 @@ export const createPostgresUserRepository = (
     hasher: PasswordHasher = createSimplePasswordHasher()
 ): UserRepository => {
     return {
+        async findById(id: string): Promise<UserRecord | null> {
+            const row = await prisma.appUser.findUnique({
+                where: {
+                    id,
+                },
+            });
+            return row ? mapUser(row) : null;
+        },
         async findByUsername(username: string): Promise<UserRecord | null> {
             const row = await prisma.appUser.findUnique({
                 where: {

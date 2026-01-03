@@ -1,13 +1,33 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
 import DefaultLayout from '../layouts/DefaultLayout.vue';
+import { trpc } from '../utils/trpc';
 
+const router = useRouter();
 const username = ref('');
 const password = ref('');
 
-const handleLogin = () => {
-  console.log('Login attempt:', username.value);
-  // tRPC 호출 로직이 들어갈 자리
+onMounted(async () => {
+  try {
+    const me = await trpc.me.query();
+    if (me) {
+      router.push('/lobby');
+    }
+  } catch (e) {
+    // Not logged in or error
+  }
+});
+
+const handleLogin = async () => {
+  try {
+    // TODO: Implement login mutation
+    // const result = await trpc.auth.login.mutation({ username: username.value, password: password.value });
+    // if (result.success) router.push('/lobby');
+    console.log('Login attempt:', username.value);
+  } catch (e) {
+    alert('로그인 실패');
+  }
 };
 
 const handleJoin = () => {

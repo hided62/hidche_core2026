@@ -82,6 +82,7 @@ export const createGatewayApiServer = async () => {
                     profileStatus,
                     adminToken: config.adminToken,
                     requestHeaders: req.headers,
+                    prisma: postgres.prisma as PrismaClient,
                 }),
         },
     });

@@ -28,7 +28,21 @@ export const appRouter = router({
             now: new Date().toISOString(),
         })),
     }),
+    me: procedure.query(async ({ ctx }) => {
+        const sessionToken = ctx.requestHeaders['x-session-token'] as string | undefined;
+        if (!sessionToken) return null;
+        const session = await ctx.sessions.getSession(sessionToken);
+        if (!session) return null;
+        const user = await ctx.users.findById(session.userId);
+        return user ? toPublicUser(user) : null;
+    }),
     lobby: router({
+        notice: procedure.query(async ({ ctx }) => {
+            const setting = await ctx.prisma.systemSetting.findUnique({
+                where: { id: 1 },
+            });
+            return setting?.notice ?? '';
+        }),
         profiles: procedure
             .input(
                 z.object({

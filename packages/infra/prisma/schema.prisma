@@ -148,6 +148,7 @@ model City {
 
 model General {
     id            Int      @id
+    userId        String?  @map("user_id")
     name          String
     nationId      Int      @default(0) @map("nation_id")
     cityId        Int      @default(0) @map("city_id")
@@ -270,4 +271,11 @@ model LogEntry {
     @@index([nationId, category, id])
     @@index([userId, category, id])
     @@map("log_entry")
+}
+
+model SystemSetting {
+    id     Int    @id @default(1) @map("no")
+    notice String @default("") @map("notice")
+
+    @@map("system")
 }

@@ -22,12 +22,13 @@ export type LobbyProfileStatus = {
     profile: string;
     scenario: string;
     status: GatewayProfileStatus;
+    apiPort: number;
     runtime: {
         apiRunning: boolean;
         daemonRunning: boolean;
     };
-    map: LobbyMapSnapshot;
-    myGeneral: LobbyGeneralStatus;
+    korName: string;
+    color: string;
 };
 
 export interface GatewayProfileStatusService {
@@ -73,25 +74,19 @@ export class RepositoryProfileStatusService implements GatewayProfileStatusServi
         row: GatewayProfileRecord,
         runtimeMap: Map<string, { apiRunning: boolean; daemonRunning: boolean }>
     ): LobbyProfileStatus {
+        const meta = row.meta as Record<string, any>;
         return {
             profileName: row.profileName,
             profile: row.profile,
             scenario: row.scenario,
             status: row.status,
+            apiPort: row.apiPort,
             runtime: runtimeMap.get(row.profileName) ?? {
                 apiRunning: false,
                 daemonRunning: false,
             },
-            map: {
-                updatedAt: null,
-                summary: null,
-            },
-            myGeneral: {
-                exists: false,
-                cityId: null,
-                cityName: null,
-                updatedAt: null,
-            },
+            korName: (meta.korName as string) ?? row.profile,
+            color: (meta.color as string) ?? '#ffffff',
         };
     }
 }

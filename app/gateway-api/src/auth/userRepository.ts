@@ -51,6 +51,7 @@ export interface CreateUserInput {
 }
 
 export interface UserRepository {
+    findById(id: string): Promise<UserRecord | null>;
     findByUsername(username: string): Promise<UserRecord | null>;
     findByOauthId(type: 'KAKAO', oauthId: string): Promise<UserRecord | null>;
     findByEmail(email: string): Promise<UserRecord | null>;
