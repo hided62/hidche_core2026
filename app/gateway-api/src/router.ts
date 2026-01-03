@@ -28,6 +28,23 @@ export const appRouter = router({
             now: new Date().toISOString(),
         })),
     }),
+    lobby: router({
+        profiles: procedure
+            .input(
+                z.object({
+                    sessionToken: z.string().min(1).optional(),
+                }).optional()
+            )
+            .query(async ({ ctx, input }) => {
+                const sessionToken = input?.sessionToken;
+                const session = sessionToken
+                    ? await ctx.sessions.getSession(sessionToken)
+                    : null;
+                return ctx.profileStatus.listLobbyProfiles({
+                    userId: session?.userId,
+                });
+            }),
+    }),
     admin: adminRouter,
     auth: router({
         kakaoStart: procedure

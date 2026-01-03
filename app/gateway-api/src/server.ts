@@ -18,6 +18,7 @@ import { createPostgresUserRepository } from './auth/postgresUserRepository.js';
 import { RedisGatewaySessionService } from './auth/redisSessionService.js';
 import { createGatewayOrchestrator } from './orchestrator/orchestratorFactory.js';
 import { appRouter } from './router.js';
+import { RepositoryProfileStatusService } from './lobby/profileStatusService.js';
 
 export const createGatewayApiServer = async () => {
     const config = resolveGatewayApiConfigFromEnv();
@@ -51,6 +52,7 @@ export const createGatewayApiServer = async () => {
         config,
         process.env
     );
+    const profileStatus = new RepositoryProfileStatusService(profiles, orchestrator);
 
     const app = fastify({
         logger: true,
@@ -77,6 +79,7 @@ export const createGatewayApiServer = async () => {
                     publicBaseUrl: config.publicBaseUrl,
                     profiles,
                     orchestrator,
+                    profileStatus,
                     adminToken: config.adminToken,
                     requestHeaders: req.headers,
                 }),

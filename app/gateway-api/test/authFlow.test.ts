@@ -4,6 +4,7 @@ import { InMemoryGatewaySessionService } from '../src/auth/inMemorySessionServic
 import { createInMemoryUserRepository } from '../src/auth/inMemoryUserRepository.js';
 import { InMemoryOAuthSessionStore } from '../src/auth/oauthSessionStore.js';
 import { createGatewayApiContext } from '../src/context.js';
+import { InMemoryProfileStatusService } from '../src/lobby/profileStatusService.js';
 import { appRouter } from '../src/router.js';
 
 const buildCaller = () => {
@@ -62,6 +63,7 @@ const buildCaller = () => {
         }),
         listRuntimeStates: async () => [],
     };
+    const profileStatus = new InMemoryProfileStatusService();
     const caller = appRouter.createCaller(
         createGatewayApiContext({
             users,
@@ -74,6 +76,7 @@ const buildCaller = () => {
             publicBaseUrl: 'http://localhost',
             profiles,
             orchestrator,
+            profileStatus,
             requestHeaders: {},
         })
     );

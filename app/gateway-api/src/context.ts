@@ -5,6 +5,7 @@ import type { KakaoOAuthClient } from './auth/kakaoClient.js';
 import type { OAuthSessionStore } from './auth/oauthSessionStore.js';
 import type { GatewayProfileRepository } from './orchestrator/profileRepository.js';
 import type { GatewayOrchestratorHandle } from './orchestrator/gatewayOrchestrator.js';
+import type { GatewayProfileStatusService } from './lobby/profileStatusService.js';
 
 export interface GatewayApiContext {
     users: UserRepository;
@@ -17,6 +18,7 @@ export interface GatewayApiContext {
     publicBaseUrl: string;
     profiles: GatewayProfileRepository;
     orchestrator: GatewayOrchestratorHandle;
+    profileStatus: GatewayProfileStatusService;
     adminToken?: string;
     requestHeaders: Record<string, string | string[] | undefined>;
 }
@@ -32,6 +34,7 @@ export const createGatewayApiContext = (options: {
     publicBaseUrl: string;
     profiles: GatewayProfileRepository;
     orchestrator: GatewayOrchestratorHandle;
+    profileStatus: GatewayProfileStatusService;
     adminToken?: string;
     requestHeaders?: Record<string, string | string[] | undefined>;
 }): GatewayApiContext => ({
@@ -45,6 +48,7 @@ export const createGatewayApiContext = (options: {
     publicBaseUrl: options.publicBaseUrl,
     profiles: options.profiles,
     orchestrator: options.orchestrator,
+    profileStatus: options.profileStatus,
     adminToken: options.adminToken,
     requestHeaders: options.requestHeaders ?? {},
 });
