@@ -7,6 +7,7 @@ import type {
     Nation,
 } from '@sammo-ts/logic/domain/entities.js';
 import type { ActionLogger } from '@sammo-ts/logic/logging/actionLogger.js';
+import type { WarStatName } from '@sammo-ts/logic/triggers/types.js';
 import type { WarUnit } from './units.js';
 import { WarTriggerCaller } from './triggers.js';
 
@@ -33,14 +34,14 @@ export interface WarActionModule<TriggerState extends GeneralTriggerState = Gene
 
     onCalcStat?(
         context: WarActionContext<TriggerState>,
-        statName: string,
+        statName: WarStatName,
         value: number | [number, number],
         aux?: unknown
     ): number | [number, number];
 
     onCalcOpposeStat?(
         context: WarActionContext<TriggerState>,
-        statName: string,
+        statName: WarStatName,
         value: number | [number, number],
         aux?: unknown
     ): number | [number, number];
@@ -90,7 +91,7 @@ export class WarActionPipeline<
 
     onCalcStat<T extends number | [number, number]>(
         context: WarActionContext<TriggerState>,
-        statName: string,
+        statName: WarStatName,
         value: T,
         aux?: unknown
     ): T {
@@ -106,7 +107,7 @@ export class WarActionPipeline<
 
     onCalcOpposeStat<T extends number | [number, number]>(
         context: WarActionContext<TriggerState>,
-        statName: string,
+        statName: WarStatName,
         value: T,
         aux?: unknown
     ): T {

@@ -1,5 +1,15 @@
 import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import { type GeneralActionContext, GeneralTriggerCaller } from './general.js';
+import type {
+    GeneralStatName,
+    TriggerActionPhase,
+    TriggerActionType,
+    TriggerDomesticActionType,
+    TriggerDomesticVarType,
+    TriggerNationalIncomeType,
+    TriggerStrategicActionType,
+    TriggerStrategicVarType,
+} from './types.js';
 
 export interface GeneralActionModule<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     getName?(): string;
@@ -11,43 +21,43 @@ export interface GeneralActionModule<TriggerState extends GeneralTriggerState = 
 
     onCalcDomestic?(
         context: GeneralActionContext<TriggerState>,
-        turnType: string,
-        varType: string,
+        turnType: TriggerDomesticActionType,
+        varType: TriggerDomesticVarType,
         value: number,
         aux?: unknown
     ): number;
 
     onCalcStat?(
         context: GeneralActionContext<TriggerState>,
-        statName: string,
+        statName: GeneralStatName,
         value: number,
         aux?: unknown
     ): number;
 
     onCalcOpposeStat?(
         context: GeneralActionContext<TriggerState>,
-        statName: string,
+        statName: GeneralStatName,
         value: number,
         aux?: unknown
     ): number;
 
     onCalcStrategic?(
         context: GeneralActionContext<TriggerState>,
-        turnType: string,
-        varType: string,
+        turnType: TriggerStrategicActionType,
+        varType: TriggerStrategicVarType,
         value: number
     ): number;
 
     onCalcNationalIncome?(
         context: GeneralActionContext<TriggerState>,
-        type: string,
+        type: TriggerNationalIncomeType,
         amount: number
     ): number;
 
     onArbitraryAction?(
         context: GeneralActionContext<TriggerState>,
-        actionType: string,
-        phase?: string | null,
+        actionType: TriggerActionType,
+        phase?: TriggerActionPhase | null,
         aux?: Record<string, unknown> | null
     ): Record<string, unknown> | null;
 }
@@ -76,8 +86,8 @@ export class GeneralActionPipeline<TriggerState extends GeneralTriggerState = Ge
 
     onCalcDomestic(
         context: GeneralActionContext<TriggerState>,
-        turnType: string,
-        varType: string,
+        turnType: TriggerDomesticActionType,
+        varType: TriggerDomesticVarType,
         value: number,
         aux?: unknown
     ): number {
@@ -93,7 +103,7 @@ export class GeneralActionPipeline<TriggerState extends GeneralTriggerState = Ge
 
     onCalcStat(
         context: GeneralActionContext<TriggerState>,
-        statName: string,
+        statName: GeneralStatName,
         value: number,
         aux?: unknown
     ): number {
@@ -109,7 +119,7 @@ export class GeneralActionPipeline<TriggerState extends GeneralTriggerState = Ge
 
     onCalcOpposeStat(
         context: GeneralActionContext<TriggerState>,
-        statName: string,
+        statName: GeneralStatName,
         value: number,
         aux?: unknown
     ): number {
@@ -125,8 +135,8 @@ export class GeneralActionPipeline<TriggerState extends GeneralTriggerState = Ge
 
     onCalcStrategic(
         context: GeneralActionContext<TriggerState>,
-        turnType: string,
-        varType: string,
+        turnType: TriggerStrategicActionType,
+        varType: TriggerStrategicVarType,
         value: number
     ): number {
         let current = value;
@@ -141,7 +151,7 @@ export class GeneralActionPipeline<TriggerState extends GeneralTriggerState = Ge
 
     onCalcNationalIncome(
         context: GeneralActionContext<TriggerState>,
-        type: string,
+        type: TriggerNationalIncomeType,
         amount: number
     ): number {
         let current = amount;
@@ -156,8 +166,8 @@ export class GeneralActionPipeline<TriggerState extends GeneralTriggerState = Ge
 
     onArbitraryAction(
         context: GeneralActionContext<TriggerState>,
-        actionType: string,
-        phase?: string | null,
+        actionType: TriggerActionType,
+        phase?: TriggerActionPhase | null,
         aux?: Record<string, unknown> | null
     ): Record<string, unknown> | null {
         let current = aux ?? null;

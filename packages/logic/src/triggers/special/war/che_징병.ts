@@ -1,4 +1,5 @@
 import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
+import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/types.js';
 import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
 import type { SpecialActionModule } from '@sammo-ts/logic/triggers/special/types.js';
 
@@ -18,19 +19,19 @@ const resolveLeadershipBonus = (
 
 function onCalcStat(
     context: GeneralActionContext,
-    statName: string,
+    statName: GeneralStatName,
     value: number,
     aux?: unknown
 ): number;
 function onCalcStat(
     context: WarActionContext,
-    statName: string,
+    statName: WarStatName,
     value: number | [number, number],
     aux?: unknown
 ): number | [number, number];
 function onCalcStat(
     context: GeneralActionContext | WarActionContext,
-    statName: string,
+    statName: GeneralStatName | WarStatName,
     value: number | [number, number]
 ): number | [number, number] {
     if (statName !== 'leadership') {

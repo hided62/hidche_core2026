@@ -1,6 +1,7 @@
 import { createStatItemModule } from './base.js';
 import type { ItemModule } from './types.js';
 import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
+import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/types.js';
 import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
 
 const STAT_VALUE = 8;
@@ -23,19 +24,19 @@ export const itemModule: ItemModule = {
     onCalcStat: (() => {
         function onCalcStat(
             _context: GeneralActionContext,
-            statName: string,
+            statName: GeneralStatName,
             value: number,
             _aux?: unknown
         ): number;
         function onCalcStat(
             _context: WarActionContext,
-            statName: string,
+            statName: WarStatName,
             value: number | [number, number],
             _aux?: unknown
         ): number | [number, number];
         function onCalcStat(
             _context: GeneralActionContext | WarActionContext,
-            statName: string,
+            statName: GeneralStatName | WarStatName,
             value: number | [number, number]
         ): number | [number, number] {
             let base = value;

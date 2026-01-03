@@ -10,6 +10,7 @@ import type {
 } from '@sammo-ts/logic/domain/entities.js';
 import type { ActionLogger } from '@sammo-ts/logic/logging/actionLogger.js';
 import { LogFormat } from '@sammo-ts/logic/logging/types.js';
+import type { WarStatName } from '@sammo-ts/logic/triggers/types.js';
 import { getTechAbility, getTechCost } from '@sammo-ts/logic/world/unitSet.js';
 import { WarActionPipeline, type WarActionContext } from './actions.js';
 import type { WarEngineConfig } from './types.js';
@@ -38,6 +39,9 @@ const META_LEADERSHIP_EXP = 'leadershipExp';
 
 const RANK_WARNUM = `${META_RANK_PREFIX}warnum`;
 const RANK_KILLNUM = `${META_RANK_PREFIX}killnum`;
+
+const toDexStatName = (armType: number): WarStatName =>
+    `dex${armType}` as WarStatName;
 const RANK_DEATHNUM = `${META_RANK_PREFIX}deathnum`;
 const RANK_OCCUPIED = `${META_RANK_PREFIX}occupied`;
 const RANK_KILLCREW = `${META_RANK_PREFIX}killcrew`;
@@ -526,7 +530,7 @@ export class WarUnitGeneral<
     }
 
     private resolveOpposeStatValue(
-        statName: string,
+        statName: WarStatName,
         value: number,
         aux?: Record<string, unknown>
     ): number {
@@ -549,13 +553,14 @@ export class WarUnitGeneral<
             isAttacker: this.isAttacker(),
             opposeType: this.oppose?.getCrewType() ?? null,
         };
+        const statName = toDexStatName(armType);
         let dex = this.actionPipeline.onCalcStat(
             this.getActionContext(),
-            `dex${armType}`,
+            statName,
             base,
             aux
         );
-        dex = this.resolveOpposeStatValue(`dex${armType}`, dex, aux);
+        dex = this.resolveOpposeStatValue(statName, dex, aux);
         return dex;
     }
 

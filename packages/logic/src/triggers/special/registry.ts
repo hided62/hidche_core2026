@@ -1,6 +1,17 @@
 import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
 import type { GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
+import type {
+    GeneralStatName,
+    TriggerActionPhase,
+    TriggerActionType,
+    TriggerDomesticActionType,
+    TriggerDomesticVarType,
+    TriggerNationalIncomeType,
+    TriggerStrategicActionType,
+    TriggerStrategicVarType,
+    WarStatName,
+} from '@sammo-ts/logic/triggers/types.js';
 import type { WarActionContext, WarActionModule } from '@sammo-ts/logic/war/actions.js';
 import type { WarUnit } from '@sammo-ts/logic/war/units.js';
 import type { WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
@@ -57,8 +68,8 @@ export class SpecialGeneralActionRouter<
 
     onCalcDomestic(
         context: GeneralActionContext<TriggerState>,
-        turnType: string,
-        varType: string,
+        turnType: TriggerDomesticActionType,
+        varType: TriggerDomesticVarType,
         value: number,
         aux?: unknown
     ): number {
@@ -68,7 +79,7 @@ export class SpecialGeneralActionRouter<
 
     onCalcStat(
         context: GeneralActionContext<TriggerState>,
-        statName: string,
+        statName: GeneralStatName,
         value: number,
         aux?: unknown
     ): number {
@@ -78,7 +89,7 @@ export class SpecialGeneralActionRouter<
 
     onCalcOpposeStat(
         context: GeneralActionContext<TriggerState>,
-        statName: string,
+        statName: GeneralStatName,
         value: number,
         aux?: unknown
     ): number {
@@ -90,8 +101,8 @@ export class SpecialGeneralActionRouter<
 
     onCalcStrategic(
         context: GeneralActionContext<TriggerState>,
-        turnType: string,
-        varType: string,
+        turnType: TriggerStrategicActionType,
+        varType: TriggerStrategicVarType,
         value: number
     ): number {
         const module = this.getModule(context);
@@ -100,7 +111,7 @@ export class SpecialGeneralActionRouter<
 
     onCalcNationalIncome(
         context: GeneralActionContext<TriggerState>,
-        type: string,
+        type: TriggerNationalIncomeType,
         amount: number
     ): number {
         const module = this.getModule(context);
@@ -109,8 +120,8 @@ export class SpecialGeneralActionRouter<
 
     onArbitraryAction(
         context: GeneralActionContext<TriggerState>,
-        actionType: string,
-        phase?: string | null,
+        actionType: TriggerActionType,
+        phase?: TriggerActionPhase | null,
         aux?: Record<string, unknown> | null
     ): Record<string, unknown> | null {
         const module = this.getModule(context);
@@ -156,7 +167,7 @@ export class SpecialWarActionRouter<
 
     onCalcStat(
         context: WarActionContext<TriggerState>,
-        statName: string,
+        statName: WarStatName,
         value: number | [number, number],
         aux?: unknown
     ): number | [number, number] {
@@ -166,7 +177,7 @@ export class SpecialWarActionRouter<
 
     onCalcOpposeStat(
         context: WarActionContext<TriggerState>,
-        statName: string,
+        statName: WarStatName,
         value: number | [number, number],
         aux?: unknown
     ): number | [number, number] {

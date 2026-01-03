@@ -1,8 +1,9 @@
 import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
+import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/types.js';
 import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
 import type { ItemModule, ItemSlot } from './types.js';
 
-const resolveStatLabel = (statName: string): string => {
+const resolveStatLabel = (statName: GeneralStatName): string => {
     switch (statName) {
         case 'leadership':
             return '통솔';
@@ -37,19 +38,19 @@ export const createStatItemModule = (
     const info = options.extraInfo ? `${baseInfo}<br>${options.extraInfo}` : baseInfo;
     function onCalcStat(
         _context: GeneralActionContext,
-        statName: string,
+        statName: GeneralStatName,
         value: number,
         _aux?: unknown
     ): number;
     function onCalcStat(
         _context: WarActionContext,
-        statName: string,
+        statName: WarStatName,
         value: number | [number, number],
         _aux?: unknown
     ): number | [number, number];
     function onCalcStat(
         _context: GeneralActionContext | WarActionContext,
-        statName: string,
+        statName: GeneralStatName | WarStatName,
         value: number | [number, number]
     ): number | [number, number] {
         if (statName !== options.statName) {

@@ -3,6 +3,17 @@ import type {
     GeneralActionContext,
     GeneralTriggerCaller,
 } from '@sammo-ts/logic/triggers/general.js';
+import type {
+    GeneralStatName,
+    TriggerActionPhase,
+    TriggerActionType,
+    TriggerDomesticActionType,
+    TriggerDomesticVarType,
+    TriggerNationalIncomeType,
+    TriggerStrategicActionType,
+    TriggerStrategicVarType,
+    WarStatName,
+} from '@sammo-ts/logic/triggers/types.js';
 import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
 import type { WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
 import type { WarUnit } from '@sammo-ts/logic/war/units.js';
@@ -29,8 +40,8 @@ export interface ItemModule<
 
     onCalcDomestic?(
         context: GeneralActionContext<TriggerState>,
-        turnType: string,
-        varType: string,
+        turnType: TriggerDomesticActionType,
+        varType: TriggerDomesticVarType,
         value: number,
         aux?: unknown
     ): number;
@@ -38,13 +49,13 @@ export interface ItemModule<
     onCalcStat?: {
         (
             context: GeneralActionContext<TriggerState>,
-            statName: string,
+            statName: GeneralStatName,
             value: number,
             aux?: unknown
         ): number;
         (
             context: WarActionContext<TriggerState>,
-            statName: string,
+            statName: WarStatName,
             value: number | [number, number],
             aux?: unknown
         ): number | [number, number];
@@ -53,13 +64,13 @@ export interface ItemModule<
     onCalcOpposeStat?: {
         (
             context: GeneralActionContext<TriggerState>,
-            statName: string,
+            statName: GeneralStatName,
             value: number,
             aux?: unknown
         ): number;
         (
             context: WarActionContext<TriggerState>,
-            statName: string,
+            statName: WarStatName,
             value: number | [number, number],
             aux?: unknown
         ): number | [number, number];
@@ -67,21 +78,21 @@ export interface ItemModule<
 
     onCalcStrategic?(
         context: GeneralActionContext<TriggerState>,
-        turnType: string,
-        varType: string,
+        turnType: TriggerStrategicActionType,
+        varType: TriggerStrategicVarType,
         value: number
     ): number;
 
     onCalcNationalIncome?(
         context: GeneralActionContext<TriggerState>,
-        type: string,
+        type: TriggerNationalIncomeType,
         amount: number
     ): number;
 
     onArbitraryAction?(
         context: GeneralActionContext<TriggerState>,
-        actionType: string,
-        phase?: string | null,
+        actionType: TriggerActionType,
+        phase?: TriggerActionPhase | null,
         aux?: Record<string, unknown> | null
     ): Record<string, unknown> | null;
 
