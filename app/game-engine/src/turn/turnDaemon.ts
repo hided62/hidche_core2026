@@ -26,6 +26,8 @@ import { createReservedTurnHandler } from './reservedTurnHandler.js';
 import { createReservedTurnStore } from './reservedTurnStore.js';
 import { loadTurnCommandProfile } from './turnCommandProfile.js';
 import { loadTurnWorldFromDatabase } from './worldLoader.js';
+import { seedScenarioToDatabase } from '../scenario/scenarioSeeder.js';
+import { createGamePostgresConnector, createGatewayPostgresConnector } from '@sammo-ts/infra';
 
 export interface TurnDaemonRuntimeOptions {
     profile: string;
@@ -151,32 +153,6 @@ export const createTurnDaemonRuntime = async (
     if (gatewayGate) {
         pauseGate = gatewayGate.shouldPause;
     }
-    if (options.profileName) {
-        adminActionConsumer = await createGatewayAdminActionConsumer({
-            databaseUrl: options.databaseUrl,
-            gatewayDatabaseUrl: options.gatewayDatabaseUrl,
-            profileName: options.profileName,
-            pollIntervalMs: options.adminActionIntervalMs,
-            handler: async (action) => {
-                const reason = action.reason ?? `admin:${action.action ?? 'action'}`;
-                switch (action.action) {
-                    case 'RESUME':
-                        controlQueue.enqueue({ type: 'resume', reason });
-                        return { status: 'APPLIED', detail: 'resume queued' };
-                    case 'PAUSE':
-                        controlQueue.enqueue({ type: 'pause', reason });
-                        return { status: 'APPLIED', detail: 'pause queued' };
-                    case 'STOP':
-                    case 'SHUTDOWN':
-                        controlQueue.enqueue({ type: 'shutdown', reason });
-                        return { status: 'APPLIED', detail: 'shutdown queued' };
-                    default:
-                        return { status: 'IGNORED', detail: 'not implemented' };
-                }
-            },
-        });
-        adminActionConsumer.start();
-    }
     if (options.enableDatabaseFlush ?? true) {
         const dbHooks = await createDatabaseTurnHooks(options.databaseUrl, world, {
             reservedTurns: reservedTurnStoreHandle?.store,
@@ -242,6 +218,147 @@ export const createTurnDaemonRuntime = async (
         },
         { profile: options.profile, defaultBudget }
     );
+
+    const resolveScenarioId = async (): Promise<number | null> => {
+        const meta = world.getState().meta as Record<string, unknown>;
+        const raw = meta.scenarioId;
+        if (typeof raw === 'number' && Number.isFinite(raw)) {
+            return Math.floor(raw);
+        }
+        if (typeof raw === 'string') {
+            const parsed = Number(raw);
+            if (Number.isFinite(parsed)) {
+                return Math.floor(parsed);
+            }
+        }
+        const connector = createGamePostgresConnector({ url: options.databaseUrl });
+        await connector.connect();
+        try {
+            const prisma = connector.prisma as unknown as {
+                worldState: { findFirst: (args: unknown) => Promise<{ scenarioCode: string } | null> };
+            };
+            const row = await prisma.worldState.findFirst({
+                select: { scenarioCode: true },
+            });
+            if (!row) {
+                return null;
+            }
+            const parsed = Number(row.scenarioCode);
+            return Number.isFinite(parsed) ? Math.floor(parsed) : null;
+        } finally {
+            await connector.disconnect();
+        }
+    };
+
+    const updateGatewayProfileStatus = async (
+        nextStatus: 'RUNNING' | 'STOPPED'
+    ): Promise<{ previous?: string; updated: boolean }> => {
+        const connector = createGatewayPostgresConnector({
+            url: options.gatewayDatabaseUrl ?? options.databaseUrl,
+        });
+        await connector.connect();
+        try {
+            const prisma = connector.prisma as unknown as {
+                gatewayProfile: {
+                    findUnique: (args: unknown) => Promise<{ status: string } | null>;
+                    update: (args: unknown) => Promise<void>;
+                };
+            };
+            const profile = await prisma.gatewayProfile.findUnique({
+                where: { profileName: options.profileName },
+                select: { status: true },
+            });
+            if (!profile) {
+                return { updated: false };
+            }
+            if (profile.status === 'DISABLED') {
+                return { previous: profile.status, updated: false };
+            }
+            await prisma.gatewayProfile.update({
+                where: { profileName: options.profileName },
+                data: {
+                    status: nextStatus,
+                    lastError: null,
+                },
+            });
+            return { previous: profile.status, updated: true };
+        } finally {
+            await connector.disconnect();
+        }
+    };
+
+    let resetInFlight = false;
+
+    if (options.profileName) {
+        adminActionConsumer = await createGatewayAdminActionConsumer({
+            databaseUrl: options.databaseUrl,
+            gatewayDatabaseUrl: options.gatewayDatabaseUrl,
+            profileName: options.profileName,
+            pollIntervalMs: options.adminActionIntervalMs,
+            handler: async (action) => {
+                const reason = action.reason ?? `admin:${action.action ?? 'action'}`;
+                if (action.action === 'RESET_NOW' || action.action === 'RESET_SCHEDULED') {
+                    if (resetInFlight) {
+                        return { status: 'IGNORED', detail: 'reset already in progress' };
+                    }
+                    if (action.action === 'RESET_SCHEDULED') {
+                        if (!action.scheduledAt) {
+                            return { status: 'FAILED', detail: 'scheduledAt is required' };
+                        }
+                        const scheduledAt = new Date(action.scheduledAt);
+                        if (Number.isNaN(scheduledAt.getTime())) {
+                            return { status: 'FAILED', detail: 'scheduledAt is invalid' };
+                        }
+                        if (scheduledAt.getTime() > Date.now()) {
+                            return { status: 'REQUESTED', detail: 'waiting for schedule' };
+                        }
+                    }
+                    resetInFlight = true;
+                    try {
+                        await lifecycle.stop('admin reset');
+                        const scenarioId = await resolveScenarioId();
+                        if (!scenarioId) {
+                            return { status: 'FAILED', detail: 'scenarioId is missing' };
+                        }
+                        const seedTime =
+                            action.scheduledAt && action.action === 'RESET_SCHEDULED'
+                                ? new Date(action.scheduledAt)
+                                : new Date();
+                        await seedScenarioToDatabase({
+                            databaseUrl: options.databaseUrl,
+                            scenarioId,
+                            tickSeconds: world.getState().tickSeconds,
+                            now: seedTime,
+                        });
+                        const statusUpdate = await updateGatewayProfileStatus('RUNNING');
+                        return {
+                            status: 'APPLIED',
+                            detail: statusUpdate.updated
+                                ? `seeded scenario ${scenarioId}; status RUNNING`
+                                : `seeded scenario ${scenarioId}; status unchanged`,
+                        };
+                    } finally {
+                        resetInFlight = false;
+                    }
+                }
+                switch (action.action) {
+                    case 'RESUME':
+                        controlQueue.enqueue({ type: 'resume', reason });
+                        return { status: 'APPLIED', detail: 'resume queued' };
+                    case 'PAUSE':
+                        controlQueue.enqueue({ type: 'pause', reason });
+                        return { status: 'APPLIED', detail: 'pause queued' };
+                    case 'STOP':
+                    case 'SHUTDOWN':
+                        controlQueue.enqueue({ type: 'shutdown', reason });
+                        return { status: 'APPLIED', detail: 'shutdown queued' };
+                    default:
+                        return { status: 'IGNORED', detail: 'not implemented' };
+                }
+            },
+        });
+        adminActionConsumer.start();
+    }
 
     return {
         lifecycle,

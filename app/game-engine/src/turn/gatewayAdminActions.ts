@@ -15,7 +15,7 @@ export interface GatewayAdminActionRecord {
 }
 
 export interface GatewayAdminActionResult {
-    status: Exclude<GatewayAdminActionStatus, 'REQUESTED'>;
+    status: GatewayAdminActionStatus;
     detail?: string;
 }
 
@@ -25,6 +25,10 @@ export interface GatewayAdminActionConsumerOptions {
     profileName: string;
     pollIntervalMs?: number;
     handler: (action: GatewayAdminActionRecord) => Promise<GatewayAdminActionResult>;
+    onActionApplied?: (
+        action: GatewayAdminActionRecord,
+        result: GatewayAdminActionResult
+    ) => Promise<void>;
 }
 
 export interface GatewayAdminActionConsumer {
@@ -117,21 +121,36 @@ export const createGatewayAdminActionConsumer = async (
                 string,
                 { status: GatewayAdminActionStatus; detail?: string; handledAt: string }
             >();
+            const appliedActions: Array<{
+                action: GatewayAdminActionRecord;
+                result: GatewayAdminActionResult;
+            }> = [];
 
             for (const action of pending) {
                 const key = buildActionKey(action);
                 try {
                     const result = await options.handler(action);
-                    updates.set(key, {
-                        status: result.status,
-                        detail: result.detail,
-                        handledAt: new Date().toISOString(),
-                    });
+                    if (result.status !== 'REQUESTED') {
+                        updates.set(key, {
+                            status: result.status,
+                            detail: result.detail,
+                            handledAt: new Date().toISOString(),
+                        });
+                        appliedActions.push({ action, result });
+                    }
                 } catch (error) {
                     updates.set(key, {
                         status: 'FAILED',
                         detail: error instanceof Error ? error.message : String(error),
                         handledAt: new Date().toISOString(),
+                    });
+                    appliedActions.push({
+                        action,
+                        result: {
+                            status: 'FAILED',
+                            detail:
+                                error instanceof Error ? error.message : String(error),
+                        },
                     });
                 }
             }
@@ -169,6 +188,12 @@ export const createGatewayAdminActionConsumer = async (
                     },
                 },
             });
+
+            if (options.onActionApplied) {
+                for (const applied of appliedActions) {
+                    await options.onActionApplied(applied.action, applied.result);
+                }
+            }
         } finally {
             inFlight = false;
         }
@@ -189,6 +214,9 @@ export const createGatewayAdminActionConsumer = async (
         if (timer) {
             clearInterval(timer);
             timer = null;
+        }
+        while (inFlight) {
+            await new Promise((resolve) => setTimeout(resolve, 50));
         }
         await connector.disconnect();
     };
