@@ -15,7 +15,6 @@ export interface GatewayApiConfig {
     kakaoAdminKey?: string;
     kakaoRedirectUri: string;
     publicBaseUrl: string;
-    adminToken?: string;
     orchestratorEnabled: boolean;
     orchestratorReconcileIntervalMs: number;
     orchestratorScheduleIntervalMs: number;
@@ -105,7 +104,6 @@ export const resolveGatewayApiConfigFromEnv = (
         kakaoAdminKey: env.KAKAO_ADMIN_KEY,
         kakaoRedirectUri,
         publicBaseUrl,
-        adminToken: env.GATEWAY_ADMIN_TOKEN,
         orchestratorEnabled: parseBoolean(env.GATEWAY_ORCHESTRATOR_ENABLED, false),
         orchestratorReconcileIntervalMs: parseNumber(
             env.GATEWAY_ORCHESTRATOR_RECONCILE_MS,

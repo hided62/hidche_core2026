@@ -69,6 +69,7 @@ type AdminAction =
   | 'DELAY'
   | 'RESET_NOW'
   | 'RESET_SCHEDULED'
+  | 'OPEN_SURVEY'
   | 'SHUTDOWN';
 
 type AdminClient = {
@@ -141,23 +142,23 @@ type AdminClient = {
 
 const adminClient = trpc.admin as unknown as AdminClient;
 
-const adminToken = ref('');
-const adminTokenStatus = ref('');
+const sessionToken = ref('');
+const sessionTokenStatus = ref('');
 
 if (typeof window !== 'undefined') {
-  adminToken.value = window.localStorage.getItem('sammo-admin-token') ?? '';
+  sessionToken.value = window.localStorage.getItem('sammo-session-token') ?? '';
 }
 
-const saveAdminToken = () => {
-  const value = adminToken.value.trim();
+const saveSessionToken = () => {
+  const value = sessionToken.value.trim();
   if (typeof window !== 'undefined') {
     if (value) {
-      window.localStorage.setItem('sammo-admin-token', value);
+      window.localStorage.setItem('sammo-session-token', value);
     } else {
-      window.localStorage.removeItem('sammo-admin-token');
+      window.localStorage.removeItem('sammo-session-token');
     }
   }
-  adminTokenStatus.value = value ? '저장됨' : '삭제됨';
+  sessionTokenStatus.value = value ? '저장됨' : '삭제됨';
 };
 
 const noticeDraft = ref('');
@@ -559,19 +560,19 @@ onMounted(() => {
 
       <section class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-3">
         <div class="flex items-center justify-between">
-          <h3 class="text-lg font-semibold">관리자 토큰</h3>
-          <span class="text-xs text-zinc-500">{{ adminTokenStatus }}</span>
+          <h3 class="text-lg font-semibold">관리자 세션 토큰</h3>
+          <span class="text-xs text-zinc-500">{{ sessionTokenStatus }}</span>
         </div>
         <div class="flex flex-col md:flex-row gap-3">
           <input
-            v-model="adminToken"
+            v-model="sessionToken"
             type="password"
             class="flex-1 bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-500"
-            placeholder="GATEWAY_ADMIN_TOKEN 입력"
+            placeholder="세션 토큰 입력"
           />
           <button
             class="bg-yellow-600 hover:bg-yellow-500 text-black font-semibold px-4 py-2 rounded"
-            @click="saveAdminToken"
+            @click="saveSessionToken"
           >
             저장
           </button>
@@ -953,6 +954,12 @@ onMounted(() => {
                       @click="requestProfileAction(profile.profileName, 'RESET_SCHEDULED')"
                     >
                       리셋 예약
+                    </button>
+                    <button
+                      class="bg-teal-700 hover:bg-teal-600 text-white font-semibold px-3 py-2 rounded"
+                      @click="requestProfileAction(profile.profileName, 'OPEN_SURVEY')"
+                    >
+                      설문 오픈
                     </button>
                     <button
                       class="bg-black hover:bg-zinc-800 text-white font-semibold px-3 py-2 rounded col-span-2"

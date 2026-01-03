@@ -5,6 +5,8 @@ import { z } from 'zod';
 
 import { procedure, router } from './trpc.js';
 import type { UserSanctions, UserServerRestriction } from './auth/userRepository.js';
+import type { AdminAuthContext } from './adminAuth.js';
+import type { GatewayApiContext } from './context.js';
 import {
     GATEWAY_BUILD_STATUSES,
     GATEWAY_PROFILE_STATUSES,
@@ -21,28 +23,159 @@ const zServerAction = z.enum([
     'DELAY',
     'RESET_NOW',
     'RESET_SCHEDULED',
+    'OPEN_SURVEY',
     'SHUTDOWN',
 ]);
 
-const adminProcedure = procedure.use(({ ctx, next }) => {
-    if (!ctx.adminToken) {
-        throw new TRPCError({
-            code: 'FORBIDDEN',
-            message: 'Admin token is not configured.',
-        });
-    }
+const ADMIN_ROLE_PREFIX = 'admin.';
+const ADMIN_ROLE_SUPERUSER = 'admin.superuser';
+const ROLE_SUPERUSER = 'superuser';
+const ROLE_ADMIN_USERS = 'admin.users.manage';
+const ROLE_ADMIN_PROFILES = 'admin.profiles.manage';
+const ROLE_ADMIN_NOTICE = 'admin.notice.manage';
+const ROLE_RESET_SCHEDULE = 'admin.reset.schedule';
+const ROLE_RESUME_WHEN_STOPPED = 'admin.resume.when-stopped';
+const ROLE_SURVEY_OPEN = 'admin.survey.open';
+
+const readSessionToken = (
+    headers: Record<string, string | string[] | undefined>
+): string | null => {
     const provided =
-        ctx.requestHeaders['x-admin-token'] ??
-        ctx.requestHeaders['authorization'] ??
-        '';
-    const token =
-        Array.isArray(provided) ? provided[0] ?? '' : (provided as string);
-    if (!token || token !== ctx.adminToken) {
+        headers['x-session-token'] ?? headers['authorization'] ?? '';
+    const raw = Array.isArray(provided) ? provided[0] ?? '' : (provided as string);
+    const token = raw.startsWith('Bearer ') ? raw.slice(7) : raw;
+    const trimmed = token.trim();
+    return trimmed ? trimmed : null;
+};
+
+const isFirstUser = async (ctx: GatewayApiContext, userId: string): Promise<boolean> => {
+    const first = await ctx.prisma.appUser.findFirst({
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+    });
+    return first?.id === userId;
+};
+
+const resolveAdminAuth = async (ctx: GatewayApiContext): Promise<AdminAuthContext> => {
+    const token = readSessionToken(ctx.requestHeaders);
+    if (!token) {
         throw new TRPCError({
             code: 'UNAUTHORIZED',
-            message: 'Invalid admin token.',
+            message: 'Session token is required.',
         });
     }
+    const session = await ctx.sessions.getSession(token);
+    if (!session) {
+        throw new TRPCError({
+            code: 'UNAUTHORIZED',
+            message: 'Session is not valid.',
+        });
+    }
+    const user = await ctx.users.findById(session.userId);
+    if (!user) {
+        throw new TRPCError({
+            code: 'UNAUTHORIZED',
+            message: 'User not found.',
+        });
+    }
+    const roles = user.roles;
+    const isSuperuser =
+        roles.includes(ROLE_SUPERUSER) ||
+        roles.includes(ADMIN_ROLE_SUPERUSER) ||
+        (await isFirstUser(ctx, session.userId));
+    const hasAdminRole =
+        isSuperuser ||
+        roles.some((role) => role === 'admin' || role.startsWith(ADMIN_ROLE_PREFIX));
+    if (!hasAdminRole) {
+        throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'Admin permission is required.',
+        });
+    }
+    return {
+        session,
+        user,
+        roles,
+        isSuperuser,
+    };
+};
+
+const requireAdminAuth = (ctx: { adminAuth?: AdminAuthContext }): AdminAuthContext => {
+    if (!ctx.adminAuth) {
+        throw new TRPCError({
+            code: 'UNAUTHORIZED',
+            message: 'Admin session is not available.',
+        });
+    }
+    return ctx.adminAuth;
+};
+
+const roleMatchesScope = (
+    role: string,
+    permission: string,
+    profileName?: string
+): boolean => {
+    if (role === permission || role === `${permission}:*`) {
+        return true;
+    }
+    if (profileName && role === `${permission}:${profileName}`) {
+        return true;
+    }
+    return false;
+};
+
+const hasScopedPermission = (
+    adminAuth: AdminAuthContext,
+    permission: string,
+    profileName?: string
+): boolean => {
+    if (adminAuth.isSuperuser) {
+        return true;
+    }
+    return adminAuth.roles.some((role: string) =>
+        roleMatchesScope(role, permission, profileName)
+    );
+};
+
+const assertPermission = (
+    adminAuth: AdminAuthContext,
+    permission: string,
+    profileName?: string
+): void => {
+    if (hasScopedPermission(adminAuth, permission, profileName)) {
+        return;
+    }
+    throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'Permission denied.',
+    });
+};
+
+const adminProcedure = procedure.use(async ({ ctx, next }) => {
+    const adminAuth = await resolveAdminAuth(ctx as GatewayApiContext);
+    return next({
+        ctx: {
+            ...ctx,
+            adminAuth,
+        },
+    });
+});
+
+const noticeAdminProcedure = adminProcedure.use(({ ctx, next }) => {
+    const adminAuth = requireAdminAuth(ctx);
+    assertPermission(adminAuth, ROLE_ADMIN_NOTICE);
+    return next();
+});
+
+const userAdminProcedure = adminProcedure.use(({ ctx, next }) => {
+    const adminAuth = requireAdminAuth(ctx);
+    assertPermission(adminAuth, ROLE_ADMIN_USERS);
+    return next();
+});
+
+const profileAdminProcedure = adminProcedure.use(({ ctx, next }) => {
+    const adminAuth = requireAdminAuth(ctx);
+    assertPermission(adminAuth, ROLE_ADMIN_PROFILES);
     return next();
 });
 
@@ -176,7 +309,7 @@ export const adminRouter = router({
             });
             return { notice: setting?.notice ?? '' };
         }),
-        setNotice: adminProcedure
+        setNotice: noticeAdminProcedure
             .input(
                 z.object({
                     notice: z.string().max(4000),
@@ -197,7 +330,7 @@ export const adminRouter = router({
             }),
     }),
     users: router({
-        lookup: adminProcedure.input(zUserLookupInput).query(async ({ ctx, input }) => {
+        lookup: userAdminProcedure.input(zUserLookupInput).query(async ({ ctx, input }) => {
             const user =
                 input.id
                     ? await ctx.users.findById(input.id)
@@ -221,7 +354,7 @@ export const adminRouter = router({
                 createdAt: user.createdAt,
             };
         }),
-        resetPassword: adminProcedure
+        resetPassword: userAdminProcedure
             .input(
                 z.object({
                     userId: z.string().min(1),
@@ -237,7 +370,7 @@ export const adminRouter = router({
                 );
                 return { password };
             }),
-        updateRoles: adminProcedure
+        updateRoles: userAdminProcedure
             .input(
                 z.object({
                     userId: z.string().min(1),
@@ -277,7 +410,7 @@ export const adminRouter = router({
                 );
                 return { roles: nextRoles };
             }),
-        updateSanctions: adminProcedure
+        updateSanctions: userAdminProcedure
             .input(
                 z.object({
                     userId: z.string().min(1),
@@ -300,7 +433,7 @@ export const adminRouter = router({
                 );
                 return { sanctions: next };
             }),
-        setServerRestriction: adminProcedure
+        setServerRestriction: userAdminProcedure
             .input(
                 z.object({
                     userId: z.string().min(1),
@@ -329,7 +462,7 @@ export const adminRouter = router({
                 );
                 return { sanctions: next };
             }),
-        resetProfileIcon: adminProcedure
+        resetProfileIcon: userAdminProcedure
             .input(
                 z.object({
                     userId: z.string().min(1),
@@ -353,7 +486,7 @@ export const adminRouter = router({
                 );
                 return { profileIconResetAt: next.profileIconResetAt };
             }),
-        forceDelete: adminProcedure
+        forceDelete: userAdminProcedure
             .input(
                 z.object({
                     userId: z.string().min(1),
@@ -386,7 +519,7 @@ export const adminRouter = router({
                 },
             }));
         }),
-        upsert: adminProcedure
+        upsert: profileAdminProcedure
             .input(
                 z.object({
                     profile: z.string().min(1).max(32),
@@ -412,7 +545,7 @@ export const adminRouter = router({
                     buildCommitSha: input.buildCommitSha,
                 });
             }),
-        setStatus: adminProcedure
+        setStatus: profileAdminProcedure
             .input(
                 z.object({
                     profileName: z.string().min(1),
@@ -448,7 +581,7 @@ export const adminRouter = router({
                 await ctx.orchestrator.reconcileNow();
                 return result;
             }),
-        updateMeta: adminProcedure
+        updateMeta: profileAdminProcedure
             .input(
                 z.object({
                     profileName: z.string().min(1),
@@ -483,6 +616,7 @@ export const adminRouter = router({
                 })
             )
             .mutation(async ({ ctx, input }) => {
+                const adminAuth = requireAdminAuth(ctx);
                 if (
                     (input.action === 'ACCELERATE' || input.action === 'DELAY') &&
                     !input.durationMinutes
@@ -503,6 +637,65 @@ export const adminRouter = router({
                     throw new TRPCError({
                         code: 'NOT_FOUND',
                         message: 'Profile not found.',
+                    });
+                }
+
+                const canManageProfiles = hasScopedPermission(
+                    adminAuth,
+                    ROLE_ADMIN_PROFILES,
+                    profile.profileName
+                );
+                const canResume =
+                    canManageProfiles ||
+                    hasScopedPermission(
+                        adminAuth,
+                        ROLE_RESUME_WHEN_STOPPED,
+                        profile.profileName
+                    );
+                const canResetSchedule =
+                    canManageProfiles ||
+                    hasScopedPermission(adminAuth, ROLE_RESET_SCHEDULE, profile.profileName);
+                const canOpenSurvey =
+                    canManageProfiles ||
+                    hasScopedPermission(adminAuth, ROLE_SURVEY_OPEN, profile.profileName);
+
+                if (input.action === 'RESUME') {
+                    if (profile.status !== 'STOPPED') {
+                        throw new TRPCError({
+                            code: 'BAD_REQUEST',
+                            message: 'Resume is allowed only for STOPPED profiles.',
+                        });
+                    }
+                    if (!canResume) {
+                        throw new TRPCError({
+                            code: 'FORBIDDEN',
+                            message: 'Resume permission is required.',
+                        });
+                    }
+                } else if (input.action === 'RESET_SCHEDULED') {
+                    if (profile.status !== 'COMPLETED') {
+                        throw new TRPCError({
+                            code: 'BAD_REQUEST',
+                            message: 'Reset scheduling is allowed only for COMPLETED profiles.',
+                        });
+                    }
+                    if (!canResetSchedule) {
+                        throw new TRPCError({
+                            code: 'FORBIDDEN',
+                            message: 'Reset scheduling permission is required.',
+                        });
+                    }
+                } else if (input.action === 'OPEN_SURVEY') {
+                    if (!canOpenSurvey) {
+                        throw new TRPCError({
+                            code: 'FORBIDDEN',
+                            message: 'Survey permission is required.',
+                        });
+                    }
+                } else if (!canManageProfiles) {
+                    throw new TRPCError({
+                        code: 'FORBIDDEN',
+                        message: 'Profile management permission is required.',
                     });
                 }
 
@@ -537,7 +730,7 @@ export const adminRouter = router({
                 await ctx.profiles.updateMeta(input.profileName, nextMeta);
                 return { ok: true, action: actionRecord };
             }),
-        requestBuild: adminProcedure
+        requestBuild: profileAdminProcedure
             .input(
                 z.object({
                     profileName: z.string().min(1),
@@ -557,7 +750,7 @@ export const adminRouter = router({
                 );
                 return result;
             }),
-        setBuildStatus: adminProcedure
+        setBuildStatus: profileAdminProcedure
             .input(
                 z.object({
                     profileName: z.string().min(1),
@@ -567,11 +760,11 @@ export const adminRouter = router({
             .mutation(async ({ ctx, input }) =>
                 ctx.profiles.updateBuildStatus(input.profileName, input.status)
             ),
-        reconcileNow: adminProcedure.mutation(async ({ ctx }) => {
+        reconcileNow: profileAdminProcedure.mutation(async ({ ctx }) => {
             await ctx.orchestrator.reconcileNow();
             return { ok: true };
         }),
-        cleanupWorkspaces: adminProcedure.mutation(async ({ ctx }) => {
+        cleanupWorkspaces: profileAdminProcedure.mutation(async ({ ctx }) => {
             const result = await ctx.orchestrator.cleanupStaleWorkspaces();
             return {
                 removed: result.removed,
