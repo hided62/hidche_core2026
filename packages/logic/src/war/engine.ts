@@ -15,10 +15,6 @@ import { buildCrewTypeIndex as buildCrewTypeDefinitionIndex } from '../world/uni
 import { WarActionPipeline } from './actions.js';
 import { WarCrewType } from './crewType.js';
 import {
-    ChePilsalActivateTrigger,
-    ChePilsalAttemptTrigger,
-} from './triggersChePilsal.js';
-import {
     WarTriggerCaller,
     createWarTriggerEnv,
     type WarTriggerRegistry,
@@ -84,7 +80,12 @@ const appendCrewTypeTriggers = (
             continue;
         }
         const trigger = factory(unit);
-        if (trigger) {
+        if (!trigger) {
+            continue;
+        }
+        if (trigger instanceof WarTriggerCaller) {
+            caller.merge(trigger);
+        } else {
             caller.append(trigger);
         }
     }
@@ -109,8 +110,7 @@ const buildBattlePhaseTriggers = (
 ): WarTriggerCaller => {
     const caller = new WarTriggerCaller();
     if (unit instanceof WarUnitGeneral) {
-        caller.append(new ChePilsalAttemptTrigger(unit));
-        caller.append(new ChePilsalActivateTrigger(unit));
+        appendCrewTypeTriggers(caller, unit, ['che_필살'], registry);
         const context = unit.getActionContext();
         caller.merge(unit.getActionPipeline().getBattlePhaseTriggerList(context));
     }

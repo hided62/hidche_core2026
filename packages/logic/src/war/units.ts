@@ -435,6 +435,7 @@ export class WarUnitGeneral<
             city: this.city,
             log: this.logger,
             rng: this.rng,
+            unit: this,
         };
     }
 

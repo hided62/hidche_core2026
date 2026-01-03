@@ -24,7 +24,9 @@ export const createWarTriggerEnv = (): WarTriggerEnv => ({
 
 export class WarTriggerCaller extends TriggerCaller<WarTriggerContext, WarTriggerEnv> {}
 
-export type WarTriggerFactory = (unit: WarUnit) => WarTrigger | null;
+export type WarTriggerFactory = (
+    unit: WarUnit
+) => WarTrigger | WarTriggerCaller | null;
 
 export type WarTriggerRegistry = Record<string, WarTriggerFactory>;
 

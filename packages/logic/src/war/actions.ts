@@ -16,6 +16,7 @@ export interface WarActionContext<TriggerState extends GeneralTriggerState = Gen
     city?: City;
     log?: ActionLogger;
     rng?: RandUtil;
+    unit?: WarUnit<TriggerState>;
 }
 
 export interface WarActionModule<TriggerState extends GeneralTriggerState = GeneralTriggerState> {

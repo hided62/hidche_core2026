@@ -431,5 +431,6 @@ export const commandSpec: GeneralTurnCommandSpec = {
     category: '내정',
     reqArg: false,
     args: {},
-    createDefinition: (env: TurnCommandEnv) => new ActionDefinition([], env),
+    createDefinition: (env: TurnCommandEnv) =>
+        new ActionDefinition(env.generalActionModules ?? [], env),
 };

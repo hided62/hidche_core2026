@@ -3,6 +3,13 @@ import type { RandomGenerator } from '@sammo-ts/common';
 import type { WorldStateRepository } from '../ports/world.js';
 import { TriggerCaller, type Trigger } from './core.js';
 
+export interface GeneralWorldView<
+    TriggerState extends GeneralTriggerState = GeneralTriggerState
+> {
+    listGenerals(): General<TriggerState>[];
+    listGeneralsByCity?(cityId: number): General<TriggerState>[];
+}
+
 export interface GeneralActionLogSink {
     push(message: string): void;
 }
@@ -28,6 +35,7 @@ export const createGeneralSkillActivation = <
 export interface GeneralActionContext<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     general: General<TriggerState>;
     world?: WorldStateRepository;
+    worldView?: GeneralWorldView<TriggerState>;
     log?: GeneralActionLogSink;
     rng?: RandomGenerator;
 }

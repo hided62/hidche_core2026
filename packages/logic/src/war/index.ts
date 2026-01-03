@@ -4,6 +4,6 @@ export * from './engine.js';
 export * from './aftermath.js';
 export * from './units.js';
 export * from './triggers.js';
-export * from './triggersChePilsal.js';
+export * from './triggers/index.js';
 export * from './crewType.js';
 export * from './utils.js';

@@ -1,3 +1,5 @@
+import type { GeneralActionModule } from '../../triggers/general-action.js';
+
 export interface TurnCommandEnv {
     develCost: number;
     trainDelta: number;
@@ -21,4 +23,5 @@ export interface TurnCommandEnv {
     baseGold: number;
     baseRice: number;
     maxResourceActionAmount: number;
+    generalActionModules?: Array<GeneralActionModule>;
 }

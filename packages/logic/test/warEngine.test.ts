@@ -9,7 +9,7 @@ import { WarActionPipeline } from '../src/war/actions.js';
 import { resolveWarBattle } from '../src/war/engine.js';
 import type { WarEngineConfig } from '../src/war/types.js';
 import { WarCrewType } from '../src/war/crewType.js';
-import { ChePilsalActivateTrigger, ChePilsalAttemptTrigger } from '../src/war/triggersChePilsal.js';
+import { loadWarTriggerModules } from '../src/war/triggers/index.js';
 import { WarUnitCity, WarUnitGeneral } from '../src/war/units.js';
 
 const buildConfig = (): WarEngineConfig => ({
@@ -157,7 +157,7 @@ const buildGeneral = (strength: number): General => ({
 });
 
 describe('war triggers', () => {
-    it('activates and applies critical damage', () => {
+    it('activates and applies critical damage', async () => {
         const rng = new RandUtil(new ConstantRNG(0));
         const config = buildConfig();
         const crewType = new WarCrewType(buildUnitSet().crewTypes?.[0]!);
@@ -191,14 +191,20 @@ describe('war triggers', () => {
 
         attacker.beginPhase();
 
-        const attempt = new ChePilsalAttemptTrigger(attacker);
-        attempt.action({ rng, attacker, defender }, { e_attacker: {}, e_defender: {} });
+        const [module] = await loadWarTriggerModules(['che_필살']);
+        if (!module) {
+            throw new Error('Missing che_필살 trigger module');
+        }
+        const caller = module.createTriggerList(attacker);
+        if (!caller) {
+            throw new Error('Missing che_필살 trigger list');
+        }
+        caller.fire(
+            { rng, attacker, defender },
+            { e_attacker: {}, e_defender: {} }
+        );
 
         expect(attacker.hasActivatedSkill('필살')).toBe(true);
-
-        const activate = new ChePilsalActivateTrigger(attacker);
-        activate.action({ rng, attacker, defender }, { e_attacker: {}, e_defender: {} });
-
         expect(attacker.getWarPowerMultiply()).toBeCloseTo(1.3);
     });
 });

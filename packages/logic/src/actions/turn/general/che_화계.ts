@@ -504,5 +504,6 @@ export const commandSpec: GeneralTurnCommandSpec = {
     category: '계략',
     reqArg: true,
     args: { destCityId: 0 },
-    createDefinition: (env: TurnCommandEnv) => new ActionDefinition([], env),
+    createDefinition: (env: TurnCommandEnv) =>
+        new ActionDefinition(env.generalActionModules ?? [], env),
 };

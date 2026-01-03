@@ -1,10 +1,11 @@
-import { LogFormat } from '../logging/types.js';
-import { TriggerPriority } from '../triggers/core.js';
-import { BaseWarUnitTrigger } from './triggers.js';
-import { WarUnitGeneral, type WarUnit } from './units.js';
+import { LogFormat } from '../../logging/types.js';
+import { TriggerPriority } from '../../triggers/core.js';
+import { BaseWarUnitTrigger, WarTriggerCaller } from '../triggers.js';
+import { WarUnitGeneral, type WarUnit } from '../units.js';
+import type { WarTriggerModule } from './types.js';
 
 // 기본 필살: 시도 단계
-export class ChePilsalAttemptTrigger extends BaseWarUnitTrigger {
+class AttemptTrigger extends BaseWarUnitTrigger {
     constructor(unit: WarUnit) {
         super(unit, TriggerPriority.Pre + 120);
     }
@@ -33,7 +34,7 @@ export class ChePilsalAttemptTrigger extends BaseWarUnitTrigger {
 }
 
 // 기본 필살: 발동 단계
-export class ChePilsalActivateTrigger extends BaseWarUnitTrigger {
+class ActivateTrigger extends BaseWarUnitTrigger {
     constructor(unit: WarUnit) {
         super(unit, TriggerPriority.Post + 400);
     }
@@ -63,3 +64,14 @@ export class ChePilsalActivateTrigger extends BaseWarUnitTrigger {
         return true;
     }
 }
+
+export const triggerModule: WarTriggerModule = {
+    key: 'che_필살',
+    name: '필살',
+    info: '[전투] 페이즈마다 확률로 필살 발동',
+    createTriggerList: (unit) =>
+        new WarTriggerCaller(
+            new AttemptTrigger(unit),
+            new ActivateTrigger(unit)
+        ),
+};
