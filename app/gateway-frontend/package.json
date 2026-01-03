@@ -4,10 +4,29 @@
     "version": "0.0.0",
     "type": "module",
     "scripts": {
-        "build": "tsc -p tsconfig.build.json",
-        "dev": "node -e \"console.log('dev not configured')\"",
-        "lint": "node -e \"console.log('lint not configured')\"",
-        "test": "node -e \"console.log('test not configured')\"",
-        "typecheck": "tsc --noEmit"
+        "dev": "vite",
+        "build": "vue-tsc && vite build",
+        "preview": "vite preview",
+        "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx --fix --ignore-path .gitignore",
+        "typecheck": "vue-tsc --noEmit"
+    },
+    "dependencies": {
+        "@sammo-ts/common": "workspace:*",
+        "@trpc/client": "^11.8.1",
+        "@trpc/server": "^11.8.1",
+        "pinia": "^3.0.4",
+        "vue": "^3.5.26",
+        "vue-router": "^4.6.4",
+        "zod": "^4.3.4"
+    },
+    "devDependencies": {
+        "@tailwindcss/vite": "^4.1.18",
+        "@vitejs/plugin-vue": "^6.0.3",
+        "autoprefixer": "^10.4.23",
+        "postcss": "^8.5.6",
+        "tailwindcss": "^4.1.18",
+        "typescript": "^5.9.3",
+        "vite": "^7.3.0",
+        "vue-tsc": "^3.2.1"
     }
 }

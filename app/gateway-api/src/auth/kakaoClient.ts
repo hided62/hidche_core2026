@@ -46,14 +46,12 @@ const parseToken = (payload: Record<string, unknown>): KakaoOAuthToken => {
 
 export class KakaoOAuthClient {
     private readonly restKey: string;
-    private readonly adminKey?: string;
     private readonly redirectUri: string;
     private readonly oauthHost: string;
     private readonly apiHost: string;
 
     constructor(config: KakaoOAuthConfig) {
         this.restKey = config.restKey;
-        this.adminKey = config.adminKey;
         this.redirectUri = config.redirectUri;
         this.oauthHost = config.oauthHost ?? 'https://kauth.kakao.com';
         this.apiHost = config.apiHost ?? 'https://kapi.kakao.com';

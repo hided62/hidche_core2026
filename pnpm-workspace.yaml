@@ -6,4 +6,6 @@ packages:
 onlyBuiltDependencies:
   - '@prisma/client'
   - '@prisma/engines'
+  - esbuild
   - prisma
+  - vue-demi
