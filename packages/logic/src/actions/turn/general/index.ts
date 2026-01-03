@@ -63,6 +63,11 @@ export const isGeneralTurnCommandKey = (
 
 
 export class GeneralTurnCommandLoader {
+    private readonly cache = new Map<
+        GeneralTurnCommandKey,
+        Promise<GeneralTurnCommandModule>
+    >();
+
     constructor(
         private readonly importers: Record<
             GeneralTurnCommandKey,
@@ -73,11 +78,17 @@ export class GeneralTurnCommandLoader {
     async load(
         key: GeneralTurnCommandKey
     ): Promise<GeneralTurnCommandModule> {
+        const cached = this.cache.get(key);
+        if (cached) {
+            return cached;
+        }
         const importer = this.importers[key];
         if (!importer) {
             throw new Error(`Unknown general turn command key: ${key}`);
         }
-        return importer();
+        const loading = importer();
+        this.cache.set(key, loading);
+        return loading;
     }
 }
 

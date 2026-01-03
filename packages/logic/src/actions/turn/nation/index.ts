@@ -42,6 +42,11 @@ export const isNationTurnCommandKey = (
 
 
 export class NationTurnCommandLoader {
+    private readonly cache = new Map<
+        NationTurnCommandKey,
+        Promise<NationTurnCommandModule>
+    >();
+
     constructor(
         private readonly importers: Record<
             NationTurnCommandKey,
@@ -52,11 +57,17 @@ export class NationTurnCommandLoader {
     async load(
         key: NationTurnCommandKey
     ): Promise<NationTurnCommandModule> {
+        const cached = this.cache.get(key);
+        if (cached) {
+            return cached;
+        }
         const importer = this.importers[key];
         if (!importer) {
             throw new Error(`Unknown nation turn command key: ${key}`);
         }
-        return importer();
+        const loading = importer();
+        this.cache.set(key, loading);
+        return loading;
     }
 }
 
