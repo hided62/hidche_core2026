@@ -17,6 +17,7 @@
             <a href="#" class="hover:text-white">패치 내역</a>
             <a href="#" class="hover:text-white">Git Repo.</a>
             <a href="#" class="hover:text-white">위키</a>
+            <RouterLink to="/admin" class="hover:text-white">관리자</RouterLink>
           </nav>
         </div>
         <div class="flex space-x-4 text-sm">

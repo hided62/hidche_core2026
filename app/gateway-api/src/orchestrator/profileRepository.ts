@@ -81,6 +81,10 @@ export interface GatewayProfileRepository {
             lastUsedAt?: string | null;
         }
     ): Promise<GatewayProfileRecord | null>;
+    updateMeta(
+        profileName: string,
+        meta: Record<string, unknown>
+    ): Promise<GatewayProfileRecord | null>;
     listReservedToStart(now: Date): Promise<GatewayProfileRecord[]>;
     findQueuedBuild(): Promise<GatewayProfileRecord | null>;
     updateLastError(profileName: string, lastError: string | null): Promise<void>;
@@ -299,6 +303,19 @@ export const createGatewayProfileRepository = (
                           ? new Date(fields.completedAt)
                           : null,
                 buildError: fields?.error === undefined ? undefined : fields.error,
+            },
+        });
+        return row ? mapProfile(row) : null;
+    },
+    async updateMeta(
+        profileName: string,
+        meta: Record<string, unknown>
+    ): Promise<GatewayProfileRecord | null> {
+        const gatewayProfile = prisma.gatewayProfile as unknown as GatewayProfileClient;
+        const row = await gatewayProfile.update({
+            where: { profileName },
+            data: {
+                meta: meta as GatewayPrisma.JsonObject,
             },
         });
         return row ? mapProfile(row) : null;

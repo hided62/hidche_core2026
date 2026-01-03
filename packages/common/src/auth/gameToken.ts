@@ -7,6 +7,15 @@ export interface UserSanctions {
     warningCount?: number;
     flags?: string[];
     notes?: string;
+    profileIconResetAt?: string;
+    serverRestrictions?: Record<string, UserServerRestriction>;
+}
+
+export interface UserServerRestriction {
+    blockedFeatures?: string[];
+    until?: string;
+    reason?: string;
+    notes?: string;
 }
 
 export interface GatewayUserInfo {

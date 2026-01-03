@@ -28,6 +28,15 @@ export interface UserSanctions {
     warningCount?: number;
     flags?: string[];
     notes?: string;
+    profileIconResetAt?: string;
+    serverRestrictions?: Record<string, UserServerRestriction>;
+}
+
+export interface UserServerRestriction {
+    blockedFeatures?: string[];
+    until?: string;
+    reason?: string;
+    notes?: string;
 }
 
 export const toPublicUser = (user: UserRecord): PublicUser => ({
@@ -59,6 +68,9 @@ export interface UserRepository {
     verifyPassword(user: UserRecord, password: string): Promise<boolean>;
     updatePassword(userId: string, password: string): Promise<void>;
     updateOAuthInfo(userId: string, oauthInfo: UserOAuthInfo): Promise<void>;
+    updateRoles(userId: string, roles: string[]): Promise<void>;
+    updateSanctions(userId: string, sanctions: UserSanctions): Promise<void>;
+    deleteUser(userId: string): Promise<void>;
 }
 
 export interface UserOAuthInfo {

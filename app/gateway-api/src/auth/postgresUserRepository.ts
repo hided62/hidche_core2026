@@ -129,5 +129,26 @@ export const createPostgresUserRepository = (
                 },
             });
         },
+        async updateRoles(userId: string, roles: string[]): Promise<void> {
+            await prisma.appUser.update({
+                where: { id: userId },
+                data: {
+                    roles: roles as GatewayPrisma.JsonArray,
+                },
+            });
+        },
+        async updateSanctions(userId: string, sanctions: UserSanctions): Promise<void> {
+            await prisma.appUser.update({
+                where: { id: userId },
+                data: {
+                    sanctions: sanctions as GatewayPrisma.JsonObject,
+                },
+            });
+        },
+        async deleteUser(userId: string): Promise<void> {
+            await prisma.appUser.delete({
+                where: { id: userId },
+            });
+        },
     };
 };

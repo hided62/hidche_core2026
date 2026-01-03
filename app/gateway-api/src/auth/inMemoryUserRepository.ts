@@ -81,5 +81,38 @@ export const createInMemoryUserRepository = (
             }
             throw new Error('User not found.');
         },
+        async updateRoles(userId: string, roles: string[]): Promise<void> {
+            for (const user of usersByName.values()) {
+                if (user.id === userId) {
+                    user.roles = [...roles];
+                    return;
+                }
+            }
+            throw new Error('User not found.');
+        },
+        async updateSanctions(userId: string, sanctions: UserRecord['sanctions']): Promise<void> {
+            for (const user of usersByName.values()) {
+                if (user.id === userId) {
+                    user.sanctions = { ...sanctions };
+                    return;
+                }
+            }
+            throw new Error('User not found.');
+        },
+        async deleteUser(userId: string): Promise<void> {
+            for (const [username, user] of usersByName.entries()) {
+                if (user.id === userId) {
+                    usersByName.delete(username);
+                    if (user.oauthType === 'KAKAO' && user.oauthId) {
+                        usersByOauthId.delete(`${user.oauthType}:${user.oauthId}`);
+                    }
+                    if (user.email) {
+                        usersByEmail.delete(user.email.toLowerCase());
+                    }
+                    return;
+                }
+            }
+            throw new Error('User not found.');
+        },
     };
 };
