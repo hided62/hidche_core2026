@@ -20,14 +20,14 @@
         "@prisma/adapter-pg": "^7.2.0",
         "@prisma/client": "^7.2.0",
         "@prisma/client-runtime-utils": "^7.2.0",
-        "es-toolkit": "^1.39.0",
+        "es-toolkit": "^1.43.0",
         "pg": "^8.16.3",
         "redis": "^5.10.0"
     },
     "devDependencies": {
-        "@types/pg": "^8.15.5",
+        "@types/pg": "^8.16.0",
         "dotenv": "^17.2.3",
         "prisma": "^7.2.0",
-        "tsdown": "^0.18.3"
+        "tsdown": "^0.18.4"
     }
 }

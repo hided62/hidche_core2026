@@ -14,15 +14,15 @@
         "typecheck": "tsc -b"
     },
     "dependencies": {
+        "@prisma/client": "^7.2.0",
         "@sammo-ts/common": "workspace:*",
         "@sammo-ts/infra": "workspace:*",
         "@sammo-ts/logic": "workspace:*",
-        "@prisma/client": "^7.2.0",
-        "es-toolkit": "^1.39.0",
-        "zod": "^4.2.1"
+        "es-toolkit": "^1.43.0",
+        "zod": "^4.3.4"
     },
     "devDependencies": {
-        "tsdown": "^0.18.3",
+        "tsdown": "^0.18.4",
         "vite-tsconfig-paths": "^6.0.3",
         "vitest": "^4.0.16"
     }

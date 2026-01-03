@@ -20,12 +20,12 @@
     },
     "dependencies": {
         "@sammo-ts/common": "workspace:*",
-        "es-toolkit": "^1.39.0",
+        "es-toolkit": "^1.43.0",
         "immer": "^11.1.3",
-        "zod": "^4.2.1"
+        "zod": "^4.3.4"
     },
     "devDependencies": {
-        "tsdown": "^0.18.3",
+        "tsdown": "^0.18.4",
         "vite-tsconfig-paths": "^6.0.3",
         "vitest": "^4.0.16"
     }
