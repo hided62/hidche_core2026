@@ -13,7 +13,8 @@
         "typecheck": "tsc -b"
     },
     "dependencies": {
-        "@noble/hashes": "^2.0.1"
+        "@noble/hashes": "^2.0.1",
+        "es-toolkit": "^1.39.0"
     },
     "devDependencies": {
         "tsdown": "^0.18.3",
