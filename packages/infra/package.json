@@ -10,11 +10,16 @@
         "dev": "tsdown -c ../../tsdown.config.ts -F @sammo-ts/infra --watch",
         "lint": "node -e \"console.log('lint not configured')\"",
         "test": "node -e \"console.log('test not configured')\"",
-        "typecheck": "tsc --noEmit"
+        "typecheck": "tsc -b",
+        "prisma:generate:game": "prisma generate --schema prisma/game.prisma",
+        "prisma:generate:gateway": "prisma generate --schema prisma/gateway.prisma",
+        "prisma:db:push:game": "prisma db push --schema prisma/game.prisma",
+        "prisma:db:push:gateway": "prisma db push --schema prisma/gateway.prisma"
     },
     "dependencies": {
         "@prisma/adapter-pg": "^7.2.0",
         "@prisma/client": "^7.2.0",
+        "@prisma/client-runtime-utils": "^7.2.0",
         "pg": "^8.16.3",
         "redis": "^5.10.0"
     },

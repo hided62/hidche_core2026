@@ -11,6 +11,7 @@ type EnvMap = Record<string, string | undefined>;
 export interface DatabaseUrlOptions {
     envFile?: string;
     env?: NodeJS.ProcessEnv;
+    schema?: string;
 }
 
 const parseEnvFile = (rawText: string): EnvMap => {
@@ -47,18 +48,42 @@ const loadEnvFile = async (envFile: string): Promise<EnvMap> => {
     }
 };
 
+const applySchemaToDatabaseUrl = (
+    url: string,
+    schema: string | undefined
+): string => {
+    if (!schema) {
+        return url;
+    }
+    try {
+        const parsed = new URL(url);
+        parsed.searchParams.set('schema', schema);
+        return parsed.toString();
+    } catch {
+        return url;
+    }
+};
+
 export const resolveDatabaseUrl = async (
     options?: DatabaseUrlOptions
 ): Promise<string> => {
     const env = options?.env ?? process.env;
     if (env.DATABASE_URL) {
-        return env.DATABASE_URL;
+        const schema =
+            options?.schema ??
+            env.POSTGRES_SCHEMA ??
+            env.DATABASE_SCHEMA;
+        return applySchemaToDatabaseUrl(env.DATABASE_URL, schema);
     }
 
     const envFile = options?.envFile ?? DEFAULT_ENV_FILE;
     const fileEnv = await loadEnvFile(envFile);
     if (fileEnv.DATABASE_URL) {
-        return fileEnv.DATABASE_URL;
+        const schema =
+            options?.schema ??
+            fileEnv.POSTGRES_SCHEMA ??
+            fileEnv.DATABASE_SCHEMA;
+        return applySchemaToDatabaseUrl(fileEnv.DATABASE_URL, schema);
     }
 
     const host = env.POSTGRES_HOST ?? fileEnv.POSTGRES_HOST ?? '127.0.0.1';
@@ -66,5 +91,12 @@ export const resolveDatabaseUrl = async (
     const user = env.POSTGRES_USER ?? fileEnv.POSTGRES_USER ?? 'sammo';
     const password = env.POSTGRES_PASSWORD ?? fileEnv.POSTGRES_PASSWORD ?? '';
     const dbName = env.POSTGRES_DB ?? fileEnv.POSTGRES_DB ?? 'sammo';
-    return `postgresql://${user}:${password}@${host}:${port}/${dbName}?schema=public`;
+    const schema =
+        options?.schema ??
+        env.POSTGRES_SCHEMA ??
+        fileEnv.POSTGRES_SCHEMA ??
+        env.DATABASE_SCHEMA ??
+        fileEnv.DATABASE_SCHEMA ??
+        'public';
+    return `postgresql://${user}:${password}@${host}:${port}/${dbName}?schema=${schema}`;
 };

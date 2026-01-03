@@ -6,7 +6,7 @@ import type { OAuthSessionStore } from './auth/oauthSessionStore.js';
 import type { GatewayProfileRepository } from './orchestrator/profileRepository.js';
 import type { GatewayOrchestratorHandle } from './orchestrator/gatewayOrchestrator.js';
 import type { GatewayProfileStatusService } from './lobby/profileStatusService.js';
-import type { PrismaClient } from '@prisma/client';
+import type { GatewayPrismaClient } from '@sammo-ts/infra';
 
 export interface GatewayApiContext {
     users: UserRepository;
@@ -22,7 +22,7 @@ export interface GatewayApiContext {
     profileStatus: GatewayProfileStatusService;
     adminToken?: string;
     requestHeaders: Record<string, string | string[] | undefined>;
-    prisma: PrismaClient;
+    prisma: GatewayPrismaClient;
 }
 
 export const createGatewayApiContext = (options: {
@@ -39,7 +39,7 @@ export const createGatewayApiContext = (options: {
     profileStatus: GatewayProfileStatusService;
     adminToken?: string;
     requestHeaders?: Record<string, string | string[] | undefined>;
-    prisma: PrismaClient;
+    prisma: GatewayPrismaClient;
 }): GatewayApiContext => ({
     users: options.users,
     sessions: options.sessions,

@@ -1,10 +1,12 @@
-import { createPostgresConnector } from '@sammo-ts/infra';
+import { createGamePostgresConnector } from '@sammo-ts/infra';
 import { describe, expect, test } from 'vitest';
 import { resolveDatabaseUrl } from '../src/scenario/databaseUrl.js';
 import { seedScenarioToDatabase } from '../src/scenario/scenarioSeeder.js';
 
 const scenarioId = 1010;
-const databaseUrl = await resolveDatabaseUrl();
+const schema = process.env.POSTGRES_SCHEMA ?? 'public';
+process.env.POSTGRES_SCHEMA = schema;
+const databaseUrl = await resolveDatabaseUrl({ schema });
 
 type ScenarioSeederPrismaClient = {
     $queryRawUnsafe(query: string): Promise<unknown>;
@@ -26,7 +28,7 @@ type ScenarioSeederPrismaClient = {
 };
 
 const canConnectToDatabase = async (url: string): Promise<boolean> => {
-    const connector = createPostgresConnector({ url });
+    const connector = createGamePostgresConnector({ url });
     try {
         await connector.connect();
         const prisma = connector.prisma as ScenarioSeederPrismaClient;
@@ -49,7 +51,7 @@ describeDb('scenario database seed', () => {
             databaseUrl,
         });
 
-        const connector = createPostgresConnector({ url: databaseUrl });
+        const connector = createGamePostgresConnector({ url: databaseUrl });
         await connector.connect();
         try {
             const prisma = connector.prisma as ScenarioSeederPrismaClient;

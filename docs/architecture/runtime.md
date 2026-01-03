@@ -4,6 +4,16 @@ Build outputs should be emitted to `/dist/{profileName}` per profile to keep
 deployments predictable. Profiles are server+scenario pairs, and scenario
 selection is required because it drives unit sets and DB settings.
 
+## Database Schemas (Gateway vs Game)
+
+Gateway uses a shared schema (default `public`) for login/profile state, while
+each game profile runs against its own schema. This keeps gateway data stable
+and allows profile-scoped game data resets.
+
+- Gateway schema: `GATEWAY_DB_SCHEMA` (default `public`)
+- Game schema: `PROFILE` value (e.g., `hwe`, `che`)
+- Optional override for gateway DB URL: `GATEWAY_DATABASE_URL`
+
 ## Suggested Build Pattern
 
 - Wrapper script under `tools/build-scripts`

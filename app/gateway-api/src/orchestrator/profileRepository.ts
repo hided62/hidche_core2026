@@ -1,4 +1,4 @@
-import { Prisma, type PrismaClient } from '@prisma/client';
+import { GatewayPrisma, type GatewayPrismaClient } from '@sammo-ts/infra';
 
 export const GATEWAY_PROFILE_STATUSES = [
     'RESERVED',
@@ -38,7 +38,7 @@ export interface GatewayProfileRecord {
     buildCompletedAt?: string;
     buildError?: string;
     lastError?: string;
-    meta: Prisma.JsonObject;
+    meta: GatewayPrisma.JsonObject;
     createdAt: string;
     updatedAt: string;
 }
@@ -52,7 +52,7 @@ export interface GatewayProfileUpsertInput {
     openAt?: string;
     scheduledStartAt?: string;
     buildCommitSha?: string;
-    meta?: Prisma.JsonObject;
+    meta?: GatewayPrisma.JsonObject;
 }
 
 export interface GatewayProfileRepository {
@@ -113,7 +113,7 @@ type GatewayProfileRow = {
     buildCompletedAt: Date | null;
     buildError: string | null;
     lastError: string | null;
-    meta: Prisma.JsonValue;
+    meta: GatewayPrisma.JsonValue;
     createdAt: Date;
     updatedAt: Date;
 };
@@ -145,7 +145,7 @@ const mapProfile = (row: GatewayProfileRow): GatewayProfileRecord => ({
     buildCompletedAt: toIso(row.buildCompletedAt),
     buildError: row.buildError ?? undefined,
     lastError: row.lastError ?? undefined,
-    meta: (row.meta ?? {}) as Prisma.JsonObject,
+    meta: (row.meta ?? {}) as GatewayPrisma.JsonObject,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
 });
@@ -154,7 +154,7 @@ const buildProfileName = (profile: string, scenario: string): string =>
     `${profile}:${scenario}`;
 
 export const createGatewayProfileRepository = (
-    prisma: PrismaClient
+    prisma: GatewayPrismaClient
 ): GatewayProfileRepository => ({
     async listProfiles(): Promise<GatewayProfileRecord[]> {
         const gatewayProfile = prisma.gatewayProfile as unknown as GatewayProfileClient;
@@ -187,7 +187,7 @@ export const createGatewayProfileRepository = (
                     ? new Date(input.scheduledStartAt)
                     : null,
                 buildCommitSha: input.buildCommitSha ?? null,
-                meta: (input.meta ?? {}) as Prisma.JsonObject,
+                meta: (input.meta ?? {}) as GatewayPrisma.JsonObject,
             },
             update: {
                 apiPort: input.apiPort,
@@ -211,7 +211,7 @@ export const createGatewayProfileRepository = (
                     input.buildCommitSha === undefined
                         ? undefined
                         : input.buildCommitSha,
-                meta: input.meta ? (input.meta as Prisma.JsonObject) : undefined,
+                meta: input.meta ? (input.meta as GatewayPrisma.JsonObject) : undefined,
             },
         });
         return mapProfile(row);

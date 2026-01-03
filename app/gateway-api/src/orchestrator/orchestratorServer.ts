@@ -1,6 +1,6 @@
-import type { PrismaClient } from '@prisma/client';
 import {
-    createPostgresConnector,
+    createGatewayPostgresConnector,
+    type GatewayPrismaClient,
     resolvePostgresConfigFromEnv,
 } from '@sammo-ts/infra';
 
@@ -9,11 +9,13 @@ import { createGatewayOrchestrator } from './orchestratorFactory.js';
 
 export const runGatewayOrchestrator = async (): Promise<void> => {
     const config = resolveGatewayOrchestratorConfigFromEnv();
-    const postgres = createPostgresConnector(resolvePostgresConfigFromEnv());
+    const postgres = createGatewayPostgresConnector(
+        resolvePostgresConfigFromEnv({ schema: config.dbSchema })
+    );
     await postgres.connect();
 
     const { orchestrator } = createGatewayOrchestrator(
-        postgres.prisma as PrismaClient,
+        postgres.prisma as GatewayPrismaClient,
         config,
         process.env
     );

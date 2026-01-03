@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { GatewayPrismaClient } from '@sammo-ts/infra';
 
 import type { GatewayOrchestratorConfig } from '../config.js';
 import { createGatewayProfileRepository } from './profileRepository.js';
@@ -16,7 +16,7 @@ export const buildEnvMap = (env: NodeJS.ProcessEnv): Record<string, string> => {
 };
 
 export const createGatewayOrchestrator = (
-    prisma: PrismaClient,
+    prisma: GatewayPrismaClient,
     config: GatewayOrchestratorConfig,
     env: NodeJS.ProcessEnv = process.env
 ): {

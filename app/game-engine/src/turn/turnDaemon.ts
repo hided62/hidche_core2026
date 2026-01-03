@@ -30,6 +30,7 @@ export interface TurnDaemonRuntimeOptions {
     profile: string;
     profileName?: string;
     databaseUrl: string;
+    gatewayDatabaseUrl?: string;
     defaultBudget?: TurnRunBudget;
     clock?: Clock;
     controlQueue?: TurnDaemonControlQueue;
@@ -137,6 +138,7 @@ export const createTurnDaemonRuntime = async (
         options.profileName
             ? await createGatewayProfileGate({
                   databaseUrl: options.databaseUrl,
+                  gatewayDatabaseUrl: options.gatewayDatabaseUrl,
                   profileName: options.profileName,
                   cacheMs: options.pauseGateIntervalMs,
               })

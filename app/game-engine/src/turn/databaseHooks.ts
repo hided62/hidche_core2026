@@ -1,5 +1,5 @@
 import {
-    createPostgresConnector,
+    createGamePostgresConnector,
     type InputJsonValue,
     type TurnEngineCityUpdateInput,
     type TurnEngineDatabaseClient,
@@ -236,9 +236,9 @@ export const createDatabaseTurnHooks = async (
     options?: { reservedTurns?: InMemoryReservedTurnStore }
 ): Promise<DatabaseTurnHooks> => {
     // 턴 처리 결과를 DB에 반영하는 훅을 만든다.
-    const connector = createPostgresConnector({ url: databaseUrl });
+    const connector = createGamePostgresConnector({ url: databaseUrl });
     await connector.connect();
-    const prisma = connector.prisma as TurnEngineDatabaseClient;
+    const prisma = connector.prisma as unknown as TurnEngineDatabaseClient;
 
     const hooks: TurnDaemonHooks = {
         flushChanges: async () => {

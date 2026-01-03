@@ -4,6 +4,7 @@ export interface GatewayApiConfig {
     host: string;
     port: number;
     trpcPath: string;
+    dbSchema: string;
     redisKeyPrefix: string;
     flushChannel: string;
     sessionTtlSeconds: number;
@@ -24,6 +25,7 @@ export interface GatewayApiConfig {
 }
 
 export interface GatewayOrchestratorConfig {
+    dbSchema: string;
     redisKeyPrefix: string;
     gameTokenSecret: string;
     orchestratorReconcileIntervalMs: number;
@@ -58,6 +60,14 @@ const parseBoolean = (value: string | undefined, fallback: boolean): boolean => 
     return fallback;
 };
 
+const resolveSchemaName = (value: string | undefined): string => {
+    if (!value) {
+        return 'public';
+    }
+    const trimmed = value.trim();
+    return trimmed ? trimmed : 'public';
+};
+
 export const resolveGatewayApiConfigFromEnv = (
     env: NodeJS.ProcessEnv = process.env
 ): GatewayApiConfig => {
@@ -76,6 +86,7 @@ export const resolveGatewayApiConfigFromEnv = (
         host: env.GATEWAY_API_HOST ?? '0.0.0.0',
         port: parseNumber(env.GATEWAY_API_PORT, 13000, 'GATEWAY_API_PORT'),
         trpcPath: env.TRPC_PATH ?? '/trpc',
+        dbSchema: resolveSchemaName(env.GATEWAY_DB_SCHEMA),
         redisKeyPrefix,
         flushChannel: `${redisKeyPrefix}:flush`,
         sessionTtlSeconds: parseNumber(env.SESSION_TTL_SECONDS, 60 * 60 * 24 * 7, 'SESSION_TTL_SECONDS'),
@@ -127,6 +138,7 @@ export const resolveGatewayOrchestratorConfigFromEnv = (
     }
     const redisKeyPrefix = env.GATEWAY_REDIS_PREFIX ?? 'sammo:gateway';
     return {
+        dbSchema: resolveSchemaName(env.GATEWAY_DB_SCHEMA),
         redisKeyPrefix,
         gameTokenSecret: secret,
         orchestratorReconcileIntervalMs: parseNumber(

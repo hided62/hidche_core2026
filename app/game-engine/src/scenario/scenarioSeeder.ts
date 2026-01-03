@@ -1,5 +1,5 @@
 import {
-    createPostgresConnector,
+    createGamePostgresConnector,
     type InputJsonValue,
     type TurnEngineDatabaseClient,
     type TurnEngineEventCreateManyInput,
@@ -117,7 +117,7 @@ export const seedScenarioToDatabase = async (
         },
     });
 
-    const connector = createPostgresConnector({ url: options.databaseUrl });
+    const connector = createGamePostgresConnector({ url: options.databaseUrl });
     const now = options.now ?? new Date();
     const tickSeconds = options.tickSeconds ?? DEFAULT_TICK_SECONDS;
     const generalGold = options.defaultGeneralGold ?? DEFAULT_GENERAL_GOLD;
@@ -125,7 +125,7 @@ export const seedScenarioToDatabase = async (
 
     await connector.connect();
     try {
-        const prisma = connector.prisma as TurnEngineDatabaseClient;
+        const prisma = connector.prisma as unknown as TurnEngineDatabaseClient;
 
         if (options.resetTables ?? true) {
             await prisma.event.deleteMany();

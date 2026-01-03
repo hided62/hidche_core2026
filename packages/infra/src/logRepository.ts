@@ -1,5 +1,4 @@
-import { LogCategory, LogScope } from '@prisma/client';
-import type { Prisma, PrismaClient } from '@prisma/client';
+import { LogCategory, LogScope, type GamePrisma, type GamePrismaClient } from './gamePrisma.js';
 
 export interface LogQueryOptions {
     limit?: number;
@@ -21,9 +20,9 @@ export interface LogEntryView {
 }
 
 const buildPaginationWhere = (
-    base: Prisma.LogEntryWhereInput,
+    base: GamePrisma.LogEntryWhereInput,
     options: LogQueryOptions
-): Prisma.LogEntryWhereInput => {
+): GamePrisma.LogEntryWhereInput => {
     if (options.beforeId) {
         return {
             ...base,
@@ -34,16 +33,16 @@ const buildPaginationWhere = (
 };
 
 const buildFindArgs = (
-    where: Prisma.LogEntryWhereInput,
+    where: GamePrisma.LogEntryWhereInput,
     options: LogQueryOptions
-): Prisma.LogEntryFindManyArgs => ({
+): GamePrisma.LogEntryFindManyArgs => ({
     where: buildPaginationWhere(where, options),
     orderBy: { id: 'desc' },
     take: options.limit ?? 50,
 });
 
 export class LogRepository {
-    constructor(private readonly prisma: PrismaClient) {}
+    constructor(private readonly prisma: GamePrismaClient) {}
 
     // 전역(시스템) 로그 조회
     async listSystemLogs(

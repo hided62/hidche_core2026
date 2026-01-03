@@ -1,7 +1,8 @@
-import { createPostgresConnector } from '@sammo-ts/infra';
+import { createGatewayPostgresConnector } from '@sammo-ts/infra';
 
 export interface GatewayProfileGateOptions {
     databaseUrl: string;
+    gatewayDatabaseUrl?: string;
     profileName: string;
     cacheMs?: number;
 }
@@ -29,7 +30,9 @@ type GatewayProfileClient = {
 export const createGatewayProfileGate = async (
     options: GatewayProfileGateOptions
 ): Promise<GatewayProfileGate> => {
-    const connector = createPostgresConnector({ url: options.databaseUrl });
+    const connector = createGatewayPostgresConnector({
+        url: options.gatewayDatabaseUrl ?? options.databaseUrl,
+    });
     await connector.connect();
     const prisma = connector.prisma as unknown as {
         gatewayProfile: GatewayProfileClient;

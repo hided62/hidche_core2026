@@ -1,5 +1,5 @@
 import {
-    createPostgresConnector,
+    createGamePostgresConnector,
     type InputJsonValue,
     type TurnEngineDatabaseClient,
 } from '@sammo-ts/infra';
@@ -269,10 +269,10 @@ export class InMemoryReservedTurnStore {
 export const createReservedTurnStore = async (
     options: ReservedTurnStoreOptions
 ): Promise<ReservedTurnStoreHandle> => {
-    const connector = createPostgresConnector({ url: options.databaseUrl });
+    const connector = createGamePostgresConnector({ url: options.databaseUrl });
     await connector.connect();
     const store = new InMemoryReservedTurnStore(
-        connector.prisma as ReservedTurnDatabaseClient,
+        connector.prisma as unknown as ReservedTurnDatabaseClient,
         {
             maxGeneralTurns: options.maxGeneralTurns ?? DEFAULT_GENERAL_TURNS,
             maxNationTurns: options.maxNationTurns ?? DEFAULT_NATION_TURNS,

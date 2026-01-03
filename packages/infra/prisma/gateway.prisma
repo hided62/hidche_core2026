@@ -1,0 +1,84 @@
+generator client {
+    provider = "prisma-client-js"
+    output   = "./generated/gateway"
+    engineType = "binary"
+}
+
+datasource db {
+    provider = "postgresql"
+}
+
+enum OAuthType {
+    NONE
+    KAKAO
+}
+
+enum GatewayProfileStatus {
+    RESERVED
+    PREOPEN
+    RUNNING
+    PAUSED
+    COMPLETED
+    STOPPED
+    DISABLED
+}
+
+enum GatewayBuildStatus {
+    IDLE
+    QUEUED
+    RUNNING
+    FAILED
+    SUCCEEDED
+}
+
+model AppUser {
+    id           String    @id @default(uuid())
+    loginId      String    @unique @map("login_id")
+    displayName  String    @map("display_name")
+    passwordHash String    @map("password_hash")
+    passwordSalt String    @map("password_salt")
+    roles        Json      @default(dbgenerated("'[]'::jsonb"))
+    sanctions    Json      @default(dbgenerated("'{}'::jsonb"))
+    oauthType    OAuthType @default(NONE) @map("oauth_type")
+    oauthId      String?   @unique @map("oauth_id")
+    email        String?   @unique
+    oauthInfo    Json      @default(dbgenerated("'{}'::jsonb")) @map("oauth_info")
+    createdAt    DateTime  @default(now()) @map("created_at")
+    updatedAt    DateTime  @updatedAt @map("updated_at")
+    lastLoginAt  DateTime? @map("last_login_at")
+
+    @@map("app_user")
+}
+
+model GatewayProfile {
+    profileName      String             @id @map("profile_name")
+    profile          String
+    scenario         String
+    apiPort          Int                @map("api_port")
+    status           GatewayProfileStatus
+    buildStatus      GatewayBuildStatus @default(IDLE) @map("build_status")
+    buildCommitSha   String?            @map("build_commit_sha")
+    buildWorkspace   String?            @map("build_workspace")
+    buildLastUsedAt  DateTime?          @map("build_last_used_at")
+    preopenAt        DateTime?          @map("preopen_at")
+    openAt           DateTime?          @map("open_at")
+    scheduledStartAt DateTime?          @map("scheduled_start_at")
+    buildRequestedAt DateTime?          @map("build_requested_at")
+    buildStartedAt   DateTime?          @map("build_started_at")
+    buildCompletedAt DateTime?          @map("build_completed_at")
+    buildError       String?            @map("build_error")
+    lastError        String?            @map("last_error")
+    meta             Json               @default(dbgenerated("'{}'::jsonb"))
+    createdAt        DateTime           @default(now()) @map("created_at")
+    updatedAt        DateTime           @updatedAt @map("updated_at")
+
+    @@unique([profile, scenario])
+    @@map("gateway_profile")
+}
+
+model SystemSetting {
+    id     Int    @id @default(1) @map("no")
+    notice String @default("") @map("notice")
+
+    @@map("system")
+}

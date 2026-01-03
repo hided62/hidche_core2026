@@ -1,10 +1,10 @@
 import fastify, { type FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
-import type { PrismaClient } from '@prisma/client';
 import {
-    createPostgresConnector,
+    createGatewayPostgresConnector,
     createRedisConnector,
+    type GatewayPrismaClient,
     resolvePostgresConfigFromEnv,
     resolveRedisConfigFromEnv,
 } from '@sammo-ts/infra';
@@ -22,13 +22,15 @@ import { RepositoryProfileStatusService } from './lobby/profileStatusService.js'
 
 export const createGatewayApiServer = async () => {
     const config = resolveGatewayApiConfigFromEnv();
-    const postgres = createPostgresConnector(resolvePostgresConfigFromEnv());
+    const postgres = createGatewayPostgresConnector(
+        resolvePostgresConfigFromEnv({ schema: config.dbSchema })
+    );
     const redis = createRedisConnector(resolveRedisConfigFromEnv());
     await postgres.connect();
     await redis.connect();
 
     const users = createPostgresUserRepository(
-        postgres.prisma as PrismaClient
+        postgres.prisma as GatewayPrismaClient
     );
     const sessions = new RedisGatewaySessionService(redis.client, {
         keyPrefix: config.redisKeyPrefix,
@@ -48,7 +50,7 @@ export const createGatewayApiServer = async () => {
     );
 
     const { orchestrator, profiles } = createGatewayOrchestrator(
-        postgres.prisma as PrismaClient,
+        postgres.prisma as GatewayPrismaClient,
         config,
         process.env
     );
@@ -82,7 +84,7 @@ export const createGatewayApiServer = async () => {
                     profileStatus,
                     adminToken: config.adminToken,
                     requestHeaders: req.headers,
-                    prisma: postgres.prisma as PrismaClient,
+                    prisma: postgres.prisma as GatewayPrismaClient,
                 }),
         },
     });

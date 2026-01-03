@@ -2,7 +2,7 @@ import fastify, { type FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import {
-    createPostgresConnector,
+    createGamePostgresConnector,
     createRedisConnector,
     resolvePostgresConfigFromEnv,
     resolveRedisConfigFromEnv,
@@ -35,7 +35,9 @@ const extractBearerToken = (value: string | string[] | undefined): string | null
 
 export const createGameApiServer = async () => {
     const config = resolveGameApiConfigFromEnv();
-    const postgres = createPostgresConnector(resolvePostgresConfigFromEnv());
+    const postgres = createGamePostgresConnector(
+        resolvePostgresConfigFromEnv({ schema: config.profile })
+    );
     const redis = createRedisConnector(resolveRedisConfigFromEnv());
 
     await postgres.connect();

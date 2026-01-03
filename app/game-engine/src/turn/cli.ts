@@ -9,6 +9,7 @@ export interface TurnDaemonCliOptions {
     profileName?: string;
     scenario?: string;
     databaseUrl?: string;
+    gatewayDatabaseUrl?: string;
     tickMinutes?: number;
     schedule?: TurnSchedule;
     budget?: Partial<TurnRunBudget>;
@@ -72,14 +73,22 @@ export const runTurnDaemonCli = async (
 ): Promise<void> => {
     const env = options.env ?? process.env;
     const profile =
-        options.profile ?? env.TURN_PROFILE ?? env.PROFILE ?? 'che';
+        options.profile ?? env.TURN_PROFILE ?? env.PROFILE ?? 'hwe';
     const scenario = options.scenario ?? env.TURN_SCENARIO ?? env.SCENARIO;
     const profileName =
         options.profileName ??
         env.TURN_PROFILE_NAME ??
         (scenario ? `${profile}:${scenario}` : profile);
     const databaseUrl =
-        options.databaseUrl ?? (await resolveDatabaseUrl({ env }));
+        options.databaseUrl ??
+        (await resolveDatabaseUrl({ env, schema: profile }));
+    const gatewayDatabaseUrl =
+        options.gatewayDatabaseUrl ??
+        env.GATEWAY_DATABASE_URL ??
+        (await resolveDatabaseUrl({
+            env,
+            schema: env.GATEWAY_DB_SCHEMA ?? 'public',
+        }));
     const budget = buildBudgetOverride(env, options.budget);
     const tickMinutes =
         options.tickMinutes ?? parseNumber(env.TURN_TICK_MINUTES);
@@ -93,6 +102,7 @@ export const runTurnDaemonCli = async (
         profile,
         profileName,
         databaseUrl,
+        gatewayDatabaseUrl,
         defaultBudget: budget,
         tickMinutes,
         schedule: options.schedule,

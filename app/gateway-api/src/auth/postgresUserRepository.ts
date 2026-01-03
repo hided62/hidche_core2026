@@ -1,4 +1,4 @@
-import { Prisma, type PrismaClient } from '@prisma/client';
+import { GatewayPrisma, type GatewayPrismaClient } from '@sammo-ts/infra';
 
 import { createSimplePasswordHasher, type PasswordHasher } from './passwordHasher.js';
 import type {
@@ -29,12 +29,12 @@ const mapUser = (row: {
     displayName: string;
     passwordHash: string;
     passwordSalt: string;
-    roles: Prisma.JsonValue;
-    sanctions: Prisma.JsonValue;
+    roles: GatewayPrisma.JsonValue;
+    sanctions: GatewayPrisma.JsonValue;
     oauthType: 'NONE' | 'KAKAO';
     oauthId: string | null;
     email: string | null;
-    oauthInfo: Prisma.JsonValue;
+    oauthInfo: GatewayPrisma.JsonValue;
     createdAt: Date;
 }): UserRecord => ({
     id: row.id,
@@ -52,7 +52,7 @@ const mapUser = (row: {
 });
 
 export const createPostgresUserRepository = (
-    prisma: PrismaClient,
+    prisma: GatewayPrismaClient,
     hasher: PasswordHasher = createSimplePasswordHasher()
 ): UserRepository => {
     return {
@@ -98,12 +98,12 @@ export const createPostgresUserRepository = (
                     displayName: input.displayName ?? input.username,
                     passwordHash: hasher.hash(input.password, salt),
                     passwordSalt: salt,
-                    roles: ['user'] satisfies Prisma.JsonArray,
-                    sanctions: {} satisfies Prisma.JsonObject,
+                    roles: ['user'] satisfies GatewayPrisma.JsonArray,
+                    sanctions: {} satisfies GatewayPrisma.JsonObject,
                     oauthType,
                     oauthId: input.oauth?.id,
                     email: input.oauth?.email?.toLowerCase(),
-                    oauthInfo: (input.oauth?.info ?? {}) as Prisma.JsonObject,
+                    oauthInfo: (input.oauth?.info ?? {}) as GatewayPrisma.JsonObject,
                 },
             });
             return mapUser(row);
@@ -125,7 +125,7 @@ export const createPostgresUserRepository = (
             await prisma.appUser.update({
                 where: { id: userId },
                 data: {
-                    oauthInfo: oauthInfo as Prisma.JsonObject,
+                    oauthInfo: oauthInfo as GatewayPrisma.JsonObject,
                 },
             });
         },
