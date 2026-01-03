@@ -6,6 +6,7 @@ export const NATION_TURN_COMMAND_KEYS = [
     'che_발령',
     'che_선전포고',
     'che_불가침제의',
+    'che_불가침파기제의',
     'che_의병모집',
 ] as const;
 
@@ -29,6 +30,7 @@ const defaultImporters: Record<
     che_발령: async () => import('./che_발령.js'),
     che_선전포고: async () => import('./che_선전포고.js'),
     che_불가침제의: async () => import('./che_불가침제의.js'),
+    che_불가침파기제의: async () => import('./che_불가침파기제의.js'),
     che_의병모집: async () => import('./che_의병모집.js'),
 };
 
