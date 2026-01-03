@@ -15,6 +15,7 @@ import type {
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
+import { clamp } from 'es-toolkit';
 
 export interface BoostMoraleArgs {}
 
@@ -27,9 +28,6 @@ export interface BoostMoraleEnvironment {
 const ACTION_NAME = '사기 진작';
 const DEFAULT_ATMOS_DELTA = 5;
 const DEFAULT_MAX_ATMOS = 100;
-
-const clamp = (value: number, min: number, max: number): number =>
-    Math.min(Math.max(value, min), max);
 
 export class ActionDefinition<
     TriggerState extends GeneralTriggerState = GeneralTriggerState

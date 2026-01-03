@@ -38,6 +38,7 @@ import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
+import { clamp } from 'es-toolkit';
 
 export interface FireAttackArgs {
     destCityId: number;
@@ -107,9 +108,6 @@ const STAT_EXP_KEY = 'intel_exp';
 const DEFAULT_MAX_PROB = 0.5;
 const INJURY_MAX = 80;
 const CITY_STATE_BURNING = 32;
-
-const clamp = (value: number, min: number, max: number): number =>
-    Math.min(Math.max(value, min), max);
 
 const randomRangeInt = (
     rng: RandomGenerator,

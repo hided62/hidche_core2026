@@ -1,16 +1,9 @@
 import type { RNG } from './RNG.js';
+import { clamp } from 'es-toolkit';
 
 const maxSafeInt = Number.MAX_SAFE_INTEGER;
 
-const clamp01 = (value: number): number => {
-    if (value < 0) {
-        return 0;
-    }
-    if (value > 1) {
-        return 1;
-    }
-    return value;
-};
+const clamp01 = (value: number): number => clamp(value, 0, 1);
 
 // 테스트에서 0/1만 고정으로 뽑기 위한 RNG
 export class ConstantRNG implements RNG {

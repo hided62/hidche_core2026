@@ -34,6 +34,7 @@ import type {
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
+import { clamp } from 'es-toolkit';
 
 export type DomesticCriticalPick = 'fail' | 'normal' | 'success';
 
@@ -88,9 +89,6 @@ const getMetaNumber = (
     const raw = meta[key];
     return typeof raw === 'number' ? raw : null;
 };
-
-const clamp = (value: number, min: number, max: number): number =>
-    Math.min(Math.max(value, min), max);
 
 const randomRange = (rng: RandomGenerator, min: number, max: number): number =>
     min + (max - min) * rng.nextFloat();

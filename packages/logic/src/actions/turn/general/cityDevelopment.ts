@@ -20,6 +20,7 @@ import type {
     GeneralActionOutcome,
     GeneralActionResolveContext,
 } from '@sammo-ts/logic/actions/engine.js';
+import { clamp } from 'es-toolkit';
 
 export interface CityDevelopmentArgs {}
 
@@ -36,9 +37,6 @@ export interface CityDevelopmentConfig {
     label: string;
     baseAmount: number;
 }
-
-const clamp = (value: number, min: number, max: number): number =>
-    Math.min(Math.max(value, min), max);
 
 const readNumber = (value: unknown): number | null =>
     typeof value === 'number' && Number.isFinite(value) ? value : null;

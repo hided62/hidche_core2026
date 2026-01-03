@@ -37,6 +37,7 @@ import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js'
 import type { NationTurnCommandSpec } from './index.js';
 import { JosaUtil } from '@sammo-ts/common';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
+import { clamp } from 'es-toolkit';
 
 export interface AwardArgs {
     isGold: boolean;
@@ -67,9 +68,6 @@ const roundToUnit = (value: number, unit: number): number =>
 
 const formatNumber = (value: number): string =>
     value.toLocaleString('en-US');
-
-const clamp = (value: number, min: number, max: number): number =>
-    Math.min(Math.max(value, min), max);
 
 const normalizeAmount = (
     amount: number,

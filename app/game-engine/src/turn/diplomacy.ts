@@ -1,4 +1,5 @@
 import type { TurnDiplomacy } from './types.js';
+import { clamp } from 'es-toolkit';
 
 // 외교 상태 코드 (legacy 기준).
 export const DIPLOMACY_STATE = {
@@ -13,9 +14,6 @@ export const DEFAULT_WAR_TERM = 6;
 
 // TODO: 불가침 제의/수락 등 외교 커맨드 전환 규칙을 이 모듈에 추가 예정.
 const MAX_WAR_TERM = 13;
-
-const clamp = (value: number, min: number, max: number): number =>
-    Math.min(max, Math.max(min, value));
 
 export const buildDiplomacyKey = (srcNationId: number, destNationId: number): string =>
     `${srcNationId}:${destNationId}`;
