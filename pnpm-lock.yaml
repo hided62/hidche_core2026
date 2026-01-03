@@ -135,9 +135,9 @@ importers:
 
   packages/common:
     dependencies:
-      js-sha512:
-        specifier: ^0.9.0
-        version: 0.9.0
+      '@noble/hashes':
+        specifier: ^2.0.1
+        version: 2.0.1
     devDependencies:
       tsdown:
         specifier: ^0.18.3
@@ -458,6 +458,10 @@ packages:
 
   '@napi-rs/wasm-runtime@1.1.0':
     resolution: {integrity: sha512-Fq6DJW+Bb5jaWE69/qOE0D1TUN9+6uWhCeZpdnSBk14pjLcCWR7Q8n49PTSPHazM37JqrsdpEthXy2xn6jWWiA==}
+
+  '@noble/hashes@2.0.1':
+    resolution: {integrity: sha512-XlOlEbQcE9fmuXxrVTXCTlG2nlRXa9Rj3rr5Ue/+tX+nmkgbX720YHh0VR3hBF9xDvwnb8D2shVGOwNx+ulArw==}
+    engines: {node: '>= 20.19.0'}
 
   '@oxc-project/types@0.103.0':
     resolution: {integrity: sha512-bkiYX5kaXWwUessFRSoXFkGIQTmc6dLGdxuRTrC+h8PSnIdZyuXHHlLAeTmOue5Br/a0/a7dHH0Gca6eXn9MKg==}
@@ -1334,9 +1338,6 @@ packages:
 
   js-git@0.7.8:
     resolution: {integrity: sha512-+E5ZH/HeRnoc/LW0AmAyhU+mNcWBzAKE+30+IDMLSLbbK+Tdt02AdkOKq9u15rlJsDEGFqtgckc8ZM59LhhiUA==}
-
-  js-sha512@0.9.0:
-    resolution: {integrity: sha512-mirki9WS/SUahm+1TbAPkqvbCiCfOAAsyXeHxK1UkullnJVVqoJG2pL9ObvT05CN+tM7fxhfYm0NbXn+1hWoZg==}
 
   js-yaml@4.1.1:
     resolution: {integrity: sha512-qQKT4zQxXl8lLwBtHMWwaTcGfFOZviOJet3Oy/xmGk2gZH677CJM9EvtfdSkgWcATZhj/55JZ0rmy3myCT5lsA==}
@@ -2284,6 +2285,8 @@ snapshots:
       '@tybys/wasm-util': 0.10.1
     optional: true
 
+  '@noble/hashes@2.0.1': {}
+
   '@oxc-project/types@0.103.0': {}
 
   '@pinojs/redact@0.4.0': {}
@@ -3113,8 +3116,6 @@ snapshots:
       culvert: 0.1.2
       git-sha1: 0.1.2
       pako: 0.2.9
-
-  js-sha512@0.9.0: {}
 
   js-yaml@4.1.1:
     dependencies:
