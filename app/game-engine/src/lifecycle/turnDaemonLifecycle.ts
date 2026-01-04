@@ -246,13 +246,35 @@ export class TurnDaemonLifecycle {
                 return;
             case 'troopJoin':
             case 'troopExit':
+            case 'dieOnPrestart':
+            case 'buildNationCandidate':
+            case 'instantRetreat':
+            case 'vacation':
+            case 'setMySetting':
+            case 'dropItem':
+            case 'changePermission':
+            case 'kick':
+            case 'appoint':
                 await this.handleMutationCommand(command);
                 return;
         }
     }
 
     private async handleMutationCommand(
-        command: Extract<TurnDaemonCommand, { type: 'troopJoin' | 'troopExit' }>
+        command: Extract<
+            TurnDaemonCommand,
+            | { type: 'troopJoin' }
+            | { type: 'troopExit' }
+            | { type: 'dieOnPrestart' }
+            | { type: 'buildNationCandidate' }
+            | { type: 'instantRetreat' }
+            | { type: 'vacation' }
+            | { type: 'setMySetting' }
+            | { type: 'dropItem' }
+            | { type: 'changePermission' }
+            | { type: 'kick' }
+            | { type: 'appoint' }
+        >
     ): Promise<void> {
         let result: TurnDaemonCommandResult | null = null;
         try {
@@ -264,14 +286,8 @@ export class TurnDaemonLifecycle {
                     type: command.type,
                     ok: false,
                     generalId: command.generalId,
-                    ...(command.type === 'troopJoin'
-                        ? {
-                              troopId: command.troopId,
-                              reason: '턴 데몬이 명령을 처리할 수 없습니다.',
-                          }
-                        : {
-                              reason: '턴 데몬이 명령을 처리할 수 없습니다.',
-                          }),
+                    reason: '턴 데몬이 명령을 처리할 수 없습니다.',
+                    ...(command.type === 'troopJoin' ? { troopId: command.troopId } : {}),
                 } as TurnDaemonCommandResult;
             }
         } catch (error) {
@@ -281,9 +297,8 @@ export class TurnDaemonLifecycle {
                 type: command.type,
                 ok: false,
                 generalId: command.generalId,
-                ...(command.type === 'troopJoin'
-                    ? { troopId: command.troopId, reason }
-                    : { reason }),
+                reason,
+                ...(command.type === 'troopJoin' ? { troopId: command.troopId } : {}),
             } as TurnDaemonCommandResult;
         }
 

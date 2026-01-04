@@ -34,6 +34,13 @@ import { loadWorldMap } from './maps/worldMap.js';
 const zRunReason = z.enum(['schedule', 'manual', 'poke']);
 const zMessageType = z.enum(['private', 'public', 'national', 'diplomacy']);
 
+const zGeneralSettings = z.object({
+    tnmt: z.number().int().optional(),
+    defence_train: z.number().int().optional(),
+    use_treatment: z.number().int().optional(),
+    use_auto_nation_turn: z.number().int().optional(),
+});
+
 const zTurnRunBudget = z.object({
     budgetMs: z.number().int().positive(),
     maxGenerals: z.number().int().positive(),
@@ -59,6 +66,19 @@ const toWorldStateSnapshot = (row: WorldStateRow) => ({
     meta: row.meta,
     updatedAt: row.updatedAt.toISOString(),
 });
+
+const getMyGeneral = async (ctx: { db: any, auth: any }) => {
+    if (!ctx.auth?.user.id) {
+        throw new TRPCError({ code: 'UNAUTHORIZED' });
+    }
+    const general = await ctx.db.general.findFirst({
+        where: { userId: parseInt(ctx.auth.user.id) },
+    });
+    if (!general) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'General not found' });
+    }
+    return general;
+};
 
 export const appRouter = router({
     health: router({
@@ -691,6 +711,161 @@ export const appRouter = router({
                 }
 
                 return { ok: true, wasLeader: result.wasLeader };
+            }),
+    }),
+    general: router({
+        dieOnPrestart: authedProcedure.mutation(async ({ ctx }) => {
+            const general = await getMyGeneral(ctx);
+            const result = await ctx.turnDaemon.requestCommand({
+                type: 'dieOnPrestart',
+                generalId: general.id,
+            });
+            if (!result || result.type !== 'dieOnPrestart') {
+                throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
+            }
+            if (!result.ok) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
+            }
+            return { ok: true };
+        }),
+        buildNationCandidate: authedProcedure.mutation(async ({ ctx }) => {
+            const general = await getMyGeneral(ctx);
+            const result = await ctx.turnDaemon.requestCommand({
+                type: 'buildNationCandidate',
+                generalId: general.id,
+            });
+            if (!result || result.type !== 'buildNationCandidate') {
+                throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
+            }
+            if (!result.ok) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
+            }
+            return { ok: true };
+        }),
+        instantRetreat: authedProcedure.mutation(async ({ ctx }) => {
+            const general = await getMyGeneral(ctx);
+            const result = await ctx.turnDaemon.requestCommand({
+                type: 'instantRetreat',
+                generalId: general.id,
+            });
+            if (!result || result.type !== 'instantRetreat') {
+                throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
+            }
+            if (!result.ok) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
+            }
+            return { ok: true };
+        }),
+        vacation: authedProcedure.mutation(async ({ ctx }) => {
+            const general = await getMyGeneral(ctx);
+            const result = await ctx.turnDaemon.requestCommand({
+                type: 'vacation',
+                generalId: general.id,
+            });
+            if (!result || result.type !== 'vacation') {
+                throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
+            }
+            if (!result.ok) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
+            }
+            return { ok: true };
+        }),
+        setMySetting: authedProcedure
+            .input(zGeneralSettings)
+            .mutation(async ({ ctx, input }) => {
+                const general = await getMyGeneral(ctx);
+                const result = await ctx.turnDaemon.requestCommand({
+                    type: 'setMySetting',
+                    generalId: general.id,
+                    settings: input,
+                });
+                if (!result || result.type !== 'setMySetting') {
+                    throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
+                }
+                if (!result.ok) {
+                    throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
+                }
+                return { ok: true };
+            }),
+        dropItem: authedProcedure
+            .input(z.object({ itemType: z.string() }))
+            .mutation(async ({ ctx, input }) => {
+                const general = await getMyGeneral(ctx);
+                const result = await ctx.turnDaemon.requestCommand({
+                    type: 'dropItem',
+                    generalId: general.id,
+                    itemType: input.itemType,
+                });
+                if (!result || result.type !== 'dropItem') {
+                    throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
+                }
+                if (!result.ok) {
+                    throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
+                }
+                return { ok: true };
+            }),
+    }),
+    nation: router({
+        changePermission: authedProcedure
+            .input(z.object({
+                isAmbassador: z.boolean(),
+                targetGeneralIds: z.array(z.number().int().positive()),
+            }))
+            .mutation(async ({ ctx, input }) => {
+                const general = await getMyGeneral(ctx);
+                const result = await ctx.turnDaemon.requestCommand({
+                    type: 'changePermission',
+                    generalId: general.id,
+                    isAmbassador: input.isAmbassador,
+                    targetGeneralIds: input.targetGeneralIds,
+                });
+                if (!result || result.type !== 'changePermission') {
+                    throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
+                }
+                if (!result.ok) {
+                    throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
+                }
+                return { ok: true };
+            }),
+        kick: authedProcedure
+            .input(z.object({ destGeneralId: z.number().int().positive() }))
+            .mutation(async ({ ctx, input }) => {
+                const general = await getMyGeneral(ctx);
+                const result = await ctx.turnDaemon.requestCommand({
+                    type: 'kick',
+                    generalId: general.id,
+                    destGeneralId: input.destGeneralId,
+                });
+                if (!result || result.type !== 'kick') {
+                    throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
+                }
+                if (!result.ok) {
+                    throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
+                }
+                return { ok: true };
+            }),
+        appoint: authedProcedure
+            .input(z.object({
+                destGeneralId: z.number().int().nonnegative(),
+                destCityId: z.number().int().nonnegative(),
+                officerLevel: z.number().int().nonnegative(),
+            }))
+            .mutation(async ({ ctx, input }) => {
+                const general = await getMyGeneral(ctx);
+                const result = await ctx.turnDaemon.requestCommand({
+                    type: 'appoint',
+                    generalId: general.id,
+                    destGeneralId: input.destGeneralId,
+                    destCityId: input.destCityId,
+                    officerLevel: input.officerLevel,
+                });
+                if (!result || result.type !== 'appoint') {
+                    throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
+                }
+                if (!result.ok) {
+                    throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
+                }
+                return { ok: true };
             }),
     }),
     turnDaemon: router({

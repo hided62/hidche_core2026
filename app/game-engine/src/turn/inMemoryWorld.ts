@@ -2,6 +2,7 @@ import type {
     City,
     LogEntryDraft,
     Nation,
+    ScenarioConfig,
     Troop,
     TurnSchedule,
 } from '@sammo-ts/logic';
@@ -190,7 +191,9 @@ export class InMemoryTurnWorld {
     private readonly createdTroopIds = new Set<number>();
     private readonly createdDiplomacyKeys = new Set<string>();
     private readonly deletedTroopIds = new Set<number>();
+    private readonly deletedGeneralIds = new Set<number>();
     private readonly logs: LogEntryDraft[] = [];
+    private readonly scenarioConfig: ScenarioConfig;
     private checkpoint?: TurnCheckpoint;
     private state: TurnWorldState;
 
@@ -200,6 +203,7 @@ export class InMemoryTurnWorld {
         options: InMemoryTurnWorldOptions
     ) {
         this.state = { ...state };
+        this.scenarioConfig = snapshot.scenarioConfig;
         this.schedule = options.schedule;
         this.generalTurnHandler =
             options.generalTurnHandler ??
@@ -235,6 +239,10 @@ export class InMemoryTurnWorld {
 
     getState(): TurnWorldState {
         return { ...this.state };
+    }
+
+    getScenarioConfig(): ScenarioConfig {
+        return this.scenarioConfig;
     }
 
     getGeneralById(id: number): TurnGeneral | null {
@@ -309,6 +317,39 @@ export class InMemoryTurnWorld {
         const next = applyGeneralPatch(target, patch);
         this.generals.set(id, next);
         this.dirtyGeneralIds.add(id);
+        return next;
+    }
+
+    removeGeneral(id: number): boolean {
+        if (!this.generals.has(id)) {
+            return false;
+        }
+        this.generals.delete(id);
+        this.dirtyGeneralIds.delete(id);
+        this.createdGeneralIds.delete(id);
+        this.deletedGeneralIds.add(id);
+        return true;
+    }
+
+    updateCity(id: number, patch: Partial<City>): City | null {
+        const target = this.cities.get(id);
+        if (!target) {
+            return null;
+        }
+        const next = { ...target, ...patch };
+        this.cities.set(id, next);
+        this.dirtyCityIds.add(id);
+        return next;
+    }
+
+    updateNation(id: number, patch: Partial<Nation>): Nation | null {
+        const target = this.nations.get(id);
+        if (!target) {
+            return null;
+        }
+        const next = { ...target, ...patch };
+        this.nations.set(id, next);
+        this.dirtyNationIds.add(id);
         return next;
     }
 
@@ -548,6 +589,7 @@ export class InMemoryTurnWorld {
         nations: Nation[];
         troops: Troop[];
         deletedTroops: number[];
+        deletedGenerals: number[];
         diplomacy: TurnDiplomacy[];
         logs: LogEntryDraft[];
         createdGenerals: TurnGeneral[];
@@ -579,6 +621,7 @@ export class InMemoryTurnWorld {
             .map((key) => this.diplomacy.get(key))
             .filter((entry): entry is TurnDiplomacy => Boolean(entry));
         const deletedTroops = Array.from(this.deletedTroopIds);
+        const deletedGenerals = Array.from(this.deletedGeneralIds);
         const logs = this.logs.splice(0, this.logs.length);
 
         this.dirtyGeneralIds.clear();
@@ -590,6 +633,7 @@ export class InMemoryTurnWorld {
         this.createdTroopIds.clear();
         this.createdDiplomacyKeys.clear();
         this.deletedTroopIds.clear();
+        this.deletedGeneralIds.clear();
 
         return {
             generals,
@@ -597,6 +641,7 @@ export class InMemoryTurnWorld {
             nations,
             troops,
             deletedTroops,
+            deletedGenerals,
             diplomacy,
             logs,
             createdGenerals,

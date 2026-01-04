@@ -26,7 +26,7 @@ import { createGatewayAdminActionConsumer } from './gatewayAdminActions.js';
 import { createGatewayProfileGate } from './gatewayProfileGate.js';
 import { createReservedTurnHandler } from './reservedTurnHandler.js';
 import { createReservedTurnStore } from './reservedTurnStore.js';
-import { createTurnDaemonCommandHandler } from './troopCommandHandler.js';
+import { createTurnDaemonCommandHandler } from './worldCommandHandler.js';
 import { loadTurnCommandProfile } from './turnCommandProfile.js';
 import { loadTurnWorldFromDatabase } from './worldLoader.js';
 

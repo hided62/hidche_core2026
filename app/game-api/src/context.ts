@@ -22,6 +22,7 @@ export interface WorldStateRow {
 
 export interface GeneralRow {
     id: number;
+    userId: number | null;
     name: string;
     nationId: number;
     cityId: number;
