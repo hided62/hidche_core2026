@@ -1,4 +1,4 @@
-import type { TurnDaemonHooks, TurnDaemonCommandHandler, TurnDaemonCommandResult, TurnRunResult } from '../lifecycle/types.js';
+import type { TurnDaemonHooks, TurnDaemonCommandHandler, TurnDaemonCommand, TurnDaemonCommandResult, TurnRunResult } from '../lifecycle/types.js';
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
 
 const buildFlushResult = (world: InMemoryTurnWorld): TurnRunResult => {

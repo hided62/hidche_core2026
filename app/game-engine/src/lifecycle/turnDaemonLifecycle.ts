@@ -10,7 +10,6 @@ import type {
     TurnStateStore,
     TurnProcessor,
     Clock,
-    TurnCheckpoint,
     TurnDaemonCommandHandler,
     TurnDaemonCommandResponder,
     TurnDaemonCommandResult,

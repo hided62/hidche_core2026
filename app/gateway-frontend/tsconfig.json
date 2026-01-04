@@ -29,7 +29,9 @@
       "@sammo-ts/infra": ["../../packages/infra/src/index.ts"],
       "@sammo-ts/infra/*": ["../../packages/infra/src/*"],
       "@sammo-ts/logic": ["../../packages/logic/src/index.ts"],
-      "@sammo-ts/logic/*": ["../../packages/logic/src/*"]
+      "@sammo-ts/logic/*": ["../../packages/logic/src/*"],
+      "@sammo-ts/game-engine": ["../../app/game-engine/src/index.ts"],
+      "@sammo-ts/game-engine/*": ["../../app/game-engine/src/*"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.tsx", "src/**/*.vue"],
