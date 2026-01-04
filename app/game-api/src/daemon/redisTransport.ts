@@ -29,7 +29,10 @@ type RedisStreamReadResponse = Array<{
 }>;
 
 const buildCommandEnvelope = (command: TurnDaemonCommand): TurnDaemonCommandEnvelope => {
-    const requestId = command.type === 'getStatus' ? command.requestId : randomUUID();
+    const requestId =
+        command.type === 'getStatus' && command.requestId
+            ? command.requestId
+            : randomUUID();
     return {
         requestId,
         sentAt: new Date().toISOString(),

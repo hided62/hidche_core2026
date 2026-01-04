@@ -228,10 +228,12 @@ export class TurnDaemonLifecycle {
                 this.stopping = true;
                 return;
             case 'getStatus': {
-                await this.commandResponder?.publishStatus(
-                    command.requestId,
-                    this.getStatus()
-                );
+                if (command.requestId) {
+                    await this.commandResponder?.publishStatus(
+                        command.requestId,
+                        this.getStatus()
+                    );
+                }
                 return;
             }
             case 'run':
@@ -285,7 +287,7 @@ export class TurnDaemonLifecycle {
             } as TurnDaemonCommandResult;
         }
 
-        if (this.commandResponder) {
+        if (this.commandResponder && command.requestId) {
             await this.commandResponder.publishCommandResult(
                 command.requestId,
                 result

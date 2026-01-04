@@ -10,3 +10,4 @@ export * from './util/RNG.js';
 export * from './util/RandUtil.js';
 export * from './util/TestRNG.js';
 export * from './util/sha512.js';
+export * from './turnDaemon/types.js';
