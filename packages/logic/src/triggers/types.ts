@@ -23,7 +23,14 @@ export type TriggerDomesticVarType =
     | 'rice'
     | 'probability';
 
-export type TriggerStrategicActionType = '의병모집';
+export type TriggerStrategicActionType =
+    | '의병모집'
+    | '허보'
+    | '필사즉생'
+    | '백성동원'
+    | '이호경식'
+    | '수몰'
+    | '급습';
 
 export type TriggerStrategicVarType = 'delay' | 'globalDelay';
 

@@ -129,6 +129,8 @@ class MemoryStateView implements StateView {
                 return `destNation:${req.id}`;
             case 'diplomacy':
                 return `diplomacy:${req.srcNationId}:${req.destNationId}`;
+            case 'diplomacyList':
+                return 'diplomacy:list';
             case 'arg':
                 return `arg:${req.key}`;
             case 'env':

@@ -37,6 +37,14 @@ export interface ActionContextWorldRef {
         toNationId: number;
         state: number;
     }>;
+    getDiplomacyEntry(fromNationId: number, toNationId: number): {
+        fromNationId: number;
+        toNationId: number;
+        state: number;
+        term: number;
+        dead?: number;
+        meta?: Record<string, unknown>;
+    } | null;
     getGeneralById(id: number): ActionContextGeneral | null;
     getCityById(id: number): City | null;
     getNationById(id: number): Nation | null;

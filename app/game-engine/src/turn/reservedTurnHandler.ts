@@ -351,6 +351,8 @@ class WorldStateView implements StateView {
                     req.srcNationId,
                     req.destNationId
                 );
+            case 'diplomacyList':
+                return this.world.listDiplomacy();
             case 'arg':
                 return this.args[req.key] ?? null;
             case 'env':

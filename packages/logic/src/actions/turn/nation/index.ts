@@ -8,6 +8,12 @@ export const NATION_TURN_COMMAND_KEYS = [
     'che_불가침제의',
     'che_불가침파기제의',
     'che_의병모집',
+    'che_허보',
+    'che_필사즉생',
+    'che_백성동원',
+    'che_이호경식',
+    'che_수몰',
+    'che_급습',
 ] as const;
 
 export type NationTurnCommandKey =
@@ -32,6 +38,12 @@ const defaultImporters: Record<
     che_불가침제의: async () => import('./che_불가침제의.js'),
     che_불가침파기제의: async () => import('./che_불가침파기제의.js'),
     che_의병모집: async () => import('./che_의병모집.js'),
+    che_허보: async () => import('./che_허보.js'),
+    che_필사즉생: async () => import('./che_필사즉생.js'),
+    che_백성동원: async () => import('./che_백성동원.js'),
+    che_이호경식: async () => import('./che_이호경식.js'),
+    che_수몰: async () => import('./che_수몰.js'),
+    che_급습: async () => import('./che_급습.js'),
 };
 
 export const isNationTurnCommandKey = (
