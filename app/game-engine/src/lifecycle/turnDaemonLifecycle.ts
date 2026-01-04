@@ -11,6 +11,9 @@ import type {
     TurnProcessor,
     Clock,
     TurnCheckpoint,
+    TurnDaemonCommandHandler,
+    TurnDaemonCommandResponder,
+    TurnDaemonCommandResult,
 } from './types.js';
 
 type PendingRun = {
@@ -31,6 +34,8 @@ export interface TurnDaemonLifecycleDeps {
     stateStore: TurnStateStore;
     processor: TurnProcessor;
     hooks?: TurnDaemonHooks;
+    commandHandler?: TurnDaemonCommandHandler;
+    commandResponder?: TurnDaemonCommandResponder;
     pauseGate?: () => Promise<boolean>;
 }
 
@@ -42,6 +47,8 @@ export class TurnDaemonLifecycle {
     private readonly stateStore: TurnStateStore;
     private readonly processor: TurnProcessor;
     private readonly hooks?: TurnDaemonHooks;
+    private readonly commandHandler?: TurnDaemonCommandHandler;
+    private readonly commandResponder?: TurnDaemonCommandResponder;
     private readonly pauseGate?: () => Promise<boolean>;
     private readonly options: TurnDaemonLifecycleOptions;
 
@@ -59,6 +66,8 @@ export class TurnDaemonLifecycle {
         this.stateStore = deps.stateStore;
         this.processor = deps.processor;
         this.hooks = deps.hooks;
+        this.commandHandler = deps.commandHandler;
+        this.commandResponder = deps.commandResponder;
         this.pauseGate = deps.pauseGate;
         this.options = options;
         this.status = {
@@ -218,6 +227,13 @@ export class TurnDaemonLifecycle {
                 this.status.state = 'stopping';
                 this.stopping = true;
                 return;
+            case 'getStatus': {
+                await this.commandResponder?.publishStatus(
+                    command.requestId,
+                    this.getStatus()
+                );
+                return;
+            }
             case 'run':
                 this.pendingRun = {
                     reason: command.reason,
@@ -226,6 +242,54 @@ export class TurnDaemonLifecycle {
                 };
                 this.status.pendingReason = command.reason;
                 return;
+            case 'troopJoin':
+            case 'troopExit':
+                await this.handleMutationCommand(command);
+                return;
+        }
+    }
+
+    private async handleMutationCommand(
+        command: Extract<TurnDaemonCommand, { type: 'troopJoin' | 'troopExit' }>
+    ): Promise<void> {
+        let result: TurnDaemonCommandResult | null = null;
+        try {
+            result = this.commandHandler
+                ? await this.commandHandler.handle(command)
+                : null;
+            if (!result) {
+                result = {
+                    type: command.type,
+                    ok: false,
+                    generalId: command.generalId,
+                    ...(command.type === 'troopJoin'
+                        ? {
+                              troopId: command.troopId,
+                              reason: '턴 데몬이 명령을 처리할 수 없습니다.',
+                          }
+                        : {
+                              reason: '턴 데몬이 명령을 처리할 수 없습니다.',
+                          }),
+                } as TurnDaemonCommandResult;
+            }
+        } catch (error) {
+            const reason =
+                error instanceof Error ? error.message : 'Unknown command error.';
+            result = {
+                type: command.type,
+                ok: false,
+                generalId: command.generalId,
+                ...(command.type === 'troopJoin'
+                    ? { troopId: command.troopId, reason }
+                    : { reason }),
+            } as TurnDaemonCommandResult;
+        }
+
+        if (this.commandResponder) {
+            await this.commandResponder.publishCommandResult(
+                command.requestId,
+                result
+            );
         }
     }
 

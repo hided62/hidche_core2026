@@ -5,6 +5,7 @@ import type { TurnDaemonTransport } from './transport.js';
 import type {
     TurnDaemonCommand,
     TurnDaemonCommandEnvelope,
+    TurnDaemonCommandResult,
     TurnDaemonEventEnvelope,
     TurnDaemonStatus,
 } from './types.js';
@@ -73,6 +74,50 @@ export class RedisTurnDaemonTransport implements TurnDaemonTransport {
             payload: JSON.stringify(envelope),
         });
         return envelope.requestId;
+    }
+
+    async requestCommand(
+        command: TurnDaemonCommand,
+        timeoutMs?: number
+    ): Promise<TurnDaemonCommandResult | null> {
+        const requestId = await this.sendCommand(command);
+
+        const deadline = Date.now() + (timeoutMs ?? this.requestTimeoutMs);
+        let lastId = '$';
+
+        while (Date.now() < deadline) {
+            const remaining = Math.max(1, deadline - Date.now());
+            const response = (await this.client.xRead(
+                { key: this.keys.eventStream, id: lastId },
+                { BLOCK: remaining, COUNT: 10 }
+            )) as RedisStreamReadResponse | null;
+
+            if (!response) {
+                return null;
+            }
+
+            for (const stream of response) {
+                for (const message of stream.messages) {
+                    lastId = message.id;
+                    const payload = message.message.payload;
+                    if (!payload) {
+                        continue;
+                    }
+                    const envelope = parseEventEnvelope(payload);
+                    if (!envelope) {
+                        continue;
+                    }
+                    if (
+                        envelope.event.type === 'commandResult' &&
+                        envelope.requestId === requestId
+                    ) {
+                        return envelope.event.result;
+                    }
+                }
+            }
+        }
+
+        return null;
     }
 
     async requestStatus(timeoutMs?: number): Promise<TurnDaemonStatus | null> {

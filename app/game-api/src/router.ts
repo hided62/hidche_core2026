@@ -634,42 +634,29 @@ export const appRouter = router({
                 })
             )
             .mutation(async ({ ctx, input }) => {
-                const general = await ctx.db.general.findUnique({
-                    where: { id: input.generalId },
+                const result = await ctx.turnDaemon.requestCommand({
+                    type: 'troopJoin',
+                    generalId: input.generalId,
+                    troopId: input.troopId,
                 });
-                if (!general) {
+                if (!result) {
                     throw new TRPCError({
-                        code: 'NOT_FOUND',
-                        message: 'General not found.',
+                        code: 'TIMEOUT',
+                        message: 'Turn daemon did not respond.',
                     });
                 }
-                if (general.troopId !== 0) {
+                if (result.type !== 'troopJoin') {
+                    throw new TRPCError({
+                        code: 'INTERNAL_SERVER_ERROR',
+                        message: 'Unexpected turn daemon response.',
+                    });
+                }
+                if (!result.ok) {
                     throw new TRPCError({
                         code: 'PRECONDITION_FAILED',
-                        message: 'Already in a troop.',
+                        message: result.reason,
                     });
                 }
-                if (general.nationId <= 0) {
-                    throw new TRPCError({
-                        code: 'PRECONDITION_FAILED',
-                        message: 'General is not part of a nation.',
-                    });
-                }
-
-                const troop = await ctx.db.troop.findUnique({
-                    where: { troopLeaderId: input.troopId },
-                });
-                if (!troop || troop.nationId !== general.nationId) {
-                    throw new TRPCError({
-                        code: 'PRECONDITION_FAILED',
-                        message: 'Troop is invalid.',
-                    });
-                }
-
-                await ctx.db.general.update({
-                    where: { id: general.id },
-                    data: { troopId: input.troopId },
-                });
 
                 return { ok: true };
             }),
@@ -680,41 +667,30 @@ export const appRouter = router({
                 })
             )
             .mutation(async ({ ctx, input }) => {
-                const general = await ctx.db.general.findUnique({
-                    where: { id: input.generalId },
+                const result = await ctx.turnDaemon.requestCommand({
+                    type: 'troopExit',
+                    generalId: input.generalId,
                 });
-                if (!general) {
+                if (!result) {
                     throw new TRPCError({
-                        code: 'NOT_FOUND',
-                        message: 'General not found.',
+                        code: 'TIMEOUT',
+                        message: 'Turn daemon did not respond.',
                     });
                 }
-                if (general.troopId === 0) {
+                if (result.type !== 'troopExit') {
+                    throw new TRPCError({
+                        code: 'INTERNAL_SERVER_ERROR',
+                        message: 'Unexpected turn daemon response.',
+                    });
+                }
+                if (!result.ok) {
                     throw new TRPCError({
                         code: 'PRECONDITION_FAILED',
-                        message: 'Not in a troop.',
+                        message: result.reason,
                     });
                 }
 
-                if (general.troopId !== general.id) {
-                    await ctx.db.general.update({
-                        where: { id: general.id },
-                        data: { troopId: 0 },
-                    });
-                    return { ok: true, wasLeader: false };
-                }
-
-                await ctx.db.$transaction([
-                    ctx.db.general.updateMany({
-                        where: { troopId: general.troopId },
-                        data: { troopId: 0 },
-                    }),
-                    ctx.db.troop.deleteMany({
-                        where: { troopLeaderId: general.troopId },
-                    }),
-                ]);
-
-                return { ok: true, wasLeader: true };
+                return { ok: true, wasLeader: result.wasLeader };
             }),
     }),
     turnDaemon: router({

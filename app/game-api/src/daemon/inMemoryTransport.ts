@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type {
     TurnDaemonCommand,
     TurnDaemonCommandEnvelope,
+    TurnDaemonCommandResult,
     TurnDaemonStatus,
 } from './types.js';
 import type { TurnDaemonTransport } from './transport.js';
@@ -18,6 +19,7 @@ const buildDefaultStatus = (): TurnDaemonStatus => ({
 export class InMemoryTurnDaemonTransport implements TurnDaemonTransport {
     public readonly commands: TurnDaemonCommandEnvelope[] = [];
     private status: TurnDaemonStatus;
+    private readonly results = new Map<string, TurnDaemonCommandResult>();
 
     constructor(initialStatus: TurnDaemonStatus = buildDefaultStatus()) {
         this.status = initialStatus;
@@ -34,11 +36,23 @@ export class InMemoryTurnDaemonTransport implements TurnDaemonTransport {
         return requestId;
     }
 
+    async requestCommand(
+        command: TurnDaemonCommand,
+        _timeoutMs?: number
+    ): Promise<TurnDaemonCommandResult | null> {
+        const requestId = await this.sendCommand(command);
+        return this.results.get(requestId) ?? null;
+    }
+
     async requestStatus(): Promise<TurnDaemonStatus> {
         return this.status;
     }
 
     setStatus(status: TurnDaemonStatus): void {
         this.status = status;
+    }
+
+    setCommandResult(requestId: string, result: TurnDaemonCommandResult): void {
+        this.results.set(requestId, result);
     }
 }

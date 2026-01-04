@@ -42,7 +42,49 @@ export type TurnDaemonCommand =
     | { type: 'run'; reason: RunReason; targetTime?: string; budget?: TurnRunBudget }
     | { type: 'pause'; reason?: string }
     | { type: 'resume'; reason?: string }
-    | { type: 'shutdown'; reason?: string };
+    | { type: 'shutdown'; reason?: string }
+    | { type: 'getStatus'; requestId: string }
+    | { type: 'troopJoin'; requestId: string; generalId: number; troopId: number }
+    | { type: 'troopExit'; requestId: string; generalId: number };
+
+export type TurnDaemonCommandResult =
+    | {
+          type: 'troopJoin';
+          ok: true;
+          generalId: number;
+          troopId: number;
+      }
+    | {
+          type: 'troopJoin';
+          ok: false;
+          generalId: number;
+          troopId: number;
+          reason: string;
+      }
+    | {
+          type: 'troopExit';
+          ok: true;
+          generalId: number;
+          wasLeader: boolean;
+      }
+    | {
+          type: 'troopExit';
+          ok: false;
+          generalId: number;
+          reason: string;
+      };
+
+export interface TurnDaemonCommandHandler {
+    handle(command: TurnDaemonCommand): Promise<TurnDaemonCommandResult | null>;
+}
+
+export interface TurnDaemonCommandResponder {
+    publishStatus(requestId: string, status: TurnDaemonStatus): Promise<void>;
+    publishCommandResult(
+        requestId: string,
+        result: TurnDaemonCommandResult
+    ): Promise<void>;
+}
 
 export type { Clock } from '@sammo-ts/common';
 

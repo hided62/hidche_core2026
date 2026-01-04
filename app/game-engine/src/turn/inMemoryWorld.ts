@@ -189,6 +189,7 @@ export class InMemoryTurnWorld {
     private readonly createdGeneralIds = new Set<number>();
     private readonly createdTroopIds = new Set<number>();
     private readonly createdDiplomacyKeys = new Set<string>();
+    private readonly deletedTroopIds = new Set<number>();
     private readonly logs: LogEntryDraft[] = [];
     private checkpoint?: TurnCheckpoint;
     private state: TurnWorldState;
@@ -295,6 +296,42 @@ export class InMemoryTurnWorld {
             ...entry,
             meta: { ...entry.meta },
         }));
+    }
+
+    updateGeneral(
+        id: number,
+        patch: Partial<TurnGeneral>
+    ): TurnGeneral | null {
+        const target = this.generals.get(id);
+        if (!target) {
+            return null;
+        }
+        const next = applyGeneralPatch(target, patch);
+        this.generals.set(id, next);
+        this.dirtyGeneralIds.add(id);
+        return next;
+    }
+
+    updateTroop(id: number, patch: Partial<Troop>): Troop | null {
+        const target = this.troops.get(id);
+        if (!target) {
+            return null;
+        }
+        const next = applyTroopPatch(target, patch);
+        this.troops.set(id, next);
+        this.dirtyTroopIds.add(id);
+        return next;
+    }
+
+    removeTroop(id: number): boolean {
+        if (!this.troops.has(id)) {
+            return false;
+        }
+        this.troops.delete(id);
+        this.dirtyTroopIds.delete(id);
+        this.createdTroopIds.delete(id);
+        this.deletedTroopIds.add(id);
+        return true;
     }
 
     applyDiplomacyPatch(input: {
@@ -510,6 +547,7 @@ export class InMemoryTurnWorld {
         cities: City[];
         nations: Nation[];
         troops: Troop[];
+        deletedTroops: number[];
         diplomacy: TurnDiplomacy[];
         logs: LogEntryDraft[];
         createdGenerals: TurnGeneral[];
@@ -540,6 +578,7 @@ export class InMemoryTurnWorld {
         const createdDiplomacy = Array.from(this.createdDiplomacyKeys)
             .map((key) => this.diplomacy.get(key))
             .filter((entry): entry is TurnDiplomacy => Boolean(entry));
+        const deletedTroops = Array.from(this.deletedTroopIds);
         const logs = this.logs.splice(0, this.logs.length);
 
         this.dirtyGeneralIds.clear();
@@ -550,12 +589,14 @@ export class InMemoryTurnWorld {
         this.createdGeneralIds.clear();
         this.createdTroopIds.clear();
         this.createdDiplomacyKeys.clear();
+        this.deletedTroopIds.clear();
 
         return {
             generals,
             cities,
             nations,
             troops,
+            deletedTroops,
             diplomacy,
             logs,
             createdGenerals,

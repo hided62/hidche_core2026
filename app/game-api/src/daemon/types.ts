@@ -38,19 +38,52 @@ export interface TurnDaemonStatus {
     checkpoint?: TurnCheckpoint;
 }
 
+export type TurnDaemonMutationCommand =
+    | { type: 'troopJoin'; generalId: number; troopId: number }
+    | { type: 'troopExit'; generalId: number };
+
 // 턴 데몬 제어 요청은 Redis 스트림으로 전달한다.
 export type TurnDaemonCommand =
     | { type: 'run'; reason: RunReason; targetTime?: string; budget?: TurnRunBudget }
     | { type: 'pause'; reason?: string }
     | { type: 'resume'; reason?: string }
-    | { type: 'getStatus'; requestId: string };
+    | { type: 'getStatus'; requestId: string }
+    | TurnDaemonMutationCommand;
+
+export type TurnDaemonCommandResult =
+    | {
+          type: 'troopJoin';
+          ok: true;
+          generalId: number;
+          troopId: number;
+      }
+    | {
+          type: 'troopJoin';
+          ok: false;
+          generalId: number;
+          troopId: number;
+          reason: string;
+      }
+    | {
+          type: 'troopExit';
+          ok: true;
+          generalId: number;
+          wasLeader: boolean;
+      }
+    | {
+          type: 'troopExit';
+          ok: false;
+          generalId: number;
+          reason: string;
+      };
 
 // 턴 데몬 이벤트는 상태/실행 결과를 API 서버에 알려준다.
 export type TurnDaemonEvent =
     | { type: 'status'; requestId?: string; status: TurnDaemonStatus }
     | { type: 'runStarted'; at: string; reason: RunReason }
     | { type: 'runCompleted'; at: string; result: TurnRunResult }
-    | { type: 'runFailed'; at: string; error: string };
+    | { type: 'runFailed'; at: string; error: string }
+    | { type: 'commandResult'; result: TurnDaemonCommandResult };
 
 export interface TurnDaemonCommandEnvelope {
     requestId: string;

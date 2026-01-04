@@ -1,4 +1,5 @@
 import type { TurnCommandProfile, TurnSchedule } from '@sammo-ts/logic';
+import { createRedisConnector, resolveRedisConfigFromEnv } from '@sammo-ts/infra';
 
 import { SystemClock } from '../lifecycle/clock.js';
 import { getNextTickTime } from '../lifecycle/getNextTickTime.js';
@@ -10,6 +11,7 @@ import type {
     TurnRunBudget,
 } from '../lifecycle/types.js';
 import { TurnDaemonLifecycle } from '../lifecycle/turnDaemonLifecycle.js';
+import { buildTurnDaemonStreamKeys, RedisTurnDaemonCommandStream } from '../lifecycle/redisCommandStream.js';
 import type { MapLoaderOptions } from '../scenario/mapLoader.js';
 import { createDatabaseTurnHooks } from './databaseHooks.js';
 import type {
@@ -24,6 +26,7 @@ import { createGatewayAdminActionConsumer } from './gatewayAdminActions.js';
 import { createGatewayProfileGate } from './gatewayProfileGate.js';
 import { createReservedTurnHandler } from './reservedTurnHandler.js';
 import { createReservedTurnStore } from './reservedTurnStore.js';
+import { createTurnDaemonCommandHandler } from './troopCommandHandler.js';
 import { loadTurnCommandProfile } from './turnCommandProfile.js';
 import { loadTurnWorldFromDatabase } from './worldLoader.js';
 
@@ -45,6 +48,8 @@ export interface TurnDaemonRuntimeOptions {
     commandProfile?: TurnCommandProfile;
     commandProfilePath?: string;
     adminActionIntervalMs?: number;
+    redisUrl?: string;
+    commandStreamStartId?: string;
 }
 
 export interface TurnDaemonRuntime {
@@ -67,6 +72,19 @@ const resolveTickMinutes = (tickSeconds: number, override?: number): number => {
 const buildFixedSchedule = (tickMinutes: number): TurnSchedule => ({
     entries: [{ startMinute: 0, tickMinutes }],
 });
+
+const resolveRedisConfig = (
+    redisUrl?: string,
+    env: NodeJS.ProcessEnv = process.env
+) => {
+    if (redisUrl) {
+        return { url: redisUrl };
+    }
+    if (!env.REDIS_URL) {
+        return null;
+    }
+    return resolveRedisConfigFromEnv(env);
+};
 
 export const createTurnDaemonRuntime = async (
     options: TurnDaemonRuntimeOptions
@@ -135,6 +153,10 @@ export const createTurnDaemonRuntime = async (
 
     let hooks: TurnDaemonHooks | undefined;
     let close = async () => {};
+    let redisCommandStream: RedisTurnDaemonCommandStream | null = null;
+    let redisConnector:
+        | ReturnType<typeof createRedisConnector>
+        | null = null;
     let pauseGate: (() => Promise<boolean>) | undefined;
     let adminActionConsumer: Awaited<
         ReturnType<typeof createGatewayAdminActionConsumer>
@@ -197,6 +219,33 @@ export const createTurnDaemonRuntime = async (
         };
     }
 
+    const redisConfig = resolveRedisConfig(options.redisUrl);
+    if (redisConfig) {
+        redisConnector = createRedisConnector(redisConfig);
+        await redisConnector.connect();
+        redisCommandStream = new RedisTurnDaemonCommandStream(
+            redisConnector.client,
+            {
+                keys: buildTurnDaemonStreamKeys(options.profileName ?? options.profile),
+                startId: options.commandStreamStartId,
+            }
+        );
+    }
+
+    const baseClose = close;
+    close = async () => {
+        await baseClose();
+        if (redisConnector) {
+            await redisConnector.disconnect();
+        }
+    };
+
+    const resolvedControlQueue = options.controlQueue ?? redisCommandStream ?? controlQueue;
+    const commandHandler = createTurnDaemonCommandHandler({
+        world,
+        hooks,
+    });
+
     const defaultBudget: TurnRunBudget = options.defaultBudget ?? {
         budgetMs: 5000,
         maxGenerals: 200,
@@ -206,13 +255,15 @@ export const createTurnDaemonRuntime = async (
     const lifecycle = new TurnDaemonLifecycle(
         {
             clock,
-            controlQueue,
+            controlQueue: resolvedControlQueue,
             getNextTickTime: (lastTurnTime) =>
                 getNextTickTime(lastTurnTime, tickMinutes),
             stateStore,
             processor,
             hooks,
             pauseGate,
+            commandHandler,
+            commandResponder: redisCommandStream ?? undefined,
         },
         { profile: options.profile, defaultBudget }
     );
@@ -232,14 +283,14 @@ export const createTurnDaemonRuntime = async (
                 }
                 switch (action.action) {
                     case 'RESUME':
-                        controlQueue.enqueue({ type: 'resume', reason });
+                        resolvedControlQueue.enqueue({ type: 'resume', reason });
                         return { status: 'APPLIED', detail: 'resume queued' };
                     case 'PAUSE':
-                        controlQueue.enqueue({ type: 'pause', reason });
+                        resolvedControlQueue.enqueue({ type: 'pause', reason });
                         return { status: 'APPLIED', detail: 'pause queued' };
                     case 'STOP':
                     case 'SHUTDOWN':
-                        controlQueue.enqueue({ type: 'shutdown', reason });
+                        resolvedControlQueue.enqueue({ type: 'shutdown', reason });
                         return { status: 'APPLIED', detail: 'shutdown queued' };
                     default:
                         return { status: 'IGNORED', detail: 'not implemented' };
@@ -252,7 +303,7 @@ export const createTurnDaemonRuntime = async (
     return {
         lifecycle,
         world,
-        controlQueue,
+        controlQueue: resolvedControlQueue,
         stateStore,
         processor,
         hooks,
