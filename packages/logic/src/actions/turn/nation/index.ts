@@ -3,6 +3,7 @@ import type { TurnCommandModule, TurnCommandSpecBase } from '@sammo-ts/logic/act
 export const NATION_TURN_COMMAND_KEYS = [
     '휴식',
     'che_포상',
+    'che_부대탈퇴지시',
     'che_발령',
     'che_선전포고',
     'che_불가침제의',
@@ -33,6 +34,7 @@ const defaultImporters: Record<
 > = {
     휴식: async () => import('./휴식.js'),
     che_포상: async () => import('./che_포상.js'),
+    che_부대탈퇴지시: async () => import('./che_부대탈퇴지시.js'),
     che_발령: async () => import('./che_발령.js'),
     che_선전포고: async () => import('./che_선전포고.js'),
     che_불가침제의: async () => import('./che_불가침제의.js'),

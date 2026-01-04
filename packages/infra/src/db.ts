@@ -4,8 +4,12 @@ export interface DatabaseClient<
     CityRow = unknown,
     NationRow = unknown,
     GeneralTurnRow = unknown,
-    NationTurnRow = unknown
+    NationTurnRow = unknown,
+    TroopRow = unknown
 > {
+    $transaction<T = unknown>(
+        queries: Array<Promise<T>>
+    ): Promise<T[]>;
     $queryRaw<T = unknown>(
         query: TemplateStringsArray,
         ...values: unknown[]
@@ -19,9 +23,20 @@ export interface DatabaseClient<
             where: { userId?: string; npcState?: number | { gt: number } };
             select?: { name?: boolean; picture?: boolean };
         }): Promise<GeneralRow | null>;
+        findMany(args: {
+            where?: { nationId?: number };
+        }): Promise<GeneralRow[]>;
         count(args?: {
             where?: { npcState?: number | { gt: number } };
         }): Promise<number>;
+        update(args: {
+            where: { id: number };
+            data: Partial<GeneralRow>;
+        }): Promise<GeneralRow>;
+        updateMany(args: {
+            where: { troopId?: number };
+            data: Partial<GeneralRow>;
+        }): Promise<unknown>;
     };
     city: {
         findUnique(args: { where: { id: number } }): Promise<CityRow | null>;
@@ -61,6 +76,14 @@ export interface DatabaseClient<
                 actionCode: string;
                 arg: unknown;
             }>;
+        }): Promise<unknown>;
+    };
+    troop: {
+        findUnique(args: {
+            where: { troopLeaderId: number };
+        }): Promise<TroopRow | null>;
+        deleteMany(args: {
+            where: { troopLeaderId: number };
         }): Promise<unknown>;
     };
 }

@@ -117,6 +117,8 @@ class MemoryStateView implements StateView {
         switch (req.kind) {
             case 'general':
                 return `general:${req.id}`;
+            case 'generalList':
+                return 'general:list';
             case 'city':
                 return `city:${req.id}`;
             case 'nation':
@@ -382,7 +384,8 @@ const mapNationRow = (row: NationRow): Nation => ({
 const buildStateView = (
     general: General,
     city: City | null,
-    nation: Nation | null
+    nation: Nation | null,
+    generalList: General[] | null
 ): StateView => {
     const view = new MemoryStateView();
     view.set({ kind: 'general', id: general.id }, general);
@@ -391,6 +394,9 @@ const buildStateView = (
     }
     if (nation) {
         view.set({ kind: 'nation', id: nation.id }, nation);
+    }
+    if (generalList) {
+        view.set({ kind: 'generalList' }, generalList);
     }
     return view;
 };
@@ -538,12 +544,16 @@ export const buildTurnCommandTable = async (options: {
     general: GeneralRow;
     city: CityRow | null;
     nation: NationRow | null;
+    nationGenerals: GeneralRow[] | null;
 }): Promise<TurnCommandTable> => {
     // 턴 입력 화면에서 쓰는 사전 판단이므로 최소 정보로 가능/불가만 계산한다.
     const general = mapGeneralRow(options.general);
     const city = options.city ? mapCityRow(options.city) : null;
     const nation = options.nation ? mapNationRow(options.nation) : null;
-    const view = buildStateView(general, city, nation);
+    const generalList = options.nationGenerals
+        ? options.nationGenerals.map(mapGeneralRow)
+        : null;
+    const view = buildStateView(general, city, nation, generalList);
 
     const ctx: ConstraintContext = {
         actorId: general.id,

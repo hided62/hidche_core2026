@@ -5,6 +5,7 @@ export type ConstraintResult =
 
 export type RequirementKey =
     | { kind: 'general'; id: number }
+    | { kind: 'generalList' }
     | { kind: 'city'; id: number }
     | { kind: 'nation'; id: number }
     | { kind: 'destGeneral'; id: number }

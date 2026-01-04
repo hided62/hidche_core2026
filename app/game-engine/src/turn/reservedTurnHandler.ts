@@ -120,6 +120,7 @@ type WorldView = {
     getGeneralById(id: number): TurnGeneral | null;
     getCityById(id: number): City | null;
     getNationById(id: number): Nation | null;
+    getTroopById(id: number): Troop | null;
     getDiplomacyEntry(
         srcNationId: number,
         destNationId: number
@@ -127,6 +128,7 @@ type WorldView = {
     listGenerals(): TurnGeneral[];
     listCities(): City[];
     listNations(): Nation[];
+    listTroops(): Troop[];
     listDiplomacy(): TurnDiplomacy[];
 };
 
@@ -230,6 +232,7 @@ const createWorldOverlay = (world: InMemoryTurnWorld) => {
         getCityById: (id) => cityOverrides.get(id) ?? world.getCityById(id),
         getNationById: (id) =>
             nationOverrides.get(id) ?? world.getNationById(id),
+        getTroopById: (id) => world.getTroopById(id),
         getDiplomacyEntry: (srcNationId, destNationId) =>
             diplomacyOverrides.get(
                 buildDiplomacyKey(srcNationId, destNationId)
@@ -246,6 +249,7 @@ const createWorldOverlay = (world: InMemoryTurnWorld) => {
             mergeList(world.listNations(), nationOverrides).map((nation) => ({
                 ...nation,
             })),
+        listTroops: () => world.listTroops().map((troop) => ({ ...troop })),
         listDiplomacy: () =>
             mergeDiplomacyList(
                 world.listDiplomacy(),
@@ -330,6 +334,8 @@ class WorldStateView implements StateView {
                     return this.overrides.general;
                 }
                 return this.world.getGeneralById(req.id);
+            case 'generalList':
+                return this.world.listGenerals();
             case 'destGeneral':
                 return this.world.getGeneralById(req.id);
             case 'city':

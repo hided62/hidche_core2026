@@ -1,4 +1,9 @@
-import type { City, General, Nation } from '@sammo-ts/logic/domain/entities.js';
+import type {
+    City,
+    General,
+    Nation,
+    Troop,
+} from '@sammo-ts/logic/domain/entities.js';
 import type { ScenarioConfig } from '@sammo-ts/logic/scenario/types.js';
 import type { ScenarioMeta } from '@sammo-ts/logic/world/types.js';
 import type { MapDefinition, UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
@@ -32,6 +37,7 @@ export interface ActionContextWorldRef {
     listGenerals(): ActionContextGeneral[];
     listCities(): City[];
     listNations(): Nation[];
+    listTroops(): Troop[];
     listDiplomacy(): Array<{
         fromNationId: number;
         toNationId: number;
@@ -48,6 +54,7 @@ export interface ActionContextWorldRef {
     getGeneralById(id: number): ActionContextGeneral | null;
     getCityById(id: number): City | null;
     getNationById(id: number): Nation | null;
+    getTroopById(id: number): Troop | null;
 }
 
 export interface ActionContextOptions {

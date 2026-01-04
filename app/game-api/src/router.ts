@@ -196,7 +196,7 @@ export const appRouter = router({
                     });
                 }
 
-                const [city, nation] = await Promise.all([
+                const [city, nation, nationGenerals] = await Promise.all([
                     general.cityId > 0
                         ? ctx.db.city.findUnique({
                               where: { id: general.cityId },
@@ -207,6 +207,11 @@ export const appRouter = router({
                               where: { id: general.nationId },
                           })
                         : null,
+                    general.nationId > 0
+                        ? ctx.db.general.findMany({
+                              where: { nationId: general.nationId },
+                          })
+                        : Promise.resolve(null),
                 ]);
 
                 return buildTurnCommandTable({
@@ -214,6 +219,7 @@ export const appRouter = router({
                     general,
                     city,
                     nation,
+                    nationGenerals,
                 });
             }),
         reserved: router({
@@ -617,6 +623,98 @@ export const appRouter = router({
                 );
 
                 return { msgType, msgId: result.receiverId };
+            }),
+    }),
+    troop: router({
+        join: authedProcedure
+            .input(
+                z.object({
+                    generalId: z.number().int().positive(),
+                    troopId: z.number().int().positive(),
+                })
+            )
+            .mutation(async ({ ctx, input }) => {
+                const general = await ctx.db.general.findUnique({
+                    where: { id: input.generalId },
+                });
+                if (!general) {
+                    throw new TRPCError({
+                        code: 'NOT_FOUND',
+                        message: 'General not found.',
+                    });
+                }
+                if (general.troopId !== 0) {
+                    throw new TRPCError({
+                        code: 'PRECONDITION_FAILED',
+                        message: 'Already in a troop.',
+                    });
+                }
+                if (general.nationId <= 0) {
+                    throw new TRPCError({
+                        code: 'PRECONDITION_FAILED',
+                        message: 'General is not part of a nation.',
+                    });
+                }
+
+                const troop = await ctx.db.troop.findUnique({
+                    where: { troopLeaderId: input.troopId },
+                });
+                if (!troop || troop.nationId !== general.nationId) {
+                    throw new TRPCError({
+                        code: 'PRECONDITION_FAILED',
+                        message: 'Troop is invalid.',
+                    });
+                }
+
+                await ctx.db.general.update({
+                    where: { id: general.id },
+                    data: { troopId: input.troopId },
+                });
+
+                return { ok: true };
+            }),
+        exit: authedProcedure
+            .input(
+                z.object({
+                    generalId: z.number().int().positive(),
+                })
+            )
+            .mutation(async ({ ctx, input }) => {
+                const general = await ctx.db.general.findUnique({
+                    where: { id: input.generalId },
+                });
+                if (!general) {
+                    throw new TRPCError({
+                        code: 'NOT_FOUND',
+                        message: 'General not found.',
+                    });
+                }
+                if (general.troopId === 0) {
+                    throw new TRPCError({
+                        code: 'PRECONDITION_FAILED',
+                        message: 'Not in a troop.',
+                    });
+                }
+
+                if (general.troopId !== general.id) {
+                    await ctx.db.general.update({
+                        where: { id: general.id },
+                        data: { troopId: 0 },
+                    });
+                    return { ok: true, wasLeader: false };
+                }
+
+                await ctx.db.$transaction([
+                    ctx.db.general.updateMany({
+                        where: { troopId: general.troopId },
+                        data: { troopId: 0 },
+                    }),
+                    ctx.db.troop.deleteMany({
+                        where: { troopLeaderId: general.troopId },
+                    }),
+                ]);
+
+                return { ok: true, wasLeader: true };
             }),
     }),
     turnDaemon: router({

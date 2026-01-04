@@ -106,13 +106,20 @@ export interface NationRow {
     meta: unknown;
 }
 
+export interface TroopRow {
+    troopLeaderId: number;
+    nationId: number;
+    name: string;
+}
+
 export type DatabaseClient = InfraDatabaseClient<
     WorldStateRow,
     GeneralRow,
     CityRow,
     NationRow,
     GeneralTurnRow,
-    NationTurnRow
+    NationTurnRow,
+    TroopRow
 >;
 
 export interface GameApiContext {
