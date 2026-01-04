@@ -35,7 +35,7 @@ import {
     buildDefaultDiplomacy,
     buildDiplomacyKey,
     type DiplomacyPatch,
-} from './diplomacy.js';
+} from '@sammo-ts/logic';
 import {
     buildCommandEnv,
     buildReservedTurnDefinitions,

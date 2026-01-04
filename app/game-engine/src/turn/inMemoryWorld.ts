@@ -20,7 +20,7 @@ import {
     buildDiplomacyKey,
     processDiplomacyMonth,
     type DiplomacyPatch,
-} from './diplomacy.js';
+} from '@sammo-ts/logic';
 
 export interface GeneralTurnContext {
     general: TurnGeneral;

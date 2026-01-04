@@ -4,8 +4,8 @@ import {
     DEFAULT_WAR_TERM,
     DIPLOMACY_STATE,
     processDiplomacyMonth,
-} from '../src/turn/diplomacy.js';
-import type { TurnDiplomacy } from '../src/turn/types.js';
+    type DiplomacyEntry,
+} from '@sammo-ts/logic';
 
 const buildEntry = (
     fromNationId: number,
@@ -13,7 +13,7 @@ const buildEntry = (
     state: number,
     term: number,
     dead = 0
-): TurnDiplomacy => ({
+): DiplomacyEntry => ({
     fromNationId,
     toNationId,
     state,

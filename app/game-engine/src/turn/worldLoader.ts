@@ -24,7 +24,7 @@ import { loadMapDefinitionByName } from '../scenario/mapLoader.js';
 import type { UnitSetLoaderOptions } from '../scenario/unitSetLoader.js';
 import { loadUnitSetDefinitionByName } from '../scenario/unitSetLoader.js';
 import type { TurnDiplomacy, TurnGeneral, TurnWorldLoadResult } from './types.js';
-import { readDiplomacyMeta } from './diplomacy.js';
+import { readDiplomacyMeta } from '@sammo-ts/logic';
 
 interface TurnWorldLoaderOptions {
     databaseUrl: string;

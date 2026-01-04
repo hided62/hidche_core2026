@@ -18,7 +18,7 @@ import { finalizeLogEntry, type LogEntryDraft } from '@sammo-ts/logic';
 import type { TurnDaemonHooks } from '../lifecycle/types.js';
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
 import type { InMemoryReservedTurnStore } from './reservedTurnStore.js';
-import { buildDiplomacyMeta } from './diplomacy.js';
+import { buildDiplomacyMeta } from '@sammo-ts/logic';
 
 export interface DatabaseTurnHooks {
     hooks: TurnDaemonHooks;

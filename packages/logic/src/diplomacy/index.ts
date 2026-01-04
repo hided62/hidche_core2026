@@ -1,4 +1,3 @@
-import type { TurnDiplomacy } from './types.js';
 import { clamp } from 'es-toolkit';
 
 // 외교 상태 코드 (legacy 기준).
@@ -15,20 +14,14 @@ export const DEFAULT_WAR_TERM = 6;
 // TODO: 불가침 제의/수락 등 외교 커맨드 전환 규칙을 이 모듈에 추가 예정.
 const MAX_WAR_TERM = 13;
 
-export const buildDiplomacyKey = (srcNationId: number, destNationId: number): string =>
-    `${srcNationId}:${destNationId}`;
-
-export const buildDefaultDiplomacy = (
-    srcNationId: number,
-    destNationId: number
-): TurnDiplomacy => ({
-    fromNationId: srcNationId,
-    toNationId: destNationId,
-    state: DIPLOMACY_STATE.TRADE,
-    term: 0,
-    dead: 0,
-    meta: {},
-});
+export interface DiplomacyEntry {
+    fromNationId: number;
+    toNationId: number;
+    state: number;
+    term: number;
+    dead: number;
+    meta: Record<string, unknown>;
+}
 
 export interface DiplomacyPatch {
     state?: number;
@@ -38,10 +31,27 @@ export interface DiplomacyPatch {
     meta?: Record<string, unknown>;
 }
 
+export const buildDiplomacyKey = (
+    srcNationId: number,
+    destNationId: number
+): string => `${srcNationId}:${destNationId}`;
+
+export const buildDefaultDiplomacy = (
+    srcNationId: number,
+    destNationId: number
+): DiplomacyEntry => ({
+    fromNationId: srcNationId,
+    toNationId: destNationId,
+    state: DIPLOMACY_STATE.TRADE,
+    term: 0,
+    dead: 0,
+    meta: {},
+});
+
 export const applyDiplomacyPatch = (
-    entry: TurnDiplomacy,
+    entry: DiplomacyEntry,
     patch: DiplomacyPatch
-): TurnDiplomacy => {
+): DiplomacyEntry => {
     const nextDead =
         typeof patch.dead === 'number'
             ? patch.dead
@@ -68,21 +78,22 @@ export const readDiplomacyMeta = (
 };
 
 export const buildDiplomacyMeta = (
-    entry: TurnDiplomacy
+    entry: DiplomacyEntry
 ): Record<string, unknown> => ({
     ...entry.meta,
     dead: entry.dead,
 });
 
+
 export const processDiplomacyMonth = (
-    diplomacy: TurnDiplomacy[],
+    diplomacy: DiplomacyEntry[],
     generalCounts: Map<number, number>
-): TurnDiplomacy[] => {
+): DiplomacyEntry[] => {
     const next = diplomacy.map((entry) => ({
         ...entry,
         meta: { ...entry.meta },
     }));
-    const byKey = new Map<string, TurnDiplomacy>(
+    const byKey = new Map<string, DiplomacyEntry>(
         next.map((entry) => [
             buildDiplomacyKey(entry.fromNationId, entry.toNationId),
             entry,
