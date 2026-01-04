@@ -42,6 +42,11 @@ export interface GeneralTurnResult {
         nations: Array<{ id: number; patch: Partial<Nation> }>;
         troops: Array<{ id: number; patch: Partial<Troop> }>;
     };
+    diplomacyPatches?: Array<{
+        srcNationId: number;
+        destNationId: number;
+        patch: DiplomacyPatch;
+    }>;
     created?: {
         generals: TurnGeneral[];
         troops?: Troop[];
@@ -429,6 +434,15 @@ export class InMemoryTurnWorld {
                 }
                 this.troops.set(patch.id, applyTroopPatch(target, patch.patch));
                 this.dirtyTroopIds.add(patch.id);
+            }
+        }
+        if (result.diplomacyPatches) {
+            for (const patch of result.diplomacyPatches) {
+                this.applyDiplomacyPatch({
+                    srcNationId: patch.srcNationId,
+                    destNationId: patch.destNationId,
+                    patch: patch.patch,
+                });
             }
         }
         if (result.created) {

@@ -27,9 +27,15 @@ import type { ConstraintContext, StateView } from '@sammo-ts/logic';
 
 import type { GeneralTurnHandler, GeneralTurnResult } from './inMemoryWorld.js';
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
-import type { TurnGeneral, TurnWorldState } from './types.js';
+import type { TurnDiplomacy, TurnGeneral, TurnWorldState } from './types.js';
 import type { ReservedTurnEntry } from './reservedTurnStore.js';
 import type { InMemoryReservedTurnStore } from './reservedTurnStore.js';
+import {
+    applyDiplomacyPatch as applyDiplomacyPatchToEntry,
+    buildDefaultDiplomacy,
+    buildDiplomacyKey,
+    type DiplomacyPatch,
+} from './diplomacy.js';
 import {
     buildCommandEnv,
     buildReservedTurnDefinitions,
@@ -110,9 +116,197 @@ class DeterministicRandom {
     }
 }
 
+type WorldView = {
+    getGeneralById(id: number): TurnGeneral | null;
+    getCityById(id: number): City | null;
+    getNationById(id: number): Nation | null;
+    getDiplomacyEntry(
+        srcNationId: number,
+        destNationId: number
+    ): TurnDiplomacy | null;
+    listGenerals(): TurnGeneral[];
+    listCities(): City[];
+    listNations(): Nation[];
+    listDiplomacy(): TurnDiplomacy[];
+};
+
+const mergeStats = (
+    base: TurnGeneral['stats'],
+    patch: Partial<TurnGeneral['stats']>
+): TurnGeneral['stats'] => ({
+    leadership: patch.leadership ?? base.leadership,
+    strength: patch.strength ?? base.strength,
+    intelligence: patch.intelligence ?? base.intelligence,
+});
+
+const mergeRole = (
+    base: TurnGeneral['role'],
+    patch: Partial<TurnGeneral['role']>
+): TurnGeneral['role'] => ({
+    ...base,
+    ...patch,
+    items: {
+        ...base.items,
+        ...(patch.items ?? {}),
+    },
+});
+
+const mergeTriggerState = (
+    base: TurnGeneral['triggerState'],
+    patch: Partial<TurnGeneral['triggerState']>
+): TurnGeneral['triggerState'] => ({
+    ...base,
+    ...patch,
+    flags: { ...base.flags, ...(patch.flags ?? {}) },
+    counters: { ...base.counters, ...(patch.counters ?? {}) },
+    modifiers: { ...base.modifiers, ...(patch.modifiers ?? {}) },
+    meta: { ...base.meta, ...(patch.meta ?? {}) },
+});
+
+const applyGeneralPatch = (
+    base: TurnGeneral,
+    patch: Partial<TurnGeneral>
+): TurnGeneral => ({
+    ...base,
+    ...patch,
+    stats: patch.stats ? mergeStats(base.stats, patch.stats) : base.stats,
+    role: patch.role ? mergeRole(base.role, patch.role) : base.role,
+    triggerState: patch.triggerState
+        ? mergeTriggerState(base.triggerState, patch.triggerState)
+        : base.triggerState,
+    meta: patch.meta ? { ...base.meta, ...patch.meta } : base.meta,
+});
+
+const applyCityPatch = (base: City, patch: Partial<City>): City => ({
+    ...base,
+    ...patch,
+    meta: patch.meta ? { ...base.meta, ...patch.meta } : base.meta,
+});
+
+const applyNationPatch = (base: Nation, patch: Partial<Nation>): Nation => ({
+    ...base,
+    ...patch,
+    meta: patch.meta ? { ...base.meta, ...patch.meta } : base.meta,
+});
+
+const mergeDiplomacyList = (
+    base: TurnDiplomacy[],
+    overrides: Map<string, TurnDiplomacy>
+): TurnDiplomacy[] => {
+    const merged = new Map<string, TurnDiplomacy>();
+    for (const entry of base) {
+        merged.set(buildDiplomacyKey(entry.fromNationId, entry.toNationId), entry);
+    }
+    for (const [key, entry] of overrides) {
+        merged.set(key, entry);
+    }
+    return Array.from(merged.values());
+};
+
+// 예약 턴 내에서 패치를 즉시 반영하기 위한 로컬 오버레이.
+const createWorldOverlay = (world: InMemoryTurnWorld) => {
+    const generalOverrides = new Map<number, TurnGeneral>();
+    const cityOverrides = new Map<number, City>();
+    const nationOverrides = new Map<number, Nation>();
+    const diplomacyOverrides = new Map<string, TurnDiplomacy>();
+
+    const mergeList = <T extends { id: number }>(
+        base: T[],
+        overrides: Map<number, T>
+    ): T[] => {
+        const merged = new Map<number, T>();
+        for (const entry of base) {
+            merged.set(entry.id, entry);
+        }
+        for (const [id, entry] of overrides) {
+            merged.set(id, entry);
+        }
+        return Array.from(merged.values());
+    };
+
+    const view: WorldView = {
+        getGeneralById: (id) =>
+            generalOverrides.get(id) ?? world.getGeneralById(id),
+        getCityById: (id) => cityOverrides.get(id) ?? world.getCityById(id),
+        getNationById: (id) =>
+            nationOverrides.get(id) ?? world.getNationById(id),
+        getDiplomacyEntry: (srcNationId, destNationId) =>
+            diplomacyOverrides.get(
+                buildDiplomacyKey(srcNationId, destNationId)
+            ) ?? world.getDiplomacyEntry(srcNationId, destNationId),
+        listGenerals: () =>
+            mergeList(world.listGenerals(), generalOverrides).map((general) => ({
+                ...general,
+            })),
+        listCities: () =>
+            mergeList(world.listCities(), cityOverrides).map((city) => ({
+                ...city,
+            })),
+        listNations: () =>
+            mergeList(world.listNations(), nationOverrides).map((nation) => ({
+                ...nation,
+            })),
+        listDiplomacy: () =>
+            mergeDiplomacyList(
+                world.listDiplomacy(),
+                diplomacyOverrides
+            ).map((entry) => ({
+                ...entry,
+                meta: { ...entry.meta },
+            })),
+    };
+
+    return {
+        view,
+        syncGeneral: (general: TurnGeneral) => {
+            generalOverrides.set(general.id, general);
+        },
+        syncCity: (city: City) => {
+            cityOverrides.set(city.id, city);
+        },
+        syncNation: (nation: Nation) => {
+            nationOverrides.set(nation.id, nation);
+        },
+        applyGeneralPatch: (id: number, patch: Partial<TurnGeneral>) => {
+            const base =
+                generalOverrides.get(id) ?? world.getGeneralById(id);
+            if (!base) {
+                return;
+            }
+            generalOverrides.set(id, applyGeneralPatch(base, patch));
+        },
+        applyCityPatch: (id: number, patch: Partial<City>) => {
+            const base = cityOverrides.get(id) ?? world.getCityById(id);
+            if (!base) {
+                return;
+            }
+            cityOverrides.set(id, applyCityPatch(base, patch));
+        },
+        applyNationPatch: (id: number, patch: Partial<Nation>) => {
+            const base = nationOverrides.get(id) ?? world.getNationById(id);
+            if (!base) {
+                return;
+            }
+            nationOverrides.set(id, applyNationPatch(base, patch));
+        },
+        applyDiplomacyPatch: (
+            srcNationId: number,
+            destNationId: number,
+            patch: DiplomacyPatch
+        ) => {
+            const key = buildDiplomacyKey(srcNationId, destNationId);
+            const base =
+                diplomacyOverrides.get(key) ??
+                world.getDiplomacyEntry(srcNationId, destNationId) ??
+                buildDefaultDiplomacy(srcNationId, destNationId);
+            diplomacyOverrides.set(key, applyDiplomacyPatchToEntry(base, patch));
+        },
+    };
+};
+
 class WorldStateView implements StateView {
     constructor(
-        private readonly world: InMemoryTurnWorld | null,
+        private readonly world: WorldView | null,
         private readonly env: Record<string, unknown>,
         private readonly args: Record<string, unknown>,
         private readonly overrides?: {
@@ -273,7 +467,9 @@ export const createReservedTurnHandler = async (options: {
     return {
         execute(context): GeneralTurnResult {
             const worldRef = options.getWorld();
-            const constraintEnv = {
+            const worldOverlay = worldRef ? createWorldOverlay(worldRef) : null;
+            const worldView = worldOverlay?.view ?? worldRef;
+            const baseConstraintEnv = {
                 ...resolveConstraintEnv(
                     context.world,
                     options.scenarioMeta,
@@ -281,8 +477,6 @@ export const createReservedTurnHandler = async (options: {
                 ),
                 ...(options.map ? { map: options.map } : {}),
                 ...(options.unitSet ? { unitSet: options.unitSet } : {}),
-                cities: worldRef?.listCities() ?? [],
-                nations: worldRef?.listNations() ?? [],
             };
             const logs: LogEntryDraft[] = [];
             const patches = {
@@ -291,6 +485,11 @@ export const createReservedTurnHandler = async (options: {
                 nations: [] as Array<{ id: number; patch: Partial<Nation> }>,
                 troops: [] as Array<{ id: number; patch: Partial<Troop> }>,
             };
+            const diplomacyPatches: Array<{
+                srcNationId: number;
+                destNationId: number;
+                patch: DiplomacyPatch;
+            }> = [];
             const created: TurnGeneral[] = [];
 
             let currentGeneral = context.general;
@@ -321,16 +520,21 @@ export const createReservedTurnHandler = async (options: {
                     logs.push(createActionLog('예약된 명령을 실행하지 못했습니다.'));
                 }
 
+                const actionConstraintEnv = {
+                    ...baseConstraintEnv,
+                    cities: worldView?.listCities() ?? [],
+                    nations: worldView?.listNations() ?? [],
+                };
                 const constraintCtx = buildConstraintContext(
                     currentGeneral,
                     currentCity,
                     currentNation,
                     actionArgs as Record<string, unknown>,
-                    constraintEnv
+                    actionConstraintEnv
                 );
                 const view = new WorldStateView(
-                    worldRef,
-                    constraintEnv,
+                    worldView,
+                    actionConstraintEnv,
                     actionArgs as Record<string, unknown>,
                     {
                         general: currentGeneral,
@@ -379,7 +583,7 @@ export const createReservedTurnHandler = async (options: {
                     scenarioMeta: options.scenarioMeta,
                     map: options.map,
                     unitSet: options.unitSet,
-                    worldRef,
+                    worldRef: worldView,
                     actionArgs: actionArgsRecord,
                     createGeneralId,
                     seedBase,
@@ -413,17 +617,31 @@ export const createReservedTurnHandler = async (options: {
                 currentCity = resolution.city ?? currentCity;
                 currentNation = resolution.nation ?? currentNation;
                 logs.push(...resolution.logs);
+                if (worldOverlay) {
+                    worldOverlay.syncGeneral(currentGeneral);
+                    if (currentCity) {
+                        worldOverlay.syncCity(currentCity);
+                    }
+                    if (currentNation) {
+                        worldOverlay.syncNation(currentNation);
+                    }
+                }
 
-                if (worldRef && resolution.effects.length > 0) {
+                if (resolution.effects.length > 0) {
                     for (const effect of resolution.effects) {
                         if (effect.type !== 'diplomacy:patch') {
                             continue;
                         }
-                        worldRef.applyDiplomacyPatch({
+                        diplomacyPatches.push({
                             srcNationId: effect.srcNationId,
                             destNationId: effect.destNationId,
                             patch: effect.patch,
                         });
+                        worldOverlay?.applyDiplomacyPatch(
+                            effect.srcNationId,
+                            effect.destNationId,
+                            effect.patch
+                        );
                     }
                 }
 
@@ -446,10 +664,31 @@ export const createReservedTurnHandler = async (options: {
                             patch: Partial<Nation>;
                         }>)
                     );
+                    if (worldOverlay) {
+                        for (const patch of resolution.patches.generals) {
+                            worldOverlay.applyGeneralPatch(
+                                patch.id,
+                                patch.patch as Partial<TurnGeneral>
+                            );
+                        }
+                        for (const patch of resolution.patches.cities) {
+                            worldOverlay.applyCityPatch(patch.id, patch.patch);
+                        }
+                        for (const patch of resolution.patches.nations) {
+                            worldOverlay.applyNationPatch(patch.id, patch.patch);
+                        }
+                    }
                 }
 
                 if (resolution.created?.generals) {
-                    created.push(...(resolution.created.generals as TurnGeneral[]));
+                    const createdGenerals =
+                        resolution.created.generals as TurnGeneral[];
+                    created.push(...createdGenerals);
+                    if (worldOverlay) {
+                        for (const general of createdGenerals) {
+                            worldOverlay.syncGeneral(general);
+                        }
+                    }
                 }
 
                 return applyNextTurnAt ? resolution.nextTurnAt : undefined;
@@ -488,6 +727,9 @@ export const createReservedTurnHandler = async (options: {
                 nextTurnAt,
                 logs,
                 patches,
+                ...(diplomacyPatches.length > 0
+                    ? { diplomacyPatches }
+                    : undefined),
                 created: created.length > 0 ? { generals: created } : undefined,
             };
 
