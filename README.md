@@ -28,6 +28,7 @@
   - `pnpm -r lint`
   - `pnpm -r test`
   - `pnpm -r build`
+  - `pnpm -r typecheck`: `tsc --noEmit` 혹은 `tsc --build` 실행
   - `pnpm -r dev`
 - 서버 빌드
   - `pnpm build:server -- --profile <server> --scenario <scenario>`
