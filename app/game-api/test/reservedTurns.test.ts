@@ -18,7 +18,7 @@ const buildDb = () => {
     const generalTurns = new Map<number, GeneralTurnRow[]>();
     const nationTurns = new Map<string, NationTurnRow[]>();
 
-    const db: DatabaseClient = {
+    const db = {
         worldState: {
             findFirst: async () => null,
         },
@@ -32,13 +32,13 @@ const buildDb = () => {
             findUnique: async () => null,
         },
         generalTurn: {
-            findMany: async ({ where }) => generalTurns.get(where.generalId) ?? [],
-            deleteMany: async ({ where }) => {
+            findMany: async ({ where }: any) => generalTurns.get(where.generalId) ?? [],
+            deleteMany: async ({ where }: any) => {
                 generalTurns.delete(where.generalId);
                 return {};
             },
-            createMany: async ({ data }) => {
-                const rows = data.map((row, index) => ({
+            createMany: async ({ data }: any) => {
+                const rows = data.map((row: any, index: number) => ({
                     id: index + 1,
                     generalId: row.generalId,
                     turnIdx: row.turnIdx,
@@ -53,14 +53,14 @@ const buildDb = () => {
             },
         },
         nationTurn: {
-            findMany: async ({ where }) =>
+            findMany: async ({ where }: any) =>
                 nationTurns.get(`${where.nationId}:${where.officerLevel}`) ?? [],
-            deleteMany: async ({ where }) => {
+            deleteMany: async ({ where }: any) => {
                 nationTurns.delete(`${where.nationId}:${where.officerLevel}`);
                 return {};
             },
-            createMany: async ({ data }) => {
-                const rows = data.map((row, index) => ({
+            createMany: async ({ data }: any) => {
+                const rows = data.map((row: any, index: number) => ({
                     id: index + 1,
                     nationId: row.nationId,
                     officerLevel: row.officerLevel,
@@ -76,7 +76,7 @@ const buildDb = () => {
                 return {};
             },
         },
-    };
+    } as unknown as DatabaseClient;
 
     return { db };
 };

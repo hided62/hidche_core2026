@@ -1,5 +1,5 @@
 import { createTRPCProxyClient, httpBatchLink } from '@trpc/client';
-import type { AppRouter } from '../../../gateway-api/src/router';
+import type { AppRouter } from '@sammo-ts/gateway-api';
 
 const getSessionToken = (): string | null => {
   if (typeof window === 'undefined') {
