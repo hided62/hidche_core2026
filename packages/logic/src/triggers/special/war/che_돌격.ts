@@ -1,7 +1,7 @@
-import type { TraitOnCalcStat, TraitModule } from '@sammo-ts/logic/triggers/special/types.js';
 import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
-import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
 import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/types.js';
+import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
+import type { TraitModule } from '@sammo-ts/logic/triggers/special/types.js';
 import { BaseWarUnitTrigger, WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
 import type { WarUnit } from '@sammo-ts/logic/war/units.js';
 
@@ -37,17 +37,24 @@ class che_돌격지속 extends BaseWarUnitTrigger {
     }
 }
 
-const onCalcStat = ((
+function onCalcStat(context: GeneralActionContext, statName: GeneralStatName, value: number, aux?: unknown): number;
+function onCalcStat(
+    context: WarActionContext,
+    statName: WarStatName,
+    value: number | [number, number],
+    aux?: unknown
+): number | [number, number];
+function onCalcStat(
     _context: GeneralActionContext | WarActionContext,
     statName: GeneralStatName | WarStatName,
     value: number | [number, number],
     _aux?: unknown
-): number | [number, number] => {
-    if (statName === 'initWarPhase' && typeof value === 'number') {
-        return value + 2;
+): number | [number, number] {
+    if (statName === 'initWarPhase') {
+        return (value as number) + 2;
     }
     return value;
-}) as unknown as TraitOnCalcStat;
+}
 
 export const traitModule: TraitModule = {
     key: 'che_돌격',

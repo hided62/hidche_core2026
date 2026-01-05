@@ -1,7 +1,7 @@
-import type { TraitOnCalcStat, TraitOnCalcOpposeStat, TraitModule } from '@sammo-ts/logic/triggers/special/types.js';
 import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
-import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
 import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/types.js';
+import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
+import type { TraitModule } from '@sammo-ts/logic/triggers/special/types.js';
 import { BaseWarUnitTrigger, WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
 import type { WarUnit } from '@sammo-ts/logic/war/units.js';
 
@@ -21,29 +21,21 @@ class che_부상무효 extends BaseWarUnitTrigger {
     }
 }
 
-const onCalcStat = ((
+function onCalcStat(context: GeneralActionContext, statName: GeneralStatName, value: number, aux?: unknown): number;
+function onCalcStat(
+    context: WarActionContext,
+    statName: WarStatName,
+    value: number | [number, number],
+    aux?: unknown
+): number | [number, number];
+function onCalcStat(
     _context: GeneralActionContext | WarActionContext,
     _statName: GeneralStatName | WarStatName,
     value: number | [number, number],
     _aux?: unknown
-): number | [number, number] => {
+): number | [number, number] {
     return value;
-}) as unknown as TraitOnCalcStat;
-
-const onCalcOpposeStat = ((
-    _context: GeneralActionContext | WarActionContext,
-    statName: GeneralStatName | WarStatName,
-    value: number | [number, number],
-    _aux?: unknown
-): number | [number, number] => {
-    if (statName === 'warMagicSuccessProb' && typeof value === 'number') {
-        return value - 0.1;
-    }
-    if (statName === 'warCriticalRatio' && typeof value === 'number') {
-        return value - 0.2;
-    }
-    return value;
-}) as unknown as TraitOnCalcOpposeStat;
+}
 
 export const traitModule: TraitModule = {
     key: 'che_견고',
@@ -52,7 +44,15 @@ export const traitModule: TraitModule = {
     kind: 'war',
     getName: () => '견고',
     getInfo: () => '[전투] 상대 필살 확률 -20%p, 상대 계략 시도시 성공 확률 -10%p, 부상 없음, 아군 피해 -10%',
-    onCalcOpposeStat,
+    onCalcOpposeStat: ((_context, statName, value, _aux) => {
+        if (statName === 'warMagicSuccessProb' && typeof value === 'number') {
+            return value - 0.1;
+        }
+        if (statName === 'warCriticalRatio' && typeof value === 'number') {
+            return value - 0.2;
+        }
+        return value;
+    }) as TraitModule['onCalcOpposeStat'],
     getBattleInitTriggerList: (_context) => {
         if (!_context.unit) return null;
         return new WarTriggerCaller(new che_부상무효(_context.unit));

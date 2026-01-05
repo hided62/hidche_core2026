@@ -1,19 +1,26 @@
-import type { TraitOnCalcStat, TraitModule } from '@sammo-ts/logic/triggers/special/types.js';
 import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
-import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
 import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/types.js';
+import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
+import type { TraitModule } from '@sammo-ts/logic/triggers/special/types.js';
 
-const onCalcStat = ((
+function onCalcStat(context: GeneralActionContext, statName: GeneralStatName, value: number, aux?: unknown): number;
+function onCalcStat(
+    context: WarActionContext,
+    statName: WarStatName,
+    value: number | [number, number],
+    aux?: unknown
+): number | [number, number];
+function onCalcStat(
     _context: GeneralActionContext | WarActionContext,
     statName: GeneralStatName | WarStatName,
     value: number | [number, number],
     _aux?: unknown
-): number | [number, number] => {
-    if (statName === 'warMagicSuccessDamage' && typeof value === 'number') {
-        return value * 1.5;
+): number | [number, number] {
+    if (statName === 'warMagicSuccessDamage') {
+        return (value as number) * 1.5;
     }
     return value;
-}) as unknown as TraitOnCalcStat;
+}
 
 export const traitModule: TraitModule = {
     key: 'che_집중',
