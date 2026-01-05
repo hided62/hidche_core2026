@@ -1,68 +1,68 @@
 import type {
-    SpecialActionModule,
-    SpecialActionModuleExport,
+    TraitModule,
+    TraitModuleExport,
 } from '@sammo-ts/logic/triggers/special/types.js';
 
-export const DOMESTIC_SPECIAL_KEYS = [
+export const DOMESTIC_TRAIT_KEYS = [
     'che_인덕',
     'che_발명',
 ] as const;
 
-export type DomesticSpecialKey =
-    (typeof DOMESTIC_SPECIAL_KEYS)[number];
+export type DomesticTraitKey =
+    (typeof DOMESTIC_TRAIT_KEYS)[number];
 
-export type DomesticSpecialModule = SpecialActionModule;
+export type DomesticTraitModule = TraitModule;
 
-export type DomesticSpecialImporter = () => Promise<SpecialActionModuleExport>;
+export type DomesticTraitImporter = () => Promise<TraitModuleExport>;
 
 const defaultImporters: Record<
-    DomesticSpecialKey,
-    DomesticSpecialImporter
+    DomesticTraitKey,
+    DomesticTraitImporter
 > = {
     che_인덕: async () => import('./che_인덕.js'),
     che_발명: async () => import('./che_발명.js'),
 };
 
-export const isDomesticSpecialKey = (
+export const isDomesticTraitKey = (
     value: string
-): value is DomesticSpecialKey =>
-    DOMESTIC_SPECIAL_KEYS.includes(value as DomesticSpecialKey);
+): value is DomesticTraitKey =>
+    DOMESTIC_TRAIT_KEYS.includes(value as DomesticTraitKey);
 
-export class DomesticSpecialLoader {
+export class DomesticTraitLoader {
     private readonly cache = new Map<
-        DomesticSpecialKey,
-        Promise<DomesticSpecialModule>
+        DomesticTraitKey,
+        Promise<DomesticTraitModule>
     >();
 
     constructor(
         private readonly importers: Record<
-            DomesticSpecialKey,
-            DomesticSpecialImporter
+            DomesticTraitKey,
+            DomesticTraitImporter
         > = defaultImporters
     ) {}
 
-    async load(key: DomesticSpecialKey): Promise<DomesticSpecialModule> {
+    async load(key: DomesticTraitKey): Promise<DomesticTraitModule> {
         const cached = this.cache.get(key);
         if (cached) {
             return cached;
         }
         const importer = this.importers[key];
         if (!importer) {
-            throw new Error(`Unknown domestic special key: ${key}`);
+            throw new Error(`Unknown domestic trait key: ${key}`);
         }
         const loading = importer().then((module) => {
-            if (!('specialModule' in module)) {
-                throw new Error(`Missing specialModule for domestic special: ${key}`);
+            if (!('traitModule' in module)) {
+                throw new Error(`Missing traitModule for domestic trait: ${key}`);
             }
-            const resolved = module.specialModule;
+            const resolved = module.traitModule;
             if (resolved.key !== key) {
                 throw new Error(
-                    `Domestic special key mismatch: expected ${key}, got ${resolved.key}`
+                    `Domestic trait key mismatch: expected ${key}, got ${resolved.key}`
                 );
             }
             if (resolved.kind !== 'domestic') {
                 throw new Error(
-                    `Domestic special kind mismatch: ${resolved.key}`
+                    `Domestic trait kind mismatch: ${resolved.key}`
                 );
             }
             return resolved;
@@ -72,11 +72,11 @@ export class DomesticSpecialLoader {
     }
 }
 
-export const loadDomesticSpecialModules = async (
-    keys: DomesticSpecialKey[],
-    loader: DomesticSpecialLoader = new DomesticSpecialLoader()
-): Promise<DomesticSpecialModule[]> => {
-    const modules: DomesticSpecialModule[] = [];
+export const loadDomesticTraitModules = async (
+    keys: DomesticTraitKey[],
+    loader: DomesticTraitLoader = new DomesticTraitLoader()
+): Promise<DomesticTraitModule[]> => {
+    const modules: DomesticTraitModule[] = [];
     const seen = new Set<string>();
     for (const key of keys) {
         if (seen.has(key)) {

@@ -2,30 +2,31 @@ import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
 import type { WarActionModule } from '@sammo-ts/logic/war/actions.js';
 
-export type SpecialActionKind = 'domestic' | 'war';
+export type TraitKind = 'domestic' | 'war' | 'personality';
 
-export interface SpecialActionSpec {
+export interface TraitSpec {
     key: string;
     name: string;
     info: string;
-    kind: SpecialActionKind;
+    kind: TraitKind;
 }
 
-export type SpecialActionModule<
+export type TraitModule<
     TriggerState extends GeneralTriggerState = GeneralTriggerState
-> = SpecialActionSpec &
+> = TraitSpec &
     GeneralActionModule<TriggerState> &
     WarActionModule<TriggerState>;
 
-export interface SpecialActionModuleExport<
+export interface TraitModuleExport<
     TriggerState extends GeneralTriggerState = GeneralTriggerState
 > {
-    specialModule: SpecialActionModule<TriggerState>;
+    traitModule: TraitModule<TriggerState>;
 }
 
-export interface SpecialActionModuleRegistry<
+export interface TraitModuleRegistry<
     TriggerState extends GeneralTriggerState = GeneralTriggerState
 > {
-    domestic: Map<string, SpecialActionModule<TriggerState>>;
-    war: Map<string, SpecialActionModule<TriggerState>>;
+    domestic: Map<string, TraitModule<TriggerState>>;
+    war: Map<string, TraitModule<TriggerState>>;
+    personality: Map<string, TraitModule<TriggerState>>;
 }

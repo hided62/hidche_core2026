@@ -1,7 +1,7 @@
-import type { SpecialActionModule } from '@sammo-ts/logic/triggers/special/types.js';
+import type { TraitModule } from '@sammo-ts/logic/triggers/special/types.js';
 
 // 내정 특기: 인덕
-export const specialModule: SpecialActionModule = {
+export const traitModule: TraitModule = {
     key: 'che_인덕',
     name: '인덕',
     info: '[내정] 주민 선정·정착 장려 : 기본 보정 +10%, 성공률 +10%p, 비용 -20%',

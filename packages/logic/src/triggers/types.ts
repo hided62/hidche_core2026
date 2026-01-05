@@ -11,7 +11,8 @@ export type TriggerDomesticActionType =
     | '민심'
     | '인구'
     | '기술'
-    | '모병';
+    | '모병'
+    | '단련';
 
 export type TriggerDomesticVarType =
     | 'cost'
@@ -36,7 +37,12 @@ export type TriggerStrategicVarType = 'delay' | 'globalDelay';
 
 export type TriggerNationalIncomeType = 'gold' | 'rice';
 
-export type GeneralStatName = 'leadership' | 'strength' | 'intelligence';
+export type GeneralStatName =
+    | 'leadership'
+    | 'strength'
+    | 'intelligence'
+    | 'experience'
+    | 'dedication';
 
 export type WarStatName =
     | GeneralStatName

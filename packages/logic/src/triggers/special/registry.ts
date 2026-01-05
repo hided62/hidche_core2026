@@ -16,46 +16,64 @@ import type { WarActionContext, WarActionModule } from '@sammo-ts/logic/war/acti
 import type { WarUnit } from '@sammo-ts/logic/war/units.js';
 import type { WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
 import type {
-    SpecialActionKind,
-    SpecialActionModule,
-    SpecialActionModuleRegistry,
+    TraitKind,
+    TraitModule,
+    TraitModuleRegistry,
 } from './types.js';
 
-const resolveSpecialKey = (
-    context: { general: { role: { specialDomestic: string | null; specialWar: string | null } } },
-    kind: SpecialActionKind
-): string | null =>
-    kind === 'domestic'
-        ? context.general.role.specialDomestic
-        : context.general.role.specialWar;
+const resolveTraitKey = (
+    context: {
+        general: {
+            role: {
+                personality: string | null;
+                specialDomestic: string | null;
+                specialWar: string | null;
+            };
+        };
+    },
+    kind: TraitKind
+): string | null => {
+    if (kind === 'domestic') {
+        return context.general.role.specialDomestic;
+    }
+    if (kind === 'war') {
+        return context.general.role.specialWar;
+    }
+    return context.general.role.personality;
+};
 
-const resolveModule = <
-    TriggerState extends GeneralTriggerState
->(
-    registry: SpecialActionModuleRegistry<TriggerState>,
-    kind: SpecialActionKind,
+const resolveModule = <TriggerState extends GeneralTriggerState>(
+    registry: TraitModuleRegistry<TriggerState>,
+    kind: TraitKind,
     key: string | null
-): SpecialActionModule<TriggerState> | null => {
+): TraitModule<TriggerState> | null => {
     if (!key) {
         return null;
     }
-    const bucket = kind === 'domestic' ? registry.domestic : registry.war;
+    let bucket: Map<string, TraitModule<TriggerState>>;
+    if (kind === 'domestic') {
+        bucket = registry.domestic;
+    } else if (kind === 'war') {
+        bucket = registry.war;
+    } else {
+        bucket = registry.personality;
+    }
     return bucket.get(key) ?? null;
 };
 
-// General 파이프라인에서 특기 모듈을 선택해 위임하는 라우터.
-export class SpecialGeneralActionRouter<
+// General 파이프라인에서 특성(특기/성격) 모듈을 선택해 위임하는 라우터.
+export class TraitGeneralActionRouter<
     TriggerState extends GeneralTriggerState = GeneralTriggerState
 > implements GeneralActionModule<TriggerState> {
     constructor(
-        private readonly kind: SpecialActionKind,
-        private readonly registry: SpecialActionModuleRegistry<TriggerState>
+        private readonly kind: TraitKind,
+        private readonly registry: TraitModuleRegistry<TriggerState>
     ) {}
 
     private getModule(
         context: GeneralActionContext<TriggerState>
-    ): SpecialActionModule<TriggerState> | null {
-        const key = resolveSpecialKey(context, this.kind);
+    ): TraitModule<TriggerState> | null {
+        const key = resolveTraitKey(context, this.kind);
         return resolveModule(this.registry, this.kind, key);
     }
 
@@ -135,19 +153,19 @@ export class SpecialGeneralActionRouter<
     }
 }
 
-// 전투 파이프라인에서 특기 모듈을 선택해 위임하는 라우터.
-export class SpecialWarActionRouter<
+// 전투 파이프라인에서 특성(특기/성격) 모듈을 선택해 위임하는 라우터.
+export class TraitWarActionRouter<
     TriggerState extends GeneralTriggerState = GeneralTriggerState
 > implements WarActionModule<TriggerState> {
     constructor(
-        private readonly kind: SpecialActionKind,
-        private readonly registry: SpecialActionModuleRegistry<TriggerState>
+        private readonly kind: TraitKind,
+        private readonly registry: TraitModuleRegistry<TriggerState>
     ) {}
 
     private getModule(
         context: WarActionContext<TriggerState>
-    ): SpecialActionModule<TriggerState> | null {
-        const key = resolveSpecialKey(context, this.kind);
+    ): TraitModule<TriggerState> | null {
+        const key = resolveTraitKey(context, this.kind);
         return resolveModule(this.registry, this.kind, key);
     }
 
@@ -195,21 +213,23 @@ export class SpecialWarActionRouter<
     }
 }
 
-export interface SpecialActionModuleSet<
+export interface TraitModuleSet<
     TriggerState extends GeneralTriggerState = GeneralTriggerState
 > {
     general: GeneralActionModule<TriggerState>[];
     war: WarActionModule<TriggerState>[];
 }
 
-export const createSpecialActionModuleRegistry = <
+export const createTraitModuleRegistry = <
     TriggerState extends GeneralTriggerState = GeneralTriggerState
 >(options: {
-    domestic?: SpecialActionModule<TriggerState>[];
-    war?: SpecialActionModule<TriggerState>[];
-}): SpecialActionModuleRegistry<TriggerState> => {
-    const domestic = new Map<string, SpecialActionModule<TriggerState>>();
-    const war = new Map<string, SpecialActionModule<TriggerState>>();
+    domestic?: TraitModule<TriggerState>[];
+    war?: TraitModule<TriggerState>[];
+    personality?: TraitModule<TriggerState>[];
+}): TraitModuleRegistry<TriggerState> => {
+    const domestic = new Map<string, TraitModule<TriggerState>>();
+    const war = new Map<string, TraitModule<TriggerState>>();
+    const personality = new Map<string, TraitModule<TriggerState>>();
 
     for (const module of options.domestic ?? []) {
         domestic.set(module.key, module);
@@ -217,22 +237,27 @@ export const createSpecialActionModuleRegistry = <
     for (const module of options.war ?? []) {
         war.set(module.key, module);
     }
+    for (const module of options.personality ?? []) {
+        personality.set(module.key, module);
+    }
 
-    return { domestic, war };
+    return { domestic, war, personality };
 };
 
-// 특기 레지스트리를 General/전투 파이프라인용 모듈 목록으로 변환한다.
-export const createSpecialActionModules = <
+// 특성 레지스트리를 General/전투 파이프라인용 모듈 목록으로 변환한다.
+export const createTraitModules = <
     TriggerState extends GeneralTriggerState = GeneralTriggerState
 >(
-    registry: SpecialActionModuleRegistry<TriggerState>
-): SpecialActionModuleSet<TriggerState> => ({
+    registry: TraitModuleRegistry<TriggerState>
+): TraitModuleSet<TriggerState> => ({
     general: [
-        new SpecialGeneralActionRouter<TriggerState>('domestic', registry),
-        new SpecialGeneralActionRouter<TriggerState>('war', registry),
+        new TraitGeneralActionRouter<TriggerState>('domestic', registry),
+        new TraitGeneralActionRouter<TriggerState>('war', registry),
+        new TraitGeneralActionRouter<TriggerState>('personality', registry),
     ],
     war: [
-        new SpecialWarActionRouter<TriggerState>('domestic', registry),
-        new SpecialWarActionRouter<TriggerState>('war', registry),
+        new TraitWarActionRouter<TriggerState>('domestic', registry),
+        new TraitWarActionRouter<TriggerState>('war', registry),
+        new TraitWarActionRouter<TriggerState>('personality', registry),
     ],
 });

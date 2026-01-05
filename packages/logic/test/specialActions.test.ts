@@ -8,10 +8,10 @@ import type { UnitSetDefinition } from '../src/world/types.js';
 import { GeneralActionPipeline } from '../src/triggers/general-action.js';
 import { createGeneralTriggerContext } from '../src/triggers/general.js';
 import {
-    createSpecialActionModuleRegistry,
-    createSpecialActionModules,
-    loadDomesticSpecialModules,
-    loadWarSpecialModules,
+    createTraitModuleRegistry,
+    createTraitModules,
+    loadDomesticTraitModules,
+    loadWarTraitModules,
 } from '../src/triggers/special/index.js';
 import { ActionLogger } from '../src/logging/actionLogger.js';
 import { WarActionPipeline } from '../src/war/actions.js';
@@ -161,13 +161,13 @@ const buildUnitSet = (): UnitSetDefinition => ({
     ],
 });
 
-describe('special action modules', () => {
-    it('loads special modules by key', async () => {
-        const domestic = await loadDomesticSpecialModules([
+describe('trait modules', () => {
+    it('loads trait modules by key', async () => {
+        const domestic = await loadDomesticTraitModules([
             'che_인덕',
             'che_발명',
         ]);
-        const war = await loadWarSpecialModules(['che_의술', 'che_징병']);
+        const war = await loadWarTraitModules(['che_의술', 'che_징병']);
 
         expect(domestic.map((module) => module.key)).toEqual([
             'che_인덕',
@@ -180,15 +180,15 @@ describe('special action modules', () => {
     });
 
     it('applies domestic and war modifiers in general pipeline', async () => {
-        const domestic = await loadDomesticSpecialModules([
+        const domestic = await loadDomesticTraitModules([
             'che_인덕',
             'che_발명',
         ]);
-        const war = await loadWarSpecialModules(['che_의술', 'che_징병']);
-        const registry = createSpecialActionModuleRegistry({ domestic, war });
-        const specialModules = createSpecialActionModules(registry);
+        const war = await loadWarTraitModules(['che_의술', 'che_징병']);
+        const registry = createTraitModuleRegistry({ domestic, war });
+        const traitModules = createTraitModules(registry);
 
-        const pipeline = new GeneralActionPipeline(specialModules.general);
+        const pipeline = new GeneralActionPipeline(traitModules.general);
         const general = buildGeneral({
             role: {
                 personality: null,
@@ -214,14 +214,14 @@ describe('special action modules', () => {
     });
 
     it('heals city generals with 의술 pre-turn trigger', async () => {
-        const domestic = await loadDomesticSpecialModules([
+        const domestic = await loadDomesticTraitModules([
             'che_인덕',
             'che_발명',
         ]);
-        const war = await loadWarSpecialModules(['che_의술', 'che_징병']);
-        const registry = createSpecialActionModuleRegistry({ domestic, war });
-        const specialModules = createSpecialActionModules(registry);
-        const pipeline = new GeneralActionPipeline(specialModules.general);
+        const war = await loadWarTraitModules(['che_의술', 'che_징병']);
+        const registry = createTraitModuleRegistry({ domestic, war });
+        const traitModules = createTraitModules(registry);
+        const pipeline = new GeneralActionPipeline(traitModules.general);
 
         const general = buildGeneral({
             injury: 20,
@@ -270,13 +270,13 @@ describe('special action modules', () => {
     });
 
     it('activates 의술 battle trigger and reduces damage', async () => {
-        const domestic = await loadDomesticSpecialModules([
+        const domestic = await loadDomesticTraitModules([
             'che_인덕',
             'che_발명',
         ]);
-        const war = await loadWarSpecialModules(['che_의술', 'che_징병']);
-        const registry = createSpecialActionModuleRegistry({ domestic, war });
-        const specialModules = createSpecialActionModules(registry);
+        const war = await loadWarTraitModules(['che_의술', 'che_징병']);
+        const registry = createTraitModuleRegistry({ domestic, war });
+        const traitModules = createTraitModules(registry);
 
         const rng = new RandUtil(new ConstantRNG(0));
         const config = buildConfig();
@@ -308,7 +308,7 @@ describe('special action modules', () => {
             true,
             crewType,
             new ActionLogger({ generalId: 1, nationId: 1 }),
-            new WarActionPipeline(specialModules.war)
+            new WarActionPipeline(traitModules.war)
         );
         const defender = new WarUnitCity(
             rng,
