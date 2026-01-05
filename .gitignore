@@ -160,4 +160,4 @@ packages/infra/prisma/generated/
 docker-compose.override.yml
 
 .turbo/
-typecheck_errors.txt
+*_errors.txt
