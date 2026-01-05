@@ -9,39 +9,9 @@
         "joinRuinedNPCProp": 0,
         "npcBanMessageProb": 1,
         "availableGeneralCommand": {
-            "개인": [
-                "휴식",
-                "che_요양",
-                "che_단련",
-                "che_숙련전환",
-                "che_견문",
-                "che_은퇴",
-                "che_장비매매",
-                "che_군량매매",
-                "che_내정특기초기화",
-                "che_전투특기초기화"
-            ],
-            "내정": [
-                "che_농지개간",
-                "che_상업투자",
-                "che_기술연구",
-                "che_수비강화",
-                "che_성벽보수",
-                "che_치안강화",
-                "che_정착장려",
-                "che_주민선정",
-                "che_물자조달"
-            ],
-            "군사": [
-                "che_징병",
-                "che_모병",
-                "che_훈련",
-                "che_사기진작",
-                "che_출병",
-                "che_집합",
-                "che_소집해제",
-                "che_첩보"
-            ],
+            "개인": ["휴식", "che_요양", "che_단련", "che_숙련전환", "che_견문", "che_은퇴", "che_장비매매", "che_군량매매", "che_내정특기초기화", "che_전투특기초기화"],
+            "내정": ["che_농지개간", "che_상업투자", "che_기술연구", "che_수비강화", "che_성벽보수", "che_치안강화", "che_정착장려", "che_주민선정", "che_물자조달"],
+            "군사": ["che_징병", "che_모병", "che_훈련", "che_사기진작", "che_출병", "che_집합", "che_소집해제", "che_첩보"],
             "인사": ["che_이동", "che_강행", "che_인재탐색", "che_귀환", "che_랜덤임관"],
             "계략": ["che_선동", "che_탈취", "che_파괴", "che_화계"],
             "국가": ["che_증여", "che_헌납", "che_하야"]
@@ -50,15 +20,7 @@
             "휴식": ["휴식"],
             "인사": ["che_발령", "che_포상", "che_몰수"],
             "특수": ["che_초토화", "che_천도", "che_증축", "che_감축"],
-            "전략": [
-                "che_필사즉생",
-                "che_백성동원",
-                "che_수몰",
-                "che_허보",
-                "che_의병모집",
-                "che_이호경식",
-                "che_급습"
-            ],
+            "전략": ["che_필사즉생", "che_백성동원", "che_수몰", "che_허보", "che_의병모집", "che_이호경식", "che_급습"],
             "기타": ["che_피장파장", "che_국기변경", "che_국호변경"]
         }
     },
@@ -109,49 +71,11 @@
         [999, "장량", 1318, 21, null, 85, 85, 85, 12, 150, 250, null, null]
     ],
     "events": [
-        [
-            "month",
-            1000,
-            ["or", ["Date", "==", null, 12], ["Date", "==", null, 6]],
-            ["CreateManyNPC", 10, 10],
-            ["DeleteEvent"]
-        ],
-        [
-            "month",
-            1000,
-            ["Date", "==", 181, 1],
-            ["OpenNationBetting", 4, 1000],
-            ["OpenNationBetting", 1, 1000],
-            ["DeleteEvent"]
-        ],
-        [
-            "month",
-            1000,
-            ["and", ["Date", ">=", 183, 1], ["RemainNation", "<=", 16]],
-            ["OpenNationBetting", 4, 1000],
-            ["OpenNationBetting", 1, 1000],
-            ["DeleteEvent"]
-        ],
-        [
-            "month",
-            1000,
-            ["and", ["Date", ">=", 183, 1], ["RemainNation", "<=", 8]],
-            ["OpenNationBetting", 1, 1000],
-            ["DeleteEvent"]
-        ],
-        [
-            "month",
-            1000,
-            ["and", ["Date", ">=", 183, 1], ["RemainNation", "<=", 4]],
-            ["OpenNationBetting", 1, 1000],
-            ["DeleteEvent"]
-        ],
-        [
-            "destroy_nation",
-            1000,
-            ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]],
-            ["BlockScoutAction"],
-            ["DeleteEvent"]
-        ]
+        ["month", 1000, ["or", ["Date", "==", null, 12], ["Date", "==", null, 6]], ["CreateManyNPC", 10, 10], ["DeleteEvent"]],
+        ["month", 1000, ["Date", "==", 181, 1], ["OpenNationBetting", 4, 1000], ["OpenNationBetting", 1, 1000], ["DeleteEvent"]],
+        ["month", 1000, ["and", ["Date", ">=", 183, 1], ["RemainNation", "<=", 16]], ["OpenNationBetting", 4, 1000], ["OpenNationBetting", 1, 1000], ["DeleteEvent"]],
+        ["month", 1000, ["and", ["Date", ">=", 183, 1], ["RemainNation", "<=", 8]], ["OpenNationBetting", 1, 1000], ["DeleteEvent"]],
+        ["month", 1000, ["and", ["Date", ">=", 183, 1], ["RemainNation", "<=", 4]], ["OpenNationBetting", 1, 1000], ["DeleteEvent"]],
+        ["destroy_nation", 1000, ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]], ["BlockScoutAction"], ["DeleteEvent"]]
     ]
 }

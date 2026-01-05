@@ -1,10 +1,7 @@
 {
     "title": "【가상모드27-e】 아시아 명장전(비급+파죽지세)",
     "startYear": 180,
-    "history": [
-        "<C>●</>180년 1월:<L><b>【가상모드27-e】</b>아시아 명장전!(비급+파죽지세)</>",
-        "<C>●</>180년 1월:<L><b>【이벤트】</b></>삼국지를 기반으로 아시아의 고대 명장들이 추가된 시나리오"
-    ],
+    "history": ["<C>●</>180년 1월:<L><b>【가상모드27-e】</b>아시아 명장전!(비급+파죽지세)</>", "<C>●</>180년 1월:<L><b>【이벤트】</b></>삼국지를 기반으로 아시아의 고대 명장들이 추가된 시나리오"],
     "stat": {
         "total": 310,
         "min": 40,
@@ -22,28 +19,7 @@
         "npcBanMessageProb": 0,
         "npcSeizureMessageProb": 0,
         "npcMessageFreqByDay": 8,
-        "availableSpecialWar": [
-            "che_귀병",
-            "che_신산",
-            "che_환술",
-            "che_집중",
-            "che_신중",
-            "che_반계",
-            "che_보병",
-            "che_궁병",
-            "che_기병",
-            "che_공성",
-            "che_돌격",
-            "che_무쌍",
-            "che_견고",
-            "che_위압",
-            "che_저격",
-            "che_필살",
-            "che_징병",
-            "che_의술",
-            "che_격노",
-            "che_척사"
-        ],
+        "availableSpecialWar": ["che_귀병", "che_신산", "che_환술", "che_집중", "che_신중", "che_반계", "che_보병", "che_궁병", "che_기병", "che_공성", "che_돌격", "che_무쌍", "che_견고", "che_위압", "che_저격", "che_필살", "che_징병", "che_의술", "che_격노", "che_척사"],
         "allItems": {
             "horse": {
                 "che_명마_01_노기": 0,
@@ -577,22 +553,7 @@
         [0, "유도", null, 0, null, 25, 23, 26, 0, 160, 300, null, null],
         [0, "유파", null, 0, null, 29, 22, 75, 0, 160, 300, null, null],
         [0, "유반", null, 0, null, 69, 76, 47, 0, 160, 300, null, null],
-        [
-            0,
-            "유비",
-            null,
-            0,
-            null,
-            88,
-            78,
-            75,
-            0,
-            160,
-            300,
-            null,
-            null,
-            "한왕실은 중산정왕의 후손인 내가 이어받겠다...!"
-        ],
+        [0, "유비", null, 0, null, 88, 78, 75, 0, 160, 300, null, null, "한왕실은 중산정왕의 후손인 내가 이어받겠다...!"],
         [0, "유표", null, 0, null, 48, 31, 72, 0, 160, 300, null, null],
         [0, "유복", null, 0, null, 64, 49, 74, 0, 160, 300, null, null],
         [0, "유벽", null, 0, null, 70, 72, 47, 0, 160, 300, null, null],
@@ -1025,12 +986,6 @@
             ],
             ["DeleteEvent"]
         ],
-        [
-            "destroy_nation",
-            1000,
-            ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]],
-            ["BlockScoutAction"],
-            ["DeleteEvent"]
-        ]
+        ["destroy_nation", 1000, ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]], ["BlockScoutAction"], ["DeleteEvent"]]
     ]
 }

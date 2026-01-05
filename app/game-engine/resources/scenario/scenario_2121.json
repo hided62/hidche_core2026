@@ -701,19 +701,7 @@
     ],
     "general_ex": [],
     "cities": [],
-    "history": [
-        "<C>●</>180년 1월:<L><b>【이벤트】</b></>제작자: 세정.",
-        "<C>●</>180년 1월:<L><b>【가상모드11】 삼국지11 영웅 난무</>",
-        "<C>●</>180년 1월:<L><b>【이벤트】</b></>당대의 대표 세력들이 등장합니다."
-    ],
+    "history": ["<C>●</>180년 1월:<L><b>【이벤트】</b></>제작자: 세정.", "<C>●</>180년 1월:<L><b>【가상모드11】 삼국지11 영웅 난무</>", "<C>●</>180년 1월:<L><b>【이벤트】</b></>당대의 대표 세력들이 등장합니다."],
     "initialEvents": [],
-    "events": [
-        [
-            "destroy_nation",
-            1000,
-            ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]],
-            ["BlockScoutAction"],
-            ["DeleteEvent"]
-        ]
-    ]
+    "events": [["destroy_nation", 1000, ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]], ["BlockScoutAction"], ["DeleteEvent"]]]
 }

@@ -1,10 +1,7 @@
 {
     "title": "【가상모드24-b】 유저무쌍 멀티 유니버스!(비급)",
     "startYear": 180,
-    "history": [
-        "<C>●</>180년 1월:<L><b>【가상모드24-b】</b>유저무쌍 멀티 유니버스!(비급)</>",
-        "<C>●</>180년 1월:<L><b>【이벤트】</b></>졸장과 명장, 충신과 간신, 무장과 지장, 모든 것이 뒤바뀐 세계"
-    ],
+    "history": ["<C>●</>180년 1월:<L><b>【가상모드24-b】</b>유저무쌍 멀티 유니버스!(비급)</>", "<C>●</>180년 1월:<L><b>【이벤트】</b></>졸장과 명장, 충신과 간신, 무장과 지장, 모든 것이 뒤바뀐 세계"],
     "stat": {
         "total": 310,
         "min": 40,
@@ -14,28 +11,7 @@
         "npcBanMessageProb": 0,
         "npcSeizureMessageProb": 0,
         "npcMessageFreqByDay": 8,
-        "availableSpecialWar": [
-            "che_귀병",
-            "che_신산",
-            "che_환술",
-            "che_집중",
-            "che_신중",
-            "che_반계",
-            "che_보병",
-            "che_궁병",
-            "che_기병",
-            "che_공성",
-            "che_돌격",
-            "che_무쌍",
-            "che_견고",
-            "che_위압",
-            "che_저격",
-            "che_필살",
-            "che_징병",
-            "che_의술",
-            "che_격노",
-            "che_척사"
-        ],
+        "availableSpecialWar": ["che_귀병", "che_신산", "che_환술", "che_집중", "che_신중", "che_반계", "che_보병", "che_궁병", "che_기병", "che_공성", "che_돌격", "che_무쌍", "che_견고", "che_위압", "che_저격", "che_필살", "che_징병", "che_의술", "che_격노", "che_척사"],
         "allItems": {
             "horse": {
                 "che_명마_01_노기": 0,
@@ -354,22 +330,7 @@
         [0, "제갈근", null, 0, null, 65, 26, 35, 0, 160, 300, null, null],
         [0, "제갈균", null, 0, null, 81, 55, 88, 0, 160, 300, null, null],
         [0, "제갈탄", null, 0, null, 68, 86, 44, 0, 160, 300, null, null],
-        [
-            0,
-            "제갈량",
-            null,
-            0,
-            null,
-            42,
-            14,
-            22,
-            0,
-            160,
-            300,
-            null,
-            null,
-            "헤헤헤…제갈량 바보 아니다. 엄마가 바보 아니라 그랬다."
-        ],
+        [0, "제갈량", null, 0, null, 42, 14, 22, 0, 160, 300, null, null, "헤헤헤…제갈량 바보 아니다. 엄마가 바보 아니라 그랬다."],
         [0, "서황", null, 0, null, 45, 26, 46, 0, 160, 300, null, null],
         [0, "서서", null, 0, null, 46, 26, 21, 0, 160, 300, null, null, "제갈량 어디 가서 나랑 동문이라고 하지마라"],
         [0, "서성", null, 0, null, 54, 59, 59, 0, 160, 300, null, null],
@@ -519,22 +480,7 @@
         [0, "비의", null, 0, null, 58, 84, 42, 0, 160, 300, null, null],
         [0, "비연", null, 0, null, 80, 62, 89, 0, 160, 300, null, null],
         [0, "비시", null, 0, null, 82, 42, 75, 0, 160, 300, null, null],
-        [
-            0,
-            "미축",
-            null,
-            0,
-            null,
-            90,
-            91,
-            52,
-            0,
-            160,
-            300,
-            null,
-            null,
-            "돈도 많고 싸움도 잘하는 간손미 에이스 미축입니다"
-        ],
+        [0, "미축", null, 0, null, 90, 91, 52, 0, 160, 300, null, null, "돈도 많고 싸움도 잘하는 간손미 에이스 미축입니다"],
         [0, "미방", null, 0, null, 86, 50, 88, 0, 160, 300, null, null],
         [0, "비요", null, 0, null, 70, 88, 57, 0, 160, 300, null, null],
         [0, "무안국", null, 0, null, 70, 51, 86, 0, 160, 300, null, null],
@@ -931,12 +877,6 @@
             ],
             ["DeleteEvent"]
         ],
-        [
-            "destroy_nation",
-            1000,
-            ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]],
-            ["BlockScoutAction"],
-            ["DeleteEvent"]
-        ]
+        ["destroy_nation", 1000, ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]], ["BlockScoutAction"], ["DeleteEvent"]]
     ]
 }
