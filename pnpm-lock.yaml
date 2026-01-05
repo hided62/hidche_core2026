@@ -164,6 +164,9 @@ importers:
       '@sammo-ts/common':
         specifier: workspace:*
         version: link:../../packages/common
+      '@sammo-ts/game-api':
+        specifier: workspace:*
+        version: link:../game-api
       '@trpc/client':
         specifier: ^11.8.1
         version: 11.8.1(@trpc/server@11.8.1(typescript@5.9.3))(typescript@5.9.3)

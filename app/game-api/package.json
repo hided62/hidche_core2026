@@ -10,7 +10,7 @@
         "worker:dev": "GAME_API_ROLE=battle-sim-worker tsdown -c ../../tsdown.config.ts -F @sammo-ts/game-api --watch",
         "lint": "node -e \"console.log('lint not configured')\"",
         "test": "vitest run --config vitest.config.ts",
-        "typecheck": "tsc --noEmit"
+        "typecheck": "tsc -b"
     },
     "devDependencies": {
         "tsdown": "^0.18.4",

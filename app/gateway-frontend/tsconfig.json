@@ -31,9 +31,19 @@
       "@sammo-ts/logic": ["../../packages/logic/src/index.ts"],
       "@sammo-ts/logic/*": ["../../packages/logic/src/*"],
       "@sammo-ts/game-engine": ["../../app/game-engine/src/index.ts"],
-      "@sammo-ts/game-engine/*": ["../../app/game-engine/src/*"]
+      "@sammo-ts/game-engine/*": ["../../app/game-engine/src/*"],
+      "@sammo-ts/game-api": ["../../app/game-api/src/index.ts"],
+      "@sammo-ts/game-api/*": ["../../app/game-api/src/*"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.tsx", "src/**/*.vue"],
-  "references": [{ "path": "./tsconfig.node.json" }]
+  "references": [
+    { "path": "./tsconfig.node.json" },
+    { "path": "../../packages/common" },
+    { "path": "../../packages/infra" },
+    { "path": "../../packages/logic" },
+    { "path": "../../app/game-engine" },
+    { "path": "../../app/game-api" },
+    { "path": "../../app/gateway-api" }
+  ]
 }
