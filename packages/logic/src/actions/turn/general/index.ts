@@ -14,6 +14,7 @@ export const GENERAL_TURN_COMMAND_KEYS = [
     'che_전투특기초기화',
     'che_출병',
     'che_주민선정',
+    'che_정착장려',
     'che_농지개간',
     'che_상업투자',
     'che_기술연구',
@@ -24,6 +25,9 @@ export const GENERAL_TURN_COMMAND_KEYS = [
     'che_집합',
     'che_인재탐색',
     'che_징병',
+    'che_모병',
+    'che_소집해제',
+    'che_군량매매',
     '휴식',
 ] as const;
 
@@ -49,6 +53,7 @@ const defaultImporters: Record<GeneralTurnCommandKey, GeneralTurnCommandImporter
     che_전투특기초기화: async () => import('./che_전투특기초기화.js'),
     che_출병: async () => import('./che_출병.js'),
     che_주민선정: async () => import('./che_주민선정.js'),
+    che_정착장려: async () => import('./che_정착장려.js'),
     che_농지개간: async () => import('./che_농지개간.js'),
     che_상업투자: async () => import('./che_상업투자.js'),
     che_기술연구: async () => import('./che_기술연구.js'),
@@ -59,6 +64,9 @@ const defaultImporters: Record<GeneralTurnCommandKey, GeneralTurnCommandImporter
     che_집합: async () => import('./che_집합.js'),
     che_인재탐색: async () => import('./che_인재탐색.js'),
     che_징병: async () => import('./che_징병.js'),
+    che_모병: async () => import('./che_모병.js'),
+    che_소집해제: async () => import('./che_소집해제.js'),
+    che_군량매매: async () => import('./che_군량매매.js'),
     휴식: async () => import('./휴식.js'),
 };
 

@@ -36,6 +36,14 @@ export class WarCrewType {
         return this.definition.rice;
     }
 
+    public reqCities(): boolean {
+        return this.definition.requirements.some((req) => req.type === 'ReqCities');
+    }
+
+    public reqRegions(): boolean {
+        return this.definition.requirements.some((req) => req.type === 'ReqRegions');
+    }
+
     get initSkillTrigger(): string[] {
         return this.definition.initSkillTrigger ?? [];
     }

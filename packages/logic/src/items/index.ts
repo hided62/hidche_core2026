@@ -27,6 +27,7 @@ export const ITEM_KEYS = [
     'che_무기_09_동호비궁',
     'che_서적_08_전론',
     'che_보물_도기',
+    'che_명마_01_노기',
 ] as const;
 
 export type ItemKey = (typeof ITEM_KEYS)[number];
@@ -42,6 +43,7 @@ const defaultImporters: Record<ItemKey, ItemImporter> = {
     che_무기_09_동호비궁: async () => import('./che_무기_09_동호비궁.js'),
     che_서적_08_전론: async () => import('./che_서적_08_전론.js'),
     che_보물_도기: async () => import('./che_보물_도기.js'),
+    che_명마_01_노기: async () => import('./che_명마_01_노기.js'),
 };
 
 export const isItemKey = (value: string): value is ItemKey => ITEM_KEYS.includes(value as ItemKey);

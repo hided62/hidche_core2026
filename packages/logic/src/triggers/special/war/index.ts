@@ -1,6 +1,6 @@
 import type { TraitModule, TraitModuleExport } from '@sammo-ts/logic/triggers/special/types.js';
 
-export const WAR_TRAIT_KEYS = ['che_의술', 'che_징병'] as const;
+export const WAR_TRAIT_KEYS = ['che_의술', 'che_징병', 'che_보병', 'che_궁병', 'che_기병', 'che_공성'] as const;
 
 export type WarTraitKey = (typeof WAR_TRAIT_KEYS)[number];
 
@@ -11,6 +11,10 @@ export type WarTraitImporter = () => Promise<TraitModuleExport>;
 const defaultImporters: Record<WarTraitKey, WarTraitImporter> = {
     che_의술: async () => import('./che_의술.js'),
     che_징병: async () => import('./che_징병.js'),
+    che_보병: async () => import('./che_보병.js'),
+    che_궁병: async () => import('./che_궁병.js'),
+    che_기병: async () => import('./che_기병.js'),
+    che_공성: async () => import('./che_공성.js'),
 };
 
 export const isWarTraitKey = (value: string): value is WarTraitKey => WAR_TRAIT_KEYS.includes(value as WarTraitKey);

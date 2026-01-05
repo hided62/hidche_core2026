@@ -388,8 +388,8 @@ export class ActionResolver<
 export class ActionDefinition<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionDefinition<TriggerState, RecruitArgs, RecruitResolveContext<TriggerState>> {
-    public readonly key = 'che_징병';
-    public readonly name = ACTION_NAME;
+    public readonly key: string = 'che_징병';
+    public readonly name: string = ACTION_NAME;
     private readonly command: CommandResolver<TriggerState>;
     private readonly resolver: ActionResolver<TriggerState>;
     private readonly env: RecruitEnvironment;

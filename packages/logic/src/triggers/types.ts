@@ -4,6 +4,10 @@ export type TriggerActionPhase = '판매' | '구매';
 
 export type TriggerDomesticActionType =
     | '상업'
+    | '농업'
+    | '성벽'
+    | '수비'
+    | '치안'
     | '인재탐색'
     | '징병'
     | '징집인구'

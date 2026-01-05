@@ -118,6 +118,10 @@ export abstract class WarUnit<TriggerState extends GeneralTriggerState = General
         return this.unitId;
     }
 
+    public getGameConfig(): WarEngineConfig {
+        return this.config;
+    }
+
     public getNationVar(key: string): TriggerValue | null {
         return resolveNationVar(this.nation, key);
     }

@@ -1,6 +1,15 @@
 import type { TraitModule, TraitModuleExport } from '@sammo-ts/logic/triggers/special/types.js';
 
-export const DOMESTIC_TRAIT_KEYS = ['che_인덕', 'che_발명'] as const;
+export const DOMESTIC_TRAIT_KEYS = [
+    'che_인덕',
+    'che_발명',
+    'che_경작',
+    'che_상재',
+    'che_축성',
+    'che_수비',
+    'che_통찰',
+    'che_귀모',
+] as const;
 
 export type DomesticTraitKey = (typeof DOMESTIC_TRAIT_KEYS)[number];
 
@@ -11,6 +20,12 @@ export type DomesticTraitImporter = () => Promise<TraitModuleExport>;
 const defaultImporters: Record<DomesticTraitKey, DomesticTraitImporter> = {
     che_인덕: async () => import('./che_인덕.js'),
     che_발명: async () => import('./che_발명.js'),
+    che_경작: async () => import('./che_경작.js'),
+    che_상재: async () => import('./che_상재.js'),
+    che_축성: async () => import('./che_축성.js'),
+    che_수비: async () => import('./che_수비.js'),
+    che_통찰: async () => import('./che_통찰.js'),
+    che_귀모: async () => import('./che_귀모.js'),
 };
 
 export const isDomesticTraitKey = (value: string): value is DomesticTraitKey =>
