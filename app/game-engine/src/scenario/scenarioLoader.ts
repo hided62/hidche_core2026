@@ -11,7 +11,8 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DEFAULT_SCENARIO_ROOT = path.resolve(__dirname, '..', '..', 'resources', 'scenario');
+const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
+const DEFAULT_SCENARIO_ROOT = path.resolve(REPO_ROOT, 'resources', 'scenario');
 
 export interface ScenarioLoaderOptions {
     scenarioRoot?: string;

@@ -6,7 +6,8 @@ import type { MapDefinition } from '@sammo-ts/logic';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DEFAULT_MAP_ROOT = path.resolve(__dirname, '..', '..', 'resources', 'map');
+const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
+const DEFAULT_MAP_ROOT = path.resolve(REPO_ROOT, 'resources', 'map');
 
 export interface MapLoaderOptions {
     mapRoot?: string;

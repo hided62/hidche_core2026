@@ -8,7 +8,7 @@
     "endOfLine": "lf",
     "overrides": [
         {
-            "files": "app/game-engine/resources/scenario/*.json",
+            "files": "resources/scenario/*.json",
             "options": {
                 "printWidth": 1000
             }
