@@ -466,8 +466,8 @@ export class WarUnitGeneral<
         const baseTurnTime = this.isAttacker()
             ? getMetaString(this.general.meta, META_TURN_TIME)
             : oppose instanceof WarUnitGeneral
-                ? getMetaString(oppose.general.meta, META_TURN_TIME)
-                : getMetaString(this.general.meta, META_TURN_TIME);
+              ? getMetaString(oppose.general.meta, META_TURN_TIME)
+              : getMetaString(this.general.meta, META_TURN_TIME);
         if (!baseTurnTime) {
             return;
         }
@@ -480,8 +480,9 @@ export class WarUnitGeneral<
 
     public override getMaxPhase(): number {
         const base = this.getCrewType().speed;
+        const aux = { isAttacker: this.isAttacker() };
         const context = this.getActionContext();
-        const phase = this.actionPipeline.onCalcStat(context, 'initWarPhase', base, { isAttacker: this.isAttacker() });
+        const phase = this.actionPipeline.onCalcStat(context, 'initWarPhase', base, aux);
         return phase + this.bonusPhase;
     }
 
@@ -506,16 +507,12 @@ export class WarUnitGeneral<
         return strength;
     }
 
-    private resolveOpposeStatValue(statName: WarStatName, value: number, aux?: any): number {
+    private resolveOpposeStatValue(statName: WarStatName, value: number, aux?: Record<string, unknown>): number {
         const oppose = this.getOppose();
         if (!(oppose instanceof WarUnitGeneral)) {
             return value;
         }
-        const result = oppose.getActionPipeline().onCalcOpposeStat(this.getActionContext(), statName, value, aux);
-        if (typeof result === 'number') {
-            return result;
-        }
-        return value;
+        return oppose.getActionPipeline().onCalcOpposeStat(this.getActionContext(), statName, value, aux);
     }
 
     public override getDex(crewType: WarCrewType): number {
@@ -530,10 +527,8 @@ export class WarUnitGeneral<
         };
         const statName = toDexStatName(armType);
         let dex = this.actionPipeline.onCalcStat(this.getActionContext(), statName, base, aux);
-        if (typeof dex === 'number') {
-            dex = this.resolveOpposeStatValue(statName, dex, aux);
-        }
-        return typeof dex === 'number' ? dex : base;
+        dex = this.resolveOpposeStatValue(statName, dex, aux);
+        return dex;
     }
 
     public override getComputedAttack(): number {
@@ -583,8 +578,8 @@ export class WarUnitGeneral<
         const mainStat = this.resolveMainStat(armType);
         const coef =
             armType === this.config.armTypes.wizard ||
-                armType === this.config.armTypes.siege ||
-                armType === this.config.armTypes.misc
+            armType === this.config.armTypes.siege ||
+            armType === this.config.armTypes.misc
                 ? 0.4
                 : 0.5;
 

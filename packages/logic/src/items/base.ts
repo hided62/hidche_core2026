@@ -34,19 +34,31 @@ export const createStatItemModule = (options: StatItemOptions): ItemModule => {
     const name = `${options.rawName}(+${options.statValue})`;
     const baseInfo = `${statLabel} +${options.statValue}`;
     const info = options.extraInfo ? `${baseInfo}<br>${options.extraInfo}` : baseInfo;
-    const onCalcStat = (
+    function onCalcStat(
+        _context: GeneralActionContext,
+        statName: GeneralStatName,
+        value: number,
+        _aux?: unknown
+    ): number;
+    function onCalcStat(
+        _context: WarActionContext,
+        statName: WarStatName,
+        value: number | [number, number],
+        _aux?: unknown
+    ): number | [number, number];
+    function onCalcStat(
         _context: GeneralActionContext | WarActionContext,
         statName: GeneralStatName | WarStatName,
         value: number | [number, number]
-    ): number | [number, number] => {
+    ): number | [number, number] {
         if (statName !== options.statName) {
             return value;
         }
-        if (typeof value === 'number') {
-            return value + options.statValue;
+        if (Array.isArray(value)) {
+            return value;
         }
-        return value;
-    };
+        return value + options.statValue;
+    }
 
     return {
         key: options.key,

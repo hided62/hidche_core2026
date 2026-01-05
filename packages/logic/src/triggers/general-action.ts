@@ -1,9 +1,7 @@
 import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import { type GeneralActionContext, GeneralTriggerCaller } from './general.js';
 import type {
-    GeneralStatBundleMap,
     GeneralStatName,
-    WarStatBundleMap,
     TriggerActionPhase,
     TriggerActionType,
     TriggerDomesticActionType,
@@ -18,58 +16,58 @@ export interface GeneralActionModule<TriggerState extends GeneralTriggerState = 
     getInfo?: (() => string) | undefined;
 
     getPreTurnExecuteTriggerList?:
-    | ((context: GeneralActionContext<TriggerState>) => GeneralTriggerCaller<TriggerState> | null)
-    | undefined;
+        | ((context: GeneralActionContext<TriggerState>) => GeneralTriggerCaller<TriggerState> | null)
+        | undefined;
 
     onCalcDomestic?:
-    | ((
-        context: GeneralActionContext<TriggerState>,
-        turnType: TriggerDomesticActionType,
-        varType: TriggerDomesticVarType,
-        value: number,
-        aux?: unknown
-    ) => number)
-    | undefined;
+        | ((
+              context: GeneralActionContext<TriggerState>,
+              turnType: TriggerDomesticActionType,
+              varType: TriggerDomesticVarType,
+              value: number,
+              aux?: unknown
+          ) => number)
+        | undefined;
 
     onCalcStat?:
-    | (<T extends GeneralStatName>(
-        context: GeneralActionContext<TriggerState>,
-        statName: T,
-        value: GeneralStatBundleMap[T]['value'],
-        aux?: GeneralStatBundleMap[T]['aux']
-    ) => GeneralStatBundleMap[T]['return'])
-    | undefined;
+        | ((
+              context: GeneralActionContext<TriggerState>,
+              statName: GeneralStatName,
+              value: number,
+              aux?: unknown
+          ) => number)
+        | undefined;
 
     onCalcOpposeStat?:
-    | (<T extends GeneralStatName>(
-        context: GeneralActionContext<TriggerState>,
-        statName: T,
-        value: GeneralStatBundleMap[T]['value'],
-        aux?: GeneralStatBundleMap[T]['aux']
-    ) => GeneralStatBundleMap[T]['return'])
-    | undefined;
+        | ((
+              context: GeneralActionContext<TriggerState>,
+              statName: GeneralStatName,
+              value: number,
+              aux?: unknown
+          ) => number)
+        | undefined;
 
     onCalcStrategic?:
-    | ((
-        context: GeneralActionContext<TriggerState>,
-        turnType: TriggerStrategicActionType,
-        varType: TriggerStrategicVarType,
-        value: number
-    ) => number)
-    | undefined;
+        | ((
+              context: GeneralActionContext<TriggerState>,
+              turnType: TriggerStrategicActionType,
+              varType: TriggerStrategicVarType,
+              value: number
+          ) => number)
+        | undefined;
 
     onCalcNationalIncome?:
-    | ((context: GeneralActionContext<TriggerState>, type: TriggerNationalIncomeType, amount: number) => number)
-    | undefined;
+        | ((context: GeneralActionContext<TriggerState>, type: TriggerNationalIncomeType, amount: number) => number)
+        | undefined;
 
     onArbitraryAction?:
-    | ((
-        context: GeneralActionContext<TriggerState>,
-        actionType: TriggerActionType,
-        phase?: TriggerActionPhase | null,
-        aux?: Record<string, unknown> | null
-    ) => Record<string, unknown> | null)
-    | undefined;
+        | ((
+              context: GeneralActionContext<TriggerState>,
+              actionType: TriggerActionType,
+              phase?: TriggerActionPhase | null,
+              aux?: Record<string, unknown> | null
+          ) => Record<string, unknown> | null)
+        | undefined;
 }
 
 export class GeneralActionPipeline<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
@@ -109,12 +107,12 @@ export class GeneralActionPipeline<TriggerState extends GeneralTriggerState = Ge
         return current;
     }
 
-    onCalcStat<T extends GeneralStatName>(
+    onCalcStat(
         context: GeneralActionContext<TriggerState>,
-        statName: T,
-        value: GeneralStatBundleMap[T]['value'],
-        aux?: GeneralStatBundleMap[T]['aux']
-    ): GeneralStatBundleMap[T]['return'] {
+        statName: GeneralStatName,
+        value: number,
+        aux?: unknown
+    ): number {
         let current = value;
         for (const module of this.modules) {
             if (!module.onCalcStat) {
@@ -125,12 +123,12 @@ export class GeneralActionPipeline<TriggerState extends GeneralTriggerState = Ge
         return current;
     }
 
-    onCalcOpposeStat<T extends GeneralStatName>(
+    onCalcOpposeStat(
         context: GeneralActionContext<TriggerState>,
-        statName: T,
-        value: GeneralStatBundleMap[T]['value'],
-        aux?: GeneralStatBundleMap[T]['aux']
-    ): GeneralStatBundleMap[T]['return'] {
+        statName: GeneralStatName,
+        value: number,
+        aux?: unknown
+    ): number {
         let current = value;
         for (const module of this.modules) {
             if (!module.onCalcOpposeStat) {

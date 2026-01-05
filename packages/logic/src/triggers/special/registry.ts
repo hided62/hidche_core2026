@@ -2,7 +2,6 @@ import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
 import type { GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
 import type {
-    GeneralStatBundleMap,
     GeneralStatName,
     TriggerActionPhase,
     TriggerActionType,
@@ -11,7 +10,6 @@ import type {
     TriggerNationalIncomeType,
     TriggerStrategicActionType,
     TriggerStrategicVarType,
-    WarStatBundleMap,
     WarStatName,
 } from '@sammo-ts/logic/triggers/types.js';
 import type { WarActionContext, WarActionModule } from '@sammo-ts/logic/war/actions.js';
@@ -66,7 +64,7 @@ export class TraitGeneralActionRouter<
     constructor(
         private readonly kind: TraitKind,
         private readonly registry: TraitModuleRegistry<TriggerState>
-    ) { }
+    ) {}
 
     private getModule(context: GeneralActionContext<TriggerState>): TraitModule<TriggerState> | null {
         const key = resolveTraitKey(context, this.kind);
@@ -89,32 +87,24 @@ export class TraitGeneralActionRouter<
         return module?.onCalcDomestic?.(context, turnType, varType, value, aux) ?? value;
     }
 
-    onCalcStat<T extends GeneralStatName>(
+    onCalcStat(
         context: GeneralActionContext<TriggerState>,
-        statName: T,
-        value: GeneralStatBundleMap[T]['value'],
-        aux?: GeneralStatBundleMap[T]['aux']
-    ): GeneralStatBundleMap[T]['return'] {
+        statName: GeneralStatName,
+        value: number,
+        aux?: unknown
+    ): number {
         const module = this.getModule(context);
-        const onCalcStat = module?.onCalcStat;
-        if (onCalcStat) {
-            return onCalcStat(context, statName, value as never, aux as never) as never;
-        }
-        return value;
+        return module?.onCalcStat?.(context, statName, value, aux) ?? value;
     }
 
-    onCalcOpposeStat<T extends GeneralStatName>(
+    onCalcOpposeStat(
         context: GeneralActionContext<TriggerState>,
-        statName: T,
-        value: GeneralStatBundleMap[T]['value'],
-        aux?: GeneralStatBundleMap[T]['aux']
-    ): GeneralStatBundleMap[T]['return'] {
+        statName: GeneralStatName,
+        value: number,
+        aux?: unknown
+    ): number {
         const module = this.getModule(context);
-        const onCalcOpposeStat = module?.onCalcOpposeStat;
-        if (onCalcOpposeStat) {
-            return onCalcOpposeStat(context, statName, value as never, aux as never) as never;
-        }
-        return value;
+        return module?.onCalcOpposeStat?.(context, statName, value, aux) ?? value;
     }
 
     onCalcStrategic(
@@ -155,7 +145,7 @@ export class TraitWarActionRouter<
     constructor(
         private readonly kind: TraitKind,
         private readonly registry: TraitModuleRegistry<TriggerState>
-    ) { }
+    ) {}
 
     private getModule(context: WarActionContext<TriggerState>): TraitModule<TriggerState> | null {
         const key = resolveTraitKey(context, this.kind);
@@ -172,32 +162,24 @@ export class TraitWarActionRouter<
         return module?.getBattlePhaseTriggerList?.(context) ?? null;
     }
 
-    onCalcStat<T extends WarStatName>(
+    onCalcStat(
         context: WarActionContext<TriggerState>,
-        statName: T,
-        value: WarStatBundleMap[T]['value'],
-        aux?: WarStatBundleMap[T]['aux']
-    ): WarStatBundleMap[T]['return'] {
+        statName: WarStatName,
+        value: number | [number, number],
+        aux?: unknown
+    ): number | [number, number] {
         const module = this.getModule(context);
-        const onCalcStat = module?.onCalcStat;
-        if (onCalcStat) {
-            return onCalcStat(context, statName, value as never, aux as never) as never;
-        }
-        return value;
+        return module?.onCalcStat?.(context, statName, value, aux) ?? value;
     }
 
-    onCalcOpposeStat<T extends WarStatName>(
+    onCalcOpposeStat(
         context: WarActionContext<TriggerState>,
-        statName: T,
-        value: WarStatBundleMap[T]['value'],
-        aux?: WarStatBundleMap[T]['aux']
-    ): WarStatBundleMap[T]['return'] {
+        statName: WarStatName,
+        value: number | [number, number],
+        aux?: unknown
+    ): number | [number, number] {
         const module = this.getModule(context);
-        const onCalcOpposeStat = module?.onCalcOpposeStat;
-        if (onCalcOpposeStat) {
-            return onCalcOpposeStat(context, statName, value as never, aux as never) as never;
-        }
-        return value;
+        return module?.onCalcOpposeStat?.(context, statName, value, aux) ?? value;
     }
 
     getWarPowerMultiplier(
