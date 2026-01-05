@@ -60,6 +60,7 @@ const handleLogout = async () => {
         <div class="max-w-5xl mx-auto py-8 px-4 space-y-8">
             <!-- Notice -->
             <div v-if="notice" class="text-center">
+                <!-- eslint-disable-next-line vue/no-v-html -->
                 <span class="text-orange-500 text-3xl font-bold" v-html="notice"></span>
             </div>
 
@@ -91,15 +92,15 @@ const handleLogout = async () => {
                                     :style="{ color: profile.color }"
                                     class="text-lg font-bold cursor-help"
                                     :title="
-                                        profileDetails[profile.profileName]
-                                            ? `시작일: ${profileDetails[profile.profileName].starttime}`
+                                        profileDetails[profile.profileName]?.starttime
+                                            ? `시작일: ${profileDetails[profile.profileName]?.starttime}`
                                             : ''
                                     "
                                 >
                                     {{ profile.korName }}섭
                                 </div>
                                 <div v-if="profileDetails[profile.profileName]" class="text-xs text-zinc-500 mt-1">
-                                    &lt;{{ profileDetails[profile.profileName].nationCnt }}국 경쟁중&gt;
+                                    &lt;{{ profileDetails[profile.profileName]?.nationCnt }}국 경쟁중&gt;
                                 </div>
                             </td>
 
@@ -108,25 +109,25 @@ const handleLogout = async () => {
                                 <template v-if="profileDetails[profile.profileName]">
                                     <div class="space-y-1">
                                         <div>
-                                            서기 {{ profileDetails[profile.profileName].year }}년
-                                            {{ profileDetails[profile.profileName].month }}월 (<span
+                                            서기 {{ profileDetails[profile.profileName]?.year }}년
+                                            {{ profileDetails[profile.profileName]?.month }}월 (<span
                                                 class="text-orange-400"
                                                 >{{ profile.scenario }}</span
                                             >)
                                         </div>
                                         <div class="text-zinc-400">
-                                            유저 : {{ profileDetails[profile.profileName].userCnt }} /
-                                            {{ profileDetails[profile.profileName].maxUserCnt }}명
+                                            유저 : {{ profileDetails[profile.profileName]?.userCnt }} /
+                                            {{ profileDetails[profile.profileName]?.maxUserCnt }}명
                                             <span class="text-cyan-400 ml-2"
-                                                >NPC : {{ profileDetails[profile.profileName].npcCnt }}명</span
+                                                >NPC : {{ profileDetails[profile.profileName]?.npcCnt }}명</span
                                             >
                                             <span class="text-green-400 ml-2"
-                                                >({{ profileDetails[profile.profileName].turnTerm }}분 턴 서버)</span
+                                                >({{ profileDetails[profile.profileName]?.turnTerm }}분 턴 서버)</span
                                             >
                                         </div>
                                         <div class="text-xs text-zinc-500">
-                                            (상성 설정:{{ profileDetails[profile.profileName].fictionMode }}), (기타
-                                            설정:{{ profileDetails[profile.profileName].otherTextInfo }})
+                                            (상성 설정:{{ profileDetails[profile.profileName]?.fictionMode }}), (기타
+                                            설정:{{ profileDetails[profile.profileName]?.otherTextInfo }})
                                         </div>
                                     </div>
                                 </template>
@@ -145,14 +146,14 @@ const handleLogout = async () => {
                                     class="w-12 h-12 mx-auto bg-zinc-800 rounded overflow-hidden border border-zinc-700"
                                 >
                                     <img
-                                        :src="profileDetails[profile.profileName].myGeneral.picture"
+                                        :src="profileDetails[profile.profileName]?.myGeneral?.picture ?? undefined"
                                         class="w-full h-full object-cover"
                                     />
                                 </div>
                             </td>
                             <td class="px-4 py-4 border-r border-zinc-800 text-center">
                                 <div v-if="profileDetails[profile.profileName]?.myGeneral" class="font-medium">
-                                    {{ profileDetails[profile.profileName].myGeneral.name }}
+                                    {{ profileDetails[profile.profileName]?.myGeneral?.name }}
                                 </div>
                                 <div v-else class="text-zinc-600">- 미 등 록 -</div>
                             </td>
@@ -161,7 +162,7 @@ const handleLogout = async () => {
                             <td class="px-4 py-4 text-center">
                                 <template v-if="profileDetails[profile.profileName]">
                                     <button
-                                        v-if="profileDetails[profile.profileName].myGeneral"
+                                        v-if="profileDetails[profile.profileName]?.myGeneral"
                                         class="w-full bg-zinc-700 hover:bg-zinc-600 text-white py-1.5 rounded text-sm transition-colors"
                                     >
                                         입장

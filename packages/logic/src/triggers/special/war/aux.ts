@@ -14,15 +14,16 @@ export const parseWarDexAux = (aux: unknown): WarDexAux => {
     const opposeRaw = aux.opposeType;
 
     if (!isRecord(opposeRaw)) {
-        return { isAttacker };
+        return isAttacker === undefined ? {} : { isAttacker };
     }
 
     const armType = opposeRaw.armType;
     if (typeof armType !== 'number') {
-        return { isAttacker };
+        return isAttacker === undefined ? {} : { isAttacker };
     }
 
-    return { isAttacker, opposeType: { armType } };
+    const opposeType = { armType };
+    return isAttacker === undefined ? { opposeType } : { isAttacker, opposeType };
 };
 
 export const getAuxArmType = (aux: unknown): number | undefined => {

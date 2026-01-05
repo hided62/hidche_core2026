@@ -99,12 +99,12 @@ export const traitModule: TraitModule = {
     getName: () => '반계',
     getInfo: () =>
         '[전투] 상대의 계략 성공 확률 -10%p, 상대의 계략을 40% 확률로 되돌림, 반목 성공시 대미지 추가(+60% → +150%)',
-    onCalcOpposeStat: (_context, statName, value, _aux) => {
+    onCalcOpposeStat: ((_context, statName, value, _aux) => {
         if (statName === 'warMagicSuccessProb' && typeof value === 'number') {
             return value - 0.1;
         }
         return value;
-    },
+    }) as TraitModule['onCalcOpposeStat'],
     getBattlePhaseTriggerList: (_context) => {
         if (!_context.unit) return null;
         return new WarTriggerCaller(new che_반계시도(_context.unit), new che_반계발동(_context.unit));

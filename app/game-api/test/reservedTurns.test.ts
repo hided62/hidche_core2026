@@ -17,14 +17,10 @@ const buildDb = () => {
     type GeneralTurnFindManyArgs = Parameters<DatabaseClient['generalTurn']['findMany']>[0];
     type GeneralTurnDeleteManyArgs = NonNullable<Parameters<DatabaseClient['generalTurn']['deleteMany']>[0]>;
     type GeneralTurnCreateManyArgs = NonNullable<Parameters<DatabaseClient['generalTurn']['createMany']>[0]>;
-    type GeneralTurnCreateManyData = GeneralTurnCreateManyArgs['data'];
-    type GeneralTurnCreateManyRow = GeneralTurnCreateManyData extends Array<infer Row> ? Row : never;
 
     type NationTurnFindManyArgs = Parameters<DatabaseClient['nationTurn']['findMany']>[0];
     type NationTurnDeleteManyArgs = NonNullable<Parameters<DatabaseClient['nationTurn']['deleteMany']>[0]>;
     type NationTurnCreateManyArgs = NonNullable<Parameters<DatabaseClient['nationTurn']['createMany']>[0]>;
-    type NationTurnCreateManyData = NationTurnCreateManyArgs['data'];
-    type NationTurnCreateManyRow = NationTurnCreateManyData extends Array<infer Row> ? Row : never;
 
     const db = {
         worldState: {
@@ -45,20 +41,23 @@ const buildDb = () => {
                 return generalId !== undefined ? (generalTurns.get(generalId) ?? []) : [];
             },
             deleteMany: async ({ where }: GeneralTurnDeleteManyArgs) => {
-                if (typeof where.generalId === 'number') {
+                if (where && typeof where.generalId === 'number') {
                     generalTurns.delete(where.generalId);
                 }
                 return {};
             },
             createMany: async ({ data }: GeneralTurnCreateManyArgs) => {
-                const rows = data.map((row: GeneralTurnCreateManyRow, index: number) => ({
+                const dataList = (Array.isArray(data) ? data : [data]) as Record<string, unknown>[];
+                const rows: GeneralTurnRow[] = dataList.map((row, index: number) => ({
                     id: index + 1,
-                    generalId: row.generalId,
-                    turnIdx: row.turnIdx,
-                    actionCode: row.actionCode,
-                    arg: row.arg,
+                    generalId: row.generalId as number,
+                    turnIdx: row.turnIdx as number,
+                    actionCode: row.actionCode as string,
+                    arg: row.arg as unknown as GeneralTurnRow['arg'],
+                    createdAt: new Date(),
                 }));
-                const generalId = data[0]?.generalId;
+                const firstRow = dataList[0];
+                const generalId = firstRow?.generalId as number | undefined;
                 if (generalId !== undefined) {
                     generalTurns.set(generalId, rows);
                 }
@@ -76,22 +75,25 @@ const buildDb = () => {
                 return nationTurns.get(`${nationId}:${officerLevel}`) ?? [];
             },
             deleteMany: async ({ where }: NationTurnDeleteManyArgs) => {
-                if (typeof where.nationId === 'number' && typeof where.officerLevel === 'number') {
+                if (where && typeof where.nationId === 'number' && typeof where.officerLevel === 'number') {
                     nationTurns.delete(`${where.nationId}:${where.officerLevel}`);
                 }
                 return {};
             },
             createMany: async ({ data }: NationTurnCreateManyArgs) => {
-                const rows = data.map((row: NationTurnCreateManyRow, index: number) => ({
+                const dataList = (Array.isArray(data) ? data : [data]) as Record<string, unknown>[];
+                const rows: NationTurnRow[] = dataList.map((row, index: number) => ({
                     id: index + 1,
-                    nationId: row.nationId,
-                    officerLevel: row.officerLevel,
-                    turnIdx: row.turnIdx,
-                    actionCode: row.actionCode,
-                    arg: row.arg,
+                    nationId: row.nationId as number,
+                    officerLevel: row.officerLevel as number,
+                    turnIdx: row.turnIdx as number,
+                    actionCode: row.actionCode as string,
+                    arg: row.arg as unknown as NationTurnRow['arg'],
+                    createdAt: new Date(),
                 }));
-                const nationId = data[0]?.nationId;
-                const officerLevel = data[0]?.officerLevel;
+                const firstRow = dataList[0];
+                const nationId = firstRow?.nationId as number | undefined;
+                const officerLevel = firstRow?.officerLevel as number | undefined;
                 if (nationId !== undefined && officerLevel !== undefined) {
                     nationTurns.set(`${nationId}:${officerLevel}`, rows);
                 }

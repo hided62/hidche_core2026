@@ -16,32 +16,38 @@ export interface WarActionContext<TriggerState extends GeneralTriggerState = Gen
 }
 
 export interface WarActionModule<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
-    getName?(): string;
-    getInfo?(): string;
+    getName?: (() => string) | undefined;
+    getInfo?: (() => string) | undefined;
 
-    getBattleInitTriggerList?(context: WarActionContext<TriggerState>): WarTriggerCaller | null;
+    getBattleInitTriggerList?: ((context: WarActionContext<TriggerState>) => WarTriggerCaller | null) | undefined;
 
-    getBattlePhaseTriggerList?(context: WarActionContext<TriggerState>): WarTriggerCaller | null;
+    getBattlePhaseTriggerList?: ((context: WarActionContext<TriggerState>) => WarTriggerCaller | null) | undefined;
 
-    onCalcStat?(
-        context: WarActionContext<TriggerState>,
-        statName: WarStatName,
-        value: number | [number, number],
-        aux?: unknown
-    ): number | [number, number];
+    onCalcStat?:
+        | ((
+              context: WarActionContext<TriggerState>,
+              statName: WarStatName,
+              value: number | [number, number],
+              aux?: unknown
+          ) => number | [number, number])
+        | undefined;
 
-    onCalcOpposeStat?(
-        context: WarActionContext<TriggerState>,
-        statName: WarStatName,
-        value: number | [number, number],
-        aux?: unknown
-    ): number | [number, number];
+    onCalcOpposeStat?:
+        | ((
+              context: WarActionContext<TriggerState>,
+              statName: WarStatName,
+              value: number | [number, number],
+              aux?: unknown
+          ) => number | [number, number])
+        | undefined;
 
-    getWarPowerMultiplier?(
-        context: WarActionContext<TriggerState>,
-        unit: WarUnit<TriggerState>,
-        oppose: WarUnit<TriggerState>
-    ): [number, number];
+    getWarPowerMultiplier?:
+        | ((
+              context: WarActionContext<TriggerState>,
+              unit: WarUnit<TriggerState>,
+              oppose: WarUnit<TriggerState>
+          ) => [number, number])
+        | undefined;
 }
 
 export class WarActionPipeline<TriggerState extends GeneralTriggerState = GeneralTriggerState> {

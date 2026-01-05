@@ -110,7 +110,10 @@ const isSupplyCity = (city: City): boolean => {
     return city.supplyState > 0;
 };
 
-export const computeBattleOrder = (defender: WarUnit, attacker: WarUnitGeneral): number => {
+export const computeBattleOrder = <TriggerState extends GeneralTriggerState>(
+    defender: WarUnit<TriggerState>,
+    attacker: WarUnitGeneral<TriggerState>
+): number => {
     if (defender instanceof WarUnitCity) {
         const context = attacker.getActionContext();
         return attacker.getActionPipeline().onCalcOpposeStat(context, 'cityBattleOrder', -1);
@@ -257,11 +260,14 @@ export const resolveWarBattle = <TriggerState extends GeneralTriggerState = Gene
         defenderGenerals.push(unit);
     }
 
-    if (defenderGenerals.length > 0 && computeBattleOrder(cityUnit, attackerUnit) > 0) {
+    if (defenderGenerals.length > 0 && computeBattleOrder<TriggerState>(cityUnit, attackerUnit) > 0) {
         defenderUnits.push(cityUnit);
     }
 
-    defenderUnits.sort((lhs, rhs) => computeBattleOrder(rhs, attackerUnit) - computeBattleOrder(lhs, attackerUnit));
+    defenderUnits.sort(
+        (lhs, rhs) =>
+            computeBattleOrder<TriggerState>(rhs, attackerUnit) - computeBattleOrder<TriggerState>(lhs, attackerUnit)
+    );
 
     const iter = defenderUnits.values();
     let defender: WarUnit<TriggerState> | null = null;

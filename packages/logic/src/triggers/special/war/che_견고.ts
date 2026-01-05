@@ -44,7 +44,7 @@ export const traitModule: TraitModule = {
     kind: 'war',
     getName: () => '견고',
     getInfo: () => '[전투] 상대 필살 확률 -20%p, 상대 계략 시도시 성공 확률 -10%p, 부상 없음, 아군 피해 -10%',
-    onCalcOpposeStat: (_context, statName, value, _aux) => {
+    onCalcOpposeStat: ((_context, statName, value, _aux) => {
         if (statName === 'warMagicSuccessProb' && typeof value === 'number') {
             return value - 0.1;
         }
@@ -52,7 +52,7 @@ export const traitModule: TraitModule = {
             return value - 0.2;
         }
         return value;
-    },
+    }) as TraitModule['onCalcOpposeStat'],
     getBattleInitTriggerList: (_context) => {
         if (!_context.unit) return null;
         return new WarTriggerCaller(new che_부상무효(_context.unit));

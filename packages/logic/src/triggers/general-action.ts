@@ -12,54 +12,62 @@ import type {
 } from './types.js';
 
 export interface GeneralActionModule<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
-    getName?(): string;
-    getInfo?(): string;
+    getName?: (() => string) | undefined;
+    getInfo?: (() => string) | undefined;
 
-    getPreTurnExecuteTriggerList?(
-        context: GeneralActionContext<TriggerState>
-    ): GeneralTriggerCaller<TriggerState> | null;
+    getPreTurnExecuteTriggerList?:
+        | ((context: GeneralActionContext<TriggerState>) => GeneralTriggerCaller<TriggerState> | null)
+        | undefined;
 
-    onCalcDomestic?(
-        context: GeneralActionContext<TriggerState>,
-        turnType: TriggerDomesticActionType,
-        varType: TriggerDomesticVarType,
-        value: number,
-        aux?: unknown
-    ): number;
+    onCalcDomestic?:
+        | ((
+              context: GeneralActionContext<TriggerState>,
+              turnType: TriggerDomesticActionType,
+              varType: TriggerDomesticVarType,
+              value: number,
+              aux?: unknown
+          ) => number)
+        | undefined;
 
-    onCalcStat?(
-        context: GeneralActionContext<TriggerState>,
-        statName: GeneralStatName,
-        value: number,
-        aux?: unknown
-    ): number;
+    onCalcStat?:
+        | ((
+              context: GeneralActionContext<TriggerState>,
+              statName: GeneralStatName,
+              value: number,
+              aux?: unknown
+          ) => number)
+        | undefined;
 
-    onCalcOpposeStat?(
-        context: GeneralActionContext<TriggerState>,
-        statName: GeneralStatName,
-        value: number,
-        aux?: unknown
-    ): number;
+    onCalcOpposeStat?:
+        | ((
+              context: GeneralActionContext<TriggerState>,
+              statName: GeneralStatName,
+              value: number,
+              aux?: unknown
+          ) => number)
+        | undefined;
 
-    onCalcStrategic?(
-        context: GeneralActionContext<TriggerState>,
-        turnType: TriggerStrategicActionType,
-        varType: TriggerStrategicVarType,
-        value: number
-    ): number;
+    onCalcStrategic?:
+        | ((
+              context: GeneralActionContext<TriggerState>,
+              turnType: TriggerStrategicActionType,
+              varType: TriggerStrategicVarType,
+              value: number
+          ) => number)
+        | undefined;
 
-    onCalcNationalIncome?(
-        context: GeneralActionContext<TriggerState>,
-        type: TriggerNationalIncomeType,
-        amount: number
-    ): number;
+    onCalcNationalIncome?:
+        | ((context: GeneralActionContext<TriggerState>, type: TriggerNationalIncomeType, amount: number) => number)
+        | undefined;
 
-    onArbitraryAction?(
-        context: GeneralActionContext<TriggerState>,
-        actionType: TriggerActionType,
-        phase?: TriggerActionPhase | null,
-        aux?: Record<string, unknown> | null
-    ): Record<string, unknown> | null;
+    onArbitraryAction?:
+        | ((
+              context: GeneralActionContext<TriggerState>,
+              actionType: TriggerActionType,
+              phase?: TriggerActionPhase | null,
+              aux?: Record<string, unknown> | null
+          ) => Record<string, unknown> | null)
+        | undefined;
 }
 
 export class GeneralActionPipeline<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
