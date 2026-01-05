@@ -8,7 +8,15 @@ import globals from 'globals';
 
 export default tseslint.config(
     {
-        ignores: ['**/dist/**', '**/node_modules/**', '**/*.d.ts', 'legacy/**', 'packages/infra/prisma/client/**'],
+        ignores: [
+            '**/dist/**',
+            '**/node_modules/**',
+            '**/*.d.ts',
+            'legacy/**',
+            'packages/infra/prisma/client/**',
+            '**/generated/**',
+            '.pnpm-store/**',
+        ],
     },
     eslint.configs.recommended,
     ...tseslint.configs.recommended,
