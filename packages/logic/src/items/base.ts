@@ -34,10 +34,10 @@ export const createStatItemModule = (options: StatItemOptions): ItemModule => {
     const name = `${options.rawName}(+${options.statValue})`;
     const baseInfo = `${statLabel} +${options.statValue}`;
     const info = options.extraInfo ? `${baseInfo}<br>${options.extraInfo}` : baseInfo;
-    const onCalcStat = ((
+    const onCalcStat = (
         _context: GeneralActionContext | WarActionContext,
         statName: GeneralStatName | WarStatName,
-        value: number | [number, number],
+        value: number | [number, number]
     ): number | [number, number] => {
         if (statName !== options.statName) {
             return value;
@@ -46,7 +46,7 @@ export const createStatItemModule = (options: StatItemOptions): ItemModule => {
             return value + options.statValue;
         }
         return value;
-    }) as ItemModule['onCalcStat'];
+    };
 
     return {
         key: options.key,
@@ -59,6 +59,6 @@ export const createStatItemModule = (options: StatItemOptions): ItemModule => {
         consumable: false,
         reqSecu: options.reqSecu,
         unique: options.unique ?? false,
-        onCalcStat: onCalcStat!,
+        onCalcStat,
     };
 };

@@ -3,6 +3,7 @@ import { type GeneralActionContext, GeneralTriggerCaller } from './general.js';
 import type {
     GeneralStatBundleMap,
     GeneralStatName,
+    WarStatBundleMap,
     TriggerActionPhase,
     TriggerActionType,
     TriggerDomesticActionType,

@@ -1,5 +1,7 @@
-import type { TraitOnCalcStat, TraitModule, OnCalcStatParams } from '@sammo-ts/logic/triggers/special/types.js';
-import type { WarStatName, WarStatBundleMap } from '@sammo-ts/logic/triggers/types.js';
+import type { TraitOnCalcStat, TraitModule } from '@sammo-ts/logic/triggers/special/types.js';
+import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
+import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
+import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/types.js';
 import { getMetaNumber } from '@sammo-ts/logic/war/utils.js';
 
 import { WarUnit } from '@sammo-ts/logic/war/units.js';
@@ -9,20 +11,19 @@ type WarUnitWithGeneral = WarUnit & { getGeneral: () => { meta: Record<string, u
 const hasGeneral = (unit: WarUnit): unit is WarUnitWithGeneral =>
     'getGeneral' in unit && typeof (unit as { getGeneral?: unknown }).getGeneral === 'function';
 
-const onCalcStat: TraitOnCalcStat = <T extends WarStatName>(
-    ...args: [
-        context: any,
-        statName: T,
-        value: WarStatBundleMap[T]['value'],
-        aux: WarStatBundleMap[T]['aux'],
-    ]
-) => {
-    const [_context, statName, value, aux] = args as OnCalcStatParams;
-    if (statName === 'warCriticalRatio' && aux.isAttacker) {
-        return (value + 0.1) as WarStatBundleMap[T]['return'];
+const onCalcStat = ((
+    _context: GeneralActionContext | WarActionContext,
+    statName: GeneralStatName | WarStatName,
+    value: number | [number, number],
+    aux?: unknown
+): number | [number, number] => {
+    const isAttacker = typeof aux === 'object' && aux !== null && (aux as { isAttacker?: unknown }).isAttacker === true;
+
+    if (statName === 'warCriticalRatio' && isAttacker && typeof value === 'number') {
+        return value + 0.1;
     }
-    return value as WarStatBundleMap[T]['return'];
-};
+    return value;
+}) as unknown as TraitOnCalcStat;
 
 export const traitModule: TraitModule = {
     key: 'che_무쌍',
