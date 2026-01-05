@@ -158,3 +158,5 @@ packages/infra/prisma/generated/
 #개발용 임시 코드
 .devbox
 docker-compose.override.yml
+
+.turbo/
