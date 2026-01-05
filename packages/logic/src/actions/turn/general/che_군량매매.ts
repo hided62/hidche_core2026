@@ -35,7 +35,9 @@ export class ActionDefinition<
         if (typeof raw !== 'object' || raw === null) {
             return null;
         }
-        const { buyRice, amount } = raw as any;
+        const record = raw as Record<string, unknown>;
+        const buyRice = record.buyRice;
+        const amount = record.amount;
         if (typeof buyRice !== 'boolean' || typeof amount !== 'number') {
             return null;
         }

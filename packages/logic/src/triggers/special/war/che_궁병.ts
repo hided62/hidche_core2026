@@ -3,6 +3,7 @@ import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/type
 import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
 import type { TraitModule } from '@sammo-ts/logic/triggers/special/types.js';
 import { getMetaNumber } from '@sammo-ts/logic/war/utils.js';
+import { getAuxArmType, parseWarDexAux } from './aux.js';
 
 function onCalcStat(context: GeneralActionContext, statName: GeneralStatName, value: number, aux?: unknown): number;
 function onCalcStat(
@@ -33,8 +34,7 @@ function onCalcStat(
 
     if (statName.startsWith('dex')) {
         const myDex = getMetaNumber(context.general.meta, `dex${archerType}`);
-        const isAttacker = (aux as any)?.isAttacker;
-        const opposeType = (aux as any)?.opposeType;
+        const { isAttacker, opposeType } = parseWarDexAux(aux);
 
         if (isAttacker && opposeType && statName === `dex${opposeType.armType}`) {
             return (value as number) + myDex;
@@ -57,12 +57,11 @@ export const traitModule: TraitModule = {
         '[군사] 궁병 계통 징·모병비 -10%<br>[전투] 회피 확률 +20%p,<br>공격시 상대 병종에/수비시 자신 병종 숙련에 궁병 숙련을 가산',
     onCalcDomestic: (_context, turnType, varType, value, aux) => {
         if (turnType === '징병' || turnType === '모병') {
-            if (varType === 'cost' && aux && typeof aux === 'object' && 'armType' in aux) {
-                // Note: In a real scenario, we should check if aux.armType is archer.
-                // Since we don't have easy access to config here, we might need to assume legacy ID 2 or similar.
-                if ((aux as any).armType === 2) {
-                    return value * 0.9;
-                }
+            const armType = getAuxArmType(aux);
+            // Note: In a real scenario, we should check if aux.armType is archer.
+            // Since we don't have easy access to config here, we might need to assume legacy ID 2 or similar.
+            if (varType === 'cost' && armType === 2) {
+                return value * 0.9;
             }
         }
         return value;

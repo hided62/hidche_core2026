@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { City, General, Nation } from '../src/domain/entities.js';
 import { resolveGeneralAction } from '../src/actions/engine.js';
 import { ActionDefinition } from '../src/actions/turn/general/che_출병.js';
+import type { DispatchResolveContext } from '../src/actions/turn/general/che_출병.js';
 import type { TurnSchedule } from '../src/turn/calendar.js';
 import type { WarAftermathConfig, WarEngineConfig } from '../src/war/types.js';
 import type { UnitSetDefinition } from '../src/world/types.js';
@@ -184,28 +185,29 @@ describe('che_출병', () => {
         const defender = buildGeneral(2, defenderNation.id, defenderCity.id);
 
         const definition = new ActionDefinition();
+        const context: Omit<DispatchResolveContext, 'addLog'> = {
+            general: attacker,
+            city: attackerCity,
+            nation: attackerNation,
+            rng,
+            destCity: defenderCity,
+            destNation: defenderNation,
+            cities: [attackerCity, defenderCity],
+            nations: [attackerNation, defenderNation],
+            generals: [attacker, defender],
+            unitSet,
+            time: {
+                year: 200,
+                month: 1,
+                startYear: 180,
+            },
+            seedBase: 'test-seed',
+            warConfig,
+            aftermathConfig,
+        };
         const resolution = resolveGeneralAction(
             definition,
-            {
-                general: attacker,
-                city: attackerCity,
-                nation: attackerNation,
-                rng,
-                destCity: defenderCity,
-                destNation: defenderNation,
-                cities: [attackerCity, defenderCity],
-                nations: [attackerNation, defenderNation],
-                generals: [attacker, defender],
-                unitSet,
-                time: {
-                    year: 200,
-                    month: 1,
-                    startYear: 180,
-                },
-                seedBase: 'test-seed',
-                warConfig,
-                aftermathConfig,
-            } as any,
+            context,
             {
                 now: new Date('2000-01-01T00:00:00Z'),
                 schedule,

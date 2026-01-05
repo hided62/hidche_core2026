@@ -44,12 +44,12 @@ export const traitModule: TraitModule = {
     kind: 'war',
     getName: () => '견고',
     getInfo: () => '[전투] 상대 필살 확률 -20%p, 상대 계략 시도시 성공 확률 -10%p, 부상 없음, 아군 피해 -10%',
-    onCalcOpposeStat: (_context, statName, value: any, _aux) => {
-        if (statName === 'warMagicSuccessProb') {
-            return (value as number) - 0.1;
+    onCalcOpposeStat: (_context, statName, value, _aux) => {
+        if (statName === 'warMagicSuccessProb' && typeof value === 'number') {
+            return value - 0.1;
         }
-        if (statName === 'warCriticalRatio') {
-            return (value as number) - 0.2;
+        if (statName === 'warCriticalRatio' && typeof value === 'number') {
+            return value - 0.2;
         }
         return value;
     },

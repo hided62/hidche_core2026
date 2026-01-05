@@ -6,6 +6,11 @@ import { BaseWarUnitTrigger, WarTriggerCaller } from '@sammo-ts/logic/war/trigge
 import type { WarUnit } from '@sammo-ts/logic/war/units.js';
 import { LogFormat } from '@sammo-ts/logic/logging/types.js';
 
+type AtmosUnit = WarUnit & { addAtmos: (amount: number) => void };
+
+const canAddAtmos = (unit: WarUnit): unit is AtmosUnit =>
+    'addAtmos' in unit && typeof (unit as { addAtmos?: unknown }).addAtmos === 'function';
+
 class che_저격시도 extends BaseWarUnitTrigger {
     private readonly ratio: number;
     private readonly woundMin: number;
@@ -86,8 +91,8 @@ class che_저격발동 extends BaseWarUnitTrigger {
             self.getLogger().pushGeneralBattleDetailLog('성벽 수비대장을 <C>저격</>했다!', LogFormat.PLAIN);
         }
 
-        if ('addAtmos' in self) {
-            (self as any).addAtmos(selfEnv['addAtmos'] as number);
+        if (canAddAtmos(self)) {
+            self.addAtmos(selfEnv['addAtmos'] as number);
         }
 
         return true;

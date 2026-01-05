@@ -13,8 +13,8 @@ export interface TurnCommandSpecBase<TKey extends string = string> {
 
 export interface TurnCommandModule<TSpec extends TurnCommandSpecBase = TurnCommandSpecBase> {
     commandSpec: TSpec;
-    ActionDefinition: new (...args: any[]) => GeneralActionDefinition;
-    ActionResolver?: new (...args: any[]) => GeneralActionResolver;
-    CommandResolver?: new (...args: any[]) => any;
+    ActionDefinition: new (...args: unknown[]) => GeneralActionDefinition;
+    ActionResolver?: new (...args: unknown[]) => GeneralActionResolver;
+    CommandResolver?: new (...args: unknown[]) => unknown;
     actionContextBuilder?: ActionContextBuilder;
 }

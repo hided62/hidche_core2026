@@ -1,15 +1,24 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
+import type { inferRouterOutputs } from '@trpc/server';
+import type { AppRouter } from '@sammo-ts/gateway-api';
 import DefaultLayout from '../layouts/DefaultLayout.vue';
 import { trpc } from '../utils/trpc';
 import { createGameTrpc } from '../utils/gameTrpc';
+import type { GameRouter } from '../utils/gameTrpc';
+
+type GatewayRouterOutput = inferRouterOutputs<AppRouter>;
+type GameRouterOutput = inferRouterOutputs<GameRouter>;
+type MeOutput = GatewayRouterOutput['me'];
+type LobbyProfile = GatewayRouterOutput['lobby']['profiles'][number];
+type LobbyInfo = GameRouterOutput['lobby']['info'];
 
 const router = useRouter();
-const me = ref<any>(null);
+const me = ref<MeOutput>(null);
 const notice = ref('');
-const profiles = ref<any[]>([]);
-const profileDetails = ref<Record<string, any>>({});
+const profiles = ref<LobbyProfile[]>([]);
+const profileDetails = ref<Record<string, LobbyInfo | undefined>>({});
 
 onMounted(async () => {
     try {

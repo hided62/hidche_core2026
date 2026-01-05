@@ -4,6 +4,11 @@ import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
 import type { TraitModule } from '@sammo-ts/logic/triggers/special/types.js';
 import { getMetaNumber } from '@sammo-ts/logic/war/utils.js';
 
+type WarUnitWithGeneral = WarUnit & { getGeneral: () => { meta: Record<string, unknown> } };
+
+const hasGeneral = (unit: WarUnit): unit is WarUnitWithGeneral =>
+    'getGeneral' in unit && typeof (unit as { getGeneral?: unknown }).getGeneral === 'function';
+
 function onCalcStat(context: GeneralActionContext, statName: GeneralStatName, value: number, aux?: unknown): number;
 function onCalcStat(
     context: WarActionContext,
@@ -17,8 +22,10 @@ function onCalcStat(
     value: number | [number, number],
     aux?: unknown
 ): number | [number, number] {
-    if (statName === 'warCriticalRatio' && (aux as any)?.isAttacker) {
-        return (value as number) + 0.1;
+    const isAttacker = typeof aux === 'object' && aux !== null && (aux as { isAttacker?: unknown }).isAttacker === true;
+
+    if (statName === 'warCriticalRatio' && isAttacker && typeof value === 'number') {
+        return value + 0.1;
     }
     return value;
 }
@@ -36,8 +43,8 @@ export const traitModule: TraitModule = {
         let defenceMultiplier = 0.98;
         // Note: unit.getGeneral() is only available for WarUnitGeneral.
         // In a real scenario, we should check if unit is WarUnitGeneral.
-        if ('getGeneral' in unit) {
-            const killnum = getMetaNumber((unit as any).getGeneral().meta, 'rank_killnum', 0);
+        if (hasGeneral(unit)) {
+            const killnum = getMetaNumber(unit.getGeneral().meta, 'rank_killnum', 0);
             const logVal = Math.log2(Math.max(1, killnum / 5));
             attackMultiplier += logVal / 20;
             defenceMultiplier -= logVal / 50;

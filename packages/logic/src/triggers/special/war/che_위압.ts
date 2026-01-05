@@ -6,6 +6,11 @@ import { BaseWarUnitTrigger, WarTriggerCaller } from '@sammo-ts/logic/war/trigge
 import type { WarUnit } from '@sammo-ts/logic/war/units.js';
 import { LogFormat } from '@sammo-ts/logic/logging/types.js';
 
+type AtmosUnit = WarUnit & { addAtmos: (amount: number) => void };
+
+const canAddAtmos = (unit: WarUnit): unit is AtmosUnit =>
+    'addAtmos' in unit && typeof (unit as { addAtmos?: unknown }).addAtmos === 'function';
+
 class che_위압시도 extends BaseWarUnitTrigger {
     constructor(unit: WarUnit) {
         super(unit, 10100);
@@ -48,8 +53,8 @@ class che_위압발동 extends BaseWarUnitTrigger {
         oppose.getLogger().pushGeneralBattleDetailLog('상대에게 <R>위압</>받았다!', LogFormat.PLAIN);
         self.getLogger().pushGeneralBattleDetailLog('상대에게 <C>위압</>을 줬다!', LogFormat.PLAIN);
         oppose.setWarPowerMultiply(0);
-        if ('addAtmos' in oppose) {
-            (oppose as any).addAtmos(-5);
+        if (canAddAtmos(oppose)) {
+            oppose.addAtmos(-5);
         }
 
         return true;

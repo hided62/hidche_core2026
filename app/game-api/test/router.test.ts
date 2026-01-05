@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import type { GameApiContext, GameProfile, WorldStateRow } from '../src/context.js';
+import type { DatabaseClient, GameApiContext, GameProfile, WorldStateRow } from '../src/context.js';
+import type { RedisConnector } from '@sammo-ts/infra';
 import { InMemoryBattleSimTransport } from '../src/battleSim/inMemoryTransport.js';
 import { InMemoryTurnDaemonTransport } from '../src/daemon/inMemoryTransport.js';
 import { appRouter } from '../src/router.js';
@@ -43,12 +44,12 @@ const buildContext = (options?: {
         },
     };
     return {
-        db: db as any,
+        db: db as unknown as DatabaseClient,
         turnDaemon: transport,
         battleSim,
         profile,
         auth: null,
-        redis: {} as any,
+        redis: {} as unknown as RedisConnector['client'],
     };
 };
 

@@ -3,9 +3,11 @@ import { describe, expect, it } from 'vitest';
 import { InMemoryGatewaySessionService } from '../src/auth/inMemorySessionService.js';
 import { createInMemoryUserRepository } from '../src/auth/inMemoryUserRepository.js';
 import { InMemoryOAuthSessionStore } from '../src/auth/oauthSessionStore.js';
+import type { KakaoOAuthClient } from '../src/auth/kakaoClient.js';
 import { createGatewayApiContext } from '../src/context.js';
 import { InMemoryProfileStatusService } from '../src/lobby/profileStatusService.js';
 import { appRouter } from '../src/router.js';
+import type { GatewayPrismaClient } from '@sammo-ts/infra';
 
 const buildCaller = () => {
     const users = createInMemoryUserRepository();
@@ -76,14 +78,14 @@ const buildCaller = () => {
             flushPublisher,
             gameTokenSecret: 'test-secret',
             gameSessionTtlSeconds: 600,
-            kakaoClient: kakaoClient as any,
+            kakaoClient: kakaoClient as unknown as KakaoOAuthClient,
             oauthSessions,
             publicBaseUrl: 'http://localhost',
             profiles,
             orchestrator,
             profileStatus,
             requestHeaders: {},
-            prisma: {} as any,
+            prisma: {} as unknown as GatewayPrismaClient,
         })
     );
     return { caller, oauthSessions };
