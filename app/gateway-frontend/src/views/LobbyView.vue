@@ -225,8 +225,8 @@ const handleLogout = async () => {
                         비밀번호 & 전콘 & 탈퇴
                     </button>
                     <button
-                        @click="handleLogout"
                         class="bg-zinc-800 hover:bg-zinc-700 text-white px-6 py-2 rounded border border-zinc-700 transition-colors"
+                        @click="handleLogout"
                     >
                         로 그 아 웃
                     </button>

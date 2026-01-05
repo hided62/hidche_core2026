@@ -69,14 +69,14 @@ const handleJoin = () => {
                     </div>
                     <div class="flex space-x-2 pt-2">
                         <button
-                            @click="handleJoin"
                             class="flex-1 bg-yellow-600 hover:bg-yellow-500 text-black font-bold py-2 rounded transition-colors flex items-center justify-center space-x-2"
+                            @click="handleJoin"
                         >
                             <span>가입 & 로그인</span>
                         </button>
                         <button
-                            @click="handleLogin"
                             class="flex-[2] bg-blue-700 hover:bg-blue-600 text-white font-bold py-2 rounded transition-colors"
+                            @click="handleLogin"
                         >
                             로그인
                         </button>
