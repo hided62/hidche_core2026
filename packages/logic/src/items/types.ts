@@ -1,8 +1,5 @@
 import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
-import type {
-    GeneralActionContext,
-    GeneralTriggerCaller,
-} from '@sammo-ts/logic/triggers/general.js';
+import type { GeneralActionContext, GeneralTriggerCaller } from '@sammo-ts/logic/triggers/general.js';
 import type {
     GeneralStatName,
     TriggerActionPhase,
@@ -20,9 +17,7 @@ import type { WarUnit } from '@sammo-ts/logic/war/units.js';
 
 export type ItemSlot = 'horse' | 'weapon' | 'book' | 'item';
 
-export interface ItemModule<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+export interface ItemModule<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     key: string;
     name: string;
     rawName: string;
@@ -47,12 +42,7 @@ export interface ItemModule<
     ): number;
 
     onCalcStat?: {
-        (
-            context: GeneralActionContext<TriggerState>,
-            statName: GeneralStatName,
-            value: number,
-            aux?: unknown
-        ): number;
+        (context: GeneralActionContext<TriggerState>, statName: GeneralStatName, value: number, aux?: unknown): number;
         (
             context: WarActionContext<TriggerState>,
             statName: WarStatName,
@@ -62,12 +52,7 @@ export interface ItemModule<
     };
 
     onCalcOpposeStat?: {
-        (
-            context: GeneralActionContext<TriggerState>,
-            statName: GeneralStatName,
-            value: number,
-            aux?: unknown
-        ): number;
+        (context: GeneralActionContext<TriggerState>, statName: GeneralStatName, value: number, aux?: unknown): number;
         (
             context: WarActionContext<TriggerState>,
             statName: WarStatName,
@@ -96,13 +81,9 @@ export interface ItemModule<
         aux?: Record<string, unknown> | null
     ): Record<string, unknown> | null;
 
-    getBattleInitTriggerList?(
-        context: WarActionContext<TriggerState>
-    ): WarTriggerCaller | null;
+    getBattleInitTriggerList?(context: WarActionContext<TriggerState>): WarTriggerCaller | null;
 
-    getBattlePhaseTriggerList?(
-        context: WarActionContext<TriggerState>
-    ): WarTriggerCaller | null;
+    getBattlePhaseTriggerList?(context: WarActionContext<TriggerState>): WarTriggerCaller | null;
 
     getWarPowerMultiplier?(
         context: WarActionContext<TriggerState>,
@@ -111,8 +92,6 @@ export interface ItemModule<
     ): [number, number];
 }
 
-export interface ItemModuleExport<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+export interface ItemModuleExport<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     itemModule: ItemModule<TriggerState>;
 }

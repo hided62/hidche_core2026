@@ -1,0 +1,6 @@
+node_modules
+dist
+legacy
+pnpm-lock.yaml
+package-lock.json
+*.log

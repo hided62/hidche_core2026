@@ -334,53 +334,31 @@ export interface TurnEngineLogEntryCreateManyInput {
 export interface TurnEngineDatabaseClient {
     worldState: {
         findFirst(args?: unknown): Promise<TurnEngineWorldStateRow | null>;
-        update(args: {
-            where: { id: number };
-            data: TurnEngineWorldStateUpdateInput;
-        }): Promise<unknown>;
-        create(args: {
-            data: TurnEngineWorldStateCreateInput;
-        }): Promise<unknown>;
+        update(args: { where: { id: number }; data: TurnEngineWorldStateUpdateInput }): Promise<unknown>;
+        create(args: { data: TurnEngineWorldStateCreateInput }): Promise<unknown>;
         deleteMany(args?: unknown): Promise<unknown>;
     };
     general: {
         findMany(args?: unknown): Promise<TurnEngineGeneralRow[]>;
-        createMany(args: {
-            data: TurnEngineGeneralCreateManyInput[];
-        }): Promise<unknown>;
-        update(args: {
-            where: { id: number };
-            data: TurnEngineGeneralUpdateInput;
-        }): Promise<unknown>;
+        createMany(args: { data: TurnEngineGeneralCreateManyInput[] }): Promise<unknown>;
+        update(args: { where: { id: number }; data: TurnEngineGeneralUpdateInput }): Promise<unknown>;
         deleteMany(args?: unknown): Promise<unknown>;
     };
     city: {
         findMany(args?: unknown): Promise<TurnEngineCityRow[]>;
-        createMany(args: {
-            data: TurnEngineCityCreateManyInput[];
-        }): Promise<unknown>;
-        update(args: {
-            where: { id: number };
-            data: TurnEngineCityUpdateInput;
-        }): Promise<unknown>;
+        createMany(args: { data: TurnEngineCityCreateManyInput[] }): Promise<unknown>;
+        update(args: { where: { id: number }; data: TurnEngineCityUpdateInput }): Promise<unknown>;
         deleteMany(args?: unknown): Promise<unknown>;
     };
     nation: {
         findMany(args?: unknown): Promise<TurnEngineNationRow[]>;
-        createMany(args: {
-            data: TurnEngineNationCreateManyInput[];
-        }): Promise<unknown>;
-        update(args: {
-            where: { id: number };
-            data: TurnEngineNationUpdateInput;
-        }): Promise<unknown>;
+        createMany(args: { data: TurnEngineNationCreateManyInput[] }): Promise<unknown>;
+        update(args: { where: { id: number }; data: TurnEngineNationUpdateInput }): Promise<unknown>;
         deleteMany(args?: unknown): Promise<unknown>;
     };
     diplomacy: {
         findMany(args?: unknown): Promise<TurnEngineDiplomacyRow[]>;
-        createMany(args: {
-            data: TurnEngineDiplomacyCreateManyInput[];
-        }): Promise<unknown>;
+        createMany(args: { data: TurnEngineDiplomacyCreateManyInput[] }): Promise<unknown>;
         update(args: {
             where: {
                 srcNationId_destNationId: {
@@ -394,26 +372,17 @@ export interface TurnEngineDatabaseClient {
     };
     troop: {
         findMany(args?: unknown): Promise<TurnEngineTroopRow[]>;
-        createMany(args: {
-            data: TurnEngineTroopCreateManyInput[];
-        }): Promise<unknown>;
-        update(args: {
-            where: { troopLeaderId: number };
-            data: TurnEngineTroopUpdateInput;
-        }): Promise<unknown>;
+        createMany(args: { data: TurnEngineTroopCreateManyInput[] }): Promise<unknown>;
+        update(args: { where: { troopLeaderId: number }; data: TurnEngineTroopUpdateInput }): Promise<unknown>;
         deleteMany(args?: unknown): Promise<unknown>;
     };
     event: {
         findMany(args?: unknown): Promise<TurnEngineEventRow[]>;
-        createMany(args: {
-            data: TurnEngineEventCreateManyInput[];
-        }): Promise<unknown>;
+        createMany(args: { data: TurnEngineEventCreateManyInput[] }): Promise<unknown>;
         deleteMany(args?: unknown): Promise<unknown>;
     };
     logEntry: {
-        createMany(args: {
-            data: TurnEngineLogEntryCreateManyInput[];
-        }): Promise<unknown>;
+        createMany(args: { data: TurnEngineLogEntryCreateManyInput[] }): Promise<unknown>;
     };
     generalTurn: {
         findMany(args?: unknown): Promise<TurnEngineGeneralTurnRow[]>;

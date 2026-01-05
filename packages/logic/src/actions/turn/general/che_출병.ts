@@ -1,14 +1,5 @@
-import type {
-    City,
-    General,
-    GeneralTriggerState,
-    Nation,
-} from '@sammo-ts/logic/domain/entities.js';
-import type {
-    Constraint,
-    ConstraintContext,
-    StateView,
-} from '@sammo-ts/logic/constraints/types.js';
+import type { City, General, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
+import type { Constraint, ConstraintContext, StateView } from '@sammo-ts/logic/constraints/types.js';
 import {
     existsDestCity,
     hasRouteWithEnemy,
@@ -37,22 +28,12 @@ import {
 import { JosaUtil, LiteHashDRBG } from '@sammo-ts/common';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { GeneralTurnCommandSpec } from './index.js';
-import type {
-    WarAftermathConfig,
-    WarEngineConfig,
-    WarTimeContext,
-} from '@sammo-ts/logic/war/types.js';
+import type { WarAftermathConfig, WarEngineConfig, WarTimeContext } from '@sammo-ts/logic/war/types.js';
 import { resolveWarAftermath } from '@sammo-ts/logic/war/aftermath.js';
 import { resolveWarBattle } from '@sammo-ts/logic/war/engine.js';
 import type { WarActionModule } from '@sammo-ts/logic/war/actions.js';
-import {
-    increaseMetaNumber,
-    simpleSerialize,
-} from '@sammo-ts/logic/war/utils.js';
-import type {
-    MapDefinition,
-    UnitSetDefinition,
-} from '@sammo-ts/logic/world/types.js';
+import { increaseMetaNumber, simpleSerialize } from '@sammo-ts/logic/war/utils.js';
+import type { MapDefinition, UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import {
     buildWarAftermathConfig,
@@ -65,7 +46,7 @@ export interface DispatchArgs {
 }
 
 export interface DispatchResolveContext<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > extends GeneralActionResolveContext<TriggerState> {
     destCity: City;
     destNation?: Nation | null;
@@ -197,9 +178,7 @@ const pickCandidateCity = (
         return { cityId, isEnemy: true, minDist };
     }
     const fallback = distanceList.get(minDist) ?? [];
-    const friendly = fallback.filter(
-        ([, nationId]) => nationId === attackerNationId
-    );
+    const friendly = fallback.filter(([, nationId]) => nationId === attackerNationId);
     if (friendly.length === 0) {
         return null;
     }
@@ -216,10 +195,7 @@ const getRequiredRice = (ctx: ConstraintContext, view: StateView): number => {
     return Math.round(general.crew / 100);
 };
 
-const resolveCrewTypeArm = (
-    unitSet: UnitSetDefinition,
-    crewTypeId: number
-): number | null => {
+const resolveCrewTypeArm = (unitSet: UnitSetDefinition, crewTypeId: number): number | null => {
     const crewTypes = unitSet.crewTypes ?? [];
     const crewType = crewTypes.find((entry) => entry.id === crewTypeId);
     if (!crewType) {
@@ -260,13 +236,8 @@ const cloneNation = (nation: Nation): Nation => ({
 });
 
 export class ActionDefinition<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> implements
-        GeneralActionDefinition<
-            TriggerState,
-            DispatchArgs,
-            DispatchResolveContext<TriggerState>
-        > {
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
+> implements GeneralActionDefinition<TriggerState, DispatchArgs, DispatchResolveContext<TriggerState>> {
     public readonly key = 'che_출병';
     public readonly name = ACTION_NAME;
     private readonly warModules: Array<WarActionModule<TriggerState>>;
@@ -286,10 +257,7 @@ export class ActionDefinition<
 
     buildConstraints(_ctx: ConstraintContext, _args: DispatchArgs): Constraint[] {
         const relYear = typeof _ctx.env.relYear === 'number' ? _ctx.env.relYear : 0;
-        const openingPartYear =
-            typeof _ctx.env.openingPartYear === 'number'
-                ? _ctx.env.openingPartYear
-                : 0;
+        const openingPartYear = typeof _ctx.env.openingPartYear === 'number' ? _ctx.env.openingPartYear : 0;
         return [
             notOpeningPart(relYear, openingPartYear),
             notSameDestCity(),
@@ -304,10 +272,7 @@ export class ActionDefinition<
         ];
     }
 
-    resolve(
-        context: DispatchResolveContext<TriggerState>,
-        args: DispatchArgs
-    ): GeneralActionOutcome<TriggerState> {
+    resolve(context: DispatchResolveContext<TriggerState>, args: DispatchArgs): GeneralActionOutcome<TriggerState> {
         void args;
         const attackerCity = context.city;
         if (!attackerCity) {
@@ -322,10 +287,7 @@ export class ActionDefinition<
         const unitSet = context.unitSet;
         const time = context.time;
         const diplomacy = context.diplomacy ?? [];
-        const allowedNationIds = buildAllowedNationIds(
-            attackerNation.id,
-            diplomacy
-        );
+        const allowedNationIds = buildAllowedNationIds(attackerNation.id, diplomacy);
         const mapIndex = context.map ? buildMapIndex(context.map) : null;
 
         let defenderCityId = finalTargetCity.id;
@@ -345,11 +307,7 @@ export class ActionDefinition<
                 mapIndex,
                 allowedCityIds
             );
-            const picked = pickCandidateCity(
-                context.rng,
-                distanceList,
-                attackerNation.id
-            );
+            const picked = pickCandidateCity(context.rng, distanceList, attackerNation.id);
             if (!picked) {
                 context.addLog('경로에 도달할 방법이 없습니다.');
                 return { effects: [] };
@@ -362,15 +320,12 @@ export class ActionDefinition<
         const destCity =
             defenderCityId === finalTargetCity.id
                 ? finalTargetCity
-                : context.cities.find((city) => city.id === defenderCityId) ??
-                  finalTargetCity;
+                : (context.cities.find((city) => city.id === defenderCityId) ?? finalTargetCity);
 
         if (!isEnemyTarget && destCity.nationId === attackerNation.id) {
             const josaRo = JosaUtil.pick(destCity.name, '로');
             if (finalTargetCity.id === destCity.id) {
-                context.addLog(
-                    `본국입니다. <G><b>${destCity.name}</b></>${josaRo} 이동합니다.`
-                );
+                context.addLog(`본국입니다. <G><b>${destCity.name}</b></>${josaRo} 이동합니다.`);
             } else {
                 const targetName = finalTargetCity.name;
                 const josaRoTarget = JosaUtil.pick(targetName, '로');
@@ -410,11 +365,7 @@ export class ActionDefinition<
 
         const armType = resolveCrewTypeArm(unitSet, context.general.crewTypeId);
         if (armType !== null) {
-            increaseMetaNumber(
-                context.general.meta,
-                `dex${armType}`,
-                context.general.crew / 100
-            );
+            increaseMetaNumber(context.general.meta, `dex${armType}`, context.general.crew / 100);
         }
 
         const cities = context.cities.map(cloneCity);
@@ -425,15 +376,10 @@ export class ActionDefinition<
         const nationMap = new Map(nations.map((nation) => [nation.id, nation]));
 
         const defenderCity = cityMap.get(destCity.id) ?? cloneCity(destCity);
-        const defenderNation =
-            defenderCity.nationId > 0
-                ? nationMap.get(defenderCity.nationId) ?? null
-                : null;
+        const defenderNation = defenderCity.nationId > 0 ? (nationMap.get(defenderCity.nationId) ?? null) : null;
 
         const defenderGenerals = generals.filter(
-            (general) =>
-                general.cityId === defenderCity.id &&
-                general.nationId === defenderCity.nationId
+            (general) => general.cityId === defenderCity.id && general.nationId === defenderCity.nationId
         );
 
         const battle = resolveWarBattle({
@@ -556,16 +502,10 @@ export const actionContextBuilder: ActionContextBuilder = (base, options) => {
     if (!destCity) {
         return null;
     }
-    const destNation =
-        destCity.nationId > 0
-            ? options.worldRef.getNationById(destCity.nationId)
-            : null;
+    const destNation = destCity.nationId > 0 ? options.worldRef.getNationById(destCity.nationId) : null;
     const diplomacy = options.worldRef.listDiplomacy();
     const warConfig = buildWarConfig(options.scenarioConfig, options.unitSet);
-    const aftermathConfig = buildWarAftermathConfig(
-        options.scenarioConfig,
-        warConfig.castleCrewTypeId
-    );
+    const aftermathConfig = buildWarAftermathConfig(options.scenarioConfig, warConfig.castleCrewTypeId);
     return {
         ...base,
         destCity,
@@ -588,6 +528,5 @@ export const commandSpec: GeneralTurnCommandSpec = {
     category: '군사',
     reqArg: true,
     args: { destCityId: 0 },
-    createDefinition: (env: TurnCommandEnv) =>
-        new ActionDefinition(env.warActionModules ?? []),
+    createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env.warActionModules ?? []),
 };

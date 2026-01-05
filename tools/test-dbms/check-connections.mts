@@ -7,14 +7,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const DEFAULT_ENV_FILE = path.resolve(__dirname, '..', '..', '.env.ci');
-const INFRA_PACKAGE_JSON = path.resolve(
-    __dirname,
-    '..',
-    '..',
-    'packages',
-    'infra',
-    'package.json'
-);
+const INFRA_PACKAGE_JSON = path.resolve(__dirname, '..', '..', 'packages', 'infra', 'package.json');
 const infraRequire = createRequire(INFRA_PACKAGE_JSON);
 const { PrismaClient } = infraRequire('@prisma/client');
 const { PrismaPg } = infraRequire('@prisma/adapter-pg');
@@ -37,10 +30,7 @@ const parseEnvFile = (rawText: string): EnvMap => {
         }
         const key = trimmed.slice(0, index).trim();
         let value = trimmed.slice(index + 1).trim();
-        if (
-            (value.startsWith('"') && value.endsWith('"')) ||
-            (value.startsWith("'") && value.endsWith("'"))
-        ) {
+        if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
             value = value.slice(1, -1);
         }
         env[key] = value;
@@ -53,8 +43,7 @@ const loadEnvFile = async (envFile: string): Promise<EnvMap> => {
     return parseEnvFile(text);
 };
 
-const maskUrlPassword = (url: string): string =>
-    url.replace(/:(?:[^@]+)@/, ':***@');
+const maskUrlPassword = (url: string): string => url.replace(/:(?:[^@]+)@/, ':***@');
 
 const resolveDatabaseUrl = (env: EnvMap): string => {
     if (process.env.DATABASE_URL) {
@@ -112,8 +101,7 @@ const isNodeError = (value: unknown): value is NodeJS.ErrnoException =>
     'code' in value &&
     typeof (value as NodeJS.ErrnoException).code === 'string';
 
-const formatError = (error: unknown): string =>
-    error instanceof Error ? error.message : String(error);
+const formatError = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 const main = async (): Promise<void> => {
     const envFile = process.env.SAMMO_ENV_FILE ?? DEFAULT_ENV_FILE;

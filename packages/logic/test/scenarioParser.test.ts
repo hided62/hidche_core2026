@@ -4,10 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import {
-    parseScenarioDefaults,
-    parseScenarioDefinition,
-} from '../src/scenario/parseScenario.js';
+import { parseScenarioDefaults, parseScenarioDefinition } from '../src/scenario/parseScenario.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,9 +18,7 @@ const readJson = async (filePath: string): Promise<unknown> => {
 
 describe('scenario parser', () => {
     it('reads defaults from legacy default.json', async () => {
-        const defaultsRaw = await readJson(
-            path.join(scenarioRoot, 'default.json')
-        );
+        const defaultsRaw = await readJson(path.join(scenarioRoot, 'default.json'));
         const defaults = parseScenarioDefaults(defaultsRaw);
 
         expect(defaults.stat.total).toBe(165);
@@ -37,12 +32,8 @@ describe('scenario parser', () => {
     });
 
     it('defaults map/unit set when scenario omits map config', async () => {
-        const defaultsRaw = await readJson(
-            path.join(scenarioRoot, 'default.json')
-        );
-        const scenarioRaw = await readJson(
-            path.join(scenarioRoot, 'scenario_0.json')
-        );
+        const defaultsRaw = await readJson(path.join(scenarioRoot, 'default.json'));
+        const scenarioRaw = await readJson(path.join(scenarioRoot, 'scenario_0.json'));
         const defaults = parseScenarioDefaults(defaultsRaw);
         const scenario = parseScenarioDefinition(scenarioRaw, defaults);
 
@@ -51,23 +42,19 @@ describe('scenario parser', () => {
     });
 
     it('parses nation/general rows from a legacy scenario', async () => {
-        const defaultsRaw = await readJson(
-            path.join(scenarioRoot, 'default.json')
-        );
-        const scenarioRaw = await readJson(
-            path.join(scenarioRoot, 'scenario_1010.json')
-        );
+        const defaultsRaw = await readJson(path.join(scenarioRoot, 'default.json'));
+        const scenarioRaw = await readJson(path.join(scenarioRoot, 'scenario_1010.json'));
         const defaults = parseScenarioDefaults(defaultsRaw);
         const scenario = parseScenarioDefinition(scenarioRaw, defaults);
 
         expect(scenario.nations.length).toBeGreaterThan(0);
         expect(scenario.generals.length).toBeGreaterThan(0);
 
-        const firstNation = scenario.nations[0];
+        const firstNation = scenario.nations[0]!;
         expect(firstNation.name).toBe('후한');
         expect(firstNation.color).toBe('#800000');
 
-        const firstGeneral = scenario.generals[0];
+        const firstGeneral = scenario.generals[0]!;
         expect(firstGeneral.name).toBe('소제1');
         expect(firstGeneral.affinity).toBe(1);
         expect(firstGeneral.picture).toBe(1001);

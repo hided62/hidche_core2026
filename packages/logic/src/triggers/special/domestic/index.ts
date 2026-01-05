@@ -1,45 +1,25 @@
-import type {
-    TraitModule,
-    TraitModuleExport,
-} from '@sammo-ts/logic/triggers/special/types.js';
+import type { TraitModule, TraitModuleExport } from '@sammo-ts/logic/triggers/special/types.js';
 
-export const DOMESTIC_TRAIT_KEYS = [
-    'che_인덕',
-    'che_발명',
-] as const;
+export const DOMESTIC_TRAIT_KEYS = ['che_인덕', 'che_발명'] as const;
 
-export type DomesticTraitKey =
-    (typeof DOMESTIC_TRAIT_KEYS)[number];
+export type DomesticTraitKey = (typeof DOMESTIC_TRAIT_KEYS)[number];
 
 export type DomesticTraitModule = TraitModule;
 
 export type DomesticTraitImporter = () => Promise<TraitModuleExport>;
 
-const defaultImporters: Record<
-    DomesticTraitKey,
-    DomesticTraitImporter
-> = {
+const defaultImporters: Record<DomesticTraitKey, DomesticTraitImporter> = {
     che_인덕: async () => import('./che_인덕.js'),
     che_발명: async () => import('./che_발명.js'),
 };
 
-export const isDomesticTraitKey = (
-    value: string
-): value is DomesticTraitKey =>
+export const isDomesticTraitKey = (value: string): value is DomesticTraitKey =>
     DOMESTIC_TRAIT_KEYS.includes(value as DomesticTraitKey);
 
 export class DomesticTraitLoader {
-    private readonly cache = new Map<
-        DomesticTraitKey,
-        Promise<DomesticTraitModule>
-    >();
+    private readonly cache = new Map<DomesticTraitKey, Promise<DomesticTraitModule>>();
 
-    constructor(
-        private readonly importers: Record<
-            DomesticTraitKey,
-            DomesticTraitImporter
-        > = defaultImporters
-    ) {}
+    constructor(private readonly importers: Record<DomesticTraitKey, DomesticTraitImporter> = defaultImporters) {}
 
     async load(key: DomesticTraitKey): Promise<DomesticTraitModule> {
         const cached = this.cache.get(key);
@@ -56,14 +36,10 @@ export class DomesticTraitLoader {
             }
             const resolved = module.traitModule;
             if (resolved.key !== key) {
-                throw new Error(
-                    `Domestic trait key mismatch: expected ${key}, got ${resolved.key}`
-                );
+                throw new Error(`Domestic trait key mismatch: expected ${key}, got ${resolved.key}`);
             }
             if (resolved.kind !== 'domestic') {
-                throw new Error(
-                    `Domestic trait kind mismatch: ${resolved.key}`
-                );
+                throw new Error(`Domestic trait kind mismatch: ${resolved.key}`);
             }
             return resolved;
         });

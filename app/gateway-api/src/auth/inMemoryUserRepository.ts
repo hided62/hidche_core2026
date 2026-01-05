@@ -4,9 +4,7 @@ import { createSimplePasswordHasher, type PasswordHasher } from './passwordHashe
 import type { CreateUserInput, UserRecord, UserRepository } from './userRepository.js';
 
 // 유저 데이터 저장소를 메모리로 대체한 임시 구현.
-export const createInMemoryUserRepository = (
-    hasher: PasswordHasher = createSimplePasswordHasher()
-): UserRepository => {
+export const createInMemoryUserRepository = (hasher: PasswordHasher = createSimplePasswordHasher()): UserRepository => {
     const usersByName = new Map<string, UserRecord>();
     const usersByOauthId = new Map<string, UserRecord>();
     const usersByEmail = new Map<string, UserRecord>();

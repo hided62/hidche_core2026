@@ -12,18 +12,9 @@ import type {
     TurnCommandEnv,
     TriggerValue,
 } from '@sammo-ts/logic';
-import {
-    evaluateConstraints,
-    loadGeneralTurnCommandSpecs,
-    loadNationTurnCommandSpecs,
-} from '@sammo-ts/logic';
+import { evaluateConstraints, loadGeneralTurnCommandSpecs, loadNationTurnCommandSpecs } from '@sammo-ts/logic';
 
-import type {
-    CityRow,
-    GeneralRow,
-    NationRow,
-    WorldStateRow,
-} from '../context.js';
+import type { CityRow, GeneralRow, NationRow, WorldStateRow } from '../context.js';
 import { loadTurnCommandProfile } from './turnCommandProfile.js';
 
 type AvailabilityStatus = 'available' | 'blocked' | 'needsInput' | 'unknown';
@@ -85,8 +76,7 @@ const DEFAULT_CREW_TYPE_ID = 1100;
 const isRecord = (value: unknown): value is Record<string, unknown> =>
     value !== null && typeof value === 'object' && !Array.isArray(value);
 
-const asRecord = (value: unknown): Record<string, unknown> =>
-    isRecord(value) ? value : {};
+const asRecord = (value: unknown): Record<string, unknown> => (isRecord(value) ? value : {});
 
 const asTriggerRecord = (value: unknown): Record<string, TriggerValue> =>
     isRecord(value) ? (value as Record<string, TriggerValue>) : {};
@@ -143,11 +133,7 @@ class MemoryStateView implements StateView {
     }
 }
 
-const resolveNumber = (
-    source: Record<string, unknown>,
-    keys: string[],
-    fallback: number
-): number => {
+const resolveNumber = (source: Record<string, unknown>, keys: string[], fallback: number): number => {
     for (const key of keys) {
         const value = source[key];
         if (typeof value === 'number' && Number.isFinite(value)) {
@@ -157,10 +143,7 @@ const resolveNumber = (
     return fallback;
 };
 
-const resolveOptionalString = (
-    source: Record<string, unknown>,
-    keys: string[]
-): string | null => {
+const resolveOptionalString = (source: Record<string, unknown>, keys: string[]): string | null => {
     for (const key of keys) {
         const value = source[key];
         if (typeof value === 'string') {
@@ -175,106 +158,36 @@ const buildCommandEnv = (worldState: WorldStateRow): CommandEnv => {
     const constValues = asRecord(config.const);
 
     return {
-        develCost: resolveNumber(
-            constValues,
-            ['develCost', 'develcost', 'develrate'],
-            0
-        ),
+        develCost: resolveNumber(constValues, ['develCost', 'develcost', 'develrate'], 0),
         trainDelta: resolveNumber(constValues, ['trainDelta'], 0),
         atmosDelta: resolveNumber(constValues, ['atmosDelta'], 0),
         maxTrainByCommand: resolveNumber(constValues, ['maxTrainByCommand'], 0),
-        maxAtmosByCommand: resolveNumber(
-            constValues,
-            ['maxAtmosByCommand'],
-            0
-        ),
-        sabotageDefaultProb: resolveNumber(
-            constValues,
-            ['sabotageDefaultProb'],
-            0
-        ),
-        sabotageProbCoefByStat: resolveNumber(
-            constValues,
-            ['sabotageProbCoefByStat'],
-            0
-        ),
-        sabotageDefenceCoefByGeneralCount: resolveNumber(
-            constValues,
-            ['sabotageDefenceCoefByGeneralCount'],
-            0
-        ),
-        sabotageDamageMin: resolveNumber(
-            constValues,
-            ['sabotageDamageMin'],
-            0
-        ),
-        sabotageDamageMax: resolveNumber(
-            constValues,
-            ['sabotageDamageMax'],
-            0
-        ),
-        openingPartYear: resolveNumber(
-            constValues,
-            ['openingPartYear'],
-            0
-        ),
-        maxGeneral: resolveNumber(
-            constValues,
-            ['defaultMaxGeneral', 'maxGeneral'],
-            0
-        ),
-        defaultNpcGold: resolveNumber(
-            constValues,
-            ['defaultNpcGold', 'defaultGold'],
-            DEFAULT_GENERAL_GOLD
-        ),
-        defaultNpcRice: resolveNumber(
-            constValues,
-            ['defaultNpcRice', 'defaultRice'],
-            DEFAULT_GENERAL_RICE
-        ),
-        defaultCrewTypeId: resolveNumber(
-            constValues,
-            ['defaultCrewTypeId'],
-            DEFAULT_CREW_TYPE_ID
-        ),
-        defaultSpecialDomestic: resolveOptionalString(
-            constValues,
-            ['defaultSpecialDomestic']
-        ),
-        defaultSpecialWar: resolveOptionalString(
-            constValues,
-            ['defaultSpecialWar']
-        ),
-        initialNationGenLimit: resolveNumber(
-            constValues,
-            ['initialNationGenLimit'],
-            0
-        ),
+        maxAtmosByCommand: resolveNumber(constValues, ['maxAtmosByCommand'], 0),
+        sabotageDefaultProb: resolveNumber(constValues, ['sabotageDefaultProb'], 0),
+        sabotageProbCoefByStat: resolveNumber(constValues, ['sabotageProbCoefByStat'], 0),
+        sabotageDefenceCoefByGeneralCount: resolveNumber(constValues, ['sabotageDefenceCoefByGeneralCount'], 0),
+        sabotageDamageMin: resolveNumber(constValues, ['sabotageDamageMin'], 0),
+        sabotageDamageMax: resolveNumber(constValues, ['sabotageDamageMax'], 0),
+        openingPartYear: resolveNumber(constValues, ['openingPartYear'], 0),
+        maxGeneral: resolveNumber(constValues, ['defaultMaxGeneral', 'maxGeneral'], 0),
+        defaultNpcGold: resolveNumber(constValues, ['defaultNpcGold', 'defaultGold'], DEFAULT_GENERAL_GOLD),
+        defaultNpcRice: resolveNumber(constValues, ['defaultNpcRice', 'defaultRice'], DEFAULT_GENERAL_RICE),
+        defaultCrewTypeId: resolveNumber(constValues, ['defaultCrewTypeId'], DEFAULT_CREW_TYPE_ID),
+        defaultSpecialDomestic: resolveOptionalString(constValues, ['defaultSpecialDomestic']),
+        defaultSpecialWar: resolveOptionalString(constValues, ['defaultSpecialWar']),
+        initialNationGenLimit: resolveNumber(constValues, ['initialNationGenLimit'], 0),
         maxTechLevel: resolveNumber(constValues, ['maxTechLevel'], 0),
         baseGold: resolveNumber(constValues, ['baseGold', 'basegold'], 0),
         baseRice: resolveNumber(constValues, ['baseRice', 'baserice'], 0),
-        maxResourceActionAmount: resolveNumber(
-            constValues,
-            ['maxResourceActionAmount'],
-            0
-        ),
+        maxResourceActionAmount: resolveNumber(constValues, ['maxResourceActionAmount'], 0),
     };
 };
 
-const buildConstraintEnv = (
-    worldState: WorldStateRow
-): Record<string, unknown> => {
+const buildConstraintEnv = (worldState: WorldStateRow): Record<string, unknown> => {
     const meta = asRecord(worldState.meta);
     const scenarioMeta = asRecord(meta.scenarioMeta);
-    const startYear =
-        typeof scenarioMeta.startYear === 'number'
-            ? scenarioMeta.startYear
-            : undefined;
-    const relYear =
-        typeof startYear === 'number'
-            ? worldState.currentYear - startYear
-            : undefined;
+    const startYear = typeof scenarioMeta.startYear === 'number' ? scenarioMeta.startYear : undefined;
+    const relYear = typeof startYear === 'number' ? worldState.currentYear - startYear : undefined;
 
     return {
         currentYear: worldState.currentYear,
@@ -331,10 +244,7 @@ const mapGeneralRow = (row: GeneralRow): General => ({
 
 const mapCityRow = (row: CityRow): City => {
     const meta = asTriggerRecord(row.meta);
-    const state =
-        typeof meta.state === 'number' && Number.isFinite(meta.state)
-            ? Math.floor(meta.state)
-            : 0;
+    const state = typeof meta.state === 'number' && Number.isFinite(meta.state) ? Math.floor(meta.state) : 0;
     return {
         id: row.id,
         name: row.name,
@@ -420,11 +330,7 @@ const evaluateAvailability = (
     }
     const missingKinds = new Set(result.missing.map((req) => req.kind));
     const inputOnlyMissing =
-        missingKinds.size === 0
-            ? reqArg
-            : Array.from(missingKinds).every((kind) =>
-                  INPUT_REQUIREMENT_KINDS.has(kind)
-              );
+        missingKinds.size === 0 ? reqArg : Array.from(missingKinds).every((kind) => INPUT_REQUIREMENT_KINDS.has(kind));
     if (inputOnlyMissing) {
         return {
             possible: true,
@@ -450,20 +356,12 @@ const evaluateDefinition = (
     return evaluateAvailability(constraints, ctx, view, reqArg);
 };
 
-const pickAvailability = (
-    lhs: AvailabilityCore,
-    rhs: AvailabilityCore
-): AvailabilityCore =>
-    AVAILABILITY_PRIORITY[lhs.status] >= AVAILABILITY_PRIORITY[rhs.status]
-        ? lhs
-        : rhs;
+const pickAvailability = (lhs: AvailabilityCore, rhs: AvailabilityCore): AvailabilityCore =>
+    AVAILABILITY_PRIORITY[lhs.status] >= AVAILABILITY_PRIORITY[rhs.status] ? lhs : rhs;
 
 type TurnCommandSpec = GeneralTurnCommandSpec | NationTurnCommandSpec;
 
-const buildEntries = (
-    env: CommandEnv,
-    specs: TurnCommandSpec[]
-): CommandEntry[] => {
+const buildEntries = (env: CommandEnv, specs: TurnCommandSpec[]): CommandEntry[] => {
     const entries: CommandEntry[] = [];
 
     for (const spec of specs) {
@@ -477,20 +375,16 @@ const buildEntries = (
 
         if (spec.key === 'che_포상') {
             entry.evaluate = (ctx, view) => {
-                const gold = evaluateDefinition(
-                    definition,
-                    ctx,
-                    view,
-                    true,
-                    { isGold: true, amount: 1, destGeneralId: 0 }
-                );
-                const rice = evaluateDefinition(
-                    definition,
-                    ctx,
-                    view,
-                    true,
-                    { isGold: false, amount: 1, destGeneralId: 0 }
-                );
+                const gold = evaluateDefinition(definition, ctx, view, true, {
+                    isGold: true,
+                    amount: 1,
+                    destGeneralId: 0,
+                });
+                const rice = evaluateDefinition(definition, ctx, view, true, {
+                    isGold: false,
+                    amount: 1,
+                    destGeneralId: 0,
+                });
                 return pickAvailability(gold, rice);
             };
         }
@@ -501,23 +395,13 @@ const buildEntries = (
     return entries;
 };
 
-const buildGroups = (
-    entries: CommandEntry[],
-    ctx: ConstraintContext,
-    view: StateView
-): TurnCommandGroup[] => {
+const buildGroups = (entries: CommandEntry[], ctx: ConstraintContext, view: StateView): TurnCommandGroup[] => {
     const groups = new Map<string, TurnCommandAvailability[]>();
 
     for (const entry of entries) {
         const availability = entry.evaluate
             ? entry.evaluate(ctx, view)
-            : evaluateDefinition(
-                  entry.definition,
-                  ctx,
-                  view,
-                  entry.reqArg,
-                  entry.args
-              );
+            : evaluateDefinition(entry.definition, ctx, view, entry.reqArg, entry.args);
         const value: TurnCommandAvailability = {
             key: entry.definition.key,
             name: entry.definition.name,
@@ -550,9 +434,7 @@ export const buildTurnCommandTable = async (options: {
     const general = mapGeneralRow(options.general);
     const city = options.city ? mapCityRow(options.city) : null;
     const nation = options.nation ? mapNationRow(options.nation) : null;
-    const generalList = options.nationGenerals
-        ? options.nationGenerals.map(mapGeneralRow)
-        : null;
+    const generalList = options.nationGenerals ? options.nationGenerals.map(mapGeneralRow) : null;
     const view = buildStateView(general, city, nation, generalList);
 
     const ctx: ConstraintContext = {

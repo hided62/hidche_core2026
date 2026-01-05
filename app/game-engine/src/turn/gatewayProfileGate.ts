@@ -15,12 +15,9 @@ export interface GatewayProfileGate {
 
 const DEFAULT_CACHE_MS = 2000;
 
-const isRunningStatus = (status: string | null | undefined): boolean =>
-    status === 'RUNNING';
+const isRunningStatus = (status: string | null | undefined): boolean => status === 'RUNNING';
 
-export const createGatewayProfileGate = async (
-    options: GatewayProfileGateOptions
-): Promise<GatewayProfileGate> => {
+export const createGatewayProfileGate = async (options: GatewayProfileGateOptions): Promise<GatewayProfileGate> => {
     const connector = createGatewayPostgresConnector({
         url: options.gatewayDatabaseUrl ?? options.databaseUrl,
     });
@@ -55,12 +52,7 @@ export const createGatewayProfileGate = async (
             return cachedPause;
         },
         async markPaused(error?: unknown): Promise<void> {
-            const message =
-                error instanceof Error
-                    ? error.message
-                    : error
-                      ? String(error)
-                      : null;
+            const message = error instanceof Error ? error.message : error ? String(error) : null;
             try {
                 await prisma.gatewayProfile.update({
                     where: { profileName: options.profileName },

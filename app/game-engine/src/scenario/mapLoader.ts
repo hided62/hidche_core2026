@@ -6,13 +6,7 @@ import type { MapDefinition } from '@sammo-ts/logic';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DEFAULT_MAP_ROOT = path.resolve(
-    __dirname,
-    '..',
-    '..',
-    'resources',
-    'map'
-);
+const DEFAULT_MAP_ROOT = path.resolve(__dirname, '..', '..', 'resources', 'map');
 
 export interface MapLoaderOptions {
     mapRoot?: string;
@@ -24,28 +18,19 @@ const readJsonFile = async (filePath: string): Promise<unknown> => {
     return JSON.parse(raw) as unknown;
 };
 
-const resolveMapRoot = (options?: MapLoaderOptions): string =>
-    options?.mapRoot ?? DEFAULT_MAP_ROOT;
+const resolveMapRoot = (options?: MapLoaderOptions): string => options?.mapRoot ?? DEFAULT_MAP_ROOT;
 
-export const resolveMapDefinitionPath = (
-    mapName: string,
-    options?: MapLoaderOptions
-): string => {
+export const resolveMapDefinitionPath = (mapName: string, options?: MapLoaderOptions): string => {
     const prefix = options?.filePrefix ?? 'map_';
     return path.resolve(resolveMapRoot(options), `${prefix}${mapName}.json`);
 };
 
-export const loadMapDefinition = async (
-    mapPath: string
-): Promise<MapDefinition> => {
+export const loadMapDefinition = async (mapPath: string): Promise<MapDefinition> => {
     const raw = await readJsonFile(mapPath);
     return raw as MapDefinition;
 };
 
-export const loadMapDefinitionByName = async (
-    mapName: string,
-    options?: MapLoaderOptions
-): Promise<MapDefinition> => {
+export const loadMapDefinitionByName = async (mapName: string, options?: MapLoaderOptions): Promise<MapDefinition> => {
     const mapPath = resolveMapDefinitionPath(mapName, options);
     return loadMapDefinition(mapPath);
 };

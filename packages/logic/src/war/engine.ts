@@ -1,30 +1,13 @@
-import {
-    JosaUtil,
-    LiteHashDRBG,
-    RandUtil,
-} from '@sammo-ts/common';
+import { JosaUtil, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 
-import type {
-    City,
-    General,
-    GeneralTriggerState,
-} from '@sammo-ts/logic/domain/entities.js';
+import type { City, General, GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import { ActionLogger } from '@sammo-ts/logic/logging/actionLogger.js';
 import { LogFormat } from '@sammo-ts/logic/logging/types.js';
 import { buildCrewTypeIndex as buildCrewTypeDefinitionIndex } from '@sammo-ts/logic/world/unitSet.js';
 import { WarActionPipeline } from './actions.js';
 import { WarCrewType } from './crewType.js';
-import {
-    WarTriggerCaller,
-    createWarTriggerEnv,
-    type WarTriggerRegistry,
-} from './triggers.js';
-import type {
-    WarBattleInput,
-    WarBattleOutcome,
-    WarGeneralInput,
-    WarUnitReport,
-} from './types.js';
+import { WarTriggerCaller, createWarTriggerEnv, type WarTriggerRegistry } from './triggers.js';
+import type { WarBattleInput, WarBattleOutcome, WarGeneralInput, WarUnitReport } from './types.js';
 import { getMetaNumber } from './utils.js';
 import { WarUnitCity, WarUnitGeneral, type WarUnit } from './units.js';
 
@@ -33,15 +16,10 @@ const META_FULL_STRENGTH = 'fullStrength';
 const META_FULL_INTELLIGENCE = 'fullIntelligence';
 const META_DEFENCE_TRAIN = 'defenceTrain';
 
-const defaultLoggerFactory = (options: {
-    generalId?: number;
-    nationId?: number;
-}): ActionLogger => new ActionLogger(options);
+const defaultLoggerFactory = (options: { generalId?: number; nationId?: number }): ActionLogger =>
+    new ActionLogger(options);
 
-const resolveCrewType = (
-    crewTypeIndex: Map<number, WarCrewType>,
-    crewTypeId: number
-): WarCrewType => {
+const resolveCrewType = (crewTypeIndex: Map<number, WarCrewType>, crewTypeId: number): WarCrewType => {
     const crewType = crewTypeIndex.get(crewTypeId);
     if (!crewType) {
         throw new Error(`Invalid crew type: ${crewTypeId}`);
@@ -49,9 +27,7 @@ const resolveCrewType = (
     return crewType;
 };
 
-const buildWarCrewTypeIndex = (
-    unitSet: WarBattleInput['unitSet']
-): Map<number, WarCrewType> => {
+const buildWarCrewTypeIndex = (unitSet: WarBattleInput['unitSet']): Map<number, WarCrewType> => {
     const index = new Map<number, WarCrewType>();
     const crewTypes = buildCrewTypeDefinitionIndex(unitSet);
     for (const [id, crewType] of crewTypes) {
@@ -62,8 +38,7 @@ const buildWarCrewTypeIndex = (
 
 const createPipeline = <TriggerState extends GeneralTriggerState>(
     input: WarGeneralInput<TriggerState>
-): WarActionPipeline<TriggerState> =>
-    new WarActionPipeline(input.modules ?? []);
+): WarActionPipeline<TriggerState> => new WarActionPipeline(input.modules ?? []);
 
 const appendCrewTypeTriggers = (
     caller: WarTriggerCaller,
@@ -91,10 +66,7 @@ const appendCrewTypeTriggers = (
     }
 };
 
-const buildBattleInitTriggers = (
-    unit: WarUnit,
-    registry: WarTriggerRegistry | undefined
-): WarTriggerCaller => {
+const buildBattleInitTriggers = (unit: WarUnit, registry: WarTriggerRegistry | undefined): WarTriggerCaller => {
     const caller = new WarTriggerCaller();
     if (unit instanceof WarUnitGeneral) {
         const context = unit.getActionContext();
@@ -104,10 +76,7 @@ const buildBattleInitTriggers = (
     return caller;
 };
 
-const buildBattlePhaseTriggers = (
-    unit: WarUnit,
-    registry: WarTriggerRegistry | undefined
-): WarTriggerCaller => {
+const buildBattlePhaseTriggers = (unit: WarUnit, registry: WarTriggerRegistry | undefined): WarTriggerCaller => {
     const caller = new WarTriggerCaller();
     if (unit instanceof WarUnitGeneral) {
         appendCrewTypeTriggers(caller, unit, ['che_필살'], registry);
@@ -118,18 +87,16 @@ const buildBattlePhaseTriggers = (
     return caller;
 };
 
-const resolveFullStats = (general: General): {
+const resolveFullStats = (
+    general: General
+): {
     leadership: number;
     strength: number;
     intelligence: number;
 } => ({
     leadership: getMetaNumber(general.meta, META_FULL_LEADERSHIP, general.stats.leadership),
     strength: getMetaNumber(general.meta, META_FULL_STRENGTH, general.stats.strength),
-    intelligence: getMetaNumber(
-        general.meta,
-        META_FULL_INTELLIGENCE,
-        general.stats.intelligence
-    ),
+    intelligence: getMetaNumber(general.meta, META_FULL_INTELLIGENCE, general.stats.intelligence),
 });
 
 const isSupplyCity = (city: City): boolean => {
@@ -143,15 +110,10 @@ const isSupplyCity = (city: City): boolean => {
     return city.supplyState > 0;
 };
 
-export const computeBattleOrder = (
-    defender: WarUnit,
-    attacker: WarUnitGeneral
-): number => {
+export const computeBattleOrder = (defender: WarUnit, attacker: WarUnitGeneral): number => {
     if (defender instanceof WarUnitCity) {
         const context = attacker.getActionContext();
-        return attacker
-            .getActionPipeline()
-            .onCalcOpposeStat(context, 'cityBattleOrder', -1);
+        return attacker.getActionPipeline().onCalcOpposeStat(context, 'cityBattleOrder', -1);
     }
 
     if (!(defender instanceof WarUnitGeneral)) {
@@ -174,18 +136,12 @@ export const computeBattleOrder = (
         return 0;
     }
 
-    const realStat =
-        general.stats.leadership +
-        general.stats.strength +
-        general.stats.intelligence;
+    const realStat = general.stats.leadership + general.stats.strength + general.stats.intelligence;
     const fullStats = resolveFullStats(general);
-    const fullStat =
-        fullStats.leadership + fullStats.strength + fullStats.intelligence;
+    const fullStat = fullStats.leadership + fullStats.strength + fullStats.intelligence;
     const totalStat = (realStat + fullStat) / 2;
 
-    const totalCrew =
-        (general.crew / 1_000_000) *
-        Math.pow(general.train * general.atmos, 1.5);
+    const totalCrew = (general.crew / 1_000_000) * Math.pow(general.train * general.atmos, 1.5);
 
     return totalStat + totalCrew / 100;
 };
@@ -231,17 +187,11 @@ const flushLoggers = (loggers: ActionLogger[]): Array<ReturnType<ActionLogger['f
     return logs;
 };
 
-export const resolveWarBattle = <
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
->(
+export const resolveWarBattle = <TriggerState extends GeneralTriggerState = GeneralTriggerState>(
     input: WarBattleInput<TriggerState>
 ): WarBattleOutcome<TriggerState> => {
     // process_war.php 전투 루프를 순수 로직으로 이식한다.
-    const rng =
-        input.rng ??
-        new RandUtil(
-            LiteHashDRBG.build(input.seed ?? '')
-        );
+    const rng = input.rng ?? new RandUtil(LiteHashDRBG.build(input.seed ?? ''));
     const loggerFactory = input.loggerFactory ?? defaultLoggerFactory;
     const triggerRegistry = input.triggerRegistry;
 
@@ -307,18 +257,11 @@ export const resolveWarBattle = <
         defenderGenerals.push(unit);
     }
 
-    if (
-        defenderGenerals.length > 0 &&
-        computeBattleOrder(cityUnit, attackerUnit) > 0
-    ) {
+    if (defenderGenerals.length > 0 && computeBattleOrder(cityUnit, attackerUnit) > 0) {
         defenderUnits.push(cityUnit);
     }
 
-    defenderUnits.sort(
-        (lhs, rhs) =>
-            computeBattleOrder(rhs, attackerUnit) -
-            computeBattleOrder(lhs, attackerUnit)
-    );
+    defenderUnits.sort((lhs, rhs) => computeBattleOrder(rhs, attackerUnit) - computeBattleOrder(lhs, attackerUnit));
 
     const iter = defenderUnits.values();
     let defender: WarUnit<TriggerState> | null = null;
@@ -345,8 +288,7 @@ export const resolveWarBattle = <
     let conquerCity = false;
     let logWritten = false;
 
-    const attackerNationName =
-        (attackerUnit.getNationVar('name') as string | null) ?? 'UNKNOWN';
+    const attackerNationName = (attackerUnit.getNationVar('name') as string | null) ?? 'UNKNOWN';
     const attackerName = attackerUnit.getName();
     const cityName = cityUnit.getName();
     const seedText = input.seed ? `(전투시드: ${input.seed})` : '';
@@ -413,17 +355,21 @@ export const resolveWarBattle = <
 
                 const josaRo = JosaUtil.pick(attackerCrewName, '로');
                 const josaUl = JosaUtil.pick(defenderCrewName, '을');
-                attackerUnit.getLogger().pushGeneralActionLog(
-                    `${attackerCrewName}${josaRo} <Y>${defenderName}</>의 ${defenderCrewName}${josaUl} <M>공격</>합니다.`,
-                    LogFormat.MONTH
-                );
+                attackerUnit
+                    .getLogger()
+                    .pushGeneralActionLog(
+                        `${attackerCrewName}${josaRo} <Y>${defenderName}</>의 ${defenderCrewName}${josaUl} <M>공격</>합니다.`,
+                        LogFormat.MONTH
+                    );
 
                 const defJosaRo = JosaUtil.pick(defenderCrewName, '로');
                 const defJosaUl = JosaUtil.pick(attackerCrewName, '을');
-                defender.getLogger().pushGeneralActionLog(
-                    `${defenderCrewName}${defJosaRo} <Y>${attackerName}</>의 ${attackerCrewName}${defJosaUl} <M>수비</>합니다.`,
-                    LogFormat.MONTH
-                );
+                defender
+                    .getLogger()
+                    .pushGeneralActionLog(
+                        `${defenderCrewName}${defJosaRo} <Y>${attackerName}</>의 ${attackerCrewName}${defJosaUl} <M>수비</>합니다.`,
+                        LogFormat.MONTH
+                    );
             } else {
                 const josaYiName = JosaUtil.pick(attackerName, '이');
                 const josaRoCrew = JosaUtil.pick(attackerCrewName, '로');
@@ -442,10 +388,7 @@ export const resolveWarBattle = <
 
             const initCaller = buildBattleInitTriggers(attackerUnit, triggerRegistry);
             initCaller.merge(buildBattleInitTriggers(defender, triggerRegistry));
-            initCaller.fire(
-                { rng, attacker: attackerUnit, defender },
-                createWarTriggerEnv()
-            );
+            initCaller.fire({ rng, attacker: attackerUnit, defender }, createWarTriggerEnv());
         }
 
         attackerUnit.beginPhase();
@@ -453,10 +396,7 @@ export const resolveWarBattle = <
 
         const battleCaller = buildBattlePhaseTriggers(attackerUnit, triggerRegistry);
         battleCaller.merge(buildBattlePhaseTriggers(defender, triggerRegistry));
-        battleCaller.fire(
-            { rng, attacker: attackerUnit, defender },
-            createWarTriggerEnv()
-        );
+        battleCaller.fire({ rng, attacker: attackerUnit, defender }, createWarTriggerEnv());
 
         let deadDefender = attackerUnit.calcDamage();
         let deadAttacker = defender.calcDamage();
@@ -486,18 +426,20 @@ export const resolveWarBattle = <
         attackerUnit.increaseKilled(deadDefender);
         defender.increaseKilled(deadAttacker);
 
-        const phaseNickname = defender.getPhase() < 0
-            ? '先'
-            : `${attackerUnit.getPhase() + 1} `;
+        const phaseNickname = defender.getPhase() < 0 ? '先' : `${attackerUnit.getPhase() + 1} `;
 
         if (deadAttacker > 0 || deadDefender > 0) {
-            attackerUnit.getLogger().pushGeneralBattleDetailLog(
-                `${phaseNickname}: <Y1>【${attackerUnit.getName()}】</> <C>${attackerUnit.getHP()} (-${deadAttacker})</> VS <C>${defender.getHP()} (-${deadDefender})</> <Y1>【${defender.getName()}】</>`
-            );
+            attackerUnit
+                .getLogger()
+                .pushGeneralBattleDetailLog(
+                    `${phaseNickname}: <Y1>【${attackerUnit.getName()}】</> <C>${attackerUnit.getHP()} (-${deadAttacker})</> VS <C>${defender.getHP()} (-${deadDefender})</> <Y1>【${defender.getName()}】</>`
+                );
 
-            defender.getLogger().pushGeneralBattleDetailLog(
-                `${phaseNickname}: <Y1>【${defender.getName()}】</> <C>${defender.getHP()} (-${deadDefender})</> VS <C>${attackerUnit.getHP()} (-${deadAttacker})</> <Y1>【${attackerUnit.getName()}】</>`
-            );
+            defender
+                .getLogger()
+                .pushGeneralBattleDetailLog(
+                    `${phaseNickname}: <Y1>【${defender.getName()}】</> <C>${defender.getHP()} (-${deadDefender})</> VS <C>${attackerUnit.getHP()} (-${deadAttacker})</> <Y1>【${attackerUnit.getName()}】</>`
+                );
         }
 
         attackerUnit.addPhase();
@@ -521,14 +463,18 @@ export const resolveWarBattle = <
                 `<Y>${attackerUnit.getName()}</>의 ${attackerUnit.getCrewTypeName()}${josaYiCrew} 퇴각했습니다.`,
                 LogFormat.MONTH
             );
-            attackerUnit.getLogger().pushGeneralActionLog(
-                attackerState.noRice ? '군량 부족으로 퇴각합니다.' : '퇴각했습니다.',
-                LogFormat.PLAIN
-            );
-            defender.getLogger().pushGeneralActionLog(
-                `<Y>${attackerUnit.getName()}</>의 ${attackerUnit.getCrewTypeName()}${josaYiCrew} 퇴각했습니다.`,
-                LogFormat.PLAIN
-            );
+            attackerUnit
+                .getLogger()
+                .pushGeneralActionLog(
+                    attackerState.noRice ? '군량 부족으로 퇴각합니다.' : '퇴각했습니다.',
+                    LogFormat.PLAIN
+                );
+            defender
+                .getLogger()
+                .pushGeneralActionLog(
+                    `<Y>${attackerUnit.getName()}</>의 ${attackerUnit.getCrewTypeName()}${josaYiCrew} 퇴각했습니다.`,
+                    LogFormat.PLAIN
+                );
             break;
         }
 
@@ -562,27 +508,25 @@ export const resolveWarBattle = <
                     `<Y>${defender.getName()}</>의 ${defender.getCrewTypeName()}${josaYiDefCrew} 패퇴했습니다.`,
                     LogFormat.MONTH
                 );
-                attackerUnit.getLogger().pushGeneralActionLog(
-                    `<Y>${defender.getName()}</>의 ${defender.getCrewTypeName()}${josaYiDefCrew} 패퇴했습니다.`,
-                    LogFormat.PLAIN
-                );
-                defender.getLogger().pushGeneralActionLog(
-                    '군량 부족으로 패퇴합니다.',
-                    LogFormat.PLAIN
-                );
+                attackerUnit
+                    .getLogger()
+                    .pushGeneralActionLog(
+                        `<Y>${defender.getName()}</>의 ${defender.getCrewTypeName()}${josaYiDefCrew} 패퇴했습니다.`,
+                        LogFormat.PLAIN
+                    );
+                defender.getLogger().pushGeneralActionLog('군량 부족으로 패퇴합니다.', LogFormat.PLAIN);
             } else {
                 attackerLogger.pushGlobalActionLog(
                     `<Y>${defender.getName()}</>의 ${defender.getCrewTypeName()}${josaYiDefCrew} 전멸했습니다.`,
                     LogFormat.MONTH
                 );
-                attackerUnit.getLogger().pushGeneralActionLog(
-                    `<Y>${defender.getName()}</>의 ${defender.getCrewTypeName()}${josaYiDefCrew} 전멸했습니다.`,
-                    LogFormat.PLAIN
-                );
-                defender.getLogger().pushGeneralActionLog(
-                    '전멸했습니다.',
-                    LogFormat.PLAIN
-                );
+                attackerUnit
+                    .getLogger()
+                    .pushGeneralActionLog(
+                        `<Y>${defender.getName()}</>의 ${defender.getCrewTypeName()}${josaYiDefCrew} 전멸했습니다.`,
+                        LogFormat.PLAIN
+                    );
+                defender.getLogger().pushGeneralActionLog('전멸했습니다.', LogFormat.PLAIN);
             }
 
             if (attackerUnit.getPhase() >= attackerUnit.getMaxPhase()) {
@@ -623,10 +567,7 @@ export const resolveWarBattle = <
         }
     }
 
-    const logs = flushLoggers([
-        attackerLogger,
-        ...defenderGenerals.map((unit) => unit.getLogger()),
-    ]);
+    const logs = flushLoggers([attackerLogger, ...defenderGenerals.map((unit) => unit.getLogger())]);
 
     const reports: WarUnitReport[] = [
         resolveUnitReport(attackerUnit),
@@ -644,23 +585,15 @@ export const resolveWarBattle = <
         metrics: {
             attackerPhase: attackerUnit.getPhase(),
             attackerActivatedSkills: attackerUnit.getActivatedSkillLog(),
-            defenderActivatedSkills: defenderUnits.map((unit) =>
-                unit.getActivatedSkillLog()
-            ),
+            defenderActivatedSkills: defenderUnits.map((unit) => unit.getActivatedSkillLog()),
         },
     };
 };
 
-export const resolveDefenderOrder = <
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
->(
+export const resolveDefenderOrder = <TriggerState extends GeneralTriggerState = GeneralTriggerState>(
     input: WarBattleInput<TriggerState>
 ): number[] => {
-    const rng =
-        input.rng ??
-        new RandUtil(
-            LiteHashDRBG.build(input.seed ?? '')
-        );
+    const rng = input.rng ?? new RandUtil(LiteHashDRBG.build(input.seed ?? ''));
     const loggerFactory = input.loggerFactory ?? defaultLoggerFactory;
 
     const crewTypeIndex = buildWarCrewTypeIndex(input.unitSet);
@@ -709,11 +642,7 @@ export const resolveDefenderOrder = <
         defenderUnits.push(unit);
     }
 
-    defenderUnits.sort(
-        (lhs, rhs) =>
-            computeBattleOrder(rhs, attackerUnit) -
-            computeBattleOrder(lhs, attackerUnit)
-    );
+    defenderUnits.sort((lhs, rhs) => computeBattleOrder(rhs, attackerUnit) - computeBattleOrder(lhs, attackerUnit));
 
     return defenderUnits.map((unit) => unit.getGeneral().id);
 };

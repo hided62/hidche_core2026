@@ -52,12 +52,10 @@ describe('sendMessage', () => {
         expect(result.receiverId).toBe(1);
         expect(result.senderId).toBe(2);
         expect(store.records).toHaveLength(2);
-        expect(store.records[0].draft.mailbox).toBe(draft.dest.generalId);
-        expect(store.records[1].draft.mailbox).toBe(draft.src.generalId);
-        expect(store.records[0].draft.payload.option).not.toHaveProperty(
-            'receiverMessageID'
-        );
-        expect(store.records[1].draft.payload.option).toMatchObject({
+        expect(store.records[0]!.draft.mailbox).toBe(draft.dest.generalId);
+        expect(store.records[1]!.draft.mailbox).toBe(draft.src.generalId);
+        expect(store.records[0]!.draft.payload.option).not.toHaveProperty('receiverMessageID');
+        expect(store.records[1]!.draft.payload.option).toMatchObject({
             receiverMessageID: 1,
         });
     });
@@ -73,9 +71,7 @@ describe('sendMessage', () => {
 
         expect(result.senderId).toBeUndefined();
         expect(store.records).toHaveLength(1);
-        expect(store.records[0].draft.mailbox).toBe(
-            MESSAGE_MAILBOX_NATIONAL_BASE + 1
-        );
+        expect(store.records[0]!.draft.mailbox).toBe(MESSAGE_MAILBOX_NATIONAL_BASE + 1);
     });
 
     it('keeps public messages in the shared mailbox only', async () => {
@@ -89,7 +85,7 @@ describe('sendMessage', () => {
 
         expect(result.senderId).toBeUndefined();
         expect(store.records).toHaveLength(1);
-        expect(store.records[0].draft.mailbox).toBe(MESSAGE_MAILBOX_PUBLIC);
+        expect(store.records[0]!.draft.mailbox).toBe(MESSAGE_MAILBOX_PUBLIC);
     });
 
     it('removes diplomacy action from sender copy', async () => {
@@ -102,7 +98,7 @@ describe('sendMessage', () => {
 
         await sendMessage(store, draft);
 
-        const senderPayload = store.records[1].draft.payload.option ?? {};
+        const senderPayload = store.records[1]!.draft.payload.option ?? {};
         expect(senderPayload).not.toHaveProperty('action');
         expect(senderPayload).toMatchObject({ payload: 1 });
     });

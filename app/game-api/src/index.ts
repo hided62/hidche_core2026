@@ -31,8 +31,7 @@ const isMain = (): boolean => {
 
 if (isMain()) {
     const role = process.env.GAME_API_ROLE ?? 'server';
-    const run =
-        role === 'battle-sim-worker' ? runBattleSimWorker : runGameApiServer;
+    const run = role === 'battle-sim-worker' ? runBattleSimWorker : runGameApiServer;
     run().catch((error) => {
         console.error('[game-api] failed to start', error);
         process.exitCode = 1;

@@ -69,9 +69,7 @@ const resolveSchemaName = (value: string | undefined): string => {
     return trimmed ? trimmed : 'public';
 };
 
-export const resolveGatewayApiConfigFromEnv = (
-    env: NodeJS.ProcessEnv = process.env
-): GatewayApiConfig => {
+export const resolveGatewayApiConfigFromEnv = (env: NodeJS.ProcessEnv = process.env): GatewayApiConfig => {
     const secret = env.GAME_TOKEN_SECRET ?? env.GATEWAY_TOKEN_SECRET ?? '';
     if (!secret) {
         throw new Error('GAME_TOKEN_SECRET is required for gateway token encryption.');
@@ -91,17 +89,9 @@ export const resolveGatewayApiConfigFromEnv = (
         redisKeyPrefix,
         flushChannel: `${redisKeyPrefix}:flush`,
         sessionTtlSeconds: parseNumber(env.SESSION_TTL_SECONDS, 60 * 60 * 24 * 7, 'SESSION_TTL_SECONDS'),
-        gameSessionTtlSeconds: parseNumber(
-            env.GAME_SESSION_TTL_SECONDS,
-            60 * 60 * 6,
-            'GAME_SESSION_TTL_SECONDS'
-        ),
+        gameSessionTtlSeconds: parseNumber(env.GAME_SESSION_TTL_SECONDS, 60 * 60 * 6, 'GAME_SESSION_TTL_SECONDS'),
         gameTokenSecret: secret,
-        oauthSessionTtlSeconds: parseNumber(
-            env.OAUTH_SESSION_TTL_SECONDS,
-            10 * 60,
-            'OAUTH_SESSION_TTL_SECONDS'
-        ),
+        oauthSessionTtlSeconds: parseNumber(env.OAUTH_SESSION_TTL_SECONDS, 10 * 60, 'OAUTH_SESSION_TTL_SECONDS'),
         kakaoRestKey,
         kakaoAdminKey: env.KAKAO_ADMIN_KEY,
         kakaoRedirectUri,
@@ -129,8 +119,7 @@ export const resolveGatewayApiConfigFromEnv = (
         ),
         workspaceRootHint: env.GATEWAY_WORKSPACE_ROOT ?? process.cwd(),
         worktreeRoot:
-            env.GATEWAY_WORKTREE_ROOT ??
-            path.resolve(env.GATEWAY_WORKSPACE_ROOT ?? process.cwd(), '.worktrees'),
+            env.GATEWAY_WORKTREE_ROOT ?? path.resolve(env.GATEWAY_WORKSPACE_ROOT ?? process.cwd(), '.worktrees'),
     };
 };
 
@@ -168,7 +157,6 @@ export const resolveGatewayOrchestratorConfigFromEnv = (
         ),
         workspaceRootHint: env.GATEWAY_WORKSPACE_ROOT ?? process.cwd(),
         worktreeRoot:
-            env.GATEWAY_WORKTREE_ROOT ??
-            path.resolve(env.GATEWAY_WORKSPACE_ROOT ?? process.cwd(), '.worktrees'),
+            env.GATEWAY_WORKTREE_ROOT ?? path.resolve(env.GATEWAY_WORKSPACE_ROOT ?? process.cwd(), '.worktrees'),
     };
 };

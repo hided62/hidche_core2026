@@ -14,35 +14,15 @@ export type TriggerDomesticActionType =
     | '모병'
     | '단련';
 
-export type TriggerDomesticVarType =
-    | 'cost'
-    | 'score'
-    | 'success'
-    | 'fail'
-    | 'train'
-    | 'atmos'
-    | 'rice'
-    | 'probability';
+export type TriggerDomesticVarType = 'cost' | 'score' | 'success' | 'fail' | 'train' | 'atmos' | 'rice' | 'probability';
 
-export type TriggerStrategicActionType =
-    | '의병모집'
-    | '허보'
-    | '필사즉생'
-    | '백성동원'
-    | '이호경식'
-    | '수몰'
-    | '급습';
+export type TriggerStrategicActionType = '의병모집' | '허보' | '필사즉생' | '백성동원' | '이호경식' | '수몰' | '급습';
 
 export type TriggerStrategicVarType = 'delay' | 'globalDelay';
 
 export type TriggerNationalIncomeType = 'gold' | 'rice';
 
-export type GeneralStatName =
-    | 'leadership'
-    | 'strength'
-    | 'intelligence'
-    | 'experience'
-    | 'dedication';
+export type GeneralStatName = 'leadership' | 'strength' | 'intelligence' | 'experience' | 'dedication';
 
 export type WarStatName =
     | GeneralStatName

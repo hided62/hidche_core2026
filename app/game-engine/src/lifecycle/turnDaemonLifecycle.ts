@@ -185,9 +185,10 @@ export class TurnDaemonLifecycle {
         const nextGeneralTurnTime = await this.stateStore.loadNextGeneralTurnTime();
         const nextTickTime = this.getNextTickTime(lastTurnTime);
         // 가장 빠른 장수 턴과 현재 틱 경계 중 먼저 오는 시각을 선택한다.
-        const nextTurnTime = nextGeneralTurnTime && nextGeneralTurnTime.getTime() <= nextTickTime.getTime()
-            ? nextGeneralTurnTime
-            : nextTickTime;
+        const nextTurnTime =
+            nextGeneralTurnTime && nextGeneralTurnTime.getTime() <= nextTickTime.getTime()
+                ? nextGeneralTurnTime
+                : nextTickTime;
 
         this.status.nextTurnTime = nextTurnTime.toISOString();
         return nextTurnTime;
@@ -228,10 +229,7 @@ export class TurnDaemonLifecycle {
                 return;
             case 'getStatus': {
                 if (command.requestId) {
-                    await this.commandResponder?.publishStatus(
-                        command.requestId,
-                        this.getStatus()
-                    );
+                    await this.commandResponder?.publishStatus(command.requestId, this.getStatus());
                 }
                 return;
             }
@@ -277,9 +275,7 @@ export class TurnDaemonLifecycle {
     ): Promise<void> {
         let result: TurnDaemonCommandResult | null = null;
         try {
-            result = this.commandHandler
-                ? await this.commandHandler.handle(command)
-                : null;
+            result = this.commandHandler ? await this.commandHandler.handle(command) : null;
             if (!result) {
                 result = {
                     type: command.type,
@@ -290,8 +286,7 @@ export class TurnDaemonLifecycle {
                 } as TurnDaemonCommandResult;
             }
         } catch (error) {
-            const reason =
-                error instanceof Error ? error.message : 'Unknown command error.';
+            const reason = error instanceof Error ? error.message : 'Unknown command error.';
             result = {
                 type: command.type,
                 ok: false,
@@ -302,10 +297,7 @@ export class TurnDaemonLifecycle {
         }
 
         if (this.commandResponder && command.requestId) {
-            await this.commandResponder.publishCommandResult(
-                command.requestId,
-                result
-            );
+            await this.commandResponder.publishCommandResult(command.requestId, result);
         }
     }
 
@@ -327,8 +319,7 @@ export class TurnDaemonLifecycle {
             this.status.state = 'paused';
             this.status.paused = true;
             this.errorPaused = true;
-            this.status.lastError =
-                error instanceof Error ? error.message : 'Unknown turn daemon error.';
+            this.status.lastError = error instanceof Error ? error.message : 'Unknown turn daemon error.';
             await this.hooks?.onRunError?.(error);
             return;
         } finally {

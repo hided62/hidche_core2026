@@ -11,26 +11,23 @@
         "min": 50,
         "max": 105
     },
-    "const":{
-        "defaultMaxGeneral":700,
-        "maxResourceActionAmount":30000,
-        "resourceActionAmountGuide":[
-            100, 200, 300, 400, 500, 600, 700, 800, 900, 1000,
-            1200, 1500, 2000, 2500, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000,
-            12000, 15000, 20000, 25000, 30000
+    "const": {
+        "defaultMaxGeneral": 700,
+        "maxResourceActionAmount": 30000,
+        "resourceActionAmountGuide": [
+            100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1200, 1500, 2000, 2500, 3000, 4000, 5000, 6000, 7000,
+            8000, 9000, 10000, 12000, 15000, 20000, 25000, 30000
         ]
     },
-      "iconPath": "루드라사움",
-      "fiction": 0,
-      "nation":[
-
-      ],
-      "map":{
-          "mapName":"ludo_rathowm",
-          "unitSet":"ludo_rathowm"
-      },
-      "diplomacy":[],
-      "general":[
+    "iconPath": "루드라사움",
+    "fiction": 0,
+    "nation": [],
+    "map": {
+        "mapName": "ludo_rathowm",
+        "unitSet": "ludo_rathowm"
+    },
+    "diplomacy": [],
+    "general": [
         [0, "바보라", null, 0, null, 102, 82, 10, 0, -15, 300, null, null],
         [0, "리아P리자스", null, 0, null, 99, 60, 82, 0, -15, 300, null, null],
         [0, "피구", null, 0, null, 96, 84, 47, 0, -15, 300, null, null],
@@ -560,7 +557,7 @@
         [0, "아나셀 카스포라", null, 0, null, 10, 20, 60, 0, -15, 300, null, null],
         [0, "크레인", null, 0, null, 10, 52, 85, 0, -15, 300, null, null]
     ],
-    "general_ex":[
+    "general_ex": [
         [999, "KD", null, 0, null, 1, 1, 1, 0, -15, 300, null, null],
         [999, "가이", null, 0, null, 1, 1, 1, 0, -15, 300, null, null],
         [999, "겟페이", null, 0, null, 1, 1, 1, 0, -15, 300, null, null],
@@ -599,19 +596,14 @@
         [999, "하모니트", null, 0, null, 1, 1, 1, 0, -15, 300, null, null],
         [999, "후지와라", null, 0, null, 1, 1, 1, 0, -15, 300, null, null]
     ],
-    "initialEvents":[
-
-    ],
-    "events":[
+    "initialEvents": [],
+    "events": [
         [
-            "destroy_nation", 1000,
-            ["and",
-                ["Date", ">=", 183, 1],
-                ["RemainNation", "==", 1]
-            ],
+            "destroy_nation",
+            1000,
+            ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]],
             ["BlockScoutAction"],
             ["DeleteEvent"]
         ]
-
     ]
 }

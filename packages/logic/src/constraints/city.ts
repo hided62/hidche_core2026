@@ -13,9 +13,7 @@ import {
 } from './helpers.js';
 import type { Constraint, RequirementKey } from './types.js';
 
-export const occupiedCity = (
-    options: { allowNeutral?: boolean } = {}
-): Constraint => ({
+export const occupiedCity = (options: { allowNeutral?: boolean } = {}): Constraint => ({
     name: 'OccupiedCity',
     requires: (ctx) => {
         const reqs: RequirementKey[] = [{ kind: 'general', id: ctx.actorId }];
@@ -93,8 +91,7 @@ export const occupiedDestCity = (): Constraint => ({
 
 export const suppliedCity = (): Constraint => ({
     name: 'SuppliedCity',
-    requires: (ctx) =>
-        ctx.cityId !== undefined ? [{ kind: 'city', id: ctx.cityId }] : [],
+    requires: (ctx) => (ctx.cityId !== undefined ? [{ kind: 'city', id: ctx.cityId }] : []),
     test: (ctx, view) => {
         const city = readCity(view, ctx.cityId);
         if (!city) {
@@ -142,13 +139,9 @@ export const suppliedDestCity = (): Constraint => ({
     },
 });
 
-export const remainCityCapacity = (
-    key: keyof City,
-    label: string
-): Constraint => ({
+export const remainCityCapacity = (key: keyof City, label: string): Constraint => ({
     name: 'RemainCityCapacity',
-    requires: (ctx) =>
-        ctx.cityId !== undefined ? [{ kind: 'city', id: ctx.cityId }] : [],
+    requires: (ctx) => (ctx.cityId !== undefined ? [{ kind: 'city', id: ctx.cityId }] : []),
     test: (ctx, view) => {
         const city = readCity(view, ctx.cityId);
         if (!city) {
@@ -171,14 +164,9 @@ export const remainCityCapacity = (
     },
 });
 
-export const remainCityCapacityByMax = (
-    key: keyof City,
-    maxKey: keyof City,
-    label: string
-): Constraint => ({
+export const remainCityCapacityByMax = (key: keyof City, maxKey: keyof City, label: string): Constraint => ({
     name: 'RemainCityCapacityByMax',
-    requires: (ctx) =>
-        ctx.cityId !== undefined ? [{ kind: 'city', id: ctx.cityId }] : [],
+    requires: (ctx) => (ctx.cityId !== undefined ? [{ kind: 'city', id: ctx.cityId }] : []),
     test: (ctx, view) => {
         const city = readCity(view, ctx.cityId);
         if (!city) {
@@ -200,14 +188,9 @@ export const remainCityCapacityByMax = (
     },
 });
 
-export const reqCityCapacity = (
-    key: keyof City,
-    label: string,
-    required: number | string
-): Constraint => ({
+export const reqCityCapacity = (key: keyof City, label: string, required: number | string): Constraint => ({
     name: 'ReqCityCapacity',
-    requires: (ctx) =>
-        ctx.cityId !== undefined ? [{ kind: 'city', id: ctx.cityId }] : [],
+    requires: (ctx) => (ctx.cityId !== undefined ? [{ kind: 'city', id: ctx.cityId }] : []),
     test: (ctx, view) => {
         const city = readCity(view, ctx.cityId);
         if (!city) {
@@ -240,8 +223,7 @@ export const reqCityCapacity = (
 
 export const reqCityTrust = (minTrust: number): Constraint => ({
     name: 'ReqCityTrust',
-    requires: (ctx) =>
-        ctx.cityId !== undefined ? [{ kind: 'city', id: ctx.cityId }] : [],
+    requires: (ctx) => (ctx.cityId !== undefined ? [{ kind: 'city', id: ctx.cityId }] : []),
     test: (ctx, view) => {
         const city = readCity(view, ctx.cityId);
         if (!city) {
@@ -251,11 +233,7 @@ export const reqCityTrust = (minTrust: number): Constraint => ({
             const req: RequirementKey = { kind: 'city', id: ctx.cityId };
             return unknownOrDeny(ctx, [req], '도시 정보가 없습니다.');
         }
-        const trust =
-            readMetaNumberFromUnknown(
-                city.meta,
-                'trust'
-            ) ?? null;
+        const trust = readMetaNumberFromUnknown(city.meta, 'trust') ?? null;
         if (trust === null) {
             return unknownOrDeny(ctx, [], '민심 정보가 없습니다.');
         }
@@ -440,9 +418,7 @@ const hasRouteToDest = (
 export const hasRouteWithEnemy = (): Constraint => ({
     name: 'HasRouteWithEnemy',
     requires: (ctx) => {
-        const reqs: RequirementKey[] = [
-            { kind: 'general', id: ctx.actorId },
-        ];
+        const reqs: RequirementKey[] = [{ kind: 'general', id: ctx.actorId }];
         const destCityId = resolveDestCityId(ctx);
         if (destCityId !== undefined) {
             reqs.push({ kind: 'destCity', id: destCityId });
@@ -469,9 +445,7 @@ export const hasRouteWithEnemy = (): Constraint => ({
         }
         const map = view.get({ kind: 'env', key: 'map' }) as MapDefinition | null;
         const cities = view.get({ kind: 'env', key: 'cities' }) as City[] | null;
-        const nations = view.get({ kind: 'env', key: 'nations' }) as
-            | Array<{ id: number }>
-            | null;
+        const nations = view.get({ kind: 'env', key: 'nations' }) as Array<{ id: number }> | null;
         if (!map || !cities || !nations) {
             return unknownOrDeny(ctx, [], '경로 정보가 없습니다.');
         }
@@ -480,11 +454,7 @@ export const hasRouteWithEnemy = (): Constraint => ({
         allowedNationIds.add(general.nationId);
         allowedNationIds.add(0);
         for (const nation of nations) {
-            const state = readDiplomacyState(
-                view,
-                general.nationId,
-                nation.id
-            );
+            const state = readDiplomacyState(view, general.nationId, nation.id);
             if (state === 0) {
                 allowedNationIds.add(nation.id);
             }

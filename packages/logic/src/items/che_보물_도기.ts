@@ -10,8 +10,7 @@ export const itemModule: ItemModule = {
     key: ITEM_KEY,
     rawName: '도기',
     name: '도기(보물)',
-    info:
-        '[개인] 판매 시 장수 소지금과 국고에 금, 쌀 중 하나를 추가 (총 +10,000, 2년마다 +5,000)',
+    info: '[개인] 판매 시 장수 소지금과 국고에 금, 쌀 중 하나를 추가 (총 +10,000, 2년마다 +5,000)',
     slot: 'item',
     cost: 200,
     buyable: false,
@@ -56,9 +55,7 @@ export const itemModule: ItemModule = {
 
         const josa = JosaUtil.pick('도기', '을');
         context.log?.push(
-            `<C>${itemModule.name}</>${josa} 판매하여 ${resName} <C>${score.toLocaleString(
-                'en-US'
-            )}</>을 보충합니다.`
+            `<C>${itemModule.name}</>${josa} 판매하여 ${resName} <C>${score.toLocaleString('en-US')}</>을 보충합니다.`
         );
         return aux;
     },

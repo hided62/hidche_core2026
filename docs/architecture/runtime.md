@@ -50,16 +50,17 @@ Gateway loads the profile table on boot, then reconciles PM2 to match.
 
 ### Boot Reconciliation
 
-1) Load profile rows from DB.
-2) List PM2 processes and map `profileName -> running state`.
-3) For each profile:
-   - If desired `RUNNING/PREOPEN/PAUSED/COMPLETED` and any process is missing, start.
-   - If desired `RESERVED/STOPPED/DISABLED` and any process is running, stop both.
-4) Persist errors to DB for audit.
+1. Load profile rows from DB.
+2. List PM2 processes and map `profileName -> running state`.
+3. For each profile:
+    - If desired `RUNNING/PREOPEN/PAUSED/COMPLETED` and any process is missing, start.
+    - If desired `RESERVED/STOPPED/DISABLED` and any process is running, stop both.
+4. Persist errors to DB for audit.
 
 ### Internal Scheduler (Gateway Cron)
 
 Gateway runs a lightweight cron loop (setInterval) that:
+
 - When `RESERVED` and `preopenAt <= now`, queue a build for the reserved commit.
 - When build succeeds, status becomes `PREOPEN` (daemon paused).
 - When `openAt <= now`, status becomes `RUNNING` and daemon resumes.
@@ -102,15 +103,15 @@ replay while pub/sub keeps live updates simple and low-latency.
 ### Recommended Split
 
 - Redis Streams:
-  - API server -> daemon: mutation requests, turn-run commands.
-  - Daemon -> API server: run status events, job results, error reports.
-  - Use consumer groups for daemon workers and API server listeners.
-  - Require `requestId` for correlation and idempotency.
-  - Ack on success; move failed items to a dead-letter stream after retry.
+    - API server -> daemon: mutation requests, turn-run commands.
+    - Daemon -> API server: run status events, job results, error reports.
+    - Use consumer groups for daemon workers and API server listeners.
+    - Require `requestId` for correlation and idempotency.
+    - Ack on success; move failed items to a dead-letter stream after retry.
 - Redis pub/sub:
-  - Daemon -> API server: low-stakes live update signals (run started/ended).
-  - API server -> frontend: SSE fan-out triggered by pub/sub updates.
-  - Do not use pub/sub for data that must be replayed or audited.
+    - Daemon -> API server: low-stakes live update signals (run started/ended).
+    - API server -> frontend: SSE fan-out triggered by pub/sub updates.
+    - Do not use pub/sub for data that must be replayed or audited.
 
 ### Operational Notes
 
@@ -158,12 +159,12 @@ also supports local ID/password login for users who cannot use Kakao.
 - The turn daemon runs as a single-threaded loop.
 - The daemon engine uses in-memory state as the primary working set.
 - The daemon waits on two conditions during the event loop.
-  - Query/command requests from the external API server.
-  - The scheduled start time of the next turn.
+    - Query/command requests from the external API server.
+    - The scheduled start time of the next turn.
 - External requests are processed until the next turn start time is reached.
-  - If no requests arrive, the daemon waits until the next turn start time.
-  - When the next turn start time arrives, the daemon starts turn processing
-    immediately even if requests remain queued.
+    - If no requests arrive, the daemon waits until the next turn start time.
+    - When the next turn start time arrives, the daemon starts turn processing
+      immediately even if requests remain queued.
 - While the daemon is resolving a turn, the API server queues incoming requests.
 
 Note: the current implementation does not yet process API mutation requests
@@ -203,16 +204,16 @@ export type DaemonEvent =
 - API server requests are delivered to the daemon via Redis Streams or
   Redis pub/sub.
 - Redis Stream mutation requests are rate-limited per user.
-  - Each user can have up to 30 pending mutation requests.
-  - Additional requests are rejected once the limit is exceeded.
+    - Each user can have up to 30 pending mutation requests.
+    - Additional requests are rejected once the limit is exceeded.
 
 ### In-Memory and DBMS Flush
 
 - The daemon processes actions against in-memory state by default.
 - DBMS writes are flushed in bulk after turn processing completes.
 - Frequently changing "next-turn intent" data is stored separately.
-  - The API server persists this data in the DBMS.
-  - The daemon loads only this data when the next turn begins.
+    - The API server persists this data in the DBMS.
+    - The daemon loads only this data when the next turn begins.
 
 ## Turn Daemon vs API Query Priority (Outline)
 

@@ -31,7 +31,7 @@ const canConnectToDatabase = async (url: string): Promise<boolean> => {
     const connector = createGamePostgresConnector({ url });
     try {
         await connector.connect();
-        const prisma = connector.prisma as ScenarioSeederPrismaClient;
+        const prisma = connector.prisma as unknown as ScenarioSeederPrismaClient;
         await prisma.$queryRawUnsafe('SELECT 1');
         return true;
     } catch {
@@ -54,13 +54,8 @@ describeDb('scenario database seed', () => {
         const connector = createGamePostgresConnector({ url: databaseUrl });
         await connector.connect();
         try {
-            const prisma = connector.prisma as ScenarioSeederPrismaClient;
-            const [
-                nationCount,
-                cityCount,
-                generalCount,
-                diplomacyCount,
-            ] = await Promise.all([
+            const prisma = connector.prisma as unknown as ScenarioSeederPrismaClient;
+            const [nationCount, cityCount, generalCount, diplomacyCount] = await Promise.all([
                 prisma.nation.count(),
                 prisma.city.count(),
                 prisma.general.count(),
@@ -70,9 +65,7 @@ describeDb('scenario database seed', () => {
             expect(nationCount).toBe(seed.nations.length);
             expect(cityCount).toBe(seed.cities.length);
             expect(generalCount).toBe(seed.generals.length);
-            expect(diplomacyCount).toBe(
-                seed.nations.length * Math.max(0, seed.nations.length - 1)
-            );
+            expect(diplomacyCount).toBe(seed.nations.length * Math.max(0, seed.nations.length - 1));
             expect(generalCount).toBeGreaterThan(0);
 
             if (seed.diplomacy.length > 0) {

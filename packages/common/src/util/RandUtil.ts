@@ -2,9 +2,7 @@ import type { RNG } from './RNG.js';
 
 // RNG 유틸리티 모음
 export class RandUtil {
-    constructor(protected rng: RNG) {
-
-    }
+    constructor(protected rng: RNG) {}
 
     public nextFloat1(): number {
         return this.rng.nextFloat1();
@@ -12,7 +10,7 @@ export class RandUtil {
 
     public nextRange(min: number, max: number): number {
         const range = max - min;
-        return this.nextFloat1() * (range) + min;
+        return this.nextFloat1() * range + min;
     }
 
     public nextRangeInt(min: number, max: number): number {

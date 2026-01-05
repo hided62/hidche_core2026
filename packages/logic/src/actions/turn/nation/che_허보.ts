@@ -1,9 +1,4 @@
-import type {
-    City,
-    General,
-    GeneralTriggerState,
-    Nation,
-} from '@sammo-ts/logic/domain/entities.js';
+import type { City, General, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
     allowDiplomacyBetweenStatus,
@@ -13,10 +8,7 @@ import {
     notOccupiedDestCity,
     occupiedCity,
 } from '@sammo-ts/logic/constraints/presets.js';
-import {
-    GeneralActionPipeline,
-    type GeneralActionModule,
-} from '@sammo-ts/logic/triggers/general-action.js';
+import { GeneralActionPipeline, type GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionEffect,
@@ -36,7 +28,7 @@ export interface DeceptionArgs {
 }
 
 export interface DeceptionResolveContext<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > extends GeneralActionResolveContext<TriggerState> {
     destCity: City;
     destNation: Nation | null;
@@ -58,11 +50,7 @@ const parseCityId = (raw: unknown): number | null => {
     return value > 0 ? value : null;
 };
 
-const pickMoveCityId = (
-    rng: GeneralActionResolveContext['rng'],
-    destCityId: number,
-    candidates: City[]
-): number => {
+const pickMoveCityId = (rng: GeneralActionResolveContext['rng'], destCityId: number, candidates: City[]): number => {
     if (candidates.length === 0) {
         return destCityId;
     }
@@ -76,9 +64,7 @@ const pickMoveCityId = (
 };
 
 // 허보 쿨타임 계산을 담당한다.
-export class CommandResolver<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     private readonly pipeline: GeneralActionPipeline<TriggerState>;
 
     constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>) {
@@ -86,20 +72,13 @@ export class CommandResolver<
     }
 
     getGlobalDelay(context: DeceptionResolveContext<TriggerState>): number {
-        return Math.round(
-            this.pipeline.onCalcStrategic(
-                context,
-                ACTION_NAME,
-                'globalDelay',
-                DEFAULT_GLOBAL_DELAY
-            )
-        );
+        return Math.round(this.pipeline.onCalcStrategic(context, ACTION_NAME, 'globalDelay', DEFAULT_GLOBAL_DELAY));
     }
 }
 
 // 허보 실행 결과를 계산한다.
 export class ActionResolver<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionResolver<TriggerState, DeceptionArgs> {
     readonly key = 'che_허보';
     private readonly command: CommandResolver<TriggerState>;
@@ -108,10 +87,7 @@ export class ActionResolver<
         this.command = new CommandResolver(modules);
     }
 
-    resolve(
-        context: DeceptionResolveContext<TriggerState>,
-        _args: DeceptionArgs
-    ): GeneralActionOutcome<TriggerState> {
+    resolve(context: DeceptionResolveContext<TriggerState>, _args: DeceptionArgs): GeneralActionOutcome<TriggerState> {
         void _args;
         const { general, nation } = context;
         const generalName = general.name;
@@ -124,13 +100,10 @@ export class ActionResolver<
         general.dedication += EXP_DED_GAIN;
 
         context.addLog(`${ACTION_NAME} 발동!`, { format: LogFormat.MONTH });
-        context.addLog(
-            `<G><b>${cityName}</b></>에 <M>${ACTION_NAME}</>를 발동`,
-            {
-                category: LogCategory.HISTORY,
-                format: LogFormat.YEAR_MONTH,
-            }
-        );
+        context.addLog(`<G><b>${cityName}</b></>에 <M>${ACTION_NAME}</>를 발동`, {
+            category: LogCategory.HISTORY,
+            format: LogFormat.YEAR_MONTH,
+        });
 
         const effects: Array<GeneralActionEffect<TriggerState>> = [];
 
@@ -149,11 +122,7 @@ export class ActionResolver<
         }
 
         for (const target of context.destCityGenerals) {
-            const moveCityId = pickMoveCityId(
-                context.rng,
-                context.destCity.id,
-                context.destNationSupplyCities
-            );
+            const moveCityId = pickMoveCityId(context.rng, context.destCity.id, context.destNationSupplyCities);
             effects.push(
                 createLogEffect(destBroadcastMessage, {
                     scope: LogScope.GENERAL,
@@ -163,12 +132,7 @@ export class ActionResolver<
                 })
             );
             if (moveCityId !== target.cityId) {
-                effects.push(
-                    createGeneralPatchEffect(
-                        { cityId: moveCityId },
-                        target.id
-                    )
-                );
+                effects.push(createGeneralPatchEffect({ cityId: moveCityId }, target.id));
             }
         }
 
@@ -208,7 +172,7 @@ export class ActionResolver<
 
 // 허보 실행을 위한 정의/제약을 구성한다.
 export class ActionDefinition<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionDefinition<TriggerState, DeceptionArgs, DeceptionResolveContext<TriggerState>> {
     public readonly key = 'che_허보';
     public readonly name = ACTION_NAME;
@@ -227,10 +191,7 @@ export class ActionDefinition<
         return { destCityId };
     }
 
-    buildConstraints(
-        _ctx: ConstraintContext,
-        _args: DeceptionArgs
-    ): Constraint[] {
+    buildConstraints(_ctx: ConstraintContext, _args: DeceptionArgs): Constraint[] {
         void _ctx;
         void _args;
         return [
@@ -238,18 +199,12 @@ export class ActionDefinition<
             beChief(),
             notNeutralDestCity(),
             notOccupiedDestCity(),
-            allowDiplomacyBetweenStatus(
-                [0, 1],
-                '선포, 전쟁중인 상대국에게만 가능합니다.'
-            ),
+            allowDiplomacyBetweenStatus([0, 1], '선포, 전쟁중인 상대국에게만 가능합니다.'),
             availableStrategicCommand(),
         ];
     }
 
-    resolve(
-        context: DeceptionResolveContext<TriggerState>,
-        args: DeceptionArgs
-    ): GeneralActionOutcome<TriggerState> {
+    resolve(context: DeceptionResolveContext<TriggerState>, args: DeceptionArgs): GeneralActionOutcome<TriggerState> {
         return this.resolver.resolve(context, args);
     }
 }
@@ -271,19 +226,12 @@ export const actionContextBuilder: ActionContextBuilder = (base, options) => {
     const destNation = worldRef.getNationById(destCity.nationId);
     const generals = worldRef.listGenerals();
     const destCityGenerals = generals.filter(
-        (general) =>
-            general.nationId === destCity.nationId &&
-            general.cityId === destCity.id
+        (general) => general.nationId === destCity.nationId && general.cityId === destCity.id
     );
-    const friendlyGenerals = generals.filter(
-        (general) => general.nationId === base.general.nationId
-    );
+    const friendlyGenerals = generals.filter((general) => general.nationId === base.general.nationId);
     const destNationSupplyCities = worldRef
         .listCities()
-        .filter(
-            (city) =>
-                city.nationId === destCity.nationId && city.supplyState > 0
-        );
+        .filter((city) => city.nationId === destCity.nationId && city.supplyState > 0);
     return {
         ...base,
         destCity,
@@ -299,6 +247,5 @@ export const commandSpec: NationTurnCommandSpec = {
     category: '전략',
     reqArg: true,
     args: { destCityId: 0 },
-    createDefinition: (env: TurnCommandEnv) =>
-        new ActionDefinition(env.generalActionModules ?? []),
+    createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env.generalActionModules ?? []),
 };

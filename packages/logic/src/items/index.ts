@@ -1,9 +1,6 @@
 import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
-import {
-    GeneralTriggerCaller,
-    type GeneralActionContext,
-} from '@sammo-ts/logic/triggers/general.js';
+import { GeneralTriggerCaller, type GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
 import type {
     GeneralStatName,
     TriggerActionPhase,
@@ -47,15 +44,12 @@ const defaultImporters: Record<ItemKey, ItemImporter> = {
     che_보물_도기: async () => import('./che_보물_도기.js'),
 };
 
-export const isItemKey = (value: string): value is ItemKey =>
-    ITEM_KEYS.includes(value as ItemKey);
+export const isItemKey = (value: string): value is ItemKey => ITEM_KEYS.includes(value as ItemKey);
 
 export class ItemLoader {
     private readonly cache = new Map<ItemKey, Promise<ItemModule>>();
 
-    constructor(
-        private readonly importers: Record<ItemKey, ItemImporter> = defaultImporters
-    ) {}
+    constructor(private readonly importers: Record<ItemKey, ItemImporter> = defaultImporters) {}
 
     async load(key: ItemKey): Promise<ItemModule> {
         const cached = this.cache.get(key);
@@ -72,9 +66,7 @@ export class ItemLoader {
             }
             const resolved = module.itemModule;
             if (resolved.key !== key) {
-                throw new Error(
-                    `Item key mismatch: expected ${key}, got ${resolved.key}`
-                );
+                throw new Error(`Item key mismatch: expected ${key}, got ${resolved.key}`);
             }
             return resolved;
         });
@@ -99,13 +91,12 @@ export const loadItemModules = async (
     return modules;
 };
 
-export type ItemModuleRegistry<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> = Map<string, ItemModule<TriggerState>>;
+export type ItemModuleRegistry<TriggerState extends GeneralTriggerState = GeneralTriggerState> = Map<
+    string,
+    ItemModule<TriggerState>
+>;
 
-export const createItemModuleRegistry = <
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
->(
+export const createItemModuleRegistry = <TriggerState extends GeneralTriggerState = GeneralTriggerState>(
     modules: ItemModule<TriggerState>[]
 ): ItemModuleRegistry<TriggerState> => {
     const registry: ItemModuleRegistry<TriggerState> = new Map();
@@ -116,13 +107,11 @@ export const createItemModuleRegistry = <
 };
 
 class ItemGeneralActionRouter<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionModule<TriggerState> {
     constructor(private readonly registry: ItemModuleRegistry<TriggerState>) {}
 
-    private resolveModules(
-        context: GeneralActionContext<TriggerState>
-    ): Array<ItemModule<TriggerState>> {
+    private resolveModules(context: GeneralActionContext<TriggerState>): Array<ItemModule<TriggerState>> {
         const keys = listEquippedItemKeys(context.general);
         const modules: Array<ItemModule<TriggerState>> = [];
         for (const key of keys) {
@@ -248,13 +237,11 @@ class ItemGeneralActionRouter<
 }
 
 class ItemWarActionRouter<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements WarActionModule<TriggerState> {
     constructor(private readonly registry: ItemModuleRegistry<TriggerState>) {}
 
-    private resolveModules(
-        context: WarActionContext<TriggerState>
-    ): Array<ItemModule<TriggerState>> {
+    private resolveModules(context: WarActionContext<TriggerState>): Array<ItemModule<TriggerState>> {
         const keys = listEquippedItemKeys(context.general);
         const modules: Array<ItemModule<TriggerState>> = [];
         for (const key of keys) {
@@ -266,9 +253,7 @@ class ItemWarActionRouter<
         return modules;
     }
 
-    getBattleInitTriggerList(
-        context: WarActionContext<TriggerState>
-    ): WarTriggerCaller | null {
+    getBattleInitTriggerList(context: WarActionContext<TriggerState>): WarTriggerCaller | null {
         const caller = new WarTriggerCaller();
         for (const module of this.resolveModules(context)) {
             const triggers = module.getBattleInitTriggerList?.(context);
@@ -279,9 +264,7 @@ class ItemWarActionRouter<
         return caller.isEmpty() ? null : caller;
     }
 
-    getBattlePhaseTriggerList(
-        context: WarActionContext<TriggerState>
-    ): WarTriggerCaller | null {
+    getBattlePhaseTriggerList(context: WarActionContext<TriggerState>): WarTriggerCaller | null {
         const caller = new WarTriggerCaller();
         for (const module of this.resolveModules(context)) {
             const triggers = module.getBattlePhaseTriggerList?.(context);
@@ -335,11 +318,7 @@ class ItemWarActionRouter<
             if (!module.getWarPowerMultiplier) {
                 continue;
             }
-            const [attMul, defMul] = module.getWarPowerMultiplier(
-                context,
-                unit,
-                oppose
-            );
+            const [attMul, defMul] = module.getWarPowerMultiplier(context, unit, oppose);
             attack *= attMul;
             defence *= defMul;
         }
@@ -347,9 +326,7 @@ class ItemWarActionRouter<
     }
 }
 
-export const createItemActionModules = <
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
->(
+export const createItemActionModules = <TriggerState extends GeneralTriggerState = GeneralTriggerState>(
     registry: ItemModuleRegistry<TriggerState>
 ): { general: GeneralActionModule<TriggerState>[]; war: WarActionModule<TriggerState>[] } => ({
     general: [new ItemGeneralActionRouter(registry)],

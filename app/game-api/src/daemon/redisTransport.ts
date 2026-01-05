@@ -17,10 +17,7 @@ interface RedisTurnDaemonTransportOptions {
 
 interface RedisClientLike {
     xAdd(stream: string, id: string, message: Record<string, string>): Promise<string>;
-    xRead(
-        streams: { key: string; id: string },
-        options?: { BLOCK?: number; COUNT?: number }
-    ): Promise<unknown>;
+    xRead(streams: { key: string; id: string }, options?: { BLOCK?: number; COUNT?: number }): Promise<unknown>;
 }
 
 type RedisStreamReadResponse = Array<{
@@ -29,10 +26,7 @@ type RedisStreamReadResponse = Array<{
 }>;
 
 const buildCommandEnvelope = (command: TurnDaemonCommand): TurnDaemonCommandEnvelope => {
-    const requestId =
-        command.type === 'getStatus' && command.requestId
-            ? command.requestId
-            : randomUUID();
+    const requestId = command.type === 'getStatus' && command.requestId ? command.requestId : randomUUID();
     return {
         requestId,
         sentAt: new Date().toISOString(),
@@ -79,10 +73,7 @@ export class RedisTurnDaemonTransport implements TurnDaemonTransport {
         return envelope.requestId;
     }
 
-    async requestCommand(
-        command: TurnDaemonCommand,
-        timeoutMs?: number
-    ): Promise<TurnDaemonCommandResult | null> {
+    async requestCommand(command: TurnDaemonCommand, timeoutMs?: number): Promise<TurnDaemonCommandResult | null> {
         const requestId = await this.sendCommand(command);
 
         const deadline = Date.now() + (timeoutMs ?? this.requestTimeoutMs);
@@ -110,10 +101,7 @@ export class RedisTurnDaemonTransport implements TurnDaemonTransport {
                     if (!envelope) {
                         continue;
                     }
-                    if (
-                        envelope.event.type === 'commandResult' &&
-                        envelope.requestId === requestId
-                    ) {
+                    if (envelope.event.type === 'commandResult' && envelope.requestId === requestId) {
                         return envelope.event.result;
                     }
                 }

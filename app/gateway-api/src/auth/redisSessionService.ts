@@ -101,10 +101,7 @@ export class RedisGatewaySessionService implements GatewaySessionService {
         await this.client.del(key);
     }
 
-    async createGameSession(
-        sessionToken: string,
-        profile: string
-    ): Promise<GameSessionInfo | null> {
+    async createGameSession(sessionToken: string, profile: string): Promise<GameSessionInfo | null> {
         const session = await this.getSession(sessionToken);
         if (!session) {
             return null;

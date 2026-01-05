@@ -1,11 +1,6 @@
 import type { RandUtil } from '@sammo-ts/common';
 
-import type {
-    City,
-    General,
-    GeneralTriggerState,
-    Nation,
-} from '@sammo-ts/logic/domain/entities.js';
+import type { City, General, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { ActionLogger } from '@sammo-ts/logic/logging/actionLogger.js';
 import type { LogEntryDraft } from '@sammo-ts/logic/logging/types.js';
 import type { UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
@@ -38,9 +33,7 @@ export interface WarTimeContext {
     startYear: number;
 }
 
-export interface WarGeneralInput<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+export interface WarGeneralInput<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     general: General<TriggerState>;
     city: City;
     nation: Nation | null;
@@ -48,9 +41,7 @@ export interface WarGeneralInput<
     modules?: Array<WarActionModule<TriggerState> | null | undefined>;
 }
 
-export interface WarBattleInput<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+export interface WarBattleInput<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     seed?: string;
     rng?: RandUtil;
     unitSet: UnitSetDefinition;
@@ -79,9 +70,7 @@ export interface WarBattleMetrics {
     defenderActivatedSkills: Array<Record<string, number>>;
 }
 
-export interface WarBattleOutcome<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+export interface WarBattleOutcome<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     attacker: General<TriggerState>;
     defenders: General<TriggerState>[];
     defenderCity: City;
@@ -115,9 +104,7 @@ export interface WarDiplomacyDelta {
     deadDelta: number;
 }
 
-export interface ConquerCityOutcome<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+export interface ConquerCityOutcome<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     conquerNationId: number;
     nationCollapsed: boolean;
     collapseRewardGold: number;
@@ -128,9 +115,7 @@ export interface ConquerCityOutcome<
     generals: General<TriggerState>[];
 }
 
-export interface WarAftermathInput<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+export interface WarAftermathInput<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     battle: WarBattleOutcome<TriggerState>;
     attackerNation: Nation;
     defenderNation: Nation | null;
@@ -147,9 +132,7 @@ export interface WarAftermathInput<
     calcNationTechGain?: (context: WarAftermathTechContext) => number;
 }
 
-export interface WarAftermathOutcome<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+export interface WarAftermathOutcome<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     nations: Nation[];
     cities: City[];
     generals: General<TriggerState>[];

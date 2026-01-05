@@ -1,8 +1,4 @@
-import type {
-    General,
-    GeneralTriggerState,
-    Nation,
-} from '@sammo-ts/logic/domain/entities.js';
+import type { General, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
     allowDiplomacyBetweenStatus,
@@ -11,10 +7,7 @@ import {
     existsDestNation,
     occupiedCity,
 } from '@sammo-ts/logic/constraints/presets.js';
-import {
-    GeneralActionPipeline,
-    type GeneralActionModule,
-} from '@sammo-ts/logic/triggers/general-action.js';
+import { GeneralActionPipeline, type GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionEffect,
@@ -22,17 +15,11 @@ import type {
     GeneralActionResolveContext,
     GeneralActionResolver,
 } from '@sammo-ts/logic/actions/engine.js';
-import {
-    createDiplomacyPatchEffect,
-    createLogEffect,
-} from '@sammo-ts/logic/actions/engine.js';
+import { createDiplomacyPatchEffect, createLogEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
-import {
-    buildDefaultDiplomacy,
-    DIPLOMACY_STATE,
-} from '../../../diplomacy/index.js';
+import { buildDefaultDiplomacy, DIPLOMACY_STATE } from '../../../diplomacy/index.js';
 import { JosaUtil } from '@sammo-ts/common';
 import type { NationTurnCommandSpec } from './index.js';
 
@@ -41,7 +28,7 @@ export interface DegradeRelationsArgs {
 }
 
 export interface DegradeRelationsResolveContext<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > extends GeneralActionResolveContext<TriggerState> {
     destNation: Nation;
     diplomacy: { state: number; term: number };
@@ -63,13 +50,10 @@ const parseNationId = (raw: unknown): number | null => {
     return value > 0 ? value : null;
 };
 
-const resolveNextTerm = (state: number, term: number): number =>
-    state === DIPLOMACY_STATE.WAR ? 3 : term + 3;
+const resolveNextTerm = (state: number, term: number): number => (state === DIPLOMACY_STATE.WAR ? 3 : term + 3);
 
 // 이호경식 쿨타임 계산을 담당한다.
-export class CommandResolver<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     private readonly pipeline: GeneralActionPipeline<TriggerState>;
 
     constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>) {
@@ -77,20 +61,13 @@ export class CommandResolver<
     }
 
     getGlobalDelay(context: DegradeRelationsResolveContext<TriggerState>): number {
-        return Math.round(
-            this.pipeline.onCalcStrategic(
-                context,
-                ACTION_NAME,
-                'globalDelay',
-                DEFAULT_GLOBAL_DELAY
-            )
-        );
+        return Math.round(this.pipeline.onCalcStrategic(context, ACTION_NAME, 'globalDelay', DEFAULT_GLOBAL_DELAY));
     }
 }
 
 // 이호경식 실행 결과를 계산한다.
 export class ActionResolver<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionResolver<TriggerState, DegradeRelationsArgs> {
     readonly key = 'che_이호경식';
     private readonly command: CommandResolver<TriggerState>;
@@ -117,37 +94,20 @@ export class ActionResolver<
         general.dedication += EXP_DED_GAIN;
 
         context.addLog(`${ACTION_NAME} 발동!`, { format: LogFormat.MONTH });
-        context.addLog(
-            `<D><b>${destNationName}</b></>에 <M>${ACTION_NAME}</>${actionJosa} 발동`,
-            {
-                category: LogCategory.HISTORY,
-                format: LogFormat.YEAR_MONTH,
-            }
-        );
+        context.addLog(`<D><b>${destNationName}</b></>에 <M>${ACTION_NAME}</>${actionJosa} 발동`, {
+            category: LogCategory.HISTORY,
+            format: LogFormat.YEAR_MONTH,
+        });
 
         const effects: Array<GeneralActionEffect<TriggerState>> = [
-            createDiplomacyPatchEffect(
-                general.nationId,
-                context.destNation.id,
-                {
-                    state: DIPLOMACY_STATE.DECLARATION,
-                    term: resolveNextTerm(
-                        context.diplomacy.state,
-                        context.diplomacy.term
-                    ),
-                }
-            ),
-            createDiplomacyPatchEffect(
-                context.destNation.id,
-                general.nationId,
-                {
-                    state: DIPLOMACY_STATE.DECLARATION,
-                    term: resolveNextTerm(
-                        context.reverseDiplomacy.state,
-                        context.reverseDiplomacy.term
-                    ),
-                }
-            ),
+            createDiplomacyPatchEffect(general.nationId, context.destNation.id, {
+                state: DIPLOMACY_STATE.DECLARATION,
+                term: resolveNextTerm(context.diplomacy.state, context.diplomacy.term),
+            }),
+            createDiplomacyPatchEffect(context.destNation.id, general.nationId, {
+                state: DIPLOMACY_STATE.DECLARATION,
+                term: resolveNextTerm(context.reverseDiplomacy.state, context.reverseDiplomacy.term),
+            }),
         ];
 
         for (const target of context.friendlyGenerals) {
@@ -209,12 +169,8 @@ export class ActionResolver<
 
 // 이호경식 실행을 위한 정의/제약을 구성한다.
 export class ActionDefinition<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> implements GeneralActionDefinition<
-        TriggerState,
-        DegradeRelationsArgs,
-        DegradeRelationsResolveContext<TriggerState>
-    > {
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
+> implements GeneralActionDefinition<TriggerState, DegradeRelationsArgs, DegradeRelationsResolveContext<TriggerState>> {
     public readonly key = 'che_이호경식';
     public readonly name = ACTION_NAME;
     private readonly resolver: ActionResolver<TriggerState>;
@@ -232,20 +188,14 @@ export class ActionDefinition<
         return { destNationId };
     }
 
-    buildConstraints(
-        _ctx: ConstraintContext,
-        _args: DegradeRelationsArgs
-    ): Constraint[] {
+    buildConstraints(_ctx: ConstraintContext, _args: DegradeRelationsArgs): Constraint[] {
         void _ctx;
         void _args;
         return [
             occupiedCity(),
             beChief(),
             existsDestNation(),
-            allowDiplomacyBetweenStatus(
-                [0, 1],
-                '선포, 전쟁중인 상대국에게만 가능합니다.'
-            ),
+            allowDiplomacyBetweenStatus([0, 1], '선포, 전쟁중인 상대국에게만 가능합니다.'),
             availableStrategicCommand(),
         ];
     }
@@ -279,12 +229,8 @@ export const actionContextBuilder: ActionContextBuilder = (base, options) => {
         worldRef.getDiplomacyEntry(destNationId, base.general.nationId) ??
         buildDefaultDiplomacy(destNationId, base.general.nationId);
     const generals = worldRef.listGenerals();
-    const friendlyGenerals = generals.filter(
-        (general) => general.nationId === base.general.nationId
-    );
-    const destNationGenerals = generals.filter(
-        (general) => general.nationId === destNationId
-    );
+    const friendlyGenerals = generals.filter((general) => general.nationId === base.general.nationId);
+    const destNationGenerals = generals.filter((general) => general.nationId === destNationId);
     return {
         ...base,
         destNation,
@@ -300,6 +246,5 @@ export const commandSpec: NationTurnCommandSpec = {
     category: '외교',
     reqArg: true,
     args: { destNationId: 0 },
-    createDefinition: (env: TurnCommandEnv) =>
-        new ActionDefinition(env.generalActionModules ?? []),
+    createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env.generalActionModules ?? []),
 };

@@ -1,11 +1,5 @@
 import type { General } from '@sammo-ts/logic/domain/entities.js';
-import {
-    allow,
-    readDestGeneral,
-    resolveDestGeneralId,
-    resolveDestNationId,
-    unknownOrDeny,
-} from './helpers.js';
+import { allow, readDestGeneral, resolveDestGeneralId, resolveDestNationId, unknownOrDeny } from './helpers.js';
 import type { Constraint, ConstraintContext, RequirementKey, StateView } from './types.js';
 
 export const notBeNeutral = (): Constraint => ({
@@ -73,9 +67,7 @@ export const reqGeneralGold = (
     requires: (ctx) => [{ kind: 'general', id: ctx.actorId }, ...requirements],
     test: (ctx, view) => {
         const generalReq: RequirementKey = { kind: 'general', id: ctx.actorId };
-        const missing = [generalReq, ...requirements].filter(
-            (req) => !view.has(req)
-        );
+        const missing = [generalReq, ...requirements].filter((req) => !view.has(req));
         if (missing.length > 0) {
             return unknownOrDeny(ctx, missing, '장수 정보가 없습니다.');
         }
@@ -99,9 +91,7 @@ export const reqGeneralRice = (
     requires: (ctx) => [{ kind: 'general', id: ctx.actorId }, ...requirements],
     test: (ctx, view) => {
         const generalReq: RequirementKey = { kind: 'general', id: ctx.actorId };
-        const missing = [generalReq, ...requirements].filter(
-            (req) => !view.has(req)
-        );
+        const missing = [generalReq, ...requirements].filter((req) => !view.has(req));
         if (missing.length > 0) {
             return unknownOrDeny(ctx, missing, '장수 정보가 없습니다.');
         }
@@ -144,9 +134,7 @@ export const reqGeneralCrewMargin = (
     requires: (ctx) => [{ kind: 'general', id: ctx.actorId }, ...requirements],
     test: (ctx, view) => {
         const generalReq: RequirementKey = { kind: 'general', id: ctx.actorId };
-        const missing = [generalReq, ...requirements].filter(
-            (req) => !view.has(req)
-        );
+        const missing = [generalReq, ...requirements].filter((req) => !view.has(req));
         if (missing.length > 0) {
             return unknownOrDeny(ctx, missing, '장수 정보가 없습니다.');
         }

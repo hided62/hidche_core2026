@@ -7,7 +7,7 @@ export interface WorldStateSnapshotSource<
     GeneralType extends General = General,
     CityType extends City = City,
     NationType extends Nation = Nation,
-    TroopType extends Troop = Troop
+    TroopType extends Troop = Troop,
 > {
     listGenerals(): Promise<GeneralType[]>;
     listCities(): Promise<CityType[]>;

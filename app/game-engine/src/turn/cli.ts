@@ -49,10 +49,7 @@ const parseBoolean = (value: string | undefined): boolean | undefined => {
     return undefined;
 };
 
-const buildBudgetOverride = (
-    env: NodeJS.ProcessEnv,
-    override?: Partial<TurnRunBudget>
-): TurnRunBudget | undefined => {
+const buildBudgetOverride = (env: NodeJS.ProcessEnv, override?: Partial<TurnRunBudget>): TurnRunBudget | undefined => {
     const budgetOverride: Partial<TurnRunBudget> = {
         budgetMs: parseNumber(env.TURN_BUDGET_MS),
         maxGenerals: parseNumber(env.TURN_MAX_GENERALS),
@@ -60,29 +57,19 @@ const buildBudgetOverride = (
         ...override,
     };
 
-    const hasOverride = Object.values(budgetOverride).some(
-        (value) => value !== undefined
-    );
+    const hasOverride = Object.values(budgetOverride).some((value) => value !== undefined);
     if (!hasOverride) {
         return undefined;
     }
     return { ...DEFAULT_BUDGET, ...budgetOverride };
 };
 
-export const runTurnDaemonCli = async (
-    options: TurnDaemonCliOptions = {}
-): Promise<void> => {
+export const runTurnDaemonCli = async (options: TurnDaemonCliOptions = {}): Promise<void> => {
     const env = options.env ?? process.env;
-    const profile =
-        options.profile ?? env.TURN_PROFILE ?? env.PROFILE ?? 'hwe';
+    const profile = options.profile ?? env.TURN_PROFILE ?? env.PROFILE ?? 'hwe';
     const scenario = options.scenario ?? env.TURN_SCENARIO ?? env.SCENARIO;
-    const profileName =
-        options.profileName ??
-        env.TURN_PROFILE_NAME ??
-        (scenario ? `${profile}:${scenario}` : profile);
-    const databaseUrl =
-        options.databaseUrl ??
-        (await resolveDatabaseUrl({ env, schema: profile }));
+    const profileName = options.profileName ?? env.TURN_PROFILE_NAME ?? (scenario ? `${profile}:${scenario}` : profile);
+    const databaseUrl = options.databaseUrl ?? (await resolveDatabaseUrl({ env, schema: profile }));
     const gatewayDatabaseUrl =
         options.gatewayDatabaseUrl ??
         env.GATEWAY_DATABASE_URL ??
@@ -91,15 +78,10 @@ export const runTurnDaemonCli = async (
             schema: env.GATEWAY_DB_SCHEMA ?? 'public',
         }));
     const budget = buildBudgetOverride(env, options.budget);
-    const tickMinutes =
-        options.tickMinutes ?? parseNumber(env.TURN_TICK_MINUTES);
-    const enableDatabaseFlush =
-        options.enableDatabaseFlush ??
-        parseBoolean(env.TURN_FLUSH_DB) ??
-        true;
+    const tickMinutes = options.tickMinutes ?? parseNumber(env.TURN_TICK_MINUTES);
+    const enableDatabaseFlush = options.enableDatabaseFlush ?? parseBoolean(env.TURN_FLUSH_DB) ?? true;
     const pauseGateIntervalMs = parseNumber(env.TURN_PAUSE_GATE_MS);
-    const adminActionIntervalMs =
-        options.adminActionIntervalMs ?? parseNumber(env.TURN_ADMIN_ACTION_MS);
+    const adminActionIntervalMs = options.adminActionIntervalMs ?? parseNumber(env.TURN_ADMIN_ACTION_MS);
 
     const runtime = await createTurnDaemonRuntime({
         profile,
@@ -137,12 +119,8 @@ export const runTurnDaemonCli = async (
     process.on('SIGINT', () => void stop('SIGINT'));
     process.on('SIGTERM', () => void stop('SIGTERM'));
 
-    const activeTickMinutes =
-        tickMinutes ??
-        Math.max(1, Math.round(runtime.world.getState().tickSeconds / 60));
-    console.info(
-        `[turn-daemon] started profile=${profile} tickMinutes=${activeTickMinutes}`
-    );
+    const activeTickMinutes = tickMinutes ?? Math.max(1, Math.round(runtime.world.getState().tickSeconds / 60));
+    console.info(`[turn-daemon] started profile=${profile} tickMinutes=${activeTickMinutes}`);
 
     try {
         await runtime.lifecycle.start();

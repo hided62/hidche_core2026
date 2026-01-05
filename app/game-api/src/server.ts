@@ -9,7 +9,7 @@ import {
 } from '@sammo-ts/infra';
 
 import { resolveGameApiConfigFromEnv } from './config.js';
-import { createGameApiContext, type DatabaseClient } from './context.js';
+import { createGameApiContext, type DatabaseClient as _DatabaseClient } from './context.js';
 import { buildTurnDaemonStreamKeys } from './daemon/streamKeys.js';
 import { RedisTurnDaemonTransport } from './daemon/redisTransport.js';
 import { InMemoryFlushStore, RedisGatewayFlushSubscriber } from './auth/flushStore.js';
@@ -35,9 +35,7 @@ const extractBearerToken = (value: string | string[] | undefined): string | null
 
 export const createGameApiServer = async () => {
     const config = resolveGameApiConfigFromEnv();
-    const postgres = createGamePostgresConnector(
-        resolvePostgresConfigFromEnv({ schema: config.profile })
-    );
+    const postgres = createGamePostgresConnector(resolvePostgresConfigFromEnv({ schema: config.profile }));
     const redis = createRedisConnector(resolveRedisConfigFromEnv());
 
     await postgres.connect();
@@ -55,11 +53,7 @@ export const createGameApiServer = async () => {
     const flushStore = new InMemoryFlushStore();
     const flushSubscriberClient = redis.client.duplicate();
     await flushSubscriberClient.connect();
-    const flushSubscriber = new RedisGatewayFlushSubscriber(
-        flushSubscriberClient,
-        config.flushChannel,
-        flushStore
-    );
+    const flushSubscriber = new RedisGatewayFlushSubscriber(flushSubscriberClient, config.flushChannel, flushStore);
     await flushSubscriber.start();
     const tokenVerifier = createGameTokenVerifier({
         secret: config.gameTokenSecret,
@@ -103,7 +97,6 @@ export const createGameApiServer = async () => {
         ok: true,
         profile: config.profileName,
     }));
-
 
     app.addHook('onClose', async () => {
         await flushSubscriber.stop();

@@ -1,25 +1,9 @@
-import type {
-    GeneralTriggerState,
-} from '@sammo-ts/logic/domain/entities.js';
-import type {
-    Constraint,
-    ConstraintContext,
-    StateView,
-} from '@sammo-ts/logic/constraints/types.js';
-import {
-    notBeNeutral,
-    occupiedCity,
-    reqGeneralGold,
-    reqGeneralRice,
-} from '@sammo-ts/logic/constraints/presets.js';
+import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
+import type { Constraint, ConstraintContext, StateView } from '@sammo-ts/logic/constraints/types.js';
+import { notBeNeutral, occupiedCity, reqGeneralGold, reqGeneralRice } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
-import type {
-    GeneralActionOutcome,
-    GeneralActionResolveContext,
-} from '@sammo-ts/logic/actions/engine.js';
-import type {
-    ActionContextBuilder,
-} from '@sammo-ts/logic/actions/turn/actionContext.js';
+import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
+import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import type { UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
@@ -32,7 +16,7 @@ export interface DexTransferArgs {
 }
 
 export interface DexTransferContext<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > extends GeneralActionResolveContext<TriggerState> {
     unitSet?: UnitSetDefinition | null;
 }
@@ -55,19 +39,12 @@ const resolveArmType = (value: unknown): number | null => {
     return value > 0 ? value : null;
 };
 
-const resolveArmTypeName = (
-    unitSet: UnitSetDefinition | null | undefined,
-    armType: number
-): string =>
+const resolveArmTypeName = (unitSet: UnitSetDefinition | null | undefined, armType: number): string =>
     unitSet?.armTypes?.[String(armType)] ?? `병종${armType}`;
 
 export class ActionDefinition<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> implements GeneralActionDefinition<
-    TriggerState,
-    DexTransferArgs,
-    DexTransferContext<TriggerState>
-> {
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
+> implements GeneralActionDefinition<TriggerState, DexTransferArgs, DexTransferContext<TriggerState>> {
     public readonly key = 'che_숙련전환';
     public readonly name = ACTION_NAME;
     private readonly env: DexTransferEnvironment;
@@ -89,26 +66,13 @@ export class ActionDefinition<
         return { srcArmType, destArmType };
     }
 
-    buildConstraints(
-        _ctx: ConstraintContext,
-        _args: DexTransferArgs
-    ): Constraint[] {
-        const getRequiredGold = (_context: ConstraintContext, _view: StateView): number =>
-            this.env.develCost ?? 0;
-        const getRequiredRice = (_context: ConstraintContext, _view: StateView): number =>
-            this.env.develCost ?? 0;
-        return [
-            notBeNeutral(),
-            occupiedCity(),
-            reqGeneralGold(getRequiredGold),
-            reqGeneralRice(getRequiredRice),
-        ];
+    buildConstraints(_ctx: ConstraintContext, _args: DexTransferArgs): Constraint[] {
+        const getRequiredGold = (_context: ConstraintContext, _view: StateView): number => this.env.develCost ?? 0;
+        const getRequiredRice = (_context: ConstraintContext, _view: StateView): number => this.env.develCost ?? 0;
+        return [notBeNeutral(), occupiedCity(), reqGeneralGold(getRequiredGold), reqGeneralRice(getRequiredRice)];
     }
 
-    resolve(
-        context: DexTransferContext<TriggerState>,
-        args: DexTransferArgs
-    ): GeneralActionOutcome<TriggerState> {
+    resolve(context: DexTransferContext<TriggerState>, args: DexTransferArgs): GeneralActionOutcome<TriggerState> {
         const general = context.general;
         const srcKey = `dex${args.srcArmType}`;
         const destKey = `dex${args.destArmType}`;
@@ -117,20 +81,10 @@ export class ActionDefinition<
         const addDex = Math.trunc(cutDex * CONVERT_COEFF);
 
         setMetaNumber(general.meta, srcKey, srcDex - cutDex);
-        setMetaNumber(
-            general.meta,
-            destKey,
-            getMetaNumber(general.meta, destKey, 0) + addDex
-        );
+        setMetaNumber(general.meta, destKey, getMetaNumber(general.meta, destKey, 0) + addDex);
 
-        const srcName = resolveArmTypeName(
-            context.unitSet,
-            args.srcArmType
-        );
-        const destName = resolveArmTypeName(
-            context.unitSet,
-            args.destArmType
-        );
+        const srcName = resolveArmTypeName(context.unitSet, args.srcArmType);
+        const destName = resolveArmTypeName(context.unitSet, args.destArmType);
         const cutJosa = JosaUtil.pick(String(cutDex), '을');
         const addJosa = JosaUtil.pick(String(addDex), '으로');
 
@@ -140,9 +94,7 @@ export class ActionDefinition<
         general.experience += 10;
         increaseMetaNumber(general.meta, 'leadership_exp', 2);
 
-        context.addLog(
-            `${srcName} 숙련 ${cutDex}${cutJosa} ${destName} 숙련 ${addDex}${addJosa} 전환했습니다.`
-        );
+        context.addLog(`${srcName} 숙련 ${cutDex}${cutJosa} ${destName} 숙련 ${addDex}${addJosa} 전환했습니다.`);
 
         return { effects: [] };
     }
@@ -158,6 +110,5 @@ export const commandSpec: GeneralTurnCommandSpec = {
     category: '군사',
     reqArg: true,
     args: { srcArmType: 0, destArmType: 0 },
-    createDefinition: (env: TurnCommandEnv) =>
-        new ActionDefinition({ develCost: env.develCost }),
+    createDefinition: (env: TurnCommandEnv) => new ActionDefinition({ develCost: env.develCost }),
 };

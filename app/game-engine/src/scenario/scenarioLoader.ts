@@ -11,13 +11,7 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DEFAULT_SCENARIO_ROOT = path.resolve(
-    __dirname,
-    '..',
-    '..',
-    'resources',
-    'scenario'
-);
+const DEFAULT_SCENARIO_ROOT = path.resolve(__dirname, '..', '..', 'resources', 'scenario');
 
 export interface ScenarioLoaderOptions {
     scenarioRoot?: string;
@@ -29,29 +23,15 @@ const readJsonFile = async (filePath: string): Promise<unknown> => {
     return JSON.parse(raw) as unknown;
 };
 
-const resolveScenarioRoot = (options?: ScenarioLoaderOptions): string =>
-    options?.scenarioRoot ?? DEFAULT_SCENARIO_ROOT;
+const resolveScenarioRoot = (options?: ScenarioLoaderOptions): string => options?.scenarioRoot ?? DEFAULT_SCENARIO_ROOT;
 
-export const resolveScenarioDefaultsPath = (
-    options?: ScenarioLoaderOptions
-): string =>
-    path.resolve(
-        resolveScenarioRoot(options),
-        options?.defaultsFileName ?? 'default.json'
-    );
+export const resolveScenarioDefaultsPath = (options?: ScenarioLoaderOptions): string =>
+    path.resolve(resolveScenarioRoot(options), options?.defaultsFileName ?? 'default.json');
 
-export const resolveScenarioPath = (
-    options: ScenarioLoaderOptions | undefined,
-    scenarioId: number
-): string =>
-    path.resolve(
-        resolveScenarioRoot(options),
-        `scenario_${scenarioId}.json`
-    );
+export const resolveScenarioPath = (options: ScenarioLoaderOptions | undefined, scenarioId: number): string =>
+    path.resolve(resolveScenarioRoot(options), `scenario_${scenarioId}.json`);
 
-export const loadScenarioDefaults = async (
-    defaultsPath: string
-): Promise<ScenarioDefaults> => {
+export const loadScenarioDefaults = async (defaultsPath: string): Promise<ScenarioDefaults> => {
     // 기본 시나리오 파일을 읽고 정규화한다.
     const raw = await readJsonFile(defaultsPath);
     return parseScenarioDefaults(raw);

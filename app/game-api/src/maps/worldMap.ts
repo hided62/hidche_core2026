@@ -47,8 +47,7 @@ const BASE_MAP_TTL_SECONDS = 30;
 const isRecord = (value: unknown): value is Record<string, unknown> =>
     value !== null && typeof value === 'object' && !Array.isArray(value);
 
-const asRecord = (value: unknown): Record<string, unknown> =>
-    isRecord(value) ? value : {};
+const asRecord = (value: unknown): Record<string, unknown> => (isRecord(value) ? value : {});
 
 const resolveStartYear = (worldState: WorldStateRow): number => {
     const meta = asRecord(worldState.meta);
@@ -98,10 +97,7 @@ const resolveSpyList = (meta: Record<string, unknown>): Record<number, number> =
 const buildBaseMapCacheKey = (ctx: GameApiContext): string =>
     `sammo:map:base:${ctx.profile.id}:${ctx.profile.scenario}`;
 
-const loadBaseMap = async (
-    ctx: GameApiContext,
-    useCache: boolean
-): Promise<BaseMapResult | null> => {
+const loadBaseMap = async (ctx: GameApiContext, useCache: boolean): Promise<BaseMapResult | null> => {
     const cacheKey = buildBaseMapCacheKey(ctx);
     if (useCache) {
         const cached = await ctx.redis.get(cacheKey);
@@ -143,14 +139,7 @@ const loadBaseMap = async (
         const meta = asRecord(row.meta);
         const state = readState(meta);
         const supplyFlag = row.supplyState > 0 ? 1 : 0;
-        return [
-            row.id,
-            row.level,
-            state,
-            row.nationId,
-            row.region,
-            supplyFlag,
-        ];
+        return [row.id, row.level, state, row.nationId, row.region, supplyFlag];
     });
 
     const nationList: MapNationCompact[] = nationRows.map((row) => [
@@ -225,9 +214,7 @@ export const loadWorldMap = async (
             FROM general
             WHERE nation_id = ${myNation}
         `;
-        shownByGeneralList = generalCities
-            .map((row) => row.cityId)
-            .filter((id) => Number.isFinite(id));
+        shownByGeneralList = generalCities.map((row) => row.cityId).filter((id) => Number.isFinite(id));
     }
 
     return {

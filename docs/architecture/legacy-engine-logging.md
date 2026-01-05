@@ -9,9 +9,9 @@ and `legacy/hwe/sammo/VersionGitDynamic.php`.
 `ActionLogger` aggregates logs for a general, nation, and global context:
 
 - Buffers multiple log channels:
-  - General history/action/battle logs
-  - National history logs
-  - Global history/action logs
+    - General history/action/battle logs
+    - National history logs
+    - Global history/action logs
 - Supports formatted prefixes (`PLAIN`, `YEAR_MONTH`, `NOTICE`, etc.).
 - `flush()` emits buffered logs via helper functions
   (`pushGeneralHistoryLog`, `pushGlobalHistoryLog`, etc.).

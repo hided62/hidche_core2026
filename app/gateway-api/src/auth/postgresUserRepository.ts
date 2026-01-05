@@ -1,13 +1,7 @@
 import { GatewayPrisma, type GatewayPrismaClient } from '@sammo-ts/infra';
 
 import { createSimplePasswordHasher, type PasswordHasher } from './passwordHasher.js';
-import type {
-    CreateUserInput,
-    UserOAuthInfo,
-    UserRecord,
-    UserRepository,
-    UserSanctions,
-} from './userRepository.js';
+import type { CreateUserInput, UserOAuthInfo, UserRecord, UserRepository, UserSanctions } from './userRepository.js';
 
 const readStringArray = (value: unknown): string[] => {
     if (!Array.isArray(value)) {

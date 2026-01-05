@@ -43,11 +43,12 @@ const buildContext = (options?: {
         },
     };
     return {
-        db,
+        db: db as any,
         turnDaemon: transport,
         battleSim,
         profile,
         auth: null,
+        redis: {} as any,
     };
 };
 
@@ -65,6 +66,7 @@ describe('appRouter', () => {
 
     it('returns world state snapshots', async () => {
         const state: WorldStateRow = {
+            id: 1,
             scenarioCode: 'default',
             currentYear: 1,
             currentMonth: 2,

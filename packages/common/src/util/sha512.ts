@@ -10,24 +10,19 @@ type NodeHash = {
 
 type NodeCreateHash = (algorithm: 'sha512') => NodeHash;
 
-const isNode = typeof process !== 'undefined'
-    && typeof process.versions?.node === 'string';
+const isNode = typeof process !== 'undefined' && typeof process.versions?.node === 'string';
 
 const nodeCryptoSpecifier = 'node:crypto';
 
 let nodeCreateHash: NodeCreateHash | null = null;
 
 if (isNode) {
-    const nodeCrypto = await import(nodeCryptoSpecifier) as typeof import('node:crypto');
+    const nodeCrypto = (await import(nodeCryptoSpecifier)) as typeof import('node:crypto');
     nodeCreateHash = nodeCrypto.createHash as NodeCreateHash;
 }
 
 function normalizeUint8Array(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
-    if (
-        bytes.buffer instanceof ArrayBuffer
-        && bytes.byteOffset === 0
-        && bytes.byteLength === bytes.buffer.byteLength
-    ) {
+    if (bytes.buffer instanceof ArrayBuffer && bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength) {
         return bytes as Uint8Array<ArrayBuffer>;
     }
     const out = new Uint8Array(bytes.byteLength);

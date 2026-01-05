@@ -55,6 +55,7 @@ const buildCity = (id: number, nationId: number): City => ({
     name: `City${id}`,
     nationId,
     level: 2,
+    state: 0,
     population: 10000,
     populationMax: 10000,
     agriculture: 1000,
@@ -204,7 +205,7 @@ describe('che_출병', () => {
                 seedBase: 'test-seed',
                 warConfig,
                 aftermathConfig,
-            },
+            } as any,
             {
                 now: new Date('2000-01-01T00:00:00Z'),
                 schedule,
@@ -215,12 +216,8 @@ describe('che_출병', () => {
         );
 
         expect(resolution.logs.length).toBeGreaterThan(0);
-        expect(resolution.patches?.generals.some((patch) => patch.id === defender.id)).toBe(
-            true
-        );
-        expect(resolution.patches?.cities.some((patch) => patch.id === defenderCity.id)).toBe(
-            true
-        );
+        expect(resolution.patches?.generals.some((patch) => patch.id === defender.id)).toBe(true);
+        expect(resolution.patches?.cities.some((patch) => patch.id === defenderCity.id)).toBe(true);
         expect(
             resolution.effects.some(
                 (effect) =>

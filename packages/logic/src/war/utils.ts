@@ -1,76 +1,33 @@
 import type { TriggerValue } from '@sammo-ts/logic/domain/entities.js';
 
 const DEX_LEVEL_THRESHOLDS = [
-    0,
-    350,
-    1375,
-    3500,
-    7125,
-    12650,
-    20475,
-    31000,
-    44625,
-    61750,
-    82775,
-    108100,
-    138125,
-    173250,
-    213875,
-    260400,
-    313225,
-    372750,
-    439375,
-    513500,
-    595525,
-    685850,
-    784875,
-    893000,
-    1010625,
-    1138150,
-    1275975,
+    0, 350, 1375, 3500, 7125, 12650, 20475, 31000, 44625, 61750, 82775, 108100, 138125, 173250, 213875, 260400, 313225,
+    372750, 439375, 513500, 595525, 685850, 784875, 893000, 1010625, 1138150, 1275975,
 ];
 
-export const clamp = (value: number, min: number, max: number): number =>
-    Math.max(min, Math.min(value, max));
+export const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(value, max));
 
-export const clampMin = (value: number, min: number): number =>
-    value < min ? min : value;
+export const clampMin = (value: number, min: number): number => (value < min ? min : value);
 
-export const clampMax = (value: number, max: number): number =>
-    value > max ? max : value;
+export const clampMax = (value: number, max: number): number => (value > max ? max : value);
 
 export const round = (value: number): number => Math.round(value);
 
-export const getMetaNumber = (
-    meta: Record<string, TriggerValue>,
-    key: string,
-    fallback = 0
-): number => {
+export const getMetaNumber = (meta: Record<string, TriggerValue>, key: string, fallback = 0): number => {
     const value = meta[key];
     return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 };
 
-export const getMetaString = (
-    meta: Record<string, TriggerValue>,
-    key: string
-): string | null => {
+export const getMetaString = (meta: Record<string, TriggerValue>, key: string): string | null => {
     const value = meta[key];
     return typeof value === 'string' ? value : null;
 };
 
-export const setMetaNumber = (
-    meta: Record<string, TriggerValue>,
-    key: string,
-    value: number
-): void => {
+export const setMetaNumber = (meta: Record<string, TriggerValue>, key: string, value: number): void => {
     meta[key] = round(value);
 };
 
-export const increaseMetaNumber = (
-    meta: Record<string, TriggerValue>,
-    key: string,
-    delta: number
-): number => {
+export const increaseMetaNumber = (meta: Record<string, TriggerValue>, key: string, delta: number): number => {
     const next = getMetaNumber(meta, key) + delta;
     meta[key] = round(next);
     return next;
@@ -92,12 +49,9 @@ export const getDexLevel = (dex: number): number => {
     return level;
 };
 
-export const getDexLog = (dex1: number, dex2: number): number =>
-    (getDexLevel(dex1) - getDexLevel(dex2)) / 55 + 1;
+export const getDexLog = (dex1: number, dex2: number): number => (getDexLevel(dex1) - getDexLevel(dex2)) / 55 + 1;
 
-export const parseConflict = (
-    raw: TriggerValue | undefined
-): Record<number, number> | null => {
+export const parseConflict = (raw: TriggerValue | undefined): Record<number, number> | null => {
     if (raw === undefined || raw === null) {
         return null;
     }
@@ -120,9 +74,7 @@ export const parseConflict = (
     return null;
 };
 
-export const stringifyConflict = (
-    conflict: Record<number, number> | null
-): string => {
+export const stringifyConflict = (conflict: Record<number, number> | null): string => {
     if (!conflict) {
         return '{}';
     }
@@ -139,9 +91,7 @@ export const stringifyConflict = (
     return JSON.stringify(ordered);
 };
 
-export const sortConflict = (
-    conflict: Record<number, number>
-): Record<number, number> => {
+export const sortConflict = (conflict: Record<number, number>): Record<number, number> => {
     const ordered: Record<number, number> = {};
     const entries = Object.entries(conflict)
         .map(([key, value]) => [Number(key), value] as const)

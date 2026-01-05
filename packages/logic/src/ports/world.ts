@@ -1,13 +1,6 @@
 // 도메인 로직이 DB에 직접 접근하지 않도록 하는 인터페이스.
 
-import type {
-    City,
-    CityId,
-    General,
-    GeneralId,
-    Nation,
-    NationId,
-} from '@sammo-ts/logic/domain/entities.js';
+import type { City, CityId, General, GeneralId, Nation, NationId } from '@sammo-ts/logic/domain/entities.js';
 
 export interface GeneralRepository<GeneralType extends General = General> {
     getById(id: GeneralId): Promise<GeneralType | null>;
@@ -30,7 +23,7 @@ export interface NationRepository<NationType extends Nation = Nation> {
 export interface WorldStateReader<
     GeneralType extends General = General,
     CityType extends City = City,
-    NationType extends Nation = Nation
+    NationType extends Nation = Nation,
 > {
     getGeneralById(id: GeneralId): Promise<GeneralType | null>;
     getCityById(id: CityId): Promise<CityType | null>;
@@ -40,7 +33,7 @@ export interface WorldStateReader<
 export interface WorldStateWriter<
     GeneralType extends General = General,
     CityType extends City = City,
-    NationType extends Nation = Nation
+    NationType extends Nation = Nation,
 > {
     saveGeneral(general: GeneralType): Promise<void>;
     saveCity(city: CityType): Promise<void>;
@@ -50,6 +43,6 @@ export interface WorldStateWriter<
 export interface WorldStateRepository<
     GeneralType extends General = General,
     CityType extends City = City,
-    NationType extends Nation = Nation
-> extends WorldStateReader<GeneralType, CityType, NationType>,
-        WorldStateWriter<GeneralType, CityType, NationType> {}
+    NationType extends Nation = Nation,
+>
+    extends WorldStateReader<GeneralType, CityType, NationType>, WorldStateWriter<GeneralType, CityType, NationType> {}

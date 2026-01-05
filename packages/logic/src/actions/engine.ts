@@ -11,55 +11,42 @@ import type {
 } from '@sammo-ts/logic/domain/entities.js';
 import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
 import { getNextTurnAt, type TurnSchedule } from '@sammo-ts/logic/turn/calendar.js';
-import {
-    LogCategory,
-    type LogEntryDraft,
-    LogFormat,
-    LogScope,
-} from '@sammo-ts/logic/logging/types.js';
+import { LogCategory, type LogEntryDraft, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 
 enablePatches();
 
-export interface WorldState<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+export interface WorldState<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     general: General<TriggerState>;
     city?: City;
     nation?: Nation | null;
 }
 
 export interface GeneralActionResolveContext<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > extends GeneralActionContext<TriggerState> {
     rng: RandomGenerator;
     city?: City;
     nation?: Nation | null;
-    addLog(
-        message: string,
-        options?: Partial<Omit<LogEntryDraft, 'text'>>
-    ): void;
+    addLog(message: string, options?: Partial<Omit<LogEntryDraft, 'text'>>): void;
 }
 
-export type GeneralActionResolveInputContext<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> = Omit<GeneralActionResolveContext<TriggerState>, 'addLog'>;
+export type GeneralActionResolveInputContext<TriggerState extends GeneralTriggerState = GeneralTriggerState> = Omit<
+    GeneralActionResolveContext<TriggerState>,
+    'addLog'
+>;
 
 export interface TurnScheduleContext {
     now: Date;
     schedule: TurnSchedule;
 }
 
-export interface GeneralPatchEffect<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+export interface GeneralPatchEffect<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     type: 'general:patch';
     patch: Partial<General<TriggerState>>;
     targetId?: GeneralId;
 }
 
-export interface GeneralAddEffect<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+export interface GeneralAddEffect<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     type: 'general:add';
     general: General<TriggerState>;
 }
@@ -99,9 +86,7 @@ export interface NextTurnOverrideEffect {
     nextTurnAt: Date;
 }
 
-export type GeneralActionEffect<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> =
+export type GeneralActionEffect<TriggerState extends GeneralTriggerState = GeneralTriggerState> =
     | GeneralPatchEffect<TriggerState>
     | GeneralAddEffect<TriggerState>
     | CityPatchEffect
@@ -110,21 +95,13 @@ export type GeneralActionEffect<
     | LogEffect
     | NextTurnOverrideEffect;
 
-export interface GeneralActionOutcome<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+export interface GeneralActionOutcome<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     effects: GeneralActionEffect<TriggerState>[];
 }
 
-export interface GeneralActionResolver<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState,
-    Args = unknown
-> {
+export interface GeneralActionResolver<TriggerState extends GeneralTriggerState = GeneralTriggerState, Args = unknown> {
     key: string;
-    resolve(
-        context: GeneralActionResolveContext<TriggerState>,
-        args: Args
-    ): GeneralActionOutcome<TriggerState>;
+    resolve(context: GeneralActionResolveContext<TriggerState>, args: Args): GeneralActionOutcome<TriggerState>;
 }
 
 export interface GeneralActionResolution {
@@ -152,9 +129,7 @@ export interface GeneralActionResolution {
     };
 }
 
-export const createGeneralPatchEffect = <
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
->(
+export const createGeneralPatchEffect = <TriggerState extends GeneralTriggerState = GeneralTriggerState>(
     patch: Partial<General<TriggerState>>,
     targetId?: GeneralId
 ): GeneralPatchEffect<TriggerState> => ({
@@ -163,28 +138,20 @@ export const createGeneralPatchEffect = <
     ...(targetId !== undefined ? { targetId } : {}),
 });
 
-export const createGeneralAddEffect = <
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
->(
+export const createGeneralAddEffect = <TriggerState extends GeneralTriggerState = GeneralTriggerState>(
     general: General<TriggerState>
 ): GeneralAddEffect<TriggerState> => ({
     type: 'general:add',
     general,
 });
 
-export const createCityPatchEffect = (
-    patch: Partial<City>,
-    targetId?: CityId
-): CityPatchEffect => ({
+export const createCityPatchEffect = (patch: Partial<City>, targetId?: CityId): CityPatchEffect => ({
     type: 'city:patch',
     patch,
     ...(targetId !== undefined ? { targetId } : {}),
 });
 
-export const createNationPatchEffect = (
-    patch: Partial<Nation>,
-    targetId?: NationId
-): NationPatchEffect => ({
+export const createNationPatchEffect = (patch: Partial<Nation>, targetId?: NationId): NationPatchEffect => ({
     type: 'nation:patch',
     patch,
     ...(targetId !== undefined ? { targetId } : {}),
@@ -201,21 +168,14 @@ export const createDiplomacyPatchEffect = (
     patch,
 });
 
-export const createLogEffect = (
-    message: string,
-    options: Partial<Omit<LogEntryDraft, 'text'>> = {}
-): LogEffect => ({
+export const createLogEffect = (message: string, options: Partial<Omit<LogEntryDraft, 'text'>> = {}): LogEffect => ({
     type: 'log',
     entry: {
         scope: options.scope ?? LogScope.GENERAL,
         category: options.category ?? LogCategory.ACTION,
         text: message,
-        ...(options.generalId !== undefined
-            ? { generalId: options.generalId }
-            : {}),
-        ...(options.nationId !== undefined
-            ? { nationId: options.nationId }
-            : {}),
+        ...(options.generalId !== undefined ? { generalId: options.generalId } : {}),
+        ...(options.nationId !== undefined ? { nationId: options.nationId } : {}),
         ...(options.userId !== undefined ? { userId: options.userId } : {}),
         ...(options.subType !== undefined ? { subType: options.subType } : {}),
         ...(options.meta !== undefined ? { meta: options.meta } : {}),
@@ -223,18 +183,13 @@ export const createLogEffect = (
     },
 });
 
-export const createNextTurnOverrideEffect = (
-    nextTurnAt: Date
-): NextTurnOverrideEffect => ({
+export const createNextTurnOverrideEffect = (nextTurnAt: Date): NextTurnOverrideEffect => ({
     type: 'schedule:override',
     nextTurnAt,
 });
 
 // 행동 결과를 Effect로 모아 상태/턴 계산을 수행한다.
-export const resolveGeneralAction = <
-    TriggerState extends GeneralTriggerState = GeneralTriggerState,
-    Args = unknown
->(
+export const resolveGeneralAction = <TriggerState extends GeneralTriggerState = GeneralTriggerState, Args = unknown>(
     resolver: GeneralActionResolver<TriggerState, Args>,
     context: GeneralActionResolveInputContext<TriggerState>,
     scheduleContext: TurnScheduleContext,
@@ -257,10 +212,7 @@ export const resolveGeneralAction = <
             nation: context.nation,
         } as WorldState<TriggerState>,
         (draft) => {
-            const addLog = (
-                message: string,
-                options: Partial<Omit<LogEntryDraft, 'text'>> = {}
-            ) => {
+            const addLog = (message: string, options: Partial<Omit<LogEntryDraft, 'text'>> = {}) => {
                 const entry: LogEntryDraft = {
                     scope: options.scope ?? LogScope.GENERAL,
                     category: options.category ?? LogCategory.ACTION,
@@ -363,9 +315,7 @@ export const resolveGeneralAction = <
         }
     );
 
-    const nextTurnAt =
-        nextTurnAtOverride ??
-        getNextTurnAt(scheduleContext.now, scheduleContext.schedule);
+    const nextTurnAt = nextTurnAtOverride ?? getNextTurnAt(scheduleContext.now, scheduleContext.schedule);
 
     const dirty: NonNullable<GeneralActionResolution['dirty']> = {
         general: false,
@@ -396,11 +346,7 @@ export const resolveGeneralAction = <
     if (dirty.general || dirty.city || dirty.nation) {
         resolution.dirty = dirty;
     }
-    if (
-        patches.generals.length > 0 ||
-        patches.cities.length > 0 ||
-        patches.nations.length > 0
-    ) {
+    if (patches.generals.length > 0 || patches.cities.length > 0 || patches.nations.length > 0) {
         resolution.patches = patches;
     }
     if (createdGenerals.length > 0) {

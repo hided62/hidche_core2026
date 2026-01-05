@@ -69,9 +69,7 @@ export class GeneralActionPipeline<TriggerState extends GeneralTriggerState = Ge
         this.modules = modules.filter(Boolean) as GeneralActionModule<TriggerState>[];
     }
 
-    getPreTurnExecuteTriggerList(
-        context: GeneralActionContext<TriggerState>
-    ): GeneralTriggerCaller<TriggerState> {
+    getPreTurnExecuteTriggerList(context: GeneralActionContext<TriggerState>): GeneralTriggerCaller<TriggerState> {
         const triggerCaller = new GeneralTriggerCaller<TriggerState>();
 
         for (const module of this.modules) {

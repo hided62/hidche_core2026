@@ -1,13 +1,9 @@
 import type { WarTriggerModule, WarTriggerModuleExport } from './types.js';
 import type { WarTriggerRegistry } from '@sammo-ts/logic/war/triggers.js';
 
-export const WAR_TRIGGER_KEYS = [
-    'che_필살',
-    'che_의술',
-] as const;
+export const WAR_TRIGGER_KEYS = ['che_필살', 'che_의술'] as const;
 
-export type WarTriggerKey =
-    (typeof WAR_TRIGGER_KEYS)[number];
+export type WarTriggerKey = (typeof WAR_TRIGGER_KEYS)[number];
 
 export type WarTriggerImporter = () => Promise<WarTriggerModuleExport>;
 
@@ -22,9 +18,7 @@ export const isWarTriggerKey = (value: string): value is WarTriggerKey =>
 export class WarTriggerLoader {
     private readonly cache = new Map<WarTriggerKey, Promise<WarTriggerModule>>();
 
-    constructor(
-        private readonly importers: Record<WarTriggerKey, WarTriggerImporter> = defaultImporters
-    ) {}
+    constructor(private readonly importers: Record<WarTriggerKey, WarTriggerImporter> = defaultImporters) {}
 
     async load(key: WarTriggerKey): Promise<WarTriggerModule> {
         const cached = this.cache.get(key);
@@ -41,9 +35,7 @@ export class WarTriggerLoader {
             }
             const resolved = module.triggerModule;
             if (resolved.key !== key) {
-                throw new Error(
-                    `War trigger key mismatch: expected ${key}, got ${resolved.key}`
-                );
+                throw new Error(`War trigger key mismatch: expected ${key}, got ${resolved.key}`);
             }
             return resolved;
         });
@@ -68,9 +60,7 @@ export const loadWarTriggerModules = async (
     return modules;
 };
 
-export const createWarTriggerRegistry = (
-    modules: WarTriggerModule[]
-): WarTriggerRegistry => {
+export const createWarTriggerRegistry = (modules: WarTriggerModule[]): WarTriggerRegistry => {
     const registry: WarTriggerRegistry = {};
     for (const module of modules) {
         registry[module.key] = (unit) => module.createTriggerList(unit);

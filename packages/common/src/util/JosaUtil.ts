@@ -1,12 +1,4 @@
-export type JosaKey =
-    | '은'
-    | '이'
-    | '과'
-    | '이나'
-    | '을'
-    | '으로'
-    | '이라'
-    | '이랑';
+export type JosaKey = '은' | '이' | '과' | '이나' | '을' | '으로' | '이라' | '이랑';
 
 const DEFAULT_POSTPOSITION: Record<JosaKey, string> = {
     은: '는',
@@ -40,10 +32,7 @@ const KO_FINISH_CODE = 0xd7a3;
 const JONGSUNG_RIEUL = 8;
 
 const getLastChar = (text: string): string => {
-    const cleaned = text
-        .replace(REG_INVALID_CHAR, ' ')
-        .replace(REG_TARGET_CHAR, '$1')
-        .trim();
+    const cleaned = text.replace(REG_INVALID_CHAR, ' ').replace(REG_TARGET_CHAR, '$1').trim();
     if (!cleaned) {
         return '';
     }
@@ -51,9 +40,7 @@ const getLastChar = (text: string): string => {
     return chars[chars.length - 1] ?? '';
 };
 
-const getDigitJongsung = (
-    digit: number
-): { has: boolean; rieul: boolean } => {
+const getDigitJongsung = (digit: number): { has: boolean; rieul: boolean } => {
     switch (digit) {
         case 0:
         case 3:
@@ -121,9 +108,7 @@ export class JosaUtil {
         }
 
         const isRo = withJongsung === '으로';
-        return hasJongsung(normalizedText, isRo)
-            ? withJongsung
-            : withoutJongsung;
+        return hasJongsung(normalizedText, isRo) ? withJongsung : withoutJongsung;
     }
 
     static put(text: string, wJongsung: string, woJongsung = ''): string {

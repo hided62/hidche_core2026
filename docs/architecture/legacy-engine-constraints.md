@@ -21,8 +21,8 @@ Constraints declare required inputs using bit flags:
 - `REQ_GENERAL`, `REQ_CITY`, `REQ_NATION`
 - `REQ_DEST_GENERAL`, `REQ_DEST_CITY`, `REQ_DEST_NATION`
 - `REQ_ARG` with typed sub-flags:
-  - `REQ_STRING_ARG`, `REQ_INT_ARG`, `REQ_NUMERIC_ARG`, `REQ_BOOLEAN_ARG`,
-    `REQ_ARRAY_ARG`, `REQ_BACKED_ENUM_ARG`
+    - `REQ_STRING_ARG`, `REQ_INT_ARG`, `REQ_NUMERIC_ARG`, `REQ_BOOLEAN_ARG`,
+      `REQ_ARRAY_ARG`, `REQ_BACKED_ENUM_ARG`
 
 `Constraint::checkInputValues()` enforces these expectations and throws if
 inputs are missing or malformed.
@@ -50,7 +50,6 @@ Constraints are organized by domain:
 - **Routing**: `HasRoute`, `HasRouteWithEnemy`.
 
 Each constraint sets a failure reason string used by UI and logs.
-
 
 ## Rewrite References
 

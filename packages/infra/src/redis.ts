@@ -12,9 +12,7 @@ export interface RedisConnector {
     disconnect(): Promise<void>;
 }
 
-export const resolveRedisConfigFromEnv = (
-    env: NodeJS.ProcessEnv = process.env
-): RedisConfig => {
+export const resolveRedisConfigFromEnv = (env: NodeJS.ProcessEnv = process.env): RedisConfig => {
     const url = env.REDIS_URL ?? '';
     if (!url) {
         throw new Error('REDIS_URL is required to create a Redis client.');

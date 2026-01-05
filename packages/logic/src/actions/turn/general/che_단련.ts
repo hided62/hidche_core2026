@@ -1,26 +1,10 @@
-import type {
-    GeneralTriggerState,
-} from '@sammo-ts/logic/domain/entities.js';
-import type {
-    Constraint,
-    ConstraintContext,
-    StateView,
-} from '@sammo-ts/logic/constraints/types.js';
-import {
-    notBeNeutral,
-    reqGeneralCrew,
-    reqGeneralGold,
-    reqGeneralRice,
-} from '@sammo-ts/logic/constraints/presets.js';
+import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
+import type { Constraint, ConstraintContext, StateView } from '@sammo-ts/logic/constraints/types.js';
+import { notBeNeutral, reqGeneralCrew, reqGeneralGold, reqGeneralRice } from '@sammo-ts/logic/constraints/presets.js';
 import { allow, unknownOrDeny, readGeneral } from '@sammo-ts/logic/constraints/helpers.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
-import type {
-    GeneralActionOutcome,
-    GeneralActionResolveContext,
-} from '@sammo-ts/logic/actions/engine.js';
-import type {
-    ActionContextBuilder,
-} from '@sammo-ts/logic/actions/turn/actionContext.js';
+import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
+import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import type { UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
@@ -30,7 +14,7 @@ import { getMetaNumber, setMetaNumber, increaseMetaNumber } from '@sammo-ts/logi
 export interface DrillArgs {}
 
 export interface DrillContext<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > extends GeneralActionResolveContext<TriggerState> {
     unitSet?: UnitSetDefinition | null;
 }
@@ -45,16 +29,10 @@ type DrillPick = 'success' | 'normal' | 'fail';
 
 const ACTION_NAME = '단련';
 
-const resolveArmTypeName = (
-    unitSet: UnitSetDefinition,
-    armType: number
-): string =>
+const resolveArmTypeName = (unitSet: UnitSetDefinition, armType: number): string =>
     unitSet.armTypes?.[String(armType)] ?? `병종${armType}`;
 
-const pickByWeight = <T extends string>(
-    rng: DrillContext['rng'],
-    weights: Record<T, number>
-): T => {
+const pickByWeight = <T extends string>(rng: DrillContext['rng'], weights: Record<T, number>): T => {
     const entries = Object.entries(weights) as Array<[T, number]>;
     const first = entries[0];
     if (!first) {
@@ -83,11 +61,7 @@ const pickByWeight = <T extends string>(
     return last ? last[0] : first[0];
 };
 
-const reqGeneralStat = (
-    key: 'train' | 'atmos',
-    label: string,
-    minValue: number
-): Constraint => ({
+const reqGeneralStat = (key: 'train' | 'atmos', label: string, minValue: number): Constraint => ({
     name: `ReqGeneral${label}`,
     requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
     test: (ctx, view) => {
@@ -105,12 +79,8 @@ const reqGeneralStat = (
 });
 
 export class ActionDefinition<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> implements GeneralActionDefinition<
-    TriggerState,
-    DrillArgs,
-    DrillContext<TriggerState>
-> {
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
+> implements GeneralActionDefinition<TriggerState, DrillArgs, DrillContext<TriggerState>> {
     public readonly key = 'che_단련';
     public readonly name = ACTION_NAME;
     private readonly env: DrillEnvironment;
@@ -124,16 +94,11 @@ export class ActionDefinition<
         return {};
     }
 
-    buildConstraints(
-        _ctx: ConstraintContext,
-        _args: DrillArgs
-    ): Constraint[] {
+    buildConstraints(_ctx: ConstraintContext, _args: DrillArgs): Constraint[] {
         const trainLow = this.env.defaultTrainLow ?? 40;
         const atmosLow = this.env.defaultAtmosLow ?? 40;
-        const getRequiredGold = (_context: ConstraintContext, _view: StateView): number =>
-            this.env.develCost ?? 0;
-        const getRequiredRice = (_context: ConstraintContext, _view: StateView): number =>
-            this.env.develCost ?? 0;
+        const getRequiredGold = (_context: ConstraintContext, _view: StateView): number => this.env.develCost ?? 0;
+        const getRequiredRice = (_context: ConstraintContext, _view: StateView): number => this.env.develCost ?? 0;
         return [
             notBeNeutral(),
             reqGeneralCrew(),
@@ -144,19 +109,14 @@ export class ActionDefinition<
         ];
     }
 
-    resolve(
-        context: DrillContext<TriggerState>,
-        _args: DrillArgs
-    ): GeneralActionOutcome<TriggerState> {
+    resolve(context: DrillContext<TriggerState>, _args: DrillArgs): GeneralActionOutcome<TriggerState> {
         if (!context.unitSet) {
             context.addLog('병종 정보를 확인할 수 없어 단련을 진행할 수 없습니다.');
             return { effects: [] };
         }
 
         const general = context.general;
-        const crewType = context.unitSet.crewTypes?.find(
-            (entry) => entry.id === general.crewTypeId
-        );
+        const crewType = context.unitSet.crewTypes?.find((entry) => entry.id === general.crewTypeId);
         if (!crewType) {
             context.addLog('병종 정보를 확인할 수 없어 단련을 진행할 수 없습니다.');
             return { effects: [] };
@@ -169,20 +129,10 @@ export class ActionDefinition<
         });
         const multiplier = pick === 'success' ? 3 : pick === 'normal' ? 2 : 1;
 
-        const baseScore = Math.round(
-            (general.crew * general.train * general.atmos) / 20 / 10000
-        );
+        const baseScore = Math.round((general.crew * general.train * general.atmos) / 20 / 10000);
         const score = baseScore * multiplier;
-        const armTypeName = resolveArmTypeName(
-            context.unitSet,
-            crewType.armType
-        );
-        const logPrefix =
-            pick === 'success'
-                ? '단련이 일취월장하여'
-                : pick === 'fail'
-                    ? '단련이 지지부진하여'
-                    : '';
+        const armTypeName = resolveArmTypeName(context.unitSet, crewType.armType);
+        const logPrefix = pick === 'success' ? '단련이 일취월장하여' : pick === 'fail' ? '단련이 지지부진하여' : '';
         const logText = logPrefix
             ? `${logPrefix} ${armTypeName} 숙련도가 ${score} 향상되었습니다.`
             : `${armTypeName} 숙련도가 ${score} 향상되었습니다.`;

@@ -4,24 +4,24 @@ import LobbyView from '../views/LobbyView.vue';
 import AdminView from '../views/AdminView.vue';
 
 const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL),
-  routes: [
-    {
-      path: '/',
-      name: 'home',
-      component: HomeView,
-    },
-    {
-      path: '/lobby',
-      name: 'lobby',
-      component: LobbyView,
-    },
-    {
-      path: '/admin',
-      name: 'admin',
-      component: AdminView,
-    },
-  ],
+    history: createWebHistory(import.meta.env.BASE_URL),
+    routes: [
+        {
+            path: '/',
+            name: 'home',
+            component: HomeView,
+        },
+        {
+            path: '/lobby',
+            name: 'lobby',
+            component: LobbyView,
+        },
+        {
+            path: '/admin',
+            name: 'admin',
+            component: AdminView,
+        },
+    ],
 });
 
 export default router;

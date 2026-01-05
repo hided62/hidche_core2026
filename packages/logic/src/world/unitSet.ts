@@ -1,10 +1,5 @@
 import type { City, General, Nation } from '@sammo-ts/logic/domain/entities.js';
-import type {
-    CrewTypeDefinition,
-    CrewTypeRequirement,
-    MapDefinition,
-    UnitSetDefinition,
-} from './types.js';
+import type { CrewTypeDefinition, CrewTypeRequirement, MapDefinition, UnitSetDefinition } from './types.js';
 
 const DEFAULT_REGION_MAP: Record<string, number> = {
     하북: 1,
@@ -22,19 +17,15 @@ const DEFAULT_MAX_TECH_LEVEL = 12;
 const isRecord = (value: unknown): value is Record<string, unknown> =>
     value !== null && typeof value === 'object' && !Array.isArray(value);
 
-const asRecord = (value: unknown): Record<string, unknown> =>
-    isRecord(value) ? value : {};
+const asRecord = (value: unknown): Record<string, unknown> => (isRecord(value) ? value : {});
 
 const asNumber = (value: unknown, fallback: number): number =>
     typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 
-const asString = (value: unknown, fallback: string): string =>
-    typeof value === 'string' ? value : fallback;
+const asString = (value: unknown, fallback: string): string => (typeof value === 'string' ? value : fallback);
 
 const asStringArray = (value: unknown): string[] =>
-    Array.isArray(value)
-        ? value.filter((item): item is string => typeof item === 'string')
-        : [];
+    Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 
 const asNullableStringArray = (value: unknown): string[] | null => {
     if (value === null || value === undefined) {
@@ -88,11 +79,7 @@ const parseRequirement = (value: unknown): CrewTypeRequirement | null => {
                 type,
                 key: asString(value.key, ''),
                 op: asString(value.op, '=='),
-                value:
-                    typeof value.value === 'number' ||
-                    typeof value.value === 'string'
-                        ? value.value
-                        : 0,
+                value: typeof value.value === 'number' || typeof value.value === 'string' ? value.value : 0,
             };
         case 'ReqMinRelYear':
             return { type, year: asNumber(value.year, 0) };
@@ -114,9 +101,7 @@ const parseCrewType = (value: unknown): CrewTypeDefinition | null => {
         return null;
     }
     const requirements = Array.isArray(value.requirements)
-        ? value.requirements
-              .map(parseRequirement)
-              .filter((entry): entry is CrewTypeRequirement => entry !== null)
+        ? value.requirements.map(parseRequirement).filter((entry): entry is CrewTypeRequirement => entry !== null)
         : [];
 
     return {
@@ -149,20 +134,15 @@ export const parseUnitSetDefinition = (value: unknown): UnitSetDefinition => {
             ? data.defaultCrewTypeId
             : null;
     const armTypes = isRecord(data.armTypes)
-        ? Object.entries(data.armTypes).reduce<Record<string, string>>(
-              (acc, [key, entry]) => {
-                  if (typeof entry === 'string') {
-                      acc[key] = entry;
-                  }
-                  return acc;
-              },
-              {}
-          )
+        ? Object.entries(data.armTypes).reduce<Record<string, string>>((acc, [key, entry]) => {
+              if (typeof entry === 'string') {
+                  acc[key] = entry;
+              }
+              return acc;
+          }, {})
         : undefined;
     const crewTypes = Array.isArray(data.crewTypes)
-        ? data.crewTypes
-              .map(parseCrewType)
-              .filter((entry): entry is CrewTypeDefinition => entry !== null)
+        ? data.crewTypes.map(parseCrewType).filter((entry): entry is CrewTypeDefinition => entry !== null)
         : [];
 
     const result: UnitSetDefinition = {
@@ -182,9 +162,7 @@ export const parseUnitSetDefinition = (value: unknown): UnitSetDefinition => {
     return result;
 };
 
-export const buildCrewTypeIndex = (
-    unitSet: UnitSetDefinition | null | undefined
-): Map<number, CrewTypeDefinition> => {
+export const buildCrewTypeIndex = (unitSet: UnitSetDefinition | null | undefined): Map<number, CrewTypeDefinition> => {
     const index = new Map<number, CrewTypeDefinition>();
     for (const crewType of unitSet?.crewTypes ?? []) {
         index.set(crewType.id, crewType);
@@ -202,10 +180,7 @@ export const findCrewTypeById = (
     return unitSet.crewTypes.find((crewType) => crewType.id === crewTypeId) ?? null;
 };
 
-export const getTechLevel = (
-    tech: number,
-    maxLevel = DEFAULT_MAX_TECH_LEVEL
-): number => {
+export const getTechLevel = (tech: number, maxLevel = DEFAULT_MAX_TECH_LEVEL): number => {
     if (!Number.isFinite(tech)) {
         return 0;
     }
@@ -263,7 +238,9 @@ const resolveRegionMap = (map: MapDefinition): Record<string, number> => {
     return Object.keys(extracted).length > 0 ? extracted : DEFAULT_REGION_MAP;
 };
 
-const buildCityIndex = (map: MapDefinition): {
+const buildCityIndex = (
+    map: MapDefinition
+): {
     nameToId: Map<string, number>;
     regionById: Map<number, number>;
 } => {
@@ -276,23 +253,10 @@ const buildCityIndex = (map: MapDefinition): {
     return { nameToId, regionById };
 };
 
-const compareAuxValue = (
-    actual: unknown,
-    op: string,
-    expected: number | string
-): boolean => {
-    const actualNum =
-        typeof actual === 'number'
-            ? actual
-            : typeof actual === 'string'
-                ? Number(actual)
-                : Number.NaN;
+const compareAuxValue = (actual: unknown, op: string, expected: number | string): boolean => {
+    const actualNum = typeof actual === 'number' ? actual : typeof actual === 'string' ? Number(actual) : Number.NaN;
     const expectedNum =
-        typeof expected === 'number'
-            ? expected
-            : typeof expected === 'string'
-                ? Number(expected)
-                : Number.NaN;
+        typeof expected === 'number' ? expected : typeof expected === 'string' ? Number(expected) : Number.NaN;
 
     if (!Number.isNaN(actualNum) && !Number.isNaN(expectedNum)) {
         switch (op) {
@@ -314,9 +278,7 @@ const compareAuxValue = (
     }
 
     if (op === '!=' || op === '==') {
-        return op === '!='
-            ? String(actual ?? '') !== String(expected)
-            : String(actual ?? '') === String(expected);
+        return op === '!=' ? String(actual ?? '') !== String(expected) : String(actual ?? '') === String(expected);
     }
     return false;
 };
@@ -333,10 +295,7 @@ export const isCrewTypeAvailable = (
     }
 
     const nationId = context.nation?.id ?? context.general.nationId;
-    const ownedCities =
-        nationId !== undefined
-            ? context.cities.filter((city) => city.nationId === nationId)
-            : [];
+    const ownedCities = nationId !== undefined ? context.cities.filter((city) => city.nationId === nationId) : [];
     const ownedCityMap = new Map<number, City>();
     for (const city of ownedCities) {
         ownedCityMap.set(city.id, city);
@@ -359,19 +318,12 @@ export const isCrewTypeAvailable = (
     for (const requirement of crewType.requirements) {
         switch (requirement.type) {
             case 'ReqTech':
-                if (
-                    tech <
-                    (requirement as Extract<CrewTypeRequirement, { type: 'ReqTech' }>).tech
-                ) {
+                if (tech < (requirement as Extract<CrewTypeRequirement, { type: 'ReqTech' }>).tech) {
                     return false;
                 }
                 break;
             case 'ReqRegions': {
-                const req =
-                    requirement as Extract<
-                        CrewTypeRequirement,
-                        { type: 'ReqRegions' }
-                    >;
+                const req = requirement as Extract<CrewTypeRequirement, { type: 'ReqRegions' }>;
                 const resolved = req.regions
                     .map((name: string) => regionMap[name])
                     .filter((id): id is number => typeof id === 'number');
@@ -381,11 +333,7 @@ export const isCrewTypeAvailable = (
                 break;
             }
             case 'ReqCities': {
-                const req =
-                    requirement as Extract<
-                        CrewTypeRequirement,
-                        { type: 'ReqCities' }
-                    >;
+                const req = requirement as Extract<CrewTypeRequirement, { type: 'ReqCities' }>;
                 const resolved = req.cities
                     .map((name: string) => nameToId.get(name))
                     .filter((id): id is number => typeof id === 'number');
@@ -395,11 +343,7 @@ export const isCrewTypeAvailable = (
                 break;
             }
             case 'ReqCitiesWithCityLevel': {
-                const req =
-                    requirement as Extract<
-                        CrewTypeRequirement,
-                        { type: 'ReqCitiesWithCityLevel' }
-                    >;
+                const req = requirement as Extract<CrewTypeRequirement, { type: 'ReqCitiesWithCityLevel' }>;
                 const resolved = req.cities
                     .map((name: string) => nameToId.get(name))
                     .filter((id): id is number => typeof id === 'number');
@@ -414,25 +358,15 @@ export const isCrewTypeAvailable = (
                 break;
             }
             case 'ReqHighLevelCities': {
-                const req =
-                    requirement as Extract<
-                        CrewTypeRequirement,
-                        { type: 'ReqHighLevelCities' }
-                    >;
-                const count = ownedCities.filter(
-                    (city) => city.level >= req.level
-                ).length;
+                const req = requirement as Extract<CrewTypeRequirement, { type: 'ReqHighLevelCities' }>;
+                const count = ownedCities.filter((city) => city.level >= req.level).length;
                 if (count < req.count) {
                     return false;
                 }
                 break;
             }
             case 'ReqNationAux': {
-                const req =
-                    requirement as Extract<
-                        CrewTypeRequirement,
-                        { type: 'ReqNationAux' }
-                    >;
+                const req = requirement as Extract<CrewTypeRequirement, { type: 'ReqNationAux' }>;
                 const value = aux[req.key];
                 if (!compareAuxValue(value, req.op, req.value)) {
                     return false;
@@ -440,10 +374,7 @@ export const isCrewTypeAvailable = (
                 break;
             }
             case 'ReqMinRelYear':
-                if (
-                    relYear <
-                    (requirement as Extract<CrewTypeRequirement, { type: 'ReqMinRelYear' }>).year
-                ) {
+                if (relYear < (requirement as Extract<CrewTypeRequirement, { type: 'ReqMinRelYear' }>).year) {
                     return false;
                 }
                 break;

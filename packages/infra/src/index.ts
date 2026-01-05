@@ -1,10 +1,5 @@
 export * from './postgres.js';
-export {
-    createGamePostgresConnector,
-    GamePrisma,
-    LogCategory,
-    LogScope,
-} from './gamePrisma.js';
+export { createGamePostgresConnector, GamePrisma, LogCategory, LogScope } from './gamePrisma.js';
 export type { GamePrismaClient } from './gamePrisma.js';
 export {
     createGatewayPostgresConnector,

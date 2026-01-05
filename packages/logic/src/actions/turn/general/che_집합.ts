@@ -1,8 +1,5 @@
 import type { General, GeneralTriggerState, Troop } from '@sammo-ts/logic/domain/entities.js';
-import type {
-    Constraint,
-    ConstraintContext,
-} from '@sammo-ts/logic/constraints/types.js';
+import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
     mustBeTroopLeader,
     notBeNeutral,
@@ -27,7 +24,7 @@ import { increaseMetaNumber } from '@sammo-ts/logic/war/utils.js';
 export interface AssemblyArgs {}
 
 export interface AssemblyResolveContext<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > extends GeneralActionResolveContext<TriggerState> {
     troop: Troop | null;
     troopMembers: Array<General<TriggerState>>;
@@ -36,12 +33,8 @@ export interface AssemblyResolveContext<
 const ACTION_NAME = '집합';
 
 export class ActionDefinition<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> implements GeneralActionDefinition<
-        TriggerState,
-        AssemblyArgs,
-        AssemblyResolveContext<TriggerState>
-    > {
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
+> implements GeneralActionDefinition<TriggerState, AssemblyArgs, AssemblyResolveContext<TriggerState>> {
     public readonly key = 'che_집합';
     public readonly name = ACTION_NAME;
 
@@ -50,23 +43,11 @@ export class ActionDefinition<
         return {};
     }
 
-    buildConstraints(
-        _ctx: ConstraintContext,
-        _args: AssemblyArgs
-    ): Constraint[] {
-        return [
-            notBeNeutral(),
-            occupiedCity(),
-            suppliedCity(),
-            mustBeTroopLeader(),
-            reqTroopMembers(),
-        ];
+    buildConstraints(_ctx: ConstraintContext, _args: AssemblyArgs): Constraint[] {
+        return [notBeNeutral(), occupiedCity(), suppliedCity(), mustBeTroopLeader(), reqTroopMembers()];
     }
 
-    resolve(
-        context: AssemblyResolveContext<TriggerState>,
-        _args: AssemblyArgs
-    ): GeneralActionOutcome<TriggerState> {
+    resolve(context: AssemblyResolveContext<TriggerState>, _args: AssemblyArgs): GeneralActionOutcome<TriggerState> {
         const city = context.city;
         if (!city) {
             context.addLog('도시 정보가 없어 집합을 진행할 수 없습니다.');
@@ -81,26 +62,16 @@ export class ActionDefinition<
         context.addLog(`<G><b>${cityName}</b></>에서 집합을 실시했습니다.`);
 
         const effects: Array<GeneralActionEffect<TriggerState>> = [];
-        const targets = context.troopMembers.filter(
-            (member) => member.cityId !== city.id
-        );
+        const targets = context.troopMembers.filter((member) => member.cityId !== city.id);
         for (const member of targets) {
+            effects.push(createGeneralPatchEffect({ cityId: city.id } as Partial<General<TriggerState>>, member.id));
             effects.push(
-                createGeneralPatchEffect(
-                    { cityId: city.id } as Partial<General<TriggerState>>,
-                    member.id
-                )
-            );
-            effects.push(
-                createLogEffect(
-                    `${troopName} 부대원들은 <G><b>${cityName}</b></>${josaRo} 집합되었습니다.`,
-                    {
-                        scope: LogScope.GENERAL,
-                        category: LogCategory.ACTION,
-                        format: LogFormat.PLAIN,
-                        generalId: member.id,
-                    }
-                )
+                createLogEffect(`${troopName} 부대원들은 <G><b>${cityName}</b></>${josaRo} 집합되었습니다.`, {
+                    scope: LogScope.GENERAL,
+                    category: LogCategory.ACTION,
+                    format: LogFormat.PLAIN,
+                    generalId: member.id,
+                })
             );
         }
 
@@ -116,9 +87,9 @@ export const actionContextBuilder: ActionContextBuilder = (base, options) => {
     const troopId = base.general.troopId;
     const troop = options.worldRef?.getTroopById(troopId) ?? null;
     const troopMembers =
-        options.worldRef?.listGenerals().filter(
-            (member) => member.troopId === troopId && member.id !== base.general.id
-        ) ?? [];
+        options.worldRef
+            ?.listGenerals()
+            .filter((member) => member.troopId === troopId && member.id !== base.general.id) ?? [];
     return {
         ...base,
         troop,

@@ -28,10 +28,7 @@ const parseEnvFile = (rawText: string): EnvMap => {
         }
         const key = trimmed.slice(0, index).trim();
         let value = trimmed.slice(index + 1).trim();
-        if (
-            (value.startsWith('"') && value.endsWith('"')) ||
-            (value.startsWith("'") && value.endsWith("'"))
-        ) {
+        if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
             value = value.slice(1, -1);
         }
         env[key] = value;
@@ -48,10 +45,7 @@ const loadEnvFile = async (envFile: string): Promise<EnvMap> => {
     }
 };
 
-const applySchemaToDatabaseUrl = (
-    url: string,
-    schema: string | undefined
-): string => {
+const applySchemaToDatabaseUrl = (url: string, schema: string | undefined): string => {
     if (!schema) {
         return url;
     }
@@ -64,25 +58,17 @@ const applySchemaToDatabaseUrl = (
     }
 };
 
-export const resolveDatabaseUrl = async (
-    options?: DatabaseUrlOptions
-): Promise<string> => {
+export const resolveDatabaseUrl = async (options?: DatabaseUrlOptions): Promise<string> => {
     const env = options?.env ?? process.env;
     if (env.DATABASE_URL) {
-        const schema =
-            options?.schema ??
-            env.POSTGRES_SCHEMA ??
-            env.DATABASE_SCHEMA;
+        const schema = options?.schema ?? env.POSTGRES_SCHEMA ?? env.DATABASE_SCHEMA;
         return applySchemaToDatabaseUrl(env.DATABASE_URL, schema);
     }
 
     const envFile = options?.envFile ?? DEFAULT_ENV_FILE;
     const fileEnv = await loadEnvFile(envFile);
     if (fileEnv.DATABASE_URL) {
-        const schema =
-            options?.schema ??
-            fileEnv.POSTGRES_SCHEMA ??
-            fileEnv.DATABASE_SCHEMA;
+        const schema = options?.schema ?? fileEnv.POSTGRES_SCHEMA ?? fileEnv.DATABASE_SCHEMA;
         return applySchemaToDatabaseUrl(fileEnv.DATABASE_URL, schema);
     }
 

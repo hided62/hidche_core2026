@@ -18,6 +18,10 @@ const buildCaller = () => {
     };
     const oauthSessions = new InMemoryOAuthSessionStore();
     const kakaoClient = {
+        restKey: '',
+        redirectUri: '',
+        oauthHost: '',
+        apiHost: '',
         buildAuthUrl: () => '',
         exchangeCode: async () => {
             throw new Error('not used');
@@ -45,6 +49,7 @@ const buildCaller = () => {
         },
         updateStatus: async () => null,
         updateBuildStatus: async () => null,
+        updateMeta: async () => null,
         listReservedToStart: async () => [],
         findQueuedBuild: async () => null,
         updateLastError: async () => {},
@@ -71,13 +76,14 @@ const buildCaller = () => {
             flushPublisher,
             gameTokenSecret: 'test-secret',
             gameSessionTtlSeconds: 600,
-            kakaoClient,
+            kakaoClient: kakaoClient as any,
             oauthSessions,
             publicBaseUrl: 'http://localhost',
             profiles,
             orchestrator,
             profileStatus,
             requestHeaders: {},
+            prisma: {} as any,
         })
     );
     return { caller, oauthSessions };

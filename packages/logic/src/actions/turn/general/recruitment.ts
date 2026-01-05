@@ -6,9 +6,7 @@ import type {
     TriggerValue,
 } from '@sammo-ts/logic/domain/entities.js';
 
-export interface GeneralRecruitmentInput<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+export interface GeneralRecruitmentInput<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     id: number;
     name: string;
     nationId: number;
@@ -52,9 +50,7 @@ const createEmptyRole = (): GeneralRole => ({
 });
 
 // 모집/탐색 등으로 생성되는 장수의 기본 모델을 구성한다.
-export const buildRecruitmentGeneral = <
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
->(
+export const buildRecruitmentGeneral = <TriggerState extends GeneralTriggerState = GeneralTriggerState>(
     input: GeneralRecruitmentInput<TriggerState>
 ): General<TriggerState> => ({
     id: input.id,
@@ -79,8 +75,6 @@ export const buildRecruitmentGeneral = <
     atmos: input.atmos ?? 0,
     age: input.age,
     npcState: input.npcState,
-    triggerState:
-        input.triggerState ??
-        (createEmptyTriggerState() as TriggerState),
+    triggerState: input.triggerState ?? (createEmptyTriggerState() as TriggerState),
     meta: input.meta ?? {},
 });

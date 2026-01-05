@@ -54,15 +54,8 @@ class ActivateTrigger extends BaseWarUnitTrigger {
         }
         selfEnv['치료발동'] = true;
 
-        oppose
-            .getLogger()
-            .pushGeneralBattleDetailLog(
-                '상대가 <R>치료</>했다!',
-                LogFormat.PLAIN
-            );
-        self
-            .getLogger()
-            .pushGeneralBattleDetailLog('<C>치료</>했다!', LogFormat.PLAIN);
+        oppose.getLogger().pushGeneralBattleDetailLog('상대가 <R>치료</>했다!', LogFormat.PLAIN);
+        self.getLogger().pushGeneralBattleDetailLog('<C>치료</>했다!', LogFormat.PLAIN);
 
         oppose.multiplyWarPowerMultiply(0.7);
         if (self instanceof WarUnitGeneral) {
@@ -79,9 +72,5 @@ export const triggerModule: WarTriggerModule = {
     key: 'che_의술',
     name: '의술',
     info: '[전투] 페이즈마다 치료 발동(아군 피해 30% 감소, 부상 회복)',
-    createTriggerList: (unit) =>
-        new WarTriggerCaller(
-            new AttemptTrigger(unit),
-            new ActivateTrigger(unit)
-        ),
+    createTriggerList: (unit) => new WarTriggerCaller(new AttemptTrigger(unit), new ActivateTrigger(unit)),
 };

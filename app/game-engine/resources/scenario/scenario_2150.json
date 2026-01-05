@@ -1,20 +1,18 @@
 {
-    "title":"【가상모드15a】 소울소드",
-    "life":1,
-    "fiction":1,
-    "nation":[
-
-    ],
-    "diplomacy":[],
-	"stat":{
-        "total":220,
-        "min":40,
-        "max":95,
-        "npcTotal":200,
-        "npcMax":95,
-        "npcMin":20
+    "title": "【가상모드15a】 소울소드",
+    "life": 1,
+    "fiction": 1,
+    "nation": [],
+    "diplomacy": [],
+    "stat": {
+        "total": 220,
+        "min": 40,
+        "max": 95,
+        "npcTotal": 200,
+        "npcMax": 95,
+        "npcMin": 20
     },
-    "general":[
+    "general": [
         [0, "모에", null, 0, null, 68, 55, 82, 0, 160, 300, null, null],
         [0, "란다", null, 0, null, 61, 78, 43, 0, 160, 300, null, null],
         [0, "키데리오", null, 0, null, 74, 70, 42, 0, 160, 300, null, null],
@@ -318,30 +316,21 @@
         [0, "라이제", null, 0, null, 97, 79, 105, 0, 160, 300, null, null],
         [0, "칼슨", null, 0, null, 80, 94, 64, 0, 160, 300, null, null]
     ],
-    "general_ex":[
-
-    ],
-    "cities":[
-
-    ],
-    "history":[
+    "general_ex": [],
+    "cities": [],
+    "history": [
         "<C>●</>180년 1월:<L><b>【이벤트】</b></>제작자: 촉구.",
         "<C>●</>180년 1월:<L><b>【가상모드13】</b>소울소드</>",
         "<C>●</>180년 1월:<L><b>【이벤트】</b></>혼란스러운 세상을 영웅들과 함께 바로잡아라!"
     ],
-    "initialEvents":[
-
-    ],
-    "events":[
+    "initialEvents": [],
+    "events": [
         [
-            "destroy_nation", 1000,
-            ["and",
-                ["Date", ">=", 183, 1],
-                ["RemainNation", "==", 1]
-            ],
+            "destroy_nation",
+            1000,
+            ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]],
             ["BlockScoutAction"],
             ["DeleteEvent"]
         ]
-
     ]
 }

@@ -8,8 +8,8 @@ updates. References include `legacy/hwe/func_time_event.php`,
 ## Entry Points
 
 - `TurnExecutionHelper::executeAllCommand()`
-  - Calls `runEventHandler(PRE_MONTH)` → `preUpdateMonthly()` → `turnDate()` →
-    `runEventHandler(MONTH)` → `postUpdateMonthly()`.
+    - Calls `runEventHandler(PRE_MONTH)` → `preUpdateMonthly()` → `turnDate()` →
+      `runEventHandler(MONTH)` → `postUpdateMonthly()`.
 - Event actions under `legacy/hwe/sammo/Event/Action/` execute concrete
   economic updates.
 
@@ -19,13 +19,14 @@ updates. References include `legacy/hwe/func_time_event.php`,
 
 - Collects all nations and cities, groups generals per nation.
 - Computes income using:
-  - `getGoldIncome()` / `getRiceIncome()` from `func_time_event.php`.
-  - `getWallIncome()` for rice from walls (same file).
+    - `getGoldIncome()` / `getRiceIncome()` from `func_time_event.php`.
+    - `getWallIncome()` for rice from walls (same file).
 - Applies nation tax rate (`rate_tmp`) and salary ratio (`bill`).
 - Pays generals by `dedication` via `getBill()`.
 - Updates `nation_env.prev_income_{gold|rice}` and logs to history.
 
 Key dependencies:
+
 - `GameConst::$basegold`, `GameConst::$baserice` for minimum reserves.
 - `GameConst::$resourceActionAmountGuide` for action amounts.
 - `iAction::onCalcNationalIncome()` for nation-type modifiers.
@@ -36,8 +37,8 @@ Key dependencies:
 
 - City stats decay by 1% (agri/comm/secu/def/wall).
 - Population growth via `popIncrease()`:
-  - Uses tax rate (`rate_tmp`) and security.
-  - Nation type can adjust via `onCalcNationalIncome('pop', ...)`.
+    - Uses tax rate (`rate_tmp`) and security.
+    - Nation type can adjust via `onCalcNationalIncome('pop', ...)`.
 - General and nation resources decay (1–5% bands based on thresholds).
 
 ## War Income and Casualties (ProcessWarIncome)
@@ -62,16 +63,16 @@ Key dependencies:
 
 - Nation level increases based on number of level≥4 cities.
 - On level-up:
-  - Grants gold/rice bonus.
-  - Logs global and national history.
-  - Initializes `nation_turn` rows for new chief levels.
-  - Runs a unique-item lottery (deterministic RNG tagged `nationLevelUp`).
+    - Grants gold/rice bonus.
+    - Logs global and national history.
+    - Initializes `nation_turn` rows for new chief levels.
+    - Runs a unique-item lottery (deterministic RNG tagged `nationLevelUp`).
 
 ## City Trade Rates (RandomizeCityTradeRate)
 
 - Once per month, adjusts `city.trade` with deterministic RNG:
-  - Probability depends on city level.
-  - Trade rate ranges 95–105 when triggered.
+    - Probability depends on city level.
+    - Trade rate ranges 95–105 when triggered.
 
 ## RNG Notes
 

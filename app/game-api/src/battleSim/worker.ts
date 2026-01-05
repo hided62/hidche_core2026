@@ -6,10 +6,7 @@ import { processBattleSimJob } from './processor.js';
 import { RedisBattleSimTransport } from './redisTransport.js';
 import type { BattleSimJob } from './types.js';
 
-type RedisBlPopResult =
-    | { key: string; element: string }
-    | [string, string]
-    | null;
+type RedisBlPopResult = { key: string; element: string } | [string, string] | null;
 
 const parseBlPopValue = (result: RedisBlPopResult): string | null => {
     if (!result) {
@@ -57,8 +54,7 @@ export const runBattleSimWorker = async (): Promise<void> => {
             const result = processBattleSimJob(job.payload);
             await transport.pushResult(job.jobId, result);
         } catch (error) {
-            const reason =
-                error instanceof Error ? error.message : '전투 시뮬레이션 오류';
+            const reason = error instanceof Error ? error.message : '전투 시뮬레이션 오류';
             await transport.pushResult(job.jobId, {
                 result: false,
                 reason,

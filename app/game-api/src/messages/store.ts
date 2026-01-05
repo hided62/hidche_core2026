@@ -50,10 +50,7 @@ const toMessageView = (row: MessageRow): MessageView => {
     };
 };
 
-export const insertMessage = async (
-    db: DatabaseClient,
-    draft: MessageRecordDraft
-): Promise<number> => {
+export const insertMessage = async (db: DatabaseClient, draft: MessageRecordDraft): Promise<number> => {
     const rows = await db.$queryRaw<Array<{ id: number }>>`
         INSERT INTO message (mailbox, type, src, dest, time, valid_until, message)
         VALUES (

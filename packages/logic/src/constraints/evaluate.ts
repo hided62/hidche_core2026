@@ -1,10 +1,4 @@
-import type {
-    Constraint,
-    ConstraintContext,
-    ConstraintResult,
-    RequirementKey,
-    StateView,
-} from './types.js';
+import type { Constraint, ConstraintContext, ConstraintResult, RequirementKey, StateView } from './types.js';
 
 export const evaluateConstraints = (
     constraints: Constraint[],
@@ -12,9 +6,7 @@ export const evaluateConstraints = (
     view: StateView
 ): ConstraintResult => {
     for (const constraint of constraints) {
-        const missing = constraint
-            .requires(ctx)
-            .filter((req) => !view.has(req));
+        const missing = constraint.requires(ctx).filter((req) => !view.has(req));
         if (missing.length > 0 && ctx.mode === 'precheck') {
             return { kind: 'unknown', missing };
         }
@@ -26,10 +18,7 @@ export const evaluateConstraints = (
     return { kind: 'allow' };
 };
 
-export const collectRequirements = (
-    constraints: Constraint[],
-    ctx: ConstraintContext
-): RequirementKey[] => {
+export const collectRequirements = (constraints: Constraint[], ctx: ConstraintContext): RequirementKey[] => {
     const keys: RequirementKey[] = [];
     for (const constraint of constraints) {
         keys.push(...constraint.requires(ctx));

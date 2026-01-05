@@ -51,5 +51,5 @@ export const traitModule: TraitModule = {
             return value;
         }
         return onCalcStat;
-    })() as Exclude<TraitModule["onCalcStat"], undefined>,
+    })() as Exclude<TraitModule['onCalcStat'], undefined>,
 };

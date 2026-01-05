@@ -39,13 +39,9 @@ export interface GameSessionTokenPayload {
 const toBase64Url = (data: Buffer): string => data.toString('base64url');
 const fromBase64Url = (value: string): Buffer => Buffer.from(value, 'base64url');
 
-const buildKey = (secret: string): Buffer =>
-    createHash('sha256').update(secret).digest();
+const buildKey = (secret: string): Buffer => createHash('sha256').update(secret).digest();
 
-export const encryptGameSessionToken = (
-    payload: GameSessionTokenPayload,
-    secret: string
-): string => {
+export const encryptGameSessionToken = (payload: GameSessionTokenPayload, secret: string): string => {
     const iv = randomBytes(12);
     const key = buildKey(secret);
     const cipher = createCipheriv('aes-256-gcm', key, iv);
@@ -90,10 +86,7 @@ const parsePayload = (value: unknown): GameSessionTokenPayload | null => {
     return payload as GameSessionTokenPayload;
 };
 
-export const decryptGameSessionToken = (
-    token: string,
-    secret: string
-): GameSessionTokenPayload | null => {
+export const decryptGameSessionToken = (token: string, secret: string): GameSessionTokenPayload | null => {
     const parts = token.split('.');
     if (parts.length !== 3) {
         return null;
@@ -106,9 +99,7 @@ export const decryptGameSessionToken = (
         const key = buildKey(secret);
         const decipher = createDecipheriv('aes-256-gcm', key, iv);
         decipher.setAuthTag(tag);
-        const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString(
-            'utf8'
-        );
+        const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
         return parsePayload(JSON.parse(plaintext));
     } catch {
         return null;

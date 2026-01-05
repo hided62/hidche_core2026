@@ -1,22 +1,9 @@
-import {
-    JosaUtil,
-    LiteHashDRBG,
-    RandUtil,
-} from '@sammo-ts/common';
+import { JosaUtil, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 
-import type {
-    City,
-    General,
-    GeneralTriggerState,
-    Nation,
-} from '@sammo-ts/logic/domain/entities.js';
+import type { City, General, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import { ActionLogger } from '@sammo-ts/logic/logging/actionLogger.js';
 import { LogFormat, type LogEntryDraft } from '@sammo-ts/logic/logging/types.js';
-import {
-    buildCrewTypeIndex,
-    getTechCost,
-    getTechLevel,
-} from '@sammo-ts/logic/world/unitSet.js';
+import { buildCrewTypeIndex, getTechCost, getTechLevel } from '@sammo-ts/logic/world/unitSet.js';
 import type { WarUnitReport } from './types.js';
 import type {
     ConquerCityOutcome,
@@ -26,21 +13,12 @@ import type {
     WarAftermathTechContext,
     WarDiplomacyDelta,
 } from './types.js';
-import {
-    clamp,
-    clampMin,
-    getMetaNumber,
-    round,
-    simpleSerialize,
-} from './utils.js';
+import { clamp, clampMin, getMetaNumber, round, simpleSerialize } from './utils.js';
 
 const META_DEAD = 'dead';
 const META_CONFLICT = 'conflict';
 
-const findReport = (
-    reports: WarUnitReport[],
-    predicate: (report: WarUnitReport) => boolean
-): WarUnitReport | null => {
+const findReport = (reports: WarUnitReport[], predicate: (report: WarUnitReport) => boolean): WarUnitReport | null => {
     for (const report of reports) {
         if (predicate(report)) {
             return report;
@@ -49,8 +27,7 @@ const findReport = (
     return null;
 };
 
-const getDeadCounter = (city: City): number =>
-    getMetaNumber(city.meta, META_DEAD, 0);
+const getDeadCounter = (city: City): number => getMetaNumber(city.meta, META_DEAD, 0);
 
 const setDeadCounter = (city: City, value: number): void => {
     city.meta[META_DEAD] = round(value);
@@ -67,19 +44,12 @@ const isSupplyCity = (city: City): boolean => {
     return city.supplyState > 0;
 };
 
-const resolveCityTrainAtmos = (year: number, startYear: number): number =>
-    clamp(year - startYear + 59, 60, 110);
+const resolveCityTrainAtmos = (year: number, startYear: number): number => clamp(year - startYear + 59, 60, 110);
 
-const isTechLimited = (
-    tech: number,
-    year: number,
-    startYear: number,
-    config: WarAftermathConfig
-): boolean => {
+const isTechLimited = (tech: number, year: number, startYear: number, config: WarAftermathConfig): boolean => {
     const relYear = clampMin(year - startYear, 0);
     const relMaxTech = clamp(
-        Math.floor(relYear / config.techLevelIncYear) +
-            config.initialAllowedTechLevel,
+        Math.floor(relYear / config.techLevelIncYear) + config.initialAllowedTechLevel,
         1,
         config.maxTechLevel
     );
@@ -92,15 +62,9 @@ const resolveNationGenCount = <TriggerState extends GeneralTriggerState>(
     generals: General<TriggerState>[],
     config: WarAftermathConfig
 ): { total: number; effective: number } => {
-    const fallback = generals.filter(
-        (general) => general.nationId === nation.id
-    ).length;
+    const fallback = generals.filter((general) => general.nationId === nation.id).length;
     let total = getMetaNumber(nation.meta, 'gennum', fallback);
-    let effective = generals.filter(
-        (general) =>
-            general.nationId === nation.id &&
-            general.npcState !== 5
-    ).length;
+    let effective = generals.filter((general) => general.nationId === nation.id && general.npcState !== 5).length;
 
     if (effective < config.initialNationGenLimit) {
         total = config.initialNationGenLimit;
@@ -126,11 +90,7 @@ const applyNationTechGain = <TriggerState extends GeneralTriggerState>(
         });
     }
 
-    const { total, effective } = resolveNationGenCount(
-        nation,
-        input.generals,
-        config
-    );
+    const { total, effective } = resolveNationGenCount(nation, input.generals, config);
 
     if (total !== effective) {
         gain *= total / effective;
@@ -145,10 +105,7 @@ const applyNationTechGain = <TriggerState extends GeneralTriggerState>(
     nation.meta.tech = round(tech);
 };
 
-const resolveConquerNation = (
-    city: City,
-    attackerNationId: number
-): number => {
+const resolveConquerNation = (city: City, attackerNationId: number): number => {
     const rawConflict = city.meta[META_CONFLICT];
     if (!rawConflict) {
         return attackerNationId;
@@ -183,26 +140,20 @@ const findNextCapital = (
     capturedCityId: number,
     oldCapital: City
 ): City | null => {
-    const candidates = cities.filter(
-        (city) => city.nationId === defenderNationId && city.id !== capturedCityId
-    );
+    const candidates = cities.filter((city) => city.nationId === defenderNationId && city.id !== capturedCityId);
     if (!candidates.length) {
         return null;
     }
 
     const oldPos = getCityPosition(oldCapital);
     if (!oldPos) {
-        return candidates.sort(
-            (lhs, rhs) => rhs.population - lhs.population
-        )[0]!;
+        return candidates.sort((lhs, rhs) => rhs.population - lhs.population)[0]!;
     }
 
     return candidates
         .map((city) => {
             const pos = getCityPosition(city);
-            const distance = pos
-                ? Math.hypot(pos.x - oldPos.x, pos.y - oldPos.y)
-                : Number.MAX_SAFE_INTEGER;
+            const distance = pos ? Math.hypot(pos.x - oldPos.x, pos.y - oldPos.y) : Number.MAX_SAFE_INTEGER;
             return { city, distance };
         })
         .sort((lhs, rhs) => {
@@ -224,14 +175,7 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
     input: WarAftermathInput<TriggerState>,
     rng: RandUtil
 ): ConquerCityOutcome<TriggerState> => {
-    const {
-        attackerNation,
-        defenderNation,
-        defenderCity,
-        cities,
-        generals,
-        config,
-    } = input;
+    const { attackerNation, defenderNation, defenderCity, cities, generals, config } = input;
     const attacker = input.battle.attacker;
 
     const logs: LogEntryDraft[] = [];
@@ -247,9 +191,7 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
 
     const defenderNationId = defenderNation?.id ?? 0;
     const defenderNationName = defenderNation?.name ?? '공백지';
-    const defenderNationDecoration = defenderNationId
-        ? `<D><b>${defenderNationName}</b></>의`
-        : '공백지인';
+    const defenderNationDecoration = defenderNationId ? `<D><b>${defenderNationName}</b></>의` : '공백지인';
 
     const attackerNationName = attackerNation.name;
     const attackerGeneralName = attacker.name;
@@ -260,13 +202,8 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
     const josaYiGen = JosaUtil.pick(attackerGeneralName, '이');
     const josaYiCity = JosaUtil.pick(cityName, '이');
 
-    attackerLogger.pushGeneralActionLog(
-        `<G><b>${cityName}</b></> 공략에 <S>성공</>했습니다.`,
-        LogFormat.PLAIN
-    );
-    attackerLogger.pushGeneralHistoryLog(
-        `<G><b>${cityName}</b></>${josaUl} <S>점령</>`
-    );
+    attackerLogger.pushGeneralActionLog(`<G><b>${cityName}</b></> 공략에 <S>성공</>했습니다.`, LogFormat.PLAIN);
+    attackerLogger.pushGeneralHistoryLog(`<G><b>${cityName}</b></>${josaUl} <S>점령</>`);
     attackerLogger.pushGlobalActionLog(
         `<Y>${attackerGeneralName}</>${josaYiGen} <G><b>${cityName}</b></> 공략에 <S>성공</>했습니다.`
     );
@@ -285,9 +222,7 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
         pushLoggers([defenderNationLogger], logs);
     }
 
-    const defenderCityCount = defenderNationId
-        ? cities.filter((city) => city.nationId === defenderNationId).length
-        : 0;
+    const defenderCityCount = defenderNationId ? cities.filter((city) => city.nationId === defenderNationId).length : 0;
     const nationCollapsed = defenderNationId !== 0 && defenderCityCount === 1;
 
     let collapseRewardGold = 0;
@@ -295,9 +230,7 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
 
     // 국가 붕괴 시 자원 손실과 포상 정산.
     if (nationCollapsed && defenderNation) {
-        const defenderGenerals = generals.filter(
-            (general) => general.nationId === defenderNationId
-        );
+        const defenderGenerals = generals.filter((general) => general.nationId === defenderNationId);
         let totalGoldLoss = 0;
         let totalRiceLoss = 0;
 
@@ -324,12 +257,8 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
             affectedGenerals.add(general);
         }
 
-        collapseRewardGold =
-            Math.max(0, defenderNation.gold - config.baseGold) * 0.5 +
-            totalGoldLoss * 0.5;
-        collapseRewardRice =
-            Math.max(0, defenderNation.rice - config.baseRice) * 0.5 +
-            totalRiceLoss * 0.5;
+        collapseRewardGold = Math.max(0, defenderNation.gold - config.baseGold) * 0.5 + totalGoldLoss * 0.5;
+        collapseRewardRice = Math.max(0, defenderNation.rice - config.baseRice) * 0.5 + totalRiceLoss * 0.5;
 
         attackerNation.gold = round(attackerNation.gold + collapseRewardGold);
         attackerNation.rice = round(attackerNation.rice + collapseRewardRice);
@@ -341,12 +270,7 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
 
     // 수도 함락 시 수도 이전 및 내부 사기/자원 페널티.
     if (!nationCollapsed && defenderNation && defenderNation.capitalCityId === defenderCity.id) {
-        const nextCapital = findNextCapital(
-            cities,
-            defenderNationId,
-            defenderCity.id,
-            defenderCity
-        );
+        const nextCapital = findNextCapital(cities, defenderNationId, defenderCity.id, defenderCity);
         if (nextCapital) {
             defenderNation.capitalCityId = nextCapital.id;
             defenderNation.gold = round(defenderNation.gold * 0.5);
@@ -373,8 +297,7 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
     const conquerNation =
         conquerNationId === attackerNation.id
             ? attackerNation
-            : input.nations.find((nation) => nation.id === conquerNationId) ??
-              attackerNation;
+            : (input.nations.find((nation) => nation.id === conquerNationId) ?? attackerNation);
 
     if (conquerNationId === attackerNation.id) {
         attacker.cityId = defenderCity.id;
@@ -431,9 +354,7 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
     };
 };
 
-export const resolveWarAftermath = <
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
->(
+export const resolveWarAftermath = <TriggerState extends GeneralTriggerState = GeneralTriggerState>(
     input: WarAftermathInput<TriggerState>
 ): WarAftermathOutcome<TriggerState> => {
     const logs: LogEntryDraft[] = [];
@@ -442,14 +363,8 @@ export const resolveWarAftermath = <
     const affectedCities = new Set<City>();
     const affectedGenerals = new Set<General<TriggerState>>();
 
-    const attackerReport = findReport(
-        input.battle.reports,
-        (report) => report.type === 'general' && report.isAttacker
-    );
-    const cityReport = findReport(
-        input.battle.reports,
-        (report) => report.type === 'city'
-    );
+    const attackerReport = findReport(input.battle.reports, (report) => report.type === 'general' && report.isAttacker);
+    const cityReport = findReport(input.battle.reports, (report) => report.type === 'city');
 
     const attackerKilled = attackerReport?.killed ?? 0;
     const attackerDead = attackerReport?.dead ?? 0;
@@ -484,10 +399,7 @@ export const resolveWarAftermath = <
             defenderNation.rice = clampMin(defenderNation.rice - rice, 0);
             affectedNations.add(defenderNation);
         } else if (input.battle.conquered) {
-            const bonus =
-                defenderNation.capitalCityId === input.defenderCity.id
-                    ? 1000
-                    : 500;
+            const bonus = defenderNation.capitalCityId === input.defenderCity.id ? 1000 : 500;
             defenderNation.rice = round(defenderNation.rice + bonus);
             affectedNations.add(defenderNation);
         }
@@ -496,31 +408,21 @@ export const resolveWarAftermath = <
     // 기술 경험치와 외교 사망자 수치 갱신.
     if (input.attackerNation.id && attackerReport) {
         const attackerTechGain = attackerDead * 0.012;
-        applyNationTechGain(
-            input.attackerNation,
-            attackerTechGain,
-            input,
-            {
-                side: 'attacker',
-                nation: input.attackerNation,
-                attackerReport,
-            }
-        );
+        applyNationTechGain(input.attackerNation, attackerTechGain, input, {
+            side: 'attacker',
+            nation: input.attackerNation,
+            attackerReport,
+        });
         affectedNations.add(input.attackerNation);
     }
 
     if (input.defenderNation && input.defenderNation.id !== 0 && attackerReport) {
         const defenderTechGain = attackerKilled * 0.009;
-        applyNationTechGain(
-            input.defenderNation,
-            defenderTechGain,
-            input,
-            {
-                side: 'defender',
-                nation: input.defenderNation,
-                attackerReport,
-            }
-        );
+        applyNationTechGain(input.defenderNation, defenderTechGain, input, {
+            side: 'defender',
+            nation: input.defenderNation,
+            attackerReport,
+        });
         affectedNations.add(input.defenderNation);
 
         diplomacyDeltas.push(

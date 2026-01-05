@@ -11,10 +11,7 @@
                 "x": 169,
                 "y": 321
             },
-            "connections": [
-                2,
-                11
-            ],
+            "connections": [2, 11],
             "max": {
                 "population": 1200000,
                 "agriculture": 8000,
@@ -33,10 +30,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "상록시티",
-                    "홍련마을"
-                ]
+                "connectionNames": ["상록시티", "홍련마을"]
             }
         },
         {
@@ -48,11 +42,7 @@
                 "x": 169,
                 "y": 231
             },
-            "connections": [
-                1,
-                3,
-                12
-            ],
+            "connections": [1, 3, 12],
             "max": {
                 "population": 900000,
                 "agriculture": 6000,
@@ -71,11 +61,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "태초마을",
-                    "회색시티",
-                    "챔피언로드(입구)"
-                ]
+                "connectionNames": ["태초마을", "회색시티", "챔피언로드(입구)"]
             }
         },
         {
@@ -87,10 +73,7 @@
                 "x": 174,
                 "y": 104
             },
-            "connections": [
-                2,
-                4
-            ],
+            "connections": [2, 4],
             "max": {
                 "population": 1200000,
                 "agriculture": 8000,
@@ -109,10 +92,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "상록시티",
-                    "달맞이산"
-                ]
+                "connectionNames": ["상록시티", "달맞이산"]
             }
         },
         {
@@ -124,10 +104,7 @@
                 "x": 297,
                 "y": 94
             },
-            "connections": [
-                3,
-                5
-            ],
+            "connections": [3, 5],
             "max": {
                 "population": 1200000,
                 "agriculture": 8000,
@@ -146,10 +123,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "회색시티",
-                    "블루시티"
-                ]
+                "connectionNames": ["회색시티", "블루시티"]
             }
         },
         {
@@ -161,12 +135,7 @@
                 "x": 452,
                 "y": 92
             },
-            "connections": [
-                4,
-                10,
-                18,
-                21
-            ],
+            "connections": [4, 10, 18, 21],
             "max": {
                 "population": 1200000,
                 "agriculture": 8000,
@@ -185,12 +154,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "달맞이산",
-                    "노랑시티",
-                    "무인발전소",
-                    "블루시티동굴"
-                ]
+                "connectionNames": ["달맞이산", "노랑시티", "무인발전소", "블루시티동굴"]
             }
         },
         {
@@ -202,10 +166,7 @@
                 "x": 451,
                 "y": 278
             },
-            "connections": [
-                19,
-                10
-            ],
+            "connections": [19, 10],
             "max": {
                 "population": 1500000,
                 "agriculture": 10000,
@@ -224,10 +185,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "IC",
-                    "노랑시티"
-                ]
+                "connectionNames": ["IC", "노랑시티"]
             }
         },
         {
@@ -239,11 +197,7 @@
                 "x": 627,
                 "y": 180
             },
-            "connections": [
-                19,
-                10,
-                18
-            ],
+            "connections": [19, 10, 18],
             "max": {
                 "population": 1200000,
                 "agriculture": 6000,
@@ -262,11 +216,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "IC",
-                    "노랑시티",
-                    "무인발전소"
-                ]
+                "connectionNames": ["IC", "노랑시티", "무인발전소"]
             }
         },
         {
@@ -278,10 +228,7 @@
                 "x": 343,
                 "y": 180
             },
-            "connections": [
-                10,
-                15
-            ],
+            "connections": [10, 15],
             "max": {
                 "population": 1800000,
                 "agriculture": 12000,
@@ -300,10 +247,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "노랑시티",
-                    "사이클링로드(입구)"
-                ]
+                "connectionNames": ["노랑시티", "사이클링로드(입구)"]
             }
         },
         {
@@ -315,11 +259,7 @@
                 "x": 357,
                 "y": 377
             },
-            "connections": [
-                16,
-                17,
-                23
-            ],
+            "connections": [16, 17, 23],
             "max": {
                 "population": 1800000,
                 "agriculture": 12000,
@@ -338,11 +278,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "사이클링로드(출구)",
-                    "관동15로",
-                    "쌍둥이섬"
-                ]
+                "connectionNames": ["사이클링로드(출구)", "관동15로", "쌍둥이섬"]
             }
         },
         {
@@ -354,12 +290,7 @@
                 "x": 451,
                 "y": 180
             },
-            "connections": [
-                7,
-                8,
-                5,
-                6
-            ],
+            "connections": [7, 8, 5, 6],
             "max": {
                 "population": 1800000,
                 "agriculture": 12000,
@@ -378,12 +309,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "보라타운",
-                    "무지개시티",
-                    "블루시티",
-                    "갈색시티"
-                ]
+                "connectionNames": ["보라타운", "무지개시티", "블루시티", "갈색시티"]
             }
         },
         {
@@ -395,10 +321,7 @@
                 "x": 169,
                 "y": 454
             },
-            "connections": [
-                1,
-                23
-            ],
+            "connections": [1, 23],
             "max": {
                 "population": 1200000,
                 "agriculture": 8000,
@@ -417,10 +340,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "태초마을",
-                    "쌍둥이섬"
-                ]
+                "connectionNames": ["태초마을", "쌍둥이섬"]
             }
         },
         {
@@ -432,10 +352,7 @@
                 "x": 90,
                 "y": 231
             },
-            "connections": [
-                2,
-                13
-            ],
+            "connections": [2, 13],
             "max": {
                 "population": 1200000,
                 "agriculture": 8000,
@@ -454,10 +371,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "상록시티",
-                    "챔피언로드(동굴)"
-                ]
+                "connectionNames": ["상록시티", "챔피언로드(동굴)"]
             }
         },
         {
@@ -469,10 +383,7 @@
                 "x": 90,
                 "y": 180
             },
-            "connections": [
-                14,
-                12
-            ],
+            "connections": [14, 12],
             "max": {
                 "population": 1500000,
                 "agriculture": 10000,
@@ -491,10 +402,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "석영고원",
-                    "챔피언로드(입구)"
-                ]
+                "connectionNames": ["석영고원", "챔피언로드(입구)"]
             }
         },
         {
@@ -506,9 +414,7 @@
                 "x": 90,
                 "y": 29
             },
-            "connections": [
-                13
-            ],
+            "connections": [13],
             "max": {
                 "population": 1800000,
                 "agriculture": 12000,
@@ -527,9 +433,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "챔피언로드(동굴)"
-                ]
+                "connectionNames": ["챔피언로드(동굴)"]
             }
         },
         {
@@ -541,10 +445,7 @@
                 "x": 252,
                 "y": 180
             },
-            "connections": [
-                8,
-                16
-            ],
+            "connections": [8, 16],
             "max": {
                 "population": 1200000,
                 "agriculture": 8000,
@@ -563,10 +464,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "무지개시티",
-                    "사이클링로드(출구)"
-                ]
+                "connectionNames": ["무지개시티", "사이클링로드(출구)"]
             }
         },
         {
@@ -578,10 +476,7 @@
                 "x": 252,
                 "y": 377
             },
-            "connections": [
-                15,
-                9
-            ],
+            "connections": [15, 9],
             "max": {
                 "population": 1500000,
                 "agriculture": 10000,
@@ -600,10 +495,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "사이클링로드(입구)",
-                    "연분홍시티"
-                ]
+                "connectionNames": ["사이클링로드(입구)", "연분홍시티"]
             }
         },
         {
@@ -615,10 +507,7 @@
                 "x": 451,
                 "y": 377
             },
-            "connections": [
-                9,
-                20
-            ],
+            "connections": [9, 20],
             "max": {
                 "population": 1200000,
                 "agriculture": 8000,
@@ -637,10 +526,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "연분홍시티",
-                    "관동13로"
-                ]
+                "connectionNames": ["연분홍시티", "관동13로"]
             }
         },
         {
@@ -652,10 +538,7 @@
                 "x": 627,
                 "y": 94
             },
-            "connections": [
-                7,
-                5
-            ],
+            "connections": [7, 5],
             "max": {
                 "population": 1500000,
                 "agriculture": 10000,
@@ -674,10 +557,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "보라타운",
-                    "블루시티"
-                ]
+                "connectionNames": ["보라타운", "블루시티"]
             }
         },
         {
@@ -689,11 +569,7 @@
                 "x": 627,
                 "y": 278
             },
-            "connections": [
-                6,
-                7,
-                20
-            ],
+            "connections": [6, 7, 20],
             "max": {
                 "population": 900000,
                 "agriculture": 6000,
@@ -712,11 +588,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "갈색시티",
-                    "보라타운",
-                    "관동13로"
-                ]
+                "connectionNames": ["갈색시티", "보라타운", "관동13로"]
             }
         },
         {
@@ -728,10 +600,7 @@
                 "x": 627,
                 "y": 344
             },
-            "connections": [
-                17,
-                19
-            ],
+            "connections": [17, 19],
             "max": {
                 "population": 900000,
                 "agriculture": 6000,
@@ -750,10 +619,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "관동15로",
-                    "IC"
-                ]
+                "connectionNames": ["관동15로", "IC"]
             }
         },
         {
@@ -765,10 +631,7 @@
                 "x": 451,
                 "y": 32
             },
-            "connections": [
-                5,
-                22
-            ],
+            "connections": [5, 22],
             "max": {
                 "population": 1200000,
                 "agriculture": 8000,
@@ -787,10 +650,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "블루시티",
-                    "이수재의집"
-                ]
+                "connectionNames": ["블루시티", "이수재의집"]
             }
         },
         {
@@ -802,9 +662,7 @@
                 "x": 572,
                 "y": 32
             },
-            "connections": [
-                21
-            ],
+            "connections": [21],
             "max": {
                 "population": 1500000,
                 "agriculture": 10000,
@@ -823,9 +681,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "블루시티동굴"
-                ]
+                "connectionNames": ["블루시티동굴"]
             }
         },
         {
@@ -837,10 +693,7 @@
                 "x": 263,
                 "y": 454
             },
-            "connections": [
-                9,
-                11
-            ],
+            "connections": [9, 11],
             "max": {
                 "population": 900000,
                 "agriculture": 6000,
@@ -859,10 +712,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "연분홍시티",
-                    "홍련마을"
-                ]
+                "connectionNames": ["연분홍시티", "홍련마을"]
             }
         }
     ],

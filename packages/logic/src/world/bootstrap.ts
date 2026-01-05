@@ -1,14 +1,5 @@
-import type {
-    City,
-    General,
-    GeneralTriggerState,
-    Nation,
-    TriggerValue,
-} from '@sammo-ts/logic/domain/entities.js';
-import type {
-    ScenarioDefinition,
-    ScenarioGeneral,
-} from '@sammo-ts/logic/scenario/types.js';
+import type { City, General, GeneralTriggerState, Nation, TriggerValue } from '@sammo-ts/logic/domain/entities.js';
+import type { ScenarioDefinition, ScenarioGeneral } from '@sammo-ts/logic/scenario/types.js';
 import type {
     CitySeed,
     GeneralSeed,
@@ -97,35 +88,17 @@ const addTriggerMeta = (
     meta[key] = value;
 };
 
-const resolveMapDefaults = (
-    map: MapDefinition,
-    options?: ScenarioBootstrapOptions
-): MapDefaults => {
+const resolveMapDefaults = (map: MapDefinition, options?: ScenarioBootstrapOptions): MapDefaults => {
     const override = options?.mapDefaults ?? {};
     return {
-        trust:
-            override.trust ??
-            map.defaults?.trust ??
-            DEFAULT_CITY_TRUST,
-        trade:
-            override.trade ??
-            map.defaults?.trade ??
-            DEFAULT_CITY_TRADE,
-        supplyState:
-            override.supplyState ??
-            map.defaults?.supplyState ??
-            DEFAULT_CITY_SUPPLY_STATE,
-        frontState:
-            override.frontState ??
-            map.defaults?.frontState ??
-            DEFAULT_CITY_FRONT_STATE,
+        trust: override.trust ?? map.defaults?.trust ?? DEFAULT_CITY_TRUST,
+        trade: override.trade ?? map.defaults?.trade ?? DEFAULT_CITY_TRADE,
+        supplyState: override.supplyState ?? map.defaults?.supplyState ?? DEFAULT_CITY_SUPPLY_STATE,
+        frontState: override.frontState ?? map.defaults?.frontState ?? DEFAULT_CITY_FRONT_STATE,
     };
 };
 
-const resolveNationType = (
-    rawType: string,
-    prefix: string
-): string => {
+const resolveNationType = (rawType: string, prefix: string): string => {
     const trimmed = rawType.trim();
     if (!trimmed) {
         return `${prefix}중립`;
@@ -136,10 +109,7 @@ const resolveNationType = (
     return `${prefix}${trimmed}`;
 };
 
-const resolveBirthYear = (
-    birthYear: number,
-    startYear: number | null
-): number => {
+const resolveBirthYear = (birthYear: number, startYear: number | null): number => {
     if (birthYear > 0) {
         return birthYear;
     }
@@ -149,11 +119,7 @@ const resolveBirthYear = (
     return 0;
 };
 
-const resolveDeathYear = (
-    deathYear: number,
-    birthYear: number,
-    startYear: number | null
-): number => {
+const resolveDeathYear = (deathYear: number, birthYear: number, startYear: number | null): number => {
     if (deathYear > 0) {
         return deathYear;
     }
@@ -253,24 +219,10 @@ const buildGeneralSeeds = (
         const id = nextId;
         nextId += 1;
 
-        const nationId = resolveNationId(
-            row.nation,
-            nationNameToId,
-            warnings,
-            row.name
-        );
-        const cityId = resolveCityId(
-            row.city,
-            cityByName,
-            warnings,
-            row.name
-        );
+        const nationId = resolveNationId(row.nation, nationNameToId, warnings, row.name);
+        const cityId = resolveCityId(row.city, cityByName, warnings, row.name);
         const birthYear = resolveBirthYear(row.birthYear, scenario.startYear);
-        const deathYear = resolveDeathYear(
-            row.deathYear,
-            birthYear,
-            scenario.startYear
-        );
+        const deathYear = resolveDeathYear(row.deathYear, birthYear, scenario.startYear);
         const officerLevel = resolveOfficerLevel(row.officerLevel, nationId);
         const age = resolveAge(scenario.startYear, birthYear);
         const stats = {
@@ -346,11 +298,7 @@ const buildGeneralSeeds = (
         addTriggerMeta(generalMeta, 'personality', row.personality ?? undefined);
         addTriggerMeta(generalMeta, 'special', row.special ?? undefined);
         addTriggerMeta(generalMeta, 'picture', row.picture ?? undefined);
-        addTriggerMeta(
-            generalMeta,
-            'specialWar',
-            row.specialWar ?? undefined
-        );
+        addTriggerMeta(generalMeta, 'specialWar', row.specialWar ?? undefined);
         addTriggerMeta(generalMeta, 'horse', row.horse ?? undefined);
         addTriggerMeta(generalMeta, 'weapon', row.weapon ?? undefined);
         addTriggerMeta(generalMeta, 'book', row.book ?? undefined);
@@ -398,9 +346,7 @@ const buildGeneralSeeds = (
 };
 
 // 시나리오, 맵, 유닛셋을 묶어 초기 월드 스냅샷과 시드 데이터를 만든다.
-export const buildScenarioBootstrap = (
-    input: ScenarioBootstrapInput
-): ScenarioBootstrapResult => {
+export const buildScenarioBootstrap = (input: ScenarioBootstrapInput): ScenarioBootstrapResult => {
     const { scenario, map, unitSet, options } = input;
     const warnings: ScenarioBootstrapWarning[] = [];
 
@@ -411,11 +357,7 @@ export const buildScenarioBootstrap = (
             message: `Scenario mapName ${environment.mapName} does not match map definition ${map.id}.`,
         });
     }
-    if (
-        unitSet &&
-        unitSet.id !== environment.unitSet &&
-        unitSet.name !== environment.unitSet
-    ) {
+    if (unitSet && unitSet.id !== environment.unitSet && unitSet.name !== environment.unitSet) {
         warnings.push({
             code: 'unit_set_mismatch',
             message: `Scenario unitSet ${environment.unitSet} does not match unit set ${unitSet.id}.`,
@@ -467,15 +409,13 @@ export const buildScenarioBootstrap = (
     }
 
     const scenarioMeta = createScenarioMeta(scenario);
-    const typePrefix =
-        options?.nationTypePrefix ?? `${environment.mapName}_`;
+    const typePrefix = options?.nationTypePrefix ?? `${environment.mapName}_`;
 
     const seedNations: NationSeed[] = [];
     const domainNations: Nation[] = [];
 
     const includeNeutralNation = options?.includeNeutralNation ?? true;
-    const includeNeutralNationInSeed =
-        options?.includeNeutralNationInSeed ?? false;
+    const includeNeutralNationInSeed = options?.includeNeutralNationInSeed ?? false;
     if (includeNeutralNation) {
         const neutralNation: Nation = {
             id: 0,
@@ -550,10 +490,7 @@ export const buildScenarioBootstrap = (
     }
 
     const mapDefaults = resolveMapDefaults(map, options);
-    const defaultCrewTypeId =
-        unitSet?.defaultCrewTypeId ??
-        options?.defaultCrewTypeId ??
-        DEFAULT_CREWTYPE_ID;
+    const defaultCrewTypeId = unitSet?.defaultCrewTypeId ?? options?.defaultCrewTypeId ?? DEFAULT_CREWTYPE_ID;
     const seedCities: CitySeed[] = [];
     const domainCities: City[] = [];
 

@@ -1,16 +1,6 @@
 import type { RandomGenerator } from '@sammo-ts/common';
-import type {
-    City,
-    General,
-    GeneralTriggerState,
-    Nation,
-} from '@sammo-ts/logic/domain/entities.js';
-import type {
-    Constraint,
-    ConstraintContext,
-    RequirementKey,
-    StateView,
-} from '@sammo-ts/logic/constraints/types.js';
+import type { City, General, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
+import type { Constraint, ConstraintContext, RequirementKey, StateView } from '@sammo-ts/logic/constraints/types.js';
 import {
     notBeNeutral,
     notWanderingNation,
@@ -21,10 +11,7 @@ import {
     suppliedCity,
 } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
-import {
-    GeneralActionPipeline,
-    type GeneralActionModule,
-} from '@sammo-ts/logic/triggers/general-action.js';
+import { GeneralActionPipeline, type GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionOutcome,
@@ -39,7 +26,7 @@ import { clamp } from 'es-toolkit';
 export type DomesticCriticalPick = 'fail' | 'normal' | 'success';
 
 export interface DomesticActionContext<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > extends GeneralActionContext<TriggerState> {
     general: General<TriggerState>;
     city: City;
@@ -52,14 +39,8 @@ export interface InvestmentEnvironment {
     frontDebuff?: number;
     frontStatesWithDebuff?: number[];
     getDomesticExpLevelBonus?: (expLevel: number) => number;
-    getCriticalRatio?: (
-        context: DomesticActionContext,
-        statKey: string
-    ) => { success: number; fail: number };
-    getCriticalScoreMultiplier?: (
-        rng: RandomGenerator,
-        pick: DomesticCriticalPick
-    ) => number;
+    getCriticalRatio?: (context: DomesticActionContext, statKey: string) => { success: number; fail: number };
+    getCriticalScoreMultiplier?: (rng: RandomGenerator, pick: DomesticCriticalPick) => number;
     adjustFrontDebuff?: (context: DomesticActionContext, debuff: number) => number;
 }
 
@@ -82,23 +63,15 @@ const ACTION_NAME = '상업 투자';
 const CITY_KEY = 'commerce';
 const STAT_EXP_KEY = 'intel_exp';
 
-const getMetaNumber = (
-    meta: Record<string, unknown>,
-    key: string
-): number | null => {
+const getMetaNumber = (meta: Record<string, unknown>, key: string): number | null => {
     const raw = meta[key];
     return typeof raw === 'number' ? raw : null;
 };
 
-const randomRange = (rng: RandomGenerator, min: number, max: number): number =>
-    min + (max - min) * rng.nextFloat();
+const randomRange = (rng: RandomGenerator, min: number, max: number): number => min + (max - min) * rng.nextFloat();
 
-const pickByWeight = (
-    rng: RandomGenerator,
-    weights: Record<DomesticCriticalPick, number>
-): DomesticCriticalPick => {
-    const total =
-        weights.fail + weights.normal + weights.success;
+const pickByWeight = (rng: RandomGenerator, weights: Record<DomesticCriticalPick, number>): DomesticCriticalPick => {
+    const total = weights.fail + weights.normal + weights.success;
     if (total <= 0) {
         return 'normal';
     }
@@ -112,18 +85,12 @@ const pickByWeight = (
     return 'normal';
 };
 
-const addMetaNumber = (
-    meta: Record<string, unknown>,
-    key: string,
-    delta: number
-): Record<string, unknown> => {
+const addMetaNumber = (meta: Record<string, unknown>, key: string, delta: number): Record<string, unknown> => {
     const current = getMetaNumber(meta, key) ?? 0;
     return { ...meta, [key]: current + delta };
 };
 
-const buildDomesticContextFromView = <
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
->(
+const buildDomesticContextFromView = <TriggerState extends GeneralTriggerState = GeneralTriggerState>(
     ctx: ConstraintContext,
     view: StateView
 ): DomesticActionContext<TriggerState> | null => {
@@ -141,10 +108,7 @@ const buildDomesticContextFromView = <
     }
     const nationId = ctx.nationId ?? general.nationId;
     const nation =
-        nationId !== undefined
-            ? ((view.get({ kind: 'nation', id: nationId }) as Nation | null) ??
-                null)
-            : null;
+        nationId !== undefined ? ((view.get({ kind: 'nation', id: nationId }) as Nation | null) ?? null) : null;
 
     return {
         general,
@@ -154,18 +118,13 @@ const buildDomesticContextFromView = <
 };
 
 // 상업 투자 결과치를 계산하는 경로를 제공한다.
-export class CommandResolver<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     private readonly pipeline: GeneralActionPipeline<TriggerState>;
     private readonly env: InvestmentEnvironment;
     private readonly actionKey = '상업';
     private readonly statKey = 'intelligence';
 
-    constructor(
-        modules: Array<GeneralActionModule<TriggerState> | null | undefined>,
-        env: InvestmentEnvironment
-    ) {
+    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>, env: InvestmentEnvironment) {
         this.pipeline = new GeneralActionPipeline(modules);
         this.env = env;
     }
@@ -175,84 +134,42 @@ export class CommandResolver<
         rice: number;
     } {
         const baseGold = this.env.develCost;
-        const gold = Math.round(
-            this.pipeline.onCalcDomestic(
-                context,
-                this.actionKey,
-                'cost',
-                baseGold
-            )
-        );
+        const gold = Math.round(this.pipeline.onCalcDomestic(context, this.actionKey, 'cost', baseGold));
         return { gold, rice: 0 };
     }
 
-    calcBaseScore(
-        context: DomesticActionContext<TriggerState>,
-        rng: RandomGenerator
-    ): number {
-        const trust =
-            getMetaNumber(context.city.meta, 'trust') ??
-            this.env.defaultTrust ??
-            DEFAULT_TRUST;
+    calcBaseScore(context: DomesticActionContext<TriggerState>, rng: RandomGenerator): number {
+        const trust = getMetaNumber(context.city.meta, 'trust') ?? this.env.defaultTrust ?? DEFAULT_TRUST;
 
-        let score = this.pipeline.onCalcStat(
-            context,
-            this.statKey,
-            context.general.stats.intelligence
-        );
+        let score = this.pipeline.onCalcStat(context, this.statKey, context.general.stats.intelligence);
 
         const expLevel =
-            getMetaNumber(context.general.meta, 'explevel') ??
-            getMetaNumber(context.general.meta, 'expLevel') ??
-            0;
-        const expBonus =
-            this.env.getDomesticExpLevelBonus?.(expLevel) ?? 1;
+            getMetaNumber(context.general.meta, 'explevel') ?? getMetaNumber(context.general.meta, 'expLevel') ?? 0;
+        const expBonus = this.env.getDomesticExpLevelBonus?.(expLevel) ?? 1;
 
         score *= trust / 100;
         score *= expBonus;
         score *= randomRange(rng, 0.8, 1.2);
 
-        return this.pipeline.onCalcDomestic(
-            context,
-            this.actionKey,
-            'score',
-            score
-        );
+        return this.pipeline.onCalcDomestic(context, this.actionKey, 'score', score);
     }
 
-    resolve(
-        context: DomesticActionContext<TriggerState>,
-        rng: RandomGenerator
-    ): CommerceInvestmentResult {
+    resolve(context: DomesticActionContext<TriggerState>, rng: RandomGenerator): CommerceInvestmentResult {
         const { gold: costGold, rice: costRice } = this.getCost(context);
-        const trust =
-            getMetaNumber(context.city.meta, 'trust') ??
-            this.env.defaultTrust ??
-            DEFAULT_TRUST;
+        const trust = getMetaNumber(context.city.meta, 'trust') ?? this.env.defaultTrust ?? DEFAULT_TRUST;
         let score = clamp(this.calcBaseScore(context, rng), 1, Number.MAX_SAFE_INTEGER);
 
-        const ratio =
-            this.env.getCriticalRatio?.(context, this.statKey) ?? {
-                success: 0,
-                fail: 0,
-            };
+        const ratio = this.env.getCriticalRatio?.(context, this.statKey) ?? {
+            success: 0,
+            fail: 0,
+        };
         let successRatio = ratio.success;
         let failRatio = ratio.fail;
         if (trust < 80) {
             successRatio *= trust / 80;
         }
-        successRatio = this.pipeline.onCalcDomestic(
-            context,
-            this.actionKey,
-            'success',
-            successRatio
-        );
-        failRatio = this.pipeline.onCalcDomestic(
-            context,
-            this.actionKey,
-            'fail',
-            failRatio
-        );
+        successRatio = this.pipeline.onCalcDomestic(context, this.actionKey, 'success', successRatio);
+        failRatio = this.pipeline.onCalcDomestic(context, this.actionKey, 'fail', failRatio);
 
         successRatio = clamp(successRatio, 0, 1);
         failRatio = clamp(failRatio, 0, 1 - successRatio);
@@ -264,18 +181,14 @@ export class CommandResolver<
             normal: normalRatio,
         });
 
-        const criticalMultiplier =
-            this.env.getCriticalScoreMultiplier?.(rng, pick) ?? 1;
+        const criticalMultiplier = this.env.getCriticalScoreMultiplier?.(rng, pick) ?? 1;
         score = Math.round(score * criticalMultiplier);
 
-        const frontStates =
-            this.env.frontStatesWithDebuff ?? DEFAULT_FRONT_STATES;
+        const frontStates = this.env.frontStatesWithDebuff ?? DEFAULT_FRONT_STATES;
         let appliedFrontDebuff = false;
         if (frontStates.includes(context.city.frontState)) {
-            const baseDebuff =
-                this.env.frontDebuff ?? DEFAULT_FRONT_DEBUFF;
-            const adjustedDebuff =
-                this.env.adjustFrontDebuff?.(context, baseDebuff) ?? baseDebuff;
+            const baseDebuff = this.env.frontDebuff ?? DEFAULT_FRONT_DEBUFF;
+            const adjustedDebuff = this.env.adjustFrontDebuff?.(context, baseDebuff) ?? baseDebuff;
             score *= adjustedDebuff;
             appliedFrontDebuff = true;
         }
@@ -296,15 +209,12 @@ export class CommandResolver<
 }
 
 export class ActionResolver<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionResolver<TriggerState, CommerceInvestmentArgs> {
     readonly key = 'che_상업투자';
     private readonly command: CommandResolver<TriggerState>;
 
-    constructor(
-        modules: Array<GeneralActionModule<TriggerState> | null | undefined>,
-        env: InvestmentEnvironment
-    ) {
+    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>, env: InvestmentEnvironment) {
         this.command = new CommandResolver(modules, env);
     }
 
@@ -329,11 +239,7 @@ export class ActionResolver<
         );
 
         // 직접 수정 (Immer Draft)
-        city.commerce = clamp(
-            city.commerce + result.score,
-            0,
-            city.commerceMax
-        );
+        city.commerce = clamp(city.commerce + result.score, 0, city.commerceMax);
 
         general.gold = Math.max(0, general.gold - result.costGold);
         general.rice = Math.max(0, general.rice - result.costRice);
@@ -346,12 +252,7 @@ export class ActionResolver<
                 ? { ...metaWithStatExp, max_domestic_critical: result.score }
                 : { ...metaWithStatExp, max_domestic_critical: 0 };
 
-        const pickLabel =
-            result.pick === 'success'
-                ? '성공'
-                : result.pick === 'fail'
-                    ? '실패'
-                    : '완료';
+        const pickLabel = result.pick === 'success' ? '성공' : result.pick === 'fail' ? '실패' : '완료';
         const logMessage = `${ACTION_NAME} ${pickLabel}: +${Math.round(result.score)}`;
         context.addLog(logMessage);
 
@@ -360,17 +261,14 @@ export class ActionResolver<
 }
 
 export class ActionDefinition<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionDefinition<TriggerState, CommerceInvestmentArgs> {
     public readonly key = 'che_상업투자';
     public readonly name = ACTION_NAME;
     private readonly command: CommandResolver<TriggerState>;
     private readonly resolver: ActionResolver<TriggerState>;
 
-    constructor(
-        modules: Array<GeneralActionModule<TriggerState> | null | undefined>,
-        env: InvestmentEnvironment
-    ) {
+    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>, env: InvestmentEnvironment) {
         this.command = new CommandResolver(modules, env);
         this.resolver = new ActionResolver(modules, env);
     }
@@ -380,10 +278,7 @@ export class ActionDefinition<
         return {};
     }
 
-    buildConstraints(
-        ctx: ConstraintContext,
-        _args: CommerceInvestmentArgs
-    ): Constraint[] {
+    buildConstraints(ctx: ConstraintContext, _args: CommerceInvestmentArgs): Constraint[] {
         void _args;
         const requirements: RequirementKey[] = [];
         if (ctx.cityId !== undefined) {
@@ -394,8 +289,7 @@ export class ActionDefinition<
         }
 
         const getCost = (context: ConstraintContext, view: StateView): number => {
-            const domesticContext =
-                buildDomesticContextFromView<TriggerState>(context, view);
+            const domesticContext = buildDomesticContextFromView<TriggerState>(context, view);
             if (!domesticContext) {
                 return 0;
             }
@@ -429,6 +323,5 @@ export const commandSpec: GeneralTurnCommandSpec = {
     category: '내정',
     reqArg: false,
     args: {},
-    createDefinition: (env: TurnCommandEnv) =>
-        new ActionDefinition(env.generalActionModules ?? [], env),
+    createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env.generalActionModules ?? [], env),
 };

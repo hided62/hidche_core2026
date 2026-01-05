@@ -1,14 +1,5 @@
-import type {
-    General,
-    GeneralTriggerState,
-    Nation,
-} from '@sammo-ts/logic/domain/entities.js';
-import type {
-    Constraint,
-    ConstraintContext,
-    RequirementKey,
-    StateView,
-} from '@sammo-ts/logic/constraints/types.js';
+import type { General, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
+import type { Constraint, ConstraintContext, RequirementKey, StateView } from '@sammo-ts/logic/constraints/types.js';
 import {
     alwaysFail,
     beChief,
@@ -27,11 +18,7 @@ import type {
     GeneralActionResolveContext,
     GeneralActionResolver,
 } from '@sammo-ts/logic/actions/engine.js';
-import {
-    createGeneralPatchEffect,
-    createLogEffect,
-    createNationPatchEffect,
-} from '@sammo-ts/logic/actions/engine.js';
+import { createGeneralPatchEffect, createLogEffect, createNationPatchEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { NationTurnCommandSpec } from './index.js';
@@ -46,7 +33,7 @@ export interface AwardArgs {
 }
 
 export interface AwardResolveContext<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > extends GeneralActionResolveContext<TriggerState> {
     destGeneral: General<TriggerState>;
 }
@@ -63,16 +50,11 @@ const ACTION_NAME = '포상';
 const DEFAULT_MIN_AMOUNT = 100;
 const DEFAULT_AMOUNT_UNIT = 100;
 
-const roundToUnit = (value: number, unit: number): number =>
-    Math.round(value / unit) * unit;
+const roundToUnit = (value: number, unit: number): number => Math.round(value / unit) * unit;
 
-const formatNumber = (value: number): string =>
-    value.toLocaleString('en-US');
+const formatNumber = (value: number): string => value.toLocaleString('en-US');
 
-const normalizeAmount = (
-    amount: number,
-    env: AwardEnvironment
-): number => {
+const normalizeAmount = (amount: number, env: AwardEnvironment): number => {
     const unit = env.amountUnit ?? DEFAULT_AMOUNT_UNIT;
     const min = env.minAmount ?? DEFAULT_MIN_AMOUNT;
     const max = env.maxAmount;
@@ -108,7 +90,7 @@ export class CommandResolver {
 
 // 포상 결과를 계산한다.
 export class ActionResolver<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionResolver<TriggerState, AwardArgs> {
     readonly key = 'che_포상';
     private readonly env: AwardEnvironment;
@@ -119,10 +101,7 @@ export class ActionResolver<
         this.command = new CommandResolver(env);
     }
 
-    resolve(
-        context: AwardResolveContext<TriggerState>,
-        args: AwardArgs
-    ): GeneralActionOutcome<TriggerState> {
+    resolve(context: AwardResolveContext<TriggerState>, args: AwardArgs): GeneralActionOutcome<TriggerState> {
         const nation = context.nation;
         if (!nation) {
             return { effects: [] };
@@ -130,11 +109,7 @@ export class ActionResolver<
         const { key, label } = resolveNationResource(nation, args.isGold);
         const base = args.isGold ? this.env.baseGold : this.env.baseRice;
         const available = Math.max(nation[key] - base, 0);
-        const amount = clamp(
-            this.command.normalizeAmount(args.amount),
-            0,
-            available
-        );
+        const amount = clamp(this.command.normalizeAmount(args.amount), 0, available);
         if (amount <= 0) {
             return { effects: [] };
         }
@@ -142,37 +117,32 @@ export class ActionResolver<
         const amountText = formatNumber(amount);
         const effects: Array<GeneralActionEffect<TriggerState>> = [
             createGeneralPatchEffect(
-                { [key]: context.destGeneral[key] + amount } as Partial<
-                    General<TriggerState>
-                >,
+                { [key]: context.destGeneral[key] + amount } as Partial<General<TriggerState>>,
                 context.destGeneral.id
             ),
-            createNationPatchEffect({
-                [key]: nation[key] - amount,
-            } as Partial<Nation>, nation.id),
+            createNationPatchEffect(
+                {
+                    [key]: nation[key] - amount,
+                } as Partial<Nation>,
+                nation.id
+            ),
         ];
 
         const amountJosa = JosaUtil.pick(amountText, '을');
         effects.push(
-            createLogEffect(
-                `${label} ${amountText}${amountJosa} 포상으로 받았습니다.`,
-                {
-                    scope: LogScope.GENERAL,
-                    category: LogCategory.ACTION,
-                    generalId: context.destGeneral.id,
-                    format: LogFormat.PLAIN,
-                }
-            )
+            createLogEffect(`${label} ${amountText}${amountJosa} 포상으로 받았습니다.`, {
+                scope: LogScope.GENERAL,
+                category: LogCategory.ACTION,
+                generalId: context.destGeneral.id,
+                format: LogFormat.PLAIN,
+            })
         );
         effects.push(
-            createLogEffect(
-                `<Y>${context.destGeneral.name}</>에게 ${label} ${amountText}${amountJosa} 수여했습니다.`,
-                {
-                    scope: LogScope.GENERAL,
-                    category: LogCategory.ACTION,
-                    format: LogFormat.MONTH,
-                }
-            )
+            createLogEffect(`<Y>${context.destGeneral.name}</>에게 ${label} ${amountText}${amountJosa} 수여했습니다.`, {
+                scope: LogScope.GENERAL,
+                category: LogCategory.ACTION,
+                format: LogFormat.MONTH,
+            })
         );
 
         return { effects };
@@ -180,12 +150,8 @@ export class ActionResolver<
 }
 
 export class ActionDefinition<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> implements GeneralActionDefinition<
-        TriggerState,
-        AwardArgs,
-        AwardResolveContext<TriggerState>
-    > {
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
+> implements GeneralActionDefinition<TriggerState, AwardArgs, AwardResolveContext<TriggerState>> {
     public readonly key = 'che_포상';
     public readonly name = ACTION_NAME;
     private readonly command: CommandResolver;
@@ -225,10 +191,7 @@ export class ActionDefinition<
         };
     }
 
-    buildConstraints(
-        ctx: ConstraintContext,
-        args: AwardArgs
-    ): Constraint[] {
+    buildConstraints(ctx: ConstraintContext, args: AwardArgs): Constraint[] {
         const requirements: RequirementKey[] = [];
         if (ctx.cityId !== undefined) {
             requirements.push({ kind: 'city', id: ctx.cityId });
@@ -262,10 +225,7 @@ export class ActionDefinition<
         ];
     }
 
-    resolve(
-        context: AwardResolveContext<TriggerState>,
-        args: AwardArgs
-    ): GeneralActionOutcome<TriggerState> {
+    resolve(context: AwardResolveContext<TriggerState>, args: AwardArgs): GeneralActionOutcome<TriggerState> {
         return this.resolver.resolve(context, args);
     }
 }
@@ -293,9 +253,7 @@ export const commandSpec: NationTurnCommandSpec = {
     args: { isGold: true, amount: 1, destGeneralId: 0 },
     createDefinition: (env: TurnCommandEnv) => {
         const maxAmount =
-            env.maxResourceActionAmount > 0
-                ? env.maxResourceActionAmount
-                : Math.max(env.baseGold, env.baseRice, 1000);
+            env.maxResourceActionAmount > 0 ? env.maxResourceActionAmount : Math.max(env.baseGold, env.baseRice, 1000);
         return new ActionDefinition({
             baseGold: env.baseGold,
             baseRice: env.baseRice,

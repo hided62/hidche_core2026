@@ -1,13 +1,5 @@
-import type {
-    City,
-    General,
-    GeneralTriggerState,
-    TriggerValue,
-} from '@sammo-ts/logic/domain/entities.js';
-import type {
-    Constraint,
-    ConstraintContext,
-} from '@sammo-ts/logic/constraints/types.js';
+import type { City, General, GeneralTriggerState, TriggerValue } from '@sammo-ts/logic/domain/entities.js';
+import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
     alwaysFail,
     beChief,
@@ -40,7 +32,7 @@ export interface AssignmentArgs {
 }
 
 export interface AssignmentResolveContext<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > extends GeneralActionResolveContext<TriggerState> {
     destGeneral: General<TriggerState>;
     destCity: City;
@@ -57,17 +49,14 @@ export interface AssignmentEnvironment {
 
 const ACTION_NAME = '발령';
 
-const joinYearMonth = (year: number, month: number): number =>
-    year * 12 + month - 1;
+const joinYearMonth = (year: number, month: number): number => year * 12 + month - 1;
 
 const cutTurn = (time: Date, turnTermMinutes: number): number => {
     const turnMs = turnTermMinutes * 60 * 1000;
     return Math.floor(time.getTime() / turnMs);
 };
 
-const resolveLastAssignment = (
-    context: AssignmentResolveContext
-): number => {
+const resolveLastAssignment = (context: AssignmentResolveContext): number => {
     let yearMonth = joinYearMonth(context.currentYear, context.currentMonth);
     const term = context.turnTermMinutes;
     const srcTime = context.generalTurnTime;
@@ -91,7 +80,7 @@ const addMetaValue = (
 
 // 발령 결과를 계산한다.
 export class ActionResolver<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionResolver<TriggerState, AssignmentArgs> {
     readonly key = 'che_발령';
     private readonly env: AssignmentEnvironment;
@@ -107,9 +96,7 @@ export class ActionResolver<
         void _args;
         const destGeneral = context.destGeneral;
         const destCity = context.destCity;
-        const cityName = this.env.formatCityName
-            ? this.env.formatCityName(destCity)
-            : destCity.name;
+        const cityName = this.env.formatCityName ? this.env.formatCityName(destCity) : destCity.name;
         const cityJosa = JosaUtil.pick(cityName, '로');
         const generalJosa = JosaUtil.pick(destGeneral.name, '을');
         const yearMonth = resolveLastAssignment(context);
@@ -125,15 +112,12 @@ export class ActionResolver<
         ];
 
         effects.push(
-            createLogEffect(
-                `<Y>${context.general.name}</>에 의해 <G><b>${cityName}</b></>${cityJosa} 발령됐습니다.`,
-                {
-                    scope: LogScope.GENERAL,
-                    category: LogCategory.ACTION,
-                    generalId: destGeneral.id,
-                    format: LogFormat.MONTH,
-                }
-            )
+            createLogEffect(`<Y>${context.general.name}</>에 의해 <G><b>${cityName}</b></>${cityJosa} 발령됐습니다.`, {
+                scope: LogScope.GENERAL,
+                category: LogCategory.ACTION,
+                generalId: destGeneral.id,
+                format: LogFormat.MONTH,
+            })
         );
         effects.push(
             createLogEffect(
@@ -151,12 +135,8 @@ export class ActionResolver<
 }
 
 export class ActionDefinition<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> implements GeneralActionDefinition<
-        TriggerState,
-        AssignmentArgs,
-        AssignmentResolveContext<TriggerState>
-    > {
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
+> implements GeneralActionDefinition<TriggerState, AssignmentArgs, AssignmentResolveContext<TriggerState>> {
     public readonly key = 'che_발령';
     public readonly name = ACTION_NAME;
     private readonly resolver: ActionResolver<TriggerState>;
@@ -185,10 +165,7 @@ export class ActionDefinition<
         };
     }
 
-    buildConstraints(
-        ctx: ConstraintContext,
-        _args: AssignmentArgs
-    ): Constraint[] {
+    buildConstraints(ctx: ConstraintContext, _args: AssignmentArgs): Constraint[] {
         void _args;
         if (ctx.destGeneralId === ctx.actorId) {
             return [alwaysFail('본인입니다')];
@@ -205,10 +182,7 @@ export class ActionDefinition<
         ];
     }
 
-    resolve(
-        context: AssignmentResolveContext<TriggerState>,
-        args: AssignmentArgs
-    ): GeneralActionOutcome<TriggerState> {
+    resolve(context: AssignmentResolveContext<TriggerState>, args: AssignmentArgs): GeneralActionOutcome<TriggerState> {
         return this.resolver.resolve(context, args);
     }
 }

@@ -25,10 +25,7 @@ export interface GatewayAdminActionConsumerOptions {
     profileName: string;
     pollIntervalMs?: number;
     handler: (action: GatewayAdminActionRecord) => Promise<GatewayAdminActionResult>;
-    onActionApplied?: (
-        action: GatewayAdminActionRecord,
-        result: GatewayAdminActionResult
-    ) => Promise<void>;
+    onActionApplied?: (action: GatewayAdminActionRecord, result: GatewayAdminActionResult) => Promise<void>;
 }
 
 export interface GatewayAdminActionConsumer {
@@ -41,8 +38,7 @@ const DEFAULT_POLL_MS = 5000;
 const isRecord = (value: unknown): value is Record<string, unknown> =>
     Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
-const normalizeMeta = (value: unknown): Record<string, unknown> =>
-    isRecord(value) ? value : {};
+const normalizeMeta = (value: unknown): Record<string, unknown> => (isRecord(value) ? value : {});
 
 const normalizeStatus = (value: unknown): GatewayAdminActionStatus | null => {
     if (typeof value === 'string') {
@@ -52,12 +48,7 @@ const normalizeStatus = (value: unknown): GatewayAdminActionStatus | null => {
 };
 
 const buildActionKey = (action: GatewayAdminActionRecord): string =>
-    [
-        action.action ?? '',
-        action.requestedAt ?? '',
-        action.scheduledAt ?? '',
-        action.reason ?? '',
-    ].join('|');
+    [action.action ?? '', action.requestedAt ?? '', action.scheduledAt ?? '', action.reason ?? ''].join('|');
 
 export const createGatewayAdminActionConsumer = async (
     options: GatewayAdminActionConsumerOptions
@@ -84,9 +75,7 @@ export const createGatewayAdminActionConsumer = async (
                 return;
             }
             const meta = normalizeMeta(profile.meta);
-            const rawActions = Array.isArray(meta.adminActions)
-                ? meta.adminActions
-                : [];
+            const rawActions = Array.isArray(meta.adminActions) ? meta.adminActions : [];
             if (!rawActions.length) {
                 return;
             }
@@ -106,10 +95,7 @@ export const createGatewayAdminActionConsumer = async (
                 return;
             }
 
-            const updates = new Map<
-                string,
-                { status: GatewayAdminActionStatus; detail?: string; handledAt: string }
-            >();
+            const updates = new Map<string, { status: GatewayAdminActionStatus; detail?: string; handledAt: string }>();
             const appliedActions: Array<{
                 action: GatewayAdminActionRecord;
                 result: GatewayAdminActionResult;
@@ -137,8 +123,7 @@ export const createGatewayAdminActionConsumer = async (
                         action,
                         result: {
                             status: 'FAILED',
-                            detail:
-                                error instanceof Error ? error.message : String(error),
+                            detail: error instanceof Error ? error.message : String(error),
                         },
                     });
                 }
@@ -192,10 +177,7 @@ export const createGatewayAdminActionConsumer = async (
         if (timer) {
             return;
         }
-        timer = setInterval(
-            () => void pollOnce(),
-            options.pollIntervalMs ?? DEFAULT_POLL_MS
-        );
+        timer = setInterval(() => void pollOnce(), options.pollIntervalMs ?? DEFAULT_POLL_MS);
         void pollOnce();
     };
 

@@ -82,10 +82,7 @@ export class InMemoryGatewaySessionService implements GatewaySessionService {
         this.sessions.delete(sessionToken);
     }
 
-    async createGameSession(
-        sessionToken: string,
-        profile: string
-    ): Promise<GameSessionInfo | null> {
+    async createGameSession(sessionToken: string, profile: string): Promise<GameSessionInfo | null> {
         const session = await this.getSession(sessionToken);
         if (!session) {
             return null;

@@ -1,7 +1,4 @@
-import type {
-    TraitModule,
-    TraitModuleExport,
-} from '@sammo-ts/logic/triggers/special/types.js';
+import type { TraitModule, TraitModuleExport } from '@sammo-ts/logic/triggers/special/types.js';
 
 export const PERSONALITY_TRAIT_KEYS = [
     'che_안전',
@@ -17,17 +14,13 @@ export const PERSONALITY_TRAIT_KEYS = [
     'che_은둔',
 ] as const;
 
-export type PersonalityTraitKey =
-    (typeof PERSONALITY_TRAIT_KEYS)[number];
+export type PersonalityTraitKey = (typeof PERSONALITY_TRAIT_KEYS)[number];
 
 export type PersonalityTraitModule = TraitModule;
 
 export type PersonalityTraitImporter = () => Promise<TraitModuleExport>;
 
-const defaultImporters: Record<
-    PersonalityTraitKey,
-    PersonalityTraitImporter
-> = {
+const defaultImporters: Record<PersonalityTraitKey, PersonalityTraitImporter> = {
     che_안전: async () => import('./che_안전.js'),
     che_유지: async () => import('./che_유지.js'),
     che_재간: async () => import('./che_재간.js'),
@@ -41,23 +34,13 @@ const defaultImporters: Record<
     che_은둔: async () => import('./che_은둔.js'),
 };
 
-export const isPersonalityTraitKey = (
-    value: string
-): value is PersonalityTraitKey =>
+export const isPersonalityTraitKey = (value: string): value is PersonalityTraitKey =>
     PERSONALITY_TRAIT_KEYS.includes(value as PersonalityTraitKey);
 
 export class PersonalityTraitLoader {
-    private readonly cache = new Map<
-        PersonalityTraitKey,
-        Promise<PersonalityTraitModule>
-    >();
+    private readonly cache = new Map<PersonalityTraitKey, Promise<PersonalityTraitModule>>();
 
-    constructor(
-        private readonly importers: Record<
-            PersonalityTraitKey,
-            PersonalityTraitImporter
-        > = defaultImporters
-    ) {}
+    constructor(private readonly importers: Record<PersonalityTraitKey, PersonalityTraitImporter> = defaultImporters) {}
 
     async load(key: PersonalityTraitKey): Promise<PersonalityTraitModule> {
         const cached = this.cache.get(key);
@@ -74,14 +57,10 @@ export class PersonalityTraitLoader {
             }
             const resolved = module.traitModule;
             if (resolved.key !== key) {
-                throw new Error(
-                    `Personality trait key mismatch: expected ${key}, got ${resolved.key}`
-                );
+                throw new Error(`Personality trait key mismatch: expected ${key}, got ${resolved.key}`);
             }
             if (resolved.kind !== 'personality') {
-                throw new Error(
-                    `Personality trait kind mismatch: ${resolved.key}`
-                );
+                throw new Error(`Personality trait kind mismatch: ${resolved.key}`);
             }
             return resolved;
         });

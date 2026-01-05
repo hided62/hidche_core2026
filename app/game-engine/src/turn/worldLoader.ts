@@ -8,14 +8,7 @@ import {
     type TurnEngineNationRow,
     type TurnEngineTroopRow,
 } from '@sammo-ts/infra';
-import type {
-    City,
-    Nation,
-    ScenarioConfig,
-    ScenarioMeta,
-    Troop,
-    TriggerValue,
-} from '@sammo-ts/logic';
+import type { City, Nation, ScenarioConfig, ScenarioMeta, Troop, TriggerValue } from '@sammo-ts/logic';
 import { z } from 'zod';
 
 import { getNextTickTime } from '../lifecycle/getNextTickTime.js';
@@ -37,8 +30,7 @@ type JsonRecord = Record<string, unknown>;
 const isRecord = (value: unknown): value is JsonRecord =>
     value !== null && typeof value === 'object' && !Array.isArray(value);
 
-const asRecord = (value: unknown): JsonRecord =>
-    isRecord(value) ? value : {};
+const asRecord = (value: unknown): JsonRecord => (isRecord(value) ? value : {});
 
 const asTriggerRecord = (value: unknown): Record<string, TriggerValue> =>
     isRecord(value) ? (value as Record<string, TriggerValue>) : {};
@@ -101,10 +93,7 @@ const parseLastTurnTime = (meta: JsonRecord): Date | null => {
     return parsed;
 };
 
-const resolveFallbackTurnTimeBase = (
-    generals: TurnGeneral[],
-    updatedAt: Date | null
-): Date => {
+const resolveFallbackTurnTimeBase = (generals: TurnGeneral[], updatedAt: Date | null): Date => {
     let earliest: Date | null = null;
     for (const general of generals) {
         const turnTime = general.turnTime;
@@ -181,10 +170,7 @@ const mapGeneralRow = (row: TurnEngineGeneralRow): TurnGeneral => ({
 
 const mapCityRow = (row: TurnEngineCityRow): City => {
     const meta = asTriggerRecord(row.meta);
-    const state =
-        typeof meta.state === 'number' && Number.isFinite(meta.state)
-            ? Math.floor(meta.state)
-            : 0;
+    const state = typeof meta.state === 'number' && Number.isFinite(meta.state) ? Math.floor(meta.state) : 0;
     return {
         id: row.id,
         name: row.name,
@@ -249,9 +235,7 @@ const mapTroopRow = (row: TurnEngineTroopRow): Troop => ({
     name: row.name,
 });
 
-export const loadTurnWorldFromDatabase = async (
-    options: TurnWorldLoaderOptions
-): Promise<TurnWorldLoadResult> => {
+export const loadTurnWorldFromDatabase = async (options: TurnWorldLoaderOptions): Promise<TurnWorldLoadResult> => {
     const connector = createGamePostgresConnector({ url: options.databaseUrl });
     await connector.connect();
     try {
@@ -261,14 +245,7 @@ export const loadTurnWorldFromDatabase = async (
             throw new Error('world_state row is required to start turn daemon.');
         }
 
-        const [
-            generalRows,
-            cityRows,
-            nationRows,
-            diplomacyRows,
-            troopRows,
-            eventRows,
-        ] = await Promise.all([
+        const [generalRows, cityRows, nationRows, diplomacyRows, troopRows, eventRows] = await Promise.all([
             prisma.general.findMany(),
             prisma.city.findMany(),
             prisma.nation.findMany(),
@@ -289,25 +266,14 @@ export const loadTurnWorldFromDatabase = async (
         const mapName = scenarioConfig.environment?.mapName ?? 'che';
         const map = await loadMapDefinitionByName(mapName, options.mapOptions);
         const unitSetName = scenarioConfig.environment?.unitSet ?? 'che';
-        const unitSet = await loadUnitSetDefinitionByName(
-            unitSetName,
-            options.unitSetOptions
-        );
+        const unitSet = await loadUnitSetDefinitionByName(unitSetName, options.unitSetOptions);
 
         const meta = asRecord(worldState.meta);
         const scenarioMeta = parseScenarioMeta(meta);
 
-        const tickMinutes = Math.max(
-            1,
-            Math.round(worldState.tickSeconds / 60)
-        );
-        const fallbackBase = resolveFallbackTurnTimeBase(
-            generals,
-            worldState.updatedAt ?? null
-        );
-        const lastTurnTime =
-            parseLastTurnTime(meta) ??
-            alignToPreviousTick(fallbackBase, tickMinutes);
+        const tickMinutes = Math.max(1, Math.round(worldState.tickSeconds / 60));
+        const fallbackBase = resolveFallbackTurnTimeBase(generals, worldState.updatedAt ?? null);
+        const lastTurnTime = parseLastTurnTime(meta) ?? alignToPreviousTick(fallbackBase, tickMinutes);
 
         const events = eventRows
             .filter((row) => row.targetCode !== 'initial')

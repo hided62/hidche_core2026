@@ -3,10 +3,7 @@ import type { ScenarioConfig } from '@sammo-ts/logic/scenario/types.js';
 import type { ScenarioMeta } from '@sammo-ts/logic/world/types.js';
 import type { WarAftermathConfig, WarEngineConfig, WarTimeContext } from '@sammo-ts/logic/war/types.js';
 import type { UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
-import type {
-    ActionContextWorldRef,
-    ActionContextWorldState,
-} from './actionContext.js';
+import type { ActionContextWorldRef, ActionContextWorldState } from './actionContext.js';
 
 export interface WorldSummary {
     totalGeneralCount: number;
@@ -20,9 +17,7 @@ export interface NationSummary {
     averageDedication?: number;
 }
 
-export const buildWorldSummary = (
-    world: ActionContextWorldRef | null
-): WorldSummary => {
+export const buildWorldSummary = (world: ActionContextWorldRef | null): WorldSummary => {
     if (!world) {
         return { totalGeneralCount: 0, totalNpcCount: 0 };
     }
@@ -51,16 +46,11 @@ export const buildWorldSummary = (
     };
 };
 
-export const buildNationSummary = (
-    world: ActionContextWorldRef | null,
-    nationId: number
-): NationSummary => {
+export const buildNationSummary = (world: ActionContextWorldRef | null, nationId: number): NationSummary => {
     if (!world || nationId <= 0) {
         return {};
     }
-    const generals = world.listGenerals().filter(
-        (general) => general.nationId === nationId
-    );
+    const generals = world.listGenerals().filter((general) => general.nationId === nationId);
     if (generals.length === 0) {
         return {};
     }
@@ -86,9 +76,7 @@ export const buildNationSummary = (
     };
 };
 
-export const buildAverageNationGeneralCount = (
-    world: ActionContextWorldRef | null
-): number => {
+export const buildAverageNationGeneralCount = (world: ActionContextWorldRef | null): number => {
     if (!world) {
         return 0;
     }
@@ -100,10 +88,7 @@ export const buildAverageNationGeneralCount = (
     return generals.length / nations.length;
 };
 
-export const resolveStartYear = (
-    world: ActionContextWorldState,
-    scenarioMeta?: ScenarioMeta
-): number => {
+export const resolveStartYear = (world: ActionContextWorldState, scenarioMeta?: ScenarioMeta): number => {
     if (typeof scenarioMeta?.startYear === 'number') {
         return scenarioMeta.startYear;
     }
@@ -128,15 +113,9 @@ const DEFAULT_AFTER_CONFIG = {
 };
 
 const asRecord = (value: unknown): Record<string, unknown> =>
-    value && typeof value === 'object' && !Array.isArray(value)
-        ? (value as Record<string, unknown>)
-        : {};
+    value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 
-const resolveNumber = (
-    record: Record<string, unknown>,
-    keys: string[],
-    fallback: number
-): number => {
+const resolveNumber = (record: Record<string, unknown>, keys: string[], fallback: number): number => {
     for (const key of keys) {
         const value = record[key];
         if (typeof value === 'number' && Number.isFinite(value)) {
@@ -147,19 +126,14 @@ const resolveNumber = (
 };
 
 // 성벽 병종은 이름/요구조건을 우선해 찾고, 없으면 기본값을 사용한다.
-const resolveCastleCrewTypeId = (
-    unitSet: UnitSetDefinition,
-    fallback: number
-): number => {
+const resolveCastleCrewTypeId = (unitSet: UnitSetDefinition, fallback: number): number => {
     const crewTypes = unitSet.crewTypes ?? [];
     const byName = crewTypes.find((crewType) => crewType.name.includes('성벽'));
     if (byName) {
         return byName.id;
     }
     const byRequirement = crewTypes.find((crewType) =>
-        crewType.requirements.some(
-            (requirement) => requirement.type === 'Impossible'
-        )
+        crewType.requirements.some((requirement) => requirement.type === 'Impossible')
     );
     if (byRequirement) {
         return byRequirement.id;
@@ -170,55 +144,22 @@ const resolveCastleCrewTypeId = (
     return crewTypes[0]?.id ?? fallback;
 };
 
-const resolveCastleArmType = (
-    unitSet: UnitSetDefinition,
-    castleCrewTypeId: number
-): number => {
+const resolveCastleArmType = (unitSet: UnitSetDefinition, castleCrewTypeId: number): number => {
     const crewTypes = unitSet.crewTypes ?? [];
-    return (
-        crewTypes.find((crewType) => crewType.id === castleCrewTypeId)?.armType ??
-        0
-    );
+    return crewTypes.find((crewType) => crewType.id === castleCrewTypeId)?.armType ?? 0;
 };
 
-export const buildWarConfig = (
-    scenarioConfig: ScenarioConfig,
-    unitSet: UnitSetDefinition
-): WarEngineConfig => {
+export const buildWarConfig = (scenarioConfig: ScenarioConfig, unitSet: UnitSetDefinition): WarEngineConfig => {
     const constValues = asRecord(scenarioConfig.const);
-    const castleCrewTypeId = resolveNumber(
-        constValues,
-        ['castleCrewTypeId'],
-        resolveCastleCrewTypeId(unitSet, 0)
-    );
+    const castleCrewTypeId = resolveNumber(constValues, ['castleCrewTypeId'], resolveCastleCrewTypeId(unitSet, 0));
     const castleArmType = resolveCastleArmType(unitSet, castleCrewTypeId);
 
     return {
-        armPerPhase: resolveNumber(
-            constValues,
-            ['armPerPhase', 'armperphase'],
-            DEFAULT_WAR_CONFIG.armPerPhase
-        ),
-        maxTrainByCommand: resolveNumber(
-            constValues,
-            ['maxTrainByCommand'],
-            DEFAULT_WAR_CONFIG.maxTrainByCommand
-        ),
-        maxAtmosByCommand: resolveNumber(
-            constValues,
-            ['maxAtmosByCommand'],
-            DEFAULT_WAR_CONFIG.maxAtmosByCommand
-        ),
-        maxTrainByWar: resolveNumber(
-            constValues,
-            ['maxTrainByWar'],
-            DEFAULT_WAR_CONFIG.maxTrainByWar
-        ),
-        maxAtmosByWar: resolveNumber(
-            constValues,
-            ['maxAtmosByWar'],
-            DEFAULT_WAR_CONFIG.maxAtmosByWar
-        ),
+        armPerPhase: resolveNumber(constValues, ['armPerPhase', 'armperphase'], DEFAULT_WAR_CONFIG.armPerPhase),
+        maxTrainByCommand: resolveNumber(constValues, ['maxTrainByCommand'], DEFAULT_WAR_CONFIG.maxTrainByCommand),
+        maxAtmosByCommand: resolveNumber(constValues, ['maxAtmosByCommand'], DEFAULT_WAR_CONFIG.maxAtmosByCommand),
+        maxTrainByWar: resolveNumber(constValues, ['maxTrainByWar'], DEFAULT_WAR_CONFIG.maxTrainByWar),
+        maxAtmosByWar: resolveNumber(constValues, ['maxAtmosByWar'], DEFAULT_WAR_CONFIG.maxAtmosByWar),
         castleCrewTypeId,
         armTypes: {
             footman: 1,
@@ -238,37 +179,22 @@ export const buildWarAftermathConfig = (
 ): WarAftermathConfig => {
     const constValues = asRecord(scenarioConfig.const);
     return {
-        initialNationGenLimit: resolveNumber(
-            constValues,
-            ['initialNationGenLimit'],
-            0
-        ),
-        techLevelIncYear: resolveNumber(
-            constValues,
-            ['techLevelIncYear'],
-            DEFAULT_AFTER_CONFIG.techLevelIncYear
-        ),
+        initialNationGenLimit: resolveNumber(constValues, ['initialNationGenLimit'], 0),
+        techLevelIncYear: resolveNumber(constValues, ['techLevelIncYear'], DEFAULT_AFTER_CONFIG.techLevelIncYear),
         initialAllowedTechLevel: resolveNumber(
             constValues,
             ['initialAllowedTechLevel'],
             DEFAULT_AFTER_CONFIG.initialAllowedTechLevel
         ),
         maxTechLevel: resolveNumber(constValues, ['maxTechLevel'], 0),
-        defaultCityWall: resolveNumber(
-            constValues,
-            ['defaultCityWall'],
-            DEFAULT_AFTER_CONFIG.defaultCityWall
-        ),
+        defaultCityWall: resolveNumber(constValues, ['defaultCityWall'], DEFAULT_AFTER_CONFIG.defaultCityWall),
         baseGold: resolveNumber(constValues, ['baseGold', 'basegold'], 0),
         baseRice: resolveNumber(constValues, ['baseRice', 'baserice'], 0),
         castleCrewTypeId,
     };
 };
 
-export const buildWarTime = (
-    world: ActionContextWorldState,
-    scenarioMeta?: ScenarioMeta
-): WarTimeContext => ({
+export const buildWarTime = (world: ActionContextWorldState, scenarioMeta?: ScenarioMeta): WarTimeContext => ({
     year: world.currentYear,
     month: world.currentMonth,
     startYear: resolveStartYear(world, scenarioMeta),

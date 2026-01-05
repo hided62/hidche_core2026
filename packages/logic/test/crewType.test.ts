@@ -2,10 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { City, General, Nation } from '../src/domain/entities.js';
 import type { MapDefinition } from '../src/world/types.js';
-import {
-    isCrewTypeAvailable,
-    parseUnitSetDefinition,
-} from '../src/world/unitSet.js';
+import { isCrewTypeAvailable, parseUnitSetDefinition } from '../src/world/unitSet.js';
 
 const buildMap = (): MapDefinition => ({
     id: 'test',
@@ -104,6 +101,7 @@ const buildCities = (): City[] => [
         name: 'A',
         nationId: 1,
         level: 6,
+        state: 0,
         population: 50000,
         populationMax: 100000,
         agriculture: 500,
@@ -212,9 +210,7 @@ describe('crew type availability', () => {
                     magicCoef: 0,
                     cost: 9,
                     rice: 9,
-                    requirements: [
-                        { type: 'ReqCitiesWithCityLevel', level: 7, cities: ['A'] },
-                    ],
+                    requirements: [{ type: 'ReqCitiesWithCityLevel', level: 7, cities: ['A'] }],
                     attackCoef: {},
                     defenceCoef: {},
                     info: [],
@@ -239,4 +235,3 @@ describe('crew type availability', () => {
         expect(isCrewTypeAvailable(unitSet, 1300, context)).toBe(false);
     });
 });
-

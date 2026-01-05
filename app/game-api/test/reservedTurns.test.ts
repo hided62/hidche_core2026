@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type {
-    DatabaseClient,
-    GeneralTurnRow,
-    NationTurnRow,
-} from '../src/context.js';
+import type { DatabaseClient, GeneralTurnRow, NationTurnRow } from '../src/context.js';
 import {
     MAX_GENERAL_TURNS,
     MAX_NATION_TURNS,
@@ -53,8 +49,7 @@ const buildDb = () => {
             },
         },
         nationTurn: {
-            findMany: async ({ where }: any) =>
-                nationTurns.get(`${where.nationId}:${where.officerLevel}`) ?? [],
+            findMany: async ({ where }: any) => nationTurns.get(`${where.nationId}:${where.officerLevel}`) ?? [],
             deleteMany: async ({ where }: any) => {
                 nationTurns.delete(`${where.nationId}:${where.officerLevel}`);
                 return {};
@@ -85,13 +80,7 @@ describe('reservedTurns', () => {
     it('sets and shifts general turns', async () => {
         const { db } = buildDb();
 
-        const initial = await setGeneralTurn(
-            db,
-            1,
-            0,
-            'che_화계',
-            { destCityId: 10 }
-        );
+        const initial = await setGeneralTurn(db, 1, 0, 'che_화계', { destCityId: 10 });
 
         expect(initial).toHaveLength(MAX_GENERAL_TURNS);
         expect(initial[0]?.action).toBe('che_화계');
@@ -108,14 +97,7 @@ describe('reservedTurns', () => {
     it('sets and shifts nation turns', async () => {
         const { db } = buildDb();
 
-        const initial = await setNationTurn(
-            db,
-            2,
-            5,
-            0,
-            'che_포상',
-            { isGold: true, amount: 200, destGeneralId: 7 }
-        );
+        const initial = await setNationTurn(db, 2, 5, 0, 'che_포상', { isGold: true, amount: 200, destGeneralId: 7 });
 
         expect(initial).toHaveLength(MAX_NATION_TURNS);
         expect(initial[0]?.action).toBe('che_포상');

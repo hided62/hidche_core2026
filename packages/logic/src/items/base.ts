@@ -29,9 +29,7 @@ export interface StatItemOptions {
     extraInfo?: string;
 }
 
-export const createStatItemModule = (
-    options: StatItemOptions
-): ItemModule => {
+export const createStatItemModule = (options: StatItemOptions): ItemModule => {
     const statLabel = resolveStatLabel(options.statName);
     const name = `${options.rawName}(+${options.statValue})`;
     const baseInfo = `${statLabel} +${options.statValue}`;

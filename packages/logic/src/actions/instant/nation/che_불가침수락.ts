@@ -12,10 +12,7 @@ import {
 } from '@sammo-ts/logic/constraints/presets.js';
 import { allow, unknownOrDeny } from '@sammo-ts/logic/constraints/helpers.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
-import type {
-    GeneralActionOutcome,
-    GeneralActionResolveContext,
-} from '@sammo-ts/logic/actions/engine.js';
+import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
 import { createDiplomacyPatchEffect, createLogEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 
@@ -27,7 +24,7 @@ export interface NonAggressionAcceptArgs {
 }
 
 export interface NonAggressionAcceptContext<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > extends GeneralActionResolveContext<TriggerState> {
     currentYear: number;
     currentMonth: number;
@@ -65,8 +62,7 @@ const parseMonth = (raw: unknown): number | null => {
     return month >= 1 && month <= 12 ? month : null;
 };
 
-const resolveMonthIndex = (year: number, month: number): number =>
-    year * 12 + month - 1;
+const resolveMonthIndex = (year: number, month: number): number => year * 12 + month - 1;
 
 const requireFutureTerm = (): Constraint => ({
     name: 'RequireNonAggressionFutureTerm',
@@ -78,11 +74,9 @@ const requireFutureTerm = (): Constraint => ({
     ],
     test: (ctx) => {
         const yearValue = typeof ctx.args.year === 'number' ? ctx.args.year : null;
-        const monthValue =
-            typeof ctx.args.month === 'number' ? ctx.args.month : null;
+        const monthValue = typeof ctx.args.month === 'number' ? ctx.args.month : null;
         const envYearValue = typeof ctx.env.year === 'number' ? ctx.env.year : null;
-        const envMonthValue =
-            typeof ctx.env.month === 'number' ? ctx.env.month : null;
+        const envMonthValue = typeof ctx.env.month === 'number' ? ctx.env.month : null;
         const missing = [];
 
         if (yearValue === null) {
@@ -126,11 +120,7 @@ const notSameDestGeneral = (): Constraint => ({
     test: (ctx) => {
         const destGeneralId = ctx.args.destGeneralId;
         if (typeof destGeneralId !== 'number') {
-            return unknownOrDeny(
-                ctx,
-                [{ kind: 'arg', key: 'destGeneralId' }],
-                '장수 정보가 없습니다.'
-            );
+            return unknownOrDeny(ctx, [{ kind: 'arg', key: 'destGeneralId' }], '장수 정보가 없습니다.');
         }
         if (destGeneralId === ctx.actorId) {
             return { kind: 'deny', reason: '대상이 올바르지 않습니다.' };
@@ -141,12 +131,8 @@ const notSameDestGeneral = (): Constraint => ({
 
 // 불가침 수락은 메시지와 연결되는 즉시 국가 커맨드로 사용한다.
 export class ActionDefinition<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> implements GeneralActionDefinition<
-        TriggerState,
-        NonAggressionAcceptArgs,
-        NonAggressionAcceptContext<TriggerState>
-    > {
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
+> implements GeneralActionDefinition<TriggerState, NonAggressionAcceptArgs, NonAggressionAcceptContext<TriggerState>> {
     public readonly key = 'che_불가침수락';
     public readonly name = ACTION_NAME;
 
@@ -161,21 +147,13 @@ export class ActionDefinition<
         const destGeneralId = parseGeneralId(data?.destGeneralId);
         const year = parseYear(data?.year);
         const month = parseMonth(data?.month);
-        if (
-            destNationId === null ||
-            destGeneralId === null ||
-            year === null ||
-            month === null
-        ) {
+        if (destNationId === null || destGeneralId === null || year === null || month === null) {
             return null;
         }
         return { destNationId, destGeneralId, year, month };
     }
 
-    buildConstraints(
-        _ctx: ConstraintContext,
-        _args: NonAggressionAcceptArgs
-    ): Constraint[] {
+    buildConstraints(_ctx: ConstraintContext, _args: NonAggressionAcceptArgs): Constraint[] {
         return [
             beChief(),
             notBeNeutral(),
@@ -201,22 +179,16 @@ export class ActionDefinition<
         if (nationId === undefined || nationId <= 0) {
             return {
                 effects: [
-                    createLogEffect(
-                        `${ACTION_NAME}을 준비했지만 국가 정보가 없습니다.`,
-                        {
-                            scope: LogScope.GENERAL,
-                            category: LogCategory.ACTION,
-                            format: LogFormat.MONTH,
-                        }
-                    ),
+                    createLogEffect(`${ACTION_NAME}을 준비했지만 국가 정보가 없습니다.`, {
+                        scope: LogScope.GENERAL,
+                        category: LogCategory.ACTION,
+                        format: LogFormat.MONTH,
+                    }),
                 ],
             };
         }
 
-        const currentMonth = resolveMonthIndex(
-            context.currentYear,
-            context.currentMonth
-        );
+        const currentMonth = resolveMonthIndex(context.currentYear, context.currentMonth);
         const targetMonth = args.year * 12 + args.month;
         const term = Math.max(0, targetMonth - currentMonth);
 
@@ -230,14 +202,11 @@ export class ActionDefinition<
                     state: DIPLOMACY_NON_AGGRESSION,
                     term,
                 }),
-                createLogEffect(
-                    `${ACTION_NAME}을 실행했습니다. (국가 ${args.destNationId})`,
-                    {
-                        scope: LogScope.GENERAL,
-                        category: LogCategory.ACTION,
-                        format: LogFormat.MONTH,
-                    }
-                ),
+                createLogEffect(`${ACTION_NAME}을 실행했습니다. (국가 ${args.destNationId})`, {
+                    scope: LogScope.GENERAL,
+                    category: LogCategory.ACTION,
+                    format: LogFormat.MONTH,
+                }),
             ],
         };
     }

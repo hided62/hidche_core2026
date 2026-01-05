@@ -17,12 +17,7 @@ const resolveLeadershipBonus = (
     return value + base * 0.25;
 };
 
-function onCalcStat(
-    context: GeneralActionContext,
-    statName: GeneralStatName,
-    value: number,
-    aux?: unknown
-): number;
+function onCalcStat(context: GeneralActionContext, statName: GeneralStatName, value: number, aux?: unknown): number;
 function onCalcStat(
     context: WarActionContext,
     statName: WarStatName,

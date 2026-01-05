@@ -1,14 +1,9 @@
 import { BaseWarUnitTrigger, WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
-import {
-    CheSnipingActivateTrigger,
-    CheSnipingAttemptTrigger,
-} from '@sammo-ts/logic/war/triggers/che_저격.js';
+import { CheSnipingActivateTrigger, CheSnipingAttemptTrigger } from '@sammo-ts/logic/war/triggers/che_저격.js';
 import { createStatItemModule } from './base.js';
 import type { ItemModule } from './types.js';
 
-const raiseType =
-    BaseWarUnitTrigger.TYPE_ITEM +
-    BaseWarUnitTrigger.TYPE_DEDUP_TYPE_BASE * 109;
+const raiseType = BaseWarUnitTrigger.TYPE_ITEM + BaseWarUnitTrigger.TYPE_DEDUP_TYPE_BASE * 109;
 
 const baseModule = createStatItemModule({
     key: 'che_무기_09_동호비궁',
@@ -30,14 +25,7 @@ export const itemModule: ItemModule = {
             return null;
         }
         return new WarTriggerCaller(
-            new CheSnipingAttemptTrigger(
-                context.unit,
-                raiseType,
-                0.2,
-                20,
-                40,
-                20
-            ),
+            new CheSnipingAttemptTrigger(context.unit, raiseType, 0.2, 20, 40, 20),
             new CheSnipingActivateTrigger(context.unit, raiseType)
         );
     },

@@ -7,6 +7,5 @@ export interface GatewayRedisKeyBuilder {
 export const createGatewayRedisKeyBuilder = (prefix: string): GatewayRedisKeyBuilder => ({
     sessionKey: (sessionToken: string) => `${prefix}:session:${sessionToken}`,
     sessionGameSetKey: (sessionToken: string) => `${prefix}:session-games:${sessionToken}`,
-    gameSessionKey: (profile: string, gameToken: string) =>
-        `${prefix}:game-session:${profile}:${gameToken}`,
+    gameSessionKey: (profile: string, gameToken: string) => `${prefix}:game-session:${profile}:${gameToken}`,
 });

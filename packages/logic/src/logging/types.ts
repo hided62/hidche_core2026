@@ -16,8 +16,7 @@ export const LogCategory = {
     USER: 'USER',
 } as const;
 
-export type LogCategory =
-    (typeof LogCategory)[keyof typeof LogCategory];
+export type LogCategory = (typeof LogCategory)[keyof typeof LogCategory];
 
 export interface LogEntryDraft {
     scope: LogScope;

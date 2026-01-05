@@ -3,10 +3,7 @@ import crypto from 'node:crypto';
 import type { BattleSimJobPayload, BattleSimResultPayload, BattleSimTransportResponse } from './types.js';
 import type { BattleSimQueueKeys } from './keys.js';
 
-type RedisBlPopResult =
-    | { key: string; element: string }
-    | [string, string]
-    | null;
+type RedisBlPopResult = { key: string; element: string } | [string, string] | null;
 
 interface RedisClientLike {
     rPush(key: string, value: string): Promise<number>;
@@ -22,8 +19,7 @@ export interface RedisBattleSimTransportOptions {
     resultTtlSeconds: number;
 }
 
-const toTimeoutSeconds = (timeoutMs: number): number =>
-    Math.max(1, Math.ceil(timeoutMs / 1000));
+const toTimeoutSeconds = (timeoutMs: number): number => Math.max(1, Math.ceil(timeoutMs / 1000));
 
 const parseBlPopValue = (result: RedisBlPopResult): string | null => {
     if (!result) {

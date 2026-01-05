@@ -1,14 +1,5 @@
-import type {
-    City,
-    General,
-    Nation,
-    StatBlock,
-    Troop,
-} from '@sammo-ts/logic/domain/entities.js';
-import type {
-    ScenarioConfig,
-    ScenarioDiplomacy,
-} from '@sammo-ts/logic/scenario/types.js';
+import type { City, General, Nation, StatBlock, Troop } from '@sammo-ts/logic/domain/entities.js';
+import type { ScenarioConfig, ScenarioDiplomacy } from '@sammo-ts/logic/scenario/types.js';
 
 export interface ScenarioMeta {
     title: string;

@@ -31,9 +31,9 @@ For defender generals:
 - Must have rice > crew/100
 - `train` and `atmos` must meet `defence_train`
 - Battle order uses:
-  - `totalStat = (realStat + fullStat) / 2`
-  - `totalCrew = crew / 1_000_000 * (train * atmos) ^ 1.5`
-  - `totalStat + totalCrew / 100`
+    - `totalStat = (realStat + fullStat) / 2`
+    - `totalCrew = crew / 1_000_000 * (train * atmos) ^ 1.5`
+    - `totalStat + totalCrew / 100`
 
 For cities:
 
@@ -44,24 +44,24 @@ For cities:
 1. Log start, include seed in battle logs.
 2. If no defenders remain, set defender = city and switch to siege.
 3. **Initial engagement**
-   - `setOppose()` for attacker/defender
-   - `addTrain(1)` for both
-   - Fire battle-init triggers
+    - `setOppose()` for attacker/defender
+    - `addTrain(1)` for both
+    - Fire battle-init triggers
 4. **Per phase**
-   - `beginPhase()` computes war power
-   - Fire battle-phase triggers
-   - `calcDamage()` on both sides
-   - Clamp damage if it exceeds HP ratios
-   - Apply damage, increase killed/dead counters
-   - Log phase results
+    - `beginPhase()` computes war power
+    - Fire battle-phase triggers
+    - `calcDamage()` on both sides
+    - Clamp damage if it exceeds HP ratios
+    - Apply damage, increase killed/dead counters
+    - Log phase results
 5. **Continuation checks**
-   - `continueWar()` fails on no rice or HP <= 0
-   - On retreat/defeat: log, apply win/lose, try wound
-   - If defender removed, move to next defender (or city siege)
+    - `continueWar()` fails on no rice or HP <= 0
+    - On retreat/defeat: log, apply win/lose, try wound
+    - If defender removed, move to next defender (or city siege)
 6. **Finish**
-   - `logBattleResult()` for last phase if needed
-   - `finishBattle()` for attacker/defender
-   - City conflict tracking and history logs
+    - `logBattleResult()` for last phase if needed
+    - `finishBattle()` for attacker/defender
+    - City conflict tracking and history logs
 
 ## Post-Battle Updates (`processWar`)
 
@@ -118,9 +118,9 @@ Triggered when the defender nation owns exactly one city (the captured city):
   attacker nation with a random delay (0–12 turns), gated by
   `GameConst::$joinRuinedNPCProp`.
 - Attacker reward:
-  - Half of defender nation gold/rice above base (`GameConst::$basegold`,
-    `GameConst::$baserice`) plus half of the aggregated general losses.
-  - Credited to attacker nation and logged to all chiefs (officer level >= 5).
+    - Half of defender nation gold/rice above base (`GameConst::$basegold`,
+      `GameConst::$baserice`) plus half of the aggregated general losses.
+    - Credited to attacker nation and logged to all chiefs (officer level >= 5).
 - Runs `EventTarget::DESTROY_NATION` handlers.
 
 ### Nation Survives Path
@@ -128,14 +128,14 @@ Triggered when the defender nation owns exactly one city (the captured city):
 If the defender nation still has other cities:
 
 - Demotes city officers (태수/군사/종사) to general:
-  - `officer_level = 1`, `officer_city = 0`.
+    - `officer_level = 1`, `officer_city = 0`.
 - If the city was the capital:
-  - Picks a new capital via `findNextCapital()` (closest distance, highest pop).
-  - Logs an emergency relocation message to global and all nation generals.
-  - Sets `nation.capital` to new city and halves nation gold/rice.
-  - Marks new capital as supply city; moves chiefs to it.
-  - Applies 20% morale loss to all generals (`atmos *= 0.8`).
-  - Refreshes cached nation static info.
+    - Picks a new capital via `findNextCapital()` (closest distance, highest pop).
+    - Logs an emergency relocation message to global and all nation generals.
+    - Sets `nation.capital` to new city and halves nation gold/rice.
+    - Marks new capital as supply city; moves chiefs to it.
+    - Applies 20% morale loss to all generals (`atmos *= 0.8`).
+    - Refreshes cached nation static info.
 
 ### Final Ownership + City Reset
 
@@ -149,8 +149,8 @@ City stats are reset after ownership is settled:
   `officer_set = 0`.
 - `agri/comm/secu` multiplied by 0.7.
 - `def/wall` reset:
-  - If `level > 3`: both set to `GameConst::$defaultCityWall`.
-  - Else: set to `def_max/2`, `wall_max/2`.
+    - If `level > 3`: both set to `GameConst::$defaultCityWall`.
+    - Else: set to `def_max/2`, `wall_max/2`.
 - Frontline status recalculated for all nearby nations (`SetNationFront()`).
 
 ### Deterministic RNG
@@ -168,10 +168,10 @@ Used for:
 
 - Train/atmos bonuses depend on city level and attacker/defender role.
 - War power:
-  - Base attack/defence from crew type + tech
-  - Adjusted by train/atmos, dex (`getDex()`), crew type coefficients
-  - Experience level scales war power and counter-scales opponent
-  - `General::getWarPowerMultiplier()` applies special multipliers
+    - Base attack/defence from crew type + tech
+    - Adjusted by train/atmos, dex (`getDex()`), crew type coefficients
+    - Experience level scales war power and counter-scales opponent
+    - `General::getWarPowerMultiplier()` applies special multipliers
 - Rice consumption on kills: proportional to damage, tech cost, unit rice
 - Wound chance: 5% unless `부상무효` / `퇴각부상무효` triggered
 - `finishBattle()` updates rank stats, rounds values, and checks stat changes
@@ -183,8 +183,8 @@ Used for:
 - Computed attack/defence = `(def + wall * 9) / 500 + 200`
 - City train/atmos scales with elapsed years since `startYear`
 - Siege state:
-  - Non-siege battle ends after one exchange
-  - Siege continues until HP <= 0
+    - Non-siege battle ends after one exchange
+    - Siege continues until HP <= 0
 - `heavyDecreaseWealth()` halves `agri/comm/secu` on supply-based rout
 - `addConflict()` records contribution in `city.conflict` JSON
 

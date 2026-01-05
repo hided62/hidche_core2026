@@ -11,13 +11,7 @@
                 "x": 345,
                 "y": 130
             },
-            "connections": [
-                9,
-                18,
-                70,
-                78,
-                80
-            ],
+            "connections": [9, 18, 70, 78, 80],
             "max": {
                 "population": 620500,
                 "agriculture": 12500,
@@ -36,13 +30,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "남피",
-                    "복양",
-                    "호관",
-                    "계교",
-                    "관도"
-                ]
+                "connectionNames": ["남피", "복양", "호관", "계교", "관도"]
             }
         },
         {
@@ -54,14 +42,7 @@
                 "x": 330,
                 "y": 215
             },
-            "connections": [
-                10,
-                19,
-                38,
-                71,
-                74,
-                80
-            ],
+            "connections": [10, 19, 38, 71, 74, 80],
             "max": {
                 "population": 587600,
                 "agriculture": 12100,
@@ -80,14 +61,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "완",
-                    "진류",
-                    "초",
-                    "호로",
-                    "사수",
-                    "관도"
-                ]
+                "connectionNames": ["완", "진류", "초", "호로", "사수", "관도"]
             }
         },
         {
@@ -99,12 +73,7 @@
                 "x": 275,
                 "y": 180
             },
-            "connections": [
-                70,
-                71,
-                72,
-                74
-            ],
+            "connections": [70, 71, 72, 74],
             "max": {
                 "population": 835700,
                 "agriculture": 11700,
@@ -123,12 +92,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "호관",
-                    "호로",
-                    "사곡",
-                    "사수"
-                ]
+                "connectionNames": ["호관", "호로", "사곡", "사수"]
             }
         },
         {
@@ -140,11 +104,7 @@
                 "x": 145,
                 "y": 165
             },
-            "connections": [
-                41,
-                73,
-                86
-            ],
+            "connections": [41, 73, 86],
             "max": {
                 "population": 592300,
                 "agriculture": 11600,
@@ -163,11 +123,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "안정",
-                    "함곡",
-                    "기산"
-                ]
+                "connectionNames": ["안정", "함곡", "기산"]
             }
         },
         {
@@ -179,11 +135,7 @@
                 "x": 25,
                 "y": 290
             },
-            "connections": [
-                26,
-                27,
-                87
-            ],
+            "connections": [26, 27, 87],
             "max": {
                 "population": 652500,
                 "agriculture": 12300,
@@ -202,11 +154,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "덕양",
-                    "강주",
-                    "면죽"
-                ]
+                "connectionNames": ["덕양", "강주", "면죽"]
             }
         },
         {
@@ -218,10 +166,7 @@
                 "x": 255,
                 "y": 290
             },
-            "connections": [
-                51,
-                89
-            ],
+            "connections": [51, 89],
             "max": {
                 "population": 583700,
                 "agriculture": 12000,
@@ -240,10 +185,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "신야",
-                    "장판"
-                ]
+                "connectionNames": ["신야", "장판"]
             }
         },
         {
@@ -255,11 +197,7 @@
                 "x": 505,
                 "y": 305
             },
-            "connections": [
-                31,
-                82,
-                83
-            ],
+            "connections": [31, 82, 83],
             "max": {
                 "population": 638600,
                 "agriculture": 11600,
@@ -278,11 +216,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "오",
-                    "합비",
-                    "광릉"
-                ]
+                "connectionNames": ["오", "합비", "광릉"]
             }
         },
         {
@@ -294,10 +228,7 @@
                 "x": 465,
                 "y": 65
             },
-            "connections": [
-                77,
-                90
-            ],
+            "connections": [77, 90],
             "max": {
                 "population": 486200,
                 "agriculture": 10200,
@@ -316,10 +247,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "역경",
-                    "백랑"
-                ]
+                "connectionNames": ["역경", "백랑"]
             }
         },
         {
@@ -331,11 +259,7 @@
                 "x": 395,
                 "y": 95
             },
-            "connections": [
-                1,
-                36,
-                77
-            ],
+            "connections": [1, 36, 77],
             "max": {
                 "population": 503200,
                 "agriculture": 9900,
@@ -354,11 +278,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "업",
-                    "평원",
-                    "역경"
-                ]
+                "connectionNames": ["업", "평원", "역경"]
             }
         },
         {
@@ -370,12 +290,7 @@
                 "x": 270,
                 "y": 235
             },
-            "connections": [
-                2,
-                20,
-                51,
-                71
-            ],
+            "connections": [2, 20, 51, 71],
             "max": {
                 "population": 472400,
                 "agriculture": 10300,
@@ -394,12 +309,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "허창",
-                    "여남",
-                    "신야",
-                    "호로"
-                ]
+                "connectionNames": ["허창", "여남", "신야", "호로"]
             }
         },
         {
@@ -411,12 +321,7 @@
                 "x": 395,
                 "y": 270
             },
-            "connections": [
-                12,
-                20,
-                38,
-                82
-            ],
+            "connections": [12, 20, 38, 82],
             "max": {
                 "population": 514300,
                 "agriculture": 9900,
@@ -435,12 +340,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "서주",
-                    "여남",
-                    "초",
-                    "합비"
-                ]
+                "connectionNames": ["서주", "여남", "초", "합비"]
             }
         },
         {
@@ -452,12 +352,7 @@
                 "x": 440,
                 "y": 250
             },
-            "connections": [
-                11,
-                21,
-                38,
-                39
-            ],
+            "connections": [11, 21, 38, 39],
             "max": {
                 "population": 485300,
                 "agriculture": 10100,
@@ -476,12 +371,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "수춘",
-                    "하비",
-                    "초",
-                    "패"
-                ]
+                "connectionNames": ["수춘", "하비", "초", "패"]
             }
         },
         {
@@ -493,12 +383,7 @@
                 "x": 245,
                 "y": 335
             },
-            "connections": [
-                14,
-                53,
-                88,
-                89
-            ],
+            "connections": [14, 53, 88, 89],
             "max": {
                 "population": 485000,
                 "agriculture": 10500,
@@ -517,12 +402,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "장사",
-                    "무릉",
-                    "이릉",
-                    "장판"
-                ]
+                "connectionNames": ["장사", "무릉", "이릉", "장판"]
             }
         },
         {
@@ -534,13 +414,7 @@
                 "x": 255,
                 "y": 375
             },
-            "connections": [
-                13,
-                15,
-                30,
-                53,
-                54
-            ],
+            "connections": [13, 15, 30, 53, 54],
             "max": {
                 "population": 471000,
                 "agriculture": 9700,
@@ -559,13 +433,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "강릉",
-                    "시상",
-                    "계양",
-                    "무릉",
-                    "영릉"
-                ]
+                "connectionNames": ["강릉", "시상", "계양", "무릉", "영릉"]
             }
         },
         {
@@ -577,13 +445,7 @@
                 "x": 360,
                 "y": 360
             },
-            "connections": [
-                14,
-                56,
-                58,
-                91,
-                92
-            ],
+            "connections": [14, 56, 58, 91, 92],
             "max": {
                 "population": 525200,
                 "agriculture": 9800,
@@ -602,13 +464,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "장사",
-                    "여강",
-                    "고창",
-                    "적벽",
-                    "파양"
-                ]
+                "connectionNames": ["장사", "여강", "고창", "적벽", "파양"]
             }
         },
         {
@@ -620,13 +476,7 @@
                 "x": 620,
                 "y": 145
             },
-            "connections": [
-                32,
-                33,
-                34,
-                60,
-                79
-            ],
+            "connections": [32, 33, 34, 60, 79],
             "max": {
                 "population": 492600,
                 "agriculture": 10000,
@@ -645,13 +495,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "평양",
-                    "사비",
-                    "계림",
-                    "안평",
-                    "동황"
-                ]
+                "connectionNames": ["평양", "사비", "계림", "안평", "동황"]
             }
         },
         {
@@ -663,10 +507,7 @@
                 "x": 365,
                 "y": 35
             },
-            "connections": [
-                35,
-                77
-            ],
+            "connections": [35, 77],
             "max": {
                 "population": 388500,
                 "agriculture": 7500,
@@ -685,10 +526,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "진양",
-                    "역경"
-                ]
+                "connectionNames": ["진양", "역경"]
             }
         },
         {
@@ -700,12 +538,7 @@
                 "x": 410,
                 "y": 170
             },
-            "connections": [
-                1,
-                19,
-                78,
-                81
-            ],
+            "connections": [1, 19, 78, 81],
             "max": {
                 "population": 418500,
                 "agriculture": 8000,
@@ -724,12 +557,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "업",
-                    "진류",
-                    "계교",
-                    "정도"
-                ]
+                "connectionNames": ["업", "진류", "계교", "정도"]
             }
         },
         {
@@ -741,13 +569,7 @@
                 "x": 365,
                 "y": 185
             },
-            "connections": [
-                2,
-                18,
-                74,
-                80,
-                81
-            ],
+            "connections": [2, 18, 74, 80, 81],
             "max": {
                 "population": 395700,
                 "agriculture": 8200,
@@ -766,13 +588,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "허창",
-                    "복양",
-                    "사수",
-                    "관도",
-                    "정도"
-                ]
+                "connectionNames": ["허창", "복양", "사수", "관도", "정도"]
             }
         },
         {
@@ -784,11 +600,7 @@
                 "x": 330,
                 "y": 260
             },
-            "connections": [
-                10,
-                11,
-                38
-            ],
+            "connections": [10, 11, 38],
             "max": {
                 "population": 383100,
                 "agriculture": 7700,
@@ -807,11 +619,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "완",
-                    "수춘",
-                    "초"
-                ]
+                "connectionNames": ["완", "수춘", "초"]
             }
         },
         {
@@ -823,10 +631,7 @@
                 "x": 480,
                 "y": 235
             },
-            "connections": [
-                12,
-                83
-            ],
+            "connections": [12, 83],
             "max": {
                 "population": 427800,
                 "agriculture": 8500,
@@ -845,10 +650,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "서주",
-                    "광릉"
-                ]
+                "connectionNames": ["서주", "광릉"]
             }
         },
         {
@@ -860,11 +662,7 @@
                 "x": 25,
                 "y": 50
             },
-            "connections": [
-                40,
-                63,
-                64
-            ],
+            "connections": [40, 63, 64],
             "max": {
                 "population": 387400,
                 "agriculture": 7700,
@@ -883,11 +681,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "천수",
-                    "강",
-                    "저"
-                ]
+                "connectionNames": ["천수", "강", "저"]
             }
         },
         {
@@ -899,12 +693,7 @@
                 "x": 230,
                 "y": 150
             },
-            "connections": [
-                35,
-                42,
-                65,
-                70
-            ],
+            "connections": [35, 42, 65, 70],
             "max": {
                 "population": 373600,
                 "agriculture": 7700,
@@ -923,12 +712,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "진양",
-                    "홍농",
-                    "흉노",
-                    "호관"
-                ]
+                "connectionNames": ["진양", "홍농", "흉노", "호관"]
             }
         },
         {
@@ -940,11 +724,7 @@
                 "x": 135,
                 "y": 205
             },
-            "connections": [
-                25,
-                75,
-                86
-            ],
+            "connections": [25, 75, 86],
             "max": {
                 "population": 402700,
                 "agriculture": 7700,
@@ -963,11 +743,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "상용",
-                    "양평",
-                    "기산"
-                ]
+                "connectionNames": ["상용", "양평", "기산"]
             }
         },
         {
@@ -979,10 +755,7 @@
                 "x": 185,
                 "y": 225
             },
-            "connections": [
-                24,
-                51
-            ],
+            "connections": [24, 51],
             "max": {
                 "population": 368700,
                 "agriculture": 7800,
@@ -1001,10 +774,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "한중",
-                    "신야"
-                ]
+                "connectionNames": ["한중", "신야"]
             }
         },
         {
@@ -1016,12 +786,7 @@
                 "x": 85,
                 "y": 275
             },
-            "connections": [
-                5,
-                27,
-                44,
-                45
-            ],
+            "connections": [5, 27, 44, 45],
             "max": {
                 "population": 380300,
                 "agriculture": 8100,
@@ -1040,12 +805,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "성도",
-                    "강주",
-                    "자동",
-                    "영안"
-                ]
+                "connectionNames": ["성도", "강주", "자동", "영안"]
             }
         },
         {
@@ -1057,13 +817,7 @@
                 "x": 70,
                 "y": 310
             },
-            "connections": [
-                5,
-                26,
-                45,
-                46,
-                47
-            ],
+            "connections": [5, 26, 45, 46, 47],
             "max": {
                 "population": 412600,
                 "agriculture": 7900,
@@ -1082,13 +836,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "성도",
-                    "덕양",
-                    "영안",
-                    "귀양",
-                    "주시"
-                ]
+                "connectionNames": ["성도", "덕양", "영안", "귀양", "주시"]
             }
         },
         {
@@ -1100,11 +848,7 @@
                 "x": 80,
                 "y": 400
             },
-            "connections": [
-                46,
-                48,
-                49
-            ],
+            "connections": [46, 48, 49],
             "max": {
                 "population": 376500,
                 "agriculture": 8200,
@@ -1123,11 +867,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "귀양",
-                    "운남",
-                    "남영"
-                ]
+                "connectionNames": ["귀양", "운남", "남영"]
             }
         },
         {
@@ -1139,12 +879,7 @@
                 "x": 245,
                 "y": 480
             },
-            "connections": [
-                50,
-                55,
-                59,
-                67
-            ],
+            "connections": [50, 55, 59, 67],
             "max": {
                 "population": 380300,
                 "agriculture": 8200,
@@ -1163,12 +898,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "교지",
-                    "상동",
-                    "대",
-                    "산월"
-                ]
+                "connectionNames": ["교지", "상동", "대", "산월"]
             }
         },
         {
@@ -1180,11 +910,7 @@
                 "x": 230,
                 "y": 400
             },
-            "connections": [
-                14,
-                54,
-                55
-            ],
+            "connections": [14, 54, 55],
             "max": {
                 "population": 395500,
                 "agriculture": 8300,
@@ -1203,11 +929,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "장사",
-                    "영릉",
-                    "상동"
-                ]
+                "connectionNames": ["장사", "영릉", "상동"]
             }
         },
         {
@@ -1219,12 +941,7 @@
                 "x": 510,
                 "y": 345
             },
-            "connections": [
-                7,
-                57,
-                92,
-                93
-            ],
+            "connections": [7, 57, 92, 93],
             "max": {
                 "population": 435500,
                 "agriculture": 7700,
@@ -1243,12 +960,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "건업",
-                    "회계",
-                    "파양",
-                    "탐라"
-                ]
+                "connectionNames": ["건업", "회계", "파양", "탐라"]
             }
         },
         {
@@ -1260,10 +972,7 @@
                 "x": 590,
                 "y": 100
             },
-            "connections": [
-                16,
-                61
-            ],
+            "connections": [16, 61],
             "max": {
                 "population": 398200,
                 "agriculture": 7800,
@@ -1282,10 +991,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "위례",
-                    "졸본"
-                ]
+                "connectionNames": ["위례", "졸본"]
             }
         },
         {
@@ -1297,11 +1003,7 @@
                 "x": 605,
                 "y": 205
             },
-            "connections": [
-                16,
-                34,
-                93
-            ],
+            "connections": [16, 34, 93],
             "max": {
                 "population": 415700,
                 "agriculture": 7700,
@@ -1320,11 +1022,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "위례",
-                    "계림",
-                    "탐라"
-                ]
+                "connectionNames": ["위례", "계림", "탐라"]
             }
         },
         {
@@ -1336,12 +1034,7 @@
                 "x": 655,
                 "y": 200
             },
-            "connections": [
-                16,
-                33,
-                62,
-                93
-            ],
+            "connections": [16, 33, 62, 93],
             "max": {
                 "population": 391100,
                 "agriculture": 8000,
@@ -1360,12 +1053,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "위례",
-                    "사비",
-                    "이도",
-                    "탐라"
-                ]
+                "connectionNames": ["위례", "사비", "이도", "탐라"]
             }
         },
         {
@@ -1377,11 +1065,7 @@
                 "x": 295,
                 "y": 60
             },
-            "connections": [
-                17,
-                23,
-                70
-            ],
+            "connections": [17, 23, 70],
             "max": {
                 "population": 307400,
                 "agriculture": 5600,
@@ -1400,11 +1084,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "계",
-                    "하내",
-                    "호관"
-                ]
+                "connectionNames": ["계", "하내", "호관"]
             }
         },
         {
@@ -1416,11 +1096,7 @@
                 "x": 440,
                 "y": 115
             },
-            "connections": [
-                9,
-                37,
-                78
-            ],
+            "connections": [9, 37, 78],
             "max": {
                 "population": 307400,
                 "agriculture": 6200,
@@ -1439,11 +1115,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "남피",
-                    "북해",
-                    "계교"
-                ]
+                "connectionNames": ["남피", "북해", "계교"]
             }
         },
         {
@@ -1455,11 +1127,7 @@
                 "x": 470,
                 "y": 155
             },
-            "connections": [
-                36,
-                39,
-                79
-            ],
+            "connections": [36, 39, 79],
             "max": {
                 "population": 314600,
                 "agriculture": 5500,
@@ -1478,11 +1146,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "평원",
-                    "패",
-                    "동황"
-                ]
+                "connectionNames": ["평원", "패", "동황"]
             }
         },
         {
@@ -1494,13 +1158,7 @@
                 "x": 365,
                 "y": 230
             },
-            "connections": [
-                2,
-                11,
-                12,
-                20,
-                81
-            ],
+            "connections": [2, 11, 12, 20, 81],
             "max": {
                 "population": 328600,
                 "agriculture": 6000,
@@ -1519,13 +1177,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "허창",
-                    "수춘",
-                    "서주",
-                    "여남",
-                    "정도"
-                ]
+                "connectionNames": ["허창", "수춘", "서주", "여남", "정도"]
             }
         },
         {
@@ -1537,11 +1189,7 @@
                 "x": 430,
                 "y": 220
             },
-            "connections": [
-                12,
-                37,
-                81
-            ],
+            "connections": [12, 37, 81],
             "max": {
                 "population": 287700,
                 "agriculture": 6400,
@@ -1560,11 +1208,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "서주",
-                    "북해",
-                    "정도"
-                ]
+                "connectionNames": ["서주", "북해", "정도"]
             }
         },
         {
@@ -1576,12 +1220,7 @@
                 "x": 70,
                 "y": 105
             },
-            "connections": [
-                22,
-                41,
-                64,
-                84
-            ],
+            "connections": [22, 41, 64, 84],
             "max": {
                 "population": 298500,
                 "agriculture": 5900,
@@ -1600,12 +1239,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "서량",
-                    "안정",
-                    "저",
-                    "적도"
-                ]
+                "connectionNames": ["서량", "안정", "저", "적도"]
             }
         },
         {
@@ -1617,11 +1251,7 @@
                 "x": 95,
                 "y": 145
             },
-            "connections": [
-                4,
-                40,
-                85
-            ],
+            "connections": [4, 40, 85],
             "max": {
                 "population": 276400,
                 "agriculture": 5700,
@@ -1640,11 +1270,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "장안",
-                    "천수",
-                    "가정"
-                ]
+                "connectionNames": ["장안", "천수", "가정"]
             }
         },
         {
@@ -1656,11 +1282,7 @@
                 "x": 210,
                 "y": 175
             },
-            "connections": [
-                23,
-                72,
-                73
-            ],
+            "connections": [23, 72, 73],
             "max": {
                 "population": 274800,
                 "agriculture": 5700,
@@ -1679,11 +1301,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "하내",
-                    "사곡",
-                    "함곡"
-                ]
+                "connectionNames": ["하내", "사곡", "함곡"]
             }
         },
         {
@@ -1695,10 +1313,7 @@
                 "x": 45,
                 "y": 190
             },
-            "connections": [
-                76,
-                85
-            ],
+            "connections": [76, 85],
             "max": {
                 "population": 278500,
                 "agriculture": 5800,
@@ -1717,10 +1332,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "가맹",
-                    "가정"
-                ]
+                "connectionNames": ["가맹", "가정"]
             }
         },
         {
@@ -1732,12 +1344,7 @@
                 "x": 75,
                 "y": 245
             },
-            "connections": [
-                26,
-                75,
-                76,
-                87
-            ],
+            "connections": [26, 75, 76, 87],
             "max": {
                 "population": 287000,
                 "agriculture": 5700,
@@ -1756,12 +1363,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "덕양",
-                    "양평",
-                    "가맹",
-                    "면죽"
-                ]
+                "connectionNames": ["덕양", "양평", "가맹", "면죽"]
             }
         },
         {
@@ -1773,11 +1375,7 @@
                 "x": 115,
                 "y": 295
             },
-            "connections": [
-                26,
-                27,
-                88
-            ],
+            "connections": [26, 27, 88],
             "max": {
                 "population": 315300,
                 "agriculture": 6200,
@@ -1796,11 +1394,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "덕양",
-                    "강주",
-                    "이릉"
-                ]
+                "connectionNames": ["덕양", "강주", "이릉"]
             }
         },
         {
@@ -1812,11 +1406,7 @@
                 "x": 90,
                 "y": 360
             },
-            "connections": [
-                27,
-                28,
-                47
-            ],
+            "connections": [27, 28, 47],
             "max": {
                 "population": 274600,
                 "agriculture": 5800,
@@ -1835,11 +1425,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "강주",
-                    "건녕",
-                    "주시"
-                ]
+                "connectionNames": ["강주", "건녕", "주시"]
             }
         },
         {
@@ -1851,11 +1437,7 @@
                 "x": 30,
                 "y": 345
             },
-            "connections": [
-                27,
-                46,
-                48
-            ],
+            "connections": [27, 46, 48],
             "max": {
                 "population": 282800,
                 "agriculture": 6000,
@@ -1874,11 +1456,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "강주",
-                    "귀양",
-                    "운남"
-                ]
+                "connectionNames": ["강주", "귀양", "운남"]
             }
         },
         {
@@ -1890,11 +1468,7 @@
                 "x": 30,
                 "y": 415
             },
-            "connections": [
-                28,
-                47,
-                66
-            ],
+            "connections": [28, 47, 66],
             "max": {
                 "population": 325800,
                 "agriculture": 6200,
@@ -1913,11 +1487,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "건녕",
-                    "주시",
-                    "남만"
-                ]
+                "connectionNames": ["건녕", "주시", "남만"]
             }
         },
         {
@@ -1929,11 +1499,7 @@
                 "x": 135,
                 "y": 405
             },
-            "connections": [
-                28,
-                54,
-                66
-            ],
+            "connections": [28, 54, 66],
             "max": {
                 "population": 285300,
                 "agriculture": 5900,
@@ -1952,11 +1518,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "건녕",
-                    "영릉",
-                    "남만"
-                ]
+                "connectionNames": ["건녕", "영릉", "남만"]
             }
         },
         {
@@ -1968,10 +1530,7 @@
                 "x": 130,
                 "y": 480
             },
-            "connections": [
-                29,
-                66
-            ],
+            "connections": [29, 66],
             "max": {
                 "population": 319500,
                 "agriculture": 5800,
@@ -1990,10 +1549,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "남해",
-                    "남만"
-                ]
+                "connectionNames": ["남해", "남만"]
             }
         },
         {
@@ -2005,11 +1561,7 @@
                 "x": 250,
                 "y": 260
             },
-            "connections": [
-                6,
-                10,
-                25
-            ],
+            "connections": [6, 10, 25],
             "max": {
                 "population": 278600,
                 "agriculture": 6000,
@@ -2028,11 +1580,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "양양",
-                    "완",
-                    "상용"
-                ]
+                "connectionNames": ["양양", "완", "상용"]
             }
         },
         {
@@ -2044,10 +1592,7 @@
                 "x": 315,
                 "y": 295
             },
-            "connections": [
-                89,
-                91
-            ],
+            "connections": [89, 91],
             "max": {
                 "population": 307400,
                 "agriculture": 5500,
@@ -2066,10 +1611,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "장판",
-                    "적벽"
-                ]
+                "connectionNames": ["장판", "적벽"]
             }
         },
         {
@@ -2081,11 +1623,7 @@
                 "x": 195,
                 "y": 355
             },
-            "connections": [
-                13,
-                14,
-                54
-            ],
+            "connections": [13, 14, 54],
             "max": {
                 "population": 319600,
                 "agriculture": 5800,
@@ -2104,11 +1642,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "강릉",
-                    "장사",
-                    "영릉"
-                ]
+                "connectionNames": ["강릉", "장사", "영릉"]
             }
         },
         {
@@ -2120,12 +1654,7 @@
                 "x": 190,
                 "y": 395
             },
-            "connections": [
-                30,
-                49,
-                53,
-                14
-            ],
+            "connections": [30, 49, 53, 14],
             "max": {
                 "population": 284900,
                 "agriculture": 6200,
@@ -2144,12 +1673,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "계양",
-                    "남영",
-                    "무릉",
-                    "장사"
-                ]
+                "connectionNames": ["계양", "남영", "무릉", "장사"]
             }
         },
         {
@@ -2161,11 +1685,7 @@
                 "x": 210,
                 "y": 435
             },
-            "connections": [
-                29,
-                30,
-                58
-            ],
+            "connections": [29, 30, 58],
             "max": {
                 "population": 276700,
                 "agriculture": 5800,
@@ -2184,11 +1704,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "남해",
-                    "계양",
-                    "고창"
-                ]
+                "connectionNames": ["남해", "계양", "고창"]
             }
         },
         {
@@ -2200,12 +1716,7 @@
                 "x": 380,
                 "y": 315
             },
-            "connections": [
-                15,
-                82,
-                91,
-                92
-            ],
+            "connections": [15, 82, 91, 92],
             "max": {
                 "population": 290500,
                 "agriculture": 5600,
@@ -2224,12 +1735,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "시상",
-                    "합비",
-                    "적벽",
-                    "파양"
-                ]
+                "connectionNames": ["시상", "합비", "적벽", "파양"]
             }
         },
         {
@@ -2241,10 +1747,7 @@
                 "x": 480,
                 "y": 395
             },
-            "connections": [
-                31,
-                67
-            ],
+            "connections": [31, 67],
             "max": {
                 "population": 300500,
                 "agriculture": 6400,
@@ -2263,10 +1766,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "오",
-                    "산월"
-                ]
+                "connectionNames": ["오", "산월"]
             }
         },
         {
@@ -2278,11 +1778,7 @@
                 "x": 350,
                 "y": 405
             },
-            "connections": [
-                15,
-                55,
-                67
-            ],
+            "connections": [15, 55, 67],
             "max": {
                 "population": 280200,
                 "agriculture": 5700,
@@ -2301,11 +1797,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "시상",
-                    "상동",
-                    "산월"
-                ]
+                "connectionNames": ["시상", "상동", "산월"]
             }
         },
         {
@@ -2317,11 +1809,7 @@
                 "x": 450,
                 "y": 480
             },
-            "connections": [
-                29,
-                67,
-                94
-            ],
+            "connections": [29, 67, 94],
             "max": {
                 "population": 325600,
                 "agriculture": 6000,
@@ -2340,11 +1828,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "남해",
-                    "산월",
-                    "유구"
-                ]
+                "connectionNames": ["남해", "산월", "유구"]
             }
         },
         {
@@ -2356,12 +1840,7 @@
                 "x": 530,
                 "y": 80
             },
-            "connections": [
-                16,
-                61,
-                79,
-                90
-            ],
+            "connections": [16, 61, 79, 90],
             "max": {
                 "population": 293700,
                 "agriculture": 6300,
@@ -2380,12 +1859,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "위례",
-                    "졸본",
-                    "동황",
-                    "백랑"
-                ]
+                "connectionNames": ["위례", "졸본", "동황", "백랑"]
             }
         },
         {
@@ -2397,11 +1871,7 @@
                 "x": 570,
                 "y": 65
             },
-            "connections": [
-                32,
-                60,
-                68
-            ],
+            "connections": [32, 60, 68],
             "max": {
                 "population": 293900,
                 "agriculture": 5500,
@@ -2420,11 +1890,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "평양",
-                    "안평",
-                    "오환"
-                ]
+                "connectionNames": ["평양", "안평", "오환"]
             }
         },
         {
@@ -2436,11 +1902,7 @@
                 "x": 680,
                 "y": 260
             },
-            "connections": [
-                34,
-                69,
-                93
-            ],
+            "connections": [34, 69, 93],
             "max": {
                 "population": 317400,
                 "agriculture": 5800,
@@ -2459,11 +1921,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "계림",
-                    "왜",
-                    "탐라"
-                ]
+                "connectionNames": ["계림", "왜", "탐라"]
             }
         },
         {
@@ -2475,10 +1933,7 @@
                 "x": 95,
                 "y": 35
             },
-            "connections": [
-                22,
-                84
-            ],
+            "connections": [22, 84],
             "max": {
                 "population": 209500,
                 "agriculture": 4000,
@@ -2497,10 +1952,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "서량",
-                    "적도"
-                ]
+                "connectionNames": ["서량", "적도"]
             }
         },
         {
@@ -2512,11 +1964,7 @@
                 "x": 25,
                 "y": 120
             },
-            "connections": [
-                22,
-                40,
-                85
-            ],
+            "connections": [22, 40, 85],
             "max": {
                 "population": 195700,
                 "agriculture": 4000,
@@ -2535,11 +1983,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "서량",
-                    "천수",
-                    "가정"
-                ]
+                "connectionNames": ["서량", "천수", "가정"]
             }
         },
         {
@@ -2551,10 +1995,7 @@
                 "x": 180,
                 "y": 95
             },
-            "connections": [
-                23,
-                84
-            ],
+            "connections": [23, 84],
             "max": {
                 "population": 206400,
                 "agriculture": 4000,
@@ -2573,10 +2014,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "하내",
-                    "적도"
-                ]
+                "connectionNames": ["하내", "적도"]
             }
         },
         {
@@ -2588,11 +2026,7 @@
                 "x": 80,
                 "y": 455
             },
-            "connections": [
-                48,
-                49,
-                50
-            ],
+            "connections": [48, 49, 50],
             "max": {
                 "population": 237800,
                 "agriculture": 4000,
@@ -2611,11 +2045,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "운남",
-                    "남영",
-                    "교지"
-                ]
+                "connectionNames": ["운남", "남영", "교지"]
             }
         },
         {
@@ -2627,12 +2057,7 @@
                 "x": 425,
                 "y": 430
             },
-            "connections": [
-                29,
-                57,
-                58,
-                59
-            ],
+            "connections": [29, 57, 58, 59],
             "max": {
                 "population": 227500,
                 "agriculture": 4000,
@@ -2651,12 +2076,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "남해",
-                    "회계",
-                    "고창",
-                    "대"
-                ]
+                "connectionNames": ["남해", "회계", "고창", "대"]
             }
         },
         {
@@ -2668,10 +2088,7 @@
                 "x": 610,
                 "y": 20
             },
-            "connections": [
-                61,
-                90
-            ],
+            "connections": [61, 90],
             "max": {
                 "population": 215300,
                 "agriculture": 4200,
@@ -2690,10 +2107,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "졸본",
-                    "백랑"
-                ]
+                "connectionNames": ["졸본", "백랑"]
             }
         },
         {
@@ -2705,10 +2119,7 @@
                 "x": 680,
                 "y": 320
             },
-            "connections": [
-                62,
-                94
-            ],
+            "connections": [62, 94],
             "max": {
                 "population": 206500,
                 "agriculture": 3900,
@@ -2727,10 +2138,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "이도",
-                    "유구"
-                ]
+                "connectionNames": ["이도", "유구"]
             }
         },
         {
@@ -2742,12 +2150,7 @@
                 "x": 285,
                 "y": 140
             },
-            "connections": [
-                1,
-                3,
-                23,
-                35
-            ],
+            "connections": [1, 3, 23, 35],
             "max": {
                 "population": 88700,
                 "agriculture": 1900,
@@ -2766,12 +2169,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "업",
-                    "낙양",
-                    "하내",
-                    "진양"
-                ]
+                "connectionNames": ["업", "낙양", "하내", "진양"]
             }
         },
         {
@@ -2783,11 +2181,7 @@
                 "x": 285,
                 "y": 205
             },
-            "connections": [
-                2,
-                3,
-                10
-            ],
+            "connections": [2, 3, 10],
             "max": {
                 "population": 111200,
                 "agriculture": 2200,
@@ -2806,11 +2200,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "허창",
-                    "낙양",
-                    "완"
-                ]
+                "connectionNames": ["허창", "낙양", "완"]
             }
         },
         {
@@ -2822,10 +2212,7 @@
                 "x": 240,
                 "y": 175
             },
-            "connections": [
-                3,
-                42
-            ],
+            "connections": [3, 42],
             "max": {
                 "population": 100800,
                 "agriculture": 2100,
@@ -2844,10 +2231,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "낙양",
-                    "홍농"
-                ]
+                "connectionNames": ["낙양", "홍농"]
             }
         },
         {
@@ -2859,10 +2243,7 @@
                 "x": 180,
                 "y": 175
             },
-            "connections": [
-                4,
-                42
-            ],
+            "connections": [4, 42],
             "max": {
                 "population": 108100,
                 "agriculture": 2000,
@@ -2881,10 +2262,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "장안",
-                    "홍농"
-                ]
+                "connectionNames": ["장안", "홍농"]
             }
         },
         {
@@ -2896,12 +2274,7 @@
                 "x": 310,
                 "y": 185
             },
-            "connections": [
-                2,
-                3,
-                19,
-                80
-            ],
+            "connections": [2, 3, 19, 80],
             "max": {
                 "population": 95800,
                 "agriculture": 1700,
@@ -2920,12 +2293,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "허창",
-                    "낙양",
-                    "진류",
-                    "관도"
-                ]
+                "connectionNames": ["허창", "낙양", "진류", "관도"]
             }
         },
         {
@@ -2937,11 +2305,7 @@
                 "x": 90,
                 "y": 220
             },
-            "connections": [
-                24,
-                44,
-                86
-            ],
+            "connections": [24, 44, 86],
             "max": {
                 "population": 86800,
                 "agriculture": 1900,
@@ -2960,11 +2324,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "한중",
-                    "자동",
-                    "기산"
-                ]
+                "connectionNames": ["한중", "자동", "기산"]
             }
         },
         {
@@ -2976,10 +2336,7 @@
                 "x": 45,
                 "y": 225
             },
-            "connections": [
-                43,
-                44
-            ],
+            "connections": [43, 44],
             "max": {
                 "population": 85500,
                 "agriculture": 1700,
@@ -2998,10 +2355,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "하변",
-                    "자동"
-                ]
+                "connectionNames": ["하변", "자동"]
             }
         },
         {
@@ -3013,11 +2367,7 @@
                 "x": 410,
                 "y": 65
             },
-            "connections": [
-                8,
-                9,
-                17
-            ],
+            "connections": [8, 9, 17],
             "max": {
                 "population": 98500,
                 "agriculture": 1800,
@@ -3036,11 +2386,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "북평",
-                    "남피",
-                    "계"
-                ]
+                "connectionNames": ["북평", "남피", "계"]
             }
         },
         {
@@ -3052,11 +2398,7 @@
                 "x": 405,
                 "y": 135
             },
-            "connections": [
-                1,
-                18,
-                36
-            ],
+            "connections": [1, 18, 36],
             "max": {
                 "population": 101200,
                 "agriculture": 2100,
@@ -3075,11 +2417,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "업",
-                    "복양",
-                    "평원"
-                ]
+                "connectionNames": ["업", "복양", "평원"]
             }
         },
         {
@@ -3091,11 +2429,7 @@
                 "x": 515,
                 "y": 145
             },
-            "connections": [
-                16,
-                37,
-                60
-            ],
+            "connections": [16, 37, 60],
             "max": {
                 "population": 99200,
                 "agriculture": 1900,
@@ -3114,11 +2448,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "위례",
-                    "북해",
-                    "안평"
-                ]
+                "connectionNames": ["위례", "북해", "안평"]
             }
         },
         {
@@ -3130,12 +2460,7 @@
                 "x": 340,
                 "y": 165
             },
-            "connections": [
-                1,
-                2,
-                19,
-                74
-            ],
+            "connections": [1, 2, 19, 74],
             "max": {
                 "population": 112300,
                 "agriculture": 2200,
@@ -3154,12 +2479,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "업",
-                    "허창",
-                    "진류",
-                    "사수"
-                ]
+                "connectionNames": ["업", "허창", "진류", "사수"]
             }
         },
         {
@@ -3171,12 +2491,7 @@
                 "x": 400,
                 "y": 210
             },
-            "connections": [
-                18,
-                19,
-                38,
-                39
-            ],
+            "connections": [18, 19, 38, 39],
             "max": {
                 "population": 108500,
                 "agriculture": 2100,
@@ -3195,12 +2510,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "복양",
-                    "진류",
-                    "초",
-                    "패"
-                ]
+                "connectionNames": ["복양", "진류", "초", "패"]
             }
         },
         {
@@ -3212,11 +2522,7 @@
                 "x": 435,
                 "y": 285
             },
-            "connections": [
-                7,
-                11,
-                56
-            ],
+            "connections": [7, 11, 56],
             "max": {
                 "population": 99800,
                 "agriculture": 2000,
@@ -3235,11 +2541,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "건업",
-                    "수춘",
-                    "여강"
-                ]
+                "connectionNames": ["건업", "수춘", "여강"]
             }
         },
         {
@@ -3251,10 +2553,7 @@
                 "x": 490,
                 "y": 275
             },
-            "connections": [
-                7,
-                21
-            ],
+            "connections": [7, 21],
             "max": {
                 "population": 100100,
                 "agriculture": 2000,
@@ -3273,10 +2572,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "건업",
-                    "하비"
-                ]
+                "connectionNames": ["건업", "하비"]
             }
         },
         {
@@ -3288,11 +2584,7 @@
                 "x": 130,
                 "y": 75
             },
-            "connections": [
-                40,
-                63,
-                65
-            ],
+            "connections": [40, 63, 65],
             "max": {
                 "population": 95200,
                 "agriculture": 1800,
@@ -3311,11 +2603,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "천수",
-                    "강",
-                    "흉노"
-                ]
+                "connectionNames": ["천수", "강", "흉노"]
             }
         },
         {
@@ -3327,11 +2615,7 @@
                 "x": 40,
                 "y": 160
             },
-            "connections": [
-                41,
-                43,
-                64
-            ],
+            "connections": [41, 43, 64],
             "max": {
                 "population": 93100,
                 "agriculture": 1700,
@@ -3350,11 +2634,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "안정",
-                    "하변",
-                    "저"
-                ]
+                "connectionNames": ["안정", "하변", "저"]
             }
         },
         {
@@ -3366,11 +2646,7 @@
                 "x": 110,
                 "y": 180
             },
-            "connections": [
-                4,
-                24,
-                75
-            ],
+            "connections": [4, 24, 75],
             "max": {
                 "population": 100500,
                 "agriculture": 1900,
@@ -3389,11 +2665,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "장안",
-                    "한중",
-                    "양평"
-                ]
+                "connectionNames": ["장안", "한중", "양평"]
             }
         },
         {
@@ -3405,10 +2677,7 @@
                 "x": 35,
                 "y": 255
             },
-            "connections": [
-                5,
-                44
-            ],
+            "connections": [5, 44],
             "max": {
                 "population": 109300,
                 "agriculture": 2200,
@@ -3427,10 +2696,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "성도",
-                    "자동"
-                ]
+                "connectionNames": ["성도", "자동"]
             }
         },
         {
@@ -3442,10 +2708,7 @@
                 "x": 215,
                 "y": 295
             },
-            "connections": [
-                13,
-                45
-            ],
+            "connections": [13, 45],
             "max": {
                 "population": 96800,
                 "agriculture": 1800,
@@ -3464,10 +2727,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "강릉",
-                    "영안"
-                ]
+                "connectionNames": ["강릉", "영안"]
             }
         },
         {
@@ -3479,12 +2739,7 @@
                 "x": 280,
                 "y": 315
             },
-            "connections": [
-                6,
-                13,
-                52,
-                91
-            ],
+            "connections": [6, 13, 52, 91],
             "max": {
                 "population": 103200,
                 "agriculture": 2100,
@@ -3503,12 +2758,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "양양",
-                    "강릉",
-                    "강하",
-                    "적벽"
-                ]
+                "connectionNames": ["양양", "강릉", "강하", "적벽"]
             }
         },
         {
@@ -3520,11 +2770,7 @@
                 "x": 530,
                 "y": 30
             },
-            "connections": [
-                8,
-                60,
-                68
-            ],
+            "connections": [8, 60, 68],
             "max": {
                 "population": 105200,
                 "agriculture": 2200,
@@ -3543,11 +2789,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "북평",
-                    "안평",
-                    "오환"
-                ]
+                "connectionNames": ["북평", "안평", "오환"]
             }
         },
         {
@@ -3559,12 +2801,7 @@
                 "x": 330,
                 "y": 325
             },
-            "connections": [
-                15,
-                52,
-                56,
-                89
-            ],
+            "connections": [15, 52, 56, 89],
             "max": {
                 "population": 111700,
                 "agriculture": 2300,
@@ -3583,12 +2820,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "시상",
-                    "강하",
-                    "여강",
-                    "장판"
-                ]
+                "connectionNames": ["시상", "강하", "여강", "장판"]
             }
         },
         {
@@ -3600,11 +2832,7 @@
                 "x": 430,
                 "y": 350
             },
-            "connections": [
-                15,
-                31,
-                56
-            ],
+            "connections": [15, 31, 56],
             "max": {
                 "population": 103700,
                 "agriculture": 2000,
@@ -3623,11 +2851,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "시상",
-                    "오",
-                    "여강"
-                ]
+                "connectionNames": ["시상", "오", "여강"]
             }
         },
         {
@@ -3639,12 +2863,7 @@
                 "x": 605,
                 "y": 260
             },
-            "connections": [
-                31,
-                33,
-                34,
-                62
-            ],
+            "connections": [31, 33, 34, 62],
             "max": {
                 "population": 113000,
                 "agriculture": 2200,
@@ -3663,12 +2882,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "오",
-                    "사비",
-                    "계림",
-                    "이도"
-                ]
+                "connectionNames": ["오", "사비", "계림", "이도"]
             }
         },
         {
@@ -3680,10 +2894,7 @@
                 "x": 625,
                 "y": 435
             },
-            "connections": [
-                59,
-                69
-            ],
+            "connections": [59, 69],
             "max": {
                 "population": 92100,
                 "agriculture": 1700,
@@ -3702,10 +2913,7 @@
             },
             "meta": {
                 "source": "legacy",
-                "connectionNames": [
-                    "대",
-                    "왜"
-                ]
+                "connectionNames": ["대", "왜"]
             }
         }
     ],

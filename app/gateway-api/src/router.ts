@@ -45,15 +45,15 @@ export const appRouter = router({
         }),
         profiles: procedure
             .input(
-                z.object({
-                    sessionToken: z.string().min(1).optional(),
-                }).optional()
+                z
+                    .object({
+                        sessionToken: z.string().min(1).optional(),
+                    })
+                    .optional()
             )
             .query(async ({ ctx, input }) => {
                 const sessionToken = input?.sessionToken;
-                const session = sessionToken
-                    ? await ctx.sessions.getSession(sessionToken)
-                    : null;
+                const session = sessionToken ? await ctx.sessions.getSession(sessionToken) : null;
                 return ctx.profileStatus.listLobbyProfiles({
                     userId: session?.userId,
                 });
@@ -63,10 +63,12 @@ export const appRouter = router({
     auth: router({
         kakaoStart: procedure
             .input(
-                z.object({
-                    mode: zOAuthMode.optional(),
-                    scopes: z.array(z.string()).optional(),
-                }).optional()
+                z
+                    .object({
+                        mode: zOAuthMode.optional(),
+                        scopes: z.array(z.string()).optional(),
+                    })
+                    .optional()
             )
             .query(async ({ ctx, input }) => {
                 const mode = input?.mode ?? 'login';
@@ -96,10 +98,7 @@ export const appRouter = router({
                 }
                 const token = await ctx.kakaoClient.exchangeCode(input.code);
                 const tokenIssuedAt = new Date();
-                const accessTokenValidUntil = addSeconds(
-                    tokenIssuedAt,
-                    token.accessTokenExpiresIn
-                ).toISOString();
+                const accessTokenValidUntil = addSeconds(tokenIssuedAt, token.accessTokenExpiresIn).toISOString();
                 const refreshTokenValidUntil = token.refreshTokenExpiresIn
                     ? addSeconds(tokenIssuedAt, token.refreshTokenExpiresIn).toISOString()
                     : undefined;
@@ -337,10 +336,7 @@ export const appRouter = router({
                 })
             )
             .mutation(async ({ ctx, input }) => {
-                const gameSession = await ctx.sessions.createGameSession(
-                    input.sessionToken,
-                    input.profile
-                );
+                const gameSession = await ctx.sessions.createGameSession(input.sessionToken, input.profile);
                 if (!gameSession) {
                     throw new TRPCError({
                         code: 'UNAUTHORIZED',

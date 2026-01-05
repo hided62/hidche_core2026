@@ -6,6 +6,8 @@
     "packageManager": "pnpm@10.26.2",
     "scripts": {
         "lint": "turbo lint",
+        "lint:fix": "turbo lint:fix",
+        "format": "prettier --write .",
         "test": "turbo test",
         "build": "turbo build",
         "typecheck": "turbo typecheck",
@@ -13,9 +15,20 @@
         "build:server": "pnpm --filter ./tools/build-scripts build:server --"
     },
     "devDependencies": {
+        "@eslint/js": "^9.39.2",
         "@types/node": "^25.0.3",
+        "@typescript-eslint/eslint-plugin": "^8.51.0",
+        "@typescript-eslint/parser": "^8.51.0",
+        "eslint": "^9.39.2",
+        "eslint-config-prettier": "^10.1.8",
+        "eslint-plugin-prettier": "^5.5.4",
+        "eslint-plugin-vue": "^10.6.2",
+        "globals": "^17.0.0",
+        "prettier": "^3.7.4",
         "tsdown": "^0.18.4",
         "turbo": "^2.7.2",
-        "typescript": "^5.9.3"
+        "typescript": "^5.9.3",
+        "typescript-eslint": "^8.51.0",
+        "vue-eslint-parser": "^10.2.0"
     }
 }

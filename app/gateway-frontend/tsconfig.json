@@ -1,51 +1,51 @@
 {
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "target": "ESNext",
-    "useDefineForClassFields": true,
-    "module": "ESNext",
-    "lib": ["ESNext", "DOM", "DOM.Iterable"],
-    "skipLibCheck": true,
+    "extends": "../../tsconfig.base.json",
+    "compilerOptions": {
+        "target": "ESNext",
+        "useDefineForClassFields": true,
+        "module": "ESNext",
+        "lib": ["ESNext", "DOM", "DOM.Iterable"],
+        "skipLibCheck": true,
 
-    /* Bundler mode */
-    "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "noEmit": true,
-    "jsx": "preserve",
+        /* Bundler mode */
+        "moduleResolution": "bundler",
+        "allowImportingTsExtensions": true,
+        "resolveJsonModule": true,
+        "isolatedModules": true,
+        "noEmit": true,
+        "jsx": "preserve",
 
-    /* Linting */
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true,
+        /* Linting */
+        "strict": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "noFallthroughCasesInSwitch": true,
 
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["./src/*"],
-      "@sammo-ts/common": ["../../packages/common/src/index.ts"],
-      "@sammo-ts/common/*": ["../../packages/common/src/*"],
-      "@sammo-ts/infra": ["../../packages/infra/src/index.ts"],
-      "@sammo-ts/infra/*": ["../../packages/infra/src/*"],
-      "@sammo-ts/logic": ["../../packages/logic/src/index.ts"],
-      "@sammo-ts/logic/*": ["../../packages/logic/src/*"],
-      "@sammo-ts/game-engine": ["../../app/game-engine/src/index.ts"],
-      "@sammo-ts/game-engine/*": ["../../app/game-engine/src/*"],
-      "@sammo-ts/game-api": ["../../app/game-api/src/index.ts"],
-      "@sammo-ts/game-api/*": ["../../app/game-api/src/*"],
-      "@sammo-ts/gateway-api": ["../../app/gateway-api/src/index.ts"],
-      "@sammo-ts/gateway-api/*": ["../../app/gateway-api/src/*"]
-    }
-  },
-  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.tsx", "src/**/*.vue"],
-  "references": [
-    { "path": "./tsconfig.node.json" },
-    { "path": "../../packages/common" },
-    { "path": "../../packages/infra" },
-    { "path": "../../packages/logic" },
-    { "path": "../../app/game-engine" },
-    { "path": "../../app/game-api" },
-    { "path": "../../app/gateway-api" }
-  ]
+        "baseUrl": ".",
+        "paths": {
+            "@/*": ["./src/*"],
+            "@sammo-ts/common": ["../../packages/common/src/index.ts"],
+            "@sammo-ts/common/*": ["../../packages/common/src/*"],
+            "@sammo-ts/infra": ["../../packages/infra/src/index.ts"],
+            "@sammo-ts/infra/*": ["../../packages/infra/src/*"],
+            "@sammo-ts/logic": ["../../packages/logic/src/index.ts"],
+            "@sammo-ts/logic/*": ["../../packages/logic/src/*"],
+            "@sammo-ts/game-engine": ["../../app/game-engine/src/index.ts"],
+            "@sammo-ts/game-engine/*": ["../../app/game-engine/src/*"],
+            "@sammo-ts/game-api": ["../../app/game-api/src/index.ts"],
+            "@sammo-ts/game-api/*": ["../../app/game-api/src/*"],
+            "@sammo-ts/gateway-api": ["../../app/gateway-api/src/index.ts"],
+            "@sammo-ts/gateway-api/*": ["../../app/gateway-api/src/*"]
+        }
+    },
+    "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.tsx", "src/**/*.vue", "test/**/*.ts", "*.ts"],
+    "references": [
+        { "path": "./tsconfig.node.json" },
+        { "path": "../../packages/common" },
+        { "path": "../../packages/infra" },
+        { "path": "../../packages/logic" },
+        { "path": "../../app/game-engine" },
+        { "path": "../../app/game-api" },
+        { "path": "../../app/gateway-api" }
+    ]
 }

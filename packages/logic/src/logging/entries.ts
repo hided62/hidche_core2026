@@ -1,11 +1,5 @@
 import { formatLogText } from './formatter.js';
-import {
-    type LogContext,
-    type LogEntryDraft,
-    type LogEntryRecord,
-    LogFormat,
-    LogScope,
-} from './types.js';
+import { type LogContext, type LogEntryDraft, type LogEntryRecord, LogFormat, LogScope } from './types.js';
 
 const shouldDropEntry = (entry: LogEntryDraft): boolean => {
     if (entry.scope === LogScope.GENERAL && !entry.generalId) {
@@ -20,10 +14,7 @@ const shouldDropEntry = (entry: LogEntryDraft): boolean => {
     return false;
 };
 
-export const finalizeLogEntry = (
-    entry: LogEntryDraft,
-    context: LogContext
-): LogEntryRecord | null => {
+export const finalizeLogEntry = (entry: LogEntryDraft, context: LogContext): LogEntryRecord | null => {
     if (shouldDropEntry(entry)) {
         return null;
     }

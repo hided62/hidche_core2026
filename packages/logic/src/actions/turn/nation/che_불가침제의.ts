@@ -9,10 +9,7 @@ import {
 } from '@sammo-ts/logic/constraints/presets.js';
 import { allow, unknownOrDeny } from '@sammo-ts/logic/constraints/helpers.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
-import type {
-    GeneralActionOutcome,
-    GeneralActionResolveContext,
-} from '@sammo-ts/logic/actions/engine.js';
+import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
 import { createLogEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
@@ -50,8 +47,7 @@ const parseMonth = (raw: unknown): number | null => {
     return month >= 1 && month <= 12 ? month : null;
 };
 
-const resolveMonthIndex = (year: number, month: number): number =>
-    year * 12 + month - 1;
+const resolveMonthIndex = (year: number, month: number): number => year * 12 + month - 1;
 
 const requireMinimumTerm = (minMonths: number): Constraint => ({
     name: 'RequireNonAggressionMinimumTerm',
@@ -65,8 +61,7 @@ const requireMinimumTerm = (minMonths: number): Constraint => ({
         const yearValue = typeof ctx.args.year === 'number' ? ctx.args.year : null;
         const monthValue = typeof ctx.args.month === 'number' ? ctx.args.month : null;
         const envYearValue = typeof ctx.env.year === 'number' ? ctx.env.year : null;
-        const envMonthValue =
-            typeof ctx.env.month === 'number' ? ctx.env.month : null;
+        const envMonthValue = typeof ctx.env.month === 'number' ? ctx.env.month : null;
         const missing = [];
 
         if (yearValue === null) {
@@ -106,7 +101,7 @@ const requireMinimumTerm = (minMonths: number): Constraint => ({
 
 // 불가침 제의를 처리하는 국가 커맨드.
 export class ActionDefinition<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionDefinition<TriggerState, NonAggressionProposalArgs> {
     public readonly key = 'che_불가침제의';
     public readonly name = ACTION_NAME;
@@ -126,10 +121,7 @@ export class ActionDefinition<
         return { destNationId, year, month };
     }
 
-    buildConstraints(
-        _ctx: ConstraintContext,
-        _args: NonAggressionProposalArgs
-    ): Constraint[] {
+    buildConstraints(_ctx: ConstraintContext, _args: NonAggressionProposalArgs): Constraint[] {
         return [
             beChief(),
             notBeNeutral(),
@@ -149,14 +141,11 @@ export class ActionDefinition<
     ): GeneralActionOutcome<TriggerState> {
         return {
             effects: [
-                createLogEffect(
-                    `${ACTION_NAME}을 준비했습니다. (국가 ${args.destNationId})`,
-                    {
-                        scope: LogScope.GENERAL,
-                        category: LogCategory.ACTION,
-                        format: LogFormat.MONTH,
-                    }
-                ),
+                createLogEffect(`${ACTION_NAME}을 준비했습니다. (국가 ${args.destNationId})`, {
+                    scope: LogScope.GENERAL,
+                    category: LogCategory.ACTION,
+                    format: LogFormat.MONTH,
+                }),
             ],
         };
     }

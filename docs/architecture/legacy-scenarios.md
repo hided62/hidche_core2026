@@ -10,9 +10,9 @@ rule set, commands, and effects. Core references include
 1. Server reset/init calls `ResetHelper::buildScenario()`.
 2. `Scenario` loads `scenario_{id}.json` and merges defaults (`default.json`).
 3. `Scenario::buildConf()` generates runtime constants:
-   - `d_setting/GameConst.php` from `GameConstBase + scenario.const/map/stat`
-   - `d_setting/CityConst.php` from `scenario/map/{mapName}.php`
-   - `d_setting/GameUnitConst.php` from `scenario/unit/{unitSet}.php`
+    - `d_setting/GameConst.php` from `GameConstBase + scenario.const/map/stat`
+    - `d_setting/CityConst.php` from `scenario/map/{mapName}.php`
+    - `d_setting/GameUnitConst.php` from `scenario/unit/{unitSet}.php`
 4. `Scenario::build()` inserts nations, generals, and events into DB and runs
    `initialEvents` immediately.
 
@@ -39,7 +39,7 @@ Notes:
   engine currently reads `initialEvents` only.
 - `general` rows use the tuple format from `Scenario::generateGeneral()`:
   `affinity, name, picture, nationName, city, leadership, strength, intel,
-  officerLevel, birth, death, ego, char, text`.
+officerLevel, birth, death, ego, char, text`.
 
 ## How Scenario Chooses Commands and Effects
 
@@ -77,6 +77,7 @@ These are the map/unit/effect variants referenced by existing scenario files.
 Defaults are `mapName=che` and `unitSet=che` when not specified.
 
 Map sets (`scenario/map/*.php`):
+
 - `che` (default)
 - `miniche`, `miniche_b`, `miniche_clean`
 - `cr`
@@ -85,6 +86,7 @@ Map sets (`scenario/map/*.php`):
 - `ludo_rathowm`
 
 Unit sets (`scenario/unit/*.php`):
+
 - `che` (default)
 - `che_except_siege`
 - `cr`
@@ -94,6 +96,7 @@ Unit sets (`scenario/unit/*.php`):
 - `ludo_rathowm`
 
 Scenario effects (`sammo/ActionScenarioEffect/*`):
+
 - `event_StrongAttacker`
 - `event_UnlimitedDefenceThresholdChange`
 - `event_MoreEffect`
@@ -106,4 +109,3 @@ Scenario events are stored in the `event` table and executed via
 
 Most scenario JSON uses lowercase targets (e.g. `"month"`). The DB enum uses
 uppercase values but is case-insensitive, so lowercase targets still match.
-

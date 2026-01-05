@@ -79,13 +79,16 @@ function calcBitMask(n: bigint): bigint {
 
 // SHA-512 기반 DRBG 구현
 export class LiteHashDRBG implements RNG {
-
     protected buffer!: ArrayBuffer;
     protected bufferIdx!: number;
     protected hq: DataView;
     protected hqIdxPos: number;
 
-    public constructor(protected seed: BytesLike, protected stateIdx = 0, bufferIdx = 0) {
+    public constructor(
+        protected seed: BytesLike,
+        protected stateIdx = 0,
+        bufferIdx = 0
+    ) {
         if (bufferIdx < 0) {
             throw new Error(`bufferIdx ${bufferIdx} < 0`);
         }
@@ -215,7 +218,6 @@ export class LiteHashDRBG implements RNG {
     }
 
     public nextFloat1(): number {
-        // eslint-disable-next-line no-constant-condition
         while (true) {
             const nInt = this._nextInt(maxRngSupportBit + 1);
             if (nInt < maxIntMore1) {

@@ -1,10 +1,5 @@
-import type {
-    GeneralTriggerState,
-} from '@sammo-ts/logic/domain/entities.js';
-import type {
-    Constraint,
-    ConstraintContext,
-} from '@sammo-ts/logic/constraints/types.js';
+import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
+import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionOutcome,
@@ -21,14 +16,11 @@ export interface RestArgs {}
 const ACTION_NAME = '휴식';
 
 export class ActionResolver<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionResolver<TriggerState, RestArgs> {
     readonly key = '휴식';
 
-    resolve(
-        context: GeneralActionResolveContext<TriggerState>,
-        _args: RestArgs
-    ): GeneralActionOutcome<TriggerState> {
+    resolve(context: GeneralActionResolveContext<TriggerState>, _args: RestArgs): GeneralActionOutcome<TriggerState> {
         context.addLog('아무것도 실행하지 않았습니다.', {
             category: LogCategory.ACTION,
             format: LogFormat.MONTH,
@@ -38,7 +30,7 @@ export class ActionResolver<
 }
 
 export class ActionDefinition<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionDefinition<TriggerState, RestArgs> {
     public readonly key = '휴식';
     public readonly name = ACTION_NAME;
@@ -49,19 +41,13 @@ export class ActionDefinition<
         return {};
     }
 
-    buildConstraints(
-        _ctx: ConstraintContext,
-        _args: RestArgs
-    ): Constraint[] {
+    buildConstraints(_ctx: ConstraintContext, _args: RestArgs): Constraint[] {
         void _ctx;
         void _args;
         return [];
     }
 
-    resolve(
-        context: GeneralActionResolveContext<TriggerState>,
-        args: RestArgs
-    ): GeneralActionOutcome<TriggerState> {
+    resolve(context: GeneralActionResolveContext<TriggerState>, args: RestArgs): GeneralActionOutcome<TriggerState> {
         return this.resolver.resolve(context, args);
     }
 }

@@ -2,10 +2,9 @@
     "extends": "../../tsconfig.paths.json",
     "compilerOptions": {
         "outDir": "dist",
-        "rootDir": "src",
         "composite": true
     },
-    "include": ["src"],
+    "include": ["src", "test", "*.ts"],
     "references": [
         { "path": "../../packages/common" },
         { "path": "../../packages/infra" },

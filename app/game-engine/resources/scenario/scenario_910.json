@@ -1,13 +1,11 @@
 {
-    "title":"【공백지】 거울세계",
-    "startYear":180,
-    "map":{
-        "mapName":"cr",
-        "unitSet":"cr"
+    "title": "【공백지】 거울세계",
+    "startYear": 180,
+    "map": {
+        "mapName": "cr",
+        "unitSet": "cr"
     },
-    "history":[
-        "<C>●</>180년 1월:<L><b>【이벤트】</b></>비슷하지만 조금 다른 곳입니다."
-    ],
+    "history": ["<C>●</>180년 1월:<L><b>【이벤트】</b></>비슷하지만 조금 다른 곳입니다."],
     "stat": {
         "total": 200,
         "min": 25,
@@ -15,8 +13,8 @@
     },
     "ignoreDefaultEvents": true,
     "const": {
-        "joinRuinedNPCProp":0,
-        "npcBanMessageProb":1,
+        "joinRuinedNPCProp": 0,
+        "npcBanMessageProb": 1,
         "availableGeneralCommand": {
             "개인": [
                 "휴식",
@@ -52,50 +50,15 @@
                 "che_소집해제",
                 "che_첩보"
             ],
-            "인사": [
-                "che_이동",
-                "che_강행",
-                "che_인재탐색",
-                "che_귀환",
-                "che_랜덤임관"
-            ],
-            "계략": [
-                "che_선동",
-                "che_탈취",
-                "che_파괴",
-                "che_화계"
-            ],
-            "국가": [
-                "che_증여",
-                "che_헌납",
-                "che_하야",
-                "che_거병",
-                "cr_건국",
-                "che_선양",
-                "che_해산"
-            ]
+            "인사": ["che_이동", "che_강행", "che_인재탐색", "che_귀환", "che_랜덤임관"],
+            "계략": ["che_선동", "che_탈취", "che_파괴", "che_화계"],
+            "국가": ["che_증여", "che_헌납", "che_하야", "che_거병", "cr_건국", "che_선양", "che_해산"]
         },
         "availableChiefCommand": {
-            "휴식": [
-                "휴식"
-            ],
-            "인사": [
-                "che_발령",
-                "che_포상",
-                "che_몰수"
-            ],
-            "외교": [
-                "che_물자원조",
-                "che_불가침제의",
-                "che_선전포고",
-                "che_종전제의",
-                "che_불가침파기제의"
-            ],
-            "특수": [
-                "che_초토화",
-                "che_천도",
-                "cr_인구이동"
-            ],
+            "휴식": ["휴식"],
+            "인사": ["che_발령", "che_포상", "che_몰수"],
+            "외교": ["che_물자원조", "che_불가침제의", "che_선전포고", "che_종전제의", "che_불가침파기제의"],
+            "특수": ["che_초토화", "che_천도", "cr_인구이동"],
             "전략": [
                 "che_필사즉생",
                 "che_백성동원",
@@ -105,19 +68,30 @@
                 "che_이호경식",
                 "che_급습"
             ],
-            "기타": [
-                "che_피장파장",
-                "che_국기변경",
-                "che_국호변경"
-            ]
+            "기타": ["che_피장파장", "che_국기변경", "che_국호변경"]
         },
         "availableSpecialWar": [
-            "che_귀병", "che_신산", "che_환술", "che_집중", "che_신중", "che_반계",
-            "che_보병", "che_궁병", "che_기병", "che_공성",
-            "che_돌격", "che_무쌍", "che_견고", "che_위압",
-            "che_저격", "che_필살", "che_징병", "che_의술", "che_격노"
+            "che_귀병",
+            "che_신산",
+            "che_환술",
+            "che_집중",
+            "che_신중",
+            "che_반계",
+            "che_보병",
+            "che_궁병",
+            "che_기병",
+            "che_공성",
+            "che_돌격",
+            "che_무쌍",
+            "che_견고",
+            "che_위압",
+            "che_저격",
+            "che_필살",
+            "che_징병",
+            "che_의술",
+            "che_격노"
         ],
-        "allItems":{
+        "allItems": {
             "horse": {
                 "che_명마_01_노기": 0,
                 "che_명마_02_조랑": 0,
@@ -231,73 +205,61 @@
             }
         }
     },
-    "defaultInitialEvents":[
+    "defaultInitialEvents": [[true, ["NoticeToHistoryLog", "<S>2년간 거병 및 건국이 가능합니다.</>", 6]]],
+    "events": [
         [
-            true,
-            ["NoticeToHistoryLog", "<S>2년간 거병 및 건국이 가능합니다.</>", 6]
-        ]
-    ],
-    "events":[
-        [
-            "month", 1000,
+            "month",
+            1000,
             ["or", ["Date", "==", null, 12], ["Date", "==", null, 6]],
             ["CreateManyNPC", 10, 10],
             ["DeleteEvent"]
         ],
+        ["month", 1000, ["Date", "==", 181, 1], ["RaiseNPCNation"], ["DeleteEvent"]],
         [
-            "month", 1000,
-            ["Date", "==", 181, 1],
-            ["RaiseNPCNation"],
-            ["DeleteEvent"]
-        ],
-        [
-            "month", 999,
+            "month",
+            999,
             ["Date", "==", 181, 1],
             ["OpenNationBetting", 4, 5000],
             ["OpenNationBetting", 1, 2000],
             ["DeleteEvent"]
         ],
         [
-            "month", 999,
-            ["and",
-                ["Date", ">=", 183, 1],
-                ["RemainNation", "<=", 8]
-            ],
+            "month",
+            999,
+            ["and", ["Date", ">=", 183, 1], ["RemainNation", "<=", 8]],
             ["OpenNationBetting", 1, 1000],
             ["DeleteEvent"]
         ],
         [
-            "destroy_nation", 1000,
-            ["and",
-                ["Date", ">=", 183, 1],
-                ["RemainNation", "==", 1]
-            ],
+            "destroy_nation",
+            1000,
+            ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]],
             ["BlockScoutAction"],
             ["DeleteEvent"]
         ],
         [
-            "month", 1000,
+            "month",
+            1000,
             true,
-            ["ChangeCity", "all", {
-                "trade":100
-            }]
+            [
+                "ChangeCity",
+                "all",
+                {
+                    "trade": 100
+                }
+            ]
         ],
         [
-            "destroy_nation", 1000,
-            ["and",
-                ["Date", ">=", 183, 1],
-                ["RemainNation", "==", 1]
-            ],
+            "destroy_nation",
+            1000,
+            ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]],
             ["BlockScoutAction"],
             ["DeleteEvent"]
         ],
+        ["pre_month", 9000, true, ["ProcessWarIncome"]],
         [
-            "pre_month", 9000,
-            true,
-            ["ProcessWarIncome"]
-        ],
-        [
-            "month", 9000,
+            "month",
+            9000,
             ["Date", "==", null, 1],
             ["MergeInheritPointRank"],
             ["ProcessSemiAnnual", "gold"],
@@ -308,14 +270,10 @@
             ["NewYear"],
             ["AssignGeneralSpeciality"]
         ],
+        ["month", 9000, ["Date", "==", null, 4], ["ResetOfficerLock"], ["RaiseDisaster"]],
         [
-            "month", 9000,
-            ["Date", "==", null, 4],
-            ["ResetOfficerLock"],
-            ["RaiseDisaster"]
-        ],
-        [
-            "month", 9000,
+            "month",
+            9000,
             ["Date", "==", null, 7],
             ["MergeInheritPointRank"],
             ["ProcessSemiAnnual", "rice"],
@@ -324,54 +282,45 @@
             ["RaiseDisaster"],
             ["RandomizeCityTradeRate"]
         ],
+        ["month", 9000, ["Date", "==", null, 10], ["ResetOfficerLock"], ["RaiseDisaster"]],
         [
-            "month", 9000,
-            ["Date", "==", null, 10],
-            ["ResetOfficerLock"],
-            ["RaiseDisaster"]
-        ],
-        [
-            "month", 2000,
+            "month",
+            2000,
             ["DateRelative", "==", 1, 1],
             ["NoticeToHistoryLog", "<S>2년 뒤 출병 제한이 풀립니다.</>", 6],
             ["DeleteEvent"]
         ],
         [
-            "month", 2000,
+            "month",
+            2000,
             ["DateRelative", "==", 2, 1],
             ["NoticeToHistoryLog", "<S>1년 뒤 출병 제한이 풀립니다.</>", 6],
             ["DeleteEvent"]
         ],
         [
-            "month", 2000,
+            "month",
+            2000,
             ["DateRelative", "==", 2, 7],
             ["NoticeToHistoryLog", "<S>6개월 뒤 출병 제한이 풀립니다. 병력을 준비해주세요.</>", 6],
             ["DeleteEvent"]
         ],
         [
-            "month", 2000,
+            "month",
+            2000,
             ["DateRelative", "==", 3, 1],
             ["NoticeToHistoryLog", "<S>출병 제한이 풀렸습니다.</>", 6],
             ["DeleteEvent"]
         ],
         [
-            "month", 2000,
+            "month",
+            2000,
             ["DateRelative", "==", 4, 1],
             ["NoticeToHistoryLog", "<S>이제부터 하야, 망명시 패널티가 적용됩니다.</>", 6],
             ["AddGlobalBetray", 1, 0],
             ["AddGlobalBetray", 1, 1],
             ["DeleteEvent"]
         ],
-        [
-            "month", 1000,
-            true,
-            ["UpdateNationLevel"],
-            ["ProvideNPCTroopLeader"]
-        ],
-        [
-            "united", 5000,
-            true,
-            ["MergeInheritPointRank"]
-        ]
+        ["month", 1000, true, ["UpdateNationLevel"], ["ProvideNPCTroopLeader"]],
+        ["united", 5000, true, ["MergeInheritPointRank"]]
     ]
 }

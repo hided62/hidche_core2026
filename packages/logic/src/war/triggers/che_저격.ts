@@ -11,14 +11,7 @@ export class CheSnipingAttemptTrigger extends BaseWarUnitTrigger {
     private readonly woundMax: number;
     private readonly addAtmos: number;
 
-    constructor(
-        unit: WarUnit,
-        raiseType: number,
-        ratio: number,
-        woundMin: number,
-        woundMax: number,
-        addAtmos = 20
-    ) {
+    constructor(unit: WarUnit, raiseType: number, ratio: number, woundMin: number, woundMax: number, addAtmos = 20) {
         super(unit, TriggerPriority.Pre + 100, raiseType);
         this.ratio = ratio;
         this.woundMin = woundMin;
@@ -85,27 +78,12 @@ export class CheSnipingActivateTrigger extends BaseWarUnitTrigger {
 
         if (oppose instanceof WarUnitGeneral) {
             self.getLogger().pushGeneralActionLog('상대를 <C>저격</>했다!', LogFormat.PLAIN);
-            self.getLogger().pushGeneralBattleDetailLog(
-                '상대를 <C>저격</>했다!',
-                LogFormat.PLAIN
-            );
-            oppose.getLogger().pushGeneralActionLog(
-                '상대에게 <R>저격</>당했다!',
-                LogFormat.PLAIN
-            );
-            oppose.getLogger().pushGeneralBattleDetailLog(
-                '상대에게 <R>저격</>당했다!',
-                LogFormat.PLAIN
-            );
+            self.getLogger().pushGeneralBattleDetailLog('상대를 <C>저격</>했다!', LogFormat.PLAIN);
+            oppose.getLogger().pushGeneralActionLog('상대에게 <R>저격</>당했다!', LogFormat.PLAIN);
+            oppose.getLogger().pushGeneralBattleDetailLog('상대에게 <R>저격</>당했다!', LogFormat.PLAIN);
         } else {
-            self.getLogger().pushGeneralActionLog(
-                '성벽 수비대장을 <C>저격</>했다!',
-                LogFormat.PLAIN
-            );
-            self.getLogger().pushGeneralBattleDetailLog(
-                '성벽 수비대장을 <C>저격</>했다!',
-                LogFormat.PLAIN
-            );
+            self.getLogger().pushGeneralActionLog('성벽 수비대장을 <C>저격</>했다!', LogFormat.PLAIN);
+            self.getLogger().pushGeneralBattleDetailLog('성벽 수비대장을 <C>저격</>했다!', LogFormat.PLAIN);
         }
 
         const addAtmos = Number(selfEnv['addAtmos'] ?? 0);
@@ -115,8 +93,7 @@ export class CheSnipingActivateTrigger extends BaseWarUnitTrigger {
             const woundMin = Number(selfEnv['woundMin'] ?? 10);
             const woundMax = Number(selfEnv['woundMax'] ?? 80);
             oppose.getGeneral().injury = clamp(
-                oppose.getGeneral().injury +
-                    self.rng.nextRangeInt(woundMin, woundMax),
+                oppose.getGeneral().injury + self.rng.nextRangeInt(woundMin, woundMax),
                 0,
                 80
             );

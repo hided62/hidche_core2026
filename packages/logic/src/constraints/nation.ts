@@ -1,20 +1,10 @@
 import type { General, Nation } from '@sammo-ts/logic/domain/entities.js';
-import {
-    allow,
-    readGeneral,
-    readMetaNumber,
-    readNation,
-    resolveDestNationId,
-    unknownOrDeny,
-} from './helpers.js';
+import { allow, readGeneral, readMetaNumber, readNation, resolveDestNationId, unknownOrDeny } from './helpers.js';
 import type { Constraint, ConstraintContext, RequirementKey, StateView } from './types.js';
 
 export const notWanderingNation = (): Constraint => ({
     name: 'NotWanderingNation',
-    requires: (ctx) =>
-        ctx.nationId !== undefined
-            ? [{ kind: 'nation', id: ctx.nationId }]
-            : [],
+    requires: (ctx) => (ctx.nationId !== undefined ? [{ kind: 'nation', id: ctx.nationId }] : []),
     test: (ctx, view) => {
         const nation = readNation(view, ctx.nationId);
         if (!nation) {
@@ -31,9 +21,7 @@ export const notWanderingNation = (): Constraint => ({
     },
 });
 
-export const availableStrategicCommand = (
-    allowTurnCnt = 0
-): Constraint => ({
+export const availableStrategicCommand = (allowTurnCnt = 0): Constraint => ({
     name: 'AvailableStrategicCommand',
     requires: (ctx) => {
         const reqs: RequirementKey[] = [{ kind: 'general', id: ctx.actorId }];
@@ -92,9 +80,7 @@ export const reqNationGold = (
             return unknownOrDeny(ctx, [], '국가 정보가 없습니다.');
         }
         const nationReq: RequirementKey = { kind: 'nation', id: nationId };
-        const missing = [nationReq, ...requirements].filter(
-            (req) => !view.has(req)
-        );
+        const missing = [nationReq, ...requirements].filter((req) => !view.has(req));
         if (missing.length > 0) {
             return unknownOrDeny(ctx, missing, '국가 정보가 없습니다.');
         }
@@ -128,9 +114,7 @@ export const reqNationRice = (
             return unknownOrDeny(ctx, [], '국가 정보가 없습니다.');
         }
         const nationReq: RequirementKey = { kind: 'nation', id: nationId };
-        const missing = [nationReq, ...requirements].filter(
-            (req) => !view.has(req)
-        );
+        const missing = [nationReq, ...requirements].filter((req) => !view.has(req));
         if (missing.length > 0) {
             return unknownOrDeny(ctx, missing, '국가 정보가 없습니다.');
         }

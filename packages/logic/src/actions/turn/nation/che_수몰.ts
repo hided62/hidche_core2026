@@ -1,9 +1,4 @@
-import type {
-    City,
-    General,
-    GeneralTriggerState,
-    Nation,
-} from '@sammo-ts/logic/domain/entities.js';
+import type { City, General, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
     allowDiplomacyBetweenStatus,
@@ -13,10 +8,7 @@ import {
     notOccupiedDestCity,
     occupiedCity,
 } from '@sammo-ts/logic/constraints/presets.js';
-import {
-    GeneralActionPipeline,
-    type GeneralActionModule,
-} from '@sammo-ts/logic/triggers/general-action.js';
+import { GeneralActionPipeline, type GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionEffect,
@@ -36,7 +28,7 @@ export interface FloodArgs {
 }
 
 export interface FloodResolveContext<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > extends GeneralActionResolveContext<TriggerState> {
     destCity: City;
     destNation: Nation | null;
@@ -59,9 +51,7 @@ const parseCityId = (raw: unknown): number | null => {
 };
 
 // 수몰 쿨타임 계산을 담당한다.
-export class CommandResolver<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     private readonly pipeline: GeneralActionPipeline<TriggerState>;
 
     constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>) {
@@ -69,20 +59,13 @@ export class CommandResolver<
     }
 
     getGlobalDelay(context: FloodResolveContext<TriggerState>): number {
-        return Math.round(
-            this.pipeline.onCalcStrategic(
-                context,
-                ACTION_NAME,
-                'globalDelay',
-                DEFAULT_GLOBAL_DELAY
-            )
-        );
+        return Math.round(this.pipeline.onCalcStrategic(context, ACTION_NAME, 'globalDelay', DEFAULT_GLOBAL_DELAY));
     }
 }
 
 // 수몰 실행 결과를 계산한다.
 export class ActionResolver<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionResolver<TriggerState, FloodArgs> {
     readonly key = 'che_수몰';
     private readonly command: CommandResolver<TriggerState>;
@@ -91,10 +74,7 @@ export class ActionResolver<
         this.command = new CommandResolver(modules);
     }
 
-    resolve(
-        context: FloodResolveContext<TriggerState>,
-        _args: FloodArgs
-    ): GeneralActionOutcome<TriggerState> {
+    resolve(context: FloodResolveContext<TriggerState>, _args: FloodArgs): GeneralActionOutcome<TriggerState> {
         void _args;
         const { general, nation } = context;
         const generalName = general.name;
@@ -107,13 +87,10 @@ export class ActionResolver<
         general.dedication += EXP_DED_GAIN;
 
         context.addLog(`${ACTION_NAME} 발동!`, { format: LogFormat.MONTH });
-        context.addLog(
-            `<G><b>${cityName}</b></>에 <M>${ACTION_NAME}</>을 발동`,
-            {
-                category: LogCategory.HISTORY,
-                format: LogFormat.YEAR_MONTH,
-            }
-        );
+        context.addLog(`<G><b>${cityName}</b></>에 <M>${ACTION_NAME}</>을 발동`, {
+            category: LogCategory.HISTORY,
+            format: LogFormat.YEAR_MONTH,
+        });
 
         const effects: Array<GeneralActionEffect<TriggerState>> = [];
 
@@ -188,12 +165,8 @@ export class ActionResolver<
 
 // 수몰 실행을 위한 정의/제약을 구성한다.
 export class ActionDefinition<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> implements GeneralActionDefinition<
-        TriggerState,
-        FloodArgs,
-        FloodResolveContext<TriggerState>
-    > {
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
+> implements GeneralActionDefinition<TriggerState, FloodArgs, FloodResolveContext<TriggerState>> {
     public readonly key = 'che_수몰';
     public readonly name = ACTION_NAME;
     private readonly resolver: ActionResolver<TriggerState>;
@@ -211,10 +184,7 @@ export class ActionDefinition<
         return { destCityId };
     }
 
-    buildConstraints(
-        _ctx: ConstraintContext,
-        _args: FloodArgs
-    ): Constraint[] {
+    buildConstraints(_ctx: ConstraintContext, _args: FloodArgs): Constraint[] {
         void _ctx;
         void _args;
         return [
@@ -227,10 +197,7 @@ export class ActionDefinition<
         ];
     }
 
-    resolve(
-        context: FloodResolveContext<TriggerState>,
-        args: FloodArgs
-    ): GeneralActionOutcome<TriggerState> {
+    resolve(context: FloodResolveContext<TriggerState>, args: FloodArgs): GeneralActionOutcome<TriggerState> {
         return this.resolver.resolve(context, args);
     }
 }
@@ -251,12 +218,8 @@ export const actionContextBuilder: ActionContextBuilder = (base, options) => {
     }
     const destNation = worldRef.getNationById(destCity.nationId);
     const generals = worldRef.listGenerals();
-    const friendlyGenerals = generals.filter(
-        (general) => general.nationId === base.general.nationId
-    );
-    const destNationGenerals = generals.filter(
-        (general) => general.nationId === destCity.nationId
-    );
+    const friendlyGenerals = generals.filter((general) => general.nationId === base.general.nationId);
+    const destNationGenerals = generals.filter((general) => general.nationId === destCity.nationId);
     return {
         ...base,
         destCity,
@@ -271,6 +234,5 @@ export const commandSpec: NationTurnCommandSpec = {
     category: '전략',
     reqArg: true,
     args: { destCityId: 0 },
-    createDefinition: (env: TurnCommandEnv) =>
-        new ActionDefinition(env.generalActionModules ?? []),
+    createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env.generalActionModules ?? []),
 };

@@ -1,10 +1,5 @@
-import type {
-    GeneralTriggerState,
-} from '@sammo-ts/logic/domain/entities.js';
-import type {
-    Constraint,
-    ConstraintContext,
-} from '@sammo-ts/logic/constraints/types.js';
+import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
+import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionOutcome,
@@ -20,7 +15,7 @@ export interface NationRestArgs {}
 const ACTION_NAME = '휴식';
 
 export class ActionResolver<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionResolver<TriggerState, NationRestArgs> {
     readonly key = '휴식';
 
@@ -35,7 +30,7 @@ export class ActionResolver<
 }
 
 export class ActionDefinition<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionDefinition<TriggerState, NationRestArgs> {
     public readonly key = '휴식';
     public readonly name = ACTION_NAME;
@@ -46,10 +41,7 @@ export class ActionDefinition<
         return {};
     }
 
-    buildConstraints(
-        _ctx: ConstraintContext,
-        _args: NationRestArgs
-    ): Constraint[] {
+    buildConstraints(_ctx: ConstraintContext, _args: NationRestArgs): Constraint[] {
         void _ctx;
         void _args;
         return [];

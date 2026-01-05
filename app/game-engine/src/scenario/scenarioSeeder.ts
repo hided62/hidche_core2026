@@ -1,13 +1,5 @@
-import {
-    createGamePostgresConnector,
-    type InputJsonValue,
-    type TurnEngineEventCreateManyInput,
-} from '@sammo-ts/infra';
-import {
-    buildScenarioBootstrap,
-    type ScenarioBootstrapWarning,
-    type WorldSeedPayload,
-} from '@sammo-ts/logic';
+import { createGamePostgresConnector, type InputJsonValue, type TurnEngineEventCreateManyInput } from '@sammo-ts/infra';
+import { buildScenarioBootstrap, type ScenarioBootstrapWarning, type WorldSeedPayload } from '@sammo-ts/logic';
 
 import type { MapLoaderOptions } from './mapLoader.js';
 import { loadMapDefinitionByName } from './mapLoader.js';
@@ -41,20 +33,14 @@ export interface ScenarioSeedResult {
 
 const asJson = (value: unknown): InputJsonValue => value as InputJsonValue;
 
-const resolveGeneralAge = (
-    startYear: number | null,
-    birthYear: number
-): number => {
+const resolveGeneralAge = (startYear: number | null, birthYear: number): number => {
     if (startYear === null || birthYear <= 0) {
         return 20;
     }
     return Math.max(startYear - birthYear, 0);
 };
 
-const buildEventRows = (
-    rows: unknown[],
-    targetOverride?: string
-): TurnEngineEventCreateManyInput[] => {
+const buildEventRows = (rows: unknown[], targetOverride?: string): TurnEngineEventCreateManyInput[] => {
     const result: TurnEngineEventCreateManyInput[] = [];
 
     for (const row of rows) {
@@ -90,29 +76,17 @@ const buildEventRows = (
 };
 
 // 시나리오 초기 데이터를 로드해 DB에 저장한다.
-export const seedScenarioToDatabase = async (
-    options: ScenarioSeedOptions
-): Promise<ScenarioSeedResult> => {
-    const scenario = await loadScenarioDefinitionById(
-        options.scenarioId,
-        options.scenarioOptions
-    );
-    const map = await loadMapDefinitionByName(
-        scenario.config.environment.mapName,
-        options.mapOptions
-    );
-    const unitSet = await loadUnitSetDefinitionByName(
-        scenario.config.environment.unitSet,
-        options.unitSetOptions
-    );
+export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Promise<ScenarioSeedResult> => {
+    const scenario = await loadScenarioDefinitionById(options.scenarioId, options.scenarioOptions);
+    const map = await loadMapDefinitionByName(scenario.config.environment.mapName, options.mapOptions);
+    const unitSet = await loadUnitSetDefinitionByName(scenario.config.environment.unitSet, options.unitSetOptions);
 
     const { seed, warnings } = buildScenarioBootstrap({
         scenario,
         map,
         unitSet,
         options: {
-            includeNeutralNationInSeed:
-                options.includeNeutralNationInSeed ?? true,
+            includeNeutralNationInSeed: options.includeNeutralNationInSeed ?? true,
         },
     });
 
@@ -216,10 +190,7 @@ export const seedScenarioToDatabase = async (
                     affinity: general.affinity,
                     bornYear: general.birthYear,
                     deadYear: general.deathYear,
-                    picture:
-                        general.picture === null
-                            ? null
-                            : String(general.picture),
+                    picture: general.picture === null ? null : String(general.picture),
                     leadership: general.stats.leadership,
                     strength: general.stats.strength,
                     intel: general.stats.intelligence,
@@ -232,10 +203,7 @@ export const seedScenarioToDatabase = async (
                     bookCode: general.book ?? 'None',
                     itemCode: general.item ?? 'None',
                     turnTime: now,
-                    age: resolveGeneralAge(
-                        scenario.startYear ?? null,
-                        general.birthYear
-                    ),
+                    age: resolveGeneralAge(scenario.startYear ?? null, general.birthYear),
                     personalCode: general.personality ?? 'None',
                     specialCode: general.special ?? 'None',
                     special2Code: general.specialWar ?? 'None',
@@ -305,10 +273,7 @@ export const seedScenarioToDatabase = async (
             });
         }
 
-        const eventRows = [
-            ...buildEventRows(seed.events),
-            ...buildEventRows(seed.initialEvents, 'initial'),
-        ];
+        const eventRows = [...buildEventRows(seed.events), ...buildEventRows(seed.initialEvents, 'initial')];
         if (eventRows.length > 0) {
             await prisma.event.createMany({
                 data: eventRows,

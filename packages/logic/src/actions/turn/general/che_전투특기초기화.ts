@@ -1,16 +1,8 @@
-import type {
-    GeneralTriggerState,
-} from '@sammo-ts/logic/domain/entities.js';
-import type {
-    Constraint,
-    ConstraintContext,
-} from '@sammo-ts/logic/constraints/types.js';
+import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
+import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import { allow, unknownOrDeny, readGeneral } from '@sammo-ts/logic/constraints/helpers.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
-import type {
-    GeneralActionOutcome,
-    GeneralActionResolveContext,
-} from '@sammo-ts/logic/actions/engine.js';
+import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
@@ -40,7 +32,7 @@ const reqWarSpecial = (): Constraint => ({
 });
 
 export class ActionDefinition<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionDefinition<TriggerState, ResetSpecialWarArgs> {
     public readonly key = 'che_전투특기초기화';
     public readonly name = ACTION_NAME;
@@ -50,10 +42,7 @@ export class ActionDefinition<
         return {};
     }
 
-    buildConstraints(
-        _ctx: ConstraintContext,
-        _args: ResetSpecialWarArgs
-    ): Constraint[] {
+    buildConstraints(_ctx: ConstraintContext, _args: ResetSpecialWarArgs): Constraint[] {
         return [reqWarSpecial()];
     }
 

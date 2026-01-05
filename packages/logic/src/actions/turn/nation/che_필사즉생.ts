@@ -1,7 +1,4 @@
-import type {
-    General,
-    GeneralTriggerState,
-} from '@sammo-ts/logic/domain/entities.js';
+import type { General, GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
     allowDiplomacyStatus,
@@ -9,10 +6,7 @@ import {
     beChief,
     occupiedCity,
 } from '@sammo-ts/logic/constraints/presets.js';
-import {
-    GeneralActionPipeline,
-    type GeneralActionModule,
-} from '@sammo-ts/logic/triggers/general-action.js';
+import { GeneralActionPipeline, type GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionEffect,
@@ -30,7 +24,7 @@ import type { NationTurnCommandSpec } from './index.js';
 export interface DesperateFightArgs {}
 
 export interface DesperateFightResolveContext<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > extends GeneralActionResolveContext<TriggerState> {
     nationGenerals: Array<General<TriggerState>>;
 }
@@ -43,9 +37,7 @@ const TRAIN_CAP = 100;
 const ATMOS_CAP = 100;
 
 // 필사즉생 쿨타임 계산을 담당한다.
-export class CommandResolver<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     private readonly pipeline: GeneralActionPipeline<TriggerState>;
 
     constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>) {
@@ -53,20 +45,13 @@ export class CommandResolver<
     }
 
     getGlobalDelay(context: DesperateFightResolveContext<TriggerState>): number {
-        return Math.round(
-            this.pipeline.onCalcStrategic(
-                context,
-                ACTION_NAME,
-                'globalDelay',
-                DEFAULT_GLOBAL_DELAY
-            )
-        );
+        return Math.round(this.pipeline.onCalcStrategic(context, ACTION_NAME, 'globalDelay', DEFAULT_GLOBAL_DELAY));
     }
 }
 
 // 필사즉생 실행 결과를 계산한다.
 export class ActionResolver<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionResolver<TriggerState, DesperateFightArgs> {
     readonly key = 'che_필사즉생';
     private readonly command: CommandResolver<TriggerState>;
@@ -96,9 +81,7 @@ export class ActionResolver<
 
         const effects: Array<GeneralActionEffect<TriggerState>> = [];
 
-        const updateTrainAtmos = (
-            target: General<TriggerState>
-        ): { train: number; atmos: number } | null => {
+        const updateTrainAtmos = (target: General<TriggerState>): { train: number; atmos: number } | null => {
             const nextTrain = Math.max(target.train, TRAIN_CAP);
             const nextAtmos = Math.max(target.atmos, ATMOS_CAP);
             if (nextTrain === target.train && nextAtmos === target.atmos) {
@@ -119,9 +102,7 @@ export class ActionResolver<
             }
             const patch = updateTrainAtmos(target);
             if (patch) {
-                effects.push(
-                    createGeneralPatchEffect(patch, target.id)
-                );
+                effects.push(createGeneralPatchEffect(patch, target.id));
             }
             effects.push(
                 createLogEffect(broadcastMessage, {
@@ -155,12 +136,8 @@ export class ActionResolver<
 
 // 필사즉생 실행을 위한 정의/제약을 구성한다.
 export class ActionDefinition<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> implements GeneralActionDefinition<
-        TriggerState,
-        DesperateFightArgs,
-        DesperateFightResolveContext<TriggerState>
-    > {
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
+> implements GeneralActionDefinition<TriggerState, DesperateFightArgs, DesperateFightResolveContext<TriggerState>> {
     public readonly key = 'che_필사즉생';
     public readonly name = ACTION_NAME;
     private readonly resolver: ActionResolver<TriggerState>;
@@ -174,10 +151,7 @@ export class ActionDefinition<
         return {};
     }
 
-    buildConstraints(
-        _ctx: ConstraintContext,
-        _args: DesperateFightArgs
-    ): Constraint[] {
+    buildConstraints(_ctx: ConstraintContext, _args: DesperateFightArgs): Constraint[] {
         void _ctx;
         void _args;
         return [
@@ -202,9 +176,7 @@ export const actionContextBuilder: ActionContextBuilder = (base, options) => {
     if (!worldRef) {
         return null;
     }
-    const nationGenerals = worldRef
-        .listGenerals()
-        .filter((entry) => entry.nationId === base.general.nationId);
+    const nationGenerals = worldRef.listGenerals().filter((entry) => entry.nationId === base.general.nationId);
     return {
         ...base,
         nationGenerals,
@@ -216,6 +188,5 @@ export const commandSpec: NationTurnCommandSpec = {
     category: '전략',
     reqArg: false,
     args: {},
-    createDefinition: (env: TurnCommandEnv) =>
-        new ActionDefinition(env.generalActionModules ?? []),
+    createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env.generalActionModules ?? []),
 };

@@ -20,11 +20,7 @@ import {
     type WarActionModule,
 } from '@sammo-ts/logic';
 
-import {
-    type BattleSimJobPayload,
-    type BattleSimLogBuckets,
-    type BattleSimResultPayload,
-} from './types.js';
+import { type BattleSimJobPayload, type BattleSimLogBuckets, type BattleSimResultPayload } from './types.js';
 import { convertLog } from './logFormatter.js';
 
 const DEFAULT_GENERAL_AGE = 20;
@@ -33,8 +29,7 @@ const itemWarModules: WarActionModule[] = createItemActionModules(
     createItemModuleRegistry(await loadItemModules([...ITEM_KEYS]))
 ).war;
 
-const normalizeItemCode = (value: string | null): string | null =>
-    value === 'None' ? null : value;
+const normalizeItemCode = (value: string | null): string | null => (value === 'None' ? null : value);
 
 const mapNationPayload = (payload: BattleSimJobPayload['attackerNation']): Nation => ({
     id: payload.nation,
@@ -81,9 +76,7 @@ const mapCityPayload = (payload: BattleSimJobPayload['attackerCity']): City => (
     },
 });
 
-const mapGeneralPayload = (
-    payload: BattleSimJobPayload['attackerGeneral']
-): General => ({
+const mapGeneralPayload = (payload: BattleSimJobPayload['attackerGeneral']): General => ({
     id: payload.no,
     name: payload.name,
     nationId: payload.nation,
@@ -121,9 +114,7 @@ const mapGeneralPayload = (
         flags: {},
         counters: {},
         modifiers: {},
-        meta: payload.inheritBuff
-            ? { inheritBuff: JSON.stringify(payload.inheritBuff) }
-            : {},
+        meta: payload.inheritBuff ? { inheritBuff: JSON.stringify(payload.inheritBuff) } : {},
     },
     meta: {
         explevel: payload.explevel,
@@ -226,9 +217,7 @@ const resolveCityRiceConsumption = (options: {
     year: number;
     startYear: number;
 }): number => {
-    const cityReport = options.battle.reports.find(
-        (report) => report.type === 'city'
-    );
+    const cityReport = options.battle.reports.find((report) => report.type === 'city');
     if (!cityReport) {
         return 0;
     }
@@ -236,9 +225,7 @@ const resolveCityRiceConsumption = (options: {
         return 0;
     }
 
-    const crewType = options.unitSet.crewTypes?.find(
-        (item) => item.id === options.castleCrewTypeId
-    );
+    const crewType = options.unitSet.crewTypes?.find((item) => item.id === options.castleCrewTypeId);
     const riceCoef = crewType?.rice ?? 1;
     const tech = Number(options.defenderNation.meta.tech ?? 0);
     const trainAtmos = resolveCityTrainAtmos(options.year, options.startYear);
@@ -346,9 +333,7 @@ export const processBattleSimJob = (payload: BattleSimJobPayload): BattleSimResu
         });
 
         lastBattle = outcome;
-        const attackerReport = outcome.reports.find(
-            (report) => report.type === 'general' && report.isAttacker
-        );
+        const attackerReport = outcome.reports.find((report) => report.type === 'general' && report.isAttacker);
         const killed = attackerReport?.killed ?? 0;
         const dead = attackerReport?.dead ?? 0;
 
@@ -386,8 +371,7 @@ export const processBattleSimJob = (payload: BattleSimJobPayload): BattleSimResu
 
         const attackerActivated = outcome.metrics?.attackerActivatedSkills ?? {};
         for (const [skillName, value] of Object.entries(attackerActivated)) {
-            attackerSkills[skillName] =
-                (attackerSkills[skillName] ?? 0) + value * weight;
+            attackerSkills[skillName] = (attackerSkills[skillName] ?? 0) + value * weight;
         }
 
         const defenderActivated = outcome.metrics?.defenderActivatedSkills ?? [];

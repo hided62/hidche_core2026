@@ -1,9 +1,4 @@
-export type TurnDaemonState =
-    | 'idle'
-    | 'running'
-    | 'flushing'
-    | 'paused'
-    | 'stopping';
+export type TurnDaemonState = 'idle' | 'running' | 'flushing' | 'paused' | 'stopping';
 
 export type RunReason = 'schedule' | 'manual' | 'poke';
 

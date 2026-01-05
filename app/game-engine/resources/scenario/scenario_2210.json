@@ -9,16 +9,14 @@
         "total": 240,
         "min": 40,
         "max": 110,
-        "npcTotal":200,
-        "npcMax":90,
-        "npcMin":20,
+        "npcTotal": 200,
+        "npcMax": 90,
+        "npcMin": 20,
         "chiefMin": 65
     },
     "iconPath": "포켓몬스터",
     "fiction": 1,
-    "nation":[
-
-    ],
+    "nation": [],
     "map": {
         "mapName": "pokemon_v1",
         "unitSet": "basic"
@@ -27,8 +25,8 @@
         "basePopIncreaseAmount": 15000,
         "expandCityPopIncreaseAmount": 300000
     },
-    "diplomacy":[],
-    "general":[
+    "diplomacy": [],
+    "general": [
         [0, "이상해씨", null, 0, null, 45, 49, 49, 0, 1973, 2100, null, null],
         [0, "이상해풀", null, 0, null, 60, 62, 63, 0, 1973, 2100, null, null],
         [0, "이상해꽃", null, 0, null, 80, 82, 83, 0, 1973, 2100, null, null],
@@ -183,7 +181,7 @@
         [0, "뮤츠", null, 0, null, 101, 105, 90, 0, 1973, 2100, "은둔", null],
         [0, "뮤", null, 0, null, 95, 95, 95, 0, 1973, 2100, "은둔", null]
     ],
-    "general_ex":[
+    "general_ex": [
         [0, "갬블러", null, 0, null, 65, 65, 65, 0, 1973, 2100, null, null],
         [0, "곤충채집소년", null, 0, null, 65, 66, 68, 0, 1973, 2100, null, null],
         [0, "포켓몬 매니아", null, 0, null, 67, 52, 69, 0, 1973, 2100, null, null],
@@ -223,21 +221,31 @@
         [0, "시바", null, 0, "석영고원", 90, 100, 70, 0, 1973, 2100, null, null],
         [0, "국화", null, 0, "석영고원", 83, 87, 88, 0, 1973, 2100, null, "환술"],
         [0, "목호", null, 0, "석영고원", 94, 73, 94, 0, 1973, 2100, null, null],
-        [0, "로켓단", null, 0, null, 85, 85, 85, 0, 1973, 2100, null, null, "우리가 그렇게 궁금하시다면 대답해 드리는게 인지상정\n이 세계의 파괴를 막기 위해! 이 세계의 평화를 지키기 위해! \n사랑과 진실, 어둠을 뿌리고 다니는...! \n포켓몬의 감초 귀"]
-    ],
-    "initialEvents":[
-
-    ],
-    "events":[
         [
-            "destroy_nation", 1000,
-            ["and",
-                ["Date", ">=", 183, 1],
-                ["RemainNation", "==", 1]
-            ],
+            0,
+            "로켓단",
+            null,
+            0,
+            null,
+            85,
+            85,
+            85,
+            0,
+            1973,
+            2100,
+            null,
+            null,
+            "우리가 그렇게 궁금하시다면 대답해 드리는게 인지상정\n이 세계의 파괴를 막기 위해! 이 세계의 평화를 지키기 위해! \n사랑과 진실, 어둠을 뿌리고 다니는...! \n포켓몬의 감초 귀"
+        ]
+    ],
+    "initialEvents": [],
+    "events": [
+        [
+            "destroy_nation",
+            1000,
+            ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]],
             ["BlockScoutAction"],
             ["DeleteEvent"]
         ]
-
     ]
 }

@@ -9,16 +9,10 @@ import { createGatewayOrchestrator } from './orchestratorFactory.js';
 
 export const runGatewayOrchestrator = async (): Promise<void> => {
     const config = resolveGatewayOrchestratorConfigFromEnv();
-    const postgres = createGatewayPostgresConnector(
-        resolvePostgresConfigFromEnv({ schema: config.dbSchema })
-    );
+    const postgres = createGatewayPostgresConnector(resolvePostgresConfigFromEnv({ schema: config.dbSchema }));
     await postgres.connect();
 
-    const { orchestrator } = createGatewayOrchestrator(
-        postgres.prisma as GatewayPrismaClient,
-        config,
-        process.env
-    );
+    const { orchestrator } = createGatewayOrchestrator(postgres.prisma as GatewayPrismaClient, config, process.env);
 
     const stop = async (reason: string): Promise<void> => {
         console.info(`[gateway-orchestrator] stopping: ${reason}`);

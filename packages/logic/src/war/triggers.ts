@@ -24,9 +24,7 @@ export const createWarTriggerEnv = (): WarTriggerEnv => ({
 
 export class WarTriggerCaller extends TriggerCaller<WarTriggerContext, WarTriggerEnv> {}
 
-export type WarTriggerFactory = (
-    unit: WarUnit
-) => WarTrigger | WarTriggerCaller | null;
+export type WarTriggerFactory = (unit: WarUnit) => WarTrigger | WarTriggerCaller | null;
 
 export type WarTriggerRegistry = Record<string, WarTriggerFactory>;
 
@@ -51,10 +49,7 @@ export abstract class BaseWarUnitTrigger implements WarTrigger {
         return `${this.priority}_${this.constructor.name}_${this.unit.getUnitId()}_${this.raiseType}`;
     }
 
-    action(
-        context: WarTriggerContext,
-        env: WarTriggerEnv
-    ): WarTriggerEnv {
+    action(context: WarTriggerContext, env: WarTriggerEnv): WarTriggerEnv {
         const nextEnv: WarTriggerEnv = {
             e_attacker: env.e_attacker ?? {},
             e_defender: env.e_defender ?? {},

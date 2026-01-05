@@ -1,8 +1,4 @@
-import {
-    createGamePostgresConnector,
-    type InputJsonValue,
-    type TurnEngineDatabaseClient,
-} from '@sammo-ts/infra';
+import { createGamePostgresConnector, type InputJsonValue, type TurnEngineDatabaseClient } from '@sammo-ts/infra';
 
 export interface ReservedTurnEntry {
     action: string;
@@ -32,21 +28,16 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const normalizeAction = (action: string | null | undefined): string =>
     action && action.length > 0 ? action : DEFAULT_TURN_ACTION;
 
-const normalizeArgs = (args: unknown): Record<string, unknown> =>
-    isRecord(args) ? args : {};
+const normalizeArgs = (args: unknown): Record<string, unknown> => (isRecord(args) ? args : {});
 
 const createDefaultEntry = (): ReservedTurnEntry => ({
     action: DEFAULT_TURN_ACTION,
     args: {},
 });
 
-const buildDefaultTurns = (length: number): ReservedTurnEntry[] =>
-    Array.from({ length }, () => createDefaultEntry());
+const buildDefaultTurns = (length: number): ReservedTurnEntry[] => Array.from({ length }, () => createDefaultEntry());
 
-const applyShift = (
-    turns: ReservedTurnEntry[],
-    amount: number
-): ReservedTurnEntry[] => {
+const applyShift = (turns: ReservedTurnEntry[], amount: number): ReservedTurnEntry[] => {
     if (amount === 0) {
         return turns.slice();
     }
@@ -79,13 +70,9 @@ const buildTurnListFromRows = (
     return result;
 };
 
-const buildNationKey = (nationId: number, officerLevel: number): string =>
-    `${nationId}:${officerLevel}`;
+const buildNationKey = (nationId: number, officerLevel: number): string => `${nationId}:${officerLevel}`;
 
-type ReservedTurnDatabaseClient = Pick<
-    TurnEngineDatabaseClient,
-    'generalTurn' | 'nationTurn'
->;
+type ReservedTurnDatabaseClient = Pick<TurnEngineDatabaseClient, 'generalTurn' | 'nationTurn'>;
 
 export class InMemoryReservedTurnStore {
     private readonly generalTurns = new Map<number, ReservedTurnEntry[]>();
@@ -119,10 +106,7 @@ export class InMemoryReservedTurnStore {
             }
         }
         for (const [generalId, rows] of generalGroups.entries()) {
-            this.generalTurns.set(
-                generalId,
-                buildTurnListFromRows(rows, this.maxGeneralTurns)
-            );
+            this.generalTurns.set(generalId, buildTurnListFromRows(rows, this.maxGeneralTurns));
         }
 
         const nationGroups = new Map<string, typeof nationRows>();
@@ -136,10 +120,7 @@ export class InMemoryReservedTurnStore {
             }
         }
         for (const [key, rows] of nationGroups.entries()) {
-            this.nationTurns.set(
-                key,
-                buildTurnListFromRows(rows, this.maxNationTurns)
-            );
+            this.nationTurns.set(key, buildTurnListFromRows(rows, this.maxNationTurns));
         }
     }
 
@@ -151,16 +132,10 @@ export class InMemoryReservedTurnStore {
             where: { generalId },
             orderBy: [{ turnIdx: 'asc' }],
         });
-        this.generalTurns.set(
-            generalId,
-            buildTurnListFromRows(rows, this.maxGeneralTurns)
-        );
+        this.generalTurns.set(generalId, buildTurnListFromRows(rows, this.maxGeneralTurns));
     }
 
-    async refreshNationTurns(
-        nationId: number,
-        officerLevel: number
-    ): Promise<void> {
+    async refreshNationTurns(nationId: number, officerLevel: number): Promise<void> {
         const key = buildNationKey(nationId, officerLevel);
         if (this.dirtyNationKeys.has(key)) {
             return;
@@ -169,10 +144,7 @@ export class InMemoryReservedTurnStore {
             where: { nationId, officerLevel },
             orderBy: [{ turnIdx: 'asc' }],
         });
-        this.nationTurns.set(
-            key,
-            buildTurnListFromRows(rows, this.maxNationTurns)
-        );
+        this.nationTurns.set(key, buildTurnListFromRows(rows, this.maxNationTurns));
     }
 
     getGeneralTurns(generalId: number): ReservedTurnEntry[] {
@@ -185,10 +157,7 @@ export class InMemoryReservedTurnStore {
         return created;
     }
 
-    getNationTurns(
-        nationId: number,
-        officerLevel: number
-    ): ReservedTurnEntry[] {
+    getNationTurns(nationId: number, officerLevel: number): ReservedTurnEntry[] {
         const key = buildNationKey(nationId, officerLevel);
         const current = this.nationTurns.get(key);
         if (current) {
@@ -204,11 +173,7 @@ export class InMemoryReservedTurnStore {
         return list[turnIdx] ?? createDefaultEntry();
     }
 
-    getNationTurn(
-        nationId: number,
-        officerLevel: number,
-        turnIdx: number
-    ): ReservedTurnEntry {
+    getNationTurn(nationId: number, officerLevel: number, turnIdx: number): ReservedTurnEntry {
         const list = this.getNationTurns(nationId, officerLevel);
         return list[turnIdx] ?? createDefaultEntry();
     }
@@ -266,18 +231,13 @@ export class InMemoryReservedTurnStore {
     }
 }
 
-export const createReservedTurnStore = async (
-    options: ReservedTurnStoreOptions
-): Promise<ReservedTurnStoreHandle> => {
+export const createReservedTurnStore = async (options: ReservedTurnStoreOptions): Promise<ReservedTurnStoreHandle> => {
     const connector = createGamePostgresConnector({ url: options.databaseUrl });
     await connector.connect();
-    const store = new InMemoryReservedTurnStore(
-        connector.prisma,
-        {
-            maxGeneralTurns: options.maxGeneralTurns ?? DEFAULT_GENERAL_TURNS,
-            maxNationTurns: options.maxNationTurns ?? DEFAULT_NATION_TURNS,
-        }
-    );
+    const store = new InMemoryReservedTurnStore(connector.prisma, {
+        maxGeneralTurns: options.maxGeneralTurns ?? DEFAULT_GENERAL_TURNS,
+        maxNationTurns: options.maxNationTurns ?? DEFAULT_NATION_TURNS,
+    });
     await store.loadAll();
     return {
         store,

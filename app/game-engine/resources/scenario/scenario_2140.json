@@ -1,21 +1,19 @@
 {
-    "title":"【가상모드14】 걸그룹대전",
-    "life":1,
-    "fiction":1,
-    "nation":[
-    ],
-    "diplomacy":[
-    ],
+    "title": "【가상모드14】 걸그룹대전",
+    "life": 1,
+    "fiction": 1,
+    "nation": [],
+    "diplomacy": [],
     "iconPath": "걸그룹",
-    "stat":{
+    "stat": {
         "total": 310,
         "min": 40,
         "max": 140,
-        "npcTotal":210,
-        "npcMax":95,
-        "npcMin":40
+        "npcTotal": 210,
+        "npcMax": 95,
+        "npcMin": 40
     },
-    "general":[
+    "general": [
         [0, "아이유", null, 0, null, 90, 56, 100, 0, 160, 250, "의협", "집중"],
         [0, "걸스데이 민아", null, 0, null, 96, 58, 95, 0, 160, 250, "대의", "환술"],
         [0, "손나은", null, 0, null, 92, 55, 92, 0, 160, 250, "안전", "귀병"],
@@ -477,29 +475,21 @@
         [0, "오로라", null, 0, null, 78, 50, 73, 0, 160, 250, null, null],
         [0, "로하", null, 0, null, 68, 82, 56, 0, 160, 250, null, null]
     ],
-    "general_ex":[
-    ],
-    "cities":[
-
-    ],
-    "history":[
+    "general_ex": [],
+    "cities": [],
+    "history": [
         "<C>●</>180년 1월:<L><b>【이벤트】</b></>제작자: 세정.",
         "<C>●</>180년 1월:<L><b>【가상모드13】</b>걸그룹대전</>",
         "<C>●</>180년 1월:<L><b>【이벤트】</b></>최고의 걸그룹을 가린다! (2022. 4. 20.)"
     ],
-    "initialEvents":[
-
-    ],
-    "events":[
+    "initialEvents": [],
+    "events": [
         [
-            "destroy_nation", 1000,
-            ["and",
-                ["Date", ">=", 183, 1],
-                ["RemainNation", "==", 1]
-            ],
+            "destroy_nation",
+            1000,
+            ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]],
             ["BlockScoutAction"],
             ["DeleteEvent"]
         ]
-
     ]
 }

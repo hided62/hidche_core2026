@@ -48,9 +48,9 @@ const zTurnRunBudget = z.object({
     catchUpCap: z.number().int().positive(),
 });
 
-
 const buildShiftAmountSchema = (maxTurns: number) =>
-    z.number()
+    z
+        .number()
         .int()
         .min(-(maxTurns - 1))
         .max(maxTurns - 1)
@@ -114,7 +114,7 @@ export const appRouter = router({
             if (ctx.auth?.user.id) {
                 const general = await ctx.db.general.findFirst({
                     where: { userId: ctx.auth.user.id },
-                    select: { name: true, picture: true }
+                    select: { name: true, picture: true },
                 });
                 if (general) {
                     myGeneral = {
@@ -143,33 +143,25 @@ export const appRouter = router({
         }),
     }),
     battle: router({
-        simulate: procedure
-            .input(zBattleSimRequest)
-            .mutation(async ({ ctx, input }) => {
-                const worldState = await ctx.db.worldState.findFirst();
-                if (!worldState) {
-                    throw new TRPCError({
-                        code: 'PRECONDITION_FAILED',
-                        message: 'World state is not initialized.',
-                    });
-                }
+        simulate: procedure.input(zBattleSimRequest).mutation(async ({ ctx, input }) => {
+            const worldState = await ctx.db.worldState.findFirst();
+            if (!worldState) {
+                throw new TRPCError({
+                    code: 'PRECONDITION_FAILED',
+                    message: 'World state is not initialized.',
+                });
+            }
 
-                const payload = await buildBattleSimJobPayload(
-                    worldState,
-                    input,
-                    ctx.profile.id
-                );
-                return ctx.battleSim.simulate(payload);
-            }),
-        getSimulation: procedure
-            .input(zBattleSimJobId)
-            .query(async ({ ctx, input }) => {
-                const result = await ctx.battleSim.getSimulationResult(input.jobId);
-                if (!result) {
-                    return { status: 'queued', jobId: input.jobId };
-                }
-                return { status: 'completed', jobId: input.jobId, payload: result };
-            }),
+            const payload = await buildBattleSimJobPayload(worldState, input, ctx.profile.id);
+            return ctx.battleSim.simulate(payload);
+        }),
+        getSimulation: procedure.input(zBattleSimJobId).query(async ({ ctx, input }) => {
+            const result = await ctx.battleSim.getSimulationResult(input.jobId);
+            if (!result) {
+                return { status: 'queued', jobId: input.jobId };
+            }
+            return { status: 'completed', jobId: input.jobId, payload: result };
+        }),
     }),
     world: router({
         getState: procedure.query(async ({ ctx }) => {
@@ -254,7 +246,8 @@ export const appRouter = router({
                 .input(
                     z.object({
                         generalId: z.number().int().positive(),
-                        turnIndex: z.number()
+                        turnIndex: z
+                            .number()
                             .int()
                             .min(0)
                             .max(MAX_GENERAL_TURNS - 1),
@@ -300,18 +293,15 @@ export const appRouter = router({
                         });
                     }
 
-                    const turns = await shiftGeneralTurns(
-                        ctx.db,
-                        input.generalId,
-                        input.amount
-                    );
+                    const turns = await shiftGeneralTurns(ctx.db, input.generalId, input.amount);
                     return { ok: true, turns };
                 }),
             setNation: authedProcedure
                 .input(
                     z.object({
                         generalId: z.number().int().positive(),
-                        turnIndex: z.number()
+                        turnIndex: z
+                            .number()
                             .int()
                             .min(0)
                             .max(MAX_NATION_TURNS - 1),
@@ -382,12 +372,7 @@ export const appRouter = router({
                         });
                     }
 
-                    const turns = await shiftNationTurns(
-                        ctx.db,
-                        general.nationId,
-                        general.officerLevel,
-                        input.amount
-                    );
+                    const turns = await shiftNationTurns(ctx.db, general.nationId, general.officerLevel, input.amount);
                     return { ok: true, turns };
                 }),
         }),
@@ -420,37 +405,36 @@ export const appRouter = router({
                     diplomacy: MESSAGE_MAILBOX_NATIONAL_BASE + nationId,
                 } satisfies Record<MessageType, number>;
 
-                const [privateMessages, publicMessages, nationalMessages, diplomacyMessages] =
-                    await Promise.all([
-                        fetchMessagesFromMailbox({
-                            db: ctx.db,
-                            mailbox: mailboxes.private,
-                            msgType: 'private',
-                            limit: 15,
-                            fromSeq: sequence,
-                        }),
-                        fetchMessagesFromMailbox({
-                            db: ctx.db,
-                            mailbox: mailboxes.public,
-                            msgType: 'public',
-                            limit: 15,
-                            fromSeq: sequence,
-                        }),
-                        fetchMessagesFromMailbox({
-                            db: ctx.db,
-                            mailbox: mailboxes.national,
-                            msgType: 'national',
-                            limit: 15,
-                            fromSeq: sequence,
-                        }),
-                        fetchMessagesFromMailbox({
-                            db: ctx.db,
-                            mailbox: mailboxes.diplomacy,
-                            msgType: 'diplomacy',
-                            limit: 15,
-                            fromSeq: sequence,
-                        }),
-                    ]);
+                const [privateMessages, publicMessages, nationalMessages, diplomacyMessages] = await Promise.all([
+                    fetchMessagesFromMailbox({
+                        db: ctx.db,
+                        mailbox: mailboxes.private,
+                        msgType: 'private',
+                        limit: 15,
+                        fromSeq: sequence,
+                    }),
+                    fetchMessagesFromMailbox({
+                        db: ctx.db,
+                        mailbox: mailboxes.public,
+                        msgType: 'public',
+                        limit: 15,
+                        fromSeq: sequence,
+                    }),
+                    fetchMessagesFromMailbox({
+                        db: ctx.db,
+                        mailbox: mailboxes.national,
+                        msgType: 'national',
+                        limit: 15,
+                        fromSeq: sequence,
+                    }),
+                    fetchMessagesFromMailbox({
+                        db: ctx.db,
+                        mailbox: mailboxes.diplomacy,
+                        msgType: 'diplomacy',
+                        limit: 15,
+                        fromSeq: sequence,
+                    }),
+                ]);
 
                 const messageBuckets: Record<MessageType, MessageView[]> = {
                     private: privateMessages,
@@ -481,20 +465,11 @@ export const appRouter = router({
 
                 if (lastType === 'private' && messageBuckets.private.length > 0) {
                     messageBuckets.private.pop();
-                } else if (
-                    lastType === 'public' &&
-                    messageBuckets.public.length > 0
-                ) {
+                } else if (lastType === 'public' && messageBuckets.public.length > 0) {
                     messageBuckets.public.pop();
-                } else if (
-                    lastType === 'national' &&
-                    messageBuckets.national.length > 0
-                ) {
+                } else if (lastType === 'national' && messageBuckets.national.length > 0) {
                     messageBuckets.national.pop();
-                } else if (
-                    lastType === 'diplomacy' &&
-                    messageBuckets.diplomacy.length > 0
-                ) {
+                } else if (lastType === 'diplomacy' && messageBuckets.diplomacy.length > 0) {
                     messageBuckets.diplomacy.pop();
                 }
 
@@ -591,27 +566,16 @@ export const appRouter = router({
                 if (input.mailbox === MESSAGE_MAILBOX_PUBLIC) {
                     msgType = 'public';
                 } else if (input.mailbox >= MESSAGE_MAILBOX_NATIONAL_BASE) {
-                    const destNationId =
-                        input.mailbox - MESSAGE_MAILBOX_NATIONAL_BASE;
+                    const destNationId = input.mailbox - MESSAGE_MAILBOX_NATIONAL_BASE;
                     if (destNationId <= 0) {
                         throw new TRPCError({
                             code: 'BAD_REQUEST',
                             message: 'Invalid nation mailbox.',
                         });
                     }
-                    const nationInfo = await resolveNationInfo(
-                        ctx.db,
-                        destNationId
-                    );
-                    dest = buildNationTarget(
-                        destNationId,
-                        nationInfo.name,
-                        nationInfo.color
-                    );
-                    msgType =
-                        destNationId === general.nationId
-                            ? 'national'
-                            : 'diplomacy';
+                    const nationInfo = await resolveNationInfo(ctx.db, destNationId);
+                    dest = buildNationTarget(destNationId, nationInfo.name, nationInfo.color);
+                    msgType = destNationId === general.nationId ? 'national' : 'diplomacy';
                 } else if (input.mailbox > 0) {
                     const destGeneral = await ctx.db.general.findUnique({
                         where: { id: input.mailbox },
@@ -643,8 +607,7 @@ export const appRouter = router({
 
                 const result = await sendMessage(
                     {
-                        insertMessage: (draft: MessageRecordDraft) =>
-                            insertMessage(ctx.db, draft),
+                        insertMessage: (draft: MessageRecordDraft) => insertMessage(ctx.db, draft),
                     },
                     draft
                 );
@@ -777,47 +740,45 @@ export const appRouter = router({
             }
             return { ok: true };
         }),
-        setMySetting: authedProcedure
-            .input(zGeneralSettings)
-            .mutation(async ({ ctx, input }) => {
-                const general = await getMyGeneral(ctx);
-                const result = await ctx.turnDaemon.requestCommand({
-                    type: 'setMySetting',
-                    generalId: general.id,
-                    settings: input,
-                });
-                if (!result || result.type !== 'setMySetting') {
-                    throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
-                }
-                if (!result.ok) {
-                    throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
-                }
-                return { ok: true };
-            }),
-        dropItem: authedProcedure
-            .input(z.object({ itemType: z.string() }))
-            .mutation(async ({ ctx, input }) => {
-                const general = await getMyGeneral(ctx);
-                const result = await ctx.turnDaemon.requestCommand({
-                    type: 'dropItem',
-                    generalId: general.id,
-                    itemType: input.itemType,
-                });
-                if (!result || result.type !== 'dropItem') {
-                    throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
-                }
-                if (!result.ok) {
-                    throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
-                }
-                return { ok: true };
-            }),
+        setMySetting: authedProcedure.input(zGeneralSettings).mutation(async ({ ctx, input }) => {
+            const general = await getMyGeneral(ctx);
+            const result = await ctx.turnDaemon.requestCommand({
+                type: 'setMySetting',
+                generalId: general.id,
+                settings: input,
+            });
+            if (!result || result.type !== 'setMySetting') {
+                throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
+            }
+            if (!result.ok) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
+            }
+            return { ok: true };
+        }),
+        dropItem: authedProcedure.input(z.object({ itemType: z.string() })).mutation(async ({ ctx, input }) => {
+            const general = await getMyGeneral(ctx);
+            const result = await ctx.turnDaemon.requestCommand({
+                type: 'dropItem',
+                generalId: general.id,
+                itemType: input.itemType,
+            });
+            if (!result || result.type !== 'dropItem') {
+                throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
+            }
+            if (!result.ok) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
+            }
+            return { ok: true };
+        }),
     }),
     nation: router({
         changePermission: authedProcedure
-            .input(z.object({
-                isAmbassador: z.boolean(),
-                targetGeneralIds: z.array(z.number().int().positive()),
-            }))
+            .input(
+                z.object({
+                    isAmbassador: z.boolean(),
+                    targetGeneralIds: z.array(z.number().int().positive()),
+                })
+            )
             .mutation(async ({ ctx, input }) => {
                 const general = await getMyGeneral(ctx);
                 const result = await ctx.turnDaemon.requestCommand({
@@ -852,11 +813,13 @@ export const appRouter = router({
                 return { ok: true };
             }),
         appoint: authedProcedure
-            .input(z.object({
-                destGeneralId: z.number().int().nonnegative(),
-                destCityId: z.number().int().nonnegative(),
-                officerLevel: z.number().int().nonnegative(),
-            }))
+            .input(
+                z.object({
+                    destGeneralId: z.number().int().nonnegative(),
+                    destCityId: z.number().int().nonnegative(),
+                    officerLevel: z.number().int().nonnegative(),
+                })
+            )
             .mutation(async ({ ctx, input }) => {
                 const general = await getMyGeneral(ctx);
                 const result = await ctx.turnDaemon.requestCommand({
@@ -895,9 +858,11 @@ export const appRouter = router({
             }),
         pause: procedure
             .input(
-                z.object({
-                    reason: z.string().min(1).optional(),
-                }).optional()
+                z
+                    .object({
+                        reason: z.string().min(1).optional(),
+                    })
+                    .optional()
             )
             .mutation(async ({ ctx, input }) => {
                 const requestId = await ctx.turnDaemon.sendCommand({
@@ -908,9 +873,11 @@ export const appRouter = router({
             }),
         resume: procedure
             .input(
-                z.object({
-                    reason: z.string().min(1).optional(),
-                }).optional()
+                z
+                    .object({
+                        reason: z.string().min(1).optional(),
+                    })
+                    .optional()
             )
             .mutation(async ({ ctx, input }) => {
                 const requestId = await ctx.turnDaemon.sendCommand({
@@ -921,9 +888,11 @@ export const appRouter = router({
             }),
         status: procedure
             .input(
-                z.object({
-                    timeoutMs: z.number().int().positive().optional(),
-                }).optional()
+                z
+                    .object({
+                        timeoutMs: z.number().int().positive().optional(),
+                    })
+                    .optional()
             )
             .query(async ({ ctx, input }) => {
                 return ctx.turnDaemon.requestStatus(input?.timeoutMs);

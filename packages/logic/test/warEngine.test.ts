@@ -94,6 +94,7 @@ const buildCity = (): City => ({
     name: 'TestCity',
     nationId: 1,
     level: 2,
+    state: 0,
     population: 10000,
     populationMax: 10000,
     agriculture: 500,
@@ -160,7 +161,7 @@ describe('war triggers', () => {
     it('activates and applies critical damage', async () => {
         const rng = new RandUtil(new ConstantRNG(0));
         const config = buildConfig();
-        const crewType = new WarCrewType(buildUnitSet().crewTypes?.[0]!);
+        const crewType = new WarCrewType(buildUnitSet().crewTypes![0]);
         const nation = buildNation();
         const city = buildCity();
 
@@ -180,7 +181,7 @@ describe('war triggers', () => {
             config,
             city,
             nation,
-            new WarCrewType(buildUnitSet().crewTypes?.[1]!),
+            new WarCrewType(buildUnitSet().crewTypes![1]),
             new ActionLogger({}),
             200,
             180
@@ -199,10 +200,7 @@ describe('war triggers', () => {
         if (!caller) {
             throw new Error('Missing che_필살 trigger list');
         }
-        caller.fire(
-            { rng, attacker, defender },
-            { e_attacker: {}, e_defender: {} }
-        );
+        caller.fire({ rng, attacker, defender }, { e_attacker: {}, e_defender: {} });
 
         expect(attacker.hasActivatedSkill('필살')).toBe(true);
         expect(attacker.getWarPowerMultiply()).toBeCloseTo(1.3);

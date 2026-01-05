@@ -1,9 +1,4 @@
-import type {
-    DatabaseClient,
-    GeneralTurnRow,
-    NationTurnRow,
-    InputJsonValue,
-} from '../context.js';
+import type { DatabaseClient, GeneralTurnRow, NationTurnRow, InputJsonValue } from '../context.js';
 
 export const DEFAULT_TURN_ACTION = '휴식';
 export const MAX_GENERAL_TURNS = 30;
@@ -26,21 +21,16 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const normalizeAction = (action: string | null | undefined): string =>
     action && action.length > 0 ? action : DEFAULT_TURN_ACTION;
 
-const normalizeArgs = (args: unknown): InputJsonValue =>
-    isRecord(args) ? (args as InputJsonValue) : {};
+const normalizeArgs = (args: unknown): InputJsonValue => (isRecord(args) ? (args as InputJsonValue) : {});
 
 const createDefaultEntry = (): ReservedTurnEntry => ({
     action: DEFAULT_TURN_ACTION,
     args: {},
 });
 
-const buildDefaultTurns = (length: number): ReservedTurnEntry[] =>
-    Array.from({ length }, () => createDefaultEntry());
+const buildDefaultTurns = (length: number): ReservedTurnEntry[] => Array.from({ length }, () => createDefaultEntry());
 
-const applyShift = (
-    turns: ReservedTurnEntry[],
-    amount: number
-): ReservedTurnEntry[] => {
+const applyShift = (turns: ReservedTurnEntry[], amount: number): ReservedTurnEntry[] => {
     if (amount === 0) {
         return turns.slice();
     }
@@ -55,10 +45,7 @@ const applyShift = (
     return sliced.concat(padding);
 };
 
-const buildTurnListFromRows = (
-    rows: Array<GeneralTurnRow | NationTurnRow>,
-    maxTurns: number
-): ReservedTurnEntry[] => {
+const buildTurnListFromRows = (rows: Array<GeneralTurnRow | NationTurnRow>, maxTurns: number): ReservedTurnEntry[] => {
     const result = buildDefaultTurns(maxTurns);
     for (const row of rows) {
         if (row.turnIdx < 0 || row.turnIdx >= maxTurns) {
@@ -113,10 +100,7 @@ const persistNationTurns = async (
     });
 };
 
-export const loadGeneralTurns = async (
-    db: DatabaseClient,
-    generalId: number
-): Promise<ReservedTurnEntry[]> => {
+export const loadGeneralTurns = async (db: DatabaseClient, generalId: number): Promise<ReservedTurnEntry[]> => {
     const rows = await db.generalTurn.findMany({
         where: { generalId },
         orderBy: [{ turnIdx: 'asc' }],

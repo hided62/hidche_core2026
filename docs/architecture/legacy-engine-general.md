@@ -11,9 +11,9 @@ exposes trigger hooks. The main reference is `legacy/hwe/sammo/General.php`.
 - `penalty` JSON is decoded into `PenaltyKey -> value` map.
 - `aux` JSON is lazily decoded and only written when aux values change.
 - Rank data is tracked with:
-  - `rankVarRead` (current read view)
-  - `rankVarIncrease` (increment queue)
-  - `rankVarSet` (explicit set queue)
+    - `rankVarRead` (current read view)
+    - `rankVarIncrease` (increment queue)
+    - `rankVarSet` (explicit set queue)
 
 ## Action Objects (`iAction`)
 
@@ -44,6 +44,7 @@ modifiers and triggers.
 - Cached by `(statName, injury, action, adjust)` tuple
 
 Convenience wrappers:
+
 - `getLeadership()`, `getStrength()`, `getIntel()`
 
 ## Turn Reservation and LastTurn
@@ -83,10 +84,10 @@ Battle triggers:
 
 - `getBattleInitSkillTriggerList()` merges per-action battle-init triggers.
 - `getBattlePhaseSkillTriggerList()` includes base phase triggers:
-  - `che_필살시도`, `che_필살발동`
-  - `che_회피시도`, `che_회피발동`
-  - `che_계략시도`, `che_계략발동`, `che_계략실패`
-  - plus any action-specific additions.
+    - `che_필살시도`, `che_필살발동`
+    - `che_회피시도`, `che_회피발동`
+    - `che_계략시도`, `che_계략발동`, `che_계략실패`
+    - plus any action-specific additions.
 
 ## Rank and Access Log Updates
 

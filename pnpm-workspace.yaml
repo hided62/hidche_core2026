@@ -1,11 +1,11 @@
 packages:
-  - packages/*
-  - app/*
-  - tools/*
+    - packages/*
+    - app/*
+    - tools/*
 
 onlyBuiltDependencies:
-  - '@prisma/client'
-  - '@prisma/engines'
-  - esbuild
-  - prisma
-  - vue-demi
+    - '@prisma/client'
+    - '@prisma/engines'
+    - esbuild
+    - prisma
+    - vue-demi

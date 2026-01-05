@@ -1,9 +1,4 @@
-import {
-    LogCategory,
-    type LogEntryDraft,
-    LogFormat,
-    LogScope,
-} from './types.js';
+import { LogCategory, type LogEntryDraft, LogFormat, LogScope } from './types.js';
 
 export class ActionLogger {
     private readonly generalId: number | undefined;
@@ -26,62 +21,42 @@ export class ActionLogger {
         return backup;
     }
 
-    public pushGeneralHistoryLog(
-        text: string | string[],
-        format: LogFormat = LogFormat.YEAR_MONTH
-    ): void {
+    public pushGeneralHistoryLog(text: string | string[], format: LogFormat = LogFormat.YEAR_MONTH): void {
         this.pushBatch(text, (message) => ({
             scope: LogScope.GENERAL,
             category: LogCategory.HISTORY,
             text: message,
-            ...(this.generalId !== undefined
-                ? { generalId: this.generalId }
-                : {}),
+            ...(this.generalId !== undefined ? { generalId: this.generalId } : {}),
             format,
         }));
     }
 
-    public pushGeneralActionLog(
-        text: string | string[],
-        format: LogFormat = LogFormat.MONTH
-    ): void {
+    public pushGeneralActionLog(text: string | string[], format: LogFormat = LogFormat.MONTH): void {
         this.pushBatch(text, (message) => ({
             scope: LogScope.GENERAL,
             category: LogCategory.ACTION,
             text: message,
-            ...(this.generalId !== undefined
-                ? { generalId: this.generalId }
-                : {}),
+            ...(this.generalId !== undefined ? { generalId: this.generalId } : {}),
             format,
         }));
     }
 
-    public pushGeneralBattleResultLog(
-        text: string | string[],
-        format: LogFormat = LogFormat.RAWTEXT
-    ): void {
+    public pushGeneralBattleResultLog(text: string | string[], format: LogFormat = LogFormat.RAWTEXT): void {
         this.pushBatch(text, (message) => ({
             scope: LogScope.GENERAL,
             category: LogCategory.BATTLE_BRIEF,
             text: message,
-            ...(this.generalId !== undefined
-                ? { generalId: this.generalId }
-                : {}),
+            ...(this.generalId !== undefined ? { generalId: this.generalId } : {}),
             format,
         }));
     }
 
-    public pushGeneralBattleDetailLog(
-        text: string | string[],
-        format: LogFormat = LogFormat.PLAIN
-    ): void {
+    public pushGeneralBattleDetailLog(text: string | string[], format: LogFormat = LogFormat.PLAIN): void {
         this.pushBatch(text, (message) => ({
             scope: LogScope.GENERAL,
             category: LogCategory.BATTLE_DETAIL,
             text: message,
-            ...(this.generalId !== undefined
-                ? { generalId: this.generalId }
-                : {}),
+            ...(this.generalId !== undefined ? { generalId: this.generalId } : {}),
             format,
         }));
     }
@@ -103,10 +78,7 @@ export class ActionLogger {
         }));
     }
 
-    public pushGlobalHistoryLog(
-        text: string | string[],
-        format: LogFormat = LogFormat.YEAR_MONTH
-    ): void {
+    public pushGlobalHistoryLog(text: string | string[], format: LogFormat = LogFormat.YEAR_MONTH): void {
         this.pushBatch(text, (message) => ({
             scope: LogScope.SYSTEM,
             category: LogCategory.HISTORY,
@@ -115,10 +87,7 @@ export class ActionLogger {
         }));
     }
 
-    public pushGlobalActionLog(
-        text: string | string[],
-        format: LogFormat = LogFormat.MONTH
-    ): void {
+    public pushGlobalActionLog(text: string | string[], format: LogFormat = LogFormat.MONTH): void {
         this.pushBatch(text, (message) => ({
             scope: LogScope.SYSTEM,
             category: LogCategory.SUMMARY,
@@ -127,10 +96,7 @@ export class ActionLogger {
         }));
     }
 
-    private pushBatch(
-        text: string | string[],
-        builder: (message: string) => LogEntryDraft
-    ): void {
+    private pushBatch(text: string | string[], builder: (message: string) => LogEntryDraft): void {
         if (Array.isArray(text)) {
             for (const item of text) {
                 if (item) {

@@ -4,51 +4,21 @@ import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const LEGACY_MAP_ROOT = path.resolve(
-    __dirname,
-    '..',
-    'legacy',
-    'hwe',
-    'scenario',
-    'map'
-);
-const LEGACY_BASE_FILE = path.resolve(
-    __dirname,
-    '..',
-    'legacy',
-    'hwe',
-    'sammo',
-    'CityConstBase.php'
-);
-const OUTPUT_ROOT = path.resolve(
-    __dirname,
-    '..',
-    'app',
-    'game-engine',
-    'resources',
-    'map'
-);
+const LEGACY_MAP_ROOT = path.resolve(__dirname, '..', 'legacy', 'hwe', 'scenario', 'map');
+const LEGACY_BASE_FILE = path.resolve(__dirname, '..', 'legacy', 'hwe', 'sammo', 'CityConstBase.php');
+const OUTPUT_ROOT = path.resolve(__dirname, '..', 'app', 'game-engine', 'resources', 'map');
 
-const MAP_NAMES = [
-    'che',
-    'miniche',
-    'miniche_b',
-    'miniche_clean',
-    'cr',
-    'chess',
-    'ludo_rathowm',
-    'pokemon_v1',
-];
+const MAP_NAMES = ['che', 'miniche', 'miniche_b', 'miniche_clean', 'cr', 'chess', 'ludo_rathowm', 'pokemon_v1'];
 
 const LEVEL_MAP = {
-    '수': 1,
-    '진': 2,
-    '관': 3,
-    '이': 4,
-    '소': 5,
-    '중': 6,
-    '대': 7,
-    '특': 8,
+    수: 1,
+    진: 2,
+    관: 3,
+    이: 4,
+    소: 5,
+    중: 6,
+    대: 7,
+    특: 8,
 };
 
 const LEVEL_LABELS = Object.entries(LEVEL_MAP).reduce((acc, [label, value]) => {
@@ -57,14 +27,14 @@ const LEVEL_LABELS = Object.entries(LEVEL_MAP).reduce((acc, [label, value]) => {
 }, {});
 
 const DEFAULT_REGION_MAP = {
-    '하북': 1,
-    '중원': 2,
-    '서북': 3,
-    '서촉': 4,
-    '남중': 5,
-    '초': 6,
-    '오월': 7,
-    '동이': 8,
+    하북: 1,
+    중원: 2,
+    서북: 3,
+    서촉: 4,
+    남중: 5,
+    초: 6,
+    오월: 7,
+    동이: 8,
 };
 
 const BUILD_INIT_COMMON = {
@@ -73,7 +43,7 @@ const BUILD_INIT_COMMON = {
 };
 
 const BUILD_INIT = {
-    '수': {
+    수: {
         population: 5000,
         agriculture: 100,
         commerce: 100,
@@ -81,7 +51,7 @@ const BUILD_INIT = {
         defence: 500,
         wall: 500,
     },
-    '진': {
+    진: {
         population: 5000,
         agriculture: 100,
         commerce: 100,
@@ -89,7 +59,7 @@ const BUILD_INIT = {
         defence: 500,
         wall: 500,
     },
-    '관': {
+    관: {
         population: 10000,
         agriculture: 100,
         commerce: 100,
@@ -97,7 +67,7 @@ const BUILD_INIT = {
         defence: 1000,
         wall: 1000,
     },
-    '이': {
+    이: {
         population: 50000,
         agriculture: 1000,
         commerce: 1000,
@@ -105,7 +75,7 @@ const BUILD_INIT = {
         defence: 1000,
         wall: 1000,
     },
-    '소': {
+    소: {
         population: 100000,
         agriculture: 1000,
         commerce: 1000,
@@ -113,7 +83,7 @@ const BUILD_INIT = {
         defence: 2000,
         wall: 2000,
     },
-    '중': {
+    중: {
         population: 100000,
         agriculture: 1000,
         commerce: 1000,
@@ -121,7 +91,7 @@ const BUILD_INIT = {
         defence: 3000,
         wall: 3000,
     },
-    '대': {
+    대: {
         population: 150000,
         agriculture: 1000,
         commerce: 1000,
@@ -129,7 +99,7 @@ const BUILD_INIT = {
         defence: 4000,
         wall: 4000,
     },
-    '특': {
+    특: {
         population: 150000,
         agriculture: 1000,
         commerce: 1000,
@@ -348,19 +318,14 @@ const parseRegionMap = (source) => {
 
 const loadLegacyMapRows = async (mapName) => {
     const mapFilePath = path.resolve(LEGACY_MAP_ROOT, `${mapName}.php`);
-    const [mapSource, baseSource] = await Promise.all([
-        readFileOrNull(mapFilePath),
-        readFileOrNull(LEGACY_BASE_FILE),
-    ]);
+    const [mapSource, baseSource] = await Promise.all([readFileOrNull(mapFilePath), readFileOrNull(LEGACY_BASE_FILE)]);
 
     if (!baseSource) {
         throw new Error(`Legacy base map file is missing: ${LEGACY_BASE_FILE}`);
     }
 
     const initCitySource =
-        (mapSource
-            ? extractPhpArray(mapSource, 'protected static $initCity')
-            : null) ??
+        (mapSource ? extractPhpArray(mapSource, 'protected static $initCity') : null) ??
         extractPhpArray(baseSource, 'protected static $initCity');
 
     if (!initCitySource) {
@@ -370,9 +335,7 @@ const loadLegacyMapRows = async (mapName) => {
     const parsed = JSON.parse(normalizePhpArray(initCitySource));
     const rows = parseLegacyCityRows(parsed);
     const baseRegionMap = parseRegionMap(baseSource) ?? DEFAULT_REGION_MAP;
-    const regionMap = mapSource
-        ? parseRegionMap(mapSource) ?? baseRegionMap
-        : baseRegionMap;
+    const regionMap = mapSource ? (parseRegionMap(mapSource) ?? baseRegionMap) : baseRegionMap;
     return { rows, regionMap };
 };
 

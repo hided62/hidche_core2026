@@ -21,7 +21,7 @@ They can:
 ## Item System
 
 - Base class: `BaseItem` implements `iAction` and exposes:
-  - `getCost()`, `isConsumable()`, `isBuyable()`, `getReqSecu()`.
+    - `getCost()`, `isConsumable()`, `isBuyable()`, `getReqSecu()`.
 - Stat items inherit `BaseStatItem` and apply a fixed stat bonus in
   `onCalcStat()` based on class name tokens.
 - Item instances live on the general (`General::getItem()`); items can also
@@ -36,8 +36,8 @@ Items are configured via `GameConst::$allItems` and scenario overrides.
   (`onCalcDomestic`), e.g., cost/success/score adjustments.
 - `ActionSpecialWar/*` injects battle triggers or stat modifiers.
 - Weighting and eligibility are managed by `SpecialityHelper`:
-  - Uses `selectWeight` + stat/arm constraints to choose specials.
-  - Deterministic RNG affects special selection for NPCs or resets.
+    - Uses `selectWeight` + stat/arm constraints to choose specials.
+    - Deterministic RNG affects special selection for NPCs or resets.
 
 ## Personalities
 

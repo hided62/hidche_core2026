@@ -1,20 +1,8 @@
-import type {
-    City,
-    LogEntryDraft,
-    Nation,
-    ScenarioConfig,
-    Troop,
-    TurnSchedule,
-} from '@sammo-ts/logic';
+import type { City, LogEntryDraft, Nation, ScenarioConfig, Troop, TurnSchedule } from '@sammo-ts/logic';
 import { getNextTurnAt } from '@sammo-ts/logic';
 
 import type { TurnCheckpoint } from '../lifecycle/types.js';
-import type {
-    TurnDiplomacy,
-    TurnGeneral,
-    TurnWorldSnapshot,
-    TurnWorldState,
-} from './types.js';
+import type { TurnDiplomacy, TurnGeneral, TurnWorldSnapshot, TurnWorldState } from './types.js';
 import {
     applyDiplomacyPatch as applyDiplomacyPatchToEntry,
     buildDefaultDiplomacy,
@@ -87,10 +75,7 @@ const compareTurnOrder = (left: TurnGeneral, right: TurnGeneral): number => {
     return left.id - right.id;
 };
 
-const shouldProcessByCheckpoint = (
-    general: TurnGeneral,
-    checkpoint?: TurnCheckpoint
-): boolean => {
+const shouldProcessByCheckpoint = (general: TurnGeneral, checkpoint?: TurnCheckpoint): boolean => {
     if (!checkpoint) {
         return true;
     }
@@ -108,19 +93,13 @@ const shouldProcessByCheckpoint = (
     return general.id > checkpoint.generalId;
 };
 
-const mergeStats = (
-    base: TurnGeneral['stats'],
-    patch: Partial<TurnGeneral['stats']>
-): TurnGeneral['stats'] => ({
+const mergeStats = (base: TurnGeneral['stats'], patch: Partial<TurnGeneral['stats']>): TurnGeneral['stats'] => ({
     leadership: patch.leadership ?? base.leadership,
     strength: patch.strength ?? base.strength,
     intelligence: patch.intelligence ?? base.intelligence,
 });
 
-const mergeRole = (
-    base: TurnGeneral['role'],
-    patch: Partial<TurnGeneral['role']>
-): TurnGeneral['role'] => ({
+const mergeRole = (base: TurnGeneral['role'], patch: Partial<TurnGeneral['role']>): TurnGeneral['role'] => ({
     ...base,
     ...patch,
     items: {
@@ -141,17 +120,12 @@ const mergeTriggerState = (
     meta: { ...base.meta, ...(patch.meta ?? {}) },
 });
 
-const applyGeneralPatch = (
-    base: TurnGeneral,
-    patch: Partial<TurnGeneral>
-): TurnGeneral => ({
+const applyGeneralPatch = (base: TurnGeneral, patch: Partial<TurnGeneral>): TurnGeneral => ({
     ...base,
     ...patch,
     stats: patch.stats ? mergeStats(base.stats, patch.stats) : base.stats,
     role: patch.role ? mergeRole(base.role, patch.role) : base.role,
-    triggerState: patch.triggerState
-        ? mergeTriggerState(base.triggerState, patch.triggerState)
-        : base.triggerState,
+    triggerState: patch.triggerState ? mergeTriggerState(base.triggerState, patch.triggerState) : base.triggerState,
     meta: patch.meta ? { ...base.meta, ...patch.meta } : base.meta,
 });
 
@@ -197,11 +171,7 @@ export class InMemoryTurnWorld {
     private checkpoint?: TurnCheckpoint;
     private state: TurnWorldState;
 
-    constructor(
-        state: TurnWorldState,
-        snapshot: TurnWorldSnapshot,
-        options: InMemoryTurnWorldOptions
-    ) {
+    constructor(state: TurnWorldState, snapshot: TurnWorldSnapshot, options: InMemoryTurnWorldOptions) {
         this.state = { ...state };
         this.scenarioConfig = snapshot.scenarioConfig;
         this.schedule = options.schedule;
@@ -225,10 +195,7 @@ export class InMemoryTurnWorld {
             this.troops.set(troop.id, { ...troop });
         }
         for (const entry of snapshot.diplomacy) {
-            const key = buildDiplomacyKey(
-                entry.fromNationId,
-                entry.toNationId
-            );
+            const key = buildDiplomacyKey(entry.fromNationId, entry.toNationId);
             this.diplomacy.set(key, {
                 ...entry,
                 meta: { ...entry.meta },
@@ -283,13 +250,8 @@ export class InMemoryTurnWorld {
         }));
     }
 
-    getDiplomacyEntry(
-        srcNationId: number,
-        destNationId: number
-    ): TurnDiplomacy | null {
-        const entry = this.diplomacy.get(
-            buildDiplomacyKey(srcNationId, destNationId)
-        );
+    getDiplomacyEntry(srcNationId: number, destNationId: number): TurnDiplomacy | null {
+        const entry = this.diplomacy.get(buildDiplomacyKey(srcNationId, destNationId));
         if (!entry) {
             return null;
         }
@@ -306,10 +268,7 @@ export class InMemoryTurnWorld {
         }));
     }
 
-    updateGeneral(
-        id: number,
-        patch: Partial<TurnGeneral>
-    ): TurnGeneral | null {
+    updateGeneral(id: number, patch: Partial<TurnGeneral>): TurnGeneral | null {
         const target = this.generals.get(id);
         if (!target) {
             return null;
@@ -375,16 +334,10 @@ export class InMemoryTurnWorld {
         return true;
     }
 
-    applyDiplomacyPatch(input: {
-        srcNationId: number;
-        destNationId: number;
-        patch: DiplomacyPatch;
-    }): void {
+    applyDiplomacyPatch(input: { srcNationId: number; destNationId: number; patch: DiplomacyPatch }): void {
         const key = buildDiplomacyKey(input.srcNationId, input.destNationId);
         const existed = this.diplomacy.has(key);
-        const base =
-            this.diplomacy.get(key) ??
-            buildDefaultDiplomacy(input.srcNationId, input.destNationId);
+        const base = this.diplomacy.get(key) ?? buildDefaultDiplomacy(input.srcNationId, input.destNationId);
         const next = applyDiplomacyPatchToEntry(base, input.patch);
         this.diplomacy.set(key, next);
         this.dirtyDiplomacyKeys.add(key);
@@ -426,10 +379,7 @@ export class InMemoryTurnWorld {
         return next ? new Date(next.turnTime.getTime()) : null;
     }
 
-    listDueGenerals(
-        targetTime: Date,
-        checkpoint?: TurnCheckpoint
-    ): TurnGeneral[] {
+    listDueGenerals(targetTime: Date, checkpoint?: TurnCheckpoint): TurnGeneral[] {
         const targetMs = targetTime.getTime();
         const due = Array.from(this.generals.values()).filter((general) => {
             if (!shouldProcessByCheckpoint(general, checkpoint)) {
@@ -443,8 +393,7 @@ export class InMemoryTurnWorld {
 
     executeGeneralTurn(general: TurnGeneral): Date {
         const city = this.cities.get(general.cityId);
-        const nation =
-            general.nationId > 0 ? this.nations.get(general.nationId) ?? null : null;
+        const nation = general.nationId > 0 ? (this.nations.get(general.nationId) ?? null) : null;
 
         const result = this.generalTurnHandler.execute({
             general,
@@ -454,8 +403,7 @@ export class InMemoryTurnWorld {
             schedule: this.schedule,
         });
 
-        const nextTurnAt =
-            result.nextTurnAt ?? getNextTurnAt(general.turnTime, this.schedule);
+        const nextTurnAt = result.nextTurnAt ?? getNextTurnAt(general.turnTime, this.schedule);
         const nextGeneral = {
             ...(result.general ?? general),
             turnTime: nextTurnAt,
@@ -480,10 +428,7 @@ export class InMemoryTurnWorld {
                 if (!target) {
                     continue;
                 }
-                this.generals.set(
-                    patch.id,
-                    applyGeneralPatch(target, patch.patch)
-                );
+                this.generals.set(patch.id, applyGeneralPatch(target, patch.patch));
                 this.dirtyGeneralIds.add(patch.id);
             }
             for (const patch of result.patches.cities) {
@@ -499,10 +444,7 @@ export class InMemoryTurnWorld {
                 if (!target) {
                     continue;
                 }
-                this.nations.set(
-                    patch.id,
-                    applyNationPatch(target, patch.patch)
-                );
+                this.nations.set(patch.id, applyNationPatch(target, patch.patch));
                 this.dirtyNationIds.add(patch.id);
             }
             for (const patch of result.patches.troops) {
@@ -682,22 +624,11 @@ export class InMemoryTurnWorld {
             generalCounts.set(nationId, (generalCounts.get(nationId) ?? 0) + 1);
         }
 
-        const updated = processDiplomacyMonth(
-            this.listDiplomacy(),
-            generalCounts
-        );
+        const updated = processDiplomacyMonth(this.listDiplomacy(), generalCounts);
         for (const entry of updated) {
-            const key = buildDiplomacyKey(
-                entry.fromNationId,
-                entry.toNationId
-            );
+            const key = buildDiplomacyKey(entry.fromNationId, entry.toNationId);
             const prev = this.diplomacy.get(key);
-            if (
-                !prev ||
-                prev.state !== entry.state ||
-                prev.term !== entry.term ||
-                prev.dead !== entry.dead
-            ) {
+            if (!prev || prev.state !== entry.state || prev.term !== entry.term || prev.dead !== entry.dead) {
                 this.diplomacy.set(key, entry);
                 this.dirtyDiplomacyKeys.add(key);
                 if (!prev) {

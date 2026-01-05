@@ -11,21 +11,15 @@ export interface TraitSpec {
     kind: TraitKind;
 }
 
-export type TraitModule<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> = TraitSpec &
+export type TraitModule<TriggerState extends GeneralTriggerState = GeneralTriggerState> = TraitSpec &
     GeneralActionModule<TriggerState> &
     WarActionModule<TriggerState>;
 
-export interface TraitModuleExport<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+export interface TraitModuleExport<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     traitModule: TraitModule<TriggerState>;
 }
 
-export interface TraitModuleRegistry<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+export interface TraitModuleRegistry<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     domestic: Map<string, TraitModule<TriggerState>>;
     war: Map<string, TraitModule<TriggerState>>;
     personality: Map<string, TraitModule<TriggerState>>;

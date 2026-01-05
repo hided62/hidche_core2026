@@ -32,17 +32,15 @@ const readDiplomacyEntry = (
             typeof record.state === 'number'
                 ? record.state
                 : typeof record.stateCode === 'number'
-                ? record.stateCode
-                : null;
+                  ? record.stateCode
+                  : null;
         const term = typeof record.term === 'number' ? record.term : null;
         return { state, term };
     }
     return null;
 };
 
-export const disallowDiplomacyBetweenStatus = (
-    disallowList: Record<number, string>
-): Constraint => ({
+export const disallowDiplomacyBetweenStatus = (disallowList: Record<number, string>): Constraint => ({
     name: 'DisallowDiplomacyBetweenStatus',
     requires: (ctx) => {
         const reqs: RequirementKey[] = [];
@@ -73,8 +71,7 @@ export const disallowDiplomacyBetweenStatus = (
             return unknownOrDeny(ctx, [], '국가 정보가 없습니다.');
         }
         const destCity = readDestCity(ctx, view);
-        const destNationId =
-            resolveDestNationId(ctx) ?? destCity?.nationId;
+        const destNationId = resolveDestNationId(ctx) ?? destCity?.nationId;
         if (destNationId === undefined) {
             return unknownOrDeny(ctx, [], '상대 국가 정보가 없습니다.');
         }
@@ -95,10 +92,7 @@ export const disallowDiplomacyBetweenStatus = (
     },
 });
 
-export const allowDiplomacyBetweenStatus = (
-    allowList: number[],
-    reason: string
-): Constraint => ({
+export const allowDiplomacyBetweenStatus = (allowList: number[], reason: string): Constraint => ({
     name: 'AllowDiplomacyBetweenStatus',
     requires: (ctx) => {
         const reqs: RequirementKey[] = [];
@@ -129,8 +123,7 @@ export const allowDiplomacyBetweenStatus = (
             return unknownOrDeny(ctx, [], '국가 정보가 없습니다.');
         }
         const destCity = readDestCity(ctx, view);
-        const destNationId =
-            resolveDestNationId(ctx) ?? destCity?.nationId;
+        const destNationId = resolveDestNationId(ctx) ?? destCity?.nationId;
         if (destNationId === undefined) {
             return unknownOrDeny(ctx, [], '상대 국가 정보가 없습니다.');
         }
@@ -150,11 +143,7 @@ export const allowDiplomacyBetweenStatus = (
     },
 });
 
-export const allowDiplomacyWithTerm = (
-    requiredState: number,
-    minTerm: number,
-    reason: string
-): Constraint => ({
+export const allowDiplomacyWithTerm = (requiredState: number, minTerm: number, reason: string): Constraint => ({
     name: 'AllowDiplomacyWithTerm',
     requires: (ctx) => {
         const reqs: RequirementKey[] = [];
@@ -185,8 +174,7 @@ export const allowDiplomacyWithTerm = (
             return unknownOrDeny(ctx, [], '국가 정보가 없습니다.');
         }
         const destCity = readDestCity(ctx, view);
-        const destNationId =
-            resolveDestNationId(ctx) ?? destCity?.nationId;
+        const destNationId = resolveDestNationId(ctx) ?? destCity?.nationId;
         if (destNationId === undefined) {
             return unknownOrDeny(ctx, [], '상대 국가 정보가 없습니다.');
         }
@@ -206,10 +194,7 @@ export const allowDiplomacyWithTerm = (
     },
 });
 
-export const allowDiplomacyStatus = (
-    allowList: number[],
-    reason: string
-): Constraint => ({
+export const allowDiplomacyStatus = (allowList: number[], reason: string): Constraint => ({
     name: 'AllowDiplomacyStatus',
     requires: (ctx) => {
         const reqs: RequirementKey[] = [{ kind: 'general', id: ctx.actorId }];

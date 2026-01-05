@@ -1,17 +1,8 @@
-import type {
-    GeneralTriggerState,
-} from '@sammo-ts/logic/domain/entities.js';
-import type {
-    Constraint,
-    ConstraintContext,
-    StateView,
-} from '@sammo-ts/logic/constraints/types.js';
+import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
+import type { Constraint, ConstraintContext, StateView } from '@sammo-ts/logic/constraints/types.js';
 import { notBeNeutral, reqGeneralGold } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
-import type {
-    GeneralActionOutcome,
-    GeneralActionResolveContext,
-} from '@sammo-ts/logic/actions/engine.js';
+import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
@@ -27,7 +18,7 @@ const ACTION_NAME = '요양';
 const DEFAULT_INJURY_DELTA = 10;
 
 export class ActionDefinition<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionDefinition<TriggerState, RecoveryArgs> {
     public readonly key = 'che_요양';
     public readonly name = ACTION_NAME;
@@ -42,12 +33,8 @@ export class ActionDefinition<
         return {};
     }
 
-    buildConstraints(
-        _ctx: ConstraintContext,
-        _args: RecoveryArgs
-    ): Constraint[] {
-        const getRequiredGold = (_context: ConstraintContext, _view: StateView): number =>
-            this.env.costGold ?? 0;
+    buildConstraints(_ctx: ConstraintContext, _args: RecoveryArgs): Constraint[] {
+        const getRequiredGold = (_context: ConstraintContext, _view: StateView): number => this.env.costGold ?? 0;
         return [notBeNeutral(), reqGeneralGold(getRequiredGold)];
     }
 

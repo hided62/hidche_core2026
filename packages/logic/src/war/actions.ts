@@ -1,11 +1,6 @@
 import type { RandUtil } from '@sammo-ts/common';
 
-import type {
-    City,
-    General,
-    GeneralTriggerState,
-    Nation,
-} from '@sammo-ts/logic/domain/entities.js';
+import type { City, General, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { ActionLogger } from '@sammo-ts/logic/logging/actionLogger.js';
 import type { WarStatName } from '@sammo-ts/logic/triggers/types.js';
 import type { WarUnit } from './units.js';
@@ -24,13 +19,9 @@ export interface WarActionModule<TriggerState extends GeneralTriggerState = Gene
     getName?(): string;
     getInfo?(): string;
 
-    getBattleInitTriggerList?(
-        context: WarActionContext<TriggerState>
-    ): WarTriggerCaller | null;
+    getBattleInitTriggerList?(context: WarActionContext<TriggerState>): WarTriggerCaller | null;
 
-    getBattlePhaseTriggerList?(
-        context: WarActionContext<TriggerState>
-    ): WarTriggerCaller | null;
+    getBattlePhaseTriggerList?(context: WarActionContext<TriggerState>): WarTriggerCaller | null;
 
     onCalcStat?(
         context: WarActionContext<TriggerState>,
@@ -53,9 +44,7 @@ export interface WarActionModule<TriggerState extends GeneralTriggerState = Gene
     ): [number, number];
 }
 
-export class WarActionPipeline<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+export class WarActionPipeline<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     // 전투용 iAction 파이프라인: 스탯/트리거/전투력 보정 흐름을 순서대로 적용한다.
     private readonly modules: WarActionModule<TriggerState>[];
 
@@ -63,9 +52,7 @@ export class WarActionPipeline<
         this.modules = modules.filter(Boolean) as WarActionModule<TriggerState>[];
     }
 
-    getBattleInitTriggerList(
-        context: WarActionContext<TriggerState>
-    ): WarTriggerCaller {
+    getBattleInitTriggerList(context: WarActionContext<TriggerState>): WarTriggerCaller {
         const caller = new WarTriggerCaller();
         for (const module of this.modules) {
             const triggers = module.getBattleInitTriggerList?.(context);
@@ -76,9 +63,7 @@ export class WarActionPipeline<
         return caller;
     }
 
-    getBattlePhaseTriggerList(
-        context: WarActionContext<TriggerState>
-    ): WarTriggerCaller {
+    getBattlePhaseTriggerList(context: WarActionContext<TriggerState>): WarTriggerCaller {
         const caller = new WarTriggerCaller();
         for (const module of this.modules) {
             const triggers = module.getBattlePhaseTriggerList?.(context);
@@ -132,11 +117,7 @@ export class WarActionPipeline<
             if (!module.getWarPowerMultiplier) {
                 continue;
             }
-            const [attMul, defMul] = module.getWarPowerMultiplier(
-                context,
-                unit,
-                oppose
-            );
+            const [attMul, defMul] = module.getWarPowerMultiplier(context, unit, oppose);
             attack *= attMul;
             defence *= defMul;
         }

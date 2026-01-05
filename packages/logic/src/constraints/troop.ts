@@ -23,10 +23,7 @@ export const mustBeTroopLeader = (): Constraint => ({
 
 export const reqTroopMembers = (): Constraint => ({
     name: 'ReqTroopMembers',
-    requires: (ctx) => [
-        { kind: 'general', id: ctx.actorId },
-        { kind: 'generalList' },
-    ],
+    requires: (ctx) => [{ kind: 'general', id: ctx.actorId }, { kind: 'generalList' }],
     test: (ctx, view) => {
         const generalReq: RequirementKey = { kind: 'general', id: ctx.actorId };
         if (!view.has(generalReq)) {
@@ -44,10 +41,7 @@ export const reqTroopMembers = (): Constraint => ({
         if (!generals) {
             return unknownOrDeny(ctx, [listReq], '장수 정보가 없습니다.');
         }
-        const hasMember = generals.some(
-            (entry) =>
-                entry.troopId === general.troopId && entry.id !== general.id
-        );
+        const hasMember = generals.some((entry) => entry.troopId === general.troopId && entry.id !== general.id);
         if (hasMember) {
             return allow();
         }

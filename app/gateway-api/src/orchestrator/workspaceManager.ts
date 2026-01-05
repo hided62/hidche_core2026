@@ -14,11 +14,7 @@ export interface WorkspaceInfo {
     needsInstall: boolean;
 }
 
-const runGit = (
-    args: string[],
-    cwd: string,
-    env?: Record<string, string>
-): Promise<{ ok: boolean; output: string }> =>
+const runGit = (args: string[], cwd: string, env?: Record<string, string>): Promise<{ ok: boolean; output: string }> =>
     new Promise((resolve) => {
         const child = spawn('git', args, {
             cwd,
@@ -43,8 +39,7 @@ const ensureDir = (dir: string): void => {
     }
 };
 
-const hasInstallMarker = (dir: string): boolean =>
-    fs.existsSync(path.join(dir, 'node_modules', '.pnpm'));
+const hasInstallMarker = (dir: string): boolean => fs.existsSync(path.join(dir, 'node_modules', '.pnpm'));
 
 export class GitWorkspaceManager {
     private readonly repoRoot: string;
@@ -63,11 +58,7 @@ export class GitWorkspaceManager {
 
         const exists = fs.existsSync(workspacePath);
         if (!exists) {
-            const hasCommit = await runGit(
-                ['cat-file', '-e', `${commitSha}^{commit}`],
-                this.repoRoot,
-                this.baseEnv
-            );
+            const hasCommit = await runGit(['cat-file', '-e', `${commitSha}^{commit}`], this.repoRoot, this.baseEnv);
             if (!hasCommit.ok) {
                 await runGit(['fetch', '--all', '--tags'], this.repoRoot, this.baseEnv);
             }
@@ -97,11 +88,7 @@ export class GitWorkspaceManager {
         if (!fs.existsSync(resolved)) {
             return false;
         }
-        const result = await runGit(
-            ['worktree', 'remove', '--force', resolved],
-            this.repoRoot,
-            this.baseEnv
-        );
+        const result = await runGit(['worktree', 'remove', '--force', resolved], this.repoRoot, this.baseEnv);
         if (!result.ok) {
             fs.rmSync(resolved, { recursive: true, force: true });
         }

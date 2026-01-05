@@ -53,12 +53,8 @@ class ActivateTrigger extends BaseWarUnitTrigger {
         }
         selfEnv['필살발동'] = true;
 
-        oppose
-            .getLogger()
-            .pushGeneralBattleDetailLog('상대의 <R>필살</>공격!</>', LogFormat.PLAIN);
-        self
-            .getLogger()
-            .pushGeneralBattleDetailLog('<C>필살</>공격!</>', LogFormat.PLAIN);
+        oppose.getLogger().pushGeneralBattleDetailLog('상대의 <R>필살</>공격!</>', LogFormat.PLAIN);
+        self.getLogger().pushGeneralBattleDetailLog('<C>필살</>공격!</>', LogFormat.PLAIN);
 
         self.multiplyWarPowerMultiply(self.criticalDamage());
         return true;
@@ -69,9 +65,5 @@ export const triggerModule: WarTriggerModule = {
     key: 'che_필살',
     name: '필살',
     info: '[전투] 페이즈마다 확률로 필살 발동',
-    createTriggerList: (unit) =>
-        new WarTriggerCaller(
-            new AttemptTrigger(unit),
-            new ActivateTrigger(unit)
-        ),
+    createTriggerList: (unit) => new WarTriggerCaller(new AttemptTrigger(unit), new ActivateTrigger(unit)),
 };

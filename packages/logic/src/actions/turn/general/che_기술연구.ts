@@ -1,12 +1,5 @@
-import type {
-    GeneralTriggerState,
-    Nation,
-} from '@sammo-ts/logic/domain/entities.js';
-import type {
-    Constraint,
-    ConstraintContext,
-    StateView,
-} from '@sammo-ts/logic/constraints/types.js';
+import type { GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
+import type { Constraint, ConstraintContext, StateView } from '@sammo-ts/logic/constraints/types.js';
 import {
     notBeNeutral,
     notWanderingNation,
@@ -15,10 +8,7 @@ import {
     suppliedCity,
 } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
-import type {
-    GeneralActionOutcome,
-    GeneralActionResolveContext,
-} from '@sammo-ts/logic/actions/engine.js';
+import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
@@ -43,7 +33,7 @@ const readTech = (nation: Nation | null | undefined): number => {
 };
 
 export class ActionDefinition<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionDefinition<TriggerState, TechResearchArgs> {
     public readonly key = 'che_기술연구';
     public readonly name = ACTION_NAME;
@@ -58,19 +48,9 @@ export class ActionDefinition<
         return {};
     }
 
-    buildConstraints(
-        _ctx: ConstraintContext,
-        _args: TechResearchArgs
-    ): Constraint[] {
-        const getRequiredGold = (_context: ConstraintContext, _view: StateView): number =>
-            this.env.costGold ?? 0;
-        return [
-            notBeNeutral(),
-            notWanderingNation(),
-            occupiedCity(),
-            suppliedCity(),
-            reqGeneralGold(getRequiredGold),
-        ];
+    buildConstraints(_ctx: ConstraintContext, _args: TechResearchArgs): Constraint[] {
+        const getRequiredGold = (_context: ConstraintContext, _view: StateView): number => this.env.costGold ?? 0;
+        return [notBeNeutral(), notWanderingNation(), occupiedCity(), suppliedCity(), reqGeneralGold(getRequiredGold)];
     }
 
     resolve(
@@ -87,8 +67,7 @@ export class ActionDefinition<
         const delta = this.env.techDelta ?? DEFAULT_TECH_DELTA;
         const currentTech = readTech(nation);
         const maxTech =
-            typeof this.env.maxTechLevel === 'number' &&
-            this.env.maxTechLevel > 0
+            typeof this.env.maxTechLevel === 'number' && this.env.maxTechLevel > 0
                 ? this.env.maxTechLevel
                 : currentTech + delta;
         const nextTech = Math.min(currentTech + delta, maxTech);

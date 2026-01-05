@@ -1,13 +1,5 @@
-import {
-    GENERAL_TURN_COMMAND_KEYS,
-    isGeneralTurnCommandKey,
-    type GeneralTurnCommandKey,
-} from './general/index.js';
-import {
-    NATION_TURN_COMMAND_KEYS,
-    isNationTurnCommandKey,
-    type NationTurnCommandKey,
-} from './nation/index.js';
+import { GENERAL_TURN_COMMAND_KEYS, isGeneralTurnCommandKey, type GeneralTurnCommandKey } from './general/index.js';
+import { NATION_TURN_COMMAND_KEYS, isNationTurnCommandKey, type NationTurnCommandKey } from './nation/index.js';
 
 export interface TurnCommandProfile {
     general: GeneralTurnCommandKey[];
@@ -25,9 +17,7 @@ const asStringArray = (value: unknown): string[] | null => {
     return list.length > 0 ? list : null;
 };
 
-const parseKeyList = <
-    T extends string
->(options: {
+const parseKeyList = <T extends string>(options: {
     raw: unknown;
     defaults: T[];
     isKey: (value: string) => value is T;
@@ -40,9 +30,7 @@ const parseKeyList = <
     const parsed: T[] = [];
     for (const value of rawList) {
         if (!options.isKey(value)) {
-            throw new Error(
-                `Unknown ${options.label} command key: ${value}`
-            );
+            throw new Error(`Unknown ${options.label} command key: ${value}`);
         }
         parsed.push(value);
     }

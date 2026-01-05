@@ -10,10 +10,5 @@ export type { PrismaClient as GatewayPrismaClient } from '../prisma/generated/ga
 import type { PostgresConfig, PostgresConnector } from './postgres.js';
 import { createPostgresConnector } from './postgres.js';
 
-export const createGatewayPostgresConnector = (
-    config: PostgresConfig
-): PostgresConnector<GatewayPrismaClient> =>
-    createPostgresConnector(
-        config,
-        (options) => new GatewayPrismaClient(options)
-    );
+export const createGatewayPostgresConnector = (config: PostgresConfig): PostgresConnector<GatewayPrismaClient> =>
+    createPostgresConnector(config, (options) => new GatewayPrismaClient(options));

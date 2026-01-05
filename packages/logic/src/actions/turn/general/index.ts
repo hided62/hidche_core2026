@@ -27,21 +27,15 @@ export const GENERAL_TURN_COMMAND_KEYS = [
     '휴식',
 ] as const;
 
-export type GeneralTurnCommandKey =
-    (typeof GENERAL_TURN_COMMAND_KEYS)[number];
+export type GeneralTurnCommandKey = (typeof GENERAL_TURN_COMMAND_KEYS)[number];
 
-export type GeneralTurnCommandSpec =
-    TurnCommandSpecBase<GeneralTurnCommandKey>;
+export type GeneralTurnCommandSpec = TurnCommandSpecBase<GeneralTurnCommandKey>;
 
-export type GeneralTurnCommandModule =
-    TurnCommandModule<GeneralTurnCommandSpec>;
+export type GeneralTurnCommandModule = TurnCommandModule<GeneralTurnCommandSpec>;
 
 export type GeneralTurnCommandImporter = () => Promise<GeneralTurnCommandModule>;
 
-const defaultImporters: Record<
-    GeneralTurnCommandKey,
-    GeneralTurnCommandImporter
-> = {
+const defaultImporters: Record<GeneralTurnCommandKey, GeneralTurnCommandImporter> = {
     che_거병: async () => import('./che_거병.js'),
     che_임관: async () => import('./che_임관.js'),
     che_건국: async () => import('./che_건국.js'),
@@ -68,28 +62,17 @@ const defaultImporters: Record<
     휴식: async () => import('./휴식.js'),
 };
 
-export const isGeneralTurnCommandKey = (
-    value: string
-): value is GeneralTurnCommandKey =>
+export const isGeneralTurnCommandKey = (value: string): value is GeneralTurnCommandKey =>
     GENERAL_TURN_COMMAND_KEYS.includes(value as GeneralTurnCommandKey);
 
-
 export class GeneralTurnCommandLoader {
-    private readonly cache = new Map<
-        GeneralTurnCommandKey,
-        Promise<GeneralTurnCommandModule>
-    >();
+    private readonly cache = new Map<GeneralTurnCommandKey, Promise<GeneralTurnCommandModule>>();
 
     constructor(
-        private readonly importers: Record<
-            GeneralTurnCommandKey,
-            GeneralTurnCommandImporter
-        > = defaultImporters
-    ) { }
+        private readonly importers: Record<GeneralTurnCommandKey, GeneralTurnCommandImporter> = defaultImporters
+    ) {}
 
-    async load(
-        key: GeneralTurnCommandKey
-    ): Promise<GeneralTurnCommandModule> {
+    async load(key: GeneralTurnCommandKey): Promise<GeneralTurnCommandModule> {
         const cached = this.cache.get(key);
         if (cached) {
             return cached;

@@ -14,7 +14,8 @@
     "scripts": {
         "build": "tsdown -c ../../tsdown.config.ts -F @sammo-ts/logic",
         "dev": "tsdown -c ../../tsdown.config.ts -F @sammo-ts/logic --watch",
-        "lint": "node -e \"console.log('lint not configured')\"",
+        "lint": "eslint .",
+        "lint:fix": "eslint . --fix",
         "test": "vitest run --config vitest.config.ts",
         "typecheck": "tsc -b"
     },

@@ -18,11 +18,7 @@ const asRecord = (value: unknown): Record<string, unknown> => {
     return value as Record<string, unknown>;
 };
 
-const resolveNumber = (
-    record: Record<string, unknown>,
-    keys: string[],
-    fallback: number
-): number => {
+const resolveNumber = (record: Record<string, unknown>, keys: string[], fallback: number): number => {
     for (const key of keys) {
         const value = record[key];
         if (typeof value === 'number' && Number.isFinite(value)) {
@@ -32,10 +28,7 @@ const resolveNumber = (
     return fallback;
 };
 
-const resolveUnitSetName = (
-    worldState: WorldStateRow,
-    fallback: string
-): string => {
+const resolveUnitSetName = (worldState: WorldStateRow, fallback: string): string => {
     const config = asRecord(worldState.config);
     const environment = asRecord(config.environment ?? config.map);
     const unitSet = environment.unitSet;
@@ -76,9 +69,12 @@ const resolveCastleCrewTypeId = (unitSet: {
     return crewTypes[0]?.id ?? 0;
 };
 
-const resolveCastleArmType = (unitSet: {
-    crewTypes?: Array<{ id: number; armType: number }>;
-}, castleCrewTypeId: number): number => {
+const resolveCastleArmType = (
+    unitSet: {
+        crewTypes?: Array<{ id: number; armType: number }>;
+    },
+    castleCrewTypeId: number
+): number => {
     const crewTypes = unitSet.crewTypes ?? [];
     return crewTypes.find((crewType) => crewType.id === castleCrewTypeId)?.armType ?? 0;
 };
@@ -93,39 +89,15 @@ export const buildBattleSimJobPayload = async (
 
     const configRecord = asRecord(worldState.config);
     const constValues = asRecord(configRecord.const ?? configRecord.consts);
-    const castleCrewTypeId = resolveNumber(
-        constValues,
-        ['castleCrewTypeId'],
-        resolveCastleCrewTypeId(unitSet)
-    );
+    const castleCrewTypeId = resolveNumber(constValues, ['castleCrewTypeId'], resolveCastleCrewTypeId(unitSet));
     const castleArmType = resolveCastleArmType(unitSet, castleCrewTypeId);
 
     const config: WarEngineConfig = {
-        armPerPhase: resolveNumber(
-            constValues,
-            ['armPerPhase', 'armperphase'],
-            DEFAULT_WAR_CONFIG.armPerPhase
-        ),
-        maxTrainByCommand: resolveNumber(
-            constValues,
-            ['maxTrainByCommand'],
-            DEFAULT_WAR_CONFIG.maxTrainByCommand
-        ),
-        maxAtmosByCommand: resolveNumber(
-            constValues,
-            ['maxAtmosByCommand'],
-            DEFAULT_WAR_CONFIG.maxAtmosByCommand
-        ),
-        maxTrainByWar: resolveNumber(
-            constValues,
-            ['maxTrainByWar'],
-            DEFAULT_WAR_CONFIG.maxTrainByWar
-        ),
-        maxAtmosByWar: resolveNumber(
-            constValues,
-            ['maxAtmosByWar'],
-            DEFAULT_WAR_CONFIG.maxAtmosByWar
-        ),
+        armPerPhase: resolveNumber(constValues, ['armPerPhase', 'armperphase'], DEFAULT_WAR_CONFIG.armPerPhase),
+        maxTrainByCommand: resolveNumber(constValues, ['maxTrainByCommand'], DEFAULT_WAR_CONFIG.maxTrainByCommand),
+        maxAtmosByCommand: resolveNumber(constValues, ['maxAtmosByCommand'], DEFAULT_WAR_CONFIG.maxAtmosByCommand),
+        maxTrainByWar: resolveNumber(constValues, ['maxTrainByWar'], DEFAULT_WAR_CONFIG.maxTrainByWar),
+        maxAtmosByWar: resolveNumber(constValues, ['maxAtmosByWar'], DEFAULT_WAR_CONFIG.maxAtmosByWar),
         castleCrewTypeId,
         armTypes: {
             footman: 1,

@@ -17,21 +17,15 @@ export const NATION_TURN_COMMAND_KEYS = [
     'che_급습',
 ] as const;
 
-export type NationTurnCommandKey =
-    (typeof NATION_TURN_COMMAND_KEYS)[number];
+export type NationTurnCommandKey = (typeof NATION_TURN_COMMAND_KEYS)[number];
 
-export type NationTurnCommandSpec =
-    TurnCommandSpecBase<NationTurnCommandKey>;
+export type NationTurnCommandSpec = TurnCommandSpecBase<NationTurnCommandKey>;
 
-export type NationTurnCommandModule =
-    TurnCommandModule<NationTurnCommandSpec>;
+export type NationTurnCommandModule = TurnCommandModule<NationTurnCommandSpec>;
 
 export type NationTurnCommandImporter = () => Promise<NationTurnCommandModule>;
 
-const defaultImporters: Record<
-    NationTurnCommandKey,
-    NationTurnCommandImporter
-> = {
+const defaultImporters: Record<NationTurnCommandKey, NationTurnCommandImporter> = {
     휴식: async () => import('./휴식.js'),
     che_포상: async () => import('./che_포상.js'),
     che_부대탈퇴지시: async () => import('./che_부대탈퇴지시.js'),
@@ -48,29 +42,17 @@ const defaultImporters: Record<
     che_급습: async () => import('./che_급습.js'),
 };
 
-export const isNationTurnCommandKey = (
-    value: string
-): value is NationTurnCommandKey =>
+export const isNationTurnCommandKey = (value: string): value is NationTurnCommandKey =>
     NATION_TURN_COMMAND_KEYS.includes(value as NationTurnCommandKey);
 
-
-
 export class NationTurnCommandLoader {
-    private readonly cache = new Map<
-        NationTurnCommandKey,
-        Promise<NationTurnCommandModule>
-    >();
+    private readonly cache = new Map<NationTurnCommandKey, Promise<NationTurnCommandModule>>();
 
     constructor(
-        private readonly importers: Record<
-            NationTurnCommandKey,
-            NationTurnCommandImporter
-        > = defaultImporters
-    ) { }
+        private readonly importers: Record<NationTurnCommandKey, NationTurnCommandImporter> = defaultImporters
+    ) {}
 
-    async load(
-        key: NationTurnCommandKey
-    ): Promise<NationTurnCommandModule> {
+    async load(key: NationTurnCommandKey): Promise<NationTurnCommandModule> {
         const cached = this.cache.get(key);
         if (cached) {
             return cached;

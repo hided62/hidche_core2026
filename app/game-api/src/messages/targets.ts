@@ -21,10 +21,7 @@ export const resolveNationInfo = async (
     return { name: nation.name, color: nation.color };
 };
 
-export const buildTargetFromGeneral = async (
-    db: DatabaseClient,
-    general: GeneralRow
-): Promise<MessageTarget> => {
+export const buildTargetFromGeneral = async (db: DatabaseClient, general: GeneralRow): Promise<MessageTarget> => {
     const nation = await resolveNationInfo(db, general.nationId);
     return {
         generalId: general.id,
@@ -36,11 +33,7 @@ export const buildTargetFromGeneral = async (
     };
 };
 
-export const buildNationTarget = (
-    nationId: number,
-    nationName: string,
-    color: string
-): MessageTarget => ({
+export const buildNationTarget = (nationId: number, nationName: string, color: string): MessageTarget => ({
     generalId: 0,
     generalName: '',
     nationId,

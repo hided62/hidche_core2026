@@ -5,11 +5,7 @@ import { createGamePostgresConnector, resolvePostgresConfigFromEnv } from '@samm
 
 import type { BuildRunner } from './buildRunner.js';
 import type { ProcessManager } from './processManager.js';
-import type {
-    GatewayProfileRecord,
-    GatewayProfileRepository,
-    GatewayProfileStatus,
-} from './profileRepository.js';
+import type { GatewayProfileRecord, GatewayProfileRepository, GatewayProfileStatus } from './profileRepository.js';
 import type { GitWorkspaceManager } from './workspaceManager.js';
 
 export interface GatewayProcessConfig {
@@ -58,12 +54,7 @@ export const planProfileReconcile = (
     status: GatewayProfileStatus,
     runtime: ProfileRuntimeState
 ): { shouldStart: boolean; shouldStop: boolean } => {
-    if (
-        status === 'RUNNING' ||
-        status === 'PREOPEN' ||
-        status === 'PAUSED' ||
-        status === 'COMPLETED'
-    ) {
+    if (status === 'RUNNING' || status === 'PREOPEN' || status === 'PAUSED' || status === 'COMPLETED') {
         return {
             shouldStart: !(runtime.apiRunning && runtime.daemonRunning),
             shouldStop: false,
@@ -97,8 +88,7 @@ interface GatewayAdminActionResult {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
     Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
-const normalizeMeta = (value: unknown): Record<string, unknown> =>
-    isRecord(value) ? value : {};
+const normalizeMeta = (value: unknown): Record<string, unknown> => (isRecord(value) ? value : {});
 
 const normalizeStatus = (value: unknown): GatewayAdminActionStatus | null => {
     if (typeof value === 'string') {
@@ -108,16 +98,9 @@ const normalizeStatus = (value: unknown): GatewayAdminActionStatus | null => {
 };
 
 const buildActionKey = (action: GatewayAdminActionRecord): string =>
-    [
-        action.action ?? '',
-        action.requestedAt ?? '',
-        action.scheduledAt ?? '',
-        action.reason ?? '',
-    ].join('|');
+    [action.action ?? '', action.requestedAt ?? '', action.scheduledAt ?? '', action.reason ?? ''].join('|');
 
-const parseScenarioId = (
-    value: string | number | null | undefined
-): number | null => {
+const parseScenarioId = (value: string | number | null | undefined): number | null => {
     if (typeof value === 'number' && Number.isFinite(value)) {
         return Math.floor(value);
     }
@@ -136,8 +119,10 @@ const buildProcessName = (profileName: string, role: 'api' | 'daemon'): string =
 const buildProcessDefinitions = (
     profile: GatewayProfileRecord,
     config: GatewayProcessConfig
-): { api: { name: string; script: string; cwd: string; env: Record<string, string> };
-    daemon: { name: string; script: string; cwd: string; env: Record<string, string> } } => {
+): {
+    api: { name: string; script: string; cwd: string; env: Record<string, string> };
+    daemon: { name: string; script: string; cwd: string; env: Record<string, string> };
+} => {
     const baseEnv = { ...(config.baseEnv ?? {}) };
     const apiName = buildProcessName(profile.profileName, 'api');
     const daemonName = buildProcessName(profile.profileName, 'daemon');
@@ -176,10 +161,7 @@ const buildProcessDefinitions = (
     };
 };
 
-const mapRuntimeStates = (
-    profileNames: string[],
-    processNames: Map<string, boolean>
-): ProfileRuntimeSnapshot[] =>
+const mapRuntimeStates = (profileNames: string[], processNames: Map<string, boolean>): ProfileRuntimeSnapshot[] =>
     profileNames.map((profileName) => {
         const apiName = buildProcessName(profileName, 'api');
         const daemonName = buildProcessName(profileName, 'daemon');
@@ -227,22 +209,10 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     start(): void {
         void this.reconcileNow();
         void this.runAdminActionsNow();
-        this.reconcileTimer = setInterval(
-            () => void this.reconcileNow(),
-            this.reconcileIntervalMs
-        );
-        this.scheduleTimer = setInterval(
-            () => void this.runScheduleNow(),
-            this.scheduleIntervalMs
-        );
-        this.buildTimer = setInterval(
-            () => void this.runBuildQueueNow(),
-            this.buildIntervalMs
-        );
-        this.adminActionTimer = setInterval(
-            () => void this.runAdminActionsNow(),
-            this.adminActionIntervalMs
-        );
+        this.reconcileTimer = setInterval(() => void this.reconcileNow(), this.reconcileIntervalMs);
+        this.scheduleTimer = setInterval(() => void this.runScheduleNow(), this.scheduleIntervalMs);
+        this.buildTimer = setInterval(() => void this.runBuildQueueNow(), this.buildIntervalMs);
+        this.adminActionTimer = setInterval(() => void this.runAdminActionsNow(), this.adminActionIntervalMs);
     }
 
     async stop(): Promise<void> {
@@ -313,8 +283,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                     );
                     continue;
                 }
-                const queued =
-                    profile.buildStatus === 'QUEUED' || profile.buildStatus === 'RUNNING';
+                const queued = profile.buildStatus === 'QUEUED' || profile.buildStatus === 'RUNNING';
                 if (!queued) {
                     await this.repository.updateBuildStatus(profile.profileName, 'QUEUED', {
                         requestedAt: now.toISOString(),
@@ -325,11 +294,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             }
             const profiles = await this.repository.listProfiles();
             for (const profile of profiles) {
-                if (
-                    profile.status === 'PREOPEN' &&
-                    profile.openAt &&
-                    new Date(profile.openAt) <= now
-                ) {
+                if (profile.status === 'PREOPEN' && profile.openAt && new Date(profile.openAt) <= now) {
                     await this.repository.updateStatus(profile.profileName, 'RUNNING', {
                         preopenAt: profile.preopenAt ?? null,
                         openAt: profile.openAt ?? null,
@@ -363,10 +328,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 startedAt,
                 error: null,
             });
-            const result = await this.runBuildCommands(
-                queued.profileName,
-                queued.buildCommitSha
-            );
+            const result = await this.runBuildCommands(queued.profileName, queued.buildCommitSha);
             const completedAt = this.now().toISOString();
             if (result.ok) {
                 await this.repository.updateBuildStatus(queued.profileName, 'SUCCEEDED', {
@@ -376,9 +338,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 if (queued.status === 'RESERVED') {
                     await this.repository.updateStatus(
                         queued.profileName,
-                        queued.openAt && new Date(queued.openAt) <= this.now()
-                            ? 'RUNNING'
-                            : 'PREOPEN',
+                        queued.openAt && new Date(queued.openAt) <= this.now() ? 'RUNNING' : 'PREOPEN',
                         {
                             preopenAt: queued.preopenAt ?? null,
                             openAt: queued.openAt ?? null,
@@ -418,13 +378,9 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         }
     }
 
-    private async handleProfileAdminActions(
-        profile: GatewayProfileRecord
-    ): Promise<void> {
+    private async handleProfileAdminActions(profile: GatewayProfileRecord): Promise<void> {
         const meta = normalizeMeta(profile.meta);
-        const rawActions = Array.isArray(meta.adminActions)
-            ? meta.adminActions
-            : [];
+        const rawActions = Array.isArray(meta.adminActions) ? meta.adminActions : [];
         if (!rawActions.length) {
             return;
         }
@@ -442,10 +398,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             return;
         }
 
-        const updates = new Map<
-            string,
-            { status: GatewayAdminActionStatus; detail?: string; handledAt: string }
-        >();
+        const updates = new Map<string, { status: GatewayAdminActionStatus; detail?: string; handledAt: string }>();
 
         for (const action of pending) {
             if (action.action !== 'RESET_NOW' && action.action !== 'RESET_SCHEDULED') {
@@ -528,9 +481,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 return { status: 'FAILED', detail: 'scenarioId is missing' };
             }
             const seedTime =
-                action.scheduledAt && action.action === 'RESET_SCHEDULED'
-                    ? new Date(action.scheduledAt)
-                    : this.now();
+                action.scheduledAt && action.action === 'RESET_SCHEDULED' ? new Date(action.scheduledAt) : this.now();
             const startedAt = this.now().toISOString();
             await this.repository.updateStatus(profile.profileName, 'STOPPED');
             await this.stopProfile(profile);
@@ -646,10 +597,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     async cleanupStaleWorkspaces(): Promise<{ removed: string[]; skipped: string[] }> {
         const profiles = await this.repository.listProfiles();
         const cutoff = this.computeCutoffDate(6);
-        const workspaceMap = new Map<
-            string,
-            { profileNames: string[]; lastUsedAt?: Date; hasActiveBuild: boolean }
-        >();
+        const workspaceMap = new Map<string, { profileNames: string[]; lastUsedAt?: Date; hasActiveBuild: boolean }>();
         for (const profile of profiles) {
             const workspace = profile.buildWorkspace;
             if (!workspace) {
@@ -733,8 +681,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         const statusMap = new Map<string, boolean>();
         for (const process of processes) {
             const status = process.status.toLowerCase();
-            const running =
-                status === 'online' || status === 'launching' || status === 'stopping';
+            const running = status === 'online' || status === 'launching' || status === 'stopping';
             statusMap.set(process.name, running);
         }
         return statusMap;

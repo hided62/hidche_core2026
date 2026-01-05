@@ -122,8 +122,8 @@ Used for base stats and battle-derived parameters. Common `statName` keys:
 
 1. `General::getPreTurnExecuteTriggerList()` merges triggers from all actions.
 2. Base triggers are appended:
-   - `GeneralTrigger/che_부상경감` (priority 10000 / BEGIN)
-   - `GeneralTrigger/che_병력군량소모` (priority 50000 / FINAL)
+    - `GeneralTrigger/che_부상경감` (priority 10000 / BEGIN)
+    - `GeneralTrigger/che_병력군량소모` (priority 50000 / FINAL)
 3. `TriggerCaller::fire()` executes them before the command runs.
 
 General triggers use `General::activateSkill()` for logging and gating.
@@ -146,10 +146,10 @@ Every phase:
 
 1. `WarUnit::beginPhase()` clears activated skills and recomputes war power.
 2. `General::getBattlePhaseSkillTriggerList()` builds the trigger list.
-   - Base triggers (always included):
-     - `che_필살시도`, `che_필살발동`
-     - `che_회피시도`, `che_회피발동`
-     - `che_계략시도`, `che_계략발동`, `che_계략실패`
+    - Base triggers (always included):
+        - `che_필살시도`, `che_필살발동`
+        - `che_회피시도`, `che_회피발동`
+        - `che_계략시도`, `che_계략발동`, `che_계략실패`
 3. Attacker/defender trigger lists are merged and fired.
 4. Damage is calculated using `getWarPower()` (after trigger multipliers).
 

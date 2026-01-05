@@ -26,13 +26,13 @@ export const zWorldStateMeta = z.object({
 });
 export type WorldStateMeta = z.infer<typeof zWorldStateMeta>;
 
-export type WorldStateRow = GamePrisma.WorldStateGetPayload<{}>;
-export type GeneralRow = GamePrisma.GeneralGetPayload<{}>;
-export type GeneralTurnRow = GamePrisma.GeneralTurnGetPayload<{}>;
-export type NationTurnRow = GamePrisma.NationTurnGetPayload<{}>;
-export type CityRow = GamePrisma.CityGetPayload<{}>;
-export type NationRow = GamePrisma.NationGetPayload<{}>;
-export type TroopRow = GamePrisma.TroopGetPayload<{}>;
+export type WorldStateRow = GamePrisma.WorldStateGetPayload<Record<string, never>>;
+export type GeneralRow = GamePrisma.GeneralGetPayload<Record<string, never>>;
+export type GeneralTurnRow = GamePrisma.GeneralTurnGetPayload<Record<string, never>>;
+export type NationTurnRow = GamePrisma.NationTurnGetPayload<Record<string, never>>;
+export type CityRow = GamePrisma.CityGetPayload<Record<string, never>>;
+export type NationRow = GamePrisma.NationGetPayload<Record<string, never>>;
+export type TroopRow = GamePrisma.TroopGetPayload<Record<string, never>>;
 
 export type JsonValue = GamePrisma.JsonValue;
 export type InputJsonValue = GamePrisma.InputJsonValue;

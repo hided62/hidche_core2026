@@ -9,7 +9,8 @@
         "build": "tsdown -c ../../tsdown.config.ts -F @sammo-ts/game-engine",
         "dev": "tsdown -c ../../tsdown.config.ts -F @sammo-ts/game-engine --watch",
         "start": "pnpm run build && node dist/index.js",
-        "lint": "node -e \"console.log('lint not configured')\"",
+        "lint": "eslint .",
+        "lint:fix": "eslint . --fix",
         "test": "vitest run --config vitest.config.ts",
         "typecheck": "tsc -b"
     },

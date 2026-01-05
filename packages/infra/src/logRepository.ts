@@ -45,10 +45,7 @@ export class LogRepository {
     constructor(private readonly prisma: GamePrismaClient) {}
 
     // 전역(시스템) 로그 조회
-    async listSystemLogs(
-        category: LogCategory,
-        options: LogQueryOptions = {}
-    ): Promise<LogEntryView[]> {
+    async listSystemLogs(category: LogCategory, options: LogQueryOptions = {}): Promise<LogEntryView[]> {
         return this.prisma.logEntry.findMany(
             buildFindArgs(
                 {
@@ -97,10 +94,7 @@ export class LogRepository {
     }
 
     // 유저 로그 조회
-    async listUserLogs(
-        userId: number,
-        options: LogQueryOptions & { subType?: string } = {}
-    ): Promise<LogEntryView[]> {
+    async listUserLogs(userId: number, options: LogQueryOptions & { subType?: string } = {}): Promise<LogEntryView[]> {
         return this.prisma.logEntry.findMany(
             buildFindArgs(
                 {

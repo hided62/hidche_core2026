@@ -1,8 +1,4 @@
-import type {
-    City,
-    General,
-    GeneralTriggerState,
-} from '@sammo-ts/logic/domain/entities.js';
+import type { City, General, GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
     availableStrategicCommand,
@@ -10,10 +6,7 @@ import {
     occupiedCity,
     occupiedDestCity,
 } from '@sammo-ts/logic/constraints/presets.js';
-import {
-    GeneralActionPipeline,
-    type GeneralActionModule,
-} from '@sammo-ts/logic/triggers/general-action.js';
+import { GeneralActionPipeline, type GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionEffect,
@@ -33,7 +26,7 @@ export interface MobilizePeopleArgs {
 }
 
 export interface MobilizePeopleResolveContext<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > extends GeneralActionResolveContext<TriggerState> {
     destCity: City;
     friendlyGenerals: Array<General<TriggerState>>;
@@ -54,9 +47,7 @@ const parseCityId = (raw: unknown): number | null => {
 };
 
 // 백성동원 쿨타임 계산을 담당한다.
-export class CommandResolver<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     private readonly pipeline: GeneralActionPipeline<TriggerState>;
 
     constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>) {
@@ -64,20 +55,13 @@ export class CommandResolver<
     }
 
     getGlobalDelay(context: MobilizePeopleResolveContext<TriggerState>): number {
-        return Math.round(
-            this.pipeline.onCalcStrategic(
-                context,
-                ACTION_NAME,
-                'globalDelay',
-                DEFAULT_GLOBAL_DELAY
-            )
-        );
+        return Math.round(this.pipeline.onCalcStrategic(context, ACTION_NAME, 'globalDelay', DEFAULT_GLOBAL_DELAY));
     }
 }
 
 // 백성동원 실행 결과를 계산한다.
 export class ActionResolver<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionResolver<TriggerState, MobilizePeopleArgs> {
     readonly key = 'che_백성동원';
     private readonly command: CommandResolver<TriggerState>;
@@ -101,13 +85,10 @@ export class ActionResolver<
         general.dedication += EXP_DED_GAIN;
 
         context.addLog(`${ACTION_NAME} 발동!`, { format: LogFormat.MONTH });
-        context.addLog(
-            `<G><b>${cityName}</b></>에 <M>${ACTION_NAME}</>을 발동`,
-            {
-                category: LogCategory.HISTORY,
-                format: LogFormat.YEAR_MONTH,
-            }
-        );
+        context.addLog(`<G><b>${cityName}</b></>에 <M>${ACTION_NAME}</>을 발동`, {
+            category: LogCategory.HISTORY,
+            format: LogFormat.YEAR_MONTH,
+        });
 
         const effects: Array<GeneralActionEffect<TriggerState>> = [];
 
@@ -125,14 +106,8 @@ export class ActionResolver<
             );
         }
 
-        const nextDefence = Math.max(
-            context.destCity.defence,
-            context.destCity.defenceMax * DEFENCE_RATE
-        );
-        const nextWall = Math.max(
-            context.destCity.wall,
-            context.destCity.wallMax * DEFENCE_RATE
-        );
+        const nextDefence = Math.max(context.destCity.defence, context.destCity.defenceMax * DEFENCE_RATE);
+        const nextWall = Math.max(context.destCity.wall, context.destCity.wallMax * DEFENCE_RATE);
         effects.push(
             createCityPatchEffect(
                 {
@@ -165,12 +140,8 @@ export class ActionResolver<
 
 // 백성동원 실행을 위한 정의/제약을 구성한다.
 export class ActionDefinition<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> implements GeneralActionDefinition<
-        TriggerState,
-        MobilizePeopleArgs,
-        MobilizePeopleResolveContext<TriggerState>
-    > {
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
+> implements GeneralActionDefinition<TriggerState, MobilizePeopleArgs, MobilizePeopleResolveContext<TriggerState>> {
     public readonly key = 'che_백성동원';
     public readonly name = ACTION_NAME;
     private readonly resolver: ActionResolver<TriggerState>;
@@ -188,18 +159,10 @@ export class ActionDefinition<
         return { destCityId };
     }
 
-    buildConstraints(
-        _ctx: ConstraintContext,
-        _args: MobilizePeopleArgs
-    ): Constraint[] {
+    buildConstraints(_ctx: ConstraintContext, _args: MobilizePeopleArgs): Constraint[] {
         void _ctx;
         void _args;
-        return [
-            occupiedCity(),
-            beChief(),
-            occupiedDestCity(),
-            availableStrategicCommand(),
-        ];
+        return [occupiedCity(), beChief(), occupiedDestCity(), availableStrategicCommand()];
     }
 
     resolve(
@@ -224,9 +187,7 @@ export const actionContextBuilder: ActionContextBuilder = (base, options) => {
     if (!destCity) {
         return null;
     }
-    const friendlyGenerals = worldRef
-        .listGenerals()
-        .filter((general) => general.nationId === base.general.nationId);
+    const friendlyGenerals = worldRef.listGenerals().filter((general) => general.nationId === base.general.nationId);
     return {
         ...base,
         destCity,
@@ -239,6 +200,5 @@ export const commandSpec: NationTurnCommandSpec = {
     category: '전략',
     reqArg: true,
     args: { destCityId: 0 },
-    createDefinition: (env: TurnCommandEnv) =>
-        new ActionDefinition(env.generalActionModules ?? []),
+    createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env.generalActionModules ?? []),
 };

@@ -30,15 +30,9 @@
             "defenceCoef": {
                 "1": 1.2
             },
-            "info": [
-                "성벽입니다.",
-                "생성할 수 없습니다."
-            ],
+            "info": ["성벽입니다.", "생성할 수 없습니다."],
             "initSkillTrigger": null,
-            "phaseSkillTrigger": [
-                "che_선제사격시도",
-                "che_선제사격발동"
-            ],
+            "phaseSkillTrigger": ["che_선제사격시도", "che_선제사격발동"],
             "iActionList": null
         },
         {
@@ -63,15 +57,9 @@
                 "3": 1.2,
                 "5": 0.8
             },
-            "info": [
-                "표준적인 보병입니다.",
-                "보병은 방어특화이며,",
-                "상대가 회피하기 어렵습니다."
-            ],
+            "info": ["표준적인 보병입니다.", "보병은 방어특화이며,", "상대가 회피하기 어렵습니다."],
             "initSkillTrigger": null,
-            "phaseSkillTrigger": [
-                "che_방어력증가5p"
-            ],
+            "phaseSkillTrigger": ["che_방어력증가5p"],
             "iActionList": null
         },
         {
@@ -92,9 +80,7 @@
                 },
                 {
                     "type": "ReqRegions",
-                    "regions": [
-                        "중원"
-                    ]
+                    "regions": ["중원"]
                 }
             ],
             "attackCoef": {
@@ -107,13 +93,9 @@
                 "3": 1.2,
                 "5": 0.8
             },
-            "info": [
-                "저렴하고 튼튼합니다."
-            ],
+            "info": ["저렴하고 튼튼합니다."],
             "initSkillTrigger": null,
-            "phaseSkillTrigger": [
-                "che_방어력증가5p"
-            ],
+            "phaseSkillTrigger": ["che_방어력증가5p"],
             "iActionList": null
         },
         {
@@ -134,9 +116,7 @@
                 },
                 {
                     "type": "ReqRegions",
-                    "regions": [
-                        "오월"
-                    ]
+                    "regions": ["오월"]
                 }
             ],
             "attackCoef": {
@@ -149,13 +129,9 @@
                 "3": 1.2,
                 "5": 0.8
             },
-            "info": [
-                "저렴하고 강력합니다."
-            ],
+            "info": ["저렴하고 강력합니다."],
             "initSkillTrigger": null,
-            "phaseSkillTrigger": [
-                "che_방어력증가5p"
-            ],
+            "phaseSkillTrigger": ["che_방어력증가5p"],
             "iActionList": null
         },
         {
@@ -176,9 +152,7 @@
                 },
                 {
                     "type": "ReqCities",
-                    "cities": [
-                        "저"
-                    ]
+                    "cities": ["저"]
                 }
             ],
             "attackCoef": {
@@ -191,13 +165,9 @@
                 "3": 1.2,
                 "5": 0.8
             },
-            "info": [
-                "은밀하고 날쌥니다."
-            ],
+            "info": ["은밀하고 날쌥니다."],
             "initSkillTrigger": null,
-            "phaseSkillTrigger": [
-                "che_방어력증가5p"
-            ],
+            "phaseSkillTrigger": ["che_방어력증가5p"],
             "iActionList": null
         },
         {
@@ -218,9 +188,7 @@
                 },
                 {
                     "type": "ReqCities",
-                    "cities": [
-                        "낙양"
-                    ]
+                    "cities": ["낙양"]
                 }
             ],
             "attackCoef": {
@@ -233,13 +201,9 @@
                 "3": 1.2,
                 "5": 0.8
             },
-            "info": [
-                "최강의 보병입니다."
-            ],
+            "info": ["최강의 보병입니다."],
             "initSkillTrigger": null,
-            "phaseSkillTrigger": [
-                "che_방어력증가5p"
-            ],
+            "phaseSkillTrigger": ["che_방어력증가5p"],
             "iActionList": null
         },
         {
@@ -260,9 +224,7 @@
                 },
                 {
                     "type": "ReqRegions",
-                    "regions": [
-                        "남중"
-                    ]
+                    "regions": ["남중"]
                 }
             ],
             "attackCoef": {
@@ -275,13 +237,9 @@
                 "3": 1.2,
                 "5": 0.8
             },
-            "info": [
-                "등갑을 두른 보병입니다."
-            ],
+            "info": ["등갑을 두른 보병입니다."],
             "initSkillTrigger": null,
-            "phaseSkillTrigger": [
-                "che_방어력증가5p"
-            ],
+            "phaseSkillTrigger": ["che_방어력증가5p"],
             "iActionList": null
         },
         {
@@ -302,9 +260,7 @@
                 },
                 {
                     "type": "ReqCities",
-                    "cities": [
-                        "성도"
-                    ]
+                    "cities": ["성도"]
                 }
             ],
             "attackCoef": {
@@ -317,13 +273,9 @@
                 "3": 1.1,
                 "5": 0.9
             },
-            "info": [
-                "정예 보병입니다. 불리한 싸움도 버텨냅니다."
-            ],
+            "info": ["정예 보병입니다. 불리한 싸움도 버텨냅니다."],
             "initSkillTrigger": null,
-            "phaseSkillTrigger": [
-                "che_방어력증가5p"
-            ],
+            "phaseSkillTrigger": ["che_방어력증가5p"],
             "iActionList": null
         },
         {
@@ -345,9 +297,7 @@
                 {
                     "type": "ReqCitiesWithCityLevel",
                     "level": 8,
-                    "cities": [
-                        "완"
-                    ]
+                    "cities": ["완"]
                 },
                 {
                     "type": "ReqNationAux",
@@ -366,13 +316,9 @@
                 "3": 1.2,
                 "5": 0.8
             },
-            "info": [
-                "대형 검을 사용합니다."
-            ],
+            "info": ["대형 검을 사용합니다."],
             "initSkillTrigger": null,
-            "phaseSkillTrigger": [
-                "che_방어력증가5p"
-            ],
+            "phaseSkillTrigger": ["che_방어력증가5p"],
             "iActionList": null
         },
         {
@@ -394,9 +340,7 @@
                 {
                     "type": "ReqCitiesWithCityLevel",
                     "level": 8,
-                    "cities": [
-                        "북평"
-                    ]
+                    "cities": ["북평"]
                 }
             ],
             "attackCoef": {
@@ -409,13 +353,9 @@
                 "3": 1.2,
                 "5": 0.8
             },
-            "info": [
-                "철퇴를 사용합니다."
-            ],
+            "info": ["철퇴를 사용합니다."],
             "initSkillTrigger": null,
-            "phaseSkillTrigger": [
-                "che_방어력증가5p"
-            ],
+            "phaseSkillTrigger": ["che_방어력증가5p"],
             "iActionList": null
         },
         {
@@ -437,9 +377,7 @@
                 {
                     "type": "ReqCitiesWithCityLevel",
                     "level": 8,
-                    "cities": [
-                        "저"
-                    ]
+                    "cities": ["저"]
                 },
                 {
                     "type": "ReqNationAux",
@@ -458,13 +396,9 @@
                 "3": 1.2,
                 "5": 0.8
             },
-            "info": [
-                "긴 극을 사용합니다."
-            ],
+            "info": ["긴 극을 사용합니다."],
             "initSkillTrigger": null,
-            "phaseSkillTrigger": [
-                "che_방어력증가5p"
-            ],
+            "phaseSkillTrigger": ["che_방어력증가5p"],
             "iActionList": null
         },
         {
@@ -489,15 +423,9 @@
                 "1": 1.2,
                 "5": 0.8
             },
-            "info": [
-                "표준적인 궁병입니다.",
-                "궁병은 선제사격을 하는 병종입니다."
-            ],
+            "info": ["표준적인 궁병입니다.", "궁병은 선제사격을 하는 병종입니다."],
             "initSkillTrigger": null,
-            "phaseSkillTrigger": [
-                "che_선제사격시도",
-                "che_선제사격발동"
-            ],
+            "phaseSkillTrigger": ["che_선제사격시도", "che_선제사격발동"],
             "iActionList": null
         },
         {
@@ -518,9 +446,7 @@
                 },
                 {
                     "type": "ReqRegions",
-                    "regions": [
-                        "동이"
-                    ]
+                    "regions": ["동이"]
                 }
             ],
             "attackCoef": {
@@ -533,14 +459,9 @@
                 "1": 1.1,
                 "5": 0.8
             },
-            "info": [
-                "말을 타고 잘 피합니다. 특히 다른 궁병보다 보병에게 조금 더 강합니다."
-            ],
+            "info": ["말을 타고 잘 피합니다. 특히 다른 궁병보다 보병에게 조금 더 강합니다."],
             "initSkillTrigger": null,
-            "phaseSkillTrigger": [
-                "che_선제사격시도",
-                "che_선제사격발동"
-            ],
+            "phaseSkillTrigger": ["che_선제사격시도", "che_선제사격발동"],
             "iActionList": null
         },
         {
@@ -561,9 +482,7 @@
                 },
                 {
                     "type": "ReqRegions",
-                    "regions": [
-                        "서촉"
-                    ]
+                    "regions": ["서촉"]
                 }
             ],
             "attackCoef": {
@@ -576,14 +495,9 @@
                 "1": 1.2,
                 "5": 0.8
             },
-            "info": [
-                "화살을 연사합니다."
-            ],
+            "info": ["화살을 연사합니다."],
             "initSkillTrigger": null,
-            "phaseSkillTrigger": [
-                "che_선제사격시도",
-                "che_선제사격발동"
-            ],
+            "phaseSkillTrigger": ["che_선제사격시도", "che_선제사격발동"],
             "iActionList": null
         },
         {
@@ -604,9 +518,7 @@
                 },
                 {
                     "type": "ReqCities",
-                    "cities": [
-                        "양양"
-                    ]
+                    "cities": ["양양"]
                 }
             ],
             "attackCoef": {
@@ -619,14 +531,9 @@
                 "1": 1.2,
                 "5": 0.8
             },
-            "info": [
-                "강건한 궁병입니다."
-            ],
+            "info": ["강건한 궁병입니다."],
             "initSkillTrigger": null,
-            "phaseSkillTrigger": [
-                "che_선제사격시도",
-                "che_선제사격발동"
-            ],
+            "phaseSkillTrigger": ["che_선제사격시도", "che_선제사격발동"],
             "iActionList": null
         },
         {
@@ -647,9 +554,7 @@
                 },
                 {
                     "type": "ReqCities",
-                    "cities": [
-                        "건업"
-                    ]
+                    "cities": ["건업"]
                 }
             ],
             "attackCoef": {
@@ -662,14 +567,9 @@
                 "1": 1.2,
                 "5": 0.8
             },
-            "info": [
-                "강력한 화살을 쏩니다."
-            ],
+            "info": ["강력한 화살을 쏩니다."],
             "initSkillTrigger": null,
-            "phaseSkillTrigger": [
-                "che_선제사격시도",
-                "che_선제사격발동"
-            ],
+            "phaseSkillTrigger": ["che_선제사격시도", "che_선제사격발동"],
             "iActionList": null
         },
         {
@@ -691,9 +591,7 @@
                 {
                     "type": "ReqCitiesWithCityLevel",
                     "level": 8,
-                    "cities": [
-                        "위례"
-                    ]
+                    "cities": ["위례"]
                 }
             ],
             "attackCoef": {
@@ -706,14 +604,9 @@
                 "1": 1.2,
                 "5": 0.8
             },
-            "info": [
-                "궁술 실력이 뛰어납니다."
-            ],
+            "info": ["궁술 실력이 뛰어납니다."],
             "initSkillTrigger": null,
-            "phaseSkillTrigger": [
-                "che_선제사격시도",
-                "che_선제사격발동"
-            ],
+            "phaseSkillTrigger": ["che_선제사격시도", "che_선제사격발동"],
             "iActionList": null
         },
         {
@@ -735,9 +628,7 @@
                 {
                     "type": "ReqCitiesWithCityLevel",
                     "level": 8,
-                    "cities": [
-                        "장사"
-                    ]
+                    "cities": ["장사"]
                 },
                 {
                     "type": "ReqNationAux",
@@ -756,14 +647,9 @@
                 "1": 1.2,
                 "5": 0.8
             },
-            "info": [
-                "불이 붙은 화살을 날립니다."
-            ],
+            "info": ["불이 붙은 화살을 날립니다."],
             "initSkillTrigger": null,
-            "phaseSkillTrigger": [
-                "che_선제사격시도",
-                "che_선제사격발동"
-            ],
+            "phaseSkillTrigger": ["che_선제사격시도", "che_선제사격발동"],
             "iActionList": null
         },
         {
@@ -785,9 +671,7 @@
                 {
                     "type": "ReqCitiesWithCityLevel",
                     "level": 8,
-                    "cities": [
-                        "흉노"
-                    ]
+                    "cities": ["흉노"]
                 },
                 {
                     "type": "ReqNationAux",
@@ -806,14 +690,9 @@
                 "1": 1.2,
                 "5": 0.8
             },
-            "info": [
-                "먼 거리에서 적을 제압합니다."
-            ],
+            "info": ["먼 거리에서 적을 제압합니다."],
             "initSkillTrigger": null,
-            "phaseSkillTrigger": [
-                "che_선제사격시도",
-                "che_선제사격발동"
-            ],
+            "phaseSkillTrigger": ["che_선제사격시도", "che_선제사격발동"],
             "iActionList": null
         },
         {
@@ -838,14 +717,9 @@
                 "2": 1.2,
                 "5": 0.8
             },
-            "info": [
-                "표준적인 기병입니다.",
-                "기병은 공격특화입니다."
-            ],
+            "info": ["표준적인 기병입니다.", "기병은 공격특화입니다."],
             "initSkillTrigger": null,
-            "phaseSkillTrigger": [
-                "che_기병병종전투"
-            ],
+            "phaseSkillTrigger": ["che_기병병종전투"],
             "iActionList": null
         },
         {
@@ -866,9 +740,7 @@
                 },
                 {
                     "type": "ReqRegions",
-                    "regions": [
-                        "하북"
-                    ]
+                    "regions": ["하북"]
                 }
             ],
             "attackCoef": {
@@ -881,13 +753,9 @@
                 "2": 1.2,
                 "5": 0.8
             },
-            "info": [
-                "백마의 위용을 보여줍니다."
-            ],
+            "info": ["백마의 위용을 보여줍니다."],
             "initSkillTrigger": null,
-            "phaseSkillTrigger": [
-                "che_기병병종전투"
-            ],
+            "phaseSkillTrigger": ["che_기병병종전투"],
             "iActionList": null
         },
         {
@@ -908,9 +776,7 @@
                 },
                 {
                     "type": "ReqRegions",
-                    "regions": [
-                        "서북"
-                    ]
+                    "regions": ["서북"]
                 }
             ],
             "attackCoef": {
@@ -923,13 +789,9 @@
                 "2": 1.2,
                 "5": 0.8
             },
-            "info": [
-                "갑주를 두른 기병입니다."
-            ],
+            "info": ["갑주를 두른 기병입니다."],
             "initSkillTrigger": null,
-            "phaseSkillTrigger": [
-                "che_기병병종전투"
-            ],
+            "phaseSkillTrigger": ["che_기병병종전투"],
             "iActionList": null
         },
         {
@@ -950,9 +812,7 @@
                 },
                 {
                     "type": "ReqCities",
-                    "cities": [
-                        "흉노"
-                    ]
+                    "cities": ["흉노"]
                 }
             ],
             "attackCoef": {
@@ -965,13 +825,9 @@
                 "2": 1.2,
                 "5": 0.8
             },
-            "info": [
-                "저돌적으로 공격합니다."
-            ],
+            "info": ["저돌적으로 공격합니다."],
             "initSkillTrigger": null,
-            "phaseSkillTrigger": [
-                "che_기병병종전투"
-            ],
+            "phaseSkillTrigger": ["che_기병병종전투"],
             "iActionList": null
         },
         {
@@ -992,9 +848,7 @@
                 },
                 {
                     "type": "ReqCities",
-                    "cities": [
-                        "강"
-                    ]
+                    "cities": ["강"]
                 }
             ],
             "attackCoef": {
@@ -1007,13 +861,9 @@
                 "2": 1.2,
                 "5": 0.8
             },
-            "info": [
-                "철갑을 두른 기병입니다."
-            ],
+            "info": ["철갑을 두른 기병입니다."],
             "initSkillTrigger": null,
-            "phaseSkillTrigger": [
-                "che_기병병종전투"
-            ],
+            "phaseSkillTrigger": ["che_기병병종전투"],
             "iActionList": null
         },
         {
@@ -1034,9 +884,7 @@
                 },
                 {
                     "type": "ReqCities",
-                    "cities": [
-                        "산월"
-                    ]
+                    "cities": ["산월"]
                 }
             ],
             "attackCoef": {
@@ -1049,13 +897,9 @@
                 "2": 1.2,
                 "5": 0.8
             },
-            "info": [
-                "날쎄고 빠른 기병입니다."
-            ],
+            "info": ["날쎄고 빠른 기병입니다."],
             "initSkillTrigger": null,
-            "phaseSkillTrigger": [
-                "che_기병병종전투"
-            ],
+            "phaseSkillTrigger": ["che_기병병종전투"],
             "iActionList": null
         },
         {
@@ -1076,9 +920,7 @@
                 },
                 {
                     "type": "ReqCities",
-                    "cities": [
-                        "남만"
-                    ]
+                    "cities": ["남만"]
                 }
             ],
             "attackCoef": {
@@ -1091,13 +933,9 @@
                 "2": 1.2,
                 "5": 0.8
             },
-            "info": [
-                "어느 누구보다 강력합니다."
-            ],
+            "info": ["어느 누구보다 강력합니다."],
             "initSkillTrigger": null,
-            "phaseSkillTrigger": [
-                "che_기병병종전투"
-            ],
+            "phaseSkillTrigger": ["che_기병병종전투"],
             "iActionList": null
         },
         {
@@ -1118,9 +956,7 @@
                 },
                 {
                     "type": "ReqCities",
-                    "cities": [
-                        "허창"
-                    ]
+                    "cities": ["허창"]
                 }
             ],
             "attackCoef": {
@@ -1133,13 +969,9 @@
                 "2": 1.2,
                 "5": 0.8
             },
-            "info": [
-                "정예 기병입니다."
-            ],
+            "info": ["정예 기병입니다."],
             "initSkillTrigger": null,
-            "phaseSkillTrigger": [
-                "che_기병병종전투"
-            ],
+            "phaseSkillTrigger": ["che_기병병종전투"],
             "iActionList": null
         },
         {
@@ -1161,9 +993,7 @@
                 {
                     "type": "ReqCitiesWithCityLevel",
                     "level": 8,
-                    "cities": [
-                        "한중"
-                    ]
+                    "cities": ["한중"]
                 }
             ],
             "attackCoef": {
@@ -1176,14 +1006,9 @@
                 "2": 1.1,
                 "5": 0.9
             },
-            "info": [
-                "험준한 지형에서 뛰어납니다.",
-                "불리한 싸움도 버텨냅니다."
-            ],
+            "info": ["험준한 지형에서 뛰어납니다.", "불리한 싸움도 버텨냅니다."],
             "initSkillTrigger": null,
-            "phaseSkillTrigger": [
-                "che_기병병종전투"
-            ],
+            "phaseSkillTrigger": ["che_기병병종전투"],
             "iActionList": null
         },
         {
@@ -1205,9 +1030,7 @@
                 {
                     "type": "ReqCitiesWithCityLevel",
                     "level": 8,
-                    "cities": [
-                        "수춘"
-                    ]
+                    "cities": ["수춘"]
                 },
                 {
                     "type": "ReqNationAux",
@@ -1226,13 +1049,9 @@
                 "2": 1.2,
                 "5": 0.8
             },
-            "info": [
-                "무식할 정도로 전장을 누빕니다."
-            ],
+            "info": ["무식할 정도로 전장을 누빕니다."],
             "initSkillTrigger": null,
-            "phaseSkillTrigger": [
-                "che_기병병종전투"
-            ],
+            "phaseSkillTrigger": ["che_기병병종전투"],
             "iActionList": null
         },
         {
@@ -1254,9 +1073,7 @@
                 {
                     "type": "ReqCitiesWithCityLevel",
                     "level": 8,
-                    "cities": [
-                        "남만"
-                    ]
+                    "cities": ["남만"]
                 },
                 {
                     "type": "ReqNationAux",
@@ -1275,13 +1092,9 @@
                 "2": 1.2,
                 "5": 0.8
             },
-            "info": [
-                "거대한 코끼리와 함께합니다."
-            ],
+            "info": ["거대한 코끼리와 함께합니다."],
             "initSkillTrigger": null,
-            "phaseSkillTrigger": [
-                "che_기병병종전투"
-            ],
+            "phaseSkillTrigger": ["che_기병병종전투"],
             "iActionList": null
         },
         {
@@ -1302,9 +1115,7 @@
             "defenceCoef": {
                 "5": 0.8
             },
-            "info": [
-                "계략을 사용하는 병종입니다."
-            ],
+            "info": ["계략을 사용하는 병종입니다."],
             "initSkillTrigger": null,
             "phaseSkillTrigger": null,
             "iActionList": null
@@ -1327,9 +1138,7 @@
                 },
                 {
                     "type": "ReqRegions",
-                    "regions": [
-                        "초"
-                    ]
+                    "regions": ["초"]
                 }
             ],
             "attackCoef": {
@@ -1338,9 +1147,7 @@
             "defenceCoef": {
                 "5": 0.8
             },
-            "info": [
-                "신출귀몰한 귀병입니다."
-            ],
+            "info": ["신출귀몰한 귀병입니다."],
             "initSkillTrigger": null,
             "phaseSkillTrigger": null,
             "iActionList": null
@@ -1363,9 +1170,7 @@
                 },
                 {
                     "type": "ReqCities",
-                    "cities": [
-                        "오환"
-                    ]
+                    "cities": ["오환"]
                 }
             ],
             "attackCoef": {
@@ -1374,9 +1179,7 @@
             "defenceCoef": {
                 "5": 0.8
             },
-            "info": [
-                "저렴하고 튼튼합니다."
-            ],
+            "info": ["저렴하고 튼튼합니다."],
             "initSkillTrigger": null,
             "phaseSkillTrigger": null,
             "iActionList": null
@@ -1399,9 +1202,7 @@
                 },
                 {
                     "type": "ReqCities",
-                    "cities": [
-                        "왜"
-                    ]
+                    "cities": ["왜"]
                 }
             ],
             "attackCoef": {
@@ -1410,9 +1211,7 @@
             "defenceCoef": {
                 "5": 0.8
             },
-            "info": [
-                "저렴하고 강력합니다."
-            ],
+            "info": ["저렴하고 강력합니다."],
             "initSkillTrigger": null,
             "phaseSkillTrigger": null,
             "iActionList": null
@@ -1435,9 +1234,7 @@
                 },
                 {
                     "type": "ReqCities",
-                    "cities": [
-                        "장안"
-                    ]
+                    "cities": ["장안"]
                 }
             ],
             "attackCoef": {
@@ -1446,9 +1243,7 @@
             "defenceCoef": {
                 "5": 0.8
             },
-            "info": [
-                "백병전에도 능숙합니다."
-            ],
+            "info": ["백병전에도 능숙합니다."],
             "initSkillTrigger": null,
             "phaseSkillTrigger": null,
             "iActionList": null
@@ -1476,9 +1271,7 @@
             "defenceCoef": {
                 "5": 0.8
             },
-            "info": [
-                "전투를 포기하고 계략에 몰두합니다."
-            ],
+            "info": ["전투를 포기하고 계략에 몰두합니다."],
             "initSkillTrigger": null,
             "phaseSkillTrigger": null,
             "iActionList": null
@@ -1501,9 +1294,7 @@
                 },
                 {
                     "type": "ReqCities",
-                    "cities": [
-                        "낙양"
-                    ]
+                    "cities": ["낙양"]
                 }
             ],
             "attackCoef": {
@@ -1512,9 +1303,7 @@
             "defenceCoef": {
                 "5": 0.8
             },
-            "info": [
-                "고도로 훈련된 귀병입니다."
-            ],
+            "info": ["고도로 훈련된 귀병입니다."],
             "initSkillTrigger": null,
             "phaseSkillTrigger": null,
             "iActionList": null
@@ -1537,9 +1326,7 @@
                 },
                 {
                     "type": "ReqCities",
-                    "cities": [
-                        "성도"
-                    ]
+                    "cities": ["성도"]
                 }
             ],
             "attackCoef": {
@@ -1548,9 +1335,7 @@
             "defenceCoef": {
                 "5": 0.8
             },
-            "info": [
-                "갑주를 두른 귀병입니다."
-            ],
+            "info": ["갑주를 두른 귀병입니다."],
             "initSkillTrigger": null,
             "phaseSkillTrigger": null,
             "iActionList": null
@@ -1573,9 +1358,7 @@
                 },
                 {
                     "type": "ReqCities",
-                    "cities": [
-                        "업"
-                    ]
+                    "cities": ["업"]
                 }
             ],
             "attackCoef": {
@@ -1584,9 +1367,7 @@
             "defenceCoef": {
                 "5": 0.8
             },
-            "info": [
-                "날카로운 무기를 가진 귀병입니다."
-            ],
+            "info": ["날카로운 무기를 가진 귀병입니다."],
             "initSkillTrigger": null,
             "phaseSkillTrigger": null,
             "iActionList": null
@@ -1610,9 +1391,7 @@
                 {
                     "type": "ReqCitiesWithCityLevel",
                     "level": 8,
-                    "cities": [
-                        "강릉"
-                    ]
+                    "cities": ["강릉"]
                 },
                 {
                     "type": "ReqNationAux",
@@ -1627,9 +1406,7 @@
             "defenceCoef": {
                 "5": 0.8
             },
-            "info": [
-                "악기를 연주하여 적을 혼란시킵니다."
-            ],
+            "info": ["악기를 연주하여 적을 혼란시킵니다."],
             "initSkillTrigger": null,
             "phaseSkillTrigger": null,
             "iActionList": null
@@ -1665,9 +1442,7 @@
             "defenceCoef": {
                 "5": 0.8
             },
-            "info": [
-                "독특한 향을 피웁니다."
-            ],
+            "info": ["독특한 향을 피웁니다."],
             "initSkillTrigger": null,
             "phaseSkillTrigger": null,
             "iActionList": null
@@ -1691,9 +1466,7 @@
                 {
                     "type": "ReqCitiesWithCityLevel",
                     "level": 8,
-                    "cities": [
-                        "왜"
-                    ]
+                    "cities": ["왜"]
                 },
                 {
                     "type": "ReqNationAux",
@@ -1708,9 +1481,7 @@
             "defenceCoef": {
                 "5": 0.8
             },
-            "info": [
-                "검무를 추는 귀병입니다."
-            ],
+            "info": ["검무를 추는 귀병입니다."],
             "initSkillTrigger": null,
             "phaseSkillTrigger": null,
             "iActionList": null
@@ -1749,19 +1520,10 @@
                 "1106": 1.067,
                 "91300": 1.112
             },
-            "info": [
-                "높은 구조물 위에서 공격합니다. 첫 공격은 성벽을 향합니다."
-            ],
-            "initSkillTrigger": [
-                "che_성벽부상무효"
-            ],
-            "phaseSkillTrigger": [
-                "che_선제사격시도",
-                "che_선제사격발동"
-            ],
-            "iActionList": [
-                "che_성벽선제"
-            ]
+            "info": ["높은 구조물 위에서 공격합니다. 첫 공격은 성벽을 향합니다."],
+            "initSkillTrigger": ["che_성벽부상무효"],
+            "phaseSkillTrigger": ["che_선제사격시도", "che_선제사격발동"],
+            "iActionList": ["che_성벽선제"]
         },
         {
             "id": 1501,
@@ -1801,12 +1563,8 @@
                 "1106": 1.067,
                 "91300": 1.067
             },
-            "info": [
-                "엄청난 위력으로 성벽을 부수어버립니다."
-            ],
-            "initSkillTrigger": [
-                "che_성벽부상무효"
-            ],
+            "info": ["엄청난 위력으로 성벽을 부수어버립니다."],
+            "initSkillTrigger": ["che_성벽부상무효"],
             "phaseSkillTrigger": null,
             "iActionList": null
         },
@@ -1828,9 +1586,7 @@
                 },
                 {
                     "type": "ReqCities",
-                    "cities": [
-                        "업"
-                    ]
+                    "cities": ["업"]
                 }
             ],
             "attackCoef": {
@@ -1850,19 +1606,10 @@
                 "1106": 1.067,
                 "91300": 1.112
             },
-            "info": [
-                "상대에게 돌덩이를 날립니다. 첫 공격은 성벽을 향합니다."
-            ],
-            "initSkillTrigger": [
-                "che_성벽부상무효"
-            ],
-            "phaseSkillTrigger": [
-                "che_선제사격시도",
-                "che_선제사격발동"
-            ],
-            "iActionList": [
-                "che_성벽선제"
-            ]
+            "info": ["상대에게 돌덩이를 날립니다. 첫 공격은 성벽을 향합니다."],
+            "initSkillTrigger": ["che_성벽부상무효"],
+            "phaseSkillTrigger": ["che_선제사격시도", "che_선제사격발동"],
+            "iActionList": ["che_성벽선제"]
         },
         {
             "id": 1503,
@@ -1882,9 +1629,7 @@
                 },
                 {
                     "type": "ReqCities",
-                    "cities": [
-                        "성도"
-                    ]
+                    "cities": ["성도"]
                 }
             ],
             "attackCoef": {
@@ -1900,16 +1645,9 @@
                 "3": 1,
                 "4": 1
             },
-            "info": [
-                "상대를 저지하는 특수병기입니다."
-            ],
-            "initSkillTrigger": [
-                "che_성벽부상무효"
-            ],
-            "phaseSkillTrigger": [
-                "che_저지시도",
-                "che_저지발동"
-            ],
+            "info": ["상대를 저지하는 특수병기입니다."],
+            "initSkillTrigger": ["che_성벽부상무효"],
+            "phaseSkillTrigger": ["che_저지시도", "che_저지발동"],
             "iActionList": null
         },
         {
@@ -1961,12 +1699,8 @@
                 "1106": 1.067,
                 "91300": 1.067
             },
-            "info": [
-                "불타는 바퀴로 적진을 붕괴시킵니다."
-            ],
-            "initSkillTrigger": [
-                "che_성벽부상무효"
-            ],
+            "info": ["불타는 바퀴로 적진을 붕괴시킵니다."],
+            "initSkillTrigger": ["che_성벽부상무효"],
             "phaseSkillTrigger": null,
             "iActionList": null
         }

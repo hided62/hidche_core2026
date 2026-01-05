@@ -9,8 +9,8 @@ engine. References include `legacy/hwe/sammo/CityConstBase.php`,
 `CityConstBase` defines default city data and lookup helpers:
 
 - `CityConstBase::$initCity` includes:
-  - id, name, level, population, agri/comm/secu/def/wall,
-    region, coordinates, and path connections.
+    - id, name, level, population, agri/comm/secu/def/wall,
+      region, coordinates, and path connections.
 - Region and level maps convert labels to numeric codes.
 - `CityConstBase::byID()` and `byName()` return `CityInitialDetail` objects.
 

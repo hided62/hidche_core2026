@@ -110,18 +110,18 @@ Nation-level choices run only for NPCs (`npc >= 2`) or for autorun users:
 ### Major Action Groups
 
 - **Troop movement**
-  - `do부대전방발령`, `do부대후방발령`, `do부대구출발령`
-  - user/NPC versions to move generals between front/back/supply cities
-  - checks `frontCities`, `supplyCities`, `last발령`, and war route.
+    - `do부대전방발령`, `do부대후방발령`, `do부대구출발령`
+    - user/NPC versions to move generals between front/back/supply cities
+    - checks `frontCities`, `supplyCities`, `last발령`, and war route.
 - **Resource distribution**
-  - `do유저장포상`, `doNPC포상`, `doNPC몰수`
-  - uses resource floors (`reqNation*`, `reqNPC*`, `reqHuman*`)
-  - weighted by target general's deficit and recent activity.
+    - `do유저장포상`, `doNPC포상`, `doNPC몰수`
+    - uses resource floors (`reqNation*`, `reqNPC*`, `reqHuman*`)
+    - weighted by target general's deficit and recent activity.
 - **Diplomacy**
-  - `do불가침제의`: respond to assistance requests with NAP offer.
-  - `do선전포고`: probabilistic declaration when strong enough.
+    - `do불가침제의`: respond to assistance requests with NAP offer.
+    - `do선전포고`: probabilistic declaration when strong enough.
 - **Capital relocation**
-  - `do천도`: moves capital based on population, dev, and connectivity.
+    - `do천도`: moves capital based on population, dev, and connectivity.
 
 ## General Turn Behavior (`chooseGeneralTurn`)
 
@@ -131,26 +131,26 @@ General-level decisions are layered:
 2. Reserved command is honored if valid (unless `휴식`).
 3. Immediate recovery if `injury > cureThreshold`.
 4. Special cases:
-   - NPC troop leaders (type 5) always `집합`.
-   - wanderers decide on founding / moving / disbanding.
+    - NPC troop leaders (type 5) always `집합`.
+    - wanderers decide on founding / moving / disbanding.
 5. Iterate policy `priority`, invoking `do{Action}`.
 6. Fallback to `do중립`.
 
 ### Major Action Groups
 
 - **Domestic development**
-  - `do일반내정`, `do전쟁내정`, `do긴급내정`
-  - weighted by `city` dev rates and general type flags.
+    - `do일반내정`, `do전쟁내정`, `do긴급내정`
+    - weighted by `city` dev rates and general type flags.
 - **War preparation**
-  - `do징병`, `do전투준비`, `do출병`
-  - strict checks on crew, train, atmos, population and diplomacy state.
+    - `do징병`, `do전투준비`, `do출병`
+    - strict checks on crew, train, atmos, population and diplomacy state.
 - **Mobility**
-  - `do전방워프`, `do후방워프`, `do내정워프`, `do귀환`
-  - uses `front/supply/backup` cities and population thresholds.
+    - `do전방워프`, `do후방워프`, `do내정워프`, `do귀환`
+    - uses `front/supply/backup` cities and population thresholds.
 - **Resource handling**
-  - `do금쌀구매` (trade), `doNPC헌납` (donation).
+    - `do금쌀구매` (trade), `doNPC헌납` (donation).
 - **Neutral behavior**
-  - `do중립` selects between `물자조달`, `인재탐색`, `견문`.
+    - `do중립` selects between `물자조달`, `인재탐색`, `견문`.
 
 ## Data Fields Accessed (Representative)
 
@@ -171,21 +171,21 @@ GeneralAI reads or writes:
 To port the AI to an in-memory state model without behavior drift:
 
 - **Snapshot-first**
-  - Build a per-turn `GameSnapshot` containing env, nation, cities, generals,
-    diplomacy, and nation_env. `GeneralAI` should read only from this snapshot.
+    - Build a per-turn `GameSnapshot` containing env, nation, cities, generals,
+      diplomacy, and nation_env. `GeneralAI` should read only from this snapshot.
 - **Derived caches**
-  - Cache `DiplomacyState`, `CityBuckets`, `GeneralBuckets`, and `WarRoute`.
-  - Use lazy recalculation and invalidate only the affected region/city/general
-    after a command is applied.
+    - Cache `DiplomacyState`, `CityBuckets`, `GeneralBuckets`, and `WarRoute`.
+    - Use lazy recalculation and invalidate only the affected region/city/general
+      after a command is applied.
 - **Deterministic ordering**
-  - For candidate lists, sort by ID before weighted RNG to preserve parity.
-  - RNG seeding should keep the exact per-turn seed scheme to ensure replay.
+    - For candidate lists, sort by ID before weighted RNG to preserve parity.
+    - RNG seeding should keep the exact per-turn seed scheme to ensure replay.
 - **Command evaluation**
-  - Keep `hasFullConditionMet()` semantics intact by providing the same
-    generalized context (`general`, `city`, `nation`, `dest*`).
+    - Keep `hasFullConditionMet()` semantics intact by providing the same
+      generalized context (`general`, `city`, `nation`, `dest*`).
 - **Policy snapshots**
-  - Cache policy values per turn and avoid reading KVStorage per action.
-  - When policies change, treat it as an explicit state transition.
+    - Cache policy values per turn and avoid reading KVStorage per action.
+    - When policies change, treat it as an explicit state transition.
 
 These guidelines mirror the current "derive once, then select via priority"
 pattern and minimize resimulation deltas in the rewrite.

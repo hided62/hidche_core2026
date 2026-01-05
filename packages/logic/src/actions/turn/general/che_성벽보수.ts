@@ -5,7 +5,7 @@ import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/action
 import type { GeneralTurnCommandSpec } from './index.js';
 
 export class ActionDefinition<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > extends CityDevelopmentActionDefinition<TriggerState> {
     constructor(env: { develCost?: number; amount?: number } = {}) {
         super(
@@ -30,6 +30,5 @@ export const commandSpec: GeneralTurnCommandSpec = {
     category: '내정',
     reqArg: false,
     args: {},
-    createDefinition: (env: TurnCommandEnv) =>
-        new ActionDefinition({ develCost: env.develCost }),
+    createDefinition: (env: TurnCommandEnv) => new ActionDefinition({ develCost: env.develCost }),
 };

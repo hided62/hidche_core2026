@@ -22,16 +22,12 @@ import { RepositoryProfileStatusService } from './lobby/profileStatusService.js'
 
 export const createGatewayApiServer = async () => {
     const config = resolveGatewayApiConfigFromEnv();
-    const postgres = createGatewayPostgresConnector(
-        resolvePostgresConfigFromEnv({ schema: config.dbSchema })
-    );
+    const postgres = createGatewayPostgresConnector(resolvePostgresConfigFromEnv({ schema: config.dbSchema }));
     const redis = createRedisConnector(resolveRedisConfigFromEnv());
     await postgres.connect();
     await redis.connect();
 
-    const users = createPostgresUserRepository(
-        postgres.prisma as GatewayPrismaClient
-    );
+    const users = createPostgresUserRepository(postgres.prisma as GatewayPrismaClient);
     const sessions = new RedisGatewaySessionService(redis.client, {
         keyPrefix: config.redisKeyPrefix,
         sessionTtlSeconds: config.sessionTtlSeconds,

@@ -1,17 +1,17 @@
-import { defineConfig } from "tsdown";
+import { defineConfig } from 'tsdown';
 
 export default defineConfig({
     workspace: {
-        include: ["packages/*", "app/*"],
-        exclude: ["**/*-frontend/**"]
+        include: ['packages/*', 'app/*'],
+        exclude: ['**/*-frontend/**'],
     },
-    entry: "src/index.ts",
-    format: "es",
-    outDir: "dist",
+    entry: 'src/index.ts',
+    format: 'es',
+    outDir: 'dist',
     dts: true,
     sourcemap: true,
-    target: "node22",
-    platform: "node",
+    target: 'node22',
+    platform: 'node',
     fixedExtension: false,
-    hash: false
+    hash: false,
 });

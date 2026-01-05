@@ -1,8 +1,4 @@
-import type {
-    General,
-    GeneralTriggerState,
-    Nation,
-} from '@sammo-ts/logic/domain/entities.js';
+import type { General, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
     allowDiplomacyWithTerm,
@@ -11,10 +7,7 @@ import {
     existsDestNation,
     occupiedCity,
 } from '@sammo-ts/logic/constraints/presets.js';
-import {
-    GeneralActionPipeline,
-    type GeneralActionModule,
-} from '@sammo-ts/logic/triggers/general-action.js';
+import { GeneralActionPipeline, type GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionEffect,
@@ -22,10 +15,7 @@ import type {
     GeneralActionResolveContext,
     GeneralActionResolver,
 } from '@sammo-ts/logic/actions/engine.js';
-import {
-    createDiplomacyPatchEffect,
-    createLogEffect,
-} from '@sammo-ts/logic/actions/engine.js';
+import { createDiplomacyPatchEffect, createLogEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
@@ -38,7 +28,7 @@ export interface RaidArgs {
 }
 
 export interface RaidResolveContext<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > extends GeneralActionResolveContext<TriggerState> {
     destNation: Nation;
     diplomacy: { state: number; term: number };
@@ -62,9 +52,7 @@ const parseNationId = (raw: unknown): number | null => {
 };
 
 // 급습 쿨타임 계산을 담당한다.
-export class CommandResolver<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     private readonly pipeline: GeneralActionPipeline<TriggerState>;
 
     constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>) {
@@ -72,20 +60,13 @@ export class CommandResolver<
     }
 
     getGlobalDelay(context: RaidResolveContext<TriggerState>): number {
-        return Math.round(
-            this.pipeline.onCalcStrategic(
-                context,
-                ACTION_NAME,
-                'globalDelay',
-                DEFAULT_GLOBAL_DELAY
-            )
-        );
+        return Math.round(this.pipeline.onCalcStrategic(context, ACTION_NAME, 'globalDelay', DEFAULT_GLOBAL_DELAY));
     }
 }
 
 // 급습 실행 결과를 계산한다.
 export class ActionResolver<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionResolver<TriggerState, RaidArgs> {
     readonly key = 'che_급습';
     private readonly command: CommandResolver<TriggerState>;
@@ -94,10 +75,7 @@ export class ActionResolver<
         this.command = new CommandResolver(modules);
     }
 
-    resolve(
-        context: RaidResolveContext<TriggerState>,
-        _args: RaidArgs
-    ): GeneralActionOutcome<TriggerState> {
+    resolve(context: RaidResolveContext<TriggerState>, _args: RaidArgs): GeneralActionOutcome<TriggerState> {
         void _args;
         const { general, nation } = context;
         const generalName = general.name;
@@ -111,29 +89,18 @@ export class ActionResolver<
         general.dedication += EXP_DED_GAIN;
 
         context.addLog(`${ACTION_NAME} 발동!`, { format: LogFormat.MONTH });
-        context.addLog(
-            `<D><b>${destNationName}</b></>에 <M>${ACTION_NAME}</>${actionJosa} 발동`,
-            {
-                category: LogCategory.HISTORY,
-                format: LogFormat.YEAR_MONTH,
-            }
-        );
+        context.addLog(`<D><b>${destNationName}</b></>에 <M>${ACTION_NAME}</>${actionJosa} 발동`, {
+            category: LogCategory.HISTORY,
+            format: LogFormat.YEAR_MONTH,
+        });
 
         const effects: Array<GeneralActionEffect<TriggerState>> = [
-            createDiplomacyPatchEffect(
-                general.nationId,
-                context.destNation.id,
-                {
-                    term: context.diplomacy.term - TERM_REDUCE,
-                }
-            ),
-            createDiplomacyPatchEffect(
-                context.destNation.id,
-                general.nationId,
-                {
-                    term: context.reverseDiplomacy.term - TERM_REDUCE,
-                }
-            ),
+            createDiplomacyPatchEffect(general.nationId, context.destNation.id, {
+                term: context.diplomacy.term - TERM_REDUCE,
+            }),
+            createDiplomacyPatchEffect(context.destNation.id, general.nationId, {
+                term: context.reverseDiplomacy.term - TERM_REDUCE,
+            }),
         ];
 
         for (const target of context.friendlyGenerals) {
@@ -195,12 +162,8 @@ export class ActionResolver<
 
 // 급습 실행을 위한 정의/제약을 구성한다.
 export class ActionDefinition<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> implements GeneralActionDefinition<
-        TriggerState,
-        RaidArgs,
-        RaidResolveContext<TriggerState>
-    > {
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
+> implements GeneralActionDefinition<TriggerState, RaidArgs, RaidResolveContext<TriggerState>> {
     public readonly key = 'che_급습';
     public readonly name = ACTION_NAME;
     private readonly resolver: ActionResolver<TriggerState>;
@@ -225,19 +188,12 @@ export class ActionDefinition<
             occupiedCity(),
             beChief(),
             existsDestNation(),
-            allowDiplomacyWithTerm(
-                1,
-                12,
-                '선포 12개월 이상인 상대국에만 가능합니다.'
-            ),
+            allowDiplomacyWithTerm(1, 12, '선포 12개월 이상인 상대국에만 가능합니다.'),
             availableStrategicCommand(),
         ];
     }
 
-    resolve(
-        context: RaidResolveContext<TriggerState>,
-        args: RaidArgs
-    ): GeneralActionOutcome<TriggerState> {
+    resolve(context: RaidResolveContext<TriggerState>, args: RaidArgs): GeneralActionOutcome<TriggerState> {
         return this.resolver.resolve(context, args);
     }
 }
@@ -263,12 +219,8 @@ export const actionContextBuilder: ActionContextBuilder = (base, options) => {
         worldRef.getDiplomacyEntry(destNationId, base.general.nationId) ??
         buildDefaultDiplomacy(destNationId, base.general.nationId);
     const generals = worldRef.listGenerals();
-    const friendlyGenerals = generals.filter(
-        (general) => general.nationId === base.general.nationId
-    );
-    const destNationGenerals = generals.filter(
-        (general) => general.nationId === destNationId
-    );
+    const friendlyGenerals = generals.filter((general) => general.nationId === base.general.nationId);
+    const destNationGenerals = generals.filter((general) => general.nationId === destNationId);
     return {
         ...base,
         destNation,
@@ -284,6 +236,5 @@ export const commandSpec: NationTurnCommandSpec = {
     category: '외교',
     reqArg: true,
     args: { destNationId: 0 },
-    createDefinition: (env: TurnCommandEnv) =>
-        new ActionDefinition(env.generalActionModules ?? []),
+    createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env.generalActionModules ?? []),
 };

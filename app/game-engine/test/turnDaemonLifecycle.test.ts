@@ -10,22 +10,15 @@ import {
     type TurnStateStore,
 } from '../src/index.js';
 
-const addMinutes = (time: Date, minutes: number): Date =>
-    new Date(time.getTime() + minutes * 60_000);
+const addMinutes = (time: Date, minutes: number): Date => new Date(time.getTime() + minutes * 60_000);
 
 describe('TurnDaemonLifecycle', () => {
     it('runs scheduled turn based on queue front and checkpoint context', async () => {
         const turnTermMinutes = 10;
         const lastTurnTime = new Date(2026, 0, 2, 2, 0, 0, 0);
-        const generalTurnQueue = [
-            addMinutes(lastTurnTime, 5),
-            addMinutes(lastTurnTime, 20),
-        ];
+        const generalTurnQueue = [addMinutes(lastTurnTime, 5), addMinutes(lastTurnTime, 20)];
         const nextTickTime = getNextTickTime(lastTurnTime, turnTermMinutes);
-        const expectedRunTimeMs = Math.min(
-            nextTickTime.getTime(),
-            generalTurnQueue[0]!.getTime()
-        );
+        const expectedRunTimeMs = Math.min(nextTickTime.getTime(), generalTurnQueue[0]!.getTime());
         const checkpoint = {
             turnTime: lastTurnTime.toISOString(),
             generalId: 101,
@@ -76,7 +69,7 @@ describe('TurnDaemonLifecycle', () => {
             {
                 profile: 'test',
                 defaultBudget: budget,
-            },
+            }
         );
 
         const loop = lifecycle.start();
@@ -101,15 +94,9 @@ describe('TurnDaemonLifecycle', () => {
     it('runs scheduled turn when tick boundary arrives before queue front', async () => {
         const turnTermMinutes = 10;
         const lastTurnTime = new Date(2026, 0, 2, 2, 0, 0, 0);
-        const generalTurnQueue = [
-            addMinutes(lastTurnTime, 15),
-            addMinutes(lastTurnTime, 30),
-        ];
+        const generalTurnQueue = [addMinutes(lastTurnTime, 15), addMinutes(lastTurnTime, 30)];
         const nextTickTime = getNextTickTime(lastTurnTime, turnTermMinutes);
-        const expectedRunTimeMs = Math.min(
-            nextTickTime.getTime(),
-            generalTurnQueue[0]!.getTime()
-        );
+        const expectedRunTimeMs = Math.min(nextTickTime.getTime(), generalTurnQueue[0]!.getTime());
         const checkpoint = {
             turnTime: lastTurnTime.toISOString(),
             generalId: 102,
@@ -160,7 +147,7 @@ describe('TurnDaemonLifecycle', () => {
             {
                 profile: 'test',
                 defaultBudget: budget,
-            },
+            }
         );
 
         const loop = lifecycle.start();

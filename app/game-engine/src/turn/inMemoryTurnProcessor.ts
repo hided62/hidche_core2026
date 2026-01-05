@@ -1,9 +1,4 @@
-import type {
-    TurnCheckpoint,
-    TurnProcessor,
-    TurnRunBudget,
-    TurnRunResult,
-} from '../lifecycle/types.js';
+import type { TurnCheckpoint, TurnProcessor, TurnRunBudget, TurnRunResult } from '../lifecycle/types.js';
 import { getNextTickTime } from '../lifecycle/getNextTickTime.js';
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
 import type { TurnGeneral } from './types.js';
@@ -13,10 +8,7 @@ export interface InMemoryTurnProcessorOptions {
     beforeExecuteGeneral?: (general: TurnGeneral) => Promise<void>;
 }
 
-const resolveTickMinutes = (
-    world: InMemoryTurnWorld,
-    override?: number
-): number => {
+const resolveTickMinutes = (world: InMemoryTurnWorld, override?: number): number => {
     if (override !== undefined) {
         return Math.max(1, override);
     }
@@ -28,9 +20,7 @@ export class InMemoryTurnProcessor implements TurnProcessor {
     // 인메모리 월드로 턴을 실행하고 월/연 갱신까지 처리한다.
     private readonly world: InMemoryTurnWorld;
     private readonly tickMinutes: number;
-    private readonly beforeExecuteGeneral?: (
-        general: TurnGeneral
-    ) => Promise<void>;
+    private readonly beforeExecuteGeneral?: (general: TurnGeneral) => Promise<void>;
 
     constructor(world: InMemoryTurnWorld, options: InMemoryTurnProcessorOptions = {}) {
         this.world = world;
@@ -38,11 +28,7 @@ export class InMemoryTurnProcessor implements TurnProcessor {
         this.beforeExecuteGeneral = options.beforeExecuteGeneral;
     }
 
-    async run(
-        targetTime: Date,
-        budget: TurnRunBudget,
-        checkpoint?: TurnCheckpoint
-    ): Promise<TurnRunResult> {
+    async run(targetTime: Date, budget: TurnRunBudget, checkpoint?: TurnCheckpoint): Promise<TurnRunResult> {
         const startMs = Date.now();
         const deadlineMs = startMs + Math.max(0, budget.budgetMs);
         const isBudgetExpired = () => Date.now() >= deadlineMs;
@@ -77,10 +63,7 @@ export class InMemoryTurnProcessor implements TurnProcessor {
         }
 
         if (!partial) {
-            let nextTickTime = getNextTickTime(
-                this.world.getState().lastTurnTime,
-                this.tickMinutes
-            );
+            let nextTickTime = getNextTickTime(this.world.getState().lastTurnTime, this.tickMinutes);
             while (nextTickTime.getTime() <= targetTime.getTime()) {
                 if (processedTurns >= budget.catchUpCap || isBudgetExpired()) {
                     partial = true;
@@ -88,10 +71,7 @@ export class InMemoryTurnProcessor implements TurnProcessor {
                 }
                 this.world.advanceMonth(nextTickTime);
                 processedTurns += 1;
-                nextTickTime = getNextTickTime(
-                    this.world.getState().lastTurnTime,
-                    this.tickMinutes
-                );
+                nextTickTime = getNextTickTime(this.world.getState().lastTurnTime, this.tickMinutes);
             }
         }
 

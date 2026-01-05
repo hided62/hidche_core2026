@@ -1,23 +1,21 @@
 {
-    "title":"【가상모드12】 삼국지11 영웅 난무",
-    "life":1,
-    "fiction":1,
-    "nation":[
-    ],
-    "diplomacy":[
-    ],
-    "stat":{
-        "total":220,
-        "min":40,
-        "max":95,
-        "npcTotal":170,
-        "npcMax":95,
-        "npcMin":10
+    "title": "【가상모드12】 삼국지11 영웅 난무",
+    "life": 1,
+    "fiction": 1,
+    "nation": [],
+    "diplomacy": [],
+    "stat": {
+        "total": 220,
+        "min": 40,
+        "max": 95,
+        "npcTotal": 170,
+        "npcMax": 95,
+        "npcMin": 10
     },
-    "const":{
-        "defaultMaxGeneral":800
+    "const": {
+        "defaultMaxGeneral": 800
     },
-    "general":[
+    "general": [
         [0, "가규", -1, 0, null, 78, 61, 84, 0, 160, 250, null, null],
         [0, "가범", -1, 0, null, 60, 62, 73, 0, 160, 250, null, null],
         [0, "가충", -1, 0, null, 54, 31, 89, 0, 160, 250, null, null],
@@ -697,29 +695,21 @@
         [0, "왕원희", -1, 0, null, 93, 51, 90, 0, 160, 250, null, null],
         [0, "김세정", -1, 0, null, 97, 93, 93, 0, 160, 250, null, null]
     ],
-    "general_ex":[
-    ],
-    "cities":[
-
-    ],
-    "history":[
+    "general_ex": [],
+    "cities": [],
+    "history": [
         "<C>●</>180년 1월:<L><b>【이벤트】</b></>제작자: 세정.",
         "<C>●</>180년 1월:<L><b>【가상모드11】 삼국지11 영웅 난무</>",
         "<C>●</>180년 1월:<L><b>【이벤트】</b></>당대의 대표 세력들이 등장합니다."
     ],
-    "initialEvents":[
-
-    ],
-    "events":[
+    "initialEvents": [],
+    "events": [
         [
-            "destroy_nation", 1000,
-            ["and",
-                ["Date", ">=", 183, 1],
-                ["RemainNation", "==", 1]
-            ],
+            "destroy_nation",
+            1000,
+            ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]],
             ["BlockScoutAction"],
             ["DeleteEvent"]
         ]
-
     ]
 }

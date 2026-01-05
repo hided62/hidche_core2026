@@ -6,15 +6,7 @@ import { parseUnitSetDefinition, type UnitSetDefinition } from '@sammo-ts/logic'
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DEFAULT_UNIT_SET_ROOT = path.resolve(
-    __dirname,
-    '..',
-    '..',
-    '..',
-    'game-engine',
-    'resources',
-    'unitset'
-);
+const DEFAULT_UNIT_SET_ROOT = path.resolve(__dirname, '..', '..', '..', 'game-engine', 'resources', 'unitset');
 
 export interface UnitSetLoaderOptions {
     unitSetRoot?: string;
@@ -26,20 +18,14 @@ const readJsonFile = async (filePath: string): Promise<unknown> => {
     return JSON.parse(raw) as unknown;
 };
 
-const resolveUnitSetRoot = (options?: UnitSetLoaderOptions): string =>
-    options?.unitSetRoot ?? DEFAULT_UNIT_SET_ROOT;
+const resolveUnitSetRoot = (options?: UnitSetLoaderOptions): string => options?.unitSetRoot ?? DEFAULT_UNIT_SET_ROOT;
 
-export const resolveUnitSetDefinitionPath = (
-    unitSetName: string,
-    options?: UnitSetLoaderOptions
-): string => {
+export const resolveUnitSetDefinitionPath = (unitSetName: string, options?: UnitSetLoaderOptions): string => {
     const prefix = options?.filePrefix ?? 'unitset_';
     return path.resolve(resolveUnitSetRoot(options), `${prefix}${unitSetName}.json`);
 };
 
-export const loadUnitSetDefinition = async (
-    unitSetPath: string
-): Promise<UnitSetDefinition> => {
+export const loadUnitSetDefinition = async (unitSetPath: string): Promise<UnitSetDefinition> => {
     const raw = await readJsonFile(unitSetPath);
     return parseUnitSetDefinition(raw);
 };

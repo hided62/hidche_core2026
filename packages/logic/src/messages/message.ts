@@ -45,8 +45,7 @@ export interface MessageStore {
     insertMessage(draft: MessageRecordDraft): Promise<number>;
 }
 
-export const isValidMailbox = (mailbox: number): boolean =>
-    mailbox > 0 && mailbox <= MESSAGE_MAILBOX_PUBLIC;
+export const isValidMailbox = (mailbox: number): boolean => mailbox > 0 && mailbox <= MESSAGE_MAILBOX_PUBLIC;
 
 export const resolveReceiverMailbox = (draft: MessageDraft): number => {
     switch (draft.msgType) {
@@ -65,9 +64,7 @@ export const resolveSenderMailbox = (draft: MessageDraft): number | null => {
         case 'public':
             return null;
         case 'private':
-            return draft.src.generalId !== draft.dest.generalId
-                ? draft.src.generalId
-                : null;
+            return draft.src.generalId !== draft.dest.generalId ? draft.src.generalId : null;
         case 'national':
             return draft.src.nationId !== draft.dest.nationId
                 ? MESSAGE_MAILBOX_NATIONAL_BASE + draft.src.nationId
@@ -77,10 +74,7 @@ export const resolveSenderMailbox = (draft: MessageDraft): number | null => {
     }
 };
 
-const buildPayload = (
-    draft: MessageDraft,
-    optionOverride?: MessageOption | null
-): MessagePayload => ({
+const buildPayload = (draft: MessageDraft, optionOverride?: MessageOption | null): MessagePayload => ({
     src: draft.src,
     dest: draft.dest,
     text: draft.text,
@@ -114,10 +108,7 @@ const buildRecord = (
     };
 };
 
-const buildSenderOption = (
-    draft: MessageDraft,
-    receiverId: number
-): MessageOption => {
+const buildSenderOption = (draft: MessageDraft, receiverId: number): MessageOption => {
     const option = {
         ...(draft.option ?? {}),
         receiverMessageID: receiverId,
@@ -157,11 +148,7 @@ export const sendMessage = async (
         return { receiverId };
     }
 
-    const senderRecord = buildRecord(
-        draft,
-        senderMailbox,
-        buildSenderOption(draft, receiverId)
-    );
+    const senderRecord = buildRecord(draft, senderMailbox, buildSenderOption(draft, receiverId));
     const senderId = await store.insertMessage(senderRecord);
 
     return senderId ? { receiverId, senderId } : { receiverId };

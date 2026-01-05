@@ -9,9 +9,7 @@ import { resolveWorkspaceRoot } from './workspaceRoot.js';
 import { GitWorkspaceManager } from './workspaceManager.js';
 
 export const buildEnvMap = (env: NodeJS.ProcessEnv): Record<string, string> => {
-    const entries = Object.entries(env).filter(
-        (entry): entry is [string, string] => typeof entry[1] === 'string'
-    );
+    const entries = Object.entries(env).filter((entry): entry is [string, string] => typeof entry[1] === 'string');
     return Object.fromEntries(entries);
 };
 

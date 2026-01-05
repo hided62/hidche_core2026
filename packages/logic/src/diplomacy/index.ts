@@ -31,15 +31,10 @@ export interface DiplomacyPatch {
     meta?: Record<string, unknown>;
 }
 
-export const buildDiplomacyKey = (
-    srcNationId: number,
-    destNationId: number
-): string => `${srcNationId}:${destNationId}`;
+export const buildDiplomacyKey = (srcNationId: number, destNationId: number): string =>
+    `${srcNationId}:${destNationId}`;
 
-export const buildDefaultDiplomacy = (
-    srcNationId: number,
-    destNationId: number
-): DiplomacyEntry => ({
+export const buildDefaultDiplomacy = (srcNationId: number, destNationId: number): DiplomacyEntry => ({
     fromNationId: srcNationId,
     toNationId: destNationId,
     state: DIPLOMACY_STATE.TRADE,
@@ -48,16 +43,13 @@ export const buildDefaultDiplomacy = (
     meta: {},
 });
 
-export const applyDiplomacyPatch = (
-    entry: DiplomacyEntry,
-    patch: DiplomacyPatch
-): DiplomacyEntry => {
+export const applyDiplomacyPatch = (entry: DiplomacyEntry, patch: DiplomacyPatch): DiplomacyEntry => {
     const nextDead =
         typeof patch.dead === 'number'
             ? patch.dead
             : typeof patch.deadDelta === 'number'
-            ? entry.dead + patch.deadDelta
-            : entry.dead;
+              ? entry.dead + patch.deadDelta
+              : entry.dead;
     return {
         ...entry,
         state: patch.state ?? entry.state,
@@ -67,9 +59,7 @@ export const applyDiplomacyPatch = (
     };
 };
 
-export const readDiplomacyMeta = (
-    meta: Record<string, unknown>
-): { meta: Record<string, unknown>; dead: number } => {
+export const readDiplomacyMeta = (meta: Record<string, unknown>): { meta: Record<string, unknown>; dead: number } => {
     const rawDead = meta.dead;
     const dead = typeof rawDead === 'number' ? rawDead : 0;
     const cleaned = { ...meta };
@@ -77,13 +67,10 @@ export const readDiplomacyMeta = (
     return { meta: cleaned, dead };
 };
 
-export const buildDiplomacyMeta = (
-    entry: DiplomacyEntry
-): Record<string, unknown> => ({
+export const buildDiplomacyMeta = (entry: DiplomacyEntry): Record<string, unknown> => ({
     ...entry.meta,
     dead: entry.dead,
 });
-
 
 export const processDiplomacyMonth = (
     diplomacy: DiplomacyEntry[],
@@ -94,10 +81,7 @@ export const processDiplomacyMonth = (
         meta: { ...entry.meta },
     }));
     const byKey = new Map<string, DiplomacyEntry>(
-        next.map((entry) => [
-            buildDiplomacyKey(entry.fromNationId, entry.toNationId),
-            entry,
-        ])
+        next.map((entry) => [buildDiplomacyKey(entry.fromNationId, entry.toNationId), entry])
     );
 
     // 전쟁 기간 갱신: 사상자에 따라 term 증가, 잔여 사상자 유지.
@@ -127,14 +111,8 @@ export const processDiplomacyMonth = (
         if (processedPairs.has(pairKey)) {
             continue;
         }
-        const opposite = byKey.get(
-            buildDiplomacyKey(entry.toNationId, entry.fromNationId)
-        );
-        if (
-            opposite &&
-            opposite.state === DIPLOMACY_STATE.WAR &&
-            opposite.term <= 1
-        ) {
+        const opposite = byKey.get(buildDiplomacyKey(entry.toNationId, entry.fromNationId));
+        if (opposite && opposite.state === DIPLOMACY_STATE.WAR && opposite.term <= 1) {
             entry.state = DIPLOMACY_STATE.TRADE;
             entry.term = 0;
             opposite.state = DIPLOMACY_STATE.TRADE;
@@ -153,15 +131,9 @@ export const processDiplomacyMonth = (
 
     // 불가침/선전포고 만료 처리.
     for (const entry of next) {
-        if (
-            entry.state === DIPLOMACY_STATE.NON_AGGRESSION &&
-            entry.term === 0
-        ) {
+        if (entry.state === DIPLOMACY_STATE.NON_AGGRESSION && entry.term === 0) {
             entry.state = DIPLOMACY_STATE.TRADE;
-        } else if (
-            entry.state === DIPLOMACY_STATE.DECLARATION &&
-            entry.term === 0
-        ) {
+        } else if (entry.state === DIPLOMACY_STATE.DECLARATION && entry.term === 0) {
             entry.state = DIPLOMACY_STATE.WAR;
             entry.term = DEFAULT_WAR_TERM;
         }

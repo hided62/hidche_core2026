@@ -8,10 +8,10 @@ references include `legacy/hwe/sammo/TurnExecutionHelper.php`,
 ## Entry Points
 
 - `TurnExecutionHelper::runEventHandler(EventTarget $eventTarget)`
-  - Loads `event` table rows by target and priority, evaluates conditions, and
-    runs actions.
+    - Loads `event` table rows by target and priority, evaluates conditions, and
+      runs actions.
 - `StaticEventHandler::handleEvent(...)`
-  - Invoked by many commands and API handlers to run per-action static hooks.
+    - Invoked by many commands and API handlers to run per-action static hooks.
 
 ## Event Table Schema
 
@@ -46,18 +46,18 @@ city occupation (`EventTarget::OCCUPY_CITY`, called by some commands).
 class instances:
 
 - **Condition**
-  - Supports logic combinators (`and`, `or`, `xor`, `not`) via
-    `Event\Condition\Logic`.
-  - Built-in condition types include:
-    - `Date`, `DateRelative`, `Interval`
-    - `RemainNation`
-    - `ConstBool`
-  - Conditions return `{ value, chain }` for tracing.
+    - Supports logic combinators (`and`, `or`, `xor`, `not`) via
+      `Event\Condition\Logic`.
+    - Built-in condition types include:
+        - `Date`, `DateRelative`, `Interval`
+        - `RemainNation`
+        - `ConstBool`
+    - Conditions return `{ value, chain }` for tracing.
 
 - **Action**
-  - Actions are classes under `Event/Action/` with `run(array $env)`.
-  - The dispatcher instantiates them from `action` arrays like
-    `['ProcessIncome', 'gold']`.
+    - Actions are classes under `Event/Action/` with `run(array $env)`.
+    - The dispatcher instantiates them from `action` arrays like
+      `['ProcessIncome', 'gold']`.
 
 ## Common Event Actions (Examples)
 
@@ -90,8 +90,8 @@ Static events are hooks triggered directly by commands/APIs:
 `legacy/hwe/sammo/GameConstBase.php`. Scenario JSON can override it:
 
 - `legacy/hwe/scenario/scenario_911.json` (only observed override in repo)
-  - `sammo\\API\\Troop\\JoinTroop` → `event_부대탑승즉시이동`
-  - `sammo\\Command\\Nation\\che_발령` → `event_부대발령즉시집합`
+    - `sammo\\API\\Troop\\JoinTroop` → `event_부대탑승즉시이동`
+    - `sammo\\Command\\Nation\\che_발령` → `event_부대발령즉시집합`
 
 Static handler names should map to classes in `legacy/hwe/sammo/StaticEvent/`
 (class name matches handler key).

@@ -35,7 +35,7 @@ Move items into the main docs once they are finalized.
 - Deterministic RNG test harness guidelines
 - Output comparison rules (sorting, tolerances, diff granularity)
 - Unit test vs simulation test split and responsibilities
-- [AI suggestion] Document che_출병 parity gaps vs legacy (city state/term=43, fallback to che_이동 when friendly, nation.war/AllowWar check, post-war static events/unique-item lottery, missing route data when map/diplomacy not provided).
+- [AI suggestion] Document che*출병 parity gaps vs legacy (city state/term=43, fallback to che*이동 when friendly, nation.war/AllowWar check, post-war static events/unique-item lottery, missing route data when map/diplomacy not provided).
 - [AI suggestion] Verify that "이호경식" followed by "출병" is correctly blocked with the new reserved-turn overlay (diplomacy state sync).
 
 ## Trigger System

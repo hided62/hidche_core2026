@@ -17,11 +17,7 @@ const expectBytes = (actual: Uint8Array, expected: Uint8Array): void => {
     expect(Array.from(actual)).toEqual(Array.from(expected));
 };
 
-function fillBlock(
-    body: MaybeBytes,
-    filler: MaybeBytes = '\0',
-    length = bufferByteSize
-): Uint8Array<ArrayBuffer> {
+function fillBlock(body: MaybeBytes, filler: MaybeBytes = '\0', length = bufferByteSize): Uint8Array<ArrayBuffer> {
     const u8Body = toBytes(body);
     const u8Filler = toBytes(filler, false);
 
@@ -80,26 +76,23 @@ class DummyBlockRNG extends LiteHashDRBG {
 const fixedKey = 'HelloWorld';
 
 describe('RNGtestDummy', () => {
-    const rng = new DummyBlockRNG([
-        fillBlock('', "\x00\x11\x22\x33\x44\x55\x66\x77\x88\x99\xaa\xbb\xcc\xdd\xee\xff")
-    ]);
+    const rng = new DummyBlockRNG([fillBlock('', '\x00\x11\x22\x33\x44\x55\x66\x77\x88\x99\xaa\xbb\xcc\xdd\xee\xff')]);
 
     it('BasicConvert', () => {
-        expect(toBytes("\x00\x11\x22\x33\x44\x55\x66\x77\x88\x99\xaa\xbb\xcc\xdd\xee\xff", false).length)
-            .toBe(16);
+        expect(toBytes('\x00\x11\x22\x33\x44\x55\x66\x77\x88\x99\xaa\xbb\xcc\xdd\xee\xff', false).length).toBe(16);
     });
 
     it('SimpleByte', () => {
-        expectBytes(toBytes("\x00", false), rng.nextBytes(1));
-        expectBytes(toBytes("\x11\x22", false), rng.nextBytes(2));
-        expectBytes(toBytes("\x33\x44\x55", false), rng.nextBytes(3));
-        expectBytes(toBytes("\x66\x77\x88\x99", false), rng.nextBytes(4));
+        expectBytes(toBytes('\x00', false), rng.nextBytes(1));
+        expectBytes(toBytes('\x11\x22', false), rng.nextBytes(2));
+        expectBytes(toBytes('\x33\x44\x55', false), rng.nextBytes(3));
+        expectBytes(toBytes('\x66\x77\x88\x99', false), rng.nextBytes(4));
     });
 
     it('OverflowBlock', () => {
         for (let idx = 0; idx < 16; idx += 1) {
             expectBytes(
-                toBytes("\xaa\xbb\xcc\xdd\xee\xff\x00\x11\x22\x33\x44\x55\x66\x77\x88\x99", false),
+                toBytes('\xaa\xbb\xcc\xdd\xee\xff\x00\x11\x22\x33\x44\x55\x66\x77\x88\x99', false),
                 rng.nextBytes(16)
             );
         }
@@ -107,18 +100,18 @@ describe('RNGtestDummy', () => {
 
     it('MultiBlock', () => {
         expectBytes(
-            fillBlock('', "\xaa\xbb\xcc\xdd\xee\xff\x00\x11\x22\x33\x44\x55\x66\x77\x88\x99", bufferByteSize * 2),
+            fillBlock('', '\xaa\xbb\xcc\xdd\xee\xff\x00\x11\x22\x33\x44\x55\x66\x77\x88\x99', bufferByteSize * 2),
             rng.nextBytes(bufferByteSize * 2)
         );
     });
 
     it('bitTest', () => {
-        expectBytes(toBytes("\x00", false), rng.nextBits(1)); //aa
-        expectBytes(toBytes("\x01", false), rng.nextBits(1)); //bb
-        expectBytes(toBytes("\xcc", false), rng.nextBits(8)); //cc
-        expectBytes(toBytes("\xdd\x02", false), rng.nextBits(10)); //ddee
-        expectBytes(toBytes("\x7f", false), rng.nextBits(7)); //ff
-        expectBytes(toBytes("\x00\x11\x22\x33\x44\x55\x06", false), rng.nextBits(53));
+        expectBytes(toBytes('\x00', false), rng.nextBits(1)); //aa
+        expectBytes(toBytes('\x01', false), rng.nextBits(1)); //bb
+        expectBytes(toBytes('\xcc', false), rng.nextBits(8)); //cc
+        expectBytes(toBytes('\xdd\x02', false), rng.nextBits(10)); //ddee
+        expectBytes(toBytes('\x7f', false), rng.nextBits(7)); //ff
+        expectBytes(toBytes('\x00\x11\x22\x33\x44\x55\x06', false), rng.nextBits(53));
     });
 
     it('int', () => {
@@ -157,9 +150,7 @@ describe('RandUtilDummy', () => {
          * 2, [7,0,1,2,3,4,6,5]
          * 1, [7,0,1,2,3,4,5,6]
          */
-        expect(randUtil.shuffle(range(8))).toEqual(
-            [7, 0, 1, 2, 3, 4, 5, 6]
-        );
+        expect(randUtil.shuffle(range(8))).toEqual([7, 0, 1, 2, 3, 4, 5, 6]);
 
         /**
          * 0, [0,1,2,3,4,5,6,7,8,9]
@@ -172,9 +163,7 @@ describe('RandUtilDummy', () => {
          * 1, [0,8,1,2,3,4,5,6,7,9]
          * 0, [0,8,1,2,3,4,5,6,7,9]
          */
-        expect(randUtil.shuffle(range(10))).toEqual(
-            [0, 8, 1, 2, 3, 4, 5, 6, 7, 9]
-        );
+        expect(randUtil.shuffle(range(10))).toEqual([0, 8, 1, 2, 3, 4, 5, 6, 7, 9]);
     });
 
     const rng = new DummyBlockRNG([fillBlock('', '\x17\x16\x15\x14\x13\x12\x11\x10')]);
@@ -187,37 +176,37 @@ describe('RandUtilDummy', () => {
         expect(randUtil.choice(new Set([5, 3, 1, 2, 8, 0]))).toBe(8);
 
         //0x14(4), 정렬 순서상 숫자(소-대) > 문자열(삽입순) > 심볼 순서
-        expect(randUtil.choice({ c: 'c', a: 'a', b: 'b', 4: 'x', 2: 't', '3': 'q' }))
-            .toBe('c');
-
+        expect(randUtil.choice({ c: 'c', a: 'a', b: 'b', 4: 'x', 2: 't', '3': 'q' })).toBe('c');
     });
 
     it('choiceUsingWeight', () => {
         //0.6275740099377194 * 38.1 = 23.91
-        expect(randUtil.choiceUsingWeight({
-            a: 0.1,
-            b: 10,
-            tt: 2,
-            x: -1,
-            c: 20,
-            d: 0,
-            e: 6
-        })).toBe('c');
+        expect(
+            randUtil.choiceUsingWeight({
+                a: 0.1,
+                b: 10,
+                tt: 2,
+                x: -1,
+                c: 20,
+                d: 0,
+                e: 6,
+            })
+        ).toBe('c');
 
         //0.658946544056166
-        expect(randUtil.choiceUsingWeightPair([
-            ['xx', 10],
-        ])).toBe('xx');
+        expect(randUtil.choiceUsingWeightPair([['xx', 10]])).toBe('xx');
 
         //0.6903152783785083 * 27.3 = 18.84560709973328
-        expect(randUtil.choiceUsingWeightPair([
-            ['e', 10],
-            ['d', 4],
-            ['c', 0.1],
-            ['baba', 0.2],
-            ['q', 9],
-            ['xt', 4]
-        ])).toBe('q');
+        expect(
+            randUtil.choiceUsingWeightPair([
+                ['e', 10],
+                ['d', 4],
+                ['c', 0.1],
+                ['baba', 0.2],
+                ['q', 9],
+                ['xt', 4],
+            ])
+        ).toBe('q');
     });
 });
 
@@ -263,12 +252,12 @@ describe('RNGAcceptable', () => {
         randUtil.choice([0, 0, 0]);
         randUtil.choiceUsingWeight({
             0: 0,
-            1: -1
+            1: -1,
         });
         randUtil.choiceUsingWeightPair([
             [0, 0],
             [1, 0],
-            [2, -2]
+            [2, -2],
         ]);
         randUtil.nextBool(1.1);
         randUtil.nextBool(-0.1);
@@ -306,16 +295,18 @@ for idx in range(5):
     print(hash(fixedKey, idx).hex())
 */
 describe('RNG', () => {
-
     //JS - PHP 일치 확인 정도로.
 
-    const testVector = Buffer.from([
-        '24d9ccd648556255fd0ee9f5b29918de90617341958b3b354d572167e4dee02b757816a2bbe0b502c52413ffd384381a9d7b4e193df6f4345d6a95e111d661c4',
-        '2e9264512f6f4b080cf1376b74fab6878ecf4a6e185942d2e5b22cf923885b9952d40601a414225d6901417fd4ce9368ac77e4a63d3fc9b58ab952bb8c33f165',
-        '8e2ebf5af6283a1b18f4c044c86c20d02be3890613c4cc8b7c6b7b35581263b972a82630df69a9289988422d7c3a9be5edf78d5de16fabd01e5dd4e458068d8a',
-        '398596047ba547bfe371ec863a3e019ab0dbc4bb3b27e9077685aae4283ff6bbccfd981d92f9358f7efffbb72a940414802d98466d132e2ad0a16a12946d5f47',
-        'b3606fe9b18c4aa7315e78bb9e47cb51cc4e203fcc2e631f0405c1b872c8e1cb5b6415ea74bbb77fffaaadb002b47cb4f4628dc0709634365b187667f5c708cb',
-    ].join(''), 'hex');
+    const testVector = Buffer.from(
+        [
+            '24d9ccd648556255fd0ee9f5b29918de90617341958b3b354d572167e4dee02b757816a2bbe0b502c52413ffd384381a9d7b4e193df6f4345d6a95e111d661c4',
+            '2e9264512f6f4b080cf1376b74fab6878ecf4a6e185942d2e5b22cf923885b9952d40601a414225d6901417fd4ce9368ac77e4a63d3fc9b58ab952bb8c33f165',
+            '8e2ebf5af6283a1b18f4c044c86c20d02be3890613c4cc8b7c6b7b35581263b972a82630df69a9289988422d7c3a9be5edf78d5de16fabd01e5dd4e458068d8a',
+            '398596047ba547bfe371ec863a3e019ab0dbc4bb3b27e9077685aae4283ff6bbccfd981d92f9358f7efffbb72a940414802d98466d132e2ad0a16a12946d5f47',
+            'b3606fe9b18c4aa7315e78bb9e47cb51cc4e203fcc2e631f0405c1b872c8e1cb5b6415ea74bbb77fffaaadb002b47cb4f4628dc0709634365b187667f5c708cb',
+        ].join(''),
+        'hex'
+    );
 
     it('bytes', () => {
         const rng = new LiteHashDRBG(fixedKey);
@@ -369,9 +360,8 @@ describe('RNG', () => {
             new Uint8Array(testVector.slice(bufferByteSize * 4, bufferByteSize * 5)),
         ]);
 
-        for (const idx of range(18)) {
+        for (const _ of range(18)) {
             expect(rng.nextFloat1()).toBe(rng2.nextFloat1());
         }
-
     });
 });

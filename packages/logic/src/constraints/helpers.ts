@@ -1,26 +1,12 @@
 import type { City, General, Nation, TriggerValue } from '@sammo-ts/logic/domain/entities.js';
-import type {
-    ConstraintContext,
-    ConstraintResult,
-    RequirementKey,
-    StateView,
-} from './types.js';
+import type { ConstraintContext, ConstraintResult, RequirementKey, StateView } from './types.js';
 
 export const allow = (): ConstraintResult => ({ kind: 'allow' });
 
-export const unknownOrDeny = (
-    ctx: ConstraintContext,
-    missing: RequirementKey[],
-    reason: string
-): ConstraintResult =>
-    ctx.mode === 'precheck'
-        ? { kind: 'unknown', missing }
-        : { kind: 'deny', reason };
+export const unknownOrDeny = (ctx: ConstraintContext, missing: RequirementKey[], reason: string): ConstraintResult =>
+    ctx.mode === 'precheck' ? { kind: 'unknown', missing } : { kind: 'deny', reason };
 
-export const readGeneral = (
-    ctx: ConstraintContext,
-    view: StateView
-): General | null => {
+export const readGeneral = (ctx: ConstraintContext, view: StateView): General | null => {
     const req: RequirementKey = { kind: 'general', id: ctx.actorId };
     if (!view.has(req)) {
         return null;
@@ -47,10 +33,7 @@ export const resolveDestGeneralId = (ctx: ConstraintContext): number | undefined
     return typeof raw === 'number' ? raw : undefined;
 };
 
-export const readDestGeneral = (
-    ctx: ConstraintContext,
-    view: StateView
-): General | null => {
+export const readDestGeneral = (ctx: ConstraintContext, view: StateView): General | null => {
     const destGeneralId = resolveDestGeneralId(ctx);
     if (destGeneralId === undefined) {
         return null;
@@ -78,18 +61,12 @@ export const resolveDestNationId = (ctx: ConstraintContext): number | undefined 
     return typeof raw === 'number' ? raw : undefined;
 };
 
-export const readDestCity = (
-    ctx: ConstraintContext,
-    view: StateView
-): City | null => {
+export const readDestCity = (ctx: ConstraintContext, view: StateView): City | null => {
     const destCityId = resolveDestCityId(ctx);
     return readCity(view, destCityId);
 };
 
-export const readNation = (
-    view: StateView,
-    id?: number
-): Nation | null => {
+export const readNation = (view: StateView, id?: number): Nation | null => {
     if (id === undefined) {
         return null;
     }
@@ -100,19 +77,12 @@ export const readNation = (
     return view.get(req) as Nation | null;
 };
 
-export const readMetaNumber = (
-    meta: Record<string, TriggerValue>,
-    key: string
-): number | null => {
+export const readMetaNumber = (meta: Record<string, TriggerValue>, key: string): number | null => {
     const value = meta[key];
     return typeof value === 'number' ? value : null;
 };
 
-export const readDiplomacyState = (
-    view: StateView,
-    srcNationId: number,
-    destNationId: number
-): number | null => {
+export const readDiplomacyState = (view: StateView, srcNationId: number, destNationId: number): number | null => {
     const req: RequirementKey = {
         kind: 'diplomacy',
         srcNationId,
@@ -138,10 +108,7 @@ export const readDiplomacyState = (
     return null;
 };
 
-export const readMetaNumberFromUnknown = (
-    meta: Record<string, unknown>,
-    key: string
-): number | null => {
+export const readMetaNumberFromUnknown = (meta: Record<string, unknown>, key: string): number | null => {
     const value = meta[key];
     return typeof value === 'number' ? value : null;
 };

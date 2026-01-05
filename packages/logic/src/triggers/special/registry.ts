@@ -15,11 +15,7 @@ import type {
 import type { WarActionContext, WarActionModule } from '@sammo-ts/logic/war/actions.js';
 import type { WarUnit } from '@sammo-ts/logic/war/units.js';
 import type { WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
-import type {
-    TraitKind,
-    TraitModule,
-    TraitModuleRegistry,
-} from './types.js';
+import type { TraitKind, TraitModule, TraitModuleRegistry } from './types.js';
 
 const resolveTraitKey = (
     context: {
@@ -63,23 +59,19 @@ const resolveModule = <TriggerState extends GeneralTriggerState>(
 
 // General 파이프라인에서 특성(특기/성격) 모듈을 선택해 위임하는 라우터.
 export class TraitGeneralActionRouter<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionModule<TriggerState> {
     constructor(
         private readonly kind: TraitKind,
         private readonly registry: TraitModuleRegistry<TriggerState>
     ) {}
 
-    private getModule(
-        context: GeneralActionContext<TriggerState>
-    ): TraitModule<TriggerState> | null {
+    private getModule(context: GeneralActionContext<TriggerState>): TraitModule<TriggerState> | null {
         const key = resolveTraitKey(context, this.kind);
         return resolveModule(this.registry, this.kind, key);
     }
 
-    getPreTurnExecuteTriggerList(
-        context: GeneralActionContext<TriggerState>
-    ) {
+    getPreTurnExecuteTriggerList(context: GeneralActionContext<TriggerState>) {
         const module = this.getModule(context);
         return module?.getPreTurnExecuteTriggerList?.(context) ?? null;
     }
@@ -112,9 +104,7 @@ export class TraitGeneralActionRouter<
         aux?: unknown
     ): number {
         const module = this.getModule(context);
-        return (
-            module?.onCalcOpposeStat?.(context, statName, value, aux) ?? value
-        );
+        return module?.onCalcOpposeStat?.(context, statName, value, aux) ?? value;
     }
 
     onCalcStrategic(
@@ -143,42 +133,31 @@ export class TraitGeneralActionRouter<
         aux?: Record<string, unknown> | null
     ): Record<string, unknown> | null {
         const module = this.getModule(context);
-        const result = module?.onArbitraryAction?.(
-            context,
-            actionType,
-            phase,
-            aux
-        );
-        return result === undefined ? aux ?? null : result;
+        const result = module?.onArbitraryAction?.(context, actionType, phase, aux);
+        return result === undefined ? (aux ?? null) : result;
     }
 }
 
 // 전투 파이프라인에서 특성(특기/성격) 모듈을 선택해 위임하는 라우터.
 export class TraitWarActionRouter<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements WarActionModule<TriggerState> {
     constructor(
         private readonly kind: TraitKind,
         private readonly registry: TraitModuleRegistry<TriggerState>
     ) {}
 
-    private getModule(
-        context: WarActionContext<TriggerState>
-    ): TraitModule<TriggerState> | null {
+    private getModule(context: WarActionContext<TriggerState>): TraitModule<TriggerState> | null {
         const key = resolveTraitKey(context, this.kind);
         return resolveModule(this.registry, this.kind, key);
     }
 
-    getBattleInitTriggerList(
-        context: WarActionContext<TriggerState>
-    ): WarTriggerCaller | null {
+    getBattleInitTriggerList(context: WarActionContext<TriggerState>): WarTriggerCaller | null {
         const module = this.getModule(context);
         return module?.getBattleInitTriggerList?.(context) ?? null;
     }
 
-    getBattlePhaseTriggerList(
-        context: WarActionContext<TriggerState>
-    ): WarTriggerCaller | null {
+    getBattlePhaseTriggerList(context: WarActionContext<TriggerState>): WarTriggerCaller | null {
         const module = this.getModule(context);
         return module?.getBattlePhaseTriggerList?.(context) ?? null;
     }
@@ -213,16 +192,12 @@ export class TraitWarActionRouter<
     }
 }
 
-export interface TraitModuleSet<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+export interface TraitModuleSet<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     general: GeneralActionModule<TriggerState>[];
     war: WarActionModule<TriggerState>[];
 }
 
-export const createTraitModuleRegistry = <
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
->(options: {
+export const createTraitModuleRegistry = <TriggerState extends GeneralTriggerState = GeneralTriggerState>(options: {
     domestic?: TraitModule<TriggerState>[];
     war?: TraitModule<TriggerState>[];
     personality?: TraitModule<TriggerState>[];
@@ -245,9 +220,7 @@ export const createTraitModuleRegistry = <
 };
 
 // 특성 레지스트리를 General/전투 파이프라인용 모듈 목록으로 변환한다.
-export const createTraitModules = <
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
->(
+export const createTraitModules = <TriggerState extends GeneralTriggerState = GeneralTriggerState>(
     registry: TraitModuleRegistry<TriggerState>
 ): TraitModuleSet<TriggerState> => ({
     general: [

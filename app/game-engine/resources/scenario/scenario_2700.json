@@ -12,9 +12,9 @@
     },
     "iconPath": ".",
     "fiction": 1,
-    "nation":[],
-    "diplomacy":[],
-    "general":[
+    "nation": [],
+    "diplomacy": [],
+    "general": [
         [0, "아회남", null, 0, null, 65, 74, 26, 0, 160, 300, null, null],
         [0, "이적", null, 0, null, 40, 24, 84, 0, 160, 300, null, null],
         [0, "윤상", null, 0, null, 51, 44, 62, 0, 160, 300, null, null],
@@ -432,7 +432,22 @@
         [0, "유도", null, 0, null, 25, 23, 26, 0, 160, 300, null, null],
         [0, "유파", null, 0, null, 29, 22, 75, 0, 160, 300, null, null],
         [0, "유반", null, 0, null, 69, 76, 47, 0, 160, 300, null, null],
-        [0, "유비", null, 0, null, 88, 78, 75, 0, 160, 300, null, null, "한왕실은 중산정왕의 후손인 내가 이어받겠다...!"],
+        [
+            0,
+            "유비",
+            null,
+            0,
+            null,
+            88,
+            78,
+            75,
+            0,
+            160,
+            300,
+            null,
+            null,
+            "한왕실은 중산정왕의 후손인 내가 이어받겠다...!"
+        ],
         [0, "유표", null, 0, null, 48, 31, 72, 0, 160, 300, null, null],
         [0, "유복", null, 0, null, 64, 49, 74, 0, 160, 300, null, null],
         [0, "유벽", null, 0, null, 70, 72, 47, 0, 160, 300, null, null],
@@ -773,9 +788,7 @@
         [0, "수부타이", null, 0, null, 94, 71, 91, 0, 160, 300, null, null],
         [0, "제베", null, 0, null, 93, 97, 68, 0, 160, 300, null, null]
     ],
-    "general_ex":[
-
-    ],
+    "general_ex": [],
     "initialEvents": [
         [
             true,
@@ -792,12 +805,7 @@
         [
             "month",
             1000,
-            [
-                "Date",
-                "==",
-                180,
-                1
-            ],
+            ["Date", "==", 180, 1],
             [
                 "ChangeCity",
                 "all",
@@ -805,19 +813,12 @@
                     "trade": 100
                 }
             ],
-            [
-                "DeleteEvent"
-            ]
+            ["DeleteEvent"]
         ],
         [
             "month",
             1000,
-            [
-                "Date",
-                "==",
-                180,
-                7
-            ],
+            ["Date", "==", 180, 7],
             [
                 "ChangeCity",
                 "all",
@@ -825,19 +826,12 @@
                     "trade": 100
                 }
             ],
-            [
-                "DeleteEvent"
-            ]
+            ["DeleteEvent"]
         ],
         [
             "month",
             1000,
-            [
-                "Date",
-                "==",
-                181,
-                1
-            ],
+            ["Date", "==", 181, 1],
             [
                 "ChangeCity",
                 "all",
@@ -845,19 +839,12 @@
                     "trade": 100
                 }
             ],
-            [
-                "DeleteEvent"
-            ]
+            ["DeleteEvent"]
         ],
         [
             "month",
             1000,
-            [
-                "Date",
-                "==",
-                181,
-                7
-            ],
+            ["Date", "==", 181, 7],
             [
                 "ChangeCity",
                 "all",
@@ -865,19 +852,12 @@
                     "trade": 100
                 }
             ],
-            [
-                "DeleteEvent"
-            ]
+            ["DeleteEvent"]
         ],
         [
             "month",
             1000,
-            [
-                "Date",
-                "==",
-                182,
-                1
-            ],
+            ["Date", "==", 182, 1],
             [
                 "ChangeCity",
                 "all",
@@ -885,19 +865,12 @@
                     "trade": 100
                 }
             ],
-            [
-                "DeleteEvent"
-            ]
+            ["DeleteEvent"]
         ],
         [
             "month",
             1000,
-            [
-                "Date",
-                "==",
-                182,
-                7
-            ],
+            ["Date", "==", 182, 7],
             [
                 "ChangeCity",
                 "all",
@@ -905,33 +878,14 @@
                     "trade": 100
                 }
             ],
-            [
-                "DeleteEvent"
-            ]
+            ["DeleteEvent"]
         ],
         [
             "destroy_nation",
             1000,
-            [
-                "and",
-                [
-                    "Date",
-                    ">=",
-                    183,
-                    1
-                ],
-                [
-                    "RemainNation",
-                    "==",
-                    1
-                ]
-            ],
-            [
-                "BlockScoutAction"
-            ],
-            [
-                "DeleteEvent"
-            ]
+            ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]],
+            ["BlockScoutAction"],
+            ["DeleteEvent"]
         ]
     ]
 }

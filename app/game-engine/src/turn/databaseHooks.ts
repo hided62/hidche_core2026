@@ -26,13 +26,9 @@ export interface DatabaseTurnHooks {
 
 const asJson = (value: unknown): InputJsonValue => value as InputJsonValue;
 
-const toCode = (value: string | null | undefined): string =>
-    value && value !== 'None' ? value : 'None';
+const toCode = (value: string | null | undefined): string => (value && value !== 'None' ? value : 'None');
 
-const readMetaNumber = (
-    meta: Record<string, unknown>,
-    key: string
-): number | null => {
+const readMetaNumber = (meta: Record<string, unknown>, key: string): number | null => {
     const value = meta[key];
     return typeof value === 'number' && Number.isFinite(value) ? value : null;
 };
@@ -180,9 +176,7 @@ const buildTroopCreate = (
 });
 
 const buildDiplomacyCreate = (
-    entry: ReturnType<
-        InMemoryTurnWorld['consumeDirtyState']
-    >['diplomacy'][number]
+    entry: ReturnType<InMemoryTurnWorld['consumeDirtyState']>['diplomacy'][number]
 ): TurnEngineDiplomacyCreateManyInput => ({
     srcNationId: entry.fromNationId,
     destNationId: entry.toNationId,
@@ -192,9 +186,7 @@ const buildDiplomacyCreate = (
 });
 
 const buildDiplomacyUpdate = (
-    entry: ReturnType<
-        InMemoryTurnWorld['consumeDirtyState']
-    >['diplomacy'][number]
+    entry: ReturnType<InMemoryTurnWorld['consumeDirtyState']>['diplomacy'][number]
 ): TurnEngineDiplomacyUpdateInput => ({
     stateCode: entry.state,
     term: entry.term,
@@ -267,16 +259,10 @@ export const createDatabaseTurnHooks = async (
                 data: worldStateUpdate,
             });
 
-            const createdIds = new Set(
-                createdGenerals.map((general) => general.id)
-            );
-            const createdTroopIds = new Set(
-                createdTroops.map((troop) => troop.id)
-            );
+            const createdIds = new Set(createdGenerals.map((general) => general.id));
+            const createdTroopIds = new Set(createdTroops.map((troop) => troop.id));
             const createdDiplomacyKeys = new Set(
-                createdDiplomacy.map(
-                    (entry) => `${entry.fromNationId}:${entry.toNationId}`
-                )
+                createdDiplomacy.map((entry) => `${entry.fromNationId}:${entry.toNationId}`)
             );
 
             if (createdGenerals.length > 0) {
@@ -336,12 +322,7 @@ export const createDatabaseTurnHooks = async (
                         })
                     ),
                 ...diplomacy
-                    .filter(
-                        (entry) =>
-                            !createdDiplomacyKeys.has(
-                                `${entry.fromNationId}:${entry.toNationId}`
-                            )
-                    )
+                    .filter((entry) => !createdDiplomacyKeys.has(`${entry.fromNationId}:${entry.toNationId}`))
                     .map((entry) =>
                         prisma.diplomacy.update({
                             where: {
@@ -363,12 +344,7 @@ export const createDatabaseTurnHooks = async (
                 };
                 const payload = logs
                     .map((entry) => buildLogCreateData(entry, logContext))
-                    .filter(
-                        (
-                            entry
-                        ): entry is TurnEngineLogEntryCreateManyInput =>
-                            Boolean(entry)
-                    );
+                    .filter((entry): entry is TurnEngineLogEntryCreateManyInput => Boolean(entry));
                 if (payload.length > 0) {
                     await prisma.logEntry.createMany({
                         data: payload,

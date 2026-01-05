@@ -26,28 +26,20 @@ const FALLBACK_STAT: ScenarioStatBlock = {
 const isRecord = (value: unknown): value is UnknownRecord =>
     typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const toRecordOrUndefined = (value: unknown): UnknownRecord | undefined =>
-    isRecord(value) ? value : undefined;
+const toRecordOrUndefined = (value: unknown): UnknownRecord | undefined => (isRecord(value) ? value : undefined);
 
-const toArrayOrUndefined = (value: unknown): unknown[] | undefined =>
-    Array.isArray(value) ? value : undefined;
+const toArrayOrUndefined = (value: unknown): unknown[] | undefined => (Array.isArray(value) ? value : undefined);
 
-const asNumber = (value: unknown, fallback: number): number =>
-    typeof value === 'number' ? value : fallback;
+const asNumber = (value: unknown, fallback: number): number => (typeof value === 'number' ? value : fallback);
 
-const asString = (value: unknown, fallback: string): string =>
-    typeof value === 'string' ? value : fallback;
+const asString = (value: unknown, fallback: string): string => (typeof value === 'string' ? value : fallback);
 
-const asNullableNumber = (value: unknown): number | null =>
-    typeof value === 'number' ? value : null;
+const asNullableNumber = (value: unknown): number | null => (typeof value === 'number' ? value : null);
 
-const asNullableString = (value: unknown): string | null =>
-    typeof value === 'string' ? value : null;
+const asNullableString = (value: unknown): string | null => (typeof value === 'string' ? value : null);
 
 const asStringArray = (value: unknown): string[] =>
-    Array.isArray(value)
-        ? value.filter((item): item is string => typeof item === 'string')
-        : [];
+    Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 
 const zRecord = z.record(z.string(), z.unknown());
 const zUnknownArray = z.array(z.unknown());
@@ -96,10 +88,7 @@ const zScenarioInput = z
     })
     .passthrough();
 
-const parseScenarioStatBlock = (
-    value: unknown,
-    fallback: ScenarioStatBlock
-): ScenarioStatBlock => {
+const parseScenarioStatBlock = (value: unknown, fallback: ScenarioStatBlock): ScenarioStatBlock => {
     const data = isRecord(value) ? value : {};
     return {
         total: asNumber(data.total, fallback.total),
@@ -112,17 +101,12 @@ const parseScenarioStatBlock = (
     };
 };
 
-const parseScenarioEnvironment = (
-    mapConfig: UnknownRecord,
-    constConfig: UnknownRecord
-): ScenarioEnvironment => {
+const parseScenarioEnvironment = (mapConfig: UnknownRecord, constConfig: UnknownRecord): ScenarioEnvironment => {
     const merged = { ...mapConfig, ...constConfig };
     const mapName = asString(merged.mapName, 'che');
     const unitSet = asString(merged.unitSet, 'che');
     const scenarioEffect =
-        typeof merged.scenarioEffect === 'string' || merged.scenarioEffect === null
-            ? merged.scenarioEffect
-            : undefined;
+        typeof merged.scenarioEffect === 'string' || merged.scenarioEffect === null ? merged.scenarioEffect : undefined;
 
     const result: ScenarioEnvironment = { mapName, unitSet };
     if (scenarioEffect !== undefined) {
@@ -136,17 +120,7 @@ const parseNationRow = (row: unknown, index: number): ScenarioNation => {
     if (!parsed.success) {
         throw new Error(`Scenario nation row ${index} is not an array.`);
     }
-    const [
-        name,
-        color,
-        gold,
-        rice,
-        infoText,
-        tech,
-        type,
-        level,
-        cities,
-    ] = parsed.data;
+    const [name, color, gold, rice, infoText, tech, type, level, cities] = parsed.data;
 
     const nationName = asString(name, '');
     if (!nationName) {
@@ -181,11 +155,7 @@ const parseDiplomacyRow = (row: unknown, index: number): ScenarioDiplomacy => {
     };
 };
 
-const parseGeneralRow = (
-    row: unknown,
-    index: number,
-    label: string
-): ScenarioGeneral => {
+const parseGeneralRow = (row: unknown, index: number, label: string): ScenarioGeneral => {
     const parsed = zUnknownArray.safeParse(row);
     if (!parsed.success) {
         throw new Error(`Scenario ${label} row ${index} is not an array.`);
@@ -224,14 +194,8 @@ const parseGeneralRow = (
     return {
         affinity: asNullableNumber(affinity),
         name,
-        picture:
-            typeof picture === 'number' || typeof picture === 'string'
-                ? picture
-                : null,
-        nation:
-            typeof nation === 'number' || typeof nation === 'string'
-                ? nation
-                : null,
+        picture: typeof picture === 'number' || typeof picture === 'string' ? picture : null,
+        nation: typeof nation === 'number' || typeof nation === 'string' ? nation : null,
         city: asNullableString(city),
         leadership: asNumber(leadership, 0),
         strength: asNumber(strength, 0),
@@ -253,8 +217,7 @@ const parseGeneralRow = (
 const parseGeneralRows = (rows: unknown[], label: string): ScenarioGeneral[] =>
     rows.map((row, index) => parseGeneralRow(row, index, label));
 
-const parseNationRows = (rows: unknown[]): ScenarioNation[] =>
-    rows.map((row, index) => parseNationRow(row, index));
+const parseNationRows = (rows: unknown[]): ScenarioNation[] => rows.map((row, index) => parseNationRow(row, index));
 
 const parseDiplomacyRows = (rows: unknown[]): ScenarioDiplomacy[] =>
     rows.map((row, index) => parseDiplomacyRow(row, index));
@@ -267,10 +230,7 @@ export const parseScenarioDefaults = (raw: unknown): ScenarioDefaults => {
     return { stat, iconPath };
 };
 
-export const parseScenarioDefinition = (
-    raw: unknown,
-    defaults: ScenarioDefaults
-): ScenarioDefinition => {
+export const parseScenarioDefinition = (raw: unknown, defaults: ScenarioDefaults): ScenarioDefinition => {
     // 시나리오 JSON을 런타임에서 쓰는 구조로 정규화한다.
     const data = zScenarioInput.parse(raw);
     const stat = parseScenarioStatBlock(data.stat, defaults.stat);
@@ -285,8 +245,7 @@ export const parseScenarioDefinition = (
     };
 
     const title = data.title;
-    const startYear =
-        typeof data.startYear === 'number' ? data.startYear : null;
+    const startYear = typeof data.startYear === 'number' ? data.startYear : null;
     const life = typeof data.life === 'number' ? data.life : null;
     const fiction = typeof data.fiction === 'number' ? data.fiction : null;
     const history = asStringArray(data.history);
@@ -295,10 +254,7 @@ export const parseScenarioDefinition = (
     const diplomacy = parseDiplomacyRows(data.diplomacy ?? []);
     const generals = parseGeneralRows(data.general ?? [], 'general');
     const generalsEx = parseGeneralRows(data.general_ex ?? [], 'general_ex');
-    const generalsNeutral = parseGeneralRows(
-        data.general_neutral ?? [],
-        'general_neutral'
-    );
+    const generalsNeutral = parseGeneralRows(data.general_neutral ?? [], 'general_neutral');
     const events = data.events ?? [];
     const initialEvents = data.initialEvents ?? data.initialActions ?? [];
 

@@ -30,10 +30,7 @@
             "defenceCoef": {
                 "1": 1.2
             },
-            "info": [
-                "성벽입니다.",
-                "생성할 수 없습니다."
-            ],
+            "info": ["성벽입니다.", "생성할 수 없습니다."],
             "initSkillTrigger": null,
             "phaseSkillTrigger": null,
             "iActionList": null
@@ -58,11 +55,7 @@
                 "2": 0.8,
                 "3": 1.2
             },
-            "info": [
-                "표준적인 보병입니다.",
-                "보병은 방어특화이며,",
-                "상대가 회피하기 어렵습니다."
-            ],
+            "info": ["표준적인 보병입니다.", "보병은 방어특화이며,", "상대가 회피하기 어렵습니다."],
             "initSkillTrigger": null,
             "phaseSkillTrigger": null,
             "iActionList": null
@@ -87,10 +80,7 @@
                 "3": 0.8,
                 "1": 1.2
             },
-            "info": [
-                "표준적인 궁병입니다.",
-                "궁병은 회피특화입니다."
-            ],
+            "info": ["표준적인 궁병입니다.", "궁병은 회피특화입니다."],
             "initSkillTrigger": null,
             "phaseSkillTrigger": null,
             "iActionList": null
@@ -115,10 +105,7 @@
                 "1": 0.8,
                 "2": 1.2
             },
-            "info": [
-                "표준적인 기병입니다.",
-                "기병은 공격특화입니다."
-            ],
+            "info": ["표준적인 기병입니다.", "기병은 공격특화입니다."],
             "initSkillTrigger": null,
             "phaseSkillTrigger": null,
             "iActionList": null
@@ -137,9 +124,7 @@
             "requirements": [],
             "attackCoef": [],
             "defenceCoef": [],
-            "info": [
-                "계략을 사용하는 병종입니다."
-            ],
+            "info": ["계략을 사용하는 병종입니다."],
             "initSkillTrigger": null,
             "phaseSkillTrigger": null,
             "iActionList": null
@@ -163,9 +148,7 @@
             ],
             "attackCoef": [],
             "defenceCoef": [],
-            "info": [
-                "전투를 포기하고 계략에 몰두합니다."
-            ],
+            "info": ["전투를 포기하고 계략에 몰두합니다."],
             "initSkillTrigger": null,
             "phaseSkillTrigger": null,
             "iActionList": null
@@ -182,16 +165,10 @@
             "cost": 7,
             "rice": 3,
             "requirements": [],
-            "attackCoef": [
-                1.8
-            ],
+            "attackCoef": [1.8],
             "defenceCoef": [],
-            "info": [
-                "높은 구조물 위에서 공격합니다."
-            ],
-            "initSkillTrigger": [
-                "che_성벽부상무효"
-            ],
+            "info": ["높은 구조물 위에서 공격합니다."],
+            "initSkillTrigger": ["che_성벽부상무효"],
             "phaseSkillTrigger": null,
             "iActionList": null
         },
@@ -216,16 +193,10 @@
                     "year": 3
                 }
             ],
-            "attackCoef": [
-                2.4
-            ],
+            "attackCoef": [2.4],
             "defenceCoef": [],
-            "info": [
-                "엄청난 위력으로 성벽을 부수어버립니다."
-            ],
-            "initSkillTrigger": [
-                "che_성벽부상무효"
-            ],
+            "info": ["엄청난 위력으로 성벽을 부수어버립니다."],
+            "initSkillTrigger": ["che_성벽부상무효"],
             "phaseSkillTrigger": null,
             "iActionList": null
         },
@@ -247,21 +218,13 @@
                 },
                 {
                     "type": "ReqCities",
-                    "cities": [
-                        "업"
-                    ]
+                    "cities": ["업"]
                 }
             ],
-            "attackCoef": [
-                1.8
-            ],
+            "attackCoef": [1.8],
             "defenceCoef": [],
-            "info": [
-                "상대에게 돌덩이를 날립니다."
-            ],
-            "initSkillTrigger": [
-                "che_성벽부상무효"
-            ],
+            "info": ["상대에게 돌덩이를 날립니다."],
+            "initSkillTrigger": ["che_성벽부상무효"],
             "phaseSkillTrigger": null,
             "iActionList": null
         },
@@ -283,19 +246,13 @@
                 },
                 {
                     "type": "ReqCities",
-                    "cities": [
-                        "성도"
-                    ]
+                    "cities": ["성도"]
                 }
             ],
             "attackCoef": [],
             "defenceCoef": [],
-            "info": [
-                "상대를 저지하는 특수병기입니다."
-            ],
-            "initSkillTrigger": [
-                "che_성벽부상무효"
-            ],
+            "info": ["상대를 저지하는 특수병기입니다."],
+            "initSkillTrigger": ["che_성벽부상무효"],
             "phaseSkillTrigger": null,
             "iActionList": null
         }

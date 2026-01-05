@@ -18,8 +18,7 @@ export const itemModule: ItemModule = {
     unique: false,
     getPreTurnExecuteTriggerList: (context) => {
         const target = context.general.triggerState.meta['use_treatment'];
-        const injuryTarget =
-            typeof target === 'number' && Number.isFinite(target) ? target : 10;
+        const injuryTarget = typeof target === 'number' && Number.isFinite(target) ? target : 10;
         return new GeneralTriggerCaller(
             new CheItemHealTrigger(context.general, {
                 injuryTarget,

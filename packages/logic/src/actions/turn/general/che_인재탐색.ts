@@ -1,32 +1,15 @@
 import type { RandomGenerator } from '@sammo-ts/common';
-import type {
-    City,
-    General,
-    GeneralTriggerState,
-    StatBlock,
-    TriggerValue,
-} from '@sammo-ts/logic/domain/entities.js';
-import type {
-    Constraint,
-    ConstraintContext,
-} from '@sammo-ts/logic/constraints/types.js';
-import {
-    reqGeneralGold,
-    reqGeneralRice,
-} from '@sammo-ts/logic/constraints/presets.js';
-import {
-    GeneralActionPipeline,
-    type GeneralActionModule,
-} from '@sammo-ts/logic/triggers/general-action.js';
+import type { City, General, GeneralTriggerState, StatBlock, TriggerValue } from '@sammo-ts/logic/domain/entities.js';
+import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
+import { reqGeneralGold, reqGeneralRice } from '@sammo-ts/logic/constraints/presets.js';
+import { GeneralActionPipeline, type GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionOutcome,
     GeneralActionResolveContext,
     GeneralActionResolver,
 } from '@sammo-ts/logic/actions/engine.js';
-import {
-    createGeneralAddEffect,
-} from '@sammo-ts/logic/actions/engine.js';
+import { createGeneralAddEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import { buildRecruitmentGeneral } from './recruitment.js';
 import { JosaUtil } from '@sammo-ts/common';
@@ -55,7 +38,7 @@ export interface TalentScoutWorldSummary {
 }
 
 export interface TalentScoutResolveContext<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > extends GeneralActionResolveContext<TriggerState> {
     currentYear: number;
     worldSummary: TalentScoutWorldSummary;
@@ -77,14 +60,8 @@ export interface TalentScoutEnvironment {
     minDeathYears?: number;
     maxDeathYears?: number;
     decorateName?: (name: string, npcState: number) => string;
-    pickCandidate?: (
-        context: TalentScoutResolveContext,
-        rng: RandomGenerator
-    ) => TalentScoutCandidate | null;
-    pickSpawnCityId?: (
-        context: TalentScoutResolveContext,
-        rng: RandomGenerator
-    ) => number | null;
+    pickCandidate?: (context: TalentScoutResolveContext, rng: RandomGenerator) => TalentScoutCandidate | null;
+    pickSpawnCityId?: (context: TalentScoutResolveContext, rng: RandomGenerator) => number | null;
     buildStats?: (
         context: TalentScoutResolveContext,
         rng: RandomGenerator,
@@ -118,15 +95,11 @@ const addMetaNumber = (
     key: StatExpKey,
     delta: number
 ): Record<string, TriggerValue> => {
-    const current =
-        typeof meta[key] === 'number' ? (meta[key] as number) : 0;
+    const current = typeof meta[key] === 'number' ? (meta[key] as number) : 0;
     return { ...meta, [key]: current + delta };
 };
 
-const pickByWeight = <T extends string>(
-    rng: RandomGenerator,
-    weights: Record<T, number>
-): T => {
+const pickByWeight = <T extends string>(rng: RandomGenerator, weights: Record<T, number>): T => {
     const entries = Object.entries(weights) as Array<[T, number]>;
     const first = entries[0];
     if (!first) {
@@ -155,26 +128,18 @@ const pickByWeight = <T extends string>(
     return last ? last[0] : first[0];
 };
 
-const pickStatExpKey = (
-    rng: RandomGenerator,
-    general: General
-): StatExpKey =>
+const pickStatExpKey = (rng: RandomGenerator, general: General): StatExpKey =>
     pickByWeight(rng, {
         leadership_exp: general.stats.leadership,
         strength_exp: general.stats.strength,
         intel_exp: general.stats.intelligence,
     });
 
-const calcFoundProp = (
-    maxGeneral: number,
-    totalGeneralCount: number,
-    totalNpcCount: number
-): number => {
+const calcFoundProp = (maxGeneral: number, totalGeneralCount: number, totalNpcCount: number): number => {
     if (maxGeneral <= 0) {
         return 0;
     }
-    const current =
-        totalGeneralCount + totalNpcCount / 2;
+    const current = totalGeneralCount + totalNpcCount / 2;
     const remainSlot = Math.max(maxGeneral - current, 0);
     const main = Math.pow(remainSlot / maxGeneral, 6);
     const small = 1 / (totalNpcCount / 3 + 1);
@@ -185,11 +150,7 @@ const calcFoundProp = (
     return Math.max(main, big);
 };
 
-const randomRangeInt = (
-    rng: RandomGenerator,
-    min: number,
-    max: number
-): number => rng.nextInt(min, max + 1);
+const randomRangeInt = (rng: RandomGenerator, min: number, max: number): number => rng.nextInt(min, max + 1);
 
 const resolveCandidate = (
     context: TalentScoutResolveContext,
@@ -235,8 +196,7 @@ const resolveStats = (
     if (env.buildStats) {
         return env.buildStats(context, rng, candidate);
     }
-    const fallback =
-        context.worldSummary.averageStats ?? context.general.stats;
+    const fallback = context.worldSummary.averageStats ?? context.general.stats;
     return {
         leadership: candidate.stats?.leadership ?? fallback.leadership,
         strength: candidate.stats?.strength ?? fallback.strength,
@@ -245,16 +205,11 @@ const resolveStats = (
 };
 
 // 인재탐색 확률과 비용을 계산한다.
-export class CommandResolver<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     private readonly pipeline: GeneralActionPipeline<TriggerState>;
     private readonly env: TalentScoutEnvironment;
 
-    constructor(
-        modules: Array<GeneralActionModule<TriggerState> | null | undefined>,
-        env: TalentScoutEnvironment
-    ) {
+    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>, env: TalentScoutEnvironment) {
         this.pipeline = new GeneralActionPipeline(modules);
         this.env = env;
     }
@@ -272,27 +227,19 @@ export class CommandResolver<
             context.worldSummary.totalGeneralCount,
             context.worldSummary.totalNpcCount
         );
-        return this.pipeline.onCalcDomestic(
-            context,
-            ACTION_KEY,
-            'probability',
-            base
-        );
+        return this.pipeline.onCalcDomestic(context, ACTION_KEY, 'probability', base);
     }
 }
 
 // 인재탐색 실행 결과를 계산한다.
 export class ActionResolver<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionResolver<TriggerState, TalentScoutArgs> {
     readonly key = 'che_인재탐색';
     private readonly env: TalentScoutEnvironment;
     private readonly command: CommandResolver<TriggerState>;
 
-    constructor(
-        modules: Array<GeneralActionModule<TriggerState> | null | undefined>,
-        env: TalentScoutEnvironment
-    ) {
+    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>, env: TalentScoutEnvironment) {
         this.env = env;
         this.command = new CommandResolver(modules, env);
     }
@@ -308,10 +255,7 @@ export class ActionResolver<
         const found = context.rng.nextBool(prop);
 
         const statKey = pickStatExpKey(context.rng, general);
-        const metaAfter =
-            found
-                ? addMetaNumber(general.meta, statKey, 3)
-                : addMetaNumber(general.meta, statKey, 1);
+        const metaAfter = found ? addMetaNumber(general.meta, statKey, 3) : addMetaNumber(general.meta, statKey, 1);
 
         const nextGold = Math.max(0, general.gold - reqGold);
         const nextRice = Math.max(0, general.rice - reqRice);
@@ -335,8 +279,7 @@ export class ActionResolver<
 
         const candidate = resolveCandidate(context, context.rng, this.env);
         const newGeneralId = context.createGeneralId();
-        const resolvedCandidate: TalentScoutCandidate =
-            candidate ?? { name: `NPC_${newGeneralId}` };
+        const resolvedCandidate: TalentScoutCandidate = candidate ?? { name: `NPC_${newGeneralId}` };
 
         const age = randomRangeInt(
             context.rng,
@@ -351,12 +294,7 @@ export class ActionResolver<
                 this.env.minDeathYears ?? DEFAULT_DEATH_MIN,
                 this.env.maxDeathYears ?? DEFAULT_DEATH_MAX
             );
-        const stats = resolveStats(
-            context,
-            context.rng,
-            this.env,
-            resolvedCandidate
-        );
+        const stats = resolveStats(context, context.rng, this.env, resolvedCandidate);
         const name = this.env.decorateName
             ? this.env.decorateName(resolvedCandidate.name, NPC_TYPE)
             : resolvedCandidate.name;
@@ -415,21 +353,14 @@ export class ActionResolver<
 }
 
 export class ActionDefinition<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> implements GeneralActionDefinition<
-        TriggerState,
-        TalentScoutArgs,
-        TalentScoutResolveContext<TriggerState>
-    > {
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
+> implements GeneralActionDefinition<TriggerState, TalentScoutArgs, TalentScoutResolveContext<TriggerState>> {
     public readonly key = 'che_인재탐색';
     public readonly name = ACTION_NAME;
     private readonly command: CommandResolver<TriggerState>;
     private readonly resolver: ActionResolver<TriggerState>;
 
-    constructor(
-        modules: Array<GeneralActionModule<TriggerState> | null | undefined>,
-        env: TalentScoutEnvironment
-    ) {
+    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>, env: TalentScoutEnvironment) {
         this.command = new CommandResolver(modules, env);
         this.resolver = new ActionResolver(modules, env);
     }
@@ -439,17 +370,11 @@ export class ActionDefinition<
         return {};
     }
 
-    buildConstraints(
-        _ctx: ConstraintContext,
-        _args: TalentScoutArgs
-    ): Constraint[] {
+    buildConstraints(_ctx: ConstraintContext, _args: TalentScoutArgs): Constraint[] {
         void _ctx;
         void _args;
         const { gold, rice } = this.command.getCost();
-        return [
-            reqGeneralGold(() => gold),
-            reqGeneralRice(() => rice),
-        ];
+        return [reqGeneralGold(() => gold), reqGeneralRice(() => rice)];
     }
 
     resolve(
@@ -473,6 +398,5 @@ export const commandSpec: GeneralTurnCommandSpec = {
     category: '인사',
     reqArg: false,
     args: {},
-    createDefinition: (env: TurnCommandEnv) =>
-        new ActionDefinition(env.generalActionModules ?? [], env),
+    createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env.generalActionModules ?? [], env),
 };

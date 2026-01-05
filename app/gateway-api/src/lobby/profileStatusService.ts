@@ -61,12 +61,8 @@ export class RepositoryProfileStatusService implements GatewayProfileStatusServi
 
     async listLobbyProfiles(): Promise<LobbyProfileStatus[]> {
         const rows = await this.profiles.listProfiles();
-        const runtimeStates = await this.orchestrator.listRuntimeStates(
-            rows.map((profile) => profile.profileName)
-        );
-        const runtimeMap = new Map(
-            runtimeStates.map((state) => [state.profileName, state])
-        );
+        const runtimeStates = await this.orchestrator.listRuntimeStates(rows.map((profile) => profile.profileName));
+        const runtimeMap = new Map(runtimeStates.map((state) => [state.profileName, state]));
         return rows.map((row) => this.mapProfile(row, runtimeMap));
     }
 

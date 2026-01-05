@@ -27,18 +27,18 @@ The `AuctionInfo` and `AuctionInfoDetail` DTOs are serialized into
 ## Core Auction Flow
 
 1. **Open**
-   - `AuctionBasicResource::openResourceAuction()` validates amounts and
-     host resources, then inserts `ng_auction`.
-   - `AuctionUniqueItem::openItemAuction()` checks availability, reserves
-     unique items, and posts a global history notice.
+    - `AuctionBasicResource::openResourceAuction()` validates amounts and
+      host resources, then inserts `ng_auction`.
+    - `AuctionUniqueItem::openItemAuction()` checks availability, reserves
+      unique items, and posts a global history notice.
 2. **Bid**
-   - Bids are inserted into `ng_auction_bid` and can extend the close date.
-   - Reverse auctions (when `detail->isReverse`) sort by lowest bid.
+    - Bids are inserted into `ng_auction_bid` and can extend the close date.
+    - Reverse auctions (when `detail->isReverse`) sort by lowest bid.
 3. **Close** (`tryFinish()` from the concrete auction)
-   - If no bids: `rollbackAuction()` returns resources to host and logs.
-   - With bids: `finishAuction()` transfers resources, logs, and sends messages.
+    - If no bids: `rollbackAuction()` returns resources to host and logs.
+    - With bids: `finishAuction()` transfers resources, logs, and sends messages.
 4. **Processing**
-   - `processAuction()` scans auctions past `close_date` and finishes them.
+    - `processAuction()` scans auctions past `close_date` and finishes them.
 
 ## Unique Item Auctions
 

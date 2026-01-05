@@ -58,16 +58,12 @@ export interface Constraint {
 - `ConstraintPlanner` collects requirements across constraints.
 - `StateView` loads those requirements (daemon: in-memory, API: DB).
 - `test()` returns:
-  - `allow` if constraint passes.
-  - `deny` with a stable reason/code for UI.
-  - `unknown` if required data is missing and `mode === 'precheck'`.
+    - `allow` if constraint passes.
+    - `deny` with a stable reason/code for UI.
+    - `unknown` if required data is missing and `mode === 'precheck'`.
 
 ```ts
-function evaluateConstraints(
-    constraints: Constraint[],
-    ctx: ConstraintContext,
-    view: StateView,
-): ConstraintResult {
+function evaluateConstraints(constraints: Constraint[], ctx: ConstraintContext, view: StateView): ConstraintResult {
     for (const constraint of constraints) {
         const missing = constraint.requires(ctx).filter((req) => !view.has(req));
         if (missing.length && ctx.mode === 'precheck') {

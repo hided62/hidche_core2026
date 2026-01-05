@@ -33,11 +33,10 @@ export interface TurnDiplomacy {
     meta: Record<string, unknown>;
 }
 
-export interface TurnWorldSnapshot
-    extends Omit<
-        WorldSnapshot,
-        'generals' | 'cities' | 'nations' | 'troops' | 'diplomacy'
-    > {
+export interface TurnWorldSnapshot extends Omit<
+    WorldSnapshot,
+    'generals' | 'cities' | 'nations' | 'troops' | 'diplomacy'
+> {
     scenarioConfig: ScenarioConfig;
     scenarioMeta?: ScenarioMeta;
     map: MapDefinition;

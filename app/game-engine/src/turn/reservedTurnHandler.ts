@@ -36,10 +36,7 @@ import {
     buildDiplomacyKey,
     type DiplomacyPatch,
 } from '@sammo-ts/logic';
-import {
-    buildCommandEnv,
-    buildReservedTurnDefinitions,
-} from './reservedTurnCommands.js';
+import { buildCommandEnv, buildReservedTurnDefinitions } from './reservedTurnCommands.js';
 import { buildActionContext } from './reservedTurnActionContext.js';
 
 const DEFAULT_ACTION = '휴식';
@@ -47,22 +44,15 @@ const DEFAULT_ACTION = '휴식';
 const isRecord = (value: unknown): value is Record<string, unknown> =>
     value !== null && typeof value === 'object' && !Array.isArray(value);
 
-const asRecord = (value: unknown): Record<string, unknown> =>
-    isRecord(value) ? value : {};
+const asRecord = (value: unknown): Record<string, unknown> => (isRecord(value) ? value : {});
 
 const resolveConstraintEnv = (
     world: TurnWorldState,
     scenarioMeta: ScenarioMeta | undefined,
     openingPartYear: number
 ): Record<string, unknown> => {
-    const startYear =
-        typeof scenarioMeta?.startYear === 'number'
-            ? scenarioMeta.startYear
-            : undefined;
-    const relYear =
-        typeof startYear === 'number'
-            ? world.currentYear - startYear
-            : undefined;
+    const startYear = typeof scenarioMeta?.startYear === 'number' ? scenarioMeta.startYear : undefined;
+    const relYear = typeof startYear === 'number' ? world.currentYear - startYear : undefined;
 
     return {
         currentYear: world.currentYear,
@@ -83,11 +73,7 @@ const buildSeedBase = (world: TurnWorldState): string => {
 
 const serializeSeed = (...values: Array<string | number>): string =>
     values
-        .map((value) =>
-            typeof value === 'string'
-                ? `str(${value.length},${value})`
-                : `int(${Math.floor(value)})`
-        )
+        .map((value) => (typeof value === 'string' ? `str(${value.length},${value})` : `int(${Math.floor(value)})`))
         .join('|');
 
 class DeterministicRandom {
@@ -121,10 +107,7 @@ type WorldView = {
     getCityById(id: number): City | null;
     getNationById(id: number): Nation | null;
     getTroopById(id: number): Troop | null;
-    getDiplomacyEntry(
-        srcNationId: number,
-        destNationId: number
-    ): TurnDiplomacy | null;
+    getDiplomacyEntry(srcNationId: number, destNationId: number): TurnDiplomacy | null;
     listGenerals(): TurnGeneral[];
     listCities(): City[];
     listNations(): Nation[];
@@ -132,19 +115,13 @@ type WorldView = {
     listDiplomacy(): TurnDiplomacy[];
 };
 
-const mergeStats = (
-    base: TurnGeneral['stats'],
-    patch: Partial<TurnGeneral['stats']>
-): TurnGeneral['stats'] => ({
+const mergeStats = (base: TurnGeneral['stats'], patch: Partial<TurnGeneral['stats']>): TurnGeneral['stats'] => ({
     leadership: patch.leadership ?? base.leadership,
     strength: patch.strength ?? base.strength,
     intelligence: patch.intelligence ?? base.intelligence,
 });
 
-const mergeRole = (
-    base: TurnGeneral['role'],
-    patch: Partial<TurnGeneral['role']>
-): TurnGeneral['role'] => ({
+const mergeRole = (base: TurnGeneral['role'], patch: Partial<TurnGeneral['role']>): TurnGeneral['role'] => ({
     ...base,
     ...patch,
     items: {
@@ -165,17 +142,12 @@ const mergeTriggerState = (
     meta: { ...base.meta, ...(patch.meta ?? {}) },
 });
 
-const applyGeneralPatch = (
-    base: TurnGeneral,
-    patch: Partial<TurnGeneral>
-): TurnGeneral => ({
+const applyGeneralPatch = (base: TurnGeneral, patch: Partial<TurnGeneral>): TurnGeneral => ({
     ...base,
     ...patch,
     stats: patch.stats ? mergeStats(base.stats, patch.stats) : base.stats,
     role: patch.role ? mergeRole(base.role, patch.role) : base.role,
-    triggerState: patch.triggerState
-        ? mergeTriggerState(base.triggerState, patch.triggerState)
-        : base.triggerState,
+    triggerState: patch.triggerState ? mergeTriggerState(base.triggerState, patch.triggerState) : base.triggerState,
     meta: patch.meta ? { ...base.meta, ...patch.meta } : base.meta,
 });
 
@@ -191,10 +163,7 @@ const applyNationPatch = (base: Nation, patch: Partial<Nation>): Nation => ({
     meta: patch.meta ? { ...base.meta, ...patch.meta } : base.meta,
 });
 
-const mergeDiplomacyList = (
-    base: TurnDiplomacy[],
-    overrides: Map<string, TurnDiplomacy>
-): TurnDiplomacy[] => {
+const mergeDiplomacyList = (base: TurnDiplomacy[], overrides: Map<string, TurnDiplomacy>): TurnDiplomacy[] => {
     const merged = new Map<string, TurnDiplomacy>();
     for (const entry of base) {
         merged.set(buildDiplomacyKey(entry.fromNationId, entry.toNationId), entry);
@@ -212,10 +181,7 @@ const createWorldOverlay = (world: InMemoryTurnWorld) => {
     const nationOverrides = new Map<number, Nation>();
     const diplomacyOverrides = new Map<string, TurnDiplomacy>();
 
-    const mergeList = <T extends { id: number }>(
-        base: T[],
-        overrides: Map<number, T>
-    ): T[] => {
+    const mergeList = <T extends { id: number }>(base: T[], overrides: Map<number, T>): T[] => {
         const merged = new Map<number, T>();
         for (const entry of base) {
             merged.set(entry.id, entry);
@@ -227,16 +193,13 @@ const createWorldOverlay = (world: InMemoryTurnWorld) => {
     };
 
     const view: WorldView = {
-        getGeneralById: (id) =>
-            generalOverrides.get(id) ?? world.getGeneralById(id),
+        getGeneralById: (id) => generalOverrides.get(id) ?? world.getGeneralById(id),
         getCityById: (id) => cityOverrides.get(id) ?? world.getCityById(id),
-        getNationById: (id) =>
-            nationOverrides.get(id) ?? world.getNationById(id),
+        getNationById: (id) => nationOverrides.get(id) ?? world.getNationById(id),
         getTroopById: (id) => world.getTroopById(id),
         getDiplomacyEntry: (srcNationId, destNationId) =>
-            diplomacyOverrides.get(
-                buildDiplomacyKey(srcNationId, destNationId)
-            ) ?? world.getDiplomacyEntry(srcNationId, destNationId),
+            diplomacyOverrides.get(buildDiplomacyKey(srcNationId, destNationId)) ??
+            world.getDiplomacyEntry(srcNationId, destNationId),
         listGenerals: () =>
             mergeList(world.listGenerals(), generalOverrides).map((general) => ({
                 ...general,
@@ -251,10 +214,7 @@ const createWorldOverlay = (world: InMemoryTurnWorld) => {
             })),
         listTroops: () => world.listTroops().map((troop) => ({ ...troop })),
         listDiplomacy: () =>
-            mergeDiplomacyList(
-                world.listDiplomacy(),
-                diplomacyOverrides
-            ).map((entry) => ({
+            mergeDiplomacyList(world.listDiplomacy(), diplomacyOverrides).map((entry) => ({
                 ...entry,
                 meta: { ...entry.meta },
             })),
@@ -272,8 +232,7 @@ const createWorldOverlay = (world: InMemoryTurnWorld) => {
             nationOverrides.set(nation.id, nation);
         },
         applyGeneralPatch: (id: number, patch: Partial<TurnGeneral>) => {
-            const base =
-                generalOverrides.get(id) ?? world.getGeneralById(id);
+            const base = generalOverrides.get(id) ?? world.getGeneralById(id);
             if (!base) {
                 return;
             }
@@ -293,11 +252,7 @@ const createWorldOverlay = (world: InMemoryTurnWorld) => {
             }
             nationOverrides.set(id, applyNationPatch(base, patch));
         },
-        applyDiplomacyPatch: (
-            srcNationId: number,
-            destNationId: number,
-            patch: DiplomacyPatch
-        ) => {
+        applyDiplomacyPatch: (srcNationId: number, destNationId: number, patch: DiplomacyPatch) => {
             const key = buildDiplomacyKey(srcNationId, destNationId);
             const base =
                 diplomacyOverrides.get(key) ??
@@ -353,10 +308,7 @@ class WorldStateView implements StateView {
             case 'destNation':
                 return this.world.getNationById(req.id);
             case 'diplomacy':
-                return this.world.getDiplomacyEntry(
-                    req.srcNationId,
-                    req.destNationId
-                );
+                return this.world.getDiplomacyEntry(req.srcNationId, req.destNationId);
             case 'diplomacyList':
                 return this.world.listDiplomacy();
             case 'arg':
@@ -369,12 +321,7 @@ class WorldStateView implements StateView {
     }
 }
 
- 
-
-const extractArgsRecord = (value: unknown): Record<string, unknown> =>
-    isRecord(value) ? value : {};
-
- 
+const extractArgsRecord = (value: unknown): Record<string, unknown> => (isRecord(value) ? value : {});
 
 const buildConstraintContext = (
     general: TurnGeneral,
@@ -414,14 +361,12 @@ export const createReservedTurnHandler = async (options: {
     commandProfile?: TurnCommandProfile;
 }): Promise<GeneralTurnHandler> => {
     const env = buildCommandEnv(options.scenarioConfig, options.unitSet);
-    const commandProfile =
-        options.commandProfile ?? DEFAULT_TURN_COMMAND_PROFILE;
-    const { general: generalDefinitions, nation: nationDefinitions } =
-        await buildReservedTurnDefinitions({
-            env,
-            commandProfile,
-            defaultActionKey: DEFAULT_ACTION,
-        });
+    const commandProfile = options.commandProfile ?? DEFAULT_TURN_COMMAND_PROFILE;
+    const { general: generalDefinitions, nation: nationDefinitions } = await buildReservedTurnDefinitions({
+        env,
+        commandProfile,
+        defaultActionKey: DEFAULT_ACTION,
+    });
     const generalFallback = generalDefinitions.get(DEFAULT_ACTION)!;
     const nationFallback = nationDefinitions.get(DEFAULT_ACTION)!;
 
@@ -431,10 +376,7 @@ export const createReservedTurnHandler = async (options: {
         commandSpec: { key: string };
         actionContextBuilder?: ActionContextBuilder;
     }): void => {
-        actionContextBuilders.set(
-            module.commandSpec.key,
-            module.actionContextBuilder ?? defaultActionContextBuilder
-        );
+        actionContextBuilders.set(module.commandSpec.key, module.actionContextBuilder ?? defaultActionContextBuilder);
     };
     const generalModuleLoader = new GeneralTurnCommandLoader();
     const nationModuleLoader = new NationTurnCommandLoader();
@@ -455,9 +397,7 @@ export const createReservedTurnHandler = async (options: {
         applyActionContextBuilder(module);
     }
     if (!actionContextBuilders.has(DEFAULT_ACTION)) {
-        applyActionContextBuilder(
-            await generalModuleLoader.load(DEFAULT_ACTION)
-        );
+        applyActionContextBuilder(await generalModuleLoader.load(DEFAULT_ACTION));
     }
 
     let nextGeneralId: number | null = null;
@@ -478,11 +418,7 @@ export const createReservedTurnHandler = async (options: {
             const worldOverlay = worldRef ? createWorldOverlay(worldRef) : null;
             const worldView = worldOverlay?.view ?? worldRef;
             const baseConstraintEnv = {
-                ...resolveConstraintEnv(
-                    context.world,
-                    options.scenarioMeta,
-                    env.openingPartYear
-                ),
+                ...resolveConstraintEnv(context.world, options.scenarioMeta, env.openingPartYear),
                 ...(options.map ? { map: options.map } : {}),
                 ...(options.unitSet ? { unitSet: options.unitSet } : {}),
             };
@@ -510,13 +446,9 @@ export const createReservedTurnHandler = async (options: {
                 command: ReservedTurnEntry,
                 applyNextTurnAt: boolean
             ): Date | undefined => {
-                const resolvedDefinition = resolveDefinition(
-                    command.action,
-                    definitionMap,
-                    fallbackDefinition
-                );
+                const resolvedDefinition = resolveDefinition(command.action, definitionMap, fallbackDefinition);
                 const rawArgs = extractArgsRecord(command.args);
-                let parsedArgs = resolvedDefinition.parseArgs(rawArgs);
+                const parsedArgs = resolvedDefinition.parseArgs(rawArgs);
                 let definition = resolvedDefinition;
                 let actionArgs = parsedArgs ?? {};
                 let actionKey = definition.key;
@@ -540,29 +472,18 @@ export const createReservedTurnHandler = async (options: {
                     actionArgs as Record<string, unknown>,
                     actionConstraintEnv
                 );
-                const view = new WorldStateView(
-                    worldView,
-                    actionConstraintEnv,
-                    actionArgs as Record<string, unknown>,
-                    {
-                        general: currentGeneral,
-                        city: currentCity,
-                        nation: currentNation,
-                    }
-                );
-                const constraints = definition.buildConstraints(
-                    constraintCtx,
-                    actionArgs
-                );
+                const view = new WorldStateView(worldView, actionConstraintEnv, actionArgs as Record<string, unknown>, {
+                    general: currentGeneral,
+                    city: currentCity,
+                    nation: currentNation,
+                });
+                const constraints = definition.buildConstraints(constraintCtx, actionArgs);
                 const result = evaluateConstraints(constraints, constraintCtx, view);
                 if (result.kind !== 'allow') {
                     definition = fallbackDefinition;
                     actionArgs = definition.parseArgs({}) ?? {};
                     actionKey = definition.key;
-                    const reason =
-                        result.kind === 'deny'
-                            ? result.reason
-                            : '조건을 확인할 수 없습니다.';
+                    const reason = result.kind === 'deny' ? result.reason : '조건을 확인할 수 없습니다.';
                     logs.push(createActionLog(reason));
                 }
 
@@ -585,17 +506,22 @@ export const createReservedTurnHandler = async (options: {
                     nation: currentNation,
                     rng: buildRng(actionKey),
                 };
-                let specificContext = buildActionContext(actionKey, baseContext, {
-                    world: context.world,
-                    scenarioConfig: options.scenarioConfig,
-                    scenarioMeta: options.scenarioMeta,
-                    map: options.map,
-                    unitSet: options.unitSet,
-                    worldRef: worldView,
-                    actionArgs: actionArgsRecord,
-                    createGeneralId,
-                    seedBase,
-                }, actionContextBuilders);
+                let specificContext = buildActionContext(
+                    actionKey,
+                    baseContext,
+                    {
+                        world: context.world,
+                        scenarioConfig: options.scenarioConfig,
+                        scenarioMeta: options.scenarioMeta,
+                        map: options.map,
+                        unitSet: options.unitSet,
+                        worldRef: worldView,
+                        actionArgs: actionArgsRecord,
+                        createGeneralId,
+                        seedBase,
+                    },
+                    actionContextBuilders
+                );
                 if (!specificContext && actionKey !== fallbackDefinition.key) {
                     definition = fallbackDefinition;
                     actionArgs = definition.parseArgs({}) ?? {};
@@ -645,11 +571,7 @@ export const createReservedTurnHandler = async (options: {
                             destNationId: effect.destNationId,
                             patch: effect.patch,
                         });
-                        worldOverlay?.applyDiplomacyPatch(
-                            effect.srcNationId,
-                            effect.destNationId,
-                            effect.patch
-                        );
+                        worldOverlay?.applyDiplomacyPatch(effect.srcNationId, effect.destNationId, effect.patch);
                     }
                 }
 
@@ -674,10 +596,7 @@ export const createReservedTurnHandler = async (options: {
                     );
                     if (worldOverlay) {
                         for (const patch of resolution.patches.generals) {
-                            worldOverlay.applyGeneralPatch(
-                                patch.id,
-                                patch.patch as Partial<TurnGeneral>
-                            );
+                            worldOverlay.applyGeneralPatch(patch.id, patch.patch as Partial<TurnGeneral>);
                         }
                         for (const patch of resolution.patches.cities) {
                             worldOverlay.applyCityPatch(patch.id, patch.patch);
@@ -689,8 +608,7 @@ export const createReservedTurnHandler = async (options: {
                 }
 
                 if (resolution.created?.generals) {
-                    const createdGenerals =
-                        resolution.created.generals as TurnGeneral[];
+                    const createdGenerals = resolution.created.generals as TurnGeneral[];
                     created.push(...createdGenerals);
                     if (worldOverlay) {
                         for (const general of createdGenerals) {
@@ -709,23 +627,11 @@ export const createReservedTurnHandler = async (options: {
                     0
                 );
                 runAction(nationDefinitions, nationFallback, nationCommand, false);
-                options.reservedTurns.shiftNationTurns(
-                    currentNation.id,
-                    currentGeneral.officerLevel,
-                    -1
-                );
+                options.reservedTurns.shiftNationTurns(currentNation.id, currentGeneral.officerLevel, -1);
             }
 
-            const generalCommand = options.reservedTurns.getGeneralTurn(
-                currentGeneral.id,
-                0
-            );
-            const nextTurnAt = runAction(
-                generalDefinitions,
-                generalFallback,
-                generalCommand,
-                true
-            );
+            const generalCommand = options.reservedTurns.getGeneralTurn(currentGeneral.id, 0);
+            const nextTurnAt = runAction(generalDefinitions, generalFallback, generalCommand, true);
             options.reservedTurns.shiftGeneralTurns(currentGeneral.id, -1);
 
             const result: GeneralTurnResult = {
@@ -735,9 +641,7 @@ export const createReservedTurnHandler = async (options: {
                 nextTurnAt,
                 logs,
                 patches,
-                ...(diplomacyPatches.length > 0
-                    ? { diplomacyPatches }
-                    : undefined),
+                ...(diplomacyPatches.length > 0 ? { diplomacyPatches } : undefined),
                 created: created.length > 0 ? { generals: created } : undefined,
             };
 

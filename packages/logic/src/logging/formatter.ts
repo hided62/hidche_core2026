@@ -1,12 +1,7 @@
 import { LogFormat } from './types.js';
 
 // 로그 포맷은 기존 표시 규칙(<C>/<S>/<R> + 기호)을 그대로 유지한다.
-export const formatLogText = (
-    text: string,
-    format: LogFormat,
-    year: number,
-    month: number
-): string => {
+export const formatLogText = (text: string, format: LogFormat, year: number, month: number): string => {
     switch (format) {
         case LogFormat.RAWTEXT:
             return text;

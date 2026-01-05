@@ -38,9 +38,7 @@ const parseToken = (payload: Record<string, unknown>): KakaoOAuthToken => {
         accessToken: String(payload.access_token ?? ''),
         refreshToken: payload.refresh_token ? String(payload.refresh_token) : undefined,
         accessTokenExpiresIn: Number(payload.expires_in ?? 0),
-        refreshTokenExpiresIn: payload.refresh_token_expires_in
-            ? Number(payload.refresh_token_expires_in)
-            : undefined,
+        refreshTokenExpiresIn: payload.refresh_token_expires_in ? Number(payload.refresh_token_expires_in) : undefined,
     };
 };
 
@@ -141,12 +139,8 @@ export class KakaoOAuthClient {
             kakaoAccount: {
                 hasEmail: Boolean(kakaoAccount.has_email ?? false),
                 email: kakaoAccount.email ? String(kakaoAccount.email) : undefined,
-                isEmailValid: kakaoAccount.is_email_valid
-                    ? Boolean(kakaoAccount.is_email_valid)
-                    : undefined,
-                isEmailVerified: kakaoAccount.is_email_verified
-                    ? Boolean(kakaoAccount.is_email_verified)
-                    : undefined,
+                isEmailValid: kakaoAccount.is_email_valid ? Boolean(kakaoAccount.is_email_valid) : undefined,
+                isEmailVerified: kakaoAccount.is_email_verified ? Boolean(kakaoAccount.is_email_verified) : undefined,
             },
         };
     }

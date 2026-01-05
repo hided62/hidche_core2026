@@ -11,19 +11,14 @@ export interface TurnDaemonStreamKeys {
     eventStream: string;
 }
 
-export const buildTurnDaemonStreamKeys = (
-    profileName: string
-): TurnDaemonStreamKeys => ({
+export const buildTurnDaemonStreamKeys = (profileName: string): TurnDaemonStreamKeys => ({
     commandStream: `sammo:${profileName}:turn-daemon:commands`,
     eventStream: `sammo:${profileName}:turn-daemon:events`,
 });
 
 interface RedisStreamClient {
     xAdd(stream: string, id: string, message: Record<string, string>): Promise<string>;
-    xRead(
-        streams: { key: string; id: string },
-        options?: { BLOCK?: number; COUNT?: number }
-    ): Promise<unknown>;
+    xRead(streams: { key: string; id: string }, options?: { BLOCK?: number; COUNT?: number }): Promise<unknown>;
 }
 
 type RedisStreamReadResponse = Array<{
@@ -68,18 +63,13 @@ const parseCommandEnvelope = (raw: string): TurnDaemonCommandEnvelope | null => 
     }
 };
 
-const normalizeCommand = (
-    envelope: TurnDaemonCommandEnvelope
-): TurnDaemonCommand | null => {
+const normalizeCommand = (envelope: TurnDaemonCommandEnvelope): TurnDaemonCommand | null => {
     const command = envelope.command as TurnDaemonCommand & {
         requestId?: string;
     };
     switch (command.type) {
         case 'troopJoin': {
-            if (
-                typeof command.generalId !== 'number' ||
-                typeof command.troopId !== 'number'
-            ) {
+            if (typeof command.generalId !== 'number' || typeof command.troopId !== 'number') {
                 return null;
             }
             return {
@@ -100,10 +90,7 @@ const normalizeCommand = (
             };
         }
         case 'getStatus': {
-            const requestId =
-                typeof command.requestId === 'string'
-                    ? command.requestId
-                    : envelope.requestId;
+            const requestId = typeof command.requestId === 'string' ? command.requestId : envelope.requestId;
             return { type: 'getStatus', requestId };
         }
         case 'run':
@@ -116,9 +103,7 @@ const normalizeCommand = (
     }
 };
 
-export class RedisTurnDaemonCommandStream
-    implements TurnDaemonControlQueue, TurnDaemonCommandResponder
-{
+export class RedisTurnDaemonCommandStream implements TurnDaemonControlQueue, TurnDaemonCommandResponder {
     private readonly client: RedisStreamClient;
     private readonly keys: TurnDaemonStreamKeys;
     private readonly localQueue: TurnDaemonCommand[] = [];
@@ -151,10 +136,7 @@ export class RedisTurnDaemonCommandStream
             return this.localQueue.shift() ?? null;
         }
 
-        const blockMs =
-            deadlineMs === null
-                ? 0
-                : Math.max(0, deadlineMs - Date.now());
+        const blockMs = deadlineMs === null ? 0 : Math.max(0, deadlineMs - Date.now());
         if (deadlineMs !== null && blockMs === 0) {
             return null;
         }
@@ -174,24 +156,15 @@ export class RedisTurnDaemonCommandStream
         return this.localQueue.length;
     }
 
-    async publishStatus(
-        requestId: string,
-        status: TurnDaemonStatus
-    ): Promise<void> {
+    async publishStatus(requestId: string, status: TurnDaemonStatus): Promise<void> {
         await this.publishEvent({ type: 'status', requestId, status }, requestId);
     }
 
-    async publishCommandResult(
-        requestId: string,
-        result: TurnDaemonCommandResult
-    ): Promise<void> {
+    async publishCommandResult(requestId: string, result: TurnDaemonCommandResult): Promise<void> {
         await this.publishEvent({ type: 'commandResult', result }, requestId);
     }
 
-    private async publishEvent(
-        event: TurnDaemonEvent,
-        requestId?: string
-    ): Promise<void> {
+    private async publishEvent(event: TurnDaemonEvent, requestId?: string): Promise<void> {
         const envelope: TurnDaemonEventEnvelope = {
             requestId,
             sentAt: new Date().toISOString(),

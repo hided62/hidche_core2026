@@ -2,7 +2,6 @@
     "extends": "../../tsconfig.paths.json",
     "compilerOptions": {
         "outDir": "dist",
-        "rootDir": "src",
         "composite": true,
         "baseUrl": ".",
         "paths": {
@@ -14,7 +13,7 @@
             "@sammo-ts/logic/*": ["../../packages/logic/src/*"]
         }
     },
-    "include": ["src"],
+    "include": ["src", "test", "*.ts"],
     "references": [
         { "path": "../../packages/common" },
         { "path": "../../packages/infra" },

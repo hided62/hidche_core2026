@@ -9,10 +9,7 @@ import {
     suppliedCity,
 } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
-import type {
-    GeneralActionOutcome,
-    GeneralActionResolveContext,
-} from '@sammo-ts/logic/actions/engine.js';
+import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
 import { createDiplomacyPatchEffect, createLogEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
@@ -36,7 +33,7 @@ const parseNationId = (raw: unknown): number | null => {
 };
 
 export class ActionDefinition<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionDefinition<TriggerState, DeclareWarArgs> {
     public readonly key = 'che_선전포고';
     public readonly name = ACTION_NAME;
@@ -73,14 +70,11 @@ export class ActionDefinition<
         if (nationId === undefined || nationId <= 0) {
             return {
                 effects: [
-                    createLogEffect(
-                        `${ACTION_NAME}을 준비했지만 국가 정보가 없습니다.`,
-                        {
-                            scope: LogScope.GENERAL,
-                            category: LogCategory.ACTION,
-                            format: LogFormat.MONTH,
-                        }
-                    ),
+                    createLogEffect(`${ACTION_NAME}을 준비했지만 국가 정보가 없습니다.`, {
+                        scope: LogScope.GENERAL,
+                        category: LogCategory.ACTION,
+                        format: LogFormat.MONTH,
+                    }),
                 ],
             };
         }
@@ -94,14 +88,11 @@ export class ActionDefinition<
                     state: DIPLOMACY_DECLARE,
                     term: DECLARE_TERM,
                 }),
-                createLogEffect(
-                    `${ACTION_NAME}을 실행했습니다. (국가 ${args.destNationId})`,
-                    {
-                        scope: LogScope.GENERAL,
-                        category: LogCategory.ACTION,
-                        format: LogFormat.MONTH,
-                    }
-                ),
+                createLogEffect(`${ACTION_NAME}을 실행했습니다. (국가 ${args.destNationId})`, {
+                    scope: LogScope.GENERAL,
+                    category: LogCategory.ACTION,
+                    format: LogFormat.MONTH,
+                }),
             ],
         };
     }

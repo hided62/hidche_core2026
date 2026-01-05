@@ -4,21 +4,12 @@ import { createRedisConnector, resolveRedisConfigFromEnv } from '@sammo-ts/infra
 import { SystemClock } from '../lifecycle/clock.js';
 import { getNextTickTime } from '../lifecycle/getNextTickTime.js';
 import { InMemoryControlQueue } from '../lifecycle/inMemoryControlQueue.js';
-import type {
-    Clock,
-    TurnDaemonControlQueue,
-    TurnDaemonHooks,
-    TurnRunBudget,
-} from '../lifecycle/types.js';
+import type { Clock, TurnDaemonControlQueue, TurnDaemonHooks, TurnRunBudget } from '../lifecycle/types.js';
 import { TurnDaemonLifecycle } from '../lifecycle/turnDaemonLifecycle.js';
 import { buildTurnDaemonStreamKeys, RedisTurnDaemonCommandStream } from '../lifecycle/redisCommandStream.js';
 import type { MapLoaderOptions } from '../scenario/mapLoader.js';
 import { createDatabaseTurnHooks } from './databaseHooks.js';
-import type {
-    GeneralTurnHandler,
-    InMemoryTurnWorldOptions,
-    TurnCalendarHandler,
-} from './inMemoryWorld.js';
+import type { GeneralTurnHandler, InMemoryTurnWorldOptions, TurnCalendarHandler } from './inMemoryWorld.js';
 import { InMemoryTurnWorld } from './inMemoryWorld.js';
 import { InMemoryTurnProcessor } from './inMemoryTurnProcessor.js';
 import { InMemoryTurnStateStore } from './inMemoryStateStore.js';
@@ -73,10 +64,7 @@ const buildFixedSchedule = (tickMinutes: number): TurnSchedule => ({
     entries: [{ startMinute: 0, tickMinutes }],
 });
 
-const resolveRedisConfig = (
-    redisUrl?: string,
-    env: NodeJS.ProcessEnv = process.env
-) => {
+const resolveRedisConfig = (redisUrl?: string, env: NodeJS.ProcessEnv = process.env) => {
     if (redisUrl) {
         return { url: redisUrl };
     }
@@ -86,9 +74,7 @@ const resolveRedisConfig = (
     return resolveRedisConfigFromEnv(env);
 };
 
-export const createTurnDaemonRuntime = async (
-    options: TurnDaemonRuntimeOptions
-): Promise<TurnDaemonRuntime> => {
+export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions): Promise<TurnDaemonRuntime> => {
     // DB에서 월드를 읽고 턴 데몬을 구동할 런타임을 만든다.
     const { state, snapshot } = await loadTurnWorldFromDatabase({
         databaseUrl: options.databaseUrl,
@@ -96,9 +82,7 @@ export const createTurnDaemonRuntime = async (
     });
 
     const tickMinutes = resolveTickMinutes(state.tickSeconds, options.tickMinutes);
-    const resolvedState = options.tickMinutes
-        ? { ...state, tickSeconds: tickMinutes * 60 }
-        : state;
+    const resolvedState = options.tickMinutes ? { ...state, tickSeconds: tickMinutes * 60 } : state;
     const schedule = options.schedule ?? buildFixedSchedule(tickMinutes);
     const reservedTurnStoreHandle = options.generalTurnHandler
         ? null
@@ -136,14 +120,9 @@ export const createTurnDaemonRuntime = async (
         tickMinutes,
         beforeExecuteGeneral: reservedTurnStoreHandle
             ? async (general) => {
-                  await reservedTurnStoreHandle.store.refreshGeneralTurns(
-                      general.id
-                  );
+                  await reservedTurnStoreHandle.store.refreshGeneralTurns(general.id);
                   if (general.nationId > 0 && general.officerLevel >= 5) {
-                      await reservedTurnStoreHandle.store.refreshNationTurns(
-                          general.nationId,
-                          general.officerLevel
-                      );
+                      await reservedTurnStoreHandle.store.refreshNationTurns(general.nationId, general.officerLevel);
                   }
               }
             : undefined,
@@ -154,22 +133,17 @@ export const createTurnDaemonRuntime = async (
     let hooks: TurnDaemonHooks | undefined;
     let close = async () => {};
     let redisCommandStream: RedisTurnDaemonCommandStream | null = null;
-    let redisConnector:
-        | ReturnType<typeof createRedisConnector>
-        | null = null;
+    let redisConnector: ReturnType<typeof createRedisConnector> | null = null;
     let pauseGate: (() => Promise<boolean>) | undefined;
-    let adminActionConsumer: Awaited<
-        ReturnType<typeof createGatewayAdminActionConsumer>
-    > | null = null;
-    const gatewayGate =
-        options.profileName
-            ? await createGatewayProfileGate({
-                  databaseUrl: options.databaseUrl,
-                  gatewayDatabaseUrl: options.gatewayDatabaseUrl,
-                  profileName: options.profileName,
-                  cacheMs: options.pauseGateIntervalMs,
-              })
-            : null;
+    let adminActionConsumer: Awaited<ReturnType<typeof createGatewayAdminActionConsumer>> | null = null;
+    const gatewayGate = options.profileName
+        ? await createGatewayProfileGate({
+              databaseUrl: options.databaseUrl,
+              gatewayDatabaseUrl: options.gatewayDatabaseUrl,
+              profileName: options.profileName,
+              cacheMs: options.pauseGateIntervalMs,
+          })
+        : null;
     if (gatewayGate) {
         pauseGate = gatewayGate.shouldPause;
     }
@@ -223,13 +197,10 @@ export const createTurnDaemonRuntime = async (
     if (redisConfig) {
         redisConnector = createRedisConnector(redisConfig);
         await redisConnector.connect();
-        redisCommandStream = new RedisTurnDaemonCommandStream(
-            redisConnector.client,
-            {
-                keys: buildTurnDaemonStreamKeys(options.profileName ?? options.profile),
-                startId: options.commandStreamStartId,
-            }
-        );
+        redisCommandStream = new RedisTurnDaemonCommandStream(redisConnector.client, {
+            keys: buildTurnDaemonStreamKeys(options.profileName ?? options.profile),
+            startId: options.commandStreamStartId,
+        });
     }
 
     const baseClose = close;
@@ -256,8 +227,7 @@ export const createTurnDaemonRuntime = async (
         {
             clock,
             controlQueue: resolvedControlQueue,
-            getNextTickTime: (lastTurnTime) =>
-                getNextTickTime(lastTurnTime, tickMinutes),
+            getNextTickTime: (lastTurnTime) => getNextTickTime(lastTurnTime, tickMinutes),
             stateStore,
             processor,
             hooks,
@@ -267,7 +237,6 @@ export const createTurnDaemonRuntime = async (
         },
         { profile: options.profile, defaultBudget }
     );
-
 
     if (options.profileName) {
         adminActionConsumer = await createGatewayAdminActionConsumer({

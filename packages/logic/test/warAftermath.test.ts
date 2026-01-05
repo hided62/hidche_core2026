@@ -49,6 +49,7 @@ const buildCity = (id: number, nationId: number): City => ({
     name: `City${id}`,
     nationId,
     level: 2,
+    state: 0,
     population: 10000,
     populationMax: 10000,
     agriculture: 1000,

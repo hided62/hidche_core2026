@@ -1,15 +1,7 @@
-import type {
-    GeneralTriggerState,
-} from '@sammo-ts/logic/domain/entities.js';
-import type {
-    Constraint,
-    ConstraintContext,
-} from '@sammo-ts/logic/constraints/types.js';
+import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
+import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
-import type {
-    GeneralActionOutcome,
-    GeneralActionResolveContext,
-} from '@sammo-ts/logic/actions/engine.js';
+import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
@@ -47,34 +39,22 @@ const SIGHTSEEING_MESSAGES: Array<{
     },
     {
         flags: IncHeavyExp,
-        texts: [
-            '주점에서 사람들과 어울려 술을 마셨습니다.',
-            '위기에 빠진 사람을 구해주었습니다.',
-        ],
+        texts: ['주점에서 사람들과 어울려 술을 마셨습니다.', '위기에 빠진 사람을 구해주었습니다.'],
         weight: 1,
     },
     {
         flags: IncHeavyExp | IncLeadership,
-        texts: [
-            '백성들에게 현인의 가르침을 설파했습니다.',
-            '어느 집의 도망친 가축을 되찾아 주었습니다.',
-        ],
+        texts: ['백성들에게 현인의 가르침을 설파했습니다.', '어느 집의 도망친 가축을 되찾아 주었습니다.'],
         weight: 2,
     },
     {
         flags: IncHeavyExp | IncStrength,
-        texts: [
-            '동네 장사와 힘겨루기를 하여 멋지게 이겼습니다.',
-            '어느 집의 무너진 울타리를 고쳐주었습니다.',
-        ],
+        texts: ['동네 장사와 힘겨루기를 하여 멋지게 이겼습니다.', '어느 집의 무너진 울타리를 고쳐주었습니다.'],
         weight: 2,
     },
     {
         flags: IncHeavyExp | IncIntel,
-        texts: [
-            '어느 명사와 설전을 벌여 멋지게 이겼습니다.',
-            '거리에서 글 모르는 아이들을 모아 글을 가르쳤습니다.',
-        ],
+        texts: ['어느 명사와 설전을 벌여 멋지게 이겼습니다.', '거리에서 글 모르는 아이들을 모아 글을 가르쳤습니다.'],
         weight: 2,
     },
     {
@@ -89,10 +69,7 @@ const SIGHTSEEING_MESSAGES: Array<{
     },
     {
         flags: IncExp | DecGold,
-        texts: [
-            '산적을 만나 금 :goldAmount:을 빼앗겼습니다.',
-            '돈을 :goldAmount: 빌려주었다가 떼어먹혔습니다.',
-        ],
+        texts: ['산적을 만나 금 :goldAmount:을 빼앗겼습니다.', '돈을 :goldAmount: 빌려주었다가 떼어먹혔습니다.'],
         weight: 1,
     },
     {
@@ -127,10 +104,7 @@ const SIGHTSEEING_MESSAGES: Array<{
     },
     {
         flags: IncHeavyExp | IncStrength | IncRice,
-        texts: [
-            '호랑이를 잡아 고기 :riceAmount:을 얻었습니다.',
-            '곰을 잡아 고기 :riceAmount:을 얻었습니다.',
-        ],
+        texts: ['호랑이를 잡아 고기 :riceAmount:을 얻었습니다.', '곰을 잡아 고기 :riceAmount:을 얻었습니다.'],
         weight: 1,
     },
     {
@@ -145,16 +119,11 @@ const SIGHTSEEING_MESSAGES: Array<{
     },
 ];
 
-const pickByWeight = (
-    rng: GeneralActionResolveContext['rng']
-): { flags: number; text: string } => {
+const pickByWeight = (rng: GeneralActionResolveContext['rng']): { flags: number; text: string } => {
     if (SIGHTSEEING_MESSAGES.length === 0) {
         return { flags: 0, text: '' };
     }
-    const total = SIGHTSEEING_MESSAGES.reduce(
-        (sum, entry) => sum + Math.max(entry.weight, 0),
-        0
-    );
+    const total = SIGHTSEEING_MESSAGES.reduce((sum, entry) => sum + Math.max(entry.weight, 0), 0);
     const base = SIGHTSEEING_MESSAGES[0];
     if (!base) {
         return { flags: 0, text: '' };
@@ -183,7 +152,7 @@ const pickByWeight = (
 };
 
 export class ActionDefinition<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionDefinition<TriggerState, SightseeingArgs> {
     public readonly key = 'che_견문';
     public readonly name = ACTION_NAME;
@@ -193,10 +162,7 @@ export class ActionDefinition<
         return {};
     }
 
-    buildConstraints(
-        _ctx: ConstraintContext,
-        _args: SightseeingArgs
-    ): Constraint[] {
+    buildConstraints(_ctx: ConstraintContext, _args: SightseeingArgs): Constraint[] {
         return [];
     }
 

@@ -1,8 +1,5 @@
 import type { ScenarioConfig } from '@sammo-ts/logic/scenario/types.js';
-import type {
-    General,
-    GeneralTriggerState,
-} from '@sammo-ts/logic/domain/entities.js';
+import type { General, GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { ItemModule } from './types.js';
 
 const ITEM_REMAIN_PREFIX = 'itemRemain:';
@@ -24,15 +21,11 @@ const toBoolean = (value: unknown): boolean => {
 export const isInventoryEnabled = (config: ScenarioConfig): boolean => {
     const constConfig = config.const ?? {};
     return toBoolean(
-        constConfig['allowInventory'] ??
-            constConfig['inventoryEnabled'] ??
-            constConfig['enableInventory']
+        constConfig['allowInventory'] ?? constConfig['inventoryEnabled'] ?? constConfig['enableInventory']
     );
 };
 
-export const listEquippedItemKeys = <
-    TriggerState extends GeneralTriggerState
->(
+export const listEquippedItemKeys = <TriggerState extends GeneralTriggerState>(
     general: General<TriggerState>
 ): string[] => {
     const items = [
@@ -53,21 +46,15 @@ export const listEquippedItemKeys = <
     return result;
 };
 
-export const getItemRemain = <
-    TriggerState extends GeneralTriggerState
->(
+export const getItemRemain = <TriggerState extends GeneralTriggerState>(
     general: General<TriggerState>,
     itemKey: string
 ): number | null => {
-    const value = general.triggerState.counters[
-        `${ITEM_REMAIN_PREFIX}${itemKey}`
-    ];
+    const value = general.triggerState.counters[`${ITEM_REMAIN_PREFIX}${itemKey}`];
     return typeof value === 'number' && value > 0 ? value : null;
 };
 
-export const setItemRemain = <
-    TriggerState extends GeneralTriggerState
->(
+export const setItemRemain = <TriggerState extends GeneralTriggerState>(
     general: General<TriggerState>,
     itemKey: string,
     remain: number | null
@@ -80,9 +67,7 @@ export const setItemRemain = <
     general.triggerState.counters[key] = remain;
 };
 
-export const consumeItemRemain = <
-    TriggerState extends GeneralTriggerState
->(
+export const consumeItemRemain = <TriggerState extends GeneralTriggerState>(
     general: General<TriggerState>,
     itemKey: string,
     fallbackRemain = 1
@@ -96,9 +81,7 @@ export const consumeItemRemain = <
     return true;
 };
 
-export const canAcquireItem = <
-    TriggerState extends GeneralTriggerState
->(options: {
+export const canAcquireItem = <TriggerState extends GeneralTriggerState>(options: {
     general: General<TriggerState>;
     item: ItemModule;
     config: ScenarioConfig;

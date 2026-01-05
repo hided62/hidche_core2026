@@ -6,8 +6,5 @@
         "composite": false
     },
     "include": ["src"],
-    "references": [
-        { "path": "../../packages/common" },
-        { "path": "../../packages/logic" }
-    ]
+    "references": [{ "path": "../../packages/common" }, { "path": "../../packages/logic" }]
 }

@@ -1,14 +1,8 @@
 import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
-import type {
-    Constraint,
-    ConstraintContext,
-} from '@sammo-ts/logic/constraints/types.js';
+import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import { beNeutral, existsDestNation } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
-import type {
-    GeneralActionOutcome,
-    GeneralActionResolveContext,
-} from '@sammo-ts/logic/actions/engine.js';
+import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat } from '@sammo-ts/logic/logging/types.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
@@ -28,7 +22,7 @@ const parseNationId = (raw: unknown): number | null => {
 };
 
 export class ActionDefinition<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionDefinition<TriggerState, AppointmentArgs> {
     public readonly key = 'che_임관';
     public readonly name = ACTION_NAME;
@@ -50,13 +44,10 @@ export class ActionDefinition<
         context: GeneralActionResolveContext<TriggerState>,
         args: AppointmentArgs
     ): GeneralActionOutcome<TriggerState> {
-        context.addLog(
-            `${ACTION_NAME}을 신청했습니다. (국가 ${args.destNationId})`,
-            {
-                category: LogCategory.ACTION,
-                format: LogFormat.MONTH,
-            }
-        );
+        context.addLog(`${ACTION_NAME}을 신청했습니다. (국가 ${args.destNationId})`, {
+            category: LogCategory.ACTION,
+            format: LogFormat.MONTH,
+        });
         return { effects: [] };
     }
 }

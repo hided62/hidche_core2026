@@ -9,10 +9,7 @@ import {
     suppliedCity,
 } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
-import type {
-    GeneralActionOutcome,
-    GeneralActionResolveContext,
-} from '@sammo-ts/logic/actions/engine.js';
+import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
 import { createLogEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
@@ -35,10 +32,8 @@ const parseNationId = (raw: unknown): number | null => {
 
 // 불가침 파기 제의를 처리하는 국가 커맨드.
 export class ActionDefinition<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> implements
-        GeneralActionDefinition<TriggerState, NonAggressionCancelProposalArgs>
-{
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
+> implements GeneralActionDefinition<TriggerState, NonAggressionCancelProposalArgs> {
     public readonly key = 'che_불가침파기제의';
     public readonly name = ACTION_NAME;
 
@@ -51,20 +46,14 @@ export class ActionDefinition<
         return { destNationId };
     }
 
-    buildConstraints(
-        _ctx: ConstraintContext,
-        _args: NonAggressionCancelProposalArgs
-    ): Constraint[] {
+    buildConstraints(_ctx: ConstraintContext, _args: NonAggressionCancelProposalArgs): Constraint[] {
         return [
             beChief(),
             notBeNeutral(),
             occupiedCity(),
             suppliedCity(),
             existsDestNation(),
-            allowDiplomacyBetweenStatus(
-                [DIPLOMACY_NON_AGGRESSION],
-                '불가침 중인 상대국에게만 가능합니다.'
-            ),
+            allowDiplomacyBetweenStatus([DIPLOMACY_NON_AGGRESSION], '불가침 중인 상대국에게만 가능합니다.'),
         ];
     }
 
@@ -74,14 +63,11 @@ export class ActionDefinition<
     ): GeneralActionOutcome<TriggerState> {
         return {
             effects: [
-                createLogEffect(
-                    `${ACTION_NAME}을 준비했습니다. (국가 ${args.destNationId})`,
-                    {
-                        scope: LogScope.GENERAL,
-                        category: LogCategory.ACTION,
-                        format: LogFormat.MONTH,
-                    }
-                ),
+                createLogEffect(`${ACTION_NAME}을 준비했습니다. (국가 ${args.destNationId})`, {
+                    scope: LogScope.GENERAL,
+                    category: LogCategory.ACTION,
+                    format: LogFormat.MONTH,
+                }),
             ],
         };
     }

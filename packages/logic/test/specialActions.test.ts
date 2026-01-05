@@ -69,6 +69,7 @@ const buildCity = (): City => ({
     name: 'TestCity',
     nationId: 1,
     level: 2,
+    state: 0,
     population: 10000,
     populationMax: 10000,
     agriculture: 500,
@@ -163,27 +164,15 @@ const buildUnitSet = (): UnitSetDefinition => ({
 
 describe('trait modules', () => {
     it('loads trait modules by key', async () => {
-        const domestic = await loadDomesticTraitModules([
-            'che_인덕',
-            'che_발명',
-        ]);
+        const domestic = await loadDomesticTraitModules(['che_인덕', 'che_발명']);
         const war = await loadWarTraitModules(['che_의술', 'che_징병']);
 
-        expect(domestic.map((module) => module.key)).toEqual([
-            'che_인덕',
-            'che_발명',
-        ]);
-        expect(war.map((module) => module.key)).toEqual([
-            'che_의술',
-            'che_징병',
-        ]);
+        expect(domestic.map((module) => module.key)).toEqual(['che_인덕', 'che_발명']);
+        expect(war.map((module) => module.key)).toEqual(['che_의술', 'che_징병']);
     });
 
     it('applies domestic and war modifiers in general pipeline', async () => {
-        const domestic = await loadDomesticTraitModules([
-            'che_인덕',
-            'che_발명',
-        ]);
+        const domestic = await loadDomesticTraitModules(['che_인덕', 'che_발명']);
         const war = await loadWarTraitModules(['che_의술', 'che_징병']);
         const registry = createTraitModuleRegistry({ domestic, war });
         const traitModules = createTraitModules(registry);
@@ -204,20 +193,13 @@ describe('trait modules', () => {
         });
 
         const context = { general };
-        expect(
-            pipeline.onCalcDomestic(context, '민심', 'score', 100)
-        ).toBeCloseTo(110);
-        expect(
-            pipeline.onCalcDomestic(context, '징병', 'train', 40)
-        ).toBe(70);
+        expect(pipeline.onCalcDomestic(context, '민심', 'score', 100)).toBeCloseTo(110);
+        expect(pipeline.onCalcDomestic(context, '징병', 'train', 40)).toBe(70);
         expect(pipeline.onCalcStat(context, 'leadership', 80)).toBe(100);
     });
 
     it('heals city generals with 의술 pre-turn trigger', async () => {
-        const domestic = await loadDomesticTraitModules([
-            'che_인덕',
-            'che_발명',
-        ]);
+        const domestic = await loadDomesticTraitModules(['che_인덕', 'che_발명']);
         const war = await loadWarTraitModules(['che_의술', 'che_징병']);
         const registry = createTraitModuleRegistry({ domestic, war });
         const traitModules = createTraitModules(registry);
@@ -270,10 +252,7 @@ describe('trait modules', () => {
     });
 
     it('activates 의술 battle trigger and reduces damage', async () => {
-        const domestic = await loadDomesticTraitModules([
-            'che_인덕',
-            'che_발명',
-        ]);
+        const domestic = await loadDomesticTraitModules(['che_인덕', 'che_발명']);
         const war = await loadWarTraitModules(['che_의술', 'che_징병']);
         const registry = createTraitModuleRegistry({ domestic, war });
         const traitModules = createTraitModules(registry);
@@ -281,7 +260,7 @@ describe('trait modules', () => {
         const rng = new RandUtil(new ConstantRNG(0));
         const config = buildConfig();
         const unitSet = buildUnitSet();
-        const crewType = new WarCrewType(unitSet.crewTypes?.[0]!);
+        const crewType = new WarCrewType(unitSet.crewTypes![0]);
         const city = buildCity();
         const nation = buildNation();
         const general = buildGeneral({
@@ -315,7 +294,7 @@ describe('trait modules', () => {
             config,
             city,
             nation,
-            new WarCrewType(unitSet.crewTypes?.[1]!),
+            new WarCrewType(unitSet.crewTypes![1]),
             new ActionLogger({}),
             200,
             180
@@ -325,9 +304,7 @@ describe('trait modules', () => {
         defender.setOppose(attacker);
         attacker.beginPhase();
 
-        const caller = attacker
-            .getActionPipeline()
-            .getBattlePhaseTriggerList(attacker.getActionContext());
+        const caller = attacker.getActionPipeline().getBattlePhaseTriggerList(attacker.getActionContext());
         caller.fire({ rng, attacker, defender }, createWarTriggerEnv());
 
         expect(defender.getWarPowerMultiply()).toBeCloseTo(0.7);

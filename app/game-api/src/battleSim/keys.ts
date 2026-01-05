@@ -4,9 +4,7 @@ export interface BattleSimQueueKeys {
     notifyKeyPrefix: string;
 }
 
-export const buildBattleSimQueueKeys = (
-    profileName: string
-): BattleSimQueueKeys => ({
+export const buildBattleSimQueueKeys = (profileName: string): BattleSimQueueKeys => ({
     queueKey: `sammo:${profileName}:battle-sim:queue`,
     resultKeyPrefix: `sammo:${profileName}:battle-sim:result:`,
     notifyKeyPrefix: `sammo:${profileName}:battle-sim:notify:`,

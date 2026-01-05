@@ -1,11 +1,25 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 @theme {
-  --color-sammo-dark: #1a1a1a;
-  --color-sammo-gold: #ffd700;
+    --color-sammo-dark: #1a1a1a;
+    --color-sammo-gold: #ffd700;
 }
 
 body {
-  @apply bg-black text-gray-200;
-  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif;
+    @apply bg-black text-gray-200;
+    font-family:
+        'Pretendard',
+        -apple-system,
+        BlinkMacSystemFont,
+        system-ui,
+        Roboto,
+        'Helvetica Neue',
+        'Segoe UI',
+        'Apple SD Gothic Neo',
+        'Noto Sans KR',
+        'Malgun Gothic',
+        'Apple Color Emoji',
+        'Segoe UI Emoji',
+        'Segoe UI Symbol',
+        sans-serif;
 }

@@ -7,10 +7,7 @@ import { procedure, router } from './trpc.js';
 import type { UserSanctions, UserServerRestriction } from './auth/userRepository.js';
 import type { AdminAuthContext } from './adminAuth.js';
 import type { GatewayApiContext } from './context.js';
-import {
-    GATEWAY_BUILD_STATUSES,
-    GATEWAY_PROFILE_STATUSES,
-} from './orchestrator/profileRepository.js';
+import { GATEWAY_BUILD_STATUSES, GATEWAY_PROFILE_STATUSES } from './orchestrator/profileRepository.js';
 
 const zProfileStatus = z.enum(GATEWAY_PROFILE_STATUSES);
 const zBuildStatus = z.enum(GATEWAY_BUILD_STATUSES);
@@ -37,12 +34,9 @@ const ROLE_RESET_SCHEDULE = 'admin.reset.schedule';
 const ROLE_RESUME_WHEN_STOPPED = 'admin.resume.when-stopped';
 const ROLE_SURVEY_OPEN = 'admin.survey.open';
 
-const readSessionToken = (
-    headers: Record<string, string | string[] | undefined>
-): string | null => {
-    const provided =
-        headers['x-session-token'] ?? headers['authorization'] ?? '';
-    const raw = Array.isArray(provided) ? provided[0] ?? '' : (provided as string);
+const readSessionToken = (headers: Record<string, string | string[] | undefined>): string | null => {
+    const provided = headers['x-session-token'] ?? headers['authorization'] ?? '';
+    const raw = Array.isArray(provided) ? (provided[0] ?? '') : (provided as string);
     const token = raw.startsWith('Bearer ') ? raw.slice(7) : raw;
     const trimmed = token.trim();
     return trimmed ? trimmed : null;
@@ -83,9 +77,7 @@ const resolveAdminAuth = async (ctx: GatewayApiContext): Promise<AdminAuthContex
         roles.includes(ROLE_SUPERUSER) ||
         roles.includes(ADMIN_ROLE_SUPERUSER) ||
         (await isFirstUser(ctx, session.userId));
-    const hasAdminRole =
-        isSuperuser ||
-        roles.some((role) => role === 'admin' || role.startsWith(ADMIN_ROLE_PREFIX));
+    const hasAdminRole = isSuperuser || roles.some((role) => role === 'admin' || role.startsWith(ADMIN_ROLE_PREFIX));
     if (!hasAdminRole) {
         throw new TRPCError({
             code: 'FORBIDDEN',
@@ -110,11 +102,7 @@ const requireAdminAuth = (ctx: { adminAuth?: AdminAuthContext }): AdminAuthConte
     return ctx.adminAuth;
 };
 
-const roleMatchesScope = (
-    role: string,
-    permission: string,
-    profileName?: string
-): boolean => {
+const roleMatchesScope = (role: string, permission: string, profileName?: string): boolean => {
     if (role === permission || role === `${permission}:*`) {
         return true;
     }
@@ -124,24 +112,14 @@ const roleMatchesScope = (
     return false;
 };
 
-const hasScopedPermission = (
-    adminAuth: AdminAuthContext,
-    permission: string,
-    profileName?: string
-): boolean => {
+const hasScopedPermission = (adminAuth: AdminAuthContext, permission: string, profileName?: string): boolean => {
     if (adminAuth.isSuperuser) {
         return true;
     }
-    return adminAuth.roles.some((role: string) =>
-        roleMatchesScope(role, permission, profileName)
-    );
+    return adminAuth.roles.some((role: string) => roleMatchesScope(role, permission, profileName));
 };
 
-const assertPermission = (
-    adminAuth: AdminAuthContext,
-    permission: string,
-    profileName?: string
-): void => {
+const assertPermission = (adminAuth: AdminAuthContext, permission: string, profileName?: string): void => {
     if (hasScopedPermission(adminAuth, permission, profileName)) {
         return;
     }
@@ -210,15 +188,9 @@ const zSanctionsPatch = z.object({
 type SanctionsPatch = z.infer<typeof zSanctionsPatch>;
 
 // 제재 패치 입력을 현재 제재 상태에 병합한다.
-const applySanctionsPatch = (
-    current: UserSanctions,
-    patch: SanctionsPatch
-): UserSanctions => {
+const applySanctionsPatch = (current: UserSanctions, patch: SanctionsPatch): UserSanctions => {
     const next: UserSanctions = { ...current };
-    const applyField = <K extends keyof UserSanctions>(
-        key: K,
-        value: UserSanctions[K] | null | undefined
-    ): void => {
+    const applyField = <K extends keyof UserSanctions>(key: K, value: UserSanctions[K] | null | undefined): void => {
         if (value === undefined) {
             return;
         }
@@ -242,9 +214,7 @@ const applySanctionsPatch = (
             delete next.serverRestrictions;
         } else {
             const existing = { ...(next.serverRestrictions ?? {}) };
-            for (const [profile, restriction] of Object.entries(
-                patch.serverRestrictions
-            )) {
+            for (const [profile, restriction] of Object.entries(patch.serverRestrictions)) {
                 if (!restriction) {
                     delete existing[profile];
                 } else {
@@ -331,14 +301,13 @@ export const adminRouter = router({
     }),
     users: router({
         lookup: userAdminProcedure.input(zUserLookupInput).query(async ({ ctx, input }) => {
-            const user =
-                input.id
-                    ? await ctx.users.findById(input.id)
-                    : input.username
-                      ? await ctx.users.findByUsername(input.username)
-                      : input.email
-                        ? await ctx.users.findByEmail(input.email)
-                        : null;
+            const user = input.id
+                ? await ctx.users.findById(input.id)
+                : input.username
+                  ? await ctx.users.findByUsername(input.username)
+                  : input.email
+                    ? await ctx.users.findByEmail(input.email)
+                    : null;
             if (!user) {
                 return null;
             }
@@ -364,10 +333,7 @@ export const adminRouter = router({
             .mutation(async ({ ctx, input }) => {
                 const password = input.newPassword ?? buildAdminPassword();
                 await ctx.users.updatePassword(input.userId, password);
-                await ctx.flushPublisher.publishUserFlush(
-                    input.userId,
-                    'admin-password-reset'
-                );
+                await ctx.flushPublisher.publishUserFlush(input.userId, 'admin-password-reset');
                 return { password };
             }),
         updateRoles: userAdminProcedure
@@ -404,10 +370,7 @@ export const adminRouter = router({
                 }
                 const nextRoles = Array.from(roles);
                 await ctx.users.updateRoles(input.userId, nextRoles);
-                await ctx.flushPublisher.publishUserFlush(
-                    input.userId,
-                    'admin-roles-updated'
-                );
+                await ctx.flushPublisher.publishUserFlush(input.userId, 'admin-roles-updated');
                 return { roles: nextRoles };
             }),
         updateSanctions: userAdminProcedure
@@ -427,10 +390,7 @@ export const adminRouter = router({
                 }
                 const next = applySanctionsPatch(user.sanctions, input.patch);
                 await ctx.users.updateSanctions(input.userId, next);
-                await ctx.flushPublisher.publishUserFlush(
-                    input.userId,
-                    'admin-sanctions-updated'
-                );
+                await ctx.flushPublisher.publishUserFlush(input.userId, 'admin-sanctions-updated');
                 return { sanctions: next };
             }),
         setServerRestriction: userAdminProcedure
@@ -456,10 +416,7 @@ export const adminRouter = router({
                 };
                 const next = applySanctionsPatch(user.sanctions, patch);
                 await ctx.users.updateSanctions(input.userId, next);
-                await ctx.flushPublisher.publishUserFlush(
-                    input.userId,
-                    'admin-server-restriction'
-                );
+                await ctx.flushPublisher.publishUserFlush(input.userId, 'admin-server-restriction');
                 return { sanctions: next };
             }),
         resetProfileIcon: userAdminProcedure
@@ -480,10 +437,7 @@ export const adminRouter = router({
                     profileIconResetAt: new Date().toISOString(),
                 });
                 await ctx.users.updateSanctions(input.userId, next);
-                await ctx.flushPublisher.publishUserFlush(
-                    input.userId,
-                    'admin-profile-icon-reset'
-                );
+                await ctx.flushPublisher.publishUserFlush(input.userId, 'admin-profile-icon-reset');
                 return { profileIconResetAt: next.profileIconResetAt };
             }),
         forceDelete: userAdminProcedure
@@ -493,10 +447,7 @@ export const adminRouter = router({
                 })
             )
             .mutation(async ({ ctx, input }) => {
-                await ctx.flushPublisher.publishUserFlush(
-                    input.userId,
-                    'admin-force-withdraw'
-                );
+                await ctx.flushPublisher.publishUserFlush(input.userId, 'admin-force-withdraw');
                 await ctx.users.deleteUser(input.userId);
                 return { ok: true };
             }),
@@ -507,9 +458,7 @@ export const adminRouter = router({
             const runtimeStates = await ctx.orchestrator.listRuntimeStates(
                 profiles.map((profile) => profile.profileName)
             );
-            const runtimeMap = new Map(
-                runtimeStates.map((state) => [state.profileName, state])
-            );
+            const runtimeMap = new Map(runtimeStates.map((state) => [state.profileName, state]));
             return profiles.map((profile) => ({
                 ...profile,
                 runtime: runtimeMap.get(profile.profileName) ?? {
@@ -563,16 +512,11 @@ export const adminRouter = router({
                         message: 'preopenAt and openAt are required for RESERVED status.',
                     });
                 }
-                const result = await ctx.profiles.updateStatus(
-                    input.profileName,
-                    input.status,
-                    {
-                        preopenAt: input.preopenAt,
-                        openAt: input.openAt,
-                        scheduledStartAt:
-                            input.status === 'RESERVED' ? input.scheduledStartAt : null,
-                    }
-                );
+                const result = await ctx.profiles.updateStatus(input.profileName, input.status, {
+                    preopenAt: input.preopenAt,
+                    openAt: input.openAt,
+                    scheduledStartAt: input.status === 'RESERVED' ? input.scheduledStartAt : null,
+                });
                 if (input.buildCommitSha) {
                     await ctx.profiles.updateBuildStatus(input.profileName, 'IDLE', {
                         commitSha: input.buildCommitSha,
@@ -617,10 +561,7 @@ export const adminRouter = router({
             )
             .mutation(async ({ ctx, input }) => {
                 const adminAuth = requireAdminAuth(ctx);
-                if (
-                    (input.action === 'ACCELERATE' || input.action === 'DELAY') &&
-                    !input.durationMinutes
-                ) {
+                if ((input.action === 'ACCELERATE' || input.action === 'DELAY') && !input.durationMinutes) {
                     throw new TRPCError({
                         code: 'BAD_REQUEST',
                         message: 'durationMinutes is required for acceleration or delay.',
@@ -640,24 +581,13 @@ export const adminRouter = router({
                     });
                 }
 
-                const canManageProfiles = hasScopedPermission(
-                    adminAuth,
-                    ROLE_ADMIN_PROFILES,
-                    profile.profileName
-                );
+                const canManageProfiles = hasScopedPermission(adminAuth, ROLE_ADMIN_PROFILES, profile.profileName);
                 const canResume =
-                    canManageProfiles ||
-                    hasScopedPermission(
-                        adminAuth,
-                        ROLE_RESUME_WHEN_STOPPED,
-                        profile.profileName
-                    );
+                    canManageProfiles || hasScopedPermission(adminAuth, ROLE_RESUME_WHEN_STOPPED, profile.profileName);
                 const canResetSchedule =
-                    canManageProfiles ||
-                    hasScopedPermission(adminAuth, ROLE_RESET_SCHEDULE, profile.profileName);
+                    canManageProfiles || hasScopedPermission(adminAuth, ROLE_RESET_SCHEDULE, profile.profileName);
                 const canOpenSurvey =
-                    canManageProfiles ||
-                    hasScopedPermission(adminAuth, ROLE_SURVEY_OPEN, profile.profileName);
+                    canManageProfiles || hasScopedPermission(adminAuth, ROLE_SURVEY_OPEN, profile.profileName);
 
                 if (input.action === 'RESUME') {
                     if (profile.status !== 'STOPPED') {
@@ -739,15 +669,11 @@ export const adminRouter = router({
             )
             .mutation(async ({ ctx, input }) => {
                 const requestedAt = new Date().toISOString();
-                const result = await ctx.profiles.updateBuildStatus(
-                    input.profileName,
-                    'QUEUED',
-                    {
-                        requestedAt,
-                        error: null,
-                        commitSha: input.commitSha,
-                    }
-                );
+                const result = await ctx.profiles.updateBuildStatus(input.profileName, 'QUEUED', {
+                    requestedAt,
+                    error: null,
+                    commitSha: input.commitSha,
+                });
                 return result;
             }),
         setBuildStatus: profileAdminProcedure
@@ -757,9 +683,7 @@ export const adminRouter = router({
                     status: zBuildStatus,
                 })
             )
-            .mutation(async ({ ctx, input }) =>
-                ctx.profiles.updateBuildStatus(input.profileName, input.status)
-            ),
+            .mutation(async ({ ctx, input }) => ctx.profiles.updateBuildStatus(input.profileName, input.status)),
         reconcileNow: profileAdminProcedure.mutation(async ({ ctx }) => {
             await ctx.orchestrator.reconcileNow();
             return { ok: true };

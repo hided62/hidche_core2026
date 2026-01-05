@@ -1,4 +1,10 @@
-import type { TurnDaemonHooks, TurnDaemonCommandHandler, TurnDaemonCommand, TurnDaemonCommandResult, TurnRunResult } from '../lifecycle/types.js';
+import type {
+    TurnDaemonHooks,
+    TurnDaemonCommandHandler,
+    TurnDaemonCommand,
+    TurnDaemonCommandResult,
+    TurnRunResult,
+} from '../lifecycle/types.js';
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
 
 const buildFlushResult = (world: InMemoryTurnWorld): TurnRunResult => {
@@ -13,10 +19,7 @@ const buildFlushResult = (world: InMemoryTurnWorld): TurnRunResult => {
     };
 };
 
-const flushWorld = async (
-    world: InMemoryTurnWorld,
-    hooks?: TurnDaemonHooks
-): Promise<void> => {
+const flushWorld = async (world: InMemoryTurnWorld, hooks?: TurnDaemonHooks): Promise<void> => {
     if (!hooks?.flushChanges) {
         return;
     }
@@ -122,9 +125,7 @@ async function handleTroopExit(
     }
 
     const troopId = general.troopId;
-    const members = world
-        .listGenerals()
-        .filter((entry) => entry.troopId === troopId);
+    const members = world.listGenerals().filter((entry) => entry.troopId === troopId);
     for (const member of members) {
         world.updateGeneral(member.id, { troopId: 0 });
     }
@@ -145,7 +146,12 @@ async function handleDieOnPrestart(
     const { world, hooks } = ctx;
     const general = world.getGeneralById(command.generalId);
     if (!general) {
-        return { type: 'dieOnPrestart', ok: false, generalId: command.generalId, reason: '장수 정보를 찾을 수 없습니다.' };
+        return {
+            type: 'dieOnPrestart',
+            ok: false,
+            generalId: command.generalId,
+            reason: '장수 정보를 찾을 수 없습니다.',
+        };
     }
     const worldState = world.getState();
     const opentime = worldState.meta.opentime as string | undefined;
@@ -169,16 +175,31 @@ async function handleBuildNationCandidate(
     const { world } = ctx;
     const general = world.getGeneralById(command.generalId);
     if (!general) {
-        return { type: 'buildNationCandidate', ok: false, generalId: command.generalId, reason: '장수 정보를 찾을 수 없습니다.' };
+        return {
+            type: 'buildNationCandidate',
+            ok: false,
+            generalId: command.generalId,
+            reason: '장수 정보를 찾을 수 없습니다.',
+        };
     }
     if (general.nationId !== 0) {
-        return { type: 'buildNationCandidate', ok: false, generalId: command.generalId, reason: '이미 국가에 소속되어 있습니다.' };
+        return {
+            type: 'buildNationCandidate',
+            ok: false,
+            generalId: command.generalId,
+            reason: '이미 국가에 소속되어 있습니다.',
+        };
     }
 
     const worldState = world.getState();
     const opentime = worldState.meta.opentime as string | undefined;
     if (opentime && new Date(worldState.lastTurnTime) > new Date(opentime)) {
-        return { type: 'buildNationCandidate', ok: false, generalId: command.generalId, reason: '가오픈 기간이 아닙니다.' };
+        return {
+            type: 'buildNationCandidate',
+            ok: false,
+            generalId: command.generalId,
+            reason: '가오픈 기간이 아닙니다.',
+        };
     }
 
     return { type: 'buildNationCandidate', ok: true, generalId: command.generalId };
@@ -191,13 +212,23 @@ async function handleInstantRetreat(
     const { world } = ctx;
     const general = world.getGeneralById(command.generalId);
     if (!general) {
-        return { type: 'instantRetreat', ok: false, generalId: command.generalId, reason: '장수 정보를 찾을 수 없습니다.' };
+        return {
+            type: 'instantRetreat',
+            ok: false,
+            generalId: command.generalId,
+            reason: '장수 정보를 찾을 수 없습니다.',
+        };
     }
 
     const config = world.getScenarioConfig();
     const availableInstantAction = config.const.availableInstantAction as Record<string, boolean> | undefined;
     if (!availableInstantAction?.instantRetreat) {
-        return { type: 'instantRetreat', ok: false, generalId: command.generalId, reason: '즉시 귀환이 허용되지 않는 서버입니다.' };
+        return {
+            type: 'instantRetreat',
+            ok: false,
+            generalId: command.generalId,
+            reason: '즉시 귀환이 허용되지 않는 서버입니다.',
+        };
     }
 
     return { type: 'instantRetreat', ok: true, generalId: command.generalId };
@@ -222,13 +253,18 @@ async function handleSetMySetting(
     const { world, hooks } = ctx;
     const general = world.getGeneralById(command.generalId);
     if (!general) {
-        return { type: 'setMySetting', ok: false, generalId: command.generalId, reason: '장수 정보를 찾을 수 없습니다.' };
+        return {
+            type: 'setMySetting',
+            ok: false,
+            generalId: command.generalId,
+            reason: '장수 정보를 찾을 수 없습니다.',
+        };
     }
     world.updateGeneral(command.generalId, {
         meta: {
             ...general.meta,
             ...command.settings,
-        }
+        },
     });
     await flushWorld(world, hooks);
     return { type: 'setMySetting', ok: true, generalId: command.generalId };
@@ -257,7 +293,7 @@ async function handleDropItem(
         role: {
             ...general.role,
             items,
-        }
+        },
     });
     await flushWorld(world, hooks);
     return { type: 'dropItem', ok: true, generalId: command.generalId };
@@ -270,7 +306,12 @@ async function handleChangePermission(
     const { world, hooks } = ctx;
     const general = world.getGeneralById(command.generalId);
     if (!general) {
-        return { type: 'changePermission', ok: false, generalId: command.generalId, reason: '장수 정보를 찾을 수 없습니다.' };
+        return {
+            type: 'changePermission',
+            ok: false,
+            generalId: command.generalId,
+            reason: '장수 정보를 찾을 수 없습니다.',
+        };
     }
     const nation = world.getNationById(general.nationId);
     if (!nation || nation.chiefGeneralId !== general.id) {
@@ -284,7 +325,7 @@ async function handleChangePermission(
                 meta: {
                     ...target.meta,
                     permission: command.isAmbassador ? 'ambassador' : 'auditor',
-                }
+                },
             });
         }
     }
@@ -309,7 +350,12 @@ async function handleKick(
 
     const target = world.getGeneralById(command.destGeneralId);
     if (!target || target.nationId !== general.nationId) {
-        return { type: 'kick', ok: false, generalId: command.generalId, reason: '대상을 찾을 수 없거나 같은 국가가 아닙니다.' };
+        return {
+            type: 'kick',
+            ok: false,
+            generalId: command.generalId,
+            reason: '대상을 찾을 수 없거나 같은 국가가 아닙니다.',
+        };
     }
 
     world.updateGeneral(command.destGeneralId, {
@@ -337,7 +383,12 @@ async function handleAppoint(
 
     const target = world.getGeneralById(command.destGeneralId);
     if (command.destGeneralId !== 0 && (!target || target.nationId !== general.nationId)) {
-        return { type: 'appoint', ok: false, generalId: command.generalId, reason: '대상을 찾을 수 없거나 같은 국가가 아닙니다.' };
+        return {
+            type: 'appoint',
+            ok: false,
+            generalId: command.generalId,
+            reason: '대상을 찾을 수 없거나 같은 국가가 아닙니다.',
+        };
     }
 
     if (command.officerLevel >= 5) {
@@ -352,17 +403,26 @@ async function handleAppoint(
     } else {
         const city = world.getCityById(command.destCityId);
         if (!city || city.nationId !== general.nationId) {
-            return { type: 'appoint', ok: false, generalId: command.generalId, reason: '도시를 찾을 수 없거나 아군 도시가 아닙니다.' };
+            return {
+                type: 'appoint',
+                ok: false,
+                generalId: command.generalId,
+                reason: '도시를 찾을 수 없거나 아군 도시가 아닙니다.',
+            };
         }
         for (const g of world.listGenerals()) {
-            if (g.nationId === general.nationId && g.meta.officerCity === command.destCityId && g.officerLevel === command.officerLevel) {
+            if (
+                g.nationId === general.nationId &&
+                g.meta.officerCity === command.destCityId &&
+                g.officerLevel === command.officerLevel
+            ) {
                 world.updateGeneral(g.id, { officerLevel: 0, meta: { ...g.meta, officerCity: 0 } });
             }
         }
         if (command.destGeneralId !== 0) {
-            world.updateGeneral(command.destGeneralId, { 
+            world.updateGeneral(command.destGeneralId, {
                 officerLevel: command.officerLevel,
-                meta: { ...target!.meta, officerCity: command.destCityId }
+                meta: { ...target!.meta, officerCity: command.destCityId },
             });
         }
     }
@@ -380,18 +440,30 @@ export const createTurnDaemonCommandHandler = (options: {
     return {
         handle: async (command): Promise<TurnDaemonCommandResult | null> => {
             switch (command.type) {
-                case 'troopJoin': return handleTroopJoin(ctx, command);
-                case 'troopExit': return handleTroopExit(ctx, command);
-                case 'dieOnPrestart': return handleDieOnPrestart(ctx, command);
-                case 'buildNationCandidate': return handleBuildNationCandidate(ctx, command);
-                case 'instantRetreat': return handleInstantRetreat(ctx, command);
-                case 'vacation': return handleVacation(ctx, command);
-                case 'setMySetting': return handleSetMySetting(ctx, command);
-                case 'dropItem': return handleDropItem(ctx, command);
-                case 'changePermission': return handleChangePermission(ctx, command);
-                case 'kick': return handleKick(ctx, command);
-                case 'appoint': return handleAppoint(ctx, command);
-                default: return null;
+                case 'troopJoin':
+                    return handleTroopJoin(ctx, command);
+                case 'troopExit':
+                    return handleTroopExit(ctx, command);
+                case 'dieOnPrestart':
+                    return handleDieOnPrestart(ctx, command);
+                case 'buildNationCandidate':
+                    return handleBuildNationCandidate(ctx, command);
+                case 'instantRetreat':
+                    return handleInstantRetreat(ctx, command);
+                case 'vacation':
+                    return handleVacation(ctx, command);
+                case 'setMySetting':
+                    return handleSetMySetting(ctx, command);
+                case 'dropItem':
+                    return handleDropItem(ctx, command);
+                case 'changePermission':
+                    return handleChangePermission(ctx, command);
+                case 'kick':
+                    return handleKick(ctx, command);
+                case 'appoint':
+                    return handleAppoint(ctx, command);
+                default:
+                    return null;
             }
         },
     };

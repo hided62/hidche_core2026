@@ -40,8 +40,7 @@ const META_LEADERSHIP_EXP = 'leadershipExp';
 const RANK_WARNUM = `${META_RANK_PREFIX}warnum`;
 const RANK_KILLNUM = `${META_RANK_PREFIX}killnum`;
 
-const toDexStatName = (armType: number): WarStatName =>
-    `dex${armType}` as WarStatName;
+const toDexStatName = (armType: number): WarStatName => `dex${armType}` as WarStatName;
 const RANK_DEATHNUM = `${META_RANK_PREFIX}deathnum`;
 const RANK_OCCUPIED = `${META_RANK_PREFIX}occupied`;
 const RANK_KILLCREW = `${META_RANK_PREFIX}killcrew`;
@@ -51,8 +50,7 @@ const RANK_DEATHCREW_PERSON = `${META_RANK_PREFIX}deathcrew_person`;
 
 const WAR_CRITICAL_RANGE: [number, number] = [1.3, 2.0];
 
-const resolveNationTech = (nation: Nation | null): number =>
-    nation ? getMetaNumber(nation.meta, 'tech', 0) : 0;
+const resolveNationTech = (nation: Nation | null): number => (nation ? getMetaNumber(nation.meta, 'tech', 0) : 0);
 
 const resolveNationVar = (nation: Nation | null, key: string): TriggerValue | null => {
     if (!nation) {
@@ -79,9 +77,7 @@ const resolveNationVar = (nation: Nation | null, key: string): TriggerValue | nu
 };
 
 // 전투 유닛 공통 상태와 수치 계산(legacy WarUnit 계열 포팅).
-export abstract class WarUnit<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+export abstract class WarUnit<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     private static nextUnitId = 1;
     private readonly unitId: number;
 
@@ -226,8 +222,7 @@ export abstract class WarUnit<
             if (!state) {
                 continue;
             }
-            this.logActivatedSkill[skillName] =
-                (this.logActivatedSkill[skillName] ?? 0) + 1;
+            this.logActivatedSkill[skillName] = (this.logActivatedSkill[skillName] ?? 0) + 1;
         }
         this.activatedSkill = {};
     }
@@ -237,8 +232,7 @@ export abstract class WarUnit<
     }
 
     public hasActivatedSkillOnLog(skillName: string): number {
-        return (this.logActivatedSkill[skillName] ?? 0) +
-            (this.hasActivatedSkill(skillName) ? 1 : 0);
+        return (this.logActivatedSkill[skillName] ?? 0) + (this.hasActivatedSkill(skillName) ? 1 : 0);
     }
 
     public getActivatedSkillLog(): Record<string, number> {
@@ -295,9 +289,7 @@ export abstract class WarUnit<
         warPower *= getDexLog(myDex, opposeDex);
 
         warPower *= this.getCrewType().getAttackCoef(oppose.getCrewType());
-        opposeWarPowerMultiply *= this.getCrewType().getDefenceCoef(
-            oppose.getCrewType()
-        );
+        opposeWarPowerMultiply *= this.getCrewType().getDefenceCoef(oppose.getCrewType());
 
         this.warPower = warPower;
         oppose.setWarPowerMultiply(opposeWarPowerMultiply);
@@ -394,7 +386,7 @@ export abstract class WarUnit<
 
 // 장수 전투 유닛(legacy WarUnitGeneral 포팅).
 export class WarUnitGeneral<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > extends WarUnit<TriggerState> {
     private readonly actionPipeline: WarActionPipeline<TriggerState>;
     private killedPerson = 0;
@@ -470,8 +462,8 @@ export class WarUnitGeneral<
         const baseTurnTime = this.isAttacker()
             ? getMetaString(this.general.meta, META_TURN_TIME)
             : oppose instanceof WarUnitGeneral
-                ? getMetaString(oppose.general.meta, META_TURN_TIME)
-                : getMetaString(this.general.meta, META_TURN_TIME);
+              ? getMetaString(oppose.general.meta, META_TURN_TIME)
+              : getMetaString(this.general.meta, META_TURN_TIME);
         if (!baseTurnTime) {
             return;
         }
@@ -486,36 +478,18 @@ export class WarUnitGeneral<
         const base = this.getCrewType().speed;
         const aux = { isAttacker: this.isAttacker() };
         const context = this.getActionContext();
-        const phase = this.actionPipeline.onCalcStat(
-            context,
-            'initWarPhase',
-            base,
-            aux
-        );
+        const phase = this.actionPipeline.onCalcStat(context, 'initWarPhase', base, aux);
         return phase + this.bonusPhase;
     }
 
     private resolveStatValue(statName: keyof StatBlock, base: number): number {
-        return this.actionPipeline.onCalcStat(
-            this.getActionContext(),
-            statName,
-            base
-        );
+        return this.actionPipeline.onCalcStat(this.getActionContext(), statName, base);
     }
 
     private resolveMainStat(armType: number): number {
-        const leadership = this.resolveStatValue(
-            'leadership',
-            this.general.stats.leadership
-        );
-        const strength = this.resolveStatValue(
-            'strength',
-            this.general.stats.strength
-        );
-        const intelligence = this.resolveStatValue(
-            'intelligence',
-            this.general.stats.intelligence
-        );
+        const leadership = this.resolveStatValue('leadership', this.general.stats.leadership);
+        const strength = this.resolveStatValue('strength', this.general.stats.strength);
+        const intelligence = this.resolveStatValue('intelligence', this.general.stats.intelligence);
 
         if (armType === this.config.armTypes.wizard) {
             return intelligence;
@@ -529,24 +503,18 @@ export class WarUnitGeneral<
         return strength;
     }
 
-    private resolveOpposeStatValue(
-        statName: WarStatName,
-        value: number,
-        aux?: Record<string, unknown>
-    ): number {
+    private resolveOpposeStatValue(statName: WarStatName, value: number, aux?: Record<string, unknown>): number {
         const oppose = this.getOppose();
         if (!(oppose instanceof WarUnitGeneral)) {
             return value;
         }
-        return oppose
-            .getActionPipeline()
-            .onCalcOpposeStat(this.getActionContext(), statName, value, aux);
+        return oppose.getActionPipeline().onCalcOpposeStat(this.getActionContext(), statName, value, aux);
     }
 
     public override getDex(crewType: WarCrewType): number {
         const armType =
             crewType.armType === this.config.armTypes.castle
-                ? this.config.armTypes.siege ?? crewType.armType
+                ? (this.config.armTypes.siege ?? crewType.armType)
                 : crewType.armType;
         const base = getMetaNumber(this.general.meta, `${META_DEX_PREFIX}${armType}`);
         const aux = {
@@ -554,12 +522,7 @@ export class WarUnitGeneral<
             opposeType: this.oppose?.getCrewType() ?? null,
         };
         const statName = toDexStatName(armType);
-        let dex = this.actionPipeline.onCalcStat(
-            this.getActionContext(),
-            statName,
-            base,
-            aux
-        );
+        let dex = this.actionPipeline.onCalcStat(this.getActionContext(), statName, base, aux);
         dex = this.resolveOpposeStatValue(statName, dex, aux);
         return dex;
     }
@@ -588,12 +551,7 @@ export class WarUnitGeneral<
 
     public override getComputedTrain(): number {
         const aux = { isAttacker: this.isAttacker() };
-        let train = this.actionPipeline.onCalcStat(
-            this.getActionContext(),
-            'bonusTrain',
-            this.general.train,
-            aux
-        );
+        let train = this.actionPipeline.onCalcStat(this.getActionContext(), 'bonusTrain', this.general.train, aux);
         train = this.resolveOpposeStatValue('bonusTrain', train, aux);
         train += this.trainBonus;
         return train;
@@ -601,12 +559,7 @@ export class WarUnitGeneral<
 
     public override getComputedAtmos(): number {
         const aux = { isAttacker: this.isAttacker() };
-        let atmos = this.actionPipeline.onCalcStat(
-            this.getActionContext(),
-            'bonusAtmos',
-            this.general.atmos,
-            aux
-        );
+        let atmos = this.actionPipeline.onCalcStat(this.getActionContext(), 'bonusAtmos', this.general.atmos, aux);
         atmos = this.resolveOpposeStatValue('bonusAtmos', atmos, aux);
         atmos += this.atmosBonus;
         return atmos;
@@ -630,12 +583,7 @@ export class WarUnitGeneral<
         ratio = Math.min(50, ratio) / 100;
 
         const aux = { isAttacker: this.isAttacker() };
-        ratio = this.actionPipeline.onCalcStat(
-            this.getActionContext(),
-            'warCriticalRatio',
-            ratio,
-            aux
-        );
+        ratio = this.actionPipeline.onCalcStat(this.getActionContext(), 'warCriticalRatio', ratio, aux);
         ratio = this.resolveOpposeStatValue('warCriticalRatio', ratio, aux);
         return ratio;
     }
@@ -646,18 +594,10 @@ export class WarUnitGeneral<
         avoidRatio *= this.getComputedTrain() / 100;
 
         const aux = { isAttacker: this.isAttacker() };
-        avoidRatio = this.actionPipeline.onCalcStat(
-            this.getActionContext(),
-            'warAvoidRatio',
-            avoidRatio,
-            aux
-        );
+        avoidRatio = this.actionPipeline.onCalcStat(this.getActionContext(), 'warAvoidRatio', avoidRatio, aux);
         avoidRatio = this.resolveOpposeStatValue('warAvoidRatio', avoidRatio, aux);
 
-        if (
-            oppose &&
-            oppose.getCrewType().armType === this.config.armTypes.footman
-        ) {
+        if (oppose && oppose.getCrewType().armType === this.config.armTypes.footman) {
             avoidRatio *= 0.75;
         }
 
@@ -665,19 +605,11 @@ export class WarUnitGeneral<
     }
 
     public override addTrain(train: number): void {
-        this.general.train = clamp(
-            this.general.train + train,
-            0,
-            this.config.maxTrainByWar
-        );
+        this.general.train = clamp(this.general.train + train, 0, this.config.maxTrainByWar);
     }
 
     public override addAtmos(atmos: number): void {
-        this.general.atmos = clamp(
-            this.general.atmos + atmos,
-            0,
-            this.config.maxAtmosByWar
-        );
+        this.general.atmos = clamp(this.general.atmos + atmos, 0, this.config.maxAtmosByWar);
     }
 
     public override addWin(): void {
@@ -688,11 +620,7 @@ export class WarUnitGeneral<
         }
 
         const atmosMultiplier = this.isAttacker() ? 1.1 : 1.05;
-        this.general.atmos = clamp(
-            Math.round(this.general.atmos * atmosMultiplier),
-            0,
-            this.config.maxAtmosByWar
-        );
+        this.general.atmos = clamp(Math.round(this.general.atmos * atmosMultiplier), 0, this.config.maxAtmosByWar);
 
         this.addStatExp(1);
     }
@@ -741,11 +669,7 @@ export class WarUnitGeneral<
         }
         rice *= this.getCrewType().rice;
         rice *= getTechCost(resolveNationTech(this.nation));
-        rice = this.actionPipeline.onCalcStat(
-            this.getActionContext(),
-            'killRice',
-            rice
-        );
+        rice = this.actionPipeline.onCalcStat(this.getActionContext(), 'killRice', rice);
         return rice;
     }
 
@@ -815,11 +739,7 @@ export class WarUnitGeneral<
             nextOpposeMultiply *= ratio;
         }
 
-        const [myMul, opposeMul] = this.actionPipeline.getWarPowerMultiplier(
-            this.getActionContext(),
-            this,
-            oppose
-        );
+        const [myMul, opposeMul] = this.actionPipeline.getWarPowerMultiplier(this.getActionContext(), this, oppose);
         nextWarPower *= myMul;
         nextOpposeMultiply *= opposeMul;
 
@@ -830,11 +750,7 @@ export class WarUnitGeneral<
 
     public override criticalDamage(): number {
         let range: [number, number] = WAR_CRITICAL_RANGE;
-        range = this.actionPipeline.onCalcStat(
-            this.getActionContext(),
-            'criticalDamageRange',
-            range
-        );
+        range = this.actionPipeline.onCalcStat(this.getActionContext(), 'criticalDamageRange', range);
         return this.rng.nextRange(...range);
     }
 
@@ -850,11 +766,7 @@ export class WarUnitGeneral<
         }
 
         this.activateSkill('부상');
-        this.general.injury = clamp(
-            this.general.injury + this.rng.nextRangeInt(10, 80),
-            0,
-            80
-        );
+        this.general.injury = clamp(this.general.injury + this.rng.nextRangeInt(10, 80), 0, 80);
         this.logger.pushGeneralActionLog('전투중 <R>부상</>당했다!', LogFormat.PLAIN);
         return true;
     }
@@ -880,18 +792,10 @@ export class WarUnitGeneral<
         increaseMetaNumber(this.general.meta, RANK_DEATHCREW, this.dead);
 
         if (this.killedPerson) {
-            increaseMetaNumber(
-                this.general.meta,
-                RANK_KILLCREW_PERSON,
-                this.killedPerson
-            );
+            increaseMetaNumber(this.general.meta, RANK_KILLCREW_PERSON, this.killedPerson);
         }
         if (this.deadPerson) {
-            increaseMetaNumber(
-                this.general.meta,
-                RANK_DEATHCREW_PERSON,
-                this.deadPerson
-            );
+            increaseMetaNumber(this.general.meta, RANK_DEATHCREW_PERSON, this.deadPerson);
         }
 
         this.general.rice = round(this.general.rice);

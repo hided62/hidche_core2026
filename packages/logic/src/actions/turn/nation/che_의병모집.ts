@@ -1,13 +1,6 @@
 import type { RandomGenerator } from '@sammo-ts/common';
-import type {
-    GeneralTriggerState,
-    StatBlock,
-    TriggerValue,
-} from '@sammo-ts/logic/domain/entities.js';
-import type {
-    Constraint,
-    ConstraintContext,
-} from '@sammo-ts/logic/constraints/types.js';
+import type { GeneralTriggerState, StatBlock, TriggerValue } from '@sammo-ts/logic/domain/entities.js';
+import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
     availableStrategicCommand,
     beChief,
@@ -15,10 +8,7 @@ import {
     notOpeningPart,
     occupiedCity,
 } from '@sammo-ts/logic/constraints/presets.js';
-import {
-    GeneralActionPipeline,
-    type GeneralActionModule,
-} from '@sammo-ts/logic/triggers/general-action.js';
+import { GeneralActionPipeline, type GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionEffect,
@@ -26,9 +16,7 @@ import type {
     GeneralActionResolveContext,
     GeneralActionResolver,
 } from '@sammo-ts/logic/actions/engine.js';
-import {
-    createGeneralAddEffect,
-} from '@sammo-ts/logic/actions/engine.js';
+import { createGeneralAddEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import { buildRecruitmentGeneral } from '@sammo-ts/logic/actions/turn/general/recruitment.js';
 import { JosaUtil } from '@sammo-ts/common';
@@ -55,7 +43,7 @@ export interface VolunteerRecruitCandidate {
 }
 
 export interface VolunteerRecruitResolveContext<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > extends GeneralActionResolveContext<TriggerState> {
     currentYear: number;
     startYear: number;
@@ -83,10 +71,7 @@ export interface VolunteerRecruitEnvironment {
     killTurnMin?: number;
     killTurnMax?: number;
     decorateName?: (name: string, npcState: number) => string;
-    pickCandidate?: (
-        context: VolunteerRecruitResolveContext,
-        rng: RandomGenerator
-    ) => VolunteerRecruitCandidate | null;
+    pickCandidate?: (context: VolunteerRecruitResolveContext, rng: RandomGenerator) => VolunteerRecruitCandidate | null;
     buildStats?: (
         context: VolunteerRecruitResolveContext,
         rng: RandomGenerator,
@@ -117,19 +102,12 @@ const addMetaValue = (
     meta[key] = value;
 };
 
-const readMetaNumber = (
-    meta: Record<string, TriggerValue>,
-    key: string
-): number | null => {
+const readMetaNumber = (meta: Record<string, TriggerValue>, key: string): number | null => {
     const value = meta[key];
     return typeof value === 'number' ? value : null;
 };
 
-const randomRangeInt = (
-    rng: RandomGenerator,
-    min: number,
-    max: number
-): number => rng.nextInt(min, max + 1);
+const randomRangeInt = (rng: RandomGenerator, min: number, max: number): number => rng.nextInt(min, max + 1);
 
 const resolveRelYear = (ctx: ConstraintContext): number => {
     const relYear = ctx.env.relYear;
@@ -173,8 +151,7 @@ const resolveStats = (
     if (env.buildStats) {
         return env.buildStats(context, rng, candidate);
     }
-    const fallback =
-        context.nationAverageStats ?? context.general.stats;
+    const fallback = context.nationAverageStats ?? context.general.stats;
     return {
         leadership: candidate.stats?.leadership ?? fallback.leadership,
         strength: candidate.stats?.strength ?? fallback.strength,
@@ -183,9 +160,7 @@ const resolveStats = (
 };
 
 // 의병모집 쿨타임/인원 계산을 제공한다.
-export class CommandResolver<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> {
+export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     private readonly pipeline: GeneralActionPipeline<TriggerState>;
     private readonly env: VolunteerRecruitEnvironment;
 
@@ -197,34 +172,15 @@ export class CommandResolver<
         this.env = env;
     }
 
-    getPostDelay(
-        context: VolunteerRecruitResolveContext<TriggerState>,
-        gennum: number
-    ): number {
+    getPostDelay(context: VolunteerRecruitResolveContext<TriggerState>, gennum: number): number {
         const fitted = Math.max(gennum, this.env.initialNationGenLimit);
         const base = Math.round(Math.sqrt(fitted * 10) * 10);
-        return Math.round(
-            this.pipeline.onCalcStrategic(
-                context,
-                ACTION_NAME,
-                'delay',
-                base
-            )
-        );
+        return Math.round(this.pipeline.onCalcStrategic(context, ACTION_NAME, 'delay', base));
     }
 
-    getGlobalDelay(
-        context: VolunteerRecruitResolveContext<TriggerState>
-    ): number {
+    getGlobalDelay(context: VolunteerRecruitResolveContext<TriggerState>): number {
         const base = this.env.globalDelayBase ?? DEFAULT_GLOBAL_DELAY;
-        return Math.round(
-            this.pipeline.onCalcStrategic(
-                context,
-                ACTION_NAME,
-                'globalDelay',
-                base
-            )
-        );
+        return Math.round(this.pipeline.onCalcStrategic(context, ACTION_NAME, 'globalDelay', base));
     }
 
     getCreateCount(avgNationGenCount: number): number {
@@ -236,7 +192,7 @@ export class CommandResolver<
 
 // 의병모집 실행 결과를 계산한다.
 export class ActionResolver<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionResolver<TriggerState, VolunteerRecruitArgs> {
     readonly key = 'che_의병모집';
     private readonly env: VolunteerRecruitEnvironment;
@@ -275,35 +231,24 @@ export class ActionResolver<
             const generalName = general.name;
             const generalJosa = JosaUtil.pick(generalName, '이');
             const actionJosa = JosaUtil.pick(ACTION_NAME, '을');
-            context.addLog(
-                `<Y>${generalName}</>${generalJosa} <M>${ACTION_NAME}</>${actionJosa} 발동했습니다.`,
-                {
-                    scope: LogScope.NATION,
-                    category: LogCategory.HISTORY,
-                    nationId: nation.id,
-                    format: LogFormat.YEAR_MONTH,
-                }
-            );
+            context.addLog(`<Y>${generalName}</>${generalJosa} <M>${ACTION_NAME}</>${actionJosa} 발동했습니다.`, {
+                scope: LogScope.NATION,
+                category: LogCategory.HISTORY,
+                nationId: nation.id,
+                format: LogFormat.YEAR_MONTH,
+            });
         }
 
-        const avgNationGen =
-            Number.isFinite(context.averageNationGeneralCount)
-                ? context.averageNationGeneralCount
-                : 0;
-        const createCount = Math.max(
-            0,
-            this.command.getCreateCount(avgNationGen)
-        );
-        const gennumValue = nation
-            ? readMetaNumber(nation.meta, 'gennum')
-            : null;
+        const avgNationGen = Number.isFinite(context.averageNationGeneralCount) ? context.averageNationGeneralCount : 0;
+        const createCount = Math.max(0, this.command.getCreateCount(avgNationGen));
+        const gennumValue = nation ? readMetaNumber(nation.meta, 'gennum') : null;
         const currentGennum = gennumValue ?? 0;
         const nextGennum = currentGennum + createCount;
         const globalDelay = this.command.getGlobalDelay(context);
 
         if (nation) {
             nation.meta = {
-                ...nation.meta as object,
+                ...(nation.meta as object),
                 gennum: nextGennum,
                 strategic_cmd_limit: globalDelay,
             };
@@ -318,20 +263,11 @@ export class ActionResolver<
 
         for (let idx = 0; idx < createCount; idx += 1) {
             const newGeneralId = context.createGeneralId();
-            const candidate =
-                resolveCandidate(context, context.rng, this.env) ??
-                { name: `NPC_${newGeneralId}` };
-            const name = this.env.decorateName
-                ? this.env.decorateName(candidate.name, NPC_TYPE)
-                : candidate.name;
+            const candidate = resolveCandidate(context, context.rng, this.env) ?? { name: `NPC_${newGeneralId}` };
+            const name = this.env.decorateName ? this.env.decorateName(candidate.name, NPC_TYPE) : candidate.name;
             const birthYear = context.currentYear - baseAge;
             const deathYear = context.currentYear + deathYears;
-            const stats = resolveStats(
-                context,
-                context.rng,
-                this.env,
-                candidate
-            );
+            const stats = resolveStats(context, context.rng, this.env, candidate);
             const meta: Record<string, TriggerValue> = {
                 npcType: NPC_TYPE,
                 crewTypeId: this.env.defaultCrewTypeId,
@@ -342,11 +278,7 @@ export class ActionResolver<
             addMetaValue(meta, 'deathYear', deathYear);
             addMetaValue(meta, 'specAge', DEFAULT_SPEC_AGE);
             addMetaValue(meta, 'specAge2', DEFAULT_SPEC_AGE);
-            addMetaValue(
-                meta,
-                'killturn',
-                randomRangeInt(context.rng, killTurnMin, killTurnMax)
-            );
+            addMetaValue(meta, 'killturn', randomRangeInt(context.rng, killTurnMin, killTurnMax));
             addMetaValue(meta, 'text', candidate.text ?? null);
 
             const newGeneral = buildRecruitmentGeneral<TriggerState>({
@@ -378,12 +310,8 @@ export class ActionResolver<
 }
 
 export class ActionDefinition<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-    > implements GeneralActionDefinition<
-        TriggerState,
-        VolunteerRecruitArgs,
-        VolunteerRecruitResolveContext<TriggerState>
-    > {
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
+> implements GeneralActionDefinition<TriggerState, VolunteerRecruitArgs, VolunteerRecruitResolveContext<TriggerState>> {
     public readonly key = 'che_의병모집';
     public readonly name = ACTION_NAME;
     private readonly resolver: ActionResolver<TriggerState>;
@@ -402,10 +330,7 @@ export class ActionDefinition<
         return {};
     }
 
-    buildConstraints(
-        ctx: ConstraintContext,
-        _args: VolunteerRecruitArgs
-    ): Constraint[] {
+    buildConstraints(ctx: ConstraintContext, _args: VolunteerRecruitArgs): Constraint[] {
         void _args;
         const relYear = resolveRelYear(ctx);
         return [
@@ -427,17 +352,12 @@ export class ActionDefinition<
 
 // 예약 턴 실행에 필요한 국가 평균 정보를 구성한다.
 export const actionContextBuilder: ActionContextBuilder = (base, options) => {
-    const nationSummary = buildNationSummary(
-        options.worldRef,
-        base.general.nationId
-    );
+    const nationSummary = buildNationSummary(options.worldRef, base.general.nationId);
     return {
         ...base,
         currentYear: options.world.currentYear,
         startYear: resolveStartYear(options.world, options.scenarioMeta),
-        averageNationGeneralCount: buildAverageNationGeneralCount(
-            options.worldRef
-        ),
+        averageNationGeneralCount: buildAverageNationGeneralCount(options.worldRef),
         nationAverageStats: nationSummary.averageStats,
         nationAverageExperience: nationSummary.averageExperience,
         nationAverageDedication: nationSummary.averageDedication,
@@ -450,6 +370,5 @@ export const commandSpec: NationTurnCommandSpec = {
     category: '전략',
     reqArg: false,
     args: {},
-    createDefinition: (env: TurnCommandEnv) =>
-        new ActionDefinition(env.generalActionModules ?? [], env),
+    createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env.generalActionModules ?? [], env),
 };

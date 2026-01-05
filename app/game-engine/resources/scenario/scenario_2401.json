@@ -11,14 +11,30 @@
         "max": 140
     },
     "const": {
-        "npcBanMessageProb":0,
-        "npcSeizureMessageProb":0,
-        "npcMessageFreqByDay":8,
+        "npcBanMessageProb": 0,
+        "npcSeizureMessageProb": 0,
+        "npcMessageFreqByDay": 8,
         "availableSpecialWar": [
-            "che_귀병", "che_신산", "che_환술", "che_집중", "che_신중", "che_반계",
-            "che_보병", "che_궁병", "che_기병", "che_공성",
-            "che_돌격", "che_무쌍", "che_견고", "che_위압",
-            "che_저격", "che_필살", "che_징병", "che_의술", "che_격노", "che_척사"
+            "che_귀병",
+            "che_신산",
+            "che_환술",
+            "che_집중",
+            "che_신중",
+            "che_반계",
+            "che_보병",
+            "che_궁병",
+            "che_기병",
+            "che_공성",
+            "che_돌격",
+            "che_무쌍",
+            "che_견고",
+            "che_위압",
+            "che_저격",
+            "che_필살",
+            "che_징병",
+            "che_의술",
+            "che_격노",
+            "che_척사"
         ],
         "allItems": {
             "horse": {
@@ -29,26 +45,26 @@
                 "che_명마_05_갈색마": 0,
                 "che_명마_06_흑색마": 0,
 
-                "che_명마_07_백마" : 2,
-                "che_명마_07_기주마" : 2,
-                "che_명마_07_오환마" : 2,
-                "che_명마_07_백상" : 2,
-                "che_명마_08_양주마" : 2,
-                "che_명마_08_흉노마" : 2,
-                "che_명마_09_과하마" : 2,
-                "che_명마_09_의남백마" : 2,
-                "che_명마_10_대완마" : 2,
-                "che_명마_10_옥추마" : 2,
-                "che_명마_11_서량마" : 2,
-                "che_명마_11_화종마" : 2,
-                "che_명마_12_사륜거" : 2,
+                "che_명마_07_백마": 2,
+                "che_명마_07_기주마": 2,
+                "che_명마_07_오환마": 2,
+                "che_명마_07_백상": 2,
+                "che_명마_08_양주마": 2,
+                "che_명마_08_흉노마": 2,
+                "che_명마_09_과하마": 2,
+                "che_명마_09_의남백마": 2,
+                "che_명마_10_대완마": 2,
+                "che_명마_10_옥추마": 2,
+                "che_명마_11_서량마": 2,
+                "che_명마_11_화종마": 2,
+                "che_명마_12_사륜거": 2,
                 "che_명마_12_옥란백용구": 2,
-                "che_명마_13_절영" : 2,
-                "che_명마_13_적로" : 2,
-                "che_명마_14_적란마" : 2,
-                "che_명마_14_조황비전" : 2,
-                "che_명마_15_한혈마" : 2,
-                "che_명마_15_적토마" : 2
+                "che_명마_13_절영": 2,
+                "che_명마_13_적로": 2,
+                "che_명마_14_적란마": 2,
+                "che_명마_14_조황비전": 2,
+                "che_명마_15_한혈마": 2,
+                "che_명마_15_적토마": 2
             },
             "weapon": {
                 "che_무기_01_단도": 0,
@@ -141,11 +157,9 @@
     },
     "iconPath": ".",
     "fiction": 1,
-    "nation":[
-
-    ],
-    "diplomacy":[],
-    "general":[
+    "nation": [],
+    "diplomacy": [],
+    "general": [
         [0, "아회남", null, 0, null, 75, 46, 84, 0, 160, 300, null, null],
         [0, "이적", null, 0, null, 90, 86, 42, 0, 160, 300, null, null],
         [0, "윤상", null, 0, null, 89, 86, 48, 0, 160, 300, null, null],
@@ -340,7 +354,22 @@
         [0, "제갈근", null, 0, null, 65, 26, 35, 0, 160, 300, null, null],
         [0, "제갈균", null, 0, null, 81, 55, 88, 0, 160, 300, null, null],
         [0, "제갈탄", null, 0, null, 68, 86, 44, 0, 160, 300, null, null],
-        [0, "제갈량", null, 0, null, 42, 14, 22, 0, 160, 300, null, null, "헤헤헤…제갈량 바보 아니다. 엄마가 바보 아니라 그랬다."],
+        [
+            0,
+            "제갈량",
+            null,
+            0,
+            null,
+            42,
+            14,
+            22,
+            0,
+            160,
+            300,
+            null,
+            null,
+            "헤헤헤…제갈량 바보 아니다. 엄마가 바보 아니라 그랬다."
+        ],
         [0, "서황", null, 0, null, 45, 26, 46, 0, 160, 300, null, null],
         [0, "서서", null, 0, null, 46, 26, 21, 0, 160, 300, null, null, "제갈량 어디 가서 나랑 동문이라고 하지마라"],
         [0, "서성", null, 0, null, 54, 59, 59, 0, 160, 300, null, null],
@@ -490,7 +519,22 @@
         [0, "비의", null, 0, null, 58, 84, 42, 0, 160, 300, null, null],
         [0, "비연", null, 0, null, 80, 62, 89, 0, 160, 300, null, null],
         [0, "비시", null, 0, null, 82, 42, 75, 0, 160, 300, null, null],
-        [0, "미축", null, 0, null, 90, 91, 52, 0, 160, 300, null, null, "돈도 많고 싸움도 잘하는 간손미 에이스 미축입니다"],
+        [
+            0,
+            "미축",
+            null,
+            0,
+            null,
+            90,
+            91,
+            52,
+            0,
+            160,
+            300,
+            null,
+            null,
+            "돈도 많고 싸움도 잘하는 간손미 에이스 미축입니다"
+        ],
         [0, "미방", null, 0, null, 86, 50, 88, 0, 160, 300, null, null],
         [0, "비요", null, 0, null, 70, 88, 57, 0, 160, 300, null, null],
         [0, "무안국", null, 0, null, 70, 51, 86, 0, 160, 300, null, null],
@@ -795,72 +839,102 @@
         [0, "김나영", null, 0, null, 93, 90, 64, 0, 160, 300, null, null, "김나영 머리에서 김나영"],
         [0, "Cure", null, 0, null, 89, 63, 94, 0, 160, 300, null, null]
     ],
-    "general_ex":[
-
-    ],
-    "initialEvents":[
+    "general_ex": [],
+    "initialEvents": [
         [
             true,
-            ["ChangeCity", "all", {
-                "trade":100
-            }]
+            [
+                "ChangeCity",
+                "all",
+                {
+                    "trade": 100
+                }
+            ]
         ]
     ],
-    "events":[
+    "events": [
         [
-            "month", 1000,
+            "month",
+            1000,
             ["Date", "==", 180, 1],
-            ["ChangeCity", "all", {
-                "trade":100
-            }],
-            ["DeleteEvent"]
-        ],
-        [
-            "month", 1000,
-            ["Date", "==", 180, 7],
-            ["ChangeCity", "all", {
-                "trade":100
-            }],
-            ["DeleteEvent"]
-        ],
-        [
-            "month", 1000,
-            ["Date", "==", 181, 1],
-            ["ChangeCity", "all", {
-                "trade":100
-            }],
-            ["DeleteEvent"]
-        ],
-        [
-            "month", 1000,
-            ["Date", "==", 181, 7],
-            ["ChangeCity", "all", {
-                "trade":100
-            }],
-            ["DeleteEvent"]
-        ],
-        [
-            "month", 1000,
-            ["Date", "==", 182, 1],
-            ["ChangeCity", "all", {
-                "trade":100
-            }],
-            ["DeleteEvent"]
-        ],
-        [
-            "month", 1000,
-            ["Date", "==", 182, 7],
-            ["ChangeCity", "all", {
-                "trade":100
-            }],
-            ["DeleteEvent"]
-        ],
-        [
-            "destroy_nation", 1000,
-            ["and",
-                ["Date", ">=", 183, 1],
-                ["RemainNation", "==", 1]
+            [
+                "ChangeCity",
+                "all",
+                {
+                    "trade": 100
+                }
             ],
+            ["DeleteEvent"]
+        ],
+        [
+            "month",
+            1000,
+            ["Date", "==", 180, 7],
+            [
+                "ChangeCity",
+                "all",
+                {
+                    "trade": 100
+                }
+            ],
+            ["DeleteEvent"]
+        ],
+        [
+            "month",
+            1000,
+            ["Date", "==", 181, 1],
+            [
+                "ChangeCity",
+                "all",
+                {
+                    "trade": 100
+                }
+            ],
+            ["DeleteEvent"]
+        ],
+        [
+            "month",
+            1000,
+            ["Date", "==", 181, 7],
+            [
+                "ChangeCity",
+                "all",
+                {
+                    "trade": 100
+                }
+            ],
+            ["DeleteEvent"]
+        ],
+        [
+            "month",
+            1000,
+            ["Date", "==", 182, 1],
+            [
+                "ChangeCity",
+                "all",
+                {
+                    "trade": 100
+                }
+            ],
+            ["DeleteEvent"]
+        ],
+        [
+            "month",
+            1000,
+            ["Date", "==", 182, 7],
+            [
+                "ChangeCity",
+                "all",
+                {
+                    "trade": 100
+                }
+            ],
+            ["DeleteEvent"]
+        ],
+        [
+            "destroy_nation",
+            1000,
+            ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]],
             ["BlockScoutAction"],
             ["DeleteEvent"]
         ]

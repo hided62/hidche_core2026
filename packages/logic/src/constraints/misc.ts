@@ -7,10 +7,7 @@ export const alwaysFail = (reason: string): Constraint => ({
     test: () => ({ kind: 'deny', reason }),
 });
 
-export const notOpeningPart = (
-    relYear: number,
-    openingPartYear: number
-): Constraint => ({
+export const notOpeningPart = (relYear: number, openingPartYear: number): Constraint => ({
     name: 'NotOpeningPart',
     requires: () => [],
     test: (_ctx) => {

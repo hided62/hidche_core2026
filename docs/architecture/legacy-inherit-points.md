@@ -43,11 +43,11 @@ Directly stored keys (`storeType = true`):
 
 Computed keys (`storeType = false` or derived):
 
-- `combat`: from `rank_data.warnum` (war engagements) * 5.
-- `sabotage`: from `rank_data.firenum` (strategy success) * 20.
-- `dex`: sum of arm-type dex, with overflow reduction, * 0.001.
+- `combat`: from `rank_data.warnum` (war engagements) \* 5.
+- `sabotage`: from `rank_data.firenum` (strategy success) \* 20.
+- `dex`: sum of arm-type dex, with overflow reduction, \* 0.001.
 - `betting`: `betwin * 10 * (betwingold / betgold)^2`.
-- `max_belong`: max of `general.belong` and aux `max_belong`, * 10.
+- `max_belong`: max of `general.belong` and aux `max_belong`, \* 10.
 
 Notes:
 
@@ -60,11 +60,11 @@ Notes:
 The system uses a two-step merge:
 
 1. **Merge** (`mergeTotalInheritancePoint`)
-   - Computes derived keys and stores them into `inheritance_{userID}`.
-   - Records a snapshot into `inheritance_result`.
+    - Computes derived keys and stores them into `inheritance_{userID}`.
+    - Records a snapshot into `inheritance_result`.
 2. **Apply** (`applyInheritanceUser`)
-   - Sums all keys into a total, logs to `user_record`, resets storage to only
-     `previous` (plus any rebirth-kept keys).
+    - Sums all keys into a total, logs to `user_record`, resets storage to only
+      `previous` (plus any rebirth-kept keys).
 
 This merge/apply is triggered in these places:
 
