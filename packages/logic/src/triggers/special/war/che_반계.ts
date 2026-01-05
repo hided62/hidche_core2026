@@ -60,7 +60,10 @@ class che_반계발동 extends BaseWarUnitTrigger {
 
         const [opposeMagic, damage] = magicData;
 
-        self.getLogger().pushGeneralBattleDetailLog(`<C>반계</>로 상대의 <D>${opposeMagic}</>을 되돌렸다!`, LogFormat.PLAIN);
+        self.getLogger().pushGeneralBattleDetailLog(
+            `<C>반계</>로 상대의 <D>${opposeMagic}</>을 되돌렸다!`,
+            LogFormat.PLAIN
+        );
         oppose.getLogger().pushGeneralBattleDetailLog(`<D>${opposeMagic}</>을 <R>역으로</> 당했다!`, LogFormat.PLAIN);
 
         self.multiplyWarPowerMultiply(damage);
@@ -77,7 +80,7 @@ function onCalcStat(
     aux?: unknown
 ): number | [number, number];
 function onCalcStat(
-    context: GeneralActionContext | WarActionContext,
+    _context: GeneralActionContext | WarActionContext,
     statName: GeneralStatName | WarStatName,
     value: number | [number, number],
     aux?: unknown
@@ -94,8 +97,9 @@ export const traitModule: TraitModule = {
     info: '[전투] 상대의 계략 성공 확률 -10%p, 상대의 계략을 40% 확률로 되돌림, 반목 성공시 대미지 추가(+60% → +150%)',
     kind: 'war',
     getName: () => '반계',
-    getInfo: () => '[전투] 상대의 계략 성공 확률 -10%p, 상대의 계략을 40% 확률로 되돌림, 반목 성공시 대미지 추가(+60% → +150%)',
-    onCalcOpposeStat: (_context, statName, value, _aux) => {
+    getInfo: () =>
+        '[전투] 상대의 계략 성공 확률 -10%p, 상대의 계략을 40% 확률로 되돌림, 반목 성공시 대미지 추가(+60% → +150%)',
+    onCalcOpposeStat: (_context, statName, value: any, _aux) => {
         if (statName === 'warMagicSuccessProb') {
             return (value as number) - 0.1;
         }

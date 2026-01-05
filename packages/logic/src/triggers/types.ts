@@ -40,4 +40,5 @@ export type WarStatName =
     | 'criticalDamageRange'
     | 'warMagicSuccessDamage'
     | 'warMagicTrialProb'
+    | 'warMagicSuccessProb'
     | `dex${number}`;

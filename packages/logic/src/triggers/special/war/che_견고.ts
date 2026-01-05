@@ -29,10 +29,10 @@ function onCalcStat(
     aux?: unknown
 ): number | [number, number];
 function onCalcStat(
-    context: GeneralActionContext | WarActionContext,
-    statName: GeneralStatName | WarStatName,
+    _context: GeneralActionContext | WarActionContext,
+    _statName: GeneralStatName | WarStatName,
     value: number | [number, number],
-    aux?: unknown
+    _aux?: unknown
 ): number | [number, number] {
     return value;
 }
@@ -44,7 +44,7 @@ export const traitModule: TraitModule = {
     kind: 'war',
     getName: () => '견고',
     getInfo: () => '[전투] 상대 필살 확률 -20%p, 상대 계략 시도시 성공 확률 -10%p, 부상 없음, 아군 피해 -10%',
-    onCalcOpposeStat: (_context, statName, value, _aux) => {
+    onCalcOpposeStat: (_context, statName, value: any, _aux) => {
         if (statName === 'warMagicSuccessProb') {
             return (value as number) - 0.1;
         }

@@ -67,11 +67,11 @@ class che_저격발동 extends BaseWarUnitTrigger {
             return true;
         }
 
-        if ((selfEnv['저격발동자'] as number ?? -1) !== this.raiseType) {
+        if (((selfEnv['저격발동자'] as number) ?? -1) !== this.raiseType) {
             return true;
         }
 
-        if (selfEnv['저격발동'] as boolean ?? false) {
+        if ((selfEnv['저격발동'] as boolean) ?? false) {
             return true;
         }
         selfEnv['저격발동'] = true;
@@ -102,10 +102,10 @@ function onCalcStat(
     aux?: unknown
 ): number | [number, number];
 function onCalcStat(
-    context: GeneralActionContext | WarActionContext,
-    statName: GeneralStatName | WarStatName,
+    _context: GeneralActionContext | WarActionContext,
+    _statName: GeneralStatName | WarStatName,
     value: number | [number, number],
-    aux?: unknown
+    _aux?: unknown
 ): number | [number, number] {
     return value;
 }
@@ -119,10 +119,7 @@ export const traitModule: TraitModule = {
     getInfo: () => '[전투] 새로운 상대와 전투 시 50% 확률로 저격 발동, 성공 시 사기+20',
     getBattlePhaseTriggerList: (_context) => {
         if (!_context.unit) return null;
-        return new WarTriggerCaller(
-            new che_저격시도(_context.unit, 0.5, 20, 40, 20),
-            new che_저격발동(_context.unit)
-        );
+        return new WarTriggerCaller(new che_저격시도(_context.unit, 0.5, 20, 40, 20), new che_저격발동(_context.unit));
     },
     onCalcStat,
 };

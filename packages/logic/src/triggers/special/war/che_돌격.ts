@@ -45,10 +45,10 @@ function onCalcStat(
     aux?: unknown
 ): number | [number, number];
 function onCalcStat(
-    context: GeneralActionContext | WarActionContext,
+    _context: GeneralActionContext | WarActionContext,
     statName: GeneralStatName | WarStatName,
     value: number | [number, number],
-    aux?: unknown
+    _aux?: unknown
 ): number | [number, number] {
     if (statName === 'initWarPhase') {
         return (value as number) + 2;

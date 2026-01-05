@@ -61,7 +61,9 @@ class che_격노발동 extends BaseWarUnitTrigger {
         const reaction = is진노 ? '진노' : '격노';
 
         self.getLogger().pushGeneralBattleDetailLog(`상대의 ${targetAct}에 <C>${reaction}</>했다!</>`, LogFormat.PLAIN);
-        oppose.getLogger().pushGeneralBattleDetailLog(`${targetAct}에 상대가 <R>${reaction}</>했다!</>`, LogFormat.PLAIN);
+        oppose
+            .getLogger()
+            .pushGeneralBattleDetailLog(`${targetAct}에 상대가 <R>${reaction}</>했다!</>`, LogFormat.PLAIN);
 
         if (is진노) {
             self.addBonusPhase(1);
@@ -80,10 +82,10 @@ function onCalcStat(
     aux?: unknown
 ): number | [number, number];
 function onCalcStat(
-    context: GeneralActionContext | WarActionContext,
-    statName: GeneralStatName | WarStatName,
+    _context: GeneralActionContext | WarActionContext,
+    _statName: GeneralStatName | WarStatName,
     value: number | [number, number],
-    aux?: unknown
+    _aux?: unknown
 ): number | [number, number] {
     return value;
 }

@@ -11,10 +11,10 @@ function onCalcStat(
     aux?: unknown
 ): number | [number, number];
 function onCalcStat(
-    context: GeneralActionContext | WarActionContext,
-    statName: GeneralStatName | WarStatName,
+    _context: GeneralActionContext | WarActionContext,
+    _statName: GeneralStatName | WarStatName,
     value: number | [number, number],
-    aux?: unknown
+    _aux?: unknown
 ): number | [number, number] {
     return value;
 }
