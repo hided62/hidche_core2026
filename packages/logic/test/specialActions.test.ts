@@ -260,7 +260,7 @@ describe('trait modules', () => {
         const rng = new RandUtil(new ConstantRNG(0));
         const config = buildConfig();
         const unitSet = buildUnitSet();
-        const crewType = new WarCrewType(unitSet.crewTypes![0]);
+        const crewType = new WarCrewType(unitSet.crewTypes![0]!);
         const city = buildCity();
         const nation = buildNation();
         const general = buildGeneral({
@@ -294,7 +294,7 @@ describe('trait modules', () => {
             config,
             city,
             nation,
-            new WarCrewType(unitSet.crewTypes![1]),
+            new WarCrewType(unitSet.crewTypes![1]!),
             new ActionLogger({}),
             200,
             180

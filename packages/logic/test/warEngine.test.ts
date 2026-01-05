@@ -161,7 +161,7 @@ describe('war triggers', () => {
     it('activates and applies critical damage', async () => {
         const rng = new RandUtil(new ConstantRNG(0));
         const config = buildConfig();
-        const crewType = new WarCrewType(buildUnitSet().crewTypes![0]);
+        const crewType = new WarCrewType(buildUnitSet().crewTypes![0]!);
         const nation = buildNation();
         const city = buildCity();
 
@@ -181,7 +181,7 @@ describe('war triggers', () => {
             config,
             city,
             nation,
-            new WarCrewType(buildUnitSet().crewTypes![1]),
+            new WarCrewType(buildUnitSet().crewTypes![1]!),
             new ActionLogger({}),
             200,
             180
