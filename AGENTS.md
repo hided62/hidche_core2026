@@ -74,7 +74,6 @@ These are placeholders to align teams; adjust once packages exist.
 ## Development Checklist (AI)
 
 - After code changes, verify TypeScript type checks (prefer `pnpm build` or `pnpm typecheck`).
-- After code changes, verify ESLint (prefer `pnpm lint`).
 - When changes require unit tests, run the relevant tests.
 
 ## Build Profiles (Proposal)
