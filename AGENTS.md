@@ -116,6 +116,7 @@ These are placeholders to align teams; adjust once packages exist.
 - Legacy concepts may use Korean identifiers; preserve Korean naming when it improves maintainability.
 - Hybrid naming is acceptable (e.g., `use전투규칙`, `use도시상태`) when the prefix is conventional but the domain term is Korean.
 - For classes, commands, and domain logic, add clear Korean comments to support Korean readers and future maintainers.
+- Use strong type conventions in TypeScript. Any is not allowed, and you should also be careful about using unknown.
 
 ## Commit & Pull Request Guidelines
 
