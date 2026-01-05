@@ -13,24 +13,41 @@ export interface TraitSpec {
     kind: TraitKind;
 }
 
+import type {
+    GeneralStatName,
+    GeneralStatBundleMap,
+    WarStatName,
+    WarStatBundleMap,
+} from '../types.js';
+
 export interface TraitOnCalcStat<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
-    (context: GeneralActionContext<TriggerState>, statName: GeneralStatName, value: number, aux?: unknown): number;
-    (
+    <T extends GeneralStatName>(
+        context: GeneralActionContext<TriggerState>,
+        statName: T,
+        value: GeneralStatBundleMap[T]['value'],
+        aux?: GeneralStatBundleMap[T]['aux']
+    ): GeneralStatBundleMap[T]['return'];
+    <T extends WarStatName>(
         context: WarActionContext<TriggerState>,
-        statName: WarStatName,
-        value: number | [number, number],
-        aux?: unknown
-    ): number | [number, number];
+        statName: T,
+        value: WarStatBundleMap[T]['value'],
+        aux?: WarStatBundleMap[T]['aux']
+    ): WarStatBundleMap[T]['return'];
 }
 
 export interface TraitOnCalcOpposeStat<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
-    (context: GeneralActionContext<TriggerState>, statName: GeneralStatName, value: number, aux?: unknown): number;
-    (
+    <T extends GeneralStatName>(
+        context: GeneralActionContext<TriggerState>,
+        statName: T,
+        value: GeneralStatBundleMap[T]['value'],
+        aux?: GeneralStatBundleMap[T]['aux']
+    ): GeneralStatBundleMap[T]['return'];
+    <T extends WarStatName>(
         context: WarActionContext<TriggerState>,
-        statName: WarStatName,
-        value: number | [number, number],
-        aux?: unknown
-    ): number | [number, number];
+        statName: T,
+        value: WarStatBundleMap[T]['value'],
+        aux?: WarStatBundleMap[T]['aux']
+    ): WarStatBundleMap[T]['return'];
 }
 
 export type TraitModule<TriggerState extends GeneralTriggerState = GeneralTriggerState> = TraitSpec &

@@ -2,7 +2,7 @@ import type { RandUtil } from '@sammo-ts/common';
 
 import type { City, General, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { ActionLogger } from '@sammo-ts/logic/logging/actionLogger.js';
-import type { WarStatName } from '@sammo-ts/logic/triggers/types.js';
+import type { WarStatBundleMap, WarStatName } from '@sammo-ts/logic/triggers/types.js';
 import type { WarUnit } from './units.js';
 import { WarTriggerCaller } from './triggers.js';
 
@@ -24,30 +24,30 @@ export interface WarActionModule<TriggerState extends GeneralTriggerState = Gene
     getBattlePhaseTriggerList?: ((context: WarActionContext<TriggerState>) => WarTriggerCaller | null) | undefined;
 
     onCalcStat?:
-        | ((
-              context: WarActionContext<TriggerState>,
-              statName: WarStatName,
-              value: number | [number, number],
-              aux?: unknown
-          ) => number | [number, number])
-        | undefined;
+    | (<T extends WarStatName>(
+        context: WarActionContext<TriggerState>,
+        statName: T,
+        value: WarStatBundleMap[T]['value'],
+        aux?: WarStatBundleMap[T]['aux']
+    ) => WarStatBundleMap[T]['return'])
+    | undefined;
 
     onCalcOpposeStat?:
-        | ((
-              context: WarActionContext<TriggerState>,
-              statName: WarStatName,
-              value: number | [number, number],
-              aux?: unknown
-          ) => number | [number, number])
-        | undefined;
+    | (<T extends WarStatName>(
+        context: WarActionContext<TriggerState>,
+        statName: T,
+        value: WarStatBundleMap[T]['value'],
+        aux?: WarStatBundleMap[T]['aux']
+    ) => WarStatBundleMap[T]['return'])
+    | undefined;
 
     getWarPowerMultiplier?:
-        | ((
-              context: WarActionContext<TriggerState>,
-              unit: WarUnit<TriggerState>,
-              oppose: WarUnit<TriggerState>
-          ) => [number, number])
-        | undefined;
+    | ((
+        context: WarActionContext<TriggerState>,
+        unit: WarUnit<TriggerState>,
+        oppose: WarUnit<TriggerState>
+    ) => [number, number])
+    | undefined;
 }
 
 export class WarActionPipeline<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
@@ -80,36 +80,36 @@ export class WarActionPipeline<TriggerState extends GeneralTriggerState = Genera
         return caller;
     }
 
-    onCalcStat<T extends number | [number, number]>(
+    onCalcStat<T extends WarStatName>(
         context: WarActionContext<TriggerState>,
-        statName: WarStatName,
-        value: T,
-        aux?: unknown
-    ): T {
-        let current: number | [number, number] = value;
+        statName: T,
+        value: WarStatBundleMap[T]['value'],
+        aux?: WarStatBundleMap[T]['aux']
+    ): WarStatBundleMap[T]['return'] {
+        let current = value;
         for (const module of this.modules) {
             if (!module.onCalcStat) {
                 continue;
             }
-            current = module.onCalcStat(context, statName, current, aux);
+            current = module.onCalcStat(context, statName, current as never, aux as never) as never;
         }
-        return current as T;
+        return current;
     }
 
-    onCalcOpposeStat<T extends number | [number, number]>(
+    onCalcOpposeStat<T extends WarStatName>(
         context: WarActionContext<TriggerState>,
-        statName: WarStatName,
-        value: T,
-        aux?: unknown
-    ): T {
-        let current: number | [number, number] = value;
+        statName: T,
+        value: WarStatBundleMap[T]['value'],
+        aux?: WarStatBundleMap[T]['aux']
+    ): WarStatBundleMap[T]['return'] {
+        let current = value;
         for (const module of this.modules) {
             if (!module.onCalcOpposeStat) {
                 continue;
             }
-            current = module.onCalcOpposeStat(context, statName, current, aux);
+            current = module.onCalcOpposeStat(context, statName, current as never, aux as never) as never;
         }
-        return current as T;
+        return current;
     }
 
     getWarPowerMultiplier(
