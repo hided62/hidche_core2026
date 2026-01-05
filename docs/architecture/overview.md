@@ -21,8 +21,8 @@ monorepo plan is prepared alongside it.
 ## Current Implementation Notes
 
 - `packages/infra` is live with Prisma/Postgres connectors used by game services.
-- `app/game-engine` implements an in-memory turn daemon with DB flush hooks.
-- `app/game-api` exposes tRPC endpoints for reserved turns, messages, and battle sims.
+- `app/game-engine` implements an in-memory turn daemon with DB flush hooks and Redis control transport.
+- `app/game-api` exposes tRPC endpoints for reserved turns, messages, and battle sims, communicating with the daemon via Redis.
 - Gateway/game frontends are still placeholders (not part of current runtime).
 
 ## Legacy Data Migration Policy

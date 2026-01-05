@@ -82,8 +82,8 @@ Gateway runs a lightweight cron loop (setInterval) that:
 ## Current Implementation Status
 
 - Turn daemon lifecycle + in-memory state live in `app/game-engine` with DB flush hooks.
-- Control queue is in-process only; Redis transport exists on API side but is not wired into the daemon.
-- API server already exposes turn-daemon commands (run/pause/resume/status) via tRPC.
+- Redis transport for daemon control is implemented and wired into the daemon.
+- API server already exposes turn-daemon commands (run/pause/resume/status) via tRPC, communicating via Redis Streams.
 - API server writes reserved turns and messages directly to the DB; daemon focuses on world state/logs.
 
 ## Turn Daemon and API Server Behavior (Outline)

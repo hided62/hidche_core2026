@@ -18,8 +18,8 @@
 
 - `legacy/` contains the application source. This is the active codebase.
 - PHP entry points live under `legacy/` and `legacy/hwe/` (for example `legacy/index.php`, `legacy/hwe/index.php`).
-- `legacy/` is mostly a shell; `legacy/src/` is largely unused.
-- Core PHP domain logic lives under `legacy/hwe/sammo/` (PSR-4 `sammo\\` namespace).
+- `legacy/src/sammo/` contains core utility classes for the `sammo\\` namespace.
+- Core PHP domain logic lives under `legacy/hwe/sammo/` (also part of the `sammo\\` namespace).
 - Frontend TypeScript/Vue sources are in `legacy/hwe/ts/` with shared components in `legacy/hwe/ts/components/`.
 - Styles are split between `legacy/css/` and SCSS in `legacy/hwe/scss/`.
 - Tests: PHPUnit in `legacy/tests/`, TypeScript tests in `legacy/hwe/test-ts/`.
@@ -62,25 +62,25 @@
 These are placeholders to align teams; adjust once packages exist.
 
 - `pnpm install`: install all workspace dependencies.
-- `pnpm typecheck`: run TypeScript type checks in all packages.
-- `pnpm lint`: lint all packages.
-- `pnpm test`: run all unit tests (Vitest where configured).
-- `pnpm build`: build all packages/apps.
-- `pnpm dev`: run dev servers where applicable.
+- `pnpm typecheck`: run TypeScript type checks in all packages (via turbo).
+- `pnpm lint`: lint all packages (via turbo).
+- `pnpm test`: run all unit tests (via turbo).
+- `pnpm build`: build all packages/apps (via turbo).
+- `pnpm dev`: run dev servers where applicable (via turbo).
 - `pnpm --filter ./app/game-frontend dev`: run a single app by filter.
 - `pnpm --filter ./app/game-api dev`: run a single service by filter.
 - `pnpm --filter ./app/game-engine dev`: run a single service by filter.
 
 ## Development Checklist (AI)
 
-- After code changes, verify TypeScript type checks (prefer `pnpm -r build` or the package `tsc`).
+- After code changes, verify TypeScript type checks (prefer `pnpm build` or `pnpm typecheck`).
 - When changes require unit tests, run the relevant tests.
 
 ## Build Profiles (Proposal)
 
 - A build profile is a server+scenario pair; scenario selection is required even if a default exists.
 - Server builds should accept a profile (server variant) plus an explicit scenario file input.
-- Recommended pattern: a `tools/build-scripts` runner invoked by pnpm, e.g. `pnpm build:server --profile che --scenario default`.
+- Recommended pattern: `pnpm build:server --profile che --scenario default`.
 - Prefer environment variables for CI/CD (`PROFILE=che SCENARIO=default pnpm build:server`) and a small wrapper script for local usage.
 - Build output stays in `/dist/{profileName}` per profile to keep deployments predictable.
 - Profile selection can target different git branches or specific commits; server operators decide the compatibility baseline.

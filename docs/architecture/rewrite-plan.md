@@ -19,6 +19,7 @@ Vue 3 frontends.
 
 - `packages/infra` is live and used by game-api/game-engine services.
 - `app/game-api` and `app/game-engine` have initial implementations (tRPC endpoints, turn daemon loop).
+- Redis transport for turn daemon control is implemented and wired.
 - Frontend apps remain placeholders while backend/runtime stabilizes.
 
 ## Runtime Stack (Planned)

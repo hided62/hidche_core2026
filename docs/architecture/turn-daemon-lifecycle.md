@@ -12,9 +12,10 @@ from the API server.
 
 ## Current Implementation Status
 
-- The daemon loop handles scheduled runs plus in-process control queue commands
-  (run/pause/resume/shutdown). It does not drain API mutation requests between turns.
-- `getStatus` is supported by API transports but not yet handled by the daemon loop.
+- The daemon loop handles scheduled runs plus Redis-based control queue commands
+  (run/pause/resume/shutdown/getStatus).
+- API mutation requests (troopJoin, vacation, etc.) are drained and handled by the daemon loop between turns.
+- `getStatus` is fully supported and responds via Redis.
 - API server currently writes reserved turns and messages directly to the DB.
 
 ## Responsibilities

@@ -31,11 +31,11 @@
     - `pnpm lint`
     - `pnpm test`
     - `pnpm build`
-    - `pnpm typecheck`: 재귀적으로 `tsc --build` 실행
+    - `pnpm typecheck`: turbo를 통해 전체 패키지 타입 체크 실행
     - `pnpm dev`
 - 서버 빌드
-    - `pnpm build:server -- --profile <server> --scenario <scenario>`
-    - 예: `pnpm build:server -- --profile che --scenario default`
+    - `pnpm build:server --profile <server> --scenario <scenario>`
+    - 예: `pnpm build:server --profile che --scenario default`
 
 ## 빌드 프로파일(예정)
 
