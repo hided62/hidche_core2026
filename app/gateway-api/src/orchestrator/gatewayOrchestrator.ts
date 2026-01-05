@@ -587,15 +587,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         const connector = createGamePostgresConnector({ url: databaseUrl });
         await connector.connect();
         try {
-            const prisma = connector.prisma as unknown as {
-                worldState: {
-                    findFirst: (args: unknown) => Promise<{
-                        scenarioCode: string | null;
-                        tickSeconds: number | null;
-                    } | null>;
-                };
-            };
-            const row = await prisma.worldState.findFirst({
+            const row = await connector.prisma.worldState.findFirst({
                 select: { scenarioCode: true, tickSeconds: true },
             });
             if (row) {

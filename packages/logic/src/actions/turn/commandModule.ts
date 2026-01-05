@@ -15,6 +15,6 @@ export interface TurnCommandModule<TSpec extends TurnCommandSpecBase = TurnComma
     commandSpec: TSpec;
     ActionDefinition: new (...args: any[]) => GeneralActionDefinition;
     ActionResolver?: new (...args: any[]) => GeneralActionResolver;
-    CommandResolver?: new (...args: any[]) => unknown;
+    CommandResolver?: new (...args: any[]) => any;
     actionContextBuilder?: ActionContextBuilder;
 }

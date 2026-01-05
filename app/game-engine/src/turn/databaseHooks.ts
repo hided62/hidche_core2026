@@ -2,7 +2,6 @@ import {
     createGamePostgresConnector,
     type InputJsonValue,
     type TurnEngineCityUpdateInput,
-    type TurnEngineDatabaseClient,
     type TurnEngineDiplomacyCreateManyInput,
     type TurnEngineDiplomacyUpdateInput,
     type TurnEngineGeneralCreateManyInput,
@@ -238,7 +237,7 @@ export const createDatabaseTurnHooks = async (
     // 턴 처리 결과를 DB에 반영하는 훅을 만든다.
     const connector = createGamePostgresConnector({ url: databaseUrl });
     await connector.connect();
-    const prisma = connector.prisma as unknown as TurnEngineDatabaseClient;
+    const prisma = connector.prisma;
 
     const hooks: TurnDaemonHooks = {
         flushChanges: async () => {
@@ -346,8 +345,10 @@ export const createDatabaseTurnHooks = async (
                     .map((entry) =>
                         prisma.diplomacy.update({
                             where: {
-                                srcNationId: entry.fromNationId,
-                                destNationId: entry.toNationId,
+                                srcNationId_destNationId: {
+                                    srcNationId: entry.fromNationId,
+                                    destNationId: entry.toNationId,
+                                },
                             },
                             data: buildDiplomacyUpdate(entry),
                         })

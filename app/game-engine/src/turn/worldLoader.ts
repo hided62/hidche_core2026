@@ -255,7 +255,7 @@ export const loadTurnWorldFromDatabase = async (
     const connector = createGamePostgresConnector({ url: options.databaseUrl });
     await connector.connect();
     try {
-        const prisma = connector.prisma as unknown as TurnEngineDatabaseClient;
+        const prisma: TurnEngineDatabaseClient = connector.prisma;
         const worldState = await prisma.worldState.findFirst();
         if (!worldState) {
             throw new Error('world_state row is required to start turn daemon.');

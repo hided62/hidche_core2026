@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { GameSessionTokenPayload } from '@sammo-ts/common';
 import type { DatabaseClient as InfraDatabaseClient, RedisConnector } from '@sammo-ts/infra';
 
@@ -9,6 +10,21 @@ export interface GameProfile {
     scenario: string;
     name: string;
 }
+
+export const zWorldStateConfig = z.object({
+    maxUserCnt: z.number().optional(),
+    fictionMode: z.string().optional(),
+});
+export type WorldStateConfig = z.infer<typeof zWorldStateConfig>;
+
+export const zWorldStateMeta = z.object({
+    starttime: z.string().optional(),
+    opentime: z.string().optional(),
+    turntime: z.string().optional(),
+    otherTextInfo: z.string().optional(),
+    isUnited: z.number().optional(),
+});
+export type WorldStateMeta = z.infer<typeof zWorldStateMeta>;
 
 export interface WorldStateRow {
     scenarioCode: string;
@@ -22,7 +38,7 @@ export interface WorldStateRow {
 
 export interface GeneralRow {
     id: number;
-    userId: number | null;
+    userId: string | null;
     name: string;
     nationId: number;
     cityId: number;
@@ -49,6 +65,7 @@ export interface GeneralRow {
     atmos: number;
     age: number;
     npcState: number;
+    picture: string | null;
     meta: unknown;
 }
 

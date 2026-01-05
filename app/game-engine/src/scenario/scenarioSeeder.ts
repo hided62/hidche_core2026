@@ -1,7 +1,6 @@
 import {
     createGamePostgresConnector,
     type InputJsonValue,
-    type TurnEngineDatabaseClient,
     type TurnEngineEventCreateManyInput,
 } from '@sammo-ts/infra';
 import {
@@ -125,7 +124,7 @@ export const seedScenarioToDatabase = async (
 
     await connector.connect();
     try {
-        const prisma = connector.prisma as unknown as TurnEngineDatabaseClient;
+        const prisma = connector.prisma;
 
         if (options.resetTables ?? true) {
             await prisma.event.deleteMany();

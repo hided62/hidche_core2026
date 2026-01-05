@@ -74,7 +74,7 @@ export class RepositoryProfileStatusService implements GatewayProfileStatusServi
         row: GatewayProfileRecord,
         runtimeMap: Map<string, { apiRunning: boolean; daemonRunning: boolean }>
     ): LobbyProfileStatus {
-        const meta = row.meta as Record<string, any>;
+        const meta = row.meta;
         return {
             profileName: row.profileName,
             profile: row.profile,
@@ -85,8 +85,8 @@ export class RepositoryProfileStatusService implements GatewayProfileStatusServi
                 apiRunning: false,
                 daemonRunning: false,
             },
-            korName: (meta.korName as string) ?? row.profile,
-            color: (meta.color as string) ?? '#ffffff',
+            korName: (meta.korName as string | undefined) ?? row.profile,
+            color: (meta.color as string | undefined) ?? '#ffffff',
         };
     }
 }

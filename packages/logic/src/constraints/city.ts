@@ -143,7 +143,7 @@ export const suppliedDestCity = (): Constraint => ({
 });
 
 export const remainCityCapacity = (
-    key: string,
+    key: keyof City,
     label: string
 ): Constraint => ({
     name: 'RemainCityCapacity',
@@ -158,11 +158,10 @@ export const remainCityCapacity = (
             const req: RequirementKey = { kind: 'city', id: ctx.cityId };
             return unknownOrDeny(ctx, [req], '도시 정보가 없습니다.');
         }
-        const record = city as unknown as Record<string, number | undefined>;
-        const maxKey = `${key}_max`;
-        const current = record[key];
-        const max = record[maxKey];
-        if (current === undefined || max === undefined) {
+        const maxKey = `${String(key)}Max` as keyof City;
+        const current = city[key];
+        const max = city[maxKey];
+        if (typeof current !== 'number' || typeof max !== 'number') {
             return unknownOrDeny(ctx, [], '도시 정보가 없습니다.');
         }
         if (current < max) {
@@ -173,8 +172,8 @@ export const remainCityCapacity = (
 });
 
 export const remainCityCapacityByMax = (
-    key: string,
-    maxKey: string,
+    key: keyof City,
+    maxKey: keyof City,
     label: string
 ): Constraint => ({
     name: 'RemainCityCapacityByMax',
@@ -189,10 +188,9 @@ export const remainCityCapacityByMax = (
             const req: RequirementKey = { kind: 'city', id: ctx.cityId };
             return unknownOrDeny(ctx, [req], '도시 정보가 없습니다.');
         }
-        const record = city as unknown as Record<string, number | undefined>;
-        const current = record[key];
-        const max = record[maxKey];
-        if (current === undefined || max === undefined) {
+        const current = city[key];
+        const max = city[maxKey];
+        if (typeof current !== 'number' || typeof max !== 'number') {
             return unknownOrDeny(ctx, [], '도시 정보가 없습니다.');
         }
         if (current < max) {
@@ -203,7 +201,7 @@ export const remainCityCapacityByMax = (
 });
 
 export const reqCityCapacity = (
-    key: string,
+    key: keyof City,
     label: string,
     required: number | string
 ): Constraint => ({
@@ -219,16 +217,15 @@ export const reqCityCapacity = (
             const req: RequirementKey = { kind: 'city', id: ctx.cityId };
             return unknownOrDeny(ctx, [req], '도시 정보가 없습니다.');
         }
-        const record = city as unknown as Record<string, number | undefined>;
-        const current = record[key];
-        if (current === undefined) {
+        const current = city[key];
+        if (typeof current !== 'number') {
             return unknownOrDeny(ctx, [], '도시 정보가 없습니다.');
         }
         if (typeof required === 'string') {
             const ratio = parsePercent(required);
-            const maxKey = `${key}Max`;
-            const max = record[maxKey];
-            if (ratio === null || max === undefined) {
+            const maxKey = `${String(key)}Max` as keyof City;
+            const max = city[maxKey];
+            if (ratio === null || typeof max !== 'number') {
                 return unknownOrDeny(ctx, [], '도시 정보가 없습니다.');
             }
             if (current >= max * ratio) {
@@ -256,7 +253,7 @@ export const reqCityTrust = (minTrust: number): Constraint => ({
         }
         const trust =
             readMetaNumberFromUnknown(
-                city.meta as Record<string, unknown>,
+                city.meta,
                 'trust'
             ) ?? null;
         if (trust === null) {

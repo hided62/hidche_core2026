@@ -1,7 +1,8 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import type { WorldStateRow } from './context.js';
+import { zWorldStateConfig, zWorldStateMeta } from './context.js';
+import type { GameApiContext, WorldStateRow } from './context.js';
 import { authedProcedure, procedure, router } from './trpc.js';
 import { buildTurnCommandTable } from './turns/commandTable.js';
 import {
@@ -67,12 +68,12 @@ const toWorldStateSnapshot = (row: WorldStateRow) => ({
     updatedAt: row.updatedAt.toISOString(),
 });
 
-const getMyGeneral = async (ctx: { db: any, auth: any }) => {
+const getMyGeneral = async (ctx: Pick<GameApiContext, 'db' | 'auth'>) => {
     if (!ctx.auth?.user.id) {
         throw new TRPCError({ code: 'UNAUTHORIZED' });
     }
     const general = await ctx.db.general.findFirst({
-        where: { userId: parseInt(ctx.auth.user.id) },
+        where: { userId: ctx.auth.user.id },
     });
     if (!general) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'General not found' });
@@ -90,13 +91,19 @@ export const appRouter = router({
     }),
     lobby: router({
         info: procedure.query(async ({ ctx }) => {
-            const worldState = await ctx.db.worldState.findFirst();
-            if (!worldState) {
+            const rawWorldState = await ctx.db.worldState.findFirst();
+            if (!rawWorldState) {
                 throw new TRPCError({
                     code: 'NOT_FOUND',
                     message: 'World state not found',
                 });
             }
+
+            const worldState = {
+                ...rawWorldState,
+                config: zWorldStateConfig.parse(rawWorldState.config),
+                meta: zWorldStateMeta.parse(rawWorldState.meta),
+            };
 
             const userCnt = await ctx.db.general.count({ where: { npcState: 0 } });
             const npcCnt = await ctx.db.general.count({ where: { npcState: { gt: 0 } } });
@@ -111,8 +118,8 @@ export const appRouter = router({
                 });
                 if (general) {
                     myGeneral = {
-                        name: (general as any).name,
-                        picture: (general as any).picture,
+                        name: general.name,
+                        picture: general.picture,
                     };
                 }
             }
@@ -121,16 +128,16 @@ export const appRouter = router({
                 year: worldState.currentYear,
                 month: worldState.currentMonth,
                 userCnt,
-                maxUserCnt: (worldState.config as any).maxUserCnt ?? 500,
+                maxUserCnt: worldState.config.maxUserCnt ?? 500,
                 npcCnt,
                 nationCnt,
                 turnTerm: worldState.tickSeconds / 60,
-                fictionMode: (worldState.config as any).fictionMode ?? '사실',
-                starttime: (worldState.meta as any).starttime ?? '',
-                opentime: (worldState.meta as any).opentime ?? '',
-                turntime: (worldState.meta as any).turntime ?? '',
-                otherTextInfo: (worldState.meta as any).otherTextInfo ?? '',
-                isUnited: (worldState.meta as any).isUnited ?? 0,
+                fictionMode: worldState.config.fictionMode ?? '사실',
+                starttime: worldState.meta.starttime ?? '',
+                opentime: worldState.meta.opentime ?? '',
+                turntime: worldState.meta.turntime ?? '',
+                otherTextInfo: worldState.meta.otherTextInfo ?? '',
+                isUnited: worldState.meta.isUnited ?? 0,
                 myGeneral,
             };
         }),

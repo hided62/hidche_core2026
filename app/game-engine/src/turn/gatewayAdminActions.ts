@@ -36,15 +36,6 @@ export interface GatewayAdminActionConsumer {
     stop(): Promise<void>;
 }
 
-type GatewayProfileRow = {
-    meta: unknown;
-};
-
-type GatewayProfileClient = {
-    findUnique(args: unknown): Promise<GatewayProfileRow | null>;
-    update(args: unknown): Promise<void>;
-};
-
 const DEFAULT_POLL_MS = 5000;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -75,9 +66,7 @@ export const createGatewayAdminActionConsumer = async (
         url: options.gatewayDatabaseUrl ?? options.databaseUrl,
     });
     await connector.connect();
-    const prisma = connector.prisma as unknown as {
-        gatewayProfile: GatewayProfileClient;
-    };
+    const prisma = connector.prisma;
 
     let timer: NodeJS.Timeout | null = null;
     let inFlight = false;

@@ -29,11 +29,13 @@ export interface CityDevelopmentEnvironment {
     amount?: number;
 }
 
+type NumberKeys<T> = { [K in keyof T]: T[K] extends number ? K : never }[keyof T];
+
 export interface CityDevelopmentConfig {
     key: string;
     name: string;
-    statKey: keyof City;
-    maxKey: keyof City;
+    statKey: NumberKeys<City>;
+    maxKey: NumberKeys<City>;
     label: string;
     baseAmount: number;
 }
@@ -74,8 +76,8 @@ export class CityDevelopmentActionDefinition<
             occupiedCity(),
             suppliedCity(),
             remainCityCapacityByMax(
-                String(this.config.statKey),
-                String(this.config.maxKey),
+                this.config.statKey,
+                this.config.maxKey,
                 this.config.label
             ),
             reqGeneralGold(getRequiredGold),
@@ -105,7 +107,7 @@ export class CityDevelopmentActionDefinition<
         const costGold = this.env.develCost ?? 0;
 
         // 직접 수정 (Immer Draft)
-        (city as any)[this.config.statKey] = nextValue;
+        city[this.config.statKey] = nextValue;
         general.gold = Math.max(0, general.gold - costGold);
 
         const logMessage = `${this.config.label}이 ${nextValue - current} 증가했습니다.`;

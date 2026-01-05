@@ -18,15 +18,6 @@ const DEFAULT_CACHE_MS = 2000;
 const isRunningStatus = (status: string | null | undefined): boolean =>
     status === 'RUNNING';
 
-type GatewayProfileRow = {
-    status: string | null;
-};
-
-type GatewayProfileClient = {
-    findUnique(args: unknown): Promise<GatewayProfileRow | null>;
-    update(args: unknown): Promise<void>;
-};
-
 export const createGatewayProfileGate = async (
     options: GatewayProfileGateOptions
 ): Promise<GatewayProfileGate> => {
@@ -34,9 +25,7 @@ export const createGatewayProfileGate = async (
         url: options.gatewayDatabaseUrl ?? options.databaseUrl,
     });
     await connector.connect();
-    const prisma = connector.prisma as unknown as {
-        gatewayProfile: GatewayProfileClient;
-    };
+    const prisma = connector.prisma;
     let lastCheckedAt = 0;
     let cachedPause = false;
 

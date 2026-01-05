@@ -1,12 +1,7 @@
-export type JsonValue =
-    | null
-    | boolean
-    | number
-    | string
-    | JsonValue[]
-    | { [key: string]: JsonValue };
+import type { GamePrisma, LogCategory, LogScope } from './gamePrisma.js';
 
-export type InputJsonValue = JsonValue;
+export type JsonValue = GamePrisma.JsonValue;
+export type InputJsonValue = GamePrisma.InputJsonValue;
 
 export interface TurnEngineWorldStateRow {
     id: number;
@@ -148,7 +143,7 @@ export interface TurnEngineGeneralUpdateInput {
     name: string;
     nationId: number;
     cityId: number;
-    troopId: number | null;
+    troopId: number;
     leadership: number;
     strength: number;
     intel: number;
@@ -181,7 +176,7 @@ export interface TurnEngineGeneralCreateManyInput {
     name: string;
     nationId: number;
     cityId: number;
-    troopId?: number | null;
+    troopId?: number;
     npcState: number;
     leadership: number;
     strength: number;
@@ -323,8 +318,8 @@ export interface TurnEngineEventCreateManyInput {
 }
 
 export interface TurnEngineLogEntryCreateManyInput {
-    scope: string;
-    category: string;
+    scope: LogScope;
+    category: LogCategory;
     subType: string | null;
     year: number;
     month: number;
@@ -387,7 +382,12 @@ export interface TurnEngineDatabaseClient {
             data: TurnEngineDiplomacyCreateManyInput[];
         }): Promise<unknown>;
         update(args: {
-            where: { srcNationId: number; destNationId: number };
+            where: {
+                srcNationId_destNationId: {
+                    srcNationId: number;
+                    destNationId: number;
+                };
+            };
             data: TurnEngineDiplomacyUpdateInput;
         }): Promise<unknown>;
         deleteMany(args?: unknown): Promise<unknown>;
@@ -416,36 +416,13 @@ export interface TurnEngineDatabaseClient {
         }): Promise<unknown>;
     };
     generalTurn: {
-        findMany(args?: {
-            where?: { generalId?: number };
-            orderBy?: { turnIdx: 'asc' | 'desc' }[];
-        }): Promise<TurnEngineGeneralTurnRow[]>;
-        deleteMany(args: { where: { generalId: number } }): Promise<unknown>;
-        createMany(args: {
-            data: Array<{
-                generalId: number;
-                turnIdx: number;
-                actionCode: string;
-                arg: InputJsonValue;
-            }>;
-        }): Promise<unknown>;
+        findMany(args?: unknown): Promise<TurnEngineGeneralTurnRow[]>;
+        deleteMany(args?: unknown): Promise<unknown>;
+        createMany(args?: unknown): Promise<unknown>;
     };
     nationTurn: {
-        findMany(args?: {
-            where?: { nationId?: number; officerLevel?: number };
-            orderBy?: { turnIdx: 'asc' | 'desc' }[];
-        }): Promise<TurnEngineNationTurnRow[]>;
-        deleteMany(args: {
-            where: { nationId: number; officerLevel: number };
-        }): Promise<unknown>;
-        createMany(args: {
-            data: Array<{
-                nationId: number;
-                officerLevel: number;
-                turnIdx: number;
-                actionCode: string;
-                arg: InputJsonValue;
-            }>;
-        }): Promise<unknown>;
+        findMany(args?: unknown): Promise<TurnEngineNationTurnRow[]>;
+        deleteMany(args?: unknown): Promise<unknown>;
+        createMany(args?: unknown): Promise<unknown>;
     };
 }

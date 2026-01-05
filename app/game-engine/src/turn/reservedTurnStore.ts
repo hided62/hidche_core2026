@@ -272,7 +272,7 @@ export const createReservedTurnStore = async (
     const connector = createGamePostgresConnector({ url: options.databaseUrl });
     await connector.connect();
     const store = new InMemoryReservedTurnStore(
-        connector.prisma as unknown as ReservedTurnDatabaseClient,
+        connector.prisma,
         {
             maxGeneralTurns: options.maxGeneralTurns ?? DEFAULT_GENERAL_TURNS,
             maxNationTurns: options.maxNationTurns ?? DEFAULT_NATION_TURNS,
