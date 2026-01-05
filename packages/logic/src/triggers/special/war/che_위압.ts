@@ -1,7 +1,7 @@
+import type { TraitOnCalcStat, TraitModule } from '@sammo-ts/logic/triggers/special/types.js';
 import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
-import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/types.js';
 import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
-import type { TraitModule } from '@sammo-ts/logic/triggers/special/types.js';
+import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/types.js';
 import { BaseWarUnitTrigger, WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
 import type { WarUnit } from '@sammo-ts/logic/war/units.js';
 import { LogFormat } from '@sammo-ts/logic/logging/types.js';
@@ -61,21 +61,14 @@ class che_위압발동 extends BaseWarUnitTrigger {
     }
 }
 
-function onCalcStat(context: GeneralActionContext, statName: GeneralStatName, value: number, aux?: unknown): number;
-function onCalcStat(
-    context: WarActionContext,
-    statName: WarStatName,
-    value: number | [number, number],
-    aux?: unknown
-): number | [number, number];
-function onCalcStat(
+const onCalcStat = ((
     _context: GeneralActionContext | WarActionContext,
     _statName: GeneralStatName | WarStatName,
     value: number | [number, number],
     _aux?: unknown
-): number | [number, number] {
+): number | [number, number] => {
     return value;
-}
+}) as unknown as TraitOnCalcStat;
 
 export const traitModule: TraitModule = {
     key: 'che_위압',

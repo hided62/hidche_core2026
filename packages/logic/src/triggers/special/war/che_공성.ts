@@ -1,24 +1,17 @@
+import type { TraitOnCalcStat, TraitModule } from '@sammo-ts/logic/triggers/special/types.js';
 import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
-import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/types.js';
 import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
-import type { TraitModule } from '@sammo-ts/logic/triggers/special/types.js';
+import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/types.js';
 import { getMetaNumber } from '@sammo-ts/logic/war/utils.js';
 import { WarUnitCity } from '@sammo-ts/logic/war/units.js';
 import { getAuxArmType, parseWarDexAux } from './aux.js';
 
-function onCalcStat(context: GeneralActionContext, statName: GeneralStatName, value: number, aux?: unknown): number;
-function onCalcStat(
-    context: WarActionContext,
-    statName: WarStatName,
-    value: number | [number, number],
-    aux?: unknown
-): number | [number, number];
-function onCalcStat(
+const onCalcStat = ((
     context: GeneralActionContext | WarActionContext,
     statName: GeneralStatName | WarStatName,
     value: number | [number, number],
     aux?: unknown
-): number | [number, number] {
+): number | [number, number] => {
     if (!('unit' in context) || !context.unit) {
         return value;
     }
@@ -41,7 +34,7 @@ function onCalcStat(
         }
     }
     return value;
-}
+}) as unknown as TraitOnCalcStat;
 
 // 전투 특기: 공성
 export const traitModule: TraitModule = {

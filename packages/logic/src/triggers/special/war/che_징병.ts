@@ -1,7 +1,7 @@
+import type { TraitOnCalcStat, TraitModule } from '@sammo-ts/logic/triggers/special/types.js';
 import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
-import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/types.js';
 import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
-import type { TraitModule } from '@sammo-ts/logic/triggers/special/types.js';
+import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/types.js';
 
 const RECRUIT_TRAIN = 70;
 const CONSCRIPT_TRAIN = 84;
@@ -17,23 +17,17 @@ const resolveLeadershipBonus = (
     return value + base * 0.25;
 };
 
-function onCalcStat(context: GeneralActionContext, statName: GeneralStatName, value: number, aux?: unknown): number;
-function onCalcStat(
-    context: WarActionContext,
-    statName: WarStatName,
-    value: number | [number, number],
-    aux?: unknown
-): number | [number, number];
-function onCalcStat(
+const onCalcStat = ((
     context: GeneralActionContext | WarActionContext,
     statName: GeneralStatName | WarStatName,
-    value: number | [number, number]
-): number | [number, number] {
+    value: number | [number, number],
+    _aux?: unknown
+): number | [number, number] => {
     if (statName !== 'leadership') {
         return value;
     }
     return resolveLeadershipBonus(context, value);
-}
+}) as unknown as TraitOnCalcStat;
 
 // 전투 특기: 징병
 export const traitModule: TraitModule = {

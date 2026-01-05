@@ -1,7 +1,7 @@
+import type { TraitOnCalcStat, TraitOnCalcOpposeStat, TraitModule } from '@sammo-ts/logic/triggers/special/types.js';
 import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
-import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/types.js';
 import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
-import type { TraitModule } from '@sammo-ts/logic/triggers/special/types.js';
+import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/types.js';
 import { BaseWarUnitTrigger, WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
 import type { WarUnit } from '@sammo-ts/logic/war/units.js';
 import { LogFormat } from '@sammo-ts/logic/logging/types.js';
@@ -72,24 +72,29 @@ class che_반계발동 extends BaseWarUnitTrigger {
     }
 }
 
-function onCalcStat(context: GeneralActionContext, statName: GeneralStatName, value: number, aux?: unknown): number;
-function onCalcStat(
-    context: WarActionContext,
-    statName: WarStatName,
-    value: number | [number, number],
-    aux?: unknown
-): number | [number, number];
-function onCalcStat(
+const onCalcStat = ((
     _context: GeneralActionContext | WarActionContext,
     statName: GeneralStatName | WarStatName,
     value: number | [number, number],
     aux?: unknown
-): number | [number, number] {
-    if (statName === 'warMagicSuccessDamage' && aux === '반목') {
-        return (value as number) + 0.9;
+): number | [number, number] => {
+    if (statName === 'warMagicSuccessDamage' && aux === '반목' && typeof value === 'number') {
+        return value + 0.9;
     }
     return value;
-}
+}) as unknown as TraitOnCalcStat;
+
+const onCalcOpposeStat = ((
+    _context: GeneralActionContext | WarActionContext,
+    statName: GeneralStatName | WarStatName,
+    value: number | [number, number],
+    _aux?: unknown
+): number | [number, number] => {
+    if (statName === 'warMagicSuccessProb' && typeof value === 'number') {
+        return value - 0.1;
+    }
+    return value;
+}) as unknown as TraitOnCalcOpposeStat;
 
 export const traitModule: TraitModule = {
     key: 'che_반계',
@@ -99,12 +104,7 @@ export const traitModule: TraitModule = {
     getName: () => '반계',
     getInfo: () =>
         '[전투] 상대의 계략 성공 확률 -10%p, 상대의 계략을 40% 확률로 되돌림, 반목 성공시 대미지 추가(+60% → +150%)',
-    onCalcOpposeStat: ((_context, statName, value, _aux) => {
-        if (statName === 'warMagicSuccessProb' && typeof value === 'number') {
-            return value - 0.1;
-        }
-        return value;
-    }) as TraitModule['onCalcOpposeStat'],
+    onCalcOpposeStat,
     getBattlePhaseTriggerList: (_context) => {
         if (!_context.unit) return null;
         return new WarTriggerCaller(new che_반계시도(_context.unit), new che_반계발동(_context.unit));
