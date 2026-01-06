@@ -1,0 +1,27 @@
+import { WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
+import { CheRetreatNoWoundTrigger } from '@sammo-ts/logic/war/triggers/che_퇴각부상무효.js';
+import { createStatItemModule } from './base.js';
+import type { ItemModule } from './types.js';
+
+const baseModule = createStatItemModule({
+    key: 'che_명마_07_백마',
+    rawName: '백마',
+    slot: 'horse',
+    statName: 'leadership',
+    statValue: 7,
+    cost: 200,
+    buyable: false,
+    reqSecu: 0,
+    unique: true,
+    extraInfo: '[전투] 전투 종료로 인한 부상 없음',
+});
+
+export const itemModule: ItemModule = {
+    ...baseModule,
+    getBattleInitTriggerList: (context) => {
+        if (!context.unit) {
+            return null;
+        }
+        return new WarTriggerCaller(new CheRetreatNoWoundTrigger(context.unit));
+    },
+};

@@ -27,7 +27,10 @@ export class CheUisulCityHealTrigger<
 > extends BaseGeneralTrigger<TriggerState> {
     public readonly priority = TriggerPriority.Begin + 10;
 
-    public constructor(general: General<TriggerState>) {
+    public constructor(
+        general: General<TriggerState>,
+        private multiplier: number = 1
+    ) {
         super(general);
     }
 
@@ -52,7 +55,7 @@ export class CheUisulCityHealTrigger<
             return true;
         });
 
-        const healed = candidates.filter(() => rng.nextBool(HEAL_PROBABILITY));
+        const healed = candidates.filter(() => rng.nextBool(HEAL_PROBABILITY * this.multiplier));
 
         for (const patient of healed) {
             patient.injury = 0;

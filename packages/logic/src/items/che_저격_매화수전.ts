@@ -1,0 +1,28 @@
+import { WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
+import { CheSnipingActivateTrigger, CheSnipingAttemptTrigger } from '@sammo-ts/logic/war/triggers/che_저격.js';
+import { BaseWarUnitTrigger } from '@sammo-ts/logic/war/triggers.js';
+import type { ItemModule } from './types.js';
+
+const RAISE_TYPE = BaseWarUnitTrigger.TYPE_ITEM + BaseWarUnitTrigger.TYPE_DEDUP_TYPE_BASE * 304;
+
+export const itemModule: ItemModule = {
+    key: 'che_저격_매화수전',
+    rawName: '매화수전',
+    name: '매화수전(저격)',
+    info: '[전투] 계략 시도 단계에서 저격 확률 50%',
+    slot: 'item',
+    cost: 200,
+    buyable: false,
+    consumable: false,
+    reqSecu: 0,
+    unique: true,
+    getBattlePhaseTriggerList: (context) => {
+        if (!context.unit) {
+            return null;
+        }
+        return new WarTriggerCaller(
+            new CheSnipingAttemptTrigger(context.unit, RAISE_TYPE, 0.5, 20, 40),
+            new CheSnipingActivateTrigger(context.unit, RAISE_TYPE)
+        );
+    },
+};
