@@ -1,6 +1,7 @@
 import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
 import type { WarActionModule } from '@sammo-ts/logic/war/actions.js';
+import type { TraitSelection } from './requirements.js';
 
 export type TraitKind = 'domestic' | 'war' | 'personality' | 'nation';
 
@@ -9,6 +10,7 @@ export interface TraitSpec {
     name: string;
     info: string;
     kind: TraitKind;
+    selection?: TraitSelection;
 }
 
 export type TraitModule<TriggerState extends GeneralTriggerState = GeneralTriggerState> = TraitSpec &

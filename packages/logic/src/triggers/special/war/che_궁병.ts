@@ -1,3 +1,4 @@
+import { TraitRequirement, TraitWeightType } from '../requirements.js';
 import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
 import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/types.js';
 import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
@@ -52,6 +53,17 @@ export const traitModule: TraitModule = {
     name: '궁병',
     info: '[군사] 궁병 계통 징·모병비 -10%<br>[전투] 회피 확률 +20%p,<br>공격시 상대 병종에/수비시 자신 병종 숙련에 궁병 숙련을 가산',
     kind: 'war',
+    selection: {
+        weight: 1,
+        weightType: TraitWeightType.NORM,
+        requirements: [
+            TraitRequirement.STAT_LEADERSHIP |
+                TraitRequirement.REQ_DEXTERITY |
+                TraitRequirement.ARMY_ARCHER |
+                TraitRequirement.STAT_NOT_INTEL,
+            TraitRequirement.STAT_STRENGTH | TraitRequirement.REQ_DEXTERITY | TraitRequirement.ARMY_ARCHER,
+        ],
+    },
     getName: () => '궁병',
     getInfo: () =>
         '[군사] 궁병 계통 징·모병비 -10%<br>[전투] 회피 확률 +20%p,<br>공격시 상대 병종에/수비시 자신 병종 숙련에 궁병 숙련을 가산',

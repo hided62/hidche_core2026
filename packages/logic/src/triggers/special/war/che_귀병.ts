@@ -19,66 +19,61 @@ function onCalcStat(
     value: number | [number, number],
     aux?: unknown
 ): number | [number, number] {
+    if (statName === 'warMagicSuccessProb') {
+        return (value as number) + 0.2;
+    }
+
     if (!('unit' in context) || !context.unit) {
         return value;
     }
     const unit = context.unit;
 
-    const footmanType = unit.getGameConfig().armTypes.footman;
-    if (footmanType === undefined) {
+    const wizardType = unit.getGameConfig().armTypes.wizard;
+    if (wizardType === undefined) {
         return value;
     }
 
     if (statName.startsWith('dex')) {
-        const myDex = getMetaNumber(context.general.meta, `dex${footmanType}`);
+        const myDex = getMetaNumber(context.general.meta, `dex${wizardType}`);
         const { isAttacker, opposeType } = parseWarDexAux(aux);
 
         if (isAttacker && opposeType && statName === `dex${opposeType.armType}`) {
             return (value as number) + myDex;
         }
-        if (!isAttacker && statName === `dex${footmanType}`) {
+        if (!isAttacker && statName === `dex${wizardType}`) {
             return (value as number) + myDex;
         }
     }
     return value;
 }
 
-// 전투 특기: 보병
+// 전투 특기: 귀병
 export const traitModule: TraitModule = {
-    key: 'che_보병',
-    name: '보병',
-    info: '[군사] 보병 계통 징·모병비 -10%<br>[전투] 공격 시 아군 피해 -10%, 수비 시 아군 피해 -20%,<br>공격시 상대 병종에/수비시 자신 병종 숙련에 보병 숙련을 가산',
+    key: 'che_귀병',
+    name: '귀병',
+    info: '[군사] 귀병 계통 징·모병비 -10%<br>[전투] 계략 성공 확률 +20%p,<br>공격시 상대 병종에/수비시 자신 병종 숙련에 귀병 숙련을 가산',
     kind: 'war',
     selection: {
         weight: 1,
         weightType: TraitWeightType.NORM,
         requirements: [
-            TraitRequirement.STAT_LEADERSHIP |
+            TraitRequirement.STAT_INTEL |
+                TraitRequirement.ARMY_WIZARD |
                 TraitRequirement.REQ_DEXTERITY |
-                TraitRequirement.ARMY_FOOTMAN |
-                TraitRequirement.STAT_NOT_INTEL,
-            TraitRequirement.STAT_STRENGTH | TraitRequirement.REQ_DEXTERITY | TraitRequirement.ARMY_FOOTMAN,
+                TraitRequirement.STAT_NOT_STRENGTH,
         ],
     },
-    getName: () => '보병',
+    getName: () => '귀병',
     getInfo: () =>
-        '[군사] 보병 계통 징·모병비 -10%<br>[전투] 공격 시 아군 피해 -10%, 수비 시 아군 피해 -20%,<br>공격시 상대 병종에/수비시 자신 병종 숙련에 보병 숙련을 가산',
+        '[군사] 귀병 계통 징·모병비 -10%<br>[전투] 계략 성공 확률 +20%p,<br>공격시 상대 병종에/수비시 자신 병종 숙련에 귀병 숙련을 가산',
     onCalcDomestic: (_context, turnType, varType, value, aux) => {
         if (turnType === '징병' || turnType === '모병') {
             const armType = getAuxArmType(aux);
-            // Note: In a real scenario, we should check if aux.armType is footman.
-            // Since we don't have easy access to config here, we might need to assume legacy ID 1 or similar.
-            if (varType === 'cost' && armType === 1) {
+            if (varType === 'cost' && armType === 4) {
                 return value * 0.9;
             }
         }
         return value;
-    },
-    getWarPowerMultiplier: (_context, unit, _oppose) => {
-        if (unit.isAttacker()) {
-            return [1, 0.9];
-        }
-        return [1, 0.8];
     },
     onCalcStat,
 };

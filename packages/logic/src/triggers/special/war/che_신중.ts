@@ -2,6 +2,7 @@ import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
 import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/types.js';
 import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
 import type { TraitModule } from '@sammo-ts/logic/triggers/special/types.js';
+import { TraitRequirement, TraitWeightType } from '../requirements.js';
 
 function onCalcStat(context: GeneralActionContext, statName: GeneralStatName, value: number, aux?: unknown): number;
 function onCalcStat(
@@ -29,5 +30,10 @@ export const traitModule: TraitModule = {
     kind: 'war',
     getName: () => '신중',
     getInfo: () => '[전투] 계략 성공 확률 100%',
+    selection: {
+        requirements: [TraitRequirement.STAT_INTEL],
+        weight: 1,
+        weightType: TraitWeightType.NORM,
+    },
     onCalcStat,
 };

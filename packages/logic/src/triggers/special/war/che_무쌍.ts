@@ -2,6 +2,7 @@ import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
 import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/types.js';
 import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
 import type { TraitModule } from '@sammo-ts/logic/triggers/special/types.js';
+import { TraitRequirement, TraitWeightType } from '../requirements.js';
 import { getMetaNumber } from '@sammo-ts/logic/war/utils.js';
 
 import { WarUnit } from '@sammo-ts/logic/war/units.js';
@@ -40,6 +41,11 @@ export const traitModule: TraitModule = {
     getName: () => '무쌍',
     getInfo: () =>
         '[전투] 대미지 +5%, 피해 -2%, 공격 시 필살 확률 +10%p, <br>승리 수의 로그 비례로 대미지 상승(10회 ⇒ +5%, 40회 ⇒ +15%)<br>승리 수의 로그 비례로 피해 감소(10회 ⇒ -2%, 40회 ⇒ -6%)',
+    selection: {
+        requirements: [TraitRequirement.STAT_STRENGTH],
+        weight: 1,
+        weightType: TraitWeightType.NORM,
+    },
     getWarPowerMultiplier: (_context, unit, _oppose) => {
         let attackMultiplier = 1.05;
         let defenceMultiplier = 0.98;

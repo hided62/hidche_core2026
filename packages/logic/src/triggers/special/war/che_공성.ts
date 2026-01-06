@@ -1,3 +1,4 @@
+import { TraitRequirement, TraitWeightType } from '../requirements.js';
 import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
 import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/types.js';
 import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
@@ -49,13 +50,18 @@ export const traitModule: TraitModule = {
     name: '공성',
     info: '[군사] 차병 계통 징·모병비 -10%<br>[전투] 성벽 공격 시 대미지 +100%,<br>공격시 상대 병종에/수비시 자신 병종 숙련에 차병 숙련을 가산',
     kind: 'war',
+    selection: {
+        weight: 1,
+        weightType: TraitWeightType.NORM,
+        requirements: [TraitRequirement.STAT_LEADERSHIP | TraitRequirement.REQ_DEXTERITY | TraitRequirement.ARMY_SIEGE],
+    },
     getName: () => '공성',
     getInfo: () =>
         '[군사] 차병 계통 징·모병비 -10%<br>[전투] 성벽 공격 시 대미지 +100%,<br>공격시 상대 병종에/수비시 자신 병종 숙련에 차병 숙련을 가산',
     onCalcDomestic: (_context, turnType, varType, value, aux) => {
         if (turnType === '징병' || turnType === '모병') {
             const armType = getAuxArmType(aux);
-            if (varType === 'cost' && armType === 4) {
+            if (varType === 'cost' && armType === 5) {
                 return value * 0.9;
             }
         }

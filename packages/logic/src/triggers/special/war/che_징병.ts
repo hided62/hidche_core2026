@@ -2,6 +2,7 @@ import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
 import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/types.js';
 import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
 import type { TraitModule } from '@sammo-ts/logic/triggers/special/types.js';
+import { TraitRequirement, TraitWeightType } from '../requirements.js';
 
 const RECRUIT_TRAIN = 70;
 const CONSCRIPT_TRAIN = 84;
@@ -44,6 +45,11 @@ export const traitModule: TraitModule = {
     getName: () => '징병',
     getInfo: () =>
         '[군사] 징병/모병 시 훈사 70/84 제공<br>[기타] 통솔 순수 능력치 보정 +25%, 징병/모병/소집해제 시 인구 변동 없음',
+    selection: {
+        requirements: [TraitRequirement.STAT_LEADERSHIP, TraitRequirement.STAT_STRENGTH, TraitRequirement.STAT_INTEL],
+        weight: 1,
+        weightType: TraitWeightType.NORM,
+    },
     onCalcDomestic: (_context, turnType, varType, value) => {
         if (turnType === '징병' || turnType === '모병') {
             if (varType === 'train' || varType === 'atmos') {

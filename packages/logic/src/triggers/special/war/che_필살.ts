@@ -2,6 +2,7 @@ import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
 import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/types.js';
 import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
 import type { TraitModule } from '@sammo-ts/logic/triggers/special/types.js';
+import { TraitRequirement, TraitWeightType } from '../requirements.js';
 import { BaseWarUnitTrigger, WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
 import type { WarUnit } from '@sammo-ts/logic/war/units.js';
 
@@ -55,6 +56,11 @@ export const traitModule: TraitModule = {
     kind: 'war',
     getName: () => '필살',
     getInfo: () => '[전투] 필살 확률 +30%p, 필살 발동시 대상 회피 불가, 필살 계수 향상',
+    selection: {
+        requirements: [TraitRequirement.STAT_LEADERSHIP, TraitRequirement.STAT_STRENGTH, TraitRequirement.STAT_INTEL],
+        weight: 1,
+        weightType: TraitWeightType.NORM,
+    },
     getBattlePhaseTriggerList: (_context) => {
         if (!_context.unit) return null;
         return new WarTriggerCaller(new che_필살강화_회피불가(_context.unit));

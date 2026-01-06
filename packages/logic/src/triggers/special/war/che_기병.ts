@@ -1,3 +1,4 @@
+import { TraitRequirement, TraitWeightType } from '../requirements.js';
 import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
 import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/types.js';
 import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
@@ -48,6 +49,17 @@ export const traitModule: TraitModule = {
     name: '기병',
     info: '[군사] 기병 계통 징·모병비 -10%<br>[전투] 수비 시 대미지 +10%, 공격 시 대미지 +20%,<br>공격시 상대 병종에/수비시 자신 병종 숙련에 기병 숙련을 가산',
     kind: 'war',
+    selection: {
+        weight: 1,
+        weightType: TraitWeightType.NORM,
+        requirements: [
+            TraitRequirement.STAT_LEADERSHIP |
+                TraitRequirement.REQ_DEXTERITY |
+                TraitRequirement.ARMY_CAVALRY |
+                TraitRequirement.STAT_NOT_INTEL,
+            TraitRequirement.STAT_STRENGTH | TraitRequirement.REQ_DEXTERITY | TraitRequirement.ARMY_CAVALRY,
+        ],
+    },
     getName: () => '기병',
     getInfo: () =>
         '[군사] 기병 계통 징·모병비 -10%<br>[전투] 수비 시 대미지 +10%, 공격 시 대미지 +20%,<br>공격시 상대 병종에/수비시 자신 병종 숙련에 기병 숙련을 가산',

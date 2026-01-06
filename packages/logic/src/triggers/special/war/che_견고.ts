@@ -2,6 +2,7 @@ import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
 import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/types.js';
 import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
 import type { TraitModule } from '@sammo-ts/logic/triggers/special/types.js';
+import { TraitRequirement, TraitWeightType } from '../requirements.js';
 import { BaseWarUnitTrigger, WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
 import type { WarUnit } from '@sammo-ts/logic/war/units.js';
 
@@ -44,6 +45,11 @@ export const traitModule: TraitModule = {
     kind: 'war',
     getName: () => '견고',
     getInfo: () => '[전투] 상대 필살 확률 -20%p, 상대 계략 시도시 성공 확률 -10%p, 부상 없음, 아군 피해 -10%',
+    selection: {
+        requirements: [TraitRequirement.STAT_STRENGTH],
+        weight: 1,
+        weightType: TraitWeightType.NORM,
+    },
     onCalcOpposeStat: ((_context, statName, value, _aux) => {
         if (statName === 'warMagicSuccessProb' && typeof value === 'number') {
             return value - 0.1;

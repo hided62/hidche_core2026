@@ -2,6 +2,7 @@ import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
 import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/types.js';
 import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
 import type { TraitModule } from '@sammo-ts/logic/triggers/special/types.js';
+import { TraitRequirement, TraitWeightType } from '../requirements.js';
 import { BaseWarUnitTrigger, WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
 import type { WarUnit } from '@sammo-ts/logic/war/units.js';
 import { LogFormat } from '@sammo-ts/logic/logging/types.js';
@@ -122,6 +123,11 @@ export const traitModule: TraitModule = {
     kind: 'war',
     getName: () => '저격',
     getInfo: () => '[전투] 새로운 상대와 전투 시 50% 확률로 저격 발동, 성공 시 사기+20',
+    selection: {
+        requirements: [TraitRequirement.STAT_LEADERSHIP, TraitRequirement.STAT_STRENGTH, TraitRequirement.STAT_INTEL],
+        weight: 1,
+        weightType: TraitWeightType.NORM,
+    },
     getBattlePhaseTriggerList: (_context) => {
         if (!_context.unit) return null;
         return new WarTriggerCaller(new che_저격시도(_context.unit, 0.5, 20, 40, 20), new che_저격발동(_context.unit));
