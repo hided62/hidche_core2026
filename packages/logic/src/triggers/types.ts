@@ -24,7 +24,7 @@ export type TriggerStrategicActionType = '의병모집' | '허보' | '필사즉�
 
 export type TriggerStrategicVarType = 'delay' | 'globalDelay';
 
-export type TriggerNationalIncomeType = 'gold' | 'rice';
+export type TriggerNationalIncomeType = 'gold' | 'rice' | 'pop';
 
 export type GeneralStatName = 'leadership' | 'strength' | 'intelligence' | 'experience' | 'dedication';
 

@@ -1,4 +1,4 @@
-import type { General, GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
+import type { General, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { RandomGenerator } from '@sammo-ts/common';
 import type { WorldStateRepository } from '@sammo-ts/logic/ports/world.js';
 import { TriggerCaller, type Trigger } from './core.js';
@@ -30,6 +30,7 @@ export const createGeneralSkillActivation = <TriggerState extends GeneralTrigger
 
 export interface GeneralActionContext<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     general: General<TriggerState>;
+    nation?: Nation | null;
     world?: WorldStateRepository;
     worldView?: GeneralWorldView<TriggerState>;
     log?: GeneralActionLogSink;

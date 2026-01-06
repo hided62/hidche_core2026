@@ -26,6 +26,7 @@ const resolveTraitKey = (
                 specialWar: string | null;
             };
         };
+        nation?: { typeCode: string } | null;
     },
     kind: TraitKind
 ): string | null => {
@@ -34,6 +35,9 @@ const resolveTraitKey = (
     }
     if (kind === 'war') {
         return context.general.role.specialWar;
+    }
+    if (kind === 'nation') {
+        return context.nation?.typeCode ?? null;
     }
     return context.general.role.personality;
 };
@@ -51,6 +55,8 @@ const resolveModule = <TriggerState extends GeneralTriggerState>(
         bucket = registry.domestic;
     } else if (kind === 'war') {
         bucket = registry.war;
+    } else if (kind === 'nation') {
+        bucket = registry.nation;
     } else {
         bucket = registry.personality;
     }
@@ -201,10 +207,12 @@ export const createTraitModuleRegistry = <TriggerState extends GeneralTriggerSta
     domestic?: TraitModule<TriggerState>[];
     war?: TraitModule<TriggerState>[];
     personality?: TraitModule<TriggerState>[];
+    nation?: TraitModule<TriggerState>[];
 }): TraitModuleRegistry<TriggerState> => {
     const domestic = new Map<string, TraitModule<TriggerState>>();
     const war = new Map<string, TraitModule<TriggerState>>();
     const personality = new Map<string, TraitModule<TriggerState>>();
+    const nation = new Map<string, TraitModule<TriggerState>>();
 
     for (const module of options.domestic ?? []) {
         domestic.set(module.key, module);
@@ -215,8 +223,11 @@ export const createTraitModuleRegistry = <TriggerState extends GeneralTriggerSta
     for (const module of options.personality ?? []) {
         personality.set(module.key, module);
     }
+    for (const module of options.nation ?? []) {
+        nation.set(module.key, module);
+    }
 
-    return { domestic, war, personality };
+    return { domestic, war, personality, nation };
 };
 
 // 특성 레지스트리를 General/전투 파이프라인용 모듈 목록으로 변환한다.
@@ -227,10 +238,12 @@ export const createTraitModules = <TriggerState extends GeneralTriggerState = Ge
         new TraitGeneralActionRouter<TriggerState>('domestic', registry),
         new TraitGeneralActionRouter<TriggerState>('war', registry),
         new TraitGeneralActionRouter<TriggerState>('personality', registry),
+        new TraitGeneralActionRouter<TriggerState>('nation', registry),
     ],
     war: [
         new TraitWarActionRouter<TriggerState>('domestic', registry),
         new TraitWarActionRouter<TriggerState>('war', registry),
         new TraitWarActionRouter<TriggerState>('personality', registry),
+        new TraitWarActionRouter<TriggerState>('nation', registry),
     ],
 });
