@@ -32,9 +32,6 @@ export const itemModule: ItemModule = {
             return null;
         }
 
-        return new WarTriggerCaller(
-            new che_저지_시도(unit),
-            new che_저지(unit)
-        );
+        return new WarTriggerCaller(new che_저지_시도(unit), new che_저지(unit));
     },
 };

@@ -17,8 +17,6 @@ export const itemModule: ItemModule = {
     unique: false,
     getBattleInitTriggerList: (context) => {
         if (!context.unit) return null;
-        return new WarTriggerCaller(
-            new che_사기(context.unit, BaseWarUnitTrigger.TYPE_CONSUMABLE_ITEM, 30)
-        );
+        return new WarTriggerCaller(new che_사기(context.unit, BaseWarUnitTrigger.TYPE_CONSUMABLE_ITEM, 30));
     },
 };

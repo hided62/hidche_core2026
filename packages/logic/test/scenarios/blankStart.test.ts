@@ -1,11 +1,10 @@
-
 import { describe, expect, it } from 'vitest';
 import { produce } from 'immer';
 import { MINIMAL_MAP } from '../fixtures/minimalMap.js';
 import { InMemoryWorld, TestGameRunner } from '../testEnv.js';
 import { buildScenarioBootstrap } from '../../src/world/bootstrap.js';
 import type { ScenarioDefinition, ScenarioGeneral } from '../../src/scenario/types.js';
-import type { Nation } from '../../src/domain/entities.js';
+import type { Nation, City } from '../../src/domain/entities.js';
 import { commandSpec as foundNationSpec } from '../../src/actions/turn/general/che_건국.js';
 import type { TurnCommandEnv } from '../../src/actions/turn/commandEnv.js';
 
@@ -66,12 +65,11 @@ const MOCK_GENERALS: ScenarioGeneral[] = Array.from({ length: 10 }, (_, i) => {
 });
 
 // We need to inject generals into the scenario object for bootstrap
-const scenarioWithGenerals = produce(MOCK_SCENARIO, draft => {
+const scenarioWithGenerals = produce(MOCK_SCENARIO, (draft) => {
     // bootstrap expects generals in specific arrays.
     // We'll put them in generalsNeutral since they are neutral
     draft.generalsNeutral = MOCK_GENERALS;
 });
-
 
 describe('Blank Start Scenario', () => {
     it('should allow neutral generals to found nations', async () => {
@@ -83,14 +81,14 @@ describe('Blank Start Scenario', () => {
                 includeNeutralNation: true,
                 defaultGeneralGold: 1000,
                 defaultGeneralRice: 1000,
-            }
+            },
         });
 
         const world = new InMemoryWorld(bootstrapResult.snapshot);
         const runner = new TestGameRunner(world, 189, 1);
 
         // 2. Identify a target general (e.g., General_0 in City 1)
-        const targetGeneral = world.getAllGenerals().find(g => g.name === 'General_0');
+        const targetGeneral = world.getAllGenerals().find((g) => g.name === 'General_0');
         expect(targetGeneral).toBeDefined();
         if (!targetGeneral) return;
 
@@ -119,7 +117,7 @@ describe('Blank Start Scenario', () => {
             maxTechLevel: 10,
             baseGold: 1000,
             baseRice: 1000,
-            maxResourceActionAmount: 1000
+            maxResourceActionAmount: 1000,
         };
 
         const foundNationDef = foundNationSpec.createDefinition(systemEnv);
@@ -130,8 +128,8 @@ describe('Blank Start Scenario', () => {
                 generalId: targetGeneral.id,
                 commandKey: 'che_건국',
                 resolver: foundNationDef,
-                args: {}
-            }
+                args: {},
+            },
         ]);
 
         // 4. Simulate Turn Processing (Daemon Logic Mock)
@@ -140,7 +138,7 @@ describe('Blank Start Scenario', () => {
 
         if (generalAfter?.meta?.founding) {
             // Mock Daemon: Create Nation
-            const newNationId = Math.max(...world.getAllNations().map(n => n.id), 0) + 1;
+            const newNationId = Math.max(...world.getAllNations().map((n) => n.id), 0) + 1;
             const newNation: Nation = {
                 id: newNationId,
                 name: `${generalAfter.name}국`,
@@ -152,7 +150,7 @@ describe('Blank Start Scenario', () => {
                 power: 0,
                 level: 1,
                 typeCode: 'che_def',
-                meta: {}
+                meta: {},
             };
 
             // Apply updates manually to world
@@ -161,16 +159,16 @@ describe('Blank Start Scenario', () => {
             const city = world.getCity(generalAfter.cityId);
             if (city) {
                 // Manually update nationId in city
-                const cityIdx = world.snapshot.cities.findIndex(c => c.id === city.id);
-                world.snapshot.cities[cityIdx] = { ...world.snapshot.cities[cityIdx], nationId: newNationId };
+                const cityIdx = world.snapshot.cities.findIndex((c) => c.id === city.id);
+                world.snapshot.cities[cityIdx] = { ...world.snapshot.cities[cityIdx], nationId: newNationId } as City;
             }
 
-            const genIdx = world.snapshot.generals.findIndex(g => g.id === generalAfter.id);
+            const genIdx = world.snapshot.generals.findIndex((g) => g.id === generalAfter.id);
             world.snapshot.generals[genIdx] = {
                 ...world.snapshot.generals[genIdx],
                 nationId: newNationId,
-                meta: { ...generalAfter.meta, founding: false }
-            };
+                meta: { ...generalAfter.meta, founding: false },
+            } as any;
         }
 
         // 5. Verify

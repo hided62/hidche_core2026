@@ -1,8 +1,11 @@
-
 import { enablePatches } from 'immer';
 import type { City, General, Nation, GeneralId, NationId, CityId } from '../src/domain/entities.js';
 import type { WorldSnapshot } from '../src/world/types.js';
-import { type GeneralActionResolution, resolveGeneralAction, type GeneralActionResolver } from '../src/actions/engine.js';
+import {
+    type GeneralActionResolution,
+    resolveGeneralAction,
+    type GeneralActionResolver,
+} from '../src/actions/engine.js';
 import type { TurnSchedule } from '../src/turn/calendar.js';
 import { type DiplomacyEntry, applyDiplomacyPatch, buildDefaultDiplomacy } from '../src/diplomacy/index.js';
 import type { ScenarioDiplomacy } from '../src/scenario/types.js';
@@ -44,8 +47,8 @@ export class InMemoryWorld {
         // Apply patches to the snapshot
         if (resolution.patches) {
             if (resolution.patches.generals) {
-                this.snapshot.generals = this.snapshot.generals.map(g => {
-                    const patchItem = resolution.patches!.generals.find(p => p.id === g.id);
+                this.snapshot.generals = this.snapshot.generals.map((g) => {
+                    const patchItem = resolution.patches!.generals.find((p) => p.id === g.id);
                     if (patchItem) {
                         return { ...g, ...patchItem.patch } as General;
                     }
@@ -53,8 +56,8 @@ export class InMemoryWorld {
                 });
             }
             if (resolution.patches.cities) {
-                this.snapshot.cities = this.snapshot.cities.map(c => {
-                    const patchItem = resolution.patches!.cities.find(p => p.id === c.id);
+                this.snapshot.cities = this.snapshot.cities.map((c) => {
+                    const patchItem = resolution.patches!.cities.find((p) => p.id === c.id);
                     if (patchItem) {
                         return { ...c, ...patchItem.patch } as City;
                     }
@@ -62,8 +65,8 @@ export class InMemoryWorld {
                 });
             }
             if (resolution.patches.nations) {
-                this.snapshot.nations = this.snapshot.nations.map(n => {
-                    const patchItem = resolution.patches!.nations.find(p => p.id === n.id);
+                this.snapshot.nations = this.snapshot.nations.map((n) => {
+                    const patchItem = resolution.patches!.nations.find((p) => p.id === n.id);
                     if (patchItem) {
                         return { ...n, ...patchItem.patch } as Nation;
                     }
@@ -93,14 +96,16 @@ export class InMemoryWorld {
                     const existing = this.getDiplomacy(srcId, destId);
 
                     // Convert ScenarioDiplomacy to DiplomacyEntry for applying patch
-                    const entry: DiplomacyEntry = existing ? {
-                        fromNationId: existing.fromNationId,
-                        toNationId: existing.toNationId,
-                        state: existing.state,
-                        term: existing.durationMonths,
-                        dead: 0,
-                        meta: {}
-                    } : buildDefaultDiplomacy(srcId, destId);
+                    const entry: DiplomacyEntry = existing
+                        ? {
+                              fromNationId: existing.fromNationId,
+                              toNationId: existing.toNationId,
+                              state: existing.state,
+                              term: existing.durationMonths,
+                              dead: 0,
+                              meta: {},
+                          }
+                        : buildDefaultDiplomacy(srcId, destId);
 
                     const patched = applyDiplomacyPatch(entry, effect.patch);
                     this.updateDiplomacy(patched);
@@ -110,7 +115,7 @@ export class InMemoryWorld {
     }
 
     private updateGeneral(updated: General) {
-        const idx = this.snapshot.generals.findIndex(g => g.id === updated.id);
+        const idx = this.snapshot.generals.findIndex((g) => g.id === updated.id);
         if (idx >= 0) {
             this.snapshot.generals[idx] = updated;
         } else {
@@ -119,21 +124,21 @@ export class InMemoryWorld {
     }
 
     private updateCity(updated: City) {
-        const idx = this.snapshot.cities.findIndex(c => c.id === updated.id);
+        const idx = this.snapshot.cities.findIndex((c) => c.id === updated.id);
         if (idx >= 0) {
             this.snapshot.cities[idx] = updated;
         }
     }
 
     private updateNation(updated: Nation) {
-        const idx = this.snapshot.nations.findIndex(n => n.id === updated.id);
+        const idx = this.snapshot.nations.findIndex((n) => n.id === updated.id);
         if (idx >= 0) {
             this.snapshot.nations[idx] = updated;
         }
     }
 
     getDiplomacy(srcId: number, destId: number): ScenarioDiplomacy | undefined {
-        return this.snapshot.diplomacy.find(d => d.fromNationId === srcId && d.toNationId === destId);
+        return this.snapshot.diplomacy.find((d) => d.fromNationId === srcId && d.toNationId === destId);
     }
 
     updateDiplomacy(entry: DiplomacyEntry) {
@@ -141,10 +146,12 @@ export class InMemoryWorld {
             fromNationId: entry.fromNationId,
             toNationId: entry.toNationId,
             state: entry.state,
-            durationMonths: entry.term
+            durationMonths: entry.term,
         };
 
-        const idx = this.snapshot.diplomacy.findIndex(d => d.fromNationId === entry.fromNationId && d.toNationId === entry.toNationId);
+        const idx = this.snapshot.diplomacy.findIndex(
+            (d) => d.fromNationId === entry.fromNationId && d.toNationId === entry.toNationId
+        );
         if (idx >= 0) {
             this.snapshot.diplomacy[idx] = scenarioEntry;
         } else {
@@ -172,9 +179,7 @@ export class TestGameRunner {
 
     async runTurn(commands: TestCommand[]) {
         const schedule: TurnSchedule = {
-            entries: [
-                { startMinute: 0, tickMinutes: 60 }
-            ]
+            entries: [{ startMinute: 0, tickMinutes: 60 }],
         };
 
         for (const cmd of commands) {
@@ -194,7 +199,7 @@ export class TestGameRunner {
                     real: () => Math.random(),
                     int: (min: number, max: number) => Math.floor(Math.random() * (max - min)) + min,
                     nextInt: (min: number, max: number) => Math.floor(Math.random() * (max - min)) + min,
-                    next: () => Math.random()
+                    next: () => Math.random(),
                 } as any,
 
                 year: this.currentDate.getFullYear(),
@@ -203,20 +208,15 @@ export class TestGameRunner {
                 map: this.world.snapshot.map,
                 unitSet: this.world.snapshot.unitSet,
                 cities: this.world.snapshot.cities,
-                ...cmd.context
+                ...cmd.context,
             };
 
             const scheduleContext = {
                 now: this.currentDate,
-                schedule
+                schedule,
             };
 
-            const resolution = resolveGeneralAction(
-                cmd.resolver,
-                inputContext as any,
-                scheduleContext,
-                cmd.args
-            );
+            const resolution = resolveGeneralAction(cmd.resolver, inputContext as any, scheduleContext, cmd.args);
 
             await this.world.applyResolution(resolution);
         }
