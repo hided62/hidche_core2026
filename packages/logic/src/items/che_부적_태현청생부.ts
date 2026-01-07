@@ -1,22 +1,11 @@
 import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
 import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/types.js';
 import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
-import { BaseWarUnitTrigger, WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
-import type { WarUnit } from '@sammo-ts/logic/war/units.js';
+import { WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
+import { che_부적 } from '@sammo-ts/logic/war/triggers/che_부적.js';
 import type { ItemModule } from './types.js';
 
 const ITEM_KEY = 'che_부적_태현청생부';
-
-class CheAmuletTrigger extends BaseWarUnitTrigger {
-    constructor(unit: WarUnit) {
-        super(unit, 0);
-    }
-
-    protected actionWar(self: WarUnit): boolean {
-        self.activateSkill('저격불가', '부상무효');
-        return true;
-    }
-}
 
 export const itemModule: ItemModule = {
     key: ITEM_KEY,
@@ -41,6 +30,6 @@ export const itemModule: ItemModule = {
     } as NonNullable<ItemModule['onCalcStat']>,
     getBattlePhaseTriggerList: (context) => {
         if (!context.unit) return null;
-        return new WarTriggerCaller(new CheAmuletTrigger(context.unit));
+        return new WarTriggerCaller(new che_부적(context.unit));
     },
 };

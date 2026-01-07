@@ -1,5 +1,5 @@
 import { BaseWarUnitTrigger, WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
-import { CheSnipingActivateTrigger, CheSnipingAttemptTrigger } from '@sammo-ts/logic/war/triggers/che_저격.js';
+import { che_저격발동, che_저격시도 } from '@sammo-ts/logic/war/triggers/che_저격.js';
 import { createStatItemModule } from './base.js';
 import type { ItemModule } from './types.js';
 
@@ -25,8 +25,8 @@ export const itemModule: ItemModule = {
             return null;
         }
         return new WarTriggerCaller(
-            new CheSnipingAttemptTrigger(context.unit, raiseType, 0.2, 20, 40, 20),
-            new CheSnipingActivateTrigger(context.unit, raiseType)
+            new che_저격시도(context.unit, raiseType, 0.2, 20, 40, 20),
+            new che_저격발동(context.unit, raiseType)
         );
     },
 };

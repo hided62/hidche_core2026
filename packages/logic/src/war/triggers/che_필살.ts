@@ -5,7 +5,7 @@ import { WarUnitGeneral, type WarUnit } from '@sammo-ts/logic/war/units.js';
 import type { WarTriggerModule } from './types.js';
 
 // 기본 필살: 시도 단계
-class AttemptTrigger extends BaseWarUnitTrigger {
+export class che_필살시도 extends BaseWarUnitTrigger {
     constructor(unit: WarUnit) {
         super(unit, TriggerPriority.Pre + 120);
     }
@@ -34,7 +34,7 @@ class AttemptTrigger extends BaseWarUnitTrigger {
 }
 
 // 기본 필살: 발동 단계
-class ActivateTrigger extends BaseWarUnitTrigger {
+export class che_필살발동 extends BaseWarUnitTrigger {
     constructor(unit: WarUnit) {
         super(unit, TriggerPriority.Post + 400);
     }
@@ -61,9 +61,29 @@ class ActivateTrigger extends BaseWarUnitTrigger {
     }
 }
 
+export class che_필살강화_회피불가 extends BaseWarUnitTrigger {
+    constructor(unit: WarUnit) {
+        super(unit, TriggerPriority.Pre + 150);
+    }
+
+    protected actionWar(
+        self: WarUnit,
+        oppose: WarUnit,
+        _selfEnv: Record<string, unknown>,
+        _opposeEnv: Record<string, unknown>
+    ): boolean {
+        if (!self.hasActivatedSkill('필살')) {
+            return true;
+        }
+
+        oppose.activateSkill('회피불가');
+        return true;
+    }
+}
+
 export const triggerModule: WarTriggerModule = {
     key: 'che_필살',
     name: '필살',
     info: '[전투] 페이즈마다 확률로 필살 발동',
-    createTriggerList: (unit) => new WarTriggerCaller(new AttemptTrigger(unit), new ActivateTrigger(unit)),
+    createTriggerList: (unit) => new WarTriggerCaller(new che_필살시도(unit), new che_필살발동(unit)),
 };

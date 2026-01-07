@@ -1,23 +1,8 @@
 import { BaseWarUnitTrigger, WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
-import type { WarUnit } from '@sammo-ts/logic/war/units.js';
+import { che_훈련 } from '@sammo-ts/logic/war/triggers/che_훈련.js';
 import type { ItemModule } from './types.js';
 
 const ITEM_KEY = 'che_훈련_청주';
-
-class CheTrainIncreaseTrigger extends BaseWarUnitTrigger {
-    private readonly amount: number;
-
-    constructor(unit: WarUnit, raiseType: number, amount: number) {
-        super(unit, 0, raiseType);
-        this.amount = amount;
-    }
-
-    protected actionWar(self: WarUnit): boolean {
-        self.addTrain(this.amount);
-        this.processConsumableItem();
-        return true;
-    }
-}
 
 export const itemModule: ItemModule = {
     key: ITEM_KEY,
@@ -33,7 +18,7 @@ export const itemModule: ItemModule = {
     getBattleInitTriggerList: (context) => {
         if (!context.unit) return null;
         return new WarTriggerCaller(
-            new CheTrainIncreaseTrigger(context.unit, BaseWarUnitTrigger.TYPE_CONSUMABLE_ITEM, 40)
+            new che_훈련(context.unit, BaseWarUnitTrigger.TYPE_CONSUMABLE_ITEM, 40)
         );
     },
 };

@@ -1,5 +1,5 @@
 import { WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
-import { CheRetreatNoWoundTrigger } from '@sammo-ts/logic/war/triggers/che_퇴각부상무효.js';
+import { che_퇴각부상무효 } from '@sammo-ts/logic/war/triggers/che_퇴각부상무효.js';
 import { createStatItemModule } from './base.js';
 import type { ItemModule } from './types.js';
 
@@ -22,6 +22,6 @@ export const itemModule: ItemModule = {
         if (!context.unit) {
             return null;
         }
-        return new WarTriggerCaller(new CheRetreatNoWoundTrigger(context.unit));
+        return new WarTriggerCaller(new che_퇴각부상무효(context.unit));
     },
 };

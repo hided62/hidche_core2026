@@ -5,7 +5,7 @@ import { WarUnitGeneral, type WarUnit } from '@sammo-ts/logic/war/units.js';
 import type { WarTriggerModule } from './types.js';
 
 // 의술: 치료 시도
-class AttemptTrigger extends BaseWarUnitTrigger {
+export class che_의술시도 extends BaseWarUnitTrigger {
     constructor(unit: WarUnit) {
         super(unit, TriggerPriority.Pre + 350);
     }
@@ -35,7 +35,7 @@ class AttemptTrigger extends BaseWarUnitTrigger {
 }
 
 // 의술: 치료 발동
-class ActivateTrigger extends BaseWarUnitTrigger {
+export class che_의술발동 extends BaseWarUnitTrigger {
     constructor(unit: WarUnit) {
         super(unit, TriggerPriority.Post + 550);
     }
@@ -72,5 +72,5 @@ export const triggerModule: WarTriggerModule = {
     key: 'che_의술',
     name: '의술',
     info: '[전투] 페이즈마다 치료 발동(아군 피해 30% 감소, 부상 회복)',
-    createTriggerList: (unit) => new WarTriggerCaller(new AttemptTrigger(unit), new ActivateTrigger(unit)),
+    createTriggerList: (unit) => new WarTriggerCaller(new che_의술시도(unit), new che_의술발동(unit)),
 };

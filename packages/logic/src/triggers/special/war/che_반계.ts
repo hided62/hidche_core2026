@@ -3,75 +3,8 @@ import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/type
 import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
 import type { TraitModule } from '@sammo-ts/logic/triggers/special/types.js';
 import { TraitRequirement, TraitWeightType } from '../requirements.js';
-import { BaseWarUnitTrigger, WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
-import type { WarUnit } from '@sammo-ts/logic/war/units.js';
-import { LogFormat } from '@sammo-ts/logic/logging/types.js';
-
-class che_반계시도 extends BaseWarUnitTrigger {
-    private readonly prob: number;
-
-    constructor(unit: WarUnit, prob = 0.4) {
-        super(unit, 30300);
-        this.prob = prob;
-    }
-
-    protected actionWar(
-        self: WarUnit,
-        oppose: WarUnit,
-        _selfEnv: Record<string, unknown>,
-        _opposeEnv: Record<string, unknown>
-    ): boolean {
-        if (!oppose.hasActivatedSkill('계략')) {
-            return true;
-        }
-        if (self.hasActivatedSkill('반계불가')) {
-            return true;
-        }
-
-        if (!self.rng.nextBool(this.prob)) {
-            return true;
-        }
-
-        self.activateSkill('반계');
-        oppose.deactivateSkill('계략');
-
-        return true;
-    }
-}
-
-class che_반계발동 extends BaseWarUnitTrigger {
-    constructor(unit: WarUnit) {
-        super(unit, 40250);
-    }
-
-    protected actionWar(
-        self: WarUnit,
-        oppose: WarUnit,
-        _selfEnv: Record<string, unknown>,
-        opposeEnv: Record<string, unknown>
-    ): boolean {
-        if (!self.hasActivatedSkill('반계')) {
-            return true;
-        }
-
-        const magicData = opposeEnv.magic as [string, number] | undefined;
-        if (!magicData) {
-            return true;
-        }
-
-        const [opposeMagic, damage] = magicData;
-
-        self.getLogger().pushGeneralBattleDetailLog(
-            `<C>반계</>로 상대의 <D>${opposeMagic}</>을 되돌렸다!`,
-            LogFormat.PLAIN
-        );
-        oppose.getLogger().pushGeneralBattleDetailLog(`<D>${opposeMagic}</>을 <R>역으로</> 당했다!`, LogFormat.PLAIN);
-
-        self.multiplyWarPowerMultiply(damage);
-
-        return true;
-    }
-}
+import { WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
+import { che_반계발동, che_반계시도 } from '@sammo-ts/logic/war/triggers/che_반계.js';
 
 function onCalcStat(context: GeneralActionContext, statName: GeneralStatName, value: number, aux?: unknown): number;
 function onCalcStat(

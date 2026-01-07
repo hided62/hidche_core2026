@@ -3,64 +3,8 @@ import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/type
 import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
 import type { TraitModule } from '@sammo-ts/logic/triggers/special/types.js';
 import { TraitRequirement, TraitWeightType } from '../requirements.js';
-import { BaseWarUnitTrigger, WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
-import type { WarUnit } from '@sammo-ts/logic/war/units.js';
-import { LogFormat } from '@sammo-ts/logic/logging/types.js';
-
-type AtmosUnit = WarUnit & { addAtmos: (amount: number) => void };
-
-const canAddAtmos = (unit: WarUnit): unit is AtmosUnit =>
-    'addAtmos' in unit && typeof (unit as { addAtmos?: unknown }).addAtmos === 'function';
-
-class che_위압시도 extends BaseWarUnitTrigger {
-    constructor(unit: WarUnit) {
-        super(unit, 10100);
-    }
-
-    protected actionWar(
-        self: WarUnit,
-        oppose: WarUnit,
-        _selfEnv: Record<string, unknown>,
-        _opposeEnv: Record<string, unknown>
-    ): boolean {
-        if (self.getPhase() !== 0 && oppose.getPhase() !== 0) {
-            return true;
-        }
-        if (self.hasActivatedSkill('위압불가')) {
-            return true;
-        }
-
-        self.activateSkill('위압');
-        oppose.activateSkill('회피불가', '필살불가', '계략불가');
-        return true;
-    }
-}
-
-class che_위압발동 extends BaseWarUnitTrigger {
-    constructor(unit: WarUnit) {
-        super(unit, 40700);
-    }
-
-    protected actionWar(
-        self: WarUnit,
-        oppose: WarUnit,
-        _selfEnv: Record<string, unknown>,
-        _opposeEnv: Record<string, unknown>
-    ): boolean {
-        if (!self.hasActivatedSkill('위압')) {
-            return true;
-        }
-
-        oppose.getLogger().pushGeneralBattleDetailLog('상대에게 <R>위압</>받았다!', LogFormat.PLAIN);
-        self.getLogger().pushGeneralBattleDetailLog('상대에게 <C>위압</>을 줬다!', LogFormat.PLAIN);
-        oppose.setWarPowerMultiply(0);
-        if (canAddAtmos(oppose)) {
-            oppose.addAtmos(-5);
-        }
-
-        return true;
-    }
-}
+import { WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
+import { che_위압발동, che_위압시도 } from '@sammo-ts/logic/war/triggers/che_위압.js';
 
 function onCalcStat(context: GeneralActionContext, statName: GeneralStatName, value: number, aux?: unknown): number;
 function onCalcStat(

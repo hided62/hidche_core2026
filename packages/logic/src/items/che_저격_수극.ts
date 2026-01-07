@@ -1,5 +1,5 @@
 import { BaseWarUnitTrigger, WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
-import { CheSnipingAttemptTrigger, CheSnipingActivateTrigger } from '@sammo-ts/logic/war/triggers/che_저격.js';
+import { che_저격시도, che_저격발동 } from '@sammo-ts/logic/war/triggers/che_저격.js';
 import type { ItemModule } from './types.js';
 
 const ITEM_KEY = 'che_저격_수극';
@@ -18,8 +18,8 @@ export const itemModule: ItemModule = {
     getBattlePhaseTriggerList: (context) => {
         if (!context.unit) return null;
         return new WarTriggerCaller(
-            new CheSnipingAttemptTrigger(context.unit, BaseWarUnitTrigger.TYPE_CONSUMABLE_ITEM, 1, 20, 40),
-            new CheSnipingActivateTrigger(context.unit, BaseWarUnitTrigger.TYPE_CONSUMABLE_ITEM)
+            new che_저격시도(context.unit, BaseWarUnitTrigger.TYPE_CONSUMABLE_ITEM, 1, 20, 40),
+            new che_저격발동(context.unit, BaseWarUnitTrigger.TYPE_CONSUMABLE_ITEM)
         );
     },
 };

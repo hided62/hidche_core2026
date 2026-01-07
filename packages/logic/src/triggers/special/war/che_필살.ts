@@ -3,28 +3,8 @@ import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/type
 import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
 import type { TraitModule } from '@sammo-ts/logic/triggers/special/types.js';
 import { TraitRequirement, TraitWeightType } from '../requirements.js';
-import { BaseWarUnitTrigger, WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
-import type { WarUnit } from '@sammo-ts/logic/war/units.js';
-
-class che_필살강화_회피불가 extends BaseWarUnitTrigger {
-    constructor(unit: WarUnit) {
-        super(unit, 20150);
-    }
-
-    protected actionWar(
-        self: WarUnit,
-        oppose: WarUnit,
-        _selfEnv: Record<string, unknown>,
-        _opposeEnv: Record<string, unknown>
-    ): boolean {
-        if (!self.hasActivatedSkill('필살')) {
-            return true;
-        }
-
-        oppose.activateSkill('회피불가');
-        return true;
-    }
-}
+import { WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
+import { che_필살강화_회피불가 } from '@sammo-ts/logic/war/triggers/che_필살.js';
 
 function onCalcStat(context: GeneralActionContext, statName: GeneralStatName, value: number, aux?: unknown): number;
 function onCalcStat(

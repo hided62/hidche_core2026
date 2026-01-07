@@ -5,7 +5,7 @@ import { WarUnitGeneral, type WarUnit } from '@sammo-ts/logic/war/units.js';
 import { clamp } from '@sammo-ts/logic/war/utils.js';
 
 // 저격 시도 트리거: 전투 시작 타이밍에 확률 체크.
-export class CheSnipingAttemptTrigger extends BaseWarUnitTrigger {
+export class che_저격시도 extends BaseWarUnitTrigger {
     private readonly ratio: number;
     private readonly woundMin: number;
     private readonly woundMax: number;
@@ -54,7 +54,7 @@ export class CheSnipingAttemptTrigger extends BaseWarUnitTrigger {
 }
 
 // 저격 발동 트리거: 성공 시 사기 보정과 부상 판정.
-export class CheSnipingActivateTrigger extends BaseWarUnitTrigger {
+export class che_저격발동 extends BaseWarUnitTrigger {
     constructor(unit: WarUnit, raiseType: number) {
         super(unit, TriggerPriority.Post + 100, raiseType);
     }

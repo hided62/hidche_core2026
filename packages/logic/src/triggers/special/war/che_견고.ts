@@ -3,24 +3,8 @@ import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/type
 import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
 import type { TraitModule } from '@sammo-ts/logic/triggers/special/types.js';
 import { TraitRequirement, TraitWeightType } from '../requirements.js';
-import { BaseWarUnitTrigger, WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
-import type { WarUnit } from '@sammo-ts/logic/war/units.js';
-
-class che_부상무효 extends BaseWarUnitTrigger {
-    constructor(unit: WarUnit) {
-        super(unit, 10200);
-    }
-
-    protected actionWar(
-        self: WarUnit,
-        _oppose: WarUnit,
-        _selfEnv: Record<string, unknown>,
-        _opposeEnv: Record<string, unknown>
-    ): boolean {
-        self.activateSkill('부상무효');
-        return true;
-    }
-}
+import { WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
+import { che_부상무효 } from '@sammo-ts/logic/war/triggers/che_견고.js';
 
 function onCalcStat(context: GeneralActionContext, statName: GeneralStatName, value: number, aux?: unknown): number;
 function onCalcStat(

@@ -3,7 +3,7 @@ import { BaseWarUnitTrigger } from '@sammo-ts/logic/war/triggers.js';
 import { WarUnitGeneral, type WarUnit } from '@sammo-ts/logic/war/units.js';
 
 // 전투 종료 부상을 무효화하는 상태를 부여한다.
-export class CheRetreatNoWoundTrigger extends BaseWarUnitTrigger {
+export class che_퇴각부상무효 extends BaseWarUnitTrigger {
     constructor(unit: WarUnit) {
         super(unit, TriggerPriority.Begin + 300);
     }
