@@ -3,20 +3,41 @@
     "compilerOptions": {
         "outDir": "dist",
         "composite": true,
+        "rootDir": "src",
         "baseUrl": ".",
         "paths": {
-            "@sammo-ts/common": ["../../packages/common/src/index.ts"],
-            "@sammo-ts/common/*": ["../../packages/common/src/*"],
-            "@sammo-ts/infra": ["../../packages/infra/src/index.ts"],
-            "@sammo-ts/infra/*": ["../../packages/infra/src/*"],
-            "@sammo-ts/logic": ["../../packages/logic/src/index.ts"],
-            "@sammo-ts/logic/*": ["../../packages/logic/src/*"]
+            "@sammo-ts/common": [
+                "../../packages/common/src/index.ts"
+            ],
+            "@sammo-ts/common/*": [
+                "../../packages/common/src/*"
+            ],
+            "@sammo-ts/infra": [
+                "../../packages/infra/src/index.ts"
+            ],
+            "@sammo-ts/infra/*": [
+                "../../packages/infra/src/*"
+            ],
+            "@sammo-ts/logic": [
+                "../../packages/logic/src/index.ts"
+            ],
+            "@sammo-ts/logic/*": [
+                "../../packages/logic/src/*"
+            ]
         }
     },
-    "include": ["src", "test", "*.ts"],
+    "include": [
+        "src"
+    ],
     "references": [
-        { "path": "../../packages/common" },
-        { "path": "../../packages/infra" },
-        { "path": "../../packages/logic" }
+        {
+            "path": "../../packages/common"
+        },
+        {
+            "path": "../../packages/infra"
+        },
+        {
+            "path": "../../packages/logic"
+        }
     ]
 }

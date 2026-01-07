@@ -1,5 +1,5 @@
 import { createTRPCProxyClient, httpBatchLink } from '@trpc/client';
-import type { appRouter } from '../../../game-api/src/router';
+import type { appRouter } from '@sammo-ts/game-api';
 
 export type GameRouter = typeof appRouter;
 

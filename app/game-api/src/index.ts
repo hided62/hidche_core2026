@@ -22,6 +22,12 @@ export * from './battleSim/inMemoryTransport.js';
 export * from './battleSim/keys.js';
 export * from './battleSim/worker.js';
 
+// Types for TRPC consumer
+export type { MessageView } from './messages/store.js';
+export type { TurnCommandTable } from './turns/commandTable.js';
+export type { ReservedTurnView } from './turns/reservedTurns.js';
+export type { JsonObject, JsonArray } from './context.js';
+
 const isMain = (): boolean => {
     if (!process.argv[1]) {
         return false;

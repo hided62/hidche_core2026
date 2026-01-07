@@ -35,6 +35,8 @@ export type NationRow = GamePrisma.NationGetPayload<Record<string, never>>;
 export type TroopRow = GamePrisma.TroopGetPayload<Record<string, never>>;
 
 export type JsonValue = GamePrisma.JsonValue;
+export type JsonObject = GamePrisma.JsonObject;
+export type JsonArray = GamePrisma.JsonArray;
 export type InputJsonValue = GamePrisma.InputJsonValue;
 
 export type DatabaseClient = InfraDatabaseClient;

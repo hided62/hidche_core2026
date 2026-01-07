@@ -7,7 +7,7 @@ import type { WorldSnapshot } from '../../src/world/types.js';
 import { commandSpec as declareWarSpec } from '../../src/actions/turn/nation/che_선전포고.js';
 import { commandSpec as deploySpec } from '../../src/actions/turn/general/che_출병.js';
 import type { TurnCommandEnv } from '../../src/actions/turn/commandEnv.js';
-import { processDiplomacyMonth, DIPLOMACY_STATE } from '../../src/diplomacy/index.js';
+import { processDiplomacyMonth, DIPLOMACY_STATE, type DiplomacyEntry } from '../../src/diplomacy/index.js';
 import { buildWarConfig, buildWarAftermathConfig } from '../../src/actions/turn/actionContextHelpers.js';
 
 describe('Diplomacy Scenario', () => {
@@ -18,30 +18,30 @@ describe('Diplomacy Scenario', () => {
 
         const mockNationA: Nation = {
             id: NATION_A_ID, name: 'Nation A', color: '#FF0000', capitalCityId: 1, chiefGeneralId: 1,
-            gold: 10000, rice: 10000, power: 0, level: 5, typeCode: 'test', meta: { tech: 1000 }
+            gold: 10000, rice: 10000, power: 0, level: 5, typeCode: 'test', meta: {}
         };
         const mockNationB: Nation = {
             id: NATION_B_ID, name: 'Nation B', color: '#0000FF', capitalCityId: 2, chiefGeneralId: 2,
-            gold: 10000, rice: 10000, power: 0, level: 5, typeCode: 'test', meta: { tech: 1000 }
+            gold: 10000, rice: 10000, power: 0, level: 5, typeCode: 'test', meta: {}
         };
 
-        // Two adjacent cities
-        const cityADef = MINIMAL_MAP.cities[0]; // A
-        const cityBDef = MINIMAL_MAP.cities[1]; // B
+        const cityADef = MINIMAL_MAP.cities[0];
+        const cityBDef = MINIMAL_MAP.cities[1];
+        if (!cityADef || !cityBDef) throw new Error('City definition missing');
 
         const mockCityA: City = {
-            id: 1, name: cityADef.name, nationId: NATION_A_ID, level: 1, region: 1, state: 0,
+            id: 1, name: cityADef.name, nationId: NATION_A_ID, level: 1, state: 0,
             population: 10000, populationMax: 10000, agriculture: 1000, agricultureMax: 1000,
             commerce: 1000, commerceMax: 1000, security: 1000, securityMax: 1000,
             defence: 1000, defenceMax: 1000, wall: 1000, wallMax: 1000,
-            supplyState: 1, frontState: 0, trust: 1000, trade: 1000, meta: {}
+            supplyState: 1, frontState: 0, meta: {}
         };
         const mockCityB: City = {
-            id: 2, name: cityBDef.name, nationId: NATION_B_ID, level: 1, region: 1, state: 0,
+            id: 2, name: cityBDef.name, nationId: NATION_B_ID, level: 1, state: 0,
             population: 10000, populationMax: 10000, agriculture: 1000, agricultureMax: 1000,
             commerce: 1000, commerceMax: 1000, security: 1000, securityMax: 1000,
             defence: 1000, defenceMax: 1000, wall: 1000, wallMax: 1000,
-            supplyState: 1, frontState: 0, trust: 1000, trade: 1000, meta: {}
+            supplyState: 1, frontState: 0, meta: {}
         };
 
         const mockGeneralA: General = {
@@ -75,15 +75,34 @@ describe('Diplomacy Scenario', () => {
 
         const world = new InMemoryWorld(snapshot);
         const runner = new TestGameRunner(world, 200, 1);
-        const env: TurnCommandEnv = {
-            general: mockGeneralA,
-            date: new Date(200, 0, 1),
-            unitSet: snapshot.unitSet,
-            map: snapshot.map
+
+        const systemEnv: TurnCommandEnv = {
+            develCost: 50,
+            trainDelta: 5,
+            atmosDelta: 5,
+            maxTrainByCommand: 100,
+            maxAtmosByCommand: 100,
+            sabotageDefaultProb: 0.5,
+            sabotageProbCoefByStat: 0.1,
+            sabotageDefenceCoefByGeneralCount: 0.1,
+            sabotageDamageMin: 10,
+            sabotageDamageMax: 20,
+            openingPartYear: 200,
+            maxGeneral: 10,
+            defaultNpcGold: 1000,
+            defaultNpcRice: 1000,
+            defaultCrewTypeId: 1,
+            defaultSpecialDomestic: null,
+            defaultSpecialWar: null,
+            initialNationGenLimit: 10,
+            maxTechLevel: 10,
+            baseGold: 1000,
+            baseRice: 1000,
+            maxResourceActionAmount: 1000
         };
 
         // 2. Declare War
-        const declareWarDef = declareWarSpec.createDefinition(env);
+        const declareWarDef = declareWarSpec.createDefinition(systemEnv);
         await runner.runTurn([{
             generalId: 1,
             commandKey: 'che_선전포고',
@@ -99,12 +118,11 @@ describe('Diplomacy Scenario', () => {
         const warConfig = buildWarConfig(snapshot.scenarioConfig, snapshot.unitSet!);
         const aftermathConfig = buildWarAftermathConfig(snapshot.scenarioConfig, warConfig.castleCrewTypeId);
 
-        // Manual WarTimeContext
         const warTime = {
             year: 200,
             month: 1,
-            season: 0, // Spring
-            turn: 1 // mock value
+            season: 0,
+            turn: 1
         };
         const seedBase = 'test_seed';
 
@@ -112,8 +130,6 @@ describe('Diplomacy Scenario', () => {
             const destCity = world.getCity(destCityId)!;
             const destNation = world.getNation(destCity.nationId);
 
-            // Update warTime based on runner's date if needed, but static is fine for test step
-            // Actually let's use runner's date for 'realism' in simulation step 5
             warTime.year = runner.currentDate.getFullYear();
             warTime.month = runner.currentDate.getMonth() + 1;
             warTime.season = Math.floor(runner.currentDate.getMonth() / 3);
@@ -124,13 +140,18 @@ describe('Diplomacy Scenario', () => {
                 warConfig,
                 aftermathConfig,
                 time: { ...warTime },
-                seedBase
+                seedBase,
+                map: world.snapshot.map,
+                unitSet: world.snapshot.unitSet,
+                cities: world.getAllCities(),
+                nations: world.getAllNations(),
+                generals: world.getAllGenerals(),
+                diplomacy: world.snapshot.diplomacy
             };
         };
 
-        // 3. Try to Deploy (Should Fail/Crash if blocked, or return empty effects)
-        // With corrected context, this call should PROCEED to check logic.
-        const deployDef = deploySpec.createDefinition(env);
+        // 3. Try to Deploy
+        const deployDef = deploySpec.createDefinition(systemEnv);
         await runner.runTurn([{
             generalId: 1,
             commandKey: 'che_출병',
@@ -139,17 +160,30 @@ describe('Diplomacy Scenario', () => {
             context: buildDispatchContext(2)
         }]);
 
-        // Assert failure: No troops created (snapshot.troops still empty)
         expect(world.snapshot.troops.length).toBe(0);
 
 
         // 4. Simulate State Transition
         for (let i = 0; i < 24; i++) {
-            world.snapshot.diplomacy = processDiplomacyMonth(
-                world.snapshot.diplomacy,
-                new Map()
-            );
-            runner.currentDate.setMonth(runner.currentDate.getMonth() + 1); // Advance runner time too
+            const entries: DiplomacyEntry[] = world.snapshot.diplomacy.map(s => ({
+                fromNationId: s.fromNationId,
+                toNationId: s.toNationId,
+                state: s.state,
+                term: s.durationMonths,
+                dead: 0,
+                meta: {}
+            }));
+
+            const updatedEntries = processDiplomacyMonth(entries, new Map());
+
+            world.snapshot.diplomacy = updatedEntries.map(e => ({
+                fromNationId: e.fromNationId,
+                toNationId: e.toNationId,
+                state: e.state,
+                durationMonths: e.term
+            }));
+
+            runner.currentDate.setMonth(runner.currentDate.getMonth() + 1);
         }
 
         const diplomacyAB_After = world.getDiplomacy(NATION_A_ID, NATION_B_ID);
@@ -166,11 +200,5 @@ describe('Diplomacy Scenario', () => {
 
         const generalAfter = world.getGeneral(1)!;
         console.log(`General Exp: ${mockGeneralA.experience} -> ${generalAfter.experience}`);
-
-        // Final assertion: expect experience to have changed (battle happened) or at least no crash
-        // Note: if battle outcome is stalemate/loss, exp might minimally change or change a lot.
-        // And if 'unable to find path' even in WAR (due to some other reason), exp won't change.
-        // But map is connected.
-        // We just verified critical path execution.
     });
 });

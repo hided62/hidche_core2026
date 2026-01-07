@@ -5,19 +5,15 @@ import { MINIMAL_MAP } from '../fixtures/minimalMap.js';
 import { InMemoryWorld, TestGameRunner } from '../testEnv.js';
 import { buildScenarioBootstrap } from '../../src/world/bootstrap.js';
 import type { ScenarioDefinition, ScenarioGeneral } from '../../src/scenario/types.js';
-import type { MapDefinition } from '../../src/world/types.js';
-import type { General, Nation } from '../../src/domain/entities.js';
+import type { Nation } from '../../src/domain/entities.js';
 import { commandSpec as foundNationSpec } from '../../src/actions/turn/general/che_건국.js';
 import type { TurnCommandEnv } from '../../src/actions/turn/commandEnv.js';
 
 // Mock Scenario Definition
 const MOCK_SCENARIO: ScenarioDefinition = {
-    id: 'test_scenario',
     title: 'Test Scenario',
-    template: 'test',
     startYear: 189,
-    beginYear: 189,
-    endYear: 250,
+    life: null,
     fiction: 0,
     history: [],
     ignoreDefaultEvents: false,
@@ -30,41 +26,44 @@ const MOCK_SCENARIO: ScenarioDefinition = {
     events: [],
     initialEvents: [],
     config: {
+        stat: { total: 300, min: 10, max: 100, npcTotal: 150, npcMax: 50, npcMin: 10, chiefMin: 70 },
+        iconPath: '',
+        map: {},
+        const: {},
         environment: {
             mapName: 'minimal_map',
             unitSet: 'test_set',
-            startYear: 189,
         },
-        options: {},
     },
 };
 
 // Mock General Data
-const MOCK_GENERALS: ScenarioGeneral[] = Array.from({ length: 10 }, (_, i) => ({
-    name: `General_${i}`,
-    nation: null, // neutral
-    city: MINIMAL_MAP.cities[i % MINIMAL_MAP.cities.length].name,
-    npc: 0,
-    p_name: `General_${i}`, // Using p_name as personality/picture placeholder if needed by types
-    uniqueName: `General_${i}`,
-    officerLevel: 0,
-    birthYear: 160,
-    deathYear: 220,
-    strength: 70 + i,
-    intelligence: 70 + i,
-    leadership: 70 + i,
-    charm: 70 + i, // Note: entities.ts checks stats, ensuring keys match
-    personality: null,
-    special: null,
-    specialWar: null,
-    affinity: 0,
-    picture: null,
-    horse: null,
-    weapon: null,
-    book: null,
-    item: null,
-    text: null,
-}));
+const MOCK_GENERALS: ScenarioGeneral[] = Array.from({ length: 10 }, (_, i) => {
+    const cityDef = MINIMAL_MAP.cities[i % MINIMAL_MAP.cities.length];
+    if (!cityDef) throw new Error('City definition missing');
+
+    return {
+        name: `General_${i}`,
+        nation: null, // neutral
+        city: cityDef.name,
+        officerLevel: 0,
+        birthYear: 160,
+        deathYear: 220,
+        strength: 70 + i,
+        intelligence: 70 + i,
+        leadership: 70 + i,
+        personality: null,
+        special: null,
+        specialWar: null,
+        affinity: 0,
+        picture: null,
+        horse: null,
+        weapon: null,
+        book: null,
+        item: null,
+        text: null,
+    };
+});
 
 // We need to inject generals into the scenario object for bootstrap
 const scenarioWithGenerals = produce(MOCK_SCENARIO, draft => {
@@ -95,18 +94,37 @@ describe('Blank Start Scenario', () => {
         expect(targetGeneral).toBeDefined();
         if (!targetGeneral) return;
 
-        expect(targetGeneral.nationId).toBe(0); // Should be neutral (nation 0 commonly used for neutral in sammo, or checking bootstrap logic)
-        // bootstrap puts neutral in nation 0 if includeNeutralNation is true.
+        expect(targetGeneral.nationId).toBe(0);
 
         // 3. Command: Found Nation
-        const env: TurnCommandEnv = {
-            general: targetGeneral,
-            date: new Date(189, 0, 1),
+        const systemEnv: TurnCommandEnv = {
+            develCost: 50,
+            trainDelta: 5,
+            atmosDelta: 5,
+            maxTrainByCommand: 100,
+            maxAtmosByCommand: 100,
+            sabotageDefaultProb: 0.5,
+            sabotageProbCoefByStat: 0.1,
+            sabotageDefenceCoefByGeneralCount: 0.1,
+            sabotageDamageMin: 10,
+            sabotageDamageMax: 20,
+            openingPartYear: 200,
+            maxGeneral: 10,
+            defaultNpcGold: 1000,
+            defaultNpcRice: 1000,
+            defaultCrewTypeId: 1,
+            defaultSpecialDomestic: null,
+            defaultSpecialWar: null,
+            initialNationGenLimit: 10,
+            maxTechLevel: 10,
+            baseGold: 1000,
+            baseRice: 1000,
+            maxResourceActionAmount: 1000
         };
-        const foundNationDef = foundNationSpec.createDefinition(env);
+
+        const foundNationDef = foundNationSpec.createDefinition(systemEnv);
 
         // Execute Turn
-        // We simulate the turn runner processing this command
         await runner.runTurn([
             {
                 generalId: targetGeneral.id,
@@ -117,9 +135,6 @@ describe('Blank Start Scenario', () => {
         ]);
 
         // 4. Simulate Turn Processing (Daemon Logic Mock)
-        // Since logic/actions/engine doesn't auto-create nation, we simulate the "Post-Turn Phase"
-        // that scans for the 'founding' flag.
-
         const generalAfter = world.getGeneral(targetGeneral.id);
         expect(generalAfter?.meta?.founding).toBe(true);
 
@@ -132,8 +147,8 @@ describe('Blank Start Scenario', () => {
                 color: '#FF0000',
                 capitalCityId: generalAfter.cityId,
                 chiefGeneralId: generalAfter.id,
-                gold: 1000,
-                rice: 1000,
+                gold: 10000,
+                rice: 10000,
                 power: 0,
                 level: 1,
                 typeCode: 'che_def',
@@ -141,15 +156,22 @@ describe('Blank Start Scenario', () => {
             };
 
             // Apply updates manually to world
-            // In a real test we'd add methods to InMemoryWorld to do this cleanly
-            (world as any).snapshot.nations.push(newNation);
+            world.snapshot.nations.push(newNation);
 
             const city = world.getCity(generalAfter.cityId);
             if (city) {
-                (world as any).updateCity({ ...city, nationId: newNationId });
+                // Manually update nationId in city
+                const cityIdx = world.snapshot.cities.findIndex(c => c.id === city.id);
+                const cityToUpdate = world.snapshot.cities[cityIdx];
+                if (cityToUpdate) cityToUpdate.nationId = newNationId;
             }
 
-            (world as any).updateGeneral({ ...generalAfter, nationId: newNationId, meta: { ...generalAfter.meta, founding: false } });
+            const genIdx = world.snapshot.generals.findIndex(g => g.id === generalAfter.id);
+            const genToUpdate = world.snapshot.generals[genIdx];
+            if (genToUpdate) {
+                genToUpdate.nationId = newNationId;
+                genToUpdate.meta = { ...generalAfter.meta, founding: false };
+            }
         }
 
         // 5. Verify

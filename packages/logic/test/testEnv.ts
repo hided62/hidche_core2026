@@ -1,15 +1,16 @@
 
-import { produceWithPatches, enablePatches } from 'immer';
-import type { City, General, Nation, GeneralId, NationId, CityId, GeneralTriggerState } from '../src/domain/entities.js';
+import { enablePatches } from 'immer';
+import type { City, General, Nation, GeneralId, NationId, CityId } from '../src/domain/entities.js';
 import type { WorldSnapshot } from '../src/world/types.js';
 import { type GeneralActionResolution, resolveGeneralAction, type GeneralActionResolver } from '../src/actions/engine.js';
 import type { TurnSchedule } from '../src/turn/calendar.js';
 import { type DiplomacyEntry, applyDiplomacyPatch, buildDefaultDiplomacy } from '../src/diplomacy/index.js';
+import type { ScenarioDiplomacy } from '../src/scenario/types.js';
 
 enablePatches();
 
 export class InMemoryWorld {
-    private snapshot: WorldSnapshot;
+    public snapshot: WorldSnapshot;
 
     constructor(initialSnapshot: WorldSnapshot) {
         this.snapshot = initialSnapshot;
@@ -89,8 +90,19 @@ export class InMemoryWorld {
                 if (effect.type === 'diplomacy:patch') {
                     const srcId = effect.srcNationId;
                     const destId = effect.destNationId;
-                    const existing = this.getDiplomacy(srcId, destId) ?? buildDefaultDiplomacy(srcId, destId);
-                    const patched = applyDiplomacyPatch(existing, effect.patch);
+                    const existing = this.getDiplomacy(srcId, destId);
+
+                    // Convert ScenarioDiplomacy to DiplomacyEntry for applying patch
+                    const entry: DiplomacyEntry = existing ? {
+                        fromNationId: existing.fromNationId,
+                        toNationId: existing.toNationId,
+                        state: existing.state,
+                        term: existing.durationMonths,
+                        dead: 0,
+                        meta: {}
+                    } : buildDefaultDiplomacy(srcId, destId);
+
+                    const patched = applyDiplomacyPatch(entry, effect.patch);
                     this.updateDiplomacy(patched);
                 }
             }
@@ -120,23 +132,30 @@ export class InMemoryWorld {
         }
     }
 
-    getDiplomacy(srcId: number, destId: number): DiplomacyEntry | undefined {
+    getDiplomacy(srcId: number, destId: number): ScenarioDiplomacy | undefined {
         return this.snapshot.diplomacy.find(d => d.fromNationId === srcId && d.toNationId === destId);
     }
 
     updateDiplomacy(entry: DiplomacyEntry) {
+        const scenarioEntry: ScenarioDiplomacy = {
+            fromNationId: entry.fromNationId,
+            toNationId: entry.toNationId,
+            state: entry.state,
+            durationMonths: entry.term
+        };
+
         const idx = this.snapshot.diplomacy.findIndex(d => d.fromNationId === entry.fromNationId && d.toNationId === entry.toNationId);
         if (idx >= 0) {
-            this.snapshot.diplomacy[idx] = entry;
+            this.snapshot.diplomacy[idx] = scenarioEntry;
         } else {
-            this.snapshot.diplomacy.push(entry);
+            this.snapshot.diplomacy.push(scenarioEntry);
         }
     }
 }
 
 export interface TestCommand {
     generalId: GeneralId;
-    commandKey: string; // Not used directly here, but for clarity
+    commandKey: string;
     resolver: GeneralActionResolver;
     args: unknown;
     context?: Record<string, unknown>;
@@ -151,11 +170,10 @@ export class TestGameRunner {
         this.currentDate = new Date(startYear, startMonth - 1);
     }
 
-    // A simplified run turn method
     async runTurn(commands: TestCommand[]) {
         const schedule: TurnSchedule = {
             entries: [
-                { startMinute: 0, tickMinutes: 60 } // simplified: 1 hour ticks for whole day
+                { startMinute: 0, tickMinutes: 60 }
             ]
         };
 
@@ -164,9 +182,10 @@ export class TestGameRunner {
             if (!general) continue;
 
             const city = this.world.getCity(general.cityId);
+            if (!city) throw new Error(`General ${general.id} is in non-existent city ${general.cityId}`);
+
             const nation = general.nationId ? this.world.getNation(general.nationId) : null;
 
-            // In test env, we might not have full context, but engine needs basic entities
             const inputContext = {
                 general,
                 city,
@@ -174,23 +193,13 @@ export class TestGameRunner {
                 rng: {
                     real: () => Math.random(),
                     int: (min: number, max: number) => Math.floor(Math.random() * (max - min)) + min,
-                    nextInt: (min: number, max: number) => Math.floor(Math.random() * (max - min)) + min, // Added nextInt
+                    nextInt: (min: number, max: number) => Math.floor(Math.random() * (max - min)) + min,
                     next: () => Math.random()
-                } as any, // Mock RNG
+                } as any,
 
-                // Extended context for specific commands (Recruit etc.)
-                map: this.world.snapshot.map,
-                unitSet: this.world.snapshot.unitSet,
-                cities: this.world.getAllCities(),
-                nations: this.world.getAllNations(),
-                currentYear: this.currentDate.getFullYear(),
-                startYear: this.world.snapshot.scenarioMeta?.startYear,
-                // GeneralActionContext base requirements
                 year: this.currentDate.getFullYear(),
                 month: this.currentDate.getMonth() + 1,
                 season: Math.floor(this.currentDate.getMonth() / 3),
-                diplomacy: this.world.snapshot.diplomacy,
-                generals: this.world.getAllGenerals(),
                 ...cmd.context
             };
 
@@ -201,7 +210,7 @@ export class TestGameRunner {
 
             const resolution = resolveGeneralAction(
                 cmd.resolver,
-                inputContext,
+                inputContext as any,
                 scheduleContext,
                 cmd.args
             );
@@ -209,7 +218,6 @@ export class TestGameRunner {
             await this.world.applyResolution(resolution);
         }
 
-        // Advance time
         this.currentDate.setMonth(this.currentDate.getMonth() + 1);
     }
 }

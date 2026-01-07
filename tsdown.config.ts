@@ -8,7 +8,9 @@ export default defineConfig({
     entry: 'src/index.ts',
     format: 'es',
     outDir: 'dist',
-    dts: true,
+    dts: {
+        build: true
+    },
     sourcemap: true,
     target: 'node22',
     platform: 'node',

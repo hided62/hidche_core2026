@@ -217,7 +217,7 @@ const resolveCityRiceConsumption = (options: {
     year: number;
     startYear: number;
 }): number => {
-    const cityReport = options.battle.reports.find((report) => report.type === 'city');
+    const cityReport = options.battle.reports.find((report: any) => report.type === 'city');
     if (!cityReport) {
         return 0;
     }
@@ -225,7 +225,7 @@ const resolveCityRiceConsumption = (options: {
         return 0;
     }
 
-    const crewType = options.unitSet.crewTypes?.find((item) => item.id === options.castleCrewTypeId);
+    const crewType = options.unitSet.crewTypes?.find((item: any) => item.id === options.castleCrewTypeId);
     const riceCoef = crewType?.rice ?? 1;
     const tech = Number(options.defenderNation.meta.tech ?? 0);
     const trainAtmos = resolveCityTrainAtmos(options.year, options.startYear);
@@ -333,7 +333,7 @@ export const processBattleSimJob = (payload: BattleSimJobPayload): BattleSimResu
         });
 
         lastBattle = outcome;
-        const attackerReport = outcome.reports.find((report) => report.type === 'general' && report.isAttacker);
+        const attackerReport = outcome.reports.find((report: any) => report.type === 'general' && report.isAttacker);
         const killed = attackerReport?.killed ?? 0;
         const dead = attackerReport?.dead ?? 0;
 
@@ -370,7 +370,7 @@ export const processBattleSimJob = (payload: BattleSimJobPayload): BattleSimResu
         defenderAvgRice += (defenderRiceInit - defenderRiceAfter + cityRice) * weight;
 
         const attackerActivated = outcome.metrics?.attackerActivatedSkills ?? {};
-        for (const [skillName, value] of Object.entries(attackerActivated)) {
+        for (const [skillName, value] of Object.entries(attackerActivated) as [string, number][]) {
             attackerSkills[skillName] = (attackerSkills[skillName] ?? 0) + value * weight;
         }
 
@@ -380,7 +380,7 @@ export const processBattleSimJob = (payload: BattleSimJobPayload): BattleSimResu
                 defendersSkills.push({});
             }
             const bucket = defendersSkills[defIdx]!;
-            for (const [skillName, value] of Object.entries(defenderActivated[defIdx]!)) {
+            for (const [skillName, value] of Object.entries(defenderActivated[defIdx]!) as [string, number][]) {
                 bucket[skillName] = (bucket[skillName] ?? 0) + value * weight;
             }
         }
