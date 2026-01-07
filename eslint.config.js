@@ -77,6 +77,12 @@ export default tseslint.config(
         },
     },
     {
+        files: ['**/test/**/*.ts', '**/*.test.ts', '**/*.spec.ts'],
+        rules: {
+            '@typescript-eslint/no-explicit-any': 'off',
+        },
+    },
+    {
         files: ['**/*.js', '**/*.mjs', '**/*.cjs'],
         rules: {
             'no-unused-vars': [

@@ -19,10 +19,10 @@
         "useUnknownInCatchVariables": true,
         "noUnusedLocals": true,
         "noUnusedParameters": true,
-        "rootDir": "src"
     },
     "include": [
-        "src"
+        "src",
+        "test"
     ],
     "references": [
         {

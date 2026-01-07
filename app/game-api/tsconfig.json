@@ -3,7 +3,6 @@
     "compilerOptions": {
         "outDir": "dist",
         "composite": true,
-        "rootDir": "src",
         "baseUrl": ".",
         "paths": {
             "@sammo-ts/common": [
@@ -27,7 +26,8 @@
         }
     },
     "include": [
-        "src"
+        "src",
+        "test"
     ],
     "references": [
         {

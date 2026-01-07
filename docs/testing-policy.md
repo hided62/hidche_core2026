@@ -55,6 +55,10 @@ Goal: ensure scenario parsing and DB application are correct.
 - Unit tests: fast, wide coverage.
 - Integration tests: focus on real DB/Redis behavior.
 - Smoke tests: minimal coverage of turn flow/build/scenario loading.
+- Test-specific Rule Relaxations:
+    - To simplify mocking and complex state preparation, the use of `any` type is allowed in test files.
+    - Type casting tricks like `as unknown as YourType` are also permitted in test code for convenience.
+    - However, test code must still be covered by TypeScript type checking to ensure API consistency and prevent regressions.
 
 ## MockDB Conclusion
 
