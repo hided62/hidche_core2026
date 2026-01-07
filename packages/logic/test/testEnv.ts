@@ -200,6 +200,9 @@ export class TestGameRunner {
                 year: this.currentDate.getFullYear(),
                 month: this.currentDate.getMonth() + 1,
                 season: Math.floor(this.currentDate.getMonth() / 3),
+                map: this.world.snapshot.map,
+                unitSet: this.world.snapshot.unitSet,
+                cities: this.world.snapshot.cities,
                 ...cmd.context
             };
 

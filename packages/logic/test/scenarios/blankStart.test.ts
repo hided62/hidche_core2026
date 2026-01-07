@@ -162,16 +162,15 @@ describe('Blank Start Scenario', () => {
             if (city) {
                 // Manually update nationId in city
                 const cityIdx = world.snapshot.cities.findIndex(c => c.id === city.id);
-                const cityToUpdate = world.snapshot.cities[cityIdx];
-                if (cityToUpdate) cityToUpdate.nationId = newNationId;
+                world.snapshot.cities[cityIdx] = { ...world.snapshot.cities[cityIdx], nationId: newNationId };
             }
 
             const genIdx = world.snapshot.generals.findIndex(g => g.id === generalAfter.id);
-            const genToUpdate = world.snapshot.generals[genIdx];
-            if (genToUpdate) {
-                genToUpdate.nationId = newNationId;
-                genToUpdate.meta = { ...generalAfter.meta, founding: false };
-            }
+            world.snapshot.generals[genIdx] = {
+                ...world.snapshot.generals[genIdx],
+                nationId: newNationId,
+                meta: { ...generalAfter.meta, founding: false }
+            };
         }
 
         // 5. Verify
