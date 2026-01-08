@@ -495,10 +495,10 @@ describe('Reserved Turn Execution Integration', () => {
                     arg: { nationName: 'NewEmpire', nationType: 'che_def', colorType: 0 },
                 },
 
-                // Gen 2: Rest -> Domestic (Fail) -> Rest -> Rest -> Domestic (Success)
+                // Gen 2: Rest -> Appointment -> Domestic (Fail) -> Rest -> Domestic (Success)
                 { generalId: 2, turnIdx: 0, actionCode: '휴식', arg: {} },
-                { generalId: 2, turnIdx: 1, actionCode: 'che_농지개간', arg: {} },
-                { generalId: 2, turnIdx: 2, actionCode: '휴식', arg: {} },
+                { generalId: 2, turnIdx: 1, actionCode: 'che_임관', arg: { destNationId: 1 } },
+                { generalId: 2, turnIdx: 2, actionCode: 'che_농지개간', arg: {} },
                 { generalId: 2, turnIdx: 3, actionCode: '휴식', arg: {} },
                 { generalId: 2, turnIdx: 4, actionCode: 'che_농지개간', arg: {} },
             ];
@@ -545,9 +545,7 @@ describe('Reserved Turn Execution Integration', () => {
             expect(nation.level).toBe(0); // Wandering
             expect(gen1.officerLevel).toBe(12); // Monarch
 
-            // Cheat: Join Gen 2 to Gen 1's nation
-            // We can treat this as "Gen 2 was convinced by Gen 1" or manually updated
-            world.updateGeneral(2, { nationId: gen1.nationId });
+            // Gen 2 will perform Appointment in Turn 1
 
             // Turn 1: Founding (Fail) and Domestic (Fail)
             await processor.run(new Date(mockDate.getTime() + 2 * 10 * 60 * 1000), {
@@ -563,12 +561,7 @@ describe('Reserved Turn Execution Integration', () => {
             const nationAfterFail = world.getNationById(gen1.nationId)!;
             expect(nationAfterFail.level).toBe(0);
 
-            // Domestic should fail (Wandering Nation)
-            // Domestic effect is increasing agriculture. Gen 2 in City 1.
-            const city1 = world.getCityById(1)!;
-            expect(city1.agriculture).toBe(100); // No change
-
-            // Turn 2: Move (Gen 1)
+            // Turn 2: Move (Gen 1) and Domestic (Fail for Gen 2 - Wandering Nation)
             await processor.run(new Date(mockDate.getTime() + 3 * 10 * 60 * 1000), {
                 budgetMs: 1000,
                 maxGenerals: 100,
@@ -576,8 +569,14 @@ describe('Reserved Turn Execution Integration', () => {
             });
             await reservedTurnStore.flushChanges();
 
+            // Verify Turn 2
+            const city1 = world.getCityById(1)!;
+            expect(city1.agriculture).toBe(100); // Fail due to Wandering Nation (level 0)
+
             const gen1AfterMove = world.getGeneralById(1)!;
             expect(gen1AfterMove.cityId).toBe(2);
+            const gen2AfterMove = world.getGeneralById(2)!;
+            expect(gen2AfterMove.cityId).toBe(2);
 
             // Turn 3: Founding (Success in City 2)
             await processor.run(new Date(mockDate.getTime() + 4 * 10 * 60 * 1000), {
@@ -593,24 +592,9 @@ describe('Reserved Turn Execution Integration', () => {
             expect(nationFinal.name).toBe('NewEmpire');
             expect(nationFinal.capitalCityId).toBe(2);
 
-            // Turn 4: Domestic (Success, Gen 2 in City 1)
-            // Wait, Gen 2 is in City 1. City 1 belongs to nation?
-            // Founding sets Capital City 2 to belongs to nation.
-            // City 1 is still Neutral?
-            // If City 1 is neutral, Domestic (Agriculture) might still fail due to "OccupiedCity" or ownership?
-            // NotWanderingNation passes.
-            // occupiedCity(): requires city.nationId === general.nationId?
-            // Let's check occupiedCity constraint.
-            // If occupiedCity fails, then Domestic fails.
-
-            // To make Domestic SUCCESS, Gen 2 must be in a city owned by the nation.
-            // But Gen 2 is in City 1.
-            // Gen 1 founded in City 2.
-            // So Gen 2 should move to City 2 OR we own City 1.
-            // Let's assume Gen 2 moves to City 2.
-            // But I didn't schedule Move for Gen 2.
-            // I'll manually move Gen 2 to City 2 before Turn 4.
-            world.updateGeneral(2, { cityId: 2 });
+            // Turn 4: Domestic (Success, Gen 2 in City 2)
+            // Gen 2 is in City 2, which was claimed by the monarch's move.
+            // Nation is now level 1, so Domestic should pass.
 
             await processor.run(new Date(mockDate.getTime() + 5 * 10 * 60 * 1000), {
                 budgetMs: 1000,
@@ -619,8 +603,8 @@ describe('Reserved Turn Execution Integration', () => {
             });
             await reservedTurnStore.flushChanges();
 
-            const city2 = world.getCityById(2)!;
-            expect(city2.agriculture).toBeGreaterThan(100); // Success
+            const city2Final = world.getCityById(2)!;
+            expect(city2Final.agriculture).toBeGreaterThan(100); // Success
         });
     });
 });

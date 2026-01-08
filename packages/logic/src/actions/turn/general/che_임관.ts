@@ -3,6 +3,7 @@ import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/
 import { beNeutral, existsDestNation } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
+import { createGeneralPatchEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat } from '@sammo-ts/logic/logging/types.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
@@ -48,7 +49,15 @@ export class ActionDefinition<
             category: LogCategory.ACTION,
             format: LogFormat.MONTH,
         });
-        return { effects: [] };
+
+        const effects = [
+            createGeneralPatchEffect<TriggerState>({
+                nationId: args.destNationId,
+                officerLevel: 1, // Common Officer
+            }),
+        ];
+
+        return { effects };
     }
 }
 
