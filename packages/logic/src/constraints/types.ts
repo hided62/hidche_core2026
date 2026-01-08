@@ -13,6 +13,7 @@ export type RequirementKey =
     | { kind: 'destNation'; id: number }
     | { kind: 'diplomacy'; srcNationId: number; destNationId: number }
     | { kind: 'diplomacyList' }
+    | { kind: 'nationList' }
     | { kind: 'arg'; key: string }
     | { kind: 'env'; key: string };
 

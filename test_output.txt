@@ -1,0 +1,67 @@
+
+> @sammo-ts/logic@0.0.0 test /home/letrhee/core2026/packages/logic
+> vitest run --config vitest.config.ts -- test/scenarios/blankStart.test.ts --run
+
+
+[1m[46m RUN [49m[22m [36mv4.0.16 [39m[90m/home/letrhee/core2026/packages/logic[39m
+
+ [32m✓[39m test/message.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m test/worldBootstrap.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 3[2mms[22m[39m
+ [32m✓[39m test/crewType.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 3[2mms[22m[39m
+ [32m✓[39m test/scenarioParser.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+[90mstdout[2m | test/scenarios/domestic.test.ts[2m > [22m[2mDomestic Affairs Scenario[2m > [22m[2mshould increase agriculture when executing "Farming" command
+[22m[39mAgriculture: 500 -> 600
+
+ [32m✓[39m test/scenarios/domestic.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [31m❯[39m test/scenarios/blankStart.test.ts [2m([22m[2m3 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[32m 14[2mms[22m[39m
+[31m     [31m×[31m should follow the correct founding scenario (uprising -> appointment -> founding)[39m[32m 12[2mms[22m[39m
+     [32m✓[39m should fail founding if city is not level 5 or 6[32m 1[2mms[22m[39m
+     [32m✓[39m should fail founding after opening part[32m 0[2mms[22m[39m
+[90mstdout[2m | test/scenarios/troops.test.ts[2m > [22m[2mTroop Management Scenario[2m > [22m[2mshould successfully draft troops, then train and boost morale
+[22m[39mDrafted: 1000
+
+[90mstdout[2m | test/scenarios/troops.test.ts[2m > [22m[2mTroop Management Scenario[2m > [22m[2mshould successfully draft troops, then train and boost morale
+[22m[39mTrain: 10 -> 75
+
+[90mstdout[2m | test/scenarios/troops.test.ts[2m > [22m[2mTroop Management Scenario[2m > [22m[2mshould successfully draft troops, then train and boost morale
+[22m[39mAtmos: 10 -> 75
+
+ [32m✓[39m test/scenarios/troops.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m test/warAftermath.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+[90mstdout[2m | test/scenarios/diplomacy.test.ts[2m > [22m[2mDiplomacy Scenario[2m > [22m[2mshould handle War Declaration and prevent/allow deployment accordingly
+[22m[39mGeneral Exp: 100 -> 100
+
+ [32m✓[39m test/dispatchWarAction.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m test/scenarios/diplomacy.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m test/warEngine.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m test/scenarios/general_commands_new.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+ [32m✓[39m test/specialActions.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 28[2mms[22m[39m
+ [32m✓[39m test/diplomacy.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 2[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m test/scenarios/blankStart.test.ts[2m > [22mBlank Start Scenario[2m > [22mshould follow the correct founding scenario (uprising -> appointment -> founding)
+[31m[1mAssertionError[22m: expected 'deny' to be 'allow' // Object.is equality[39m
+
+Expected: [32m"allow"[39m
+Received: [31m"deny"[39m
+
+[36m [2m❯[22m test/scenarios/blankStart.test.ts:[2m252:30[22m[39m
+    [90m250| [39m        for (const constraint of foundNationDef.buildConstraints(final…
+    [90m251| [39m            [35mconst[39m res [33m=[39m constraint[33m.[39m[34mtest[39m(finalCtx[33m,[39m finalView)[33m;[39m
+    [90m252| [39m            [34mexpect[39m(res[33m.[39mkind)[33m.[39m[34mtoBe[39m([32m'allow'[39m)[33m;[39m
+    [90m   | [39m                             [31m^[39m
+    [90m253| [39m        }
+    [90m254| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m13 passed[39m[22m[90m (14)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m31 passed[39m[22m[90m (32)[39m
+[2m   Start at [22m 14:11:35
+[2m   Duration [22m 587ms[2m (transform 2.41s, setup 0ms, import 3.55s, tests 123ms, environment 2ms)[22m
+
+/home/letrhee/core2026/packages/logic:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @sammo-ts/logic@0.0.0 test: `vitest run --config vitest.config.ts -- test/scenarios/blankStart.test.ts --run`
+Exit status 1

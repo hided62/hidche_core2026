@@ -59,6 +59,25 @@ export const beChief = (): Constraint => ({
     },
 });
 
+export const beMonarch = (): Constraint => ({
+    name: 'BeMonarch',
+    requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
+    test: (ctx, view) => {
+        const req: RequirementKey = { kind: 'general', id: ctx.actorId };
+        if (!view.has(req)) {
+            return unknownOrDeny(ctx, [req], '장수 정보가 없습니다.');
+        }
+        const general = view.get(req) as General | null;
+        if (!general) {
+            return unknownOrDeny(ctx, [req], '장수 정보가 없습니다.');
+        }
+        if (general.officerLevel === 12) {
+            return allow();
+        }
+        return { kind: 'deny', reason: '군주가 아닙니다.' };
+    },
+});
+
 export const reqGeneralGold = (
     getRequiredGold: (ctx: ConstraintContext, view: StateView) => number,
     requirements: RequirementKey[] = []

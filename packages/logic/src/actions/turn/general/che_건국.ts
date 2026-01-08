@@ -1,6 +1,14 @@
 import type { GeneralTriggerState, TriggerValue } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
-import { beNeutral } from '@sammo-ts/logic/constraints/presets.js';
+import {
+    beMonarch,
+    beWanderingNation,
+    reqNationGeneralCount,
+    beOpeningPart,
+    beNeutralCity,
+    reqCityLevel,
+    checkNationNameDuplicate,
+} from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat } from '@sammo-ts/logic/logging/types.js';
@@ -8,7 +16,11 @@ import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js'
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 
-export interface FoundingArgs {}
+export interface FoundingArgs {
+    nationName: string;
+    nationType: string;
+    colorType: number;
+}
 
 const ACTION_NAME = '건국';
 
@@ -18,18 +30,31 @@ export class ActionDefinition<
     public readonly key = 'che_건국';
     public readonly name = ACTION_NAME;
 
-    parseArgs(_raw: unknown): FoundingArgs | null {
-        void _raw;
-        return {};
+    parseArgs(raw: unknown): FoundingArgs | null {
+        if (typeof raw !== 'object' || raw === null) return null;
+        const { nationName, nationType, colorType } = raw as any;
+        if (typeof nationName !== 'string' || !nationName) return null;
+        if (typeof nationType !== 'string' || !nationType) return null;
+        if (typeof colorType !== 'number') return null;
+
+        return { nationName, nationType, colorType };
     }
 
-    buildConstraints(_ctx: ConstraintContext, _args: FoundingArgs): Constraint[] {
-        return [beNeutral()];
+    buildConstraints(_ctx: ConstraintContext, args: FoundingArgs): Constraint[] {
+        return [
+            beOpeningPart(),
+            beMonarch(),
+            beWanderingNation(),
+            reqNationGeneralCount(2),
+            beNeutralCity(),
+            reqCityLevel([5, 6]), // 소, 중 도시
+            checkNationNameDuplicate(args.nationName),
+        ];
     }
 
     resolve(
         context: GeneralActionResolveContext<TriggerState>,
-        _args: FoundingArgs
+        args: FoundingArgs
     ): GeneralActionOutcome<TriggerState> {
         const general = context.general;
 
@@ -37,9 +62,10 @@ export class ActionDefinition<
         general.meta = {
             ...(general.meta as object),
             founding: true as TriggerValue,
+            foundingArgs: args as unknown as TriggerValue, // Cast to TriggerValue to solve type mismatch
         };
 
-        context.addLog(`${ACTION_NAME}을 준비했습니다.`, {
+        context.addLog(`${args.nationName} 건국을 준비했습니다.`, {
             category: LogCategory.ACTION,
             format: LogFormat.MONTH,
         });
@@ -54,7 +80,11 @@ export const actionContextBuilder = defaultActionContextBuilder;
 export const commandSpec: GeneralTurnCommandSpec = {
     key: 'che_건국',
     category: '전략',
-    reqArg: false,
-    args: {},
+    reqArg: true,
+    args: {
+        nationName: 'string',
+        nationType: 'string',
+        colorType: 'number',
+    },
     createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
 };

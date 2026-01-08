@@ -21,6 +21,25 @@ export const notWanderingNation = (): Constraint => ({
     },
 });
 
+export const beWanderingNation = (): Constraint => ({
+    name: 'BeWanderingNation',
+    requires: (ctx) => (ctx.nationId !== undefined ? [{ kind: 'nation', id: ctx.nationId }] : []),
+    test: (ctx, view) => {
+        const nation = readNation(view, ctx.nationId);
+        if (!nation) {
+            if (ctx.nationId === undefined) {
+                return unknownOrDeny(ctx, [], '국가 정보가 없습니다.');
+            }
+            const req: RequirementKey = { kind: 'nation', id: ctx.nationId };
+            return unknownOrDeny(ctx, [req], '국가 정보가 없습니다.');
+        }
+        if (nation.level === 0) {
+            return allow();
+        }
+        return { kind: 'deny', reason: '방랑군이 아닙니다.' };
+    },
+});
+
 export const availableStrategicCommand = (allowTurnCnt = 0): Constraint => ({
     name: 'AvailableStrategicCommand',
     requires: (ctx) => {
@@ -192,6 +211,63 @@ export const differentDestNation = (): Constraint => ({
         }
         if (baseNationId === destNationId) {
             return { kind: 'deny', reason: '같은 국가입니다.' };
+        }
+        return allow();
+    },
+});
+
+export const reqNationGeneralCount = (min: number): Constraint => ({
+    name: 'ReqNationGeneralCount',
+    requires: (ctx) => {
+        const reqs: RequirementKey[] = [{ kind: 'generalList' }];
+        if (ctx.nationId !== undefined) {
+            reqs.push({ kind: 'nation', id: ctx.nationId });
+        } else {
+            reqs.push({ kind: 'general', id: ctx.actorId });
+        }
+        return reqs;
+    },
+    test: (ctx, view) => {
+        const listReq: RequirementKey = { kind: 'generalList' };
+        if (!view.has(listReq)) {
+            return unknownOrDeny(ctx, [listReq], '장수가 없습니다.');
+        }
+        const generals = view.get(listReq) as General[] | null;
+        if (!generals) {
+            return unknownOrDeny(ctx, [listReq], '장수가 없습니다.');
+        }
+
+        let baseNationId = ctx.nationId;
+        if (baseNationId === undefined) {
+            const general = readGeneral(ctx, view);
+            if (!general) {
+                const req: RequirementKey = {
+                    kind: 'general',
+                    id: ctx.actorId,
+                };
+                return unknownOrDeny(ctx, [req], '장수가 없습니다.');
+            }
+            baseNationId = general.nationId;
+        }
+
+        const count = generals.filter((g) => g.nationId === baseNationId).length;
+        if (count >= min) {
+            return allow();
+        }
+        return { kind: 'deny', reason: `국가 소속 장수가 부족합니다. (필요: ${min}, 현재: ${count})` };
+    },
+});
+
+export const checkNationNameDuplicate = (name: string): Constraint => ({
+    name: 'CheckNationNameDuplicate',
+    requires: () => [{ kind: 'nationList' }],
+    test: (_ctx, view) => {
+        const nations = view.get({ kind: 'nationList' }) as Nation[] | null;
+        if (!nations) {
+            return { kind: 'unknown', missing: [{ kind: 'nationList' }] };
+        }
+        if (nations.some((n) => n.name === name)) {
+            return { kind: 'deny', reason: '이미 존재하는 국가 이름입니다.' };
         }
         return allow();
     },

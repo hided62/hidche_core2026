@@ -1,4 +1,4 @@
-import type { City, General } from '@sammo-ts/logic/domain/entities.js';
+import type { City, General, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { MapDefinition } from '@sammo-ts/logic/world/types.js';
 import {
     allow,
@@ -368,53 +368,6 @@ export const notSameDestCity = (): Constraint => ({
     },
 });
 
-const buildMapIndex = (map: MapDefinition): Map<number, number[]> => {
-    const index = new Map<number, number[]>();
-    for (const city of map.cities) {
-        index.set(city.id, Array.from(city.connections ?? []));
-    }
-    return index;
-};
-
-const hasRouteToDest = (
-    mapIndex: Map<number, number[]>,
-    allowedCityIds: Set<number>,
-    fromCityId: number,
-    toCityId: number
-): boolean => {
-    if (fromCityId === toCityId) {
-        return true;
-    }
-    if (!allowedCityIds.has(toCityId)) {
-        return false;
-    }
-    const queue: number[] = [fromCityId];
-    const visited = new Set<number>();
-    while (queue.length > 0) {
-        const current = queue.shift();
-        if (current === undefined) {
-            continue;
-        }
-        if (visited.has(current)) {
-            continue;
-        }
-        visited.add(current);
-        const neighbors = mapIndex.get(current) ?? [];
-        for (const next of neighbors) {
-            if (!allowedCityIds.has(next)) {
-                continue;
-            }
-            if (next === toCityId) {
-                return true;
-            }
-            if (!visited.has(next)) {
-                queue.push(next);
-            }
-        }
-    }
-    return false;
-};
-
 export const hasRouteWithEnemy = (): Constraint => ({
     name: 'HasRouteWithEnemy',
     requires: (ctx) => {
@@ -477,15 +430,53 @@ export const hasRouteWithEnemy = (): Constraint => ({
         if (!allowedCityIds.has(destCity.id)) {
             return { kind: 'deny', reason: '경로에 도달할 방법이 없습니다.' };
         }
-
-        const mapIndex = buildMapIndex(map);
-        if (!mapIndex.has(general.cityId)) {
-            return unknownOrDeny(ctx, [], '경로 정보가 없습니다.');
-        }
-
-        if (!hasRouteToDest(mapIndex, allowedCityIds, general.cityId, destCity.id)) {
-            return { kind: 'deny', reason: '경로에 도달할 방법이 없습니다.' };
-        }
         return allow();
+    },
+});
+
+export const beNeutralCity = (): Constraint => ({
+    name: 'BeNeutralCity',
+    requires: (ctx) => (ctx.cityId !== undefined ? [{ kind: 'city', id: ctx.cityId }] : []),
+    test: (ctx, view) => {
+        const city = readCity(view, ctx.cityId);
+        if (!city) {
+            if (ctx.cityId === undefined) {
+                return unknownOrDeny(ctx, [], '도시 정보가 없습니다.');
+            }
+            const req: RequirementKey = { kind: 'city', id: ctx.cityId };
+            return unknownOrDeny(ctx, [req], '도시 정보가 없습니다.');
+        }
+        if (city.nationId === 0) {
+            return allow();
+        }
+        const general = readGeneral(ctx, view);
+        if (general && city.nationId === general.nationId) {
+            const nationReq: RequirementKey = { kind: 'nation', id: general.nationId };
+            const nation = view.get(nationReq) as Nation | null;
+            if (nation && nation.level === 0) {
+                // 방랑군 본인 도시면 건국 가능
+                return allow();
+            }
+        }
+        return { kind: 'deny', reason: '공백지가 아닙니다.' };
+    },
+});
+
+export const reqCityLevel = (levels: number[]): Constraint => ({
+    name: 'ReqCityLevel',
+    requires: (ctx) => (ctx.cityId !== undefined ? [{ kind: 'city', id: ctx.cityId }] : []),
+    test: (ctx, view) => {
+        const city = readCity(view, ctx.cityId);
+        if (!city) {
+            if (ctx.cityId === undefined) {
+                return unknownOrDeny(ctx, [], '도시 정보가 없습니다.');
+            }
+            const req: RequirementKey = { kind: 'city', id: ctx.cityId };
+            return unknownOrDeny(ctx, [req], '도시 정보가 없습니다.');
+        }
+        if (levels.includes(city.level)) {
+            return allow();
+        }
+        return { kind: 'deny', reason: '규모가 맞지 않습니다.' };
     },
 });
