@@ -84,8 +84,13 @@ export class InMemoryWorld {
             this.updateNation(resolution.nation);
         }
 
-        if (resolution.created && resolution.created.generals) {
-            this.snapshot.generals.push(...resolution.created.generals);
+        if (resolution.created) {
+            if (resolution.created.generals) {
+                this.snapshot.generals.push(...resolution.created.generals);
+            }
+            if (resolution.created.nations) {
+                this.snapshot.nations.push(...resolution.created.nations);
+            }
         }
 
         if (resolution.effects) {
@@ -177,6 +182,9 @@ export class TestGameRunner {
         this.currentDate = new Date(startYear, startMonth - 1);
     }
 
+    nextGeneralId = 1;
+    nextNationId = 1;
+
     async runTurn(commands: TestCommand[]) {
         const schedule: TurnSchedule = {
             entries: [{ startMinute: 0, tickMinutes: 60 }],
@@ -212,6 +220,21 @@ export class TestGameRunner {
                 map: this.world.snapshot.map,
                 unitSet: this.world.snapshot.unitSet,
                 cities: this.world.snapshot.cities,
+                nations: this.world.snapshot.nations,
+                createGeneralId: () => {
+                    if (this.nextGeneralId === 1) {
+                        const ids = this.world.getAllGenerals().map((g) => g.id);
+                        this.nextGeneralId = ids.length > 0 ? Math.max(...ids) + 1 : 1;
+                    }
+                    return this.nextGeneralId++;
+                },
+                createNationId: () => {
+                    if (this.nextNationId === 1) {
+                        const ids = this.world.getAllNations().map((n) => n.id);
+                        this.nextNationId = ids.length > 0 ? Math.max(...ids) + 1 : 1;
+                    }
+                    return this.nextNationId++;
+                },
                 ...cmd.context,
             };
 

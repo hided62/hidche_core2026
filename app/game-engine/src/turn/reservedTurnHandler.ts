@@ -305,6 +305,8 @@ class WorldStateView implements StateView {
                     return this.overrides.nation;
                 }
                 return this.world.getNationById(req.id);
+            case 'nationList':
+                return this.world.listNations();
             case 'destNation':
                 return this.world.getNationById(req.id);
             case 'diplomacy':
@@ -402,13 +404,31 @@ export const createReservedTurnHandler = async (options: {
 
     let nextGeneralId: number | null = null;
     const createGeneralId = (): number => {
+        const world = options.getWorld();
+        if (world) {
+            return world.getNextGeneralId();
+        }
+
         if (nextGeneralId === null) {
-            const world = options.getWorld();
-            const ids = world ? world.listGenerals().map((general) => general.id) : [];
-            nextGeneralId = ids.length > 0 ? Math.max(...ids) + 1 : 1;
+            nextGeneralId = 1;
         }
         const result = nextGeneralId;
         nextGeneralId += 1;
+        return result;
+    };
+
+    let nextNationId: number | null = null;
+    const createNationId = (): number => {
+        const world = options.getWorld();
+        if (world) {
+            return world.getNextNationId();
+        }
+
+        if (nextNationId === null) {
+            nextNationId = 1;
+        }
+        const result = nextNationId;
+        nextNationId += 1;
         return result;
     };
 
@@ -434,7 +454,8 @@ export const createReservedTurnHandler = async (options: {
                 destNationId: number;
                 patch: DiplomacyPatch;
             }> = [];
-            const created: TurnGeneral[] = [];
+            const createdGenerals: TurnGeneral[] = [];
+            const createdNations: Nation[] = [];
 
             let currentGeneral = context.general;
             let currentCity = context.city;
@@ -518,6 +539,7 @@ export const createReservedTurnHandler = async (options: {
                         worldRef: worldView,
                         actionArgs: actionArgsRecord,
                         createGeneralId,
+                        createNationId,
                         seedBase,
                     },
                     actionContextBuilders
@@ -550,6 +572,13 @@ export const createReservedTurnHandler = async (options: {
                 currentGeneral = resolution.general as TurnGeneral;
                 currentCity = resolution.city ?? currentCity;
                 currentNation = resolution.nation ?? currentNation;
+
+                if (!currentNation && resolution.created?.nations) {
+                    currentNation =
+                        (resolution.created.nations as Nation[]).find((n) => n.id === currentGeneral.nationId) ??
+                        currentNation;
+                }
+
                 logs.push(...resolution.logs);
                 if (worldOverlay) {
                     worldOverlay.syncGeneral(currentGeneral);
@@ -608,11 +637,20 @@ export const createReservedTurnHandler = async (options: {
                 }
 
                 if (resolution.created?.generals) {
-                    const createdGenerals = resolution.created.generals as TurnGeneral[];
-                    created.push(...createdGenerals);
+                    const newGenerals = resolution.created.generals as TurnGeneral[];
+                    createdGenerals.push(...newGenerals);
                     if (worldOverlay) {
-                        for (const general of createdGenerals) {
+                        for (const general of newGenerals) {
                             worldOverlay.syncGeneral(general);
+                        }
+                    }
+                }
+                if (resolution.created?.nations) {
+                    const newNations = resolution.created.nations as Nation[];
+                    createdNations.push(...newNations);
+                    if (worldOverlay) {
+                        for (const nation of newNations) {
+                            worldOverlay.syncNation(nation);
                         }
                     }
                 }
@@ -642,7 +680,13 @@ export const createReservedTurnHandler = async (options: {
                 logs,
                 patches,
                 ...(diplomacyPatches.length > 0 ? { diplomacyPatches } : undefined),
-                created: created.length > 0 ? { generals: created } : undefined,
+                created:
+                    createdGenerals.length > 0 || createdNations.length > 0
+                        ? {
+                              generals: createdGenerals,
+                              ...(createdNations.length > 0 ? { nations: createdNations } : {}),
+                          }
+                        : undefined,
             };
 
             return result;

@@ -64,6 +64,7 @@ export interface ActionContextOptions {
     worldRef: ActionContextWorldRef | null;
     actionArgs: Record<string, unknown>;
     createGeneralId: () => number;
+    createNationId: () => number;
     seedBase: string;
 }
 

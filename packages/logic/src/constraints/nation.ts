@@ -261,12 +261,12 @@ export const reqNationGeneralCount = (min: number): Constraint => ({
 export const checkNationNameDuplicate = (name: string): Constraint => ({
     name: 'CheckNationNameDuplicate',
     requires: () => [{ kind: 'nationList' }],
-    test: (_ctx, view) => {
+    test: (ctx, view) => {
         const nations = view.get({ kind: 'nationList' }) as Nation[] | null;
         if (!nations) {
             return { kind: 'unknown', missing: [{ kind: 'nationList' }] };
         }
-        if (nations.some((n) => n.name === name)) {
+        if (nations.some((n) => n.name === name && n.id !== ctx.nationId)) {
             return { kind: 'deny', reason: '이미 존재하는 국가 이름입니다.' };
         }
         return allow();

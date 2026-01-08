@@ -1,16 +1,21 @@
-import type { GeneralTriggerState, TriggerValue } from '@sammo-ts/logic/domain/entities.js';
+import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
     beMonarch,
     beWanderingNation,
-    reqNationGeneralCount,
-    beOpeningPart,
     beNeutralCity,
     reqCityLevel,
+    reqNationGeneralCount,
     checkNationNameDuplicate,
+    beOpeningPart,
 } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
+import {
+    createCityPatchEffect,
+    createGeneralPatchEffect,
+    createNationPatchEffect,
+} from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat } from '@sammo-ts/logic/logging/types.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
@@ -23,6 +28,42 @@ export interface FoundingArgs {
 }
 
 const ACTION_NAME = '건국';
+
+const NATION_COLORS = [
+    '#FF0000',
+    '#800000',
+    '#A0522D',
+    '#FF6347',
+    '#FFA500',
+    '#FFDAB9',
+    '#FFD700',
+    '#FFFF00',
+    '#7CFC00',
+    '#00FF00',
+    '#808000',
+    '#008000',
+    '#2E8B57',
+    '#008080',
+    '#20B2AA',
+    '#6495ED',
+    '#7FFFD4',
+    '#AFEEEE',
+    '#87CEEB',
+    '#00FFFF',
+    '#00BFFF',
+    '#0000FF',
+    '#000080',
+    '#483D8B',
+    '#7B68EE',
+    '#BA55D3',
+    '#800080',
+    '#FF00FF',
+    '#FFC0CB',
+    '#F5F5DC',
+    '#E0FFFF',
+    '#FFFFFF',
+    '#A9A9A9',
+];
 
 export class ActionDefinition<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -57,20 +98,67 @@ export class ActionDefinition<
         args: FoundingArgs
     ): GeneralActionOutcome<TriggerState> {
         const general = context.general;
+        const nation = context.nation!;
+        const cityId = general.cityId!;
 
-        // 직접 수정 (Immer Draft)
-        general.meta = {
-            ...(general.meta as object),
-            founding: true as TriggerValue,
-            foundingArgs: args as unknown as TriggerValue, // Cast to TriggerValue to solve type mismatch
-        };
+        if (args.colorType < 0 || args.colorType >= NATION_COLORS.length) {
+            throw new Error('Invalid color type');
+        }
+        const color = NATION_COLORS[args.colorType];
 
-        context.addLog(`${args.nationName} 건국을 준비했습니다.`, {
+        const josaUl = '을'; // Mock JosaUtil.pick
+        const josaYi = '이';
+        const city = context.city;
+
+        context.addLog(`${args.nationName}${josaUl} 건국하였습니다.`, {
+            category: LogCategory.USER,
+            format: LogFormat.PLAIN,
+        });
+        context.addLog(`${general.name}${josaYi} ${city?.name}에 국가를 건설하였습니다.`, {
             category: LogCategory.ACTION,
             format: LogFormat.MONTH,
         });
+        context.addLog(`【건국】${args.nationType} ${args.nationName}${josaYi} 새로이 등장하였습니다.`, {
+            category: LogCategory.HISTORY,
+            format: LogFormat.PLAIN,
+        });
+        context.addLog(`${args.nationName}${josaUl} 건국`, {
+            category: LogCategory.HISTORY,
+            format: LogFormat.PLAIN,
+        });
+        context.addLog(`${general.name}${josaYi} ${args.nationName}${josaUl} 건국`, {
+            category: LogCategory.HISTORY,
+            format: LogFormat.PLAIN,
+        });
 
-        return { effects: [] };
+        const effects = [
+            createNationPatchEffect(
+                {
+                    name: args.nationName,
+                    typeCode: args.nationType,
+                    color: color!,
+                    level: 1, // Normal Nation
+                    capitalCityId: cityId,
+                    meta: {
+                        ...nation.meta,
+                        can_국기변경: 1,
+                    },
+                },
+                nation.id
+            ),
+            createCityPatchEffect(
+                {
+                    nationId: nation.id,
+                },
+                cityId
+            ),
+            createGeneralPatchEffect<TriggerState>({
+                experience: (general.experience || 0) + 1000,
+                dedication: (general.dedication || 0) + 1000,
+            }),
+        ];
+
+        return { effects };
     }
 }
 

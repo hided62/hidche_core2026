@@ -244,6 +244,7 @@ export const createDatabaseTurnHooks = async (
                 diplomacy,
                 logs,
                 createdGenerals,
+                createdNations,
                 createdTroops,
                 createdDiplomacy,
             } = world.consumeDirtyState();
@@ -260,6 +261,7 @@ export const createDatabaseTurnHooks = async (
             });
 
             const createdIds = new Set(createdGenerals.map((general) => general.id));
+            const createdNationIds = new Set(createdNations.map((nation) => nation.id));
             const createdTroopIds = new Set(createdTroops.map((troop) => troop.id));
             const createdDiplomacyKeys = new Set(
                 createdDiplomacy.map((entry) => `${entry.fromNationId}:${entry.toNationId}`)
@@ -268,6 +270,21 @@ export const createDatabaseTurnHooks = async (
             if (createdGenerals.length > 0) {
                 await prisma.general.createMany({
                     data: createdGenerals.map(buildGeneralCreate),
+                });
+            }
+            if (createdNations.length > 0) {
+                await prisma.nation.createMany({
+                    data: createdNations.map((nation) => ({
+                        id: nation.id,
+                        name: nation.name,
+                        color: nation.color,
+                        capitalCityId: nation.capitalCityId,
+                        gold: nation.gold,
+                        rice: nation.rice,
+                        level: nation.level,
+                        typeCode: nation.typeCode,
+                        meta: asJson(nation.meta),
+                    })),
                 });
             }
             if (createdTroops.length > 0) {
@@ -307,12 +324,14 @@ export const createDatabaseTurnHooks = async (
                         data: buildCityUpdate(city),
                     })
                 ),
-                ...nations.map((nation) =>
-                    prisma.nation.update({
-                        where: { id: nation.id },
-                        data: buildNationUpdate(nation),
-                    })
-                ),
+                ...nations
+                    .filter((nation) => !createdNationIds.has(nation.id))
+                    .map((nation) =>
+                        prisma.nation.update({
+                            where: { id: nation.id },
+                            data: buildNationUpdate(nation),
+                        })
+                    ),
                 ...troops
                     .filter((troop) => !createdTroopIds.has(troop.id))
                     .map((troop) =>

@@ -91,6 +91,7 @@ export type GeneralActionEffect<TriggerState extends GeneralTriggerState = Gener
     | GeneralAddEffect<TriggerState>
     | CityPatchEffect
     | NationPatchEffect
+    | NationAddEffect
     | DiplomacyPatchEffect
     | LogEffect
     | NextTurnOverrideEffect;
@@ -117,6 +118,7 @@ export interface GeneralActionResolution {
     effects: GeneralActionEffect[];
     created?: {
         generals: General[];
+        nations?: Nation[];
     };
     patches?: {
         generals: Array<{ id: GeneralId; patch: Partial<General> }>;
@@ -165,6 +167,16 @@ export const createNationPatchEffect = (patch: Partial<Nation>, targetId?: Natio
     ...(targetId !== undefined ? { targetId } : {}),
 });
 
+export interface NationAddEffect {
+    type: 'nation:add';
+    nation: Nation;
+}
+
+export const createNationAddEffect = (nation: Nation): NationAddEffect => ({
+    type: 'nation:add',
+    nation,
+});
+
 export const createDiplomacyPatchEffect = (
     srcNationId: NationId,
     destNationId: NationId,
@@ -206,6 +218,7 @@ export const resolveGeneralAction = <TriggerState extends GeneralTriggerState = 
     const logs: LogEntryDraft[] = [];
     let nextTurnAtOverride: Date | null = null;
     const createdGenerals: General[] = [];
+    const createdNations: Nation[] = [];
     const patches: NonNullable<GeneralActionResolution['patches']> = {
         generals: [],
         cities: [],
@@ -283,6 +296,9 @@ export const resolveGeneralAction = <TriggerState extends GeneralTriggerState = 
                         break;
                     case 'general:add':
                         createdGenerals.push(effect.general as General);
+                        break;
+                    case 'nation:add':
+                        createdNations.push(effect.nation as Nation);
                         break;
                     case 'diplomacy:patch':
                         pendingEffects.push(effect);
@@ -366,9 +382,10 @@ export const resolveGeneralAction = <TriggerState extends GeneralTriggerState = 
     if (patches.generals.length > 0 || patches.cities.length > 0 || patches.nations.length > 0) {
         resolution.patches = patches;
     }
-    if (createdGenerals.length > 0) {
+    if (createdGenerals.length > 0 || createdNations.length > 0) {
         resolution.created = {
             generals: createdGenerals,
+            ...(createdNations.length > 0 ? { nations: createdNations } : {}),
         };
     }
 

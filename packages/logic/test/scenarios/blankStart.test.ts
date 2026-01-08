@@ -133,6 +133,8 @@ describe('Blank Start Scenario', () => {
                 if (req.kind === 'env') {
                     if (req.key === 'world') return { currentYear: year };
                     if (req.key === 'openingPartYear') return systemEnv.openingPartYear;
+                    if (req.key === 'relYear') return year - 189;
+                    if (req.key === 'year') return year;
                 }
                 return null;
             },
@@ -181,33 +183,13 @@ describe('Blank Start Scenario', () => {
         ]);
 
         const gen0AfterUprising = world.getGeneral(gen0.id)!;
-        expect(gen0AfterUprising.meta.uprising).toBe(true);
+        expect(gen0AfterUprising.nationId).toBeGreaterThan(0);
+        expect(gen0AfterUprising.officerLevel).toBe(12);
 
-        // Simulate Uprising Daemon
-        const newNationId = 1;
-        const newNation: Nation = {
-            id: newNationId,
-            name: 'Gen0Nation',
-            color: '#FF0000',
-            capitalCityId: gen0AfterUprising.cityId,
-            chiefGeneralId: gen0AfterUprising.id,
-            gold: 10000,
-            rice: 10000,
-            power: 0,
-            level: 0, // Wandering Nation
-            typeCode: 'che_def',
-            meta: {},
-        };
-        world.snapshot.nations.push(newNation);
-        const cityIdx = world.snapshot.cities.findIndex((c) => c.id === gen0AfterUprising.cityId);
-        world.snapshot.cities[cityIdx] = { ...world.snapshot.cities[cityIdx], nationId: newNationId, level: 5 } as City; // level 5 (소)
-        const gen0Idx = world.snapshot.generals.findIndex((g) => g.id === gen0AfterUprising.id);
-        world.snapshot.generals[gen0Idx] = {
-            ...world.snapshot.generals[gen0Idx],
-            nationId: newNationId,
-            officerLevel: 12, // Monarch
-            meta: { ...gen0AfterUprising.meta, uprising: false },
-        } as General;
+        const newNationId = gen0AfterUprising.nationId;
+        const newNation = world.getNation(newNationId)!;
+        expect(newNation.chiefGeneralId).toBe(gen0.id);
+        expect(newNation.level).toBe(0); // Wandering Nation
 
         // --- Step 2: Gen 1 performs Appointment ---
         // Before appointment, Gen 0 should FAIL Founding because general count = 1
@@ -280,8 +262,10 @@ describe('Blank Start Scenario', () => {
             },
         ]);
 
-        expect(world.getGeneral(gen0.id)?.meta.founding).toBe(true);
-        expect(world.getGeneral(gen0.id)?.meta.foundingArgs).toEqual(FOUNDING_ARGS);
+        const nationAfterFounding = world.getNation(newNationId)!;
+        expect(nationAfterFounding.level).toBe(1);
+        expect(nationAfterFounding.name).toBe(FOUNDING_ARGS.nationName);
+        expect(nationAfterFounding.capitalCityId).toBe(gen0.cityId);
     });
 
     it('should fail founding if city is not level 5 or 6', async () => {

@@ -38,6 +38,7 @@ export interface GeneralTurnResult {
     }>;
     created?: {
         generals: TurnGeneral[];
+        nations?: Nation[];
         troops?: Troop[];
     };
 }
@@ -162,6 +163,7 @@ export class InMemoryTurnWorld {
     private readonly dirtyTroopIds = new Set<number>();
     private readonly dirtyDiplomacyKeys = new Set<string>();
     private readonly createdGeneralIds = new Set<number>();
+    private readonly createdNationIds = new Set<number>();
     private readonly createdTroopIds = new Set<number>();
     private readonly createdDiplomacyKeys = new Set<string>();
     private readonly deletedTroopIds = new Set<number>();
@@ -358,6 +360,44 @@ export class InMemoryTurnWorld {
         };
     }
 
+    getNextNationId(): number {
+        const meta = this.state.meta as Record<string, unknown>;
+        let lastId = (meta.lastNationId as number | undefined) ?? 0;
+        if (lastId === 0) {
+            const currentIds = Array.from(this.nations.keys());
+            lastId = currentIds.length > 0 ? Math.max(...currentIds) : 0;
+        }
+
+        const nextId = lastId + 1;
+        this.state = {
+            ...this.state,
+            meta: {
+                ...this.state.meta,
+                lastNationId: nextId,
+            },
+        };
+        return nextId;
+    }
+
+    getNextGeneralId(): number {
+        const meta = this.state.meta as Record<string, unknown>;
+        let lastId = (meta.lastGeneralId as number | undefined) ?? 0;
+        if (lastId === 0) {
+            const currentIds = Array.from(this.generals.keys());
+            lastId = currentIds.length > 0 ? Math.max(...currentIds) : 0;
+        }
+
+        const nextId = lastId + 1;
+        this.state = {
+            ...this.state,
+            meta: {
+                ...this.state.meta,
+                lastGeneralId: nextId,
+            },
+        };
+        return nextId;
+    }
+
     setCheckpoint(checkpoint?: TurnCheckpoint): void {
         this.checkpoint = checkpoint;
     }
@@ -474,6 +514,16 @@ export class InMemoryTurnWorld {
                 this.dirtyGeneralIds.add(createdGeneral.id);
                 this.createdGeneralIds.add(createdGeneral.id);
             }
+            if (result.created.nations) {
+                for (const createdNation of result.created.nations) {
+                    if (this.nations.has(createdNation.id)) {
+                        continue;
+                    }
+                    this.nations.set(createdNation.id, { ...createdNation });
+                    this.dirtyNationIds.add(createdNation.id);
+                    this.createdNationIds.add(createdNation.id);
+                }
+            }
             if (result.created.troops) {
                 for (const createdTroop of result.created.troops) {
                     if (this.troops.has(createdTroop.id)) {
@@ -535,6 +585,7 @@ export class InMemoryTurnWorld {
         diplomacy: TurnDiplomacy[];
         logs: LogEntryDraft[];
         createdGenerals: TurnGeneral[];
+        createdNations: Nation[];
         createdTroops: Troop[];
         createdDiplomacy: TurnDiplomacy[];
     } {
@@ -544,6 +595,9 @@ export class InMemoryTurnWorld {
         const createdGenerals = Array.from(this.createdGeneralIds)
             .map((id) => this.generals.get(id))
             .filter((general): general is TurnGeneral => Boolean(general));
+        const createdNations = Array.from(this.createdNationIds)
+            .map((id) => this.nations.get(id))
+            .filter((nation): nation is Nation => Boolean(nation));
         const cities = Array.from(this.dirtyCityIds)
             .map((id) => this.cities.get(id))
             .filter((city): city is City => Boolean(city));
@@ -572,6 +626,7 @@ export class InMemoryTurnWorld {
         this.dirtyTroopIds.clear();
         this.dirtyDiplomacyKeys.clear();
         this.createdGeneralIds.clear();
+        this.createdNationIds.clear();
         this.createdTroopIds.clear();
         this.createdDiplomacyKeys.clear();
         this.deletedTroopIds.clear();
@@ -587,6 +642,7 @@ export class InMemoryTurnWorld {
             diplomacy,
             logs,
             createdGenerals,
+            createdNations,
             createdTroops,
             createdDiplomacy,
         };

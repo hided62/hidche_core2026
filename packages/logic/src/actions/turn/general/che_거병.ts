@@ -1,14 +1,20 @@
-import type { GeneralTriggerState, TriggerValue } from '@sammo-ts/logic/domain/entities.js';
+import type { GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import { beNeutral } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
+import { createGeneralPatchEffect, createNationAddEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat } from '@sammo-ts/logic/logging/types.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
-import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
+import type { ActionContextBuilder, ActionContextBase } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 
 export interface UprisingArgs {}
+
+export interface UprisingContext extends ActionContextBase {
+    createNationId: () => number;
+    listNations?: () => Nation[];
+}
 
 const ACTION_NAME = '거병';
 
@@ -19,7 +25,6 @@ export class ActionDefinition<
     public readonly name = ACTION_NAME;
 
     parseArgs(_raw: unknown): UprisingArgs | null {
-        void _raw;
         return {};
     }
 
@@ -32,24 +37,92 @@ export class ActionDefinition<
         _args: UprisingArgs
     ): GeneralActionOutcome<TriggerState> {
         const general = context.general;
+        const uprisingCtx = context as unknown as UprisingContext;
 
-        // 직접 수정 (Immer Draft)
-        general.meta = {
-            ...(general.meta as object),
-            uprising: true as TriggerValue,
+        if (!uprisingCtx.createNationId) {
+            throw new Error('createNationId is not defined in context');
+        }
+
+        const newNationId = uprisingCtx.createNationId();
+        const josaYi = '이'; // Mock JodaUtil.pick
+
+        let nationName = general.name;
+        const nations = uprisingCtx.listNations ? uprisingCtx.listNations() : [];
+
+        if (nations.some((n) => n.name === nationName)) {
+            nationName = '㉥' + nationName;
+            if (nationName.length > 18) nationName = nationName.substring(0, 18);
+        }
+
+        if (nations.some((n) => n.name === nationName)) {
+            nationName = '㉥' + nationName;
+        }
+
+        const newNation: Nation = {
+            id: newNationId,
+            name: nationName,
+            color: '#330000',
+            typeCode: 'che_중립',
+            level: 0,
+            capitalCityId: null,
+            chiefGeneralId: general.id,
+            gold: 0,
+            rice: 2000,
+            power: 0,
+            meta: {
+                rate: 20,
+                bill: 100,
+                strategic_cmd_limit: 12,
+                surlimit: 72,
+                secretlimit: 3,
+                gennum: 1,
+            },
         };
 
-        context.addLog(`${ACTION_NAME}을 준비했습니다.`, {
+        const cityName = context.city?.name ?? '??';
+
+        context.addLog(`거병에 성공하였습니다.`, {
+            category: LogCategory.USER,
+            format: LogFormat.PLAIN,
+        });
+        context.addLog(`${general.name}${josaYi} ${cityName}에 거병하였습니다.`, {
             category: LogCategory.ACTION,
             format: LogFormat.MONTH,
         });
+        context.addLog(`【거병】${general.name}${josaYi} 세력을 결성하였습니다.`, {
+            category: LogCategory.HISTORY,
+            format: LogFormat.PLAIN,
+        });
+        context.addLog(`${cityName}에서 거병`, {
+            category: LogCategory.HISTORY,
+            format: LogFormat.PLAIN,
+        });
+        context.addLog(`${general.name}${josaYi} ${cityName}에서 거병`, {
+            category: LogCategory.HISTORY,
+            format: LogFormat.PLAIN,
+        });
 
-        return { effects: [] };
+        const effects = [
+            createNationAddEffect(newNation),
+            createGeneralPatchEffect<TriggerState>({
+                nationId: newNationId,
+                officerLevel: 12,
+                experience: (general.experience || 0) + 100,
+                dedication: (general.dedication || 0) + 100,
+            }),
+        ];
+
+        return { effects };
     }
 }
 
-// 예약 턴 실행은 기본 컨텍스트만 사용한다.
-export const actionContextBuilder = defaultActionContextBuilder;
+export const actionContextBuilder: ActionContextBuilder = (base, options) => {
+    return {
+        ...base,
+        createNationId: options.createNationId,
+        listNations: () => options.worldRef?.listNations() ?? [],
+    };
+};
 
 export const commandSpec: GeneralTurnCommandSpec = {
     key: 'che_거병',
