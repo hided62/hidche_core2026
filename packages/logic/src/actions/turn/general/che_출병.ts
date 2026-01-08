@@ -336,7 +336,13 @@ export class ActionDefinition<
                     `<G><b>${targetName}</b></>${josaRoTarget} 가는 도중 <G><b>${destCity.name}</b></>을 거치기로 합니다.`
                 );
             }
-            return { effects: [] };
+            return {
+                effects: [],
+                alternative: {
+                    commandKey: 'che_이동',
+                    args: { destCityId: destCity.id },
+                },
+            };
         }
 
         if (finalTargetCity.id !== destCity.id) {

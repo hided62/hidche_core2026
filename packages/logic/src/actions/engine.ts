@@ -97,6 +97,10 @@ export type GeneralActionEffect<TriggerState extends GeneralTriggerState = Gener
 
 export interface GeneralActionOutcome<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     effects: GeneralActionEffect<TriggerState>[];
+    alternative?: {
+        commandKey: string;
+        args: unknown;
+    };
 }
 
 export interface GeneralActionResolver<TriggerState extends GeneralTriggerState = GeneralTriggerState, Args = unknown> {
@@ -126,6 +130,10 @@ export interface GeneralActionResolution {
         generalId?: GeneralId;
         cityId?: CityId;
         nationId?: NationId;
+    };
+    alternative?: {
+        commandKey: string;
+        args: unknown;
     };
 }
 
@@ -205,6 +213,7 @@ export const resolveGeneralAction = <TriggerState extends GeneralTriggerState = 
     };
 
     const pendingEffects: GeneralActionEffect[] = [];
+    let outcome: GeneralActionOutcome<TriggerState> | undefined;
     const [nextWorld, worldPatches] = produceWithPatches(
         {
             general: context.general,
@@ -252,9 +261,10 @@ export const resolveGeneralAction = <TriggerState extends GeneralTriggerState = 
                 }
             };
 
-            const outcome = resolver.resolve(
+            outcome = resolver.resolve(
                 {
                     ...context,
+                    // ...
                     general: castDraft(draft.general),
                     city: castDraft(draft.city),
                     nation: castDraft(draft.nation),
@@ -345,6 +355,7 @@ export const resolveGeneralAction = <TriggerState extends GeneralTriggerState = 
         nextTurnAt,
         logs,
         effects: pendingEffects,
+        ...(outcome?.alternative ? { alternative: outcome.alternative } : {}),
     };
     if (nextWorld.city) {
         resolution.city = nextWorld.city as City;
