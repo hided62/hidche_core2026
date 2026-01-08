@@ -290,6 +290,8 @@ export const resolveGeneralAction = <TriggerState extends GeneralTriggerState = 
                                 id: effect.targetId,
                                 patch: effect.patch as Partial<General>,
                             });
+                        } else if (effect.type === 'general:patch') {
+                            Object.assign(draft.general, effect.patch);
                         } else if (
                             effect.type === 'city:patch' &&
                             effect.targetId !== undefined &&
@@ -299,6 +301,8 @@ export const resolveGeneralAction = <TriggerState extends GeneralTriggerState = 
                                 id: effect.targetId,
                                 patch: effect.patch,
                             });
+                        } else if (effect.type === 'city:patch' && draft.city) {
+                            Object.assign(draft.city, effect.patch);
                         } else if (
                             effect.type === 'nation:patch' &&
                             effect.targetId !== undefined &&
@@ -308,6 +312,8 @@ export const resolveGeneralAction = <TriggerState extends GeneralTriggerState = 
                                 id: effect.targetId,
                                 patch: effect.patch,
                             });
+                        } else if (effect.type === 'nation:patch' && draft.nation) {
+                            Object.assign(draft.nation, effect.patch);
                         }
                         break;
                 }
