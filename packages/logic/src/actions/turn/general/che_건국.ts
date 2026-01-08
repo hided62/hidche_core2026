@@ -32,7 +32,7 @@ export class ActionDefinition<
 
     parseArgs(raw: unknown): FoundingArgs | null {
         if (typeof raw !== 'object' || raw === null) return null;
-        const { nationName, nationType, colorType } = raw as any;
+        const { nationName, nationType, colorType } = raw as Record<string, unknown>;
         if (typeof nationName !== 'string' || !nationName) return null;
         if (typeof nationType !== 'string' || !nationType) return null;
         if (typeof colorType !== 'number') return null;
