@@ -31,3 +31,17 @@ export const collectRequirements = (constraints: Constraint[], ctx: ConstraintCo
     }
     return keys;
 };
+
+export interface ActionWithConstraints {
+    buildConstraints(ctx: ConstraintContext, args: unknown): Constraint[];
+}
+
+export const evaluateActionConstraints = <Args>(
+    action: ActionWithConstraints,
+    ctx: ConstraintContext,
+    view: StateView,
+    args: Args
+): ConstraintResult => {
+    const constraints = action.buildConstraints(ctx, args);
+    return evaluateConstraints(constraints, ctx, view);
+};

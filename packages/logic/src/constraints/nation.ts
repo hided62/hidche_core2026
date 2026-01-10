@@ -154,11 +154,11 @@ export const existsDestNation = (): Constraint => ({
     requires: (ctx) =>
         resolveDestNationId(ctx) !== undefined
             ? [
-                {
-                    kind: 'destNation',
-                    id: resolveDestNationId(ctx) ?? 0,
-                },
-            ]
+                  {
+                      kind: 'destNation',
+                      id: resolveDestNationId(ctx) ?? 0,
+                  },
+              ]
             : [],
     test: (ctx, view) => {
         const destNationId = resolveDestNationId(ctx);

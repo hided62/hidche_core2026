@@ -21,21 +21,25 @@ export const notOpeningPart = (relYear: number, openingPartYear: number): Constr
 export const beOpeningPart = (): Constraint => ({
     name: 'beOpeningPart',
     requires: () => [
-        { kind: 'env', key: 'year' },
+        { kind: 'env', key: 'relYear' },
         { kind: 'env', key: 'openingPartYear' },
     ],
     test: (_ctx, view) => {
-        const year = view.get({ kind: 'env', key: 'year' }) as number | undefined;
+        const relYear = view.get({ kind: 'env', key: 'relYear' }) as number | undefined;
         const openingPartYear = view.get({ kind: 'env', key: 'openingPartYear' }) as number | undefined;
 
-        if (year === undefined || openingPartYear === undefined) {
-            // 정보가 없으면 제약을 무시하거나 알림
+        if (openingPartYear === undefined) {
+            return { kind: 'deny', reason: '초반 제한 중에는 불가능합니다.' };
+        }
+
+        if (relYear === undefined) {
+            return { kind: 'deny', reason: '초반 제한 중에는 불가능합니다.' };
+        }
+
+        if (relYear + 1 <= openingPartYear) {
             return allow();
         }
 
-        if (year <= openingPartYear) {
-            return allow();
-        }
-        return { kind: 'deny', reason: '초반이 지났습니다.' };
+        return { kind: 'deny', reason: '초반 제한 중에는 불가능합니다.' };
     },
 });

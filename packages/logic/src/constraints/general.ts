@@ -181,11 +181,11 @@ export const existsDestGeneral = (): Constraint => ({
     requires: (ctx) =>
         resolveDestGeneralId(ctx) !== undefined
             ? [
-                {
-                    kind: 'destGeneral',
-                    id: resolveDestGeneralId(ctx) ?? 0,
-                },
-            ]
+                  {
+                      kind: 'destGeneral',
+                      id: resolveDestGeneralId(ctx) ?? 0,
+                  },
+              ]
             : [],
     test: (ctx, view) => {
         const destGeneralId = resolveDestGeneralId(ctx);

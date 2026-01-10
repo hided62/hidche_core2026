@@ -32,8 +32,8 @@ const readDiplomacyEntry = (
             typeof record.state === 'number'
                 ? record.state
                 : typeof record.stateCode === 'number'
-                    ? record.stateCode
-                    : null;
+                  ? record.stateCode
+                  : null;
         const term = typeof record.term === 'number' ? record.term : null;
         return { state, term };
     }
