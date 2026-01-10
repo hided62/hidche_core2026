@@ -3,7 +3,7 @@ import { allow, readGeneral, readMetaNumber, readNation, resolveDestNationId, un
 import type { Constraint, ConstraintContext, RequirementKey, StateView } from './types.js';
 
 export const notWanderingNation = (): Constraint => ({
-    name: 'NotWanderingNation',
+    name: 'notWanderingNation',
     requires: (ctx) => (ctx.nationId !== undefined ? [{ kind: 'nation', id: ctx.nationId }] : []),
     test: (ctx, view) => {
         const nation = readNation(view, ctx.nationId);
@@ -22,7 +22,7 @@ export const notWanderingNation = (): Constraint => ({
 });
 
 export const beWanderingNation = (): Constraint => ({
-    name: 'BeWanderingNation',
+    name: 'beWanderingNation',
     requires: (ctx) => (ctx.nationId !== undefined ? [{ kind: 'nation', id: ctx.nationId }] : []),
     test: (ctx, view) => {
         const nation = readNation(view, ctx.nationId);
@@ -41,7 +41,7 @@ export const beWanderingNation = (): Constraint => ({
 });
 
 export const availableStrategicCommand = (allowTurnCnt = 0): Constraint => ({
-    name: 'AvailableStrategicCommand',
+    name: 'availableStrategicCommand',
     requires: (ctx) => {
         const reqs: RequirementKey[] = [{ kind: 'general', id: ctx.actorId }];
         if (ctx.nationId !== undefined) {
@@ -85,7 +85,7 @@ export const reqNationGold = (
     getRequiredGold: (ctx: ConstraintContext, view: StateView) => number,
     requirements: RequirementKey[] = []
 ): Constraint => ({
-    name: 'ReqNationGold',
+    name: 'reqNationGold',
     requires: (ctx) => {
         const reqs: RequirementKey[] = [...requirements];
         if (ctx.nationId !== undefined) {
@@ -119,7 +119,7 @@ export const reqNationRice = (
     getRequiredRice: (ctx: ConstraintContext, view: StateView) => number,
     requirements: RequirementKey[] = []
 ): Constraint => ({
-    name: 'ReqNationRice',
+    name: 'reqNationRice',
     requires: (ctx) => {
         const reqs: RequirementKey[] = [...requirements];
         if (ctx.nationId !== undefined) {
@@ -150,15 +150,15 @@ export const reqNationRice = (
 });
 
 export const existsDestNation = (): Constraint => ({
-    name: 'ExistsDestNation',
+    name: 'existsDestNation',
     requires: (ctx) =>
         resolveDestNationId(ctx) !== undefined
             ? [
-                  {
-                      kind: 'destNation',
-                      id: resolveDestNationId(ctx) ?? 0,
-                  },
-              ]
+                {
+                    kind: 'destNation',
+                    id: resolveDestNationId(ctx) ?? 0,
+                },
+            ]
             : [],
     test: (ctx, view) => {
         const destNationId = resolveDestNationId(ctx);
@@ -178,7 +178,7 @@ export const existsDestNation = (): Constraint => ({
 });
 
 export const differentDestNation = (): Constraint => ({
-    name: 'DifferentDestNation',
+    name: 'differentDestNation',
     requires: (ctx) => {
         const reqs: RequirementKey[] = [];
         if (ctx.nationId !== undefined) {
@@ -217,7 +217,7 @@ export const differentDestNation = (): Constraint => ({
 });
 
 export const reqNationGeneralCount = (min: number): Constraint => ({
-    name: 'ReqNationGeneralCount',
+    name: 'reqNationGeneralCount',
     requires: (ctx) => {
         const reqs: RequirementKey[] = [{ kind: 'generalList' }];
         if (ctx.nationId !== undefined) {
@@ -259,7 +259,7 @@ export const reqNationGeneralCount = (min: number): Constraint => ({
 });
 
 export const checkNationNameDuplicate = (name: string): Constraint => ({
-    name: 'CheckNationNameDuplicate',
+    name: 'checkNationNameDuplicate',
     requires: () => [{ kind: 'nationList' }],
     test: (ctx, view) => {
         const nations = view.get({ kind: 'nationList' }) as Nation[] | null;

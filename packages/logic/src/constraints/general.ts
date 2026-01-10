@@ -3,7 +3,7 @@ import { allow, readDestGeneral, resolveDestGeneralId, resolveDestNationId, unkn
 import type { Constraint, ConstraintContext, RequirementKey, StateView } from './types.js';
 
 export const notBeNeutral = (): Constraint => ({
-    name: 'NotBeNeutral',
+    name: 'notBeNeutral',
     requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
     test: (ctx, view) => {
         const req: RequirementKey = { kind: 'general', id: ctx.actorId };
@@ -22,7 +22,7 @@ export const notBeNeutral = (): Constraint => ({
 });
 
 export const beNeutral = (): Constraint => ({
-    name: 'BeNeutral',
+    name: 'beNeutral',
     requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
     test: (ctx, view) => {
         const req: RequirementKey = { kind: 'general', id: ctx.actorId };
@@ -41,7 +41,7 @@ export const beNeutral = (): Constraint => ({
 });
 
 export const beChief = (): Constraint => ({
-    name: 'BeChief',
+    name: 'beChief',
     requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
     test: (ctx, view) => {
         const req: RequirementKey = { kind: 'general', id: ctx.actorId };
@@ -60,7 +60,7 @@ export const beChief = (): Constraint => ({
 });
 
 export const beMonarch = (): Constraint => ({
-    name: 'BeMonarch',
+    name: 'beMonarch',
     requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
     test: (ctx, view) => {
         const req: RequirementKey = { kind: 'general', id: ctx.actorId };
@@ -82,7 +82,7 @@ export const reqGeneralGold = (
     getRequiredGold: (ctx: ConstraintContext, view: StateView) => number,
     requirements: RequirementKey[] = []
 ): Constraint => ({
-    name: 'ReqGeneralGold',
+    name: 'reqGeneralGold',
     requires: (ctx) => [{ kind: 'general', id: ctx.actorId }, ...requirements],
     test: (ctx, view) => {
         const generalReq: RequirementKey = { kind: 'general', id: ctx.actorId };
@@ -106,7 +106,7 @@ export const reqGeneralRice = (
     getRequiredRice: (ctx: ConstraintContext, view: StateView) => number,
     requirements: RequirementKey[] = []
 ): Constraint => ({
-    name: 'ReqGeneralRice',
+    name: 'reqGeneralRice',
     requires: (ctx) => [{ kind: 'general', id: ctx.actorId }, ...requirements],
     test: (ctx, view) => {
         const generalReq: RequirementKey = { kind: 'general', id: ctx.actorId };
@@ -127,7 +127,7 @@ export const reqGeneralRice = (
 });
 
 export const reqGeneralCrew = (): Constraint => ({
-    name: 'ReqGeneralCrew',
+    name: 'reqGeneralCrew',
     requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
     test: (ctx, view) => {
         const generalReq: RequirementKey = { kind: 'general', id: ctx.actorId };
@@ -149,7 +149,7 @@ export const reqGeneralCrewMargin = (
     getCrewTypeId: (ctx: ConstraintContext, view: StateView) => number | null,
     requirements: RequirementKey[] = []
 ): Constraint => ({
-    name: 'ReqGeneralCrewMargin',
+    name: 'reqGeneralCrewMargin',
     requires: (ctx) => [{ kind: 'general', id: ctx.actorId }, ...requirements],
     test: (ctx, view) => {
         const generalReq: RequirementKey = { kind: 'general', id: ctx.actorId };
@@ -177,15 +177,15 @@ export const reqGeneralCrewMargin = (
 });
 
 export const existsDestGeneral = (): Constraint => ({
-    name: 'ExistsDestGeneral',
+    name: 'existsDestGeneral',
     requires: (ctx) =>
         resolveDestGeneralId(ctx) !== undefined
             ? [
-                  {
-                      kind: 'destGeneral',
-                      id: resolveDestGeneralId(ctx) ?? 0,
-                  },
-              ]
+                {
+                    kind: 'destGeneral',
+                    id: resolveDestGeneralId(ctx) ?? 0,
+                },
+            ]
             : [],
     test: (ctx, view) => {
         const destGeneralId = resolveDestGeneralId(ctx);
@@ -205,7 +205,7 @@ export const existsDestGeneral = (): Constraint => ({
 });
 
 export const destGeneralInDestNation = (): Constraint => ({
-    name: 'DestGeneralInDestNation',
+    name: 'destGeneralInDestNation',
     requires: (ctx) => {
         const reqs: RequirementKey[] = [];
         const destGeneralId = resolveDestGeneralId(ctx);
@@ -246,7 +246,7 @@ export const destGeneralInDestNation = (): Constraint => ({
 });
 
 export const friendlyDestGeneral = (): Constraint => ({
-    name: 'FriendlyDestGeneral',
+    name: 'friendlyDestGeneral',
     requires: (ctx) => {
         const reqs: RequirementKey[] = [{ kind: 'general', id: ctx.actorId }];
         const destGeneralId = resolveDestGeneralId(ctx);

@@ -32,8 +32,8 @@ const readDiplomacyEntry = (
             typeof record.state === 'number'
                 ? record.state
                 : typeof record.stateCode === 'number'
-                  ? record.stateCode
-                  : null;
+                    ? record.stateCode
+                    : null;
         const term = typeof record.term === 'number' ? record.term : null;
         return { state, term };
     }
@@ -41,7 +41,7 @@ const readDiplomacyEntry = (
 };
 
 export const disallowDiplomacyBetweenStatus = (disallowList: Record<number, string>): Constraint => ({
-    name: 'DisallowDiplomacyBetweenStatus',
+    name: 'disallowDiplomacyBetweenStatus',
     requires: (ctx) => {
         const reqs: RequirementKey[] = [];
         if (ctx.nationId !== undefined) {
@@ -93,7 +93,7 @@ export const disallowDiplomacyBetweenStatus = (disallowList: Record<number, stri
 });
 
 export const allowDiplomacyBetweenStatus = (allowList: number[], reason: string): Constraint => ({
-    name: 'AllowDiplomacyBetweenStatus',
+    name: 'allowDiplomacyBetweenStatus',
     requires: (ctx) => {
         const reqs: RequirementKey[] = [];
         if (ctx.nationId !== undefined) {
@@ -144,7 +144,7 @@ export const allowDiplomacyBetweenStatus = (allowList: number[], reason: string)
 });
 
 export const allowDiplomacyWithTerm = (requiredState: number, minTerm: number, reason: string): Constraint => ({
-    name: 'AllowDiplomacyWithTerm',
+    name: 'allowDiplomacyWithTerm',
     requires: (ctx) => {
         const reqs: RequirementKey[] = [];
         if (ctx.nationId !== undefined) {
@@ -195,7 +195,7 @@ export const allowDiplomacyWithTerm = (requiredState: number, minTerm: number, r
 });
 
 export const allowDiplomacyStatus = (allowList: number[], reason: string): Constraint => ({
-    name: 'AllowDiplomacyStatus',
+    name: 'allowDiplomacyStatus',
     requires: (ctx) => {
         const reqs: RequirementKey[] = [{ kind: 'general', id: ctx.actorId }];
         if (ctx.nationId !== undefined) {

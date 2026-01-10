@@ -3,7 +3,7 @@ import { allow, unknownOrDeny } from './helpers.js';
 import type { Constraint, RequirementKey } from './types.js';
 
 export const mustBeTroopLeader = (): Constraint => ({
-    name: 'MustBeTroopLeader',
+    name: 'mustBeTroopLeader',
     requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
     test: (ctx, view) => {
         const generalReq: RequirementKey = { kind: 'general', id: ctx.actorId };
@@ -22,7 +22,7 @@ export const mustBeTroopLeader = (): Constraint => ({
 });
 
 export const reqTroopMembers = (): Constraint => ({
-    name: 'ReqTroopMembers',
+    name: 'reqTroopMembers',
     requires: (ctx) => [{ kind: 'general', id: ctx.actorId }, { kind: 'generalList' }],
     test: (ctx, view) => {
         const generalReq: RequirementKey = { kind: 'general', id: ctx.actorId };

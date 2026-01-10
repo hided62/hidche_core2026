@@ -340,11 +340,12 @@ const buildConstraintContext = (
     mode: 'full',
 });
 
-const createActionLog = (message: string): LogEntryDraft => ({
+const createActionLog = (message: string, meta?: Record<string, unknown>): LogEntryDraft => ({
     scope: LogScope.GENERAL,
     category: LogCategory.ACTION,
     format: LogFormat.MONTH,
     text: message,
+    meta,
 });
 
 const resolveDefinition = (
@@ -505,7 +506,8 @@ export const createReservedTurnHandler = async (options: {
                     actionArgs = definition.parseArgs({}) ?? {};
                     actionKey = definition.key;
                     const reason = result.kind === 'deny' ? result.reason : '조건을 확인할 수 없습니다.';
-                    logs.push(createActionLog(reason));
+                    const meta = result.kind === 'deny' ? { constraintName: result.constraintName } : undefined;
+                    logs.push(createActionLog(reason, meta));
                 }
 
                 const seedBase = buildSeedBase(context.world);

@@ -1,6 +1,6 @@
 export type ConstraintResult =
     | { kind: 'allow' }
-    | { kind: 'deny'; reason: string; code?: string }
+    | { kind: 'deny'; reason: string; code?: string; constraintName?: string }
     | { kind: 'unknown'; missing: RequirementKey[] };
 
 export type RequirementKey =

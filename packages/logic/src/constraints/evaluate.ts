@@ -11,6 +11,12 @@ export const evaluateConstraints = (
             return { kind: 'unknown', missing };
         }
         const result = constraint.test(ctx, view);
+        if (result.kind === 'deny') {
+            return {
+                ...result,
+                constraintName: result.constraintName ?? constraint.name,
+            };
+        }
         if (result.kind !== 'allow') {
             return result;
         }

@@ -2,13 +2,13 @@ import { allow } from './helpers.js';
 import type { Constraint } from './types.js';
 
 export const alwaysFail = (reason: string): Constraint => ({
-    name: 'AlwaysFail',
+    name: 'alwaysFail',
     requires: () => [],
     test: () => ({ kind: 'deny', reason }),
 });
 
 export const notOpeningPart = (relYear: number, openingPartYear: number): Constraint => ({
-    name: 'NotOpeningPart',
+    name: 'notOpeningPart',
     requires: () => [],
     test: (_ctx) => {
         if (relYear >= openingPartYear) {
@@ -19,7 +19,7 @@ export const notOpeningPart = (relYear: number, openingPartYear: number): Constr
 });
 
 export const beOpeningPart = (): Constraint => ({
-    name: 'BeOpeningPart',
+    name: 'beOpeningPart',
     requires: () => [
         { kind: 'env', key: 'year' },
         { kind: 'env', key: 'openingPartYear' },

@@ -14,7 +14,7 @@ import {
 import type { Constraint, RequirementKey } from './types.js';
 
 export const occupiedCity = (options: { allowNeutral?: boolean } = {}): Constraint => ({
-    name: 'OccupiedCity',
+    name: 'occupiedCity',
     requires: (ctx) => {
         const reqs: RequirementKey[] = [{ kind: 'general', id: ctx.actorId }];
         if (ctx.cityId !== undefined) {
@@ -51,7 +51,7 @@ export const occupiedCity = (options: { allowNeutral?: boolean } = {}): Constrai
 });
 
 export const occupiedDestCity = (): Constraint => ({
-    name: 'OccupiedDestCity',
+    name: 'occupiedDestCity',
     requires: (ctx) => {
         const reqs: RequirementKey[] = [{ kind: 'general', id: ctx.actorId }];
         const destCityId = resolveDestCityId(ctx);
@@ -90,7 +90,7 @@ export const occupiedDestCity = (): Constraint => ({
 });
 
 export const suppliedCity = (): Constraint => ({
-    name: 'SuppliedCity',
+    name: 'suppliedCity',
     requires: (ctx) => (ctx.cityId !== undefined ? [{ kind: 'city', id: ctx.cityId }] : []),
     test: (ctx, view) => {
         const city = readCity(view, ctx.cityId);
@@ -109,15 +109,15 @@ export const suppliedCity = (): Constraint => ({
 });
 
 export const suppliedDestCity = (): Constraint => ({
-    name: 'SuppliedDestCity',
+    name: 'suppliedDestCity',
     requires: (ctx) =>
         resolveDestCityId(ctx) !== undefined
             ? [
-                  {
-                      kind: 'destCity',
-                      id: resolveDestCityId(ctx) ?? 0,
-                  },
-              ]
+                {
+                    kind: 'destCity',
+                    id: resolveDestCityId(ctx) ?? 0,
+                },
+            ]
             : [],
     test: (ctx, view) => {
         const destCity = readDestCity(ctx, view);
@@ -140,7 +140,7 @@ export const suppliedDestCity = (): Constraint => ({
 });
 
 export const remainCityCapacity = (key: keyof City, label: string): Constraint => ({
-    name: 'RemainCityCapacity',
+    name: 'remainCityCapacity',
     requires: (ctx) => (ctx.cityId !== undefined ? [{ kind: 'city', id: ctx.cityId }] : []),
     test: (ctx, view) => {
         const city = readCity(view, ctx.cityId);
@@ -165,7 +165,7 @@ export const remainCityCapacity = (key: keyof City, label: string): Constraint =
 });
 
 export const remainCityCapacityByMax = (key: keyof City, maxKey: keyof City, label: string): Constraint => ({
-    name: 'RemainCityCapacityByMax',
+    name: 'remainCityCapacityByMax',
     requires: (ctx) => (ctx.cityId !== undefined ? [{ kind: 'city', id: ctx.cityId }] : []),
     test: (ctx, view) => {
         const city = readCity(view, ctx.cityId);
@@ -189,7 +189,7 @@ export const remainCityCapacityByMax = (key: keyof City, maxKey: keyof City, lab
 });
 
 export const reqCityCapacity = (key: keyof City, label: string, required: number | string): Constraint => ({
-    name: 'ReqCityCapacity',
+    name: 'reqCityCapacity',
     requires: (ctx) => (ctx.cityId !== undefined ? [{ kind: 'city', id: ctx.cityId }] : []),
     test: (ctx, view) => {
         const city = readCity(view, ctx.cityId);
@@ -222,7 +222,7 @@ export const reqCityCapacity = (key: keyof City, label: string, required: number
 });
 
 export const reqCityTrust = (minTrust: number): Constraint => ({
-    name: 'ReqCityTrust',
+    name: 'reqCityTrust',
     requires: (ctx) => (ctx.cityId !== undefined ? [{ kind: 'city', id: ctx.cityId }] : []),
     test: (ctx, view) => {
         const city = readCity(view, ctx.cityId);
@@ -245,15 +245,15 @@ export const reqCityTrust = (minTrust: number): Constraint => ({
 });
 
 export const existsDestCity = (): Constraint => ({
-    name: 'ExistsDestCity',
+    name: 'existsDestCity',
     requires: (ctx) =>
         resolveDestCityId(ctx) !== undefined
             ? [
-                  {
-                      kind: 'destCity',
-                      id: resolveDestCityId(ctx) ?? 0,
-                  },
-              ]
+                {
+                    kind: 'destCity',
+                    id: resolveDestCityId(ctx) ?? 0,
+                },
+            ]
             : [],
     test: (ctx, view) => {
         const destCityId = resolveDestCityId(ctx);
@@ -273,7 +273,7 @@ export const existsDestCity = (): Constraint => ({
 });
 
 export const notOccupiedDestCity = (): Constraint => ({
-    name: 'NotOccupiedDestCity',
+    name: 'notOccupiedDestCity',
     requires: (ctx) => {
         const reqs: RequirementKey[] = [{ kind: 'general', id: ctx.actorId }];
         const destCityId = resolveDestCityId(ctx);
@@ -311,15 +311,15 @@ export const notOccupiedDestCity = (): Constraint => ({
 });
 
 export const notNeutralDestCity = (): Constraint => ({
-    name: 'NotNeutralDestCity',
+    name: 'notNeutralDestCity',
     requires: (ctx) =>
         resolveDestCityId(ctx) !== undefined
             ? [
-                  {
-                      kind: 'destCity',
-                      id: resolveDestCityId(ctx) ?? 0,
-                  },
-              ]
+                {
+                    kind: 'destCity',
+                    id: resolveDestCityId(ctx) ?? 0,
+                },
+            ]
             : [],
     test: (ctx, view) => {
         const destCity = readDestCity(ctx, view);
@@ -342,7 +342,7 @@ export const notNeutralDestCity = (): Constraint => ({
 });
 
 export const notSameDestCity = (): Constraint => ({
-    name: 'NotSameDestCity',
+    name: 'notSameDestCity',
     requires: (ctx) => {
         const reqs: RequirementKey[] = [{ kind: 'general', id: ctx.actorId }];
         const destCityId = resolveDestCityId(ctx);
@@ -369,7 +369,7 @@ export const notSameDestCity = (): Constraint => ({
 });
 
 export const hasRouteWithEnemy = (): Constraint => ({
-    name: 'HasRouteWithEnemy',
+    name: 'hasRouteWithEnemy',
     requires: (ctx) => {
         const reqs: RequirementKey[] = [{ kind: 'general', id: ctx.actorId }];
         const destCityId = resolveDestCityId(ctx);
@@ -435,7 +435,7 @@ export const hasRouteWithEnemy = (): Constraint => ({
 });
 
 export const beNeutralCity = (): Constraint => ({
-    name: 'BeNeutralCity',
+    name: 'beNeutralCity',
     requires: (ctx) => (ctx.cityId !== undefined ? [{ kind: 'city', id: ctx.cityId }] : []),
     test: (ctx, view) => {
         const city = readCity(view, ctx.cityId);
@@ -463,7 +463,7 @@ export const beNeutralCity = (): Constraint => ({
 });
 
 export const reqCityLevel = (levels: number[]): Constraint => ({
-    name: 'ReqCityLevel',
+    name: 'reqCityLevel',
     requires: (ctx) => (ctx.cityId !== undefined ? [{ kind: 'city', id: ctx.cityId }] : []),
     test: (ctx, view) => {
         const city = readCity(view, ctx.cityId);
