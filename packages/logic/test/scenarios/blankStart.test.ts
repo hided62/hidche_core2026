@@ -10,6 +10,7 @@ import { commandSpec as uprisingSpec } from '../../src/actions/turn/general/che_
 import { commandSpec as appointmentSpec } from '../../src/actions/turn/general/che_임관.js';
 import type { TurnCommandEnv } from '../../src/actions/turn/commandEnv.js';
 import type { ConstraintContext, RequirementKey, StateView } from '../../src/constraints/types.js';
+import { evaluateActionConstraints } from '../../src/constraints/evaluate.js';
 
 // Mock Scenario Definition
 const MOCK_SCENARIO: ScenarioDefinition = {
@@ -113,7 +114,7 @@ describe('Blank Start Scenario', () => {
         };
     }
 
-    function createViewState(world: InMemoryWorld, year: number = 189): StateView {
+    function createViewState(world: InMemoryWorld, year: number = 189, env: TurnCommandEnv = systemEnv): StateView {
         return {
             has: (req: RequirementKey) => {
                 if (req.kind === 'general') return world.getGeneral(req.id) !== undefined;
@@ -132,7 +133,7 @@ describe('Blank Start Scenario', () => {
                 if (req.kind === 'nationList') return world.snapshot.nations;
                 if (req.kind === 'env') {
                     if (req.key === 'world') return { currentYear: year };
-                    if (req.key === 'openingPartYear') return systemEnv.openingPartYear;
+                    if (req.key === 'openingPartYear') return env.openingPartYear;
                     if (req.key === 'relYear') return year - 189;
                     if (req.key === 'year') return year;
                 }
@@ -194,12 +195,12 @@ describe('Blank Start Scenario', () => {
         // --- Step 2: Gen 1 performs Appointment ---
         // Before appointment, Gen 0 should FAIL Founding because general count = 1
         const ctxBefore = createConstraintContext(world.getGeneral(gen0.id)!, 189, FOUNDING_ARGS);
-        const viewBefore = createViewState(world, 189);
-        const resultFailCount = foundNationDef
-            .buildConstraints(ctxBefore, FOUNDING_ARGS)
-            .find((c) => c.name === 'ReqNationGeneralCount')
-            ?.test(ctxBefore, viewBefore);
-        expect(resultFailCount?.kind).toBe('deny');
+        const viewBefore = createViewState(world, 189, ctxBefore.env as any);
+        const resultFailCount = evaluateActionConstraints(foundNationDef, ctxBefore, viewBefore, FOUNDING_ARGS);
+        expect(resultFailCount.kind).toBe('deny');
+        if (resultFailCount.kind === 'deny') {
+            expect(resultFailCount.constraintName).toBe('reqNationGeneralCount');
+        }
 
         await runner.runTurn([
             {
@@ -238,20 +239,23 @@ describe('Blank Start Scenario', () => {
             ...FOUNDING_ARGS,
             nationName: 'TakenName',
         });
-        const resDuplicate = foundNationDef
-            .buildConstraints(ctxDuplicate, { ...FOUNDING_ARGS, nationName: 'TakenName' })
-            .find((c) => c.name === 'CheckNationNameDuplicate')
-            ?.test(ctxDuplicate, createViewState(world, 189));
-        expect(resDuplicate?.kind).toBe('deny');
+        const resDuplicate = evaluateActionConstraints(
+            foundNationDef,
+            ctxDuplicate,
+            createViewState(world, 189, ctxDuplicate.env as any),
+            { ...FOUNDING_ARGS, nationName: 'TakenName' }
+        );
+        expect(resDuplicate.kind).toBe('deny');
+        if (resDuplicate.kind === 'deny') {
+            expect(resDuplicate.constraintName).toBe('checkNationNameDuplicate');
+        }
 
         // Now it should pass constraints
         const finalGen0 = world.getGeneral(gen0.id)!;
         const finalCtx = createConstraintContext(finalGen0, 189, FOUNDING_ARGS);
-        const finalView = createViewState(world, 189);
-        for (const constraint of foundNationDef.buildConstraints(finalCtx, FOUNDING_ARGS)) {
-            const res = constraint.test(finalCtx, finalView);
-            expect(res.kind).toBe('allow');
-        }
+        const finalView = createViewState(world, 189, finalCtx.env as any);
+        const finalResult = evaluateActionConstraints(foundNationDef, finalCtx, finalView, FOUNDING_ARGS);
+        expect(finalResult.kind).toBe('allow');
 
         await runner.runTurn([
             {
@@ -294,18 +298,24 @@ describe('Blank Start Scenario', () => {
         world.snapshot.nations.push(newNation);
         const gen0Idx = world.snapshot.generals.findIndex((g) => g.id === gen0.id);
         world.snapshot.generals[gen0Idx] = { ...gen0, nationId: 1, officerLevel: 12 } as General;
+
+        // Add another general to satisfy reqNationGeneralCount(2)
+        const gen1 = world.getAllGenerals().find((g) => g.id !== gen0.id)!;
+        const gen1Idx = world.snapshot.generals.findIndex((g) => g.id === gen1.id);
+        world.snapshot.generals[gen1Idx] = { ...gen1, nationId: 1 } as General;
+
         const cityIdx = world.snapshot.cities.findIndex((c) => c.id === gen0.cityId);
         world.snapshot.cities[cityIdx] = { ...world.snapshot.cities[cityIdx], level: 1 } as City;
 
         const foundNationDef = foundNationSpec.createDefinition(systemEnv);
         const ctx = createConstraintContext(world.getGeneral(gen0.id)!, 189, FOUNDING_ARGS);
-        const view = createViewState(world, 189);
+        const view = createViewState(world, 189, ctx.env as any);
 
-        const resLevel = foundNationDef
-            .buildConstraints(ctx, FOUNDING_ARGS)
-            .find((c) => c.name === 'reqCityLevel')
-            ?.test(ctx, view);
-        expect(resLevel?.kind).toBe('deny');
+        const resLevel = evaluateActionConstraints(foundNationDef, ctx, view, FOUNDING_ARGS);
+        expect(resLevel.kind).toBe('deny');
+        if (resLevel.kind === 'deny') {
+            expect(resLevel.constraintName).toBe('reqCityLevel');
+        }
     });
 
     it('should fail founding after opening part', async () => {
@@ -318,19 +328,43 @@ describe('Blank Start Scenario', () => {
         const gen0 = world.getAllGenerals().find((g) => g.name === 'General_0')!;
 
         const foundNationDef = foundNationSpec.createDefinition(systemEnv);
+        // Setup monarch and enough generals
+        const newNation: Nation = {
+            id: 1,
+            name: 'Test',
+            color: '#FF0000',
+            capitalCityId: gen0.cityId,
+            chiefGeneralId: gen0.id,
+            gold: 10000,
+            rice: 10000,
+            power: 0,
+            level: 0,
+            typeCode: 'che_def',
+            meta: {},
+        };
+        world.snapshot.nations.push(newNation);
+        const gen0Idx = world.snapshot.generals.findIndex((g) => g.id === gen0.id);
+        world.snapshot.generals[gen0Idx] = { ...gen0, nationId: 1, officerLevel: 12 } as General;
+        const gen1 = world.getAllGenerals().find((g) => g.id !== gen0.id)!;
+        const gen1Idx = world.snapshot.generals.findIndex((g) => g.id === gen1.id);
+        world.snapshot.generals[gen1Idx] = { ...gen1, nationId: 1 } as General;
+
         // startYear가 189였음
         const year = 190;
-        const ctx = createConstraintContext(gen0, year, FOUNDING_ARGS);
-        const view = createViewState(world, year);
+        const ctx = createConstraintContext(world.getGeneral(gen0.id)!, year, FOUNDING_ARGS);
+        // OpeningPartYear를 1로 설정하여 189(rel 0)만 허용하고 190(rel 1)은 실패하게 함
+        ctx.env.openingPartYear = 1;
 
-        let result = true;
-        for (const constraint of foundNationDef.buildConstraints(ctx, FOUNDING_ARGS)) {
-            const res = constraint.test(ctx, view);
-            if (res.kind === 'deny') {
-                result = false;
-                break;
-            }
+        // Ensure city level doesn't block evaluation before beOpeningPart
+        const cityIdx = world.snapshot.cities.findIndex((c) => c.id === gen0.cityId);
+        world.snapshot.cities[cityIdx] = { ...world.snapshot.cities[cityIdx], level: 5 } as City;
+
+        const view = createViewState(world, year, ctx.env as any);
+
+        const res = evaluateActionConstraints(foundNationDef, ctx, view, FOUNDING_ARGS);
+        expect(res.kind).toBe('deny');
+        if (res.kind === 'deny') {
+            expect(res.constraintName).toBe('beOpeningPart');
         }
-        expect(result).toBe(false);
     });
 });
