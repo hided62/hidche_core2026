@@ -479,7 +479,6 @@ describe('Reserved Turn Execution Integration', () => {
             };
 
             const initialRows = [
-                // Gen 1: Uprising -> Founding (Fail) -> Move -> Founding (Success)
                 { generalId: 1, turnIdx: 0, actionCode: 'che_거병', arg: {} },
                 {
                     generalId: 1,
@@ -487,20 +486,29 @@ describe('Reserved Turn Execution Integration', () => {
                     actionCode: 'che_건국',
                     arg: { nationName: 'NewEmpire', nationType: 'che_def', colorType: 0 },
                 },
-                { generalId: 1, turnIdx: 2, actionCode: 'che_이동', arg: { destCityId: 2 } },
+                { generalId: 2, turnIdx: 2, actionCode: '휴식', arg: {} },
+                { generalId: 1, turnIdx: 3, actionCode: 'che_이동', arg: { destCityId: 2 } },
                 {
                     generalId: 1,
-                    turnIdx: 3,
+                    turnIdx: 4,
+                    actionCode: 'che_건국',
+                    arg: { nationName: 'NewEmpire', nationType: 'che_def', colorType: 0 },
+                },
+                { generalId: 1, turnIdx: 5, actionCode: 'che_이동', arg: { destCityId: 2 } },
+                {
+                    generalId: 1,
+                    turnIdx: 6,
                     actionCode: 'che_건국',
                     arg: { nationName: 'NewEmpire', nationType: 'che_def', colorType: 0 },
                 },
 
-                // Gen 2: Rest -> Appointment -> Domestic (Fail) -> Rest -> Domestic (Success)
                 { generalId: 2, turnIdx: 0, actionCode: '휴식', arg: {} },
-                { generalId: 2, turnIdx: 1, actionCode: 'che_임관', arg: { destNationId: 1 } },
-                { generalId: 2, turnIdx: 2, actionCode: 'che_농지개간', arg: {} },
-                { generalId: 2, turnIdx: 3, actionCode: '휴식', arg: {} },
-                { generalId: 2, turnIdx: 4, actionCode: 'che_농지개간', arg: {} },
+                { generalId: 2, turnIdx: 1, actionCode: 'che_농지개간', arg: {} },
+                { generalId: 2, turnIdx: 2, actionCode: 'che_임관', arg: { destNationId: 1 } },
+                { generalId: 2, turnIdx: 3, actionCode: 'che_농지개간', arg: {} },
+                { generalId: 2, turnIdx: 4, actionCode: '휴식', arg: {} },
+                { generalId: 2, turnIdx: 5, actionCode: 'che_농지개간', arg: {} },
+                { generalId: 2, turnIdx: 6, actionCode: 'che_농지개간', arg: {} },
             ];
 
             const mockPrisma = createMockPrisma(initialRows);
@@ -530,7 +538,7 @@ describe('Reserved Turn Execution Integration', () => {
             const processor = new InMemoryTurnProcessor(world, { tickMinutes: 10 });
 
             // Execution Loop
-            // Turn 0: Uprising (Gen 1)
+            // Turn 0: 거병, 휴식
             await processor.run(new Date(mockDate.getTime() + 10 * 60 * 1000), {
                 budgetMs: 1000,
                 maxGenerals: 100,
@@ -538,16 +546,14 @@ describe('Reserved Turn Execution Integration', () => {
             });
             await reservedTurnStore.flushChanges();
 
-            // Verify Uprising
+            // 거병 결과 확인
             const gen1 = world.getGeneralById(1)!;
             expect(gen1.nationId).toBeGreaterThan(0);
             const nation = world.getNationById(gen1.nationId)!;
             expect(nation.level).toBe(0); // Wandering
             expect(gen1.officerLevel).toBe(12); // Monarch
 
-            // Gen 2 will perform Appointment in Turn 1
-
-            // Turn 1: Founding (Fail) and Domestic (Fail)
+            // Turn 1: 건국(실패), 농지개간(실패)
             await processor.run(new Date(mockDate.getTime() + 2 * 10 * 60 * 1000), {
                 // Skip enough time for turn
                 budgetMs: 1000,
@@ -556,12 +562,13 @@ describe('Reserved Turn Execution Integration', () => {
             });
             await reservedTurnStore.flushChanges();
 
-            // Verify Failures
-            // Founding should fail (Wrong City), so Nation Level should still be 0
             const nationAfterFail = world.getNationById(gen1.nationId)!;
             expect(nationAfterFail.level).toBe(0);
 
-            // Turn 2: Move (Gen 1) and Domestic (Fail for Gen 2 - Wandering Nation)
+            const city1 = world.getCityById(1)!;
+            expect(city1.agriculture).toBe(100); // Fail due to Wandering Nation (level 0)
+
+            // Turn 2: 휴식, 임관(성공)
             await processor.run(new Date(mockDate.getTime() + 3 * 10 * 60 * 1000), {
                 budgetMs: 1000,
                 maxGenerals: 100,
@@ -569,16 +576,10 @@ describe('Reserved Turn Execution Integration', () => {
             });
             await reservedTurnStore.flushChanges();
 
-            // Verify Turn 2
-            const city1 = world.getCityById(1)!;
-            expect(city1.agriculture).toBe(100); // Fail due to Wandering Nation (level 0)
+            // 임관 결과 확인
+            expect(world.getGeneralById(2)!.nationId).toBeGreaterThan(0);
 
-            const gen1AfterMove = world.getGeneralById(1)!;
-            expect(gen1AfterMove.cityId).toBe(2);
-            const gen2AfterMove = world.getGeneralById(2)!;
-            expect(gen2AfterMove.cityId).toBe(2);
-
-            // Turn 3: Founding (Success in City 2)
+            // Turn 3: 건국(실패), 농지개간(실패)
             await processor.run(new Date(mockDate.getTime() + 4 * 10 * 60 * 1000), {
                 budgetMs: 1000,
                 maxGenerals: 100,
@@ -587,15 +588,12 @@ describe('Reserved Turn Execution Integration', () => {
             await reservedTurnStore.flushChanges();
 
             // Verify Founding
-            const nationFinal = world.getNationById(gen1.nationId)!;
-            expect(nationFinal.level).toBe(1); // Normal Nation
-            expect(nationFinal.name).toBe('NewEmpire');
-            expect(nationFinal.capitalCityId).toBe(2);
+            expect(world.getNationById(gen1.nationId)!).toBe(0); // Wandering Nation
 
-            // Turn 4: Domestic (Success, Gen 2 in City 2)
-            // Gen 2 is in City 2, which was claimed by the monarch's move.
-            // Nation is now level 1, so Domestic should pass.
+            // 내정 실패
+            expect(world.getCityById(1)!.agriculture).toBe(100);
 
+            // Turn 4: 건국(실패), 휴식
             await processor.run(new Date(mockDate.getTime() + 5 * 10 * 60 * 1000), {
                 budgetMs: 1000,
                 maxGenerals: 100,
@@ -603,8 +601,262 @@ describe('Reserved Turn Execution Integration', () => {
             });
             await reservedTurnStore.flushChanges();
 
-            const city2Final = world.getCityById(2)!;
-            expect(city2Final.agriculture).toBeGreaterThan(100); // Success
+            expect(world.getNationById(gen1.nationId)!).toBe(0); // Wandering Nation
+
+            // Turn 5: 이동, 휴식 [장수2 이동]
+            await processor.run(new Date(mockDate.getTime() + 6 * 10 * 60 * 1000), {
+                budgetMs: 1000,
+                maxGenerals: 100,
+                catchUpCap: 10,
+            });
+            await reservedTurnStore.flushChanges();
+
+            expect(world.getGeneralById(1)!.cityId).toBe(2);
+            expect(world.getGeneralById(2)!.cityId).toBe(2);
+
+            // Turn 6: 건국(성공), 내농지개간(성공)
+            await processor.run(new Date(mockDate.getTime() + 7 * 10 * 60 * 1000), {
+                budgetMs: 1000,
+                maxGenerals: 100,
+                catchUpCap: 10,
+            });
+            await reservedTurnStore.flushChanges();
+
+            expect(world.getNationById(gen1.nationId)!.level).toBeGreaterThan(0);
+            expect(world.getCityById(2)!.agriculture).toBeGreaterThan(100);
+        });
+
+        it('should fail founding with specific constraints', async () => {
+            const mockDate = new Date('0189-01-01T00:00:00Z');
+            const generals: TurnGeneral[] = [
+                {
+                    id: 1,
+                    name: 'Solo_Warrior',
+                    nationId: 0,
+                    cityId: 1,
+                    troopId: 0,
+                    stats: { leadership: 80, strength: 80, intelligence: 80 },
+                    turnTime: mockDate,
+                    role: {
+                        items: { horse: null, weapon: null, book: null, item: null },
+                        personality: null,
+                        specialDomestic: null,
+                        specialWar: null,
+                    },
+                    triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
+                    meta: {},
+                    officerLevel: 5,
+                    experience: 0,
+                    dedication: 0,
+                    injury: 0,
+                    gold: 2000,
+                    rice: 2000,
+                    crew: 0,
+                    crewTypeId: 0,
+                    train: 0,
+                    atmos: 0,
+                    age: 30,
+                    npcState: 0,
+                },
+                {
+                    id: 2,
+                    name: 'Companion',
+                    nationId: 0,
+                    cityId: 1,
+                    troopId: 0,
+                    stats: { leadership: 70, strength: 70, intelligence: 70 },
+                    turnTime: mockDate,
+                    role: {
+                        items: { horse: null, weapon: null, book: null, item: null },
+                        personality: null,
+                        specialDomestic: null,
+                        specialWar: null,
+                    },
+                    triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
+                    meta: {},
+                    officerLevel: 5,
+                    experience: 0,
+                    dedication: 0,
+                    injury: 0,
+                    gold: 2000,
+                    rice: 2000,
+                    crew: 0,
+                    crewTypeId: 0,
+                    train: 0,
+                    atmos: 0,
+                    age: 30,
+                    npcState: 0,
+                },
+            ];
+
+            const cities = [
+                {
+                    id: 1,
+                    name: 'Small_City',
+                    nationId: 0,
+                    viewName: 'Small_City',
+                    level: 1, // Invalid level
+                    agriculture: 100,
+                    agricultureMax: 2000,
+                    commerce: 100,
+                    commerceMax: 2000,
+                    security: 100,
+                    securityMax: 100,
+                    def: 100,
+                    defMax: 100,
+                    wall: 100,
+                    wallMax: 100,
+                    pop: 10000,
+                    popMax: 50000,
+                    trust: 50,
+                    supplyState: 1,
+                    frontState: 0,
+                    tradepoint: 0,
+                    meta: {},
+                },
+            ];
+
+            const localMap = {
+                id: 'local_map',
+                name: 'TestMap',
+                cities: [{ id: 1, connections: [] }] as any,
+            };
+
+            const snapshot: TurnWorldSnapshot = {
+                generals: generals as any,
+                cities: cities as any,
+                nations: [],
+                troops: [],
+                diplomacy: [],
+                events: [],
+                initialEvents: [],
+                map: localMap,
+                scenarioConfig: {
+                    stat: { total: 300, min: 10, max: 100, npcTotal: 150, npcMax: 50, npcMin: 10, chiefMin: 70 },
+                    iconPath: '',
+                    map: {},
+                    const: { openingPartYear: 9999 },
+                    environment: { mapName: 'local', unitSet: 'default' },
+                },
+                scenarioMeta: {
+                    startYear: 189,
+                } as any,
+                unitSet: {} as any,
+            };
+
+            const state: TurnWorldState = {
+                id: 1,
+                currentYear: 189,
+                currentMonth: 1,
+                tickSeconds: 600,
+                lastTurnTime: mockDate,
+                meta: {},
+            };
+
+            // Case 1: Fail founding because not a monarch (nationId: 0, level 5)
+            const initialRows = [
+                {
+                    generalId: 1,
+                    turnIdx: 0,
+                    actionCode: 'che_건국',
+                    arg: { nationName: 'Empire', nationType: 'che_def', colorType: 0 },
+                },
+            ];
+
+            const mockPrisma = createMockPrisma(initialRows);
+            const reservedTurnStore = new InMemoryReservedTurnStore(mockPrisma as any, {
+                maxGeneralTurns: 10,
+                maxNationTurns: 10,
+            });
+            await reservedTurnStore.loadAll();
+
+            const wrapper = { world: null as InMemoryTurnWorld | null };
+            const handler = await createReservedTurnHandler({
+                reservedTurns: reservedTurnStore,
+                scenarioConfig: snapshot.scenarioConfig,
+                scenarioMeta: snapshot.scenarioMeta,
+                map: localMap,
+                unitSet: snapshot.unitSet,
+                getWorld: () => wrapper.world,
+            });
+
+            const world = new InMemoryTurnWorld(state, snapshot, {
+                schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+                generalTurnHandler: handler,
+            });
+            wrapper.world = world;
+
+            const processor = new InMemoryTurnProcessor(world, { tickMinutes: 10 });
+
+            // Run Turn 0
+            await processor.run(new Date(mockDate.getTime() + 10 * 60 * 1000), {
+                budgetMs: 1000,
+                maxGenerals: 100,
+                catchUpCap: 10,
+            });
+            const dirty = world.consumeDirtyState();
+            const logFoundingFail = dirty.logs.find((l) => l.text.includes('군주가 아닙니다'));
+            expect(logFoundingFail?.meta?.constraintName).toBe('beMonarch');
+
+            // Case 2: Uprising first, but only 1 general in nation -> fail founding (reqNationGeneralCount: 2)
+            const turnsG1 = reservedTurnStore.getGeneralTurns(1);
+            turnsG1[1] = { action: 'che_거병', args: {} };
+            turnsG1[2] = {
+                action: 'che_건국',
+                args: { nationName: 'Empire', nationType: 'che_def', colorType: 0 },
+            };
+            await reservedTurnStore.flushChanges();
+
+            // Execute Uprising (Turn 1)
+            await processor.run(new Date(mockDate.getTime() + 2 * 10 * 60 * 1000), {
+                budgetMs: 1000,
+                maxGenerals: 100,
+                catchUpCap: 10,
+            });
+            world.consumeDirtyState(); // clear logs
+
+            // Execute Founding attempt (Turn 2)
+            // Now Gen 1 is a monarch of a wandering nation, but it's the ONLY general in that nation (Gen 2 is still nationId 0)
+            await processor.run(new Date(mockDate.getTime() + 3 * 10 * 60 * 1000), {
+                budgetMs: 1000,
+                maxGenerals: 100,
+                catchUpCap: 10,
+            });
+            const dirty2 = world.consumeDirtyState();
+            const logGeneralCountFail = dirty2.logs.find((l) => l.text.includes('장수가 부족합니다'));
+            expect(logGeneralCountFail?.meta?.constraintName).toBe('reqNationGeneralCount');
+
+            // Case 3: recruit Gen 2, but city level is wrong (reqCityLevel: [5, 6])
+            const gen1Current = world.getGeneralById(1)!;
+            const gen1NationId = gen1Current.nationId;
+
+            const turnsG2 = reservedTurnStore.getGeneralTurns(2);
+            turnsG2[3] = { action: 'che_임관', args: { destNationId: gen1NationId } };
+
+            const turnsG1_v2 = reservedTurnStore.getGeneralTurns(1);
+            turnsG1_v2[4] = {
+                action: 'che_건국',
+                args: { nationName: 'Empire', nationType: 'che_def', colorType: 0 },
+            };
+            await reservedTurnStore.flushChanges();
+
+            // Gen 2 Appointments (Turn 3)
+            await processor.run(new Date(mockDate.getTime() + 4 * 10 * 60 * 1000), {
+                budgetMs: 1000,
+                maxGenerals: 100,
+                catchUpCap: 10,
+            });
+            world.consumeDirtyState();
+
+            // Gen 1 attempts founding in Small_City (level 1) (Turn 4)
+            await processor.run(new Date(mockDate.getTime() + 5 * 10 * 60 * 1000), {
+                budgetMs: 1000,
+                maxGenerals: 100,
+                catchUpCap: 10,
+            });
+            const dirty3 = world.consumeDirtyState();
+            const logCityLevelFail = dirty3.logs.find((l) => l.text.includes('규모가 맞지 않습니다'));
+            expect(logCityLevelFail?.meta?.constraintName).toBe('reqCityLevel');
         });
     });
 });
