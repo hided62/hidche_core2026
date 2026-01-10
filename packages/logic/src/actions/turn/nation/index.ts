@@ -15,6 +15,14 @@ export const NATION_TURN_COMMAND_KEYS = [
     'che_이호경식',
     'che_수몰',
     'che_급습',
+    'che_천도',
+    'che_국호변경',
+    'che_무작위수도이전',
+    'che_국기변경',
+    'che_증축',
+    'che_감축',
+    'che_몰수',
+    'che_물자원조',
 ] as const;
 
 export type NationTurnCommandKey = (typeof NATION_TURN_COMMAND_KEYS)[number];
@@ -40,6 +48,14 @@ const defaultImporters: Record<NationTurnCommandKey, NationTurnCommandImporter> 
     che_이호경식: async () => import('./che_이호경식.js'),
     che_수몰: async () => import('./che_수몰.js'),
     che_급습: async () => import('./che_급습.js'),
+    che_천도: async () => import('./che_천도.js'),
+    che_국호변경: async () => import('./che_국호변경.js'),
+    che_무작위수도이전: async () => import('./che_무작위수도이전.js'),
+    che_국기변경: async () => import('./che_국기변경.js'),
+    che_증축: async () => import('./che_증축.js'),
+    che_감축: async () => import('./che_감축.js'),
+    che_몰수: async () => import('./che_몰수.js'),
+    che_물자원조: async () => import('./che_물자원조.js'),
 };
 
 export const isNationTurnCommandKey = (value: string): value is NationTurnCommandKey =>
@@ -50,7 +66,7 @@ export class NationTurnCommandLoader {
 
     constructor(
         private readonly importers: Record<NationTurnCommandKey, NationTurnCommandImporter> = defaultImporters
-    ) {}
+    ) { }
 
     async load(key: NationTurnCommandKey): Promise<NationTurnCommandModule> {
         const cached = this.cache.get(key);

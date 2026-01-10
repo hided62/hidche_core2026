@@ -1,0 +1,125 @@
+import type { GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
+import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
+import type { StateView } from '@sammo-ts/logic/world/stateView.js';
+import {
+    beChief,
+    occupiedCity,
+    suppliedCity,
+} from '@sammo-ts/logic/constraints/presets.js';
+import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
+import type { GeneralActionEffect, GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
+import { createLogEffect, createNationPatchEffect } from '@sammo-ts/logic/actions/engine.js';
+import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
+import { JosaUtil } from '@sammo-ts/common';
+import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
+import type { NationTurnCommandSpec } from './index.js';
+
+export interface ChangeFlagArgs {
+    colorType: number;
+}
+
+const ACTION_NAME = '국기변경';
+
+const NATION_COLORS = [
+    '#FF0000', '#800000', '#A0522D', '#FF6347', '#FFA500', '#FFDAB9', '#FFD700', '#FFFF00', '#7CFC00', '#00FF00',
+    '#808000', '#008000', '#2E8B57', '#008080', '#20B2AA', '#6495ED', '#7FFFD4', '#AFEEEE', '#87CEEB', '#00FFFF',
+    '#00BFFF', '#0000FF', '#000080', '#483D8B', '#7B68EE', '#BA55D3', '#800080', '#FF00FF', '#FFC0CB', '#F5F5DC',
+    '#E0FFFF', '#FFFFFF', '#A9A9A9',
+];
+
+export class ActionDefinition<
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
+> implements GeneralActionDefinition<TriggerState, ChangeFlagArgs> {
+    public readonly key = 'che_국기변경';
+    public readonly name = ACTION_NAME;
+
+    parseArgs(raw: unknown): ChangeFlagArgs | null {
+        const data = raw as { colorType?: number };
+        if (typeof data?.colorType !== 'number') return null;
+        if (data.colorType < 0 || data.colorType >= NATION_COLORS.length) return null;
+        return { colorType: data.colorType };
+    }
+
+    buildConstraints(_ctx: ConstraintContext, _args: ChangeFlagArgs): Constraint[] {
+        return [
+            occupiedCity(),
+            beChief(),
+            suppliedCity(),
+            {
+                name: 'canChangeFlag',
+                requires: (ctx) => [{ kind: 'nation', id: ctx.nationId! }],
+                test: (ctx: ConstraintContext, view: StateView) => {
+                    const nation = view.get({ kind: 'nation', id: ctx.nationId! }) as Nation | undefined;
+                    const canChange = ((nation?.meta as any)?.[`can_${ACTION_NAME}`] ?? 0) !== 0;
+                    if (!canChange) return { kind: 'deny', reason: '더이상 변경이 불가능합니다.' };
+                    return { kind: 'allow' };
+                }
+            }
+        ];
+    }
+
+    resolve(
+        context: GeneralActionResolveContext<TriggerState>,
+        args: ChangeFlagArgs
+    ): GeneralActionOutcome<TriggerState> {
+        const { general, nation } = context;
+        if (!nation) {
+            return { effects: [createLogEffect('국가 정보가 없습니다.', { scope: LogScope.GENERAL })] };
+        }
+
+        const color = NATION_COLORS[args.colorType];
+        const generalName = general.name;
+        const nationName = nation.name;
+
+        const josaYi = JosaUtil.pick(generalName, '이');
+        const josaYiNation = JosaUtil.pick(nationName, '이');
+
+        const effects: Array<GeneralActionEffect<TriggerState>> = [
+            createNationPatchEffect({
+                color: color!,
+                meta: {
+                    ...nation.meta,
+                    [`can_${ACTION_NAME}`]: 0,
+                },
+            }, nation.id),
+            // Global Action Log
+            createLogEffect(`<Y>${generalName}</>${josaYi} <span style='color:${color};'><b>국기</b></span>를 변경하였습니다.`, {
+                scope: LogScope.SYSTEM,
+                category: LogCategory.ACTION,
+                format: LogFormat.PLAIN,
+            }),
+            // Global History Log
+            createLogEffect(`<S><b>【${ACTION_NAME}】</b></><D><b>${nationName}</b></>${josaYiNation} <span style='color:${color};'><b>국기</b></span>를 변경하였습니다.`, {
+                scope: LogScope.SYSTEM,
+                category: LogCategory.HISTORY,
+                format: LogFormat.YEAR_MONTH,
+            }),
+            // Actor Nation History Log
+            createLogEffect(`<Y>${generalName}</>${josaYi} <span style='color:${color};'><b>국기</b></span>를 변경하였습니다.`, {
+                scope: LogScope.NATION,
+                nationId: nation.id,
+                category: LogCategory.HISTORY,
+                format: LogFormat.YEAR_MONTH,
+            }),
+            // General Action Log
+            createLogEffect(`<span style='color:${color};'><b>국기</b></span>를 변경하였습니다.`, {
+                scope: LogScope.GENERAL,
+                category: LogCategory.ACTION,
+                format: LogFormat.MONTH,
+            }),
+        ];
+
+        general.experience += 5;
+        general.dedication += 5;
+
+        return { effects };
+    }
+}
+
+export const commandSpec: NationTurnCommandSpec = {
+    key: 'che_국기변경',
+    category: '국가',
+    reqArg: true,
+    args: { colorType: 0 },
+    createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
+};

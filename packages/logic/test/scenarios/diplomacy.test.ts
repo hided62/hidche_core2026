@@ -181,6 +181,9 @@ describe('Diplomacy Scenario', () => {
                 commandKey: 'che_선전포고',
                 resolver: declareWarDef,
                 args: { destNationId: NATION_B_ID },
+                context: {
+                    destNation: mockNationB,
+                },
             },
         ]);
 

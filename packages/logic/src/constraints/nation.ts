@@ -1,4 +1,4 @@
-import type { General, Nation } from '@sammo-ts/logic/domain/entities.js';
+import type { City, General, Nation } from '@sammo-ts/logic/domain/entities.js';
 import { allow, readGeneral, readMetaNumber, readNation, resolveDestNationId, unknownOrDeny } from './helpers.js';
 import type { Constraint, ConstraintContext, RequirementKey, StateView } from './types.js';
 
@@ -270,5 +270,70 @@ export const checkNationNameDuplicate = (name: string): Constraint => ({
             return { kind: 'deny', reason: '이미 존재하는 국가 이름입니다.' };
         }
         return allow();
+    },
+});
+
+export const nearNation = (): Constraint => ({
+    name: 'nearNation',
+    requires: (ctx) => {
+        const reqs: RequirementKey[] = [
+            { kind: 'env', key: 'cities' },
+            { kind: 'env', key: 'map' },
+        ];
+        if (ctx.nationId !== undefined) {
+            reqs.push({ kind: 'nation', id: ctx.nationId });
+        } else {
+            reqs.push({ kind: 'general', id: ctx.actorId });
+        }
+        const destNationId = resolveDestNationId(ctx);
+        if (destNationId !== undefined) {
+            reqs.push({ kind: 'destNation', id: destNationId });
+        }
+        return reqs;
+    },
+    test: (ctx, view) => {
+        const cities = view.get({ kind: 'env', key: 'cities' }) as City[] | null;
+        const map = view.get({ kind: 'env', key: 'map' }) as {
+            cities: Array<{ id: number; connections: number[] }>;
+        } | null;
+        if (!cities || !map) {
+            return unknownOrDeny(ctx, [], '지도 정보가 없습니다.');
+        }
+
+        const destNationId = resolveDestNationId(ctx);
+        if (destNationId === undefined) {
+            return unknownOrDeny(ctx, [], '상대 국가 정보가 없습니다.');
+        }
+
+        let baseNationId = ctx.nationId;
+        if (baseNationId === undefined) {
+            const general = readGeneral(ctx, view);
+            if (!general) {
+                return unknownOrDeny(ctx, [], '아국 정보가 없습니다.');
+            }
+            baseNationId = general.nationId;
+        }
+
+        const baseNationCityIds = new Set(cities.filter((c) => c.nationId === baseNationId).map((c) => c.id));
+        const destNationCityIds = new Set(cities.filter((c) => c.nationId === destNationId).map((c) => c.id));
+
+        if (baseNationCityIds.size === 0) {
+            return { kind: 'deny', reason: '아국 도시가 없습니다.' };
+        }
+        if (destNationCityIds.size === 0) {
+            return { kind: 'deny', reason: '상대 국가 도시가 없습니다.' };
+        }
+
+        for (const cityId of baseNationCityIds) {
+            const cityDef = map.cities.find((c) => c.id === cityId);
+            if (!cityDef) continue;
+            for (const neighborId of cityDef.connections) {
+                if (destNationCityIds.has(neighborId)) {
+                    return allow();
+                }
+            }
+        }
+
+        return { kind: 'deny', reason: '인접 국가가 아닙니다.' };
     },
 });
