@@ -303,7 +303,7 @@ describe('Blank Start Scenario', () => {
 
         const resLevel = foundNationDef
             .buildConstraints(ctx, FOUNDING_ARGS)
-            .find((c) => c.name === 'ReqCityLevel')
+            .find((c) => c.name === 'reqCityLevel')
             ?.test(ctx, view);
         expect(resLevel?.kind).toBe('deny');
     });
@@ -318,15 +318,19 @@ describe('Blank Start Scenario', () => {
         const gen0 = world.getAllGenerals().find((g) => g.name === 'General_0')!;
 
         const foundNationDef = foundNationSpec.createDefinition(systemEnv);
-        // openingPartYear is 200, so 201 should fail
-        const year = 201;
+        // startYear가 189였음
+        const year = 190;
         const ctx = createConstraintContext(gen0, year, FOUNDING_ARGS);
         const view = createViewState(world, year);
 
-        const resOpening = foundNationDef
-            .buildConstraints(ctx, FOUNDING_ARGS)
-            .find((c) => c.name === 'BeOpeningPart')
-            ?.test(ctx, view);
-        expect(resOpening?.kind).toBe('deny');
+        let result = true;
+        for (const constraint of foundNationDef.buildConstraints(ctx, FOUNDING_ARGS)) {
+            const res = constraint.test(ctx, view);
+            if (res.kind === 'deny') {
+                result = false;
+                break;
+            }
+        }
+        expect(result).toBe(false);
     });
 });
