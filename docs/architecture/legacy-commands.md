@@ -31,61 +31,61 @@ which commands are available via `GameConst` overrides. See
 
 | Key                  | Display name (actionName) |
 | -------------------- | ------------------------- |
-| `che_NPC능동`        | `NPC능동`                 |
-| `che_강행`           | `강행`                    |
-| `che_거병`           | `거병`                    |
-| `che_건국`           | `건국`                    |
-| `che_견문`           | `견문`                    |
-| `che_군량매매`       | `군량매매`                |
-| `che_귀환`           | `귀환`                    |
-| `che_기술연구`       | `기술 연구`               |
-| `che_내정특기초기화` | `내정 특기 초기화`        |
-| `che_농지개간`       | `농지 개간`               |
-| `che_단련`           | `단련`                    |
-| `che_등용`           | `등용`                    |
-| `che_등용수락`       | `등용 수락`               |
-| `che_랜덤임관`       | `무작위 국가로 임관`      |
-| `che_모반시도`       | `모반시도`                |
-| `che_모병`           | `모병`                    |
-| `che_무작위건국`     | `무작위 도시 건국`        |
-| `che_물자조달`       | `물자조달`                |
-| `che_방랑`           | `방랑`                    |
-| `che_사기진작`       | `사기진작`                |
-| `che_상업투자`       | `상업 투자`               |
-| `che_선동`           | `선동`                    |
-| `che_선양`           | `선양`                    |
-| `che_성벽보수`       | `성벽 보수`               |
-| `che_소집해제`       | `소집해제`                |
-| `che_수비강화`       | `수비 강화`               |
-| `che_숙련전환`       | `숙련전환`                |
-| `che_요양`           | `요양`                    |
-| `che_은퇴`           | `은퇴`                    |
-| `che_이동`           | `이동`                    |
-| `che_인재탐색`       | `인재탐색`                |
-| `che_임관`           | `임관`                    |
-| `che_장비매매`       | `장비매매`                |
-| `che_장수대상임관`   | `장수를 따라 임관`        |
-| `che_전투태세`       | `전투태세`                |
-| `che_전투특기초기화` | `전투 특기 초기화`        |
-| `che_접경귀환`       | `접경귀환`                |
-| `che_정착장려`       | `정착 장려`               |
-| `che_주민선정`       | `주민 선정`               |
-| `che_증여`           | `증여`                    |
-| `che_집합`           | `집합`                    |
-| `che_징병`           | `징병`                    |
-| `che_첩보`           | `첩보`                    |
-| `che_출병`           | `출병`                    |
-| `che_치안강화`       | `치안 강화`               |
-| `che_탈취`           | `탈취`                    |
-| `che_파괴`           | `파괴`                    |
-| `che_하야`           | `하야`                    |
-| `che_해산`           | `해산`                    |
-| `che_헌납`           | `헌납`                    |
-| `che_화계`           | `화계`                    |
-| `che_훈련`           | `훈련`                    |
-| `cr_건국`            | `건국`                    |
-| `cr_맹훈련`          | `맹훈련`                  |
-| `휴식`               | `휴식`                    |
+| `che_NPC능동`        | `NPC능동`                 | Planned |
+| `che_강행`           | `강행`                    | Planned |
+| `che_거병`           | `거병`                    | Ported |
+| `che_건국`           | `건국`                    | Ported |
+| `che_견문`           | `견문`                    | Ported |
+| `che_군량매매`       | `군량매매`                | Ported |
+| `che_귀환`           | `귀환`                    | Planned |
+| `che_기술연구`       | `기술 연구`               | Ported |
+| `che_내정특기초기화` | `내정 특기 초기화`        | Ported |
+| `che_농지개간`       | `농지 개간`               | Ported |
+| `che_단련`           | `단련`                    | Ported |
+| `che_등용`           | `등용`                    | Ported |
+| `che_등용수락`       | `등용 수락`               | Planned |
+| `che_랜덤임관`       | `무작위 국가로 임관`      | Planned |
+| `che_모반시도`       | `모반시도`                | Planned |
+| `che_모병`           | `모병`                    | Ported |
+| `che_무작위건국`     | `무작위 도시 건국`        | Planned |
+| `che_물자조달`       | `물자조달`                | Ported |
+| `che_방랑`           | `방랑`                    | Ported |
+| `che_사기진작`       | `사기진작`                | Ported |
+| `che_상업투자`       | `상업 투자`               | Ported |
+| `che_선동`           | `선동`                    | Ported |
+| `che_선양`           | `선양`                    | Planned |
+| `che_성벽보수`       | `성벽 보수`               | Ported |
+| `che_소집해제`       | `소집해제`                | Ported |
+| `che_수비강화`       | `수비 강화`               | Ported |
+| `che_숙련전환`       | `숙련전환`                | Ported |
+| `che_요양`           | `요양`                    | Ported |
+| `che_은퇴`           | `은퇴`                    | Ported |
+| `che_이동`           | `이동`                    | Ported |
+| `che_인재탐색`       | `인재탐색`                | Ported |
+| `che_임관`           | `임관`                    | Ported |
+| `che_장비매매`       | `장비매매`                | Planned |
+| `che_장수대상임관`   | `장수를 따라 임관`        | Planned |
+| `che_전투태세`       | `전투태세`                | Planned |
+| `che_전투특기초기화` | `전투 특기 초기화`        | Ported |
+| `che_접경귀환`       | `접경귀환`                | Planned |
+| `che_정착장려`       | `정착 장려`               | Ported |
+| `che_주민선정`       | `주민 선정`               | Ported |
+| `che_증여`           | `증여`                    | Planned |
+| `che_집합`           | `집합`                    | Ported |
+| `che_징병`           | `징병`                    | Ported |
+| `che_첩보`           | `첩보`                    | Ported |
+| `che_출병`           | `출병`                    | Ported |
+| `che_치안강화`       | `치안 강화`               | Ported |
+| `che_탈취`           | `탈취`                    | Ported |
+| `che_파괴`           | `파괴`                    | Ported |
+| `che_하야`           | `하야`                    | Ported |
+| `che_해산`           | `해산`                    | Planned |
+| `che_헌납`           | `헌납`                    | Ported |
+| `che_화계`           | `화계`                    | Ported |
+| `che_훈련`           | `훈련`                    | Ported |
+| `cr_건국`            | `건국`                    | Planned |
+| `cr_맹훈련`          | `맹훈련`                  | Planned |
+| `휴식`               | `휴식`                    | Ported |
 
 ## Nation Commands (`legacy/hwe/sammo/Command/Nation/`)
 

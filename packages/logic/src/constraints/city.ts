@@ -1,5 +1,6 @@
 import type { City, General, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { MapDefinition } from '@sammo-ts/logic/world/types.js';
+import { getCityDistance } from '../world/distance.js';
 import {
     allow,
     parsePercent,
@@ -113,11 +114,11 @@ export const suppliedDestCity = (): Constraint => ({
     requires: (ctx) =>
         resolveDestCityId(ctx) !== undefined
             ? [
-                  {
-                      kind: 'destCity',
-                      id: resolveDestCityId(ctx) ?? 0,
-                  },
-              ]
+                {
+                    kind: 'destCity',
+                    id: resolveDestCityId(ctx) ?? 0,
+                },
+            ]
             : [],
     test: (ctx, view) => {
         const destCity = readDestCity(ctx, view);
@@ -249,11 +250,11 @@ export const existsDestCity = (): Constraint => ({
     requires: (ctx) =>
         resolveDestCityId(ctx) !== undefined
             ? [
-                  {
-                      kind: 'destCity',
-                      id: resolveDestCityId(ctx) ?? 0,
-                  },
-              ]
+                {
+                    kind: 'destCity',
+                    id: resolveDestCityId(ctx) ?? 0,
+                },
+            ]
             : [],
     test: (ctx, view) => {
         const destCityId = resolveDestCityId(ctx);
@@ -315,11 +316,11 @@ export const notNeutralDestCity = (): Constraint => ({
     requires: (ctx) =>
         resolveDestCityId(ctx) !== undefined
             ? [
-                  {
-                      kind: 'destCity',
-                      id: resolveDestCityId(ctx) ?? 0,
-                  },
-              ]
+                {
+                    kind: 'destCity',
+                    id: resolveDestCityId(ctx) ?? 0,
+                },
+            ]
             : [],
     test: (ctx, view) => {
         const destCity = readDestCity(ctx, view);
@@ -478,5 +479,96 @@ export const reqCityLevel = (levels: number[]): Constraint => ({
             return allow();
         }
         return { kind: 'deny', reason: '규모가 맞지 않습니다.' };
+    },
+});
+
+export const nearCity = (maxDistance: number): Constraint => ({
+    name: 'nearCity',
+    requires: (ctx) => {
+        const reqs: RequirementKey[] = [{ kind: 'env', key: 'map' }];
+        const destCityId = resolveDestCityId(ctx);
+        if (destCityId !== undefined) {
+            reqs.push({ kind: 'destCity', id: destCityId });
+        }
+        if (ctx.cityId !== undefined) {
+            reqs.push({ kind: 'city', id: ctx.cityId });
+        }
+        return reqs;
+    },
+    test: (ctx, view) => {
+        const map = view.get({ kind: 'env', key: 'map' }) as MapDefinition | null;
+        if (!map) {
+            return unknownOrDeny(ctx, [], '지도 정보가 없습니다.');
+        }
+
+        const destCityId = resolveDestCityId(ctx);
+        if (destCityId === undefined) {
+            return unknownOrDeny(ctx, [], '도시 정보가 없습니다.');
+        }
+
+        const city = readCity(view, ctx.cityId);
+
+        if (!city) {
+            if (ctx.cityId === undefined) {
+                return unknownOrDeny(ctx, [], '도시 정보가 없습니다.');
+            }
+            const req: RequirementKey = { kind: 'city', id: ctx.cityId };
+            return unknownOrDeny(ctx, [req], '도시 정보가 없습니다.');
+        }
+
+        const distance = getCityDistance(map, city.id, destCityId);
+        if (distance <= maxDistance) {
+            return allow();
+        }
+
+        return { kind: 'deny', reason: '너무 멉니다.' };
+    },
+});
+
+export const notCapital = (checkCurrentCity = false): Constraint => ({
+    name: 'notCapital',
+    requires: (ctx) => {
+        const reqs: RequirementKey[] = [{ kind: 'general', id: ctx.actorId }];
+        if (checkCurrentCity) {
+            if (ctx.cityId !== undefined) {
+                reqs.push({ kind: 'city', id: ctx.cityId });
+            }
+        } else {
+            // If checking dest, we need destCityId
+            const destCityId = resolveDestCityId(ctx);
+            if (destCityId !== undefined) {
+                reqs.push({ kind: 'destCity', id: destCityId });
+            }
+        }
+        // Need nation to know capital
+        reqs.push({ kind: 'nation', id: ctx.nationId });
+        return reqs;
+    },
+    test: (ctx, view) => {
+        const nationReq: RequirementKey = { kind: 'nation', id: ctx.nationId };
+        if (!view.has(nationReq)) return unknownOrDeny(ctx, [nationReq], '국가 정보가 없습니다.');
+        const nation = view.get(nationReq) as Nation | null;
+        if (!nation) return unknownOrDeny(ctx, [nationReq], '국가 정보가 없습니다.');
+
+        let targetCityId: number | undefined;
+
+        if (checkCurrentCity) {
+            targetCityId = ctx.cityId;
+            if (targetCityId === undefined) {
+                const general = readGeneral(ctx, view);
+                targetCityId = general?.cityId;
+            }
+        } else {
+            targetCityId = resolveDestCityId(ctx);
+        }
+
+        if (targetCityId === undefined) {
+            return unknownOrDeny(ctx, [], '도시 정보가 없습니다.');
+        }
+
+        if (targetCityId === nation.capitalCityId) {
+            return { kind: 'deny', reason: '수도입니다.' };
+        }
+        return allow();
     },
 });

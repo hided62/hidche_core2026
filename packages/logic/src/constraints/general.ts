@@ -181,11 +181,11 @@ export const existsDestGeneral = (): Constraint => ({
     requires: (ctx) =>
         resolveDestGeneralId(ctx) !== undefined
             ? [
-                  {
-                      kind: 'destGeneral',
-                      id: resolveDestGeneralId(ctx) ?? 0,
-                  },
-              ]
+                {
+                    kind: 'destGeneral',
+                    id: resolveDestGeneralId(ctx) ?? 0,
+                },
+            ]
             : [],
     test: (ctx, view) => {
         const destGeneralId = resolveDestGeneralId(ctx);
@@ -280,5 +280,77 @@ export const friendlyDestGeneral = (): Constraint => ({
             return allow();
         }
         return { kind: 'deny', reason: '아군이 아닙니다.' };
+    },
+});
+
+export const mustBeNPC = (): Constraint => ({
+    name: 'mustBeNPC',
+    requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
+    test: (ctx, view) => {
+        const req: RequirementKey = { kind: 'general', id: ctx.actorId };
+        const general = view.get(req) as General | null;
+        if (!general) {
+            return unknownOrDeny(ctx, [req], '장수 정보가 없습니다.');
+        }
+        // Assuming npcState >= 2 means NPC. Need to verify exact logic if possible, 
+        // but typically 0=human, 1=?, 2=NPC. 
+        // Legacy: $general->getNPC() where 0:User, 1:Virtual User(unused?), 2:NPC ...
+        if (general.npcState >= 2) {
+            return allow();
+        }
+        return { kind: 'deny', reason: 'NPC가 아닙니다.' };
+    },
+});
+
+export const notSameDestNation = (): Constraint => ({
+    name: 'notSameDestNation',
+    requires: (ctx) => {
+        const reqs: RequirementKey[] = [];
+        const destNationId = resolveDestNationId(ctx);
+        if (destNationId !== undefined) {
+            reqs.push({ kind: 'destNation', id: destNationId });
+        }
+        return reqs;
+    },
+    test: (ctx, _view) => {
+        const destNationId = resolveDestNationId(ctx);
+        if (destNationId === undefined) {
+            return unknownOrDeny(ctx, [], '목표 국가가 없습니다.');
+        }
+
+        if (ctx.nationId === destNationId) {
+            return { kind: 'deny', reason: '이미 소속된 국가입니다.' };
+        }
+        return allow();
+    },
+});
+
+export const notLord = (): Constraint => ({
+    name: 'notLord',
+    requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
+    test: (ctx, view) => {
+        const req: RequirementKey = { kind: 'general', id: ctx.actorId };
+        const general = view.get(req) as General | null;
+        if (!general) return unknownOrDeny(ctx, [req], '장수 정보가 없습니다.');
+
+        if (general.officerLevel !== 12) {
+            return allow();
+        }
+        return { kind: 'deny', reason: '군주는 불가능합니다.' };
+    },
+});
+
+export const notChief = (): Constraint => ({
+    name: 'notChief',
+    requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
+    test: (ctx, view) => {
+        const req: RequirementKey = { kind: 'general', id: ctx.actorId };
+        const general = view.get(req) as General | null;
+        if (!general) return unknownOrDeny(ctx, [req], '장수 정보가 없습니다.');
+
+        if (general.officerLevel <= 4) {
+            return allow();
+        }
+        return { kind: 'deny', reason: '수뇌입니다.' };
     },
 });

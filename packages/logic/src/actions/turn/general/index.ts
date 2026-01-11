@@ -3,6 +3,9 @@ import type { TurnCommandModule, TurnCommandSpecBase } from '@sammo-ts/logic/act
 export const GENERAL_TURN_COMMAND_KEYS = [
     'che_거병',
     'che_임관',
+    'che_랜덤임관',
+    'che_귀환',
+    'che_등용수락',
     'che_건국',
     'che_훈련',
     'che_단련',
@@ -39,6 +42,9 @@ export const GENERAL_TURN_COMMAND_KEYS = [
     'che_파괴',
     'che_선동',
     'che_탈취',
+    'che_NPC능동',
+    'che_강행',
+    'che_귀환',
     '휴식',
 ] as const;
 
@@ -53,6 +59,9 @@ export type GeneralTurnCommandImporter = () => Promise<GeneralTurnCommandModule>
 const defaultImporters: Record<GeneralTurnCommandKey, GeneralTurnCommandImporter> = {
     che_거병: async () => import('./che_거병.js'),
     che_임관: async () => import('./che_임관.js'),
+    che_등용수락: () => import('./che_등용수락.js'),
+    che_랜덤임관: () => import('./che_랜덤임관.js'),
+    che_귀환: async () => import('./che_귀환.js'),
     che_건국: async () => import('./che_건국.js'),
     che_훈련: async () => import('./che_훈련.js'),
     che_단련: async () => import('./che_단련.js'),
@@ -89,6 +98,8 @@ const defaultImporters: Record<GeneralTurnCommandKey, GeneralTurnCommandImporter
     che_파괴: async () => import('./che_파괴.js'),
     che_선동: async () => import('./che_선동.js'),
     che_탈취: async () => import('./che_탈취.js'),
+    che_NPC능동: async () => import('./che_NPC능동.js'),
+    che_강행: async () => import('./che_강행.js'),
     휴식: async () => import('./휴식.js'),
 };
 
@@ -100,7 +111,7 @@ export class GeneralTurnCommandLoader {
 
     constructor(
         private readonly importers: Record<GeneralTurnCommandKey, GeneralTurnCommandImporter> = defaultImporters
-    ) {}
+    ) { }
 
     async load(key: GeneralTurnCommandKey): Promise<GeneralTurnCommandModule> {
         const cached = this.cache.get(key);
