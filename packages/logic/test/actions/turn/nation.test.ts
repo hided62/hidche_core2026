@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { City, General, Nation } from '../../../src/domain/entities.js';
 import { resolveGeneralAction } from '../../../src/actions/engine.js';
 import { ActionDefinition as DeclareWarAction } from '../../../src/actions/turn/nation/che_선전포고.js';
+import { ActionDefinition as MoveCapitalAction } from '../../../src/actions/turn/nation/che_천도.js';
+import { ActionDefinition as ChangeNationNameAction } from '../../../src/actions/turn/nation/che_국호변경.js';
+import { ActionDefinition as ExpandCityAction } from '../../../src/actions/turn/nation/che_증축.js';
 import { ActionDefinition as LastStandAction } from '../../../src/actions/turn/nation/che_필사즉생.js';
 import { LogCategory, LogScope } from '../../../src/logging/types.js';
 import type { MapDefinition } from '../../../src/world/types.js';
@@ -239,6 +242,93 @@ describe('Nation Actions', () => {
 
             expect(general.experience).toBeGreaterThan(100);
             expect(nation.meta.strategic_cmd_limit).toBeGreaterThan(0);
+        });
+    });
+
+    describe('che_천도 (Move Capital)', () => {
+        it('changes nation capital city', () => {
+            const nation = buildNation(1);
+            const city1 = buildCity(1, 1);
+            const city2 = buildCity(2, 1);
+            const general = buildGeneral(1, 1, 1);
+            const env = { develCost: 100, baseGold: 100, baseRice: 100 };
+            const definition = new MoveCapitalAction(env as any);
+
+            const context = {
+                general,
+                nation,
+                city: city1,
+                destCity: city2,
+                rng: {} as any,
+                map: {
+                    cities: [
+                        { id: 1, connections: [2] },
+                        { id: 2, connections: [1] },
+                    ],
+                } as any,
+                addLog: () => {},
+            };
+
+            const resolution = definition.resolve(context as any, { destCityID: 2 });
+
+            expect(resolution.effects).toContainEqual(
+                expect.objectContaining({
+                    type: 'nation:patch',
+                    patch: expect.objectContaining({ capitalCityId: 2 }),
+                })
+            );
+        });
+    });
+
+    describe('che_국호변경 (Change Nation Name)', () => {
+        it('changes nation name', () => {
+            const nation = buildNation(1, 'OldName');
+            const general = buildGeneral(1, 1, 1);
+            const definition = new ChangeNationNameAction();
+
+            const context = {
+                general,
+                nation,
+                rng: {} as any,
+                addLog: () => {},
+            };
+
+            const resolution = definition.resolve(context as any, { nationName: 'NewName' });
+
+            expect(resolution.effects).toContainEqual(
+                expect.objectContaining({
+                    type: 'nation:patch',
+                    patch: expect.objectContaining({ name: 'NewName' }),
+                })
+            );
+        });
+    });
+
+    describe('che_증축 (City Expansion)', () => {
+        it('increases city level and stats', () => {
+            const nation = buildNation(1);
+            const city = buildCity(1, 1);
+            city.level = 2;
+            const general = buildGeneral(1, 1, 1);
+            const env = { develCost: 100, baseGold: 100, baseRice: 100 };
+            const definition = new ExpandCityAction(env as any);
+
+            const context = {
+                general,
+                nation,
+                capitalCity: city,
+                rng: {} as any,
+                addLog: () => {},
+            };
+
+            const resolution = definition.resolve(context as any, {});
+
+            expect(resolution.effects).toContainEqual(
+                expect.objectContaining({
+                    type: 'city:patch',
+                    patch: expect.objectContaining({ level: 3 }),
+                })
+            );
         });
     });
 });

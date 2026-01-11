@@ -66,7 +66,7 @@ export class NationTurnCommandLoader {
 
     constructor(
         private readonly importers: Record<NationTurnCommandKey, NationTurnCommandImporter> = defaultImporters
-    ) { }
+    ) {}
 
     async load(key: NationTurnCommandKey): Promise<NationTurnCommandModule> {
         const cached = this.cache.get(key);

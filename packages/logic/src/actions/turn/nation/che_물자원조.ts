@@ -8,7 +8,11 @@ import {
     existsDestNation,
 } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
-import type { GeneralActionEffect, GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
+import type {
+    GeneralActionEffect,
+    GeneralActionOutcome,
+    GeneralActionResolveContext,
+} from '@sammo-ts/logic/actions/engine.js';
 import { createLogEffect, createNationPatchEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import { JosaUtil } from '@sammo-ts/common';
@@ -38,7 +42,7 @@ export class ActionDefinition<
     public readonly key = 'che_물자원조';
     public readonly name = ACTION_NAME;
 
-    constructor(private readonly env: TurnCommandEnv) { }
+    constructor(private readonly env: TurnCommandEnv) {}
 
     parseArgs(raw: unknown): MaterialAidArgs | null {
         const data = raw as { destNationId?: number; amountList?: [number, number] };
@@ -70,28 +74,30 @@ export class ActionDefinition<
                         return { kind: 'deny', reason: '작위 제한량 이상은 보낼 수 없습니다.' };
                     }
                     return { kind: 'allow' };
-                }
+                },
             },
             {
                 name: 'nationSurlimit',
                 requires: (ctx) => [{ kind: 'nation', id: ctx.nationId! }],
                 test: (_ctx: ConstraintContext, view: StateView) => {
                     const nation = view.get({ kind: 'nation', id: _ctx.nationId! }) as Nation | undefined;
-                    const surlimit = (nation?.meta as any)?.surlimit ?? 0;
+                    const surlimitRaw = nation?.meta.surlimit;
+                    const surlimit = typeof surlimitRaw === 'number' ? surlimitRaw : 0;
                     if (surlimit > 0) return { kind: 'deny', reason: '외교제한중입니다.' };
                     return { kind: 'allow' };
-                }
+                },
             },
             {
                 name: 'destNationSurlimit',
                 requires: () => [{ kind: 'nation', id: args.destNationId }],
-                test: (ctx: ConstraintContext, view: StateView) => {
+                test: (_ctx: ConstraintContext, view: StateView) => {
                     const destNation = view.get({ kind: 'nation', id: args.destNationId }) as Nation | undefined;
-                    const surlimit = (destNation?.meta as any)?.surlimit ?? 0;
+                    const surlimitRaw = destNation?.meta.surlimit;
+                    const surlimit = typeof surlimitRaw === 'number' ? surlimitRaw : 0;
                     if (surlimit > 0) return { kind: 'deny', reason: '상대국이 외교제한중입니다.' };
                     return { kind: 'allow' };
-                }
-            }
+                },
+            },
         ];
     }
 
@@ -119,38 +125,53 @@ export class ActionDefinition<
         const broadcastMessage = `<D><b>${destNation.name}</b></>${josaRo} 금<C>${goldText}</> 쌀<C>${riceText}</>을 지원했습니다.`;
 
         const effects: Array<GeneralActionEffect<TriggerState>> = [
-            createNationPatchEffect({
-                gold: nation.gold - actualGold,
-                rice: nation.rice - actualRice,
-                meta: {
-                    ...nation.meta,
-                    surlimit: ((nation.meta as any)?.surlimit ?? 0) + POST_REQ_TURN,
+            createNationPatchEffect(
+                {
+                    gold: nation.gold - actualGold,
+                    rice: nation.rice - actualRice,
+                    meta: {
+                        ...nation.meta,
+                        surlimit: Number(nation.meta.surlimit ?? 0) + POST_REQ_TURN,
+                    },
                 },
-            }, nation.id),
-            createNationPatchEffect({
-                gold: destNation.gold + actualGold,
-                rice: destNation.rice + actualRice,
-            }, destNation.id),
+                nation.id
+            ),
+            createNationPatchEffect(
+                {
+                    gold: destNation.gold + actualGold,
+                    rice: destNation.rice + actualRice,
+                },
+                destNation.id
+            ),
             // Global History Log
-            createLogEffect(`<Y><b>【${ACTION_NAME}】</b></><D><b>${nationName}</b></>에서 <D><b>${destNation.name}</b></>${josaRo} 물자를 지원합니다`, {
-                scope: LogScope.SYSTEM,
-                category: LogCategory.HISTORY,
-                format: LogFormat.YEAR_MONTH,
-            }),
+            createLogEffect(
+                `<Y><b>【${ACTION_NAME}】</b></><D><b>${nationName}</b></>에서 <D><b>${destNation.name}</b></>${josaRo} 물자를 지원합니다`,
+                {
+                    scope: LogScope.SYSTEM,
+                    category: LogCategory.HISTORY,
+                    format: LogFormat.YEAR_MONTH,
+                }
+            ),
             // Actor Nation History Log
-            createLogEffect(`<D><b>${destNation.name}</b></>${josaRo} 금<C>${goldText}</> 쌀<C>${riceText}</>${josaUlRice} 지원`, {
-                scope: LogScope.NATION,
-                nationId: nation.id,
-                category: LogCategory.HISTORY,
-                format: LogFormat.YEAR_MONTH,
-            }),
+            createLogEffect(
+                `<D><b>${destNation.name}</b></>${josaRo} 금<C>${goldText}</> 쌀<C>${riceText}</>${josaUlRice} 지원`,
+                {
+                    scope: LogScope.NATION,
+                    nationId: nation.id,
+                    category: LogCategory.HISTORY,
+                    format: LogFormat.YEAR_MONTH,
+                }
+            ),
             // Dest Nation History Log
-            createLogEffect(`<D><b>${nationName}</b></>로부터 금<C>${goldText}</> 쌀<C>${riceText}</>${josaUlRice} 지원 받음`, {
-                scope: LogScope.NATION,
-                nationId: destNation.id,
-                category: LogCategory.HISTORY,
-                format: LogFormat.YEAR_MONTH,
-            }),
+            createLogEffect(
+                `<D><b>${nationName}</b></>로부터 금<C>${goldText}</> 쌀<C>${riceText}</>${josaUlRice} 지원 받음`,
+                {
+                    scope: LogScope.NATION,
+                    nationId: destNation.id,
+                    category: LogCategory.HISTORY,
+                    format: LogFormat.YEAR_MONTH,
+                }
+            ),
             // General Action Log
             createLogEffect(broadcastMessage, {
                 scope: LogScope.GENERAL,

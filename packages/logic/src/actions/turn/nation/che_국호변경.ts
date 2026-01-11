@@ -1,13 +1,12 @@
 import type { GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
-import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
-import {
-    beChief,
-    occupiedCity,
-    suppliedCity,
-    checkNationNameDuplicate,
-} from '@sammo-ts/logic/constraints/presets.js';
+import type { Constraint, ConstraintContext, StateView } from '@sammo-ts/logic/constraints/types.js';
+import { beChief, occupiedCity, suppliedCity, checkNationNameDuplicate } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
-import type { GeneralActionEffect, GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
+import type {
+    GeneralActionEffect,
+    GeneralActionOutcome,
+    GeneralActionResolveContext,
+} from '@sammo-ts/logic/actions/engine.js';
 import { createLogEffect, createNationPatchEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import { JosaUtil } from '@sammo-ts/common';
@@ -46,12 +45,13 @@ export class ActionDefinition<
                 name: 'canChangeNationName',
                 requires: (ctx) => [{ kind: 'nation', id: ctx.nationId! }],
                 test: (_ctx: ConstraintContext, view: StateView) => {
-                    const nation = view.get({ kind: 'nation', id: ctx.nationId! }) as Nation | undefined;
-                    const canChange = ((nation?.meta as any)?.[`can_${ACTION_NAME}`] ?? 0) !== 0;
+                    const nation = view.get({ kind: 'nation', id: _ctx.nationId! }) as Nation | undefined;
+                    const canChangeRaw = nation?.meta[`can_${ACTION_NAME}`];
+                    const canChange = (typeof canChangeRaw === 'number' ? canChangeRaw : 0) !== 0;
                     if (!canChange) return { kind: 'deny', reason: '더이상 변경이 불가능합니다.' };
                     return { kind: 'allow' };
-                }
-            }
+                },
+            },
         ];
     }
 
@@ -72,13 +72,16 @@ export class ActionDefinition<
         const josaYiNation = JosaUtil.pick(newNationName, '이');
 
         const effects: Array<GeneralActionEffect<TriggerState>> = [
-            createNationPatchEffect({
-                name: newNationName,
-                meta: {
-                    ...nation.meta,
-                    [`can_${ACTION_NAME}`]: 0,
+            createNationPatchEffect(
+                {
+                    name: newNationName,
+                    meta: {
+                        ...nation.meta,
+                        [`can_${ACTION_NAME}`]: 0,
+                    },
                 },
-            }, nation.id),
+                nation.id
+            ),
             // Global Action Log
             createLogEffect(`<Y>${generalName}</>${josaYi} 국호를 <D><b>${newNationName}</b></>로 변경하였습니다.`, {
                 scope: LogScope.SYSTEM,
@@ -86,11 +89,14 @@ export class ActionDefinition<
                 format: LogFormat.PLAIN,
             }),
             // Global History Log
-            createLogEffect(`<S><b>【${ACTION_NAME}】</b></><D><b>${oldNationName}</b></>${josaYiNation} 국호를 <D><b>${newNationName}</b></>로 변경하였습니다.`, {
-                scope: LogScope.SYSTEM,
-                category: LogCategory.HISTORY,
-                format: LogFormat.YEAR_MONTH,
-            }),
+            createLogEffect(
+                `<S><b>【${ACTION_NAME}】</b></><D><b>${oldNationName}</b></>${josaYiNation} 국호를 <D><b>${newNationName}</b></>로 변경하였습니다.`,
+                {
+                    scope: LogScope.SYSTEM,
+                    category: LogCategory.HISTORY,
+                    format: LogFormat.YEAR_MONTH,
+                }
+            ),
             // Actor Nation History Log
             createLogEffect(`<Y>${generalName}</>${josaYi} 국호를 <D><b>${newNationName}</b></>로 변경하였습니다.`, {
                 scope: LogScope.NATION,

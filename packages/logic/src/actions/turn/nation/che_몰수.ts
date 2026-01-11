@@ -8,7 +8,11 @@ import {
     suppliedCity,
 } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
-import type { GeneralActionEffect, GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
+import type {
+    GeneralActionEffect,
+    GeneralActionOutcome,
+    GeneralActionResolveContext,
+} from '@sammo-ts/logic/actions/engine.js';
 import { createLogEffect, createNationPatchEffect, createGeneralPatchEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import { JosaUtil } from '@sammo-ts/common';
@@ -37,7 +41,7 @@ export class ActionDefinition<
     public readonly key = 'che_몰수';
     public readonly name = ACTION_NAME;
 
-    constructor(private readonly env: TurnCommandEnv) { }
+    constructor(private readonly env: TurnCommandEnv) {}
 
     parseArgs(raw: unknown): SeizureArgs | null {
         const data = raw as { isGold?: boolean; amount?: number; destGeneralID?: number };
@@ -70,15 +74,12 @@ export class ActionDefinition<
                         return { kind: 'deny', reason: '본인입니다' };
                     }
                     return { kind: 'allow' };
-                }
-            }
+                },
+            },
         ];
     }
 
-    resolve(
-        context: SeizureResolveContext<TriggerState>,
-        args: SeizureArgs
-    ): GeneralActionOutcome<TriggerState> {
+    resolve(context: SeizureResolveContext<TriggerState>, args: SeizureArgs): GeneralActionOutcome<TriggerState> {
         const { general, nation, destGeneral } = context;
         if (!nation) {
             return { effects: [createLogEffect('국가 정보가 없습니다.', { scope: LogScope.GENERAL })] };
@@ -87,7 +88,7 @@ export class ActionDefinition<
         const resKey = args.isGold ? 'gold' : 'rice';
         const resName = args.isGold ? '금' : '쌀';
 
-        const actualAmount = clamp(args.amount, 0, (destGeneral as any)[resKey] ?? 0);
+        const actualAmount = clamp(args.amount, 0, destGeneral[resKey] ?? 0);
 
         if (actualAmount <= 0) {
             return {
@@ -105,12 +106,18 @@ export class ActionDefinition<
         const josaUl = JosaUtil.pick(amountText, '을');
 
         const effects: Array<GeneralActionEffect<TriggerState>> = [
-            createGeneralPatchEffect({
-                [resKey]: (destGeneral as any)[resKey] - actualAmount,
-            }, destGeneral.id),
-            createNationPatchEffect({
-                [resKey]: (nation as any)[resKey] + actualAmount,
-            }, nation.id),
+            createGeneralPatchEffect(
+                {
+                    [resKey]: destGeneral[resKey] - actualAmount,
+                },
+                destGeneral.id
+            ),
+            createNationPatchEffect(
+                {
+                    [resKey]: nation[resKey] + actualAmount,
+                },
+                nation.id
+            ),
             // Actor General Action Log
             createLogEffect(`<Y>${destGeneral.name}</>에게서 ${resName} <C>${amountText}</>${josaUl} 몰수했습니다.`, {
                 scope: LogScope.GENERAL,
