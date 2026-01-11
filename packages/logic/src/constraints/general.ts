@@ -181,11 +181,11 @@ export const existsDestGeneral = (): Constraint => ({
     requires: (ctx) =>
         resolveDestGeneralId(ctx) !== undefined
             ? [
-                {
-                    kind: 'destGeneral',
-                    id: resolveDestGeneralId(ctx) ?? 0,
-                },
-            ]
+                  {
+                      kind: 'destGeneral',
+                      id: resolveDestGeneralId(ctx) ?? 0,
+                  },
+              ]
             : [],
     test: (ctx, view) => {
         const destGeneralId = resolveDestGeneralId(ctx);
@@ -292,8 +292,8 @@ export const mustBeNPC = (): Constraint => ({
         if (!general) {
             return unknownOrDeny(ctx, [req], '장수 정보가 없습니다.');
         }
-        // Assuming npcState >= 2 means NPC. Need to verify exact logic if possible, 
-        // but typically 0=human, 1=?, 2=NPC. 
+        // Assuming npcState >= 2 means NPC. Need to verify exact logic if possible,
+        // but typically 0=human, 1=?, 2=NPC.
         // Legacy: $general->getNPC() where 0:User, 1:Virtual User(unused?), 2:NPC ...
         if (general.npcState >= 2) {
             return allow();

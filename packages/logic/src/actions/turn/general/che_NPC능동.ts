@@ -1,6 +1,6 @@
 import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
-import { mustBeNPC, reqGeneralGold, unknownOrDeny, existsDestCity } from '@sammo-ts/logic/constraints/presets.js';
+import { mustBeNPC, existsDestCity } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionOutcome,
@@ -104,7 +104,7 @@ export class ActionDefinition<
         return null;
     }
 
-    buildConstraints(ctx: ConstraintContext, args: NPCSelfArgs): Constraint[] {
+    buildConstraints(_ctx: ConstraintContext, args: NPCSelfArgs): Constraint[] {
         const constraints = [mustBeNPC()];
 
         if (args.optionText === '순간이동') {

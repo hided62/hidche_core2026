@@ -111,8 +111,8 @@ describe('che_NPC능동', () => {
         const runner = new TestGameRunner(world, 200, 1);
 
         // Add NPC General manually to snapshot
-        const cityId = MINIMAL_MAP.cities[0].id;
-        const destCityId = MINIMAL_MAP.cities[1].id;
+        const cityId = MINIMAL_MAP.cities[0]!.id;
+        const destCityId = MINIMAL_MAP.cities[1]!.id;
 
         const general: General = {
             id: 1,
@@ -144,7 +144,7 @@ describe('che_NPC능동', () => {
         };
         world.snapshot.generals.push(general);
 
-        const outcome = await runner.runTurn([
+        await runner.runTurn([
             {
                 generalId: general.id,
                 commandKey: 'che_NPC능동',
@@ -166,8 +166,8 @@ describe('che_NPC능동', () => {
         });
         const world = new InMemoryWorld(bootstrapResult.snapshot);
 
-        const cityId = MINIMAL_MAP.cities[0].id;
-        const destCityId = MINIMAL_MAP.cities[1].id;
+        const cityId = MINIMAL_MAP.cities[0]!.id;
+        const destCityId = MINIMAL_MAP.cities[1]!.id;
 
         const general: General = {
             id: 1,

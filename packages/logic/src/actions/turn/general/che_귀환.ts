@@ -1,12 +1,12 @@
-import type { City, General, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
+import type { City, GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
-    allow,
+    // allow,
     notBeNeutral,
     notWanderingNation,
     notCapital,
     readMetaNumberFromUnknown,
-    unknownOrDeny,
+    // unknownOrDeny,
 } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
@@ -22,7 +22,7 @@ import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js'
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 
-export interface ReturnArgs {}
+export interface ReturnArgs { }
 
 const ACTION_NAME = '귀환';
 const ACTION_KEY = 'che_귀환';
@@ -100,7 +100,7 @@ export class ActionResolver<
         }
 
         const josaRo = JosaUtil.pick(destCityName, '로');
-        const date = 'XX:XX'; // Placeholder for date, actual date is handled by log format usually, but legacy includes it explicitly?
+        // const date = 'XX:XX';
         // Legacy: <1>$date</>
         // LogFormat.MONTH handles date prefix usually. LogFormat.HM handles HH:MM.
         // Legacy output: "StartCity로 귀환했습니다. 10:00"

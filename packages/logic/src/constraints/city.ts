@@ -541,11 +541,11 @@ export const notCapital = (checkCurrentCity = false): Constraint => ({
             }
         }
         // Need nation to know capital
-        reqs.push({ kind: 'nation', id: ctx.nationId });
+        reqs.push({ kind: 'nation', id: ctx.nationId ?? 0 });
         return reqs;
     },
     test: (ctx, view) => {
-        const nationReq: RequirementKey = { kind: 'nation', id: ctx.nationId };
+        const nationReq: RequirementKey = { kind: 'nation', id: ctx.nationId ?? 0 };
         if (!view.has(nationReq)) return unknownOrDeny(ctx, [nationReq], '국가 정보가 없습니다.');
         const nation = view.get(nationReq) as Nation | null;
         if (!nation) return unknownOrDeny(ctx, [nationReq], '국가 정보가 없습니다.');
