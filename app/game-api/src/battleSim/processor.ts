@@ -18,6 +18,8 @@ import {
     type UnitSetDefinition,
     type WarBattleOutcome,
     type WarActionModule,
+    type WarUnitReport,
+    type CrewTypeDefinition,
 } from '@sammo-ts/logic';
 
 import { type BattleSimJobPayload, type BattleSimLogBuckets, type BattleSimResultPayload } from './types.js';
@@ -217,7 +219,7 @@ const resolveCityRiceConsumption = (options: {
     year: number;
     startYear: number;
 }): number => {
-    const cityReport = options.battle.reports.find((report: any) => report.type === 'city');
+    const cityReport = options.battle.reports.find((report: WarUnitReport) => report.type === 'city');
     if (!cityReport) {
         return 0;
     }
@@ -225,7 +227,9 @@ const resolveCityRiceConsumption = (options: {
         return 0;
     }
 
-    const crewType = options.unitSet.crewTypes?.find((item: any) => item.id === options.castleCrewTypeId);
+    const crewType = options.unitSet.crewTypes?.find(
+        (item: CrewTypeDefinition) => item.id === options.castleCrewTypeId
+    );
     const riceCoef = crewType?.rice ?? 1;
     const tech = Number(options.defenderNation.meta.tech ?? 0);
     const trainAtmos = resolveCityTrainAtmos(options.year, options.startYear);
@@ -333,7 +337,9 @@ export const processBattleSimJob = (payload: BattleSimJobPayload): BattleSimResu
         });
 
         lastBattle = outcome;
-        const attackerReport = outcome.reports.find((report: any) => report.type === 'general' && report.isAttacker);
+        const attackerReport = outcome.reports.find(
+            (report: WarUnitReport) => report.type === 'general' && report.isAttacker
+        );
         const killed = attackerReport?.killed ?? 0;
         const dead = attackerReport?.dead ?? 0;
 

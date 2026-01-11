@@ -114,11 +114,11 @@ export const suppliedDestCity = (): Constraint => ({
     requires: (ctx) =>
         resolveDestCityId(ctx) !== undefined
             ? [
-                {
-                    kind: 'destCity',
-                    id: resolveDestCityId(ctx) ?? 0,
-                },
-            ]
+                  {
+                      kind: 'destCity',
+                      id: resolveDestCityId(ctx) ?? 0,
+                  },
+              ]
             : [],
     test: (ctx, view) => {
         const destCity = readDestCity(ctx, view);
@@ -250,11 +250,11 @@ export const existsDestCity = (): Constraint => ({
     requires: (ctx) =>
         resolveDestCityId(ctx) !== undefined
             ? [
-                {
-                    kind: 'destCity',
-                    id: resolveDestCityId(ctx) ?? 0,
-                },
-            ]
+                  {
+                      kind: 'destCity',
+                      id: resolveDestCityId(ctx) ?? 0,
+                  },
+              ]
             : [],
     test: (ctx, view) => {
         const destCityId = resolveDestCityId(ctx);
@@ -316,11 +316,11 @@ export const notNeutralDestCity = (): Constraint => ({
     requires: (ctx) =>
         resolveDestCityId(ctx) !== undefined
             ? [
-                {
-                    kind: 'destCity',
-                    id: resolveDestCityId(ctx) ?? 0,
-                },
-            ]
+                  {
+                      kind: 'destCity',
+                      id: resolveDestCityId(ctx) ?? 0,
+                  },
+              ]
             : [],
     test: (ctx, view) => {
         const destCity = readDestCity(ctx, view);

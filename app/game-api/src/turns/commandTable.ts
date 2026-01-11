@@ -328,7 +328,7 @@ const evaluateAvailability = (
             reason: result.reason,
         };
     }
-    const missingKinds = new Set(result.missing.map((req: any) => req.kind));
+    const missingKinds = new Set(result.missing.map((req: RequirementKey) => req.kind));
     const inputOnlyMissing =
         missingKinds.size === 0 ? reqArg : Array.from(missingKinds).every((kind) => INPUT_REQUIREMENT_KINDS.has(kind));
     if (inputOnlyMissing) {

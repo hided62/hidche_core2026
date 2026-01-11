@@ -111,7 +111,7 @@ export class GeneralTurnCommandLoader {
 
     constructor(
         private readonly importers: Record<GeneralTurnCommandKey, GeneralTurnCommandImporter> = defaultImporters
-    ) { }
+    ) {}
 
     async load(key: GeneralTurnCommandKey): Promise<GeneralTurnCommandModule> {
         const cached = this.cache.get(key);

@@ -1,14 +1,12 @@
 import type { General, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
-    allow,
     existsDestNation,
     existsDestGeneral,
     notSameDestNation,
     destGeneralInDestNation,
     notLord,
     readMetaNumberFromUnknown,
-    unknownOrDeny,
 } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
@@ -44,6 +42,8 @@ export class ActionResolver<
 > implements GeneralActionResolver<TriggerState, AcceptScoutArgs> {
     readonly key = ACTION_KEY;
 
+    constructor(private readonly env: TurnCommandEnv) {}
+
     resolve(
         context: AcceptScoutResolveContext<TriggerState>,
         _args: AcceptScoutArgs
@@ -59,7 +59,6 @@ export class ActionResolver<
 
         // 1. Logs
         const destNationName = destNation.name;
-        const recruiterName = destGeneral.name;
         const generalName = general.name;
 
         const josaRo = JosaUtil.pick(destNationName, '로');
@@ -67,28 +66,14 @@ export class ActionResolver<
 
         // Self Log
         context.addLog(`<D>${destNationName}</>${josaRo} 망명하여 수도로 이동합니다.`, {
-            // Text says "Move to Capital", but logic might move to recruiter city.
-            // Legacy log says "수도로 이동합니다", but implementation moves to destGeneral city if present!
-            // We should match implementation or text? Text is just flavor.
             category: LogCategory.ACTION,
-            format: LogFormat.InGame, // Using InGame or specific format?
+            format: LogFormat.PLAIN,
         });
-
-        // Recruiter Log
-        // We need to add log to recruiter? `context.addSideEffectLog`?
-        // Current system mostly logs for the actor.
-        // If we want to log for recruiter, we might need a way to push logs to others in `effects` or strictly via `addLog` with target?
-        // `GeneralActionResolveContext` usually implies logs are for the actor.
-        // But `GeneralTurnOutcome` doesn't explicitly return logs for others.
-        // We can create a patch for recruiter that appends to their log?
-        // Or usage of `addLog` might support target? No, `addLog` in context usually targets actor.
-        // We will skip Recruiter Log for now or rely on Global Log.
 
         // Global Log
         context.addLog(`<Y>${generalName}</>${josaYi} <D><b>${destNationName}</b></>${josaRo} <S>망명</>하였습니다.`, {
-            category: LogCategory.ACTION, // Global category?
-            format: LogFormat.InGame, // Global logs are handled by system?
-            // In new system, we might need to specify it.
+            category: LogCategory.ACTION,
+            format: LogFormat.PLAIN,
         });
 
         // 2. Recruiter Rewards
@@ -103,12 +88,9 @@ export class ActionResolver<
         );
 
         // 3. Betrayal Logic
-        // If currentNation exists (and > 0), handle betrayal return logic.
-        const defaultGold = 1000; // From env? context.env.defaultNpcGold? Or GameConst?
-        // Using context.env values if available. SystemEnv has `baseGold`?
         // Legacy: GameConst::$defaultGold (usually 1000/2000).
-        const safeGold = context.env.baseGold || 1000;
-        const safeRice = context.env.baseRice || 1000;
+        const safeGold = this.env.baseGold || 1000;
+        const safeRice = this.env.baseRice || 1000;
 
         let newGold = general.gold;
         let newRice = general.rice;
@@ -147,10 +129,6 @@ export class ActionResolver<
             // Penalty
             // 10% * betray count deduction
             const penaltyFactor = 1 - 0.1 * betrayCount;
-            if (penaltyFactor < 0) {
-                // Should not be less than 0? capped at ?
-                // Legacy: (1 - 0.1 * betray).
-            }
             // Apply penalty
             newExp = Math.floor(newExp * Math.max(0, penaltyFactor));
             newDed = Math.floor(newDed * Math.max(0, penaltyFactor));
@@ -162,9 +140,8 @@ export class ActionResolver<
         }
 
         // 4. Update General (Self)
-        let targetCityId = destGeneral.cityId; // Join recruiter
-        // If recruiter is not valid city?
-        if (!targetCityId) targetCityId = destNation.capitalCityId!;
+        const targetCityId = destNation.capitalCityId;
+        if (!targetCityId) throw new Error('Capital city not found.');
 
         effects.push(
             createGeneralPatchEffect(
@@ -176,29 +153,16 @@ export class ActionResolver<
                     gold: newGold,
                     rice: newRice,
                     officerLevel: 1, // Reset rank
-                    // officer_city: 0 via meta
-                    crew: general.crew, // Keep crew? Legacy implies checking troop leader.
-                    // If troop leader, disband troop.
-                    // TS entity `troopId`.
                     troopId: 0, // Quit troop
                     meta: {
                         ...general.meta,
                         officer_city: 0,
                         betray: newBetray,
-                        // killturn logic?
                     },
                 },
                 general.id
             )
         );
-
-        // 5. Update Nations Gen Count (Visual only? or real count)
-        // Legacy updates `gennum`.
-        // We can create patches for nations if `gennum` is part of Nation entity?
-        // Nation entity usually doesn't store computed `gennum` in TS domain?
-        // If it's real column, we can update.
-        // Checking entity: `Nation` interface does NOT have `gennum`.
-        // So we skip updating gennum on Nation entity.
 
         return { effects };
     }
@@ -211,26 +175,18 @@ export class ActionDefinition<
     public readonly name = ACTION_NAME;
     private readonly resolver: ActionResolver<TriggerState>;
 
-    constructor() {
-        this.resolver = new ActionResolver();
+    constructor(env: TurnCommandEnv) {
+        this.resolver = new ActionResolver(env);
     }
 
     parseArgs(raw: unknown): AcceptScoutArgs | null {
-        // Validate args
         const args = raw as Partial<AcceptScoutArgs>;
         if (typeof args.destNationId !== 'number' || typeof args.destGeneralId !== 'number') return null;
         return { destNationId: args.destNationId, destGeneralId: args.destGeneralId };
     }
 
     buildConstraints(_ctx: ConstraintContext, _args: AcceptScoutArgs): Constraint[] {
-        return [
-            // notBeNeutral(), // Ignored to allow betrayal
-            existsDestNation(),
-            existsDestGeneral(), // Need to check if destGeneral exists
-            notSameDestNation(),
-            destGeneralInDestNation(),
-            notLord(),
-        ];
+        return [existsDestNation(), existsDestGeneral(), notSameDestNation(), destGeneralInDestNation(), notLord()];
     }
 
     resolve(
@@ -242,16 +198,15 @@ export class ActionDefinition<
 }
 
 export const actionContextBuilder: ActionContextBuilder = (base, options) => {
-    // Populate destNation and destGeneral
-    const args = base.args as Partial<AcceptScoutArgs>;
+    const args = options.actionArgs as Partial<AcceptScoutArgs>;
     let destNation: Nation | undefined;
     let destGeneral: General | undefined;
 
     if (args.destNationId) {
-        destNation = options.worldRef?.getNation(args.destNationId);
+        destNation = options.worldRef?.getNationById(args.destNationId) ?? undefined;
     }
     if (args.destGeneralId) {
-        destGeneral = options.worldRef?.getGeneral(args.destGeneralId);
+        destGeneral = options.worldRef?.getGeneralById(args.destGeneralId) ?? undefined;
     }
 
     return {
@@ -263,14 +218,11 @@ export const actionContextBuilder: ActionContextBuilder = (base, options) => {
 
 export const commandSpec: GeneralTurnCommandSpec = {
     key: 'che_등용수락',
-    category: '계략', // Strategy? or '인사'(Personnel)? Legacy not checked for category. "군사" in task.md?
-    // che_등용수락 is usually separate.
-    // che_등용 is 인사(Personnel).
-    // Let's use '인사'.
+    category: '인사',
     reqArg: true,
     args: {
         destNationId: 'number',
         destGeneralId: 'number',
     },
-    createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
+    createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env),
 };

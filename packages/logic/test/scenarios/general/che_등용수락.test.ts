@@ -5,7 +5,6 @@ import { InMemoryWorld, TestGameRunner } from '../../testEnv.js';
 import { evaluateActionConstraints } from '../../../src/constraints/evaluate.js';
 import type { TurnCommandEnv } from '../../../src/actions/turn/commandEnv.js';
 import type { ConstraintContext, RequirementKey, StateView } from '../../../src/constraints/types.js';
-import { readGeneral } from '../../../src/constraints/helpers.js';
 
 const MOCK_SCENARIO_BASE = {
     title: 'Test',
@@ -84,15 +83,15 @@ const systemEnv: TurnCommandEnv = {
     maxResourceActionAmount: 1000,
 };
 
-function createConstraintContext(actor: General, year: number = 200, args: any = {}): ConstraintContext {
+function createConstraintContext(actorId: number, cityId: number, nationId: number, args: any = {}): ConstraintContext {
     return {
-        actorId: actor.id,
-        cityId: actor.cityId,
-        nationId: actor.nationId || 0,
+        actorId,
+        cityId,
+        nationId,
         args,
         env: {
             ...systemEnv,
-            world: { currentYear: year },
+            world: { currentYear: 200 },
             openingPartYear: systemEnv.openingPartYear,
             map: MINIMAL_MAP,
             cities: MINIMAL_MAP.cities,
@@ -186,7 +185,12 @@ describe('che_등용수락', () => {
             experience: 0,
             dedication: 0,
             officerLevel: 1,
-            role: null as any,
+            role: {
+                personality: null,
+                specialDomestic: null,
+                specialWar: null,
+                items: { horse: null, weapon: null, book: null, item: null },
+            },
             injury: 0,
             gold: 1000,
             rice: 1000,
@@ -218,18 +222,17 @@ describe('che_등용수락', () => {
         world.snapshot.generals.push(recruiterGen);
         world.snapshot.nations.push(nation2);
 
+        const { commandSpec } = await import('../../../src/actions/turn/general/che_등용수락.js');
+
         await runner.runTurn([
             {
                 generalId: neutralGen.id,
                 commandKey: 'che_등용수락',
-                resolver: (
-                    await import('../../../src/actions/turn/general/che_등용수락.js')
-                ).commandSpec.createDefinition({} as any),
+                resolver: commandSpec.createDefinition(systemEnv),
                 args: { destNationId: 2, destGeneralId: 2 },
                 context: {
                     destNation: nation2,
                     destGeneral: recruiterGen,
-                    env: systemEnv,
                 },
             },
         ]);
@@ -238,7 +241,7 @@ describe('che_등용수락', () => {
         const updatedRecruiter = world.getGeneral(recruiterGen.id);
 
         expect(updatedSelf?.nationId).toBe(2);
-        expect(updatedSelf?.cityId).toBe(102);
+        expect(updatedSelf?.cityId).toBe(102); // Capital of Nation2
         expect(updatedSelf?.experience).toBe(100);
         expect(updatedSelf?.dedication).toBe(100);
 
@@ -265,7 +268,12 @@ describe('che_등용수락', () => {
             experience: 1000,
             dedication: 1000,
             officerLevel: 1,
-            role: null as any,
+            role: {
+                personality: null,
+                specialDomestic: null,
+                specialWar: null,
+                items: { horse: null, weapon: null, book: null, item: null },
+            },
             injury: 0,
             gold: 2000,
             rice: 2000,
@@ -302,7 +310,12 @@ describe('che_등용수락', () => {
             experience: 0,
             dedication: 0,
             officerLevel: 1,
-            role: null as any,
+            role: {
+                personality: null,
+                specialDomestic: null,
+                specialWar: null,
+                items: { horse: null, weapon: null, book: null, item: null },
+            },
             injury: 0,
             gold: 1000,
             rice: 1000,
@@ -334,18 +347,17 @@ describe('che_등용수락', () => {
         world.snapshot.nations.push(nation1);
         world.snapshot.nations.push(nation2);
 
+        const { commandSpec } = await import('../../../src/actions/turn/general/che_등용수락.js');
+
         await runner.runTurn([
             {
                 generalId: betrayer.id,
                 commandKey: 'che_등용수락',
-                resolver: (
-                    await import('../../../src/actions/turn/general/che_등용수락.js')
-                ).commandSpec.createDefinition({} as any),
+                resolver: commandSpec.createDefinition(systemEnv),
                 args: { destNationId: 2, destGeneralId: 2 },
                 context: {
                     destNation: nation2,
                     destGeneral: recruiterGen,
-                    env: systemEnv,
                 },
             },
         ]);
@@ -453,22 +465,16 @@ describe('che_등용수락', () => {
         world.snapshot.nations.push(nation1);
         world.snapshot.nations.push(nation2);
 
-        // Manually check constraints for denial
-        const def = (await import('../../../src/actions/turn/general/che_등용수락.js')).commandSpec.createDefinition(
-            {} as any
-        );
+        const { commandSpec } = await import('../../../src/actions/turn/general/che_등용수락.js');
+        const def = commandSpec.createDefinition(systemEnv);
         const args = { destNationId: 2, destGeneralId: 2 };
 
-        const ctx = createConstraintContext(monarch, 200, args);
+        const ctx = createConstraintContext(monarch.id, monarch.cityId, monarch.nationId!, args);
         const view = createViewState(world, 200);
 
         const result = evaluateActionConstraints(def, ctx, view, args);
         expect(result.kind).toBe('deny');
         if (result.kind === 'deny') {
-            const reason = result.constraintName || result.reason;
-            // notLord constraint failure.
-            // In TS presets, notLord(monarch) returns deny.
-            // ConstraintName should be 'notLord' or 'NotLord'.
             expect(result.constraintName).toMatch(/NotLord/i);
         }
     });
@@ -490,7 +496,12 @@ describe('che_등용수락', () => {
             experience: 0,
             dedication: 0,
             officerLevel: 1,
-            role: null as any,
+            role: {
+                personality: null,
+                specialDomestic: null,
+                specialWar: null,
+                items: { horse: null, weapon: null, book: null, item: null },
+            },
             injury: 0,
             gold: 1000,
             rice: 1000,
@@ -516,8 +527,6 @@ describe('che_등용수락', () => {
             typeCode: 'che_def',
             meta: {},
         };
-        // Recruiter also in same nation? Or different?
-        // Arg destNationId is key.
         const recruiterGen: General = {
             id: 2,
             name: 'Recruiter',
@@ -546,12 +555,11 @@ describe('che_등용수락', () => {
         world.snapshot.generals.push(recruiterGen);
         world.snapshot.nations.push(nation1);
 
-        const def = (await import('../../../src/actions/turn/general/che_등용수락.js')).commandSpec.createDefinition(
-            {} as any
-        );
-        const args = { destNationId: 1, destGeneralId: 2 }; // Target same nation 1
+        const { commandSpec } = await import('../../../src/actions/turn/general/che_등용수락.js');
+        const def = commandSpec.createDefinition(systemEnv);
+        const args = { destNationId: 1, destGeneralId: 2 };
 
-        const ctx = createConstraintContext(general, 200, args);
+        const ctx = createConstraintContext(general.id, general.cityId, general.nationId!, args);
         const view = createViewState(world, 200);
 
         const result = evaluateActionConstraints(def, ctx, view, args);

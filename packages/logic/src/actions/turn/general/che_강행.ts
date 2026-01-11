@@ -5,7 +5,6 @@ import {
     nearCity,
     reqGeneralGold,
     reqGeneralRice,
-
     existsDestCity,
 } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';

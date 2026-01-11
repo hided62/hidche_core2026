@@ -22,7 +22,7 @@ import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js'
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 
-export interface ReturnArgs { }
+export interface ReturnArgs {}
 
 const ACTION_NAME = '귀환';
 const ACTION_KEY = 'che_귀환';
