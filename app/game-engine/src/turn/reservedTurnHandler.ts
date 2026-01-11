@@ -38,6 +38,8 @@ import {
 } from '@sammo-ts/logic';
 import { buildCommandEnv, buildReservedTurnDefinitions } from './reservedTurnCommands.js';
 import { buildActionContext } from './reservedTurnActionContext.js';
+import { GeneralAI, shouldUseAi } from './ai/generalAi.js';
+import type { AiReservedTurnProvider } from './ai/types.js';
 
 const DEFAULT_ACTION = '휴식';
 
@@ -433,6 +435,10 @@ export const createReservedTurnHandler = async (options: {
         return result;
     };
 
+    const reservedTurnProvider: AiReservedTurnProvider = {
+        getGeneralTurn: (generalId, turnIdx) => options.reservedTurns.getGeneralTurn(generalId, turnIdx),
+    };
+
     return {
         execute(context): GeneralTurnResult {
             const worldRef = options.getWorld();
@@ -661,16 +667,62 @@ export const createReservedTurnHandler = async (options: {
             };
 
             if (currentNation && currentGeneral.officerLevel >= 5) {
-                const nationCommand = options.reservedTurns.getNationTurn(
+                let nationCommand = options.reservedTurns.getNationTurn(
                     currentNation.id,
                     currentGeneral.officerLevel,
                     0
                 );
+                if (worldView && shouldUseAi(currentGeneral, context.world)) {
+                    const ai = new GeneralAI({
+                        general: currentGeneral,
+                        city: currentCity,
+                        nation: currentNation,
+                        world: context.world,
+                        worldRef: worldView,
+                        reservedTurnProvider,
+                        scenarioConfig: options.scenarioConfig,
+                        scenarioMeta: options.scenarioMeta,
+                        map: options.map,
+                        unitSet: options.unitSet,
+                        commandEnv: env,
+                        generalDefinitions,
+                        nationDefinitions,
+                        generalFallback,
+                        nationFallback,
+                    });
+                    const candidate = ai.chooseNationTurn(nationCommand);
+                    if (candidate) {
+                        nationCommand = { action: candidate.action, args: candidate.args };
+                    }
+                }
                 runAction(nationDefinitions, nationFallback, nationCommand, false);
                 options.reservedTurns.shiftNationTurns(currentNation.id, currentGeneral.officerLevel, -1);
             }
 
-            const generalCommand = options.reservedTurns.getGeneralTurn(currentGeneral.id, 0);
+            let generalCommand = options.reservedTurns.getGeneralTurn(currentGeneral.id, 0);
+            if (worldView && shouldUseAi(currentGeneral, context.world)) {
+                const ai = new GeneralAI({
+                    general: currentGeneral,
+                    city: currentCity,
+                    nation: currentNation,
+                    world: context.world,
+                    worldRef: worldView,
+                    reservedTurnProvider,
+                    scenarioConfig: options.scenarioConfig,
+                    scenarioMeta: options.scenarioMeta,
+                    map: options.map,
+                    unitSet: options.unitSet,
+                    commandEnv: env,
+                    generalDefinitions,
+                    nationDefinitions,
+                    generalFallback,
+                    nationFallback,
+                });
+                const candidate = ai.chooseGeneralTurn(generalCommand);
+                if (candidate) {
+                    generalCommand = { action: candidate.action, args: candidate.args };
+                }
+            }
             const nextTurnAt = runAction(generalDefinitions, generalFallback, generalCommand, true);
             options.reservedTurns.shiftGeneralTurns(currentGeneral.id, -1);
 

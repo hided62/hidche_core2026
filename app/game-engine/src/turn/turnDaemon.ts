@@ -20,6 +20,7 @@ import { createReservedTurnStore } from './reservedTurnStore.js';
 import { createTurnDaemonCommandHandler } from './worldCommandHandler.js';
 import { loadTurnCommandProfile } from './turnCommandProfile.js';
 import { loadTurnWorldFromDatabase } from './worldLoader.js';
+import { shouldUseAi } from './ai/generalAi.js';
 
 export interface TurnDaemonRuntimeOptions {
     profile: string;
@@ -116,14 +117,30 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
     worldRef = world;
 
     const stateStore = new InMemoryTurnStateStore(world);
+    const prefetchedNationTurns = new Set<string>();
     const processor = new InMemoryTurnProcessor(world, {
         tickMinutes,
         beforeExecuteGeneral: reservedTurnStoreHandle
             ? async (general) => {
-                  await reservedTurnStoreHandle.store.refreshGeneralTurns(general.id);
+                  const promises: Promise<unknown>[] = [];
+                  promises.push(reservedTurnStoreHandle.store.refreshGeneralTurns(general.id));
                   if (general.nationId > 0 && general.officerLevel >= 5) {
-                      await reservedTurnStoreHandle.store.refreshNationTurns(general.nationId, general.officerLevel);
+                      promises.push(
+                          reservedTurnStoreHandle.store.refreshNationTurns(general.nationId, general.officerLevel)
+                      );
                   }
+                  if (general.nationId > 0 && general.officerLevel >= 5 && shouldUseAi(general, world.getState())) {
+                      const key = `${general.nationId}:${world.getState().currentYear}:${world.getState().currentMonth}`;
+                      if (!prefetchedNationTurns.has(key)) {
+                          prefetchedNationTurns.add(key);
+                          const generalIds = world
+                              .listGenerals()
+                              .filter((candidate) => candidate.nationId === general.nationId)
+                              .map((candidate) => candidate.id);
+                          promises.push(reservedTurnStoreHandle.store.prefetchGeneralTurns(generalIds));
+                      }
+                  }
+                  await Promise.all(promises);
               }
             : undefined,
     });

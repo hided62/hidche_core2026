@@ -135,6 +135,30 @@ export class InMemoryReservedTurnStore {
         this.generalTurns.set(generalId, buildTurnListFromRows(rows, this.maxGeneralTurns));
     }
 
+    async prefetchGeneralTurns(generalIds: number[]): Promise<void> {
+        const targetIds = Array.from(new Set(generalIds)).filter((generalId) => !this.dirtyGeneralIds.has(generalId));
+        if (targetIds.length === 0) {
+            return;
+        }
+        const rows = await this.prisma.generalTurn.findMany({
+            where: { generalId: { in: targetIds } },
+            orderBy: [{ generalId: 'asc' }, { turnIdx: 'asc' }],
+        });
+        const grouped = new Map<number, typeof rows>();
+        for (const row of rows) {
+            const list = grouped.get(row.generalId);
+            if (list) {
+                list.push(row);
+            } else {
+                grouped.set(row.generalId, [row]);
+            }
+        }
+        for (const generalId of targetIds) {
+            const list = grouped.get(generalId) ?? [];
+            this.generalTurns.set(generalId, buildTurnListFromRows(list, this.maxGeneralTurns));
+        }
+    }
+
     async refreshNationTurns(nationId: number, officerLevel: number): Promise<void> {
         const key = buildNationKey(nationId, officerLevel);
         if (this.dirtyNationKeys.has(key)) {
