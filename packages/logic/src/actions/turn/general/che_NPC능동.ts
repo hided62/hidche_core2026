@@ -1,11 +1,6 @@
 import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
-import {
-    mustBeNPC,
-    reqGeneralGold,
-    unknownOrDeny,
-    existsDestCity,
-} from '@sammo-ts/logic/constraints/presets.js';
+import { mustBeNPC, reqGeneralGold, unknownOrDeny, existsDestCity } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionOutcome,
@@ -25,17 +20,16 @@ export interface NPCSelfArgs {
     destCityId?: number;
 }
 
-export type NPCSelfResolveContext<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
-> = GeneralActionResolveContext<TriggerState> & {
-    map?: MapDefinition;
-};
+export type NPCSelfResolveContext<TriggerState extends GeneralTriggerState = GeneralTriggerState> =
+    GeneralActionResolveContext<TriggerState> & {
+        map?: MapDefinition;
+    };
 
 const ACTION_NAME = 'NPC능동';
 const ACTION_KEY = 'che_NPC능동';
 
 export class ActionResolver<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionResolver<TriggerState, NPCSelfArgs> {
     readonly key = ACTION_KEY;
 
@@ -85,7 +79,7 @@ export class ActionResolver<
 }
 
 export class ActionDefinition<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionDefinition<TriggerState, NPCSelfArgs, NPCSelfResolveContext<TriggerState>> {
     public readonly key = ACTION_KEY;
     public readonly name = ACTION_NAME;
@@ -111,9 +105,7 @@ export class ActionDefinition<
     }
 
     buildConstraints(ctx: ConstraintContext, args: NPCSelfArgs): Constraint[] {
-        const constraints = [
-            mustBeNPC()
-        ];
+        const constraints = [mustBeNPC()];
 
         if (args.optionText === '순간이동') {
             constraints.push(existsDestCity());

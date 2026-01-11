@@ -35,9 +35,36 @@ const LINEAR_MAP: MapDefinition = {
     id: 'linear_map',
     name: 'Linear Map',
     cities: [
-        { id: 101, name: 'CapitalCity', level: 1, region: 1, position: { x: 0, y: 0 }, connections: [102], max: {} as any, initial: {} as any },
-        { id: 102, name: 'OtherCity', level: 1, region: 1, position: { x: 0, y: 0 }, connections: [101, 103], max: {} as any, initial: {} as any },
-        { id: 103, name: 'OfficerCity', level: 1, region: 1, position: { x: 0, y: 0 }, connections: [102], max: {} as any, initial: {} as any },
+        {
+            id: 101,
+            name: 'CapitalCity',
+            level: 1,
+            region: 1,
+            position: { x: 0, y: 0 },
+            connections: [102],
+            max: {} as any,
+            initial: {} as any,
+        },
+        {
+            id: 102,
+            name: 'OtherCity',
+            level: 1,
+            region: 1,
+            position: { x: 0, y: 0 },
+            connections: [101, 103],
+            max: {} as any,
+            initial: {} as any,
+        },
+        {
+            id: 103,
+            name: 'OfficerCity',
+            level: 1,
+            region: 1,
+            position: { x: 0, y: 0 },
+            connections: [102],
+            max: {} as any,
+            initial: {} as any,
+        },
     ],
     defaults: { trust: 50, trade: 100, supplyState: 1, frontState: 0 },
 };
@@ -78,7 +105,7 @@ function createConstraintContext(actor: General, year: number = 200, args: any =
             world: { currentYear: year },
             openingPartYear: systemEnv.openingPartYear,
             map: LINEAR_MAP,
-            cities: LINEAR_MAP.cities
+            cities: LINEAR_MAP.cities,
         },
         mode: 'full',
     };
@@ -119,7 +146,6 @@ function createViewState(world: InMemoryWorld, year: number = 200, env: TurnComm
 }
 
 describe('che_귀환', () => {
-
     it('should return to capital if normal officer', async () => {
         const bootstrapResult = buildScenarioBootstrap({
             scenario: MOCK_SCENARIO_BASE,
@@ -129,14 +155,45 @@ describe('che_귀환', () => {
         const runner = new TestGameRunner(world, 200, 1);
 
         const general: General = {
-            id: 1, name: 'NormalOfficer', nationId: 1, cityId: 102, troopId: 0,
-            stats: { leadership: 50, strength: 50, intelligence: 50 }, experience: 0, dedication: 0,
-            officerLevel: 1, role: { personality: null, specialDomestic: null, specialWar: null, items: { horse: null, weapon: null, book: null, item: null } },
-            injury: 0, gold: 1000, rice: 1000, crew: 0, crewTypeId: 0, train: 0, atmos: 0, age: 20, npcState: 0, triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} }, meta: {},
+            id: 1,
+            name: 'NormalOfficer',
+            nationId: 1,
+            cityId: 102,
+            troopId: 0,
+            stats: { leadership: 50, strength: 50, intelligence: 50 },
+            experience: 0,
+            dedication: 0,
+            officerLevel: 1,
+            role: {
+                personality: null,
+                specialDomestic: null,
+                specialWar: null,
+                items: { horse: null, weapon: null, book: null, item: null },
+            },
+            injury: 0,
+            gold: 1000,
+            rice: 1000,
+            crew: 0,
+            crewTypeId: 0,
+            train: 0,
+            atmos: 0,
+            age: 20,
+            npcState: 0,
+            triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
+            meta: {},
         };
         const nation: Nation = {
-            id: 1, name: 'MyNation', color: '#000', capitalCityId: 101, chiefGeneralId: 1,
-            gold: 0, rice: 0, power: 0, level: 1, typeCode: 'che_def', meta: {},
+            id: 1,
+            name: 'MyNation',
+            color: '#000',
+            capitalCityId: 101,
+            chiefGeneralId: 1,
+            gold: 0,
+            rice: 0,
+            power: 0,
+            level: 1,
+            typeCode: 'che_def',
+            meta: {},
         };
         world.snapshot.generals.push(general);
         world.snapshot.nations.push(nation);
@@ -145,9 +202,11 @@ describe('che_귀환', () => {
             {
                 generalId: general.id,
                 commandKey: 'che_귀환',
-                resolver: (await import('../../../src/actions/turn/general/che_귀환.js')).commandSpec.createDefinition({} as any),
+                resolver: (await import('../../../src/actions/turn/general/che_귀환.js')).commandSpec.createDefinition(
+                    {} as any
+                ),
                 args: {},
-            }
+            },
         ]);
 
         const updated = world.getGeneral(general.id);
@@ -168,15 +227,45 @@ describe('che_귀환', () => {
         const runner = new TestGameRunner(world, 200, 1);
 
         const general: General = {
-            id: 1, name: 'Governor', nationId: 1, cityId: 102, troopId: 0,
-            stats: { leadership: 50, strength: 50, intelligence: 50 }, experience: 0, dedication: 0,
-            officerLevel: 4, role: { personality: null, specialDomestic: null, specialWar: null, items: { horse: null, weapon: null, book: null, item: null } },
-            injury: 0, gold: 1000, rice: 1000, crew: 0, crewTypeId: 0, train: 0, atmos: 0, age: 20, npcState: 0, triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
+            id: 1,
+            name: 'Governor',
+            nationId: 1,
+            cityId: 102,
+            troopId: 0,
+            stats: { leadership: 50, strength: 50, intelligence: 50 },
+            experience: 0,
+            dedication: 0,
+            officerLevel: 4,
+            role: {
+                personality: null,
+                specialDomestic: null,
+                specialWar: null,
+                items: { horse: null, weapon: null, book: null, item: null },
+            },
+            injury: 0,
+            gold: 1000,
+            rice: 1000,
+            crew: 0,
+            crewTypeId: 0,
+            train: 0,
+            atmos: 0,
+            age: 20,
+            npcState: 0,
+            triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
             meta: { officer_city: 103 },
         };
         const nation: Nation = {
-            id: 1, name: 'MyNation', color: '#000', capitalCityId: 101, chiefGeneralId: 1,
-            gold: 0, rice: 0, power: 0, level: 1, typeCode: 'che_def', meta: {},
+            id: 1,
+            name: 'MyNation',
+            color: '#000',
+            capitalCityId: 101,
+            chiefGeneralId: 1,
+            gold: 0,
+            rice: 0,
+            power: 0,
+            level: 1,
+            typeCode: 'che_def',
+            meta: {},
         };
         world.snapshot.generals.push(general);
         world.snapshot.nations.push(nation);
@@ -185,9 +274,11 @@ describe('che_귀환', () => {
             {
                 generalId: general.id,
                 commandKey: 'che_귀환',
-                resolver: (await import('../../../src/actions/turn/general/che_귀환.js')).commandSpec.createDefinition({} as any),
+                resolver: (await import('../../../src/actions/turn/general/che_귀환.js')).commandSpec.createDefinition(
+                    {} as any
+                ),
                 args: {},
-            }
+            },
         ]);
 
         const updated = world.getGeneral(general.id);
@@ -202,19 +293,52 @@ describe('che_귀환', () => {
         const world = new InMemoryWorld(bootstrapResult.snapshot);
 
         const general: General = {
-            id: 1, name: 'AlreadyHome', nationId: 1, cityId: 101, troopId: 0,
-            stats: { leadership: 50, strength: 50, intelligence: 50 }, experience: 0, dedication: 0,
-            officerLevel: 1, role: { personality: null, specialDomestic: null, specialWar: null, items: { horse: null, weapon: null, book: null, item: null } },
-            injury: 0, gold: 1000, rice: 1000, crew: 0, crewTypeId: 0, train: 0, atmos: 0, age: 20, npcState: 0, triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} }, meta: {},
+            id: 1,
+            name: 'AlreadyHome',
+            nationId: 1,
+            cityId: 101,
+            troopId: 0,
+            stats: { leadership: 50, strength: 50, intelligence: 50 },
+            experience: 0,
+            dedication: 0,
+            officerLevel: 1,
+            role: {
+                personality: null,
+                specialDomestic: null,
+                specialWar: null,
+                items: { horse: null, weapon: null, book: null, item: null },
+            },
+            injury: 0,
+            gold: 1000,
+            rice: 1000,
+            crew: 0,
+            crewTypeId: 0,
+            train: 0,
+            atmos: 0,
+            age: 20,
+            npcState: 0,
+            triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
+            meta: {},
         };
         const nation: Nation = {
-            id: 1, name: 'MyNation', color: '#000', capitalCityId: 101, chiefGeneralId: 1,
-            gold: 0, rice: 0, power: 0, level: 1, typeCode: 'che_def', meta: {},
+            id: 1,
+            name: 'MyNation',
+            color: '#000',
+            capitalCityId: 101,
+            chiefGeneralId: 1,
+            gold: 0,
+            rice: 0,
+            power: 0,
+            level: 1,
+            typeCode: 'che_def',
+            meta: {},
         };
         world.snapshot.generals.push(general);
         world.snapshot.nations.push(nation);
 
-        const def = (await import('../../../src/actions/turn/general/che_귀환.js')).commandSpec.createDefinition({} as any);
+        const def = (await import('../../../src/actions/turn/general/che_귀환.js')).commandSpec.createDefinition(
+            {} as any
+        );
         const args = {};
 
         const ctx = createConstraintContext(general, 200, args);
@@ -251,15 +375,45 @@ describe('che_귀환', () => {
         const runner = new TestGameRunner(world, 200, 1);
 
         const general: General = {
-            id: 1, name: 'GovernorAtHome', nationId: 1, cityId: 103, troopId: 0,
-            stats: { leadership: 50, strength: 50, intelligence: 50 }, experience: 0, dedication: 0,
-            officerLevel: 4, role: { personality: null, specialDomestic: null, specialWar: null, items: { horse: null, weapon: null, book: null, item: null } },
-            injury: 0, gold: 1000, rice: 1000, crew: 0, crewTypeId: 0, train: 0, atmos: 0, age: 20, npcState: 0, triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
+            id: 1,
+            name: 'GovernorAtHome',
+            nationId: 1,
+            cityId: 103,
+            troopId: 0,
+            stats: { leadership: 50, strength: 50, intelligence: 50 },
+            experience: 0,
+            dedication: 0,
+            officerLevel: 4,
+            role: {
+                personality: null,
+                specialDomestic: null,
+                specialWar: null,
+                items: { horse: null, weapon: null, book: null, item: null },
+            },
+            injury: 0,
+            gold: 1000,
+            rice: 1000,
+            crew: 0,
+            crewTypeId: 0,
+            train: 0,
+            atmos: 0,
+            age: 20,
+            npcState: 0,
+            triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
             meta: { officer_city: 103 },
         };
         const nation: Nation = {
-            id: 1, name: 'MyNation', color: '#000', capitalCityId: 101, chiefGeneralId: 1,
-            gold: 0, rice: 0, power: 0, level: 1, typeCode: 'che_def', meta: {},
+            id: 1,
+            name: 'MyNation',
+            color: '#000',
+            capitalCityId: 101,
+            chiefGeneralId: 1,
+            gold: 0,
+            rice: 0,
+            power: 0,
+            level: 1,
+            typeCode: 'che_def',
+            meta: {},
         };
         world.snapshot.generals.push(general);
         world.snapshot.nations.push(nation);
@@ -271,9 +425,11 @@ describe('che_귀환', () => {
             {
                 generalId: general.id,
                 commandKey: 'che_귀환',
-                resolver: (await import('../../../src/actions/turn/general/che_귀환.js')).commandSpec.createDefinition({} as any),
+                resolver: (await import('../../../src/actions/turn/general/che_귀환.js')).commandSpec.createDefinition(
+                    {} as any
+                ),
                 args: {},
-            }
+            },
         ]);
 
         const updated = world.getGeneral(general.id);

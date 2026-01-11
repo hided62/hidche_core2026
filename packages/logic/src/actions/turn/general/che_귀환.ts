@@ -1,4 +1,3 @@
-
 import type { City, General, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
@@ -23,7 +22,7 @@ import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js'
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 
-export interface ReturnArgs { }
+export interface ReturnArgs {}
 
 const ACTION_NAME = '귀환';
 const ACTION_KEY = 'che_귀환';
@@ -71,7 +70,7 @@ export class ActionResolver<
             throw new Error('Destination city not found (No capital?).');
         }
 
-        // We need city name for log. 
+        // We need city name for log.
         // If we don't have city object in context, we can't log name easily unless we fetch it.
         // We should add `getWorldCity(id)` to context or something.
         // Or assume resolving involves looking up city.
@@ -83,8 +82,8 @@ export class ActionResolver<
         // `GeneralActionResolveContext` usually doesn't have `worldRef`.
         // We must rely on `contextBuilder` to populate necessary data.
 
-        // Let's iterate `nationCities` if provided. 
-        // Or use `ActionContextBuilder` to fetch city by ID if we knew it? 
+        // Let's iterate `nationCities` if provided.
+        // Or use `ActionContextBuilder` to fetch city by ID if we knew it?
         // We don't know ID until we check logic.
 
         // In `ActionContextBuilder`, we can just load all cities of the nation?
@@ -94,7 +93,7 @@ export class ActionResolver<
         let foundDestCity: City | undefined;
 
         if (context.nationCities) {
-            foundDestCity = context.nationCities.find(c => c.id === destCityId);
+            foundDestCity = context.nationCities.find((c) => c.id === destCityId);
             if (foundDestCity) {
                 destCityName = foundDestCity.name;
             }
@@ -108,7 +107,7 @@ export class ActionResolver<
 
         context.addLog(`<G><b>${destCityName}</b></>${josaRo} 귀환했습니다.`, {
             category: LogCategory.ACTION,
-            format: LogFormat.MONTH, // Or HM if we want HH:MM suffix? 
+            format: LogFormat.MONTH, // Or HM if we want HH:MM suffix?
             // Legacy uses explicit date at end.
             // We can just use standard MONTH format for now.
         });
@@ -116,27 +115,32 @@ export class ActionResolver<
         const exp = 70;
         const ded = 100;
 
-        effects.push(createGeneralPatchEffect({
-            ...general,
-            cityId: destCityId,
-            experience: general.experience + exp,
-            dedication: general.dedication + ded,
-            stats: {
-                ...general.stats,
-                leadership: general.stats.leadership, // Update not needed unless verified
-            },
-            // leadership_exp + 1 in legacy?
-            // "increaseVar('leadership_exp', 1)"
-            // General entity doesn't show leadership_exp in Interface?
-            // Checking `entities.ts`... `stats` is Leadership/Strength/Intel.
-            // `experience` is total exp?
-            // If `leadership_exp` is missing in Entity, we must use meta or omit.
-            // Default to meta if needed.
-            meta: {
-                ...general.meta,
-                leadership_exp: (readMetaNumberFromUnknown(general.meta, 'leadership_exp') ?? 0) + 1
-            }
-        }, general.id));
+        effects.push(
+            createGeneralPatchEffect(
+                {
+                    ...general,
+                    cityId: destCityId,
+                    experience: general.experience + exp,
+                    dedication: general.dedication + ded,
+                    stats: {
+                        ...general.stats,
+                        leadership: general.stats.leadership, // Update not needed unless verified
+                    },
+                    // leadership_exp + 1 in legacy?
+                    // "increaseVar('leadership_exp', 1)"
+                    // General entity doesn't show leadership_exp in Interface?
+                    // Checking `entities.ts`... `stats` is Leadership/Strength/Intel.
+                    // `experience` is total exp?
+                    // If `leadership_exp` is missing in Entity, we must use meta or omit.
+                    // Default to meta if needed.
+                    meta: {
+                        ...general.meta,
+                        leadership_exp: (readMetaNumberFromUnknown(general.meta, 'leadership_exp') ?? 0) + 1,
+                    },
+                },
+                general.id
+            )
+        );
 
         return { effects };
     }
@@ -173,9 +177,9 @@ export class ActionDefinition<
 export const actionContextBuilder: ActionContextBuilder = (base, options) => {
     return {
         ...base,
-        // We effectively need all cities to find the destination name if it's not the capital. 
+        // We effectively need all cities to find the destination name if it's not the capital.
         // Or at least nation cities.
-        nationCities: options.worldRef?.listCities().filter(c => c.nationId === base.nation?.id) ?? [],
+        nationCities: options.worldRef?.listCities().filter((c) => c.nationId === base.nation?.id) ?? [],
     };
 };
 

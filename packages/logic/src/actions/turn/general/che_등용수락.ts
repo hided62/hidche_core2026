@@ -1,4 +1,3 @@
-
 import type { General, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
@@ -45,7 +44,10 @@ export class ActionResolver<
 > implements GeneralActionResolver<TriggerState, AcceptScoutArgs> {
     readonly key = ACTION_KEY;
 
-    resolve(context: AcceptScoutResolveContext<TriggerState>, _args: AcceptScoutArgs): GeneralActionOutcome<TriggerState> {
+    resolve(
+        context: AcceptScoutResolveContext<TriggerState>,
+        _args: AcceptScoutArgs
+    ): GeneralActionOutcome<TriggerState> {
         const general = context.general;
         const currentNation = context.nation;
         const destNation = context.destNation;
@@ -64,7 +66,8 @@ export class ActionResolver<
         const josaYi = JosaUtil.pick(generalName, '이');
 
         // Self Log
-        context.addLog(`<D>${destNationName}</>${josaRo} 망명하여 수도로 이동합니다.`, { // Text says "Move to Capital", but logic might move to recruiter city.
+        context.addLog(`<D>${destNationName}</>${josaRo} 망명하여 수도로 이동합니다.`, {
+            // Text says "Move to Capital", but logic might move to recruiter city.
             // Legacy log says "수도로 이동합니다", but implementation moves to destGeneral city if present!
             // We should match implementation or text? Text is just flavor.
             category: LogCategory.ACTION,
@@ -89,10 +92,15 @@ export class ActionResolver<
         });
 
         // 2. Recruiter Rewards
-        effects.push(createGeneralPatchEffect({
-            experience: destGeneral.experience + 100,
-            dedication: destGeneral.dedication + 100,
-        }, destGeneral.id));
+        effects.push(
+            createGeneralPatchEffect(
+                {
+                    experience: destGeneral.experience + 100,
+                    dedication: destGeneral.dedication + 100,
+                },
+                destGeneral.id
+            )
+        );
 
         // 3. Betrayal Logic
         // If currentNation exists (and > 0), handle betrayal return logic.
@@ -107,7 +115,7 @@ export class ActionResolver<
         let newExp = general.experience;
         let newDed = general.dedication;
 
-        const betrayCount = (readMetaNumberFromUnknown(general.meta, 'betray') ?? 0);
+        const betrayCount = readMetaNumberFromUnknown(general.meta, 'betray') ?? 0;
         let newBetray = betrayCount;
 
         if (currentNation && currentNation.id !== 0) {
@@ -125,16 +133,22 @@ export class ActionResolver<
             }
 
             if (returnGold > 0 || returnRice > 0) {
-                effects.push(createNationPatchEffect({
-                    gold: currentNation.gold + returnGold,
-                    rice: currentNation.rice + returnRice
-                }, currentNation.id));
+                effects.push(
+                    createNationPatchEffect(
+                        {
+                            gold: currentNation.gold + returnGold,
+                            rice: currentNation.rice + returnRice,
+                        },
+                        currentNation.id
+                    )
+                );
             }
 
             // Penalty
             // 10% * betray count deduction
-            const penaltyFactor = 1 - (0.1 * betrayCount);
-            if (penaltyFactor < 0) { // Should not be less than 0? capped at ?
+            const penaltyFactor = 1 - 0.1 * betrayCount;
+            if (penaltyFactor < 0) {
+                // Should not be less than 0? capped at ?
                 // Legacy: (1 - 0.1 * betray).
             }
             // Apply penalty
@@ -152,26 +166,31 @@ export class ActionResolver<
         // If recruiter is not valid city?
         if (!targetCityId) targetCityId = destNation.capitalCityId!;
 
-        effects.push(createGeneralPatchEffect({
-            nationId: destNation.id,
-            cityId: targetCityId,
-            experience: newExp,
-            dedication: newDed,
-            gold: newGold,
-            rice: newRice,
-            officerLevel: 1, // Reset rank
-            // officer_city: 0 via meta
-            crew: general.crew, // Keep crew? Legacy implies checking troop leader.
-            // If troop leader, disband troop.
-            // TS entity `troopId`.
-            troopId: 0, // Quit troop
-            meta: {
-                ...general.meta,
-                officer_city: 0,
-                betray: newBetray,
-                // killturn logic?
-            }
-        }, general.id));
+        effects.push(
+            createGeneralPatchEffect(
+                {
+                    nationId: destNation.id,
+                    cityId: targetCityId,
+                    experience: newExp,
+                    dedication: newDed,
+                    gold: newGold,
+                    rice: newRice,
+                    officerLevel: 1, // Reset rank
+                    // officer_city: 0 via meta
+                    crew: general.crew, // Keep crew? Legacy implies checking troop leader.
+                    // If troop leader, disband troop.
+                    // TS entity `troopId`.
+                    troopId: 0, // Quit troop
+                    meta: {
+                        ...general.meta,
+                        officer_city: 0,
+                        betray: newBetray,
+                        // killturn logic?
+                    },
+                },
+                general.id
+            )
+        );
 
         // 5. Update Nations Gen Count (Visual only? or real count)
         // Legacy updates `gennum`.
@@ -214,7 +233,10 @@ export class ActionDefinition<
         ];
     }
 
-    resolve(context: AcceptScoutResolveContext<TriggerState>, args: AcceptScoutArgs): GeneralActionOutcome<TriggerState> {
+    resolve(
+        context: AcceptScoutResolveContext<TriggerState>,
+        args: AcceptScoutArgs
+    ): GeneralActionOutcome<TriggerState> {
         return this.resolver.resolve(context, args);
     }
 }

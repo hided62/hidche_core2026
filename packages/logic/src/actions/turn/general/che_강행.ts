@@ -28,7 +28,7 @@ export interface ForcedMoveArgs {
 }
 
 export interface ForcedMoveResolveContext<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > extends GeneralActionResolveContext<TriggerState> {
     moveGenerals?: General<TriggerState>[]; // For roaming move
     map?: MapDefinition;
@@ -39,7 +39,7 @@ const ACTION_NAME = '강행';
 const ACTION_KEY = 'che_강행';
 
 export class ActionResolver<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionResolver<TriggerState, ForcedMoveArgs> {
     readonly key = ACTION_KEY;
 
@@ -97,7 +97,8 @@ export class ActionResolver<
         const nextTrain = Math.max(20, general.train - 5);
         const nextAtmos = Math.max(20, general.atmos - 5);
         const nextExp = general.experience + 100;
-        const nextLeadershipExp = (typeof general.meta.leadership_exp === 'number' ? general.meta.leadership_exp : 0) + 1;
+        const nextLeadershipExp =
+            (typeof general.meta.leadership_exp === 'number' ? general.meta.leadership_exp : 0) + 1;
 
         effects.push(
             createGeneralPatchEffect(
@@ -128,14 +129,14 @@ export class ActionResolver<
                 // Currently addLog attaches provided logs to turnLog (which is for the actor).
                 // To log for OTHERS, we might need specific effect or handle it differently.
                 // For now, I will omit logs for others or use a special effect if available.
-                // The legacy TS porting pattern for "others" logs isn't fully standardized yet in shared snippets. 
+                // The legacy TS porting pattern for "others" logs isn't fully standardized yet in shared snippets.
                 // Assuming createGeneralPatchEffect handles state. Logs for others might be missing in this iteration unless I find `createLogEffect`.
 
                 effects.push(
                     createGeneralPatchEffect(
                         {
                             ...target,
-                            cityId: destCityId
+                            cityId: destCityId,
                         },
                         target.id
                     )
@@ -148,7 +149,7 @@ export class ActionResolver<
 }
 
 export class ActionDefinition<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionDefinition<TriggerState, ForcedMoveArgs, ForcedMoveResolveContext<TriggerState>> {
     public readonly key = ACTION_KEY;
     public readonly name = ACTION_NAME;
@@ -173,7 +174,7 @@ export class ActionDefinition<
                 const cost = ctx.env.develCost as number;
                 return (cost ?? 0) * 5;
             }),
-            reqGeneralRice(() => 0) // Legacy checks cost[1] which is 0, but included constraint.
+            reqGeneralRice(() => 0), // Legacy checks cost[1] which is 0, but included constraint.
         ];
     }
 

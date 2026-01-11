@@ -35,11 +35,56 @@ const LINEAR_MAP: MapDefinition = {
     id: 'linear_map',
     name: 'Linear Map',
     cities: [
-        { id: 101, name: 'City1', level: 1, region: 1, position: { x: 0, y: 0 }, connections: [102], max: {} as any, initial: {} as any },
-        { id: 102, name: 'City2', level: 1, region: 1, position: { x: 0, y: 0 }, connections: [101, 103], max: {} as any, initial: {} as any },
-        { id: 103, name: 'City3', level: 1, region: 1, position: { x: 0, y: 0 }, connections: [102, 104], max: {} as any, initial: {} as any },
-        { id: 104, name: 'City4', level: 1, region: 1, position: { x: 0, y: 0 }, connections: [103, 105], max: {} as any, initial: {} as any },
-        { id: 105, name: 'City5', level: 1, region: 1, position: { x: 0, y: 0 }, connections: [104], max: {} as any, initial: {} as any },
+        {
+            id: 101,
+            name: 'City1',
+            level: 1,
+            region: 1,
+            position: { x: 0, y: 0 },
+            connections: [102],
+            max: {} as any,
+            initial: {} as any,
+        },
+        {
+            id: 102,
+            name: 'City2',
+            level: 1,
+            region: 1,
+            position: { x: 0, y: 0 },
+            connections: [101, 103],
+            max: {} as any,
+            initial: {} as any,
+        },
+        {
+            id: 103,
+            name: 'City3',
+            level: 1,
+            region: 1,
+            position: { x: 0, y: 0 },
+            connections: [102, 104],
+            max: {} as any,
+            initial: {} as any,
+        },
+        {
+            id: 104,
+            name: 'City4',
+            level: 1,
+            region: 1,
+            position: { x: 0, y: 0 },
+            connections: [103, 105],
+            max: {} as any,
+            initial: {} as any,
+        },
+        {
+            id: 105,
+            name: 'City5',
+            level: 1,
+            region: 1,
+            position: { x: 0, y: 0 },
+            connections: [104],
+            max: {} as any,
+            initial: {} as any,
+        },
     ],
     defaults: { trust: 50, trade: 100, supplyState: 1, frontState: 0 },
 };
@@ -140,7 +185,12 @@ describe('che_강행', () => {
             experience: 1000,
             dedication: 0,
             officerLevel: 1,
-            role: { personality: null, specialDomestic: null, specialWar: null, items: { horse: null, weapon: null, book: null, item: null } },
+            role: {
+                personality: null,
+                specialDomestic: null,
+                specialWar: null,
+                items: { horse: null, weapon: null, book: null, item: null },
+            },
             injury: 0,
             gold: 1000,
             rice: 1000,
@@ -154,18 +204,29 @@ describe('che_강행', () => {
             meta: {},
         };
         const nation: Nation = {
-            id: 1, name: 'MyNation', color: '#000', capitalCityId: 101, chiefGeneralId: 1,
-            gold: 0, rice: 0, power: 0, level: 1, typeCode: 'che_def', meta: {},
+            id: 1,
+            name: 'MyNation',
+            color: '#000',
+            capitalCityId: 101,
+            chiefGeneralId: 1,
+            gold: 0,
+            rice: 0,
+            power: 0,
+            level: 1,
+            typeCode: 'che_def',
+            meta: {},
         };
         world.snapshot.generals.push(general);
         world.snapshot.nations.push(nation);
 
         // Move 101 -> 104 (dist 3) OK
-        const definition = (await import('../../../src/actions/turn/general/che_강행.js')).commandSpec.createDefinition({
-            scenarioConfig: { const: { develCost: 10 } } as any,
-            worldRef: { listGenerals: () => world.getAllGenerals() } as any, // Mock world ref context
-            map: LINEAR_MAP
-        } as any);
+        const definition = (await import('../../../src/actions/turn/general/che_강행.js')).commandSpec.createDefinition(
+            {
+                scenarioConfig: { const: { develCost: 10 } } as any,
+                worldRef: { listGenerals: () => world.getAllGenerals() } as any, // Mock world ref context
+                map: LINEAR_MAP,
+            } as any
+        );
 
         await runner.runTurn([
             {
@@ -175,9 +236,9 @@ describe('che_강행', () => {
                 args: { destCityId: 104 },
                 context: {
                     map: LINEAR_MAP,
-                    startDevelCost: 10
-                }
-            }
+                    startDevelCost: 10,
+                },
+            },
         ]);
 
         const updated = world.getGeneral(general.id);
@@ -206,7 +267,12 @@ describe('che_강행', () => {
             experience: 1000,
             dedication: 0,
             officerLevel: 1,
-            role: { personality: null, specialDomestic: null, specialWar: null, items: { horse: null, weapon: null, book: null, item: null } },
+            role: {
+                personality: null,
+                specialDomestic: null,
+                specialWar: null,
+                items: { horse: null, weapon: null, book: null, item: null },
+            },
             injury: 0,
             gold: 1000,
             rice: 1000,
@@ -220,18 +286,29 @@ describe('che_강행', () => {
             meta: {},
         };
         const nation: Nation = {
-            id: 1, name: 'MyNation', color: '#000', capitalCityId: 101, chiefGeneralId: 1,
-            gold: 0, rice: 0, power: 0, level: 1, typeCode: 'che_def', meta: {},
+            id: 1,
+            name: 'MyNation',
+            color: '#000',
+            capitalCityId: 101,
+            chiefGeneralId: 1,
+            gold: 0,
+            rice: 0,
+            power: 0,
+            level: 1,
+            typeCode: 'che_def',
+            meta: {},
         };
         world.snapshot.generals.push(general);
         world.snapshot.nations.push(nation);
 
         // Move 101 -> 105 (dist 4) Fail
-        const definition = (await import('../../../src/actions/turn/general/che_강행.js')).commandSpec.createDefinition({
-            scenarioConfig: { const: { develCost: 10 } } as any,
-            worldRef: { listGenerals: () => world.getAllGenerals() } as any,
-            map: LINEAR_MAP
-        } as any);
+        const definition = (await import('../../../src/actions/turn/general/che_강행.js')).commandSpec.createDefinition(
+            {
+                scenarioConfig: { const: { develCost: 10 } } as any,
+                worldRef: { listGenerals: () => world.getAllGenerals() } as any,
+                map: LINEAR_MAP,
+            } as any
+        );
 
         // Manual constraint check
         const args = { destCityId: 105 };
@@ -258,35 +335,88 @@ describe('che_강행', () => {
         const runner = new TestGameRunner(world, 200, 1);
 
         const leader: General = {
-            id: 1, name: 'Leader', nationId: 1, cityId: 101, troopId: 0,
-            stats: { leadership: 50, strength: 50, intelligence: 50 }, experience: 0, dedication: 0,
-            officerLevel: 12, role: { personality: null, specialDomestic: null, specialWar: null, items: { horse: null, weapon: null, book: null, item: null } },
-            injury: 0, gold: 1000, rice: 1000, crew: 0, crewTypeId: 0, train: 50, atmos: 50, age: 20, npcState: 0, triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} }, meta: {},
+            id: 1,
+            name: 'Leader',
+            nationId: 1,
+            cityId: 101,
+            troopId: 0,
+            stats: { leadership: 50, strength: 50, intelligence: 50 },
+            experience: 0,
+            dedication: 0,
+            officerLevel: 12,
+            role: {
+                personality: null,
+                specialDomestic: null,
+                specialWar: null,
+                items: { horse: null, weapon: null, book: null, item: null },
+            },
+            injury: 0,
+            gold: 1000,
+            rice: 1000,
+            crew: 0,
+            crewTypeId: 0,
+            train: 50,
+            atmos: 50,
+            age: 20,
+            npcState: 0,
+            triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
+            meta: {},
         };
 
         const sub: General = {
-            id: 2, name: 'Sub', nationId: 1, cityId: 101, troopId: 0,
-            stats: { leadership: 50, strength: 50, intelligence: 50 }, experience: 0, dedication: 0,
-            officerLevel: 1, role: { personality: null, specialDomestic: null, specialWar: null, items: { horse: null, weapon: null, book: null, item: null } },
-            injury: 0, gold: 1000, rice: 1000, crew: 0, crewTypeId: 0, train: 50, atmos: 50, age: 20, npcState: 0, triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} }, meta: {},
+            id: 2,
+            name: 'Sub',
+            nationId: 1,
+            cityId: 101,
+            troopId: 0,
+            stats: { leadership: 50, strength: 50, intelligence: 50 },
+            experience: 0,
+            dedication: 0,
+            officerLevel: 1,
+            role: {
+                personality: null,
+                specialDomestic: null,
+                specialWar: null,
+                items: { horse: null, weapon: null, book: null, item: null },
+            },
+            injury: 0,
+            gold: 1000,
+            rice: 1000,
+            crew: 0,
+            crewTypeId: 0,
+            train: 50,
+            atmos: 50,
+            age: 20,
+            npcState: 0,
+            triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
+            meta: {},
         };
 
         const nation: Nation = {
-            id: 1, name: 'RoamingNation', color: '#000', capitalCityId: 101, chiefGeneralId: 1,
-            gold: 0, rice: 0, power: 0,
+            id: 1,
+            name: 'RoamingNation',
+            color: '#000',
+            capitalCityId: 101,
+            chiefGeneralId: 1,
+            gold: 0,
+            rice: 0,
+            power: 0,
             level: 0, // Roaming
-            typeCode: 'che_def', meta: {},
+            typeCode: 'che_def',
+            meta: {},
         };
 
         world.snapshot.generals.push(leader);
         world.snapshot.generals.push(sub);
         world.snapshot.nations.push(nation);
 
-        const definition = (await import('../../../src/actions/turn/general/che_강행.js')).commandSpec.createDefinition({
-            scenarioConfig: { const: { develCost: 10 } } as any,
-            worldRef: { listGenerals: () => world.getAllGenerals() } as any, // Must return valid list
-            map: LINEAR_MAP
-        } as any);
+        const definition = (await import('../../../src/actions/turn/general/che_강행.js')).commandSpec.createDefinition(
+            {
+                scenarioConfig: { const: { develCost: 10 } } as any,
+                worldRef: { listGenerals: () => world.getAllGenerals() } as any, // Must return valid list
+                map: LINEAR_MAP,
+            } as any
+        );
 
         await runner.runTurn([
             {
@@ -297,9 +427,9 @@ describe('che_강행', () => {
                 context: {
                     map: LINEAR_MAP,
                     startDevelCost: 10,
-                    moveGenerals: world.getAllGenerals()
-                }
-            }
+                    moveGenerals: world.getAllGenerals(),
+                },
+            },
         ]);
 
         const updatedLeader = world.getGeneral(leader.id);

@@ -1,4 +1,3 @@
-
 import { describe, expect, it } from 'vitest';
 import type { General, Nation } from '../../../src/domain/entities.js';
 import { buildScenarioBootstrap } from '../../../src/world/bootstrap.js';
@@ -36,8 +35,26 @@ const MINIMAL_MAP = {
     id: 'minimal_map',
     name: 'Minimal Map',
     cities: [
-        { id: 101, name: 'Capital1', level: 1, region: 1, position: { x: 0, y: 0 }, connections: [], max: {} as any, initial: {} as any },
-        { id: 102, name: 'Capital2', level: 1, region: 1, position: { x: 0, y: 0 }, connections: [], max: {} as any, initial: {} as any },
+        {
+            id: 101,
+            name: 'Capital1',
+            level: 1,
+            region: 1,
+            position: { x: 0, y: 0 },
+            connections: [],
+            max: {} as any,
+            initial: {} as any,
+        },
+        {
+            id: 102,
+            name: 'Capital2',
+            level: 1,
+            region: 1,
+            position: { x: 0, y: 0 },
+            connections: [],
+            max: {} as any,
+            initial: {} as any,
+        },
     ],
     defaults: { trust: 50, trade: 100, supplyState: 1, frontState: 0 },
 };
@@ -78,7 +95,7 @@ function createConstraintContext(actor: General, year: number = 200, args: any =
             world: { currentYear: year },
             openingPartYear: systemEnv.openingPartYear,
             map: MINIMAL_MAP,
-            cities: MINIMAL_MAP.cities
+            cities: MINIMAL_MAP.cities,
         },
         mode: 'full',
     };
@@ -131,21 +148,70 @@ describe('che_등용수락', () => {
         const runner = new TestGameRunner(world, 200, 1);
 
         const neutralGen: General = {
-            id: 1, name: 'Neutral', nationId: 0, cityId: 101, troopId: 0,
-            stats: { leadership: 50, strength: 50, intelligence: 50 }, experience: 0, dedication: 0,
-            officerLevel: 0, role: { personality: null, specialDomestic: null, specialWar: null, items: { horse: null, weapon: null, book: null, item: null } },
-            injury: 0, gold: 1000, rice: 1000, crew: 0, crewTypeId: 0, train: 0, atmos: 0, age: 20, npcState: 0, triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} }, meta: {},
+            id: 1,
+            name: 'Neutral',
+            nationId: 0,
+            cityId: 101,
+            troopId: 0,
+            stats: { leadership: 50, strength: 50, intelligence: 50 },
+            experience: 0,
+            dedication: 0,
+            officerLevel: 0,
+            role: {
+                personality: null,
+                specialDomestic: null,
+                specialWar: null,
+                items: { horse: null, weapon: null, book: null, item: null },
+            },
+            injury: 0,
+            gold: 1000,
+            rice: 1000,
+            crew: 0,
+            crewTypeId: 0,
+            train: 0,
+            atmos: 0,
+            age: 20,
+            npcState: 0,
+            triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
+            meta: {},
         };
 
         const recruiterGen: General = {
-            id: 2, name: 'Recruiter', nationId: 2, cityId: 102, troopId: 0,
-            stats: { leadership: 50, strength: 50, intelligence: 50 }, experience: 0, dedication: 0,
-            officerLevel: 1, role: null as any, injury: 0, gold: 1000, rice: 1000, crew: 0, crewTypeId: 0, train: 0, atmos: 0, age: 20, npcState: 0, triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} }, meta: {},
+            id: 2,
+            name: 'Recruiter',
+            nationId: 2,
+            cityId: 102,
+            troopId: 0,
+            stats: { leadership: 50, strength: 50, intelligence: 50 },
+            experience: 0,
+            dedication: 0,
+            officerLevel: 1,
+            role: null as any,
+            injury: 0,
+            gold: 1000,
+            rice: 1000,
+            crew: 0,
+            crewTypeId: 0,
+            train: 0,
+            atmos: 0,
+            age: 20,
+            npcState: 0,
+            triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
+            meta: {},
         };
 
         const nation2: Nation = {
-            id: 2, name: 'Nation2', color: '#000', capitalCityId: 102, chiefGeneralId: 2,
-            gold: 0, rice: 0, power: 0, level: 1, typeCode: 'che_def', meta: {},
+            id: 2,
+            name: 'Nation2',
+            color: '#000',
+            capitalCityId: 102,
+            chiefGeneralId: 2,
+            gold: 0,
+            rice: 0,
+            power: 0,
+            level: 1,
+            typeCode: 'che_def',
+            meta: {},
         };
 
         world.snapshot.generals.push(neutralGen);
@@ -156,14 +222,16 @@ describe('che_등용수락', () => {
             {
                 generalId: neutralGen.id,
                 commandKey: 'che_등용수락',
-                resolver: (await import('../../../src/actions/turn/general/che_등용수락.js')).commandSpec.createDefinition({} as any),
+                resolver: (
+                    await import('../../../src/actions/turn/general/che_등용수락.js')
+                ).commandSpec.createDefinition({} as any),
                 args: { destNationId: 2, destGeneralId: 2 },
                 context: {
                     destNation: nation2,
                     destGeneral: recruiterGen,
-                    env: systemEnv
-                }
-            }
+                    env: systemEnv,
+                },
+            },
         ]);
 
         const updatedSelf = world.getGeneral(neutralGen.id);
@@ -188,24 +256,77 @@ describe('che_등용수락', () => {
         const runner = new TestGameRunner(world, 200, 1);
 
         const betrayer: General = {
-            id: 1, name: 'Betrayer', nationId: 1, cityId: 101, troopId: 0,
-            stats: { leadership: 50, strength: 50, intelligence: 50 }, experience: 1000, dedication: 1000,
-            officerLevel: 1, role: null as any, injury: 0, gold: 2000, rice: 2000, crew: 0, crewTypeId: 0, train: 0, atmos: 0, age: 20, npcState: 0, triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
+            id: 1,
+            name: 'Betrayer',
+            nationId: 1,
+            cityId: 101,
+            troopId: 0,
+            stats: { leadership: 50, strength: 50, intelligence: 50 },
+            experience: 1000,
+            dedication: 1000,
+            officerLevel: 1,
+            role: null as any,
+            injury: 0,
+            gold: 2000,
+            rice: 2000,
+            crew: 0,
+            crewTypeId: 0,
+            train: 0,
+            atmos: 0,
+            age: 20,
+            npcState: 0,
+            triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
             meta: { betray: 1 },
         };
         const nation1: Nation = {
-            id: 1, name: 'Nation1', color: '#000', capitalCityId: 101, chiefGeneralId: 0,
-            gold: 0, rice: 0, power: 0, level: 1, typeCode: 'che_def', meta: {},
+            id: 1,
+            name: 'Nation1',
+            color: '#000',
+            capitalCityId: 101,
+            chiefGeneralId: 0,
+            gold: 0,
+            rice: 0,
+            power: 0,
+            level: 1,
+            typeCode: 'che_def',
+            meta: {},
         };
 
         const recruiterGen: General = {
-            id: 2, name: 'Recruiter', nationId: 2, cityId: 102, troopId: 0,
-            stats: { leadership: 50, strength: 50, intelligence: 50 }, experience: 0, dedication: 0,
-            officerLevel: 1, role: null as any, injury: 0, gold: 1000, rice: 1000, crew: 0, crewTypeId: 0, train: 0, atmos: 0, age: 20, npcState: 0, triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} }, meta: {},
+            id: 2,
+            name: 'Recruiter',
+            nationId: 2,
+            cityId: 102,
+            troopId: 0,
+            stats: { leadership: 50, strength: 50, intelligence: 50 },
+            experience: 0,
+            dedication: 0,
+            officerLevel: 1,
+            role: null as any,
+            injury: 0,
+            gold: 1000,
+            rice: 1000,
+            crew: 0,
+            crewTypeId: 0,
+            train: 0,
+            atmos: 0,
+            age: 20,
+            npcState: 0,
+            triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
+            meta: {},
         };
         const nation2: Nation = {
-            id: 2, name: 'Nation2', color: '#000', capitalCityId: 102, chiefGeneralId: 2,
-            gold: 0, rice: 0, power: 0, level: 1, typeCode: 'che_def', meta: {},
+            id: 2,
+            name: 'Nation2',
+            color: '#000',
+            capitalCityId: 102,
+            chiefGeneralId: 2,
+            gold: 0,
+            rice: 0,
+            power: 0,
+            level: 1,
+            typeCode: 'che_def',
+            meta: {},
         };
 
         world.snapshot.generals.push(betrayer);
@@ -217,14 +338,16 @@ describe('che_등용수락', () => {
             {
                 generalId: betrayer.id,
                 commandKey: 'che_등용수락',
-                resolver: (await import('../../../src/actions/turn/general/che_등용수락.js')).commandSpec.createDefinition({} as any),
+                resolver: (
+                    await import('../../../src/actions/turn/general/che_등용수락.js')
+                ).commandSpec.createDefinition({} as any),
                 args: { destNationId: 2, destGeneralId: 2 },
                 context: {
                     destNation: nation2,
                     destGeneral: recruiterGen,
-                    env: systemEnv
-                }
-            }
+                    env: systemEnv,
+                },
+            },
         ]);
 
         const updatedSelf = world.getGeneral(betrayer.id);
@@ -248,23 +371,81 @@ describe('che_등용수락', () => {
         const world = new InMemoryWorld(bootstrapResult.snapshot);
 
         const monarch: General = {
-            id: 1, name: 'Monarch', nationId: 1, cityId: 101, troopId: 0,
-            stats: { leadership: 50, strength: 50, intelligence: 50 }, experience: 0, dedication: 0,
-            officerLevel: 12, role: { personality: null, specialDomestic: null, specialWar: null, items: { horse: null, weapon: null, book: null, item: null } },
-            injury: 0, gold: 1000, rice: 1000, crew: 0, crewTypeId: 0, train: 0, atmos: 0, age: 20, npcState: 0, triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} }, meta: {},
+            id: 1,
+            name: 'Monarch',
+            nationId: 1,
+            cityId: 101,
+            troopId: 0,
+            stats: { leadership: 50, strength: 50, intelligence: 50 },
+            experience: 0,
+            dedication: 0,
+            officerLevel: 12,
+            role: {
+                personality: null,
+                specialDomestic: null,
+                specialWar: null,
+                items: { horse: null, weapon: null, book: null, item: null },
+            },
+            injury: 0,
+            gold: 1000,
+            rice: 1000,
+            crew: 0,
+            crewTypeId: 0,
+            train: 0,
+            atmos: 0,
+            age: 20,
+            npcState: 0,
+            triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
+            meta: {},
         };
         const nation1: Nation = {
-            id: 1, name: 'Nation1', color: '#000', capitalCityId: 101, chiefGeneralId: 1,
-            gold: 0, rice: 0, power: 0, level: 1, typeCode: 'che_def', meta: {},
+            id: 1,
+            name: 'Nation1',
+            color: '#000',
+            capitalCityId: 101,
+            chiefGeneralId: 1,
+            gold: 0,
+            rice: 0,
+            power: 0,
+            level: 1,
+            typeCode: 'che_def',
+            meta: {},
         };
         const recruiterGen: General = {
-            id: 2, name: 'Recruiter', nationId: 2, cityId: 102, troopId: 0,
-            stats: { leadership: 50, strength: 50, intelligence: 50 }, experience: 0, dedication: 0,
-            officerLevel: 1, role: null as any, injury: 0, gold: 1000, rice: 1000, crew: 0, crewTypeId: 0, train: 0, atmos: 0, age: 20, npcState: 0, triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} }, meta: {},
+            id: 2,
+            name: 'Recruiter',
+            nationId: 2,
+            cityId: 102,
+            troopId: 0,
+            stats: { leadership: 50, strength: 50, intelligence: 50 },
+            experience: 0,
+            dedication: 0,
+            officerLevel: 1,
+            role: null as any,
+            injury: 0,
+            gold: 1000,
+            rice: 1000,
+            crew: 0,
+            crewTypeId: 0,
+            train: 0,
+            atmos: 0,
+            age: 20,
+            npcState: 0,
+            triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
+            meta: {},
         };
         const nation2: Nation = {
-            id: 2, name: 'Nation2', color: '#000', capitalCityId: 102, chiefGeneralId: 2,
-            gold: 0, rice: 0, power: 0, level: 1, typeCode: 'che_def', meta: {},
+            id: 2,
+            name: 'Nation2',
+            color: '#000',
+            capitalCityId: 102,
+            chiefGeneralId: 2,
+            gold: 0,
+            rice: 0,
+            power: 0,
+            level: 1,
+            typeCode: 'che_def',
+            meta: {},
         };
 
         world.snapshot.generals.push(monarch);
@@ -273,7 +454,9 @@ describe('che_등용수락', () => {
         world.snapshot.nations.push(nation2);
 
         // Manually check constraints for denial
-        const def = (await import('../../../src/actions/turn/general/che_등용수락.js')).commandSpec.createDefinition({} as any);
+        const def = (await import('../../../src/actions/turn/general/che_등용수락.js')).commandSpec.createDefinition(
+            {} as any
+        );
         const args = { destNationId: 2, destGeneralId: 2 };
 
         const ctx = createConstraintContext(monarch, 200, args);
@@ -283,7 +466,7 @@ describe('che_등용수락', () => {
         expect(result.kind).toBe('deny');
         if (result.kind === 'deny') {
             const reason = result.constraintName || result.reason;
-            // notLord constraint failure. 
+            // notLord constraint failure.
             // In TS presets, notLord(monarch) returns deny.
             // ConstraintName should be 'notLord' or 'NotLord'.
             expect(result.constraintName).toMatch(/NotLord/i);
@@ -298,27 +481,74 @@ describe('che_등용수락', () => {
         const world = new InMemoryWorld(bootstrapResult.snapshot);
 
         const general: General = {
-            id: 1, name: 'Gen1', nationId: 1, cityId: 101, troopId: 0,
-            stats: { leadership: 50, strength: 50, intelligence: 50 }, experience: 0, dedication: 0,
-            officerLevel: 1, role: null as any, injury: 0, gold: 1000, rice: 1000, crew: 0, crewTypeId: 0, train: 0, atmos: 0, age: 20, npcState: 0, triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} }, meta: {},
+            id: 1,
+            name: 'Gen1',
+            nationId: 1,
+            cityId: 101,
+            troopId: 0,
+            stats: { leadership: 50, strength: 50, intelligence: 50 },
+            experience: 0,
+            dedication: 0,
+            officerLevel: 1,
+            role: null as any,
+            injury: 0,
+            gold: 1000,
+            rice: 1000,
+            crew: 0,
+            crewTypeId: 0,
+            train: 0,
+            atmos: 0,
+            age: 20,
+            npcState: 0,
+            triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
+            meta: {},
         };
         const nation1: Nation = {
-            id: 1, name: 'Nation1', color: '#000', capitalCityId: 101, chiefGeneralId: 1,
-            gold: 0, rice: 0, power: 0, level: 1, typeCode: 'che_def', meta: {},
+            id: 1,
+            name: 'Nation1',
+            color: '#000',
+            capitalCityId: 101,
+            chiefGeneralId: 1,
+            gold: 0,
+            rice: 0,
+            power: 0,
+            level: 1,
+            typeCode: 'che_def',
+            meta: {},
         };
         // Recruiter also in same nation? Or different?
         // Arg destNationId is key.
         const recruiterGen: General = {
-            id: 2, name: 'Recruiter', nationId: 1, cityId: 101, troopId: 0,
-            stats: { leadership: 50, strength: 50, intelligence: 50 }, experience: 0, dedication: 0,
-            officerLevel: 1, role: null as any, injury: 0, gold: 1000, rice: 1000, crew: 0, crewTypeId: 0, train: 0, atmos: 0, age: 20, npcState: 0, triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} }, meta: {},
+            id: 2,
+            name: 'Recruiter',
+            nationId: 1,
+            cityId: 101,
+            troopId: 0,
+            stats: { leadership: 50, strength: 50, intelligence: 50 },
+            experience: 0,
+            dedication: 0,
+            officerLevel: 1,
+            role: null as any,
+            injury: 0,
+            gold: 1000,
+            rice: 1000,
+            crew: 0,
+            crewTypeId: 0,
+            train: 0,
+            atmos: 0,
+            age: 20,
+            npcState: 0,
+            triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
+            meta: {},
         };
 
         world.snapshot.generals.push(general);
         world.snapshot.generals.push(recruiterGen);
         world.snapshot.nations.push(nation1);
 
-        const def = (await import('../../../src/actions/turn/general/che_등용수락.js')).commandSpec.createDefinition({} as any);
+        const def = (await import('../../../src/actions/turn/general/che_등용수락.js')).commandSpec.createDefinition(
+            {} as any
+        );
         const args = { destNationId: 1, destGeneralId: 2 }; // Target same nation 1
 
         const ctx = createConstraintContext(general, 200, args);

@@ -101,7 +101,6 @@ function createViewState(world: InMemoryWorld, year: number = 200, env: TurnComm
 }
 
 describe('che_NPC능동', () => {
-
     it('should allow NPC to teleport with "순간이동"', async () => {
         const bootstrapResult = buildScenarioBootstrap({
             scenario: MOCK_SCENARIO_BASE,
@@ -125,7 +124,12 @@ describe('che_NPC능동', () => {
             experience: 0,
             dedication: 0,
             officerLevel: 0,
-            role: { personality: null, specialDomestic: null, specialWar: null, items: { horse: null, weapon: null, book: null, item: null } },
+            role: {
+                personality: null,
+                specialDomestic: null,
+                specialWar: null,
+                items: { horse: null, weapon: null, book: null, item: null },
+            },
             injury: 0,
             gold: 1000,
             rice: 1000,
@@ -144,9 +148,11 @@ describe('che_NPC능동', () => {
             {
                 generalId: general.id,
                 commandKey: 'che_NPC능동',
-                resolver: (await import('../../../src/actions/turn/general/che_NPC능동.js')).commandSpec.createDefinition({} as any),
+                resolver: (
+                    await import('../../../src/actions/turn/general/che_NPC능동.js')
+                ).commandSpec.createDefinition({} as any),
                 args: { optionText: '순간이동', destCityId },
-            }
+            },
         ]);
 
         const updated = world.getGeneral(general.id);
@@ -173,7 +179,12 @@ describe('che_NPC능동', () => {
             experience: 0,
             dedication: 0,
             officerLevel: 0,
-            role: { personality: null, specialDomestic: null, specialWar: null, items: { horse: null, weapon: null, book: null, item: null } },
+            role: {
+                personality: null,
+                specialDomestic: null,
+                specialWar: null,
+                items: { horse: null, weapon: null, book: null, item: null },
+            },
             injury: 0,
             gold: 1000,
             rice: 1000,
@@ -188,7 +199,9 @@ describe('che_NPC능동', () => {
         };
         world.snapshot.generals.push(general);
 
-        const def = (await import('../../../src/actions/turn/general/che_NPC능동.js')).commandSpec.createDefinition({} as any);
+        const def = (await import('../../../src/actions/turn/general/che_NPC능동.js')).commandSpec.createDefinition(
+            {} as any
+        );
         const args = { optionText: '순간이동', destCityId };
 
         const ctx = createConstraintContext(general, 200, args);
