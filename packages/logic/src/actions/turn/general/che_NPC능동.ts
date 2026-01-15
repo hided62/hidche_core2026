@@ -17,11 +17,6 @@ import type { GeneralTurnCommandSpec } from './index.js';
 import type { MapDefinition } from '@sammo-ts/logic/world/types.js';
 import { parseArgsWithSchema } from '../parseArgs.js';
 
-export interface NPCSelfArgs {
-    optionText: string;
-    destCityId?: number;
-}
-
 export type NPCSelfResolveContext<TriggerState extends GeneralTriggerState = GeneralTriggerState> =
     GeneralActionResolveContext<TriggerState> & {
         map?: MapDefinition;
@@ -29,12 +24,13 @@ export type NPCSelfResolveContext<TriggerState extends GeneralTriggerState = Gen
 
 const ACTION_NAME = 'NPC능동';
 const ACTION_KEY = 'che_NPC능동';
-const NPC_SELF_ARGS_SCHEMA = z.discriminatedUnion('optionText', [
+const ARGS_SCHEMA = z.discriminatedUnion('optionText', [
     z.object({
         optionText: z.literal('순간이동'),
         destCityId: z.number(),
     }),
 ]);
+export type NPCSelfArgs = z.infer<typeof ARGS_SCHEMA>;
 
 export class ActionResolver<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -98,7 +94,7 @@ export class ActionDefinition<
     }
 
     parseArgs(raw: unknown): NPCSelfArgs | null {
-        return parseArgsWithSchema(NPC_SELF_ARGS_SCHEMA, raw);
+        return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
     buildConstraints(_ctx: ConstraintContext, args: NPCSelfArgs): Constraint[] {
@@ -121,5 +117,6 @@ export const commandSpec: GeneralTurnCommandSpec = {
     category: '특수', // Valid category? Legacy didn't specify category in static prop usually, handled by mapping. Defaulting to '특수'.
     reqArg: true,
     args: { optionText: '', destCityId: 0 },
+    argsSchema: ARGS_SCHEMA,
     createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
 };

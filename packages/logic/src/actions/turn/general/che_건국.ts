@@ -17,17 +17,19 @@ import {
     createNationPatchEffect,
 } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat } from '@sammo-ts/logic/logging/types.js';
+import { z } from 'zod';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
-
-export interface FoundingArgs {
-    nationName: string;
-    nationType: string;
-    colorType: number;
-}
+import { parseArgsWithSchema } from '../parseArgs.js';
 
 const ACTION_NAME = '건국';
+const ARGS_SCHEMA = z.object({
+    nationName: z.string().min(1),
+    nationType: z.string().min(1),
+    colorType: z.number(),
+});
+export type FoundingArgs = z.infer<typeof ARGS_SCHEMA>;
 
 const NATION_COLORS = [
     '#FF0000',
@@ -72,13 +74,7 @@ export class ActionDefinition<
     public readonly name = ACTION_NAME;
 
     parseArgs(raw: unknown): FoundingArgs | null {
-        if (typeof raw !== 'object' || raw === null) return null;
-        const { nationName, nationType, colorType } = raw as Record<string, unknown>;
-        if (typeof nationName !== 'string' || !nationName) return null;
-        if (typeof nationType !== 'string' || !nationType) return null;
-        if (typeof colorType !== 'number') return null;
-
-        return { nationName, nationType, colorType };
+        return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
     buildConstraints(_ctx: ConstraintContext, args: FoundingArgs): Constraint[] {
@@ -174,5 +170,6 @@ export const commandSpec: GeneralTurnCommandSpec = {
         nationType: 'string',
         colorType: 'number',
     },
+    argsSchema: ARGS_SCHEMA,
     createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
 };

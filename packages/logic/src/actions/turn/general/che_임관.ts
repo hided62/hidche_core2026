@@ -5,15 +5,17 @@ import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition
 import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
 import { createGeneralPatchEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat } from '@sammo-ts/logic/logging/types.js';
+import { z } from 'zod';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
-
-export interface AppointmentArgs {
-    destNationId: number;
-}
+import { parseArgsWithSchema } from '../parseArgs.js';
 
 const ACTION_NAME = '임관';
+const ARGS_SCHEMA = z.object({
+    destNationId: z.number(),
+});
+export type AppointmentArgs = z.infer<typeof ARGS_SCHEMA>;
 
 const parseNationId = (raw: unknown): number | null => {
     if (typeof raw !== 'number' || !Number.isFinite(raw)) {
@@ -29,8 +31,11 @@ export class ActionDefinition<
     public readonly name = ACTION_NAME;
 
     parseArgs(raw: unknown): AppointmentArgs | null {
-        const data = raw as { destNationId?: unknown };
-        const destNationId = parseNationId(data?.destNationId);
+        const data = parseArgsWithSchema(ARGS_SCHEMA, raw);
+        if (!data) {
+            return null;
+        }
+        const destNationId = parseNationId(data.destNationId);
         if (destNationId === null) {
             return null;
         }
@@ -69,5 +74,6 @@ export const commandSpec: GeneralTurnCommandSpec = {
     category: '전략',
     reqArg: true,
     args: { destNationId: 0 },
+    argsSchema: ARGS_SCHEMA,
     createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
 };

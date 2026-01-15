@@ -24,10 +24,6 @@ import type { GeneralTurnCommandSpec } from './index.js';
 import type { MapDefinition } from '@sammo-ts/logic/world/types.js';
 import { parseArgsWithSchema } from '../parseArgs.js';
 
-export interface MoveArgs {
-    destCityId: number;
-}
-
 export interface MoveResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > extends GeneralActionResolveContext<TriggerState> {
@@ -38,9 +34,10 @@ export interface MoveResolveContext<
 
 const ACTION_NAME = '이동';
 const ACTION_KEY = 'che_이동';
-const MOVE_ARGS_SCHEMA = z.object({
+const ARGS_SCHEMA = z.object({
     destCityId: z.number(),
 });
+export type MoveArgs = z.infer<typeof ARGS_SCHEMA>;
 
 // Helper for map connectivity
 const connectedCity = (): Constraint => ({
@@ -160,7 +157,7 @@ export class ActionDefinition<
     }
 
     parseArgs(raw: unknown): MoveArgs | null {
-        return parseArgsWithSchema(MOVE_ARGS_SCHEMA, raw);
+        return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
     buildConstraints(ctx: ConstraintContext, _args: MoveArgs): Constraint[] {
@@ -195,5 +192,6 @@ export const commandSpec: GeneralTurnCommandSpec = {
     category: '군사',
     reqArg: true,
     args: { destCityId: 0 },
+    argsSchema: ARGS_SCHEMA,
     createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
 };

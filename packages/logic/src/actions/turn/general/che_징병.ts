@@ -19,6 +19,7 @@ import type {
 import type { MapDefinition, UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { resolveStartYear } from '@sammo-ts/logic/actions/turn/actionContextHelpers.js';
+import { z } from 'zod';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import {
@@ -27,11 +28,7 @@ import {
     getTechCost,
     isCrewTypeAvailable,
 } from '@sammo-ts/logic/world/unitSet.js';
-
-export interface RecruitArgs {
-    crewType: number;
-    amount: number;
-}
+import { parseArgsWithSchema } from '../parseArgs.js';
 
 export interface RecruitEnvironment {
     costOffset?: number;
@@ -58,9 +55,27 @@ const DEFAULT_ATMOS = 40;
 const DEFAULT_MIN_POP = 30000;
 const DEFAULT_TRUST = 50;
 const MIN_CREW = 100;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-    value !== null && typeof value === 'object' && !Array.isArray(value);
+const ARGS_SCHEMA = z.preprocess(
+    (raw) => {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+            return raw;
+        }
+        const record = raw as Record<string, unknown>;
+        const crewType = record.crewType ?? record.crewTypeId;
+        return { ...record, crewType };
+    },
+    z.object({
+        crewType: z.preprocess(
+            (value) => (typeof value === 'number' ? Math.floor(value) : value),
+            z.number().int().positive()
+        ),
+        amount: z.preprocess(
+            (value) => (typeof value === 'number' ? Math.floor(value) : value),
+            z.number().int().min(0)
+        ),
+    })
+);
+export type RecruitArgs = z.infer<typeof ARGS_SCHEMA>;
 
 const clamp = (value: number, min: number | null, max: number | null): number => {
     if (max !== null && min !== null && max < min) {
@@ -401,13 +416,7 @@ export class ActionDefinition<
     }
 
     parseArgs(raw: unknown): RecruitArgs | null {
-        const data = isRecord(raw) ? raw : {};
-        const crewTypeId = resolveCrewTypeId(data);
-        const amount = resolveCrewAmount(data);
-        if (crewTypeId === null || amount === null) {
-            return null;
-        }
-        return { crewType: crewTypeId, amount };
+        return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
     buildConstraints(ctx: ConstraintContext, _args: RecruitArgs): Constraint[] {
@@ -528,5 +537,6 @@ export const commandSpec: GeneralTurnCommandSpec = {
     category: '내정',
     reqArg: true,
     args: {},
+    argsSchema: ARGS_SCHEMA,
     createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env.generalActionModules ?? [], {}),
 };

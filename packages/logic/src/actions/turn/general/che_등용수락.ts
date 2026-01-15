@@ -18,17 +18,19 @@ import type {
 import { createGeneralPatchEffect, createNationPatchEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat } from '@sammo-ts/logic/logging/types.js';
 import { JosaUtil } from '@sammo-ts/common';
+import { z } from 'zod';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
-
-export interface AcceptScoutArgs {
-    destNationId: number;
-    destGeneralId: number;
-}
+import { parseArgsWithSchema } from '../parseArgs.js';
 
 const ACTION_NAME = '등용수락';
 const ACTION_KEY = 'che_등용수락';
+const ARGS_SCHEMA = z.object({
+    destNationId: z.number(),
+    destGeneralId: z.number(),
+});
+export type AcceptScoutArgs = z.infer<typeof ARGS_SCHEMA>;
 
 export interface AcceptScoutResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -180,9 +182,7 @@ export class ActionDefinition<
     }
 
     parseArgs(raw: unknown): AcceptScoutArgs | null {
-        const args = raw as Partial<AcceptScoutArgs>;
-        if (typeof args.destNationId !== 'number' || typeof args.destGeneralId !== 'number') return null;
-        return { destNationId: args.destNationId, destGeneralId: args.destGeneralId };
+        return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
     buildConstraints(_ctx: ConstraintContext, _args: AcceptScoutArgs): Constraint[] {
@@ -224,5 +224,6 @@ export const commandSpec: GeneralTurnCommandSpec = {
         destNationId: 'number',
         destGeneralId: 'number',
     },
+    argsSchema: ARGS_SCHEMA,
     createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env),
 };

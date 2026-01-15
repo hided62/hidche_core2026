@@ -4,14 +4,11 @@ import { occupiedCity, reqGeneralGold, reqGeneralRice } from '@sammo-ts/logic/co
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
 import { LogFormat } from '@sammo-ts/logic/logging/types.js';
+import { z } from 'zod';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
-
-export interface TradeArgs {
-    buyRice: boolean;
-    amount: number;
-}
+import { parseArgsWithSchema } from '../parseArgs.js';
 
 export interface TradeEnvironment {
     exchangeFee?: number;
@@ -19,6 +16,11 @@ export interface TradeEnvironment {
 
 const ACTION_NAME = '군량매매';
 const DEFAULT_EXCHANGE_FEE = 0.01;
+const ARGS_SCHEMA = z.object({
+    buyRice: z.boolean(),
+    amount: z.number(),
+});
+export type TradeArgs = z.infer<typeof ARGS_SCHEMA>;
 
 export class ActionDefinition<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -32,16 +34,7 @@ export class ActionDefinition<
     }
 
     parseArgs(raw: unknown): TradeArgs | null {
-        if (typeof raw !== 'object' || raw === null) {
-            return null;
-        }
-        const record = raw as Record<string, unknown>;
-        const buyRice = record.buyRice;
-        const amount = record.amount;
-        if (typeof buyRice !== 'boolean' || typeof amount !== 'number') {
-            return null;
-        }
-        return { buyRice, amount };
+        return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
     buildConstraints(_ctx: ConstraintContext, args: TradeArgs): Constraint[] {
@@ -129,5 +122,6 @@ export const commandSpec: GeneralTurnCommandSpec = {
         buyRice: 'boolean',
         amount: 'number',
     },
+    argsSchema: ARGS_SCHEMA,
     createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
 };

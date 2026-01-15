@@ -26,6 +26,7 @@ import {
     createNationPatchEffect,
 } from '@sammo-ts/logic/actions/engine.js';
 import { JosaUtil, LiteHashDRBG } from '@sammo-ts/common';
+import { z } from 'zod';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import type { WarAftermathConfig, WarEngineConfig, WarTimeContext } from '@sammo-ts/logic/war/types.js';
@@ -40,10 +41,7 @@ import {
     buildWarConfig,
     buildWarTime,
 } from '@sammo-ts/logic/actions/turn/actionContextHelpers.js';
-
-export interface DispatchArgs {
-    destCityId: number;
-}
+import { parseArgsWithSchema } from '../parseArgs.js';
 
 export interface DispatchResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -63,6 +61,10 @@ export interface DispatchResolveContext<
 }
 
 const ACTION_NAME = '출병';
+const ARGS_SCHEMA = z.object({
+    destCityId: z.number(),
+});
+export type DispatchArgs = z.infer<typeof ARGS_SCHEMA>;
 
 const parseCityId = (raw: unknown): number | null => {
     if (typeof raw !== 'number' || !Number.isFinite(raw)) {
@@ -247,8 +249,11 @@ export class ActionDefinition<
     }
 
     parseArgs(raw: unknown): DispatchArgs | null {
-        const data = raw as { destCityId?: unknown };
-        const destCityId = parseCityId(data?.destCityId);
+        const data = parseArgsWithSchema(ARGS_SCHEMA, raw);
+        if (!data) {
+            return null;
+        }
+        const destCityId = parseCityId(data.destCityId);
         if (destCityId === null) {
             return null;
         }
@@ -534,5 +539,6 @@ export const commandSpec: GeneralTurnCommandSpec = {
     category: '군사',
     reqArg: true,
     args: { destCityId: 0 },
+    argsSchema: ARGS_SCHEMA,
     createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env.warActionModules ?? []),
 };

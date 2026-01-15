@@ -14,17 +14,19 @@ import type {
 } from '@sammo-ts/logic/actions/engine.js';
 import { createGeneralPatchEffect, createNationPatchEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat } from '@sammo-ts/logic/logging/types.js';
+import { z } from 'zod';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
-
-export interface DonateArgs {
-    isGold: boolean;
-    amount: number;
-}
+import { parseArgsWithSchema } from '../parseArgs.js';
 
 const ACTION_NAME = '헌납';
 const ACTION_KEY = 'che_헌납';
+const ARGS_SCHEMA = z.object({
+    isGold: z.boolean(),
+    amount: z.number(),
+});
+export type DonateArgs = z.infer<typeof ARGS_SCHEMA>;
 
 export class ActionResolver<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -91,9 +93,7 @@ export class ActionDefinition<
     }
 
     parseArgs(raw: unknown): DonateArgs | null {
-        const data = raw as Partial<DonateArgs>;
-        if (typeof data.isGold !== 'boolean' || typeof data.amount !== 'number') return null;
-        return { isGold: data.isGold, amount: data.amount };
+        return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
     buildConstraints(_ctx: ConstraintContext, args: DonateArgs): Constraint[] {
@@ -115,5 +115,6 @@ export const commandSpec: GeneralTurnCommandSpec = {
     category: '내정',
     reqArg: true,
     args: { isGold: true, amount: 0 },
+    argsSchema: ARGS_SCHEMA,
     createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
 };

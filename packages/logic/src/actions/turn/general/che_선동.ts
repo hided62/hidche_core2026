@@ -16,14 +16,12 @@ import type {
 } from '@sammo-ts/logic/actions/engine.js';
 import { createGeneralPatchEffect, createCityPatchEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat } from '@sammo-ts/logic/logging/types.js';
+import { z } from 'zod';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { ActionContextBase, ActionContextOptions } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import { JosaUtil } from '@sammo-ts/common';
-
-export interface AgitateArgs {
-    destCityId: number;
-}
+import { parseArgsWithSchema } from '../parseArgs.js';
 
 export interface AgitateResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -34,6 +32,10 @@ export interface AgitateResolveContext<
 
 const ACTION_NAME = '선동';
 const ACTION_KEY = 'che_선동';
+const ARGS_SCHEMA = z.object({
+    destCityId: z.number(),
+});
+export type AgitateArgs = z.infer<typeof ARGS_SCHEMA>;
 
 export class ActionResolver<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -130,9 +132,7 @@ export class ActionDefinition<
     }
 
     parseArgs(raw: unknown): AgitateArgs | null {
-        const data = raw as Partial<AgitateArgs>;
-        if (typeof data.destCityId !== 'number') return null;
-        return { destCityId: data.destCityId };
+        return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
     buildConstraints(ctx: ConstraintContext, _args: AgitateArgs): Constraint[] {
@@ -170,5 +170,6 @@ export const commandSpec: GeneralTurnCommandSpec = {
     category: '군사',
     reqArg: true,
     args: { destCityId: 0 },
+    argsSchema: ARGS_SCHEMA,
     createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env),
 };

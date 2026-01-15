@@ -9,11 +9,8 @@ import type { GeneralTurnCommandSpec } from './index.js';
 import type { UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
 import { JosaUtil } from '@sammo-ts/common';
 import { getMetaNumber, setMetaNumber, increaseMetaNumber } from '@sammo-ts/logic/war/utils.js';
-
-export interface DexTransferArgs {
-    srcArmType: number;
-    destArmType: number;
-}
+import { z } from 'zod';
+import { parseArgsWithSchema } from '../parseArgs.js';
 
 export interface DexTransferContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -28,16 +25,13 @@ export interface DexTransferEnvironment {
 const ACTION_NAME = '숙련전환';
 const DECREASE_COEFF = 0.4;
 const CONVERT_COEFF = 0.9;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-    value !== null && typeof value === 'object' && !Array.isArray(value);
-
-const resolveArmType = (value: unknown): number | null => {
-    if (typeof value !== 'number' || !Number.isInteger(value)) {
-        return null;
-    }
-    return value > 0 ? value : null;
-};
+const ARGS_SCHEMA = z
+    .object({
+        srcArmType: z.number().int().positive(),
+        destArmType: z.number().int().positive(),
+    })
+    .refine((data) => data.srcArmType !== data.destArmType);
+export type DexTransferArgs = z.infer<typeof ARGS_SCHEMA>;
 
 const resolveArmTypeName = (unitSet: UnitSetDefinition | null | undefined, armType: number): string =>
     unitSet?.armTypes?.[String(armType)] ?? `병종${armType}`;
@@ -54,16 +48,7 @@ export class ActionDefinition<
     }
 
     parseArgs(raw: unknown): DexTransferArgs | null {
-        const data = isRecord(raw) ? raw : {};
-        const srcArmType = resolveArmType(data.srcArmType);
-        const destArmType = resolveArmType(data.destArmType);
-        if (srcArmType === null || destArmType === null) {
-            return null;
-        }
-        if (srcArmType === destArmType) {
-            return null;
-        }
-        return { srcArmType, destArmType };
+        return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
     buildConstraints(_ctx: ConstraintContext, _args: DexTransferArgs): Constraint[] {
@@ -110,5 +95,6 @@ export const commandSpec: GeneralTurnCommandSpec = {
     category: '군사',
     reqArg: true,
     args: { srcArmType: 0, destArmType: 0 },
+    argsSchema: ARGS_SCHEMA,
     createDefinition: (env: TurnCommandEnv) => new ActionDefinition({ develCost: env.develCost }),
 };

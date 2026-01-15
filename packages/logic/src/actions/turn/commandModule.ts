@@ -1,4 +1,5 @@
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
+import type { ZodType } from 'zod';
 import type { ActionContextBuilder } from './actionContext.js';
 import type { TurnCommandEnv } from './commandEnv.js';
 
@@ -7,6 +8,7 @@ export interface TurnCommandSpecBase<TKey extends string = string> {
     category: string;
     reqArg: boolean;
     args: Record<string, unknown>;
+    argsSchema?: ZodType<unknown>;
     createDefinition(env: TurnCommandEnv): GeneralActionDefinition;
 }
 

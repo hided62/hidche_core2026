@@ -23,14 +23,12 @@ import type {
 } from '@sammo-ts/logic/actions/engine.js';
 import { createCityPatchEffect, createGeneralPatchEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
+import { z } from 'zod';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import { clamp } from 'es-toolkit';
-
-export interface FireAttackArgs {
-    destCityId: number;
-}
+import { parseArgsWithSchema } from '../parseArgs.js';
 
 export interface FireAttackEnvironment {
     develCost: number;
@@ -84,6 +82,10 @@ export interface FireAttackResult<TriggerState extends GeneralTriggerState = Gen
 
 const ACTION_NAME = '화계';
 const ACTION_KEY = '계략';
+const ARGS_SCHEMA = z.object({
+    destCityId: z.number(),
+});
+export type FireAttackArgs = z.infer<typeof ARGS_SCHEMA>;
 const STAT_EXP_KEY = 'intel_exp';
 const DEFAULT_MAX_PROB = 0.5;
 const INJURY_MAX = 80;
@@ -357,14 +359,7 @@ export class ActionDefinition<
     }
 
     parseArgs(raw: unknown): FireAttackArgs | null {
-        if (!raw || typeof raw !== 'object') {
-            return null;
-        }
-        const destCityId = (raw as { destCityId?: unknown }).destCityId;
-        if (typeof destCityId !== 'number' || Number.isNaN(destCityId)) {
-            return null;
-        }
-        return { destCityId };
+        return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
     buildConstraints(_ctx: ConstraintContext, _args: FireAttackArgs): Constraint[] {
@@ -399,5 +394,6 @@ export const commandSpec: GeneralTurnCommandSpec = {
     category: '계략',
     reqArg: true,
     args: { destCityId: 0 },
+    argsSchema: ARGS_SCHEMA,
     createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env.generalActionModules ?? [], env),
 };

@@ -16,14 +16,12 @@ import type {
 } from '@sammo-ts/logic/actions/engine.js';
 import { createGeneralPatchEffect, createNationPatchEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
+import { z } from 'zod';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { ActionContextBase, ActionContextOptions } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import type { MapDefinition } from '@sammo-ts/logic/world/types.js';
-
-export interface SpyArgs {
-    destCityId: number;
-}
+import { parseArgsWithSchema } from '../parseArgs.js';
 
 export interface SpyResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -35,6 +33,10 @@ export interface SpyResolveContext<
 
 const ACTION_NAME = '첩보';
 const ACTION_KEY = 'che_첩보';
+const ARGS_SCHEMA = z.object({
+    destCityId: z.number(),
+});
+export type SpyArgs = z.infer<typeof ARGS_SCHEMA>;
 
 export class ActionResolver<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -126,9 +128,7 @@ export class ActionDefinition<
     }
 
     parseArgs(raw: unknown): SpyArgs | null {
-        const data = raw as Partial<SpyArgs>;
-        if (typeof data.destCityId !== 'number') return null;
-        return { destCityId: data.destCityId };
+        return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
     buildConstraints(ctx: ConstraintContext, _args: SpyArgs): Constraint[] {
@@ -167,5 +167,6 @@ export const commandSpec: GeneralTurnCommandSpec = {
     category: '군사',
     reqArg: true,
     args: { destCityId: 0 },
+    argsSchema: ARGS_SCHEMA,
     createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
 };

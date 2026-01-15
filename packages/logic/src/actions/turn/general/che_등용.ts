@@ -16,13 +16,11 @@ import type {
 } from '@sammo-ts/logic/actions/engine.js';
 import { createGeneralPatchEffect, createLogEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogScope } from '@sammo-ts/logic/logging/types.js';
+import { z } from 'zod';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { ActionContextBase, ActionContextOptions } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
-
-export interface EmployArgs {
-    destGeneralId: number;
-}
+import { parseArgsWithSchema } from '../parseArgs.js';
 
 export interface EmployResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -33,6 +31,10 @@ export interface EmployResolveContext<
 
 const ACTION_NAME = '등용';
 const ACTION_KEY = 'che_등용';
+const ARGS_SCHEMA = z.object({
+    destGeneralId: z.number(),
+});
+export type EmployArgs = z.infer<typeof ARGS_SCHEMA>;
 
 const differentNationDestGeneral = (): Constraint => ({
     name: 'DifferentNationDestGeneral',
@@ -145,9 +147,7 @@ export class ActionDefinition<
     }
 
     parseArgs(raw: unknown): EmployArgs | null {
-        const data = raw as Partial<EmployArgs>;
-        if (typeof data.destGeneralId !== 'number') return null;
-        return { destGeneralId: data.destGeneralId };
+        return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
     buildConstraints(_ctx: ConstraintContext, args: EmployArgs): Constraint[] {
@@ -205,5 +205,6 @@ export const commandSpec: GeneralTurnCommandSpec = {
     category: '인사',
     reqArg: true,
     args: { destGeneralId: 0 },
+    argsSchema: ARGS_SCHEMA,
     createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env),
 };
