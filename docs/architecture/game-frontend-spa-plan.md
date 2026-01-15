@@ -71,6 +71,7 @@
 - API: tRPC client + zod 기반 타입 안전성 유지
 - UI 데이터 구성은 client-driven을 기본으로 하되 숨겨야 할 정보는 서버에서 제거
 - 최소 정보 공개용 public API는 서버 캐시(10분)와 함께 제공
+- 한국인 사용자 대상이며, 다국어 지원은 고려하지 않음.
 
 ## Implementation Phases
 
