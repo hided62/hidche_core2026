@@ -479,36 +479,39 @@ describe('Reserved Turn Execution Integration', () => {
             };
 
             const initialRows = [
+                // 0
                 { generalId: 1, turnIdx: 0, actionCode: 'che_거병', arg: {} },
+                { generalId: 2, turnIdx: 0, actionCode: '휴식', arg: {} },
+                // 1
                 {
                     generalId: 1,
                     turnIdx: 1,
                     actionCode: 'che_건국',
                     arg: { nationName: 'NewEmpire', nationType: 'che_def', colorType: 0 },
                 },
-                { generalId: 2, turnIdx: 2, actionCode: '휴식', arg: {} },
-                { generalId: 1, turnIdx: 3, actionCode: 'che_이동', arg: { destCityId: 2 } },
-                {
-                    generalId: 1,
-                    turnIdx: 4,
-                    actionCode: 'che_건국',
-                    arg: { nationName: 'NewEmpire', nationType: 'che_def', colorType: 0 },
-                },
-                { generalId: 1, turnIdx: 5, actionCode: 'che_이동', arg: { destCityId: 2 } },
-                {
-                    generalId: 1,
-                    turnIdx: 6,
-                    actionCode: 'che_건국',
-                    arg: { nationName: 'NewEmpire', nationType: 'che_def', colorType: 0 },
-                },
-
-                { generalId: 2, turnIdx: 0, actionCode: '휴식', arg: {} },
                 { generalId: 2, turnIdx: 1, actionCode: 'che_농지개간', arg: {} },
+                // 2
+                { generalId: 1, turnIdx: 2, actionCode: '휴식', arg: {} },
                 { generalId: 2, turnIdx: 2, actionCode: 'che_임관', arg: { destNationId: 1 } },
+                // 3
+                {
+                    generalId: 1,
+                    turnIdx: 3,
+                    actionCode: 'che_건국',
+                    arg: { nationName: 'NewEmpire', nationType: 'che_def', colorType: 0 },
+                },
                 { generalId: 2, turnIdx: 3, actionCode: 'che_농지개간', arg: {} },
+                // 4
+                { generalId: 1, turnIdx: 4, actionCode: 'che_이동', arg: { destCityId: 2 } },
                 { generalId: 2, turnIdx: 4, actionCode: '휴식', arg: {} },
+                // 5
+                {
+                    generalId: 1,
+                    turnIdx: 5,
+                    actionCode: 'che_건국',
+                    arg: { nationName: 'NewEmpire', nationType: 'che_def', colorType: 0 },
+                },
                 { generalId: 2, turnIdx: 5, actionCode: 'che_농지개간', arg: {} },
-                { generalId: 2, turnIdx: 6, actionCode: 'che_농지개간', arg: {} },
             ];
 
             const mockPrisma = createMockPrisma(initialRows);
@@ -596,7 +599,7 @@ describe('Reserved Turn Execution Integration', () => {
             // 내정 실패
             expect(world.getCityById(1)!.agriculture).toBe(100);
 
-            // Turn 4: 건국(성공)
+            // Turn 4: 이동(성공), 휴식
             await processor.run(new Date(mockDate.getTime() + 5 * 10 * 60 * 1000), {
                 budgetMs: 1000,
                 maxGenerals: 100,
@@ -604,21 +607,10 @@ describe('Reserved Turn Execution Integration', () => {
             });
             await reservedTurnStore.flushChanges();
 
-            const nationSucceeded = world.getNationById(gen1Final.nationId)!;
-            expect(nationSucceeded.level).toBe(1); // Now a Normal Nation
-
-            // Turn 5: 이동, 휴식 [장수2 이동]
-            await processor.run(new Date(mockDate.getTime() + 6 * 10 * 60 * 1000), {
-                budgetMs: 1000,
-                maxGenerals: 100,
-                catchUpCap: 10,
-            });
-            await reservedTurnStore.flushChanges();
-
             expect(world.getGeneralById(1)!.cityId).toBe(2);
-            expect(world.getGeneralById(2)!.cityId).toBe(1);
+            expect(world.getGeneralById(2)!.cityId).toBe(2); // 방랑군 이동은 하위 장수도 같이 이동
 
-            // Turn 6: 건국(성공), 내농지개간(성공)
+            // Turn 5: 건국(성공), 농지개간(성공)
             await processor.run(new Date(mockDate.getTime() + 7 * 10 * 60 * 1000), {
                 budgetMs: 1000,
                 maxGenerals: 100,
@@ -628,9 +620,9 @@ describe('Reserved Turn Execution Integration', () => {
 
             const gen1ReallyFinal = world.getGeneralById(1)!;
             expect(world.getNationById(gen1ReallyFinal.nationId)!.level).toBeGreaterThan(0);
-            // Gen 2 fails domestic because City 1 is no longer owned by Gen 2's nation (it's still nationId 0)
             expect(world.getCityById(1)!.agriculture).toBe(100);
             expect(world.getCityById(1)!.nationId).toBe(0); // City 1 is still unowned
+            expect(world.getCityById(2)!.agriculture).toBeGreaterThan(100); // City 2 agric increased
         });
 
         it('should fail founding with specific constraints', async () => {

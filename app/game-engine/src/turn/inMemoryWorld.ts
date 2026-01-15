@@ -432,20 +432,21 @@ export class InMemoryTurnWorld {
     }
 
     executeGeneralTurn(general: TurnGeneral): Date {
-        const city = this.cities.get(general.cityId);
-        const nation = general.nationId > 0 ? (this.nations.get(general.nationId) ?? null) : null;
+        const currentGeneral = this.generals.get(general.id) ?? general;
+        const city = this.cities.get(currentGeneral.cityId);
+        const nation = currentGeneral.nationId > 0 ? (this.nations.get(currentGeneral.nationId) ?? null) : null;
 
         const result = this.generalTurnHandler.execute({
-            general,
+            general: currentGeneral,
             city,
             nation,
             world: this.state,
             schedule: this.schedule,
         });
 
-        const nextTurnAt = result.nextTurnAt ?? getNextTurnAt(general.turnTime, this.schedule);
+        const nextTurnAt = result.nextTurnAt ?? getNextTurnAt(currentGeneral.turnTime, this.schedule);
         const nextGeneral = {
-            ...(result.general ?? general),
+            ...(result.general ?? currentGeneral),
             turnTime: nextTurnAt,
         };
         this.generals.set(nextGeneral.id, nextGeneral);
