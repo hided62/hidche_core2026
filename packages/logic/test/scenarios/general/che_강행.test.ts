@@ -247,6 +247,8 @@ describe('che_강행', () => {
         expect(updated?.atmos).toBe(45);
         // Cost: 10 * 5 = 50. Gold 1000 -> 950.
         expect(updated?.gold).toBe(950);
+        expect(updated?.experience).toBe(1100);
+        expect(updated?.meta.leadership_exp).toBe(1);
     });
 
     it('should deny move to far city', async () => {

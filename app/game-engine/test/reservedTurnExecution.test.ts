@@ -37,7 +37,7 @@ const MINIMAL_MAP = {
 
 // --- Mocks & Helpers ---
 
-const mockDate = new Date('189-01-01T00:00:00Z');
+const mockDate = new Date('0189-01-01T00:00:00Z');
 
 // We need a mock Prisma client that satisfies the shape required by InMemoryReservedTurnStore
 // It expects { generalTurn: { findMany, deleteMany, createMany }, nationTurn: { ... } }
@@ -320,6 +320,310 @@ describe('Reserved Turn Execution Integration', () => {
         // Turn 1 exec -> Shift -1
         // Turn 2 exec -> Shift -1
         // Turns should indeed be empty/default now.
+    });
+
+    it('should fall back to rest when args are invalid', async () => {
+        const invalidSnapshot: TurnWorldSnapshot = {
+            generals: [
+                {
+                    id: 1,
+                    name: 'Fallback_General',
+                    nationId: 1,
+                    cityId: 1,
+                    troopId: 0,
+                    stats: { leadership: 80, strength: 80, intelligence: 80 },
+                    turnTime: mockDate,
+                    role: {
+                        items: { horse: null, weapon: null, book: null, item: null },
+                        personality: null,
+                        specialDomestic: null,
+                        specialWar: null,
+                    },
+                    triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
+                    meta: {},
+                    officerLevel: 5,
+                    experience: 0,
+                    dedication: 0,
+                    injury: 0,
+                    gold: 2000,
+                    rice: 2000,
+                    crew: 0,
+                    crewTypeId: 0,
+                    train: 0,
+                    atmos: 0,
+                    age: 30,
+                    npcState: 0,
+                } as TurnGeneral,
+            ],
+            cities: [
+                {
+                    id: 1,
+                    name: 'City_1',
+                    nationId: 1,
+                    viewName: 'City_1',
+                    agriculture: 100,
+                    agricultureMax: 2000,
+                    commerce: 100,
+                    commerceMax: 2000,
+                    security: 100,
+                    securityMax: 100,
+                    def: 100,
+                    defMax: 100,
+                    wall: 100,
+                    wallMax: 100,
+                    pop: 10000,
+                    popMax: 50000,
+                    trust: 50,
+                    supplyState: 1,
+                    frontState: 0,
+                    tradepoint: 0,
+                    meta: {},
+                } as any,
+            ],
+            nations: [
+                {
+                    id: 1,
+                    name: 'FallbackNation',
+                    color: '#FF0000',
+                    capitalCityId: 1,
+                    chiefGeneralId: 1,
+                    gold: 10000,
+                    rice: 10000,
+                    power: 0,
+                    level: 1,
+                    typeCode: 'che_def',
+                    meta: {},
+                } as any,
+            ],
+            troops: [],
+            diplomacy: [],
+            events: [],
+            initialEvents: [],
+            map: MINIMAL_MAP as any,
+            scenarioConfig: {
+                stat: { total: 300, min: 10, max: 100, npcTotal: 150, npcMax: 50, npcMin: 10, chiefMin: 70 },
+                iconPath: '',
+                map: {},
+                const: {},
+                environment: { mapName: 'minimal', unitSet: 'default' },
+            },
+            scenarioMeta: {
+                startYear: 189,
+            } as any,
+            unitSet: {} as any,
+        };
+
+        const invalidState: TurnWorldState = {
+            id: 1,
+            currentYear: 189,
+            currentMonth: 1,
+            tickSeconds: 600,
+            lastTurnTime: mockDate,
+            meta: {},
+        };
+
+        const invalidRows = [
+            { generalId: 1, turnIdx: 0, actionCode: 'che_이동', arg: { destCityId: 'bad' } },
+        ];
+
+        const mockPrisma = createMockPrisma(invalidRows);
+        const reservedTurnStore = new InMemoryReservedTurnStore(mockPrisma as any, {
+            maxGeneralTurns: 10,
+            maxNationTurns: 10,
+        });
+        await reservedTurnStore.loadAll();
+
+        const wrapper = { world: null as InMemoryTurnWorld | null };
+        const handler = await createReservedTurnHandler({
+            reservedTurns: reservedTurnStore,
+            scenarioConfig: invalidSnapshot.scenarioConfig,
+            scenarioMeta: invalidSnapshot.scenarioMeta,
+            map: MINIMAL_MAP,
+            unitSet: invalidSnapshot.unitSet,
+            getWorld: () => wrapper.world,
+        });
+
+        const world = new InMemoryTurnWorld(invalidState, invalidSnapshot, {
+            schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+            generalTurnHandler: handler,
+        });
+        wrapper.world = world;
+
+        const processor = new InMemoryTurnProcessor(world, { tickMinutes: 10 });
+        await processor.run(new Date(mockDate.getTime() + 10 * 60 * 1000), {
+            budgetMs: 1000,
+            maxGenerals: 100,
+            catchUpCap: 10,
+        });
+
+        const dirty = world.consumeDirtyState();
+        expect(world.getGeneralById(1)!.cityId).toBe(1);
+        expect(dirty.logs.some((log) => log.text.includes('예약된 명령을 실행하지 못했습니다.'))).toBe(true);
+        expect(dirty.logs.some((log) => log.text.includes('아무것도 실행하지 않았습니다.'))).toBe(true);
+    });
+
+    it('should fall back to rest when constraints fail', async () => {
+        const invalidSnapshot: TurnWorldSnapshot = {
+            generals: [
+                {
+                    id: 1,
+                    name: 'Fallback_General',
+                    nationId: 1,
+                    cityId: 1,
+                    troopId: 0,
+                    stats: { leadership: 80, strength: 80, intelligence: 80 },
+                    turnTime: mockDate,
+                    role: {
+                        items: { horse: null, weapon: null, book: null, item: null },
+                        personality: null,
+                        specialDomestic: null,
+                        specialWar: null,
+                    },
+                    triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
+                    meta: {},
+                    officerLevel: 5,
+                    experience: 0,
+                    dedication: 0,
+                    injury: 0,
+                    gold: 2000,
+                    rice: 2000,
+                    crew: 0,
+                    crewTypeId: 0,
+                    train: 0,
+                    atmos: 0,
+                    age: 30,
+                    npcState: 0,
+                } as TurnGeneral,
+            ],
+            cities: [
+                {
+                    id: 1,
+                    name: 'City_1',
+                    nationId: 1,
+                    viewName: 'City_1',
+                    agriculture: 100,
+                    agricultureMax: 2000,
+                    commerce: 100,
+                    commerceMax: 2000,
+                    security: 100,
+                    securityMax: 100,
+                    def: 100,
+                    defMax: 100,
+                    wall: 100,
+                    wallMax: 100,
+                    pop: 10000,
+                    popMax: 50000,
+                    trust: 50,
+                    supplyState: 1,
+                    frontState: 0,
+                    tradepoint: 0,
+                    meta: {},
+                } as any,
+                {
+                    id: 2,
+                    name: 'City_2',
+                    nationId: 1,
+                    viewName: 'City_2',
+                    agriculture: 100,
+                    agricultureMax: 2000,
+                    commerce: 100,
+                    commerceMax: 2000,
+                    security: 100,
+                    securityMax: 100,
+                    def: 100,
+                    defMax: 100,
+                    wall: 100,
+                    wallMax: 100,
+                    pop: 10000,
+                    popMax: 50000,
+                    trust: 50,
+                    supplyState: 1,
+                    frontState: 0,
+                    tradepoint: 0,
+                    meta: {},
+                } as any,
+            ],
+            nations: [
+                {
+                    id: 1,
+                    name: 'FallbackNation',
+                    color: '#FF0000',
+                    capitalCityId: 1,
+                    chiefGeneralId: 1,
+                    gold: 10000,
+                    rice: 10000,
+                    power: 0,
+                    level: 1,
+                    typeCode: 'che_def',
+                    meta: {},
+                } as any,
+            ],
+            troops: [],
+            diplomacy: [],
+            events: [],
+            initialEvents: [],
+            map: MINIMAL_MAP as any,
+            scenarioConfig: {
+                stat: { total: 300, min: 10, max: 100, npcTotal: 150, npcMax: 50, npcMin: 10, chiefMin: 70 },
+                iconPath: '',
+                map: {},
+                const: {},
+                environment: { mapName: 'minimal', unitSet: 'default' },
+            },
+            scenarioMeta: {
+                startYear: 189,
+            } as any,
+            unitSet: {} as any,
+        };
+
+        const invalidState: TurnWorldState = {
+            id: 1,
+            currentYear: 189,
+            currentMonth: 1,
+            tickSeconds: 600,
+            lastTurnTime: mockDate,
+            meta: {},
+        };
+
+        const invalidRows = [
+            { generalId: 1, turnIdx: 0, actionCode: 'che_이동', arg: { destCityId: 1 } },
+        ];
+
+        const mockPrisma = createMockPrisma(invalidRows);
+        const reservedTurnStore = new InMemoryReservedTurnStore(mockPrisma as any, {
+            maxGeneralTurns: 10,
+            maxNationTurns: 10,
+        });
+        await reservedTurnStore.loadAll();
+
+        const wrapper = { world: null as InMemoryTurnWorld | null };
+        const handler = await createReservedTurnHandler({
+            reservedTurns: reservedTurnStore,
+            scenarioConfig: invalidSnapshot.scenarioConfig,
+            scenarioMeta: invalidSnapshot.scenarioMeta,
+            map: MINIMAL_MAP,
+            unitSet: invalidSnapshot.unitSet,
+            getWorld: () => wrapper.world,
+        });
+
+        const world = new InMemoryTurnWorld(invalidState, invalidSnapshot, {
+            schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+            generalTurnHandler: handler,
+        });
+        wrapper.world = world;
+
+        const processor = new InMemoryTurnProcessor(world, { tickMinutes: 10 });
+        await processor.run(new Date(mockDate.getTime() + 10 * 60 * 1000), {
+            budgetMs: 1000,
+            maxGenerals: 100,
+            catchUpCap: 10,
+        });
+
+        const dirty = world.consumeDirtyState();
+        expect(world.getGeneralById(1)!.cityId).toBe(1);
+        const denyLog = dirty.logs.find((log) => log.text.includes('같은 도시입니다.'));
+        expect(denyLog?.meta?.constraintName).toBe('notSameDestCity');
+        expect(dirty.logs.some((log) => log.text.includes('아무것도 실행하지 않았습니다.'))).toBe(true);
     });
 
     describe('Uprising and Founding Execution', () => {
