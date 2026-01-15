@@ -120,7 +120,7 @@ export const commandSpec: NationTurnCommandSpec = {
     key: 'che_국호변경',
     category: '국가',
     reqArg: true,
-    args: { nationName: '' },
+    availabilityArgs: { nationName: '' },
     argsSchema: ARGS_SCHEMA,
     createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
 };

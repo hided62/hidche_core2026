@@ -77,7 +77,7 @@ export const commandSpec: NationTurnCommandSpec = {
     key: 'che_종전제의',
     category: '외교',
     reqArg: true,
-    args: { destNationId: 0 },
+    availabilityArgs: { destNationId: 0 },
     argsSchema: ARGS_SCHEMA,
     createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
 };

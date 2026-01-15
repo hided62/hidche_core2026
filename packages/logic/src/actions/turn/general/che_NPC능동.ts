@@ -116,7 +116,7 @@ export const commandSpec: GeneralTurnCommandSpec = {
     key: 'che_NPC능동',
     category: '특수', // Valid category? Legacy didn't specify category in static prop usually, handled by mapping. Defaulting to '특수'.
     reqArg: true,
-    args: { optionText: '', destCityId: 0 },
+    availabilityArgs: { optionText: '', destCityId: 0 },
     argsSchema: ARGS_SCHEMA,
     createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
 };

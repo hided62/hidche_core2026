@@ -204,7 +204,7 @@ export const commandSpec: GeneralTurnCommandSpec = {
     key: 'che_등용',
     category: '인사',
     reqArg: true,
-    args: { destGeneralId: 0 },
+    availabilityArgs: { destGeneralId: 0 },
     argsSchema: ARGS_SCHEMA,
     createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env),
 };

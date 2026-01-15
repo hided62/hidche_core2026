@@ -72,7 +72,7 @@ export const commandSpec: GeneralTurnCommandSpec = {
     key: 'che_사기진작',
     category: '군사',
     reqArg: false,
-    args: {},
+
     createDefinition: (env: TurnCommandEnv) =>
         new ActionDefinition({
             atmosDelta: env.atmosDelta,

@@ -118,7 +118,7 @@ export const commandSpec: GeneralTurnCommandSpec = {
     key: 'che_군량매매',
     category: '개인',
     reqArg: true,
-    args: {
+    availabilityArgs: {
         buyRice: 'boolean',
         amount: 'number',
     },

@@ -170,7 +170,7 @@ export const commandSpec: GeneralTurnCommandSpec = {
     key: 'che_단련',
     category: '군사',
     reqArg: false,
-    args: {},
+
     createDefinition: (env: TurnCommandEnv) =>
         new ActionDefinition({
             develCost: env.develCost,

@@ -62,6 +62,6 @@ export const commandSpec: NationTurnCommandSpec = {
     key: '휴식',
     category: '휴식',
     reqArg: false,
-    args: {},
+
     createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
 };

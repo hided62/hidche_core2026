@@ -50,7 +50,7 @@ interface CommandEntry {
     category: string;
     definition: GeneralActionDefinition;
     reqArg: boolean;
-    args: unknown;
+    availabilityArgs: Readonly<Record<string, unknown>>;
     evaluate?: (ctx: ConstraintContext, view: StateView) => AvailabilityCore;
 }
 
@@ -370,7 +370,7 @@ const buildEntries = (env: CommandEnv, specs: TurnCommandSpec[]): CommandEntry[]
             category: spec.category,
             definition,
             reqArg: spec.reqArg,
-            args: spec.args,
+            availabilityArgs: spec.reqArg ? spec.availabilityArgs : {},
         };
 
         if (spec.key === 'che_포상') {
@@ -401,7 +401,7 @@ const buildGroups = (entries: CommandEntry[], ctx: ConstraintContext, view: Stat
     for (const entry of entries) {
         const availability = entry.evaluate
             ? entry.evaluate(ctx, view)
-            : evaluateDefinition(entry.definition, ctx, view, entry.reqArg, entry.args);
+            : evaluateDefinition(entry.definition, ctx, view, entry.reqArg, entry.availabilityArgs);
         const value: TurnCommandAvailability = {
             key: entry.definition.key,
             name: entry.definition.name,

@@ -7,7 +7,7 @@ export interface TurnCommandSpecWithArgs<TKey extends string = string> {
     key: TKey;
     category: string;
     reqArg: true;
-    args: Record<string, unknown>;
+    availabilityArgs: Readonly<Record<string, unknown>>;
     argsSchema: ZodType<Record<string, unknown>>;
     createDefinition(env: TurnCommandEnv): GeneralActionDefinition;
 }
@@ -16,7 +16,6 @@ export interface TurnCommandSpecWithoutArgs<TKey extends string = string> {
     key: TKey;
     category: string;
     reqArg: false;
-    args: Record<string, unknown>;
     argsSchema?: undefined;
     createDefinition(env: TurnCommandEnv): GeneralActionDefinition;
 }

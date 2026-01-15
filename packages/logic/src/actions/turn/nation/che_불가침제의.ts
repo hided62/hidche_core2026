@@ -138,7 +138,7 @@ export const commandSpec: NationTurnCommandSpec = {
     key: 'che_불가침제의',
     category: '외교',
     reqArg: true,
-    args: { destNationId: 0, year: 0, month: 0 },
+    availabilityArgs: { destNationId: 0, year: 0, month: 0 },
     argsSchema: ARGS_SCHEMA,
     createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
 };

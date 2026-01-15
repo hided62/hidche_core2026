@@ -230,6 +230,6 @@ export const commandSpec: GeneralTurnCommandSpec = {
     key: 'che_견문',
     category: '개인',
     reqArg: false,
-    args: {},
+
     createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
 };

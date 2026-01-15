@@ -393,7 +393,7 @@ export const commandSpec: GeneralTurnCommandSpec = {
     key: 'che_화계',
     category: '계략',
     reqArg: true,
-    args: { destCityId: 0 },
+    availabilityArgs: { destCityId: 0 },
     argsSchema: ARGS_SCHEMA,
     createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env.generalActionModules ?? [], env),
 };

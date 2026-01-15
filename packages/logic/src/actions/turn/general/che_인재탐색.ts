@@ -397,6 +397,6 @@ export const commandSpec: GeneralTurnCommandSpec = {
     key: 'che_인재탐색',
     category: '인사',
     reqArg: false,
-    args: {},
+
     createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env.generalActionModules ?? [], env),
 };

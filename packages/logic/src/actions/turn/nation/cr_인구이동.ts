@@ -168,7 +168,7 @@ export const commandSpec: NationTurnCommandSpec = {
     key: 'cr_인구이동',
     category: '특수',
     reqArg: true,
-    args: { destCityId: 0, amount: 0 },
+    availabilityArgs: { destCityId: 0, amount: 0 },
     argsSchema: ARGS_SCHEMA,
     createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env),
 };

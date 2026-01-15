@@ -165,7 +165,7 @@ export const commandSpec: GeneralTurnCommandSpec = {
     key: 'che_건국',
     category: '전략',
     reqArg: true,
-    args: {
+    availabilityArgs: {
         nationName: 'string',
         nationType: 'string',
         colorType: 'number',

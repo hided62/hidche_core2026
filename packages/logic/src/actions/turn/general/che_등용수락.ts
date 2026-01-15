@@ -220,7 +220,7 @@ export const commandSpec: GeneralTurnCommandSpec = {
     key: 'che_등용수락',
     category: '인사',
     reqArg: true,
-    args: {
+    availabilityArgs: {
         destNationId: 'number',
         destGeneralId: 'number',
     },

@@ -142,7 +142,7 @@ export const createEventResearchCommand = (config: EventResearchConfig): {
         key: config.key as NationTurnCommandSpec['key'],
         category: CATEGORY,
         reqArg: false,
-        args: {},
+
         createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env),
     };
 

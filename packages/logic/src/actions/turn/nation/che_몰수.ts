@@ -161,7 +161,7 @@ export const commandSpec: NationTurnCommandSpec = {
     key: 'che_몰수',
     category: '인사',
     reqArg: true,
-    args: { isGold: false, amount: 0, destGeneralID: 0 },
+    availabilityArgs: { isGold: false, amount: 0, destGeneralID: 0 },
     argsSchema: ARGS_SCHEMA,
     createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env),
 };

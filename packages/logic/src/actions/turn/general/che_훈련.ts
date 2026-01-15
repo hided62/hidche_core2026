@@ -72,7 +72,7 @@ export const commandSpec: GeneralTurnCommandSpec = {
     key: 'che_훈련',
     category: '군사',
     reqArg: false,
-    args: {},
+
     createDefinition: (env: TurnCommandEnv) =>
         new ActionDefinition({
             trainDelta: env.trainDelta,

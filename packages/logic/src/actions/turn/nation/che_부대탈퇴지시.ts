@@ -113,7 +113,7 @@ export const commandSpec: NationTurnCommandSpec = {
     key: 'che_부대탈퇴지시',
     category: '인사',
     reqArg: true,
-    args: { destGeneralId: 0 },
+    availabilityArgs: { destGeneralId: 0 },
     argsSchema: ARGS_SCHEMA,
     createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
 };

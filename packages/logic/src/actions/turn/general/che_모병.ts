@@ -26,7 +26,7 @@ export const commandSpec: GeneralTurnCommandSpec = {
     key: 'che_모병',
     category: '군사',
     reqArg: true,
-    args: {
+    availabilityArgs: {
         crewType: 'number',
         amount: 'number',
     },

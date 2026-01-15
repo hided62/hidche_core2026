@@ -265,7 +265,7 @@ export const commandSpec: NationTurnCommandSpec = {
     key: 'che_초토화',
     category: '특수',
     reqArg: true,
-    args: { destCityId: 0 },
+    availabilityArgs: { destCityId: 0 },
     argsSchema: ARGS_SCHEMA,
     createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
 };

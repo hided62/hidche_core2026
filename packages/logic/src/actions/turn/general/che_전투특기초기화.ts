@@ -65,6 +65,6 @@ export const commandSpec: GeneralTurnCommandSpec = {
     key: 'che_전투특기초기화',
     category: '개인',
     reqArg: false,
-    args: {},
+
     createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
 };

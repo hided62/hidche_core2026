@@ -161,7 +161,7 @@ export const commandSpec: NationTurnCommandSpec = {
     key: 'che_국기변경',
     category: '국가',
     reqArg: true,
-    args: { colorType: 0 },
+    availabilityArgs: { colorType: 0 },
     argsSchema: ARGS_SCHEMA,
     createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
 };

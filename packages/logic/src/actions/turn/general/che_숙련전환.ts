@@ -94,7 +94,7 @@ export const commandSpec: GeneralTurnCommandSpec = {
     key: 'che_숙련전환',
     category: '군사',
     reqArg: true,
-    args: { srcArmType: 0, destArmType: 0 },
+    availabilityArgs: { srcArmType: 0, destArmType: 0 },
     argsSchema: ARGS_SCHEMA,
     createDefinition: (env: TurnCommandEnv) => new ActionDefinition({ develCost: env.develCost }),
 };

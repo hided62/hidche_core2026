@@ -59,6 +59,6 @@ export const commandSpec: GeneralTurnCommandSpec = {
     key: '휴식',
     category: '개인',
     reqArg: false,
-    args: {},
+
     createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
 };

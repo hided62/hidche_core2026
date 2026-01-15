@@ -91,7 +91,7 @@ export const commandSpec: GeneralTurnCommandSpec = {
     key: 'che_기술연구',
     category: '내정',
     reqArg: false,
-    args: {},
+
     createDefinition: (env: TurnCommandEnv) =>
         new ActionDefinition({
             costGold: env.develCost,

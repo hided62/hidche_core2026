@@ -114,7 +114,7 @@ export const commandSpec: GeneralTurnCommandSpec = {
     key: 'che_헌납',
     category: '내정',
     reqArg: true,
-    args: { isGold: true, amount: 0 },
+    availabilityArgs: { isGold: true, amount: 0 },
     argsSchema: ARGS_SCHEMA,
     createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
 };

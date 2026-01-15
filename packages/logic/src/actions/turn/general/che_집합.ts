@@ -101,6 +101,6 @@ export const commandSpec: GeneralTurnCommandSpec = {
     key: 'che_집합',
     category: '군사',
     reqArg: false,
-    args: {},
+
     createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
 };

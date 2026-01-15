@@ -239,7 +239,7 @@ export const commandSpec: NationTurnCommandSpec = {
     key: 'che_허보',
     category: '전략',
     reqArg: true,
-    args: { destCityId: 0 },
+    availabilityArgs: { destCityId: 0 },
     argsSchema: ARGS_SCHEMA,
     createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env.generalActionModules ?? []),
 };

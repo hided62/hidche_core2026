@@ -369,6 +369,6 @@ export const commandSpec: NationTurnCommandSpec = {
     key: 'che_의병모집',
     category: '전략',
     reqArg: false,
-    args: {},
+
     createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env.generalActionModules ?? [], env),
 };

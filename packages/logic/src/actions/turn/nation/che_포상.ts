@@ -239,7 +239,7 @@ export const commandSpec: NationTurnCommandSpec = {
     key: 'che_포상',
     category: '인사',
     reqArg: true,
-    args: { isGold: true, amount: 1, destGeneralId: 0 },
+    availabilityArgs: { isGold: true, amount: 1, destGeneralId: 0 },
     argsSchema: ARGS_SCHEMA,
     createDefinition: (env: TurnCommandEnv) => {
         const maxAmount =

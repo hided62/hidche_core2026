@@ -205,6 +205,6 @@ export const commandSpec: NationTurnCommandSpec = {
     key: 'che_무작위수도이전',
     category: '국가',
     reqArg: false,
-    args: {},
+
     createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
 };

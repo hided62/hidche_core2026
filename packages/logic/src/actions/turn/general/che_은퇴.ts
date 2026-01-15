@@ -129,6 +129,6 @@ export const commandSpec: GeneralTurnCommandSpec = {
     key: 'che_은퇴',
     category: '개인',
     reqArg: false,
-    args: {},
+
     createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
 };
