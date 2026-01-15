@@ -7,3 +7,7 @@ export {
     ActionDefinition as NonAggressionCancelAcceptActionDefinition,
     type NonAggressionCancelAcceptArgs,
 } from './che_불가침파기수락.js';
+export {
+    ActionDefinition as StopWarAcceptActionDefinition,
+    type StopWarAcceptArgs,
+} from './che_종전수락.js';
