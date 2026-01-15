@@ -1,9 +1,46 @@
 {
-    "extends": "../../tsconfig.paths.json",
+    "extends": "../../tsconfig.base.json",
     "compilerOptions": {
-        "outDir": "dist",
-        "composite": true,
-        "lib": ["ES2022", "DOM", "DOM.Iterable"]
+        "target": "ESNext",
+        "useDefineForClassFields": true,
+        "module": "ESNext",
+        "lib": ["ESNext", "DOM", "DOM.Iterable"],
+        "skipLibCheck": true,
+        "moduleResolution": "bundler",
+        "allowImportingTsExtensions": true,
+        "resolveJsonModule": true,
+        "isolatedModules": true,
+        "noEmit": true,
+        "jsx": "preserve",
+        "strict": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "noFallthroughCasesInSwitch": true,
+        "baseUrl": ".",
+        "paths": {
+            "@/*": ["./src/*"],
+            "@sammo-ts/common": ["../../packages/common/src/index.ts"],
+            "@sammo-ts/common/*": ["../../packages/common/src/*"],
+            "@sammo-ts/infra": ["../../packages/infra/src/index.ts"],
+            "@sammo-ts/infra/*": ["../../packages/infra/src/*"],
+            "@sammo-ts/logic": ["../../packages/logic/src/index.ts"],
+            "@sammo-ts/logic/*": ["../../packages/logic/src/*"],
+            "@sammo-ts/game-engine": ["../../app/game-engine/src/index.ts"],
+            "@sammo-ts/game-engine/*": ["../../app/game-engine/src/*"],
+            "@sammo-ts/game-api": ["../../app/game-api/src/index.ts"],
+            "@sammo-ts/game-api/*": ["../../app/game-api/src/*"]
+        }
     },
-    "include": ["src", "test", "*.ts"]
+    "include": [
+        "src/**/*.ts",
+        "src/**/*.d.ts",
+        "src/**/*.tsx",
+        "src/**/*.vue",
+        "test/**/*.ts"
+    ],
+    "references": [
+        {
+            "path": "./tsconfig.node.json"
+        }
+    ]
 }

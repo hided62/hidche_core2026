@@ -1,0 +1,12 @@
+@import 'tailwindcss';
+
+@theme {
+    --color-sammo-ink: #101010;
+    --color-sammo-parchment: #e8ddc4;
+    --color-sammo-gold: #c9a45a;
+}
+
+body {
+    @apply bg-sammo-ink text-sammo-parchment;
+    font-family: 'Galmuri11', 'Noto Serif KR', 'Malgun Gothic', serif;
+}
