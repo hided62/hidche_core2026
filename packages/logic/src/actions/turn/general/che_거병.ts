@@ -1,4 +1,3 @@
-/* eslint-disable prettier/prettier */
 import type { GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import { beNeutral } from '@sammo-ts/logic/constraints/presets.js';

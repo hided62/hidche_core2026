@@ -12,9 +12,9 @@ import type { ActionLogger } from '@sammo-ts/logic/logging/actionLogger.js';
 import { LogFormat } from '@sammo-ts/logic/logging/types.js';
 import type { WarStatName } from '@sammo-ts/logic/triggers/types.js';
 import { getTechAbility, getTechCost } from '@sammo-ts/logic/world/unitSet.js';
-import { WarActionPipeline, type WarActionContext } from './actions.js';
+import type { WarActionPipeline, WarActionContext } from './actions.js';
 import type { WarEngineConfig } from './types.js';
-import { WarCrewType } from './crewType.js';
+import type { WarCrewType } from './crewType.js';
 import {
     clamp,
     clampMin,

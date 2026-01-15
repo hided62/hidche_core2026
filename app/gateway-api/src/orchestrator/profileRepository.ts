@@ -1,4 +1,4 @@
-import { GatewayPrisma, type GatewayPrismaClient } from '@sammo-ts/infra';
+import type { GatewayPrisma, GatewayPrismaClient } from '@sammo-ts/infra';
 
 export const GATEWAY_PROFILE_STATUSES = [
     'RESERVED',

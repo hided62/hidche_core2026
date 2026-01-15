@@ -12,7 +12,7 @@ onMounted(async () => {
     try {
         const me = await trpc.me.query();
         if (me) {
-            router.push('/lobby');
+            await router.push('/lobby');
         }
     } catch (e) {
         // Not logged in or error

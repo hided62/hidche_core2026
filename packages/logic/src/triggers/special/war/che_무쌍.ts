@@ -1,3 +1,4 @@
+import type { TriggerValue } from '@sammo-ts/logic/domain/entities.js';
 import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
 import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/types.js';
 import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
@@ -5,7 +6,7 @@ import type { TraitModule } from '@sammo-ts/logic/triggers/special/types.js';
 import { TraitRequirement, TraitWeightType } from '../requirements.js';
 import { getMetaNumber } from '@sammo-ts/logic/war/utils.js';
 
-import { WarUnit } from '@sammo-ts/logic/war/units.js';
+import type { WarUnit } from '@sammo-ts/logic/war/units.js';
 
 type WarUnitWithGeneral = WarUnit & { getGeneral: () => { meta: Record<string, unknown> } };
 
@@ -53,7 +54,7 @@ export const traitModule: TraitModule = {
         // In a real scenario, we should check if unit is WarUnitGeneral.
         if (hasGeneral(unit)) {
             const killnum = getMetaNumber(
-                unit.getGeneral().meta as Record<string, import('@sammo-ts/logic/domain/entities.js').TriggerValue>,
+                unit.getGeneral().meta as Record<string, TriggerValue>,
                 'rank_killnum',
                 0
             );

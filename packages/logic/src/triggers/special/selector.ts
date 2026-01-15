@@ -1,4 +1,4 @@
-import { RandUtil } from '@sammo-ts/common';
+import type { RandUtil } from '@sammo-ts/common';
 import { TraitRequirement, TraitWeightType } from './requirements.js';
 import type { TraitModule } from './types.js';
 import type { ScenarioStatBlock } from '../../scenario/types.js';

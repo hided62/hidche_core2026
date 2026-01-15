@@ -74,6 +74,22 @@ export default tseslint.config(
             ],
             '@typescript-eslint/no-explicit-any': 'error',
             '@typescript-eslint/no-empty-object-type': 'off',
+            '@typescript-eslint/consistent-type-imports': [
+                'error',
+                {
+                    fixStyle: 'separate-type-imports',
+                },
+            ],
+            '@typescript-eslint/no-floating-promises': 'error',
+            '@typescript-eslint/no-misused-promises': [
+                'error',
+                {
+                    checksVoidReturn: {
+                        arguments: false,
+                        attributes: false,
+                    },
+                },
+            ],
         },
     },
     {
@@ -100,7 +116,7 @@ export default tseslint.config(
             prettier: prettierPlugin,
         },
         rules: {
-            'prettier/prettier': 'error',
+            'prettier/prettier': 'off',
         },
     },
     prettierConfig

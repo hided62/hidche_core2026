@@ -1,4 +1,4 @@
-import { GatewayPrisma, type GatewayPrismaClient } from '@sammo-ts/infra';
+import type { GatewayPrisma, GatewayPrismaClient } from '@sammo-ts/infra';
 
 import { createSimplePasswordHasher, type PasswordHasher } from './passwordHasher.js';
 import type { CreateUserInput, UserOAuthInfo, UserRecord, UserRepository, UserSanctions } from './userRepository.js';

@@ -1,14 +1,10 @@
 import { sha512 as sha512Noble } from '@noble/hashes/sha2.js';
 
+import type { createHash } from 'node:crypto';
 import type { BytesLike } from './BytesLike.js';
 import { convertBytesLikeToUint8Array } from './convertBytesLikeToUint8Array.js';
 
-type NodeHash = {
-    update(data: Uint8Array): NodeHash;
-    digest(): Uint8Array;
-};
-
-type NodeCreateHash = (algorithm: 'sha512') => NodeHash;
+type NodeCreateHash = typeof createHash;
 
 const isNode = typeof process !== 'undefined' && typeof process.versions?.node === 'string';
 
@@ -17,7 +13,7 @@ const nodeCryptoSpecifier = 'node:crypto';
 let nodeCreateHash: NodeCreateHash | null = null;
 
 if (isNode) {
-    const nodeCrypto = (await import(nodeCryptoSpecifier)) as typeof import('node:crypto');
+    const nodeCrypto = await import(nodeCryptoSpecifier);
     nodeCreateHash = nodeCrypto.createHash as NodeCreateHash;
 }
 

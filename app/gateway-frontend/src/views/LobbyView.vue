@@ -24,7 +24,7 @@ onMounted(async () => {
     try {
         me.value = await trpc.me.query();
         if (!me.value) {
-            router.push('/');
+            await router.push('/');
             return;
         }
 
@@ -51,7 +51,7 @@ onMounted(async () => {
 const handleLogout = async () => {
     // TODO: Implement logout mutation in gateway-api
     // await trpc.auth.logout.mutation();
-    router.push('/');
+    await router.push('/');
 };
 </script>
 

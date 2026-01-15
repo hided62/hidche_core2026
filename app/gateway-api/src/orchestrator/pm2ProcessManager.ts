@@ -1,8 +1,9 @@
 import { createRequire } from 'node:module';
 
+import type * as Pm2 from 'pm2';
 import type { ProcessManager, ManagedProcessInfo, ProcessDefinition } from './processManager.js';
 
-type Pm2Module = typeof import('pm2');
+type Pm2Module = typeof Pm2;
 
 const require = createRequire(import.meta.url);
 
