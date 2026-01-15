@@ -362,6 +362,17 @@ export class ActionDefinition<
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
+    buildMinConstraints(_ctx: ConstraintContext, _args: FireAttackArgs): Constraint[] {
+        const { gold, rice } = this.command.getCost();
+        return [
+            notBeNeutral(),
+            occupiedCity(),
+            suppliedCity(),
+            reqGeneralGold(() => gold),
+            reqGeneralRice(() => rice),
+        ];
+    }
+
     buildConstraints(_ctx: ConstraintContext, _args: FireAttackArgs): Constraint[] {
         void _ctx;
         void _args;

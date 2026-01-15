@@ -51,6 +51,25 @@ export class ActionDefinition<
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
+    buildMinConstraints(_ctx: ConstraintContext, _args: MaterialAidArgs): Constraint[] {
+        return [
+            occupiedCity(),
+            beChief(),
+            suppliedCity(),
+            {
+                name: 'nationSurlimit',
+                requires: (ctx) => [{ kind: 'nation', id: ctx.nationId! }],
+                test: (_ctx: ConstraintContext, view: StateView) => {
+                    const nation = view.get({ kind: 'nation', id: _ctx.nationId! }) as Nation | undefined;
+                    const surlimitRaw = nation?.meta.surlimit;
+                    const surlimit = typeof surlimitRaw === 'number' ? surlimitRaw : 0;
+                    if (surlimit > 0) return { kind: 'deny', reason: '외교제한중입니다.' };
+                    return { kind: 'allow' };
+                },
+            },
+        ];
+    }
+
     buildConstraints(_ctx: ConstraintContext, args: MaterialAidArgs): Constraint[] {
         const [goldAmount, riceAmount] = args.amountList;
         return [

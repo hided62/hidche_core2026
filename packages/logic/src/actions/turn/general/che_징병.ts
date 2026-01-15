@@ -419,6 +419,16 @@ export class ActionDefinition<
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
+    buildMinConstraints(_ctx: ConstraintContext, _args: RecruitArgs): Constraint[] {
+        const minPopBase = this.env.minAvailableRecruitPop ?? DEFAULT_MIN_POP;
+        return [
+            notBeNeutral(),
+            occupiedCity(),
+            reqCityCapacity('population', '주민', minPopBase + MIN_CREW),
+            reqCityTrust(20),
+        ];
+    }
+
     buildConstraints(ctx: ConstraintContext, _args: RecruitArgs): Constraint[] {
         const requirements: RequirementKey[] = [
             { kind: 'arg', key: 'crewType' },

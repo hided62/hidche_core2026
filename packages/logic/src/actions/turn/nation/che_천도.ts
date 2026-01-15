@@ -77,6 +77,10 @@ export class ActionDefinition<
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
+    buildMinConstraints(_ctx: ConstraintContext, _args: MoveCapitalArgs): Constraint[] {
+        return [occupiedCity(), beChief(), suppliedCity()];
+    }
+
     buildConstraints(_ctx: ConstraintContext, args: MoveCapitalArgs): Constraint[] {
         const develcost = this.env.develCost;
 

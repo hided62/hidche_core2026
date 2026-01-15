@@ -3,8 +3,10 @@ import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/
 import {
     notBeNeutral,
     notWanderingNation,
+    occupiedCity,
     reqGeneralGold,
     reqGeneralRice,
+    suppliedCity,
 } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
@@ -96,11 +98,15 @@ export class ActionDefinition<
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
+    buildMinConstraints(_ctx: ConstraintContext, _args: DonateArgs): Constraint[] {
+        return [notBeNeutral(), occupiedCity(), suppliedCity()];
+    }
+
     buildConstraints(_ctx: ConstraintContext, args: DonateArgs): Constraint[] {
         if (args.isGold) {
-            return [notBeNeutral(), notWanderingNation(), reqGeneralGold(() => args.amount)];
+            return [notBeNeutral(), notWanderingNation(), occupiedCity(), suppliedCity(), reqGeneralGold(() => args.amount)];
         }
-        return [notBeNeutral(), notWanderingNation(), reqGeneralRice(() => args.amount)];
+        return [notBeNeutral(), notWanderingNation(), occupiedCity(), suppliedCity(), reqGeneralRice(() => args.amount)];
     }
 
     resolve(context: GeneralActionResolveContext<TriggerState>, args: DonateArgs): GeneralActionOutcome<TriggerState> {

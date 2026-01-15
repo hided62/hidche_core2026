@@ -260,6 +260,19 @@ export class ActionDefinition<
         return { destCityId };
     }
 
+    buildMinConstraints(ctx: ConstraintContext, _args: DispatchArgs): Constraint[] {
+        const relYear = typeof ctx.env.relYear === 'number' ? ctx.env.relYear : 0;
+        const openingPartYear = typeof ctx.env.openingPartYear === 'number' ? ctx.env.openingPartYear : 0;
+        return [
+            notOpeningPart(relYear + 2, openingPartYear),
+            notBeNeutral(),
+            occupiedCity(),
+            suppliedCity(),
+            reqGeneralCrew(),
+            reqGeneralRice(getRequiredRice),
+        ];
+    }
+
     buildConstraints(_ctx: ConstraintContext, _args: DispatchArgs): Constraint[] {
         const relYear = typeof _ctx.env.relYear === 'number' ? _ctx.env.relYear : 0;
         const openingPartYear = typeof _ctx.env.openingPartYear === 'number' ? _ctx.env.openingPartYear : 0;

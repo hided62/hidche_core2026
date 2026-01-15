@@ -42,6 +42,10 @@ export class ActionDefinition<
         return { destNationId };
     }
 
+    buildMinConstraints(_ctx: ConstraintContext, _args: AppointmentArgs): Constraint[] {
+        return [beNeutral()];
+    }
+
     buildConstraints(_ctx: ConstraintContext, _args: AppointmentArgs): Constraint[] {
         return [beNeutral(), existsDestNation()];
     }

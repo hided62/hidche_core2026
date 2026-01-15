@@ -180,6 +180,10 @@ export class ActionDefinition<
         };
     }
 
+    buildMinConstraints(_ctx: ConstraintContext, _args: AwardArgs): Constraint[] {
+        return [notBeNeutral(), occupiedCity(), beChief(), suppliedCity()];
+    }
+
     buildConstraints(ctx: ConstraintContext, args: AwardArgs): Constraint[] {
         const requirements: RequirementKey[] = [];
         if (ctx.cityId !== undefined) {

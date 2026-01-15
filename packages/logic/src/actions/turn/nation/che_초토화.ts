@@ -116,6 +116,10 @@ export class ActionDefinition<
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
+    buildMinConstraints(_ctx: ConstraintContext, _args: ScorchedEarthArgs): Constraint[] {
+        return [occupiedCity(), beChief(), suppliedCity(), requireNoDiplomacyLimit()];
+    }
+
     buildConstraints(_ctx: ConstraintContext, args: ScorchedEarthArgs): Constraint[] {
         void _ctx;
         return [

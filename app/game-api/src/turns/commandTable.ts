@@ -184,6 +184,8 @@ const buildCommandEnv = (worldState: WorldStateRow): CommandEnv => {
 };
 
 const buildConstraintEnv = (worldState: WorldStateRow): Record<string, unknown> => {
+    const config = asRecord(worldState.config);
+    const constValues = asRecord(config.const);
     const meta = asRecord(worldState.meta);
     const scenarioMeta = asRecord(meta.scenarioMeta);
     const startYear = typeof scenarioMeta.startYear === 'number' ? scenarioMeta.startYear : undefined;
@@ -196,6 +198,7 @@ const buildConstraintEnv = (worldState: WorldStateRow): Record<string, unknown> 
         month: worldState.currentMonth,
         startYear,
         relYear,
+        openingPartYear: resolveNumber(constValues, ['openingPartYear'], 0),
     };
 };
 
@@ -352,7 +355,10 @@ const evaluateDefinition = (
     reqArg: boolean,
     args: unknown
 ): AvailabilityCore => {
-    const constraints = definition.buildConstraints(ctx, args);
+    const constraints =
+        ctx.mode === 'precheck' && definition.buildMinConstraints
+            ? definition.buildMinConstraints(ctx, args)
+            : definition.buildConstraints(ctx, args);
     return evaluateAvailability(constraints, ctx, view, reqArg);
 };
 

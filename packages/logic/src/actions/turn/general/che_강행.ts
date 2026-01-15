@@ -164,6 +164,10 @@ export class ActionDefinition<
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
+    buildMinConstraints(_ctx: ConstraintContext, _args: ForcedMoveArgs): Constraint[] {
+        return [];
+    }
+
     buildConstraints(ctx: ConstraintContext, _args: ForcedMoveArgs): Constraint[] {
         return [
             existsDestCity(),

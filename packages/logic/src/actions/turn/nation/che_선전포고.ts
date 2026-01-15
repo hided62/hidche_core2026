@@ -53,6 +53,24 @@ export class ActionDefinition<
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
+    buildMinConstraints(_ctx: ConstraintContext, _args: DeclareWarArgs): Constraint[] {
+        const relYear = typeof _ctx.env.relYear === 'number' ? _ctx.env.relYear : 0;
+        return [
+            notBeNeutral(),
+            occupiedCity(),
+            suppliedCity(),
+            beChief(),
+            {
+                name: 'declareWarYearLimit',
+                requires: () => [],
+                test: () => {
+                    if (relYear >= 1) return { kind: 'allow' };
+                    return { kind: 'deny', reason: '초반제한 해제 2년전부터 가능합니다.' };
+                },
+            },
+        ];
+    }
+
     buildConstraints(_ctx: ConstraintContext, _args: DeclareWarArgs): Constraint[] {
         const relYear = typeof _ctx.env.relYear === 'number' ? _ctx.env.relYear : 0;
 

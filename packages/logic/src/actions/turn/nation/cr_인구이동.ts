@@ -65,6 +65,15 @@ export class ActionDefinition<
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
+    buildMinConstraints(_ctx: ConstraintContext, _args: PopulationMoveArgs): Constraint[] {
+        return [
+            occupiedCity(),
+            beChief(),
+            suppliedCity(),
+            reqCityCapacity('population', '주민', MIN_AVAILABLE_RECRUIT_POP + 100),
+        ];
+    }
+
     buildConstraints(_ctx: ConstraintContext, args: PopulationMoveArgs): Constraint[] {
         const cost = calcCost(this.env.develCost, args.amount);
         return [

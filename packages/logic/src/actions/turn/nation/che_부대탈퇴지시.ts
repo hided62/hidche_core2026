@@ -48,6 +48,10 @@ export class ActionDefinition<
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
+    buildMinConstraints(_ctx: ConstraintContext, _args: TroopKickArgs): Constraint[] {
+        return [notBeNeutral(), beChief()];
+    }
+
     buildConstraints(ctx: ConstraintContext, _args: TroopKickArgs): Constraint[] {
         if (ctx.destGeneralId !== undefined && ctx.destGeneralId === ctx.actorId) {
             return [alwaysFail('본인입니다')];

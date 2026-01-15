@@ -160,6 +160,15 @@ export class ActionDefinition<
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
+    buildMinConstraints(ctx: ConstraintContext, _args: MoveArgs): Constraint[] {
+        return [
+            reqGeneralGold(() => {
+                const develCost = ctx.env.develCost as number;
+                return develCost ?? 0;
+            }),
+        ];
+    }
+
     buildConstraints(ctx: ConstraintContext, _args: MoveArgs): Constraint[] {
         const constraints = [
             existsDestCity(),

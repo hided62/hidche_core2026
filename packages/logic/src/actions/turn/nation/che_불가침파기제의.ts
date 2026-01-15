@@ -40,6 +40,10 @@ export class ActionDefinition<
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
+    buildMinConstraints(_ctx: ConstraintContext, _args: NonAggressionCancelProposalArgs): Constraint[] {
+        return [beChief(), notBeNeutral(), occupiedCity(), suppliedCity()];
+    }
+
     buildConstraints(_ctx: ConstraintContext, _args: NonAggressionCancelProposalArgs): Constraint[] {
         return [
             beChief(),

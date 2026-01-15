@@ -97,6 +97,10 @@ export class ActionDefinition<
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
+    buildMinConstraints(_ctx: ConstraintContext, _args: NonAggressionProposalArgs): Constraint[] {
+        return [beChief(), notBeNeutral()];
+    }
+
     buildConstraints(_ctx: ConstraintContext, _args: NonAggressionProposalArgs): Constraint[] {
         return [
             beChief(),

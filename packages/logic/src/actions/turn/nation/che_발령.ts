@@ -152,6 +152,10 @@ export class ActionDefinition<
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
+    buildMinConstraints(_ctx: ConstraintContext, _args: AssignmentArgs): Constraint[] {
+        return [beChief(), notBeNeutral(), occupiedCity(), suppliedCity()];
+    }
+
     buildConstraints(ctx: ConstraintContext, _args: AssignmentArgs): Constraint[] {
         void _args;
         if (ctx.destGeneralId === ctx.actorId) {

@@ -32,6 +32,25 @@ export class ActionDefinition<
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
+    buildMinConstraints(_ctx: ConstraintContext, _args: ChangeNationNameArgs): Constraint[] {
+        return [
+            occupiedCity(),
+            beChief(),
+            suppliedCity(),
+            {
+                name: 'canChangeNationName',
+                requires: (ctx) => [{ kind: 'nation', id: ctx.nationId! }],
+                test: (_ctx: ConstraintContext, view: StateView) => {
+                    const nation = view.get({ kind: 'nation', id: _ctx.nationId! }) as Nation | undefined;
+                    const canChangeRaw = nation?.meta[`can_${ACTION_NAME}`];
+                    const canChange = (typeof canChangeRaw === 'number' ? canChangeRaw : 0) !== 0;
+                    if (!canChange) return { kind: 'deny', reason: '더이상 변경이 불가능합니다.' };
+                    return { kind: 'allow' };
+                },
+            },
+        ];
+    }
+
     buildConstraints(_ctx: ConstraintContext, args: ChangeNationNameArgs): Constraint[] {
         return [
             occupiedCity(),

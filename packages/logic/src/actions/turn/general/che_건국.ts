@@ -77,6 +77,10 @@ export class ActionDefinition<
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
+    buildMinConstraints(_ctx: ConstraintContext, _args: FoundingArgs): Constraint[] {
+        return [beOpeningPart(), beWanderingNation()];
+    }
+
     buildConstraints(_ctx: ConstraintContext, args: FoundingArgs): Constraint[] {
         return [
             beOpeningPart(),

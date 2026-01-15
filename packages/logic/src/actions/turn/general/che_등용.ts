@@ -150,6 +150,10 @@ export class ActionDefinition<
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
+    buildMinConstraints(_ctx: ConstraintContext, _args: EmployArgs): Constraint[] {
+        return [notBeNeutral(), occupiedCity(), suppliedCity()];
+    }
+
     buildConstraints(_ctx: ConstraintContext, args: EmployArgs): Constraint[] {
         const develCost = this.env.develCost ?? 100;
 

@@ -152,6 +152,10 @@ export class ActionDefinition<
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
+    buildMinConstraints(_ctx: ConstraintContext, _args: MobilizePeopleArgs): Constraint[] {
+        return [occupiedCity(), beChief(), availableStrategicCommand()];
+    }
+
     buildConstraints(_ctx: ConstraintContext, _args: MobilizePeopleArgs): Constraint[] {
         void _ctx;
         void _args;

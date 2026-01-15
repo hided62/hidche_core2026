@@ -43,6 +43,10 @@ export class ActionDefinition<
         return {};
     }
 
+    buildMinConstraints(_ctx: ConstraintContext, _args: ReduceCityArgs): Constraint[] {
+        return [occupiedCity(), beChief(), suppliedCity()];
+    }
+
     private getRecoverAmount(): number {
         return this.env.develCost * COST_COEF + DEFAULT_COST / 2;
     }

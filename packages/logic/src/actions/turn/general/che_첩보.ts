@@ -131,6 +131,12 @@ export class ActionDefinition<
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
+    buildMinConstraints(ctx: ConstraintContext, _args: SpyArgs): Constraint[] {
+        const env = ctx.env;
+        const cost = ((env.develCost as number) ?? 100) * 3;
+        return [notBeNeutral(), reqGeneralGold(() => cost), reqGeneralRice(() => cost)];
+    }
+
     buildConstraints(ctx: ConstraintContext, _args: SpyArgs): Constraint[] {
         const env = ctx.env;
         const cost = ((env.develCost as number) ?? 100) * 3;

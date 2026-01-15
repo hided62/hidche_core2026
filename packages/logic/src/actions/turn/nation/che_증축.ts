@@ -48,6 +48,10 @@ export class ActionDefinition<
         return {};
     }
 
+    buildMinConstraints(_ctx: ConstraintContext, _args: ExpandCityArgs): Constraint[] {
+        return [occupiedCity(), beChief(), suppliedCity()];
+    }
+
     private getCost(): number {
         return this.env.develCost * COST_COEF + DEFAULT_COST;
     }
