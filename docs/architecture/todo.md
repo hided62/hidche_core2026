@@ -15,6 +15,10 @@ Move items into the main docs once they are finalized.
 - [AI suggestion] Integrate war/battle pipeline into turn processing (troop movement/war resolution hooks, not just isolated sim jobs).
 - [AI suggestion] Expand turn command catalog beyond the current subset (general/nation commands).
 
+## Frontend
+
+- [AI suggestion] Maintain a game frontend SPA implementation plan and keep it aligned with legacy screen inventory (`docs/architecture/game-frontend-spa-plan.md`).
+
 ## Runtime and Operations (Lower Priority)
 
 - Document current turn daemon scheduling details and preemption rules (based on TurnDaemonLifecycle).
