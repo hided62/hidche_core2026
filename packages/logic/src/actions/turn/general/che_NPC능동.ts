@@ -11,9 +11,11 @@ import type {
 import { createGeneralPatchEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat } from '@sammo-ts/logic/logging/types.js';
 import { JosaUtil } from '@sammo-ts/common';
+import { z } from 'zod';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import type { MapDefinition } from '@sammo-ts/logic/world/types.js';
+import { parseArgsWithSchema } from '../parseArgs.js';
 
 export interface NPCSelfArgs {
     optionText: string;
@@ -27,6 +29,12 @@ export type NPCSelfResolveContext<TriggerState extends GeneralTriggerState = Gen
 
 const ACTION_NAME = 'NPC능동';
 const ACTION_KEY = 'che_NPC능동';
+const NPC_SELF_ARGS_SCHEMA = z.discriminatedUnion('optionText', [
+    z.object({
+        optionText: z.literal('순간이동'),
+        destCityId: z.number(),
+    }),
+]);
 
 export class ActionResolver<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -90,18 +98,7 @@ export class ActionDefinition<
     }
 
     parseArgs(raw: unknown): NPCSelfArgs | null {
-        const data = raw as Partial<NPCSelfArgs>;
-        if (!data.optionText) return null;
-
-        if (data.optionText === '순간이동') {
-            if (typeof data.destCityId !== 'number') return null;
-            // We can check city existence here deeply but constraint is better place usually,
-            // simplified parse just structural.
-            return { optionText: data.optionText, destCityId: data.destCityId };
-        }
-
-        // Only '순간이동' implemented in legacy file shown.
-        return null;
+        return parseArgsWithSchema(NPC_SELF_ARGS_SCHEMA, raw);
     }
 
     buildConstraints(_ctx: ConstraintContext, args: NPCSelfArgs): Constraint[] {

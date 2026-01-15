@@ -17,10 +17,12 @@ import type {
 import { createGeneralPatchEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat } from '@sammo-ts/logic/logging/types.js';
 import { JosaUtil } from '@sammo-ts/common';
+import { z } from 'zod';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import type { MapDefinition } from '@sammo-ts/logic/world/types.js';
+import { parseArgsWithSchema } from '../parseArgs.js';
 
 export interface MoveArgs {
     destCityId: number;
@@ -36,6 +38,9 @@ export interface MoveResolveContext<
 
 const ACTION_NAME = '이동';
 const ACTION_KEY = 'che_이동';
+const MOVE_ARGS_SCHEMA = z.object({
+    destCityId: z.number(),
+});
 
 // Helper for map connectivity
 const connectedCity = (): Constraint => ({
@@ -155,9 +160,7 @@ export class ActionDefinition<
     }
 
     parseArgs(raw: unknown): MoveArgs | null {
-        const data = raw as Partial<MoveArgs>;
-        if (typeof data.destCityId !== 'number') return null;
-        return { destCityId: data.destCityId };
+        return parseArgsWithSchema(MOVE_ARGS_SCHEMA, raw);
     }
 
     buildConstraints(ctx: ConstraintContext, _args: MoveArgs): Constraint[] {

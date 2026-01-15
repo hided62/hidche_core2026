@@ -17,10 +17,12 @@ import type {
 import { createGeneralPatchEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat } from '@sammo-ts/logic/logging/types.js';
 import { JosaUtil } from '@sammo-ts/common';
+import { z } from 'zod';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import type { MapDefinition } from '@sammo-ts/logic/world/types.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
+import { parseArgsWithSchema } from '../parseArgs.js';
 
 export interface ForcedMoveArgs {
     destCityId: number;
@@ -36,6 +38,9 @@ export interface ForcedMoveResolveContext<
 
 const ACTION_NAME = '강행';
 const ACTION_KEY = 'che_강행';
+const FORCED_MOVE_ARGS_SCHEMA = z.object({
+    destCityId: z.number(),
+});
 
 export class ActionResolver<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -159,9 +164,7 @@ export class ActionDefinition<
     }
 
     parseArgs(raw: unknown): ForcedMoveArgs | null {
-        const data = raw as Partial<ForcedMoveArgs>;
-        if (typeof data.destCityId !== 'number') return null;
-        return { destCityId: data.destCityId };
+        return parseArgsWithSchema(FORCED_MOVE_ARGS_SCHEMA, raw);
     }
 
     buildConstraints(ctx: ConstraintContext, _args: ForcedMoveArgs): Constraint[] {
