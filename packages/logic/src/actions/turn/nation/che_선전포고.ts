@@ -21,10 +21,16 @@ import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionCo
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { JosaUtil } from '@sammo-ts/common';
 import type { NationTurnCommandSpec } from './index.js';
+import { z } from 'zod';
+import { parseArgsWithSchema } from '../parseArgs.js';
 
-export interface DeclareWarArgs {
-    destNationId: number;
-}
+const ARGS_SCHEMA = z.object({
+    destNationId: z.preprocess(
+        (value) => (typeof value === 'number' ? Math.floor(value) : value),
+        z.number().int().positive()
+    ),
+});
+export type DeclareWarArgs = z.infer<typeof ARGS_SCHEMA>;
 
 // DeclareWarResolveContext is not used anymore as it was replaced by inline type in ActionDefinition
 
@@ -32,13 +38,6 @@ const ACTION_NAME = '선전포고';
 // legacy 규칙: 선전포고 상태는 24턴 유지.
 const DIPLOMACY_DECLARE = 1;
 const DECLARE_TERM = 24;
-
-const parseNationId = (raw: unknown): number | null => {
-    if (typeof raw !== 'number' || !Number.isFinite(raw)) {
-        return null;
-    }
-    return raw > 0 ? Math.floor(raw) : null;
-};
 
 export class ActionDefinition<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -51,12 +50,7 @@ export class ActionDefinition<
     public readonly name = ACTION_NAME;
 
     parseArgs(raw: unknown): DeclareWarArgs | null {
-        const data = raw as { destNationId?: unknown };
-        const destNationId = parseNationId(data?.destNationId);
-        if (destNationId === null) {
-            return null;
-        }
-        return { destNationId };
+        return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
     buildConstraints(_ctx: ConstraintContext, _args: DeclareWarArgs): Constraint[] {
@@ -164,7 +158,7 @@ export class ActionDefinition<
 }
 
 // 예약 턴 실행에 필요한 대상 국가 정보를 구성한다.
-export const actionContextBuilder: ActionContextBuilder = (base, options) => {
+export const actionContextBuilder: ActionContextBuilder<DeclareWarArgs> = (base, options) => {
     const destNationId = options.actionArgs.destNationId;
     if (typeof destNationId !== 'number') {
         return null;
@@ -188,5 +182,6 @@ export const commandSpec: NationTurnCommandSpec = {
     category: '외교',
     reqArg: true,
     args: { destNationId: 0 },
+    argsSchema: ARGS_SCHEMA,
     createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
 };

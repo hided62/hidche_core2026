@@ -25,11 +25,14 @@ import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionCo
 import { resolveTurnTermMinutes } from '@sammo-ts/logic/actions/turn/actionContextHelpers.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { NationTurnCommandSpec } from './index.js';
+import { z } from 'zod';
+import { parseArgsWithSchema } from '../parseArgs.js';
 
-export interface AssignmentArgs {
-    destGeneralId: number;
-    destCityId: number;
-}
+const ARGS_SCHEMA = z.object({
+    destGeneralId: z.number(),
+    destCityId: z.number(),
+});
+export type AssignmentArgs = z.infer<typeof ARGS_SCHEMA>;
 
 export interface AssignmentResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -146,23 +149,7 @@ export class ActionDefinition<
     }
 
     parseArgs(raw: unknown): AssignmentArgs | null {
-        if (!raw || typeof raw !== 'object') {
-            return null;
-        }
-        const data = raw as {
-            destGeneralId?: unknown;
-            destCityId?: unknown;
-        };
-        if (typeof data.destGeneralId !== 'number') {
-            return null;
-        }
-        if (typeof data.destCityId !== 'number') {
-            return null;
-        }
-        return {
-            destGeneralId: data.destGeneralId,
-            destCityId: data.destCityId,
-        };
+        return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
     buildConstraints(ctx: ConstraintContext, _args: AssignmentArgs): Constraint[] {
@@ -188,7 +175,7 @@ export class ActionDefinition<
 }
 
 // 예약 턴 실행에 필요한 대상 장수/도시 컨텍스트를 구성한다.
-export const actionContextBuilder: ActionContextBuilder = (base, options) => {
+export const actionContextBuilder: ActionContextBuilder<AssignmentArgs> = (base, options) => {
     const destGeneralId = options.actionArgs.destGeneralId;
     const destCityId = options.actionArgs.destCityId;
     if (typeof destGeneralId !== 'number' || typeof destCityId !== 'number') {
@@ -216,5 +203,6 @@ export const commandSpec: NationTurnCommandSpec = {
     category: '인사',
     reqArg: true,
     args: { destGeneralId: 0, destCityId: 0 },
+    argsSchema: ARGS_SCHEMA,
     createDefinition: (_env: TurnCommandEnv) => new ActionDefinition({}),
 };

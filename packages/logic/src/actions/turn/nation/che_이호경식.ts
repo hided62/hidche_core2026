@@ -22,10 +22,16 @@ import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js'
 import { buildDefaultDiplomacy, DIPLOMACY_STATE } from '../../../diplomacy/index.js';
 import { JosaUtil } from '@sammo-ts/common';
 import type { NationTurnCommandSpec } from './index.js';
+import { z } from 'zod';
+import { parseArgsWithSchema } from '../parseArgs.js';
 
-export interface DegradeRelationsArgs {
-    destNationId: number;
-}
+const ARGS_SCHEMA = z.object({
+    destNationId: z.preprocess(
+        (value) => (typeof value === 'number' ? Math.floor(value) : value),
+        z.number().int().positive()
+    ),
+});
+export type DegradeRelationsArgs = z.infer<typeof ARGS_SCHEMA>;
 
 export interface DegradeRelationsResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -41,14 +47,6 @@ const ACTION_NAME = '이호경식';
 const DEFAULT_GLOBAL_DELAY = 9;
 const PRE_REQ_TURN = 0;
 const EXP_DED_GAIN = 5 * (PRE_REQ_TURN + 1);
-
-const parseNationId = (raw: unknown): number | null => {
-    if (typeof raw !== 'number' || !Number.isFinite(raw)) {
-        return null;
-    }
-    const value = Math.floor(raw);
-    return value > 0 ? value : null;
-};
 
 const resolveNextTerm = (state: number, term: number): number => (state === DIPLOMACY_STATE.WAR ? 3 : term + 3);
 
@@ -180,12 +178,7 @@ export class ActionDefinition<
     }
 
     parseArgs(raw: unknown): DegradeRelationsArgs | null {
-        const data = raw as { destNationId?: unknown };
-        const destNationId = parseNationId(data?.destNationId);
-        if (destNationId === null) {
-            return null;
-        }
-        return { destNationId };
+        return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
     buildConstraints(_ctx: ConstraintContext, _args: DegradeRelationsArgs): Constraint[] {
@@ -209,7 +202,7 @@ export class ActionDefinition<
 }
 
 // 예약 턴 실행에 필요한 대상 국가/외교 정보를 구성한다.
-export const actionContextBuilder: ActionContextBuilder = (base, options) => {
+export const actionContextBuilder: ActionContextBuilder<DegradeRelationsArgs> = (base, options) => {
     const destNationId = options.actionArgs.destNationId;
     if (typeof destNationId !== 'number') {
         return null;
@@ -246,5 +239,6 @@ export const commandSpec: NationTurnCommandSpec = {
     category: '외교',
     reqArg: true,
     args: { destNationId: 0 },
+    argsSchema: ARGS_SCHEMA,
     createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env.generalActionModules ?? []),
 };

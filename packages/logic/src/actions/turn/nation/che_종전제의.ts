@@ -16,19 +16,18 @@ import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js'
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { NationTurnCommandSpec } from './index.js';
 import { JosaUtil } from '@sammo-ts/common';
+import { z } from 'zod';
+import { parseArgsWithSchema } from '../parseArgs.js';
 
-export interface StopWarProposalArgs {
-    destNationId: number;
-}
+const ARGS_SCHEMA = z.object({
+    destNationId: z.preprocess(
+        (value) => (typeof value === 'number' ? Math.floor(value) : value),
+        z.number().int().positive()
+    ),
+});
+export type StopWarProposalArgs = z.infer<typeof ARGS_SCHEMA>;
 
 const ACTION_NAME = '종전 제의';
-
-const parseNationId = (raw: unknown): number | null => {
-    if (typeof raw !== 'number' || !Number.isFinite(raw)) {
-        return null;
-    }
-    return raw > 0 ? Math.floor(raw) : null;
-};
 
 // 종전 제의를 처리하는 국가 커맨드.
 export class ActionDefinition<
@@ -38,12 +37,7 @@ export class ActionDefinition<
     public readonly name = ACTION_NAME;
 
     parseArgs(raw: unknown): StopWarProposalArgs | null {
-        const data = raw as { destNationId?: unknown };
-        const destNationId = parseNationId(data?.destNationId);
-        if (destNationId === null) {
-            return null;
-        }
-        return { destNationId };
+        return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
     buildConstraints(_ctx: ConstraintContext, _args: StopWarProposalArgs): Constraint[] {
@@ -84,5 +78,6 @@ export const commandSpec: NationTurnCommandSpec = {
     category: '외교',
     reqArg: true,
     args: { destNationId: 0 },
+    argsSchema: ARGS_SCHEMA,
     createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
 };

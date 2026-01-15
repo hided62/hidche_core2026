@@ -20,12 +20,18 @@ import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js'
 import type { NationTurnCommandSpec } from './index.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { clamp } from 'es-toolkit';
+import { z } from 'zod';
+import { parseArgsWithSchema } from '../parseArgs.js';
 
-export interface SeizureArgs {
-    isGold: boolean;
-    amount: number;
-    destGeneralID: number;
-}
+const ARGS_SCHEMA = z.object({
+    isGold: z.boolean(),
+    amount: z.preprocess(
+        (value) => (typeof value === 'number' ? Math.floor(value / 100) * 100 : value),
+        z.number().int().positive()
+    ),
+    destGeneralID: z.number(),
+});
+export type SeizureArgs = z.infer<typeof ARGS_SCHEMA>;
 
 export interface SeizureResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -44,18 +50,13 @@ export class ActionDefinition<
     constructor(private readonly env: TurnCommandEnv) {}
 
     parseArgs(raw: unknown): SeizureArgs | null {
-        const data = raw as { isGold?: boolean; amount?: number; destGeneralID?: number };
-        if (typeof data?.isGold !== 'boolean') return null;
-        if (typeof data?.amount !== 'number') return null;
-        if (typeof data?.destGeneralID !== 'number') return null;
-
-        const amount = Math.floor(data.amount / 100) * 100;
-        if (amount <= 0) return null;
-
+        const data = parseArgsWithSchema(ARGS_SCHEMA, raw);
+        if (!data) {
+            return null;
+        }
         return {
-            isGold: data.isGold,
-            amount: clamp(amount, 100, this.env.maxResourceActionAmount ?? 10000),
-            destGeneralID: data.destGeneralID,
+            ...data,
+            amount: clamp(data.amount, 100, this.env.maxResourceActionAmount ?? 10000),
         };
     }
 
@@ -140,7 +141,7 @@ export class ActionDefinition<
     }
 }
 
-export const actionContextBuilder: ActionContextBuilder = (base, options) => {
+export const actionContextBuilder: ActionContextBuilder<SeizureArgs> = (base, options) => {
     const destGeneralId = options.actionArgs.destGeneralID;
     if (typeof destGeneralId !== 'number') return null;
 
@@ -161,5 +162,6 @@ export const commandSpec: NationTurnCommandSpec = {
     category: '인사',
     reqArg: true,
     args: { isGold: false, amount: 0, destGeneralID: 0 },
+    argsSchema: ARGS_SCHEMA,
     createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env),
 };

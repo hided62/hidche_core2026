@@ -290,7 +290,7 @@ describe('Nation Missing Actions', () => {
         setupDiplomacy(view, nation.id, destNation.id, 2);
 
         const definition = new CounterStrategyAction();
-        const args = { destNationId: destNation.id, commandType: 'che_허보' };
+        const args = { destNationId: destNation.id, commandType: 'che_허보' } as const;
         const ctx: ConstraintContext = {
             actorId: general.id,
             nationId: nation.id,
@@ -327,7 +327,7 @@ describe('Nation Missing Actions', () => {
                 addLog: () => {},
             } as any,
             { now: new Date(), schedule },
-            { destNationId: destNation.id, commandType: 'che_허보' }
+            { destNationId: destNation.id, commandType: 'che_허보' } as const
         );
 
         expect(resolution.general.experience).toBeGreaterThan(100);

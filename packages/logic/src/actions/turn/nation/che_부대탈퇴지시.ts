@@ -19,10 +19,16 @@ import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js'
 import type { NationTurnCommandSpec } from './index.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import { JosaUtil } from '@sammo-ts/common';
+import { z } from 'zod';
+import { parseArgsWithSchema } from '../parseArgs.js';
 
-export interface TroopKickArgs {
-    destGeneralId: number;
-}
+const ARGS_SCHEMA = z.object({
+    destGeneralId: z.preprocess(
+        (value) => (typeof value === 'number' ? Math.floor(value) : value),
+        z.number().int().positive()
+    ),
+});
+export type TroopKickArgs = z.infer<typeof ARGS_SCHEMA>;
 
 export interface TroopKickResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -39,17 +45,7 @@ export class ActionDefinition<
     public readonly name = ACTION_NAME;
 
     parseArgs(raw: unknown): TroopKickArgs | null {
-        if (!raw || typeof raw !== 'object') {
-            return null;
-        }
-        const data = raw as { destGeneralId?: unknown };
-        if (typeof data.destGeneralId !== 'number') {
-            return null;
-        }
-        if (data.destGeneralId <= 0) {
-            return null;
-        }
-        return { destGeneralId: data.destGeneralId };
+        return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
     buildConstraints(ctx: ConstraintContext, _args: TroopKickArgs): Constraint[] {
@@ -98,7 +94,7 @@ export class ActionDefinition<
     }
 }
 
-export const actionContextBuilder: ActionContextBuilder = (base, options) => {
+export const actionContextBuilder: ActionContextBuilder<TroopKickArgs> = (base, options) => {
     const destGeneralId = options.actionArgs.destGeneralId;
     if (typeof destGeneralId !== 'number') {
         return null;
@@ -118,5 +114,6 @@ export const commandSpec: NationTurnCommandSpec = {
     category: '인사',
     reqArg: true,
     args: { destGeneralId: 0 },
+    argsSchema: ARGS_SCHEMA,
     createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
 };

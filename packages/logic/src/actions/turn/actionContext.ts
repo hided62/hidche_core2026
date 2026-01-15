@@ -55,23 +55,22 @@ export interface ActionContextWorldRef {
     getTroopById(id: number): Troop | null;
 }
 
-export interface ActionContextOptions {
+export interface ActionContextOptions<TArgs extends Record<string, unknown> = Record<string, unknown>> {
     world: ActionContextWorldState;
     scenarioConfig: ScenarioConfig;
     scenarioMeta?: ScenarioMeta;
     map?: MapDefinition;
     unitSet?: UnitSetDefinition;
     worldRef: ActionContextWorldRef | null;
-    actionArgs: Record<string, unknown>;
+    actionArgs: TArgs;
     createGeneralId: () => number;
     createNationId: () => number;
     seedBase: string;
 }
 
 // 예약 턴 처리에서 커맨드별로 필요한 컨텍스트를 확장한다.
-export type ActionContextBuilder = (
-    base: ActionContextBase,
-    options: ActionContextOptions
-) => ActionResolveContext | null;
+export type ActionContextBuilder<TArgs extends Record<string, unknown> = Record<string, unknown>> = {
+    bivarianceHack(base: ActionContextBase, options: ActionContextOptions<TArgs>): ActionResolveContext | null;
+}['bivarianceHack'];
 
 export const defaultActionContextBuilder: ActionContextBuilder = (base) => base;

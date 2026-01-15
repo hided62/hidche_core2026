@@ -55,7 +55,7 @@ const DEFAULT_ATMOS = 40;
 const DEFAULT_MIN_POP = 30000;
 const DEFAULT_TRUST = 50;
 const MIN_CREW = 100;
-const ARGS_SCHEMA = z.preprocess(
+export const ARGS_SCHEMA = z.preprocess(
     (raw) => {
         if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
             return raw;

@@ -3,16 +3,35 @@ import type { ZodType } from 'zod';
 import type { ActionContextBuilder } from './actionContext.js';
 import type { TurnCommandEnv } from './commandEnv.js';
 
-export interface TurnCommandSpecBase<TKey extends string = string> {
+export interface TurnCommandSpecWithArgs<TKey extends string = string> {
     key: TKey;
     category: string;
-    reqArg: boolean;
+    reqArg: true;
     args: Record<string, unknown>;
-    argsSchema?: ZodType<unknown>;
+    argsSchema: ZodType<Record<string, unknown>>;
     createDefinition(env: TurnCommandEnv): GeneralActionDefinition;
 }
 
+export interface TurnCommandSpecWithoutArgs<TKey extends string = string> {
+    key: TKey;
+    category: string;
+    reqArg: false;
+    args: Record<string, unknown>;
+    argsSchema?: undefined;
+    createDefinition(env: TurnCommandEnv): GeneralActionDefinition;
+}
+
+export type TurnCommandSpecBase<TKey extends string = string> =
+    | TurnCommandSpecWithArgs<TKey>
+    | TurnCommandSpecWithoutArgs<TKey>;
+
+export type TurnCommandArgs<TSpec extends TurnCommandSpecBase> = TSpec extends {
+    argsSchema: ZodType<infer TArgs>;
+}
+    ? TArgs
+    : Record<string, never>;
+
 export interface TurnCommandModule<TSpec extends TurnCommandSpecBase = TurnCommandSpecBase> {
     commandSpec: TSpec;
-    actionContextBuilder?: ActionContextBuilder;
+    actionContextBuilder?: ActionContextBuilder<TurnCommandArgs<TSpec>>;
 }

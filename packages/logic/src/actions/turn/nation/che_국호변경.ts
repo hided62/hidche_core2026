@@ -12,10 +12,13 @@ import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.
 import { JosaUtil } from '@sammo-ts/common';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { NationTurnCommandSpec } from './index.js';
+import { z } from 'zod';
+import { parseArgsWithSchema } from '../parseArgs.js';
 
-export interface ChangeNationNameArgs {
-    nationName: string;
-}
+const ARGS_SCHEMA = z.object({
+    nationName: z.string().trim().min(1).max(8),
+});
+export type ChangeNationNameArgs = z.infer<typeof ARGS_SCHEMA>;
 
 const ACTION_NAME = '국호변경';
 
@@ -26,13 +29,7 @@ export class ActionDefinition<
     public readonly name = ACTION_NAME;
 
     parseArgs(raw: unknown): ChangeNationNameArgs | null {
-        const data = raw as { nationName?: string };
-        if (typeof data?.nationName !== 'string') return null;
-
-        const name = data.nationName.trim();
-        if (name.length < 1 || name.length > 8) return null;
-
-        return { nationName: name };
+        return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
     buildConstraints(_ctx: ConstraintContext, args: ChangeNationNameArgs): Constraint[] {
@@ -124,5 +121,6 @@ export const commandSpec: NationTurnCommandSpec = {
     category: '국가',
     reqArg: true,
     args: { nationName: '' },
+    argsSchema: ARGS_SCHEMA,
     createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
 };

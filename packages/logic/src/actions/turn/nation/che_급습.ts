@@ -22,10 +22,16 @@ import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js'
 import { buildDefaultDiplomacy } from '../../../diplomacy/index.js';
 import { JosaUtil } from '@sammo-ts/common';
 import type { NationTurnCommandSpec } from './index.js';
+import { z } from 'zod';
+import { parseArgsWithSchema } from '../parseArgs.js';
 
-export interface RaidArgs {
-    destNationId: number;
-}
+const ARGS_SCHEMA = z.object({
+    destNationId: z.preprocess(
+        (value) => (typeof value === 'number' ? Math.floor(value) : value),
+        z.number().int().positive()
+    ),
+});
+export type RaidArgs = z.infer<typeof ARGS_SCHEMA>;
 
 export interface RaidResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -42,14 +48,6 @@ const DEFAULT_GLOBAL_DELAY = 9;
 const PRE_REQ_TURN = 0;
 const EXP_DED_GAIN = 5 * (PRE_REQ_TURN + 1);
 const TERM_REDUCE = 3;
-
-const parseNationId = (raw: unknown): number | null => {
-    if (typeof raw !== 'number' || !Number.isFinite(raw)) {
-        return null;
-    }
-    const value = Math.floor(raw);
-    return value > 0 ? value : null;
-};
 
 // 급습 쿨타임 계산을 담당한다.
 export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
@@ -173,12 +171,7 @@ export class ActionDefinition<
     }
 
     parseArgs(raw: unknown): RaidArgs | null {
-        const data = raw as { destNationId?: unknown };
-        const destNationId = parseNationId(data?.destNationId);
-        if (destNationId === null) {
-            return null;
-        }
-        return { destNationId };
+        return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
     buildConstraints(_ctx: ConstraintContext, _args: RaidArgs): Constraint[] {
@@ -199,7 +192,7 @@ export class ActionDefinition<
 }
 
 // 예약 턴 실행에 필요한 대상 국가/외교 정보를 구성한다.
-export const actionContextBuilder: ActionContextBuilder = (base, options) => {
+export const actionContextBuilder: ActionContextBuilder<RaidArgs> = (base, options) => {
     const destNationId = options.actionArgs.destNationId;
     if (typeof destNationId !== 'number') {
         return null;
@@ -236,5 +229,6 @@ export const commandSpec: NationTurnCommandSpec = {
     category: '외교',
     reqArg: true,
     args: { destNationId: 0 },
+    argsSchema: ARGS_SCHEMA,
     createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env.generalActionModules ?? []),
 };

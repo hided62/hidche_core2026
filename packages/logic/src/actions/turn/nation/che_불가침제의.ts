@@ -15,37 +15,24 @@ import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { NationTurnCommandSpec } from './index.js';
+import { z } from 'zod';
+import { parseArgsWithSchema } from '../parseArgs.js';
 
-export interface NonAggressionProposalArgs {
-    destNationId: number;
-    year: number;
-    month: number;
-}
+const ARGS_SCHEMA = z.object({
+    destNationId: z.preprocess(
+        (value) => (typeof value === 'number' ? Math.floor(value) : value),
+        z.number().int().positive()
+    ),
+    year: z.preprocess((value) => (typeof value === 'number' ? Math.floor(value) : value), z.number().int().min(0)),
+    month: z.preprocess(
+        (value) => (typeof value === 'number' ? Math.floor(value) : value),
+        z.number().int().min(1).max(12)
+    ),
+});
+export type NonAggressionProposalArgs = z.infer<typeof ARGS_SCHEMA>;
 
 const ACTION_NAME = '불가침 제의';
 const MIN_TERM_MONTHS = 6;
-
-const parseNationId = (raw: unknown): number | null => {
-    if (typeof raw !== 'number' || !Number.isFinite(raw)) {
-        return null;
-    }
-    return raw > 0 ? Math.floor(raw) : null;
-};
-
-const parseYear = (raw: unknown): number | null => {
-    if (typeof raw !== 'number' || !Number.isFinite(raw)) {
-        return null;
-    }
-    return raw >= 0 ? Math.floor(raw) : null;
-};
-
-const parseMonth = (raw: unknown): number | null => {
-    if (typeof raw !== 'number' || !Number.isFinite(raw)) {
-        return null;
-    }
-    const month = Math.floor(raw);
-    return month >= 1 && month <= 12 ? month : null;
-};
 
 const resolveMonthIndex = (year: number, month: number): number => year * 12 + month - 1;
 
@@ -107,18 +94,7 @@ export class ActionDefinition<
     public readonly name = ACTION_NAME;
 
     parseArgs(raw: unknown): NonAggressionProposalArgs | null {
-        const data = raw as {
-            destNationId?: unknown;
-            year?: unknown;
-            month?: unknown;
-        };
-        const destNationId = parseNationId(data?.destNationId);
-        const year = parseYear(data?.year);
-        const month = parseMonth(data?.month);
-        if (destNationId === null || year === null || month === null) {
-            return null;
-        }
-        return { destNationId, year, month };
+        return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
     buildConstraints(_ctx: ConstraintContext, _args: NonAggressionProposalArgs): Constraint[] {
@@ -163,5 +139,6 @@ export const commandSpec: NationTurnCommandSpec = {
     category: '외교',
     reqArg: true,
     args: { destNationId: 0, year: 0, month: 0 },
+    argsSchema: ARGS_SCHEMA,
     createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
 };

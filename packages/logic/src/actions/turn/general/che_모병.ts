@@ -1,5 +1,5 @@
 import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
-import { ActionDefinition as RecruitActionDefinition } from './che_징병.js';
+import { ARGS_SCHEMA, ActionDefinition as RecruitActionDefinition } from './che_징병.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
@@ -30,5 +30,6 @@ export const commandSpec: GeneralTurnCommandSpec = {
         crewType: 'number',
         amount: 'number',
     },
+    argsSchema: ARGS_SCHEMA,
     createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env.generalActionModules ?? []),
 };

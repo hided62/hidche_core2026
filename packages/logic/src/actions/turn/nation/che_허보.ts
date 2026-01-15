@@ -22,10 +22,16 @@ import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionCo
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { JosaUtil } from '@sammo-ts/common';
 import type { NationTurnCommandSpec } from './index.js';
+import { z } from 'zod';
+import { parseArgsWithSchema } from '../parseArgs.js';
 
-export interface DeceptionArgs {
-    destCityId: number;
-}
+const ARGS_SCHEMA = z.object({
+    destCityId: z.preprocess(
+        (value) => (typeof value === 'number' ? Math.floor(value) : value),
+        z.number().int().positive()
+    ),
+});
+export type DeceptionArgs = z.infer<typeof ARGS_SCHEMA>;
 
 export interface DeceptionResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -41,14 +47,6 @@ const ACTION_NAME = '허보';
 const DEFAULT_GLOBAL_DELAY = 9;
 const PRE_REQ_TURN = 1;
 const EXP_DED_GAIN = 5 * (PRE_REQ_TURN + 1);
-
-const parseCityId = (raw: unknown): number | null => {
-    if (typeof raw !== 'number' || !Number.isFinite(raw)) {
-        return null;
-    }
-    const value = Math.floor(raw);
-    return value > 0 ? value : null;
-};
 
 const pickMoveCityId = (rng: GeneralActionResolveContext['rng'], destCityId: number, candidates: City[]): number => {
     if (candidates.length === 0) {
@@ -183,12 +181,7 @@ export class ActionDefinition<
     }
 
     parseArgs(raw: unknown): DeceptionArgs | null {
-        const data = raw as { destCityId?: unknown };
-        const destCityId = parseCityId(data?.destCityId);
-        if (destCityId === null) {
-            return null;
-        }
-        return { destCityId };
+        return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
     buildConstraints(_ctx: ConstraintContext, _args: DeceptionArgs): Constraint[] {
@@ -210,7 +203,7 @@ export class ActionDefinition<
 }
 
 // 예약 턴 실행에 필요한 대상 도시/장수 정보를 구성한다.
-export const actionContextBuilder: ActionContextBuilder = (base, options) => {
+export const actionContextBuilder: ActionContextBuilder<DeceptionArgs> = (base, options) => {
     const destCityId = options.actionArgs.destCityId;
     if (typeof destCityId !== 'number') {
         return null;
@@ -247,5 +240,6 @@ export const commandSpec: NationTurnCommandSpec = {
     category: '전략',
     reqArg: true,
     args: { destCityId: 0 },
+    argsSchema: ARGS_SCHEMA,
     createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env.generalActionModules ?? []),
 };

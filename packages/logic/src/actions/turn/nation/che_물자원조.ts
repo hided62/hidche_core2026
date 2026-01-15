@@ -20,11 +20,14 @@ import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js'
 import type { NationTurnCommandSpec } from './index.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { clamp } from 'es-toolkit';
+import { z } from 'zod';
+import { parseArgsWithSchema } from '../parseArgs.js';
 
-export interface MaterialAidArgs {
-    destNationId: number;
-    amountList: [number, number]; // [gold, rice]
-}
+const ARGS_SCHEMA = z.object({
+    destNationId: z.number(),
+    amountList: z.tuple([z.number(), z.number()]),
+});
+export type MaterialAidArgs = z.infer<typeof ARGS_SCHEMA>;
 
 export interface MaterialAidResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -45,15 +48,7 @@ export class ActionDefinition<
     constructor(private readonly env: TurnCommandEnv) {}
 
     parseArgs(raw: unknown): MaterialAidArgs | null {
-        const data = raw as { destNationId?: number; amountList?: [number, number] };
-        if (typeof data?.destNationId !== 'number') return null;
-        if (!Array.isArray(data.amountList) || data.amountList.length !== 2) return null;
-        if (typeof data.amountList[0] !== 'number' || typeof data.amountList[1] !== 'number') return null;
-
-        return {
-            destNationId: data.destNationId,
-            amountList: [data.amountList[0], data.amountList[1]],
-        };
+        return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
     buildConstraints(_ctx: ConstraintContext, args: MaterialAidArgs): Constraint[] {
@@ -187,7 +182,7 @@ export class ActionDefinition<
     }
 }
 
-export const actionContextBuilder: ActionContextBuilder = (base, options) => {
+export const actionContextBuilder: ActionContextBuilder<MaterialAidArgs> = (base, options) => {
     const destNationId = options.actionArgs.destNationId;
     if (typeof destNationId !== 'number') return null;
 
@@ -208,5 +203,6 @@ export const commandSpec: NationTurnCommandSpec = {
     category: '외교',
     reqArg: true,
     args: { destNationId: 0, amountList: [0, 0] },
+    argsSchema: ARGS_SCHEMA,
     createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env),
 };

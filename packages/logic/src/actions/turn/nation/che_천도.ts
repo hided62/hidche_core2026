@@ -20,10 +20,13 @@ import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js'
 import { JosaUtil } from '@sammo-ts/common';
 import type { NationTurnCommandSpec } from './index.js';
 import type { MapDefinition } from '@sammo-ts/logic/world/types.js';
+import { z } from 'zod';
+import { parseArgsWithSchema } from '../parseArgs.js';
 
-export interface MoveCapitalArgs {
-    destCityID: number;
-}
+const ARGS_SCHEMA = z.object({
+    destCityID: z.number(),
+});
+export type MoveCapitalArgs = z.infer<typeof ARGS_SCHEMA>;
 
 export interface MoveCapitalResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -71,9 +74,7 @@ export class ActionDefinition<
     constructor(private readonly env: TurnCommandEnv) {}
 
     parseArgs(raw: unknown): MoveCapitalArgs | null {
-        const data = raw as { destCityID?: number };
-        if (typeof data?.destCityID !== 'number') return null;
-        return { destCityID: data.destCityID };
+        return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
     buildConstraints(_ctx: ConstraintContext, args: MoveCapitalArgs): Constraint[] {
@@ -194,7 +195,7 @@ export class ActionDefinition<
     }
 }
 
-export const actionContextBuilder: ActionContextBuilder = (base, options) => {
+export const actionContextBuilder: ActionContextBuilder<MoveCapitalArgs> = (base, options) => {
     const destCityId = options.actionArgs.destCityID;
     if (typeof destCityId !== 'number') return null;
 
@@ -217,5 +218,6 @@ export const commandSpec: NationTurnCommandSpec = {
     category: '국가',
     reqArg: true,
     args: { destCityID: 0 },
+    argsSchema: ARGS_SCHEMA,
     createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env),
 };

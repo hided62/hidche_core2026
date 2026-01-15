@@ -25,12 +25,15 @@ import type { NationTurnCommandSpec } from './index.js';
 import { JosaUtil } from '@sammo-ts/common';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { clamp } from 'es-toolkit';
+import { z } from 'zod';
+import { parseArgsWithSchema } from '../parseArgs.js';
 
-export interface AwardArgs {
-    isGold: boolean;
-    amount: number;
-    destGeneralId: number;
-}
+const ARGS_SCHEMA = z.object({
+    isGold: z.boolean(),
+    amount: z.number(),
+    destGeneralId: z.number(),
+});
+export type AwardArgs = z.infer<typeof ARGS_SCHEMA>;
 
 export interface AwardResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -163,21 +166,8 @@ export class ActionDefinition<
     }
 
     parseArgs(raw: unknown): AwardArgs | null {
-        if (!raw || typeof raw !== 'object') {
-            return null;
-        }
-        const data = raw as {
-            isGold?: unknown;
-            amount?: unknown;
-            destGeneralId?: unknown;
-        };
-        if (typeof data.isGold !== 'boolean') {
-            return null;
-        }
-        if (typeof data.amount !== 'number' || Number.isNaN(data.amount)) {
-            return null;
-        }
-        if (typeof data.destGeneralId !== 'number') {
+        const data = parseArgsWithSchema(ARGS_SCHEMA, raw);
+        if (!data) {
             return null;
         }
         const amount = this.command.normalizeAmount(data.amount);
@@ -185,9 +175,8 @@ export class ActionDefinition<
             return null;
         }
         return {
-            isGold: data.isGold,
+            ...data,
             amount,
-            destGeneralId: data.destGeneralId,
         };
     }
 
@@ -231,7 +220,7 @@ export class ActionDefinition<
 }
 
 // 예약 턴 실행에 필요한 대상 장수를 주입한다.
-export const actionContextBuilder: ActionContextBuilder = (base, options) => {
+export const actionContextBuilder: ActionContextBuilder<AwardArgs> = (base, options) => {
     const destGeneralId = options.actionArgs.destGeneralId;
     if (typeof destGeneralId !== 'number') {
         return null;
@@ -251,6 +240,7 @@ export const commandSpec: NationTurnCommandSpec = {
     category: '인사',
     reqArg: true,
     args: { isGold: true, amount: 1, destGeneralId: 0 },
+    argsSchema: ARGS_SCHEMA,
     createDefinition: (env: TurnCommandEnv) => {
         const maxAmount =
             env.maxResourceActionAmount > 0 ? env.maxResourceActionAmount : Math.max(env.baseGold, env.baseRice, 1000);

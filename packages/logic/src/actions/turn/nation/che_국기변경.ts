@@ -12,10 +12,8 @@ import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.
 import { JosaUtil } from '@sammo-ts/common';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { NationTurnCommandSpec } from './index.js';
-
-export interface ChangeFlagArgs {
-    colorType: number;
-}
+import { z } from 'zod';
+import { parseArgsWithSchema } from '../parseArgs.js';
 
 const ACTION_NAME = '국기변경';
 
@@ -55,6 +53,11 @@ const NATION_COLORS = [
     '#A9A9A9',
 ];
 
+const ARGS_SCHEMA = z.object({
+    colorType: z.number().int().min(0).max(NATION_COLORS.length - 1),
+});
+export type ChangeFlagArgs = z.infer<typeof ARGS_SCHEMA>;
+
 export class ActionDefinition<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionDefinition<TriggerState, ChangeFlagArgs> {
@@ -62,10 +65,7 @@ export class ActionDefinition<
     public readonly name = ACTION_NAME;
 
     parseArgs(raw: unknown): ChangeFlagArgs | null {
-        const data = raw as { colorType?: number };
-        if (typeof data?.colorType !== 'number') return null;
-        if (data.colorType < 0 || data.colorType >= NATION_COLORS.length) return null;
-        return { colorType: data.colorType };
+        return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
     buildConstraints(_ctx: ConstraintContext, _args: ChangeFlagArgs): Constraint[] {
@@ -162,5 +162,6 @@ export const commandSpec: NationTurnCommandSpec = {
     category: '국가',
     reqArg: true,
     args: { colorType: 0 },
+    argsSchema: ARGS_SCHEMA,
     createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
 };

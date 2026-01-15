@@ -21,11 +21,10 @@ import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionCo
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { JosaUtil } from '@sammo-ts/common';
 import type { NationTurnCommandSpec } from './index.js';
+import { z } from 'zod';
+import { parseArgsWithSchema } from '../parseArgs.js';
 
-export interface CounterStrategyArgs {
-    destNationId: number;
-    commandType: string;
-}
+export type CounterStrategyArgs = z.infer<typeof ARGS_SCHEMA>;
 
 export interface CounterStrategyResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -40,7 +39,18 @@ const DEFAULT_GLOBAL_DELAY = 8;
 const PRE_REQ_TURN = 1;
 const EXP_DED_GAIN = 5 * (PRE_REQ_TURN + 1);
 
-const STRATEGIC_COMMANDS: Record<string, string> = {
+const STRATEGIC_COMMAND_KEYS = [
+    'che_필사즉생',
+    'che_백성동원',
+    'che_수몰',
+    'che_허보',
+    'che_의병모집',
+    'che_이호경식',
+    'che_급습',
+    'che_피장파장',
+] as const;
+
+const STRATEGIC_COMMANDS: Record<(typeof STRATEGIC_COMMAND_KEYS)[number], string> = {
     che_필사즉생: '필사즉생',
     che_백성동원: '백성동원',
     che_수몰: '수몰',
@@ -51,26 +61,15 @@ const STRATEGIC_COMMANDS: Record<string, string> = {
     che_피장파장: '피장파장',
 };
 
-const parseNationId = (raw: unknown): number | null => {
-    if (typeof raw !== 'number' || !Number.isFinite(raw)) {
-        return null;
-    }
-    const value = Math.floor(raw);
-    return value > 0 ? value : null;
-};
-
-const parseCommandType = (raw: unknown): string | null => {
-    if (typeof raw !== 'string') {
-        return null;
-    }
-    if (!Object.prototype.hasOwnProperty.call(STRATEGIC_COMMANDS, raw)) {
-        return null;
-    }
-    if (raw === 'che_피장파장') {
-        return null;
-    }
-    return raw;
-};
+const ARGS_SCHEMA = z.object({
+    destNationId: z.preprocess(
+        (value) => (typeof value === 'number' ? Math.floor(value) : value),
+        z.number().int().positive()
+    ),
+    commandType: z
+        .enum(STRATEGIC_COMMAND_KEYS)
+        .refine((value) => value !== 'che_피장파장', '같은 전략은 선택할 수 없습니다.'),
+});
 
 const requireCommandType = (): Constraint => ({
     name: 'requireStrategicCommandType',
@@ -209,13 +208,7 @@ export class ActionDefinition<
     private readonly resolver = new ActionResolver<TriggerState>();
 
     parseArgs(raw: unknown): CounterStrategyArgs | null {
-        const data = raw as { destNationId?: unknown; commandType?: unknown };
-        const destNationId = parseNationId(data?.destNationId);
-        const commandType = parseCommandType(data?.commandType);
-        if (destNationId === null || commandType === null) {
-            return null;
-        }
-        return { destNationId, commandType };
+        return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
     buildConstraints(_ctx: ConstraintContext, _args: CounterStrategyArgs): Constraint[] {
@@ -237,7 +230,7 @@ export class ActionDefinition<
 }
 
 // 예약 턴 실행에 필요한 대상 국가/장수 정보를 구성한다.
-export const actionContextBuilder: ActionContextBuilder = (base, options) => {
+export const actionContextBuilder: ActionContextBuilder<CounterStrategyArgs> = (base, options) => {
     const destNationId = options.actionArgs.destNationId;
     if (typeof destNationId !== 'number') {
         return null;
@@ -266,5 +259,6 @@ export const commandSpec: NationTurnCommandSpec = {
     category: '전략',
     reqArg: true,
     args: { destNationId: 0, commandType: '' },
+    argsSchema: ARGS_SCHEMA,
     createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
 };

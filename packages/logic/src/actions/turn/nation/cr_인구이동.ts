@@ -25,11 +25,8 @@ import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js'
 import type { NationTurnCommandSpec } from './index.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { clamp } from 'es-toolkit';
-
-export interface PopulationMoveArgs {
-    destCityId: number;
-    amount: number;
-}
+import { z } from 'zod';
+import { parseArgsWithSchema } from '../parseArgs.js';
 
 export interface PopulationMoveResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -42,24 +39,17 @@ const ACTION_NAME = '인구이동';
 const AMOUNT_LIMIT = 100000;
 const MIN_AVAILABLE_RECRUIT_POP = 30000;
 
-const parseCityId = (raw: unknown): number | null => {
-    if (typeof raw !== 'number' || !Number.isFinite(raw)) {
-        return null;
-    }
-    const value = Math.floor(raw);
-    return value > 0 ? value : null;
-};
-
-const parseAmount = (raw: unknown): number | null => {
-    if (typeof raw !== 'number' || !Number.isFinite(raw)) {
-        return null;
-    }
-    const value = Math.floor(raw);
-    if (value < 0) {
-        return null;
-    }
-    return clamp(value, 0, AMOUNT_LIMIT);
-};
+const ARGS_SCHEMA = z.object({
+    destCityId: z.preprocess(
+        (value) => (typeof value === 'number' ? Math.floor(value) : value),
+        z.number().int().positive()
+    ),
+    amount: z.preprocess(
+        (value) => (typeof value === 'number' ? clamp(Math.floor(value), 0, AMOUNT_LIMIT) : value),
+        z.number().int().min(0).max(AMOUNT_LIMIT)
+    ),
+});
+export type PopulationMoveArgs = z.infer<typeof ARGS_SCHEMA>;
 
 const calcCost = (develCost: number, amount: number): number => Math.round((develCost * amount) / 10000);
 
@@ -72,13 +62,7 @@ export class ActionDefinition<
     constructor(private readonly env: TurnCommandEnv) {}
 
     parseArgs(raw: unknown): PopulationMoveArgs | null {
-        const data = raw as { destCityId?: unknown; amount?: unknown };
-        const destCityId = parseCityId(data?.destCityId);
-        const amount = parseAmount(data?.amount);
-        if (destCityId === null || amount === null) {
-            return null;
-        }
-        return { destCityId, amount };
+        return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
     buildConstraints(_ctx: ConstraintContext, args: PopulationMoveArgs): Constraint[] {
@@ -159,7 +143,7 @@ export class ActionDefinition<
     }
 }
 
-export const actionContextBuilder: ActionContextBuilder = (base, options) => {
+export const actionContextBuilder: ActionContextBuilder<PopulationMoveArgs> = (base, options) => {
     const destCityId = options.actionArgs.destCityId;
     if (typeof destCityId !== 'number') {
         return null;
@@ -185,5 +169,6 @@ export const commandSpec: NationTurnCommandSpec = {
     category: '특수',
     reqArg: true,
     args: { destCityId: 0, amount: 0 },
+    argsSchema: ARGS_SCHEMA,
     createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env),
 };
