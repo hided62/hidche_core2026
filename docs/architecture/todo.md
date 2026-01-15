@@ -35,6 +35,9 @@ Move items into the main docs once they are finalized.
 - Deterministic RNG test harness guidelines
 - Output comparison rules (sorting, tolerances, diff granularity)
 - Unit test vs simulation test split and responsibilities
+- [AI suggestion] Add a test helper that runs commands through parseArgs + constraint evaluation with a deterministic RNG (e.g., LiteHashDRBG) to mirror legacy execution paths.
+- [AI suggestion] Expand command tests to assert legacy side effects (exp/ded/stat-exp, gold/rice deltas, betray/inventory/troop cleanup) for key commands (e.g., 하야/강행/농지개간).
+- [AI suggestion] Replace smoke/placeholder tests with concrete assertions for success/failure outcomes (e.g., 등용, NPC능동 invalid args, 출병 troop creation).
 - [AI suggestion] Document che*출병 parity gaps vs legacy (city state/term=43, fallback to che*이동 when friendly, nation.war/AllowWar check, post-war static events/unique-item lottery, missing route data when map/diplomacy not provided).
 - [AI suggestion] Verify that "이호경식" followed by "출병" is correctly blocked with the new reserved-turn overlay (diplomacy state sync).
 
