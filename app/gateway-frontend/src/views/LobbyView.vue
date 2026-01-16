@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from '@sammo-ts/gateway-api';
 import DefaultLayout from '../layouts/DefaultLayout.vue';
+import MapPreview from '../components/MapPreview.vue';
 import { trpc } from '../utils/trpc';
 import { createGameTrpc } from '../utils/gameTrpc';
 import type { GameRouter } from '../utils/gameTrpc';
@@ -13,12 +14,19 @@ type GameRouterOutput = inferRouterOutputs<GameRouter>;
 type MeOutput = GatewayRouterOutput['me'];
 type LobbyProfile = GatewayRouterOutput['lobby']['profiles'][number];
 type LobbyInfo = GameRouterOutput['lobby']['info'];
+type PublicMap = GameRouterOutput['public']['getCachedMap'];
+type PublicMapLayout = GameRouterOutput['public']['getMapLayout'];
+type MapPreviewBundle = {
+    mapData: PublicMap;
+    mapLayout: PublicMapLayout;
+};
 
 const router = useRouter();
 const me = ref<MeOutput>(null);
 const notice = ref('');
 const profiles = ref<LobbyProfile[]>([]);
 const profileDetails = ref<Record<string, LobbyInfo | undefined>>({});
+const profileMapPreviews = ref<Record<string, MapPreviewBundle | undefined>>({});
 
 onMounted(async () => {
     try {
@@ -31,18 +39,32 @@ onMounted(async () => {
         notice.value = await trpc.lobby.notice.query();
         profiles.value = await trpc.lobby.profiles.query();
 
-        // Fetch details for each profile
-        for (const profile of profiles.value) {
-            if (profile.status === 'RUNNING' || profile.status === 'PREOPEN') {
-                try {
-                    const gameTrpc = createGameTrpc(profile.apiPort);
-                    const info = await gameTrpc.lobby.info.query();
-                    profileDetails.value[profile.profileName] = info;
-                } catch (e) {
-                    console.error(`Failed to fetch info for ${profile.profileName}`, e);
-                }
+        const detailTasks = profiles.value.map(async (profile) => {
+            if (profile.status !== 'RUNNING' && profile.status !== 'PREOPEN') {
+                return;
             }
-        }
+            const gameTrpc = createGameTrpc(profile.apiPort);
+            const [infoResult, layoutResult, mapResult] = await Promise.allSettled([
+                gameTrpc.lobby.info.query(),
+                gameTrpc.public.getMapLayout.query(),
+                gameTrpc.public.getCachedMap.query(),
+            ]);
+
+            if (infoResult.status === 'fulfilled') {
+                profileDetails.value[profile.profileName] = infoResult.value;
+            } else {
+                console.error(`Failed to fetch info for ${profile.profileName}`, infoResult.reason);
+            }
+
+            if (layoutResult.status === 'fulfilled' && mapResult.status === 'fulfilled') {
+                profileMapPreviews.value[profile.profileName] = {
+                    mapLayout: layoutResult.value,
+                    mapData: mapResult.value,
+                };
+            }
+        });
+
+        await Promise.all(detailTasks);
     } catch (e) {
         console.error('Failed to load lobby', e);
     }
@@ -217,6 +239,46 @@ const handleLogout = async () => {
                             <span class="text-zinc-300 font-bold">훼섭</span> : 운영자 테스트 서버입니다. 기습적으로
                             열리고, 닫힐 수 있습니다.
                         </p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-zinc-900 border border-zinc-800 rounded shadow-xl overflow-hidden">
+                <div
+                    class="bg-zinc-800 px-6 py-2 text-center font-bold text-white border-b border-zinc-700 tracking-widest"
+                >
+                    공개 지도 미리보기
+                </div>
+                <div class="p-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div
+                        v-for="profile in profiles"
+                        :key="profile.profileName"
+                        class="border border-zinc-800 rounded bg-zinc-950/50 p-3"
+                    >
+                        <div class="flex items-center justify-between text-xs text-zinc-400 mb-2">
+                            <span class="font-semibold" :style="{ color: profile.color }">
+                                {{ profile.korName }}섭
+                            </span>
+                            <span>{{ profile.status }}</span>
+                        </div>
+                        <div v-if="profile.status === 'RUNNING' || profile.status === 'PREOPEN'">
+                            <div v-if="profileMapPreviews[profile.profileName]">
+                                <MapPreview
+                                    :map-data="profileMapPreviews[profile.profileName]!.mapData"
+                                    :map-layout="profileMapPreviews[profile.profileName]!.mapLayout"
+                                />
+                                <div v-if="profileDetails[profile.profileName]" class="text-xs text-zinc-400 mt-2">
+                                    유저 {{ profileDetails[profile.profileName]?.userCnt ?? '-' }} /
+                                    {{ profileDetails[profile.profileName]?.maxUserCnt ?? '-' }} ·
+                                    {{ profileDetails[profile.profileName]?.nationCnt ?? '-' }}국 ·
+                                    {{ profileDetails[profile.profileName]?.turnTerm ?? '-' }}분 턴
+                                </div>
+                            </div>
+                            <div v-else class="text-xs text-zinc-500 py-8 text-center">
+                                지도를 불러오는 중...
+                            </div>
+                        </div>
+                        <div v-else class="text-xs text-zinc-600 py-8 text-center">- 폐 쇄 중 -</div>
                     </div>
                 </div>
             </div>

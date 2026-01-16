@@ -43,6 +43,7 @@ type GeneralCityRow = {
 
 const MAP_VERSION = 0 as const;
 const BASE_MAP_TTL_SECONDS = 30;
+const PUBLIC_MAP_TTL_SECONDS = 600;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
     value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -94,11 +95,21 @@ const resolveSpyList = (meta: Record<string, unknown>): Record<number, number> =
     return {};
 };
 
-const buildBaseMapCacheKey = (ctx: GameApiContext): string =>
-    `sammo:map:base:${ctx.profile.id}:${ctx.profile.scenario}`;
+const buildBaseMapCacheKey = (ctx: GameApiContext, scope: 'base' | 'public' = 'base'): string =>
+    `sammo:map:${scope}:${ctx.profile.id}:${ctx.profile.scenario}`;
 
-const loadBaseMap = async (ctx: GameApiContext, useCache: boolean): Promise<BaseMapResult | null> => {
-    const cacheKey = buildBaseMapCacheKey(ctx);
+const loadBaseMap = async (
+    ctx: GameApiContext,
+    options?: {
+        useCache?: boolean;
+        cacheKey?: string;
+        ttlSeconds?: number;
+    }
+): Promise<BaseMapResult | null> => {
+    const useCache = options?.useCache ?? true;
+    const cacheKey = options?.cacheKey ?? buildBaseMapCacheKey(ctx);
+    const ttlSeconds = options?.ttlSeconds ?? BASE_MAP_TTL_SECONDS;
+
     if (useCache) {
         const cached = await ctx.redis.get(cacheKey);
         if (cached) {
@@ -161,11 +172,19 @@ const loadBaseMap = async (ctx: GameApiContext, useCache: boolean): Promise<Base
 
     if (useCache) {
         await ctx.redis.set(cacheKey, JSON.stringify(baseMap), {
-            EX: BASE_MAP_TTL_SECONDS,
+            EX: ttlSeconds,
         });
     }
 
     return baseMap;
+};
+
+export const loadPublicMap = async (ctx: GameApiContext, useCache = true): Promise<BaseMapResult | null> => {
+    return loadBaseMap(ctx, {
+        useCache,
+        cacheKey: buildBaseMapCacheKey(ctx, 'public'),
+        ttlSeconds: PUBLIC_MAP_TTL_SECONDS,
+    });
 };
 
 export const loadWorldMap = async (
@@ -177,7 +196,7 @@ export const loadWorldMap = async (
         useCache?: boolean;
     }
 ): Promise<WorldMapResult | null> => {
-    const baseMap = await loadBaseMap(ctx, options.useCache ?? true);
+    const baseMap = await loadBaseMap(ctx, { useCache: options.useCache ?? true });
     if (!baseMap) {
         return null;
     }

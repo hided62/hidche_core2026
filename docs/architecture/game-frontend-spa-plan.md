@@ -133,11 +133,12 @@
 - 지도 아이콘 베이스 경로: `VITE_GAME_ASSET_URL`로 레거시 이미지 경로 주입
 - Join/빙의 UI 구현: 장수 생성/빙의 탭, NPC 목록 로딩, 생성/빙의 후 세션 상태 갱신 및 메인 이동
 - 게임 API: `join.getConfig`, `join.createGeneral`, `join.listPossessCandidates`, `join.possessGeneral` 추가
+- Public 화면 구현: 캐시 지도/중원 정세/세력 일람/제한 장수 일람 구성
+- Public API: `public.getCachedMap`, `public.getWorldTrend`, `public.getNationList`, `public.getGeneralList` 추가
 
 ## Next Frontend Tasks
 
 - 게이트웨이 로그인/프로필 선택 플로우 정리 (토큰 전달 방식, 자동 로그인, 쿠키 기반 전환 고려)
-- 공개(Public) 화면 구현: 캐싱된 지도/중원정세/세력일람 + 제한된 장수일람
 - 실시간 업데이트(SSE) 연결 설계 및 메인 화면 토글과 연동
 - MapViewer 비주얼 보강: 레거시 테마/아이콘/맵 배경 스타일 상세 이식
 - 레거시 이미지 서빙 위치 확정 및 SPA 배포 시 정적 경로 매핑
