@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import { computed, ref } from 'vue';
 import SkeletonLines from '../ui/SkeletonLines.vue';
+import type { MessageType } from '@sammo-ts/logic';
 
 interface MessageEntry {
     id: number;
     text: string;
     time: string;
+    msgType: MessageType;
 }
 
 interface MessageBucket {
@@ -17,59 +20,96 @@ interface MessageBucket {
 const props = defineProps<{
     messages: MessageBucket | null;
     loading: boolean;
+    targetMailbox: number;
+    draftText: string;
+    mailboxOptions: Array<{ label: string; value: number; disabled?: boolean }>;
 }>();
 
-const preview = (items: MessageEntry[]): MessageEntry | null => (items.length ? items[0] : null);
+const emit = defineEmits<{
+    (event: 'update:targetMailbox', value: number): void;
+    (event: 'update:draftText', value: string): void;
+    (event: 'send'): void;
+    (event: 'refresh'): void;
+    (event: 'load-older', type: MessageType): void;
+}>();
 
-const trimText = (value: string): string => {
-    const clean = value.replace(/\s+/g, ' ').trim();
-    if (clean.length <= 60) {
-        return clean;
+const messageTabs: Array<{ key: MessageType; label: string }> = [
+    { key: 'public', label: '전체' },
+    { key: 'national', label: '국가' },
+    { key: 'private', label: '개인' },
+    { key: 'diplomacy', label: '외교' },
+];
+
+const activeTab = ref<MessageType>('public');
+
+const activeMessages = computed(() => {
+    if (!props.messages) {
+        return [] as MessageEntry[];
     }
-    return `${clean.slice(0, 60)}...`;
+    return props.messages[activeTab.value] ?? [];
+});
+
+const setMailbox = (value: string) => {
+    const parsed = Number(value);
+    emit('update:targetMailbox', Number.isFinite(parsed) ? parsed : 0);
 };
 </script>
 
 <template>
     <div class="message-panel">
+        <div class="message-input">
+            <select
+                class="message-select"
+                :value="targetMailbox"
+                @change="setMailbox(($event.target as HTMLSelectElement).value)"
+            >
+                <option
+                    v-for="option in mailboxOptions"
+                    :key="option.label"
+                    :value="option.value"
+                    :disabled="option.disabled"
+                >
+                    {{ option.label }}
+                </option>
+            </select>
+            <input
+                class="message-text"
+                type="text"
+                maxlength="99"
+                :value="draftText"
+                placeholder="메시지 입력"
+                @input="emit('update:draftText', ($event.target as HTMLInputElement).value)"
+                @keydown.enter="emit('send')"
+            />
+            <button class="message-send" @click="emit('send')">전송</button>
+        </div>
+
+        <div class="message-tabs">
+            <button
+                v-for="tab in messageTabs"
+                :key="tab.key"
+                :class="{ active: activeTab === tab.key }"
+                @click="activeTab = tab.key"
+            >
+                {{ tab.label }}
+            </button>
+            <button class="refresh" @click="emit('refresh')">갱신</button>
+        </div>
+
         <div v-if="props.loading">
-            <SkeletonLines :lines="5" />
+            <SkeletonLines :lines="4" />
         </div>
         <div v-else-if="!props.messages" class="empty">
             메시지를 불러오지 못했습니다.
         </div>
-        <div v-else class="message-body">
-            <div class="bucket">
-                <div class="bucket-title">개인</div>
-                <div class="bucket-item" v-if="preview(props.messages.private)">
-                    <div class="text">{{ trimText(preview(props.messages.private)?.text ?? '') }}</div>
-                    <div class="time">{{ preview(props.messages.private)?.time }}</div>
+        <div v-else class="message-list">
+            <div v-if="activeMessages.length === 0" class="empty">메시지가 없습니다.</div>
+            <div v-else>
+                <div v-for="message in activeMessages" :key="message.id" class="message-item">
+                    <div class="text">{{ message.text }}</div>
+                    <div class="time">{{ message.time }}</div>
                 </div>
-                <div v-else class="bucket-empty">메시지 없음</div>
-            </div>
-            <div class="bucket">
-                <div class="bucket-title">공공</div>
-                <div class="bucket-item" v-if="preview(props.messages.public)">
-                    <div class="text">{{ trimText(preview(props.messages.public)?.text ?? '') }}</div>
-                    <div class="time">{{ preview(props.messages.public)?.time }}</div>
-                </div>
-                <div v-else class="bucket-empty">메시지 없음</div>
-            </div>
-            <div class="bucket">
-                <div class="bucket-title">국가</div>
-                <div class="bucket-item" v-if="preview(props.messages.national)">
-                    <div class="text">{{ trimText(preview(props.messages.national)?.text ?? '') }}</div>
-                    <div class="time">{{ preview(props.messages.national)?.time }}</div>
-                </div>
-                <div v-else class="bucket-empty">메시지 없음</div>
-            </div>
-            <div class="bucket">
-                <div class="bucket-title">외교</div>
-                <div class="bucket-item" v-if="preview(props.messages.diplomacy)">
-                    <div class="text">{{ trimText(preview(props.messages.diplomacy)?.text ?? '') }}</div>
-                    <div class="time">{{ preview(props.messages.diplomacy)?.time }}</div>
-                </div>
-                <div v-else class="bucket-empty">메시지 없음</div>
+                <button class="load-older" @click="emit('load-older', activeTab)">이전 메시지</button>
             </div>
         </div>
     </div>
@@ -82,32 +122,72 @@ const trimText = (value: string): string => {
     gap: 12px;
 }
 
-.bucket {
+.message-input {
+    display: grid;
+    grid-template-columns: minmax(90px, 120px) 1fr auto;
+    gap: 6px;
+}
+
+.message-select,
+.message-text {
+    background: rgba(16, 16, 16, 0.8);
+    border: 1px solid rgba(201, 164, 90, 0.4);
+    color: inherit;
+    padding: 6px;
+    font-size: 0.75rem;
+}
+
+.message-send {
+    border: 1px solid rgba(201, 164, 90, 0.4);
+    padding: 6px 10px;
+    font-size: 0.75rem;
+    cursor: pointer;
+}
+
+.message-tabs {
     display: flex;
-    flex-direction: column;
-    gap: 4px;
+    flex-wrap: wrap;
+    gap: 6px;
 }
 
-.bucket-title {
-    font-size: 0.8rem;
-    color: rgba(232, 221, 196, 0.7);
-}
-
-.bucket-item {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    font-size: 0.85rem;
-}
-
-.bucket-item .time {
+.message-tabs button {
+    border: 1px solid rgba(201, 164, 90, 0.4);
+    padding: 4px 8px;
     font-size: 0.7rem;
+    cursor: pointer;
+}
+
+.message-tabs button.active {
+    background: rgba(201, 164, 90, 0.2);
+}
+
+.message-tabs .refresh {
+    margin-left: auto;
+}
+
+.message-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.message-item {
+    border: 1px solid rgba(201, 164, 90, 0.2);
+    padding: 6px;
+    font-size: 0.75rem;
+}
+
+.message-item .time {
+    margin-top: 4px;
+    font-size: 0.65rem;
     color: rgba(232, 221, 196, 0.6);
 }
 
-.bucket-empty {
-    font-size: 0.8rem;
-    color: rgba(232, 221, 196, 0.5);
+.load-older {
+    border: 1px dashed rgba(201, 164, 90, 0.3);
+    padding: 6px;
+    font-size: 0.7rem;
+    cursor: pointer;
 }
 
 .empty {

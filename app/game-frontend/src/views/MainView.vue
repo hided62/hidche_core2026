@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { ref, watch } from 'vue';
+import { storeToRefs } from 'pinia';
 import { useMediaQuery } from '@vueuse/core';
 import PanelCard from '../components/ui/PanelCard.vue';
 import SkeletonLines from '../components/ui/SkeletonLines.vue';
@@ -9,20 +10,11 @@ import GeneralBasicCard from '../components/main/GeneralBasicCard.vue';
 import CityBasicCard from '../components/main/CityBasicCard.vue';
 import NationBasicCard from '../components/main/NationBasicCard.vue';
 import MessagePanel from '../components/main/MessagePanel.vue';
-import { trpc } from '../utils/trpc';
 import { useSessionStore } from '../stores/session';
-
-type GeneralContext = Awaited<ReturnType<typeof trpc.general.me.query>>;
-type LobbyInfo = Awaited<ReturnType<typeof trpc.lobby.info.query>>;
-type CommandTable = Awaited<ReturnType<typeof trpc.turns.getCommandTable.query>>;
-type WorldMapResult = Awaited<ReturnType<typeof trpc.world.getMap.query>>;
-type MessageBundle = Awaited<ReturnType<typeof trpc.messages.getRecent.query>>;
-
-type GeneralInfo = NonNullable<GeneralContext>['general'];
-type CityInfo = NonNullable<GeneralContext>['city'];
-type NationInfo = NonNullable<GeneralContext>['nation'];
+import { useMainDashboardStore } from '../stores/mainDashboard';
 
 const session = useSessionStore();
+const dashboard = useMainDashboardStore();
 const isMobile = useMediaQuery('(max-width: 1024px)');
 
 const mobileTabs = [
@@ -36,76 +28,27 @@ const mobileTabs = [
 type MobileTabKey = (typeof mobileTabs)[number]['key'];
 
 const mobileTab = ref<MobileTabKey>('map');
-const realtimeEnabled = ref(true);
-const realtimeStatus = ref<'idle' | 'connected' | 'paused'>('connected');
 
-const loading = ref(false);
-const error = ref<string | null>(null);
-
-const generalInfo = ref<GeneralInfo | null>(null);
-const cityInfo = ref<CityInfo | null>(null);
-const nationInfo = ref<NationInfo | null>(null);
-const lobbyInfo = ref<LobbyInfo | null>(null);
-const worldMap = ref<WorldMapResult | null>(null);
-const commandTable = ref<CommandTable | null>(null);
-const messages = ref<MessageBundle | null>(null);
-
-const statusLine = computed(() => {
-    if (!lobbyInfo.value) {
-        return '상태 정보를 불러오는 중';
-    }
-    return `${lobbyInfo.value.year}년 ${lobbyInfo.value.month}월 · 턴 ${lobbyInfo.value.turnTerm}분`;
-});
-
-const realtimeLabel = computed(() => {
-    if (!realtimeEnabled.value) {
-        return '끔';
-    }
-    if (realtimeStatus.value === 'connected') {
-        return '연결됨';
-    }
-    return '대기중';
-});
+const {
+    loading,
+    error,
+    realtimeEnabled,
+    general,
+    city,
+    nation,
+    lobbyInfo,
+    worldMap,
+    commandTable,
+    messages,
+    messageDraftText,
+    targetMailbox,
+    mailboxOptions,
+    statusLine,
+    realtimeLabel,
+} = storeToRefs(dashboard);
 
 const loadMainData = async () => {
-    if (loading.value) {
-        return;
-    }
-
-    loading.value = true;
-    error.value = null;
-
-    try {
-        const generalContext = await trpc.general.me.query();
-        if (!generalContext) {
-            generalInfo.value = null;
-            cityInfo.value = null;
-            nationInfo.value = null;
-            loading.value = false;
-            return;
-        }
-
-        generalInfo.value = generalContext.general;
-        cityInfo.value = generalContext.city;
-        nationInfo.value = generalContext.nation;
-
-        const generalId = generalContext.general.id;
-        const [lobby, map, commands, messageData] = await Promise.all([
-            trpc.lobby.info.query(),
-            trpc.world.getMap.query({ generalId, showMe: true, useCache: true }),
-            trpc.turns.getCommandTable.query({ generalId }),
-            trpc.messages.getRecent.query({ generalId }),
-        ]);
-
-        lobbyInfo.value = lobby;
-        worldMap.value = map;
-        commandTable.value = commands;
-        messages.value = messageData;
-    } catch (err) {
-        error.value = '메인 정보를 불러오지 못했습니다.';
-    } finally {
-        loading.value = false;
-    }
+    await dashboard.loadMainData();
 };
 
 watch(
@@ -117,10 +60,6 @@ watch(
     },
     { immediate: true }
 );
-
-watch(realtimeEnabled, (enabled) => {
-    realtimeStatus.value = enabled ? 'connected' : 'paused';
-});
 </script>
 
 <template>
@@ -131,7 +70,11 @@ watch(realtimeEnabled, (enabled) => {
                 <p class="page-subtitle">{{ statusLine }}</p>
             </div>
             <div class="header-actions">
-                <button class="toggle" :class="{ active: realtimeEnabled }" @click="realtimeEnabled = !realtimeEnabled">
+                <button
+                    class="toggle"
+                    :class="{ active: realtimeEnabled }"
+                    @click="dashboard.setRealtimeEnabled(!realtimeEnabled)"
+                >
                     실시간 동기화: {{ realtimeLabel }}
                 </button>
                 <button class="ghost" @click="loadMainData">새로고침</button>
@@ -170,13 +113,13 @@ watch(realtimeEnabled, (enabled) => {
 
             <div class="mobile-panel" v-if="mobileTab === 'status'">
                 <PanelCard title="장수 스탯">
-                    <GeneralBasicCard :general="generalInfo" :loading="loading" />
+                    <GeneralBasicCard :general="general" :loading="loading" />
                 </PanelCard>
                 <PanelCard title="도시 정보">
-                    <CityBasicCard :city="cityInfo" :loading="loading" />
+                    <CityBasicCard :city="city" :loading="loading" />
                 </PanelCard>
                 <PanelCard title="국가 정보">
-                    <NationBasicCard :nation="nationInfo" :loading="loading" />
+                    <NationBasicCard :nation="nation" :loading="loading" />
                 </PanelCard>
             </div>
 
@@ -201,7 +144,18 @@ watch(realtimeEnabled, (enabled) => {
 
             <div class="mobile-panel" v-if="mobileTab === 'messages'">
                 <PanelCard title="메시지함">
-                    <MessagePanel :messages="messages" :loading="loading" />
+                    <MessagePanel
+                        :messages="messages"
+                        :loading="loading"
+                        :target-mailbox="targetMailbox"
+                        :draft-text="messageDraftText"
+                        :mailbox-options="mailboxOptions"
+                        @update:target-mailbox="targetMailbox = $event"
+                        @update:draft-text="messageDraftText = $event"
+                        @send="dashboard.sendMessage"
+                        @load-older="dashboard.loadOlderMessages"
+                        @refresh="dashboard.refreshMessages"
+                    />
                 </PanelCard>
             </div>
         </section>
@@ -220,7 +174,18 @@ watch(realtimeEnabled, (enabled) => {
                     </div>
                 </PanelCard>
                 <PanelCard title="메시지함">
-                    <MessagePanel :messages="messages" :loading="loading" />
+                    <MessagePanel
+                        :messages="messages"
+                        :loading="loading"
+                        :target-mailbox="targetMailbox"
+                        :draft-text="messageDraftText"
+                        :mailbox-options="mailboxOptions"
+                        @update:target-mailbox="targetMailbox = $event"
+                        @update:draft-text="messageDraftText = $event"
+                        @send="dashboard.sendMessage"
+                        @load-older="dashboard.loadOlderMessages"
+                        @refresh="dashboard.refreshMessages"
+                    />
                 </PanelCard>
             </div>
 
@@ -229,17 +194,17 @@ watch(realtimeEnabled, (enabled) => {
                     <CommandListPanel :command-table="commandTable" :loading="loading" />
                 </PanelCard>
                 <PanelCard title="장수 스탯">
-                    <GeneralBasicCard :general="generalInfo" :loading="loading" />
+                    <GeneralBasicCard :general="general" :loading="loading" />
                 </PanelCard>
                 <PanelCard title="장수 동향">
                     <SkeletonLines v-if="loading" :lines="4" />
                     <div v-else class="placeholder">장수 동향은 실시간 스트림으로 연결 예정</div>
                 </PanelCard>
                 <PanelCard title="도시 정보">
-                    <CityBasicCard :city="cityInfo" :loading="loading" />
+                    <CityBasicCard :city="city" :loading="loading" />
                 </PanelCard>
                 <PanelCard title="국가 정보">
-                    <NationBasicCard :nation="nationInfo" :loading="loading" />
+                    <NationBasicCard :nation="nation" :loading="loading" />
                 </PanelCard>
                 <PanelCard title="개인 기록">
                     <SkeletonLines v-if="loading" :lines="4" />
