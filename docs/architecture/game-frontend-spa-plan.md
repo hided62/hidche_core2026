@@ -131,6 +131,8 @@
 - 지도 선택 연동: 클릭 시 선택 도시 패널/명령 패널에 연결
 - 레거시 맵 렌더링 보강: 테마/계절 배경, 도로 레이어, 성/이벤트 아이콘, 상태색 로직 이식
 - 지도 아이콘 베이스 경로: `VITE_GAME_ASSET_URL`로 레거시 이미지 경로 주입
+- Join/빙의 UI 구현: 장수 생성/빙의 탭, NPC 목록 로딩, 생성/빙의 후 세션 상태 갱신 및 메인 이동
+- 게임 API: `join.getConfig`, `join.createGeneral`, `join.listPossessCandidates`, `join.possessGeneral` 추가
 
 ## Next Frontend Tasks
 
@@ -140,7 +142,7 @@
 - MapViewer 비주얼 보강: 레거시 테마/아이콘/맵 배경 스타일 상세 이식
 - 레거시 이미지 서빙 위치 확정 및 SPA 배포 시 정적 경로 매핑
 - CommandSelectForm/MessagePanel 이식 마무리(예약/전송 플로우 연결)
-- Join/빙의 UI 구현 및 완료 후 상태 갱신(장수 생성 감지)
+- 유산 포인트/추가 옵션(도시·특기·턴타임) 이식 및 서버 검증 규칙 합의
 - 화면 라우트 매핑 표 및 데이터 계약 문서화
 
 ## Deliverables
