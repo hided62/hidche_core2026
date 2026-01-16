@@ -25,6 +25,11 @@ Move items into the main docs once they are finalized.
 - [AI suggestion] Provide map city name/position data for MapViewer (API or scenario export) and replace placeholder layout.
 - [AI suggestion] Implement join/빙의 UI and post-creation refresh flow.
 - [AI suggestion] Build and maintain a legacy-to-SPA route mapping table with data requirements.
+- [AI suggestion] Implement command reservation UI (일반/국가 예턴) and connect `CommandSelectForm` to `turns.reserved` APIs with validation + queue preview.
+- [AI suggestion] Wire `realtimeEnabled` to an SSE or polling channel and update main dashboard data buckets (map/lobby/messages/commands).
+- [AI suggestion] Finalize static asset and web base URLs (`VITE_GAME_WEB_URL`, `VITE_GAME_ASSET_URL`) and document deployment mapping for legacy images.
+- [AI suggestion] Expand Join UI to cover inherit options (특기/도시/턴타임/보너스 스탯) using `join.getConfig` and `join.createGeneral` inputs.
+- [AI suggestion] Extend MessagePanel to support private/diplomacy targets and surface sender/receiver metadata from message payloads.
 
 ## Runtime and Operations (Lower Priority)
 
