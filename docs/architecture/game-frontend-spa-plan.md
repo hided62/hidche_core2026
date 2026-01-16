@@ -117,6 +117,24 @@
 - 테스트(스토어 단위 + 최소 E2E 경로) 추가
 - 성능 점검(맵/리스트 가상화, 이미지/아이콘 정리)
 
+## Current Progress
+
+- Phase 1: `app/game-frontend` 기본 스캐폴딩(Vite/Vue3/Pinia/Router/Tailwind) 완료
+- Phase 2: 게임/게이트웨이 tRPC 클라이언트 분리 구성 및 env 키 추가
+- 인증 부트스트랩: 게이트웨이 세션 확인 → 게임 토큰 발급 → 장수 보유 여부 반영
+- 라우트: Public/Login/Join/Main 기본 가드 및 분기 처리
+- 메인 화면 스켈레톤: 지도/명령/장수/도시/국가/메시지 패널 + 반응형 레이아웃 + 실시간 토글 UI
+- API 보강: 게임 API에 `general.me` 추가 (메인 화면 컨텍스트 제공)
+
+## Next Frontend Tasks
+
+- 게이트웨이 로그인/프로필 선택 플로우 정리 (토큰 전달 방식, 자동 로그인, 쿠키 기반 전환 고려)
+- 공개(Public) 화면 구현: 캐싱된 지도/중원정세/세력일람 + 제한된 장수일람
+- 실시간 업데이트(SSE) 연결 설계 및 메인 화면 토글과 연동
+- 레거시 주요 컴포넌트 이식(MapViewer/CommandSelectForm/MessagePanel 등)
+- Join/빙의 UI 구현 및 완료 후 상태 갱신(장수 생성 감지)
+- 화면 라우트 매핑 표 및 데이터 계약 문서화
+
 ## Deliverables
 
 - 화면 라우트 매핑 표(legacy -> SPA)

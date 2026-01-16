@@ -136,6 +136,9 @@ importers:
       '@sammo-ts/game-api':
         specifier: workspace:*
         version: link:../game-api
+      '@sammo-ts/gateway-api':
+        specifier: workspace:*
+        version: link:../gateway-api
       '@sammo-ts/logic':
         specifier: workspace:*
         version: link:../../packages/logic

@@ -18,6 +18,12 @@ Move items into the main docs once they are finalized.
 ## Frontend
 
 - [AI suggestion] Maintain a game frontend SPA implementation plan and keep it aligned with legacy screen inventory (`docs/architecture/game-frontend-spa-plan.md`).
+- [AI suggestion] Define gateway login handoff + profile selection flow for the game frontend (token delivery, auto-login, cookie vs localStorage policy).
+- [AI suggestion] Implement Public 화면: 캐싱된 지도/중원정세/세력일람 + 제한된 장수일람 API/뷰.
+- [AI suggestion] Define main screen SSE contract + 실시간 동기화 토글 연동 (지도/명령/도시/국가/장수/메시지/동향/기록).
+- [AI suggestion] Port legacy main UI components into `app/game-frontend` (MapViewer, CommandSelectForm, MessagePanel 등).
+- [AI suggestion] Implement join/빙의 UI and post-creation refresh flow.
+- [AI suggestion] Build and maintain a legacy-to-SPA route mapping table with data requirements.
 
 ## Runtime and Operations (Lower Priority)
 
