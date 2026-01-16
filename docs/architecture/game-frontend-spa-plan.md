@@ -125,13 +125,15 @@
 - 라우트: Public/Login/Join/Main 기본 가드 및 분기 처리
 - 메인 화면 스켈레톤: 지도/명령/장수/도시/국가/메시지 패널 + 반응형 레이아웃 + 실시간 토글 UI
 - API 보강: 게임 API에 `general.me` 추가 (메인 화면 컨텍스트 제공)
+- MapViewer 1차 이식: 지도 토글/툴팁/도시 마커/디테일 모드와 Pinia 상태 연결
 
 ## Next Frontend Tasks
 
 - 게이트웨이 로그인/프로필 선택 플로우 정리 (토큰 전달 방식, 자동 로그인, 쿠키 기반 전환 고려)
 - 공개(Public) 화면 구현: 캐싱된 지도/중원정세/세력일람 + 제한된 장수일람
 - 실시간 업데이트(SSE) 연결 설계 및 메인 화면 토글과 연동
-- 레거시 주요 컴포넌트 이식(MapViewer/CommandSelectForm/MessagePanel 등)
+- MapViewer 데이터 보강: 도시명/좌표 제공 API 및 레거시 맵 렌더링 이식
+- CommandSelectForm/MessagePanel 이식 마무리(예약/전송 플로우 연결)
 - Join/빙의 UI 구현 및 완료 후 상태 갱신(장수 생성 감지)
 - 화면 라우트 매핑 표 및 데이터 계약 문서화
 
