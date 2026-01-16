@@ -20,9 +20,17 @@ interface TurnCommandTable {
     nation: TurnCommandGroup[];
 }
 
+interface SelectedCityInfo {
+    id: number;
+    name: string;
+    nationName: string;
+    regionName: string;
+}
+
 const props = defineProps<{
     commandTable: TurnCommandTable | null;
     loading: boolean;
+    selectedCity: SelectedCityInfo | null;
 }>();
 
 const activeCategory = ref('');
@@ -34,6 +42,15 @@ const handleSelect = (commandKey: string) => {
 
 <template>
     <div class="command-panel">
+        <div class="command-selection">
+            <div class="label">선택 도시</div>
+            <div class="value">
+                <span v-if="props.selectedCity">
+                    {{ props.selectedCity.name }} · {{ props.selectedCity.nationName }} · {{ props.selectedCity.regionName }}
+                </span>
+                <span v-else>선택된 도시 없음</span>
+            </div>
+        </div>
         <CommandSelectForm
             :command-table="props.commandTable"
             :loading="props.loading"
@@ -52,6 +69,19 @@ const handleSelect = (commandKey: string) => {
     display: flex;
     flex-direction: column;
     gap: 12px;
+}
+
+.command-selection {
+    border: 1px solid rgba(201, 164, 90, 0.35);
+    padding: 6px 8px;
+    font-size: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.command-selection .label {
+    color: rgba(232, 221, 196, 0.6);
 }
 
 .command-placeholder {

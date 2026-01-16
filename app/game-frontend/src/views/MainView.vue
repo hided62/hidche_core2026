@@ -10,6 +10,7 @@ import GeneralBasicCard from '../components/main/GeneralBasicCard.vue';
 import CityBasicCard from '../components/main/CityBasicCard.vue';
 import NationBasicCard from '../components/main/NationBasicCard.vue';
 import MessagePanel from '../components/main/MessagePanel.vue';
+import SelectedCityPanel from '../components/main/SelectedCityPanel.vue';
 import { useSessionStore } from '../stores/session';
 import { useMainDashboardStore } from '../stores/mainDashboard';
 
@@ -38,6 +39,8 @@ const {
     nation,
     lobbyInfo,
     worldMap,
+    mapLayout,
+    selectedCity,
     commandTable,
     messages,
     messageDraftText,
@@ -101,13 +104,16 @@ watch(
 
             <div class="mobile-panel" v-if="mobileTab === 'map'">
                 <PanelCard title="지도">
-                    <MapViewer :map-data="worldMap" :loading="loading" />
+                    <MapViewer :map-data="worldMap" :map-layout="mapLayout" :loading="loading" />
+                </PanelCard>
+                <PanelCard title="선택 도시">
+                    <SelectedCityPanel :city="selectedCity" :loading="loading" />
                 </PanelCard>
             </div>
 
             <div class="mobile-panel" v-if="mobileTab === 'commands'">
                 <PanelCard title="명령 목록" subtitle="예턴/명령 배치 영역">
-                    <CommandListPanel :command-table="commandTable" :loading="loading" />
+                    <CommandListPanel :command-table="commandTable" :loading="loading" :selected-city="selectedCity" />
                 </PanelCard>
             </div>
 
@@ -163,7 +169,10 @@ watch(
         <section v-else class="layout-desktop">
             <div class="stack">
                 <PanelCard title="지도" subtitle="실시간 지도 + 도시 상황">
-                    <MapViewer :map-data="worldMap" :loading="loading" />
+                    <MapViewer :map-data="worldMap" :map-layout="mapLayout" :loading="loading" />
+                </PanelCard>
+                <PanelCard title="선택 도시">
+                    <SelectedCityPanel :city="selectedCity" :loading="loading" />
                 </PanelCard>
                 <PanelCard title="중원 정세">
                     <SkeletonLines v-if="loading" :lines="3" />
@@ -191,7 +200,7 @@ watch(
 
             <div class="stack">
                 <PanelCard title="명령 목록" subtitle="예턴/명령 배치 영역">
-                    <CommandListPanel :command-table="commandTable" :loading="loading" />
+                    <CommandListPanel :command-table="commandTable" :loading="loading" :selected-city="selectedCity" />
                 </PanelCard>
                 <PanelCard title="장수 스탯">
                     <GeneralBasicCard :general="general" :loading="loading" />

@@ -31,6 +31,7 @@ import {
 import { buildBattleSimJobPayload } from './battleSim/environment.js';
 import { zBattleSimJobId, zBattleSimRequest } from './battleSim/schema.js';
 import { loadWorldMap } from './maps/worldMap.js';
+import { loadMapLayout } from './maps/mapLayout.js';
 
 const zRunReason = z.enum(['schedule', 'manual', 'poke']);
 const zMessageType = z.enum(['private', 'public', 'national', 'diplomacy']);
@@ -167,6 +168,9 @@ export const appRouter = router({
         getState: procedure.query(async ({ ctx }) => {
             const state = await ctx.db.worldState.findFirst();
             return state ? toWorldStateSnapshot(state) : null;
+        }),
+        getMapLayout: procedure.query(async ({ ctx }) => {
+            return loadMapLayout(ctx.profile.scenario);
         }),
         getMap: procedure
             .input(

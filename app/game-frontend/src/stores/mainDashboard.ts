@@ -2,6 +2,7 @@ import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
 import { MESSAGE_MAILBOX_NATIONAL_BASE, MESSAGE_MAILBOX_PUBLIC, type MessageType } from '@sammo-ts/logic';
 import { trpc } from '../utils/trpc';
+import { useMapViewerStore } from './mapViewer';
 
 const resolveErrorMessage = (value: unknown): string => {
     if (value instanceof Error) {
@@ -17,6 +18,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     type GeneralContext = Awaited<ReturnType<typeof trpc.general.me.query>>;
     type LobbyInfo = Awaited<ReturnType<typeof trpc.lobby.info.query>>;
     type WorldMapResult = Awaited<ReturnType<typeof trpc.world.getMap.query>>;
+    type MapLayout = Awaited<ReturnType<typeof trpc.world.getMapLayout.query>>;
     type CommandTable = Awaited<ReturnType<typeof trpc.turns.getCommandTable.query>>;
     type MessageBundle = Awaited<ReturnType<typeof trpc.messages.getRecent.query>>;
 
@@ -28,6 +30,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     const generalContext = ref<GeneralContext | null>(null);
     const lobbyInfo = ref<LobbyInfo | null>(null);
     const worldMap = ref<WorldMapResult | null>(null);
+    const mapLayout = ref<MapLayout | null>(null);
     const commandTable = ref<CommandTable | null>(null);
     const messages = ref<MessageBundle | null>(null);
 
@@ -39,6 +42,41 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     const nation = computed(() => generalContext.value?.nation ?? null);
     const generalId = computed(() => general.value?.id ?? null);
     const nationId = computed(() => nation.value?.id ?? null);
+    const mapViewer = useMapViewerStore();
+
+    const selectedCity = computed(() => {
+        const layout = mapLayout.value;
+        const map = worldMap.value;
+        const selectedId = mapViewer.selectedCityId;
+        if (!layout || !map || !selectedId) {
+            return null;
+        }
+        const layoutCity = layout.cityList.find((city) => city.id === selectedId);
+        const mapEntry = map.cityList.find((entry) => entry[0] === selectedId);
+        if (!layoutCity || !mapEntry) {
+            return null;
+        }
+        const [, , state, nationIdValue, region, supplyFlag] = mapEntry;
+        const nationEntry = map.nationList.find((nationEntry) => nationEntry[0] === nationIdValue);
+        const regionName = layout.regionMap[region] ?? '-';
+        const levelName = layout.levelMap[layoutCity.level] ?? '-';
+
+        return {
+            id: layoutCity.id,
+            name: layoutCity.name,
+            level: layoutCity.level,
+            levelName,
+            region,
+            regionName,
+            nationId: nationIdValue,
+            nationName: nationEntry?.[1] ?? '무주',
+            nationColor: nationEntry?.[2] ?? '#444444',
+            state,
+            supply: supplyFlag > 0,
+            isCapital: nationEntry?.[3] === layoutCity.id,
+            isMyCity: map.myCity === layoutCity.id,
+        } as const;
+    });
 
     const mailboxOptions = computed(() => {
         const options: Array<{ label: string; value: number; disabled?: boolean }> = [
@@ -90,13 +128,16 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             }
 
             const id = context.general.id;
-            const [lobby, map, commands, messageData] = await Promise.all([
+            const layoutPromise = mapLayout.value ? Promise.resolve(mapLayout.value) : trpc.world.getMapLayout.query();
+            const [layout, lobby, map, commands, messageData] = await Promise.all([
+                layoutPromise,
                 trpc.lobby.info.query(),
                 trpc.world.getMap.query({ generalId: id, showMe: true, useCache: true }),
                 trpc.turns.getCommandTable.query({ generalId: id }),
                 trpc.messages.getRecent.query({ generalId: id }),
             ]);
 
+            mapLayout.value = layout;
             lobbyInfo.value = lobby;
             worldMap.value = map;
             commandTable.value = commands;
@@ -186,6 +227,8 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         nation,
         lobbyInfo,
         worldMap,
+        mapLayout,
+        selectedCity,
         commandTable,
         messages,
         messageDraftText,

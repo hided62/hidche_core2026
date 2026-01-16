@@ -4,6 +4,7 @@ interface MapViewerState {
     showCityName: boolean;
     detailMode: boolean;
     hoveredCityId: number | null;
+    selectedCityId: number | null;
 }
 
 export const useMapViewerStore = defineStore('mapViewer', {
@@ -11,6 +12,7 @@ export const useMapViewerStore = defineStore('mapViewer', {
         showCityName: true,
         detailMode: false,
         hoveredCityId: null,
+        selectedCityId: null,
     }),
     actions: {
         toggleCityName() {
@@ -21,6 +23,9 @@ export const useMapViewerStore = defineStore('mapViewer', {
         },
         setHoveredCity(cityId: number | null) {
             this.hoveredCityId = cityId;
+        },
+        setSelectedCity(cityId: number | null) {
+            this.selectedCityId = cityId;
         },
     },
 });
