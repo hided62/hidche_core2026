@@ -1,21 +1,21 @@
 import { createTRPCProxyClient, httpBatchLink } from '@trpc/client';
 import type { AppRouter } from '@sammo-ts/game-api';
 
-const getSessionToken = (): string | null => {
+const getGameToken = (): string | null => {
     if (typeof window === 'undefined') {
         return null;
     }
 
-    return window.localStorage.getItem('sammo-session-token');
+    return window.localStorage.getItem('sammo-game-token');
 };
 
 export const trpc = createTRPCProxyClient<AppRouter>({
     links: [
         httpBatchLink({
-            url: '/api/trpc',
+            url: import.meta.env.VITE_GAME_API_URL ?? '/api/trpc',
             headers() {
-                const token = getSessionToken();
-                return token ? { 'x-session-token': token } : {};
+                const token = getGameToken();
+                return token ? { authorization: `Bearer ${token}` } : {};
             },
         }),
     ],

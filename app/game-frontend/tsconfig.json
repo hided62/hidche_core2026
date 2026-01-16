@@ -28,7 +28,9 @@
             "@sammo-ts/game-engine": ["../../app/game-engine/src/index.ts"],
             "@sammo-ts/game-engine/*": ["../../app/game-engine/src/*"],
             "@sammo-ts/game-api": ["../../app/game-api/src/index.ts"],
-            "@sammo-ts/game-api/*": ["../../app/game-api/src/*"]
+            "@sammo-ts/game-api/*": ["../../app/game-api/src/*"],
+            "@sammo-ts/gateway-api": ["../../app/gateway-api/src/index.ts"],
+            "@sammo-ts/gateway-api/*": ["../../app/gateway-api/src/*"]
         }
     },
     "include": [

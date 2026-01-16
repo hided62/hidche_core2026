@@ -2,6 +2,7 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import MainView from '../views/MainView.vue';
 import PublicView from '../views/PublicView.vue';
 import LoginView from '../views/LoginView.vue';
+import JoinView from '../views/JoinView.vue';
 import NotFoundView from '../views/NotFoundView.vue';
 import { useSessionStore } from '../stores/session';
 
@@ -19,6 +20,15 @@ const routes = [
         path: '/public',
         name: 'public',
         component: PublicView,
+    },
+    {
+        path: '/join',
+        name: 'join',
+        component: JoinView,
+        meta: {
+            requiresAuth: true,
+            requiresNoGeneral: true,
+        },
     },
     {
         path: '/login',
@@ -40,23 +50,31 @@ const router = createRouter({
     routes,
 });
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
     const session = useSessionStore();
+
+    if (!session.isReady) {
+        await session.initialize();
+    }
 
     if (!session.isReady) {
         return true;
     }
 
     if (to.meta.publicOnly && session.isAuthed) {
-        return { name: 'home' };
+        return { name: session.hasGeneral ? 'home' : 'join' };
     }
 
     if (to.meta.requiresAuth && !session.isAuthed) {
         return { name: 'public' };
     }
 
+    if (to.meta.requiresNoGeneral && session.hasGeneral) {
+        return { name: 'home' };
+    }
+
     if (to.meta.requiresGeneral && !session.hasGeneral) {
-        return { name: 'public' };
+        return { name: session.isAuthed ? 'join' : 'public' };
     }
 
     return true;
