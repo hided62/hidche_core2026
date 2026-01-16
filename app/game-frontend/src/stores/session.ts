@@ -23,6 +23,7 @@ interface SessionState {
 const SESSION_TOKEN_KEY = 'sammo-session-token';
 const PROFILE_KEY = 'sammo-game-profile';
 const GAME_TOKEN_KEY = 'sammo-game-token';
+const ACCESS_TOKEN_PREFIX = 'ga_';
 
 const readStorage = (key: string): string | null => {
     if (typeof window === 'undefined') {
@@ -54,6 +55,13 @@ const readQueryParam = (key: string): string | null => {
     url.searchParams.delete(key);
     window.history.replaceState({}, '', url.toString());
     return value;
+};
+
+const isAccessToken = (token: string | null): boolean => {
+    if (!token) {
+        return false;
+    }
+    return token.startsWith(ACCESS_TOKEN_PREFIX);
 };
 
 export const useSessionStore = defineStore('session', {
@@ -96,11 +104,34 @@ export const useSessionStore = defineStore('session', {
                 this.status = 'authed';
                 return;
             }
+            if (!isAccessToken(this.gameToken)) {
+                const exchanged = await this.exchangeGatewayToken();
+                if (!exchanged) {
+                    this.status = this.sessionToken ? 'authed' : 'public';
+                    return;
+                }
+            }
             try {
                 const lobby = await gameTrpc.lobby.info.query();
                 this.status = lobby.myGeneral ? 'general' : 'authed';
             } catch {
                 this.error = 'game_status_unavailable';
+            }
+        },
+        async exchangeGatewayToken(): Promise<boolean> {
+            if (!this.gameToken || isAccessToken(this.gameToken)) {
+                return true;
+            }
+            try {
+                const exchanged = await gameTrpc.auth.exchangeGatewayToken.mutate({
+                    gatewayToken: this.gameToken,
+                });
+                this.setGameToken(exchanged.accessToken);
+                return true;
+            } catch {
+                this.error = 'game_token_exchange_failed';
+                this.setGameToken(null);
+                return false;
             }
         },
         async initialize() {
@@ -121,6 +152,11 @@ export const useSessionStore = defineStore('session', {
                 this.setProfile(profileFromQuery);
             }
 
+            const gatewayTokenFromQuery = readQueryParam('gameToken');
+            if (gatewayTokenFromQuery) {
+                this.setGameToken(gatewayTokenFromQuery);
+            }
+
             const storedToken = this.sessionToken ?? readStorage(SESSION_TOKEN_KEY);
             if (storedToken && storedToken !== this.sessionToken) {
                 this.setSessionToken(storedToken);
@@ -131,30 +167,34 @@ export const useSessionStore = defineStore('session', {
                 this.setProfile(storedProfile);
             }
 
-            if (!this.sessionToken) {
+            if (!this.sessionToken && !this.gameToken) {
                 this.status = 'public';
                 this.initializing = false;
                 return;
             }
 
-            try {
-                const me = await gatewayTrpc.me.query();
-                if (!me) {
-                    this.clearSession();
+            if (this.sessionToken) {
+                try {
+                    const me = await gatewayTrpc.me.query();
+                    if (!me) {
+                        this.clearSession();
+                        this.initializing = false;
+                        return;
+                    }
+                    this.user = {
+                        id: me.id,
+                        username: me.username,
+                        displayName: me.displayName,
+                    };
+                    this.status = 'authed';
+                } catch {
+                    this.error = 'gateway_unavailable';
+                    this.status = 'public';
                     this.initializing = false;
                     return;
                 }
-                this.user = {
-                    id: me.id,
-                    username: me.username,
-                    displayName: me.displayName,
-                };
+            } else {
                 this.status = 'authed';
-            } catch {
-                this.error = 'gateway_unavailable';
-                this.status = 'public';
-                this.initializing = false;
-                return;
             }
 
             if (!this.profile) {
@@ -163,17 +203,16 @@ export const useSessionStore = defineStore('session', {
             }
 
             try {
-                const sessionToken = this.sessionToken;
-                if (!sessionToken) {
-                    this.status = 'public';
-                    this.initializing = false;
-                    return;
+                if (!this.gameToken || !isAccessToken(this.gameToken)) {
+                    const sessionToken = this.sessionToken;
+                    if (sessionToken) {
+                        const issued = await gatewayTrpc.auth.issueGameSession.mutate({
+                            sessionToken,
+                            profile: this.profile,
+                        });
+                        this.setGameToken(issued.gameToken);
+                    }
                 }
-                const issued = await gatewayTrpc.auth.issueGameSession.mutate({
-                    sessionToken,
-                    profile: this.profile,
-                });
-                this.setGameToken(issued.gameToken);
                 await this.refreshGeneralStatus();
             } catch {
                 this.error = 'game_session_unavailable';

@@ -4,6 +4,8 @@ import type { DatabaseClient, GameApiContext, GameProfile, WorldStateRow } from 
 import type { RedisConnector } from '@sammo-ts/infra';
 import { InMemoryBattleSimTransport } from '../src/battleSim/inMemoryTransport.js';
 import { InMemoryTurnDaemonTransport } from '../src/daemon/inMemoryTransport.js';
+import { InMemoryFlushStore } from '../src/auth/flushStore.js';
+import { RedisAccessTokenStore } from '../src/auth/accessTokenStore.js';
 import { appRouter } from '../src/router.js';
 
 const profile: GameProfile = {
@@ -43,6 +45,13 @@ const buildContext = (options?: {
             createMany: async () => ({}),
         },
     };
+    const accessTokenStore = new RedisAccessTokenStore(
+        {
+            get: async () => null,
+            set: async () => null,
+        },
+        profile.name
+    );
     return {
         db: db as unknown as DatabaseClient,
         turnDaemon: transport,
@@ -50,6 +59,9 @@ const buildContext = (options?: {
         profile,
         auth: null,
         redis: {} as unknown as RedisConnector['client'],
+        accessTokenStore,
+        flushStore: new InMemoryFlushStore(),
+        gameTokenSecret: 'test-secret',
     };
 };
 

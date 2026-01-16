@@ -4,6 +4,8 @@ import type { DatabaseClient as InfraDatabaseClient, RedisConnector, GamePrisma 
 
 import type { TurnDaemonTransport } from './daemon/transport.js';
 import type { BattleSimTransport } from './battleSim/transport.js';
+import type { FlushStore } from './auth/flushStore.js';
+import type { RedisAccessTokenStore } from './auth/accessTokenStore.js';
 
 export interface GameProfile {
     id: string;
@@ -48,6 +50,9 @@ export interface GameApiContext {
     battleSim: BattleSimTransport;
     profile: GameProfile;
     auth: GameSessionTokenPayload | null;
+    accessTokenStore: RedisAccessTokenStore;
+    flushStore: FlushStore;
+    gameTokenSecret: string;
 }
 
 export const createGameApiContext = (options: {
@@ -57,6 +62,9 @@ export const createGameApiContext = (options: {
     battleSim: BattleSimTransport;
     profile: GameProfile;
     auth: GameSessionTokenPayload | null;
+    accessTokenStore: RedisAccessTokenStore;
+    flushStore: FlushStore;
+    gameTokenSecret: string;
 }): GameApiContext => {
     return {
         db: options.db,
@@ -65,5 +73,8 @@ export const createGameApiContext = (options: {
         battleSim: options.battleSim,
         profile: options.profile,
         auth: options.auth,
+        accessTokenStore: options.accessTokenStore,
+        flushStore: options.flushStore,
+        gameTokenSecret: options.gameTokenSecret,
     };
 };

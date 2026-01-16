@@ -1,6 +1,7 @@
 import { router } from './trpc.js';
 
 import { battleRouter } from './router/battle/index.js';
+import { authRouter } from './router/auth/index.js';
 import { generalRouter } from './router/general/index.js';
 import { healthRouter } from './router/health/index.js';
 import { joinRouter } from './router/join/index.js';
@@ -15,6 +16,7 @@ import { worldRouter } from './router/world/index.js';
 
 export const appRouter = router({
     health: healthRouter,
+    auth: authRouter,
     lobby: lobbyRouter,
     public: publicRouter,
     join: joinRouter,

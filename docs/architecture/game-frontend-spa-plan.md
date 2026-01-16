@@ -135,10 +135,12 @@
 - 게임 API: `join.getConfig`, `join.createGeneral`, `join.listPossessCandidates`, `join.possessGeneral` 추가
 - Public 화면 구현: 캐시 지도/중원 정세/세력 일람/제한 장수 일람 구성
 - Public API: `public.getCachedMap`, `public.getWorldTrend`, `public.getNationList`, `public.getGeneralList` 추가
+- Gateway → Game handoff: 게이트웨이에서 `gameToken` 발급 후 게임 프론트에서 1회 교환(access token)하는 흐름 추가
 
 ## Next Frontend Tasks
 
 - 게이트웨이 로그인/프로필 선택 플로우 정리 (토큰 전달 방식, 자동 로그인, 쿠키 기반 전환 고려)
+- 게이트웨이/게임 프론트 도메인 경로(`VITE_GAME_WEB_URL`) 확정 및 운영 배포 경로 문서화
 - 실시간 업데이트(SSE) 연결 설계 및 메인 화면 토글과 연동
 - MapViewer 비주얼 보강: 레거시 테마/아이콘/맵 배경 스타일 상세 이식
 - 레거시 이미지 서빙 위치 확정 및 SPA 배포 시 정적 경로 매핑

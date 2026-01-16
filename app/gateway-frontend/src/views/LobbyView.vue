@@ -27,6 +27,7 @@ const notice = ref('');
 const profiles = ref<LobbyProfile[]>([]);
 const profileDetails = ref<Record<string, LobbyInfo | undefined>>({});
 const profileMapPreviews = ref<Record<string, MapPreviewBundle | undefined>>({});
+const entryLoading = ref<Record<string, boolean>>({});
 
 onMounted(async () => {
     try {
@@ -74,6 +75,48 @@ const handleLogout = async () => {
     // TODO: Implement logout mutation in gateway-api
     // await trpc.auth.logout.mutation();
     await router.push('/');
+};
+
+const resolveGameUrl = (path: string, profileName: string, gameToken: string): string | null => {
+    const baseUrl = import.meta.env.VITE_GAME_WEB_URL ?? '';
+    if (!baseUrl) {
+        return null;
+    }
+    const base = new URL(baseUrl, window.location.origin);
+    const normalizedPath = path.replace(/^\//, '');
+    const url = new URL(normalizedPath, base);
+    url.searchParams.set('profile', profileName);
+    url.searchParams.set('gameToken', gameToken);
+    return url.toString();
+};
+
+const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
+    if (entryLoading.value[profile.profileName]) {
+        return;
+    }
+    const sessionToken = window.localStorage.getItem('sammo-session-token');
+    if (!sessionToken) {
+        await router.push('/');
+        return;
+    }
+    entryLoading.value[profile.profileName] = true;
+    try {
+        const issued = await trpc.auth.issueGameSession.mutate({
+            sessionToken,
+            profile: profile.profileName,
+        });
+        const url = resolveGameUrl(targetPath, issued.profile, issued.gameToken);
+        if (!url) {
+            alert('게임 프론트엔드 주소가 설정되지 않았습니다.');
+            return;
+        }
+        window.location.href = url;
+    } catch (e) {
+        console.error('Failed to issue game session', e);
+        alert('게임 서버 접속에 실패했습니다.');
+    } finally {
+        entryLoading.value[profile.profileName] = false;
+    }
 };
 </script>
 
@@ -186,12 +229,16 @@ const handleLogout = async () => {
                                     <button
                                         v-if="profileDetails[profile.profileName]?.myGeneral"
                                         class="w-full bg-zinc-700 hover:bg-zinc-600 text-white py-1.5 rounded text-sm transition-colors"
+                                        :disabled="entryLoading[profile.profileName]"
+                                        @click="handleEnter(profile, '/')"
                                     >
                                         입장
                                     </button>
                                     <button
                                         v-else
                                         class="w-full bg-zinc-700 hover:bg-zinc-600 text-white py-1.5 rounded text-sm transition-colors"
+                                        :disabled="entryLoading[profile.profileName]"
+                                        @click="handleEnter(profile, '/join')"
                                     >
                                         장수생성
                                     </button>

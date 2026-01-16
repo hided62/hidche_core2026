@@ -13,7 +13,7 @@ import { createGameApiContext, type DatabaseClient as _DatabaseClient } from './
 import { buildTurnDaemonStreamKeys } from './daemon/streamKeys.js';
 import { RedisTurnDaemonTransport } from './daemon/redisTransport.js';
 import { InMemoryFlushStore, RedisGatewayFlushSubscriber } from './auth/flushStore.js';
-import { createGameTokenVerifier } from './auth/tokenVerifier.js';
+import { RedisAccessTokenStore } from './auth/accessTokenStore.js';
 import { appRouter } from './router.js';
 import { buildBattleSimQueueKeys } from './battleSim/keys.js';
 import { RedisBattleSimTransport } from './battleSim/redisTransport.js';
@@ -55,11 +55,7 @@ export const createGameApiServer = async () => {
     await flushSubscriberClient.connect();
     const flushSubscriber = new RedisGatewayFlushSubscriber(flushSubscriberClient, config.flushChannel, flushStore);
     await flushSubscriber.start();
-    const tokenVerifier = createGameTokenVerifier({
-        secret: config.gameTokenSecret,
-        profileName: config.profileName,
-        flushStore,
-    });
+    const accessTokenStore = new RedisAccessTokenStore(redis.client, config.profileName);
 
     const app = fastify({
         logger: true,
@@ -74,9 +70,16 @@ export const createGameApiServer = async () => {
         prefix: config.trpcPath,
         trpcOptions: {
             router: appRouter,
-            createContext: ({ req }: { req: FastifyRequest }) => {
+            createContext: async ({ req }: { req: FastifyRequest }) => {
                 const token = extractBearerToken(req.headers.authorization);
-                const auth = token ? tokenVerifier.verify(token) : null;
+                let auth = null;
+                if (token) {
+                    const stored = await accessTokenStore.get(token);
+                    if (stored) {
+                        const flushedAt = flushStore.getFlushedAt(stored.user.id);
+                        auth = flushedAt && new Date(stored.issuedAt) <= flushedAt ? null : stored;
+                    }
+                }
                 return createGameApiContext({
                     db: postgres.prisma,
                     redis: redis.client,
@@ -88,6 +91,9 @@ export const createGameApiServer = async () => {
                         name: config.profileName,
                     },
                     auth,
+                    accessTokenStore,
+                    flushStore,
+                    gameTokenSecret: config.gameTokenSecret,
                 });
             },
         },
