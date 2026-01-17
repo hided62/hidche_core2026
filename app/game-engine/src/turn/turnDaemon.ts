@@ -237,7 +237,7 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
                     await publishRealtimeEvent({
                         type: 'turnCompleted',
                         at: new Date().toISOString(),
-                        result,
+                        lastTurnTime: result.lastTurnTime,
                     });
                 } catch {
                     // 실시간 이벤트 전송 실패는 턴 처리 결과에 영향을 주지 않는다.

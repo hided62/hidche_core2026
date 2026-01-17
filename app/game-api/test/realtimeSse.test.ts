@@ -31,13 +31,7 @@ describe('parseRealtimeEvent', () => {
         const payload: RealtimeEvent = {
             type: 'turnCompleted',
             at: '2026-01-01T00:00:00.000Z',
-            result: {
-                lastTurnTime: '2026-01-01T00:00:00.000Z',
-                processedGenerals: 2,
-                processedTurns: 1,
-                durationMs: 1200,
-                partial: false,
-            },
+            lastTurnTime: '2026-01-01T00:00:00.000Z',
         };
         const parsed = parseRealtimeEvent(JSON.stringify(payload));
 
