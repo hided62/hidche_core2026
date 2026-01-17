@@ -280,10 +280,10 @@ onMounted(() => {
                     </select>
                     <input v-model="filterText" class="filter-input" placeholder="도시 검색" />
                     <button
+                        v-if="canAppoint"
                         class="ghost"
                         :class="{ active: showAppointment }"
                         @click="showAppointment = !showAppointment"
-                        v-if="canAppoint"
                     >
                         관직 임명 모드
                     </button>
@@ -345,7 +345,7 @@ onMounted(() => {
                     </div>
 
                     <div v-if="showAppointment && canAppoint" class="city-appoint">
-                        <div class="appoint-row" v-for="level in officerLevels" :key="level">
+                        <div v-for="level in officerLevels" :key="level" class="appoint-row">
                             <span class="officer-label">{{ officerLabels[level] }}</span>
                             <select
                                 v-model.number="appointmentDraft[city.id][level]"

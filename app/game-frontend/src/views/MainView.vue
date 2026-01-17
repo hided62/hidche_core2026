@@ -123,7 +123,7 @@ watch(
                 </button>
             </div>
 
-            <div class="mobile-panel" v-if="mobileTab === 'map'">
+            <div v-if="mobileTab === 'map'" class="mobile-panel">
                 <PanelCard title="지도">
                     <MapViewer :map-data="worldMap" :map-layout="mapLayout" :loading="loading" />
                 </PanelCard>
@@ -132,7 +132,7 @@ watch(
                 </PanelCard>
             </div>
 
-            <div class="mobile-panel" v-if="mobileTab === 'commands'">
+            <div v-if="mobileTab === 'commands'" class="mobile-panel">
                 <PanelCard title="명령 목록" subtitle="예턴/명령 배치 영역">
                     <CommandListPanel
                         :command-table="commandTable"
@@ -149,7 +149,7 @@ watch(
                 </PanelCard>
             </div>
 
-            <div class="mobile-panel" v-if="mobileTab === 'status'">
+            <div v-if="mobileTab === 'status'" class="mobile-panel">
                 <PanelCard title="장수 스탯">
                     <GeneralBasicCard :general="general" :loading="loading" />
                 </PanelCard>
@@ -161,7 +161,7 @@ watch(
                 </PanelCard>
             </div>
 
-            <div class="mobile-panel" v-if="mobileTab === 'world'">
+            <div v-if="mobileTab === 'world'" class="mobile-panel">
                 <PanelCard title="장수 동향">
                     <SkeletonLines v-if="loading" :lines="4" />
                     <div v-else class="placeholder">장수 동향은 실시간 스트림으로 연결 예정</div>
@@ -180,7 +180,7 @@ watch(
                 </PanelCard>
             </div>
 
-            <div class="mobile-panel" v-if="mobileTab === 'messages'">
+            <div v-if="mobileTab === 'messages'" class="mobile-panel">
                 <PanelCard title="메시지함">
                     <MessagePanel
                         :messages="messages"

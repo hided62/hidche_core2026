@@ -102,7 +102,7 @@ const parsePhpArray = (input: string): unknown => {
 
     const parseNumber = () => {
         let raw = '';
-        while (index < input.length && /[0-9.+\-]/.test(input[index] ?? '')) {
+        while (index < input.length && /[0-9.+-]/.test(input[index] ?? '')) {
             raw += input[index];
             index += 1;
         }
@@ -121,7 +121,7 @@ const parsePhpArray = (input: string): unknown => {
         if (char === '"' || char === "'") {
             return parseString();
         }
-        if (/[0-9.+\-]/.test(char)) {
+        if (/[0-9.+-]/.test(char)) {
             return parseNumber();
         }
         if (input.startsWith('true', index)) {

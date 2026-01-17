@@ -314,14 +314,14 @@ onMounted(() => {
                         <div class="chief-name">
                             {{ chiefAssignments[level]?.name ?? '-' }}
                         </div>
-                        <div class="chief-meta" v-if="chiefAssignments[level]">
+                        <div v-if="chiefAssignments[level]" class="chief-meta">
                             {{ chiefAssignments[level]?.officerCityName ?? chiefAssignments[level]?.cityName ?? '-' }}
                         </div>
                     </div>
                 </div>
             </PanelCard>
 
-            <PanelCard title="수뇌부 임명" subtitle="수뇌 관직 임명 및 해임" v-if="canAssign">
+            <PanelCard v-if="canAssign" title="수뇌부 임명" subtitle="수뇌 관직 임명 및 해임">
                 <div class="chief-appoint">
                     <div v-for="level in chiefLevels" :key="level" class="appoint-row">
                         <div class="appoint-label">{{ formatOfficerLevelText(level, nationLevel) }}</div>
@@ -336,7 +336,7 @@ onMounted(() => {
                 </div>
             </PanelCard>
 
-            <PanelCard title="도시 관직 빠른 임명" subtitle="도시별 관직을 신속하게 배치합니다" v-if="canAssign">
+            <PanelCard v-if="canAssign" title="도시 관직 빠른 임명" subtitle="도시별 관직을 신속하게 배치합니다">
                 <div class="fast-appoint">
                     <div class="appoint-row">
                         <div class="appoint-label">도시</div>
@@ -397,7 +397,7 @@ onMounted(() => {
                 </div>
             </PanelCard>
 
-            <PanelCard title="외교 권한" subtitle="외교권자/조언자 임명" v-if="isLeader">
+            <PanelCard v-if="isLeader" title="외교 권한" subtitle="외교권자/조언자 임명">
                 <div class="permission-grid">
                     <div>
                         <div class="permission-title">외교권자 (최대 2명)</div>
@@ -408,9 +408,9 @@ onMounted(() => {
                                 class="permission-item"
                             >
                                 <input
+                                    v-model="ambassadorSelection"
                                     type="checkbox"
                                     :value="candidate.id"
-                                    v-model="ambassadorSelection"
                                     @change="enforceAmbassadorLimit(candidate.id)"
                                 />
                                 {{ candidate.name }}
@@ -427,9 +427,9 @@ onMounted(() => {
                                 class="permission-item"
                             >
                                 <input
+                                    v-model="auditorSelection"
                                     type="checkbox"
                                     :value="candidate.id"
-                                    v-model="auditorSelection"
                                     @change="enforceAuditorLimit(candidate.id)"
                                 />
                                 {{ candidate.name }}
@@ -440,7 +440,7 @@ onMounted(() => {
                 </div>
             </PanelCard>
 
-            <PanelCard title="추방" subtitle="국가에서 장수를 추방합니다" v-if="canAssign">
+            <PanelCard v-if="canAssign" title="추방" subtitle="국가에서 장수를 추방합니다">
                 <div class="kick-panel">
                     <select v-model.number="kickTargetId" class="select-input">
                         <option :value="0">장수 선택</option>
@@ -448,7 +448,7 @@ onMounted(() => {
                             {{ general.name }}
                         </option>
                     </select>
-                    <button class="ghost" @click="kickGeneral" :disabled="kickTargetId === 0">추방</button>
+                    <button class="ghost" :disabled="kickTargetId === 0" @click="kickGeneral">추방</button>
                 </div>
             </PanelCard>
         </section>
