@@ -1,4 +1,5 @@
 import { createGamePostgresConnector, type InputJsonValue, type TurnEngineDatabaseClient } from '@sammo-ts/infra';
+import { isRecord } from '@sammo-ts/common';
 
 export interface ReservedTurnEntry {
     action: string;
@@ -21,9 +22,6 @@ const DEFAULT_GENERAL_TURNS = 30;
 const DEFAULT_NATION_TURNS = 12;
 
 const asJson = (value: unknown): InputJsonValue => value as InputJsonValue;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-    value !== null && typeof value === 'object' && !Array.isArray(value);
 
 const normalizeAction = (action: string | null | undefined): string =>
     action && action.length > 0 ? action : DEFAULT_TURN_ACTION;

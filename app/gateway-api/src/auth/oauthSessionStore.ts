@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { parseJson } from '@sammo-ts/common';
 
 export type OAuthMode = 'login' | 'change_pw';
 
@@ -40,17 +41,6 @@ interface RedisClientLike {
     del(key: string): Promise<number>;
     multi(): RedisPipeline;
 }
-
-const parseJson = <T>(raw: string | null): T | null => {
-    if (!raw) {
-        return null;
-    }
-    try {
-        return JSON.parse(raw) as T;
-    } catch {
-        return null;
-    }
-};
 
 export class RedisOAuthSessionStore implements OAuthSessionStore {
     private readonly client: RedisClientLike;

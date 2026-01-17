@@ -1,19 +1,17 @@
 import { GENERAL_TURN_COMMAND_KEYS, isGeneralTurnCommandKey, type GeneralTurnCommandKey } from './general/index.js';
 import { NATION_TURN_COMMAND_KEYS, isNationTurnCommandKey, type NationTurnCommandKey } from './nation/index.js';
+import { asStringArray, isRecord } from '@sammo-ts/common';
 
 export interface TurnCommandProfile {
     general: GeneralTurnCommandKey[];
     nation: NationTurnCommandKey[];
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-    value !== null && typeof value === 'object' && !Array.isArray(value);
-
-const asStringArray = (value: unknown): string[] | null => {
+const asStringArrayOrNull = (value: unknown): string[] | null => {
     if (!Array.isArray(value)) {
         return null;
     }
-    const list = value.filter((entry): entry is string => typeof entry === 'string');
+    const list = asStringArray(value);
     return list.length > 0 ? list : null;
 };
 
@@ -23,7 +21,7 @@ const parseKeyList = <T extends string>(options: {
     isKey: (value: string) => value is T;
     label: string;
 }): T[] => {
-    const rawList = asStringArray(options.raw);
+    const rawList = asStringArrayOrNull(options.raw);
     if (!rawList) {
         return options.defaults;
     }

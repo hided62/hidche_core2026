@@ -1,9 +1,9 @@
+import { isRecord } from '@sammo-ts/common';
+
 export interface WarDexAux {
     isAttacker?: boolean;
     opposeType?: { armType: number };
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object';
 
 export const parseWarDexAux = (aux: unknown): WarDexAux => {
     if (!isRecord(aux)) {

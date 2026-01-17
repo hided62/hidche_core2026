@@ -21,7 +21,7 @@ import {
     resolveGeneralAction,
 } from '@sammo-ts/logic';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic';
-import { LiteHashDRBG } from '@sammo-ts/common';
+import { asRecord, LiteHashDRBG } from '@sammo-ts/common';
 
 import type { ConstraintContext, StateView } from '@sammo-ts/logic';
 
@@ -42,11 +42,6 @@ import { GeneralAI, shouldUseAi } from './ai/generalAi.js';
 import type { AiReservedTurnProvider } from './ai/types.js';
 
 const DEFAULT_ACTION = '휴식';
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-    value !== null && typeof value === 'object' && !Array.isArray(value);
-
-const asRecord = (value: unknown): Record<string, unknown> => (isRecord(value) ? value : {});
 
 const resolveConstraintEnv = (
     world: TurnWorldState,
@@ -325,7 +320,7 @@ class WorldStateView implements StateView {
     }
 }
 
-const extractArgsRecord = (value: unknown): Record<string, unknown> => (isRecord(value) ? value : {});
+const extractArgsRecord = (value: unknown): Record<string, unknown> => asRecord(value);
 
 const buildConstraintContext = (
     general: TurnGeneral,

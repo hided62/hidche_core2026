@@ -1,9 +1,7 @@
 import type { City, Nation } from '@sammo-ts/logic';
+import { asRecord, isRecord } from '@sammo-ts/common';
 
-export const isRecord = (value: unknown): value is Record<string, unknown> =>
-    value !== null && typeof value === 'object' && !Array.isArray(value);
-
-export const asRecord = (value: unknown): Record<string, unknown> => (isRecord(value) ? value : {});
+export { asRecord, isRecord };
 
 export const readNumber = (value: unknown, fallback = 0): number => {
     if (typeof value === 'number' && Number.isFinite(value)) {

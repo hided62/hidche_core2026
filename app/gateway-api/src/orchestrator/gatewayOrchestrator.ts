@@ -2,6 +2,7 @@ import path from 'node:path';
 
 import { seedScenarioToDatabase, type ScenarioInstallOptions } from '@sammo-ts/game-engine';
 import { createGamePostgresConnector, resolvePostgresConfigFromEnv } from '@sammo-ts/infra';
+import { isRecord } from '@sammo-ts/common';
 
 import type { BuildRunner } from './buildRunner.js';
 import type { ProcessManager } from './processManager.js';
@@ -102,9 +103,6 @@ interface GatewayAdminActionResult {
     status: GatewayAdminActionStatus;
     detail?: string;
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-    Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
 const normalizeMeta = (value: unknown): Record<string, unknown> => (isRecord(value) ? value : {});
 

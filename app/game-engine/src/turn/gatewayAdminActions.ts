@@ -1,4 +1,5 @@
 import { createGatewayPostgresConnector } from '@sammo-ts/infra';
+import { isRecord } from '@sammo-ts/common';
 
 export type GatewayAdminActionStatus = 'REQUESTED' | 'APPLIED' | 'FAILED' | 'IGNORED';
 
@@ -52,9 +53,6 @@ export interface GatewayAdminActionConsumer {
 }
 
 const DEFAULT_POLL_MS = 5000;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-    Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
 const normalizeMeta = (value: unknown): Record<string, unknown> => (isRecord(value) ? value : {});
 

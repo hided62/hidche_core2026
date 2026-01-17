@@ -1,5 +1,13 @@
 import type { City, General, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { CrewTypeDefinition, CrewTypeRequirement, MapDefinition, UnitSetDefinition } from './types.js';
+import {
+    asNullableStringArray,
+    asNumber,
+    asRecord,
+    asString,
+    asStringArray,
+    isRecord,
+} from '@sammo-ts/common';
 
 const DEFAULT_REGION_MAP: Record<string, number> = {
     하북: 1,
@@ -13,26 +21,6 @@ const DEFAULT_REGION_MAP: Record<string, number> = {
 };
 
 const DEFAULT_MAX_TECH_LEVEL = 12;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-    value !== null && typeof value === 'object' && !Array.isArray(value);
-
-const asRecord = (value: unknown): Record<string, unknown> => (isRecord(value) ? value : {});
-
-const asNumber = (value: unknown, fallback: number): number =>
-    typeof value === 'number' && Number.isFinite(value) ? value : fallback;
-
-const asString = (value: unknown, fallback: string): string => (typeof value === 'string' ? value : fallback);
-
-const asStringArray = (value: unknown): string[] =>
-    Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
-
-const asNullableStringArray = (value: unknown): string[] | null => {
-    if (value === null || value === undefined) {
-        return null;
-    }
-    return asStringArray(value);
-};
 
 const normalizeCoef = (value: unknown): Record<string, number> => {
     if (!isRecord(value)) {

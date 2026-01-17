@@ -13,6 +13,7 @@ import type {
     TriggerValue,
 } from '@sammo-ts/logic';
 import { evaluateConstraints, loadGeneralTurnCommandSpecs, loadNationTurnCommandSpecs } from '@sammo-ts/logic';
+import { asRecord, isRecord } from '@sammo-ts/common';
 
 import type { CityRow, GeneralRow, NationRow, WorldStateRow } from '../context.js';
 import { loadTurnCommandProfile } from './turnCommandProfile.js';
@@ -72,11 +73,6 @@ const AVAILABILITY_PRIORITY: Record<AvailabilityStatus, number> = {
 const DEFAULT_GENERAL_GOLD = 1000;
 const DEFAULT_GENERAL_RICE = 1000;
 const DEFAULT_CREW_TYPE_ID = 1100;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-    value !== null && typeof value === 'object' && !Array.isArray(value);
-
-const asRecord = (value: unknown): Record<string, unknown> => (isRecord(value) ? value : {});
 
 const asTriggerRecord = (value: unknown): Record<string, TriggerValue> =>
     isRecord(value) ? (value as Record<string, TriggerValue>) : {};

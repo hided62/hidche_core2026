@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { parseBooleanWithFallback, parseNumberWithFallback } from '@sammo-ts/common';
 
 export interface GatewayApiConfig {
     host: string;
@@ -36,31 +37,6 @@ export interface GatewayOrchestratorConfig {
     worktreeRoot: string;
 }
 
-const parseNumber = (value: string | undefined, fallback: number, label: string): number => {
-    if (!value) {
-        return fallback;
-    }
-    const parsed = Number(value);
-    if (Number.isNaN(parsed)) {
-        throw new Error(`${label} must be a number.`);
-    }
-    return parsed;
-};
-
-const parseBoolean = (value: string | undefined, fallback: boolean): boolean => {
-    if (!value) {
-        return fallback;
-    }
-    const normalized = value.trim().toLowerCase();
-    if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) {
-        return true;
-    }
-    if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) {
-        return false;
-    }
-    return fallback;
-};
-
 const resolveSchemaName = (value: string | undefined): string => {
     if (!value) {
         return 'public';
@@ -83,36 +59,44 @@ export const resolveGatewayApiConfigFromEnv = (env: NodeJS.ProcessEnv = process.
     const redisKeyPrefix = env.GATEWAY_REDIS_PREFIX ?? 'sammo:gateway';
     return {
         host: env.GATEWAY_API_HOST ?? '0.0.0.0',
-        port: parseNumber(env.GATEWAY_API_PORT, 13000, 'GATEWAY_API_PORT'),
+        port: parseNumberWithFallback(env.GATEWAY_API_PORT, 13000, 'GATEWAY_API_PORT'),
         trpcPath: env.TRPC_PATH ?? '/trpc',
         dbSchema: resolveSchemaName(env.GATEWAY_DB_SCHEMA),
         redisKeyPrefix,
         flushChannel: `${redisKeyPrefix}:flush`,
-        sessionTtlSeconds: parseNumber(env.SESSION_TTL_SECONDS, 60 * 60 * 24 * 7, 'SESSION_TTL_SECONDS'),
-        gameSessionTtlSeconds: parseNumber(env.GAME_SESSION_TTL_SECONDS, 60 * 60 * 6, 'GAME_SESSION_TTL_SECONDS'),
+        sessionTtlSeconds: parseNumberWithFallback(env.SESSION_TTL_SECONDS, 60 * 60 * 24 * 7, 'SESSION_TTL_SECONDS'),
+        gameSessionTtlSeconds: parseNumberWithFallback(
+            env.GAME_SESSION_TTL_SECONDS,
+            60 * 60 * 6,
+            'GAME_SESSION_TTL_SECONDS'
+        ),
         gameTokenSecret: secret,
-        oauthSessionTtlSeconds: parseNumber(env.OAUTH_SESSION_TTL_SECONDS, 10 * 60, 'OAUTH_SESSION_TTL_SECONDS'),
+        oauthSessionTtlSeconds: parseNumberWithFallback(
+            env.OAUTH_SESSION_TTL_SECONDS,
+            10 * 60,
+            'OAUTH_SESSION_TTL_SECONDS'
+        ),
         kakaoRestKey,
         kakaoAdminKey: env.KAKAO_ADMIN_KEY,
         kakaoRedirectUri,
         publicBaseUrl,
-        orchestratorEnabled: parseBoolean(env.GATEWAY_ORCHESTRATOR_ENABLED, false),
-        orchestratorReconcileIntervalMs: parseNumber(
+        orchestratorEnabled: parseBooleanWithFallback(env.GATEWAY_ORCHESTRATOR_ENABLED, false),
+        orchestratorReconcileIntervalMs: parseNumberWithFallback(
             env.GATEWAY_ORCHESTRATOR_RECONCILE_MS,
             15000,
             'GATEWAY_ORCHESTRATOR_RECONCILE_MS'
         ),
-        orchestratorScheduleIntervalMs: parseNumber(
+        orchestratorScheduleIntervalMs: parseNumberWithFallback(
             env.GATEWAY_ORCHESTRATOR_SCHEDULE_MS,
             5000,
             'GATEWAY_ORCHESTRATOR_SCHEDULE_MS'
         ),
-        orchestratorBuildIntervalMs: parseNumber(
+        orchestratorBuildIntervalMs: parseNumberWithFallback(
             env.GATEWAY_ORCHESTRATOR_BUILD_MS,
             10000,
             'GATEWAY_ORCHESTRATOR_BUILD_MS'
         ),
-        orchestratorAdminIntervalMs: parseNumber(
+        orchestratorAdminIntervalMs: parseNumberWithFallback(
             env.GATEWAY_ORCHESTRATOR_ADMIN_MS,
             5000,
             'GATEWAY_ORCHESTRATOR_ADMIN_MS'
@@ -135,22 +119,22 @@ export const resolveGatewayOrchestratorConfigFromEnv = (
         dbSchema: resolveSchemaName(env.GATEWAY_DB_SCHEMA),
         redisKeyPrefix,
         gameTokenSecret: secret,
-        orchestratorReconcileIntervalMs: parseNumber(
+        orchestratorReconcileIntervalMs: parseNumberWithFallback(
             env.GATEWAY_ORCHESTRATOR_RECONCILE_MS,
             15000,
             'GATEWAY_ORCHESTRATOR_RECONCILE_MS'
         ),
-        orchestratorScheduleIntervalMs: parseNumber(
+        orchestratorScheduleIntervalMs: parseNumberWithFallback(
             env.GATEWAY_ORCHESTRATOR_SCHEDULE_MS,
             5000,
             'GATEWAY_ORCHESTRATOR_SCHEDULE_MS'
         ),
-        orchestratorBuildIntervalMs: parseNumber(
+        orchestratorBuildIntervalMs: parseNumberWithFallback(
             env.GATEWAY_ORCHESTRATOR_BUILD_MS,
             10000,
             'GATEWAY_ORCHESTRATOR_BUILD_MS'
         ),
-        orchestratorAdminIntervalMs: parseNumber(
+        orchestratorAdminIntervalMs: parseNumberWithFallback(
             env.GATEWAY_ORCHESTRATOR_ADMIN_MS,
             5000,
             'GATEWAY_ORCHESTRATOR_ADMIN_MS'

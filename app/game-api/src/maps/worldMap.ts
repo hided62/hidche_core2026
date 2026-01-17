@@ -1,4 +1,5 @@
 import type { GameApiContext, WorldStateRow } from '../context.js';
+import { asRecord, isRecord } from '@sammo-ts/common';
 
 export type MapCityCompact = [number, number, number, number, number, number];
 export type MapNationCompact = [number, string, string, number];
@@ -44,11 +45,6 @@ type GeneralCityRow = {
 const MAP_VERSION = 0 as const;
 const BASE_MAP_TTL_SECONDS = 30;
 const PUBLIC_MAP_TTL_SECONDS = 600;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-    value !== null && typeof value === 'object' && !Array.isArray(value);
-
-const asRecord = (value: unknown): Record<string, unknown> => (isRecord(value) ? value : {});
 
 const resolveStartYear = (worldState: WorldStateRow): number => {
     const meta = asRecord(worldState.meta);

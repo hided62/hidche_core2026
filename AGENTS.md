@@ -35,6 +35,7 @@
 ## Planned Monorepo Layout (TypeScript Rewrite)
 
 - `/packages/common`: shared utilities and type definitions.
+  - Frequently used utility functions should be registered here and utilized.
 - `/packages/infra`: Prisma/Redis connectors and other runtime infra.
 - `/packages/logic`: pure game logic with DI/interfaces for external dependencies.
 - `/app/gateway-frontend`: Gateway UI application.

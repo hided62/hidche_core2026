@@ -1,4 +1,5 @@
 import type { DatabaseClient, GeneralTurnRow, NationTurnRow, InputJsonValue } from '../context.js';
+import { isRecord } from '@sammo-ts/common';
 
 export const DEFAULT_TURN_ACTION = '휴식';
 export const MAX_GENERAL_TURNS = 30;
@@ -14,9 +15,6 @@ export interface ReservedTurnView {
     action: string;
     args: InputJsonValue;
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-    value !== null && typeof value === 'object' && !Array.isArray(value);
 
 const normalizeAction = (action: string | null | undefined): string =>
     action && action.length > 0 ? action : DEFAULT_TURN_ACTION;

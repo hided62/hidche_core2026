@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { asNullableNumber, asNullableString, asNumber, asString, asStringArray, isRecord } from '@sammo-ts/common';
 
 import type {
     ScenarioConfig,
@@ -23,23 +24,9 @@ const FALLBACK_STAT: ScenarioStatBlock = {
     chiefMin: 0,
 };
 
-const isRecord = (value: unknown): value is UnknownRecord =>
-    typeof value === 'object' && value !== null && !Array.isArray(value);
-
 const toRecordOrUndefined = (value: unknown): UnknownRecord | undefined => (isRecord(value) ? value : undefined);
 
 const toArrayOrUndefined = (value: unknown): unknown[] | undefined => (Array.isArray(value) ? value : undefined);
-
-const asNumber = (value: unknown, fallback: number): number => (typeof value === 'number' ? value : fallback);
-
-const asString = (value: unknown, fallback: string): string => (typeof value === 'string' ? value : fallback);
-
-const asNullableNumber = (value: unknown): number | null => (typeof value === 'number' ? value : null);
-
-const asNullableString = (value: unknown): string | null => (typeof value === 'string' ? value : null);
-
-const asStringArray = (value: unknown): string[] =>
-    Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 
 const zRecord = z.record(z.string(), z.unknown());
 const zUnknownArray = z.array(z.unknown());

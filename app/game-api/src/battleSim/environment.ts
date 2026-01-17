@@ -2,6 +2,7 @@ import type { WorldStateRow } from '../context.js';
 import type { BattleSimJobPayload, BattleSimRequestPayload } from './types.js';
 import { loadUnitSetDefinitionByName } from './unitSetLoader.js';
 import type { WarEngineConfig } from '@sammo-ts/logic';
+import { asRecord } from '@sammo-ts/common';
 
 const DEFAULT_WAR_CONFIG = {
     armPerPhase: 500,
@@ -9,13 +10,6 @@ const DEFAULT_WAR_CONFIG = {
     maxAtmosByCommand: 100,
     maxTrainByWar: 110,
     maxAtmosByWar: 150,
-};
-
-const asRecord = (value: unknown): Record<string, unknown> => {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-        return {};
-    }
-    return value as Record<string, unknown>;
 };
 
 const resolveNumber = (record: Record<string, unknown>, keys: string[], fallback: number): number => {

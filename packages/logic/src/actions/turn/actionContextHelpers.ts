@@ -4,6 +4,7 @@ import type { ScenarioMeta } from '@sammo-ts/logic/world/types.js';
 import type { WarAftermathConfig, WarEngineConfig, WarTimeContext } from '@sammo-ts/logic/war/types.js';
 import type { UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
 import type { ActionContextWorldRef, ActionContextWorldState } from './actionContext.js';
+import { asRecord } from '@sammo-ts/common';
 
 export interface WorldSummary {
     totalGeneralCount: number;
@@ -111,9 +112,6 @@ const DEFAULT_AFTER_CONFIG = {
     initialAllowedTechLevel: 1,
     defaultCityWall: 1000,
 };
-
-const asRecord = (value: unknown): Record<string, unknown> =>
-    value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 
 const resolveNumber = (record: Record<string, unknown>, keys: string[], fallback: number): number => {
     for (const key of keys) {

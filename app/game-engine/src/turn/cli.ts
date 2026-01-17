@@ -1,4 +1,5 @@
 import type { TurnSchedule } from '@sammo-ts/logic';
+import { parseOptionalBoolean, parseOptionalNumber } from '@sammo-ts/common';
 
 import type { TurnRunBudget } from '../lifecycle/types.js';
 import { resolveDatabaseUrl } from '../scenario/databaseUrl.js';
@@ -24,36 +25,11 @@ const DEFAULT_BUDGET: TurnRunBudget = {
     catchUpCap: 1,
 };
 
-const parseNumber = (value: string | undefined): number | undefined => {
-    if (!value) {
-        return undefined;
-    }
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) {
-        return undefined;
-    }
-    return parsed;
-};
-
-const parseBoolean = (value: string | undefined): boolean | undefined => {
-    if (!value) {
-        return undefined;
-    }
-    const normalized = value.trim().toLowerCase();
-    if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) {
-        return true;
-    }
-    if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) {
-        return false;
-    }
-    return undefined;
-};
-
 const buildBudgetOverride = (env: NodeJS.ProcessEnv, override?: Partial<TurnRunBudget>): TurnRunBudget | undefined => {
     const budgetOverride: Partial<TurnRunBudget> = {
-        budgetMs: parseNumber(env.TURN_BUDGET_MS),
-        maxGenerals: parseNumber(env.TURN_MAX_GENERALS),
-        catchUpCap: parseNumber(env.TURN_CATCH_UP_CAP),
+        budgetMs: parseOptionalNumber(env.TURN_BUDGET_MS),
+        maxGenerals: parseOptionalNumber(env.TURN_MAX_GENERALS),
+        catchUpCap: parseOptionalNumber(env.TURN_CATCH_UP_CAP),
         ...override,
     };
 
@@ -78,10 +54,10 @@ export const runTurnDaemonCli = async (options: TurnDaemonCliOptions = {}): Prom
             schema: env.GATEWAY_DB_SCHEMA ?? 'public',
         }));
     const budget = buildBudgetOverride(env, options.budget);
-    const tickMinutes = options.tickMinutes ?? parseNumber(env.TURN_TICK_MINUTES);
-    const enableDatabaseFlush = options.enableDatabaseFlush ?? parseBoolean(env.TURN_FLUSH_DB) ?? true;
-    const pauseGateIntervalMs = parseNumber(env.TURN_PAUSE_GATE_MS);
-    const adminActionIntervalMs = options.adminActionIntervalMs ?? parseNumber(env.TURN_ADMIN_ACTION_MS);
+    const tickMinutes = options.tickMinutes ?? parseOptionalNumber(env.TURN_TICK_MINUTES);
+    const enableDatabaseFlush = options.enableDatabaseFlush ?? parseOptionalBoolean(env.TURN_FLUSH_DB) ?? true;
+    const pauseGateIntervalMs = parseOptionalNumber(env.TURN_PAUSE_GATE_MS);
+    const adminActionIntervalMs = options.adminActionIntervalMs ?? parseOptionalNumber(env.TURN_ADMIN_ACTION_MS);
 
     const runtime = await createTurnDaemonRuntime({
         profile,

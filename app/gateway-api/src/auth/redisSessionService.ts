@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { parseJson } from '@sammo-ts/common';
 
 import { createGatewayRedisKeyBuilder } from './redisKeys.js';
 import type {
@@ -29,17 +30,6 @@ interface RedisClientLike {
     multi(): RedisPipeline;
     del(key: string): Promise<number>;
 }
-
-const parseJson = <T>(raw: string | null): T | null => {
-    if (!raw) {
-        return null;
-    }
-    try {
-        return JSON.parse(raw) as T;
-    } catch {
-        return null;
-    }
-};
 
 // Redis 세션 저장소는 게이트웨이와 게임 서버 간 SSO 토큰을 관리한다.
 export class RedisGatewaySessionService implements GatewaySessionService {

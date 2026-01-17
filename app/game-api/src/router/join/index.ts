@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto';
 
 import type { WorldStateRow } from '../../context.js';
 import { authedProcedure, router } from '../../trpc.js';
+import { asNumber, asRecord, asStringArray } from '@sammo-ts/common';
 import {
     isPersonalityTraitKey,
     isWarTraitKey,
@@ -22,15 +23,6 @@ const DEFAULT_JOIN_STAT = {
     bonusMin: 3,
     bonusMax: 5,
 };
-
-const asRecord = (value: unknown): Record<string, unknown> =>
-    value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-
-const asNumber = (value: unknown, fallback: number): number =>
-    typeof value === 'number' && Number.isFinite(value) ? value : fallback;
-
-const asStringArray = (value: unknown): string[] =>
-    Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 
 const resolveJoinStat = (worldState: WorldStateRow) => {
     const config = asRecord(worldState.config);

@@ -15,15 +15,11 @@ import {
     ITEM_KEYS,
     loadItemModules,
 } from '@sammo-ts/logic';
+import { asRecord } from '@sammo-ts/common';
 
 const DEFAULT_GENERAL_GOLD = 1000;
 const DEFAULT_GENERAL_RICE = 1000;
 const DEFAULT_CREW_TYPE_ID = 1100;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-    value !== null && typeof value === 'object' && !Array.isArray(value);
-
-const asRecord = (value: unknown): Record<string, unknown> => (isRecord(value) ? value : {});
 
 const normalizeCode = (value: string | null | undefined): string | null => {
     if (!value || value === 'None') {

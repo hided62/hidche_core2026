@@ -10,6 +10,7 @@ import {
 } from '@sammo-ts/infra';
 import type { City, Nation, ScenarioConfig, ScenarioMeta, Troop, TriggerValue } from '@sammo-ts/logic';
 import { z } from 'zod';
+import { asRecord, isRecord } from '@sammo-ts/common';
 
 import { getNextTickTime } from '../lifecycle/getNextTickTime.js';
 import type { MapLoaderOptions } from '../scenario/mapLoader.js';
@@ -26,11 +27,6 @@ interface TurnWorldLoaderOptions {
 }
 
 type JsonRecord = Record<string, unknown>;
-
-const isRecord = (value: unknown): value is JsonRecord =>
-    value !== null && typeof value === 'object' && !Array.isArray(value);
-
-const asRecord = (value: unknown): JsonRecord => (isRecord(value) ? value : {});
 
 const asTriggerRecord = (value: unknown): Record<string, TriggerValue> =>
     isRecord(value) ? (value as Record<string, TriggerValue>) : {};
