@@ -53,6 +53,14 @@ type AdminUser = {
     createdAt: string;
 };
 
+type AdminPublicUser = {
+    id: string;
+    username: string;
+    displayName: string;
+    roles: string[];
+    createdAt: string;
+};
+
 type AdminProfile = {
     profileName: string;
     profile: string;
@@ -133,6 +141,16 @@ type AdminClient = {
         };
     };
     users: {
+        getLocalAccountStatus: {
+            query: () => Promise<{ enabled: boolean }>;
+        };
+        createLocal: {
+            mutate: (input: {
+                username: string;
+                password: string;
+                displayName?: string;
+            }) => Promise<{ user: AdminPublicUser }>;
+        };
         lookup: {
             query: (input: { id?: string; username?: string; email?: string }) => Promise<AdminUser | null>;
         };
@@ -297,6 +315,16 @@ const userLoading = ref(false);
 const userError = ref('');
 const userResult = ref<AdminUser | null>(null);
 
+const localAccountEnabled = ref(false);
+const localAccountStatus = ref('');
+const localAccountResult = ref('');
+const localAccountLoading = ref(false);
+const localAccountForm = ref({
+    username: '',
+    password: '',
+    displayName: '',
+});
+
 const passwordInput = ref('');
 const passwordResult = ref('');
 const passwordStatus = ref('');
@@ -321,6 +349,18 @@ const restrictionStatus = ref('');
 const forceDeleteStatus = ref('');
 
 const hasUser = computed(() => Boolean(userResult.value));
+
+const loadLocalAccountStatus = async () => {
+    localAccountStatus.value = '';
+    try {
+        const result = await adminClient.users.getLocalAccountStatus.query();
+        localAccountEnabled.value = result.enabled;
+        localAccountStatus.value = result.enabled ? '' : 'ENV 설정이 비활성화 상태입니다.';
+    } catch (error) {
+        localAccountEnabled.value = false;
+        localAccountStatus.value = '로컬 계정 생성 설정 확인 실패';
+    }
+};
 
 const loadNotice = async () => {
     noticeLoading.value = true;
@@ -908,7 +948,46 @@ const forceDeleteUser = async () => {
     }
 };
 
+const createLocalAccount = async () => {
+    localAccountStatus.value = '';
+    localAccountResult.value = '';
+    if (!localAccountEnabled.value) {
+        localAccountStatus.value = 'ENV 설정이 비활성화 상태입니다.';
+        return;
+    }
+    const username = localAccountForm.value.username.trim();
+    const password = localAccountForm.value.password.trim();
+    const displayName = localAccountForm.value.displayName.trim();
+    if (!username || !password) {
+        localAccountStatus.value = '아이디와 비밀번호를 입력하세요.';
+        return;
+    }
+    localAccountLoading.value = true;
+    try {
+        const result = await adminClient.users.createLocal.mutate({
+            username,
+            password,
+            displayName: displayName || undefined,
+        });
+        localAccountResult.value = `생성됨: ${result.user.username} (${result.user.id})`;
+        localAccountStatus.value = '로컬 계정 생성 완료';
+        localAccountForm.value = {
+            username: result.user.username,
+            password: '',
+            displayName: '',
+        };
+        userLookupMode.value = 'username';
+        userLookupValue.value = result.user.username;
+        await lookupUser();
+    } catch (error) {
+        localAccountStatus.value = '로컬 계정 생성 실패';
+    } finally {
+        localAccountLoading.value = false;
+    }
+};
+
 onMounted(() => {
+    void loadLocalAccountStatus();
     void loadNotice();
     void loadProfiles();
 });
@@ -989,6 +1068,52 @@ onMounted(() => {
                                 >{{ JSON.stringify(userResult.sanctions, null, 2) }}
               </pre
                             >
+                        </div>
+                    </div>
+
+                    <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4">
+                        <div class="flex items-center justify-between">
+                            <h4 class="text-base font-semibold">로컬 계정 생성</h4>
+                            <span class="text-xs text-zinc-500">
+                                ENV {{ localAccountEnabled ? 'ON' : 'OFF' }}
+                            </span>
+                        </div>
+                        <div class="text-xs text-zinc-500">
+                            카카오 OAuth 없이 로그인 가능한 계정을 생성합니다.
+                        </div>
+                        <div class="grid gap-2">
+                            <input
+                                v-model="localAccountForm.username"
+                                type="text"
+                                class="bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
+                                placeholder="아이디"
+                                :disabled="!localAccountEnabled || localAccountLoading"
+                            />
+                            <input
+                                v-model="localAccountForm.password"
+                                type="password"
+                                class="bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
+                                placeholder="비밀번호"
+                                :disabled="!localAccountEnabled || localAccountLoading"
+                            />
+                            <input
+                                v-model="localAccountForm.displayName"
+                                type="text"
+                                class="bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
+                                placeholder="표시명 (선택)"
+                                :disabled="!localAccountEnabled || localAccountLoading"
+                            />
+                            <button
+                                class="bg-cyan-600 hover:bg-cyan-500 text-black font-semibold px-4 py-2 rounded"
+                                :disabled="!localAccountEnabled || localAccountLoading"
+                                @click="createLocalAccount"
+                            >
+                                계정 생성
+                            </button>
+                        </div>
+                        <div class="text-xs text-zinc-500">{{ localAccountStatus }}</div>
+                        <div v-if="localAccountResult" class="text-xs text-emerald-400">
+                            {{ localAccountResult }}
                         </div>
                     </div>
 

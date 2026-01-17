@@ -18,6 +18,7 @@ export interface GatewayApiContext {
     kakaoClient: KakaoOAuthClient;
     oauthSessions: OAuthSessionStore;
     publicBaseUrl: string;
+    adminLocalAccountEnabled: boolean;
     profiles: GatewayProfileRepository;
     orchestrator: GatewayOrchestratorHandle;
     profileStatus: GatewayProfileStatusService;
@@ -35,6 +36,7 @@ export const createGatewayApiContext = (options: {
     kakaoClient: KakaoOAuthClient;
     oauthSessions: OAuthSessionStore;
     publicBaseUrl: string;
+    adminLocalAccountEnabled: boolean;
     profiles: GatewayProfileRepository;
     orchestrator: GatewayOrchestratorHandle;
     profileStatus: GatewayProfileStatusService;
@@ -49,6 +51,7 @@ export const createGatewayApiContext = (options: {
     kakaoClient: options.kakaoClient,
     oauthSessions: options.oauthSessions,
     publicBaseUrl: options.publicBaseUrl,
+    adminLocalAccountEnabled: options.adminLocalAccountEnabled,
     profiles: options.profiles,
     orchestrator: options.orchestrator,
     profileStatus: options.profileStatus,

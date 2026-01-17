@@ -82,6 +82,7 @@ const buildCaller = () => {
             kakaoClient: kakaoClient as unknown as KakaoOAuthClient,
             oauthSessions,
             publicBaseUrl: 'http://localhost',
+            adminLocalAccountEnabled: false,
             profiles,
             orchestrator,
             profileStatus,

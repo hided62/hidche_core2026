@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { procedure, router } from './trpc.js';
 import { listScenarioPreviews, resolveGitCommitSha } from './scenario/scenarioCatalog.js';
 import type { UserSanctions, UserServerRestriction } from './auth/userRepository.js';
+import { toPublicUser } from './auth/userRepository.js';
 import type { AdminAuthContext } from './adminAuth.js';
 import type { GatewayApiContext } from './context.js';
 import { GATEWAY_BUILD_STATUSES, GATEWAY_PROFILE_STATUSES } from './orchestrator/profileRepository.js';
@@ -41,6 +42,7 @@ const ADMIN_ROLE_PREFIX = 'admin.';
 const ADMIN_ROLE_SUPERUSER = 'admin.superuser';
 const ROLE_SUPERUSER = 'superuser';
 const ROLE_ADMIN_USERS = 'admin.users.manage';
+const ROLE_ADMIN_USERS_CREATE = 'admin.users.create';
 const ROLE_ADMIN_PROFILES = 'admin.profiles.manage';
 const ROLE_ADMIN_NOTICE = 'admin.notice.manage';
 const ROLE_RESET_SCHEDULE = 'admin.reset.schedule';
@@ -142,6 +144,20 @@ const assertPermission = (adminAuth: AdminAuthContext, permission: string, profi
     });
 };
 
+const canCreateLocalUser = (adminAuth: AdminAuthContext): boolean =>
+    hasScopedPermission(adminAuth, ROLE_ADMIN_USERS_CREATE) || hasScopedPermission(adminAuth, ROLE_ADMIN_USERS);
+
+// 로컬 계정 임의 생성은 환경 설정이 켜져 있을 때만 허용한다.
+const assertLocalAccountEnabled = (ctx: GatewayApiContext): void => {
+    if (ctx.adminLocalAccountEnabled) {
+        return;
+    }
+    throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'Local account provisioning is disabled.',
+    });
+};
+
 const adminProcedure = procedure.use(async ({ ctx, next }) => {
     const adminAuth = await resolveAdminAuth(ctx as GatewayApiContext);
     return next({
@@ -161,6 +177,17 @@ const noticeAdminProcedure = adminProcedure.use(({ ctx, next }) => {
 const userAdminProcedure = adminProcedure.use(({ ctx, next }) => {
     const adminAuth = requireAdminAuth(ctx);
     assertPermission(adminAuth, ROLE_ADMIN_USERS);
+    return next();
+});
+
+const userCreateProcedure = adminProcedure.use(({ ctx, next }) => {
+    const adminAuth = requireAdminAuth(ctx);
+    if (!canCreateLocalUser(adminAuth)) {
+        throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'Permission denied.',
+        });
+    }
     return next();
 });
 
@@ -196,6 +223,12 @@ const zSanctionsPatch = z.object({
     notes: z.string().max(2000).nullable().optional(),
     profileIconResetAt: z.string().datetime().nullable().optional(),
     serverRestrictions: z.record(z.string(), zServerRestriction.nullable()).nullable().optional(),
+});
+
+const zLocalAccountInput = z.object({
+    username: z.string().min(2).max(32),
+    password: z.string().min(6).max(128),
+    displayName: z.string().min(2).max(40).optional(),
 });
 
 const zInstallAutorun = z.object({
@@ -339,6 +372,34 @@ export const adminRouter = router({
             }),
     }),
     users: router({
+        getLocalAccountStatus: adminProcedure.query(({ ctx }) => ({
+            enabled: (ctx as GatewayApiContext).adminLocalAccountEnabled,
+        })),
+        createLocal: userCreateProcedure.input(zLocalAccountInput).mutation(async ({ ctx, input }) => {
+            const gatewayCtx = ctx as GatewayApiContext;
+            assertLocalAccountEnabled(gatewayCtx);
+            const existing = await gatewayCtx.users.findByUsername(input.username);
+            if (existing) {
+                throw new TRPCError({
+                    code: 'CONFLICT',
+                    message: 'Username already exists.',
+                });
+            }
+            try {
+                const created = await gatewayCtx.users.createUser({
+                    username: input.username,
+                    password: input.password,
+                    displayName: input.displayName,
+                });
+                return { user: toPublicUser(created) };
+            } catch (error) {
+                throw new TRPCError({
+                    code: 'CONFLICT',
+                    message: 'Username already exists.',
+                    cause: error,
+                });
+            }
+        }),
         lookup: userAdminProcedure.input(zUserLookupInput).query(async ({ ctx, input }) => {
             const user = input.id
                 ? await ctx.users.findById(input.id)

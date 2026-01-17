@@ -75,6 +75,7 @@ export const createGatewayApiServer = async () => {
                     kakaoClient,
                     oauthSessions,
                     publicBaseUrl: config.publicBaseUrl,
+                    adminLocalAccountEnabled: config.adminLocalAccountEnabled,
                     profiles,
                     orchestrator,
                     profileStatus,
