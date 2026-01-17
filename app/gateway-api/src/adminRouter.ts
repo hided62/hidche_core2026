@@ -4,7 +4,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { procedure, router } from './trpc.js';
-import { listScenarioPreviews } from './scenario/scenarioCatalog.js';
+import { listScenarioPreviews, resolveGitCommitSha } from './scenario/scenarioCatalog.js';
 import type { UserSanctions, UserServerRestriction } from './auth/userRepository.js';
 import type { AdminAuthContext } from './adminAuth.js';
 import type { GatewayApiContext } from './context.js';
@@ -221,6 +221,7 @@ const zInstallOptions = z.object({
     autorunUser: zInstallAutorun.nullable().optional(),
     openAt: z.string().datetime().optional(),
     preopenAt: z.string().datetime().optional(),
+    gitRef: z.string().min(1).max(128).optional(),
 });
 
 type SanctionsPatch = z.infer<typeof zSanctionsPatch>;
@@ -506,9 +507,18 @@ export const adminRouter = router({
                 },
             }));
         }),
-        listScenarios: profileAdminProcedure.query(async () => {
-            return listScenarioPreviews();
-        }),
+        listScenarios: profileAdminProcedure
+            .input(
+                z
+                    .object({
+                        gitRef: z.string().min(1).max(128).optional(),
+                    })
+                    .optional()
+            )
+            .query(async ({ input }) => {
+                const gitRef = input?.gitRef?.trim();
+                return listScenarioPreviews({ gitRef: gitRef || null });
+            }),
         upsert: profileAdminProcedure
             .input(
                 z.object({
@@ -669,6 +679,22 @@ export const adminRouter = router({
                     }
                 }
 
+                let resolvedCommitSha: string | null = null;
+                const gitRef = input.install.gitRef?.trim();
+                if (gitRef) {
+                    try {
+                        resolvedCommitSha = await resolveGitCommitSha(gitRef);
+                    } catch (error) {
+                        throw new TRPCError({
+                            code: 'BAD_REQUEST',
+                            message: 'git ref is invalid or unavailable.',
+                        });
+                    }
+                    await ctx.profiles.updateBuildStatus(profile.profileName, profile.buildStatus, {
+                        commitSha: resolvedCommitSha,
+                    });
+                }
+
                 const scheduledAt = openAt ? (preopenAt ?? openAt).toISOString() : null;
                 const action = scheduledAt ? 'RESET_SCHEDULED' : 'RESET_NOW';
                 const meta = readMetaObject(profile.meta);
@@ -685,6 +711,7 @@ export const adminRouter = router({
                         ...input.install,
                         openAt: input.install.openAt ?? null,
                         preopenAt: input.install.preopenAt ?? null,
+                        gitRef: gitRef ?? null,
                         autorunUser: autorunUser
                             ? {
                                   limitMinutes: autorunUser.limitMinutes,

@@ -30,6 +30,7 @@ export interface GatewayAdminActionRecord {
         } | null;
         openAt?: string | null;
         preopenAt?: string | null;
+        gitRef?: string | null;
     };
 }
 

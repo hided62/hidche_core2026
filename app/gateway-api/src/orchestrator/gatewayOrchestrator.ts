@@ -96,6 +96,7 @@ interface GatewayAdminActionRecord {
         } | null;
         openAt?: string | null;
         preopenAt?: string | null;
+        gitRef?: string | null;
     };
 }
 
@@ -619,12 +620,17 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 });
                 return { status: 'FAILED', detail: 'build failed' };
             }
+            const workspace = await this.workspaceManager.prepare(commitSha);
+            const resourceRoot = path.join(workspace.root, 'resources');
             await seedScenarioToDatabase({
                 databaseUrl: seedInfo.databaseUrl,
                 scenarioId: seedInfo.scenarioId,
                 tickSeconds: seedInfo.tickSeconds,
                 now: seedTime,
                 installOptions: installOptions ?? undefined,
+                scenarioOptions: { scenarioRoot: path.join(resourceRoot, 'scenario') },
+                mapOptions: { mapRoot: path.join(resourceRoot, 'map') },
+                unitSetOptions: { unitSetRoot: path.join(resourceRoot, 'unitset') },
             });
             await this.repository.updateBuildStatus(profile.profileName, 'SUCCEEDED', {
                 completedAt,

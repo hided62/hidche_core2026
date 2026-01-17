@@ -87,6 +87,12 @@ type ScenarioPreview = {
     nations: ScenarioNationPreview[];
 };
 
+type ScenarioCatalogState = {
+    scenarios: ScenarioPreview[];
+    loading: boolean;
+    status: string;
+};
+
 type InstallFormState = {
     scenarioId: number;
     turnTermMinutes: number;
@@ -102,6 +108,7 @@ type InstallFormState = {
     autorunUserOptions: Record<string, boolean>;
     openAt: string;
     preopenAt: string;
+    gitRef: string;
     reason: string;
 };
 
@@ -169,7 +176,7 @@ type AdminClient = {
             query: () => Promise<AdminProfile[]>;
         };
         listScenarios: {
-            query: () => Promise<ScenarioPreview[]>;
+            query: (input?: { gitRef?: string }) => Promise<ScenarioPreview[]>;
         };
         updateMeta: {
             mutate: (input: {
@@ -202,6 +209,7 @@ type AdminClient = {
                     } | null;
                     openAt?: string;
                     preopenAt?: string;
+                    gitRef?: string;
                 };
                 reason?: string;
             }) => Promise<{ ok: boolean; action?: unknown }>;
@@ -267,9 +275,7 @@ const profileActions = ref<
     >
 >({});
 const profileActionStatus = ref<Record<string, string>>({});
-const scenarios = ref<ScenarioPreview[]>([]);
-const scenariosLoading = ref(false);
-const scenariosStatus = ref('');
+const scenarioCatalogs = ref<Record<string, ScenarioCatalogState>>({});
 const profileInstalls = ref<Record<string, InstallFormState>>({});
 const profileInstallStatus = ref<Record<string, string>>({});
 
@@ -397,6 +403,21 @@ const buildAutorunOptionMap = (options?: string[]): Record<string, boolean> => {
     return map;
 };
 
+const normalizeGitRefInput = (value: string): string => value.trim();
+
+const getScenarioCatalogKey = (gitRef: string): string => normalizeGitRefInput(gitRef);
+
+const getScenarioCatalogStateByRef = (gitRef: string): ScenarioCatalogState => {
+    const key = getScenarioCatalogKey(gitRef);
+    return (
+        scenarioCatalogs.value[key] ?? {
+            scenarios: [],
+            loading: false,
+            status: '',
+        }
+    );
+};
+
 const ensureProfileInstallBuffers = (profile: AdminProfile) => {
     if (profileInstalls.value[profile.profileName]) {
         return;
@@ -408,6 +429,9 @@ const ensureProfileInstallBuffers = (profile: AdminProfile) => {
         ? autorunUser.options.filter((option): option is string => typeof option === 'string')
         : undefined;
     const scenarioId = Number(profile.scenario);
+
+    const installGitRef = readString(install.gitRef, '');
+    const buildCommitRef = typeof profile.buildCommitSha === 'string' ? profile.buildCommitSha : '';
 
     profileInstalls.value[profile.profileName] = {
         scenarioId: Number.isFinite(scenarioId) ? scenarioId : readNumber(install.scenarioId, 0),
@@ -424,22 +448,23 @@ const ensureProfileInstallBuffers = (profile: AdminProfile) => {
         autorunUserOptions: buildAutorunOptionMap(autorunOptionsRaw),
         openAt: toLocalInputValue(install.openAt),
         preopenAt: toLocalInputValue(install.preopenAt),
+        gitRef: installGitRef || buildCommitRef,
         reason: '',
     };
 };
 
-const scenarioMap = computed(() => {
+const buildScenarioMap = (items: ScenarioPreview[]): Map<number, ScenarioPreview> => {
     const map = new Map<number, ScenarioPreview>();
-    scenarios.value.forEach((scenario) => {
+    items.forEach((scenario) => {
         map.set(scenario.id, scenario);
     });
     return map;
-});
+};
 
-const scenarioGroups = computed(() => {
+const buildScenarioGroups = (items: ScenarioPreview[]): Record<string, ScenarioPreview[]> => {
     const pattern = /【(.*?)[0-9\-_.a-zA-Z]*】/;
     const groups: Record<string, ScenarioPreview[]> = {};
-    for (const scenario of scenarios.value) {
+    for (const scenario of items) {
         const match = pattern.exec(scenario.title);
         const category = match?.[1] ?? '기타';
         if (!groups[category]) {
@@ -448,14 +473,41 @@ const scenarioGroups = computed(() => {
         groups[category].push(scenario);
     }
     return groups;
-});
+};
 
 const getScenarioPreview = (profileName: string): ScenarioPreview | null => {
     const install = profileInstalls.value[profileName];
     if (!install) {
         return null;
     }
-    return scenarioMap.value.get(install.scenarioId) ?? null;
+    const catalog = getScenarioCatalogStateByRef(install.gitRef);
+    const map = buildScenarioMap(catalog.scenarios);
+    return map.get(install.scenarioId) ?? null;
+};
+
+const getScenarioGroups = (profileName: string): Record<string, ScenarioPreview[]> => {
+    const install = profileInstalls.value[profileName];
+    if (!install) {
+        return {};
+    }
+    const catalog = getScenarioCatalogStateByRef(install.gitRef);
+    return buildScenarioGroups(catalog.scenarios);
+};
+
+const getScenarioLoading = (profileName: string): boolean => {
+    const install = profileInstalls.value[profileName];
+    if (!install) {
+        return false;
+    }
+    return getScenarioCatalogStateByRef(install.gitRef).loading;
+};
+
+const getScenarioStatus = (profileName: string): string => {
+    const install = profileInstalls.value[profileName];
+    if (!install) {
+        return '';
+    }
+    return getScenarioCatalogStateByRef(install.gitRef).status;
 };
 
 const loadProfiles = async () => {
@@ -467,6 +519,15 @@ const loadProfiles = async () => {
             ensureProfileInstallBuffers(profile);
         });
         profiles.value = result;
+        const refs = new Set<string>();
+        refs.add('');
+        result.forEach((profile) => {
+            const install = profileInstalls.value[profile.profileName];
+            if (install?.gitRef) {
+                refs.add(normalizeGitRefInput(install.gitRef));
+            }
+        });
+        await Promise.all(Array.from(refs).map((gitRef) => loadScenarioCatalog(gitRef)));
     } catch (error) {
         profileActionStatus.value = {
             ...profileActionStatus.value,
@@ -477,17 +538,45 @@ const loadProfiles = async () => {
     }
 };
 
-const loadScenarios = async () => {
-    scenariosLoading.value = true;
-    scenariosStatus.value = '';
+const loadScenarioCatalog = async (gitRef: string) => {
+    const key = getScenarioCatalogKey(gitRef);
+    const previous = scenarioCatalogs.value[key];
+    scenarioCatalogs.value = {
+        ...scenarioCatalogs.value,
+        [key]: {
+            scenarios: previous?.scenarios ?? [],
+            loading: true,
+            status: '',
+        },
+    };
     try {
-        const result = await adminClient.profiles.listScenarios.query();
-        scenarios.value = result;
+        const result = await adminClient.profiles.listScenarios.query(key ? { gitRef: key } : undefined);
+        scenarioCatalogs.value = {
+            ...scenarioCatalogs.value,
+            [key]: {
+                scenarios: result,
+                loading: false,
+                status: '',
+            },
+        };
     } catch (error) {
-        scenariosStatus.value = '시나리오 목록을 불러오지 못했습니다.';
-    } finally {
-        scenariosLoading.value = false;
+        scenarioCatalogs.value = {
+            ...scenarioCatalogs.value,
+            [key]: {
+                scenarios: previous?.scenarios ?? [],
+                loading: false,
+                status: '시나리오 목록을 불러오지 못했습니다.',
+            },
+        };
     }
+};
+
+const loadScenariosForProfile = async (profileName: string) => {
+    const install = profileInstalls.value[profileName];
+    if (!install) {
+        return;
+    }
+    await loadScenarioCatalog(install.gitRef);
 };
 
 const updateProfileMeta = async (profileName: string) => {
@@ -581,6 +670,7 @@ const requestInstall = async (profileName: string) => {
         return;
     }
     try {
+        const gitRef = normalizeGitRefInput(install.gitRef);
         await adminClient.profiles.install.mutate({
             profileName,
             install: {
@@ -597,6 +687,7 @@ const requestInstall = async (profileName: string) => {
                 autorunUser,
                 openAt: openAt ? openAt.toISOString() : undefined,
                 preopenAt: preopenAt ? preopenAt.toISOString() : undefined,
+                gitRef: gitRef ? gitRef : undefined,
             },
             reason: install.reason.trim() || undefined,
         });
@@ -820,7 +911,6 @@ const forceDeleteUser = async () => {
 onMounted(() => {
     void loadNotice();
     void loadProfiles();
-    void loadScenarios();
 });
 </script>
 
@@ -1260,14 +1350,34 @@ onMounted(() => {
                                 <div class="grid lg:grid-cols-2 gap-4">
                                     <div class="space-y-3">
                                         <div class="space-y-1">
+                                            <label class="text-xs text-zinc-400">Git ref (선택)</label>
+                                            <div class="flex gap-2">
+                                                <input
+                                                    v-model="profileInstalls[profile.profileName].gitRef"
+                                                    type="text"
+                                                    class="flex-1 bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
+                                                    placeholder="main / v1.0.0 / abc123"
+                                                />
+                                                <button
+                                                    class="bg-zinc-700 hover:bg-zinc-600 text-white text-sm px-3 py-2 rounded"
+                                                    :disabled="getScenarioLoading(profile.profileName)"
+                                                    @click="loadScenariosForProfile(profile.profileName)"
+                                                >
+                                                    불러오기
+                                                </button>
+                                            </div>
+                                            <div class="text-xs text-zinc-500">비워두면 현재 저장소 기준으로 불러옵니다.</div>
+                                        </div>
+
+                                        <div class="space-y-1">
                                             <label class="text-xs text-zinc-400">시나리오 선택</label>
                                             <select
                                                 v-model.number="profileInstalls[profile.profileName].scenarioId"
                                                 class="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
-                                                :disabled="scenariosLoading"
+                                                :disabled="getScenarioLoading(profile.profileName)"
                                             >
-                                                <option v-if="scenariosLoading" disabled>불러오는 중...</option>
-                                                <template v-for="(items, group) in scenarioGroups" :key="group">
+                                                <option v-if="getScenarioLoading(profile.profileName)" disabled>불러오는 중...</option>
+                                                <template v-for="(items, group) in getScenarioGroups(profile.profileName)" :key="group">
                                                     <optgroup :label="group">
                                                         <option v-for="scenario in items" :key="scenario.id" :value="scenario.id">
                                                             {{ scenario.title }}
@@ -1275,8 +1385,8 @@ onMounted(() => {
                                                     </optgroup>
                                                 </template>
                                             </select>
-                                            <div v-if="scenariosStatus" class="text-xs text-red-400">
-                                                {{ scenariosStatus }}
+                                            <div v-if="getScenarioStatus(profile.profileName)" class="text-xs text-red-400">
+                                                {{ getScenarioStatus(profile.profileName) }}
                                             </div>
                                         </div>
 
