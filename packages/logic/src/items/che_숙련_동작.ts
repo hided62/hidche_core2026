@@ -19,10 +19,10 @@ export const itemModule: ItemModule = {
     onCalcStat: function (
         _context: GeneralActionContext | WarActionContext,
         statName: GeneralStatName | WarStatName,
-        value: unknown
-    ): unknown {
-        if (statName === ('addDex' as unknown as GeneralStatName)) {
-            return (value as number) * 1.2;
+        value: number | [number, number]
+    ): number | [number, number] {
+        if (statName === 'addDex' && typeof value === 'number') {
+            return value * 1.2;
         }
         return value;
     } as NonNullable<ItemModule['onCalcStat']>,

@@ -4,12 +4,14 @@ import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
 import { createStatItemModule } from './base.js';
 import type { ItemModule } from './types.js';
 
+const STAT_VALUE = 12;
+
 const baseModule = createStatItemModule({
     key: 'che_명마_12_옥란백용구',
     rawName: '옥란백용구',
     slot: 'horse',
     statName: 'leadership',
-    statValue: 12,
+    statValue: STAT_VALUE,
     cost: 200,
     buyable: false,
     reqSecu: 0,
@@ -22,20 +24,18 @@ export const itemModule: ItemModule = {
     onCalcStat: function (
         context: GeneralActionContext | WarActionContext,
         statName: GeneralStatName | WarStatName,
-        value: unknown,
-        aux?: unknown
-    ): unknown {
-        const newValue = baseModule.onCalcStat!(
-            context as unknown as GeneralActionContext,
-            statName as unknown as GeneralStatName,
-            value as unknown as number,
-            aux
-        );
-        if (statName === 'warAvoidRatio') {
-            const { leadership } = (context as unknown as GeneralActionContext).general.stats;
-            const crewL = (context as unknown as GeneralActionContext).general.crew / 100;
+        value: number | [number, number],
+        _aux?: unknown
+    ): number | [number, number] {
+        let newValue: number | [number, number] = value;
+        if (statName === 'leadership' && typeof value === 'number') {
+            newValue = value + STAT_VALUE;
+        }
+        if (statName === 'warAvoidRatio' && typeof newValue === 'number') {
+            const { leadership } = context.general.stats;
+            const crewL = context.general.crew / 100;
             const boost = (1 - crewL / leadership) * 0.5;
-            return (newValue as number) + Math.min(Math.max(boost, 0), 0.5);
+            return newValue + Math.min(Math.max(boost, 0), 0.5);
         }
         return newValue;
     } as NonNullable<ItemModule['onCalcStat']>,

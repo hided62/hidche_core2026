@@ -21,19 +21,17 @@ const baseModule = createStatItemModule({
 export const itemModule: ItemModule = {
     ...baseModule,
     onCalcStat: function (
-        context: GeneralActionContext | WarActionContext,
+        _context: GeneralActionContext | WarActionContext,
         statName: GeneralStatName | WarStatName,
-        value: unknown,
-        aux?: unknown
-    ): unknown {
-        const newValue = baseModule.onCalcStat!(
-            context as unknown as GeneralActionContext,
-            statName as unknown as GeneralStatName,
-            value as unknown as number,
-            aux
-        );
-        if (statName === 'warMagicTrialProb') {
-            return (newValue as number) + 0.03;
+        value: number | [number, number],
+        _aux?: unknown
+    ): number | [number, number] {
+        let newValue: number | [number, number] = value;
+        if (statName === 'intelligence' && typeof value === 'number') {
+            newValue = value + STAT_VALUE;
+        }
+        if (statName === 'warMagicTrialProb' && typeof newValue === 'number') {
+            return newValue + 0.03;
         }
         return newValue;
     } as NonNullable<ItemModule['onCalcStat']>,

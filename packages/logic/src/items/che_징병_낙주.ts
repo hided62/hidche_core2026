@@ -28,10 +28,10 @@ export const itemModule: ItemModule = {
     onCalcStat: function (
         context: GeneralActionContext | WarActionContext,
         statName: GeneralStatName | WarStatName,
-        value: unknown
-    ): unknown {
-        if (statName === 'leadership') {
-            return (value as number) + (context as unknown as GeneralActionContext).general.stats.leadership * 0.15;
+        value: number | [number, number]
+    ): number | [number, number] {
+        if (statName === 'leadership' && typeof value === 'number') {
+            return value + context.general.stats.leadership * 0.15;
         }
         return value;
     } as NonNullable<ItemModule['onCalcStat']>,

@@ -44,9 +44,11 @@ export type WarStatName =
     | 'bonusAtmos'
     | 'warCriticalRatio'
     | 'warAvoidRatio'
+    | 'injuryProb'
     | 'killRice'
     | 'criticalDamageRange'
     | 'warMagicSuccessDamage'
     | 'warMagicTrialProb'
     | 'warMagicSuccessProb'
+    | 'addDex'
     | `dex${number}`;
