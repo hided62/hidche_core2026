@@ -76,6 +76,7 @@ These are placeholders to align teams; adjust once packages exist.
 
 - After code changes, verify TypeScript type checks (prefer `pnpm build` or `pnpm typecheck`).
 - When changes require unit tests, run the relevant tests.
+- When migrating existing functionality, keep text and log output identical to the legacy behavior unless there is a technical blocker.
 
 ## Build Profiles (Proposal)
 
