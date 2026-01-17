@@ -17,6 +17,7 @@ import {
     insertMessage,
     type MessageView,
 } from '../../messages/store.js';
+import { publishRealtimeEvent } from '../../realtime/publisher.js';
 
 const zMessageType = z.enum(['private', 'public', 'national', 'diplomacy']);
 
@@ -254,6 +255,19 @@ export const messagesRouter = router({
                 },
                 draft
             );
+
+            try {
+                await publishRealtimeEvent(ctx.redis, ctx.profile.name, {
+                    type: 'messageCreated',
+                    at: now.toISOString(),
+                    mailbox: input.mailbox,
+                    msgType,
+                    messageId: result.receiverId,
+                    senderId: general.id,
+                });
+            } catch {
+                // 실시간 알림 실패는 메시지 전송 실패로 취급하지 않는다.
+            }
 
             return { msgType, msgId: result.receiverId };
         }),

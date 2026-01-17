@@ -1,8 +1,10 @@
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { defineStore } from 'pinia';
 import { MESSAGE_MAILBOX_NATIONAL_BASE, MESSAGE_MAILBOX_PUBLIC, type MessageType } from '@sammo-ts/logic';
+import type { RealtimeEvent } from '@sammo-ts/common';
 import { trpc } from '../utils/trpc';
 import { useMapViewerStore } from './mapViewer';
+import { useSessionStore } from './session';
 
 const resolveErrorMessage = (value: unknown): string => {
     if (value instanceof Error) {
@@ -25,7 +27,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     const loading = ref(false);
     const error = ref<string | null>(null);
     const realtimeEnabled = ref(true);
-    const realtimeStatus = ref<'idle' | 'connected' | 'paused'>('connected');
+    const realtimeStatus = ref<'idle' | 'connected' | 'paused'>('idle');
 
     const generalContext = ref<GeneralContext | null>(null);
     const lobbyInfo = ref<LobbyInfo | null>(null);
@@ -43,6 +45,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     const generalId = computed(() => general.value?.id ?? null);
     const nationId = computed(() => nation.value?.id ?? null);
     const mapViewer = useMapViewerStore();
+    const session = useSessionStore();
 
     const selectedCity = computed(() => {
         const layout = mapLayout.value;
@@ -108,7 +111,9 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
 
     const setRealtimeEnabled = (enabled: boolean) => {
         realtimeEnabled.value = enabled;
-        realtimeStatus.value = enabled ? 'connected' : 'paused';
+        if (!enabled) {
+            realtimeStatus.value = 'paused';
+        }
     };
 
     const loadMainData = async () => {
@@ -215,6 +220,139 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             error.value = resolveErrorMessage(err);
         }
     };
+
+    let realtimeSource: EventSource | null = null;
+    let realtimeToken: string | null = null;
+
+    const isAccessToken = (token: string | null): boolean => Boolean(token?.startsWith('ga_'));
+
+    const buildRealtimeUrl = (token: string): string => {
+        const base = import.meta.env.VITE_GAME_SSE_URL ?? '/events';
+        const url = new URL(base, window.location.origin);
+        url.searchParams.set('token', token);
+        return url.toString();
+    };
+
+    const parseRealtimePayload = (raw: MessageEvent): RealtimeEvent | null => {
+        if (!raw.data || typeof raw.data !== 'string') {
+            return null;
+        }
+        try {
+            const parsed = JSON.parse(raw.data) as RealtimeEvent;
+            if (!parsed || typeof parsed !== 'object') {
+                return null;
+            }
+            if (typeof parsed.type !== 'string') {
+                return null;
+            }
+            return parsed;
+        } catch {
+            return null;
+        }
+    };
+
+    const isMailboxRelevant = (mailbox: number): boolean => {
+        if (mailbox === MESSAGE_MAILBOX_PUBLIC) {
+            return true;
+        }
+        const currentGeneralId = generalId.value;
+        if (currentGeneralId && mailbox === currentGeneralId) {
+            return true;
+        }
+        const currentNationId = nationId.value;
+        if (currentNationId && mailbox === MESSAGE_MAILBOX_NATIONAL_BASE + currentNationId) {
+            return true;
+        }
+        return false;
+    };
+
+    const closeRealtimeSource = () => {
+        if (!realtimeSource) {
+            return;
+        }
+        realtimeSource.close();
+        realtimeSource = null;
+        realtimeToken = null;
+    };
+
+    const ensureAccessToken = async (): Promise<string | null> => {
+        if (!session.gameToken) {
+            return null;
+        }
+        if (isAccessToken(session.gameToken)) {
+            return session.gameToken;
+        }
+        const exchanged = await session.exchangeGatewayToken();
+        if (!exchanged) {
+            return null;
+        }
+        return session.gameToken && isAccessToken(session.gameToken) ? session.gameToken : null;
+    };
+
+    const connectRealtime = async () => {
+        if (typeof window === 'undefined') {
+            return;
+        }
+        if (!realtimeEnabled.value || !session.isReady || !session.hasGeneral) {
+            return;
+        }
+        const token = await ensureAccessToken();
+        if (!token) {
+            realtimeStatus.value = 'idle';
+            return;
+        }
+        if (realtimeSource && realtimeToken === token) {
+            return;
+        }
+        closeRealtimeSource();
+        realtimeToken = token;
+        realtimeStatus.value = 'idle';
+
+        const source = new EventSource(buildRealtimeUrl(token));
+        realtimeSource = source;
+
+        source.addEventListener('open', () => {
+            realtimeStatus.value = 'connected';
+        });
+        source.addEventListener('error', () => {
+            realtimeStatus.value = realtimeEnabled.value ? 'idle' : 'paused';
+        });
+        source.addEventListener('turnCompleted', () => {
+            void loadMainData();
+        });
+        source.addEventListener('messageCreated', (event) => {
+            const payload = parseRealtimePayload(event);
+            if (!payload || payload.type !== 'messageCreated') {
+                return;
+            }
+            if (isMailboxRelevant(payload.mailbox)) {
+                void refreshMessages();
+            }
+        });
+        source.addEventListener('ping', () => {
+            if (realtimeEnabled.value) {
+                realtimeStatus.value = 'connected';
+            }
+        });
+    };
+
+    watch(
+        () => [realtimeEnabled.value, session.isReady, session.hasGeneral, session.gameToken],
+        ([enabled, ready, hasGeneral]) => {
+            if (!enabled) {
+                closeRealtimeSource();
+                realtimeStatus.value = 'paused';
+                return;
+            }
+            if (!ready || !hasGeneral) {
+                closeRealtimeSource();
+                realtimeStatus.value = 'idle';
+                return;
+            }
+            void connectRealtime();
+        },
+        { immediate: true }
+    );
 
     return {
         loading,

@@ -1,4 +1,5 @@
 import type { TurnCommandProfile, TurnSchedule } from '@sammo-ts/logic';
+import { buildGameEventChannel, type RealtimeEvent } from '@sammo-ts/common';
 import { createRedisConnector, resolveRedisConfigFromEnv } from '@sammo-ts/infra';
 
 import { SystemClock } from '../lifecycle/clock.js';
@@ -148,6 +149,7 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
     const clock = options.clock ?? new SystemClock();
 
     let hooks: TurnDaemonHooks | undefined;
+    let publishRealtimeEvent: ((event: RealtimeEvent) => Promise<void>) | null = null;
     let close = async () => {};
     let redisCommandStream: RedisTurnDaemonCommandStream | null = null;
     let redisConnector: ReturnType<typeof createRedisConnector> | null = null;
@@ -214,10 +216,35 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
     if (redisConfig) {
         redisConnector = createRedisConnector(redisConfig);
         await redisConnector.connect();
-        redisCommandStream = new RedisTurnDaemonCommandStream(redisConnector.client, {
+        const redisClient = redisConnector.client;
+        redisCommandStream = new RedisTurnDaemonCommandStream(redisClient, {
             keys: buildTurnDaemonStreamKeys(options.profileName ?? options.profile),
             startId: options.commandStreamStartId,
         });
+        const realtimeChannel = buildGameEventChannel(options.profileName ?? options.profile);
+        publishRealtimeEvent = async (event: RealtimeEvent) => {
+            await redisClient.publish(realtimeChannel, JSON.stringify(event));
+        };
+    }
+
+    if (publishRealtimeEvent) {
+        const basePublishEvents = hooks?.publishEvents;
+        // 턴 처리 완료 이벤트를 실시간 채널로 전파한다.
+        hooks = {
+            ...hooks,
+            publishEvents: async (result) => {
+                try {
+                    await publishRealtimeEvent({
+                        type: 'turnCompleted',
+                        at: new Date().toISOString(),
+                        result,
+                    });
+                } catch {
+                    // 실시간 이벤트 전송 실패는 턴 처리 결과에 영향을 주지 않는다.
+                }
+                await basePublishEvents?.(result);
+            },
+        };
     }
 
     const baseClose = close;

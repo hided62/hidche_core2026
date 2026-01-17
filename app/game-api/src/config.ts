@@ -2,6 +2,7 @@ export interface GameApiConfig {
     host: string;
     port: number;
     trpcPath: string;
+    eventsPath: string;
     profile: string;
     scenario: string;
     profileName: string;
@@ -37,6 +38,7 @@ export const resolveGameApiConfigFromEnv = (env: NodeJS.ProcessEnv = process.env
         host: env.GAME_API_HOST ?? '0.0.0.0',
         port: parseNumber(env.GAME_API_PORT, 14000, 'GAME_API_PORT'),
         trpcPath: env.TRPC_PATH ?? '/trpc',
+        eventsPath: env.GAME_API_EVENTS_PATH ?? '/events',
         profile,
         scenario,
         profileName,
