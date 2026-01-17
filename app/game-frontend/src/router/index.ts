@@ -3,6 +3,9 @@ import MainView from '../views/MainView.vue';
 import PublicView from '../views/PublicView.vue';
 import LoginView from '../views/LoginView.vue';
 import JoinView from '../views/JoinView.vue';
+import NationCitiesView from '../views/NationCitiesView.vue';
+import NationGeneralsView from '../views/NationGeneralsView.vue';
+import NationPersonnelView from '../views/NationPersonnelView.vue';
 import NotFoundView from '../views/NotFoundView.vue';
 import { useSessionStore } from '../stores/session';
 
@@ -28,6 +31,33 @@ const routes = [
         meta: {
             requiresAuth: true,
             requiresNoGeneral: true,
+        },
+    },
+    {
+        path: '/nation/cities',
+        name: 'nation-cities',
+        component: NationCitiesView,
+        meta: {
+            requiresAuth: true,
+            requiresGeneral: true,
+        },
+    },
+    {
+        path: '/nation/generals',
+        name: 'nation-generals',
+        component: NationGeneralsView,
+        meta: {
+            requiresAuth: true,
+            requiresGeneral: true,
+        },
+    },
+    {
+        path: '/nation/personnel',
+        name: 'nation-personnel',
+        component: NationPersonnelView,
+        meta: {
+            requiresAuth: true,
+            requiresGeneral: true,
         },
     },
     {
