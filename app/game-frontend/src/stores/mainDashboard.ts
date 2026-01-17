@@ -23,6 +23,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     type MapLayout = Awaited<ReturnType<typeof trpc.world.getMapLayout.query>>;
     type CommandTable = Awaited<ReturnType<typeof trpc.turns.getCommandTable.query>>;
     type MessageBundle = Awaited<ReturnType<typeof trpc.messages.getRecent.query>>;
+    type ReservedTurnView = Awaited<ReturnType<typeof trpc.turns.reserved.getGeneral.query>>[number];
 
     const loading = ref(false);
     const error = ref<string | null>(null);
@@ -35,6 +36,8 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     const mapLayout = ref<MapLayout | null>(null);
     const commandTable = ref<CommandTable | null>(null);
     const messages = ref<MessageBundle | null>(null);
+    const reservedGeneralTurns = ref<ReservedTurnView[] | null>(null);
+    const reservedNationTurns = ref<ReservedTurnView[] | null>(null);
 
     const messageDraftText = ref('');
     const targetMailbox = ref<number>(MESSAGE_MAILBOX_PUBLIC);
@@ -128,18 +131,27 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             generalContext.value = context;
 
             if (!context) {
+                reservedGeneralTurns.value = null;
+                reservedNationTurns.value = null;
                 loading.value = false;
                 return;
             }
 
             const id = context.general.id;
             const layoutPromise = mapLayout.value ? Promise.resolve(mapLayout.value) : trpc.world.getMapLayout.query();
-            const [layout, lobby, map, commands, messageData] = await Promise.all([
+            const generalTurnsPromise = trpc.turns.reserved.getGeneral.query({ generalId: id });
+            const nationTurnsPromise =
+                context.general.nationId > 0 && context.general.officerLevel >= 5
+                    ? trpc.turns.reserved.getNation.query({ generalId: id })
+                    : Promise.resolve(null);
+            const [layout, lobby, map, commands, messageData, generalTurns, nationTurns] = await Promise.all([
                 layoutPromise,
                 trpc.lobby.info.query(),
                 trpc.world.getMap.query({ generalId: id, showMe: true, useCache: true }),
                 trpc.turns.getCommandTable.query({ generalId: id }),
                 trpc.messages.getRecent.query({ generalId: id }),
+                generalTurnsPromise,
+                nationTurnsPromise,
             ]);
 
             mapLayout.value = layout;
@@ -147,6 +159,8 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             worldMap.value = map;
             commandTable.value = commands;
             messages.value = messageData;
+            reservedGeneralTurns.value = generalTurns;
+            reservedNationTurns.value = nationTurns;
         } catch (err) {
             error.value = resolveErrorMessage(err);
         } finally {
@@ -220,6 +234,83 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             error.value = resolveErrorMessage(err);
         }
     };
+
+    const setGeneralTurn = async (turnIndex: number, action: string) => {
+        const id = generalId.value;
+        if (!id) {
+            return;
+        }
+        try {
+            const result = await trpc.turns.reserved.setGeneral.mutate({
+                generalId: id,
+                turnIndex,
+                action,
+                args: {},
+            });
+            reservedGeneralTurns.value = result.turns;
+        } catch (err) {
+            error.value = resolveErrorMessage(err);
+        }
+    };
+
+    const shiftGeneralTurns = async (amount: number) => {
+        const id = generalId.value;
+        if (!id) {
+            return;
+        }
+        try {
+            const result = await trpc.turns.reserved.shiftGeneral.mutate({
+                generalId: id,
+                amount,
+            });
+            reservedGeneralTurns.value = result.turns;
+        } catch (err) {
+            error.value = resolveErrorMessage(err);
+        }
+    };
+
+    const setNationTurn = async (turnIndex: number, action: string) => {
+        const id = generalId.value;
+        const currentGeneral = general.value;
+        if (!id || !currentGeneral) {
+            return;
+        }
+        if (currentGeneral.nationId <= 0 || currentGeneral.officerLevel < 5) {
+            return;
+        }
+        try {
+            const result = await trpc.turns.reserved.setNation.mutate({
+                generalId: id,
+                turnIndex,
+                action,
+                args: {},
+            });
+            reservedNationTurns.value = result.turns;
+        } catch (err) {
+            error.value = resolveErrorMessage(err);
+        }
+    };
+
+    const shiftNationTurns = async (amount: number) => {
+        const id = generalId.value;
+        const currentGeneral = general.value;
+        if (!id || !currentGeneral) {
+            return;
+        }
+        if (currentGeneral.nationId <= 0 || currentGeneral.officerLevel < 5) {
+            return;
+        }
+        try {
+            const result = await trpc.turns.reserved.shiftNation.mutate({
+                generalId: id,
+                amount,
+            });
+            reservedNationTurns.value = result.turns;
+        } catch (err) {
+            error.value = resolveErrorMessage(err);
+        }
+    };
+
 
     let realtimeSource: EventSource | null = null;
     let realtimeToken: string | null = null;
@@ -369,6 +460,8 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         selectedCity,
         commandTable,
         messages,
+        reservedGeneralTurns,
+        reservedNationTurns,
         messageDraftText,
         targetMailbox,
         mailboxOptions,
@@ -379,5 +472,9 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         refreshMessages,
         sendMessage,
         loadOlderMessages,
+        setGeneralTurn,
+        shiftGeneralTurns,
+        setNationTurn,
+        shiftNationTurns,
     };
 });

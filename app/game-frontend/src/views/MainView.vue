@@ -43,12 +43,30 @@ const {
     selectedCity,
     commandTable,
     messages,
+    reservedGeneralTurns,
+    reservedNationTurns,
     messageDraftText,
     targetMailbox,
     mailboxOptions,
     statusLine,
     realtimeLabel,
 } = storeToRefs(dashboard);
+
+const reserveGeneralTurn = (payload: { index: number; action: string }) => {
+    void dashboard.setGeneralTurn(payload.index, payload.action);
+};
+
+const shiftGeneralTurns = (amount: number) => {
+    void dashboard.shiftGeneralTurns(amount);
+};
+
+const reserveNationTurn = (payload: { index: number; action: string }) => {
+    void dashboard.setNationTurn(payload.index, payload.action);
+};
+
+const shiftNationTurns = (amount: number) => {
+    void dashboard.shiftNationTurns(amount);
+};
 
 const loadMainData = async () => {
     await dashboard.loadMainData();
@@ -113,7 +131,18 @@ watch(
 
             <div class="mobile-panel" v-if="mobileTab === 'commands'">
                 <PanelCard title="명령 목록" subtitle="예턴/명령 배치 영역">
-                    <CommandListPanel :command-table="commandTable" :loading="loading" :selected-city="selectedCity" />
+                    <CommandListPanel
+                        :command-table="commandTable"
+                        :loading="loading"
+                        :selected-city="selectedCity"
+                        :reserved-general-turns="reservedGeneralTurns"
+                        :reserved-nation-turns="reservedNationTurns"
+                        :general="general"
+                        @set-general-turn="reserveGeneralTurn"
+                        @shift-general-turns="shiftGeneralTurns"
+                        @set-nation-turn="reserveNationTurn"
+                        @shift-nation-turns="shiftNationTurns"
+                    />
                 </PanelCard>
             </div>
 
@@ -200,7 +229,18 @@ watch(
 
             <div class="stack">
                 <PanelCard title="명령 목록" subtitle="예턴/명령 배치 영역">
-                    <CommandListPanel :command-table="commandTable" :loading="loading" :selected-city="selectedCity" />
+                    <CommandListPanel
+                        :command-table="commandTable"
+                        :loading="loading"
+                        :selected-city="selectedCity"
+                        :reserved-general-turns="reservedGeneralTurns"
+                        :reserved-nation-turns="reservedNationTurns"
+                        :general="general"
+                        @set-general-turn="reserveGeneralTurn"
+                        @shift-general-turns="shiftGeneralTurns"
+                        @set-nation-turn="reserveNationTurn"
+                        @shift-nation-turns="shiftNationTurns"
+                    />
                 </PanelCard>
                 <PanelCard title="장수 스탯">
                     <GeneralBasicCard :general="general" :loading="loading" />

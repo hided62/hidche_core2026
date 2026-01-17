@@ -108,6 +108,11 @@ export const loadGeneralTurns = async (db: DatabaseClient, generalId: number): P
     return buildTurnListFromRows(rows, MAX_GENERAL_TURNS);
 };
 
+export const listGeneralTurns = async (db: DatabaseClient, generalId: number): Promise<ReservedTurnView[]> => {
+    const turns = await loadGeneralTurns(db, generalId);
+    return serializeTurnList(turns);
+};
+
 export const loadNationTurns = async (
     db: DatabaseClient,
     nationId: number,
@@ -118,6 +123,15 @@ export const loadNationTurns = async (
         orderBy: [{ turnIdx: 'asc' }],
     });
     return buildTurnListFromRows(rows, MAX_NATION_TURNS);
+};
+
+export const listNationTurns = async (
+    db: DatabaseClient,
+    nationId: number,
+    officerLevel: number
+): Promise<ReservedTurnView[]> => {
+    const turns = await loadNationTurns(db, nationId, officerLevel);
+    return serializeTurnList(turns);
 };
 
 export const setGeneralTurn = async (

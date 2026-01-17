@@ -5,6 +5,7 @@ import SkeletonLines from '../ui/SkeletonLines.vue';
 type CommandAvailability = {
     key: string;
     name: string;
+    reqArg: boolean;
     status: 'available' | 'blocked' | 'needsInput' | 'unknown';
     possible: boolean;
     reason?: string;
