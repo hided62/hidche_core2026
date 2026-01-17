@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-import { seedScenarioToDatabase } from '@sammo-ts/game-engine';
+import { seedScenarioToDatabase, type ScenarioInstallOptions } from '@sammo-ts/game-engine';
 import { createGamePostgresConnector, resolvePostgresConfigFromEnv } from '@sammo-ts/infra';
 
 import type { BuildRunner } from './buildRunner.js';
@@ -78,6 +78,24 @@ interface GatewayAdminActionRecord {
     handledAt?: string | null;
     handler?: string | null;
     detail?: string | null;
+    install?: {
+        scenarioId?: number;
+        turnTermMinutes?: number;
+        sync?: boolean;
+        fiction?: number;
+        extend?: boolean;
+        blockGeneralCreate?: number;
+        npcMode?: number;
+        showImgLevel?: number;
+        tournamentTrig?: boolean;
+        joinMode?: string;
+        autorunUser?: {
+            limitMinutes?: number;
+            options?: string[];
+        } | null;
+        openAt?: string | null;
+        preopenAt?: string | null;
+    };
 }
 
 interface GatewayAdminActionResult {
@@ -111,6 +129,95 @@ const parseScenarioId = (value: string | number | null | undefined): number | nu
         }
     }
     return null;
+};
+
+const parseDateTime = (value: unknown): Date | null => {
+    if (typeof value !== 'string') {
+        return null;
+    }
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+        return null;
+    }
+    return parsed;
+};
+
+const parseInstallOptions = (
+    action: GatewayAdminActionRecord
+): {
+    installOptions: ScenarioInstallOptions | null;
+    scenarioId: number | null;
+    openAt: Date | null;
+    preopenAt: Date | null;
+} => {
+    if (!isRecord(action.install)) {
+        return { installOptions: null, scenarioId: null, openAt: null, preopenAt: null };
+    }
+
+    const install = action.install;
+    const scenarioId = parseScenarioId(install.scenarioId ?? null);
+    const turnTermMinutes =
+        typeof install.turnTermMinutes === 'number' && Number.isFinite(install.turnTermMinutes)
+            ? Math.floor(install.turnTermMinutes)
+            : undefined;
+    const sync = typeof install.sync === 'boolean' ? install.sync : undefined;
+    const fiction =
+        typeof install.fiction === 'number' && Number.isFinite(install.fiction) ? Math.floor(install.fiction) : undefined;
+    const extend = typeof install.extend === 'boolean' ? install.extend : undefined;
+    const blockGeneralCreate =
+        typeof install.blockGeneralCreate === 'number' && Number.isFinite(install.blockGeneralCreate)
+            ? Math.floor(install.blockGeneralCreate)
+            : undefined;
+    const npcMode =
+        typeof install.npcMode === 'number' && Number.isFinite(install.npcMode) ? Math.floor(install.npcMode) : undefined;
+    const showImgLevel =
+        typeof install.showImgLevel === 'number' && Number.isFinite(install.showImgLevel)
+            ? Math.floor(install.showImgLevel)
+            : undefined;
+    const tournamentTrig = typeof install.tournamentTrig === 'boolean' ? install.tournamentTrig : undefined;
+    const joinMode = typeof install.joinMode === 'string' ? install.joinMode : undefined;
+
+    let autorunUser: ScenarioInstallOptions['autorunUser'];
+    if (isRecord(install.autorunUser)) {
+        const limitMinutes =
+            typeof install.autorunUser.limitMinutes === 'number' && Number.isFinite(install.autorunUser.limitMinutes)
+                ? Math.floor(install.autorunUser.limitMinutes)
+                : 0;
+        const optionsRaw = Array.isArray(install.autorunUser.options)
+            ? install.autorunUser.options.filter((option) => typeof option === 'string')
+            : [];
+        const options = optionsRaw.reduce<Record<string, boolean>>((acc, option) => {
+            acc[option] = true;
+            return acc;
+        }, {});
+        if (limitMinutes > 0 && Object.keys(options).length > 0) {
+            autorunUser = { limitMinutes, options };
+        }
+    }
+
+    const openAt = parseDateTime(install.openAt ?? null);
+    const preopenAt = parseDateTime(install.preopenAt ?? null);
+
+    const installOptions: ScenarioInstallOptions = {
+        turnTermMinutes,
+        sync,
+        fiction,
+        extend,
+        blockGeneralCreate,
+        npcMode,
+        showImgLevel,
+        tournamentTrig,
+        joinMode: joinMode === 'full' || joinMode === 'onlyRandom' ? joinMode : undefined,
+        autorunUser: autorunUser ?? null,
+        preopenAt: preopenAt ?? null,
+    };
+
+    return {
+        installOptions,
+        scenarioId,
+        openAt,
+        preopenAt,
+    };
 };
 
 const buildProcessName = (profileName: string, role: 'api' | 'daemon'): string =>
@@ -476,15 +583,29 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         this.buildInFlight = true;
         this.resetInFlight.add(profile.profileName);
         try {
-            const seedInfo = await this.resolveResetSeedInfo(profile);
+            const { installOptions, scenarioId: installScenarioId, openAt, preopenAt } = parseInstallOptions(action);
+            const tickOverride =
+                installOptions?.turnTermMinutes !== undefined ? installOptions.turnTermMinutes * 60 : undefined;
+            const seedInfo = await this.resolveResetSeedInfo(profile, {
+                scenarioId: installScenarioId,
+                tickSeconds: tickOverride,
+            });
             if (!seedInfo.scenarioId) {
                 return { status: 'FAILED', detail: 'scenarioId is missing' };
             }
             const seedTime =
-                action.scheduledAt && action.action === 'RESET_SCHEDULED' ? new Date(action.scheduledAt) : this.now();
+                openAt ??
+                (action.scheduledAt && action.action === 'RESET_SCHEDULED' ? new Date(action.scheduledAt) : this.now());
             const startedAt = this.now().toISOString();
+            let activeProfile = profile;
+            if (installScenarioId !== null && String(installScenarioId) !== profile.scenario) {
+                const updated = await this.repository.updateScenario(profile.profileName, String(installScenarioId));
+                if (updated) {
+                    activeProfile = updated;
+                }
+            }
             await this.repository.updateStatus(profile.profileName, 'STOPPED');
-            await this.stopProfile(profile);
+            await this.stopProfile(activeProfile);
             await this.repository.updateBuildStatus(profile.profileName, 'RUNNING', {
                 requestedAt: startedAt,
                 startedAt,
@@ -505,13 +626,20 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 scenarioId: seedInfo.scenarioId,
                 tickSeconds: seedInfo.tickSeconds,
                 now: seedTime,
+                installOptions: installOptions ?? undefined,
             });
             await this.repository.updateBuildStatus(profile.profileName, 'SUCCEEDED', {
                 completedAt,
                 error: null,
             });
-            await this.repository.updateStatus(profile.profileName, 'RUNNING');
-            await this.startProfile(profile);
+            const now = this.now();
+            const shouldPreopen = openAt ? openAt.getTime() > now.getTime() : false;
+            await this.repository.updateStatus(profile.profileName, shouldPreopen ? 'PREOPEN' : 'RUNNING', {
+                preopenAt: preopenAt ? preopenAt.toISOString() : openAt ? openAt.toISOString() : null,
+                openAt: openAt ? openAt.toISOString() : null,
+                scheduledStartAt: action.scheduledAt ?? null,
+            });
+            await this.startProfile(activeProfile);
             return { status: 'APPLIED', detail: 'reset completed via rebuild' };
         } catch (error) {
             const detail = error instanceof Error ? error.message : String(error);
@@ -527,14 +655,15 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     }
 
     private async resolveResetSeedInfo(
-        profile: GatewayProfileRecord
+        profile: GatewayProfileRecord,
+        overrides?: { scenarioId?: number | null; tickSeconds?: number }
     ): Promise<{ databaseUrl: string; scenarioId: number | null; tickSeconds?: number }> {
         const databaseUrl = resolvePostgresConfigFromEnv({
             env: this.processConfig.baseEnv ?? process.env,
             schema: profile.profile,
         }).url;
-        let scenarioId = parseScenarioId(profile.scenario);
-        let tickSeconds: number | undefined;
+        let scenarioId = overrides?.scenarioId ?? parseScenarioId(profile.scenario);
+        let tickSeconds: number | undefined = overrides?.tickSeconds;
         const connector = createGamePostgresConnector({ url: databaseUrl });
         await connector.connect();
         try {
@@ -542,11 +671,13 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 select: { scenarioCode: true, tickSeconds: true },
             });
             if (row) {
-                const resolvedScenario = parseScenarioId(row.scenarioCode);
-                if (resolvedScenario !== null) {
-                    scenarioId = resolvedScenario;
+                if (scenarioId === null) {
+                    const resolvedScenario = parseScenarioId(row.scenarioCode);
+                    if (resolvedScenario !== null) {
+                        scenarioId = resolvedScenario;
+                    }
                 }
-                if (typeof row.tickSeconds === 'number' && Number.isFinite(row.tickSeconds)) {
+                if (tickSeconds === undefined && typeof row.tickSeconds === 'number' && Number.isFinite(row.tickSeconds)) {
                     tickSeconds = row.tickSeconds;
                 }
             }

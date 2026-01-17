@@ -49,6 +49,7 @@ const buildCaller = () => {
         upsertProfile: async () => {
             throw new Error('not used');
         },
+        updateScenario: async () => null,
         updateStatus: async () => null,
         updateBuildStatus: async () => null,
         updateMeta: async () => null,

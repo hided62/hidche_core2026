@@ -12,6 +12,24 @@ export interface GatewayAdminActionRecord {
     handledAt?: string | null;
     handler?: string | null;
     detail?: string | null;
+    install?: {
+        scenarioId?: number;
+        turnTermMinutes?: number;
+        sync?: boolean;
+        fiction?: number;
+        extend?: boolean;
+        blockGeneralCreate?: number;
+        npcMode?: number;
+        showImgLevel?: number;
+        tournamentTrig?: boolean;
+        joinMode?: string;
+        autorunUser?: {
+            limitMinutes?: number;
+            options?: string[];
+        } | null;
+        openAt?: string | null;
+        preopenAt?: string | null;
+    };
 }
 
 export interface GatewayAdminActionResult {

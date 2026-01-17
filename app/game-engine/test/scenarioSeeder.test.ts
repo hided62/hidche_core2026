@@ -1,6 +1,7 @@
 import { createGamePostgresConnector } from '@sammo-ts/infra';
 import { describe, expect, test } from 'vitest';
 import { resolveDatabaseUrl } from '../src/scenario/databaseUrl.js';
+import { loadScenarioDefinitionById } from '../src/scenario/scenarioLoader.js';
 import { seedScenarioToDatabase } from '../src/scenario/scenarioSeeder.js';
 
 const scenarioId = 1010;
@@ -24,6 +25,15 @@ type ScenarioSeederPrismaClient = {
         findFirst(args: {
             where: { srcNationId: number; destNationId: number };
         }): Promise<{ stateCode: number; term: number } | null>;
+    };
+    worldState: {
+        findFirst(): Promise<{
+            config: unknown;
+            meta: unknown;
+            tickSeconds: number;
+            currentYear: number;
+            currentMonth: number;
+        } | null>;
     };
 };
 
@@ -93,6 +103,59 @@ describeDb('scenario database seed', () => {
                     expect(reverse.term).toBe(sample.durationMonths);
                 }
             }
+        } finally {
+            await connector.disconnect();
+        }
+    });
+
+    test('applies install options to world state', async () => {
+        const scenario = await loadScenarioDefinitionById(scenarioId);
+        const { seed } = await seedScenarioToDatabase({
+            scenarioId,
+            databaseUrl,
+            now: new Date('2030-01-01T00:00:00Z'),
+            installOptions: {
+                turnTermMinutes: 60,
+                sync: false,
+                fiction: 1,
+                extend: false,
+                blockGeneralCreate: 2,
+                npcMode: 0,
+                showImgLevel: 3,
+                tournamentTrig: true,
+                joinMode: 'full',
+                autorunUser: {
+                    limitMinutes: 60,
+                    options: {
+                        develop: true,
+                    },
+                },
+            },
+        });
+
+        const expectedGenerals = scenario.generals.length + scenario.generalsNeutral.length;
+        expect(seed.generals.length).toBe(expectedGenerals);
+
+        const connector = createGamePostgresConnector({ url: databaseUrl });
+        await connector.connect();
+        try {
+            const prisma = connector.prisma as unknown as ScenarioSeederPrismaClient;
+            const worldState = await prisma.worldState.findFirst();
+            expect(worldState).not.toBeNull();
+            if (!worldState) {
+                return;
+            }
+            expect(worldState.tickSeconds).toBe(3600);
+            expect(worldState.currentMonth).toBe(1);
+
+            const config = (worldState.config ?? {}) as Record<string, unknown>;
+            expect(config.extendedGeneral).toBe(false);
+            expect(config.joinMode).toBe('full');
+
+            const meta = (worldState.meta ?? {}) as Record<string, unknown>;
+            const autorun = (meta.autorun_user ?? {}) as Record<string, unknown>;
+            const autorunOptions = (autorun.options ?? {}) as Record<string, unknown>;
+            expect(autorunOptions.develop).toBe(true);
         } finally {
             await connector.disconnect();
         }

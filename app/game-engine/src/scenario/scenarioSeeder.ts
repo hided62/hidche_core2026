@@ -12,6 +12,27 @@ const DEFAULT_TICK_SECONDS = 120 * 60;
 const DEFAULT_GENERAL_GOLD = 1000;
 const DEFAULT_GENERAL_RICE = 1000;
 
+const MINUTES_TO_MS = 60_000;
+
+export interface ScenarioAutorunOptions {
+    limitMinutes: number;
+    options: Record<string, boolean>;
+}
+
+export interface ScenarioInstallOptions {
+    turnTermMinutes?: number;
+    sync?: boolean;
+    fiction?: number;
+    extend?: boolean;
+    blockGeneralCreate?: number;
+    npcMode?: number;
+    showImgLevel?: number;
+    tournamentTrig?: boolean;
+    joinMode?: 'full' | 'onlyRandom';
+    autorunUser?: ScenarioAutorunOptions | null;
+    preopenAt?: Date | null;
+}
+
 export interface ScenarioSeedOptions {
     scenarioId: number;
     databaseUrl: string;
@@ -21,6 +42,7 @@ export interface ScenarioSeedOptions {
     resetTables?: boolean;
     now?: Date;
     tickSeconds?: number;
+    installOptions?: ScenarioInstallOptions;
     includeNeutralNationInSeed?: boolean;
     defaultGeneralGold?: number;
     defaultGeneralRice?: number;
@@ -32,6 +54,61 @@ export interface ScenarioSeedResult {
 }
 
 const asJson = (value: unknown): InputJsonValue => value as InputJsonValue;
+
+const formatDateTime = (date: Date): string => {
+    const pad = (value: number): string => String(value).padStart(2, '0');
+    return [
+        `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`,
+        `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`,
+    ].join(' ');
+};
+
+const cutTurn = (date: Date, turnTermMinutes: number): Date => {
+    const base = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 1, 0, 0, 0);
+    base.setDate(base.getDate() - 1);
+    const diffMinutes = Math.floor((date.getTime() - base.getTime()) / MINUTES_TO_MS);
+    const alignedMinutes = diffMinutes - (diffMinutes % turnTermMinutes);
+    return new Date(base.getTime() + alignedMinutes * MINUTES_TO_MS);
+};
+
+const cutDay = (date: Date, turnTermMinutes: number): { startTime: Date; month: number; yearPulled: boolean } => {
+    const base = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 1, 0, 0, 0);
+    base.setDate(base.getDate() - 1);
+    const baseGap = 12 * turnTermMinutes;
+    const diffMinutes = Math.floor((date.getTime() - base.getTime()) / MINUTES_TO_MS);
+    const timeAdjust = diffMinutes % baseGap;
+    const month = Math.floor(timeAdjust / turnTermMinutes) + 1;
+    const yearPulled = month > 3;
+    const alignedMinutes = diffMinutes - timeAdjust + (yearPulled ? baseGap : 0);
+    return {
+        startTime: new Date(base.getTime() + alignedMinutes * MINUTES_TO_MS),
+        month,
+        yearPulled,
+    };
+};
+
+const resolveStartState = (
+    scenarioStartYear: number | null,
+    now: Date,
+    turnTermMinutes: number,
+    sync: boolean
+): { startTime: Date; currentYear: number; currentMonth: number } => {
+    const startYear = scenarioStartYear ?? 0;
+    if (!sync) {
+        return {
+            startTime: cutTurn(now, turnTermMinutes),
+            currentYear: startYear,
+            currentMonth: 1,
+        };
+    }
+
+    const { startTime, month, yearPulled } = cutDay(now, turnTermMinutes);
+    return {
+        startTime,
+        currentYear: startYear - (yearPulled ? 1 : 0),
+        currentMonth: month,
+    };
+};
 
 const resolveGeneralAge = (startYear: number | null, birthYear: number): number => {
     if (startYear === null || birthYear <= 0) {
@@ -77,12 +154,15 @@ const buildEventRows = (rows: unknown[], targetOverride?: string): TurnEngineEve
 
 // 시나리오 초기 데이터를 로드해 DB에 저장한다.
 export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Promise<ScenarioSeedResult> => {
+    const install = options.installOptions;
     const scenario = await loadScenarioDefinitionById(options.scenarioId, options.scenarioOptions);
+    const includeExtendedGeneral = install?.extend ?? true;
+    const scenarioDefinition = includeExtendedGeneral ? scenario : { ...scenario, generalsEx: [] };
     const map = await loadMapDefinitionByName(scenario.config.environment.mapName, options.mapOptions);
     const unitSet = await loadUnitSetDefinitionByName(scenario.config.environment.unitSet, options.unitSetOptions);
 
     const { seed, warnings } = buildScenarioBootstrap({
-        scenario,
+        scenario: scenarioDefinition,
         map,
         unitSet,
         options: {
@@ -92,9 +172,46 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
 
     const connector = createGamePostgresConnector({ url: options.databaseUrl });
     const now = options.now ?? new Date();
-    const tickSeconds = options.tickSeconds ?? DEFAULT_TICK_SECONDS;
+    const tickSeconds =
+        install?.turnTermMinutes !== undefined ? install.turnTermMinutes * 60 : options.tickSeconds ?? DEFAULT_TICK_SECONDS;
+    const turnTermMinutes = Math.max(1, Math.round(tickSeconds / 60));
+    const sync = install?.sync ?? false;
+    const startState = resolveStartState(scenario.startYear ?? null, now, turnTermMinutes, sync);
     const generalGold = options.defaultGeneralGold ?? DEFAULT_GENERAL_GOLD;
     const generalRice = options.defaultGeneralRice ?? DEFAULT_GENERAL_RICE;
+
+    const worldConfig: Record<string, unknown> = {
+        fiction: install?.fiction,
+        fictionMode: install?.fiction === 0 ? '연의' : install?.fiction === 1 ? '가상' : undefined,
+        joinMode: install?.joinMode,
+        blockGeneralCreate: install?.blockGeneralCreate,
+        npcMode: install?.npcMode,
+        showImgLevel: install?.showImgLevel,
+        tournamentTrig: install?.tournamentTrig,
+        extendedGeneral: includeExtendedGeneral,
+        turnTermMinutes: install?.turnTermMinutes,
+        syncTurnTime: install?.sync,
+    };
+
+    const worldMeta: Record<string, unknown> = {
+        scenarioId: options.scenarioId,
+        scenarioMeta: seed.scenarioMeta,
+        starttime: formatDateTime(startState.startTime),
+        turntime: formatDateTime(now),
+        opentime: formatDateTime(now),
+        lastTurnTime: formatDateTime(now),
+    };
+
+    if (install?.preopenAt) {
+        worldMeta.preopenAt = formatDateTime(install.preopenAt);
+    }
+
+    if (install?.autorunUser) {
+        worldMeta.autorun_user = {
+            limit_minutes: install.autorunUser.limitMinutes,
+            options: install.autorunUser.options,
+        };
+    }
 
     await connector.connect();
     try {
@@ -113,14 +230,11 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
         await prisma.worldState.create({
             data: {
                 scenarioCode: String(options.scenarioId),
-                currentYear: scenario.startYear ?? 0,
-                currentMonth: 1,
+                currentYear: startState.currentYear,
+                currentMonth: startState.currentMonth,
                 tickSeconds,
-                config: asJson(seed.scenarioConfig),
-                meta: asJson({
-                    scenarioId: options.scenarioId,
-                    scenarioMeta: seed.scenarioMeta,
-                }),
+                config: asJson({ ...seed.scenarioConfig, ...worldConfig }),
+                meta: asJson(worldMeta),
             },
         });
 

@@ -53,6 +53,7 @@ export interface GatewayProfileRepository {
     listProfiles(): Promise<GatewayProfileRecord[]>;
     getProfile(profileName: string): Promise<GatewayProfileRecord | null>;
     upsertProfile(input: GatewayProfileUpsertInput): Promise<GatewayProfileRecord>;
+    updateScenario(profileName: string, scenario: string): Promise<GatewayProfileRecord | null>;
     updateStatus(
         profileName: string,
         status: GatewayProfileStatus,
@@ -177,6 +178,15 @@ export const createGatewayProfileRepository = (prisma: GatewayPrismaClient): Gat
             },
         });
         return mapProfile(row);
+    },
+    async updateScenario(profileName: string, scenario: string): Promise<GatewayProfileRecord | null> {
+        const row = await prisma.gatewayProfile.update({
+            where: { profileName },
+            data: {
+                scenario,
+            },
+        });
+        return row ? mapProfile(row) : null;
     },
     async updateStatus(
         profileName: string,

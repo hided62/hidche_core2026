@@ -1,5 +1,6 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
+import { randomBytes } from 'node:crypto';
 
 import type { WorldStateRow } from '../../context.js';
 import { authedProcedure, router } from '../../trpc.js';
@@ -42,6 +43,17 @@ const resolveJoinStat = (worldState: WorldStateRow) => {
         bonusMax: DEFAULT_JOIN_STAT.bonusMax,
     };
 };
+
+const resolveJoinPolicy = (worldState: WorldStateRow) => {
+    const config = asRecord(worldState.config);
+    const joinMode = typeof config.joinMode === 'string' ? config.joinMode : 'full';
+    const blockGeneralCreate =
+        typeof config.blockGeneralCreate === 'number' && Number.isFinite(config.blockGeneralCreate)
+            ? Math.floor(config.blockGeneralCreate)
+            : 0;
+    return { joinMode, blockGeneralCreate };
+};
+
 
 const hashString = (value: string): number => {
     let hash = 0;
@@ -169,6 +181,14 @@ export const joinRouter = router({
                 });
             }
 
+            const joinPolicy = resolveJoinPolicy(worldState);
+            if (joinPolicy.blockGeneralCreate === 1) {
+                throw new TRPCError({
+                    code: 'FORBIDDEN',
+                    message: '장수 생성이 제한된 서버입니다.',
+                });
+            }
+
             const statRule = resolveJoinStat(worldState);
             const statTotal = input.leadership + input.strength + input.intel;
 
@@ -195,12 +215,30 @@ export const joinRouter = router({
 
             const personalityOptions = await loadPersonalityOptions();
             const personalityKeys = personalityOptions.map((trait) => trait.key);
+            const resolveGeneralName = async (): Promise<string> => {
+                if (joinPolicy.blockGeneralCreate !== 2) {
+                    return input.name;
+                }
+                for (let attempt = 0; attempt < 5; attempt += 1) {
+                    const candidate = randomBytes(5).toString('hex');
+                    const exists = await ctx.db.general.findFirst({ where: { name: candidate } });
+                    if (!exists) {
+                        return candidate;
+                    }
+                }
+                throw new TRPCError({
+                    code: 'INTERNAL_SERVER_ERROR',
+                    message: '랜덤 장수명 생성에 실패했습니다.',
+                });
+            };
+
+            const generalName = await resolveGeneralName();
             const chosenPersonality =
                 input.character === 'Random'
-                    ? pickFromList(personalityKeys, `${userId}:${input.name}`) ?? 'None'
+                    ? pickFromList(personalityKeys, `${userId}:${generalName}`) ?? 'None'
                     : isPersonalityTraitKey(input.character)
-                    ? input.character
-                    : 'None';
+                      ? input.character
+                      : 'None';
 
             return ctx.db.$transaction(async (db) => {
                 const existing = await db.general.findFirst({ where: { userId } });
@@ -210,7 +248,7 @@ export const joinRouter = router({
                         message: '이미 장수가 생성되어 있습니다.',
                     });
                 }
-                const nameExists = await db.general.findFirst({ where: { name: input.name } });
+                const nameExists = await db.general.findFirst({ where: { name: generalName } });
                 if (nameExists) {
                     throw new TRPCError({
                         code: 'CONFLICT',
@@ -234,7 +272,7 @@ export const joinRouter = router({
                     data: {
                         id: nextId,
                         userId,
-                        name: input.name,
+                        name: generalName,
                         nationId: 0,
                         cityId,
                         troopId: 0,

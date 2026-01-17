@@ -14,6 +14,7 @@ Move items into the main docs once they are finalized.
 - [AI suggestion] Implement diplomacy/state transitions and monthly/command-based updates beyond read-only maps.
 - [AI suggestion] Integrate war/battle pipeline into turn processing (troop movement/war resolution hooks, not just isolated sim jobs).
 - [AI suggestion] Expand turn command catalog beyond the current subset (general/nation commands).
+- [AI suggestion] Apply install settings (`join_mode`, `npcmode`, `show_img_level`, `tournament_trig`) to runtime rules/command constraints and UI behavior, beyond just storing them in world state.
 
 ## Frontend
 

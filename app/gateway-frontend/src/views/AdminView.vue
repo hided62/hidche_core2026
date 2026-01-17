@@ -67,6 +67,44 @@ type AdminProfile = {
     meta: Record<string, unknown>;
 };
 
+type ScenarioNationPreview = {
+    id: number;
+    name: string;
+    color: string;
+    cities: string[];
+    generals: number;
+    generalsEx: number;
+    generalsNeutral: number;
+};
+
+type ScenarioPreview = {
+    id: number;
+    title: string;
+    year: number | null;
+    npcCount: number;
+    npcExCount: number;
+    npcNeutralCount: number;
+    nations: ScenarioNationPreview[];
+};
+
+type InstallFormState = {
+    scenarioId: number;
+    turnTermMinutes: number;
+    sync: boolean;
+    fiction: number;
+    extend: boolean;
+    blockGeneralCreate: number;
+    npcMode: number;
+    showImgLevel: number;
+    tournamentTrig: boolean;
+    joinMode: 'full' | 'onlyRandom';
+    autorunUserMinutes: number;
+    autorunUserOptions: Record<string, boolean>;
+    openAt: string;
+    preopenAt: string;
+    reason: string;
+};
+
 type AdminAction =
     | 'RESUME'
     | 'PAUSE'
@@ -130,6 +168,9 @@ type AdminClient = {
         list: {
             query: () => Promise<AdminProfile[]>;
         };
+        listScenarios: {
+            query: () => Promise<ScenarioPreview[]>;
+        };
         updateMeta: {
             mutate: (input: {
                 profileName: string;
@@ -140,6 +181,30 @@ type AdminClient = {
                     profileImageUrl?: string | null;
                 };
             }) => Promise<AdminProfile | null>;
+        };
+        install: {
+            mutate: (input: {
+                profileName: string;
+                install: {
+                    scenarioId: number;
+                    turnTermMinutes: number;
+                    sync: boolean;
+                    fiction: number;
+                    extend: boolean;
+                    blockGeneralCreate: number;
+                    npcMode: number;
+                    showImgLevel: number;
+                    tournamentTrig: boolean;
+                    joinMode: 'full' | 'onlyRandom';
+                    autorunUser?: {
+                        limitMinutes: number;
+                        options: string[];
+                    } | null;
+                    openAt?: string;
+                    preopenAt?: string;
+                };
+                reason?: string;
+            }) => Promise<{ ok: boolean; action?: unknown }>;
         };
         requestAction: {
             mutate: (input: {
@@ -202,6 +267,23 @@ const profileActions = ref<
     >
 >({});
 const profileActionStatus = ref<Record<string, string>>({});
+const scenarios = ref<ScenarioPreview[]>([]);
+const scenariosLoading = ref(false);
+const scenariosStatus = ref('');
+const profileInstalls = ref<Record<string, InstallFormState>>({});
+const profileInstallStatus = ref<Record<string, string>>({});
+
+const autorunOptionLabels = [
+    { key: 'develop', label: '내정' },
+    { key: 'warp', label: '순간이동' },
+    { key: 'recruit', label: '징병' },
+    { key: 'recruit_high', label: '모병' },
+    { key: 'train', label: '훈사' },
+    { key: 'battle', label: '출병' },
+    { key: 'chief', label: '기본 사령턴' },
+] as const;
+
+const turnTermOptions = [120, 60, 30, 20, 10, 5, 2, 1] as const;
 
 const userLookupMode = ref<'username' | 'id' | 'email'>('username');
 const userLookupValue = ref('');
@@ -281,11 +363,109 @@ const ensureProfileBuffers = (profile: AdminProfile) => {
     }
 };
 
+const pad2 = (value: number): string => String(value).padStart(2, '0');
+
+const formatLocalInput = (date: Date): string =>
+    `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}T${pad2(date.getHours())}:${pad2(
+        date.getMinutes()
+    )}`;
+
+const toLocalInputValue = (value: unknown): string => {
+    if (typeof value !== 'string') {
+        return '';
+    }
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+        return '';
+    }
+    return formatLocalInput(parsed);
+};
+
+const readNumber = (value: unknown, fallback: number): number =>
+    typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+
+const readBoolean = (value: unknown, fallback: boolean): boolean =>
+    typeof value === 'boolean' ? value : fallback;
+
+const readString = (value: unknown, fallback: string): string => (typeof value === 'string' ? value : fallback);
+
+const buildAutorunOptionMap = (options?: string[]): Record<string, boolean> => {
+    const map: Record<string, boolean> = {};
+    autorunOptionLabels.forEach(({ key }) => {
+        map[key] = options ? options.includes(key) : true;
+    });
+    return map;
+};
+
+const ensureProfileInstallBuffers = (profile: AdminProfile) => {
+    if (profileInstalls.value[profile.profileName]) {
+        return;
+    }
+    const meta = (profile.meta ?? {}) as Record<string, unknown>;
+    const install = (meta.install ?? {}) as Record<string, unknown>;
+    const autorunUser = (install.autorunUser ?? {}) as Record<string, unknown>;
+    const autorunOptionsRaw = Array.isArray(autorunUser.options)
+        ? autorunUser.options.filter((option): option is string => typeof option === 'string')
+        : undefined;
+    const scenarioId = Number(profile.scenario);
+
+    profileInstalls.value[profile.profileName] = {
+        scenarioId: Number.isFinite(scenarioId) ? scenarioId : readNumber(install.scenarioId, 0),
+        turnTermMinutes: readNumber(install.turnTermMinutes, 60),
+        sync: readBoolean(install.sync, true),
+        fiction: readNumber(install.fiction, 1),
+        extend: readBoolean(install.extend, true),
+        blockGeneralCreate: readNumber(install.blockGeneralCreate, 0),
+        npcMode: readNumber(install.npcMode, 0),
+        showImgLevel: readNumber(install.showImgLevel, 3),
+        tournamentTrig: readBoolean(install.tournamentTrig, true),
+        joinMode: readString(install.joinMode, 'full') === 'onlyRandom' ? 'onlyRandom' : 'full',
+        autorunUserMinutes: readNumber(autorunUser.limitMinutes, 1440),
+        autorunUserOptions: buildAutorunOptionMap(autorunOptionsRaw),
+        openAt: toLocalInputValue(install.openAt),
+        preopenAt: toLocalInputValue(install.preopenAt),
+        reason: '',
+    };
+};
+
+const scenarioMap = computed(() => {
+    const map = new Map<number, ScenarioPreview>();
+    scenarios.value.forEach((scenario) => {
+        map.set(scenario.id, scenario);
+    });
+    return map;
+});
+
+const scenarioGroups = computed(() => {
+    const pattern = /【(.*?)[0-9\-_.a-zA-Z]*】/;
+    const groups: Record<string, ScenarioPreview[]> = {};
+    for (const scenario of scenarios.value) {
+        const match = pattern.exec(scenario.title);
+        const category = match?.[1] ?? '기타';
+        if (!groups[category]) {
+            groups[category] = [];
+        }
+        groups[category].push(scenario);
+    }
+    return groups;
+});
+
+const getScenarioPreview = (profileName: string): ScenarioPreview | null => {
+    const install = profileInstalls.value[profileName];
+    if (!install) {
+        return null;
+    }
+    return scenarioMap.value.get(install.scenarioId) ?? null;
+};
+
 const loadProfiles = async () => {
     profilesLoading.value = true;
     try {
         const result = await adminClient.profiles.list.query();
-        result.forEach(ensureProfileBuffers);
+        result.forEach((profile) => {
+            ensureProfileBuffers(profile);
+            ensureProfileInstallBuffers(profile);
+        });
         profiles.value = result;
     } catch (error) {
         profileActionStatus.value = {
@@ -294,6 +474,19 @@ const loadProfiles = async () => {
         };
     } finally {
         profilesLoading.value = false;
+    }
+};
+
+const loadScenarios = async () => {
+    scenariosLoading.value = true;
+    scenariosStatus.value = '';
+    try {
+        const result = await adminClient.profiles.listScenarios.query();
+        scenarios.value = result;
+    } catch (error) {
+        scenariosStatus.value = '시나리오 목록을 불러오지 못했습니다.';
+    } finally {
+        scenariosLoading.value = false;
     }
 };
 
@@ -352,6 +545,70 @@ const requestProfileAction = async (profileName: string, action: AdminAction) =>
         profileActionStatus.value = {
             ...profileActionStatus.value,
             [profileName]: `요청 실패: ${action}`,
+        };
+    }
+};
+
+const requestInstall = async (profileName: string) => {
+    const install = profileInstalls.value[profileName];
+    if (!install) {
+        return;
+    }
+    const options = Object.entries(install.autorunUserOptions)
+        .filter(([, enabled]) => enabled)
+        .map(([key]) => key);
+    const autorunUser =
+        install.autorunUserMinutes > 0 && options.length
+            ? {
+                  limitMinutes: install.autorunUserMinutes,
+                  options,
+              }
+            : null;
+    const openAt = install.openAt ? new Date(install.openAt) : null;
+    if (openAt && Number.isNaN(openAt.getTime())) {
+        profileInstallStatus.value = {
+            ...profileInstallStatus.value,
+            [profileName]: '오픈 시간이 올바르지 않습니다.',
+        };
+        return;
+    }
+    const preopenAt = install.preopenAt ? new Date(install.preopenAt) : null;
+    if (preopenAt && Number.isNaN(preopenAt.getTime())) {
+        profileInstallStatus.value = {
+            ...profileInstallStatus.value,
+            [profileName]: '가오픈 시간이 올바르지 않습니다.',
+        };
+        return;
+    }
+    try {
+        await adminClient.profiles.install.mutate({
+            profileName,
+            install: {
+                scenarioId: install.scenarioId,
+                turnTermMinutes: install.turnTermMinutes,
+                sync: install.sync,
+                fiction: install.fiction,
+                extend: install.extend,
+                blockGeneralCreate: install.blockGeneralCreate,
+                npcMode: install.npcMode,
+                showImgLevel: install.showImgLevel,
+                tournamentTrig: install.tournamentTrig,
+                joinMode: install.joinMode,
+                autorunUser,
+                openAt: openAt ? openAt.toISOString() : undefined,
+                preopenAt: preopenAt ? preopenAt.toISOString() : undefined,
+            },
+            reason: install.reason.trim() || undefined,
+        });
+        profileInstallStatus.value = {
+            ...profileInstallStatus.value,
+            [profileName]: openAt ? '설치 예약 완료' : '설치 요청 완료',
+        };
+        await loadProfiles();
+    } catch (error) {
+        profileInstallStatus.value = {
+            ...profileInstallStatus.value,
+            [profileName]: '설치 요청 실패',
         };
     }
 };
@@ -563,6 +820,7 @@ const forceDeleteUser = async () => {
 onMounted(() => {
     void loadNotice();
     void loadProfiles();
+    void loadScenarios();
 });
 </script>
 
@@ -987,6 +1245,394 @@ onMounted(() => {
                                     </div>
                                     <div class="text-xs text-zinc-500">
                                         {{ profileActionStatus[profile.profileName] }}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div
+                                v-if="profileInstalls[profile.profileName]"
+                                class="border-t border-zinc-800 pt-4 space-y-3"
+                            >
+                                <div class="flex items-center justify-between">
+                                    <h4 class="text-sm font-semibold">설치/리셋</h4>
+                                    <span class="text-xs text-zinc-500">{{ profileInstallStatus[profile.profileName] }}</span>
+                                </div>
+                                <div class="grid lg:grid-cols-2 gap-4">
+                                    <div class="space-y-3">
+                                        <div class="space-y-1">
+                                            <label class="text-xs text-zinc-400">시나리오 선택</label>
+                                            <select
+                                                v-model.number="profileInstalls[profile.profileName].scenarioId"
+                                                class="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
+                                                :disabled="scenariosLoading"
+                                            >
+                                                <option v-if="scenariosLoading" disabled>불러오는 중...</option>
+                                                <template v-for="(items, group) in scenarioGroups" :key="group">
+                                                    <optgroup :label="group">
+                                                        <option v-for="scenario in items" :key="scenario.id" :value="scenario.id">
+                                                            {{ scenario.title }}
+                                                        </option>
+                                                    </optgroup>
+                                                </template>
+                                            </select>
+                                            <div v-if="scenariosStatus" class="text-xs text-red-400">
+                                                {{ scenariosStatus }}
+                                            </div>
+                                        </div>
+
+                                        <div class="grid grid-cols-2 gap-2">
+                                            <div class="space-y-1">
+                                                <label class="text-xs text-zinc-400">턴 시간(분)</label>
+                                                <select
+                                                    v-model.number="profileInstalls[profile.profileName].turnTermMinutes"
+                                                    class="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
+                                                >
+                                                    <option v-for="term in turnTermOptions" :key="term" :value="term">
+                                                        {{ term }}
+                                                    </option>
+                                                </select>
+                                            </div>
+                                            <div class="space-y-1">
+                                                <label class="text-xs text-zinc-400">시간 동기화</label>
+                                                <div class="flex gap-2">
+                                                    <label class="flex items-center gap-1 text-xs text-zinc-300">
+                                                        <input
+                                                            v-model="profileInstalls[profile.profileName].sync"
+                                                            class="accent-yellow-500"
+                                                            type="radio"
+                                                            :value="true"
+                                                        />
+                                                        Y
+                                                    </label>
+                                                    <label class="flex items-center gap-1 text-xs text-zinc-300">
+                                                        <input
+                                                            v-model="profileInstalls[profile.profileName].sync"
+                                                            class="accent-yellow-500"
+                                                            type="radio"
+                                                            :value="false"
+                                                        />
+                                                        N
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div class="space-y-1">
+                                            <label class="text-xs text-zinc-400">NPC 상성</label>
+                                            <div class="flex gap-2">
+                                                <label class="flex items-center gap-1 text-xs text-zinc-300">
+                                                    <input
+                                                        v-model.number="profileInstalls[profile.profileName].fiction"
+                                                        class="accent-yellow-500"
+                                                        type="radio"
+                                                        :value="0"
+                                                    />
+                                                    연의
+                                                </label>
+                                                <label class="flex items-center gap-1 text-xs text-zinc-300">
+                                                    <input
+                                                        v-model.number="profileInstalls[profile.profileName].fiction"
+                                                        class="accent-yellow-500"
+                                                        type="radio"
+                                                        :value="1"
+                                                    />
+                                                    가상
+                                                </label>
+                                            </div>
+                                        </div>
+
+                                        <div class="grid grid-cols-2 gap-2">
+                                            <div class="space-y-1">
+                                                <label class="text-xs text-zinc-400">확장 NPC</label>
+                                                <div class="flex gap-2">
+                                                    <label class="flex items-center gap-1 text-xs text-zinc-300">
+                                                        <input
+                                                            v-model="profileInstalls[profile.profileName].extend"
+                                                            class="accent-yellow-500"
+                                                            type="radio"
+                                                            :value="true"
+                                                        />
+                                                        포함
+                                                    </label>
+                                                    <label class="flex items-center gap-1 text-xs text-zinc-300">
+                                                        <input
+                                                            v-model="profileInstalls[profile.profileName].extend"
+                                                            class="accent-yellow-500"
+                                                            type="radio"
+                                                            :value="false"
+                                                        />
+                                                        미포함
+                                                    </label>
+                                                </div>
+                                            </div>
+                                            <div class="space-y-1">
+                                                <label class="text-xs text-zinc-400">임관 모드</label>
+                                                <div class="flex gap-2">
+                                                    <label class="flex items-center gap-1 text-xs text-zinc-300">
+                                                        <input
+                                                            v-model="profileInstalls[profile.profileName].joinMode"
+                                                            class="accent-yellow-500"
+                                                            type="radio"
+                                                            value="full"
+                                                        />
+                                                        일반
+                                                    </label>
+                                                    <label class="flex items-center gap-1 text-xs text-zinc-300">
+                                                        <input
+                                                            v-model="profileInstalls[profile.profileName].joinMode"
+                                                            class="accent-yellow-500"
+                                                            type="radio"
+                                                            value="onlyRandom"
+                                                        />
+                                                        랜덤 임관
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div class="space-y-1">
+                                            <label class="text-xs text-zinc-400">장수 임의 생성</label>
+                                            <div class="flex gap-2 flex-wrap">
+                                                <label class="flex items-center gap-1 text-xs text-zinc-300">
+                                                    <input
+                                                        v-model.number="profileInstalls[profile.profileName].blockGeneralCreate"
+                                                        class="accent-yellow-500"
+                                                        type="radio"
+                                                        :value="0"
+                                                    />
+                                                    가능
+                                                </label>
+                                                <label class="flex items-center gap-1 text-xs text-zinc-300">
+                                                    <input
+                                                        v-model.number="profileInstalls[profile.profileName].blockGeneralCreate"
+                                                        class="accent-yellow-500"
+                                                        type="radio"
+                                                        :value="2"
+                                                    />
+                                                    장수명 무작위
+                                                </label>
+                                                <label class="flex items-center gap-1 text-xs text-zinc-300">
+                                                    <input
+                                                        v-model.number="profileInstalls[profile.profileName].blockGeneralCreate"
+                                                        class="accent-yellow-500"
+                                                        type="radio"
+                                                        :value="1"
+                                                    />
+                                                    불가
+                                                </label>
+                                            </div>
+                                        </div>
+
+                                        <div class="space-y-1">
+                                            <label class="text-xs text-zinc-400">NPC 빙의</label>
+                                            <div class="flex gap-2 flex-wrap">
+                                                <label class="flex items-center gap-1 text-xs text-zinc-300">
+                                                    <input
+                                                        v-model.number="profileInstalls[profile.profileName].npcMode"
+                                                        class="accent-yellow-500"
+                                                        type="radio"
+                                                        :value="1"
+                                                    />
+                                                    가능
+                                                </label>
+                                                <label class="flex items-center gap-1 text-xs text-zinc-300">
+                                                    <input
+                                                        v-model.number="profileInstalls[profile.profileName].npcMode"
+                                                        class="accent-yellow-500"
+                                                        type="radio"
+                                                        :value="0"
+                                                    />
+                                                    불가
+                                                </label>
+                                                <label class="flex items-center gap-1 text-xs text-zinc-300">
+                                                    <input
+                                                        v-model.number="profileInstalls[profile.profileName].npcMode"
+                                                        class="accent-yellow-500"
+                                                        type="radio"
+                                                        :value="2"
+                                                    />
+                                                    선택 생성 가능
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="space-y-3">
+                                        <div class="space-y-1">
+                                            <label class="text-xs text-zinc-400">이미지 표기</label>
+                                            <div class="flex gap-2 flex-wrap">
+                                                <label class="flex items-center gap-1 text-xs text-zinc-300">
+                                                    <input
+                                                        v-model.number="profileInstalls[profile.profileName].showImgLevel"
+                                                        class="accent-yellow-500"
+                                                        type="radio"
+                                                        :value="0"
+                                                    />
+                                                    안함
+                                                </label>
+                                                <label class="flex items-center gap-1 text-xs text-zinc-300">
+                                                    <input
+                                                        v-model.number="profileInstalls[profile.profileName].showImgLevel"
+                                                        class="accent-yellow-500"
+                                                        type="radio"
+                                                        :value="1"
+                                                    />
+                                                    전콘
+                                                </label>
+                                                <label class="flex items-center gap-1 text-xs text-zinc-300">
+                                                    <input
+                                                        v-model.number="profileInstalls[profile.profileName].showImgLevel"
+                                                        class="accent-yellow-500"
+                                                        type="radio"
+                                                        :value="2"
+                                                    />
+                                                    전콘, 병종
+                                                </label>
+                                                <label class="flex items-center gap-1 text-xs text-zinc-300">
+                                                    <input
+                                                        v-model.number="profileInstalls[profile.profileName].showImgLevel"
+                                                        class="accent-yellow-500"
+                                                        type="radio"
+                                                        :value="3"
+                                                    />
+                                                    전콘, 병종, NPC
+                                                </label>
+                                            </div>
+                                        </div>
+
+                                        <div class="space-y-1">
+                                            <label class="text-xs text-zinc-400">토너먼트 자동 시작</label>
+                                            <div class="flex gap-2">
+                                                <label class="flex items-center gap-1 text-xs text-zinc-300">
+                                                    <input
+                                                        v-model="profileInstalls[profile.profileName].tournamentTrig"
+                                                        class="accent-yellow-500"
+                                                        type="radio"
+                                                        :value="false"
+                                                    />
+                                                    수동
+                                                </label>
+                                                <label class="flex items-center gap-1 text-xs text-zinc-300">
+                                                    <input
+                                                        v-model="profileInstalls[profile.profileName].tournamentTrig"
+                                                        class="accent-yellow-500"
+                                                        type="radio"
+                                                        :value="true"
+                                                    />
+                                                    자동
+                                                </label>
+                                            </div>
+                                        </div>
+
+                                        <div class="space-y-1">
+                                            <label class="text-xs text-zinc-400">휴식 턴 자동 행동</label>
+                                            <div class="flex flex-wrap gap-2">
+                                                <label
+                                                    v-for="option in autorunOptionLabels"
+                                                    :key="option.key"
+                                                    class="flex items-center gap-1 text-xs text-zinc-300"
+                                                >
+                                                    <input
+                                                        v-model="profileInstalls[profile.profileName].autorunUserOptions[option.key]"
+                                                        class="accent-yellow-500"
+                                                        type="checkbox"
+                                                    />
+                                                    {{ option.label }}
+                                                </label>
+                                            </div>
+                                        </div>
+
+                                        <div class="space-y-1">
+                                            <label class="text-xs text-zinc-400">유효 시간(분)</label>
+                                            <select
+                                                v-model.number="profileInstalls[profile.profileName].autorunUserMinutes"
+                                                class="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
+                                            >
+                                                <option :value="0">꺼짐</option>
+                                                <option :value="43200">항상</option>
+                                                <option :value="10">10분</option>
+                                                <option :value="20">20분</option>
+                                                <option :value="30">30분</option>
+                                                <option :value="60">1시간</option>
+                                                <option :value="120">2시간</option>
+                                                <option :value="180">3시간</option>
+                                                <option :value="240">4시간</option>
+                                                <option :value="360">6시간</option>
+                                                <option :value="480">8시간</option>
+                                                <option :value="600">10시간</option>
+                                                <option :value="720">12시간</option>
+                                                <option :value="1440">24시간</option>
+                                                <option :value="2160">36시간</option>
+                                                <option :value="2880">48시간</option>
+                                                <option :value="3600">60시간</option>
+                                                <option :value="4320">72시간</option>
+                                            </select>
+                                        </div>
+
+                                        <div class="grid grid-cols-2 gap-2">
+                                            <div class="space-y-1">
+                                                <label class="text-xs text-zinc-400">오픈 예약</label>
+                                                <input
+                                                    v-model="profileInstalls[profile.profileName].openAt"
+                                                    type="datetime-local"
+                                                    class="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
+                                                />
+                                            </div>
+                                            <div class="space-y-1">
+                                                <label class="text-xs text-zinc-400">가오픈 예약</label>
+                                                <input
+                                                    v-model="profileInstalls[profile.profileName].preopenAt"
+                                                    type="datetime-local"
+                                                    class="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div class="space-y-1">
+                                            <label class="text-xs text-zinc-400">설치 메모</label>
+                                            <input
+                                                v-model="profileInstalls[profile.profileName].reason"
+                                                type="text"
+                                                class="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
+                                                placeholder="사유/메모"
+                                            />
+                                        </div>
+
+                                        <button
+                                            class="bg-emerald-600 hover:bg-emerald-500 text-black font-semibold px-4 py-2 rounded w-full"
+                                            @click="requestInstall(profile.profileName)"
+                                        >
+                                            설치 적용
+                                        </button>
+
+                                        <div v-if="getScenarioPreview(profile.profileName)" class="bg-zinc-950 border border-zinc-800 rounded p-3 text-xs text-zinc-300 space-y-2">
+                                            <div class="font-semibold text-zinc-200">
+                                                {{ getScenarioPreview(profile.profileName)?.title }}
+                                            </div>
+                                            <div>시작 연도: {{ getScenarioPreview(profile.profileName)?.year ?? '-' }}년</div>
+                                            <div>
+                                                NPC: {{ getScenarioPreview(profile.profileName)?.npcCount }}명
+                                                <span v-if="getScenarioPreview(profile.profileName)?.npcExCount">+{{ getScenarioPreview(profile.profileName)?.npcExCount }}명</span>
+                                                <span v-if="getScenarioPreview(profile.profileName)?.npcNeutralCount">
+                                                    / 중립 {{ getScenarioPreview(profile.profileName)?.npcNeutralCount }}명
+                                                </span>
+                                            </div>
+                                            <div class="space-y-1">
+                                                <div class="text-zinc-400">국가</div>
+                                                <div class="space-y-1">
+                                                    <div
+                                                        v-for="nation in getScenarioPreview(profile.profileName)?.nations ?? []"
+                                                        :key="nation.id"
+                                                        class="text-[11px]"
+                                                    >
+                                                        <span :style="{ color: nation.color }">{{ nation.name }}</span>
+                                                        {{ nation.generals }}명
+                                                        <span v-if="nation.generalsEx">(+{{ nation.generalsEx }})</span>
+                                                        <span class="text-zinc-500">· {{ nation.cities.join(', ') }}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>

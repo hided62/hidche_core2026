@@ -16,15 +16,32 @@ export interface GameProfile {
 export const zWorldStateConfig = z.object({
     maxUserCnt: z.number().optional(),
     fictionMode: z.string().optional(),
+    fiction: z.number().optional(),
+    joinMode: z.string().optional(),
+    blockGeneralCreate: z.number().optional(),
+    npcMode: z.number().optional(),
+    showImgLevel: z.number().optional(),
+    tournamentTrig: z.boolean().optional(),
+    extendedGeneral: z.boolean().optional(),
+    turnTermMinutes: z.number().optional(),
+    syncTurnTime: z.boolean().optional(),
 });
 export type WorldStateConfig = z.infer<typeof zWorldStateConfig>;
 
 export const zWorldStateMeta = z.object({
     starttime: z.string().optional(),
     opentime: z.string().optional(),
+    preopenAt: z.string().optional(),
     turntime: z.string().optional(),
     otherTextInfo: z.string().optional(),
     isUnited: z.number().optional(),
+    autorun_user: z
+        .object({
+            limit_minutes: z.number().optional(),
+            options: z.record(z.string(), z.boolean()).optional(),
+        })
+        .nullable()
+        .optional(),
 });
 export type WorldStateMeta = z.infer<typeof zWorldStateMeta>;
 

@@ -4,6 +4,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { procedure, router } from './trpc.js';
+import { listScenarioPreviews } from './scenario/scenarioCatalog.js';
 import type { UserSanctions, UserServerRestriction } from './auth/userRepository.js';
 import type { AdminAuthContext } from './adminAuth.js';
 import type { GatewayApiContext } from './context.js';
@@ -12,6 +13,7 @@ import { GATEWAY_BUILD_STATUSES, GATEWAY_PROFILE_STATUSES } from './orchestrator
 const zProfileStatus = z.enum(GATEWAY_PROFILE_STATUSES);
 const zBuildStatus = z.enum(GATEWAY_BUILD_STATUSES);
 const zUserRoleMode = z.enum(['set', 'grant', 'revoke']);
+const zJoinMode = z.enum(['full', 'onlyRandom']);
 const zServerAction = z.enum([
     'RESUME',
     'PAUSE',
@@ -23,6 +25,17 @@ const zServerAction = z.enum([
     'OPEN_SURVEY',
     'SHUTDOWN',
 ]);
+
+const TURN_TERM_MINUTES = [1, 2, 5, 10, 20, 30, 60, 120] as const;
+const AUTORUN_USER_OPTIONS = [
+    'develop',
+    'warp',
+    'recruit',
+    'recruit_high',
+    'train',
+    'battle',
+    'chief',
+] as const;
 
 const ADMIN_ROLE_PREFIX = 'admin.';
 const ADMIN_ROLE_SUPERUSER = 'admin.superuser';
@@ -183,6 +196,31 @@ const zSanctionsPatch = z.object({
     notes: z.string().max(2000).nullable().optional(),
     profileIconResetAt: z.string().datetime().nullable().optional(),
     serverRestrictions: z.record(z.string(), zServerRestriction.nullable()).nullable().optional(),
+});
+
+const zInstallAutorun = z.object({
+    limitMinutes: z.number().int().min(0).max(43200),
+    options: z.array(z.enum(AUTORUN_USER_OPTIONS)),
+});
+
+const isAllowedTurnTerm = (value: number): boolean => TURN_TERM_MINUTES.some((term) => term === value);
+
+const zInstallOptions = z.object({
+    scenarioId: z.number().int().min(0),
+    turnTermMinutes: z.number().int().refine((value) => isAllowedTurnTerm(value), {
+        message: 'turnTermMinutes must divide 120.',
+    }),
+    sync: z.boolean(),
+    fiction: z.number().int().min(0).max(1),
+    extend: z.boolean(),
+    blockGeneralCreate: z.number().int().min(0).max(2),
+    npcMode: z.number().int().min(0).max(2),
+    showImgLevel: z.number().int().min(0).max(3),
+    tournamentTrig: z.boolean(),
+    joinMode: zJoinMode,
+    autorunUser: zInstallAutorun.nullable().optional(),
+    openAt: z.string().datetime().optional(),
+    preopenAt: z.string().datetime().optional(),
 });
 
 type SanctionsPatch = z.infer<typeof zSanctionsPatch>;
@@ -468,6 +506,9 @@ export const adminRouter = router({
                 },
             }));
         }),
+        listScenarios: profileAdminProcedure.query(async () => {
+            return listScenarioPreviews();
+        }),
         upsert: profileAdminProcedure
             .input(
                 z.object({
@@ -548,6 +589,135 @@ export const adminRouter = router({
                 const meta = readMetaObject(profile.meta);
                 const nextMeta = applyMetaPatch(meta, input.patch);
                 return ctx.profiles.updateMeta(input.profileName, nextMeta);
+            }),
+        install: profileAdminProcedure
+            .input(
+                z.object({
+                    profileName: z.string().min(1),
+                    install: zInstallOptions,
+                    reason: z.string().max(200).optional(),
+                })
+            )
+            .mutation(async ({ ctx, input }) => {
+                const profile = await ctx.profiles.getProfile(input.profileName);
+                if (!profile) {
+                    throw new TRPCError({
+                        code: 'NOT_FOUND',
+                        message: 'Profile not found.',
+                    });
+                }
+
+                const now = new Date();
+                const openAt = input.install.openAt ? new Date(input.install.openAt) : null;
+                const preopenAt = input.install.preopenAt ? new Date(input.install.preopenAt) : null;
+                if (openAt && Number.isNaN(openAt.getTime())) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: 'openAt is invalid.',
+                    });
+                }
+                if (preopenAt && Number.isNaN(preopenAt.getTime())) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: 'preopenAt is invalid.',
+                    });
+                }
+                if (openAt && openAt.getTime() < now.getTime()) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: 'openAt must be in the future.',
+                    });
+                }
+                if (preopenAt && !openAt) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: 'openAt is required when preopenAt is set.',
+                    });
+                }
+                if (preopenAt && openAt && preopenAt.getTime() >= openAt.getTime()) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: 'preopenAt must be earlier than openAt.',
+                    });
+                }
+
+                const autorunUser = input.install.autorunUser ?? null;
+                if (autorunUser) {
+                    if (autorunUser.limitMinutes <= 0 && autorunUser.options.length > 0) {
+                        throw new TRPCError({
+                            code: 'BAD_REQUEST',
+                            message: 'autorunUser limitMinutes must be positive when options are provided.',
+                        });
+                    }
+                    if (autorunUser.limitMinutes > 0 && autorunUser.options.length === 0) {
+                        throw new TRPCError({
+                            code: 'BAD_REQUEST',
+                            message: 'autorunUser options must be provided when limitMinutes is set.',
+                        });
+                    }
+                }
+
+                const scenarioValue = String(input.install.scenarioId);
+                if (profile.scenario !== scenarioValue) {
+                    try {
+                        await ctx.profiles.updateScenario(profile.profileName, scenarioValue);
+                    } catch (error) {
+                        throw new TRPCError({
+                            code: 'CONFLICT',
+                            message: 'Scenario update failed due to duplication.',
+                        });
+                    }
+                }
+
+                const scheduledAt = openAt ? (preopenAt ?? openAt).toISOString() : null;
+                const action = scheduledAt ? 'RESET_SCHEDULED' : 'RESET_NOW';
+                const meta = readMetaObject(profile.meta);
+                const actionLog = Array.isArray(meta.adminActions)
+                    ? meta.adminActions.filter((entry) => entry && typeof entry === 'object')
+                    : [];
+                const actionRecord = {
+                    action,
+                    requestedAt: now.toISOString(),
+                    scheduledAt,
+                    reason: input.reason ?? null,
+                    status: 'REQUESTED',
+                    install: {
+                        ...input.install,
+                        openAt: input.install.openAt ?? null,
+                        preopenAt: input.install.preopenAt ?? null,
+                        autorunUser: autorunUser
+                            ? {
+                                  limitMinutes: autorunUser.limitMinutes,
+                                  options: autorunUser.options,
+                              }
+                            : null,
+                    },
+                };
+
+                const nextMeta = {
+                    ...meta,
+                    adminActions: [...actionLog, actionRecord],
+                    install: actionRecord.install,
+                    installUpdatedAt: now.toISOString(),
+                };
+
+                await ctx.profiles.updateMeta(input.profileName, nextMeta);
+
+                if (openAt) {
+                    await ctx.profiles.updateStatus(profile.profileName, profile.status, {
+                        preopenAt: preopenAt ? preopenAt.toISOString() : openAt.toISOString(),
+                        openAt: openAt.toISOString(),
+                        scheduledStartAt: scheduledAt,
+                    });
+                } else {
+                    await ctx.profiles.updateStatus(profile.profileName, profile.status, {
+                        preopenAt: null,
+                        openAt: null,
+                        scheduledStartAt: null,
+                    });
+                }
+
+                return { ok: true, action: actionRecord };
             }),
         requestAction: adminProcedure
             .input(
