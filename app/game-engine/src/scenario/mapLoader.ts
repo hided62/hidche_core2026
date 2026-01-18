@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type { MapDefinition } from '@sammo-ts/logic';
+import { MapDefinitionSchema, type MapDefinition } from '@sammo-ts/logic';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,7 +28,7 @@ export const resolveMapDefinitionPath = (mapName: string, options?: MapLoaderOpt
 
 export const loadMapDefinition = async (mapPath: string): Promise<MapDefinition> => {
     const raw = await readJsonFile(mapPath);
-    return raw as MapDefinition;
+    return MapDefinitionSchema.parse(raw);
 };
 
 export const loadMapDefinitionByName = async (mapName: string, options?: MapLoaderOptions): Promise<MapDefinition> => {

@@ -7,6 +7,7 @@ export * from './logging/index.js';
 export * from './messages/index.js';
 export * from './items/index.js';
 export { ITEM_KEYS, createItemActionModules, createItemModuleRegistry, loadItemModules } from './items/index.js';
+export * from './resources/index.js';
 export * from './ports/world.js';
 export * from './ports/worldSnapshot.js';
 export * from './scenario/index.js';

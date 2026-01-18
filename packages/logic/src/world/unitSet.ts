@@ -8,6 +8,7 @@ import {
     asStringArray,
     isRecord,
 } from '@sammo-ts/common';
+import { UnitSetDefinitionInputSchema } from '../resources/unitSetSchema.js';
 
 const DEFAULT_REGION_MAP: Record<string, number> = {
     하북: 1,
@@ -114,7 +115,7 @@ const parseCrewType = (value: unknown): CrewTypeDefinition | null => {
 };
 
 export const parseUnitSetDefinition = (value: unknown): UnitSetDefinition => {
-    const data = asRecord(value);
+    const data = UnitSetDefinitionInputSchema.parse(value);
     const id = asString(data.id, 'unknown');
     const name = asString(data.name, id);
     const defaultCrewTypeId =

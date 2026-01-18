@@ -13,7 +13,9 @@
         "build": "turbo build",
         "typecheck": "turbo typecheck",
         "dev": "turbo dev",
-        "build:server": "pnpm --filter ./tools/build-scripts build:server --"
+        "build:server": "pnpm --filter ./tools/build-scripts build:server --",
+        "generate:resource-schemas": "pnpm --filter @sammo-ts/tools-scripts generate:resource-schemas",
+        "validate:resources": "pnpm --filter @sammo-ts/tools-scripts validate:resources"
     },
     "devDependencies": {
         "@eslint/js": "^9.39.2",
@@ -27,9 +29,11 @@
         "globals": "^17.0.0",
         "prettier": "^3.7.4",
         "tsdown": "^0.18.4",
+        "tsx": "^4.21.0",
         "turbo": "^2.7.2",
         "typescript": "^5.9.3",
         "typescript-eslint": "^8.51.0",
-        "vue-eslint-parser": "^10.2.0"
+        "vue-eslint-parser": "^10.2.0",
+        "zod-to-json-schema": "^3.25.1"
     }
 }

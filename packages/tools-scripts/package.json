@@ -1,0 +1,19 @@
+{
+    "name": "@sammo-ts/tools-scripts",
+    "private": true,
+    "version": "0.0.0",
+    "type": "module",
+    "scripts": {
+        "generate:resource-schemas": "tsx src/generate-resource-schemas.ts",
+        "validate:resources": "tsx src/validate-resources.ts",
+        "typecheck": "tsc -p tsconfig.json --noEmit"
+    },
+    "dependencies": {
+        "@sammo-ts/logic": "workspace:*",
+        "zod-to-json-schema": "^3.25.1"
+    },
+    "devDependencies": {
+        "tsx": "^4.21.0",
+        "typescript": "^5.9.3"
+    }
+}

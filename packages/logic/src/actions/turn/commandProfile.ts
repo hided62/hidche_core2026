@@ -1,6 +1,7 @@
 import { GENERAL_TURN_COMMAND_KEYS, isGeneralTurnCommandKey, type GeneralTurnCommandKey } from './general/index.js';
 import { NATION_TURN_COMMAND_KEYS, isNationTurnCommandKey, type NationTurnCommandKey } from './nation/index.js';
-import { asStringArray, isRecord } from '@sammo-ts/common';
+import { asStringArray } from '@sammo-ts/common';
+import { TurnCommandProfileInputSchema } from '../../resources/turnCommandSchema.js';
 
 export interface TurnCommandProfile {
     general: GeneralTurnCommandKey[];
@@ -44,18 +45,20 @@ export const parseTurnCommandProfile = (
     raw: unknown,
     fallback: TurnCommandProfile = DEFAULT_TURN_COMMAND_PROFILE
 ): TurnCommandProfile => {
-    if (!isRecord(raw)) {
+    const parsed = TurnCommandProfileInputSchema.safeParse(raw);
+    if (!parsed.success) {
         return fallback;
     }
+    const data = parsed.data;
     return {
         general: parseKeyList({
-            raw: raw.general,
+            raw: data.general,
             defaults: fallback.general,
             isKey: isGeneralTurnCommandKey,
             label: 'general',
         }),
         nation: parseKeyList({
-            raw: raw.nation,
+            raw: data.nation,
             defaults: fallback.nation,
             isKey: isNationTurnCommandKey,
             label: 'nation',

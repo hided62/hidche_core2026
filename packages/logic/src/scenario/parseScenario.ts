@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { asNullableNumber, asNullableString, asNumber, asString, asStringArray, isRecord } from '@sammo-ts/common';
 
+import { ScenarioDefaultsInputSchema, ScenarioDefinitionInputSchema } from '../resources/scenarioSchema.js';
+
 import type {
     ScenarioConfig,
     ScenarioDefaults,
@@ -24,56 +26,7 @@ const FALLBACK_STAT: ScenarioStatBlock = {
     chiefMin: 0,
 };
 
-const toRecordOrUndefined = (value: unknown): UnknownRecord | undefined => (isRecord(value) ? value : undefined);
-
-const toArrayOrUndefined = (value: unknown): unknown[] | undefined => (Array.isArray(value) ? value : undefined);
-
-const zRecord = z.record(z.string(), z.unknown());
 const zUnknownArray = z.array(z.unknown());
-const zOptionalRecord = z.preprocess(toRecordOrUndefined, zRecord.optional());
-const zOptionalArray = z.preprocess(toArrayOrUndefined, zUnknownArray.optional());
-const zStatInput = z
-    .object({
-        total: z.number().optional(),
-        min: z.number().optional(),
-        max: z.number().optional(),
-        npcTotal: z.number().optional(),
-        npcMax: z.number().optional(),
-        npcMin: z.number().optional(),
-        chiefMin: z.number().optional(),
-    })
-    .partial();
-
-const zScenarioDefaults = z
-    .object({
-        stat: z.preprocess(toRecordOrUndefined, zStatInput.optional()),
-        iconPath: z.string().optional(),
-    })
-    .passthrough();
-
-const zScenarioInput = z
-    .object({
-        title: z.string(),
-        startYear: z.number().optional(),
-        life: z.number().optional(),
-        fiction: z.number().optional(),
-        history: zOptionalArray,
-        iconPath: z.string().optional(),
-        stat: z.preprocess(toRecordOrUndefined, zStatInput.optional()),
-        map: zOptionalRecord,
-        const: zOptionalRecord,
-        nation: zOptionalArray,
-        diplomacy: zOptionalArray,
-        general: zOptionalArray,
-        general_ex: zOptionalArray,
-        general_neutral: zOptionalArray,
-        cities: zOptionalArray,
-        events: zOptionalArray,
-        initialEvents: zOptionalArray,
-        initialActions: zOptionalArray,
-        ignoreDefaultEvents: z.boolean().optional(),
-    })
-    .passthrough();
 
 const parseScenarioStatBlock = (value: unknown, fallback: ScenarioStatBlock): ScenarioStatBlock => {
     const data = isRecord(value) ? value : {};
@@ -211,7 +164,7 @@ const parseDiplomacyRows = (rows: unknown[]): ScenarioDiplomacy[] =>
 
 export const parseScenarioDefaults = (raw: unknown): ScenarioDefaults => {
     // 기본 시나리오 설정값을 안전하게 읽는다.
-    const data = zScenarioDefaults.parse(raw);
+    const data = ScenarioDefaultsInputSchema.parse(raw);
     const stat = parseScenarioStatBlock(data.stat, FALLBACK_STAT);
     const iconPath = asString(data.iconPath, '.');
     return { stat, iconPath };
@@ -219,7 +172,7 @@ export const parseScenarioDefaults = (raw: unknown): ScenarioDefaults => {
 
 export const parseScenarioDefinition = (raw: unknown, defaults: ScenarioDefaults): ScenarioDefinition => {
     // 시나리오 JSON을 런타임에서 쓰는 구조로 정규화한다.
-    const data = zScenarioInput.parse(raw);
+    const data = ScenarioDefinitionInputSchema.parse(raw);
     const stat = parseScenarioStatBlock(data.stat, defaults.stat);
     const mapConfig = data.map ?? {};
     const constConfig = data.const ?? {};
