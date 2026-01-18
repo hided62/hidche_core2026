@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { GameSessionTokenPayload } from '@sammo-ts/common';
+import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 import type { DatabaseClient as InfraDatabaseClient, RedisConnector, GamePrisma } from '@sammo-ts/infra';
 
 import type { TurnDaemonTransport } from './daemon/transport.js';

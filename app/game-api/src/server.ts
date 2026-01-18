@@ -1,7 +1,8 @@
 import fastify, { type FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
-import { buildGameEventChannel, type GameSessionTokenPayload } from '@sammo-ts/common';
+import { buildGameEventChannel } from '@sammo-ts/common';
+import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 import {
     createGamePostgresConnector,
     createRedisConnector,

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import type { GameSessionTokenPayload } from '@sammo-ts/common';
+import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 import { isValid, parseISO } from 'date-fns';
 
 interface RedisClientLike {

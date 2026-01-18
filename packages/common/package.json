@@ -5,9 +5,19 @@
     "type": "module",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+        },
+        "./auth/gameToken": {
+            "types": "./dist/auth/gameToken.d.ts",
+            "default": "./dist/auth/gameToken.js"
+        }
+    },
     "scripts": {
-        "build": "tsdown -c ../../tsdown.config.ts -F @sammo-ts/common",
-        "dev": "tsdown -c ../../tsdown.config.ts -F @sammo-ts/common --watch",
+        "build": "tsdown -c ./tsdown.config.ts",
+        "dev": "tsdown -c ./tsdown.config.ts --watch",
         "lint": "eslint .",
         "lint:fix": "eslint . --fix",
         "test": "vitest run --config vitest.config.ts",

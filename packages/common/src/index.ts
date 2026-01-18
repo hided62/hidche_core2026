@@ -1,5 +1,4 @@
 export * from './rng.js';
-export * from './auth/gameToken.js';
 export * from './time/Clock.js';
 export * from './util/BytesLike.js';
 export * from './util/convertBytesLikeToArrayBuffer.js';

@@ -15,7 +15,7 @@ import { InMemoryTurnDaemonTransport } from '../src/daemon/inMemoryTransport.js'
 import { InMemoryFlushStore } from '../src/auth/flushStore.js';
 import { RedisAccessTokenStore } from '../src/auth/accessTokenStore.js';
 import { appRouter } from '../src/router.js';
-import type { GameSessionTokenPayload } from '@sammo-ts/common';
+import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 
 const profile: GameProfile = {
     id: 'che',
