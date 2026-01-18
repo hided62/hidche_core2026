@@ -20,7 +20,7 @@
         "@sammo-ts/infra": "workspace:*",
         "@sammo-ts/logic": "workspace:*",
         "es-toolkit": "^1.43.0",
-        "zod": "^4.3.4"
+        "zod": "^4.3.5"
     },
     "devDependencies": {
         "tsdown": "^0.18.4",

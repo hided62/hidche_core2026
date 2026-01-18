@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { z } from 'zod';
+import type { ZodTypeAny } from 'zod';
 import {
     MapResourceSchema,
     ScenarioResourceSchema,
@@ -15,7 +16,7 @@ const __dirname = path.dirname(__filename);
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
 const RESOURCE_ROOT = path.join(REPO_ROOT, 'resources');
 
-const writeSchema = async (relativePath: string, schema: unknown): Promise<void> => {
+const writeSchema = async (relativePath: string, schema: ZodTypeAny): Promise<void> => {
     const outputPath = path.join(RESOURCE_ROOT, relativePath);
     const jsonSchema = z.toJSONSchema(schema, { target: 'draft-07' });
     const serialized = `${JSON.stringify(jsonSchema, null, 4)}\n`;
