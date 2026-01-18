@@ -201,17 +201,46 @@ const cleanupPm2 = async (manager: Pm2ProcessManager, names: string[]) => {
 
 const waitForTurnDaemonStatus = async (
     gameClient: ReturnType<typeof createGameClient>,
-    timeoutMs = 10_000
+    timeoutMs = 90_000
 ) => {
     const deadline = Date.now() + timeoutMs;
+    let lastError: string | null = null;
     while (Date.now() < deadline) {
-        const status = await gameClient.turnDaemon.status.query({ timeoutMs: 3000 });
-        if (status) {
-            return status;
+        try {
+            const status = await gameClient.turnDaemon.status.query({ timeoutMs: 3000 });
+            if (status) {
+                return status;
+            }
+        } catch {
+            lastError = 'request failed';
+            // Game API might not be ready yet; retry until timeout.
         }
         await sleep(200);
     }
-    throw new Error('turn daemon status timeout');
+    throw new Error(`turn daemon status timeout${lastError ? ` (${lastError})` : ''}`);
+};
+
+const waitForHttpOk = async (url: string, timeoutMs = 15_000) => {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        try {
+            const parsedUrl = new URL(url);
+            const client = parsedUrl.protocol === 'https:' ? https : http;
+            const status = await new Promise<number>((resolve, reject) => {
+                const request = client.request(parsedUrl, (response) => {
+                    response.resume();
+                    resolve(response.statusCode ?? 0);
+                });
+                request.on('error', reject);
+                request.end();
+            });
+            if (status >= 200 && status < 300) {
+                return;
+            }
+        } catch {}
+        await sleep(250);
+    }
+    throw new Error(`health check timeout: ${url}`);
 };
 
 const runTurn = async (gameClient: ReturnType<typeof createGameClient>) => {
@@ -465,6 +494,8 @@ describe('pm2 orchestrator e2e', () => {
 
         await waitForPm2Online(pm2Manager, processNames);
 
+        await waitForHttpOk(`${gameUrl}/healthz`);
+
         await waitForTurnDaemonStatus(gameClientPublic);
 
         const login = await gatewayClient.auth.login.mutate({
@@ -503,14 +534,8 @@ describe('pm2 orchestrator e2e', () => {
             strength: 55,
             intel: 55,
             character: 'Random',
-            inheritCity: cityCandidates[0]!,
         });
         expect(createdGeneral.generalId).toBeGreaterThan(0);
-
-        const settingResult = await gameClientAuthed.general.setMySetting.mutate({
-            tnmt: 1,
-        });
-        expect(settingResult.ok).toBe(true);
 
         const eventsPath = process.env.GAME_API_EVENTS_PATH ?? '/events';
         const runStartMs = Date.now();

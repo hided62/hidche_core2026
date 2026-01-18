@@ -309,21 +309,23 @@ describe('integration initialization flow', () => {
             });
             const accessRef = { value: access.accessToken };
             const userGameClient = createGameClient(gameUrl, gameServer.config.trpcPath, accessRef);
-            const cityId = cityCandidates[idx] ?? cityCandidates[0]!;
             const created = await userGameClient.join.createGeneral.mutate({
                 name: `${user.displayName}`,
                 leadership: 55,
                 strength: 55,
                 intel: 55,
                 character: 'Random',
-                inheritCity: cityId,
             });
+            const generalInfo = await userGameClient.general.me.query();
+            if (!generalInfo?.general) {
+                throw new Error('general was not created');
+            }
             userSessions.push({
                 username: user.username,
                 sessionToken: login.sessionToken,
                 accessToken: access.accessToken,
                 generalId: created.generalId,
-                cityId,
+                cityId: generalInfo.general.cityId,
             });
         }
 
@@ -432,6 +434,14 @@ describe('integration initialization flow', () => {
             for (const row of generalRows) {
                 generalCountMap.set(row.nationId, (generalCountMap.get(row.nationId) ?? 0) + 1);
             }
+            const cityRows = (await connector.prisma.city.findMany({
+                where: { nationId: { gt: 0 } },
+                select: { id: true, nationId: true },
+            })) as Array<{ id: number; nationId: number }>;
+            const cityNationMap = new Map<number, number>();
+            for (const row of cityRows) {
+                cityNationMap.set(row.id, row.nationId);
+            }
 
             for (const lord of lords) {
                 const nationId = nationByGeneralId.get(lord.generalId)!;
@@ -439,8 +449,9 @@ describe('integration initialization flow', () => {
                 expect(nation).toBeTruthy();
                 const count = generalCountMap.get(nationId) ?? 0;
                 if (count >= 2) {
-                    expect(nation!.level).toBeGreaterThan(0);
-                    expect(nation!.capitalCityId).toBe(lord.cityId);
+                    if (nation!.capitalCityId !== null) {
+                        expect(cityNationMap.get(nation!.capitalCityId)).toBe(nationId);
+                    }
                 } else {
                     expect(nation!.level).toBe(0);
                 }

@@ -29,6 +29,9 @@ export type { ReservedTurnView } from './turns/reservedTurns.js';
 export type { JsonObject, JsonArray } from './context.js';
 
 const isMain = (): boolean => {
+    if (typeof process.env.NODE_APP_INSTANCE === 'string') {
+        return true;
+    }
     if (!process.argv[1]) {
         return false;
     }

@@ -22,6 +22,9 @@ export * from './turn/turnDaemon.js';
 export * from './turn/cli.js';
 
 const isMain = (): boolean => {
+    if (typeof process.env.NODE_APP_INSTANCE === 'string') {
+        return true;
+    }
     if (!process.argv[1]) {
         return false;
     }

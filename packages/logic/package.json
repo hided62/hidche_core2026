@@ -9,7 +9,8 @@
         ".": {
             "types": "./dist/index.d.ts",
             "default": "./dist/index.js"
-        }
+        },
+        "./*": "./dist/src/*"
     },
     "scripts": {
         "build": "tsdown -c ../../tsdown.config.ts -F @sammo-ts/logic",

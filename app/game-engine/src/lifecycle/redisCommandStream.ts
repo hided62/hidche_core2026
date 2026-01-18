@@ -89,6 +89,117 @@ const normalizeCommand = (envelope: TurnDaemonCommandEnvelope): TurnDaemonComman
                 generalId: command.generalId,
             };
         }
+        case 'dieOnPrestart': {
+            if (typeof command.generalId !== 'number') {
+                return null;
+            }
+            return {
+                type: 'dieOnPrestart',
+                requestId: envelope.requestId,
+                generalId: command.generalId,
+            };
+        }
+        case 'buildNationCandidate': {
+            if (typeof command.generalId !== 'number') {
+                return null;
+            }
+            return {
+                type: 'buildNationCandidate',
+                requestId: envelope.requestId,
+                generalId: command.generalId,
+            };
+        }
+        case 'instantRetreat': {
+            if (typeof command.generalId !== 'number') {
+                return null;
+            }
+            return {
+                type: 'instantRetreat',
+                requestId: envelope.requestId,
+                generalId: command.generalId,
+            };
+        }
+        case 'vacation': {
+            if (typeof command.generalId !== 'number') {
+                return null;
+            }
+            return {
+                type: 'vacation',
+                requestId: envelope.requestId,
+                generalId: command.generalId,
+            };
+        }
+        case 'setMySetting': {
+            if (typeof command.generalId !== 'number' || !command.settings || typeof command.settings !== 'object') {
+                return null;
+            }
+            return {
+                type: 'setMySetting',
+                requestId: envelope.requestId,
+                generalId: command.generalId,
+                settings: command.settings,
+            };
+        }
+        case 'dropItem': {
+            if (typeof command.generalId !== 'number' || typeof command.itemType !== 'string') {
+                return null;
+            }
+            return {
+                type: 'dropItem',
+                requestId: envelope.requestId,
+                generalId: command.generalId,
+                itemType: command.itemType,
+            };
+        }
+        case 'changePermission': {
+            if (
+                typeof command.generalId !== 'number' ||
+                typeof command.isAmbassador !== 'boolean' ||
+                !Array.isArray(command.targetGeneralIds)
+            ) {
+                return null;
+            }
+            const targetGeneralIds = command.targetGeneralIds.filter((id) => typeof id === 'number');
+            if (targetGeneralIds.length === 0) {
+                return null;
+            }
+            return {
+                type: 'changePermission',
+                requestId: envelope.requestId,
+                generalId: command.generalId,
+                isAmbassador: command.isAmbassador,
+                targetGeneralIds,
+            };
+        }
+        case 'kick': {
+            if (typeof command.generalId !== 'number' || typeof command.destGeneralId !== 'number') {
+                return null;
+            }
+            return {
+                type: 'kick',
+                requestId: envelope.requestId,
+                generalId: command.generalId,
+                destGeneralId: command.destGeneralId,
+            };
+        }
+        case 'appoint': {
+            if (
+                typeof command.generalId !== 'number' ||
+                typeof command.destGeneralId !== 'number' ||
+                typeof command.destCityId !== 'number' ||
+                typeof command.officerLevel !== 'number'
+            ) {
+                return null;
+            }
+            return {
+                type: 'appoint',
+                requestId: envelope.requestId,
+                generalId: command.generalId,
+                destGeneralId: command.destGeneralId,
+                destCityId: command.destCityId,
+                officerLevel: command.officerLevel,
+            };
+        }
         case 'getStatus': {
             const requestId = typeof command.requestId === 'string' ? command.requestId : envelope.requestId;
             return { type: 'getStatus', requestId };
