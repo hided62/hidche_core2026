@@ -1,7 +1,386 @@
 {
-    "$ref": "#/definitions/UnitSetDefinition",
-    "definitions": {
-        "UnitSetDefinition": {}
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string"
+        },
+        "name": {
+            "type": "string"
+        },
+        "defaultCrewTypeId": {
+            "type": "number"
+        },
+        "armTypes": {
+            "type": "object",
+            "propertyNames": {
+                "type": "string"
+            },
+            "additionalProperties": {
+                "type": "string"
+            }
+        },
+        "crewTypes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "number"
+                    },
+                    "armType": {
+                        "type": "number"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "attack": {
+                        "type": "number"
+                    },
+                    "defence": {
+                        "type": "number"
+                    },
+                    "speed": {
+                        "type": "number"
+                    },
+                    "avoid": {
+                        "type": "number"
+                    },
+                    "magicCoef": {
+                        "type": "number"
+                    },
+                    "cost": {
+                        "type": "number"
+                    },
+                    "rice": {
+                        "type": "number"
+                    },
+                    "requirements": {
+                        "type": "array",
+                        "items": {
+                            "anyOf": [
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "type": "string",
+                                            "const": "ReqTech"
+                                        },
+                                        "tech": {
+                                            "type": "number"
+                                        }
+                                    },
+                                    "required": [
+                                        "type",
+                                        "tech"
+                                    ],
+                                    "additionalProperties": false
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "type": "string",
+                                            "const": "ReqRegions"
+                                        },
+                                        "regions": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "type",
+                                        "regions"
+                                    ],
+                                    "additionalProperties": false
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "type": "string",
+                                            "const": "ReqCities"
+                                        },
+                                        "cities": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "type",
+                                        "cities"
+                                    ],
+                                    "additionalProperties": false
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "type": "string",
+                                            "const": "ReqCitiesWithCityLevel"
+                                        },
+                                        "level": {
+                                            "type": "number"
+                                        },
+                                        "cities": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "type",
+                                        "level",
+                                        "cities"
+                                    ],
+                                    "additionalProperties": false
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "type": "string",
+                                            "const": "ReqHighLevelCities"
+                                        },
+                                        "level": {
+                                            "type": "number"
+                                        },
+                                        "count": {
+                                            "type": "number"
+                                        }
+                                    },
+                                    "required": [
+                                        "type",
+                                        "level",
+                                        "count"
+                                    ],
+                                    "additionalProperties": false
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "type": "string",
+                                            "const": "ReqNationAux"
+                                        },
+                                        "key": {
+                                            "type": "string"
+                                        },
+                                        "op": {
+                                            "type": "string"
+                                        },
+                                        "value": {
+                                            "anyOf": [
+                                                {
+                                                    "type": "number"
+                                                },
+                                                {
+                                                    "type": "string"
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    "required": [
+                                        "type",
+                                        "key",
+                                        "op",
+                                        "value"
+                                    ],
+                                    "additionalProperties": false
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "type": "string",
+                                            "const": "ReqMinRelYear"
+                                        },
+                                        "year": {
+                                            "type": "number"
+                                        }
+                                    },
+                                    "required": [
+                                        "type",
+                                        "year"
+                                    ],
+                                    "additionalProperties": false
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "type": "string",
+                                            "const": "ReqChief"
+                                        }
+                                    },
+                                    "required": [
+                                        "type"
+                                    ],
+                                    "additionalProperties": false
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "type": "string",
+                                            "const": "ReqNotChief"
+                                        }
+                                    },
+                                    "required": [
+                                        "type"
+                                    ],
+                                    "additionalProperties": false
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "type": "string",
+                                            "const": "Impossible"
+                                        }
+                                    },
+                                    "required": [
+                                        "type"
+                                    ],
+                                    "additionalProperties": false
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": [
+                                        "type"
+                                    ],
+                                    "additionalProperties": {}
+                                }
+                            ]
+                        }
+                    },
+                    "attackCoef": {
+                        "anyOf": [
+                            {
+                                "type": "object",
+                                "propertyNames": {
+                                    "type": "string"
+                                },
+                                "additionalProperties": {
+                                    "type": "number"
+                                }
+                            },
+                            {
+                                "type": "array",
+                                "items": {
+                                    "type": "number"
+                                }
+                            }
+                        ]
+                    },
+                    "defenceCoef": {
+                        "anyOf": [
+                            {
+                                "type": "object",
+                                "propertyNames": {
+                                    "type": "string"
+                                },
+                                "additionalProperties": {
+                                    "type": "number"
+                                }
+                            },
+                            {
+                                "type": "array",
+                                "items": {
+                                    "type": "number"
+                                }
+                            }
+                        ]
+                    },
+                    "info": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "initSkillTrigger": {
+                        "anyOf": [
+                            {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                }
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "phaseSkillTrigger": {
+                        "anyOf": [
+                            {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                }
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "iActionList": {
+                        "anyOf": [
+                            {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                }
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "armType",
+                    "name",
+                    "attack",
+                    "defence",
+                    "speed",
+                    "avoid",
+                    "magicCoef",
+                    "cost",
+                    "rice",
+                    "requirements",
+                    "attackCoef",
+                    "defenceCoef",
+                    "info",
+                    "initSkillTrigger",
+                    "phaseSkillTrigger",
+                    "iActionList"
+                ],
+                "additionalProperties": false
+            }
+        },
+        "meta": {
+            "type": "object",
+            "propertyNames": {
+                "type": "string"
+            },
+            "additionalProperties": {}
+        }
     },
-    "$schema": "http://json-schema.org/draft-07/schema#"
+    "required": [
+        "id",
+        "name"
+    ],
+    "additionalProperties": false
 }

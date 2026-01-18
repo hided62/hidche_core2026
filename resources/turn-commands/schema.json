@@ -1,7 +1,23 @@
 {
-    "$ref": "#/definitions/TurnCommandProfile",
-    "definitions": {
-        "TurnCommandProfile": {}
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+        "general": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "nation": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        }
     },
-    "$schema": "http://json-schema.org/draft-07/schema#"
+    "required": [
+        "general",
+        "nation"
+    ],
+    "additionalProperties": false
 }

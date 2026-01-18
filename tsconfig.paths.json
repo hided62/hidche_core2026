@@ -9,6 +9,8 @@
             "@sammo-ts/infra/*": ["packages/infra/src/*"],
             "@sammo-ts/logic": ["packages/logic/src/index.ts"],
             "@sammo-ts/logic/*": ["packages/logic/src/*"],
+            "@sammo-ts/logic/resources": ["packages/logic/src/resources/index.ts"],
+            "@sammo-ts/logic/resources/*": ["packages/logic/src/resources/*"],
             "@sammo-ts/gateway-api": ["app/gateway-api/src/index.ts"],
             "@sammo-ts/gateway-api/*": ["app/gateway-api/src/*"],
             "@sammo-ts/game-api": ["app/game-api/src/index.ts"],

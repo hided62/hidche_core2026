@@ -19,7 +19,7 @@ export const CrewTypeRequirementSchema = z.union([
     z.object({ type: z.literal('ReqChief') }),
     z.object({ type: z.literal('ReqNotChief') }),
     z.object({ type: z.literal('Impossible') }),
-    z.looseObject({ type: z.string() }),
+    z.object({ type: z.string() }).passthrough(),
 ]);
 
 export const CrewTypeDefinitionInputSchema = z.object({

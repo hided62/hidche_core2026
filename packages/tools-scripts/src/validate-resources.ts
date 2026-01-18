@@ -7,7 +7,7 @@ import {
     ScenarioResourceSchema,
     TurnCommandProfileInputSchema,
     UnitSetDefinitionInputSchema,
-} from '@sammo-ts/logic';
+} from '@sammo-ts/logic/resources';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

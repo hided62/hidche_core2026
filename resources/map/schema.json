@@ -1,7 +1,186 @@
 {
-    "$ref": "#/definitions/MapResource",
-    "definitions": {
-        "MapResource": {}
-    },
-    "$schema": "http://json-schema.org/draft-07/schema#"
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "anyOf": [
+        {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "cities": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": "number"
+                            },
+                            "name": {
+                                "type": "string"
+                            },
+                            "level": {
+                                "type": "number"
+                            },
+                            "region": {
+                                "type": "number"
+                            },
+                            "position": {
+                                "type": "object",
+                                "properties": {
+                                    "x": {
+                                        "type": "number"
+                                    },
+                                    "y": {
+                                        "type": "number"
+                                    }
+                                },
+                                "required": [
+                                    "x",
+                                    "y"
+                                ],
+                                "additionalProperties": false
+                            },
+                            "connections": {
+                                "type": "array",
+                                "items": {
+                                    "type": "number"
+                                }
+                            },
+                            "max": {
+                                "type": "object",
+                                "properties": {
+                                    "population": {
+                                        "type": "number"
+                                    },
+                                    "agriculture": {
+                                        "type": "number"
+                                    },
+                                    "commerce": {
+                                        "type": "number"
+                                    },
+                                    "security": {
+                                        "type": "number"
+                                    },
+                                    "defence": {
+                                        "type": "number"
+                                    },
+                                    "wall": {
+                                        "type": "number"
+                                    }
+                                },
+                                "required": [
+                                    "population",
+                                    "agriculture",
+                                    "commerce",
+                                    "security",
+                                    "defence",
+                                    "wall"
+                                ],
+                                "additionalProperties": false
+                            },
+                            "initial": {
+                                "type": "object",
+                                "properties": {
+                                    "population": {
+                                        "type": "number"
+                                    },
+                                    "agriculture": {
+                                        "type": "number"
+                                    },
+                                    "commerce": {
+                                        "type": "number"
+                                    },
+                                    "security": {
+                                        "type": "number"
+                                    },
+                                    "defence": {
+                                        "type": "number"
+                                    },
+                                    "wall": {
+                                        "type": "number"
+                                    }
+                                },
+                                "required": [
+                                    "population",
+                                    "agriculture",
+                                    "commerce",
+                                    "security",
+                                    "defence",
+                                    "wall"
+                                ],
+                                "additionalProperties": false
+                            },
+                            "meta": {
+                                "type": "object",
+                                "propertyNames": {
+                                    "type": "string"
+                                },
+                                "additionalProperties": {}
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "name",
+                            "level",
+                            "region",
+                            "position",
+                            "connections",
+                            "max",
+                            "initial"
+                        ],
+                        "additionalProperties": false
+                    }
+                },
+                "defaults": {
+                    "type": "object",
+                    "properties": {
+                        "trust": {
+                            "type": "number"
+                        },
+                        "trade": {
+                            "type": "number"
+                        },
+                        "supplyState": {
+                            "type": "number"
+                        },
+                        "frontState": {
+                            "type": "number"
+                        }
+                    },
+                    "additionalProperties": false
+                },
+                "meta": {
+                    "type": "object",
+                    "propertyNames": {
+                        "type": "string"
+                    },
+                    "additionalProperties": {}
+                }
+            },
+            "required": [
+                "id",
+                "name",
+                "cities"
+            ],
+            "additionalProperties": false
+        },
+        {
+            "type": "object",
+            "propertyNames": {
+                "type": "string"
+            },
+            "additionalProperties": {
+                "type": "object",
+                "propertyNames": {
+                    "type": "string"
+                },
+                "additionalProperties": {
+                    "type": "string"
+                }
+            }
+        }
+    ]
 }

@@ -10,7 +10,7 @@
     },
     "dependencies": {
         "@sammo-ts/logic": "workspace:*",
-        "zod-to-json-schema": "^3.25.1"
+        "zod": "^4.3.5"
     },
     "devDependencies": {
         "tsx": "^4.21.0",
