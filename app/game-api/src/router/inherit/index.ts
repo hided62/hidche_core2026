@@ -1,0 +1,833 @@
+import { TRPCError } from '@trpc/server';
+import { z } from 'zod';
+
+import { authedProcedure, router } from '../../trpc.js';
+import { asNumber, asRecord, parseJson, LiteHashDRBG } from '@sammo-ts/common';
+import { loadWarTraitModules, WarTraitLoader, WAR_TRAIT_KEYS, isWarTraitKey } from '@sammo-ts/logic';
+import type { InheritBuffType } from '@sammo-ts/logic';
+import {
+    appendInheritanceLog,
+    buildResetCost,
+    computeInheritanceItems,
+    readInheritancePoint,
+    readUserStateMeta,
+    resolveInheritConstants,
+    setInheritancePoint,
+    sumInheritanceItems,
+    writeUserStateMeta,
+} from '../../services/inheritance.js';
+import type { WorldStateRow } from '../../context.js';
+
+const BUFF_KEYS: InheritBuffType[] = [
+    'warAvoidRatio',
+    'warCriticalRatio',
+    'warMagicTrialProb',
+    'success',
+    'fail',
+    'warAvoidRatioOppose',
+    'warCriticalRatioOppose',
+    'warMagicTrialProbOppose',
+];
+
+const BUFF_LABELS: Record<InheritBuffType, string> = {
+    warAvoidRatio: '회피 확률 증가',
+    warCriticalRatio: '필살 확률 증가',
+    warMagicTrialProb: '전투계략 시도 확률 증가',
+    success: '내정 성공률 증가',
+    fail: '내정 실패율 감소',
+    warAvoidRatioOppose: '상대 회피 확률 감소',
+    warCriticalRatioOppose: '상대 필살 확률 감소',
+    warMagicTrialProbOppose: '상대 전투계략 시도 확률 감소',
+};
+
+const parseBuffRecord = (raw: unknown): Record<string, number> => {
+    if (typeof raw === 'string') {
+        const parsed = parseJson<Record<string, number>>(raw);
+        return parsed ?? {};
+    }
+    const record = asRecord(raw);
+    const result: Record<string, number> = {};
+    for (const [key, value] of Object.entries(record)) {
+        if (typeof value === 'number' && Number.isFinite(value)) {
+            result[key] = value;
+        }
+    }
+    return result;
+};
+
+const serializeBuffRecord = (buff: Record<string, number>): string => JSON.stringify(buff);
+
+const resolveWorld = async (ctx: { db: { worldState: { findFirst: () => Promise<unknown> } } }) => {
+    const worldState = await ctx.db.worldState.findFirst();
+    if (!worldState || typeof worldState !== 'object') {
+        throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message: 'World state is not initialized.',
+        });
+    }
+    return worldState as {
+        config: unknown;
+        meta: unknown;
+        currentYear: number;
+        currentMonth: number;
+        tickSeconds: number;
+    };
+};
+
+const buildTurnTimeZoneList = (tickMinutes: number): string[] => {
+    const zones: string[] = [];
+    for (let i = 0; i < 60; i += 1) {
+        const totalMinutes = i * tickMinutes;
+        const hour = Math.floor(totalMinutes / 60) % 24;
+        const minute = totalMinutes % 60;
+        zones.push(`${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`);
+    }
+    return zones;
+};
+
+const alignToTurnBase = (time: Date, tickMinutes: number): Date => {
+    const base = new Date(time.getFullYear(), time.getMonth(), time.getDate() - 1, 1, 0, 0, 0);
+    const elapsedMinutes = Math.floor((time.getTime() - base.getTime()) / 60000);
+    const alignedMinutes = elapsedMinutes - (elapsedMinutes % tickMinutes);
+    return new Date(base.getTime() + alignedMinutes * 60000);
+};
+
+const formatTimeLabel = (value: Date): string => {
+    const hours = String(value.getHours()).padStart(2, '0');
+    const minutes = String(value.getMinutes()).padStart(2, '0');
+    return `${hours}:${minutes}`;
+};
+
+const resolveSeasonValue = (meta: Record<string, unknown>): number | null => {
+    const raw = meta.season;
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+        return Math.floor(raw);
+    }
+    if (typeof raw === 'string') {
+        const parsed = Number(raw);
+        if (Number.isFinite(parsed)) {
+            return Math.floor(parsed);
+        }
+    }
+    return null;
+};
+
+const readResetSeasons = (meta: Record<string, unknown>): number[] => {
+    if (!Array.isArray(meta.last_stat_reset)) {
+        return [];
+    }
+    return meta.last_stat_reset
+        .map((value) => (typeof value === 'number' && Number.isFinite(value) ? Math.floor(value) : null))
+        .filter((value): value is number => value !== null);
+};
+
+const pickWeightedIndex = (rng: LiteHashDRBG, weights: number[]): number => {
+    const total = weights.reduce((acc, value) => acc + value, 0);
+    if (total <= 0) {
+        return 0;
+    }
+    let cursor = rng.nextFloat1() * total;
+    for (let i = 0; i < weights.length; i += 1) {
+        cursor -= weights[i] ?? 0;
+        if (cursor <= 0) {
+            return i;
+        }
+    }
+    return weights.length - 1;
+};
+
+const buildRandomBonus = (rng: LiteHashDRBG, baseStats: [number, number, number]): [number, number, number] => {
+    const bonusCount = rng.nextInt(2) + 3;
+    const bonus = [0, 0, 0] as [number, number, number];
+    for (let i = 0; i < bonusCount; i += 1) {
+        const index = pickWeightedIndex(rng, baseStats);
+        bonus[index] += 1;
+    }
+    return bonus;
+};
+
+export const inheritRouter = router({
+    getStatus: authedProcedure.query(async ({ ctx }) => {
+        const userId = ctx.auth?.user.id;
+        if (!userId) {
+            throw new TRPCError({ code: 'UNAUTHORIZED' });
+        }
+
+        const worldState = await ctx.db.worldState.findFirst();
+        if (!worldState) {
+            throw new TRPCError({
+                code: 'PRECONDITION_FAILED',
+                message: 'World state is not initialized.',
+            });
+        }
+
+        const general = await ctx.db.general.findFirst({
+            where: { userId },
+            select: {
+                id: true,
+                name: true,
+                nationId: true,
+                npcState: true,
+                special2Code: true,
+                meta: true,
+                turnTime: true,
+            },
+        });
+
+        if (!general) {
+            throw new TRPCError({ code: 'PRECONDITION_FAILED', message: '장수가 존재하지 않습니다.' });
+        }
+
+        const meta = asRecord(worldState.meta);
+        const isUnited = typeof meta.isUnited === 'number' && meta.isUnited !== 0;
+        const items = await computeInheritanceItems({
+            db: ctx.db,
+            userId,
+            generalMeta: asRecord(general.meta),
+            isUnited,
+        });
+        const totalPoint = sumInheritanceItems(items);
+
+        const inheritConst = resolveInheritConstants(worldState);
+        const buffState = parseBuffRecord(asRecord(general.meta).inheritBuff);
+        const buffLevels = BUFF_KEYS.reduce<Record<string, number>>((acc, key) => {
+            acc[key] = Math.max(0, Math.min(5, Math.floor(buffState[key] ?? 0)));
+            return acc;
+        }, {});
+
+        const resetSpecialLevel = asNumber(asRecord(general.meta).inheritResetSpecialWar, -1) + 1;
+        const resetTurnLevel = asNumber(asRecord(general.meta).inheritResetTurnTime, -1) + 1;
+
+        const config = asRecord(worldState.config);
+        const constValues = asRecord(config.const);
+        const availableSpecialWar = Array.isArray(constValues.availableSpecialWar)
+            ? constValues.availableSpecialWar.filter((key): key is string => typeof key === 'string')
+            : [];
+        const warKeys = availableSpecialWar.length > 0 ? availableSpecialWar : [...WAR_TRAIT_KEYS];
+        const warTraitKeys = warKeys.filter(isWarTraitKey);
+        const warModules = await loadWarTraitModules(warTraitKeys, new WarTraitLoader());
+        const warSpecials = warModules.map((trait) => ({
+            key: trait.key,
+            name: trait.name,
+            info: trait.info ?? '',
+        }));
+
+        const others = await ctx.db.general.findMany({
+            where: { id: { not: general.id }, userId: { not: null } },
+            select: { id: true, name: true },
+            orderBy: { id: 'asc' },
+        });
+
+        return {
+            items,
+            totalPoint,
+            inheritConst,
+            buffLevels,
+            resetCosts: {
+                resetSpecialWar: buildResetCost(inheritConst.inheritResetAttrPointBase, resetSpecialLevel),
+                resetTurnTime: buildResetCost(inheritConst.inheritResetAttrPointBase, resetTurnLevel),
+            },
+            resetLevels: {
+                resetSpecialWar: resetSpecialLevel,
+                resetTurnTime: resetTurnLevel,
+            },
+            availableSpecialWar: warSpecials,
+            availableTargetGenerals: others,
+            turnTimeZones: buildTurnTimeZoneList(Math.max(1, Math.round(worldState.tickSeconds / 60))),
+            isUnited,
+            currentSpecialWar: general.special2Code ?? 'None',
+        };
+    }),
+    getLogs: authedProcedure
+        .input(
+            z.object({
+                lastId: z.number().int().optional(),
+            })
+        )
+        .query(async ({ ctx, input }) => {
+            const userId = ctx.auth?.user.id;
+            if (!userId) {
+                throw new TRPCError({ code: 'UNAUTHORIZED' });
+            }
+            const lastId = input.lastId ?? Number.MAX_SAFE_INTEGER;
+            const logs = await ctx.db.inheritanceLog.findMany({
+                where: {
+                    userId,
+                    id: { lt: lastId },
+                },
+                orderBy: { id: 'desc' },
+                take: 30,
+                select: { id: true, year: true, month: true, text: true },
+            });
+            return logs;
+        }),
+    buyHiddenBuff: authedProcedure
+        .input(
+            z.object({
+                type: z.enum(BUFF_KEYS),
+                level: z.number().int().min(1).max(5),
+            })
+        )
+        .mutation(async ({ ctx, input }) => {
+            const userId = ctx.auth?.user.id;
+            if (!userId) {
+                throw new TRPCError({ code: 'UNAUTHORIZED' });
+            }
+
+            const worldState = await resolveWorld(ctx);
+            const worldMeta = asRecord(worldState.meta);
+            if (typeof worldMeta.isUnited === 'number' && worldMeta.isUnited !== 0) {
+                throw new TRPCError({ code: 'FORBIDDEN', message: '이미 천하가 통일되었습니다.' });
+            }
+
+            const inheritConst = resolveInheritConstants(worldState as WorldStateRow);
+            const general = await ctx.db.general.findFirst({
+                where: { userId },
+                select: { id: true, meta: true },
+            });
+            if (!general) {
+                throw new TRPCError({ code: 'PRECONDITION_FAILED', message: '장수가 존재하지 않습니다.' });
+            }
+
+            const buff = parseBuffRecord(asRecord(general.meta).inheritBuff);
+            const prevLevel = Math.max(0, Math.min(5, Math.floor(buff[input.type] ?? 0)));
+            if (input.level === prevLevel) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '이미 구입했습니다.' });
+            }
+            if (input.level < prevLevel) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '이미 더 높은 등급을 구입했습니다.' });
+            }
+            const cost = inheritConst.inheritBuffPoints[input.level] - inheritConst.inheritBuffPoints[prevLevel];
+            const currentPoint = await readInheritancePoint(ctx.db, userId, 'previous');
+            if (currentPoint < cost) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '유산 포인트가 부족합니다.' });
+            }
+
+            const buffText = BUFF_LABELS[input.type];
+            const moreText = prevLevel > 0 ? '추가' : '';
+            buff[input.type] = input.level;
+            await ctx.db.general.update({
+                where: { id: general.id },
+                data: {
+                    meta: {
+                        ...asRecord(general.meta),
+                        inheritBuff: serializeBuffRecord(buff),
+                    },
+                },
+            });
+
+            await setInheritancePoint(ctx.db, userId, 'previous', currentPoint - cost);
+            await appendInheritanceLog(
+                ctx.db,
+                userId,
+                worldState.currentYear,
+                worldState.currentMonth,
+                `${cost} 포인트로 ${buffText} ${input.level} 단계 ${moreText}구입`
+            );
+            return { ok: true, remainPoint: currentPoint - cost };
+        }),
+    setNextSpecialWar: authedProcedure
+        .input(
+            z.object({
+                specialKey: z.string(),
+            })
+        )
+        .mutation(async ({ ctx, input }) => {
+            const userId = ctx.auth?.user.id;
+            if (!userId) {
+                throw new TRPCError({ code: 'UNAUTHORIZED' });
+            }
+
+            const worldState = await resolveWorld(ctx);
+            const worldMeta = asRecord(worldState.meta);
+            if (typeof worldMeta.isUnited === 'number' && worldMeta.isUnited !== 0) {
+                throw new TRPCError({ code: 'FORBIDDEN', message: '이미 천하가 통일되었습니다.' });
+            }
+
+            if (!isWarTraitKey(input.specialKey)) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '잘못된 전투 특기입니다.' });
+            }
+            const config = asRecord(worldState.config);
+            const constValues = asRecord(config.const);
+            const allowedSpecialWar = Array.isArray(constValues.availableSpecialWar)
+                ? constValues.availableSpecialWar.filter((key): key is string => typeof key === 'string')
+                : [];
+            if (allowedSpecialWar.length > 0 && !allowedSpecialWar.includes(input.specialKey)) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '허용되지 않은 전투 특기입니다.' });
+            }
+
+            const inheritConst = resolveInheritConstants(worldState as WorldStateRow);
+            const currentPoint = await readInheritancePoint(ctx.db, userId, 'previous');
+            if (currentPoint < inheritConst.inheritSpecificSpecialPoint) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '유산 포인트가 부족합니다.' });
+            }
+
+            const general = await ctx.db.general.findFirst({
+                where: { userId },
+                select: { id: true, meta: true, special2Code: true },
+            });
+            if (!general) {
+                throw new TRPCError({ code: 'PRECONDITION_FAILED', message: '장수가 존재하지 않습니다.' });
+            }
+            if (general.special2Code === input.specialKey) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '이미 그 특기를 보유하고 있습니다.' });
+            }
+            const meta = asRecord(general.meta);
+            const reservedSpecial =
+                typeof meta.inheritSpecificSpecialWar === 'string' ? meta.inheritSpecificSpecialWar : null;
+            if (reservedSpecial === input.specialKey) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '이미 그 특기를 예약하였습니다.' });
+            }
+            if (reservedSpecial) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '이미 예약한 특기가 있습니다.' });
+            }
+
+            const [warModule] = await loadWarTraitModules([input.specialKey], new WarTraitLoader());
+            const warName = warModule?.name ?? input.specialKey;
+
+            await ctx.db.general.update({
+                where: { id: general.id },
+                data: {
+                    meta: {
+                        ...meta,
+                        inheritSpecificSpecialWar: input.specialKey,
+                    },
+                },
+            });
+
+            await setInheritancePoint(ctx.db, userId, 'previous', currentPoint - inheritConst.inheritSpecificSpecialPoint);
+            await appendInheritanceLog(
+                ctx.db,
+                userId,
+                worldState.currentYear,
+                worldState.currentMonth,
+                `${inheritConst.inheritSpecificSpecialPoint} 포인트로 다음 전투 특기로 ${warName} 지정`
+            );
+            return { ok: true };
+        }),
+    resetSpecialWar: authedProcedure.mutation(async ({ ctx }) => {
+        const userId = ctx.auth?.user.id;
+        if (!userId) {
+            throw new TRPCError({ code: 'UNAUTHORIZED' });
+        }
+
+        const worldState = await resolveWorld(ctx);
+        const worldMeta = asRecord(worldState.meta);
+        if (typeof worldMeta.isUnited === 'number' && worldMeta.isUnited !== 0) {
+            throw new TRPCError({ code: 'FORBIDDEN', message: '이미 천하가 통일되었습니다.' });
+        }
+
+        const general = await ctx.db.general.findFirst({
+            where: { userId },
+            select: { id: true, special2Code: true, meta: true },
+        });
+        if (!general) {
+            throw new TRPCError({ code: 'PRECONDITION_FAILED', message: '장수가 존재하지 않습니다.' });
+        }
+        if (!general.special2Code || general.special2Code === 'None') {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: '이미 전투 특기가 공란입니다.' });
+        }
+
+        const inheritConst = resolveInheritConstants(worldState as WorldStateRow);
+        const currentLevel = asNumber(asRecord(general.meta).inheritResetSpecialWar, -1);
+        const nextLevel = currentLevel + 1;
+        const cost = buildResetCost(inheritConst.inheritResetAttrPointBase, nextLevel);
+        const currentPoint = await readInheritancePoint(ctx.db, userId, 'previous');
+        if (currentPoint < cost) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: '유산 포인트가 부족합니다.' });
+        }
+
+        const meta = asRecord(general.meta);
+        const prevList = parseJson<string[]>(typeof meta.prev_types_special2 === 'string' ? meta.prev_types_special2 : null) ?? [];
+        prevList.push(general.special2Code);
+
+        await ctx.db.general.update({
+            where: { id: general.id },
+            data: {
+                special2Code: 'None',
+                meta: {
+                    ...meta,
+                    inheritResetSpecialWar: nextLevel,
+                    prev_types_special2: JSON.stringify(prevList),
+                },
+            },
+        });
+
+        await setInheritancePoint(ctx.db, userId, 'previous', currentPoint - cost);
+        await appendInheritanceLog(ctx.db, userId, worldState.currentYear, worldState.currentMonth, `${cost} 포인트로 전투 특기 초기화`);
+        return { ok: true };
+    }),
+    resetTurnTime: authedProcedure.mutation(async ({ ctx }) => {
+        const userId = ctx.auth?.user.id;
+        if (!userId) {
+            throw new TRPCError({ code: 'UNAUTHORIZED' });
+        }
+
+        const worldState = await resolveWorld(ctx);
+        const worldMeta = asRecord(worldState.meta);
+        if (typeof worldMeta.isUnited === 'number' && worldMeta.isUnited !== 0) {
+            throw new TRPCError({ code: 'FORBIDDEN', message: '이미 천하가 통일되었습니다.' });
+        }
+
+        const general = await ctx.db.general.findFirst({
+            where: { userId },
+            select: { id: true, meta: true, turnTime: true },
+        });
+        if (!general) {
+            throw new TRPCError({ code: 'PRECONDITION_FAILED', message: '장수가 존재하지 않습니다.' });
+        }
+
+        const inheritConst = resolveInheritConstants(worldState as WorldStateRow);
+        const currentLevel = asNumber(asRecord(general.meta).inheritResetTurnTime, -1);
+        const nextLevel = currentLevel + 1;
+        const cost = buildResetCost(inheritConst.inheritResetAttrPointBase, nextLevel);
+        const currentPoint = await readInheritancePoint(ctx.db, userId, 'previous');
+        if (currentPoint < cost) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: '유산 포인트가 부족합니다.' });
+        }
+
+        const tickMinutes = Math.max(1, Math.round(worldState.tickSeconds / 60));
+        const baseTime = alignToTurnBase(general.turnTime ?? new Date(), tickMinutes);
+        const seedBase = `${asRecord(worldState.meta).hiddenSeed ?? 'inherit'}:ResetTurnTime:${userId}:${general.id}`;
+        const rng = new LiteHashDRBG(seedBase);
+        const offsetMinutes = rng.nextFloat1() * tickMinutes;
+        let nextTurnTime = new Date(baseTime.getTime() + offsetMinutes * 60000);
+        if (nextTurnTime.getTime() <= Date.now()) {
+            nextTurnTime = new Date(nextTurnTime.getTime() + tickMinutes * 60000);
+        }
+
+        await ctx.db.general.update({
+            where: { id: general.id },
+            data: {
+                turnTime: nextTurnTime,
+                meta: {
+                    ...asRecord(general.meta),
+                    inheritResetTurnTime: nextLevel,
+                },
+            },
+        });
+
+        await setInheritancePoint(ctx.db, userId, 'previous', currentPoint - cost);
+        await appendInheritanceLog(
+            ctx.db,
+            userId,
+            worldState.currentYear,
+            worldState.currentMonth,
+            `${cost} 포인트로 턴 시간을 바꾸어 다다음 턴부터 ${formatTimeLabel(nextTurnTime)} 적용`
+        );
+        return { ok: true, nextTurnTime: nextTurnTime.toISOString() };
+    }),
+    resetStat: authedProcedure
+        .input(
+            z.object({
+                leadership: z.number().int(),
+                strength: z.number().int(),
+                intel: z.number().int(),
+                inheritBonusStat: z.tuple([z.number().int(), z.number().int(), z.number().int()]).optional(),
+            })
+        )
+        .mutation(async ({ ctx, input }) => {
+            const userId = ctx.auth?.user.id;
+            if (!userId) {
+                throw new TRPCError({ code: 'UNAUTHORIZED' });
+            }
+            const worldState = await resolveWorld(ctx);
+            const worldMeta = asRecord(worldState.meta);
+            if (typeof worldMeta.isUnited === 'number' && worldMeta.isUnited !== 0) {
+                throw new TRPCError({ code: 'FORBIDDEN', message: '이미 천하가 통일되었습니다.' });
+            }
+            const config = asRecord(worldState.config);
+            const statConfig = asRecord(config.stat);
+            const statTotal = asNumber(statConfig.total, input.leadership + input.strength + input.intel);
+            const statMin = asNumber(statConfig.min, 1);
+            const statMax = asNumber(statConfig.max, 999);
+
+            const total = input.leadership + input.strength + input.intel;
+            if (total !== statTotal) {
+                throw new TRPCError({
+                    code: 'BAD_REQUEST',
+                    message: `능력치 총합이 ${statTotal}이 아닙니다. 다시 입력해주세요!`,
+                });
+            }
+            if (
+                input.leadership < statMin ||
+                input.strength < statMin ||
+                input.intel < statMin ||
+                input.leadership > statMax ||
+                input.strength > statMax ||
+                input.intel > statMax
+            ) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '능력치 범위를 벗어났습니다.' });
+            }
+
+            const inheritConst = resolveInheritConstants(worldState as WorldStateRow);
+            const bonus = input.inheritBonusStat ?? [0, 0, 0];
+            const bonusSum = bonus.reduce((acc, value) => acc + value, 0);
+            if (bonus.some((value) => value < 0)) {
+                throw new TRPCError({
+                    code: 'BAD_REQUEST',
+                    message: '보너스 능력치가 음수입니다. 다시 입력해주세요!',
+                });
+            }
+            if (bonusSum !== 0 && (bonusSum < 3 || bonusSum > 5)) {
+                throw new TRPCError({
+                    code: 'BAD_REQUEST',
+                    message: '보너스 능력치 합이 잘못 지정되었습니다. 다시 입력해주세요!',
+                });
+            }
+
+            const currentPoint = await readInheritancePoint(ctx.db, userId, 'previous');
+            const cost = bonusSum > 0 ? inheritConst.inheritBornStatPoint : 0;
+            if (currentPoint < cost) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '유산 포인트가 부족합니다.' });
+            }
+
+            const general = await ctx.db.general.findFirst({
+                where: { userId },
+                select: { id: true, npcState: true },
+            });
+            if (!general) {
+                throw new TRPCError({ code: 'PRECONDITION_FAILED', message: '장수가 존재하지 않습니다.' });
+            }
+            if (general.npcState >= 2) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: 'NPC는 능력치 초기화를 할 수 없습니다.' });
+            }
+
+            const seasonValue = resolveSeasonValue(worldMeta);
+            if (seasonValue !== null) {
+                const userState = await readUserStateMeta(ctx.db, userId);
+                const resetSeasons = readResetSeasons(userState);
+                if (resetSeasons.includes(seasonValue)) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: '이번 시즌에 이미 능력치를 초기화하셨습니다.',
+                    });
+                }
+            }
+
+            const finalBonus =
+                bonusSum === 0
+                    ? buildRandomBonus(
+                          new LiteHashDRBG(
+                              `${asRecord(worldState.meta).hiddenSeed ?? 'inherit'}:ResetStat:${userId}`
+                          ),
+                          [input.leadership, input.strength, input.intel]
+                      )
+                    : (bonus as [number, number, number]);
+            const nextStats = {
+                leadership: input.leadership + finalBonus[0],
+                strength: input.strength + finalBonus[1],
+                intel: input.intel + finalBonus[2],
+            };
+
+            await ctx.db.general.update({
+                where: { id: general.id },
+                data: {
+                    leadership: nextStats.leadership,
+                    strength: nextStats.strength,
+                    intel: nextStats.intel,
+                },
+            });
+
+            await appendInheritanceLog(
+                ctx.db,
+                userId,
+                worldState.currentYear,
+                worldState.currentMonth,
+                `통솔 ${input.leadership}, 무력 ${input.strength}, 지력 ${input.intel} 스탯 재설정`
+            );
+            if (bonusSum > 0) {
+                await appendInheritanceLog(
+                    ctx.db,
+                    userId,
+                    worldState.currentYear,
+                    worldState.currentMonth,
+                    `${cost}로 통솔 ${finalBonus[0]}, 무력 ${finalBonus[1]}, 지력 ${finalBonus[2]} 보너스 능력치 적용`
+                );
+            } else {
+                await appendInheritanceLog(
+                    ctx.db,
+                    userId,
+                    worldState.currentYear,
+                    worldState.currentMonth,
+                    `통솔 ${finalBonus[0]}, 무력 ${finalBonus[1]}, 지력 ${finalBonus[2]} 보너스 능력치 적용`
+                );
+            }
+            if (cost > 0) {
+                await setInheritancePoint(ctx.db, userId, 'previous', currentPoint - cost);
+            }
+            if (seasonValue !== null) {
+                const userState = await readUserStateMeta(ctx.db, userId);
+                const resetSeasons = readResetSeasons(userState);
+                const nextSeasons = resetSeasons.includes(seasonValue)
+                    ? resetSeasons
+                    : [...resetSeasons, seasonValue];
+                await writeUserStateMeta(ctx.db, userId, {
+                    ...userState,
+                    last_stat_reset: nextSeasons,
+                });
+            }
+            return { ok: true, stats: nextStats };
+        }),
+    buyRandomUnique: authedProcedure.mutation(async ({ ctx }) => {
+        const userId = ctx.auth?.user.id;
+        if (!userId) {
+            throw new TRPCError({ code: 'UNAUTHORIZED' });
+        }
+        const worldState = await resolveWorld(ctx);
+        const worldMeta = asRecord(worldState.meta);
+        if (typeof worldMeta.isUnited === 'number' && worldMeta.isUnited !== 0) {
+            throw new TRPCError({ code: 'FORBIDDEN', message: '이미 천하가 통일되었습니다.' });
+        }
+        const inheritConst = resolveInheritConstants(worldState as WorldStateRow);
+        const currentPoint = await readInheritancePoint(ctx.db, userId, 'previous');
+        if (currentPoint < inheritConst.inheritItemRandomPoint) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: '유산 포인트가 부족합니다.' });
+        }
+
+        const general = await ctx.db.general.findFirst({
+            where: { userId },
+            select: { id: true, meta: true },
+        });
+        if (!general) {
+            throw new TRPCError({ code: 'PRECONDITION_FAILED', message: '장수가 존재하지 않습니다.' });
+        }
+        const meta = asRecord(general.meta);
+        if (meta.inheritRandomUnique !== undefined && meta.inheritRandomUnique !== null) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: '이미 구입 명령을 내렸습니다. 다음 턴까지 기다려주세요.' });
+        }
+
+        await ctx.db.general.update({
+            where: { id: general.id },
+            data: {
+                meta: {
+                    ...meta,
+                    inheritRandomUnique: 1,
+                },
+            },
+        });
+
+        await setInheritancePoint(ctx.db, userId, 'previous', currentPoint - inheritConst.inheritItemRandomPoint);
+        await appendInheritanceLog(
+            ctx.db,
+            userId,
+            worldState.currentYear,
+            worldState.currentMonth,
+            `${inheritConst.inheritItemRandomPoint} 포인트로 랜덤 유니크 구입`
+        );
+        return { ok: true };
+    }),
+    openUniqueAuction: authedProcedure
+        .input(
+            z.object({
+                itemId: z.string(),
+                amount: z.number().int().min(1),
+            })
+        )
+        .mutation(async ({ ctx, input }) => {
+            const userId = ctx.auth?.user.id;
+            if (!userId) {
+                throw new TRPCError({ code: 'UNAUTHORIZED' });
+            }
+            const worldState = await resolveWorld(ctx);
+            const worldMeta = asRecord(worldState.meta);
+            if (typeof worldMeta.isUnited === 'number' && worldMeta.isUnited !== 0) {
+                throw new TRPCError({ code: 'FORBIDDEN', message: '이미 천하가 통일되었습니다.' });
+            }
+            const inheritConst = resolveInheritConstants(worldState as WorldStateRow);
+            if (input.amount < inheritConst.inheritItemUniqueMinPoint) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '입찰 포인트가 부족합니다.' });
+            }
+            const currentPoint = await readInheritancePoint(ctx.db, userId, 'previous');
+            if (currentPoint < input.amount) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '유산 포인트가 부족합니다.' });
+            }
+
+            const general = await ctx.db.general.findFirst({
+                where: { userId },
+                select: { id: true, meta: true },
+            });
+            if (!general) {
+                throw new TRPCError({ code: 'PRECONDITION_FAILED', message: '장수가 존재하지 않습니다.' });
+            }
+            const meta = asRecord(general.meta);
+            if (meta.inheritSpecificUnique) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '이미 유니크 경매 신청이 있습니다.' });
+            }
+
+            await ctx.db.general.update({
+                where: { id: general.id },
+                data: {
+                    meta: {
+                        ...meta,
+                        inheritSpecificUnique: JSON.stringify({
+                            itemId: input.itemId,
+                            amount: input.amount,
+                            requestedAt: new Date().toISOString(),
+                        }),
+                    },
+                },
+            });
+
+            await setInheritancePoint(ctx.db, userId, 'previous', currentPoint - input.amount);
+            await appendInheritanceLog(
+                ctx.db,
+                userId,
+                worldState.currentYear,
+                worldState.currentMonth,
+                `${input.amount} 포인트로 유니크 경매 신청`
+            );
+            return { ok: true };
+        }),
+    checkOwner: authedProcedure
+        .input(
+            z.object({
+                targetGeneralId: z.number().int().positive(),
+            })
+        )
+        .mutation(async ({ ctx, input }) => {
+            const userId = ctx.auth?.user.id;
+            if (!userId) {
+                throw new TRPCError({ code: 'UNAUTHORIZED' });
+            }
+            const worldState = await resolveWorld(ctx);
+            const worldMeta = asRecord(worldState.meta);
+            if (typeof worldMeta.isUnited === 'number' && worldMeta.isUnited !== 0) {
+                throw new TRPCError({ code: 'FORBIDDEN', message: '이미 천하가 통일되었습니다.' });
+            }
+            const inheritConst = resolveInheritConstants(worldState as WorldStateRow);
+            const currentPoint = await readInheritancePoint(ctx.db, userId, 'previous');
+            if (currentPoint < inheritConst.inheritCheckOwnerPoint) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '유산 포인트가 부족합니다.' });
+            }
+
+            const [general, target] = await Promise.all([
+                ctx.db.general.findFirst({ where: { userId }, select: { id: true } }),
+                ctx.db.general.findUnique({
+                    where: { id: input.targetGeneralId },
+                    select: { id: true, name: true, userId: true, meta: true },
+                }),
+            ]);
+            if (!general) {
+                throw new TRPCError({ code: 'PRECONDITION_FAILED', message: '장수가 존재하지 않습니다.' });
+            }
+            if (!target || !target.userId) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '대상 장수가 존재하지 않습니다.' });
+            }
+            if (target.id === general.id) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '자신의 정보는 확인할 수 없습니다.' });
+            }
+
+            const ownerName = typeof asRecord(target.meta).ownerName === 'string' ? (asRecord(target.meta).ownerName as string) : target.userId;
+
+            await setInheritancePoint(ctx.db, userId, 'previous', currentPoint - inheritConst.inheritCheckOwnerPoint);
+            await appendInheritanceLog(
+                ctx.db,
+                userId,
+                worldState.currentYear,
+                worldState.currentMonth,
+                `${inheritConst.inheritCheckOwnerPoint} 포인트로 장수 소유자 확인`
+            );
+            return { ok: true, ownerName, targetName: target.name };
+        }),
+});

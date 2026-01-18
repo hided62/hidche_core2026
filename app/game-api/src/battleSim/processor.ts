@@ -12,6 +12,7 @@ import {
     createItemModuleRegistry,
     ITEM_KEYS,
     loadItemModules,
+    createInheritBuffModules,
     type City,
     type General,
     type Nation,
@@ -27,9 +28,11 @@ import { convertLog } from './logFormatter.js';
 
 const DEFAULT_GENERAL_AGE = 20;
 
-const itemWarModules: WarActionModule[] = createItemActionModules(
-    createItemModuleRegistry(await loadItemModules([...ITEM_KEYS]))
-).war;
+const inheritBuffModules = createInheritBuffModules();
+const itemWarModules: WarActionModule[] = [
+    ...createItemActionModules(createItemModuleRegistry(await loadItemModules([...ITEM_KEYS]))).war,
+    inheritBuffModules.war,
+];
 
 const normalizeItemCode = (value: string | null): string | null => (value === 'None' ? null : value);
 

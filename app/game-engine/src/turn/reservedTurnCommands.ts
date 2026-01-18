@@ -14,6 +14,7 @@ import {
     createItemModuleRegistry,
     ITEM_KEYS,
     loadItemModules,
+    createInheritBuffModules,
 } from '@sammo-ts/logic';
 import { asRecord } from '@sammo-ts/common';
 
@@ -107,8 +108,11 @@ export const buildReservedTurnDefinitions = async (options: {
     const itemModules = await loadItemModules([...ITEM_KEYS]);
     const itemRegistry = createItemModuleRegistry(itemModules);
     const itemActionModules = createItemActionModules(itemRegistry);
+    const inheritBuffModules = createInheritBuffModules();
     options.env.generalActionModules = [...(options.env.generalActionModules ?? []), ...itemActionModules.general];
     options.env.warActionModules = [...(options.env.warActionModules ?? []), ...itemActionModules.war];
+    options.env.generalActionModules.push(inheritBuffModules.general);
+    options.env.warActionModules.push(inheritBuffModules.war);
 
     const generalSpecs = await loadGeneralTurnCommandSpecs(options.commandProfile.general);
     const nationSpecs = await loadNationTurnCommandSpecs(options.commandProfile.nation);

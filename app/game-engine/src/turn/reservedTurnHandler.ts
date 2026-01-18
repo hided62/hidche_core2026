@@ -468,7 +468,7 @@ export const createReservedTurnHandler = async (options: {
                 fallbackDefinition: GeneralActionDefinition,
                 command: ReservedTurnEntry,
                 applyNextTurnAt: boolean
-            ): Date | undefined => {
+            ): { nextTurnAt?: Date; actionKey: string } => {
                 const resolvedDefinition = resolveDefinition(command.action, definitionMap, fallbackDefinition);
                 const rawArgs = extractArgsRecord(command.args);
                 const parsedArgs = resolvedDefinition.parseArgs(rawArgs);
@@ -658,7 +658,7 @@ export const createReservedTurnHandler = async (options: {
                     }
                 }
 
-                return applyNextTurnAt ? resolution.nextTurnAt : undefined;
+                return { nextTurnAt: applyNextTurnAt ? resolution.nextTurnAt : undefined, actionKey };
             };
 
             if (currentNation && currentGeneral.officerLevel >= 5) {
@@ -718,8 +718,24 @@ export const createReservedTurnHandler = async (options: {
                     generalCommand = { action: candidate.action, args: candidate.args };
                 }
             }
-            const nextTurnAt = runAction(generalDefinitions, generalFallback, generalCommand, true);
+            const generalResult = runAction(generalDefinitions, generalFallback, generalCommand, true);
+            const nextTurnAt = generalResult.nextTurnAt;
             options.reservedTurns.shiftGeneralTurns(currentGeneral.id, -1);
+
+            const worldMeta = asRecord(context.world.meta);
+            if (currentGeneral.npcState < 2 && !(typeof worldMeta.isUnited === 'number' && worldMeta.isUnited !== 0)) {
+                const meta = { ...currentGeneral.meta };
+                const lived = typeof meta.inherit_lived_month === 'number' ? meta.inherit_lived_month : 0;
+                const active = typeof meta.inherit_active_action === 'number' ? meta.inherit_active_action : 0;
+                meta.inherit_lived_month = lived + 1;
+                if (generalResult.actionKey !== DEFAULT_ACTION) {
+                    meta.inherit_active_action = active + 1;
+                } else {
+                    meta.inherit_active_action = active;
+                }
+                currentGeneral = { ...currentGeneral, meta };
+                worldOverlay?.syncGeneral(currentGeneral);
+            }
 
             const result: GeneralTurnResult = {
                 general: currentGeneral,

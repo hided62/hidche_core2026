@@ -5,10 +5,12 @@ import PanelCard from '../components/ui/PanelCard.vue';
 import SkeletonLines from '../components/ui/SkeletonLines.vue';
 import { trpc } from '../utils/trpc';
 import { useSessionStore } from '../stores/session';
+import { cityLevelMap, regionMap } from '../utils/nationFormat';
 
 type JoinConfig = Awaited<ReturnType<typeof trpc.join.getConfig.query>>;
 type JoinInput = Parameters<typeof trpc.join.createGeneral.mutate>[0];
 type PossessCandidate = Awaited<ReturnType<typeof trpc.join.listPossessCandidates.query>>[0];
+type JoinForm = Omit<JoinInput, 'inheritBonusStat'> & { inheritBonusStat: [number, number, number] };
 
 const router = useRouter();
 const session = useSessionStore();
@@ -20,13 +22,14 @@ const submitting = ref(false);
 const joinConfig = ref<JoinConfig | null>(null);
 const activeTab = ref<'create' | 'possess'>('create');
 
-const form = ref<JoinInput>({
+const form = ref<JoinForm>({
     name: '',
     leadership: 0,
     strength: 0,
     intel: 0,
     character: 'Random',
     pic: true,
+    inheritBonusStat: [0, 0, 0],
 });
 
 const npcCandidates = ref<PossessCandidate[]>([]);
@@ -63,11 +66,83 @@ const canSubmit = computed(() => {
     if (statErrors.value.length > 0) {
         return false;
     }
+    if (inheritErrors.value.length > 0) {
+        return false;
+    }
     return true;
 });
 
 const nationList = computed(() => joinConfig.value?.nations ?? []);
 const personalities = computed(() => joinConfig.value?.personalities ?? []);
+const inheritConfig = computed(() => joinConfig.value?.inherit ?? null);
+
+const inheritTotalPoint = computed(() => inheritConfig.value?.totalPoint ?? 0);
+const inheritCosts = computed(
+    () =>
+        inheritConfig.value?.costs ?? {
+            inheritBornSpecialPoint: 0,
+            inheritBornTurntimePoint: 0,
+            inheritBornCityPoint: 0,
+            inheritBornStatPoint: 0,
+        }
+);
+const inheritRequiredPoint = computed(() => {
+    let total = 0;
+    if (form.value.inheritSpecial) {
+        total += inheritCosts.value.inheritBornSpecialPoint;
+    }
+    if (form.value.inheritCity !== undefined) {
+        total += inheritCosts.value.inheritBornCityPoint;
+    }
+    if (form.value.inheritTurntimeZone !== undefined) {
+        total += inheritCosts.value.inheritBornTurntimePoint;
+    }
+    const bonus = form.value.inheritBonusStat ?? [0, 0, 0];
+    const bonusSum = bonus.reduce((acc, value) => acc + value, 0);
+    if (bonusSum > 0) {
+        total += inheritCosts.value.inheritBornStatPoint;
+    }
+    return total;
+});
+
+const inheritBonusSum = computed(() => {
+    const bonus = form.value.inheritBonusStat ?? [0, 0, 0];
+    return bonus.reduce((acc, value) => acc + value, 0);
+});
+
+const inheritErrors = computed(() => {
+    const errors: string[] = [];
+    const bonus = form.value.inheritBonusStat ?? [0, 0, 0];
+    const bonusSum = bonus.reduce((acc, value) => acc + value, 0);
+    if (bonusSum !== 0 && (bonusSum < 3 || bonusSum > 5)) {
+        errors.push('보너스 능력치는 합 3~5 사이여야 합니다.');
+    }
+    if (inheritRequiredPoint.value > inheritTotalPoint.value) {
+        errors.push('보유한 유산 포인트가 부족합니다.');
+    }
+    return errors;
+});
+
+const inheritSpecialChoice = computed<string>({
+    get: () => form.value.inheritSpecial ?? '',
+    set: (value) => {
+        form.value.inheritSpecial = value ? value : undefined;
+    },
+});
+
+const inheritCityChoice = computed<string>({
+    get: () => (form.value.inheritCity !== undefined ? String(form.value.inheritCity) : ''),
+    set: (value) => {
+        form.value.inheritCity = value ? Number(value) : undefined;
+    },
+});
+
+const inheritTurntimeChoice = computed<string>({
+    get: () => (form.value.inheritTurntimeZone !== undefined ? String(form.value.inheritTurntimeZone) : ''),
+    set: (value) => {
+        form.value.inheritTurntimeZone = value ? Number(value) : undefined;
+    },
+});
 
 const randomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 
@@ -283,8 +358,106 @@ onMounted(() => {
                 </div>
             </PanelCard>
 
-            <PanelCard title="유산/빙의 안내" subtitle="유산 포인트와 추가 옵션은 추후 이식 예정입니다.">
-                <div class="muted">특기/도시 선택, 턴 시간 지정은 향후 UI와 함께 제공됩니다.</div>
+            <PanelCard title="유산 포인트 옵션" subtitle="보유 포인트를 사용해 시작 옵션을 지정합니다.">
+                <div v-if="!inheritConfig" class="muted">유산 포인트 정보를 불러오지 못했습니다.</div>
+                <div v-else class="inherit-panel">
+                    <div class="inherit-summary">
+                        <div>보유 포인트: {{ inheritTotalPoint }}</div>
+                        <div>필요 포인트: {{ inheritRequiredPoint }}</div>
+                    </div>
+
+                    <div class="inherit-options">
+                        <label class="form-field">
+                            <span>전투 특기 선택</span>
+                            <select v-model="inheritSpecialChoice" class="form-input">
+                                <option value="">선택 안함</option>
+                                <option
+                                    v-for="special in inheritConfig.availableSpecialWar"
+                                    :key="special.key"
+                                    :value="special.key"
+                                >
+                                    {{ special.name }}
+                                </option>
+                            </select>
+                            <small class="muted">비용 {{ inheritCosts.inheritBornSpecialPoint }} 포인트</small>
+                        </label>
+
+                        <label class="form-field">
+                            <span>시작 도시 지정</span>
+                            <select v-model="inheritCityChoice" class="form-input">
+                                <option value="">랜덤 배치</option>
+                                <option
+                                    v-for="city in inheritConfig.availableCities"
+                                    :key="city.id"
+                                    :value="String(city.id)"
+                                >
+                                    {{ city.name }} · {{ cityLevelMap[city.level] ?? city.level }} ·
+                                    {{ regionMap[city.region] ?? city.region }}
+                                </option>
+                            </select>
+                            <small class="muted">비용 {{ inheritCosts.inheritBornCityPoint }} 포인트</small>
+                        </label>
+
+                        <label class="form-field">
+                            <span>턴 시간대 지정</span>
+                            <select v-model="inheritTurntimeChoice" class="form-input">
+                                <option value="">랜덤 배치</option>
+                                <option
+                                    v-for="(zone, index) in inheritConfig.turnTimeZones"
+                                    :key="zone"
+                                    :value="String(index)"
+                                >
+                                    {{ zone }}
+                                </option>
+                            </select>
+                            <small class="muted">비용 {{ inheritCosts.inheritBornTurntimePoint }} 포인트</small>
+                        </label>
+                    </div>
+
+                    <div class="inherit-bonus">
+                        <div class="bonus-title">보너스 능력치</div>
+                        <div class="bonus-grid">
+                            <label class="form-field">
+                                <span>통솔</span>
+                                <input
+                                    v-model.number="form.inheritBonusStat[0]"
+                                    type="number"
+                                    min="0"
+                                    max="5"
+                                    class="form-input"
+                                />
+                            </label>
+                            <label class="form-field">
+                                <span>무력</span>
+                                <input
+                                    v-model.number="form.inheritBonusStat[1]"
+                                    type="number"
+                                    min="0"
+                                    max="5"
+                                    class="form-input"
+                                />
+                            </label>
+                            <label class="form-field">
+                                <span>지력</span>
+                                <input
+                                    v-model.number="form.inheritBonusStat[2]"
+                                    type="number"
+                                    min="0"
+                                    max="5"
+                                    class="form-input"
+                                />
+                            </label>
+                        </div>
+                        <small class="muted">
+                            보너스 합 {{ inheritBonusSum }} (0 또는 3~5) · 비용
+                            {{ inheritCosts.inheritBornStatPoint }} 포인트
+                        </small>
+                    </div>
+
+                    <div v-if="inheritErrors.length" class="inherit-errors">
+                        <div v-for="item in inheritErrors" :key="item">{{ item }}</div>
+                    </div>
+                </div>
             </PanelCard>
         </section>
 
@@ -472,6 +645,48 @@ onMounted(() => {
     border: 1px solid rgba(201, 164, 90, 0.4);
     padding: 6px 12px;
     font-size: 0.8rem;
+}
+
+.inherit-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.inherit-summary {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 0.8rem;
+    color: rgba(232, 221, 196, 0.85);
+}
+
+.inherit-options {
+    display: grid;
+    gap: 12px;
+}
+
+.inherit-bonus {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.bonus-title {
+    font-size: 0.8rem;
+    color: rgba(232, 221, 196, 0.8);
+}
+
+.bonus-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.inherit-errors {
+    color: rgba(240, 150, 150, 0.9);
+    font-size: 0.75rem;
 }
 
 .form-actions .ghost,

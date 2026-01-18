@@ -5,6 +5,7 @@ import { authRouter } from './router/auth/index.js';
 import { generalRouter } from './router/general/index.js';
 import { healthRouter } from './router/health/index.js';
 import { joinRouter } from './router/join/index.js';
+import { inheritRouter } from './router/inherit/index.js';
 import { lobbyRouter } from './router/lobby/index.js';
 import { messagesRouter } from './router/messages/index.js';
 import { nationRouter } from './router/nation/index.js';
@@ -20,6 +21,7 @@ export const appRouter = router({
     lobby: lobbyRouter,
     public: publicRouter,
     join: joinRouter,
+    inherit: inheritRouter,
     battle: battleRouter,
     world: worldRouter,
     turns: turnsRouter,

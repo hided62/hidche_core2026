@@ -3,6 +3,7 @@ import MainView from '../views/MainView.vue';
 import PublicView from '../views/PublicView.vue';
 import LoginView from '../views/LoginView.vue';
 import JoinView from '../views/JoinView.vue';
+import InheritView from '../views/InheritView.vue';
 import NationCitiesView from '../views/NationCitiesView.vue';
 import NationGeneralsView from '../views/NationGeneralsView.vue';
 import NationPersonnelView from '../views/NationPersonnelView.vue';
@@ -31,6 +32,15 @@ const routes = [
         meta: {
             requiresAuth: true,
             requiresNoGeneral: true,
+        },
+    },
+    {
+        path: '/inherit',
+        name: 'inherit',
+        component: InheritView,
+        meta: {
+            requiresAuth: true,
+            requiresGeneral: true,
         },
     },
     {

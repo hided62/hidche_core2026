@@ -210,6 +210,20 @@ export class InMemoryTurnWorld {
         return { ...this.state };
     }
 
+    updateWorldMeta(patch: Record<string, unknown>): void {
+        this.state = {
+            ...this.state,
+            meta: {
+                ...this.state.meta,
+                ...patch,
+            },
+        };
+    }
+
+    pushLog(entry: LogEntryDraft): void {
+        this.logs.push(entry);
+    }
+
     getScenarioConfig(): ScenarioConfig {
         return this.scenarioConfig;
     }

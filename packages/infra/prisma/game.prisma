@@ -206,3 +206,50 @@ model LogEntry {
     @@index([userId, category, id])
     @@map("log_entry")
 }
+
+model InheritancePoint {
+    id        Int      @id @default(autoincrement())
+    userId    String   @map("user_id")
+    key       String
+    value     Float    @default(0)
+    aux       Json     @default(dbgenerated("'{}'::jsonb"))
+    updatedAt DateTime @updatedAt @map("updated_at")
+
+    @@unique([userId, key])
+    @@index([userId])
+    @@map("inheritance_point")
+}
+
+model InheritanceLog {
+    id        Int      @id @default(autoincrement())
+    userId    String   @map("user_id")
+    year      Int
+    month     Int
+    text      String
+    createdAt DateTime @default(now()) @map("created_at")
+
+    @@index([userId, id])
+    @@map("inheritance_log")
+}
+
+model InheritanceResult {
+    id        Int      @id @default(autoincrement())
+    serverId  String   @map("server_id")
+    owner     String   @map("owner")
+    generalId Int      @map("general_id")
+    year      Int
+    month     Int
+    value     Json     @default(dbgenerated("'{}'::jsonb"))
+    createdAt DateTime @default(now()) @map("created_at")
+
+    @@index([serverId, owner])
+    @@map("inheritance_result")
+}
+
+model InheritanceUserState {
+    userId    String   @id @map("user_id")
+    meta      Json     @default(dbgenerated("'{}'::jsonb"))
+    updatedAt DateTime @updatedAt @map("updated_at")
+
+    @@map("inheritance_user_state")
+}

@@ -1,7 +1,7 @@
 import type { GamePrisma, GamePrismaClient } from './gamePrisma.js';
 
 export interface DatabaseClient {
-    $transaction: GamePrismaClient['$transaction'];
+    $transaction?: GamePrismaClient['$transaction'];
     $queryRaw: GamePrismaClient['$queryRaw'];
     worldState: GamePrisma.WorldStateDelegate;
     general: GamePrisma.GeneralDelegate;
@@ -10,4 +10,8 @@ export interface DatabaseClient {
     generalTurn: GamePrisma.GeneralTurnDelegate;
     nationTurn: GamePrisma.NationTurnDelegate;
     troop: GamePrisma.TroopDelegate;
+    inheritancePoint: GamePrisma.InheritancePointDelegate;
+    inheritanceLog: GamePrisma.InheritanceLogDelegate;
+    inheritanceResult: GamePrisma.InheritanceResultDelegate;
+    inheritanceUserState: GamePrisma.InheritanceUserStateDelegate;
 }

@@ -22,6 +22,7 @@ import { createTurnDaemonCommandHandler } from './worldCommandHandler.js';
 import { loadTurnCommandProfile } from './turnCommandProfile.js';
 import { loadTurnWorldFromDatabase } from './worldLoader.js';
 import { shouldUseAi } from './ai/generalAi.js';
+import { createUnificationHandler } from './unificationHandler.js';
 
 export interface TurnDaemonRuntimeOptions {
     profile: string;
@@ -99,6 +100,13 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
               })
             : await loadTurnCommandProfile());
     let worldRef: InMemoryTurnWorld | null = null;
+    const unification = options.calendarHandler
+        ? null
+        : createUnificationHandler({
+              databaseUrl: options.databaseUrl,
+              profileName: options.profileName ?? options.profile,
+              getWorld: () => worldRef,
+          });
     const worldOptions: InMemoryTurnWorldOptions = {
         schedule,
         generalTurnHandler:
@@ -112,7 +120,7 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
                 getWorld: () => worldRef,
                 commandProfile,
             })),
-        calendarHandler: options.calendarHandler,
+        calendarHandler: options.calendarHandler ?? unification?.handler,
     };
     const world = new InMemoryTurnWorld(resolvedState, snapshot, worldOptions);
     worldRef = world;
@@ -250,6 +258,9 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
     const baseClose = close;
     close = async () => {
         await baseClose();
+        if (unification) {
+            await unification.close();
+        }
         if (redisConnector) {
             await redisConnector.disconnect();
         }
