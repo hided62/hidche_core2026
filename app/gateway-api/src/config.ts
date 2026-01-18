@@ -61,7 +61,7 @@ export const resolveGatewayApiConfigFromEnv = (env: NodeJS.ProcessEnv = process.
     return {
         host: env.GATEWAY_API_HOST ?? '0.0.0.0',
         port: parseNumberWithFallback(env.GATEWAY_API_PORT, 13000, 'GATEWAY_API_PORT'),
-        trpcPath: env.TRPC_PATH ?? '/trpc',
+        trpcPath: env.GATEWAY_TRPC_PATH ?? env.TRPC_PATH ?? '/trpc',
         dbSchema: resolveSchemaName(env.GATEWAY_DB_SCHEMA),
         redisKeyPrefix,
         flushChannel: `${redisKeyPrefix}:flush`,

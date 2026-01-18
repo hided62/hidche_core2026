@@ -32,6 +32,7 @@ The test runs real Postgres and Redis, and talks to the API servers via tRPC.
     - `GAME_TOKEN_SECRET`, `KAKAO_REST_KEY`, `KAKAO_REDIRECT_URI`
     - `GATEWAY_BOOTSTRAP_TOKEN`
     - `GATEWAY_API_HOST`, `GATEWAY_API_PORT`, `GAME_API_HOST`, `GAME_API_PORT`
+    - `GATEWAY_TRPC_PATH`, `GAME_TRPC_PATH`, `GAME_API_EVENTS_PATH`
     - `PROFILE=che`, `SCENARIO=2`
 - `pnpm install` and `pnpm build` have already completed.
 

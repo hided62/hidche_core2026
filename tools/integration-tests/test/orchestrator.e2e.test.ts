@@ -418,8 +418,9 @@ describe('pm2 orchestrator e2e', () => {
         const adminSessionRef: { value?: string } = {};
         const accessTokenRef: { value?: string } = {};
         const gatewayClient = createGatewayClient(gatewayUrl, gatewayServer.config.trpcPath, adminSessionRef);
-        const gameClientPublic = createGameClient(gameUrl, process.env.TRPC_PATH ?? '/trpc', { value: undefined });
-        const gameClientAuthed = createGameClient(gameUrl, process.env.TRPC_PATH ?? '/trpc', accessTokenRef);
+        const gameTrpcPath = process.env.GAME_TRPC_PATH ?? process.env.TRPC_PATH ?? '/trpc';
+        const gameClientPublic = createGameClient(gameUrl, gameTrpcPath, { value: undefined });
+        const gameClientAuthed = createGameClient(gameUrl, gameTrpcPath, accessTokenRef);
 
         const bootstrap = await gatewayClient.auth.bootstrapLocal.mutate({
             token: bootstrapToken,

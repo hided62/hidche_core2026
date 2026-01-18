@@ -28,7 +28,7 @@ export const resolveGameApiConfigFromEnv = (env: NodeJS.ProcessEnv = process.env
     return {
         host: env.GAME_API_HOST ?? '0.0.0.0',
         port: parseNumberWithFallback(env.GAME_API_PORT, 14000, 'GAME_API_PORT'),
-        trpcPath: env.TRPC_PATH ?? '/trpc',
+        trpcPath: env.GAME_TRPC_PATH ?? env.TRPC_PATH ?? '/trpc',
         eventsPath: env.GAME_API_EVENTS_PATH ?? '/events',
         profile,
         scenario,

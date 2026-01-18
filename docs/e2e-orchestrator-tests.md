@@ -46,6 +46,9 @@ Minimum environment variables for the test:
 - `GATEWAY_REDIS_PREFIX` (optional but recommended to isolate keys)
 - `GATEWAY_WORKSPACE_ROOT` (workspace root with built `dist/`)
 - `GATEWAY_WORKTREE_ROOT` (worktree root for builds; can be temp)
+- `GATEWAY_TRPC_PATH` (e.g. `/gateway/api/trpc`)
+- `GAME_TRPC_PATH` (e.g. `/che/api/trpc`)
+- `GAME_API_EVENTS_PATH` (e.g. `/che/api/events`)
 
 For profile alignment:
 
