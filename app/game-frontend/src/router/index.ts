@@ -7,6 +7,8 @@ import InheritView from '../views/InheritView.vue';
 import NationCitiesView from '../views/NationCitiesView.vue';
 import NationGeneralsView from '../views/NationGeneralsView.vue';
 import NationPersonnelView from '../views/NationPersonnelView.vue';
+import ChiefCenterView from '../views/ChiefCenterView.vue';
+import NpcControlView from '../views/NpcControlView.vue';
 import NotFoundView from '../views/NotFoundView.vue';
 import { useSessionStore } from '../stores/session';
 
@@ -65,6 +67,24 @@ const routes = [
         path: '/nation/personnel',
         name: 'nation-personnel',
         component: NationPersonnelView,
+        meta: {
+            requiresAuth: true,
+            requiresGeneral: true,
+        },
+    },
+    {
+        path: '/chief-center',
+        name: 'chief-center',
+        component: ChiefCenterView,
+        meta: {
+            requiresAuth: true,
+            requiresGeneral: true,
+        },
+    },
+    {
+        path: '/npc-control',
+        name: 'npc-control',
+        component: NpcControlView,
         meta: {
             requiresAuth: true,
             requiresGeneral: true,

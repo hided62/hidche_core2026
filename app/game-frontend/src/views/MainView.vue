@@ -94,6 +94,8 @@ watch(
                 <RouterLink class="ghost" to="/nation/cities">세력 도시</RouterLink>
                 <RouterLink class="ghost" to="/nation/generals">세력 장수</RouterLink>
                 <RouterLink class="ghost" to="/nation/personnel">인사부</RouterLink>
+                <RouterLink class="ghost" to="/chief-center">사령부</RouterLink>
+                <RouterLink class="ghost" to="/npc-control">NPC 정책</RouterLink>
                 <RouterLink class="ghost" to="/inherit">유산 강화</RouterLink>
                 <button
                     class="toggle"

@@ -9,6 +9,7 @@ import { inheritRouter } from './router/inherit/index.js';
 import { lobbyRouter } from './router/lobby/index.js';
 import { messagesRouter } from './router/messages/index.js';
 import { nationRouter } from './router/nation/index.js';
+import { npcRouter } from './router/npc/index.js';
 import { publicRouter } from './router/public/index.js';
 import { troopRouter } from './router/troop/index.js';
 import { turnDaemonRouter } from './router/turnDaemon/index.js';
@@ -29,6 +30,7 @@ export const appRouter = router({
     troop: troopRouter,
     general: generalRouter,
     nation: nationRouter,
+    npc: npcRouter,
     turnDaemon: turnDaemonRouter,
 });
 
