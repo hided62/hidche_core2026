@@ -13,7 +13,7 @@ describe('formatSseFrame', () => {
             data: 'ok',
         });
 
-        expect(output).toBe(['event: ping', 'id: 1', 'retry: 1500', 'data: ok', ''].join('\n'));
+        expect(output).toBe(['event: ping', 'id: 1', 'retry: 1500', 'data: ok', ''].join('\n') + '\n');
     });
 
     it('splits multiline data', () => {
@@ -22,7 +22,7 @@ describe('formatSseFrame', () => {
             data: 'first\nsecond',
         });
 
-        expect(output).toBe(['event: notice', 'data: first', 'data: second', ''].join('\n'));
+        expect(output).toBe(['event: notice', 'data: first', 'data: second', ''].join('\n') + '\n');
     });
 });
 

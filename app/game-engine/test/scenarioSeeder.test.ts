@@ -37,12 +37,37 @@ type ScenarioSeederPrismaClient = {
     };
 };
 
+const requiredTables = [
+    'world_state',
+    'nation',
+    'city',
+    'general',
+    'diplomacy',
+    'troop',
+    'event',
+];
+
+const hasRequiredTables = async (prisma: ScenarioSeederPrismaClient, schemaName: string): Promise<boolean> => {
+    for (const table of requiredTables) {
+        const result = (await prisma.$queryRawUnsafe(
+            `SELECT to_regclass('${schemaName}.${table}') as regclass`
+        )) as Array<{ regclass: string | null }>;
+        if (!Array.isArray(result) || result.length === 0 || result[0]?.regclass === null) {
+            return false;
+        }
+    }
+    return true;
+};
+
 const canConnectToDatabase = async (url: string): Promise<boolean> => {
     const connector = createGamePostgresConnector({ url });
     try {
         await connector.connect();
         const prisma = connector.prisma as unknown as ScenarioSeederPrismaClient;
         await prisma.$queryRawUnsafe('SELECT 1');
+        if (!(await hasRequiredTables(prisma, schema))) {
+            return false;
+        }
         return true;
     } catch {
         return false;

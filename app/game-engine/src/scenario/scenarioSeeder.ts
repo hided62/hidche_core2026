@@ -58,6 +58,29 @@ export interface ScenarioSeedResult {
 
 const asJson = (value: unknown): InputJsonValue => value as InputJsonValue;
 
+type RawQueryClient = {
+    $queryRawUnsafe<T>(query: string): Promise<T>;
+};
+
+const resolveSchemaName = (databaseUrl: string): string => {
+    try {
+        return new URL(databaseUrl).searchParams.get('schema') ?? 'public';
+    } catch {
+        return 'public';
+    }
+};
+
+const hasEventTable = async (prisma: RawQueryClient, schema: string): Promise<boolean> => {
+    try {
+        const result = await prisma.$queryRawUnsafe<Array<{ regclass: string | null }>>(
+            `SELECT to_regclass('${schema}.event') as regclass`
+        );
+        return Array.isArray(result) && result.length > 0 && result[0]?.regclass !== null;
+    } catch {
+        return false;
+    }
+};
+
 const formatDateTime = (date: Date): string => {
     const pad = (value: number): string => String(value).padStart(2, '0');
     return [
@@ -236,9 +259,13 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
     await connector.connect();
     try {
         const prisma = connector.prisma;
+        const schema = resolveSchemaName(options.databaseUrl);
+        const eventTableReady = await hasEventTable(prisma, schema);
 
         if (options.resetTables ?? true) {
-            await prisma.event.deleteMany();
+            if (eventTableReady) {
+                await prisma.event.deleteMany();
+            }
             await prisma.diplomacy.deleteMany();
             await prisma.general.deleteMany();
             await prisma.troop.deleteMany();
@@ -408,7 +435,7 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
         }
 
         const eventRows = [...buildEventRows(seed.events), ...buildEventRows(seed.initialEvents, 'initial')];
-        if (eventRows.length > 0) {
+        if (eventRows.length > 0 && eventTableReady) {
             await prisma.event.createMany({
                 data: eventRows,
             });
