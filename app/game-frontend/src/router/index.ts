@@ -7,7 +7,9 @@ import InheritView from '../views/InheritView.vue';
 import NationCitiesView from '../views/NationCitiesView.vue';
 import NationGeneralsView from '../views/NationGeneralsView.vue';
 import NationPersonnelView from '../views/NationPersonnelView.vue';
+import NationStratFinanView from '../views/NationStratFinanView.vue';
 import ChiefCenterView from '../views/ChiefCenterView.vue';
+import BattleCenterView from '../views/BattleCenterView.vue';
 import NpcControlView from '../views/NpcControlView.vue';
 import NotFoundView from '../views/NotFoundView.vue';
 import { useSessionStore } from '../stores/session';
@@ -73,9 +75,27 @@ const routes = [
         },
     },
     {
+        path: '/nation/finance',
+        name: 'nation-finance',
+        component: NationStratFinanView,
+        meta: {
+            requiresAuth: true,
+            requiresGeneral: true,
+        },
+    },
+    {
         path: '/chief-center',
         name: 'chief-center',
         component: ChiefCenterView,
+        meta: {
+            requiresAuth: true,
+            requiresGeneral: true,
+        },
+    },
+    {
+        path: '/battle-center',
+        name: 'battle-center',
+        component: BattleCenterView,
         meta: {
             requiresAuth: true,
             requiresGeneral: true,

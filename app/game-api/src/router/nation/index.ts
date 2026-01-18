@@ -2,8 +2,18 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { asNumber, asRecord } from '@sammo-ts/common';
+import { LogCategory, LogScope } from '@sammo-ts/infra';
 import {
+    calcCityGoldIncome,
+    calcCityRiceIncome,
+    calcCityWallIncome,
+    createIncomeActionContext,
     DomesticTraitLoader,
+    getGoldIncome,
+    getOutcome,
+    getRiceIncome,
+    getWallIncome,
+    getWarGoldIncome,
     loadDomesticTraitModules,
     isDomesticTraitKey,
     loadNationTraitModules,
@@ -15,13 +25,14 @@ import {
     loadWarTraitModules,
     WarTraitLoader,
     isWarTraitKey,
-    type GeneralActionContext,
-    type General as LogicGeneral,
+    type CityIncomeSource,
     type Nation as LogicNation,
+    type NationIncomeContext,
+    type TriggerNationalIncomeType,
     type TriggerValue,
 } from '@sammo-ts/logic';
 
-import type { WorldStateRow } from '../../context.js';
+import type { GameApiContext, InputJsonValue, WorldStateRow } from '../../context.js';
 import { authedProcedure, router } from '../../trpc.js';
 import { MAX_NATION_TURNS, listNationTurns } from '../../turns/reservedTurns.js';
 import { getMyGeneral } from '../shared/general.js';
@@ -39,12 +50,6 @@ type TraitCache = {
 };
 
 type NationTraitModule = Awaited<ReturnType<typeof loadNationTraitModules>>[number] | null;
-
-type NationIncomeContext = {
-    trait: NationTraitModule;
-    context: GeneralActionContext;
-    rate: number;
-};
 
 type NationIncomeRow = {
     id: number;
@@ -119,6 +124,46 @@ type GeneralOfficerRow = {
     meta: unknown;
 };
 
+type NationCountRow = {
+    nationId: number;
+    count: number;
+};
+
+type NationStratRow = {
+    id: number;
+    name: string;
+    color: string;
+    level: number;
+    typeCode: string;
+    capitalCityId: number | null;
+    gold: number | null;
+    rice: number | null;
+    tech: number | null;
+    meta: unknown;
+};
+
+type DiplomacyRow = {
+    destNationId: number;
+    stateCode: number;
+    term: number;
+};
+
+type GeneralPowerRow = {
+    id: number;
+    nationId: number;
+    cityId: number;
+    npcState: number;
+    officerLevel: number;
+    leadership: number;
+    strength: number;
+    intel: number;
+    experience: number;
+    dedication: number;
+    gold: number;
+    rice: number;
+    meta: unknown;
+};
+
 const traitCache: TraitCache = {
     domestic: new Map(),
     war: new Map(),
@@ -127,6 +172,8 @@ const traitCache: TraitCache = {
 };
 
 const DEFAULT_CHIEF_STAT_MIN = 65;
+const MAX_AVAILABLE_WAR_SETTING_CNT = 10;
+const INC_AVAILABLE_WAR_SETTING_CNT = 2;
 
 const normalizeTraitKey = (value: string | null | undefined): string | null => {
     if (!value || value === 'None') {
@@ -138,6 +185,26 @@ const normalizeTraitKey = (value: string | null | undefined): string | null => {
 const readMetaNumber = (meta: Record<string, unknown>, key: string, fallback: number): number => {
     const raw = meta[key];
     return typeof raw === 'number' && Number.isFinite(raw) ? raw : fallback;
+};
+
+const readMetaBool = (meta: Record<string, unknown>, key: string, fallback = false): boolean => {
+    const raw = meta[key];
+    if (typeof raw === 'boolean') {
+        return raw;
+    }
+    if (typeof raw === 'number') {
+        return raw !== 0;
+    }
+    if (typeof raw === 'string') {
+        const lowered = raw.toLowerCase();
+        if (lowered === 'true' || lowered === '1') {
+            return true;
+        }
+        if (lowered === 'false' || lowered === '0') {
+            return false;
+        }
+    }
+    return fallback;
 };
 
 const resolveOfficerCity = (meta: Record<string, unknown>): number => {
@@ -170,6 +237,53 @@ const resolveChiefStatMin = (worldState: WorldStateRow | null): number => {
 const resolveNationRate = (nation: NationIncomeRow): number => {
     const meta = asRecord(nation.meta);
     return asNumber(meta.rate, 20);
+};
+
+const toIncomeCity = (city: CityIncomeRow): CityIncomeSource => ({
+    id: city.id,
+    population: city.population,
+    populationMax: city.populationMax,
+    agriculture: city.agriculture,
+    agricultureMax: city.agricultureMax,
+    commerce: city.commerce,
+    commerceMax: city.commerceMax,
+    security: city.security,
+    securityMax: city.securityMax,
+    trust: city.trust,
+    supplyState: city.supplyState,
+    defence: city.defence,
+    defenceMax: city.defenceMax,
+    wall: city.wall,
+    wallMax: city.wallMax,
+    meta: asRecord(city.meta),
+});
+
+const resolveNationBill = (meta: Record<string, unknown>): number => readMetaNumber(meta, 'bill', 100);
+
+const resolveNationSecretLimit = (meta: Record<string, unknown>): number => {
+    const legacy = readMetaNumber(meta, 'secretlimit', -1);
+    if (legacy >= 0) {
+        return legacy;
+    }
+    return readMetaNumber(meta, 'secretLimit', 3);
+};
+
+const resolveNationBlockWar = (meta: Record<string, unknown>): boolean =>
+    readMetaBool(meta, 'war', readMetaBool(meta, 'blockWar', false));
+
+const resolveNationBlockScout = (meta: Record<string, unknown>): boolean =>
+    readMetaBool(meta, 'scout', readMetaBool(meta, 'blockScout', false));
+
+const resolveNationNotice = (meta: Record<string, unknown>): string =>
+    typeof meta.notice === 'string' ? meta.notice : '';
+
+const resolveNationScoutMessage = (meta: Record<string, unknown>): string =>
+    typeof meta.infoText === 'string' ? meta.infoText : '';
+
+const resolveWarSettingRemain = (meta: Record<string, unknown>): number => {
+    const legacy = readMetaNumber(meta, 'available_war_setting_cnt', -1);
+    const fallback = legacy >= 0 ? legacy : readMetaNumber(meta, 'availableWarSettingCnt', MAX_AVAILABLE_WAR_SETTING_CNT);
+    return Math.max(0, Math.min(MAX_AVAILABLE_WAR_SETTING_CNT, fallback));
 };
 
 const checkSecretMaxPermission = (penalty: Record<string, unknown>): number => {
@@ -234,46 +348,12 @@ const loadTraitNames = async (
     return cache;
 };
 
-const buildIncomeContext = (nation: NationIncomeRow): GeneralActionContext => {
+const buildNationIncomeContext = async (nation: NationIncomeRow): Promise<NationIncomeContext> => {
+    let trait: NationTraitModule = null;
+    if (isNationTraitKey(nation.typeCode)) {
+        [trait] = await loadNationTraitModules([nation.typeCode], new NationTraitLoader());
+    }
     const nationMeta = asRecord(nation.meta) as Record<string, TriggerValue>;
-    const general: LogicGeneral = {
-        id: 0,
-        name: 'SYSTEM',
-        nationId: nation.id,
-        cityId: 0,
-        troopId: 0,
-        stats: { leadership: 0, strength: 0, intelligence: 0 },
-        experience: 0,
-        dedication: 0,
-        officerLevel: 0,
-        role: {
-            personality: null,
-            specialDomestic: null,
-            specialWar: null,
-            items: {
-                horse: null,
-                weapon: null,
-                book: null,
-                item: null,
-            },
-        },
-        injury: 0,
-        gold: 0,
-        rice: 0,
-        crew: 0,
-        crewTypeId: 0,
-        train: 0,
-        atmos: 0,
-        age: 0,
-        npcState: 0,
-        triggerState: {
-            flags: {},
-            counters: {},
-            modifiers: {},
-            meta: {},
-        },
-        meta: {},
-    };
     const logicNation: LogicNation = {
         id: nation.id,
         name: nation.name,
@@ -287,110 +367,88 @@ const buildIncomeContext = (nation: NationIncomeRow): GeneralActionContext => {
         typeCode: nation.typeCode,
         meta: nationMeta,
     };
-    return { general, nation: logicNation };
-};
-
-const buildNationIncomeContext = async (nation: NationIncomeRow): Promise<NationIncomeContext> => {
-    let trait: NationTraitModule = null;
-    if (isNationTraitKey(nation.typeCode)) {
-        [trait] = await loadNationTraitModules([nation.typeCode], new NationTraitLoader());
-    }
+    const actionContext = createIncomeActionContext(logicNation);
+    const modifyIncome = trait?.onCalcNationalIncome
+        ? (type: TriggerNationalIncomeType, amount: number) => trait.onCalcNationalIncome!(actionContext, type, amount)
+        : undefined;
     return {
-        trait,
-        context: buildIncomeContext(nation),
+        modifyIncome,
         rate: resolveNationRate(nation),
     };
 };
 
-const applyNationIncome = (
-    incomeContext: NationIncomeContext,
-    type: 'gold' | 'rice' | 'pop',
-    amount: number
-): number => {
-    if (!incomeContext.trait?.onCalcNationalIncome) {
-        return amount;
+const formatDateTime = (value: Date | null): string => {
+    if (!value) {
+        return '';
     }
-    return incomeContext.trait.onCalcNationalIncome(incomeContext.context, type, amount);
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    const hours = String(value.getHours()).padStart(2, '0');
+    const minutes = String(value.getMinutes()).padStart(2, '0');
+    const seconds = String(value.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 };
 
-const calcCityGoldIncome = (
-    incomeContext: NationIncomeContext,
-    city: CityIncomeRow,
-    officerCnt: number,
-    isCapital: boolean,
-    nationLevel: number
-): number => {
-    if (city.supplyState === 0) {
-        return 0;
-    }
-    const trustRatio = city.trust / 200 + 0.5;
-    const commMax = Math.max(1, city.commerceMax);
-    const secuMax = Math.max(1, city.securityMax);
-
-    let income = (city.population * city.commerce * trustRatio) / commMax / 30;
-    income *= 1 + city.security / secuMax / 10;
-    income *= Math.pow(1.05, officerCnt);
-    if (isCapital && nationLevel > 0) {
-        income *= 1 + 1 / (3 * nationLevel);
-    }
-
-    const adjusted = applyNationIncome(incomeContext, 'gold', income);
-    return Math.round(adjusted * (incomeContext.rate / 20));
-};
-
-const calcCityRiceIncome = (
-    incomeContext: NationIncomeContext,
-    city: CityIncomeRow,
-    officerCnt: number,
-    isCapital: boolean,
-    nationLevel: number
-): number => {
-    if (city.supplyState === 0) {
-        return 0;
-    }
-    const trustRatio = city.trust / 200 + 0.5;
-    const agriMax = Math.max(1, city.agricultureMax);
-    const secuMax = Math.max(1, city.securityMax);
-
-    let income = (city.population * city.agriculture * trustRatio) / agriMax / 30;
-    income *= 1 + city.security / secuMax / 10;
-    income *= Math.pow(1.05, officerCnt);
-    if (isCapital && nationLevel > 0) {
-        income *= 1 + 1 / (3 * nationLevel);
-    }
-
-    const adjusted = applyNationIncome(incomeContext, 'rice', income);
-    return Math.round(adjusted * (incomeContext.rate / 20));
-};
-
-const calcCityWallIncome = (
-    incomeContext: NationIncomeContext,
-    city: CityIncomeRow,
-    officerCnt: number,
-    isCapital: boolean,
-    nationLevel: number
-): number => {
-    if (city.supplyState === 0) {
-        return 0;
-    }
-    const wallMax = Math.max(1, city.wallMax);
-    const secuMax = Math.max(1, city.securityMax);
-
-    let income = (city.defence * city.wall) / wallMax / 3;
-    income *= 1 + city.security / secuMax / 10;
-    income *= Math.pow(1.05, officerCnt);
-    if (isCapital && nationLevel > 0) {
-        income *= 1 + 1 / (3 * nationLevel);
-    }
-
-    const adjusted = applyNationIncome(incomeContext, 'rice', income);
-    return Math.round(adjusted * (incomeContext.rate / 20));
-};
+const zGeneralLogType = z.enum(['generalHistory', 'generalAction', 'battleResult', 'battleDetail']);
+type GeneralLogType = z.infer<typeof zGeneralLogType>;
 
 const assertNationAccess = (general: { nationId: number; officerLevel: number }) => {
     if (general.nationId <= 0 || general.officerLevel <= 0) {
         throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Nation membership required.' });
     }
+};
+
+const resolveNationPermission = (
+    general: { nationId: number; officerLevel: number; meta: unknown; penalty: unknown },
+    nationMeta: unknown,
+    checkSecretLimit = true
+): number =>
+    resolveSecretPermission(
+        {
+            nationId: general.nationId,
+            officerLevel: general.officerLevel,
+            meta: general.meta,
+            penalty: general.penalty,
+        },
+        nationMeta,
+        checkSecretLimit
+    );
+
+const assertNationEditable = (
+    general: { nationId: number; officerLevel: number; meta: unknown; penalty: unknown },
+    nationMeta: unknown
+): void => {
+    const permission = resolveNationPermission(general, nationMeta, false);
+    if (permission < 0) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: '권한이 부족합니다.' });
+    }
+    if (general.officerLevel < 5 && permission !== 4) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: '권한이 부족합니다.' });
+    }
+};
+
+const updateNationMeta = async (
+    ctx: Pick<GameApiContext, 'db'>,
+    nationId: number,
+    updates: Record<string, unknown>
+): Promise<InputJsonValue> => {
+    const nation = await ctx.db.nation.findUnique({
+        where: { id: nationId },
+        select: { meta: true },
+    });
+    if (!nation) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Nation not found' });
+    }
+    const meta = asRecord(nation.meta);
+    const nextMeta = { ...meta, ...updates } as InputJsonValue;
+    await ctx.db.nation.update({
+        where: { id: nationId },
+        data: {
+            meta: nextMeta,
+        },
+    });
+    return nextMeta;
 };
 
 const mapGeneralList = async (
@@ -632,10 +690,11 @@ export const nationRouter = router({
             const officers = officerByCity.get(city.id) ?? {};
             const officerCnt = officerCntByCity.get(city.id) ?? 0;
             const isCapital = nation.capitalCityId === city.id;
+            const incomeCity = toIncomeCity(city);
             const incomes = {
-                gold: calcCityGoldIncome(incomeContext, city, officerCnt, isCapital, nation.level),
-                rice: calcCityRiceIncome(incomeContext, city, officerCnt, isCapital, nation.level),
-                wall: calcCityWallIncome(incomeContext, city, officerCnt, isCapital, nation.level),
+                gold: calcCityGoldIncome(incomeContext, incomeCity, officerCnt, isCapital, nation.level),
+                rice: calcCityRiceIncome(incomeContext, incomeCity, officerCnt, isCapital, nation.level),
+                wall: calcCityWallIncome(incomeContext, incomeCity, officerCnt, isCapital, nation.level),
             };
 
             return {
@@ -871,6 +930,649 @@ export const nationRouter = router({
             },
         };
     }),
+    getStratFinan: authedProcedure.query(async ({ ctx }) => {
+        const me = await getMyGeneral(ctx);
+        assertNationAccess(me);
+
+        const [nation, worldState, nationRows, diplomacyRows, generalCounts, cityCounts, cityRows, generalRows] =
+            (await Promise.all([
+                ctx.db.nation.findUnique({
+                    where: { id: me.nationId },
+                    select: {
+                        id: true,
+                        name: true,
+                        color: true,
+                        level: true,
+                        typeCode: true,
+                        capitalCityId: true,
+                        gold: true,
+                        rice: true,
+                        tech: true,
+                        meta: true,
+                    },
+                }),
+                ctx.db.worldState.findFirst(),
+                ctx.db.nation.findMany({
+                    select: {
+                        id: true,
+                        name: true,
+                        color: true,
+                        level: true,
+                        typeCode: true,
+                        capitalCityId: true,
+                        gold: true,
+                        rice: true,
+                        tech: true,
+                        meta: true,
+                    },
+                    orderBy: { id: 'asc' },
+                }),
+                ctx.db.diplomacy.findMany({
+                    where: { srcNationId: me.nationId },
+                    select: {
+                        destNationId: true,
+                        stateCode: true,
+                        term: true,
+                    },
+                }),
+                ctx.db.$queryRaw<NationCountRow[]>`
+                    SELECT nation_id as "nationId", COUNT(*)::int as "count"
+                    FROM general
+                    GROUP BY nation_id
+                `,
+                ctx.db.$queryRaw<NationCountRow[]>`
+                    SELECT nation_id as "nationId", COUNT(*)::int as "count"
+                    FROM city
+                    GROUP BY nation_id
+                `,
+                ctx.db.city.findMany({
+                    select: {
+                        id: true,
+                        name: true,
+                        level: true,
+                        nationId: true,
+                        region: true,
+                        population: true,
+                        populationMax: true,
+                        agriculture: true,
+                        agricultureMax: true,
+                        commerce: true,
+                        commerceMax: true,
+                        security: true,
+                        securityMax: true,
+                        trust: true,
+                        trade: true,
+                        defence: true,
+                        defenceMax: true,
+                        wall: true,
+                        wallMax: true,
+                        supplyState: true,
+                        frontState: true,
+                        meta: true,
+                    },
+                }),
+                ctx.db.general.findMany({
+                    select: {
+                        id: true,
+                        nationId: true,
+                        cityId: true,
+                        npcState: true,
+                        officerLevel: true,
+                        leadership: true,
+                        strength: true,
+                        intel: true,
+                        experience: true,
+                        dedication: true,
+                        gold: true,
+                        rice: true,
+                        meta: true,
+                    },
+                }),
+            ])) as [
+                (NationIncomeRow & { tech: number | null }) | null,
+                WorldStateRow | null,
+                NationStratRow[],
+                DiplomacyRow[],
+                NationCountRow[],
+                NationCountRow[],
+                CityIncomeRow[],
+                GeneralPowerRow[],
+            ];
+
+        if (!nation) {
+            throw new TRPCError({ code: 'NOT_FOUND', message: 'Nation not found' });
+        }
+        if (!worldState) {
+            throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'World state is not initialized.' });
+        }
+
+        const permissionLevel = resolveNationPermission(me, nation.meta, true);
+        if (permissionLevel < 1) {
+            throw new TRPCError({ code: 'FORBIDDEN', message: '권한이 부족합니다.' });
+        }
+
+        const nationMeta = asRecord(nation.meta);
+        const editable = me.officerLevel >= 5 || permissionLevel === 4;
+
+        const generalCountMap = new Map<number, number>();
+        for (const row of generalCounts) {
+            generalCountMap.set(row.nationId, row.count);
+        }
+
+        const cityCountMap = new Map<number, number>();
+        for (const row of cityCounts) {
+            cityCountMap.set(row.nationId, row.count);
+        }
+
+        const diplomacyMap = new Map<number, { state: number; term: number | null }>();
+        for (const row of diplomacyRows) {
+            diplomacyMap.set(row.destNationId, { state: row.stateCode, term: row.term });
+        }
+
+        const cityStatsByNation = new Map<number, { popSum: number; valueSum: number; maxSum: number }>();
+        for (const city of cityRows) {
+            const entry = cityStatsByNation.get(city.nationId) ?? { popSum: 0, valueSum: 0, maxSum: 0 };
+            const valueSum =
+                city.population +
+                city.agriculture +
+                city.commerce +
+                city.security +
+                city.wall +
+                city.defence;
+            const maxSum =
+                city.populationMax +
+                city.agricultureMax +
+                city.commerceMax +
+                city.securityMax +
+                city.wallMax +
+                city.defenceMax;
+            entry.popSum += city.population;
+            entry.valueSum += valueSum;
+            entry.maxSum += maxSum;
+            cityStatsByNation.set(city.nationId, entry);
+        }
+
+        const generalStatsByNation = new Map<number, { goldRice: number; statPower: number; expDed: number }>();
+        for (const general of generalRows) {
+            const entry = generalStatsByNation.get(general.nationId) ?? { goldRice: 0, statPower: 0, expDed: 0 };
+            entry.goldRice += general.gold + general.rice;
+            const leadership = general.leadership;
+            const strength = general.strength;
+            const intel = general.intel;
+            const npcMultiplier = general.npcState < 2 ? 1.2 : 1;
+            const leaderCore = leadership >= 40 ? leadership : 0;
+            entry.statPower += npcMultiplier * leaderCore * 2 + (Math.sqrt(intel * strength) * 2 + leadership / 2) / 2;
+            entry.expDed += general.experience + general.dedication;
+            generalStatsByNation.set(general.nationId, entry);
+        }
+
+        const powerByNation = new Map<number, number>();
+        for (const nationItem of nationRows) {
+            const generalStats = generalStatsByNation.get(nationItem.id) ?? { goldRice: 0, statPower: 0, expDed: 0 };
+            const cityStats = cityStatsByNation.get(nationItem.id) ?? { popSum: 0, valueSum: 0, maxSum: 0 };
+            const resource = Math.round(((nationItem.gold ?? 0) + (nationItem.rice ?? 0) + generalStats.goldRice) / 100);
+            const tech = nationItem.tech ?? 0;
+            const cityPower =
+                nationItem.level > 0 && cityStats.maxSum > 0
+                    ? Math.round((cityStats.popSum * cityStats.valueSum) / cityStats.maxSum / 100)
+                    : 0;
+            const expDed = Math.round(generalStats.expDed / 100);
+            powerByNation.set(
+                nationItem.id,
+                Math.round((resource + tech + cityPower + generalStats.statPower + expDed) / 10)
+            );
+        }
+
+        const nationsList = nationRows.map((nationItem) => {
+            const diplomacy =
+                nationItem.id === nation.id
+                    ? { state: 7, term: null }
+                    : diplomacyMap.get(nationItem.id) ?? { state: 2, term: 0 };
+            return {
+                id: nationItem.id,
+                name: nationItem.name,
+                color: nationItem.color,
+                level: nationItem.level,
+                power: powerByNation.get(nationItem.id) ?? 0,
+                generalCount: generalCountMap.get(nationItem.id) ?? 0,
+                cityCount: cityCountMap.get(nationItem.id) ?? 0,
+                diplomacy,
+            };
+        });
+
+        const nationCities = cityRows.filter((city) => city.nationId === nation.id);
+        const nationGenerals = generalRows.filter((general) => general.nationId === nation.id);
+
+        const officerCntByCity = new Map<number, number>();
+        for (const general of nationGenerals) {
+            if (general.officerLevel < 2 || general.officerLevel > 4) {
+                continue;
+            }
+            const officerCity = resolveOfficerCity(asRecord(general.meta));
+            if (!officerCity || general.cityId !== officerCity) {
+                continue;
+            }
+            officerCntByCity.set(officerCity, (officerCntByCity.get(officerCity) ?? 0) + 1);
+        }
+
+        const incomeContext = await buildNationIncomeContext(nation);
+        const baseIncomeContext: NationIncomeContext = { ...incomeContext, rate: 100 };
+        const incomeCities = nationCities.map(toIncomeCity);
+        const goldCityIncome = getGoldIncome(
+            baseIncomeContext,
+            incomeCities,
+            officerCntByCity,
+            nation.capitalCityId ?? 0,
+            nation.level
+        );
+        const riceCityIncome = getRiceIncome(
+            baseIncomeContext,
+            incomeCities,
+            officerCntByCity,
+            nation.capitalCityId ?? 0,
+            nation.level
+        );
+        const riceWallIncome = getWallIncome(
+            baseIncomeContext,
+            incomeCities,
+            officerCntByCity,
+            nation.capitalCityId ?? 0,
+            nation.level
+        );
+        const warGoldIncome = getWarGoldIncome(baseIncomeContext, incomeCities);
+
+        const outcome = getOutcome(
+            100,
+            nationGenerals.filter((general) => general.npcState !== 5)
+        );
+
+        return {
+            editable,
+            nationMsg: resolveNationNotice(nationMeta),
+            scoutMsg: resolveNationScoutMessage(nationMeta),
+            nationId: nation.id,
+            officerLevel: me.officerLevel,
+            year: worldState.currentYear,
+            month: worldState.currentMonth,
+            nationsList,
+            gold: nation.gold ?? 0,
+            rice: nation.rice ?? 0,
+            income: {
+                gold: {
+                    city: goldCityIncome,
+                    war: warGoldIncome,
+                },
+                rice: {
+                    city: riceCityIncome,
+                    wall: riceWallIncome,
+                },
+            },
+            outcome,
+            policy: {
+                rate: resolveNationRate(nation),
+                bill: resolveNationBill(nationMeta),
+                secretLimit: resolveNationSecretLimit(nationMeta),
+                blockScout: resolveNationBlockScout(nationMeta),
+                blockWar: resolveNationBlockWar(nationMeta),
+            },
+            warSettingCnt: {
+                remain: resolveWarSettingRemain(nationMeta),
+                inc: INC_AVAILABLE_WAR_SETTING_CNT,
+                max: MAX_AVAILABLE_WAR_SETTING_CNT,
+            },
+        };
+    }),
+    setNotice: authedProcedure
+        .input(
+            z.object({
+                msg: z.string().max(16384),
+            })
+        )
+        .mutation(async ({ ctx, input }) => {
+            const me = await getMyGeneral(ctx);
+            assertNationAccess(me);
+            const nation = await ctx.db.nation.findUnique({
+                where: { id: me.nationId },
+                select: { meta: true },
+            });
+            if (!nation) {
+                throw new TRPCError({ code: 'NOT_FOUND', message: 'Nation not found' });
+            }
+            assertNationEditable(me, nation.meta);
+            await updateNationMeta(ctx, me.nationId, {
+                notice: input.msg,
+            });
+            return { ok: true };
+        }),
+    setScoutMsg: authedProcedure
+        .input(
+            z.object({
+                msg: z.string().max(1000),
+            })
+        )
+        .mutation(async ({ ctx, input }) => {
+            const me = await getMyGeneral(ctx);
+            assertNationAccess(me);
+            const nation = await ctx.db.nation.findUnique({
+                where: { id: me.nationId },
+                select: { meta: true },
+            });
+            if (!nation) {
+                throw new TRPCError({ code: 'NOT_FOUND', message: 'Nation not found' });
+            }
+            assertNationEditable(me, nation.meta);
+            await updateNationMeta(ctx, me.nationId, {
+                infoText: input.msg,
+            });
+            return { ok: true };
+        }),
+    setRate: authedProcedure
+        .input(
+            z.object({
+                amount: z.number().int().min(5).max(30),
+            })
+        )
+        .mutation(async ({ ctx, input }) => {
+            const me = await getMyGeneral(ctx);
+            assertNationAccess(me);
+            const nation = await ctx.db.nation.findUnique({
+                where: { id: me.nationId },
+                select: { meta: true },
+            });
+            if (!nation) {
+                throw new TRPCError({ code: 'NOT_FOUND', message: 'Nation not found' });
+            }
+            assertNationEditable(me, nation.meta);
+            await updateNationMeta(ctx, me.nationId, {
+                rate: input.amount,
+            });
+            return { ok: true };
+        }),
+    setBill: authedProcedure
+        .input(
+            z.object({
+                amount: z.number().int().min(20).max(200),
+            })
+        )
+        .mutation(async ({ ctx, input }) => {
+            const me = await getMyGeneral(ctx);
+            assertNationAccess(me);
+            const nation = await ctx.db.nation.findUnique({
+                where: { id: me.nationId },
+                select: { meta: true },
+            });
+            if (!nation) {
+                throw new TRPCError({ code: 'NOT_FOUND', message: 'Nation not found' });
+            }
+            assertNationEditable(me, nation.meta);
+            await updateNationMeta(ctx, me.nationId, {
+                bill: input.amount,
+            });
+            return { ok: true };
+        }),
+    setSecretLimit: authedProcedure
+        .input(
+            z.object({
+                amount: z.number().int().min(1).max(99),
+            })
+        )
+        .mutation(async ({ ctx, input }) => {
+            const me = await getMyGeneral(ctx);
+            assertNationAccess(me);
+            const nation = await ctx.db.nation.findUnique({
+                where: { id: me.nationId },
+                select: { meta: true },
+            });
+            if (!nation) {
+                throw new TRPCError({ code: 'NOT_FOUND', message: 'Nation not found' });
+            }
+            assertNationEditable(me, nation.meta);
+            await updateNationMeta(ctx, me.nationId, {
+                secretlimit: input.amount,
+            });
+            return { ok: true };
+        }),
+    setBlockWar: authedProcedure
+        .input(
+            z.object({
+                value: z.boolean(),
+            })
+        )
+        .mutation(async ({ ctx, input }) => {
+            const me = await getMyGeneral(ctx);
+            assertNationAccess(me);
+            const nation = await ctx.db.nation.findUnique({
+                where: { id: me.nationId },
+                select: { meta: true },
+            });
+            if (!nation) {
+                throw new TRPCError({ code: 'NOT_FOUND', message: 'Nation not found' });
+            }
+            assertNationEditable(me, nation.meta);
+
+            const meta = asRecord(nation.meta);
+            const remain = resolveWarSettingRemain(meta);
+            if (remain <= 0) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '잔여 횟수가 부족합니다.' });
+            }
+            const nextRemain = Math.max(0, remain - 1);
+            await updateNationMeta(ctx, me.nationId, {
+                war: input.value ? 1 : 0,
+                available_war_setting_cnt: nextRemain,
+            });
+            return { availableCnt: nextRemain };
+        }),
+    setBlockScout: authedProcedure
+        .input(
+            z.object({
+                value: z.boolean(),
+            })
+        )
+        .mutation(async ({ ctx, input }) => {
+            const me = await getMyGeneral(ctx);
+            assertNationAccess(me);
+            const nation = await ctx.db.nation.findUnique({
+                where: { id: me.nationId },
+                select: { meta: true },
+            });
+            if (!nation) {
+                throw new TRPCError({ code: 'NOT_FOUND', message: 'Nation not found' });
+            }
+            assertNationEditable(me, nation.meta);
+            await updateNationMeta(ctx, me.nationId, {
+                scout: input.value ? 1 : 0,
+            });
+            return { ok: true };
+        }),
+    getBattleCenter: authedProcedure.query(async ({ ctx }) => {
+        const me = await getMyGeneral(ctx);
+        assertNationAccess(me);
+
+        const [nation, worldState, generalRows] = await Promise.all([
+            ctx.db.nation.findUnique({
+                where: { id: me.nationId },
+                select: {
+                    id: true,
+                    name: true,
+                    color: true,
+                    level: true,
+                    meta: true,
+                },
+            }),
+            ctx.db.worldState.findFirst(),
+            ctx.db.general.findMany({
+                where: { nationId: me.nationId },
+                select: {
+                    id: true,
+                    name: true,
+                    npcState: true,
+                    officerLevel: true,
+                    cityId: true,
+                    turnTime: true,
+                    recentWarTime: true,
+                    leadership: true,
+                    strength: true,
+                    intel: true,
+                    experience: true,
+                    dedication: true,
+                    injury: true,
+                    gold: true,
+                    rice: true,
+                    crew: true,
+                    train: true,
+                    atmos: true,
+                },
+                orderBy: { id: 'asc' },
+            }),
+        ]);
+
+        if (!nation) {
+            throw new TRPCError({ code: 'NOT_FOUND', message: 'Nation not found' });
+        }
+        if (!worldState) {
+            throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'World state is not initialized.' });
+        }
+
+        const permissionLevel = resolveNationPermission(me, nation.meta, true);
+        if (permissionLevel < 1) {
+            throw new TRPCError({ code: 'FORBIDDEN', message: '권한이 부족합니다.' });
+        }
+
+        const generalIds = generalRows.map((general) => general.id);
+        const battleCounts =
+            generalIds.length > 0
+                ? await ctx.db.logEntry.groupBy({
+                      by: ['generalId'],
+                      where: {
+                          generalId: { in: generalIds },
+                          category: LogCategory.BATTLE_BRIEF,
+                      },
+                      _count: { _all: true },
+                  })
+                : [];
+        const battleCountMap = new Map<number, number>();
+        for (const row of battleCounts) {
+            if (row.generalId !== null) {
+                battleCountMap.set(row.generalId, row._count._all);
+            }
+        }
+
+        const generals = generalRows.map((general) => ({
+            id: general.id,
+            name: general.name,
+            npcState: general.npcState,
+            officerLevel: general.officerLevel,
+            cityId: general.cityId,
+            turnTime: formatDateTime(general.turnTime),
+            recentWar: formatDateTime(general.recentWarTime),
+            warnum: battleCountMap.get(general.id) ?? 0,
+            stats: {
+                leadership: general.leadership,
+                strength: general.strength,
+                intelligence: general.intel,
+            },
+            experience: general.experience,
+            dedication: general.dedication,
+            injury: general.injury,
+            gold: general.gold,
+            rice: general.rice,
+            crew: general.crew,
+            train: general.train,
+            atmos: general.atmos,
+        }));
+
+        return {
+            me: {
+                id: me.id,
+                officerLevel: me.officerLevel,
+                permissionLevel,
+            },
+            nation: {
+                id: nation.id,
+                name: nation.name,
+                color: nation.color,
+                level: nation.level,
+            },
+            currentYear: worldState.currentYear,
+            currentMonth: worldState.currentMonth,
+            turnTermMinutes: Math.max(1, Math.round(worldState.tickSeconds / 60)),
+            generals,
+        };
+    }),
+    getGeneralLog: authedProcedure
+        .input(
+            z.object({
+                generalId: z.number().int().positive(),
+                type: zGeneralLogType,
+            })
+        )
+        .query(async ({ ctx, input }) => {
+            const me = await getMyGeneral(ctx);
+            assertNationAccess(me);
+
+            const [nation, target] = await Promise.all([
+                ctx.db.nation.findUnique({
+                    where: { id: me.nationId },
+                    select: { meta: true },
+                }),
+                ctx.db.general.findUnique({
+                    where: { id: input.generalId },
+                    select: { id: true, nationId: true, npcState: true },
+                }),
+            ]);
+
+            if (!nation) {
+                throw new TRPCError({ code: 'NOT_FOUND', message: 'Nation not found' });
+            }
+            if (!target) {
+                throw new TRPCError({ code: 'NOT_FOUND', message: 'General not found' });
+            }
+
+            const permissionLevel = resolveNationPermission(me, nation.meta, true);
+            if (permissionLevel < 1) {
+                throw new TRPCError({ code: 'FORBIDDEN', message: '권한이 부족합니다.' });
+            }
+            if (target.nationId !== me.nationId) {
+                throw new TRPCError({ code: 'FORBIDDEN', message: '같은 나라의 장수가 아닙니다.' });
+            }
+            if (
+                input.type === 'generalAction' &&
+                target.npcState < 2 &&
+                target.id !== me.id &&
+                permissionLevel < 2
+            ) {
+                throw new TRPCError({
+                    code: 'FORBIDDEN',
+                    message: '권한이 부족합니다. 유저 장수의 개인 기록은 수뇌만 열람 가능합니다.',
+                });
+            }
+
+            const categoryMap: Record<GeneralLogType, LogCategory> = {
+                generalHistory: LogCategory.HISTORY,
+                generalAction: LogCategory.ACTION,
+                battleResult: LogCategory.BATTLE_BRIEF,
+                battleDetail: LogCategory.BATTLE_DETAIL,
+            };
+
+            const logs = await ctx.db.logEntry.findMany({
+                where: {
+                    generalId: target.id,
+                    scope: LogScope.GENERAL,
+                    category: categoryMap[input.type],
+                },
+                orderBy: { id: 'desc' },
+                take: 30,
+            });
+
+            return {
+                type: input.type,
+                generalId: target.id,
+                logs: logs.map((entry) => ({
+                    id: entry.id,
+                    text: entry.text,
+                })),
+            };
+        }),
     getChiefCenter: authedProcedure.query(async ({ ctx }) => {
         const me = await getMyGeneral(ctx);
         assertNationAccess(me);

@@ -1,6 +1,7 @@
 import type { TurnCommandProfile, TurnSchedule } from '@sammo-ts/logic';
 import { buildGameEventChannel, type RealtimeEvent } from '@sammo-ts/common';
 import { createRedisConnector, resolveRedisConfigFromEnv } from '@sammo-ts/infra';
+import { NATION_TRAIT_KEYS, NationTraitLoader, loadNationTraitModules } from '@sammo-ts/logic';
 
 import { SystemClock } from '../lifecycle/clock.js';
 import { getNextTickTime } from '../lifecycle/getNextTickTime.js';
@@ -16,6 +17,8 @@ import { InMemoryTurnProcessor } from './inMemoryTurnProcessor.js';
 import { InMemoryTurnStateStore } from './inMemoryStateStore.js';
 import { createGatewayAdminActionConsumer } from './gatewayAdminActions.js';
 import { createGatewayProfileGate } from './gatewayProfileGate.js';
+import { composeCalendarHandlers } from './calendarHandlers.js';
+import { createIncomeHandler } from './incomeHandler.js';
 import { createReservedTurnHandler } from './reservedTurnHandler.js';
 import { createReservedTurnStore } from './reservedTurnStore.js';
 import { createTurnDaemonCommandHandler } from './worldCommandHandler.js';
@@ -100,6 +103,8 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
               })
             : await loadTurnCommandProfile());
     let worldRef: InMemoryTurnWorld | null = null;
+    const nationTraits = await loadNationTraitModules([...NATION_TRAIT_KEYS], new NationTraitLoader());
+    const nationTraitMap = new Map(nationTraits.map((module) => [module.key, module]));
     const unification = options.calendarHandler
         ? null
         : createUnificationHandler({
@@ -107,6 +112,12 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
               profileName: options.profileName ?? options.profile,
               getWorld: () => worldRef,
           });
+    const incomeHandler = createIncomeHandler({
+        getWorld: () => worldRef,
+        scenarioConfig: snapshot.scenarioConfig,
+        nationTraits: nationTraitMap,
+    });
+    const calendarHandler = composeCalendarHandlers(options.calendarHandler ?? unification?.handler, incomeHandler);
     const worldOptions: InMemoryTurnWorldOptions = {
         schedule,
         generalTurnHandler:
@@ -120,7 +131,7 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
                 getWorld: () => worldRef,
                 commandProfile,
             })),
-        calendarHandler: options.calendarHandler ?? unification?.handler,
+        calendarHandler: calendarHandler ?? undefined,
     };
     const world = new InMemoryTurnWorld(resolvedState, snapshot, worldOptions);
     worldRef = world;

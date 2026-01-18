@@ -7,9 +7,11 @@ export interface DatabaseClient {
     general: GamePrisma.GeneralDelegate;
     city: GamePrisma.CityDelegate;
     nation: GamePrisma.NationDelegate;
+    diplomacy: GamePrisma.DiplomacyDelegate;
     generalTurn: GamePrisma.GeneralTurnDelegate;
     nationTurn: GamePrisma.NationTurnDelegate;
     troop: GamePrisma.TroopDelegate;
+    logEntry: GamePrisma.LogEntryDelegate;
     inheritancePoint: GamePrisma.InheritancePointDelegate;
     inheritanceLog: GamePrisma.InheritanceLogDelegate;
     inheritanceResult: GamePrisma.InheritanceResultDelegate;
