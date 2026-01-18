@@ -24,6 +24,7 @@
 - Styles are split between `legacy/css/` and SCSS in `legacy/hwe/scss/`.
 - Tests: PHPUnit in `legacy/tests/`, TypeScript tests in `legacy/hwe/test-ts/`.
 - Static data/assets: scenarios in `legacy/hwe/scenario/`, templates in `legacy/hwe/templates/`.
+- Image storage listing (ls -R dump): `docs/image-storage.md`.
 
 ## Legacy Endpoint Patterns
 
