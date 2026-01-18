@@ -327,9 +327,13 @@ export const createDatabaseTurnHooks = async (
                 ...nations
                     .filter((nation) => !createdNationIds.has(nation.id))
                     .map((nation) =>
-                        prisma.nation.update({
+                        prisma.nation.upsert({
                             where: { id: nation.id },
-                            data: buildNationUpdate(nation),
+                            update: buildNationUpdate(nation),
+                            create: {
+                                id: nation.id,
+                                ...buildNationUpdate(nation),
+                            },
                         })
                     ),
                 ...troops

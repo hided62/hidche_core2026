@@ -137,11 +137,12 @@ export class RedisTurnDaemonCommandStream implements TurnDaemonControlQueue, Tur
         }
 
         const blockMs = deadlineMs === null ? 0 : Math.max(0, deadlineMs - Date.now());
+        const cappedBlockMs = deadlineMs === null ? 0 : Math.min(blockMs, 1000);
         if (deadlineMs !== null && blockMs === 0) {
             return null;
         }
 
-        const remote = await this.readRemoteCommands(blockMs);
+        const remote = await this.readRemoteCommands(cappedBlockMs);
         if (remote.length === 0) {
             return null;
         }

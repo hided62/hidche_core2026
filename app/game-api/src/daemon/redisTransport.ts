@@ -77,7 +77,7 @@ export class RedisTurnDaemonTransport implements TurnDaemonTransport {
         const requestId = await this.sendCommand(command);
 
         const deadline = Date.now() + (timeoutMs ?? this.requestTimeoutMs);
-        let lastId = '$';
+        let lastId = '0-0';
 
         while (Date.now() < deadline) {
             const remaining = Math.max(1, deadline - Date.now());
@@ -116,7 +116,7 @@ export class RedisTurnDaemonTransport implements TurnDaemonTransport {
         await this.sendCommand({ type: 'getStatus', requestId });
 
         const deadline = Date.now() + (timeoutMs ?? this.requestTimeoutMs);
-        let lastId = '$';
+        let lastId = '0-0';
 
         while (Date.now() < deadline) {
             const remaining = Math.max(1, deadline - Date.now());

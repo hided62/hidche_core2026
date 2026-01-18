@@ -100,11 +100,11 @@ const truncateSchema = async (schema: string) => {
 const resetDatabase = async () => {
     await ensureSchema('public');
     await ensureSchema('che');
-    await execCommand('pnpm', ['--filter', '@sammo-ts/infra', 'prisma:db:push:gateway'], {
+    await execCommand('pnpm', ['--filter', '@sammo-ts/infra', 'prisma:db:push:gateway', '--accept-data-loss'], {
         ...process.env,
         POSTGRES_SCHEMA: 'public',
     });
-    await execCommand('pnpm', ['--filter', '@sammo-ts/infra', 'prisma:db:push:game'], {
+    await execCommand('pnpm', ['--filter', '@sammo-ts/infra', 'prisma:db:push:game', '--accept-data-loss'], {
         ...process.env,
         POSTGRES_SCHEMA: 'che',
     });
@@ -160,6 +160,7 @@ describe('integration initialization flow', () => {
 
     beforeAll(async () => {
         await loadEnv();
+        process.chdir(workspaceRoot);
         await resetDatabase();
         await resetRedis();
 
@@ -188,7 +189,7 @@ describe('integration initialization flow', () => {
         if (gatewayServer) {
             await gatewayServer.app.close();
         }
-    });
+    }, 30_000);
 
     it('seeds scenario, creates users, and validates founding flow', async () => {
         if (!gatewayServer || !gameServer) {
@@ -392,9 +393,12 @@ describe('integration initialization flow', () => {
         const runTurn = async () => {
             const status = await waitForStatus();
             const prevRunAt = status.lastRunAt;
+            const targetTime = status.nextTurnTime
+                ? new Date(new Date(status.nextTurnTime).getTime() + 5 * 60_000).toISOString()
+                : new Date(Date.now() + 5 * 60_000).toISOString();
             await gameClient.turnDaemon.run.mutate({
                 reason: 'manual',
-                targetTime: status.nextTurnTime ?? undefined,
+                targetTime,
             });
             const deadline = Date.now() + 20_000;
             while (Date.now() < deadline) {
