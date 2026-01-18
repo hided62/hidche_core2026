@@ -1,0 +1,20 @@
+{
+    "json.schemas": [
+        {
+            "fileMatch": ["resources/map/*.json"],
+            "url": "./resources/schema/map.json"
+        },
+        {
+            "fileMatch": ["resources/scenario/*.json"],
+            "url": "./resources/schema/scenario.json"
+        },
+        {
+            "fileMatch": ["resources/unitset/*.json"],
+            "url": "./resources/schema/unitset.json"
+        },
+        {
+            "fileMatch": ["resources/turn-commands/*.json"],
+            "url": "./resources/schema/turn-commands.json"
+        }
+    ]
+}

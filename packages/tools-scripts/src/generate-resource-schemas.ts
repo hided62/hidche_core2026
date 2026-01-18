@@ -18,16 +18,16 @@ const RESOURCE_ROOT = path.join(REPO_ROOT, 'resources');
 
 const writeSchema = async (relativePath: string, schema: ZodTypeAny): Promise<void> => {
     const outputPath = path.join(RESOURCE_ROOT, relativePath);
-    const jsonSchema = z.toJSONSchema(schema, { target: 'draft-07' });
+    const jsonSchema = z.toJSONSchema(schema);
     const serialized = `${JSON.stringify(jsonSchema, null, 4)}\n`;
     await fs.writeFile(outputPath, serialized, 'utf8');
 };
 
 const main = async (): Promise<void> => {
-    await writeSchema(path.join('map', 'schema.json'), MapResourceSchema);
-    await writeSchema(path.join('scenario', 'schema.json'), ScenarioResourceSchema);
-    await writeSchema(path.join('unitset', 'schema.json'), UnitSetDefinitionInputSchema);
-    await writeSchema(path.join('turn-commands', 'schema.json'), TurnCommandProfileInputSchema);
+    await writeSchema(path.join('schema', 'map.json'), MapResourceSchema);
+    await writeSchema(path.join('schema', 'scenario.json'), ScenarioResourceSchema);
+    await writeSchema(path.join('schema', 'unitset.json'), UnitSetDefinitionInputSchema);
+    await writeSchema(path.join('schema', 'turn-commands.json'), TurnCommandProfileInputSchema);
 };
 
 main().catch((error) => {

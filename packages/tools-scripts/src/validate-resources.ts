@@ -24,7 +24,7 @@ const RESOURCE_SCHEMAS: Record<string, (value: unknown) => void> = {
 const listJsonFiles = async (dirPath: string): Promise<string[]> => {
     const entries = await fs.readdir(dirPath, { withFileTypes: true });
     return entries
-        .filter((entry) => entry.isFile() && entry.name.endsWith('.json') && entry.name !== 'schema.json')
+        .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
         .map((entry) => entry.name)
         .sort((a, b) => a.localeCompare(b));
 };
