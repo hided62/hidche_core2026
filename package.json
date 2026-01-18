@@ -9,6 +9,7 @@
         "lint:fix": "turbo lint:fix",
         "format": "prettier --write .",
         "test": "turbo test",
+        "test:integration": "pnpm --filter @sammo-ts/integration-tests test:integration",
         "build": "turbo build",
         "typecheck": "turbo typecheck",
         "dev": "turbo dev",

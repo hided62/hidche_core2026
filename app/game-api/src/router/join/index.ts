@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto';
 
 import type { WorldStateRow } from '../../context.js';
 import { authedProcedure, router } from '../../trpc.js';
-import { asNumber, asRecord, asStringArray } from '@sammo-ts/common';
+import { asNumber, asRecord, asStringArray, parseBooleanWithFallback } from '@sammo-ts/common';
 import {
     isPersonalityTraitKey,
     isWarTraitKey,
@@ -250,13 +250,57 @@ export const joinRouter = router({
 
                 const maxId = await db.general.aggregate({ _max: { id: true } });
                 const nextId = (maxId._max.id ?? 0) + 1;
-                const cityList = await db.city.findMany({ select: { id: true }, orderBy: { id: 'asc' } });
+                const cityList = await db.city.findMany({
+                    select: { id: true, level: true },
+                    orderBy: { id: 'asc' },
+                });
                 if (!cityList.length) {
                     throw new TRPCError({
                         code: 'PRECONDITION_FAILED',
                         message: '도시 정보를 찾을 수 없습니다.',
                     });
                 }
+                // 통합 테스트 전용: ENV로 지정한 경우에만 도시 지정 허용.
+                const allowCityOverride = parseBooleanWithFallback(process.env.INTEGRATION_JOIN_ALLOW_CITY, false);
+                if (allowCityOverride && typeof input.inheritCity === 'number') {
+                    const override = cityList.find((city) => city.id === input.inheritCity);
+                    if (!override) {
+                        throw new TRPCError({
+                            code: 'BAD_REQUEST',
+                            message: '지정한 도시를 찾을 수 없습니다.',
+                        });
+                    }
+                    if (override.level !== 5 && override.level !== 6) {
+                        throw new TRPCError({
+                            code: 'BAD_REQUEST',
+                            message: '통합 테스트에서는 소성/중성 도시만 지정할 수 있습니다.',
+                        });
+                    }
+                    const general = await db.general.create({
+                        data: {
+                            id: nextId,
+                            userId,
+                            name: generalName,
+                            nationId: 0,
+                            cityId: override.id,
+                            troopId: 0,
+                            npcState: 0,
+                            leadership: input.leadership,
+                            strength: input.strength,
+                            intel: input.intel,
+                            personalCode: chosenPersonality ?? 'None',
+                            specialCode: 'None',
+                            special2Code: 'None',
+                            turnTime: new Date(),
+                            meta: {
+                                createdBy: 'join',
+                            },
+                        },
+                    });
+
+                    return { ok: true, generalId: general.id };
+                }
+
                 const cityIndex = hashString(userId) % cityList.length;
                 const cityId = cityList[cityIndex]?.id ?? cityList[0].id;
 

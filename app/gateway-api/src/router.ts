@@ -15,6 +15,7 @@ const zUsername = z.string().min(2).max(32);
 const zPassword = z.string().min(6).max(128);
 const zProfile = z.string().min(1).max(64);
 const zOAuthMode = z.enum(['login', 'change_pw']);
+const zBootstrapToken = z.string().min(1);
 
 const parseDate = (value: string): Date | null => {
     const parsed = parseISO(value);
@@ -61,6 +62,51 @@ export const appRouter = router({
     }),
     admin: adminRouter,
     auth: router({
+        bootstrapLocal: procedure
+            .input(
+                z.object({
+                    token: zBootstrapToken,
+                    username: zUsername,
+                    password: zPassword,
+                    displayName: z.string().min(2).max(40).optional(),
+                })
+            )
+            .mutation(async ({ ctx, input }) => {
+                const expected = process.env.GATEWAY_BOOTSTRAP_TOKEN ?? '';
+                if (!expected) {
+                    throw new TRPCError({
+                        code: 'FORBIDDEN',
+                        message: 'Bootstrap is disabled.',
+                    });
+                }
+                if (input.token !== expected) {
+                    throw new TRPCError({
+                        code: 'UNAUTHORIZED',
+                        message: 'Invalid bootstrap token.',
+                    });
+                }
+                const existing = await ctx.prisma.appUser.findFirst({
+                    select: { id: true },
+                });
+                if (existing) {
+                    throw new TRPCError({
+                        code: 'CONFLICT',
+                        message: 'Bootstrap is already completed.',
+                    });
+                }
+                const created = await ctx.users.createUser({
+                    username: input.username,
+                    password: input.password,
+                    displayName: input.displayName,
+                });
+                await ctx.users.updateRoles(created.id, ['superuser']);
+                const session = await ctx.sessions.createSession(created);
+                return {
+                    user: toPublicUser(created),
+                    sessionToken: session.sessionToken,
+                    issuedAt: session.issuedAt,
+                };
+            }),
         kakaoStart: procedure
             .input(
                 z

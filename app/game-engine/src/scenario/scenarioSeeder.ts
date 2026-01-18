@@ -1,4 +1,5 @@
 import { createGamePostgresConnector, type InputJsonValue, type TurnEngineEventCreateManyInput } from '@sammo-ts/infra';
+import { asRecord } from '@sammo-ts/common';
 import { buildScenarioBootstrap, type ScenarioBootstrapWarning, type WorldSeedPayload } from '@sammo-ts/logic';
 
 import type { MapLoaderOptions } from './mapLoader.js';
@@ -11,6 +12,8 @@ import { loadUnitSetDefinitionByName } from './unitSetLoader.js';
 const DEFAULT_TICK_SECONDS = 120 * 60;
 const DEFAULT_GENERAL_GOLD = 1000;
 const DEFAULT_GENERAL_RICE = 1000;
+const DEFAULT_OPENING_PART_YEAR = 3;
+const INTEGRATION_WORLD_SEED_ENV = 'INTEGRATION_WORLD_SEED';
 
 const MINUTES_TO_MS = 60_000;
 
@@ -180,6 +183,18 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
     const generalGold = options.defaultGeneralGold ?? DEFAULT_GENERAL_GOLD;
     const generalRice = options.defaultGeneralRice ?? DEFAULT_GENERAL_RICE;
 
+    const scenarioConst = asRecord(seed.scenarioConfig.const);
+    if (
+        typeof scenarioConst.openingPartYear !== 'number' ||
+        Number.isNaN(scenarioConst.openingPartYear)
+    ) {
+        scenarioConst.openingPartYear = DEFAULT_OPENING_PART_YEAR;
+    }
+    const scenarioConfig = {
+        ...seed.scenarioConfig,
+        const: scenarioConst,
+    };
+
     const worldConfig: Record<string, unknown> = {
         fiction: install?.fiction,
         fictionMode: install?.fiction === 0 ? '연의' : install?.fiction === 1 ? '가상' : undefined,
@@ -201,6 +216,11 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
         opentime: formatDateTime(now),
         lastTurnTime: formatDateTime(now),
     };
+
+    const integrationSeed = process.env[INTEGRATION_WORLD_SEED_ENV];
+    if (typeof integrationSeed === 'string' && integrationSeed.trim().length > 0) {
+        worldMeta.hiddenSeed = integrationSeed.trim();
+    }
 
     if (install?.preopenAt) {
         worldMeta.preopenAt = formatDateTime(install.preopenAt);
@@ -233,7 +253,7 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
                 currentYear: startState.currentYear,
                 currentMonth: startState.currentMonth,
                 tickSeconds,
-                config: asJson({ ...seed.scenarioConfig, ...worldConfig }),
+                config: asJson({ ...scenarioConfig, ...worldConfig }),
                 meta: asJson(worldMeta),
             },
         });

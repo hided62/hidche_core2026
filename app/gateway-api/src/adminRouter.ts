@@ -1,7 +1,10 @@
 import { randomBytes } from 'node:crypto';
+import path from 'node:path';
 
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
+
+import { resolvePostgresConfigFromEnv } from '@sammo-ts/infra';
 
 import { procedure, router } from './trpc.js';
 import { listScenarioPreviews, resolveGitCommitSha } from './scenario/scenarioCatalog.js';
@@ -10,6 +13,7 @@ import { toPublicUser } from './auth/userRepository.js';
 import type { AdminAuthContext } from './adminAuth.js';
 import type { GatewayApiContext } from './context.js';
 import { GATEWAY_BUILD_STATUSES, GATEWAY_PROFILE_STATUSES } from './orchestrator/profileRepository.js';
+import { seedProfileDatabase } from './orchestrator/seedProfileDatabase.js';
 
 const zProfileStatus = z.enum(GATEWAY_PROFILE_STATUSES);
 const zBuildStatus = z.enum(GATEWAY_BUILD_STATUSES);
@@ -670,6 +674,7 @@ export const adminRouter = router({
                 })
             )
             .mutation(async ({ ctx, input }) => {
+                const adminAuth = requireAdminAuth(ctx);
                 const profile = await ctx.profiles.getProfile(input.profileName);
                 if (!profile) {
                     throw new TRPCError({
@@ -779,6 +784,11 @@ export const adminRouter = router({
                                   options: autorunUser.options,
                               }
                             : null,
+                        adminUser: {
+                            id: adminAuth.user.id,
+                            username: adminAuth.user.username,
+                            displayName: adminAuth.user.displayName,
+                        },
                     },
                 };
 
@@ -806,6 +816,81 @@ export const adminRouter = router({
                 }
 
                 return { ok: true, action: actionRecord };
+            }),
+        installNow: profileAdminProcedure
+            .input(
+                z.object({
+                    profileName: z.string().min(1),
+                    install: zInstallOptions,
+                    reason: z.string().max(200).optional(),
+                })
+            )
+            .mutation(async ({ ctx, input }) => {
+                const adminAuth = requireAdminAuth(ctx);
+                const profile = await ctx.profiles.getProfile(input.profileName);
+                if (!profile) {
+                    throw new TRPCError({
+                        code: 'NOT_FOUND',
+                        message: 'Profile not found.',
+                    });
+                }
+
+                const scenarioValue = String(input.install.scenarioId);
+                let updatedProfile = profile;
+                if (profile.scenario !== scenarioValue) {
+                    const updated = await ctx.profiles.updateScenario(profile.profileName, scenarioValue);
+                    if (updated) {
+                        updatedProfile = updated;
+                    }
+                }
+
+                const databaseUrl = resolvePostgresConfigFromEnv({
+                    env: process.env,
+                    schema: updatedProfile.profile,
+                }).url;
+                const resourcesRoot = path.resolve(process.cwd(), 'resources');
+
+                await seedProfileDatabase({
+                    databaseUrl,
+                    scenarioId: input.install.scenarioId,
+                    tickSeconds: input.install.turnTermMinutes * 60,
+                    now: new Date(),
+                    installOptions: {
+                        turnTermMinutes: input.install.turnTermMinutes,
+                        sync: input.install.sync,
+                        fiction: input.install.fiction,
+                        extend: input.install.extend,
+                        blockGeneralCreate: input.install.blockGeneralCreate,
+                        npcMode: input.install.npcMode,
+                        showImgLevel: input.install.showImgLevel,
+                        tournamentTrig: input.install.tournamentTrig,
+                        joinMode: input.install.joinMode,
+                        autorunUser: input.install.autorunUser
+                            ? {
+                                  limitMinutes: input.install.autorunUser.limitMinutes,
+                                  options: Object.fromEntries(
+                                      input.install.autorunUser.options.map((option) => [option, true])
+                                  ),
+                              }
+                            : null,
+                    },
+                    scenarioOptions: { scenarioRoot: path.join(resourcesRoot, 'scenario') },
+                    mapOptions: { mapRoot: path.join(resourcesRoot, 'map') },
+                    unitSetOptions: { unitSetRoot: path.join(resourcesRoot, 'unitset') },
+                    adminUser: {
+                        id: adminAuth.user.id,
+                        username: adminAuth.user.username,
+                        displayName: adminAuth.user.displayName,
+                    },
+                });
+
+                await ctx.profiles.updateStatus(updatedProfile.profileName, 'RUNNING', {
+                    preopenAt: null,
+                    openAt: null,
+                    scheduledStartAt: null,
+                });
+
+                return { ok: true };
             }),
         requestAction: adminProcedure
             .input(

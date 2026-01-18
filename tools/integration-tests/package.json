@@ -1,0 +1,22 @@
+{
+    "name": "@sammo-ts/integration-tests",
+    "private": true,
+    "version": "0.0.0",
+    "type": "module",
+    "scripts": {
+        "test:integration": "vitest run --config vitest.config.ts",
+        "typecheck": "tsc -b"
+    },
+    "dependencies": {
+        "@sammo-ts/common": "workspace:*",
+        "@sammo-ts/game-api": "workspace:*",
+        "@sammo-ts/game-engine": "workspace:*",
+        "@sammo-ts/gateway-api": "workspace:*",
+        "@sammo-ts/infra": "workspace:*",
+        "@trpc/client": "^11.8.1"
+    },
+    "devDependencies": {
+        "vite-tsconfig-paths": "^6.0.3",
+        "vitest": "^4.0.16"
+    }
+}

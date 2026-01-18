@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-import { seedScenarioToDatabase, type ScenarioInstallOptions } from '@sammo-ts/game-engine';
+import { type ScenarioInstallOptions } from '@sammo-ts/game-engine';
 import { createGamePostgresConnector, resolvePostgresConfigFromEnv } from '@sammo-ts/infra';
 import { isRecord } from '@sammo-ts/common';
 
@@ -8,6 +8,7 @@ import type { BuildRunner } from './buildRunner.js';
 import type { ProcessManager } from './processManager.js';
 import type { GatewayProfileRecord, GatewayProfileRepository, GatewayProfileStatus } from './profileRepository.js';
 import type { GitWorkspaceManager } from './workspaceManager.js';
+import { seedProfileDatabase, type AdminSeedUser } from './seedProfileDatabase.js';
 
 export interface GatewayProcessConfig {
     workspaceRoot: string;
@@ -94,6 +95,11 @@ interface GatewayAdminActionRecord {
             limitMinutes?: number;
             options?: string[];
         } | null;
+        adminUser?: {
+            id?: string;
+            username?: string;
+            displayName?: string | null;
+        };
         openAt?: string | null;
         preopenAt?: string | null;
         gitRef?: string | null;
@@ -146,11 +152,12 @@ const parseInstallOptions = (
 ): {
     installOptions: ScenarioInstallOptions | null;
     scenarioId: number | null;
+    adminUser: AdminSeedUser | null;
     openAt: Date | null;
     preopenAt: Date | null;
 } => {
     if (!isRecord(action.install)) {
-        return { installOptions: null, scenarioId: null, openAt: null, preopenAt: null };
+        return { installOptions: null, scenarioId: null, adminUser: null, openAt: null, preopenAt: null };
     }
 
     const install = action.install;
@@ -196,6 +203,20 @@ const parseInstallOptions = (
 
     const openAt = parseDateTime(install.openAt ?? null);
     const preopenAt = parseDateTime(install.preopenAt ?? null);
+    const adminUser =
+        isRecord(install.adminUser) && typeof install.adminUser.id === 'string'
+            ? {
+                  id: install.adminUser.id,
+                  username:
+                      typeof install.adminUser.username === 'string'
+                          ? install.adminUser.username
+                          : install.adminUser.id,
+                  displayName:
+                      typeof install.adminUser.displayName === 'string'
+                          ? install.adminUser.displayName
+                          : undefined,
+              }
+            : null;
 
     const installOptions: ScenarioInstallOptions = {
         turnTermMinutes,
@@ -214,6 +235,7 @@ const parseInstallOptions = (
     return {
         installOptions,
         scenarioId,
+        adminUser,
         openAt,
         preopenAt,
     };
@@ -582,7 +604,8 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         this.buildInFlight = true;
         this.resetInFlight.add(profile.profileName);
         try {
-            const { installOptions, scenarioId: installScenarioId, openAt, preopenAt } = parseInstallOptions(action);
+            const { installOptions, scenarioId: installScenarioId, adminUser, openAt, preopenAt } =
+                parseInstallOptions(action);
             const tickOverride =
                 installOptions?.turnTermMinutes !== undefined ? installOptions.turnTermMinutes * 60 : undefined;
             const seedInfo = await this.resolveResetSeedInfo(profile, {
@@ -622,7 +645,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             }
             const workspace = await this.workspaceManager.prepare(commitSha);
             const resourceRoot = path.join(workspace.root, 'resources');
-            await seedScenarioToDatabase({
+            await seedProfileDatabase({
                 databaseUrl: seedInfo.databaseUrl,
                 scenarioId: seedInfo.scenarioId,
                 tickSeconds: seedInfo.tickSeconds,
@@ -631,6 +654,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 scenarioOptions: { scenarioRoot: path.join(resourceRoot, 'scenario') },
                 mapOptions: { mapRoot: path.join(resourceRoot, 'map') },
                 unitSetOptions: { unitSetRoot: path.join(resourceRoot, 'unitset') },
+                adminUser,
             });
             await this.repository.updateBuildStatus(profile.profileName, 'SUCCEEDED', {
                 completedAt,

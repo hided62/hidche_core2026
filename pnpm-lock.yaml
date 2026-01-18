@@ -215,6 +215,9 @@ importers:
       '@sammo-ts/infra':
         specifier: workspace:*
         version: link:../../packages/infra
+      '@sammo-ts/logic':
+        specifier: workspace:*
+        version: link:../../packages/logic
       '@trpc/server':
         specifier: ^11.8.1
         version: 11.8.1(typescript@5.9.3)
@@ -393,6 +396,34 @@ importers:
         version: 4.0.16(@types/node@25.0.3)(jiti@2.6.1)(lightningcss@1.30.2)
 
   tools/build-scripts: {}
+
+  tools/integration-tests:
+    dependencies:
+      '@sammo-ts/common':
+        specifier: workspace:*
+        version: link:../../packages/common
+      '@sammo-ts/game-api':
+        specifier: workspace:*
+        version: link:../../app/game-api
+      '@sammo-ts/game-engine':
+        specifier: workspace:*
+        version: link:../../app/game-engine
+      '@sammo-ts/gateway-api':
+        specifier: workspace:*
+        version: link:../../app/gateway-api
+      '@sammo-ts/infra':
+        specifier: workspace:*
+        version: link:../../packages/infra
+      '@trpc/client':
+        specifier: ^11.8.1
+        version: 11.8.1(@trpc/server@11.8.1(typescript@5.9.3))(typescript@5.9.3)
+    devDependencies:
+      vite-tsconfig-paths:
+        specifier: ^6.0.3
+        version: 6.0.3(typescript@5.9.3)(vite@7.3.1(@types/node@25.0.3)(jiti@2.6.1)(lightningcss@1.30.2))
+      vitest:
+        specifier: ^4.0.16
+        version: 4.0.16(@types/node@25.0.3)(jiti@2.6.1)(lightningcss@1.30.2)
 
 packages:
 
