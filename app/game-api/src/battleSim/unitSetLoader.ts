@@ -6,7 +6,8 @@ import { parseUnitSetDefinition, type UnitSetDefinition } from '@sammo-ts/logic'
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DEFAULT_UNIT_SET_ROOT = path.resolve(__dirname, '..', '..', '..', 'game-engine', 'resources', 'unitset');
+const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
+const DEFAULT_UNIT_SET_ROOT = path.resolve(REPO_ROOT, 'resources', 'unitset');
 
 export interface UnitSetLoaderOptions {
     unitSetRoot?: string;

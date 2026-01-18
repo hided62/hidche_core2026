@@ -133,6 +133,7 @@ const mapGeneralPayload = (payload: BattleSimJobPayload['attackerGeneral']): Gen
         intelExp: payload.intel_exp,
         strengthExp: payload.strength_exp,
         leadershipExp: payload.leadership_exp,
+        defenceTrain: payload.defence_train,
         rank_warnum: payload.warnum,
         rank_killnum: payload.killnum,
         rank_killcrew: payload.killcrew,

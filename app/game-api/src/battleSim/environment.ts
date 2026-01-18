@@ -3,6 +3,7 @@ import type { BattleSimJobPayload, BattleSimRequestPayload } from './types.js';
 import { loadUnitSetDefinitionByName } from './unitSetLoader.js';
 import type { WarEngineConfig } from '@sammo-ts/logic';
 import { asRecord } from '@sammo-ts/common';
+import type { UnitSetDefinition } from '@sammo-ts/logic';
 
 const DEFAULT_WAR_CONFIG = {
     armPerPhase: 500,
@@ -73,11 +74,17 @@ const resolveCastleArmType = (
     return crewTypes.find((crewType) => crewType.id === castleCrewTypeId)?.armType ?? 0;
 };
 
-export const buildBattleSimJobPayload = async (
+export interface BattleSimEnvironment {
+    unitSetName: string;
+    unitSet: UnitSetDefinition;
+    config: WarEngineConfig;
+    startYear: number;
+}
+
+export const buildBattleSimEnvironment = async (
     worldState: WorldStateRow,
-    request: BattleSimRequestPayload,
     profileFallback: string
-): Promise<BattleSimJobPayload> => {
+): Promise<BattleSimEnvironment> => {
     const unitSetName = resolveUnitSetName(worldState, profileFallback);
     const unitSet = await loadUnitSetDefinitionByName(unitSetName);
 
@@ -105,13 +112,28 @@ export const buildBattleSimJobPayload = async (
     };
 
     return {
-        ...request,
+        unitSetName,
         unitSet,
         config,
+        startYear: resolveStartYear(worldState),
+    };
+};
+
+export const buildBattleSimJobPayload = async (
+    worldState: WorldStateRow,
+    request: BattleSimRequestPayload,
+    profileFallback: string
+): Promise<BattleSimJobPayload> => {
+    const environment = await buildBattleSimEnvironment(worldState, profileFallback);
+
+    return {
+        ...request,
+        unitSet: environment.unitSet,
+        config: environment.config,
         time: {
             year: request.year,
             month: request.month,
-            startYear: resolveStartYear(worldState),
+            startYear: environment.startYear,
         },
     };
 };

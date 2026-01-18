@@ -38,6 +38,7 @@ export interface BattleSimGeneralPayload {
     dex3: number;
     dex4: number;
     dex5: number;
+    defence_train: number;
     recent_war: string | null;
     warnum: number;
     killnum: number;

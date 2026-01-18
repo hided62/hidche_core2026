@@ -10,6 +10,7 @@ import NationPersonnelView from '../views/NationPersonnelView.vue';
 import NationStratFinanView from '../views/NationStratFinanView.vue';
 import ChiefCenterView from '../views/ChiefCenterView.vue';
 import BattleCenterView from '../views/BattleCenterView.vue';
+import BattleSimulatorView from '../views/BattleSimulatorView.vue';
 import NpcControlView from '../views/NpcControlView.vue';
 import NotFoundView from '../views/NotFoundView.vue';
 import { useSessionStore } from '../stores/session';
@@ -96,6 +97,15 @@ const routes = [
         path: '/battle-center',
         name: 'battle-center',
         component: BattleCenterView,
+        meta: {
+            requiresAuth: true,
+            requiresGeneral: true,
+        },
+    },
+    {
+        path: '/battle-simulator',
+        name: 'battle-simulator',
+        component: BattleSimulatorView,
         meta: {
             requiresAuth: true,
             requiresGeneral: true,
