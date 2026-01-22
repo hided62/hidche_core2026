@@ -1,26 +1,145 @@
-import { createGamePostgresConnector, GamePrisma } from '@sammo-ts/infra';
+import { createGamePostgresConnector, GamePrisma, type GamePrismaClient } from '@sammo-ts/infra';
+import { ActionLogger, ItemLoader, LogFormat, UserLogger, isItemKey } from '@sammo-ts/logic';
+import { JosaUtil } from '@sammo-ts/common';
 
-import type { TurnDaemonCommandResult } from '../lifecycle/types.js';
+import type { TurnDaemonCommandResult, TurnDaemonHooks } from '../lifecycle/types.js';
+import type { InMemoryTurnWorld } from '../turn/inMemoryWorld.js';
+import type { LogEntryDraft } from '@sammo-ts/logic';
 
 export interface AuctionFinalizer {
     finalize(auctionId: number): Promise<TurnDaemonCommandResult>;
     close(): Promise<void>;
 }
 
+type AuctionType = 'BUY_RICE' | 'SELL_RICE' | 'UNIQUE_ITEM';
+type AuctionStatus = 'OPEN' | 'FINALIZING' | 'FINISHED' | 'CANCELED';
+
 interface AuctionRow {
     id: number;
-    status: string;
+    type: AuctionType;
+    targetCode: string | null;
+    hostGeneralId: number;
+    hostName: string | null;
+    detail: unknown;
+    status: AuctionStatus;
 }
 
-export const createAuctionFinalizer = async (databaseUrl: string): Promise<AuctionFinalizer> => {
-    const connector = createGamePostgresConnector({ url: databaseUrl });
+interface AuctionBidRow {
+    id: number;
+    generalId: number;
+    amount: number;
+}
+
+interface AuctionDetailBase {
+    title?: string;
+    isReverse?: boolean;
+}
+
+interface AuctionDetailResource extends AuctionDetailBase {
+    amount?: number;
+}
+
+const buildFlushResult = (world: InMemoryTurnWorld) => {
+    const state = world.getState();
+    return {
+        lastTurnTime: state.lastTurnTime.toISOString(),
+        processedGenerals: 0,
+        processedTurns: 0,
+        durationMs: 0,
+        partial: false,
+        checkpoint: world.getCheckpoint(),
+    };
+};
+
+const flushWorld = async (world: InMemoryTurnWorld, hooks?: TurnDaemonHooks): Promise<void> => {
+    if (!hooks?.flushChanges) {
+        return;
+    }
+    await hooks.flushChanges(buildFlushResult(world));
+};
+
+const parseDetail = (detail: unknown): AuctionDetailResource => {
+    if (!detail || typeof detail !== 'object') {
+        return {};
+    }
+    return detail as AuctionDetailResource;
+};
+
+const pushLogs = (world: InMemoryTurnWorld, logs: LogEntryDraft[]): void => {
+    for (const log of logs) {
+        world.pushLog(log);
+    }
+};
+
+const refundInheritancePoint = async (options: {
+    prisma: GamePrismaClient;
+    userId: string;
+    amount: number;
+}): Promise<void> => {
+    const { prisma, userId, amount } = options;
+    if (!userId || amount <= 0) {
+        return;
+    }
+    const current = await prisma.inheritancePoint.findUnique({
+        where: {
+            userId_key: {
+                userId,
+                key: 'previous',
+            },
+        },
+    });
+    const nextValue = (current?.value ?? 0) + amount;
+    await prisma.inheritancePoint.upsert({
+        where: {
+            userId_key: {
+                userId,
+                key: 'previous',
+            },
+        },
+        update: {
+            value: nextValue,
+        },
+        create: {
+            userId,
+            key: 'previous',
+            value: nextValue,
+        },
+    });
+};
+
+export const createAuctionFinalizer = async (options: {
+    databaseUrl: string;
+    world: InMemoryTurnWorld;
+    hooks?: TurnDaemonHooks;
+}): Promise<AuctionFinalizer> => {
+    const connector = createGamePostgresConnector({ url: options.databaseUrl });
     await connector.connect();
     const prisma = connector.prisma;
+    const world = options.world;
+    const hooks = options.hooks;
+    const itemLoader = new ItemLoader();
+
+    const getGeneralUserId = async (generalId: number): Promise<string | null> => {
+        const rows = await prisma.$queryRaw<{ userId: string | null }[]>(
+            GamePrisma.sql`SELECT user_id as "userId" FROM general WHERE id = ${generalId}`
+        );
+        return rows[0]?.userId ?? null;
+    };
 
     return {
         finalize: async (auctionId: number): Promise<TurnDaemonCommandResult> => {
             const rows = await prisma.$queryRaw<AuctionRow[]>(
-                GamePrisma.sql`SELECT id, status FROM auction WHERE id = ${auctionId}`
+                GamePrisma.sql`
+                    SELECT id,
+                        type,
+                        target_code as "targetCode",
+                        host_general_id as "hostGeneralId",
+                        host_name as "hostName",
+                        detail,
+                        status
+                    FROM auction
+                    WHERE id = ${auctionId}
+                `
             );
             const auction = rows[0];
             if (!auction) {
@@ -32,7 +151,7 @@ export const createAuctionFinalizer = async (databaseUrl: string): Promise<Aucti
                 };
             }
 
-            if (auction.status === 'FINISHED') {
+            if (auction.status === 'FINISHED' || auction.status === 'CANCELED') {
                 return { type: 'auctionFinalize', ok: true, auctionId };
             }
 
@@ -45,12 +164,215 @@ export const createAuctionFinalizer = async (databaseUrl: string): Promise<Aucti
                 };
             }
 
-            const now = new Date();
-            await prisma.$executeRaw(
-                GamePrisma.sql`UPDATE auction SET status = 'FINISHED', finished_at = ${now}, updated_at = ${now} WHERE id = ${auctionId}`
-            );
+            const detail = parseDetail(auction.detail);
+            const isReverse = detail.isReverse === true;
 
-            // TODO: 경매 정산(자원 이동, 로그 기록, 유니크 지급)을 월드 상태와 함께 확정해야 한다.
+            const bidRows = await prisma.$queryRaw<AuctionBidRow[]>(
+                isReverse
+                    ? GamePrisma.sql`
+                        SELECT id, general_id as "generalId", amount
+                        FROM auction_bid
+                        WHERE auction_id = ${auctionId}
+                        ORDER BY amount ASC, id ASC
+                        LIMIT 1
+                      `
+                    : GamePrisma.sql`
+                        SELECT id, general_id as "generalId", amount
+                        FROM auction_bid
+                        WHERE auction_id = ${auctionId}
+                        ORDER BY amount DESC, id ASC
+                        LIMIT 1
+                      `
+            );
+            const highestBid = bidRows[0] ?? null;
+
+            const now = new Date();
+            const logs: LogEntryDraft[] = [];
+            const globalLogger = new ActionLogger();
+
+            const finalizeStatus = async (status: AuctionStatus) => {
+                await prisma.$executeRaw(
+                    GamePrisma.sql`
+                        UPDATE auction
+                        SET status = ${status},
+                            finished_at = ${now},
+                            updated_at = ${now}
+                        WHERE id = ${auctionId}
+                    `
+                );
+            };
+
+            if (!highestBid) {
+                if (auction.type === 'BUY_RICE' || auction.type === 'SELL_RICE') {
+                    const amount = detail.amount;
+                    if (!amount || amount <= 0) {
+                        await finalizeStatus('CANCELED');
+                        return {
+                            type: 'auctionFinalize',
+                            ok: false,
+                            auctionId,
+                            reason: '경매 거래량 정보가 없습니다.',
+                        };
+                    }
+                    if (auction.hostGeneralId > 0) {
+                        const host = world.getGeneralById(auction.hostGeneralId);
+                        if (!host) {
+                            await finalizeStatus('CANCELED');
+                            return {
+                                type: 'auctionFinalize',
+                                ok: false,
+                                auctionId,
+                                reason: '경매 주최자를 찾을 수 없습니다.',
+                            };
+                        }
+                        const resourceKey = auction.type === 'BUY_RICE' ? 'rice' : 'gold';
+                        world.updateGeneral(host.id, {
+                            [resourceKey]: host[resourceKey] + amount,
+                        });
+                        const hostLogger = new ActionLogger({ generalId: host.id, nationId: host.nationId });
+                        hostLogger.pushGeneralActionLog(`경매가 유찰되어 ${resourceKey === 'rice' ? '쌀' : '금'} ${amount}을 회수했습니다.`, LogFormat.PLAIN);
+                        logs.push(...hostLogger.flush());
+                        globalLogger.pushGlobalActionLog(`경매 ${auctionId}번이 유찰되었습니다.`, LogFormat.PLAIN);
+                    }
+                }
+
+                logs.push(...globalLogger.flush());
+                pushLogs(world, logs);
+                await flushWorld(world, hooks);
+                await finalizeStatus('FINISHED');
+                return { type: 'auctionFinalize', ok: true, auctionId };
+            }
+
+            const bidder = world.getGeneralById(highestBid.generalId);
+            if (!bidder) {
+                await finalizeStatus('CANCELED');
+                return {
+                    type: 'auctionFinalize',
+                    ok: false,
+                    auctionId,
+                    reason: '입찰자를 찾을 수 없습니다.',
+                };
+            }
+
+            if (auction.type === 'BUY_RICE' || auction.type === 'SELL_RICE') {
+                const amount = detail.amount;
+                if (!amount || amount <= 0) {
+                    await finalizeStatus('CANCELED');
+                    return {
+                        type: 'auctionFinalize',
+                        ok: false,
+                        auctionId,
+                        reason: '경매 거래량 정보가 없습니다.',
+                    };
+                }
+                const hostResource = auction.type === 'BUY_RICE' ? 'rice' : 'gold';
+                const bidderResource = auction.type === 'BUY_RICE' ? 'gold' : 'rice';
+                if (auction.hostGeneralId > 0) {
+                    const host = world.getGeneralById(auction.hostGeneralId);
+                    if (!host) {
+                        await finalizeStatus('CANCELED');
+                        return {
+                            type: 'auctionFinalize',
+                            ok: false,
+                            auctionId,
+                            reason: '경매 주최자를 찾을 수 없습니다.',
+                        };
+                    }
+                    world.updateGeneral(host.id, {
+                        [bidderResource]: host[bidderResource] + highestBid.amount,
+                    });
+                    const hostLogger = new ActionLogger({ generalId: host.id, nationId: host.nationId });
+                    const hostJosa = JosaUtil.pick(host.name, '이');
+                    hostLogger.pushGeneralActionLog(
+                        `${auctionId}번 경매 성사: ${host.name}${hostJosa} ${hostResource === 'rice' ? '쌀' : '금'} ${amount}을 판매했습니다.`,
+                        LogFormat.PLAIN
+                    );
+                    logs.push(...hostLogger.flush());
+                }
+
+                world.updateGeneral(bidder.id, {
+                    [hostResource]: bidder[hostResource] + amount,
+                });
+                const bidderLogger = new ActionLogger({ generalId: bidder.id, nationId: bidder.nationId });
+                bidderLogger.pushGeneralActionLog(
+                    `${auctionId}번 경매 성사: ${hostResource === 'rice' ? '쌀' : '금'} ${amount}을 획득했습니다.`,
+                    LogFormat.PLAIN
+                );
+                logs.push(...bidderLogger.flush());
+
+                globalLogger.pushGlobalActionLog(`경매 ${auctionId}번 거래가 성사되었습니다.`, LogFormat.PLAIN);
+            } else if (auction.type === 'UNIQUE_ITEM') {
+                const itemKey = auction.targetCode;
+                if (!itemKey) {
+                    await finalizeStatus('CANCELED');
+                    return {
+                        type: 'auctionFinalize',
+                        ok: false,
+                        auctionId,
+                        reason: '유니크 아이템 정보가 없습니다.',
+                    };
+                }
+                if (!isItemKey(itemKey)) {
+                    await finalizeStatus('CANCELED');
+                    return {
+                        type: 'auctionFinalize',
+                        ok: false,
+                        auctionId,
+                        reason: '아이템 키가 올바르지 않습니다.',
+                    };
+                }
+                const itemModule = await itemLoader.load(itemKey).catch(() => null);
+                if (!itemModule) {
+                    await finalizeStatus('CANCELED');
+                    await refundInheritancePoint({
+                        prisma,
+                        userId: (await getGeneralUserId(bidder.id)) ?? '',
+                        amount: highestBid.amount,
+                    });
+                    return {
+                        type: 'auctionFinalize',
+                        ok: false,
+                        auctionId,
+                        reason: '아이템 정보를 불러올 수 없습니다.',
+                    };
+                }
+
+                const slot = itemModule.slot;
+                world.updateGeneral(bidder.id, {
+                    role: {
+                        ...bidder.role,
+                        items: {
+                            ...bidder.role.items,
+                            [slot]: itemKey,
+                        },
+                    },
+                });
+
+                const bidderLogger = new ActionLogger({ generalId: bidder.id, nationId: bidder.nationId });
+                const josaUl = JosaUtil.pick(itemModule.rawName, '을');
+                bidderLogger.pushGeneralActionLog(
+                    `유니크 경매 낙찰로 ${itemModule.name}${josaUl} 획득했습니다.`,
+                    LogFormat.PLAIN
+                );
+                logs.push(...bidderLogger.flush());
+
+                const bidderUserId = await getGeneralUserId(bidder.id);
+                if (bidderUserId) {
+                    const userIdNum = Number(bidderUserId);
+                    if (Number.isFinite(userIdNum)) {
+                        const userLogger = new UserLogger(userIdNum);
+                        userLogger.push(`유니크 ${itemModule.name} 경매로 ${highestBid.amount} 포인트 사용`, 'inheritPoint');
+                        logs.push(...userLogger.flush());
+                    }
+                }
+
+                globalLogger.pushGlobalActionLog(`유니크 경매 ${auctionId}번이 성사되었습니다.`, LogFormat.PLAIN);
+            }
+
+            logs.push(...globalLogger.flush());
+            pushLogs(world, logs);
+            await flushWorld(world, hooks);
+            await finalizeStatus('FINISHED');
 
             return { type: 'auctionFinalize', ok: true, auctionId };
         },

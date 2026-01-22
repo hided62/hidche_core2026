@@ -15,6 +15,7 @@ import { troopRouter } from './router/troop/index.js';
 import { turnDaemonRouter } from './router/turnDaemon/index.js';
 import { turnsRouter } from './router/turns/index.js';
 import { worldRouter } from './router/world/index.js';
+import { auctionRouter } from './router/auction/index.js';
 
 export const appRouter = router({
     health: healthRouter,
@@ -32,6 +33,7 @@ export const appRouter = router({
     nation: nationRouter,
     npc: npcRouter,
     turnDaemon: turnDaemonRouter,
+    auction: auctionRouter,
 });
 
 export type AppRouter = typeof appRouter;

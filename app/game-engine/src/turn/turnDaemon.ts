@@ -191,7 +191,11 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
         const dbHooks = await createDatabaseTurnHooks(options.databaseUrl, world, {
             reservedTurns: reservedTurnStoreHandle?.store,
         });
-        auctionFinalizer = await createAuctionFinalizer(options.databaseUrl);
+        auctionFinalizer = await createAuctionFinalizer({
+            databaseUrl: options.databaseUrl,
+            world,
+            hooks: dbHooks.hooks,
+        });
         hooks = {
             ...dbHooks.hooks,
             onRunError: async (error) => {

@@ -288,6 +288,7 @@ model AuctionBid {
     amount    Int
     eventId   String   @map("event_id")
     eventAt   DateTime @map("event_at")
+    meta      Json     @default(dbgenerated("'{}'::jsonb"))
     createdAt DateTime @default(now()) @map("created_at")
 
     auction Auction @relation(fields: [auctionId], references: [id], onDelete: Cascade)
