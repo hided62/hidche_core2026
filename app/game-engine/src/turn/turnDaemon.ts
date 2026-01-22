@@ -26,6 +26,7 @@ import { loadTurnCommandProfile } from './turnCommandProfile.js';
 import { loadTurnWorldFromDatabase } from './worldLoader.js';
 import { shouldUseAi } from './ai/generalAi.js';
 import { createUnificationHandler } from './unificationHandler.js';
+import { createAuctionFinalizer } from '../auction/finalizer.js';
 
 export interface TurnDaemonRuntimeOptions {
     profile: string;
@@ -170,6 +171,7 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
     let hooks: TurnDaemonHooks | undefined;
     let publishRealtimeEvent: ((event: RealtimeEvent) => Promise<void>) | null = null;
     let close = async () => {};
+    let auctionFinalizer: Awaited<ReturnType<typeof createAuctionFinalizer>> | null = null;
     let redisCommandStream: RedisTurnDaemonCommandStream | null = null;
     let redisConnector: ReturnType<typeof createRedisConnector> | null = null;
     let pauseGate: (() => Promise<boolean>) | undefined;
@@ -189,6 +191,7 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
         const dbHooks = await createDatabaseTurnHooks(options.databaseUrl, world, {
             reservedTurns: reservedTurnStoreHandle?.store,
         });
+        auctionFinalizer = await createAuctionFinalizer(options.databaseUrl);
         hooks = {
             ...dbHooks.hooks,
             onRunError: async (error) => {
@@ -197,6 +200,9 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
             },
         };
         close = async () => {
+            if (auctionFinalizer) {
+                await auctionFinalizer.close();
+            }
             await dbHooks.close();
             if (reservedTurnStoreHandle) {
                 await reservedTurnStoreHandle.close();
@@ -281,6 +287,7 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
     const commandHandler = createTurnDaemonCommandHandler({
         world,
         hooks,
+        auctionFinalizer: auctionFinalizer ?? undefined,
     });
 
     const defaultBudget: TurnRunBudget = options.defaultBudget ?? {

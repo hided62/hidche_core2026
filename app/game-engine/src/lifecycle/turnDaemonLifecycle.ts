@@ -249,6 +249,7 @@ export class TurnDaemonLifecycle {
             case 'vacation':
             case 'setMySetting':
             case 'dropItem':
+            case 'auctionFinalize':
             case 'changePermission':
             case 'kick':
             case 'appoint':
@@ -268,6 +269,7 @@ export class TurnDaemonLifecycle {
             | { type: 'vacation' }
             | { type: 'setMySetting' }
             | { type: 'dropItem' }
+            | { type: 'auctionFinalize' }
             | { type: 'changePermission' }
             | { type: 'kick' }
             | { type: 'appoint' }
@@ -277,23 +279,41 @@ export class TurnDaemonLifecycle {
         try {
             result = this.commandHandler ? await this.commandHandler.handle(command) : null;
             if (!result) {
+                if (command.type === 'auctionFinalize') {
+                    result = {
+                        type: 'auctionFinalize',
+                        ok: false,
+                        auctionId: command.auctionId,
+                        reason: '턴 데몬이 경매 확정을 처리할 수 없습니다.',
+                    };
+                } else {
+                    result = {
+                        type: command.type,
+                        ok: false,
+                        generalId: command.generalId,
+                        reason: '턴 데몬이 명령을 처리할 수 없습니다.',
+                        ...(command.type === 'troopJoin' ? { troopId: command.troopId } : {}),
+                    } as TurnDaemonCommandResult;
+                }
+            }
+        } catch (error) {
+            const reason = error instanceof Error ? error.message : 'Unknown command error.';
+            if (command.type === 'auctionFinalize') {
+                result = {
+                    type: 'auctionFinalize',
+                    ok: false,
+                    auctionId: command.auctionId,
+                    reason,
+                };
+            } else {
                 result = {
                     type: command.type,
                     ok: false,
                     generalId: command.generalId,
-                    reason: '턴 데몬이 명령을 처리할 수 없습니다.',
+                    reason,
                     ...(command.type === 'troopJoin' ? { troopId: command.troopId } : {}),
                 } as TurnDaemonCommandResult;
             }
-        } catch (error) {
-            const reason = error instanceof Error ? error.message : 'Unknown command error.';
-            result = {
-                type: command.type,
-                ok: false,
-                generalId: command.generalId,
-                reason,
-                ...(command.type === 'troopJoin' ? { troopId: command.troopId } : {}),
-            } as TurnDaemonCommandResult;
         }
 
         if (this.commandResponder && command.requestId) {

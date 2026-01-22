@@ -68,6 +68,16 @@ const normalizeCommand = (envelope: TurnDaemonCommandEnvelope): TurnDaemonComman
         requestId?: string;
     };
     switch (command.type) {
+        case 'auctionFinalize': {
+            if (typeof command.auctionId !== 'number') {
+                return null;
+            }
+            return {
+                type: 'auctionFinalize',
+                requestId: envelope.requestId,
+                auctionId: command.auctionId,
+            };
+        }
         case 'troopJoin': {
             if (typeof command.generalId !== 'number' || typeof command.troopId !== 'number') {
                 return null;

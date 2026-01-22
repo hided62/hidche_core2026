@@ -69,6 +69,7 @@ export type TurnDaemonCommand =
           };
       }
     | { type: 'dropItem'; requestId?: string; generalId: number; itemType: string }
+    | { type: 'auctionFinalize'; requestId?: string; auctionId: number }
     | {
           type: 'changePermission';
           requestId?: string;
@@ -87,6 +88,17 @@ export type TurnDaemonCommand =
       };
 
 export type TurnDaemonCommandResult =
+    | {
+          type: 'auctionFinalize';
+          ok: true;
+          auctionId: number;
+      }
+    | {
+          type: 'auctionFinalize';
+          ok: false;
+          auctionId: number;
+          reason: string;
+      }
     | {
           type: 'troopJoin';
           ok: true;

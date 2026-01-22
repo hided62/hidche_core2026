@@ -11,6 +11,9 @@ export interface GameApiConfig {
     daemonRequestTimeoutMs: number;
     battleSimRequestTimeoutMs: number;
     battleSimResultTtlSeconds: number;
+    auctionTimerPollMs: number;
+    auctionTimerResyncMs: number;
+    auctionTimerRetentionSeconds: number;
     gameTokenSecret: string;
     flushChannel: string;
 }
@@ -43,6 +46,21 @@ export const resolveGameApiConfigFromEnv = (env: NodeJS.ProcessEnv = process.env
             env.BATTLE_SIM_RESULT_TTL_SECONDS,
             60,
             'BATTLE_SIM_RESULT_TTL_SECONDS'
+        ),
+        auctionTimerPollMs: parseNumberWithFallback(
+            env.AUCTION_TIMER_POLL_MS,
+            1000,
+            'AUCTION_TIMER_POLL_MS'
+        ),
+        auctionTimerResyncMs: parseNumberWithFallback(
+            env.AUCTION_TIMER_RESYNC_MS,
+            300000,
+            'AUCTION_TIMER_RESYNC_MS'
+        ),
+        auctionTimerRetentionSeconds: parseNumberWithFallback(
+            env.AUCTION_TIMER_RETENTION_SECONDS,
+            21600,
+            'AUCTION_TIMER_RETENTION_SECONDS'
         ),
         gameTokenSecret: secret,
         flushChannel: `${gatewayPrefix}:flush`,

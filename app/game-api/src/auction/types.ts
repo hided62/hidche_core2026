@@ -1,0 +1,11 @@
+export type AuctionStatus = 'OPEN' | 'FINALIZING' | 'FINISHED' | 'CANCELED';
+
+export interface AuctionTimerRow {
+    id: number;
+    closeAt: Date;
+    status: AuctionStatus;
+}
+
+export interface AuctionFinalizeRequest {
+    auctionId: number;
+}

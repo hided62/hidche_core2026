@@ -29,6 +29,11 @@ const flushWorld = async (world: InMemoryTurnWorld, hooks?: TurnDaemonHooks): Pr
 interface CommandHandlerContext {
     world: InMemoryTurnWorld;
     hooks?: TurnDaemonHooks;
+    auctionFinalizer?: AuctionFinalizer;
+}
+
+interface AuctionFinalizer {
+    finalize(auctionId: number): Promise<TurnDaemonCommandResult>;
 }
 
 async function handleTroopJoin(
@@ -299,6 +304,21 @@ async function handleDropItem(
     return { type: 'dropItem', ok: true, generalId: command.generalId };
 }
 
+async function handleAuctionFinalize(
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'auctionFinalize' }>
+): Promise<TurnDaemonCommandResult> {
+    if (!ctx.auctionFinalizer) {
+        return {
+            type: 'auctionFinalize',
+            ok: false,
+            auctionId: command.auctionId,
+            reason: '경매 확정기가 준비되지 않았습니다.',
+        };
+    }
+    return ctx.auctionFinalizer.finalize(command.auctionId);
+}
+
 async function handleChangePermission(
     ctx: CommandHandlerContext,
     command: Extract<TurnDaemonCommand, { type: 'changePermission' }>
@@ -434,8 +454,9 @@ async function handleAppoint(
 export const createTurnDaemonCommandHandler = (options: {
     world: InMemoryTurnWorld;
     hooks?: TurnDaemonHooks;
+    auctionFinalizer?: AuctionFinalizer;
 }): TurnDaemonCommandHandler => {
-    const ctx = { world: options.world, hooks: options.hooks };
+    const ctx = { world: options.world, hooks: options.hooks, auctionFinalizer: options.auctionFinalizer };
 
     return {
         handle: async (command): Promise<TurnDaemonCommandResult | null> => {
@@ -456,6 +477,8 @@ export const createTurnDaemonCommandHandler = (options: {
                     return handleSetMySetting(ctx, command);
                 case 'dropItem':
                     return handleDropItem(ctx, command);
+                case 'auctionFinalize':
+                    return handleAuctionFinalize(ctx, command);
                 case 'changePermission':
                     return handleChangePermission(ctx, command);
                 case 'kick':

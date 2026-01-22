@@ -24,6 +24,19 @@ enum LogCategory {
     USER
 }
 
+enum AuctionStatus {
+    OPEN
+    FINALIZING
+    FINISHED
+    CANCELED
+}
+
+enum AuctionType {
+    BUY_RICE
+    SELL_RICE
+    UNIQUE_ITEM
+}
+
 model WorldState {
     id           Int      @id @default(autoincrement())
     scenarioCode String   @map("scenario_code")
@@ -244,6 +257,44 @@ model InheritanceResult {
 
     @@index([serverId, owner])
     @@map("inheritance_result")
+}
+
+model Auction {
+    id            Int           @id @default(autoincrement())
+    type          AuctionType
+    targetCode    String?       @map("target_code")
+    hostGeneralId Int           @map("host_general_id")
+    hostName      String?       @map("host_name")
+    detail        Json          @default(dbgenerated("'{}'::jsonb"))
+    status        AuctionStatus @default(OPEN)
+    closeAt       DateTime      @map("close_at")
+    latestEventId String        @default("") @map("latest_event_id")
+    latestEventAt DateTime      @default(now()) @map("latest_event_at")
+    finalizingAt  DateTime?     @map("finalizing_at")
+    finishedAt    DateTime?     @map("finished_at")
+    createdAt     DateTime      @default(now()) @map("created_at")
+    updatedAt     DateTime      @updatedAt @map("updated_at")
+
+    bids AuctionBid[]
+
+    @@index([status, closeAt])
+    @@map("auction")
+}
+
+model AuctionBid {
+    id        Int      @id @default(autoincrement())
+    auctionId Int      @map("auction_id")
+    generalId Int      @map("general_id")
+    amount    Int
+    eventId   String   @map("event_id")
+    eventAt   DateTime @map("event_at")
+    createdAt DateTime @default(now()) @map("created_at")
+
+    auction Auction @relation(fields: [auctionId], references: [id], onDelete: Cascade)
+
+    @@index([auctionId, amount])
+    @@index([auctionId, eventAt])
+    @@map("auction_bid")
 }
 
 model InheritanceUserState {
