@@ -39,6 +39,7 @@ export interface TurnWorldSnapshot extends Omit<
 > {
     scenarioConfig: ScenarioConfig;
     scenarioMeta?: ScenarioMeta;
+    worldConfig?: Record<string, unknown>;
     map: MapDefinition;
     unitSet?: UnitSetDefinition;
     diplomacy: TurnDiplomacy[];

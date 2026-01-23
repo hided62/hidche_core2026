@@ -258,6 +258,7 @@ export const loadTurnWorldFromDatabase = async (options: TurnWorldLoaderOptions)
         const diplomacy = diplomacyRows.map(mapDiplomacyRow);
         const troops = troopRows.map(mapTroopRow);
 
+        const worldConfig = asRecord(worldState.config);
         const scenarioConfig = mapScenarioConfig(worldState.config);
         const mapName = scenarioConfig.environment?.mapName ?? 'che';
         const map = await loadMapDefinitionByName(mapName, options.mapOptions);
@@ -304,6 +305,7 @@ export const loadTurnWorldFromDatabase = async (options: TurnWorldLoaderOptions)
             snapshot: {
                 scenarioConfig,
                 ...(scenarioMeta ? { scenarioMeta } : {}),
+                worldConfig,
                 map,
                 unitSet,
                 nations,

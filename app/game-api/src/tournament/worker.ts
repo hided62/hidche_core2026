@@ -351,7 +351,6 @@ const sortByRanking = (entries: TournamentParticipantEntry[]): TournamentPartici
 };
 
 const buildFinal16MatchesFromGroups = (
-    state: TournamentState,
     participants: TournamentParticipantEntry[]
 ): TournamentMatchEntry[] | null => {
     const groupOrder = [10, 14, 11, 15, 12, 16, 13, 17, 14, 10, 15, 11, 16, 12, 17, 13];
@@ -935,7 +934,7 @@ const applyPreBattleStage = async (
     if (state.stage === 5) {
         const matches = await store.getMatches();
         if (matches.length === 0) {
-            const fixedMatches = buildFinal16MatchesFromGroups(state, participants);
+            const fixedMatches = buildFinal16MatchesFromGroups(participants);
             const participantIds = fixedMatches
                 ? fixedMatches.flatMap((entry) => [entry.attackerId, entry.defenderId])
                 : pickFinalists(state, participants);
