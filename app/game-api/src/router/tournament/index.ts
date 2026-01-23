@@ -36,6 +36,7 @@ const zTournamentState = z.object({
     bettingCloseAt: z.string().optional(),
     winnerId: z.number().int().optional(),
     bettingSettled: z.boolean().optional(),
+    rewardSettled: z.boolean().optional(),
     lastError: z.string().optional(),
     lastErrorAt: z.string().optional(),
 });

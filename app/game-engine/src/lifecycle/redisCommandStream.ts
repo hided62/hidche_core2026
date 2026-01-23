@@ -256,6 +256,32 @@ const normalizeCommand = (envelope: TurnDaemonCommandEnvelope): TurnDaemonComman
                 payouts,
             };
         }
+        case 'tournamentReward': {
+            if (typeof command.winnerId !== 'number' || typeof command.runnerUpId !== 'number') {
+                return null;
+            }
+            if (!Array.isArray(command.top16) || !Array.isArray(command.top8) || !Array.isArray(command.top4)) {
+                return null;
+            }
+            const normalizeIds = (list: unknown[]): number[] =>
+                list.filter((entry): entry is number => typeof entry === 'number' && Number.isFinite(entry));
+            const top16 = normalizeIds(command.top16);
+            const top8 = normalizeIds(command.top8);
+            const top4 = normalizeIds(command.top4);
+            if (top16.length === 0) {
+                return null;
+            }
+            return {
+                type: 'tournamentReward',
+                requestId: envelope.requestId,
+                tournamentType: typeof command.tournamentType === 'number' ? command.tournamentType : 0,
+                winnerId: command.winnerId,
+                runnerUpId: command.runnerUpId,
+                top16,
+                top8,
+                top4,
+            };
+        }
         case 'getStatus': {
             const requestId = typeof command.requestId === 'string' ? command.requestId : envelope.requestId;
             return { type: 'getStatus', requestId };

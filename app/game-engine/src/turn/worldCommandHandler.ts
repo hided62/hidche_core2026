@@ -30,10 +30,15 @@ interface CommandHandlerContext {
     world: InMemoryTurnWorld;
     hooks?: TurnDaemonHooks;
     auctionFinalizer?: AuctionFinalizer;
+    tournamentRewardFinalizer?: TournamentRewardFinalizer;
 }
 
 interface AuctionFinalizer {
     finalize(auctionId: number): Promise<TurnDaemonCommandResult>;
+}
+
+interface TournamentRewardFinalizer {
+    finalize(command: Extract<TurnDaemonCommand, { type: 'tournamentReward' }>): Promise<TurnDaemonCommandResult>;
 }
 
 async function handleTroopJoin(
@@ -547,12 +552,34 @@ async function handleTournamentBettingPayout(
     };
 }
 
+async function handleTournamentReward(
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'tournamentReward' }>
+): Promise<TurnDaemonCommandResult> {
+    if (!ctx.tournamentRewardFinalizer) {
+        return {
+            type: 'tournamentReward',
+            ok: false,
+            winnerId: command.winnerId,
+            runnerUpId: command.runnerUpId,
+            reason: '보상 처리기가 준비되지 않았습니다.',
+        };
+    }
+    return ctx.tournamentRewardFinalizer.finalize(command);
+}
+
 export const createTurnDaemonCommandHandler = (options: {
     world: InMemoryTurnWorld;
     hooks?: TurnDaemonHooks;
     auctionFinalizer?: AuctionFinalizer;
+    tournamentRewardFinalizer?: TournamentRewardFinalizer;
 }): TurnDaemonCommandHandler => {
-    const ctx = { world: options.world, hooks: options.hooks, auctionFinalizer: options.auctionFinalizer };
+    const ctx = {
+        world: options.world,
+        hooks: options.hooks,
+        auctionFinalizer: options.auctionFinalizer,
+        tournamentRewardFinalizer: options.tournamentRewardFinalizer,
+    };
 
     return {
         handle: async (command): Promise<TurnDaemonCommandResult | null> => {
@@ -585,6 +612,8 @@ export const createTurnDaemonCommandHandler = (options: {
                     return handleTournamentRefund(ctx, command);
                 case 'tournamentBettingPayout':
                     return handleTournamentBettingPayout(ctx, command);
+                case 'tournamentReward':
+                    return handleTournamentReward(ctx, command);
                 default:
                     return null;
             }

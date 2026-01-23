@@ -105,6 +105,16 @@ export type TurnDaemonCommand =
               generalId: number;
               amount: number;
           }>;
+      }
+    | {
+          type: 'tournamentReward';
+          requestId?: string;
+          tournamentType: number;
+          winnerId: number;
+          runnerUpId: number;
+          top16: number[];
+          top8: number[];
+          top4: number[];
       };
 
 export type TurnDaemonCommandResult =
@@ -166,21 +176,38 @@ export type TurnDaemonCommandResult =
           ok: false;
           bettingId?: number;
           reason: string;
-            }
-        | {
-                    type: 'tournamentBettingPayout';
-                    ok: true;
-                    bettingId?: number;
-                    processed: number;
-                    missing: number;
-                    totalPayout: number;
-            }
-        | {
-                    type: 'tournamentBettingPayout';
-                    ok: false;
-                    bettingId?: number;
-                    reason: string;
-            };
+      }
+    | {
+          type: 'tournamentBettingPayout';
+          ok: true;
+          bettingId?: number;
+          processed: number;
+          missing: number;
+          totalPayout: number;
+      }
+    | {
+          type: 'tournamentBettingPayout';
+          ok: false;
+          bettingId?: number;
+          reason: string;
+      }
+    | {
+          type: 'tournamentReward';
+          ok: true;
+          winnerId: number;
+          runnerUpId: number;
+          rewarded: number;
+          missing: number;
+          totalGold: number;
+          totalExp: number;
+      }
+    | {
+          type: 'tournamentReward';
+          ok: false;
+          winnerId: number;
+          runnerUpId: number;
+          reason: string;
+      };
 
 export type TurnDaemonEvent =
     | { type: 'status'; requestId?: string; status: TurnDaemonStatus }

@@ -268,6 +268,42 @@ const buildBettingPayouts = (
     return { payouts, total, refundAll: false };
 };
 
+const buildTournamentRewardPayload = (
+    matches: TournamentMatchEntry[]
+): { top16: number[]; top8: number[]; top4: number[]; winnerId: number; runnerUpId: number } => {
+    const top16 = new Set<number>();
+    const top8 = new Set<number>();
+    const top4 = new Set<number>();
+
+    for (const match of matches) {
+        if (match.stage === 7) {
+            top16.add(match.attackerId);
+            top16.add(match.defenderId);
+            if (typeof match.winnerId === 'number') {
+                top8.add(match.winnerId);
+            }
+        }
+        if (match.stage === 8 && typeof match.winnerId === 'number') {
+            top4.add(match.winnerId);
+        }
+    }
+
+    const finalMatch = matches.find((match) => match.stage === 10 && typeof match.winnerId === 'number');
+    if (!finalMatch || typeof finalMatch.winnerId !== 'number') {
+        throw new Error('결승전 결과를 찾을 수 없습니다.');
+    }
+    const winnerId = finalMatch.winnerId;
+    const runnerUpId = finalMatch.attackerId === winnerId ? finalMatch.defenderId : finalMatch.attackerId;
+
+    return {
+        top16: Array.from(top16),
+        top8: Array.from(top8),
+        top4: Array.from(top4),
+        winnerId,
+        runnerUpId,
+    };
+};
+
 const applyPreBattleStage = async (
     store: TournamentStore,
     state: TournamentState,
@@ -481,39 +517,59 @@ export const runTournamentWorker = async (): Promise<void> => {
                 nextState = await applyPreBattleStage(store, state, String(baseSeed));
             }
 
-            if (
-                nextState.stage === 0 &&
-                nextState.winnerId &&
-                nextState.bettingId &&
-                !nextState.bettingSettled
-            ) {
-                const bettingEntries = await store.getBettingEntries();
-                if (bettingEntries.length > 0) {
-                    const payoutInfo = buildBettingPayouts(nextState.winnerId, bettingEntries);
-                    if (payoutInfo.payouts.length > 0) {
-                        if (payoutInfo.refundAll) {
-                            await daemonTransport.sendCommand({
-                                type: 'tournamentRefund',
-                                bettingId: nextState.bettingId,
-                                refunds: payoutInfo.payouts,
-                                reason: 'no_winner',
-                            });
-                        } else {
-                            await daemonTransport.sendCommand({
-                                type: 'tournamentBettingPayout',
-                                bettingId: nextState.bettingId,
-                                payouts: payoutInfo.payouts,
-                                reason: 'winner_payout',
-                            });
-                        }
-                    }
+            if (nextState.stage === 0 && nextState.winnerId) {
+                let settledState: TournamentState | null = null;
+
+                if (!nextState.rewardSettled) {
+                    const matches = await store.getMatches();
+                    const rewardPayload = buildTournamentRewardPayload(matches);
+                    await daemonTransport.sendCommand({
+                        type: 'tournamentReward',
+                        tournamentType: nextState.type,
+                        winnerId: rewardPayload.winnerId,
+                        runnerUpId: rewardPayload.runnerUpId,
+                        top16: rewardPayload.top16,
+                        top8: rewardPayload.top8,
+                        top4: rewardPayload.top4,
+                    });
+                    settledState = {
+                        ...(settledState ?? nextState),
+                        rewardSettled: true,
+                    };
                 }
 
-                const settledState: TournamentState = {
-                    ...nextState,
-                    bettingSettled: true,
-                };
-                await store.setState(settledState);
+                if (nextState.bettingId && !nextState.bettingSettled) {
+                    const bettingEntries = await store.getBettingEntries();
+                    if (bettingEntries.length > 0) {
+                        const payoutInfo = buildBettingPayouts(nextState.winnerId, bettingEntries);
+                        if (payoutInfo.payouts.length > 0) {
+                            if (payoutInfo.refundAll) {
+                                await daemonTransport.sendCommand({
+                                    type: 'tournamentRefund',
+                                    bettingId: nextState.bettingId,
+                                    refunds: payoutInfo.payouts,
+                                    reason: 'no_winner',
+                                });
+                            } else {
+                                await daemonTransport.sendCommand({
+                                    type: 'tournamentBettingPayout',
+                                    bettingId: nextState.bettingId,
+                                    payouts: payoutInfo.payouts,
+                                    reason: 'winner_payout',
+                                });
+                            }
+                        }
+                    }
+
+                    settledState = {
+                        ...(settledState ?? nextState),
+                        bettingSettled: true,
+                    };
+                }
+
+                if (settledState) {
+                    await store.setState(settledState);
+                }
             }
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Unknown error';

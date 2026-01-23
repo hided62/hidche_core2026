@@ -27,6 +27,7 @@ import { loadTurnWorldFromDatabase } from './worldLoader.js';
 import { shouldUseAi } from './ai/generalAi.js';
 import { createUnificationHandler } from './unificationHandler.js';
 import { createAuctionFinalizer } from '../auction/finalizer.js';
+import { createTournamentRewardFinalizer } from '../tournament/finalizer.js';
 
 export interface TurnDaemonRuntimeOptions {
     profile: string;
@@ -172,6 +173,7 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
     let publishRealtimeEvent: ((event: RealtimeEvent) => Promise<void>) | null = null;
     let close = async () => {};
     let auctionFinalizer: Awaited<ReturnType<typeof createAuctionFinalizer>> | null = null;
+    let tournamentRewardFinalizer: Awaited<ReturnType<typeof createTournamentRewardFinalizer>> | null = null;
     let redisCommandStream: RedisTurnDaemonCommandStream | null = null;
     let redisConnector: ReturnType<typeof createRedisConnector> | null = null;
     let pauseGate: (() => Promise<boolean>) | undefined;
@@ -196,6 +198,11 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
             world,
             hooks: dbHooks.hooks,
         });
+        tournamentRewardFinalizer = await createTournamentRewardFinalizer({
+            databaseUrl: options.databaseUrl,
+            world,
+            hooks: dbHooks.hooks,
+        });
         hooks = {
             ...dbHooks.hooks,
             onRunError: async (error) => {
@@ -206,6 +213,9 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
         close = async () => {
             if (auctionFinalizer) {
                 await auctionFinalizer.close();
+            }
+            if (tournamentRewardFinalizer) {
+                await tournamentRewardFinalizer.close();
             }
             await dbHooks.close();
             if (reservedTurnStoreHandle) {
@@ -292,6 +302,7 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
         world,
         hooks,
         auctionFinalizer: auctionFinalizer ?? undefined,
+        tournamentRewardFinalizer: tournamentRewardFinalizer ?? undefined,
     });
 
     const defaultBudget: TurnRunBudget = options.defaultBudget ?? {

@@ -13,6 +13,7 @@ export interface TournamentState {
     bettingCloseAt?: string;
     winnerId?: number;
     bettingSettled?: boolean;
+    rewardSettled?: boolean;
     lastError?: string;
     lastErrorAt?: string;
 }
