@@ -255,7 +255,7 @@ const placeBet = async () => {
 
 const toggleJoin = async () => {
     try {
-        await trpc.general.setMySetting.mutate({ tnmt: 1 });
+        await trpc.tournament.join.mutate();
         lastActionMessage.value = '참가 신청이 반영되었습니다.';
         await loadTournament();
     } catch (err) {

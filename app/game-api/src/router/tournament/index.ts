@@ -223,6 +223,50 @@ export const tournamentRouter = router({
 
         return { state, totals, myTotals, totalAmount, myAmount };
     }),
+    join: authedProcedure.mutation(async ({ ctx }) => {
+        const userId = ctx.auth?.user.id;
+        if (!userId) {
+            throw new TRPCError({ code: 'UNAUTHORIZED' });
+        }
+        const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
+        const state = await store.getState();
+        if (!state || state.stage !== 1) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: '참가 신청 기간이 아닙니다.' });
+        }
+
+        const participants = await store.getParticipants();
+
+        const general = await ctx.db.general.findFirst({
+            where: { userId },
+            select: { id: true, name: true, leadership: true, strength: true, intel: true, meta: true },
+        });
+        if (!general) {
+            throw new TRPCError({ code: 'NOT_FOUND', message: '장수 정보를 찾을 수 없습니다.' });
+        }
+
+        const already = participants.find((entry) => entry.id === general.id);
+        if (already) {
+            return { ok: true, count: participants.length };
+        }
+
+        if (participants.length >= 64) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: '참가 인원이 가득 찼습니다.' });
+        }
+
+        const meta = asRecord(general.meta);
+        const level = typeof meta.explevel === 'number' ? meta.explevel : 0;
+        const next = participants.concat({
+            id: general.id,
+            name: general.name,
+            leadership: general.leadership,
+            strength: general.strength,
+            intel: general.intel,
+            level,
+        });
+
+        await store.setParticipants(next);
+        return { ok: true, count: next.length };
+    }),
     placeBet: authedProcedure
         .input(
             z.object({

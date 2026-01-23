@@ -1,4 +1,4 @@
-import { asRecord, createTournamentRng } from '@sammo-ts/common';
+import { createTournamentRng } from '@sammo-ts/common';
 import { resolveTournamentBattle, TournamentType } from '@sammo-ts/logic';
 import {
     createGamePostgresConnector,
@@ -419,61 +419,6 @@ const applyPreBattleStage = async (
     return state;
 };
 
-const resolveParticipantOrder = (type: TournamentType): Array<
-    { leadership: 'desc' } | { strength: 'desc' } | { intel: 'desc' } | { id: 'asc' }
-> => {
-    switch (type) {
-        case TournamentType.LEADERSHIP:
-            return [{ leadership: 'desc' }, { id: 'asc' }];
-        case TournamentType.STRENGTH:
-            return [{ strength: 'desc' }, { id: 'asc' }];
-        case TournamentType.INTEL:
-            return [{ intel: 'desc' }, { id: 'asc' }];
-        case TournamentType.TOTAL:
-        default:
-            return [{ leadership: 'desc' }, { strength: 'desc' }, { intel: 'desc' }, { id: 'asc' }];
-    }
-};
-
-const ensureParticipants = async (
-    store: TournamentStore,
-    prisma: ReturnType<typeof createGamePostgresConnector>['prisma'],
-    state: TournamentState,
-    limit: number
-): Promise<void> => {
-    const participants = await store.getParticipants();
-    if (participants.length > 0) {
-        return;
-    }
-
-    const generals = await prisma.general.findMany({
-        orderBy: resolveParticipantOrder(state.type),
-        take: limit,
-        select: {
-            id: true,
-            name: true,
-            leadership: true,
-            strength: true,
-            intel: true,
-            meta: true,
-        },
-    });
-
-    const snapshot = generals.map((general) => {
-        const meta = asRecord(general.meta);
-        const level = typeof meta.explevel === 'number' ? meta.explevel : 0;
-        return {
-            id: general.id,
-            name: general.name,
-            leadership: general.leadership,
-            strength: general.strength,
-            intel: general.intel,
-            level,
-        };
-    });
-
-    await store.setParticipants(snapshot);
-};
 
 export const runTournamentWorker = async (): Promise<void> => {
     const config = resolveGameApiConfigFromEnv();
@@ -514,9 +459,6 @@ export const runTournamentWorker = async (): Promise<void> => {
             const worldState = await postgres.prisma.worldState.findFirst();
             const baseSeed = (worldState?.meta as Record<string, unknown> | null)?.hiddenSeed ?? 'tournament';
             let nextState = state;
-            if (isPreBattleStage(state.stage) && (state.stage === 1 || state.stage === 3 || state.stage === 4)) {
-                await ensureParticipants(store, postgres.prisma, state, 64);
-            }
             if (isBattleStage(state.stage)) {
                 nextState = await applyBattle(store, state, String(baseSeed));
             } else if (isPreBattleStage(state.stage)) {
