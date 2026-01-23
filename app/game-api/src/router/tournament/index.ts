@@ -116,4 +116,64 @@ export const tournamentRouter = router({
         await store.setBettingEntries(input);
         return { ok: true, count: input.length };
     }),
+    placeBet: authedProcedure
+        .input(
+            z.object({
+                targetId: z.number().int().positive(),
+                amount: z.number().int().positive(),
+            })
+        )
+        .mutation(async ({ ctx, input }) => {
+            const userId = ctx.auth?.user.id;
+            if (!userId) {
+                throw new TRPCError({ code: 'UNAUTHORIZED' });
+            }
+            const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
+            const state = await store.getState();
+            if (!state || state.stage !== 6) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '베팅 기간이 아닙니다.' });
+            }
+            const closeAt = state.bettingCloseAt ? new Date(state.bettingCloseAt).getTime() : 0;
+            if (closeAt && closeAt <= Date.now()) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '베팅이 마감되었습니다.' });
+            }
+
+            const matches = await store.getMatches();
+            const candidateIds = new Set<number>();
+            for (const match of matches) {
+                if (match.stage === 7) {
+                    candidateIds.add(match.attackerId);
+                    candidateIds.add(match.defenderId);
+                }
+            }
+            if (!candidateIds.has(input.targetId)) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '올바르지 않은 베팅 대상입니다.' });
+            }
+
+            const general = await ctx.db.general.findFirst({
+                where: { userId },
+                select: { id: true, gold: true },
+            });
+            if (!general) {
+                throw new TRPCError({ code: 'PRECONDITION_FAILED', message: '장수가 존재하지 않습니다.' });
+            }
+
+            const minRemainGold = 500;
+            if (general.gold - input.amount < minRemainGold) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '소지금이 부족합니다.' });
+            }
+
+            await ctx.db.general.update({
+                where: { id: general.id },
+                data: { gold: general.gold - input.amount },
+            });
+
+            await store.appendBettingEntry({
+                generalId: general.id,
+                targetId: input.targetId,
+                amount: input.amount,
+            });
+
+            return { ok: true };
+        }),
 });

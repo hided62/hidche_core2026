@@ -51,4 +51,11 @@ export class TournamentStore {
     async setBettingEntries(entries: TournamentBetEntry[]): Promise<void> {
         await this.redis.set(this.keys.bettingKey, JSON.stringify(entries));
     }
+
+    async appendBettingEntry(entry: TournamentBetEntry): Promise<TournamentBetEntry[]> {
+        const entries = await this.getBettingEntries();
+        entries.push(entry);
+        await this.setBettingEntries(entries);
+        return entries;
+    }
 }
