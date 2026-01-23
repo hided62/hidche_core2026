@@ -10,6 +10,8 @@ export interface TournamentState {
     termSeconds: number;
     nextAt: string;
     bettingId?: number;
+    bettingCloseAt?: string;
+    winnerId?: number;
     lastError?: string;
     lastErrorAt?: string;
 }
