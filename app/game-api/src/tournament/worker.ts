@@ -1,4 +1,4 @@
-import { createTournamentRng } from '@sammo-ts/common';
+import { asRecord, createTournamentRng } from '@sammo-ts/common';
 import { resolveTournamentBattle, TournamentType } from '@sammo-ts/logic';
 import {
     createGamePostgresConnector,
@@ -12,7 +12,7 @@ import { RedisTurnDaemonTransport } from '../daemon/redisTransport.js';
 import { buildTurnDaemonStreamKeys } from '../daemon/streamKeys.js';
 import { buildTournamentKeys } from './keys.js';
 import { TournamentStore } from './store.js';
-import type { TournamentBetEntry, TournamentMatchEntry, TournamentState } from './types.js';
+import type { TournamentBetEntry, TournamentMatchEntry, TournamentParticipantEntry, TournamentState } from './types.js';
 
 const sleepMs = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -52,6 +52,340 @@ const resolveStatValue = (type: TournamentType, entry: { leadership: number; str
         default:
             return entry.leadership + entry.strength + entry.intel;
     }
+};
+
+const resolveGroupPair = (stage: number, phase: number): [number, number] | null => {
+    if (stage === 2) {
+        const pairMap: Array<[number, number]> = [
+            [0, 1], [2, 3], [4, 5], [6, 7],
+            [0, 2], [1, 3], [4, 6], [5, 7],
+            [0, 3], [1, 6], [2, 5], [4, 7],
+            [0, 4], [1, 5], [2, 6], [3, 7],
+            [0, 5], [1, 4], [2, 7], [3, 6],
+            [0, 6], [1, 7], [2, 4], [3, 5],
+            [0, 7], [1, 2], [3, 4], [5, 6],
+        ];
+        const basePair = pairMap[phase % 28];
+        if (!basePair) {
+            return null;
+        }
+        return phase >= 28 ? [basePair[1], basePair[0]] : basePair;
+    }
+
+    if (stage === 4) {
+        const pairMap: Array<[number, number]> = [
+            [0, 1], [2, 3],
+            [0, 2], [1, 3],
+            [0, 3], [1, 2],
+        ];
+        return pairMap[phase % 6] ?? null;
+    }
+
+    return null;
+};
+
+const assignGroupSlots = (
+    participants: Array<TournamentParticipantEntry & { groupId?: number; groupNo?: number }>,
+    groupCount: number,
+    groupSize: number,
+    groupStart: number
+): TournamentParticipantEntry[] => {
+    const groupCounts = Array.from({ length: groupCount }, () => 0);
+    for (const entry of participants) {
+        if (entry.groupId !== undefined && entry.groupId >= groupStart && entry.groupId < groupStart + groupCount) {
+            const idx = entry.groupId - groupStart;
+            if (idx >= 0 && idx < groupCount) {
+                groupCounts[idx] += 1;
+            }
+        }
+    }
+
+    return participants.map((entry) => {
+        if (entry.groupId !== undefined && entry.groupNo !== undefined) {
+            return entry;
+        }
+        const minCount = Math.min(...groupCounts);
+        const groupIdx = groupCounts.findIndex((count) => count === minCount);
+        const groupNo = groupCounts[groupIdx] ?? 0;
+        groupCounts[groupIdx] = groupNo + 1;
+        return {
+            ...entry,
+            groupId: groupStart + groupIdx,
+            groupNo: groupNo < groupSize ? groupNo : groupNo % groupSize,
+            win: 0,
+            draw: 0,
+            lose: 0,
+            gl: 0,
+        };
+    });
+};
+
+const selectWeighted = <T>(rng: ReturnType<typeof createTournamentRng>, pool: Array<{ item: T; weight: number }>): T => {
+    return rng.choiceUsingWeightPair(pool.map((entry) => [entry.item, entry.weight]));
+};
+
+const fillParticipants = async (options: {
+    prisma: ReturnType<typeof createGamePostgresConnector>['prisma'];
+    state: TournamentState;
+    baseSeed: string;
+    current: TournamentParticipantEntry[];
+    limit: number;
+}): Promise<TournamentParticipantEntry[]> => {
+    const { prisma, state, baseSeed, limit } = options;
+    const takenIds = new Set(options.current.map((entry) => entry.id));
+    const result = [...options.current];
+
+    if (result.length >= limit) {
+        return result;
+    }
+
+    const applicants = await prisma.general.findMany({
+        where: {
+            meta: { path: ['tnmt'], equals: 1 },
+        },
+        select: {
+            id: true,
+            name: true,
+            leadership: true,
+            strength: true,
+            intel: true,
+            meta: true,
+            npcState: true,
+        },
+    });
+
+    const applicantPool = applicants
+        .filter((entry) => !takenIds.has(entry.id))
+        .map((entry) => {
+            const score = resolveStatValue(state.type, entry);
+            const meta = asRecord(entry.meta);
+            const level = typeof meta.explevel === 'number' ? meta.explevel : 0;
+            return {
+                item: {
+                    id: entry.id,
+                    name: entry.name,
+                    leadership: entry.leadership,
+                    strength: entry.strength,
+                    intel: entry.intel,
+                    level,
+                },
+                weight: Math.max(1, score ** 1.5),
+            };
+        });
+
+    const applicantRng = createTournamentRng(baseSeed, {
+        openYear: state.openYear,
+        openMonth: state.openMonth,
+        stage: 1,
+        phase: state.phase,
+        matchIndex: 0,
+        participantIndex: 0,
+        extraSeed: 'fill:applicants',
+    });
+
+    while (result.length < limit && applicantPool.length > 0) {
+        const picked = selectWeighted(applicantRng, applicantPool);
+        applicantPool.splice(applicantPool.findIndex((entry) => entry.item.id === picked.id), 1);
+        takenIds.add(picked.id);
+        result.push(picked);
+    }
+
+    if (result.length >= limit) {
+        return result;
+    }
+
+    const npcRows = await prisma.general.findMany({
+        where: {
+            npcState: { gte: 2 },
+        },
+        select: {
+            id: true,
+            name: true,
+            leadership: true,
+            strength: true,
+            intel: true,
+            meta: true,
+            npcState: true,
+        },
+    });
+
+    const npcPool = npcRows
+        .filter((entry) => !takenIds.has(entry.id))
+        .map((entry) => {
+            const score = resolveStatValue(state.type, entry);
+            const meta = asRecord(entry.meta);
+            const level = typeof meta.explevel === 'number' ? meta.explevel : 0;
+            return {
+                item: {
+                    id: entry.id,
+                    name: entry.name,
+                    leadership: entry.leadership,
+                    strength: entry.strength,
+                    intel: entry.intel,
+                    level,
+                },
+                weight: Math.max(1, score ** 1.5),
+            };
+        });
+
+    const npcRng = createTournamentRng(baseSeed, {
+        openYear: state.openYear,
+        openMonth: state.openMonth,
+        stage: 1,
+        phase: state.phase,
+        matchIndex: 0,
+        participantIndex: 1,
+        extraSeed: 'fill:npc',
+    });
+
+    while (result.length < limit && npcPool.length > 0) {
+        const picked = selectWeighted(npcRng, npcPool);
+        npcPool.splice(npcPool.findIndex((entry) => entry.item.id === picked.id), 1);
+        takenIds.add(picked.id);
+        result.push(picked);
+    }
+
+    let dummyId = -1;
+    while (result.length < limit) {
+        while (takenIds.has(dummyId)) {
+            dummyId -= 1;
+        }
+        takenIds.add(dummyId);
+        result.push({
+            id: dummyId,
+            name: '무명장수',
+            leadership: 10,
+            strength: 10,
+            intel: 10,
+            level: 10,
+        });
+        dummyId -= 1;
+    }
+
+    return result;
+};
+
+const applyGroupMatch = (
+    participants: TournamentParticipantEntry[],
+    attacker: TournamentParticipantEntry,
+    defender: TournamentParticipantEntry,
+    state: TournamentState,
+    baseSeed: string,
+    matchIndex: number
+): TournamentParticipantEntry[] => {
+    const result = resolveTournamentBattle({
+        type: state.type,
+        battleType: 0,
+        attacker: {
+            id: attacker.id,
+            name: attacker.name,
+            stats: {
+                leadership: attacker.leadership,
+                strength: attacker.strength,
+                intel: attacker.intel,
+            },
+            level: attacker.level,
+        },
+        defender: {
+            id: defender.id,
+            name: defender.name,
+            stats: {
+                leadership: defender.leadership,
+                strength: defender.strength,
+                intel: defender.intel,
+            },
+            level: defender.level,
+        },
+        context: {
+            openYear: state.openYear,
+            openMonth: state.openMonth,
+            stage: state.stage,
+            phase: state.phase,
+            matchIndex,
+        },
+        baseSeed,
+    });
+
+    const glDelta = Math.round((result.totalDamage.defender - result.totalDamage.attacker) / 50);
+
+    return participants.map((entry) => {
+        if (entry.id !== attacker.id && entry.id !== defender.id) {
+            return entry;
+        }
+        const next = {
+            ...entry,
+            win: entry.win ?? 0,
+            draw: entry.draw ?? 0,
+            lose: entry.lose ?? 0,
+            gl: entry.gl ?? 0,
+        };
+        if (result.draw) {
+            next.draw += 1;
+            return next;
+        }
+        if (result.winnerId === entry.id) {
+            next.win += 1;
+            next.gl += glDelta;
+            return next;
+        }
+        next.lose += 1;
+        next.gl -= glDelta;
+        return next;
+    });
+};
+
+const sortByRanking = (entries: TournamentParticipantEntry[]): TournamentParticipantEntry[] => {
+    return [...entries].sort((lhs, rhs) => {
+        const lhsPoints = (lhs.win ?? 0) * 3 + (lhs.draw ?? 0);
+        const rhsPoints = (rhs.win ?? 0) * 3 + (rhs.draw ?? 0);
+        if (lhsPoints !== rhsPoints) {
+            return rhsPoints - lhsPoints;
+        }
+        const lhsGl = lhs.gl ?? 0;
+        const rhsGl = rhs.gl ?? 0;
+        if (lhsGl !== rhsGl) {
+            return rhsGl - lhsGl;
+        }
+        return lhs.id - rhs.id;
+    });
+};
+
+const buildFinal16MatchesFromGroups = (
+    state: TournamentState,
+    participants: TournamentParticipantEntry[]
+): TournamentMatchEntry[] | null => {
+    const groupOrder = [10, 14, 11, 15, 12, 16, 13, 17, 14, 10, 15, 11, 16, 12, 17, 13];
+    const rankOrder = [1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2, 1, 2];
+
+    const selected: number[] = [];
+    for (let i = 0; i < groupOrder.length; i += 1) {
+        const groupId = groupOrder[i]!;
+        const rank = rankOrder[i]!;
+        const entry = participants.find((p) => p.groupId === groupId && p.finalRank === rank);
+        if (!entry) {
+            return null;
+        }
+        selected.push(entry.id);
+    }
+
+    return selected.reduce<TournamentMatchEntry[]>((acc, _id, idx) => {
+        if (idx % 2 !== 0) {
+            return acc;
+        }
+        const attackerId = selected[idx];
+        const defenderId = selected[idx + 1];
+        if (attackerId === undefined || defenderId === undefined) {
+            return acc;
+        }
+        acc.push({
+            id: acc.length + 1,
+            stage: 7,
+            roundIndex: acc.length,
+            attackerId,
+            defenderId,
+        });
+        return acc;
+    }, []);
 };
 
 const pickFinalists = (state: TournamentState, participants: Array<{ id: number; leadership: number; strength: number; intel: number }>): number[] =>
@@ -310,22 +644,114 @@ const buildTournamentRewardPayload = (
     };
 };
 
+const resolveNumber = (source: Record<string, unknown>, keys: string[], fallback: number): number => {
+    for (const key of keys) {
+        const value = source[key];
+        if (typeof value === 'number' && Number.isFinite(value)) {
+            return value;
+        }
+    }
+    return fallback;
+};
+
+const seedNpcBets = async (options: {
+    prisma: ReturnType<typeof createGamePostgresConnector>['prisma'];
+    store: TournamentStore;
+    state: TournamentState;
+    baseSeed: string;
+}): Promise<void> => {
+    const { prisma, store, state, baseSeed } = options;
+    const existing = await store.getBettingEntries();
+    if (existing.length > 0) {
+        return;
+    }
+
+    const matches = await store.getMatches();
+    const candidateIds = Array.from(
+        new Set(
+            matches
+                .filter((match) => match.stage === 7)
+                .flatMap((match) => [match.attackerId, match.defenderId])
+        )
+    );
+    if (candidateIds.length === 0) {
+        return;
+    }
+
+    const worldState = await prisma.worldState.findFirst();
+    const config = asRecord(worldState?.config ?? {});
+    const constValues = asRecord(config.const ?? config);
+    const startYear = resolveNumber(constValues, ['startYear', 'startyear'], state.openYear);
+    const currentYear = worldState?.currentYear ?? state.openYear;
+    const betGold = Math.max(10, Math.floor((3 + currentYear - startYear) * 0.334) * 10);
+
+    const npcList = await prisma.general.findMany({
+        where: {
+            npcState: { gte: 2 },
+            gold: { gte: 500 + betGold },
+        },
+        select: { id: true, gold: true },
+    });
+    if (npcList.length === 0) {
+        return;
+    }
+
+    const rng = createTournamentRng(baseSeed, {
+        openYear: state.openYear,
+        openMonth: state.openMonth,
+        stage: 6,
+        phase: 0,
+        matchIndex: 0,
+        participantIndex: 0,
+        extraSeed: `OpenBettingTournament:${state.bettingId ?? 'none'}`,
+    });
+
+    const entries = [...existing];
+    for (const npc of npcList) {
+        const targetId = rng.choice(candidateIds);
+        entries.push({ generalId: npc.id, targetId, amount: betGold });
+    }
+
+    await prisma.$transaction(
+        npcList.map((npc) =>
+            prisma.general.update({
+                where: { id: npc.id },
+                data: { gold: npc.gold - betGold },
+            })
+        )
+    );
+    await store.setBettingEntries(entries);
+};
+
 const applyPreBattleStage = async (
     store: TournamentStore,
+    prisma: ReturnType<typeof createGamePostgresConnector>['prisma'],
     state: TournamentState,
     baseSeed: string
 ): Promise<TournamentState> => {
     const participants = await store.getParticipants();
 
     if (state.stage === 1) {
+        let nextParticipants = participants;
         if (participants.length < 64) {
-            const waitingState: TournamentState = {
-                ...state,
-                nextAt: resolveNextAt(state),
-            };
-            await store.setState(waitingState);
-            return waitingState;
+            nextParticipants = await fillParticipants({
+                prisma,
+                state,
+                baseSeed,
+                current: participants,
+                limit: 64,
+            });
         }
+        const grouped = assignGroupSlots(nextParticipants, 8, 8, 0).map((entry) => ({
+            ...entry,
+            win: 0,
+            draw: 0,
+            lose: 0,
+            gl: 0,
+            seedRank: 0,
+            finalRank: 0,
+        }));
+        await store.setParticipants(grouped);
         const nextState: TournamentState = {
             ...state,
             stage: 2,
@@ -338,13 +764,52 @@ const applyPreBattleStage = async (
     }
 
     if (state.stage === 2) {
-        const maxPhase = 27;
-        const nextPhase = Math.min(maxPhase, state.phase + 1);
-        const isComplete = nextPhase >= maxPhase;
+        const pair = resolveGroupPair(2, state.phase);
+        if (!pair) {
+            throw new Error('예선 매치 구성을 찾을 수 없습니다.');
+        }
+        let updated = participants.some((entry) => entry.groupId === undefined)
+            ? assignGroupSlots(participants, 8, 8, 0)
+            : participants;
+        for (let groupId = 0; groupId < 8; groupId += 1) {
+            const groupEntries = updated.filter((entry) => entry.groupId === groupId);
+            const attacker = groupEntries.find((entry) => entry.groupNo === pair[0]);
+            const defender = groupEntries.find((entry) => entry.groupNo === pair[1]);
+            if (!attacker || !defender) {
+                continue;
+            }
+            updated = applyGroupMatch(updated, attacker, defender, state, baseSeed, groupId);
+        }
+        await store.setParticipants(updated);
+
+        const maxPhase = 55;
+        const isComplete = state.phase >= maxPhase;
+        if (isComplete) {
+            const ranked = updated;
+            for (let groupId = 0; groupId < 8; groupId += 1) {
+                const groupEntries = ranked.filter((entry) => entry.groupId === groupId);
+                const ordered = sortByRanking(groupEntries);
+                ordered.slice(0, 4).forEach((entry, idx) => {
+                    const target = ranked.find((item) => item.id === entry.id);
+                    if (target) {
+                        target.seedRank = idx + 1;
+                    }
+                });
+            }
+            await store.setParticipants(ranked);
+            const nextState: TournamentState = {
+                ...state,
+                stage: 3,
+                phase: 0,
+                nextAt: resolveNextAt(state),
+            };
+            await store.setState(nextState);
+            return nextState;
+        }
+
         const nextState: TournamentState = {
             ...state,
-            stage: isComplete ? 3 : state.stage,
-            phase: isComplete ? 0 : nextPhase,
+            phase: state.phase + 1,
             nextAt: resolveNextAt(state),
         };
         await store.setState(nextState);
@@ -352,10 +817,66 @@ const applyPreBattleStage = async (
     }
 
     if (state.stage === 3) {
+        const phase = state.phase;
+        const groupId = 10 + (phase % 8);
+        const groupNo = Math.floor(phase / 8);
+        const seedTarget = phase < 8 ? 1 : phase < 16 ? 2 : 3;
+
+        const candidates = participants.filter((entry) => {
+            if (entry.groupId !== undefined && entry.groupId >= 10) {
+                return false;
+            }
+            if (seedTarget === 3) {
+                return (entry.seedRank ?? 0) > 2;
+            }
+            return (entry.seedRank ?? 0) === seedTarget;
+        });
+
+        if (candidates.length === 0) {
+            throw new Error('본선 추첨 후보가 없습니다.');
+        }
+
+        const rng = createTournamentRng(baseSeed, {
+            openYear: state.openYear,
+            openMonth: state.openMonth,
+            stage: 3,
+            phase,
+            matchIndex: groupId,
+            participantIndex: 0,
+            extraSeed: `selection:${seedTarget}:${candidates.map((c) => c.id).join('-')}`,
+        });
+        const picked = rng.choice(candidates);
+
+        const nextParticipants = participants.map((entry) => {
+            if (entry.id !== picked.id) {
+                return entry;
+            }
+            return {
+                ...entry,
+                groupId,
+                groupNo,
+                win: 0,
+                draw: 0,
+                lose: 0,
+                gl: 0,
+            };
+        });
+        await store.setParticipants(nextParticipants);
+
+        if (phase >= 31) {
+            const nextState: TournamentState = {
+                ...state,
+                stage: 4,
+                phase: 0,
+                nextAt: resolveNextAt(state),
+            };
+            await store.setState(nextState);
+            return nextState;
+        }
+
         const nextState: TournamentState = {
             ...state,
-            stage: 4,
-            phase: 0,
+            phase: phase + 1,
             nextAt: resolveNextAt(state),
         };
         await store.setState(nextState);
@@ -363,13 +884,48 @@ const applyPreBattleStage = async (
     }
 
     if (state.stage === 4) {
+        const pair = resolveGroupPair(4, state.phase);
+        if (!pair) {
+            throw new Error('본선 매치 구성을 찾을 수 없습니다.');
+        }
+        let updated = participants;
+        for (let groupId = 10; groupId < 18; groupId += 1) {
+            const groupEntries = updated.filter((entry) => entry.groupId === groupId);
+            const attacker = groupEntries.find((entry) => entry.groupNo === pair[0]);
+            const defender = groupEntries.find((entry) => entry.groupNo === pair[1]);
+            if (!attacker || !defender) {
+                continue;
+            }
+            updated = applyGroupMatch(updated, attacker, defender, state, baseSeed, groupId);
+        }
+        await store.setParticipants(updated);
+
         const maxPhase = 5;
-        const nextPhase = Math.min(maxPhase, state.phase + 1);
-        const isComplete = nextPhase >= maxPhase;
+        if (state.phase >= maxPhase) {
+            for (let groupId = 10; groupId < 18; groupId += 1) {
+                const groupEntries = updated.filter((entry) => entry.groupId === groupId);
+                const ordered = sortByRanking(groupEntries);
+                ordered.slice(0, 2).forEach((entry, idx) => {
+                    const target = updated.find((item) => item.id === entry.id);
+                    if (target) {
+                        target.finalRank = idx + 1;
+                    }
+                });
+            }
+            await store.setParticipants(updated);
+            const nextState: TournamentState = {
+                ...state,
+                stage: 5,
+                phase: 0,
+                nextAt: resolveNextAt(state),
+            };
+            await store.setState(nextState);
+            return nextState;
+        }
+
         const nextState: TournamentState = {
             ...state,
-            stage: isComplete ? 5 : state.stage,
-            phase: isComplete ? 0 : nextPhase,
+            phase: state.phase + 1,
             nextAt: resolveNextAt(state),
         };
         await store.setState(nextState);
@@ -379,18 +935,23 @@ const applyPreBattleStage = async (
     if (state.stage === 5) {
         const matches = await store.getMatches();
         if (matches.length === 0) {
-            const participantIds = pickFinalists(state, participants);
-            const initialMatches = buildInitialMatches(state, baseSeed, participantIds);
+            const fixedMatches = buildFinal16MatchesFromGroups(state, participants);
+            const participantIds = fixedMatches
+                ? fixedMatches.flatMap((entry) => [entry.attackerId, entry.defenderId])
+                : pickFinalists(state, participants);
+            const initialMatches = fixedMatches ?? buildInitialMatches(state, baseSeed, participantIds);
             await store.setMatches(initialMatches);
         }
         const nextState: TournamentState = {
             ...state,
             stage: 6,
             phase: 0,
+            bettingId: state.bettingId ?? Date.now(),
             bettingCloseAt: resolveBettingCloseAt(state),
             nextAt: resolveNextAt(state),
         };
         await store.setState(nextState);
+        await seedNpcBets({ prisma, store, state: nextState, baseSeed });
         return nextState;
     }
 
@@ -463,7 +1024,7 @@ export const runTournamentWorker = async (): Promise<void> => {
             if (isBattleStage(state.stage)) {
                 nextState = await applyBattle(store, state, String(baseSeed));
             } else if (isPreBattleStage(state.stage)) {
-                nextState = await applyPreBattleStage(store, state, String(baseSeed));
+                nextState = await applyPreBattleStage(store, postgres.prisma, state, String(baseSeed));
             }
 
             if (nextState.stage === 0 && nextState.winnerId) {

@@ -1,6 +1,6 @@
 import { JosaUtil, asRecord } from '@sammo-ts/common';
 import { createGamePostgresConnector } from '@sammo-ts/infra';
-import { ActionLogger, LogFormat, type TournamentType } from '@sammo-ts/logic';
+import { ActionLogger, LogFormat, type TournamentType, type TriggerValue } from '@sammo-ts/logic';
 
 import type { TurnDaemonCommand, TurnDaemonCommandResult, TurnDaemonHooks } from '../lifecycle/types.js';
 import type { InMemoryTurnWorld } from '../turn/inMemoryWorld.js';
@@ -21,6 +21,20 @@ const resolveTournamentLabel = (type: TournamentType): string => {
         case 0:
         default:
             return '전력전';
+    }
+};
+
+const resolveTournamentRankPrefix = (type: TournamentType): string => {
+    switch (type) {
+        case 1:
+            return 'tl';
+        case 2:
+            return 'ts';
+        case 3:
+            return 'ti';
+        case 0:
+        default:
+            return 'tt';
     }
 };
 
@@ -124,7 +138,9 @@ export const createTournamentRewardFinalizer = async (options: {
             }
         }
 
-        const tournamentLabel = resolveTournamentLabel(command.tournamentType as TournamentType);
+        const tournamentType = command.tournamentType as TournamentType;
+        const tournamentLabel = resolveTournamentLabel(tournamentType);
+        const rankPrefix = resolveTournamentRankPrefix(tournamentType);
         const logs: ReturnType<ActionLogger['flush']> = [];
         let rewarded = 0;
         let missing = 0;
@@ -137,9 +153,36 @@ export const createTournamentRewardFinalizer = async (options: {
                 missing += 1;
                 continue;
             }
+            const rankKey = `${rankPrefix}g`;
+            const currentRankValue = typeof general.meta[rankKey] === 'number' ? Number(general.meta[rankKey]) : 0;
+            let rankDelta = 0;
+            if (reward.label === '16강 진출') {
+                rankDelta = 1;
+            } else if (reward.label === '8강 진출') {
+                rankDelta = 1;
+            } else if (reward.label === '4강 진출') {
+                rankDelta = 2;
+            } else if (reward.label === '준우승') {
+                rankDelta = 2;
+            } else if (reward.label === '우승') {
+                rankDelta = 2;
+            }
+
+            const rankMetaNext: Record<string, TriggerValue> = {
+                [rankKey]: currentRankValue + rankDelta,
+            };
+            if (reward.label === '우승') {
+                const pointKey = `${rankPrefix}p`;
+                const currentPoint = typeof general.meta[pointKey] === 'number' ? Number(general.meta[pointKey]) : 0;
+                rankMetaNext[pointKey] = currentPoint + 1;
+            }
             world.updateGeneral(generalId, {
                 gold: general.gold + reward.gold,
                 experience: general.experience + reward.exp,
+                meta: {
+                    ...general.meta,
+                    ...rankMetaNext,
+                },
             });
             totalGold += reward.gold;
             totalExp += reward.exp;

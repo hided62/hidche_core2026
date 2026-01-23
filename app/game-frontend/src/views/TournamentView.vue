@@ -285,13 +285,9 @@ const progressSummary = computed(() => {
 const adminMessage = ref<string | null>(null);
 
 const adminStopTournament = async () => {
-    if (!snapshot.value?.state) {
-        adminMessage.value = '토너먼트 상태를 찾을 수 없습니다.';
-        return;
-    }
     try {
-        await trpc.tournament.patchState.mutate({ auto: false });
-        adminMessage.value = '자동 진행이 중지되었습니다.';
+        await trpc.tournament.cancel.mutate();
+        adminMessage.value = '토너먼트가 취소되었습니다.';
         await loadTournament();
     } catch (err) {
         adminMessage.value = resolveErrorMessage(err);

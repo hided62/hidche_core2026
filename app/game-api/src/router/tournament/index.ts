@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { asRecord } from '@sammo-ts/common';
 import type { TournamentType } from '@sammo-ts/logic';
+import type { TournamentState } from '../../tournament/types.js';
 
 import { TournamentStore } from '../../tournament/store.js';
 import { buildTournamentKeys } from '../../tournament/keys.js';
@@ -13,6 +14,16 @@ const hasAdminRole = (roles: string[], profileName: string): boolean => {
         return true;
     }
     return roles.some((role) => role === 'admin.tournament' || role === `admin.tournament:${profileName}`);
+};
+
+const resolveNumber = (source: Record<string, unknown>, keys: string[], fallback: number): number => {
+    for (const key of keys) {
+        const value = source[key];
+        if (typeof value === 'number' && Number.isFinite(value)) {
+            return value;
+        }
+    }
+    return fallback;
 };
 
 const adminProcedure = authedProcedure.use(({ ctx, next }) => {
@@ -49,6 +60,14 @@ const zParticipant = z.object({
     strength: z.number().int().min(0),
     intel: z.number().int().min(0),
     level: z.number().int().min(0),
+    groupId: z.number().int().optional(),
+    groupNo: z.number().int().optional(),
+    win: z.number().int().optional(),
+    draw: z.number().int().optional(),
+    lose: z.number().int().optional(),
+    gl: z.number().int().optional(),
+    seedRank: z.number().int().optional(),
+    finalRank: z.number().int().optional(),
 });
 
 const zMatch = z.object({
@@ -246,6 +265,12 @@ export const tournamentRouter = router({
             throw new TRPCError({ code: 'NOT_FOUND', message: '장수 정보를 찾을 수 없습니다.' });
         }
 
+        const nextMeta = { ...asRecord(general.meta), tnmt: 1 };
+        await ctx.db.general.update({
+            where: { id: general.id },
+            data: { meta: nextMeta },
+        });
+
         const already = participants.find((entry) => entry.id === general.id);
         if (already) {
             return { ok: true, count: participants.length };
@@ -268,6 +293,68 @@ export const tournamentRouter = router({
 
         await store.setParticipants(next);
         return { ok: true, count: next.length };
+    }),
+    cancel: adminProcedure.mutation(async ({ ctx }) => {
+        const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
+        const state = await store.getState();
+        if (!state) {
+            throw new TRPCError({ code: 'NOT_FOUND', message: 'Tournament state not found.' });
+        }
+
+        const [participants, bets] = await Promise.all([
+            store.getParticipants(),
+            store.getBettingEntries(),
+        ]);
+
+        const worldState = await ctx.db.worldState.findFirst();
+        const config = asRecord(worldState?.config ?? {});
+        const constValues = asRecord(config.const ?? config);
+        const develCost = resolveNumber(constValues, ['develCost', 'develcost', 'develrate'], 0);
+
+        const refundMap = new Map<number, number>();
+        for (const participant of participants) {
+            if (participant.id <= 0) {
+                continue;
+            }
+            if (participant.groupId !== undefined && participant.groupId >= 0 && participant.groupId < 8) {
+                refundMap.set(participant.id, (refundMap.get(participant.id) ?? 0) + develCost);
+            }
+        }
+        for (const bet of bets) {
+            refundMap.set(bet.generalId, (refundMap.get(bet.generalId) ?? 0) + bet.amount);
+        }
+
+        if (refundMap.size > 0) {
+            await ctx.turnDaemon.sendCommand({
+                type: 'tournamentRefund',
+                refunds: Array.from(refundMap.entries()).map(([generalId, amount]) => ({
+                    generalId,
+                    amount,
+                })),
+                reason: 'cancel',
+            });
+        }
+
+        await Promise.all([
+            store.setParticipants([]),
+            store.setMatches([]),
+            store.setBettingEntries([]),
+        ]);
+
+        const nextState: TournamentState = {
+            ...state,
+            stage: 0,
+            phase: 0,
+            auto: false,
+            winnerId: undefined,
+            bettingSettled: true,
+            rewardSettled: false,
+            bettingCloseAt: undefined,
+            participantsLockedAt: undefined,
+            nextAt: new Date().toISOString(),
+        };
+        await store.setState(nextState);
+        return { ok: true };
     }),
     placeBet: authedProcedure
         .input(

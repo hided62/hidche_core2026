@@ -26,6 +26,14 @@ export interface TournamentParticipantEntry {
     strength: number;
     intel: number;
     level: number;
+    groupId?: number;
+    groupNo?: number;
+    win?: number;
+    draw?: number;
+    lose?: number;
+    gl?: number;
+    seedRank?: number;
+    finalRank?: number;
 }
 
 export interface TournamentMatchEntry {
