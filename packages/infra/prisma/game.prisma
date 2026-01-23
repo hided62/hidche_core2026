@@ -220,6 +220,19 @@ model LogEntry {
     @@map("log_entry")
 }
 
+model ErrorLog {
+    id        Int      @id @default(autoincrement())
+    category  String
+    source    String?  @map("source")
+    message   String
+    trace     String?
+    context   Json     @default(dbgenerated("'{}'::jsonb"))
+    createdAt DateTime @default(now()) @map("created_at")
+
+    @@index([category, id])
+    @@map("error_log")
+}
+
 model InheritancePoint {
     id        Int      @id @default(autoincrement())
     userId    String   @map("user_id")

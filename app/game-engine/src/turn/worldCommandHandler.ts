@@ -451,6 +451,54 @@ async function handleAppoint(
     return { type: 'appoint', ok: true, generalId: command.generalId };
 }
 
+async function handleTournamentRefund(
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'tournamentRefund' }>
+): Promise<TurnDaemonCommandResult> {
+    const { world, hooks } = ctx;
+    if (!command.refunds || command.refunds.length === 0) {
+        return {
+            type: 'tournamentRefund',
+            ok: false,
+            bettingId: command.bettingId,
+            reason: '환불 대상이 없습니다.',
+        };
+    }
+
+    let processed = 0;
+    let missing = 0;
+    let totalRefund = 0;
+
+    for (const refund of command.refunds) {
+        if (!refund || typeof refund.generalId !== 'number' || typeof refund.amount !== 'number') {
+            continue;
+        }
+        if (refund.amount <= 0) {
+            continue;
+        }
+        const general = world.getGeneralById(refund.generalId);
+        if (!general) {
+            missing += 1;
+            continue;
+        }
+        world.updateGeneral(refund.generalId, {
+            gold: general.gold + refund.amount,
+        });
+        processed += 1;
+        totalRefund += refund.amount;
+    }
+
+    await flushWorld(world, hooks);
+    return {
+        type: 'tournamentRefund',
+        ok: true,
+        bettingId: command.bettingId,
+        processed,
+        missing,
+        totalRefund,
+    };
+}
+
 export const createTurnDaemonCommandHandler = (options: {
     world: InMemoryTurnWorld;
     hooks?: TurnDaemonHooks;
@@ -485,6 +533,8 @@ export const createTurnDaemonCommandHandler = (options: {
                     return handleKick(ctx, command);
                 case 'appoint':
                     return handleAppoint(ctx, command);
+                case 'tournamentRefund':
+                    return handleTournamentRefund(ctx, command);
                 default:
                     return null;
             }

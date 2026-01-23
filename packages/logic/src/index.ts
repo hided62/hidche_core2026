@@ -15,5 +15,6 @@ export * from './ports/worldSnapshot.js';
 export * from './scenario/index.js';
 export * from './triggers/index.js';
 export * from './turn/index.js';
+export * from './tournament/index.js';
 export * from './world/index.js';
 export * from './war/index.js';

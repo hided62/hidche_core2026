@@ -18,6 +18,8 @@
         "worker:dev": "GAME_API_ROLE=battle-sim-worker tsdown -c ../../tsdown.config.ts -F @sammo-ts/game-api --watch",
         "worker:auction": "GAME_API_ROLE=auction-worker node dist/index.js",
         "worker:auction:dev": "GAME_API_ROLE=auction-worker tsdown -c ../../tsdown.config.ts -F @sammo-ts/game-api --watch",
+        "worker:tournament": "GAME_API_ROLE=tournament-worker node dist/index.js",
+        "worker:tournament:dev": "GAME_API_ROLE=tournament-worker tsdown -c ../../tsdown.config.ts -F @sammo-ts/game-api --watch",
         "lint": "eslint .",
         "lint:fix": "eslint . --fix",
         "test": "vitest run --config vitest.config.ts",

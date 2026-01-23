@@ -14,6 +14,7 @@ export interface GameApiConfig {
     auctionTimerPollMs: number;
     auctionTimerResyncMs: number;
     auctionTimerRetentionSeconds: number;
+    tournamentPollMs: number;
     gameTokenSecret: string;
     flushChannel: string;
 }
@@ -61,6 +62,11 @@ export const resolveGameApiConfigFromEnv = (env: NodeJS.ProcessEnv = process.env
             env.AUCTION_TIMER_RETENTION_SECONDS,
             21600,
             'AUCTION_TIMER_RETENTION_SECONDS'
+        ),
+        tournamentPollMs: parseNumberWithFallback(
+            env.TOURNAMENT_POLL_MS,
+            1000,
+            'TOURNAMENT_POLL_MS'
         ),
         gameTokenSecret: secret,
         flushChannel: `${gatewayPrefix}:flush`,

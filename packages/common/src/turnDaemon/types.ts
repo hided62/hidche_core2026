@@ -85,7 +85,17 @@ export type TurnDaemonCommand =
           destGeneralId: number;
           destCityId: number;
           officerLevel: number;
-      };
+        }
+    | {
+                type: 'tournamentRefund';
+                requestId?: string;
+                bettingId?: number;
+                reason?: string;
+                refunds: Array<{
+                        generalId: number;
+                        amount: number;
+                }>;
+        };
 
 export type TurnDaemonCommandResult =
     | {
@@ -132,7 +142,21 @@ export type TurnDaemonCommandResult =
     | { type: 'dropItem'; ok: boolean; generalId: number; reason?: string }
     | { type: 'changePermission'; ok: boolean; generalId: number; reason?: string }
     | { type: 'kick'; ok: boolean; generalId: number; reason?: string }
-    | { type: 'appoint'; ok: boolean; generalId: number; reason?: string };
+    | { type: 'appoint'; ok: boolean; generalId: number; reason?: string }
+    | {
+          type: 'tournamentRefund';
+          ok: true;
+          bettingId?: number;
+          processed: number;
+          missing: number;
+          totalRefund: number;
+      }
+    | {
+          type: 'tournamentRefund';
+          ok: false;
+          bettingId?: number;
+          reason: string;
+      };
 
 export type TurnDaemonEvent =
     | { type: 'status'; requestId?: string; status: TurnDaemonStatus }

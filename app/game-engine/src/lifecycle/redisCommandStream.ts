@@ -210,6 +210,29 @@ const normalizeCommand = (envelope: TurnDaemonCommandEnvelope): TurnDaemonComman
                 officerLevel: command.officerLevel,
             };
         }
+        case 'tournamentRefund': {
+            if (!Array.isArray(command.refunds)) {
+                return null;
+            }
+            const refunds = command.refunds
+                .filter((entry) =>
+                    entry && typeof entry.generalId === 'number' && typeof entry.amount === 'number'
+                )
+                .map((entry) => ({
+                    generalId: entry.generalId,
+                    amount: entry.amount,
+                }));
+            if (refunds.length === 0) {
+                return null;
+            }
+            return {
+                type: 'tournamentRefund',
+                requestId: envelope.requestId,
+                bettingId: typeof command.bettingId === 'number' ? command.bettingId : undefined,
+                reason: typeof command.reason === 'string' ? command.reason : undefined,
+                refunds,
+            };
+        }
         case 'getStatus': {
             const requestId = typeof command.requestId === 'string' ? command.requestId : envelope.requestId;
             return { type: 'getStatus', requestId };

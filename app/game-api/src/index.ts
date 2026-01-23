@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { runGameApiServer } from './server.js';
 import { runBattleSimWorker } from './battleSim/worker.js';
 import { runAuctionWorker } from './auction/worker.js';
+import { runTournamentWorker } from './tournament/worker.js';
 
 export * from './config.js';
 export * from './context.js';
@@ -26,6 +27,7 @@ export * from './auction/types.js';
 export * from './auction/keys.js';
 export * from './auction/scheduler.js';
 export * from './auction/worker.js';
+export * from './tournament/worker.js';
 
 // Types for TRPC consumer
 export type { MessageView } from './messages/store.js';
@@ -49,8 +51,10 @@ if (isMain()) {
         role === 'battle-sim-worker'
             ? runBattleSimWorker
             : role === 'auction-worker'
-              ? runAuctionWorker
-              : runGameApiServer;
+                            ? runAuctionWorker
+                            : role === 'tournament-worker'
+                                ? runTournamentWorker
+                                : runGameApiServer;
     run().catch((error) => {
         console.error('[game-api] failed to start', error);
         process.exitCode = 1;
