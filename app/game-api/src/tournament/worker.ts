@@ -20,35 +20,13 @@ type TournamentPrismaClient = {
         findMany: (args: {
             where: Record<string, unknown>;
             select: Record<string, boolean>;
-        }) => Promise<
-            Array<{
-                id: number;
-                name: string;
-                leadership: number;
-                strength: number;
-                intel: number;
-                meta: unknown;
-                npcState: number;
-                gold?: number;
-            }>
-        >;
+        }) => Promise<Array<Record<string, unknown>>>;
         update: (args: { where: { id: number }; data: { gold: number } }) => Promise<unknown>;
     };
     worldState: {
-        findFirst: () => Promise<{ meta?: unknown; currentYear?: number } | null>;
+        findFirst: () => Promise<{ meta?: unknown; currentYear?: number; config?: unknown } | null>;
     };
-    $transaction: <T>(actions: Promise<T>[]) => Promise<T[]>;
-    errorLog: {
-        create: (args: {
-            data: {
-                category: string;
-                source: string;
-                message: string;
-                trace?: string;
-                context?: Record<string, unknown>;
-            };
-        }) => Promise<unknown>;
-    };
+    $transaction: (actions: Promise<unknown>[]) => Promise<unknown[]>;
 };
 
 const sleepMs = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -192,18 +170,22 @@ const fillParticipants = async (options: {
     });
 
     const applicantPool = applicants
-        .filter((entry) => !takenIds.has(entry.id))
+        .map((entry) => asRecord(entry))
+        .filter((entry) => typeof entry.id === 'number' && !takenIds.has(entry.id))
         .map((entry) => {
-            const score = resolveStatValue(state.type, entry);
+            const leadership = typeof entry.leadership === 'number' ? entry.leadership : 0;
+            const strength = typeof entry.strength === 'number' ? entry.strength : 0;
+            const intel = typeof entry.intel === 'number' ? entry.intel : 0;
+            const score = resolveStatValue(state.type, { leadership, strength, intel });
             const meta = asRecord(entry.meta);
             const level = typeof meta.explevel === 'number' ? meta.explevel : 0;
             return {
                 item: {
-                    id: entry.id,
-                    name: entry.name,
-                    leadership: entry.leadership,
-                    strength: entry.strength,
-                    intel: entry.intel,
+                    id: entry.id as number,
+                    name: typeof entry.name === 'string' ? entry.name : '무명장수',
+                    leadership,
+                    strength,
+                    intel,
                     level,
                 },
                 weight: Math.max(1, score ** 1.5),
@@ -247,18 +229,22 @@ const fillParticipants = async (options: {
     });
 
     const npcPool = npcRows
-        .filter((entry) => !takenIds.has(entry.id))
+        .map((entry) => asRecord(entry))
+        .filter((entry) => typeof entry.id === 'number' && !takenIds.has(entry.id))
         .map((entry) => {
-            const score = resolveStatValue(state.type, entry);
+            const leadership = typeof entry.leadership === 'number' ? entry.leadership : 0;
+            const strength = typeof entry.strength === 'number' ? entry.strength : 0;
+            const intel = typeof entry.intel === 'number' ? entry.intel : 0;
+            const score = resolveStatValue(state.type, { leadership, strength, intel });
             const meta = asRecord(entry.meta);
             const level = typeof meta.explevel === 'number' ? meta.explevel : 0;
             return {
                 item: {
-                    id: entry.id,
-                    name: entry.name,
-                    leadership: entry.leadership,
-                    strength: entry.strength,
-                    intel: entry.intel,
+                    id: entry.id as number,
+                    name: typeof entry.name === 'string' ? entry.name : '무명장수',
+                    leadership,
+                    strength,
+                    intel,
                     level,
                 },
                 weight: Math.max(1, score ** 1.5),
@@ -728,7 +714,10 @@ const seedNpcBets = async (options: {
         },
         select: { id: true, gold: true },
     });
-    if (npcList.length === 0) {
+    const npcBetList = npcList
+        .map((entry) => asRecord(entry))
+        .filter((entry) => typeof entry.id === 'number' && typeof entry.gold === 'number');
+    if (npcBetList.length === 0) {
         return;
     }
 
@@ -743,16 +732,16 @@ const seedNpcBets = async (options: {
     });
 
     const entries = [...existing];
-    for (const npc of npcList) {
+    for (const npc of npcBetList) {
         const targetId = rng.choice(candidateIds);
-        entries.push({ generalId: npc.id, targetId, amount: betGold });
+        entries.push({ generalId: npc.id as number, targetId, amount: betGold });
     }
 
     await prisma.$transaction(
-        npcList.map((npc) =>
+        npcBetList.map((npc) =>
             prisma.general.update({
-                where: { id: npc.id },
-                data: { gold: npc.gold - betGold },
+                where: { id: npc.id as number },
+                data: { gold: (npc.gold as number) - betGold },
             })
         )
     );

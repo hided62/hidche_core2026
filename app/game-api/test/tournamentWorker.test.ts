@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { TournamentType } from '@sammo-ts/logic';
 import type { TurnDaemonCommand } from '@sammo-ts/common';
+import { createTournamentAutoStartHandler } from '@sammo-ts/common';
 
 import { TournamentStore } from '../src/tournament/store.js';
 import { buildTournamentKeys } from '../src/tournament/keys.js';
@@ -11,7 +12,6 @@ import {
     settleTournamentOutcome,
 } from '../src/tournament/worker.js';
 import type { TurnDaemonTransport } from '../src/daemon/transport.js';
-import { createTournamentAutoStartHandler } from '../../game-engine/src/turn/tournamentAutoStart.js';
 
 class MemoryRedis {
     private readonly store = new Map<string, string>();
@@ -153,6 +153,7 @@ const createPrismaMock = (options: {
         worldState: {
             findFirst: async () => ({
                 meta: { hiddenSeed: options.baseSeed ?? 'seed' },
+                config: { const: { startYear: 1 } },
                 currentYear: options.currentYear ?? 1,
             }),
         },
@@ -269,11 +270,8 @@ describe('tournament worker (in-memory)', () => {
             getTickSeconds: () => 600,
         });
         handler.onMonthChanged?.({
-            previousYear: 1,
-            previousMonth: 1,
             currentYear: 1,
             currentMonth: 2,
-            turnTime: new Date(),
         });
         await delayTick();
 
