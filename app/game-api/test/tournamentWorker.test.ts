@@ -1,0 +1,358 @@
+import { describe, expect, it } from 'vitest';
+import { TournamentType } from '@sammo-ts/logic';
+import type { TurnDaemonCommand } from '@sammo-ts/common';
+
+import { TournamentStore } from '../src/tournament/store.js';
+import { buildTournamentKeys } from '../src/tournament/keys.js';
+import type { TournamentBetEntry, TournamentMatchEntry, TournamentParticipantEntry, TournamentState } from '../src/tournament/types.js';
+import {
+    applyBattle,
+    applyPreBattleStage,
+    settleTournamentOutcome,
+} from '../src/tournament/worker.js';
+import type { TurnDaemonTransport } from '../src/daemon/transport.js';
+import { createTournamentAutoStartHandler } from '../../game-engine/src/turn/tournamentAutoStart.js';
+
+class MemoryRedis {
+    private readonly store = new Map<string, string>();
+
+    async get(key: string): Promise<string | null> {
+        return this.store.get(key) ?? null;
+    }
+
+    async set(key: string, value: string): Promise<string> {
+        this.store.set(key, value);
+        return 'OK';
+    }
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
+
+const createTournamentState = (overrides: Partial<TournamentState> = {}): TournamentState => {
+    const now = new Date().toISOString();
+    return {
+        stage: 1,
+        phase: 0,
+        type: TournamentType.TOTAL,
+        auto: true,
+        openYear: 1,
+        openMonth: 2,
+        termSeconds: 10,
+        nextAt: now,
+        bettingId: undefined,
+        bettingCloseAt: undefined,
+        winnerId: undefined,
+        bettingSettled: false,
+        rewardSettled: false,
+        participantsLockedAt: undefined,
+        lastError: undefined,
+        lastErrorAt: undefined,
+        ...overrides,
+    };
+};
+
+const createParticipants = (high: number, mid: number, low: number): TournamentParticipantEntry[] => {
+    const result: TournamentParticipantEntry[] = [];
+    let cursor = 1;
+    for (let i = 0; i < high; i += 1) {
+        result.push({
+            id: cursor,
+            name: `상급${cursor}`,
+            leadership: 90,
+            strength: 90,
+            intel: 90,
+            level: 50,
+        });
+        cursor += 1;
+    }
+    for (let i = 0; i < mid; i += 1) {
+        result.push({
+            id: cursor,
+            name: `중급${cursor}`,
+            leadership: 60,
+            strength: 60,
+            intel: 60,
+            level: 30,
+        });
+        cursor += 1;
+    }
+    for (let i = 0; i < low; i += 1) {
+        result.push({
+            id: cursor,
+            name: `하급${cursor}`,
+            leadership: 30,
+            strength: 30,
+            intel: 30,
+            level: 10,
+        });
+        cursor += 1;
+    }
+    return result;
+};
+
+const createPrismaMock = (options: {
+    applicants?: Array<{
+        id: number;
+        name: string;
+        leadership: number;
+        strength: number;
+        intel: number;
+        meta: Record<string, unknown>;
+        npcState: number;
+    }>;
+    npcs?: Array<{
+        id: number;
+        name: string;
+        leadership: number;
+        strength: number;
+        intel: number;
+        meta: Record<string, unknown>;
+        npcState: number;
+    }>;
+    npcBetting?: Array<{
+        id: number;
+        name: string;
+        leadership: number;
+        strength: number;
+        intel: number;
+        meta: Record<string, unknown>;
+        npcState: number;
+        gold: number;
+    }>;
+    baseSeed?: string;
+    currentYear?: number;
+}) => {
+    const applicants = options.applicants ?? [];
+    const npcs = options.npcs ?? [];
+    const npcBetting = options.npcBetting ?? [];
+
+    return {
+        general: {
+            findMany: async (args: { where: Record<string, unknown>; select: Record<string, boolean> }) => {
+                const where = args.where;
+                if (isRecord(where) && 'meta' in where) {
+                    return applicants.filter((entry) => {
+                        const meta = isRecord(entry.meta) ? entry.meta : {};
+                        return meta.tnmt === 1;
+                    });
+                }
+                if (isRecord(where)) {
+                    const npcState = isRecord(where.npcState) ? where.npcState : null;
+                    if (isRecord(npcState) && typeof npcState.gte === 'number') {
+                        const gold = isRecord(where.gold) ? where.gold : null;
+                        if (isRecord(gold) && typeof gold.gte === 'number') {
+                            return npcBetting;
+                        }
+                        return npcs;
+                    }
+                }
+                return [];
+            },
+            update: async () => ({ ok: true }),
+        },
+        worldState: {
+            findFirst: async () => ({
+                meta: { hiddenSeed: options.baseSeed ?? 'seed' },
+                currentYear: options.currentYear ?? 1,
+            }),
+        },
+        $transaction: async (actions: Promise<unknown>[]) => Promise.all(actions),
+        errorLog: {
+            create: async () => ({ ok: true }),
+        },
+    };
+};
+
+const runTournamentToCompletion = async (options: {
+    store: TournamentStore;
+    prisma: ReturnType<typeof createPrismaMock>;
+    baseSeed: string;
+}): Promise<TournamentState> => {
+    let state = await options.store.getState();
+    if (!state) {
+        throw new Error('토너먼트 상태가 없습니다.');
+    }
+
+    for (let i = 0; i < 2000; i += 1) {
+        if (state.stage === 0) {
+            return state;
+        }
+        if (state.stage === 6) {
+            const closedAt = new Date(Date.now() - 1000).toISOString();
+            state = { ...state, bettingCloseAt: closedAt, nextAt: closedAt };
+            await options.store.setState(state);
+        }
+        if (state.stage >= 1 && state.stage <= 6) {
+            state = await applyPreBattleStage(options.store, options.prisma, state, options.baseSeed);
+            continue;
+        }
+        if (state.stage >= 7 && state.stage <= 10) {
+            state = await applyBattle(options.store, state, options.baseSeed);
+            continue;
+        }
+        break;
+    }
+
+    throw new Error('토너먼트가 결승까지 진행되지 않았습니다.');
+};
+
+const delayTick = async (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+describe('tournament worker (in-memory)', () => {
+    it('64명(상/중/하 스탯)으로 결승까지 진행된다', async () => {
+        const redis = new MemoryRedis();
+        const store = new TournamentStore(redis, buildTournamentKeys('test'));
+        const participants = createParticipants(16, 16, 32);
+        const state = createTournamentState({ stage: 1 });
+        await store.setParticipants(participants);
+        await store.setState(state);
+
+        const prisma = createPrismaMock({ baseSeed: 'seed' });
+        const finalState = await runTournamentToCompletion({ store, prisma, baseSeed: 'seed' });
+        const matches = await store.getMatches();
+
+        expect(finalState.stage).toBe(0);
+        expect(finalState.winnerId).toBeDefined();
+        expect(matches.some((match) => match.stage === 10 && match.winnerId)).toBe(true);
+    });
+
+    it('우승 결과에 따라 베팅 정산 명령이 생성된다', async () => {
+        const redis = new MemoryRedis();
+        const store = new TournamentStore(redis, buildTournamentKeys('test-bet'));
+        const matches: TournamentMatchEntry[] = [
+            { id: 1, stage: 10, roundIndex: 0, attackerId: 10, defenderId: 11, winnerId: 10 },
+        ];
+        const entries: TournamentBetEntry[] = [
+            { generalId: 1, targetId: 10, amount: 100 },
+            { generalId: 2, targetId: 11, amount: 200 },
+        ];
+        const state = createTournamentState({
+            stage: 0,
+            auto: false,
+            winnerId: 10,
+            bettingId: 123,
+            rewardSettled: false,
+            bettingSettled: false,
+        });
+        await store.setMatches(matches);
+        await store.setBettingEntries(entries);
+        await store.setState(state);
+
+        const sent: TurnDaemonCommand[] = [];
+        const transport: TurnDaemonTransport = {
+            sendCommand: async (command) => {
+                sent.push(command);
+                return 'ok';
+            },
+            requestCommand: async () => null,
+            requestStatus: async () => null,
+        };
+
+        await settleTournamentOutcome({ store, daemonTransport: transport, state });
+
+        const rewardCommand = sent.find((command) => command.type === 'tournamentReward');
+        const bettingCommand = sent.find((command) => command.type === 'tournamentBettingPayout');
+
+        expect(rewardCommand).toBeDefined();
+        expect(bettingCommand).toBeDefined();
+        if (bettingCommand && bettingCommand.type === 'tournamentBettingPayout') {
+            expect(bettingCommand.payouts).toEqual([{ generalId: 1, amount: 300 }]);
+        }
+    });
+
+    it('자동 오픈 후 참가자 보충(NPC/더미 포함)하고 결승까지 진행된다', async () => {
+        const redis = new MemoryRedis();
+        const handler = createTournamentAutoStartHandler({
+            profileName: 'auto',
+            getRedisClient: () => redis,
+            getWorldConfig: () => ({ tournamentTrig: true }),
+            getTickSeconds: () => 600,
+        });
+        handler.onMonthChanged?.({
+            previousYear: 1,
+            previousMonth: 1,
+            currentYear: 1,
+            currentMonth: 2,
+            turnTime: new Date(),
+        });
+        await delayTick();
+
+        const store = new TournamentStore(redis, buildTournamentKeys('auto'));
+        const state = await store.getState();
+        expect(state?.stage).toBe(1);
+
+        const autoApplicants = [
+            {
+                id: 1,
+                name: '자동참가1',
+                leadership: 70,
+                strength: 70,
+                intel: 70,
+                meta: { tnmt: 1, explevel: 20 },
+                npcState: 0,
+            },
+            {
+                id: 2,
+                name: '자동참가2',
+                leadership: 65,
+                strength: 65,
+                intel: 65,
+                meta: { tnmt: 1, explevel: 18 },
+                npcState: 0,
+            },
+            {
+                id: 99,
+                name: '비자동참가',
+                leadership: 80,
+                strength: 80,
+                intel: 80,
+                meta: { tnmt: 0, explevel: 25 },
+                npcState: 0,
+            },
+        ];
+        const npcs = [
+            {
+                id: 1001,
+                name: 'NPC1',
+                leadership: 40,
+                strength: 40,
+                intel: 40,
+                meta: { explevel: 12 },
+                npcState: 2,
+            },
+            {
+                id: 1002,
+                name: 'NPC2',
+                leadership: 35,
+                strength: 35,
+                intel: 35,
+                meta: { explevel: 10 },
+                npcState: 2,
+            },
+        ];
+
+        const prisma = createPrismaMock({
+            applicants: autoApplicants,
+            npcs,
+            baseSeed: 'seed',
+        });
+
+        const initialState = state ?? createTournamentState({ stage: 1 });
+        await store.setState(initialState);
+        const afterJoin = await applyPreBattleStage(store, prisma, initialState, 'seed');
+        const participants = await store.getParticipants();
+
+        expect(afterJoin.stage).toBe(2);
+        expect(participants).toHaveLength(64);
+        expect(participants.some((entry) => entry.id === 1)).toBe(true);
+        expect(participants.some((entry) => entry.id === 2)).toBe(true);
+        expect(participants.some((entry) => entry.id === 99)).toBe(false);
+        expect(participants.some((entry) => entry.id === 1001)).toBe(true);
+        expect(participants.some((entry) => entry.id < 0)).toBe(true);
+
+        await store.setState(afterJoin);
+        const finalState = await runTournamentToCompletion({ store, prisma, baseSeed: 'seed' });
+        expect(finalState.stage).toBe(0);
+        expect(finalState.winnerId).toBeDefined();
+    });
+});

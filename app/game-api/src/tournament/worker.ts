@@ -10,9 +10,46 @@ import {
 import { resolveGameApiConfigFromEnv } from '../config.js';
 import { RedisTurnDaemonTransport } from '../daemon/redisTransport.js';
 import { buildTurnDaemonStreamKeys } from '../daemon/streamKeys.js';
+import type { TurnDaemonTransport } from '../daemon/transport.js';
 import { buildTournamentKeys } from './keys.js';
 import { TournamentStore } from './store.js';
 import type { TournamentBetEntry, TournamentMatchEntry, TournamentParticipantEntry, TournamentState } from './types.js';
+
+type TournamentPrismaClient = {
+    general: {
+        findMany: (args: {
+            where: Record<string, unknown>;
+            select: Record<string, boolean>;
+        }) => Promise<
+            Array<{
+                id: number;
+                name: string;
+                leadership: number;
+                strength: number;
+                intel: number;
+                meta: unknown;
+                npcState: number;
+                gold?: number;
+            }>
+        >;
+        update: (args: { where: { id: number }; data: { gold: number } }) => Promise<unknown>;
+    };
+    worldState: {
+        findFirst: () => Promise<{ meta?: unknown; currentYear?: number } | null>;
+    };
+    $transaction: <T>(actions: Promise<T>[]) => Promise<T[]>;
+    errorLog: {
+        create: (args: {
+            data: {
+                category: string;
+                source: string;
+                message: string;
+                trace?: string;
+                context?: Record<string, unknown>;
+            };
+        }) => Promise<unknown>;
+    };
+};
 
 const sleepMs = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -125,7 +162,7 @@ const selectWeighted = <T>(rng: ReturnType<typeof createTournamentRng>, pool: Ar
 };
 
 const fillParticipants = async (options: {
-    prisma: ReturnType<typeof createGamePostgresConnector>['prisma'];
+    prisma: TournamentPrismaClient;
     state: TournamentState;
     baseSeed: string;
     current: TournamentParticipantEntry[];
@@ -478,7 +515,7 @@ const buildNextMatches = (
     return result;
 };
 
-const applyBattle = async (
+export const applyBattle = async (
     store: TournamentStore,
     state: TournamentState,
     baseSeed: string
@@ -585,7 +622,7 @@ const applyBattle = async (
     return nextState;
 };
 
-const buildBettingPayouts = (
+export const buildBettingPayouts = (
     winnerId: number,
     entries: TournamentBetEntry[]
 ): { payouts: Array<{ generalId: number; amount: number }>; total: number; refundAll: boolean } => {
@@ -607,7 +644,7 @@ const buildBettingPayouts = (
     return { payouts, total, refundAll: false };
 };
 
-const buildTournamentRewardPayload = (
+export const buildTournamentRewardPayload = (
     matches: TournamentMatchEntry[]
 ): { top16: number[]; top8: number[]; top4: number[]; winnerId: number; runnerUpId: number } => {
     const top16 = new Set<number>();
@@ -654,7 +691,7 @@ const resolveNumber = (source: Record<string, unknown>, keys: string[], fallback
 };
 
 const seedNpcBets = async (options: {
-    prisma: ReturnType<typeof createGamePostgresConnector>['prisma'];
+    prisma: TournamentPrismaClient;
     store: TournamentStore;
     state: TournamentState;
     baseSeed: string;
@@ -722,9 +759,9 @@ const seedNpcBets = async (options: {
     await store.setBettingEntries(entries);
 };
 
-const applyPreBattleStage = async (
+export const applyPreBattleStage = async (
     store: TournamentStore,
-    prisma: ReturnType<typeof createGamePostgresConnector>['prisma'],
+    prisma: TournamentPrismaClient,
     state: TournamentState,
     baseSeed: string
 ): Promise<TournamentState> => {
@@ -980,6 +1017,72 @@ const applyPreBattleStage = async (
     return state;
 };
 
+export const settleTournamentOutcome = async (options: {
+    store: TournamentStore;
+    daemonTransport: TurnDaemonTransport;
+    state: TournamentState;
+}): Promise<TournamentState | null> => {
+    const { store, daemonTransport, state } = options;
+    if (state.stage !== 0 || !state.winnerId) {
+        return null;
+    }
+
+    let settledState: TournamentState | null = null;
+
+    if (!state.rewardSettled) {
+        const matches = await store.getMatches();
+        const rewardPayload = buildTournamentRewardPayload(matches);
+        await daemonTransport.sendCommand({
+            type: 'tournamentReward',
+            tournamentType: state.type,
+            winnerId: rewardPayload.winnerId,
+            runnerUpId: rewardPayload.runnerUpId,
+            top16: rewardPayload.top16,
+            top8: rewardPayload.top8,
+            top4: rewardPayload.top4,
+        });
+        settledState = {
+            ...(settledState ?? state),
+            rewardSettled: true,
+        };
+    }
+
+    if (state.bettingId && !state.bettingSettled) {
+        const bettingEntries = await store.getBettingEntries();
+        if (bettingEntries.length > 0) {
+            const payoutInfo = buildBettingPayouts(state.winnerId, bettingEntries);
+            if (payoutInfo.payouts.length > 0) {
+                if (payoutInfo.refundAll) {
+                    await daemonTransport.sendCommand({
+                        type: 'tournamentRefund',
+                        bettingId: state.bettingId,
+                        refunds: payoutInfo.payouts,
+                        reason: 'no_winner',
+                    });
+                } else {
+                    await daemonTransport.sendCommand({
+                        type: 'tournamentBettingPayout',
+                        bettingId: state.bettingId,
+                        payouts: payoutInfo.payouts,
+                        reason: 'winner_payout',
+                    });
+                }
+            }
+        }
+
+        settledState = {
+            ...(settledState ?? state),
+            bettingSettled: true,
+        };
+    }
+
+    if (settledState) {
+        await store.setState(settledState);
+    }
+
+    return settledState;
+};
+
 
 export const runTournamentWorker = async (): Promise<void> => {
     const config = resolveGameApiConfigFromEnv();
@@ -1026,60 +1129,11 @@ export const runTournamentWorker = async (): Promise<void> => {
                 nextState = await applyPreBattleStage(store, postgres.prisma, state, String(baseSeed));
             }
 
-            if (nextState.stage === 0 && nextState.winnerId) {
-                let settledState: TournamentState | null = null;
-
-                if (!nextState.rewardSettled) {
-                    const matches = await store.getMatches();
-                    const rewardPayload = buildTournamentRewardPayload(matches);
-                    await daemonTransport.sendCommand({
-                        type: 'tournamentReward',
-                        tournamentType: nextState.type,
-                        winnerId: rewardPayload.winnerId,
-                        runnerUpId: rewardPayload.runnerUpId,
-                        top16: rewardPayload.top16,
-                        top8: rewardPayload.top8,
-                        top4: rewardPayload.top4,
-                    });
-                    settledState = {
-                        ...(settledState ?? nextState),
-                        rewardSettled: true,
-                    };
-                }
-
-                if (nextState.bettingId && !nextState.bettingSettled) {
-                    const bettingEntries = await store.getBettingEntries();
-                    if (bettingEntries.length > 0) {
-                        const payoutInfo = buildBettingPayouts(nextState.winnerId, bettingEntries);
-                        if (payoutInfo.payouts.length > 0) {
-                            if (payoutInfo.refundAll) {
-                                await daemonTransport.sendCommand({
-                                    type: 'tournamentRefund',
-                                    bettingId: nextState.bettingId,
-                                    refunds: payoutInfo.payouts,
-                                    reason: 'no_winner',
-                                });
-                            } else {
-                                await daemonTransport.sendCommand({
-                                    type: 'tournamentBettingPayout',
-                                    bettingId: nextState.bettingId,
-                                    payouts: payoutInfo.payouts,
-                                    reason: 'winner_payout',
-                                });
-                            }
-                        }
-                    }
-
-                    settledState = {
-                        ...(settledState ?? nextState),
-                        bettingSettled: true,
-                    };
-                }
-
-                if (settledState) {
-                    await store.setState(settledState);
-                }
-            }
+            await settleTournamentOutcome({
+                store,
+                daemonTransport,
+                state: nextState,
+            });
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Unknown error';
             const trace = error instanceof Error ? error.stack : undefined;
