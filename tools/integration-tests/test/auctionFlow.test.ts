@@ -406,6 +406,22 @@ describe('auction integration flow', () => {
             data: { gold: 50, rice: 1000 },
         });
 
+        if (turnDaemon) {
+            await turnDaemon.lifecycle.stop('integration-test');
+            await turnDaemon.close();
+            await turnDaemonLoop;
+        }
+        const gameDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'che' }).url;
+        const gatewayDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'public' }).url;
+        turnDaemon = await createTurnDaemonRuntime({
+            profile: 'che',
+            profileName: 'che:2',
+            databaseUrl: gameDatabaseUrl,
+            gatewayDatabaseUrl,
+        });
+        turnDaemonLoop = turnDaemon.lifecycle.start();
+        await sleep(500);
+
         const now = new Date();
         const initialCloseAt = new Date(now.getTime() + 10_000);
         const auction = await prisma.auction.create({
@@ -442,7 +458,7 @@ describe('auction integration flow', () => {
             value: poorBidder.accessToken,
         });
         await expect(
-            poorClient.auction.bidBuyRice.mutate({ auctionId: auction.id, amount: 200 })
+            poorClient.auction.bidBuyRice.mutate({ auctionId: auction.id, amount: 500 })
         ).rejects.toThrow('금이 부족합니다.');
 
         const updatedAuction = await prisma.auction.findUnique({
@@ -488,7 +504,8 @@ describe('auction integration flow', () => {
             where: { id: bidder1.generalId },
             select: { rice: true },
         });
-        expect(bidderRow?.rice).toBeGreaterThan(1500);
+        expect(bidderRow).not.toBeNull();
+        expect(bidderRow!.rice).toBe(2000);
     }, 60_000);
 
     it('handles unique auction constraints and finalization extension', async () => {
@@ -586,6 +603,22 @@ describe('auction integration flow', () => {
             where: { id: validBidder.generalId },
             data: slotUpdate,
         });
+
+        if (turnDaemon) {
+            await turnDaemon.lifecycle.stop('integration-test');
+            await turnDaemon.close();
+            await turnDaemonLoop;
+        }
+        const gameDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'che' }).url;
+        const gatewayDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'public' }).url;
+        turnDaemon = await createTurnDaemonRuntime({
+            profile: 'che',
+            profileName: 'che:2',
+            databaseUrl: gameDatabaseUrl,
+            gatewayDatabaseUrl,
+        });
+        turnDaemonLoop = turnDaemon.lifecycle.start();
+        await sleep(500);
 
         const finalizeAt = new Date(Date.now() - 1000);
         await prisma.auction.update({
