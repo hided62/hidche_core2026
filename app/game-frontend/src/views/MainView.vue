@@ -98,6 +98,7 @@ watch(
                 <RouterLink class="ghost" to="/chief-center">사령부</RouterLink>
                 <RouterLink class="ghost" to="/battle-center">감찰부</RouterLink>
                 <RouterLink class="ghost" to="/battle-simulator">전투 시뮬레이터</RouterLink>
+                <RouterLink class="ghost" to="/tournament">토너먼트</RouterLink>
                 <RouterLink class="ghost" to="/npc-control">NPC 정책</RouterLink>
                 <RouterLink class="ghost" to="/inherit">유산 강화</RouterLink>
                 <button

@@ -13,6 +13,7 @@ import BattleCenterView from '../views/BattleCenterView.vue';
 import BattleSimulatorView from '../views/BattleSimulatorView.vue';
 import NpcControlView from '../views/NpcControlView.vue';
 import NotFoundView from '../views/NotFoundView.vue';
+import TournamentView from '../views/TournamentView.vue';
 import { useSessionStore } from '../stores/session';
 
 const routes = [
@@ -115,6 +116,15 @@ const routes = [
         path: '/npc-control',
         name: 'npc-control',
         component: NpcControlView,
+        meta: {
+            requiresAuth: true,
+            requiresGeneral: true,
+        },
+    },
+    {
+        path: '/tournament',
+        name: 'tournament',
+        component: TournamentView,
         meta: {
             requiresAuth: true,
             requiresGeneral: true,
