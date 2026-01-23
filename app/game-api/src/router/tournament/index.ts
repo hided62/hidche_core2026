@@ -37,6 +37,7 @@ const zTournamentState = z.object({
     winnerId: z.number().int().optional(),
     bettingSettled: z.boolean().optional(),
     rewardSettled: z.boolean().optional(),
+    participantsLockedAt: z.string().optional(),
     lastError: z.string().optional(),
     lastErrorAt: z.string().optional(),
 });
@@ -95,6 +96,7 @@ export const tournamentRouter = router({
         const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
         return store.getState();
     }),
+    getAdminStatus: adminProcedure.query(async () => ({ ok: true })),
     getSnapshot: procedure.query(async ({ ctx }) => {
         const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
         const [state, participants, matches, bets] = await Promise.all([
@@ -230,7 +232,7 @@ export const tournamentRouter = router({
         }
         const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
         const state = await store.getState();
-        if (!state || state.stage !== 1) {
+        if (!state || state.stage !== 1 || state.participantsLockedAt) {
             throw new TRPCError({ code: 'BAD_REQUEST', message: '참가 신청 기간이 아닙니다.' });
         }
 

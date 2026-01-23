@@ -330,6 +330,7 @@ const applyPreBattleStage = async (
             ...state,
             stage: 2,
             phase: 0,
+            participantsLockedAt: new Date().toISOString(),
             nextAt: resolveNextAt(state),
         };
         await store.setState(nextState);

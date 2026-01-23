@@ -17,6 +17,7 @@ const snapshot = ref<TournamentSnapshot | null>(null);
 const bettingSummary = ref<TournamentBettingSummary | null>(null);
 const myGeneral = ref<GeneralMe | null>(null);
 const lastActionMessage = ref<string | null>(null);
+const adminEnabled = ref(false);
 
 const mobileTabs = [
     { key: 'status', label: '상태' },
@@ -46,14 +47,16 @@ const loadTournament = async () => {
     lastActionMessage.value = null;
 
     try {
-        const [snapshotResult, bettingResult, generalResult] = await Promise.all([
+        const [snapshotResult, bettingResult, generalResult, adminResult] = await Promise.all([
             trpc.tournament.getSnapshot.query(),
             trpc.tournament.getBettingSummary.query(),
             trpc.general.me.query(),
+            trpc.tournament.getAdminStatus.query().catch(() => null),
         ]);
         snapshot.value = snapshotResult;
         bettingSummary.value = bettingResult;
         myGeneral.value = generalResult;
+        adminEnabled.value = !!adminResult?.ok;
     } catch (err) {
         error.value = resolveErrorMessage(err);
     } finally {
@@ -223,6 +226,7 @@ const isParticipant = computed(() => {
 });
 
 const showJoinButton = computed(() => snapshot.value?.state?.stage === 1);
+const joinLockedAt = computed(() => snapshot.value?.state?.participantsLockedAt ?? null);
 
 const betTargetId = ref<number>(0);
 const betAmount = ref<number>(0);
@@ -267,6 +271,64 @@ const bettingTotals = computed<Record<number, number>>(() => bettingSummary.valu
 const bettingMine = computed<Record<number, number>>(() => bettingSummary.value?.myTotals ?? {});
 const totalBetAmount = computed(() => bettingSummary.value?.totalAmount ?? 0);
 const myBetAmount = computed(() => bettingSummary.value?.myAmount ?? 0);
+
+const progressSummary = computed(() => {
+    return {
+        participants: snapshot.value?.participants?.length ?? 0,
+        matches: snapshot.value?.matches?.length ?? 0,
+        bets: snapshot.value?.bets?.length ?? 0,
+        nextAt: snapshot.value?.state?.nextAt ?? null,
+        lockedAt: snapshot.value?.state?.participantsLockedAt ?? null,
+    };
+});
+
+const adminMessage = ref<string | null>(null);
+
+const adminStopTournament = async () => {
+    if (!snapshot.value?.state) {
+        adminMessage.value = '토너먼트 상태를 찾을 수 없습니다.';
+        return;
+    }
+    try {
+        await trpc.tournament.patchState.mutate({ auto: false });
+        adminMessage.value = '자동 진행이 중지되었습니다.';
+        await loadTournament();
+    } catch (err) {
+        adminMessage.value = resolveErrorMessage(err);
+    }
+};
+
+const adminStartTournament = async () => {
+    const current = snapshot.value?.state;
+    if (!current) {
+        adminMessage.value = '토너먼트 상태를 찾을 수 없습니다.';
+        return;
+    }
+    try {
+        await Promise.all([
+            trpc.tournament.setParticipants.mutate([]),
+            trpc.tournament.setMatches.mutate([]),
+            trpc.tournament.setBettingEntries.mutate([]),
+        ]);
+        await trpc.tournament.setState.mutate({
+            ...current,
+            stage: 1,
+            phase: 0,
+            auto: true,
+            nextAt: new Date().toISOString(),
+            bettingId: undefined,
+            bettingCloseAt: undefined,
+            winnerId: undefined,
+            bettingSettled: false,
+            rewardSettled: false,
+            participantsLockedAt: undefined,
+        });
+        adminMessage.value = '임의 개최가 시작되었습니다.';
+        await loadTournament();
+    } catch (err) {
+        adminMessage.value = resolveErrorMessage(err);
+    }
+};
 </script>
 
 <template>
@@ -315,6 +377,24 @@ const myBetAmount = computed(() => bettingSummary.value?.myAmount ?? 0);
                             {{ isParticipant ? '참가 완료' : '참가 신청' }}
                         </button>
                         <span v-else class="muted">참가 신청 기간이 아닙니다.</span>
+                        <span v-if="joinLockedAt" class="muted">
+                            접수 종료: {{ new Date(joinLockedAt).toLocaleString('ko-KR') }}
+                        </span>
+                    </div>
+                </PanelCard>
+
+                <PanelCard v-if="adminEnabled" title="관리자 진행 상황">
+                    <div class="status-grid">
+                        <div>참가자: {{ progressSummary.participants }}</div>
+                        <div>대진: {{ progressSummary.matches }}</div>
+                        <div>베팅: {{ progressSummary.bets }}</div>
+                        <div>다음 진행: {{ progressSummary.nextAt ? new Date(progressSummary.nextAt).toLocaleString('ko-KR') : '-' }}</div>
+                        <div>접수 종료: {{ progressSummary.lockedAt ? new Date(progressSummary.lockedAt).toLocaleString('ko-KR') : '-' }}</div>
+                    </div>
+                    <div class="status-actions">
+                        <button class="ghost" @click="adminStopTournament">중지</button>
+                        <button class="ghost" @click="adminStartTournament">임의 개최</button>
+                        <span v-if="adminMessage" class="muted">{{ adminMessage }}</span>
                     </div>
                 </PanelCard>
 
@@ -471,6 +551,24 @@ const myBetAmount = computed(() => bettingSummary.value?.myAmount ?? 0);
                             {{ isParticipant ? '참가 완료' : '참가 신청' }}
                         </button>
                         <span v-else class="muted">참가 신청 기간이 아닙니다.</span>
+                        <span v-if="joinLockedAt" class="muted">
+                            접수 종료: {{ new Date(joinLockedAt).toLocaleString('ko-KR') }}
+                        </span>
+                    </div>
+                </PanelCard>
+
+                <PanelCard v-if="adminEnabled" title="관리자 진행 상황">
+                    <div class="status-grid">
+                        <div>참가자: {{ progressSummary.participants }}</div>
+                        <div>대진: {{ progressSummary.matches }}</div>
+                        <div>베팅: {{ progressSummary.bets }}</div>
+                        <div>다음 진행: {{ progressSummary.nextAt ? new Date(progressSummary.nextAt).toLocaleString('ko-KR') : '-' }}</div>
+                        <div>접수 종료: {{ progressSummary.lockedAt ? new Date(progressSummary.lockedAt).toLocaleString('ko-KR') : '-' }}</div>
+                    </div>
+                    <div class="status-actions">
+                        <button class="ghost" @click="adminStopTournament">중지</button>
+                        <button class="ghost" @click="adminStartTournament">임의 개최</button>
+                        <span v-if="adminMessage" class="muted">{{ adminMessage }}</span>
                     </div>
                 </PanelCard>
 
