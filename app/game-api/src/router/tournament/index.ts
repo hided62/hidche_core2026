@@ -58,6 +58,24 @@ const zMatch = z.object({
     defenderId: z.number().int().positive(),
     winnerId: z.number().int().positive().optional(),
     log: z.array(z.string()).optional(),
+    logEntries: z
+        .array(
+            z.object({
+                phase: z.number().int().min(0),
+                attackerEnergy: z.number().int(),
+                defenderEnergy: z.number().int(),
+                attackerDamage: z.number().int(),
+                defenderDamage: z.number().int(),
+                text: z.string(),
+            })
+        )
+        .optional(),
+    lastEnergy: z
+        .object({
+            attacker: z.number().int(),
+            defender: z.number().int(),
+        })
+        .optional(),
 });
 
 const zBetEntry = z.object({

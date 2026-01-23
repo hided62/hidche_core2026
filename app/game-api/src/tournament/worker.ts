@@ -227,10 +227,16 @@ const applyBattle = async (
         baseSeed,
     });
 
+    const lastLogEntry = result.logEntries[result.logEntries.length - 1] ?? null;
+
     const updatedMatch: TournamentMatchEntry = {
         ...target,
         winnerId: result.winnerId ?? undefined,
         log: result.log,
+        logEntries: result.logEntries,
+        lastEnergy: lastLogEntry
+            ? { attacker: lastLogEntry.attackerEnergy, defender: lastLogEntry.defenderEnergy }
+            : undefined,
     };
 
     const nextMatches = matches.map((entry) => (entry.id === target.id ? updatedMatch : entry));

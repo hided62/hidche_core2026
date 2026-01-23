@@ -35,6 +35,18 @@ export interface TournamentMatchEntry {
     defenderId: number;
     winnerId?: number;
     log?: string[];
+    logEntries?: Array<{
+        phase: number;
+        attackerEnergy: number;
+        defenderEnergy: number;
+        attackerDamage: number;
+        defenderDamage: number;
+        text: string;
+    }>;
+    lastEnergy?: {
+        attacker: number;
+        defender: number;
+    };
 }
 
 export interface TournamentBetEntry {

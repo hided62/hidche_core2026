@@ -4,7 +4,6 @@ import { useMediaQuery } from '@vueuse/core';
 import PanelCard from '../components/ui/PanelCard.vue';
 import SkeletonLines from '../components/ui/SkeletonLines.vue';
 import { trpc } from '../utils/trpc';
-import { formatLog } from '../utils/formatLog';
 
 type TournamentSnapshot = Awaited<ReturnType<typeof trpc.tournament.getSnapshot.query>>;
 type TournamentBettingSummary = Awaited<ReturnType<typeof trpc.tournament.getBettingSummary.query>>;
@@ -138,30 +137,66 @@ const currentMatch = computed(() => {
     return matches[fallbackIndex] ?? matches.find((match) => !match.winnerId) ?? matches[0];
 });
 
-const extractEnergy = (logs?: string[]) => {
-    if (!logs || logs.length === 0) {
+const currentEnergy = computed(() => {
+    const match = currentMatch.value;
+    if (!match) {
         return null;
     }
-    const line = [...logs].reverse().find((entry) => entry.includes('合')) ?? null;
-    if (!line) {
-        return null;
+    if (match.lastEnergy) {
+        return match.lastEnergy;
     }
-    const values: number[] = [];
-    const regex = /<C>(\d+)<\/>/g;
-    let match: RegExpExecArray | null = null;
-    while ((match = regex.exec(line)) !== null) {
-        values.push(Number(match[1]));
+    const lastEntry = match.logEntries?.[match.logEntries.length - 1];
+    if (lastEntry) {
+        return { attacker: lastEntry.attackerEnergy, defender: lastEntry.defenderEnergy };
     }
-    if (values.length < 2) {
-        return null;
-    }
-    return { attacker: values[0], defender: values[1] };
-};
+    return null;
+});
 
-const currentEnergy = computed(() => extractEnergy(currentMatch.value?.log));
-const formattedLogs = computed(() =>
-    (currentMatch.value?.log ?? []).map((entry) => formatLog(entry))
-);
+const currentEnergyStats = computed(() => {
+    const match = currentMatch.value;
+    if (!match) {
+        return null;
+    }
+    const lastEnergy = currentEnergy.value;
+    if (!lastEnergy) {
+        return null;
+    }
+    let maxAttacker = lastEnergy.attacker;
+    let maxDefender = lastEnergy.defender;
+    if (match.logEntries && match.logEntries.length > 0) {
+        for (const entry of match.logEntries) {
+            if (entry.attackerEnergy > maxAttacker) {
+                maxAttacker = entry.attackerEnergy;
+            }
+            if (entry.defenderEnergy > maxDefender) {
+                maxDefender = entry.defenderEnergy;
+            }
+        }
+    }
+    return {
+        attacker: lastEnergy.attacker,
+        defender: lastEnergy.defender,
+        maxAttacker: Math.max(1, maxAttacker),
+        maxDefender: Math.max(1, maxDefender),
+    };
+});
+
+const attackerEnergyPercent = computed(() => {
+    const stats = currentEnergyStats.value;
+    if (!stats) {
+        return 0;
+    }
+    return Math.max(0, Math.min(100, (stats.attacker / stats.maxAttacker) * 100));
+});
+
+const defenderEnergyPercent = computed(() => {
+    const stats = currentEnergyStats.value;
+    if (!stats) {
+        return 0;
+    }
+    return Math.max(0, Math.min(100, (stats.defender / stats.maxDefender) * 100));
+});
+const formattedLogs = computed(() => currentMatch.value?.log ?? []);
 
 const finalists = computed(() => {
     const matches = stageMatches(7);
@@ -228,8 +263,8 @@ const toggleJoin = async () => {
     }
 };
 
-const bettingTotals = computed(() => bettingSummary.value?.totals ?? {});
-const bettingMine = computed(() => bettingSummary.value?.myTotals ?? {});
+const bettingTotals = computed<Record<number, number>>(() => bettingSummary.value?.totals ?? {});
+const bettingMine = computed<Record<number, number>>(() => bettingSummary.value?.myTotals ?? {});
 const totalBetAmount = computed(() => bettingSummary.value?.totalAmount ?? 0);
 const myBetAmount = computed(() => bettingSummary.value?.myAmount ?? 0);
 </script>
@@ -293,12 +328,28 @@ const myBetAmount = computed(() => bettingSummary.value?.myAmount ?? 0);
                             <div class="match-meta">
                                 남은 체력: {{ currentEnergy?.attacker ?? '-' }} / {{ currentEnergy?.defender ?? '-' }}
                             </div>
+                            <div v-if="currentEnergyStats" class="energy-bars">
+                                <div class="energy-row">
+                                    <span class="energy-label">공격</span>
+                                    <div class="energy-track">
+                                        <div class="energy-fill attacker" :style="{ width: `${attackerEnergyPercent}%` }" />
+                                    </div>
+                                    <span class="energy-value">{{ currentEnergyStats.attacker }}</span>
+                                </div>
+                                <div class="energy-row">
+                                    <span class="energy-label">수비</span>
+                                    <div class="energy-track">
+                                        <div class="energy-fill defender" :style="{ width: `${defenderEnergyPercent}%` }" />
+                                    </div>
+                                    <span class="energy-value">{{ currentEnergyStats.defender }}</span>
+                                </div>
+                            </div>
                             <div class="log-box">
                                 <div
                                     v-for="(entry, idx) in formattedLogs"
                                     :key="idx"
                                     class="log-line"
-                                    v-html="entry"
+                                    v-text="entry"
                                 />
                             </div>
                         </div>
@@ -433,12 +484,28 @@ const myBetAmount = computed(() => bettingSummary.value?.myAmount ?? 0);
                             <div class="match-meta">
                                 남은 체력: {{ currentEnergy?.attacker ?? '-' }} / {{ currentEnergy?.defender ?? '-' }}
                             </div>
+                            <div v-if="currentEnergyStats" class="energy-bars">
+                                <div class="energy-row">
+                                    <span class="energy-label">공격</span>
+                                    <div class="energy-track">
+                                        <div class="energy-fill attacker" :style="{ width: `${attackerEnergyPercent}%` }" />
+                                    </div>
+                                    <span class="energy-value">{{ currentEnergyStats.attacker }}</span>
+                                </div>
+                                <div class="energy-row">
+                                    <span class="energy-label">수비</span>
+                                    <div class="energy-track">
+                                        <div class="energy-fill defender" :style="{ width: `${defenderEnergyPercent}%` }" />
+                                    </div>
+                                    <span class="energy-value">{{ currentEnergyStats.defender }}</span>
+                                </div>
+                            </div>
                             <div class="log-box">
                                 <div
                                     v-for="(entry, idx) in formattedLogs"
                                     :key="idx"
                                     class="log-line"
-                                    v-html="entry"
+                                    v-text="entry"
                                 />
                             </div>
                         </div>
@@ -682,6 +749,52 @@ const myBetAmount = computed(() => bettingSummary.value?.myAmount ?? 0);
 .match-meta {
     font-size: 0.85rem;
     color: rgba(232, 221, 196, 0.7);
+}
+
+.energy-bars {
+    margin-top: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.energy-row {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.8rem;
+}
+
+.energy-label {
+    width: 36px;
+    color: rgba(232, 221, 196, 0.7);
+}
+
+.energy-track {
+    height: 8px;
+    background: rgba(201, 164, 90, 0.15);
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.energy-fill {
+    height: 100%;
+    border-radius: 999px;
+}
+
+.energy-fill.attacker {
+    background: linear-gradient(90deg, rgba(245, 184, 101, 0.9), rgba(245, 184, 101, 0.4));
+}
+
+.energy-fill.defender {
+    background: linear-gradient(90deg, rgba(120, 170, 255, 0.9), rgba(120, 170, 255, 0.4));
+}
+
+.energy-value {
+    width: 40px;
+    text-align: right;
+    color: rgba(232, 221, 196, 0.8);
 }
 
 .log-box {
