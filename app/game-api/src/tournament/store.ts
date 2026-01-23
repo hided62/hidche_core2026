@@ -1,5 +1,5 @@
 import type { TournamentKeys } from './keys.js';
-import type { TournamentMatchEntry, TournamentParticipantEntry, TournamentState } from './types.js';
+import type { TournamentBetEntry, TournamentMatchEntry, TournamentParticipantEntry, TournamentState } from './types.js';
 
 interface RedisClientLike {
     get(key: string): Promise<string | null>;
@@ -42,5 +42,13 @@ export class TournamentStore {
 
     async setMatches(matches: TournamentMatchEntry[]): Promise<void> {
         await this.redis.set(this.keys.matchesKey, JSON.stringify(matches));
+    }
+
+    async getBettingEntries(): Promise<TournamentBetEntry[]> {
+        return safeJsonParse<TournamentBetEntry[]>(await this.redis.get(this.keys.bettingKey)) ?? [];
+    }
+
+    async setBettingEntries(entries: TournamentBetEntry[]): Promise<void> {
+        await this.redis.set(this.keys.bettingKey, JSON.stringify(entries));
     }
 }

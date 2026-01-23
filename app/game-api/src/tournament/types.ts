@@ -12,6 +12,7 @@ export interface TournamentState {
     bettingId?: number;
     bettingCloseAt?: string;
     winnerId?: number;
+    bettingSettled?: boolean;
     lastError?: string;
     lastErrorAt?: string;
 }
@@ -33,4 +34,10 @@ export interface TournamentMatchEntry {
     defenderId: number;
     winnerId?: number;
     log?: string[];
+}
+
+export interface TournamentBetEntry {
+    generalId: number;
+    targetId: number;
+    amount: number;
 }

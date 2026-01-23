@@ -233,6 +233,29 @@ const normalizeCommand = (envelope: TurnDaemonCommandEnvelope): TurnDaemonComman
                 refunds,
             };
         }
+        case 'tournamentBettingPayout': {
+            if (!Array.isArray(command.payouts)) {
+                return null;
+            }
+            const payouts = command.payouts
+                .filter((entry) =>
+                    entry && typeof entry.generalId === 'number' && typeof entry.amount === 'number'
+                )
+                .map((entry) => ({
+                    generalId: entry.generalId,
+                    amount: entry.amount,
+                }));
+            if (payouts.length === 0) {
+                return null;
+            }
+            return {
+                type: 'tournamentBettingPayout',
+                requestId: envelope.requestId,
+                bettingId: typeof command.bettingId === 'number' ? command.bettingId : undefined,
+                reason: typeof command.reason === 'string' ? command.reason : undefined,
+                payouts,
+            };
+        }
         case 'getStatus': {
             const requestId = typeof command.requestId === 'string' ? command.requestId : envelope.requestId;
             return { type: 'getStatus', requestId };

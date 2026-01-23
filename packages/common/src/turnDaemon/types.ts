@@ -85,17 +85,27 @@ export type TurnDaemonCommand =
           destGeneralId: number;
           destCityId: number;
           officerLevel: number;
-        }
+      }
     | {
-                type: 'tournamentRefund';
-                requestId?: string;
-                bettingId?: number;
-                reason?: string;
-                refunds: Array<{
-                        generalId: number;
-                        amount: number;
-                }>;
-        };
+          type: 'tournamentRefund';
+          requestId?: string;
+          bettingId?: number;
+          reason?: string;
+          refunds: Array<{
+              generalId: number;
+              amount: number;
+          }>;
+      }
+    | {
+          type: 'tournamentBettingPayout';
+          requestId?: string;
+          bettingId?: number;
+          reason?: string;
+          payouts: Array<{
+              generalId: number;
+              amount: number;
+          }>;
+      };
 
 export type TurnDaemonCommandResult =
     | {
@@ -156,7 +166,21 @@ export type TurnDaemonCommandResult =
           ok: false;
           bettingId?: number;
           reason: string;
-      };
+            }
+        | {
+                    type: 'tournamentBettingPayout';
+                    ok: true;
+                    bettingId?: number;
+                    processed: number;
+                    missing: number;
+                    totalPayout: number;
+            }
+        | {
+                    type: 'tournamentBettingPayout';
+                    ok: false;
+                    bettingId?: number;
+                    reason: string;
+            };
 
 export type TurnDaemonEvent =
     | { type: 'status'; requestId?: string; status: TurnDaemonStatus }

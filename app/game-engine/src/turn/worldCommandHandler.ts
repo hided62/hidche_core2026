@@ -499,6 +499,54 @@ async function handleTournamentRefund(
     };
 }
 
+async function handleTournamentBettingPayout(
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'tournamentBettingPayout' }>
+): Promise<TurnDaemonCommandResult> {
+    const { world, hooks } = ctx;
+    if (!command.payouts || command.payouts.length === 0) {
+        return {
+            type: 'tournamentBettingPayout',
+            ok: false,
+            bettingId: command.bettingId,
+            reason: '정산 대상이 없습니다.',
+        };
+    }
+
+    let processed = 0;
+    let missing = 0;
+    let totalPayout = 0;
+
+    for (const payout of command.payouts) {
+        if (!payout || typeof payout.generalId !== 'number' || typeof payout.amount !== 'number') {
+            continue;
+        }
+        if (payout.amount <= 0) {
+            continue;
+        }
+        const general = world.getGeneralById(payout.generalId);
+        if (!general) {
+            missing += 1;
+            continue;
+        }
+        world.updateGeneral(payout.generalId, {
+            gold: general.gold + payout.amount,
+        });
+        processed += 1;
+        totalPayout += payout.amount;
+    }
+
+    await flushWorld(world, hooks);
+    return {
+        type: 'tournamentBettingPayout',
+        ok: true,
+        bettingId: command.bettingId,
+        processed,
+        missing,
+        totalPayout,
+    };
+}
+
 export const createTurnDaemonCommandHandler = (options: {
     world: InMemoryTurnWorld;
     hooks?: TurnDaemonHooks;
@@ -535,6 +583,8 @@ export const createTurnDaemonCommandHandler = (options: {
                     return handleAppoint(ctx, command);
                 case 'tournamentRefund':
                     return handleTournamentRefund(ctx, command);
+                case 'tournamentBettingPayout':
+                    return handleTournamentBettingPayout(ctx, command);
                 default:
                     return null;
             }

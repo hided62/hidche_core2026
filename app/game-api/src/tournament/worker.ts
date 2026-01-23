@@ -8,9 +8,11 @@ import {
 } from '@sammo-ts/infra';
 
 import { resolveGameApiConfigFromEnv } from '../config.js';
+import { RedisTurnDaemonTransport } from '../daemon/redisTransport.js';
+import { buildTurnDaemonStreamKeys } from '../daemon/streamKeys.js';
 import { buildTournamentKeys } from './keys.js';
 import { TournamentStore } from './store.js';
-import type { TournamentMatchEntry, TournamentState } from './types.js';
+import type { TournamentBetEntry, TournamentMatchEntry, TournamentState } from './types.js';
 
 const sleepMs = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -244,6 +246,28 @@ const applyBattle = async (
     return nextState;
 };
 
+const buildBettingPayouts = (
+    winnerId: number,
+    entries: TournamentBetEntry[]
+): { payouts: Array<{ generalId: number; amount: number }>; total: number; refundAll: boolean } => {
+    const total = entries.reduce((sum, entry) => sum + entry.amount, 0);
+    if (total <= 0) {
+        return { payouts: [], total: 0, refundAll: false };
+    }
+    const winners = entries.filter((entry) => entry.targetId === winnerId);
+    const winnersTotal = winners.reduce((sum, entry) => sum + entry.amount, 0);
+    if (winnersTotal <= 0) {
+        const refunds = entries.map((entry) => ({ generalId: entry.generalId, amount: entry.amount }));
+        return { payouts: refunds, total, refundAll: true };
+    }
+    const ratio = total / winnersTotal;
+    const payouts = winners.map((entry) => ({
+        generalId: entry.generalId,
+        amount: Math.round(entry.amount * ratio),
+    }));
+    return { payouts, total, refundAll: false };
+};
+
 const applyPreBattleStage = async (
     store: TournamentStore,
     state: TournamentState,
@@ -362,6 +386,10 @@ export const runTournamentWorker = async (): Promise<void> => {
     await redis.connect();
 
     const store = new TournamentStore(redis.client, buildTournamentKeys(config.profileName));
+    const daemonTransport = new RedisTurnDaemonTransport(redis.client, {
+        keys: buildTurnDaemonStreamKeys(config.profileName),
+        requestTimeoutMs: config.daemonRequestTimeoutMs,
+    });
 
     const handleExit = async () => {
         await redis.disconnect();
@@ -387,10 +415,46 @@ export const runTournamentWorker = async (): Promise<void> => {
         try {
             const worldState = await postgres.prisma.worldState.findFirst();
             const baseSeed = (worldState?.meta as Record<string, unknown> | null)?.hiddenSeed ?? 'tournament';
+            let nextState = state;
             if (isBattleStage(state.stage)) {
-                await applyBattle(store, state, String(baseSeed));
+                nextState = await applyBattle(store, state, String(baseSeed));
             } else if (isPreBattleStage(state.stage)) {
-                await applyPreBattleStage(store, state, String(baseSeed));
+                nextState = await applyPreBattleStage(store, state, String(baseSeed));
+            }
+
+            if (
+                nextState.stage === 0 &&
+                nextState.winnerId &&
+                nextState.bettingId &&
+                !nextState.bettingSettled
+            ) {
+                const bettingEntries = await store.getBettingEntries();
+                if (bettingEntries.length > 0) {
+                    const payoutInfo = buildBettingPayouts(nextState.winnerId, bettingEntries);
+                    if (payoutInfo.payouts.length > 0) {
+                        if (payoutInfo.refundAll) {
+                            await daemonTransport.sendCommand({
+                                type: 'tournamentRefund',
+                                bettingId: nextState.bettingId,
+                                refunds: payoutInfo.payouts,
+                                reason: 'no_winner',
+                            });
+                        } else {
+                            await daemonTransport.sendCommand({
+                                type: 'tournamentBettingPayout',
+                                bettingId: nextState.bettingId,
+                                payouts: payoutInfo.payouts,
+                                reason: 'winner_payout',
+                            });
+                        }
+                    }
+                }
+
+                const settledState: TournamentState = {
+                    ...nextState,
+                    bettingSettled: true,
+                };
+                await store.setState(settledState);
             }
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Unknown error';
