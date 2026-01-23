@@ -14,6 +14,9 @@ export interface AuctionFinalizer {
 type AuctionType = 'BUY_RICE' | 'SELL_RICE' | 'UNIQUE_ITEM';
 type AuctionStatus = 'OPEN' | 'FINALIZING' | 'FINISHED' | 'CANCELED';
 
+const COEFF_EXTENSION_MINUTES_PER_BID = 1 / 6;
+const MIN_EXTENSION_MINUTES_PER_BID = 1;
+
 interface AuctionRow {
     id: number;
     type: AuctionType;
@@ -22,6 +25,7 @@ interface AuctionRow {
     hostName: string | null;
     detail: unknown;
     status: AuctionStatus;
+    closeAt: Date;
 }
 
 interface AuctionBidRow {
@@ -33,6 +37,7 @@ interface AuctionBidRow {
 interface AuctionDetailBase {
     title?: string;
     isReverse?: boolean;
+    availableLatestBidCloseDate?: string | null;
 }
 
 interface AuctionDetailResource extends AuctionDetailBase {
@@ -63,6 +68,33 @@ const parseDetail = (detail: unknown): AuctionDetailResource => {
         return {};
     }
     return detail as AuctionDetailResource;
+};
+
+const toTurnMinutes = (tickSeconds: number): number => Math.max(1, Math.round(tickSeconds / 60));
+
+const resolveTurnMinutes = async (prisma: GamePrismaClient): Promise<number> => {
+    const rows = (await prisma.$queryRaw(
+        GamePrisma.sql`SELECT tick_seconds as "tickSeconds" FROM world_state ORDER BY id LIMIT 1`
+    )) as Array<{ tickSeconds: number }>;
+    return toTurnMinutes(rows[0]?.tickSeconds ?? 60);
+};
+
+const extendCloseDate = (options: {
+    now: Date;
+    closeAt: Date;
+    turnMinutes: number;
+    availableLatestBidCloseDate?: Date | null;
+}): Date => {
+    const { now, closeAt, turnMinutes, availableLatestBidCloseDate } = options;
+    const extendMinutes = Math.max(MIN_EXTENSION_MINUTES_PER_BID, turnMinutes * COEFF_EXTENSION_MINUTES_PER_BID);
+    const extended = new Date(now.getTime() + extendMinutes * 60 * 1000);
+    if (extended.getTime() <= closeAt.getTime()) {
+        return closeAt;
+    }
+    if (availableLatestBidCloseDate && extended.getTime() > availableLatestBidCloseDate.getTime()) {
+        return availableLatestBidCloseDate;
+    }
+    return extended;
 };
 
 const pushLogs = (world: InMemoryTurnWorld, logs: LogEntryDraft[]): void => {
@@ -136,7 +168,8 @@ export const createAuctionFinalizer = async (options: {
                         host_general_id as "hostGeneralId",
                         host_name as "hostName",
                         detail,
-                        status
+                        status,
+                        close_at as "closeAt"
                     FROM auction
                     WHERE id = ${auctionId}
                 `
@@ -338,6 +371,44 @@ export const createAuctionFinalizer = async (options: {
                 }
 
                 const slot = itemModule.slot;
+                const currentItem = bidder.role.items?.[slot] ?? null;
+                if (currentItem && currentItem !== 'None' && isItemKey(currentItem)) {
+                    const currentModule = await itemLoader.load(currentItem).catch(() => null);
+                    if (currentModule && !currentModule.buyable) {
+                        const turnMinutes = await resolveTurnMinutes(prisma);
+                        const availableLatestBidCloseDate = detail.availableLatestBidCloseDate
+                            ? new Date(detail.availableLatestBidCloseDate)
+                            : null;
+                        const nextCloseAt = extendCloseDate({
+                            now,
+                            closeAt: auction.closeAt,
+                            turnMinutes,
+                            availableLatestBidCloseDate,
+                        });
+                        await prisma.$executeRaw(
+                            GamePrisma.sql`
+                                UPDATE auction
+                                SET status = 'OPEN',
+                                    close_at = ${nextCloseAt},
+                                    updated_at = ${now}
+                                WHERE id = ${auctionId}
+                            `
+                        );
+                        globalLogger.pushGlobalActionLog(
+                            `유니크 경매 ${auctionId}번이 보유 제한으로 연장되었습니다.`,
+                            LogFormat.PLAIN
+                        );
+                        logs.push(...globalLogger.flush());
+                        pushLogs(world, logs);
+                        await flushWorld(world, hooks);
+                        return {
+                            type: 'auctionFinalize',
+                            ok: false,
+                            auctionId,
+                            reason: '유니크 보유 제한으로 연장',
+                        };
+                    }
+                }
                 world.updateGeneral(bidder.id, {
                     role: {
                         ...bidder.role,
