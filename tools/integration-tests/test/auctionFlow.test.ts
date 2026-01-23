@@ -650,4 +650,138 @@ describe('auction integration flow', () => {
         expect(reopened?.status).toBe('OPEN');
         expect(reopened?.closeAt.getTime()).toBeGreaterThan(finalizeAt.getTime());
     }, 60_000);
+
+    it('unique auction: two bidders extend until limit, then winner gets item', async () => {
+        if (!gameConnector || !redisConnector || !gameServer) {
+            throw new Error('runtime not ready');
+        }
+        const prisma = gameConnector.prisma;
+        const redis = redisConnector.client;
+
+        const [bidderA, bidderB] = userSessions;
+        if (!bidderA || !bidderB) {
+            throw new Error('not enough bidders');
+        }
+
+        const uniquePair = await findUniqueItemPair();
+        const slotField = resolveSlotField(uniquePair.slot);
+        if (!slotField) {
+            throw new Error('unsupported item slot');
+        }
+
+        await prisma.general.update({
+            where: { id: bidderA.generalId },
+            data: { weaponCode: 'None', bookCode: 'None', horseCode: 'None', itemCode: 'None' },
+        });
+        await prisma.general.update({
+            where: { id: bidderB.generalId },
+            data: { weaponCode: 'None', bookCode: 'None', horseCode: 'None', itemCode: 'None' },
+        });
+
+        await prisma.inheritancePoint.upsert({
+            where: { userId_key: { userId: bidderA.userId, key: 'previous' } },
+            update: { value: 5000 },
+            create: { userId: bidderA.userId, key: 'previous', value: 5000 },
+        });
+        await prisma.inheritancePoint.upsert({
+            where: { userId_key: { userId: bidderB.userId, key: 'previous' } },
+            update: { value: 5000 },
+            create: { userId: bidderB.userId, key: 'previous', value: 5000 },
+        });
+
+        if (turnDaemon) {
+            await turnDaemon.lifecycle.stop('integration-test');
+            await turnDaemon.close();
+            await turnDaemonLoop;
+        }
+        const gameDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'che' }).url;
+        const gatewayDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'public' }).url;
+        turnDaemon = await createTurnDaemonRuntime({
+            profile: 'che',
+            profileName: 'che:2',
+            databaseUrl: gameDatabaseUrl,
+            gatewayDatabaseUrl,
+        });
+        turnDaemonLoop = turnDaemon.lifecycle.start();
+        await sleep(500);
+
+        const now = new Date();
+        await prisma.$executeRaw(
+            GamePrisma.sql`
+                UPDATE auction
+                SET status = 'CANCELED',
+                    finished_at = ${now},
+                    updated_at = ${now}
+                WHERE status = 'OPEN'
+                  AND type = 'UNIQUE_ITEM'
+            `
+        );
+
+        const keys = buildAuctionTimerKeys(gameServer.config.profileName);
+        await redis.del(keys.timerKey);
+
+        const limitCloseAt = new Date(now.getTime() + 60_000);
+        const auction = await prisma.auction.create({
+            data: {
+                type: 'UNIQUE_ITEM',
+                targetCode: uniquePair.keyA,
+                hostGeneralId: 0,
+                hostName: '시스템',
+                detail: {
+                    startBidAmount: 200,
+                    isReverse: false,
+                    availableLatestBidCloseDate: limitCloseAt.toISOString(),
+                },
+                status: 'OPEN',
+                closeAt: new Date(now.getTime() + 2000),
+            },
+        });
+
+        await seedAuctionTimers(prisma, redis, keys);
+
+        const bidderAClient = createGameClient(gameUrl, gameServer.config.trpcPath, { value: bidderA.accessToken });
+        const bidderBClient = createGameClient(gameUrl, gameServer.config.trpcPath, { value: bidderB.accessToken });
+
+        await bidderAClient.auction.bidUnique.mutate({ auctionId: auction.id, amount: 300, tryExtendCloseDate: true });
+        await bidderBClient.auction.bidUnique.mutate({ auctionId: auction.id, amount: 350, tryExtendCloseDate: true });
+        await bidderAClient.auction.bidUnique.mutate({ auctionId: auction.id, amount: 420, tryExtendCloseDate: true });
+        await bidderBClient.auction.bidUnique.mutate({ auctionId: auction.id, amount: 500, tryExtendCloseDate: true });
+
+        const afterBids = await prisma.auction.findUnique({
+            where: { id: auction.id },
+            select: { closeAt: true },
+        });
+        expect(afterBids).not.toBeNull();
+        expect(afterBids!.closeAt.getTime()).toBe(limitCloseAt.getTime());
+
+        const finalizeAt = new Date(Date.now() - 1000);
+        await prisma.auction.update({
+            where: { id: auction.id },
+            data: { closeAt: finalizeAt, status: 'OPEN' },
+        });
+        await redis.zAdd(keys.timerKey, [{ score: finalizeAt.getTime(), value: String(auction.id) }]);
+
+        const transport = new RedisTurnDaemonTransport(redis, {
+            keys: buildTurnDaemonStreamKeys(gameServer.config.profileName),
+            requestTimeoutMs: 10_000,
+        });
+        await prisma.$executeRaw(
+            GamePrisma.sql`
+                UPDATE auction
+                SET status = 'FINALIZING',
+                    finalizing_at = ${new Date()},
+                    updated_at = ${new Date()}
+                WHERE id = ${auction.id}
+            `
+        );
+        const result = await transport.requestCommand({ type: 'auctionFinalize', auctionId: auction.id }, 10_000);
+        expect(result?.ok).toBe(true);
+
+        const winner = await prisma.general.findUnique({
+            where: { id: bidderB.generalId },
+            select: { weaponCode: true, bookCode: true, horseCode: true, itemCode: true },
+        });
+        expect(winner).not.toBeNull();
+        expect(Object.values(winner!)).toContain(uniquePair.keyA);
+    }, 60_000);
 });
