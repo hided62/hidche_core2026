@@ -1,6 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { asRecord } from '@sammo-ts/common';
 import type { TournamentType } from '@sammo-ts/logic';
 
 import { TournamentStore } from '../../tournament/store.js';
@@ -64,6 +65,12 @@ const zBetEntry = z.object({
     amount: z.number().int().positive(),
 });
 
+const zSeedParticipants = z.object({
+    generalIds: z.array(z.number().int().positive()).optional(),
+    limit: z.number().int().min(1).max(256).optional(),
+    includeNpc: z.boolean().optional(),
+});
+
 export const tournamentRouter = router({
     getState: procedure.query(async ({ ctx }) => {
         const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
@@ -115,6 +122,87 @@ export const tournamentRouter = router({
         const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
         await store.setBettingEntries(input);
         return { ok: true, count: input.length };
+    }),
+    seedParticipants: adminProcedure.input(zSeedParticipants).mutation(async ({ ctx, input }) => {
+        const limit = input.limit ?? 64;
+        const includeNpc = input.includeNpc ?? true;
+        const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
+
+        const generals = input.generalIds && input.generalIds.length > 0
+            ? await ctx.db.general.findMany({
+                  where: { id: { in: input.generalIds } },
+                  select: { id: true, name: true, leadership: true, strength: true, intel: true, meta: true },
+              })
+            : await ctx.db.general.findMany({
+                  where: includeNpc ? {} : { npcState: 0 },
+                  orderBy: [
+                      { leadership: 'desc' },
+                      { strength: 'desc' },
+                      { intel: 'desc' },
+                      { id: 'asc' },
+                  ],
+                  take: limit,
+                  select: { id: true, name: true, leadership: true, strength: true, intel: true, meta: true },
+              });
+
+        const participants = generals.map((general) => {
+            const meta = asRecord(general.meta);
+            const level = typeof meta.explevel === 'number' ? meta.explevel : 0;
+            return {
+                id: general.id,
+                name: general.name,
+                leadership: general.leadership,
+                strength: general.strength,
+                intel: general.intel,
+                level,
+            };
+        });
+
+        await store.setParticipants(participants);
+        return { ok: true, count: participants.length };
+    }),
+    getBettingSummary: authedProcedure.query(async ({ ctx }) => {
+        const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
+        const [state, entries, matches] = await Promise.all([
+            store.getState(),
+            store.getBettingEntries(),
+            store.getMatches(),
+        ]);
+
+        if (!state || state.stage < 5) {
+            return { state, totals: {}, myTotals: {}, totalAmount: 0, myAmount: 0 };
+        }
+
+        const candidateIds = new Set<number>();
+        for (const match of matches) {
+            if (match.stage === 7) {
+                candidateIds.add(match.attackerId);
+                candidateIds.add(match.defenderId);
+            }
+        }
+
+        const totals: Record<number, number> = {};
+        const myTotals: Record<number, number> = {};
+        let totalAmount = 0;
+        let myAmount = 0;
+        const userId = ctx.auth?.user.id;
+        const general = userId
+            ? await ctx.db.general.findFirst({ where: { userId }, select: { id: true } })
+            : null;
+
+        for (const entry of entries) {
+            if (!candidateIds.has(entry.targetId)) {
+                continue;
+            }
+            totals[entry.targetId] = (totals[entry.targetId] ?? 0) + entry.amount;
+            totalAmount += entry.amount;
+            if (general && entry.generalId === general.id) {
+                myTotals[entry.targetId] = (myTotals[entry.targetId] ?? 0) + entry.amount;
+                myAmount += entry.amount;
+            }
+        }
+
+        return { state, totals, myTotals, totalAmount, myAmount };
     }),
     placeBet: authedProcedure
         .input(
