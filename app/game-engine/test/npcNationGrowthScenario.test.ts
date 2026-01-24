@@ -11,7 +11,6 @@ import { DEFAULT_TURN_COMMAND_PROFILE, LogCategory, evaluateConstraints } from '
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 import type { GeneralAiDebugState } from '../src/turn/ai/generalAi.js';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
-import { joinYearMonth } from '../src/turn/ai/aiUtils.js';
 import { InMemoryReservedTurnStore } from '../src/turn/reservedTurnStore.js';
 import { createReservedTurnHandler } from '../src/turn/reservedTurnHandler.js';
 import { InMemoryTurnProcessor } from '../src/turn/inMemoryTurnProcessor.js';
