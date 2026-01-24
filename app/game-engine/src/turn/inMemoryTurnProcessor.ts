@@ -6,7 +6,15 @@ import type { TurnGeneral } from './types.js';
 export interface InMemoryTurnProcessorOptions {
     tickMinutes?: number;
     beforeExecuteGeneral?: (general: TurnGeneral) => Promise<void>;
+    afterExecuteGeneral?: (general: TurnGeneral, result: TurnGeneralExecutionResult) => Promise<void>;
 }
+
+export type TurnGeneralExecutionResult = {
+    ok: boolean;
+    executedAt: Date;
+    nextTurnAt?: Date;
+    error?: unknown;
+};
 
 const resolveTickMinutes = (world: InMemoryTurnWorld, override?: number): number => {
     if (override !== undefined) {
@@ -21,11 +29,13 @@ export class InMemoryTurnProcessor implements TurnProcessor {
     private readonly world: InMemoryTurnWorld;
     private readonly tickMinutes: number;
     private readonly beforeExecuteGeneral?: (general: TurnGeneral) => Promise<void>;
+    private readonly afterExecuteGeneral?: (general: TurnGeneral, result: TurnGeneralExecutionResult) => Promise<void>;
 
     constructor(world: InMemoryTurnWorld, options: InMemoryTurnProcessorOptions = {}) {
         this.world = world;
         this.tickMinutes = resolveTickMinutes(world, options.tickMinutes);
         this.beforeExecuteGeneral = options.beforeExecuteGeneral;
+        this.afterExecuteGeneral = options.afterExecuteGeneral;
     }
 
     async run(targetTime: Date, budget: TurnRunBudget, checkpoint?: TurnCheckpoint): Promise<TurnRunResult> {
@@ -52,7 +62,24 @@ export class InMemoryTurnProcessor implements TurnProcessor {
             if (this.beforeExecuteGeneral) {
                 await this.beforeExecuteGeneral(general);
             }
-            this.world.executeGeneralTurn(general);
+            let nextTurnAt: Date | undefined;
+            let executionError: unknown;
+            try {
+                nextTurnAt = this.world.executeGeneralTurn(general);
+            } catch (error) {
+                executionError = error;
+            }
+            if (this.afterExecuteGeneral) {
+                await this.afterExecuteGeneral(general, {
+                    ok: executionError === undefined,
+                    executedAt,
+                    nextTurnAt,
+                    error: executionError,
+                });
+            }
+            if (executionError !== undefined) {
+                throw executionError;
+            }
             processedGenerals += 1;
             nextCheckpoint = {
                 turnTime: executedAt.toISOString(),
