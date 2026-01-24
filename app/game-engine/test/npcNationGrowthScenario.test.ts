@@ -528,7 +528,7 @@ describe('NPC 대형 시뮬레이션', () => {
 
             const state = world.getState();
             const startYear = snapshot.scenarioMeta?.startYear ?? 0;
-            const constraintEnv = {
+            const constraintEnv: Record<string, unknown> = {
                 currentYear: state.currentYear,
                 currentMonth: state.currentMonth,
                 year: state.currentYear,
