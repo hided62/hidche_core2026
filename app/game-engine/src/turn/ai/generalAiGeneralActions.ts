@@ -723,12 +723,7 @@ export const do국가선택 = (ai: GeneralAI) => {
     }
 
     if (ai.rng.nextBool(0.3)) {
-        const nations = ai.worldRef.listNations().filter((nation) => nation.id > 0);
-        if (nations.length === 0) {
-            return null;
-        }
-        const destNation = ai.rng.choice(nations);
-        return ai.buildGeneralCandidate('che_임관', { destNationId: destNation.id }, '국가선택');
+        return ai.buildGeneralCandidate('che_랜덤임관', {}, '국가선택');
     }
 
     if (ai.rng.nextBool(0.2) && ai.map) {
