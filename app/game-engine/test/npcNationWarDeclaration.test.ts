@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TurnSchedule, UnitSetDefinition } from '@sammo-ts/logic';
+import { DIPLOMACY_STATE } from '@sammo-ts/logic';
 import type { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 import { LARGE_TEST_MAP, buildLargeTestCities } from './fixtures/largeTestMap.js';
@@ -36,7 +37,7 @@ const createNpcGeneral = (
     gold: 20000,
     rice: 20000,
     crew: 0,
-    crewTypeId: 0,
+    crewTypeId: 1100,
     train: 0,
     atmos: 0,
     age: 30,
@@ -53,6 +54,13 @@ const maxCityStats = (city: ReturnType<typeof buildLargeTestCities>[number]) => 
     wall: city.wallMax,
     meta: { ...(city.meta ?? {}), trust: 100, trade: 100 },
 });
+
+const addMonths = (year: number, month: number, delta: number): { year: number; month: number } => {
+    const total = year * 12 + (month - 1) + delta;
+    const nextYear = Math.floor(total / 12);
+    const nextMonth = (total % 12) + 1;
+    return { year: nextYear, month: nextMonth };
+};
 
 describe('NPC 선전포고 조건 테스트', () => {
     it('183년 5월 시작 후 3개월 이내 선전포고가 발생해야 한다', async () => {
@@ -191,6 +199,7 @@ describe('NPC 선전포고 조건 테스트', () => {
 
         const worldRef = { current: null as InMemoryTurnWorld | null };
         let declaredAt: { year: number; month: number; nationId: number } | null = null;
+        const dispatchCounts = new Map<string, number>();
 
         const { runUntil } = await createTurnTestHarness({
             snapshot,
@@ -199,6 +208,15 @@ describe('NPC 선전포고 조건 테스트', () => {
             map: LARGE_TEST_MAP,
             worldRef,
             onActionResolved: (payload) => {
+                if (payload.kind === 'general' && payload.actionKey === 'che_출병') {
+                    const world = worldRef.current;
+                    if (!world) {
+                        return;
+                    }
+                    const { currentYear, currentMonth } = world.getState();
+                    const key = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+                    dispatchCounts.set(key, (dispatchCounts.get(key) ?? 0) + 1);
+                }
                 if (payload.kind !== 'nation') {
                     return;
                 }
@@ -220,9 +238,20 @@ describe('NPC 선전포고 조건 테스트', () => {
             includeNationSummary: true,
         });
 
+        const findDiplomacyEntry = (world: InMemoryTurnWorld | null) => {
+            const diplomacyEntries = world?.listDiplomacy() ?? [];
+            return diplomacyEntries.find((entry) =>
+                (entry.fromNationId === 1 && entry.toNationId === 2) ||
+                (entry.fromNationId === 2 && entry.toNationId === 1)
+            );
+        };
+
         try {
             await runUntil(
-                (current) => current.currentYear > 183 || (current.currentYear === 183 && current.currentMonth >= 8)
+                (current) =>
+                    declaredAt !== null ||
+                    current.currentYear > 183 ||
+                    (current.currentYear === 183 && current.currentMonth >= 8)
             );
         } catch (error) {
             debug.dumpWatched('선전포고 테스트 실패');
@@ -234,5 +263,87 @@ describe('NPC 선전포고 조건 테스트', () => {
         }
 
         expect(declaredAt).not.toBeNull();
+
+        const world = worldRef.current;
+        if (!world) {
+            debug.dumpWatched('선전포고 후 월드 누락');
+            throw new Error('world not initialized');
+        }
+
+        const declareEntry = findDiplomacyEntry(world);
+        if (!declareEntry) {
+            debug.dumpWatched('선전포고 외교 상태 누락');
+        }
+        expect(declareEntry).not.toBeNull();
+        expect(declareEntry?.state).toBe(DIPLOMACY_STATE.DECLARATION);
+
+        const remainTurns = Math.max(0, (declareEntry?.term ?? 0) - 1);
+        const preWarTarget = addMonths(
+            world!.getState().currentYear,
+            world!.getState().currentMonth,
+            remainTurns
+        );
+
+        await runUntil((current) =>
+            current.currentYear > preWarTarget.year ||
+            (current.currentYear === preWarTarget.year && current.currentMonth >= preWarTarget.month)
+        );
+
+        const preWarEntry = findDiplomacyEntry(world);
+        if (!preWarEntry) {
+            debug.dumpWatched('개전 직전 외교 상태 누락');
+        }
+        expect(preWarEntry).not.toBeNull();
+        expect(preWarEntry?.state).toBe(DIPLOMACY_STATE.DECLARATION);
+        expect(preWarEntry?.term).toBe(1);
+
+        const recruited = world
+            .listGenerals()
+            .filter((general) => general.nationId > 0 && general.crew > 0 && general.crewTypeId > 0);
+
+        if (recruited.length === 0) {
+            debug.dumpWatched('개전 직전 병력 부족');
+        }
+        expect(recruited.length).toBeGreaterThanOrEqual(5);
+        for (const general of recruited) {
+            expect(general.train).toBeGreaterThanOrEqual(90);
+            expect(general.atmos).toBeGreaterThanOrEqual(90);
+            const city = world.getCityById(general.cityId);
+            if (!city || city.frontState <= 0) {
+                debug.dumpWatched('접경 도시 배치 실패');
+            }
+            expect(city).not.toBeNull();
+            expect(city?.frontState ?? 0).toBeGreaterThan(0);
+        }
+
+        const warTarget = addMonths(preWarTarget.year, preWarTarget.month, 1);
+        await runUntil((current) =>
+            current.currentYear > warTarget.year ||
+            (current.currentYear === warTarget.year && current.currentMonth >= warTarget.month)
+        );
+
+        const warEntry = findDiplomacyEntry(world);
+        if (!warEntry) {
+            debug.dumpWatched('개전 외교 상태 누락');
+        }
+        expect(warEntry).not.toBeNull();
+        expect(warEntry?.state).toBe(DIPLOMACY_STATE.WAR);
+
+        const dispatchWindowEnd = addMonths(warTarget.year, warTarget.month, 2);
+        await runUntil((current) =>
+            current.currentYear > dispatchWindowEnd.year ||
+            (current.currentYear === dispatchWindowEnd.year && current.currentMonth >= dispatchWindowEnd.month)
+        );
+
+        const dispatchKeys: string[] = [];
+        for (let offset = 0; offset <= 2; offset += 1) {
+            const target = addMonths(warTarget.year, warTarget.month, offset);
+            dispatchKeys.push(`${target.year}-${String(target.month).padStart(2, '0')}`);
+        }
+        const dispatchCount = dispatchKeys.reduce((sum, key) => sum + (dispatchCounts.get(key) ?? 0), 0);
+        if (dispatchCount <= 0) {
+            debug.dumpWatched('출병 기록 누락');
+        }
+        expect(dispatchCount).toBeGreaterThan(0);
     });
 });
