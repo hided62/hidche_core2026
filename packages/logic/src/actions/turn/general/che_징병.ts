@@ -22,7 +22,6 @@ import { resolveStartYear } from '@sammo-ts/logic/actions/turn/actionContextHelp
 import { z } from 'zod';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { GeneralTurnCommandSpec } from './index.js';
-import { allow, readCity, readGeneral, unknownOrDeny } from '@sammo-ts/logic/constraints/helpers.js';
 import {
     type CrewTypeAvailabilityContext,
     findCrewTypeById,
@@ -57,35 +56,6 @@ const DEFAULT_MIN_POP = 30000;
 const DEFAULT_TRUST = 50;
 const MIN_CREW = 100;
 
-const npcRecruitCity = (): Constraint => ({
-    name: 'npcRecruitCity',
-    requires: (ctx) => {
-        const reqs: RequirementKey[] = [{ kind: 'general', id: ctx.actorId }];
-        if (ctx.cityId !== undefined) {
-            reqs.push({ kind: 'city', id: ctx.cityId });
-        }
-        return reqs;
-    },
-    test: (ctx, view) => {
-        const general = readGeneral(ctx, view);
-        if (!general) {
-            const req: RequirementKey = { kind: 'general', id: ctx.actorId };
-            return unknownOrDeny(ctx, [req], '장수 정보가 없습니다.');
-        }
-        const city = readCity(view, ctx.cityId ?? general.cityId);
-        if (!city) {
-            const req: RequirementKey = { kind: 'city', id: ctx.cityId ?? general.cityId };
-            return unknownOrDeny(ctx, [req], '도시 정보가 없습니다.');
-        }
-        if (city.nationId === general.nationId) {
-            return allow();
-        }
-        if (general.npcState >= 2 && city.nationId === 0) {
-            return allow();
-        }
-        return { kind: 'deny', reason: '아국이 아닙니다.' };
-    },
-});
 export const ARGS_SCHEMA = z.preprocess(
     (raw) => {
         if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
@@ -454,7 +424,7 @@ export class ActionDefinition<
         const minPopBase = this.env.minAvailableRecruitPop ?? DEFAULT_MIN_POP;
         return [
             notBeNeutral(),
-            npcRecruitCity(),
+            occupiedCity(),
             reqCityCapacity('population', '주민', minPopBase + MIN_CREW),
             reqCityTrust(20),
         ];
@@ -538,7 +508,7 @@ export class ActionDefinition<
 
         const constraints: Constraint[] = [
             notBeNeutral(),
-            npcRecruitCity(),
+            occupiedCity(),
             reqCityCapacity('population', '주민', minPopBase + resolveRequestedCrew(ctx)),
             reqCityTrust(20),
             reqGeneralGold(getCost, requirements),
