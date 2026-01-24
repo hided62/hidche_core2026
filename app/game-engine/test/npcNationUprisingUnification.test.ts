@@ -83,6 +83,30 @@ const boostNationOneCities = (world: InMemoryTurnWorld) => {
     }
 };
 
+const applyPost200Penalty = (world: InMemoryTurnWorld) => {
+    const { currentYear } = world.getState();
+    if (currentYear < 200) {
+        return;
+    }
+    const cities = world.listCities();
+    for (const city of cities) {
+        if (city.nationId === 1) {
+            continue;
+        }
+        const meta = city.meta ?? {};
+        const trust = typeof meta.trust === 'number' ? Math.floor(meta.trust * 0.9) : undefined;
+        world.updateCity(city.id, {
+            population: Math.floor(city.population * 0.9),
+            agriculture: Math.floor(city.agriculture * 0.9),
+            commerce: Math.floor(city.commerce * 0.9),
+            security: Math.floor(city.security * 0.9),
+            defence: Math.floor(city.defence * 0.9),
+            wall: Math.floor(city.wall * 0.9),
+            meta: trust !== undefined ? { ...meta, trust } : meta,
+        });
+    }
+};
+
 const dumpWorldStatus = (world: InMemoryTurnWorld, label: string) => {
     const state = world.getState();
     const cities = world.listCities();
@@ -252,6 +276,7 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
                     return;
                 }
                 boostNationOneCities(world);
+                applyPost200Penalty(world);
                 const meta = world.getState().meta as Record<string, unknown>;
                 if (typeof meta.isUnited === 'number' && meta.isUnited !== 0) {
                     return;
@@ -277,7 +302,7 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
         const lastNationAiState = new Map<number, unknown>();
         let declarationCount = 0;
 
-        const { runUntil, getCollectedLogs, getAndClearCollectedLogs } = await createTurnTestHarness({
+        const { runUntil, getCollectedLogs, getCollectedLogsCount, getCollectedLogsRange } = await createTurnTestHarness({
             snapshot,
             state,
             schedule,
@@ -298,23 +323,29 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
             },
         });
 
+        let monthlyLogCursor = 0;
+        const maxMonthlyLogEntries = 20;
         const dumpMonthlyLogs = (label: string) => {
-            const logs = getAndClearCollectedLogs();
+            const end = getCollectedLogsCount();
+            if (end <= monthlyLogCursor) {
+                return;
+            }
+            const logs = getCollectedLogsRange(monthlyLogCursor, end);
+            monthlyLogCursor = end;
             if (logs.length === 0) {
                 return;
             }
-            const globalLogs = logs.filter((log) => log.category === LogCategory.HISTORY);
-            if (globalLogs.length === 0) {
+            const historyLogs = logs.filter((log) => log.category === LogCategory.HISTORY);
+            if (historyLogs.length === 0) {
                 return;
             }
-            console.log('[DEBUG] month global logs', {
+            const limitedLogs = historyLogs.slice(0, maxMonthlyLogEntries);
+            const truncated = historyLogs.length - limitedLogs.length;
+            console.log('[DEBUG] month history logs', {
                 label,
-                total: globalLogs.length,
-                logs: globalLogs.map((log) => ({
-                    category: log.category,
-                    format: log.format,
-                    text: log.text,
-                })),
+                total: historyLogs.length,
+                truncated,
+                logs: limitedLogs.map((log) => log.text),
             });
         };
 

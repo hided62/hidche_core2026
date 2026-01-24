@@ -185,6 +185,9 @@ export const createTurnTestHarness = async (options: TurnTestHarnessOptions) => 
         runOneTick,
         runUntil,
         getCollectedLogs: () => [...collectedLogs],
+        getCollectedLogsCount: () => collectedLogs.length,
+        getCollectedLogsRange: (start: number, end?: number) =>
+            collectedLogs.slice(start, end ?? collectedLogs.length),
         getAndClearCollectedLogs: () => collectedLogs.splice(0, collectedLogs.length),
     };
 };
