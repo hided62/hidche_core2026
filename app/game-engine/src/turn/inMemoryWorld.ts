@@ -147,6 +147,21 @@ const applyTroopPatch = (base: Troop, patch: Partial<Troop>): Troop => ({
     ...patch,
 });
 
+const normalizeGeneralTurnTime = (general: TurnGeneral, fallback: Date): TurnGeneral => {
+    const raw = general.turnTime as unknown;
+    const parsed = raw instanceof Date ? raw : raw ? new Date(raw as string) : null;
+    if (!parsed || Number.isNaN(parsed.getTime())) {
+        return {
+            ...general,
+            turnTime: new Date(fallback.getTime()),
+        };
+    }
+    return {
+        ...general,
+        turnTime: parsed,
+    };
+};
+
 export class InMemoryTurnWorld {
     // DB에서 읽어온 월드 상태를 메모리에 고정해 턴 처리를 담당한다.
     private readonly schedule: TurnSchedule;
@@ -185,7 +200,7 @@ export class InMemoryTurnWorld {
         this.calendarHandler = options.calendarHandler;
 
         for (const general of snapshot.generals) {
-            this.generals.set(general.id, { ...general });
+            this.generals.set(general.id, normalizeGeneralTurnTime({ ...general }, this.state.lastTurnTime));
         }
         for (const city of snapshot.cities) {
             this.cities.set(city.id, { ...city });
@@ -494,7 +509,8 @@ export class InMemoryTurnWorld {
                 if (!target) {
                     continue;
                 }
-                this.generals.set(patch.id, applyGeneralPatch(target, patch.patch));
+                const patched = applyGeneralPatch(target, patch.patch);
+                this.generals.set(patch.id, normalizeGeneralTurnTime(patched, this.state.lastTurnTime));
                 this.dirtyGeneralIds.add(patch.id);
             }
             for (const patch of result.patches.cities) {
@@ -536,7 +552,10 @@ export class InMemoryTurnWorld {
                 if (this.generals.has(createdGeneral.id)) {
                     continue;
                 }
-                this.generals.set(createdGeneral.id, { ...createdGeneral });
+                this.generals.set(
+                    createdGeneral.id,
+                    normalizeGeneralTurnTime({ ...createdGeneral }, this.state.lastTurnTime)
+                );
                 this.dirtyGeneralIds.add(createdGeneral.id);
                 this.createdGeneralIds.add(createdGeneral.id);
             }
