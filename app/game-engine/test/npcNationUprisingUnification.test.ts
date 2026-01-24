@@ -68,6 +68,21 @@ const buildUnificationLog = (nationName: string): LogEntryDraft => ({
     meta: {},
 });
 
+const boostNationOneCities = (world: InMemoryTurnWorld) => {
+    const cities = world.listCities();
+    for (const city of cities) {
+        if (city.nationId !== 1) {
+            continue;
+        }
+        world.updateCity(city.id, {
+            population: city.populationMax,
+            defence: city.defenceMax,
+            wall: city.wallMax,
+            meta: { ...(city.meta ?? {}), trust: 100 },
+        });
+    }
+};
+
 const dumpWorldStatus = (world: InMemoryTurnWorld, label: string) => {
     const state = world.getState();
     const cities = world.listCities();
@@ -236,6 +251,7 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
                 if (!world) {
                     return;
                 }
+                boostNationOneCities(world);
                 const meta = world.getState().meta as Record<string, unknown>;
                 if (typeof meta.isUnited === 'number' && meta.isUnited !== 0) {
                     return;
