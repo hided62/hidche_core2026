@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import type { LogEntryDraft, TurnSchedule, UnitSetDefinition } from '@sammo-ts/logic';
 import { LogCategory } from '@sammo-ts/logic';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
+import type { GeneralAiDebugState } from '../src/turn/ai/generalAi.js';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
+import { joinYearMonth } from '../src/turn/ai/aiUtils.js';
 import { InMemoryReservedTurnStore } from '../src/turn/reservedTurnStore.js';
 import { createReservedTurnHandler } from '../src/turn/reservedTurnHandler.js';
 import { InMemoryTurnProcessor } from '../src/turn/inMemoryTurnProcessor.js';
@@ -208,6 +210,7 @@ describe('NPC 대형 시뮬레이션', () => {
             ok: boolean;
             error?: unknown;
             logs: LogEntryDraft[];
+            aiState?: GeneralAiDebugState;
         };
 
         const turnTraces: TurnTrace[] = [];
@@ -232,6 +235,7 @@ describe('NPC 대형 시뮬레이션', () => {
                 trace.requestedAction = payload.requestedAction;
                 trace.usedFallback = payload.usedFallback;
                 trace.blockedReason = payload.blockedReason;
+                trace.aiState = payload.aiState;
             },
         });
 
@@ -369,24 +373,6 @@ describe('NPC 대형 시뮬레이션', () => {
             }
         };
 
-        const scheduleNpcRecruitment = () => {
-            const nations = world.listNations().filter((nation) => nation.level >= 1 && nation.capitalCityId);
-            const generals = world.listGenerals();
-            for (const nation of nations) {
-                const targetGenerals = generals.filter((general) => general.nationId === nation.id);
-                for (const general of targetGenerals) {
-                    if (general.crew > 0 && general.crewTypeId > 0) {
-                        continue;
-                    }
-                    const amount = Math.max(100, Math.floor(general.stats.leadership * 50));
-                    world.updateGeneral(general.id, {
-                        crew: amount,
-                        crewTypeId: unitSet.defaultCrewTypeId,
-                    });
-                }
-            }
-        };
-
         const maybeSnapshotGold = () => {
             checkpointGoldByGeneral.clear();
             for (const general of world.listGenerals()) {
@@ -438,6 +424,10 @@ describe('NPC 대형 시뮬레이션', () => {
                 }
             }
         } catch (error) {
+            const lastAiTrace = [...turnTraces].reverse().find((trace) => trace.aiState);
+            if (lastAiTrace?.aiState) {
+                console.log('[DEBUG] last aiState:', lastAiTrace.aiState);
+            }
             dumpTraceSummary('NPC 대형 시뮬레이션 실패');
             const sampleNation = world.listNations().find((nation) => nation.level >= 1 && nation.capitalCityId);
             if (sampleNation) {

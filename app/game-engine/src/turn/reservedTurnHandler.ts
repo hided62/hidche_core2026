@@ -394,6 +394,7 @@ export const createReservedTurnHandler = async (options: {
         actionKey: string;
         usedFallback: boolean;
         blockedReason?: string;
+        aiState?: ReturnType<GeneralAI['getDebugState']>;
     }) => void;
 }): Promise<GeneralTurnHandler> => {
     const env = buildCommandEnv(options.scenarioConfig, options.unitSet);
@@ -709,6 +710,7 @@ export const createReservedTurnHandler = async (options: {
                     currentGeneral.officerLevel,
                     0
                 );
+                let nationAiState: ReturnType<GeneralAI['getDebugState']> | undefined;
                 if (worldView && shouldUseAi(currentGeneral, context.world)) {
                     const ai = new GeneralAI({
                         general: currentGeneral,
@@ -731,6 +733,7 @@ export const createReservedTurnHandler = async (options: {
                     if (candidate) {
                         nationCommand = { action: candidate.action, args: candidate.args };
                     }
+                    nationAiState = ai.getDebugState();
                 }
                 const nationResult = runAction(nationDefinitions, nationFallback, nationCommand, false);
                 options.onActionResolved?.({
@@ -741,11 +744,13 @@ export const createReservedTurnHandler = async (options: {
                     actionKey: nationResult.actionKey,
                     usedFallback: nationResult.usedFallback,
                     ...(nationResult.blockedReason ? { blockedReason: nationResult.blockedReason } : {}),
+                    ...(nationAiState ? { aiState: nationAiState } : {}),
                 });
                 options.reservedTurns.shiftNationTurns(currentNation.id, currentGeneral.officerLevel, -1);
             }
 
             let generalCommand = options.reservedTurns.getGeneralTurn(currentGeneral.id, 0);
+            let generalAiState: ReturnType<GeneralAI['getDebugState']> | undefined;
             if (worldView && shouldUseAi(currentGeneral, context.world)) {
                 const ai = new GeneralAI({
                     general: currentGeneral,
@@ -768,6 +773,7 @@ export const createReservedTurnHandler = async (options: {
                 if (candidate) {
                     generalCommand = { action: candidate.action, args: candidate.args };
                 }
+                generalAiState = ai.getDebugState();
             }
             const generalResult = runAction(generalDefinitions, generalFallback, generalCommand, true);
             options.onActionResolved?.({
@@ -778,6 +784,7 @@ export const createReservedTurnHandler = async (options: {
                 actionKey: generalResult.actionKey,
                 usedFallback: generalResult.usedFallback,
                 ...(generalResult.blockedReason ? { blockedReason: generalResult.blockedReason } : {}),
+                ...(generalAiState ? { aiState: generalAiState } : {}),
             });
             const nextTurnAt = generalResult.nextTurnAt;
             options.reservedTurns.shiftGeneralTurns(currentGeneral.id, -1);

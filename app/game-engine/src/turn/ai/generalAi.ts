@@ -141,6 +141,28 @@ export interface GeneralAIOptions {
     nationFallback: GeneralActionDefinition;
 }
 
+export type GeneralAiDebugState = {
+    generalId: number;
+    nationId: number | null;
+    cityId: number | null;
+    yearMonth: number;
+    startYear: number;
+    startYearMonth: number;
+    dipState: number;
+    attackable: boolean;
+    warTargetNation: Record<number, number>;
+    genType: number;
+    lastAttackable: number;
+    frontCities: Array<{ id: number; frontState: number; supplyState: number }>;
+    supplyCities: Array<{ id: number; frontState: number; supplyState: number }>;
+    policy: {
+        minAvailableRecruitPop: number;
+        minNpcWarLeadership: number;
+        minWarCrew: number;
+        cureThreshold: number;
+    };
+};
+
 export class GeneralAI {
     public readonly general: TurnGeneral;
     public readonly city?: City;
@@ -421,6 +443,45 @@ export class GeneralAI {
 
         const neutral = generalActionHandlers['중립']?.(this);
         return neutral ?? this.buildGeneralCandidate(ACTION_REST, {}, 'neutral');
+    }
+
+    getDebugState(): GeneralAiDebugState {
+        this.updateInstance();
+        this.categorizeNationCities();
+        const yearMonth = joinYearMonth(this.world.currentYear, this.world.currentMonth);
+        const startYearMonth = joinYearMonth(this.startYear + 2, 5);
+        const meta = asRecord(this.nation?.meta ?? {});
+        const lastAttackable = readMetaNumber(meta, 'last_attackable', 0);
+
+        return {
+            generalId: this.general.id,
+            nationId: this.nation?.id ?? null,
+            cityId: this.city?.id ?? null,
+            yearMonth,
+            startYear: this.startYear,
+            startYearMonth,
+            dipState: this.dipState,
+            attackable: this.attackable,
+            warTargetNation: { ...this.warTargetNation },
+            genType: this.genType,
+            lastAttackable,
+            frontCities: Object.values(this.frontCities).map((city) => ({
+                id: city.id,
+                frontState: city.frontState,
+                supplyState: city.supplyState,
+            })),
+            supplyCities: Object.values(this.supplyCities).map((city) => ({
+                id: city.id,
+                frontState: city.frontState,
+                supplyState: city.supplyState,
+            })),
+            policy: {
+                minAvailableRecruitPop: this.aiConst.minAvailableRecruitPop,
+                minNpcWarLeadership: this.nationPolicy.minNpcWarLeadership,
+                minWarCrew: this.nationPolicy.minWarCrew,
+                cureThreshold: this.nationPolicy.cureThreshold,
+            },
+        };
     }
 
     buildGeneralCandidate(action: string, args: Record<string, unknown>, reason: string): AiCommandCandidate | null {
