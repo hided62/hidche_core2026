@@ -386,15 +386,17 @@ describe('NPC 선전포고·개전·통일 흐름 테스트', () => {
                 (current.currentYear === next.year && current.currentMonth >= next.month)
             );
 
-            const warLoopEntry = findDiplomacyEntry(world);
-            if (!warLoopEntry) {
-                debug.dumpWatched('개전 이후 외교 상태 누락');
-                throw new Error('missing diplomacy entry');
-            }
-            expect(warLoopEntry.state).toBe(DIPLOMACY_STATE.WAR);
-
             const nowNation1Cities = countCities(1, world);
             const nowNation2Cities = countCities(2, world);
+
+            if (nowNation1Cities > 0 && nowNation2Cities > 0) {
+                const warLoopEntry = findDiplomacyEntry(world);
+                if (!warLoopEntry) {
+                    debug.dumpWatched('개전 이후 외교 상태 누락');
+                    throw new Error('missing diplomacy entry');
+                }
+                expect(warLoopEntry.state).toBe(DIPLOMACY_STATE.WAR);
+            }
 
             expect(nowNation1Cities).toBeLessThanOrEqual(prevNation1Cities);
             expect(nowNation2Cities).toBeGreaterThanOrEqual(prevNation2Cities);

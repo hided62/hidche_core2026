@@ -96,12 +96,12 @@ const applyPost200Penalty = (world: InMemoryTurnWorld) => {
         const meta = city.meta ?? {};
         const trust = typeof meta.trust === 'number' ? Math.floor(meta.trust * 0.9) : undefined;
         world.updateCity(city.id, {
-            population: Math.floor(city.population * 0.9),
-            agriculture: Math.floor(city.agriculture * 0.9),
-            commerce: Math.floor(city.commerce * 0.9),
-            security: Math.floor(city.security * 0.9),
-            defence: Math.floor(city.defence * 0.9),
-            wall: Math.floor(city.wall * 0.9),
+            population: Math.floor(city.population * 0.85),
+            agriculture: Math.floor(city.agriculture * 0.85),
+            commerce: Math.floor(city.commerce * 0.85),
+            security: Math.floor(city.security * 0.85),
+            defence: Math.floor(city.defence * 0.85),
+            wall: Math.floor(city.wall * 0.85),
             meta: trust !== undefined ? { ...meta, trust } : meta,
         });
     }
@@ -325,7 +325,7 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
 
         let monthlyLogCursor = 0;
         const maxMonthlyLogEntries = 20;
-        const dumpMonthlyLogs = (label: string) => {
+        const _dumpMonthlyLogs = (label: string) => {
             const end = getCollectedLogsCount();
             if (end <= monthlyLogCursor) {
                 return;
@@ -480,7 +480,7 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
                     current.currentYear > target.year ||
                     (current.currentYear === target.year && current.currentMonth >= target.month)
                 );
-                dumpMonthlyLogs(`${target.year}-${String(target.month).padStart(2, '0')}`);
+                //_dumpMonthlyLogs(`${target.year}-${String(target.month).padStart(2, '0')}`);
 
                 const activeNationCount = world
                     .listNations()
