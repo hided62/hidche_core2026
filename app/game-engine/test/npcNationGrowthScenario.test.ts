@@ -401,6 +401,26 @@ describe('NPC 대형 시뮬레이션', () => {
             }
         };
 
+        const assertWarReadiness = (minCount: number, minTrain = 70, minAtmos = 70) => {
+            const recruited = world
+                .listGenerals()
+                .filter((general) => general.nationId > 0 && general.crew > 0 && general.crewTypeId > 0);
+            const ready = recruited.filter((general) => general.train >= minTrain && general.atmos >= minAtmos);
+            expect(ready.length).toBeGreaterThanOrEqual(minCount);
+        };
+
+        const assertDispatchRecorded = (year: number, month: number, minCount = 1) => {
+            const matches = turnTraces.filter(
+                (trace) => trace.year === year && trace.month === month && trace.actionKey === 'che_출병'
+            );
+            expect(matches.length).toBeGreaterThanOrEqual(minCount);
+        };
+
+        const assertNoNeutralCities = () => {
+            const neutralCities = world.listCities().filter((city) => city.nationId <= 0);
+            expect(neutralCities.length).toBe(0);
+        };
+
         const maybeSnapshotGold = () => {
             checkpointGoldByGeneral.clear();
             for (const general of world.listGenerals()) {
@@ -492,6 +512,9 @@ describe('NPC 대형 시뮬레이션', () => {
             ['181-01', () => assertNationGeneralCount(10)],
             ['182-01', () => assertDomesticGrowthBy(182, 1)],
             ['182-10', () => assertNationRecruitCount(5)],
+            ['182-12', () => assertWarReadiness(10, 70, 70)],
+            ['183-01', () => assertDispatchRecorded(183, 1, 1)],
+            ['183-07', () => assertNoNeutralCities()],
         ]);
 
         const toKey = (year: number, month: number) => `${year}-${String(month).padStart(2, '0')}`;
@@ -615,7 +638,7 @@ describe('NPC 대형 시뮬레이션', () => {
                 if (checker) {
                     checker();
                 }
-                if (currentYear > 182 || (currentYear === 182 && currentMonth >= 10)) {
+                if (currentYear > 183 || (currentYear === 183 && currentMonth >= 7)) {
                     break;
                 }
             }
