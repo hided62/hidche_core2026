@@ -263,17 +263,15 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
             },
         });
 
-        let occupationLogCount = 0;
         const dumpMonthlyLogs = (label: string) => {
             const logs = getAndClearCollectedLogs();
             if (logs.length === 0) {
                 return;
             }
-            const globalLogs = logs.filter((log) => log.scope === LogScope.SYSTEM);
+            const globalLogs = logs.filter((log) => log.category === LogCategory.HISTORY);
             if (globalLogs.length === 0) {
                 return;
             }
-            occupationLogCount += globalLogs.filter((log) => log.text.includes('지배')).length;
             console.log('[DEBUG] month global logs', {
                 label,
                 total: globalLogs.length,
@@ -408,7 +406,6 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
                 .listNations()
                 .filter((nation) => nation.level > 0 && world.listCities().some((city) => city.nationId === nation.id))
                 .length;
-            let minNationCount = prevNationCount;
             let unifiedAt: { year: number; month: number } | null = null;
 
             while (true) {
@@ -429,7 +426,6 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
                 expect(totalGenerals).toBeGreaterThanOrEqual(2);
 
                 prevNationCount = activeNationCount;
-                minNationCount = Math.min(minNationCount, activeNationCount);
 
                 if (activeNationCount === 1 && !unifiedAt) {
                     const nextMonth = addMonths(world.getState().currentYear, world.getState().currentMonth, 1);
@@ -452,15 +448,13 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
             const meta = world.getState().meta as Record<string, unknown>;
             if (!unifiedAt) {
                 dumpWorldStatus(world, '통일 실패');
-                expect(minNationCount).toBeLessThanOrEqual(4);
-                expect(occupationLogCount).toBeGreaterThan(0);
-            } else {
-                expect(meta.isUnited).toBe(2);
-
-                const logs = getCollectedLogs();
-                const hasUnificationLog = logs.some((log) => log.text.includes('전토를 통일하였습니다.'));
-                expect(hasUnificationLog).toBe(true);
+                throw new Error('unification did not occur before 300-01');
             }
+            expect(meta.isUnited).toBe(2);
+
+            const logs = getCollectedLogs();
+            const hasUnificationLog = logs.some((log) => log.text.includes('전토를 통일하였습니다.'));
+            expect(hasUnificationLog).toBe(true);
 
             const warStates = world.listDiplomacy().filter((entry) => entry.state === DIPLOMACY_STATE.WAR);
             if (warStates.length > 0) {
