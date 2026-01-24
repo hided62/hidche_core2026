@@ -312,5 +312,14 @@ describe('NPC 전투준비 턴 검증', () => {
 
         expect(trainingCounts.get('182-09') ?? 0).toBeGreaterThan(0);
         expect(trainingCounts.get('182-10') ?? 0).toBeGreaterThan(0);
+
+        const trainedGenerals = world
+            .listGenerals()
+            .filter((general) => general.nationId === 1 && general.crew > 0 && general.crewTypeId > 0);
+        expect(trainedGenerals.length).toBeGreaterThan(0);
+        for (const general of trainedGenerals) {
+            expect(general.train).toBeGreaterThanOrEqual(70);
+            expect(general.atmos).toBeGreaterThanOrEqual(70);
+        }
     });
 });

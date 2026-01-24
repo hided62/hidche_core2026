@@ -658,7 +658,7 @@ describe('NPC 대형 시뮬레이션', () => {
             if (debugGeneralId) {
                 await debugRecruitConstraints(debugGeneralId);
             }
-            dumpTraceSummary('NPC 대형 시뮬레이션 실패');
+            dumpTraceSummary('NPC 대형 시뮬레이션 실패', 200);
             const sampleNation = world.listNations().find((nation) => nation.level >= 1 && nation.capitalCityId);
             if (sampleNation) {
                 const policy = (sampleNation.meta as Record<string, unknown>)?.npc_nation_policy;
