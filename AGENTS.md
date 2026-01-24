@@ -75,7 +75,7 @@ These are placeholders to align teams; adjust once packages exist.
 
 ## Development Checklist (AI)
 
-- After code changes, verify TypeScript type checks (prefer `pnpm build` or `pnpm typecheck`).
+- After code changes, the AI MUST run `pnpm typecheck`.
 - When changes require unit tests, run the relevant tests.
 - When migrating existing functionality, keep text and log output identical to the legacy behavior unless there is a technical blocker.
 
@@ -105,7 +105,7 @@ These are placeholders to align teams; adjust once packages exist.
 ## Randomness Policy (Verifiable RNG)
 
 - All game-impacting randomness must be verifiable and reproducible from a deterministic seed.
-- Prefer reusing the existing TypeScript implementations: `legacy/hwe/ts/util/LiteHashDRBG.ts` and `legacy/hwe/ts/util/RNG.ts` with minimal or no changes.
+- Prefer using the existing TypeScript implementations: `packages/common/src/util/LiteHashDRBG.ts`, `packages/common/src/rng.ts`(interface) and `packages/common/src/util/RandUtil.ts`.
 - Seed composition should include a hidden base seed plus action context (action type, time, actor, target) so results can be re-validated later.
 - Do not introduce ad-hoc randomness in game logic; allow non-deterministic randomness only for non-gameplay, cosmetic, or UI-only cases.
 
