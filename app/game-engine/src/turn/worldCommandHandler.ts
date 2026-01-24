@@ -753,50 +753,37 @@ export const createTurnDaemonCommandHandler = (options: {
         tournamentRewardFinalizer: options.tournamentRewardFinalizer,
     };
 
+    type HandlerMap = Partial<Record<TurnDaemonCommand['type'], (command: TurnDaemonCommand) => Promise<TurnDaemonCommandResult>>>;
+
+    const handlers: HandlerMap = {
+        troopJoin: (command) => handleTroopJoin(ctx, command as Extract<TurnDaemonCommand, { type: 'troopJoin' }>),
+        troopExit: (command) => handleTroopExit(ctx, command as Extract<TurnDaemonCommand, { type: 'troopExit' }>),
+        dieOnPrestart: (command) => handleDieOnPrestart(ctx, command as Extract<TurnDaemonCommand, { type: 'dieOnPrestart' }>),
+        buildNationCandidate: (command) => handleBuildNationCandidate(ctx, command as Extract<TurnDaemonCommand, { type: 'buildNationCandidate' }>),
+        instantRetreat: (command) => handleInstantRetreat(ctx, command as Extract<TurnDaemonCommand, { type: 'instantRetreat' }>),
+        vacation: (command) => handleVacation(ctx, command as Extract<TurnDaemonCommand, { type: 'vacation' }>),
+        setMySetting: (command) => handleSetMySetting(ctx, command as Extract<TurnDaemonCommand, { type: 'setMySetting' }>),
+        dropItem: (command) => handleDropItem(ctx, command as Extract<TurnDaemonCommand, { type: 'dropItem' }>),
+        auctionFinalize: (command) => handleAuctionFinalize(ctx, command as Extract<TurnDaemonCommand, { type: 'auctionFinalize' }>),
+        auctionBid: (command) => handleAuctionBid(ctx, command as Extract<TurnDaemonCommand, { type: 'auctionBid' }>),
+        changePermission: (command) => handleChangePermission(ctx, command as Extract<TurnDaemonCommand, { type: 'changePermission' }>),
+        kick: (command) => handleKick(ctx, command as Extract<TurnDaemonCommand, { type: 'kick' }>),
+        appoint: (command) => handleAppoint(ctx, command as Extract<TurnDaemonCommand, { type: 'appoint' }>),
+        tournamentRefund: (command) => handleTournamentRefund(ctx, command as Extract<TurnDaemonCommand, { type: 'tournamentRefund' }>),
+        tournamentBettingPayout: (command) => handleTournamentBettingPayout(ctx, command as Extract<TurnDaemonCommand, { type: 'tournamentBettingPayout' }>),
+        tournamentReward: (command) => handleTournamentReward(ctx, command as Extract<TurnDaemonCommand, { type: 'tournamentReward' }>),
+        setNationMeta: (command) => handleSetNationMeta(ctx, command as Extract<TurnDaemonCommand, { type: 'setNationMeta' }>),
+        adjustGeneralResources: (command) => handleAdjustGeneralResources(ctx, command as Extract<TurnDaemonCommand, { type: 'adjustGeneralResources' }>),
+        patchGeneral: (command) => handlePatchGeneral(ctx, command as Extract<TurnDaemonCommand, { type: 'patchGeneral' }>),
+    };
+
     return {
         handle: async (command): Promise<TurnDaemonCommandResult | null> => {
-            switch (command.type) {
-                case 'troopJoin':
-                    return handleTroopJoin(ctx, command);
-                case 'troopExit':
-                    return handleTroopExit(ctx, command);
-                case 'dieOnPrestart':
-                    return handleDieOnPrestart(ctx, command);
-                case 'buildNationCandidate':
-                    return handleBuildNationCandidate(ctx, command);
-                case 'instantRetreat':
-                    return handleInstantRetreat(ctx, command);
-                case 'vacation':
-                    return handleVacation(ctx, command);
-                case 'setMySetting':
-                    return handleSetMySetting(ctx, command);
-                case 'dropItem':
-                    return handleDropItem(ctx, command);
-                case 'auctionFinalize':
-                    return handleAuctionFinalize(ctx, command);
-                case 'auctionBid':
-                    return handleAuctionBid(ctx, command);
-                case 'changePermission':
-                    return handleChangePermission(ctx, command);
-                case 'kick':
-                    return handleKick(ctx, command);
-                case 'appoint':
-                    return handleAppoint(ctx, command);
-                case 'tournamentRefund':
-                    return handleTournamentRefund(ctx, command);
-                case 'tournamentBettingPayout':
-                    return handleTournamentBettingPayout(ctx, command);
-                case 'tournamentReward':
-                    return handleTournamentReward(ctx, command);
-                case 'setNationMeta':
-                    return handleSetNationMeta(ctx, command);
-                case 'adjustGeneralResources':
-                    return handleAdjustGeneralResources(ctx, command);
-                case 'patchGeneral':
-                    return handlePatchGeneral(ctx, command);
-                default:
-                    return null;
+            const handler = handlers[command.type];
+            if (!handler) {
+                return null;
             }
+            return handler(command);
         },
     };
 };

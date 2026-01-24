@@ -304,3 +304,12 @@ export type TurnDaemonEvent =
     | { type: 'runCompleted'; at: string; result: TurnRunResult }
     | { type: 'runFailed'; at: string; error: string }
     | { type: 'commandResult'; result: TurnDaemonCommandResult };
+
+export type TurnDaemonCommandType = TurnDaemonCommand['type'];
+
+export type TurnDaemonCommandByType<T extends TurnDaemonCommandType> = Extract<TurnDaemonCommand, { type: T }>;
+
+export type TurnDaemonCommandResultByType<T extends TurnDaemonCommandType> = Extract<
+    TurnDaemonCommandResult,
+    { type: T }
+>;
