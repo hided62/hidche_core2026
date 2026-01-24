@@ -77,6 +77,8 @@ These are placeholders to align teams; adjust once packages exist.
 
 - After code changes, the AI MUST run `CI=1 pnpm typecheck`.
 - When changes require unit tests, run the relevant tests.
+  - For game engine changes, run (example):
+    `pnpm --filter @sammo-ts/game-engine test npcNationUprisingUnification`.
 - When migrating existing functionality, keep text and log output identical to the legacy behavior unless there is a technical blocker.
 
 ## Build Profiles (Proposal)
