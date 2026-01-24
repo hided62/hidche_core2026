@@ -3,7 +3,7 @@ import type { TurnCommandModule, TurnCommandSpecBase } from '@sammo-ts/logic/act
 export const GENERAL_TURN_COMMAND_KEYS = [
     'che_거병',
     'che_임관',
-    // 'che_랜덤임관',
+    'che_랜덤임관',
     'che_귀환',
     'che_등용수락',
     'che_건국',
@@ -60,7 +60,7 @@ const defaultImporters: Record<GeneralTurnCommandKey, GeneralTurnCommandImporter
     che_거병: async () => import('./che_거병.js'),
     che_임관: async () => import('./che_임관.js'),
     che_등용수락: () => import('./che_등용수락.js'),
-    // che_랜덤임관: () => import('./che_랜덤임관.js'),
+    che_랜덤임관: () => import('./che_랜덤임관.js'),
     che_귀환: async () => import('./che_귀환.js'),
     che_건국: async () => import('./che_건국.js'),
     che_훈련: async () => import('./che_훈련.js'),
