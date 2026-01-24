@@ -10,6 +10,7 @@ import { createReservedTurnHandler } from '../src/turn/reservedTurnHandler.js';
 import { InMemoryTurnProcessor } from '../src/turn/inMemoryTurnProcessor.js';
 import { createIncomeHandler } from '../src/turn/incomeHandler.js';
 import { createNpcTaxHandler } from '../src/turn/npcTaxHandler.js';
+import { createFrontStateHandler } from '../src/turn/frontStateHandler.js';
 import { composeCalendarHandlers } from '../src/turn/calendarHandlers.js';
 import { LARGE_TEST_MAP, buildLargeTestCities } from './fixtures/largeTestMap.js';
 
@@ -272,7 +273,12 @@ describe('NPC 대형 시뮬레이션', () => {
             getWorld: () => wrapper.world,
         });
 
-        const calendarHandler = composeCalendarHandlers(incomeHandler, npcTaxHandler);
+        const frontStateHandler = createFrontStateHandler({
+            getWorld: () => wrapper.world,
+            map: LARGE_TEST_MAP,
+        });
+
+        const calendarHandler = composeCalendarHandlers(incomeHandler, npcTaxHandler, frontStateHandler);
 
         const world = new InMemoryTurnWorld(state, snapshot, {
             schedule,

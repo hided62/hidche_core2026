@@ -37,6 +37,7 @@ import {
     type DiplomacyPatch,
 } from '@sammo-ts/logic';
 import { buildCommandEnv, buildReservedTurnDefinitions } from './reservedTurnCommands.js';
+import { buildFrontStatePatches } from './frontStateHandler.js';
 import { buildActionContext } from './reservedTurnActionContext.js';
 import { GeneralAI, shouldUseAi } from './ai/generalAi.js';
 import type { AiReservedTurnProvider } from './ai/types.js';
@@ -697,6 +698,31 @@ export const createReservedTurnHandler = async (options: {
                     if (worldOverlay) {
                         for (const nation of newNations) {
                             worldOverlay.syncNation(nation);
+                        }
+                    }
+                }
+
+                const hasDiplomacyChange = diplomacyPatches.length > 0;
+                const hasNationChange = (resolution.patches?.cities ?? []).some((patch) =>
+                    Object.prototype.hasOwnProperty.call(patch.patch ?? {}, 'nationId')
+                );
+                if (hasDiplomacyChange || hasNationChange) {
+                    const worldView = worldOverlay?.view ?? worldRef;
+                    if (worldView && options.map) {
+                        const frontPatches = buildFrontStatePatches({
+                            worldView,
+                            map: options.map,
+                        });
+                        if (frontPatches.length > 0) {
+                            for (const patch of frontPatches) {
+                                const existing = patches.cities.find((entry) => entry.id === patch.id);
+                                if (existing) {
+                                    existing.patch = { ...existing.patch, ...patch.patch };
+                                } else {
+                                    patches.cities.push({ id: patch.id, patch: patch.patch });
+                                }
+                                worldOverlay?.applyCityPatch(patch.id, patch.patch);
+                            }
                         }
                     }
                 }

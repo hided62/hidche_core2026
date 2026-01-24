@@ -19,6 +19,7 @@ import { createGatewayAdminActionConsumer } from './gatewayAdminActions.js';
 import { createGatewayProfileGate } from './gatewayProfileGate.js';
 import { composeCalendarHandlers } from './calendarHandlers.js';
 import { createIncomeHandler } from './incomeHandler.js';
+import { createFrontStateHandler } from './frontStateHandler.js';
 import { createReservedTurnHandler } from './reservedTurnHandler.js';
 import { createReservedTurnStore } from './reservedTurnStore.js';
 import { createTurnDaemonCommandHandler } from './worldCommandHandler.js';
@@ -122,6 +123,10 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
         scenarioConfig: snapshot.scenarioConfig,
         nationTraits: nationTraitMap,
     });
+    const frontStateHandler = createFrontStateHandler({
+        getWorld: () => worldRef,
+        map: snapshot.map ?? null,
+    });
     const tournamentAutoStartHandler = createTournamentAutoStartHandler({
         profileName: options.profileName ?? options.profile,
         getRedisClient: () => redisConnector?.client,
@@ -131,6 +136,7 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
     const calendarHandler = composeCalendarHandlers(
         options.calendarHandler ?? unification?.handler,
         incomeHandler,
+        frontStateHandler,
         tournamentAutoStartHandler
     );
     const worldOptions: InMemoryTurnWorldOptions = {
