@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { TurnSchedule, UnitSetDefinition } from '@sammo-ts/logic';
-import { DIPLOMACY_STATE } from '@sammo-ts/logic';
-import type { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
+import type { LogEntryDraft, TurnSchedule, UnitSetDefinition } from '@sammo-ts/logic';
+import { DIPLOMACY_STATE, LogCategory, LogFormat, LogScope } from '@sammo-ts/logic';
+import type { InMemoryTurnWorld, TurnCalendarHandler } from '../src/turn/inMemoryWorld.js';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 import { LARGE_TEST_MAP, buildLargeTestCities } from './fixtures/largeTestMap.js';
 import { createTurnTestHarness, createWorldDebugger } from './helpers/turnTestHarness.js';
@@ -61,6 +61,14 @@ const addMonths = (year: number, month: number, delta: number): { year: number; 
     const nextMonth = (total % 12) + 1;
     return { year: nextYear, month: nextMonth };
 };
+
+const buildUnificationLog = (nationName: string): LogEntryDraft => ({
+    scope: LogScope.SYSTEM,
+    category: LogCategory.HISTORY,
+    format: LogFormat.YEAR_MONTH,
+    text: `<C>●</><Y><b>【통일】</b></><D><b>${nationName}</b></>이 전토를 통일하였습니다.`,
+    meta: {},
+});
 
 describe('NPC 선전포고 조건 테스트', () => {
     it('183년 5월 시작 후 3개월 이내 선전포고가 발생해야 한다', async () => {
@@ -126,7 +134,9 @@ describe('NPC 선전포고 조건 테스트', () => {
             }
         };
         pushNationGenerals(1, cityA1.id);
-        pushNationGenerals(2, cityB1.id);
+        for (let i = 0; i < 3; i += 1) {
+            pushNationGenerals(2, cityB1.id);
+        }
 
         const snapshot: TurnWorldSnapshot = {
             generals: generals as any,
@@ -201,12 +211,42 @@ describe('NPC 선전포고 조건 테스트', () => {
         let declaredAt: { year: number; month: number; nationId: number } | null = null;
         const dispatchCounts = new Map<string, number>();
 
-        const { runUntil } = await createTurnTestHarness({
+        const unificationHandler: TurnCalendarHandler = {
+            onMonthChanged: () => {
+                const world = worldRef.current;
+                if (!world) {
+                    return;
+                }
+                const meta = world.getState().meta as Record<string, unknown>;
+                if (typeof meta.isUnited === 'number' && meta.isUnited !== 0) {
+                    return;
+                }
+                const cities = world.listCities();
+                const activeNations = world
+                    .listNations()
+                    .filter((nation) => nation.level > 0)
+                    .filter((nation) => cities.some((city) => city.nationId === nation.id));
+                if (activeNations.length !== 1) {
+                    return;
+                }
+                const winner = activeNations[0];
+                const ownedCount = cities.filter((city) => city.nationId === winner.id).length;
+                if (ownedCount !== cities.length) {
+                    return;
+                }
+                world.updateWorldMeta({ isUnited: 2 });
+                world.pushLog(buildUnificationLog(winner.name));
+            },
+        };
+
+        const { runUntil, getCollectedLogs } = await createTurnTestHarness({
             snapshot,
             state,
             schedule,
             map: LARGE_TEST_MAP,
             worldRef,
+            extraCalendarHandlers: [unificationHandler],
+            collectLogs: true,
             onActionResolved: (payload) => {
                 if (payload.kind === 'general' && payload.actionKey === 'che_출병') {
                     const world = worldRef.current;
@@ -245,6 +285,9 @@ describe('NPC 선전포고 조건 테스트', () => {
                 (entry.fromNationId === 2 && entry.toNationId === 1)
             );
         };
+
+        const countCities = (nationId: number, currentWorld: InMemoryTurnWorld) =>
+            currentWorld.listCities().filter((city) => city.nationId === nationId).length;
 
         try {
             await runUntil(
@@ -328,6 +371,62 @@ describe('NPC 선전포고 조건 테스트', () => {
         }
         expect(warEntry).not.toBeNull();
         expect(warEntry?.state).toBe(DIPLOMACY_STATE.WAR);
+
+        let prevNation1Cities = countCities(1, world);
+        let prevNation2Cities = countCities(2, world);
+        let guard = 0;
+
+        while (prevNation1Cities > 0 && guard < 120) {
+            const next = addMonths(world.getState().currentYear, world.getState().currentMonth, 1);
+            await runUntil((current) =>
+                current.currentYear > next.year ||
+                (current.currentYear === next.year && current.currentMonth >= next.month)
+            );
+
+            const warLoopEntry = findDiplomacyEntry(world);
+            if (!warLoopEntry) {
+                debug.dumpWatched('개전 이후 외교 상태 누락');
+                throw new Error('missing diplomacy entry');
+            }
+            expect(warLoopEntry.state).toBe(DIPLOMACY_STATE.WAR);
+
+            const nowNation1Cities = countCities(1, world);
+            const nowNation2Cities = countCities(2, world);
+
+            expect(nowNation1Cities).toBeLessThanOrEqual(prevNation1Cities);
+            expect(nowNation2Cities).toBeGreaterThanOrEqual(prevNation2Cities);
+
+            prevNation1Cities = nowNation1Cities;
+            prevNation2Cities = nowNation2Cities;
+            guard += 1;
+        }
+
+        if (prevNation1Cities > 0) {
+            debug.dumpWatched('국가 1 도시 소멸 실패');
+            throw new Error('nation 1 cities not eliminated');
+        }
+
+        const allOwnedByNation2 = world.listCities().every((city) => city.nationId === 2);
+        expect(allOwnedByNation2).toBe(true);
+
+        const unifyCheckTarget = addMonths(world.getState().currentYear, world.getState().currentMonth, 1);
+        await runUntil((current) =>
+            current.currentYear > unifyCheckTarget.year ||
+            (current.currentYear === unifyCheckTarget.year && current.currentMonth >= unifyCheckTarget.month)
+        );
+
+        const worldMeta = world.getState().meta as Record<string, unknown>;
+        if (worldMeta.isUnited !== 2) {
+            debug.dumpWatched('통일 상태 누락');
+        }
+        expect(worldMeta.isUnited).toBe(2);
+
+        const logs = getCollectedLogs();
+        const hasUnificationLog = logs.some((log) => log.text.includes('전토를 통일하였습니다.'));
+        if (!hasUnificationLog) {
+            debug.dumpWatched('통일 로그 누락');
+        }
+        expect(hasUnificationLog).toBe(true);
 
         const dispatchWindowEnd = addMonths(warTarget.year, warTarget.month, 2);
         await runUntil((current) =>

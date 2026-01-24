@@ -1,7 +1,8 @@
 import { vi } from 'vitest';
-import type { MapDefinition, TurnSchedule } from '@sammo-ts/logic';
+import type { LogEntryDraft, MapDefinition, TurnSchedule } from '@sammo-ts/logic';
 import type { TurnWorldSnapshot, TurnWorldState } from '../../src/turn/types.js';
 import type { InMemoryTurnWorld, GeneralTurnHandler } from '../../src/turn/inMemoryWorld.js';
+import type { TurnCalendarHandler } from '../../src/turn/inMemoryWorld.js';
 import { InMemoryTurnWorld as InMemoryTurnWorldClass } from '../../src/turn/inMemoryWorld.js';
 import { InMemoryReservedTurnStore } from '../../src/turn/reservedTurnStore.js';
 import { createReservedTurnHandler } from '../../src/turn/reservedTurnHandler.js';
@@ -70,6 +71,8 @@ export type TurnTestHarnessOptions = {
     worldRef?: { current: InMemoryTurnWorld | null };
     onActionResolved?: Parameters<typeof createReservedTurnHandler>[0]['onActionResolved'];
     wrapGeneralTurnHandler?: (handler: GeneralTurnHandler) => GeneralTurnHandler;
+    extraCalendarHandlers?: TurnCalendarHandler[];
+    collectLogs?: boolean;
 };
 
 const defaultRunOptions = {
@@ -116,7 +119,12 @@ export const createTurnTestHarness = async (options: TurnTestHarnessOptions) => 
         map: options.map,
     });
 
-    const calendarHandler = composeCalendarHandlers(incomeHandler, npcTaxHandler, frontStateHandler);
+    const calendarHandler = composeCalendarHandlers(
+        incomeHandler,
+        npcTaxHandler,
+        frontStateHandler,
+        ...(options.extraCalendarHandlers ?? [])
+    );
 
     const world = new InMemoryTurnWorldClass(options.state, options.snapshot, {
         schedule: options.schedule,
@@ -130,6 +138,18 @@ export const createTurnTestHarness = async (options: TurnTestHarnessOptions) => 
         afterExecuteGeneral: options.turnProcessorOptions?.afterExecuteGeneral,
     });
 
+    const collectedLogs: LogEntryDraft[] = [];
+
+    const collectWorldLogs = () => {
+        if (!options.collectLogs) {
+            return;
+        }
+        const { logs } = world.consumeDirtyState();
+        if (logs.length > 0) {
+            collectedLogs.push(...logs);
+        }
+    };
+
     const runOneTick = async (runOptions: TurnHarnessRunOptions = {}) => {
         const minutes = runOptions.minutes ?? options.turnProcessorOptions?.tickMinutes ?? 10;
         const target = addMinutes(world.getState().lastTurnTime, minutes);
@@ -138,6 +158,7 @@ export const createTurnTestHarness = async (options: TurnTestHarnessOptions) => 
             maxGenerals: runOptions.maxGenerals ?? defaultRunOptions.maxGenerals,
             catchUpCap: runOptions.catchUpCap ?? defaultRunOptions.catchUpCap,
         });
+        collectWorldLogs();
     };
 
     const runUntil = async (
@@ -163,6 +184,7 @@ export const createTurnTestHarness = async (options: TurnTestHarnessOptions) => 
         processor,
         runOneTick,
         runUntil,
+        getCollectedLogs: () => [...collectedLogs],
     };
 };
 
