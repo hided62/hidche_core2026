@@ -70,8 +70,8 @@ const buildUnificationLog = (nationName: string): LogEntryDraft => ({
     meta: {},
 });
 
-describe('NPC 선전포고 조건 테스트', () => {
-    it('183년 5월 시작 후 3개월 이내 선전포고가 발생해야 한다', async () => {
+describe('NPC 선전포고·개전·통일 흐름 테스트', () => {
+    it('선전포고부터 개전/점유전/통일까지 진행되어야 한다', async () => {
         const cities = buildLargeTestCities().map(maxCityStats);
         const cityA1 = cities.find((city) => city.id === 1)!;
         const cityA2 = cities.find((city) => city.id === 2)!;
