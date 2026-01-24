@@ -1,52 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { TurnSchedule, UnitSetDefinition } from '@sammo-ts/logic';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
-import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
-import { InMemoryReservedTurnStore } from '../src/turn/reservedTurnStore.js';
-import { createReservedTurnHandler } from '../src/turn/reservedTurnHandler.js';
-import { InMemoryTurnProcessor } from '../src/turn/inMemoryTurnProcessor.js';
-import { composeCalendarHandlers } from '../src/turn/calendarHandlers.js';
-import { createIncomeHandler } from '../src/turn/incomeHandler.js';
-import { createNpcTaxHandler } from '../src/turn/npcTaxHandler.js';
-import { createFrontStateHandler } from '../src/turn/frontStateHandler.js';
+import type { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import { LARGE_TEST_MAP, buildLargeTestCities } from './fixtures/largeTestMap.js';
+import { createTurnTestHarness } from './helpers/turnTestHarness.js';
 
 const mockDate = new Date('0182-07-01T00:00:00Z');
-
-const createMockPrisma = (initialGeneralRows: any[] = []) => {
-    let generalRows = [...initialGeneralRows];
-    return {
-        generalTurn: {
-            findMany: vi.fn(async ({ where } = {}) => {
-                if (where?.generalId) {
-                    return generalRows
-                        .filter((row) => row.generalId === where.generalId)
-                        .sort((a, b) => a.turnIdx - b.turnIdx);
-                }
-                return generalRows;
-            }),
-            deleteMany: vi.fn(async ({ where } = {}) => {
-                if (where?.generalId) {
-                    generalRows = generalRows.filter((row) => row.generalId !== where.generalId);
-                }
-                return { count: 0 };
-            }),
-            createMany: vi.fn(async ({ data }) => {
-                if (Array.isArray(data)) {
-                    generalRows.push(...data);
-                }
-                return { count: data.length };
-            }),
-        },
-        nationTurn: {
-            findMany: vi.fn(async () => []),
-            deleteMany: vi.fn(async () => ({ count: 0 })),
-            createMany: vi.fn(async () => ({ count: 0 })),
-        },
-    };
-};
-
-const addMinutes = (time: Date, minutes: number): Date => new Date(time.getTime() + minutes * 60_000);
 
 const createNpcGeneral = (
     id: number,
@@ -213,12 +172,31 @@ describe('NPC 전투준비 턴 검증', () => {
             entries: [{ startMinute: 0, tickMinutes: 10 }],
         };
 
-        const mockPrisma = createMockPrisma();
-        const reservedTurnStore = new InMemoryReservedTurnStore(mockPrisma as any, {
-            maxGeneralTurns: 10,
-            maxNationTurns: 10,
+        const worldRef = { current: null as InMemoryTurnWorld | null };
+        const trainingActions = new Set(['che_훈련', 'che_사기진작']);
+        const trainingCounts = new Map<string, number>();
+        const { world, reservedTurnStore, runUntil } = await createTurnTestHarness({
+            snapshot,
+            state,
+            schedule,
+            map: LARGE_TEST_MAP,
+            worldRef,
+            onActionResolved: (payload) => {
+                if (payload.kind !== 'general') {
+                    return;
+                }
+                if (!trainingActions.has(payload.actionKey)) {
+                    return;
+                }
+                const currentWorld = worldRef.current;
+                if (!currentWorld) {
+                    return;
+                }
+                const { currentYear, currentMonth } = currentWorld.getState();
+                const key = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+                trainingCounts.set(key, (trainingCounts.get(key) ?? 0) + 1);
+            },
         });
-        await reservedTurnStore.loadAll();
 
         for (const general of generals.filter((g) => g.nationId === 1)) {
             const turns = reservedTurnStore.getGeneralTurns(general.id);
@@ -231,84 +209,9 @@ describe('NPC 전투준비 턴 검증', () => {
             };
         }
 
-        const wrapper = { world: null as InMemoryTurnWorld | null };
-        const trainingActions = new Set(['che_훈련', 'che_사기진작']);
-        const trainingCounts = new Map<string, number>();
-
-        const handler = await createReservedTurnHandler({
-            reservedTurns: reservedTurnStore,
-            scenarioConfig: snapshot.scenarioConfig,
-            scenarioMeta: snapshot.scenarioMeta,
-            map: LARGE_TEST_MAP as any,
-            unitSet: snapshot.unitSet,
-            getWorld: () => wrapper.world,
-            onActionResolved: (payload) => {
-                if (payload.kind !== 'general') {
-                    return;
-                }
-                if (!trainingActions.has(payload.actionKey)) {
-                    return;
-                }
-                const world = wrapper.world;
-                if (!world) {
-                    return;
-                }
-                const { currentYear, currentMonth } = world.getState();
-                const key = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
-                trainingCounts.set(key, (trainingCounts.get(key) ?? 0) + 1);
-            },
-        });
-
-        const tracedHandler = {
-            execute: (ctx: Parameters<typeof handler.execute>[0]) => {
-                return handler.execute(ctx);
-            },
-        };
-
-        const incomeHandler = createIncomeHandler({
-            getWorld: () => wrapper.world,
-            scenarioConfig: snapshot.scenarioConfig,
-            nationTraits: new Map(),
-        });
-
-        const npcTaxHandler = createNpcTaxHandler({
-            getWorld: () => wrapper.world,
-        });
-
-        const frontStateHandler = createFrontStateHandler({
-            getWorld: () => wrapper.world,
-            map: LARGE_TEST_MAP,
-        });
-
-        const calendarHandler = composeCalendarHandlers(incomeHandler, npcTaxHandler, frontStateHandler);
-
-        const world = new InMemoryTurnWorld(state, snapshot, {
-            schedule,
-            generalTurnHandler: tracedHandler,
-            calendarHandler,
-        });
-        wrapper.world = world;
-
-        const processor = new InMemoryTurnProcessor(world, {
-            tickMinutes: 10,
-        });
-
-        const runOneMonth = async () => {
-            const target = addMinutes(world.getState().lastTurnTime, 10);
-            await processor.run(target, {
-                budgetMs: 10000,
-                maxGenerals: 100000,
-                catchUpCap: 1,
-            });
-        };
-
-        while (true) {
-            await runOneMonth();
-            const { currentYear, currentMonth } = world.getState();
-            if (currentYear > 182 || (currentYear === 182 && currentMonth >= 11)) {
-                break;
-            }
-        }
+        await runUntil(
+            (current) => current.currentYear > 182 || (current.currentYear === 182 && current.currentMonth >= 11)
+        );
 
         expect(trainingCounts.get('182-09') ?? 0).toBeGreaterThan(0);
         expect(trainingCounts.get('182-10') ?? 0).toBeGreaterThan(0);

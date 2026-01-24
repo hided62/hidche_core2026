@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type {
     ConstraintContext,
     LogEntryDraft,
@@ -10,56 +10,15 @@ import type {
 import { DEFAULT_TURN_COMMAND_PROFILE, LogCategory, evaluateConstraints } from '@sammo-ts/logic';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 import type { GeneralAiDebugState } from '../src/turn/ai/generalAi.js';
-import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
-import { InMemoryReservedTurnStore } from '../src/turn/reservedTurnStore.js';
-import { createReservedTurnHandler } from '../src/turn/reservedTurnHandler.js';
-import { InMemoryTurnProcessor } from '../src/turn/inMemoryTurnProcessor.js';
+import type { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import { GeneralAI } from '../src/turn/ai/generalAi.js';
 import { do징병 } from '../src/turn/ai/generalAiGeneralActions.js';
-import { createIncomeHandler } from '../src/turn/incomeHandler.js';
-import { createNpcTaxHandler } from '../src/turn/npcTaxHandler.js';
-import { createFrontStateHandler } from '../src/turn/frontStateHandler.js';
-import { composeCalendarHandlers } from '../src/turn/calendarHandlers.js';
 import { buildCommandEnv, buildReservedTurnDefinitions } from '../src/turn/reservedTurnCommands.js';
 import { LARGE_TEST_MAP, buildLargeTestCities } from './fixtures/largeTestMap.js';
 import { round } from 'es-toolkit';
+import { createTurnTestHarness, createWorldDebugger } from './helpers/turnTestHarness.js';
 
 const mockDate = new Date('0179-08-01T00:00:00Z');
-
-const createMockPrisma = (initialGeneralRows: any[] = []) => {
-    let generalRows = [...initialGeneralRows];
-    return {
-        generalTurn: {
-            findMany: vi.fn(async ({ where } = {}) => {
-                if (where?.generalId) {
-                    return generalRows
-                        .filter((row) => row.generalId === where.generalId)
-                        .sort((a, b) => a.turnIdx - b.turnIdx);
-                }
-                return generalRows;
-            }),
-            deleteMany: vi.fn(async ({ where } = {}) => {
-                if (where?.generalId) {
-                    generalRows = generalRows.filter((row) => row.generalId !== where.generalId);
-                }
-                return { count: 0 };
-            }),
-            createMany: vi.fn(async ({ data }) => {
-                if (Array.isArray(data)) {
-                    generalRows.push(...data);
-                }
-                return { count: data.length };
-            }),
-        },
-        nationTurn: {
-            findMany: vi.fn(async () => []),
-            deleteMany: vi.fn(async () => ({ count: 0 })),
-            createMany: vi.fn(async () => ({ count: 0 })),
-        },
-    };
-};
-
-const addMinutes = (time: Date, minutes: number): Date => new Date(time.getTime() + minutes * 60_000);
 
 const createNpcGeneral = (
     id: number,
@@ -213,14 +172,7 @@ describe('NPC 대형 시뮬레이션', () => {
             entries: [{ startMinute: 0, tickMinutes: 10 }],
         };
 
-        const mockPrisma = createMockPrisma();
-        const reservedTurnStore = new InMemoryReservedTurnStore(mockPrisma as any, {
-            maxGeneralTurns: 10,
-            maxNationTurns: 10,
-        });
-        await reservedTurnStore.loadAll();
-
-        const wrapper = { world: null as InMemoryTurnWorld | null };
+        const worldRef = { current: null as InMemoryTurnWorld | null };
 
         type TurnTrace = {
             year: number;
@@ -248,13 +200,12 @@ describe('NPC 대형 시뮬레이션', () => {
 
         const commandEnv = buildCommandEnv(snapshot.scenarioConfig, snapshot.unitSet);
 
-        const handler = await createReservedTurnHandler({
-            reservedTurns: reservedTurnStore,
-            scenarioConfig: snapshot.scenarioConfig,
-            scenarioMeta: snapshot.scenarioMeta,
-            map: LARGE_TEST_MAP as any,
-            unitSet: snapshot.unitSet,
-            getWorld: () => wrapper.world,
+        const { world, reservedTurnStore, runUntil } = await createTurnTestHarness({
+            snapshot,
+            state,
+            schedule,
+            map: LARGE_TEST_MAP,
+            worldRef,
             onActionResolved: (payload) => {
                 if (payload.kind !== 'general') {
                     return;
@@ -269,73 +220,47 @@ describe('NPC 대형 시뮬레이션', () => {
                 trace.blockedReason = payload.blockedReason;
                 trace.aiState = payload.aiState;
             },
-        });
-
-        const tracedHandler = {
-            execute: (ctx: Parameters<typeof handler.execute>[0]) => {
-                const trace: TurnTrace = {
-                    year: ctx.world.currentYear,
-                    month: ctx.world.currentMonth,
-                    nationId: ctx.general.nationId,
-                    generalId: ctx.general.id,
-                    gold: ctx.general.gold,
-                    rice: ctx.general.rice,
-                    crew: ctx.general.crew,
-                    train: ctx.general.train,
-                    atmos: ctx.general.atmos,
-                    actionKey: 'unknown',
-                    requestedAction: 'unknown',
-                    usedFallback: false,
-                    ok: true,
-                    actionText: 'unknown',
-                    logs: [],
-                };
-                traceByGeneralId.set(ctx.general.id, trace);
-                const result = handler.execute(ctx);
-                const actionLog = result.logs?.find((log) => log.category === LogCategory.ACTION);
-                trace.actionText = actionLog?.text ?? 'unknown';
-                trace.logs = result.logs ?? [];
-                if (ctx.general.nationId === 0) {
+            wrapGeneralTurnHandler: (handler) => ({
+                execute: (ctx) => {
+                    const trace: TurnTrace = {
+                        year: ctx.world.currentYear,
+                        month: ctx.world.currentMonth,
+                        nationId: ctx.general.nationId,
+                        generalId: ctx.general.id,
+                        gold: ctx.general.gold,
+                        rice: ctx.general.rice,
+                        crew: ctx.general.crew,
+                        train: ctx.general.train,
+                        atmos: ctx.general.atmos,
+                        actionKey: 'unknown',
+                        requestedAction: 'unknown',
+                        usedFallback: false,
+                        ok: true,
+                        actionText: 'unknown',
+                        logs: [],
+                    };
+                    traceByGeneralId.set(ctx.general.id, trace);
+                    const result = handler.execute(ctx);
+                    const actionLog = result.logs?.find((log) => log.category === LogCategory.ACTION);
+                    trace.actionText = actionLog?.text ?? 'unknown';
+                    trace.logs = result.logs ?? [];
+                    if (ctx.general.nationId === 0) {
+                        return result;
+                    }
+                    turnTraces.push(trace);
                     return result;
-                }
-                turnTraces.push(trace);
-                return result;
-            },
-        };
-
-        const incomeHandler = createIncomeHandler({
-            getWorld: () => wrapper.world,
-            scenarioConfig: snapshot.scenarioConfig,
-            nationTraits: new Map(),
-        });
-
-        const npcTaxHandler = createNpcTaxHandler({
-            getWorld: () => wrapper.world,
-        });
-
-        const frontStateHandler = createFrontStateHandler({
-            getWorld: () => wrapper.world,
-            map: LARGE_TEST_MAP,
-        });
-
-        const calendarHandler = composeCalendarHandlers(incomeHandler, npcTaxHandler, frontStateHandler);
-
-        const world = new InMemoryTurnWorld(state, snapshot, {
-            schedule,
-            generalTurnHandler: tracedHandler,
-            calendarHandler,
-        });
-        wrapper.world = world;
-
-        const processor = new InMemoryTurnProcessor(world, {
-            tickMinutes: 10,
-            afterExecuteGeneral: async (general, result) => {
-                const trace = traceByGeneralId.get(general.id);
-                if (!trace) {
-                    return;
-                }
-                trace.ok = result.ok;
-                trace.error = result.error;
+                },
+            }),
+            turnProcessorOptions: {
+                tickMinutes: 10,
+                afterExecuteGeneral: async (general, result) => {
+                    const trace = traceByGeneralId.get(general.id);
+                    if (!trace) {
+                        return;
+                    }
+                    trace.ok = result.ok;
+                    trace.error = result.error;
+                },
             },
         });
         const checkpointGoldByGeneral = new Map<number, number>();
@@ -355,15 +280,9 @@ describe('NPC 대형 시뮬레이션', () => {
             }
         };
 
-        const runOneMonth = async () => {
-            const target = addMinutes(world.getState().lastTurnTime, 10);
-            await processor.run(target, {
-                budgetMs: 10000,
-                maxGenerals: 100000,
-                catchUpCap: 1,
-            });
-        };
-
+        const debug = createWorldDebugger(() => worldRef.current, {
+            includeNationSummary: true,
+        });
         const assertUprisingCount = (minCount: number) => {
             const nations = world.listNations();
             expect(nations.length).toBeGreaterThanOrEqual(minCount);
@@ -653,18 +572,17 @@ describe('NPC 대형 시뮬레이션', () => {
         };
 
         try {
-            while (true) {
-                await runOneMonth();
-                const { currentYear, currentMonth } = world.getState();
-                const key = toKey(currentYear, currentMonth);
-                const checker = targetChecks.get(key);
-                if (checker) {
-                    checker();
+            await runUntil(
+                (current) => current.currentYear > 183 || (current.currentYear === 183 && current.currentMonth >= 7),
+                undefined,
+                (current) => {
+                    const key = toKey(current.currentYear, current.currentMonth);
+                    const checker = targetChecks.get(key);
+                    if (checker) {
+                        checker();
+                    }
                 }
-                if (currentYear > 183 || (currentYear === 183 && currentMonth >= 7)) {
-                    break;
-                }
-            }
+            );
         } catch (error) {
             const lastAiTrace = [...turnTraces].reverse().find((trace) => trace.aiState);
             if (lastAiTrace?.aiState) {
@@ -675,10 +593,12 @@ describe('NPC 대형 시뮬레이션', () => {
                 await debugRecruitConstraints(debugGeneralId);
             }
             dumpTraceSummary('NPC 대형 시뮬레이션 실패', 200);
+            debug.dumpWorldSummary('NPC 대형 시뮬레이션 실패');
             const sampleNation = world.listNations().find((nation) => nation.level >= 1 && nation.capitalCityId);
             if (sampleNation) {
                 const policy = (sampleNation.meta as Record<string, unknown>)?.npc_nation_policy;
                 console.log('[TRACE] sample npc_nation_policy:', policy);
+                debug.dumpNation(sampleNation.id, 'NPC 샘플 국가');
                 const sampleGeneral = world
                     .listGenerals()
                     .find((general) => general.nationId === sampleNation.id && general.cityId > 0);
@@ -691,6 +611,7 @@ describe('NPC 대형 시뮬레이션', () => {
                         population: city?.population,
                         populationMax: city?.populationMax,
                     });
+                    debug.dumpCity(sampleGeneral.cityId, 'NPC 샘플 도시');
                 }
                 const nationGenerals = world.listGenerals().filter((general) => general.nationId === sampleNation.id);
                 const crewOnly = nationGenerals.filter((general) => general.crew > 0);
