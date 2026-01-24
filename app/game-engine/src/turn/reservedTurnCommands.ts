@@ -18,9 +18,26 @@ import {
 } from '@sammo-ts/logic';
 import { asRecord } from '@sammo-ts/common';
 
+// legacy GameConstBase 기본값
 const DEFAULT_GENERAL_GOLD = 1000;
 const DEFAULT_GENERAL_RICE = 1000;
 const DEFAULT_CREW_TYPE_ID = 1100;
+const DEFAULT_TRAIN_DELTA = 30;
+const DEFAULT_ATMOS_DELTA = 30;
+const DEFAULT_MAX_TRAIN_BY_COMMAND = 100;
+const DEFAULT_MAX_ATMOS_BY_COMMAND = 100;
+const DEFAULT_SABOTAGE_PROB = 0.35;
+const DEFAULT_SABOTAGE_PROB_COEF = 300;
+const DEFAULT_SABOTAGE_DEFENCE_COEF = 0.04;
+const DEFAULT_SABOTAGE_DAMAGE_MIN = 100;
+const DEFAULT_SABOTAGE_DAMAGE_MAX = 800;
+const DEFAULT_OPENING_PART_YEAR = 3;
+const DEFAULT_MAX_GENERAL = 500;
+const DEFAULT_INITIAL_NATION_GEN_LIMIT = 10;
+const DEFAULT_MAX_TECH_LEVEL = 12;
+const DEFAULT_BASE_GOLD = 0;
+const DEFAULT_BASE_RICE = 2000;
+const DEFAULT_MAX_RESOURCE_ACTION_AMOUNT = 10000;
 
 const normalizeCode = (value: string | null | undefined): string | null => {
     if (!value || value === 'None') {
@@ -55,17 +72,21 @@ export const buildCommandEnv = (config: ScenarioConfig, unitSet?: UnitSetDefinit
     return {
         develCost: resolveNumber(constValues, ['develCost', 'develcost', 'develrate'], 0),
         minAvailableRecruitPop: resolveNumber(constValues, ['minAvailableRecruitPop'], 30000),
-        trainDelta: resolveNumber(constValues, ['trainDelta'], 0),
-        atmosDelta: resolveNumber(constValues, ['atmosDelta'], 0),
-        maxTrainByCommand: resolveNumber(constValues, ['maxTrainByCommand'], 0),
-        maxAtmosByCommand: resolveNumber(constValues, ['maxAtmosByCommand'], 0),
-        sabotageDefaultProb: resolveNumber(constValues, ['sabotageDefaultProb'], 0),
-        sabotageProbCoefByStat: resolveNumber(constValues, ['sabotageProbCoefByStat'], 0),
-        sabotageDefenceCoefByGeneralCount: resolveNumber(constValues, ['sabotageDefenceCoefByGeneralCount'], 0),
-        sabotageDamageMin: resolveNumber(constValues, ['sabotageDamageMin'], 0),
-        sabotageDamageMax: resolveNumber(constValues, ['sabotageDamageMax'], 0),
-        openingPartYear: resolveNumber(constValues, ['openingPartYear'], 0),
-        maxGeneral: resolveNumber(constValues, ['defaultMaxGeneral', 'maxGeneral'], 0),
+        trainDelta: resolveNumber(constValues, ['trainDelta'], DEFAULT_TRAIN_DELTA),
+        atmosDelta: resolveNumber(constValues, ['atmosDelta'], DEFAULT_ATMOS_DELTA),
+        maxTrainByCommand: resolveNumber(constValues, ['maxTrainByCommand'], DEFAULT_MAX_TRAIN_BY_COMMAND),
+        maxAtmosByCommand: resolveNumber(constValues, ['maxAtmosByCommand'], DEFAULT_MAX_ATMOS_BY_COMMAND),
+        sabotageDefaultProb: resolveNumber(constValues, ['sabotageDefaultProb'], DEFAULT_SABOTAGE_PROB),
+        sabotageProbCoefByStat: resolveNumber(constValues, ['sabotageProbCoefByStat'], DEFAULT_SABOTAGE_PROB_COEF),
+        sabotageDefenceCoefByGeneralCount: resolveNumber(
+            constValues,
+            ['sabotageDefenceCoefByGeneralCount'],
+            DEFAULT_SABOTAGE_DEFENCE_COEF
+        ),
+        sabotageDamageMin: resolveNumber(constValues, ['sabotageDamageMin'], DEFAULT_SABOTAGE_DAMAGE_MIN),
+        sabotageDamageMax: resolveNumber(constValues, ['sabotageDamageMax'], DEFAULT_SABOTAGE_DAMAGE_MAX),
+        openingPartYear: resolveNumber(constValues, ['openingPartYear'], DEFAULT_OPENING_PART_YEAR),
+        maxGeneral: resolveNumber(constValues, ['defaultMaxGeneral', 'maxGeneral'], DEFAULT_MAX_GENERAL),
         defaultNpcGold: resolveNumber(constValues, ['defaultNpcGold', 'defaultGold'], DEFAULT_GENERAL_GOLD),
         defaultNpcRice: resolveNumber(constValues, ['defaultNpcRice', 'defaultRice'], DEFAULT_GENERAL_RICE),
         defaultCrewTypeId: resolveNumber(
@@ -75,11 +96,19 @@ export const buildCommandEnv = (config: ScenarioConfig, unitSet?: UnitSetDefinit
         ),
         defaultSpecialDomestic: resolveOptionalString(constValues, ['defaultSpecialDomestic']),
         defaultSpecialWar: resolveOptionalString(constValues, ['defaultSpecialWar']),
-        initialNationGenLimit: resolveNumber(constValues, ['initialNationGenLimit'], 0),
-        maxTechLevel: resolveNumber(constValues, ['maxTechLevel'], 0),
-        baseGold: resolveNumber(constValues, ['baseGold', 'basegold'], 0),
-        baseRice: resolveNumber(constValues, ['baseRice', 'baserice'], 0),
-        maxResourceActionAmount: resolveNumber(constValues, ['maxResourceActionAmount'], 0),
+        initialNationGenLimit: resolveNumber(
+            constValues,
+            ['initialNationGenLimit'],
+            DEFAULT_INITIAL_NATION_GEN_LIMIT
+        ),
+        maxTechLevel: resolveNumber(constValues, ['maxTechLevel'], DEFAULT_MAX_TECH_LEVEL),
+        baseGold: resolveNumber(constValues, ['baseGold', 'basegold'], DEFAULT_BASE_GOLD),
+        baseRice: resolveNumber(constValues, ['baseRice', 'baserice'], DEFAULT_BASE_RICE),
+        maxResourceActionAmount: resolveNumber(
+            constValues,
+            ['maxResourceActionAmount'],
+            DEFAULT_MAX_RESOURCE_ACTION_AMOUNT
+        ),
     };
 };
 
