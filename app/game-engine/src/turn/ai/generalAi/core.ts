@@ -28,6 +28,7 @@ import { WorldStateView } from './worldStateView.js';
 import type { GeneralAIOptions, GeneralAiDebugState } from './types.js';
 
 const ACTION_REST = '휴식';
+const lastAttackableByNation = new Map<number, number>();
 
 const t무장 = 1;
 const t지장 = 2;
@@ -122,7 +123,9 @@ export class GeneralAI {
     constructor(options: GeneralAIOptions) {
         this.general = options.general;
         this.city = options.city;
-        this.nation = options.nation ?? null;
+        this.nation =
+            options.nation ??
+            (options.general.nationId > 0 ? options.worldRef?.getNationById(options.general.nationId) ?? null : null);
         this.world = options.world;
         this.worldRef = options.worldRef;
         this.map = options.map;
@@ -746,6 +749,13 @@ export class GeneralAI {
 
         const declareTerms = warTargets.filter((entry) => entry.state === 1).map((entry) => entry.term);
         const minWarTerm = declareTerms.length > 0 ? Math.min(...declareTerms) : null;
+        let lastAttackable = lastAttackableByNation.get(nationId) ??
+            readMetaNumber(asRecord(this.nation.meta), 'last_attackable', 0);
+        const markAttackable = () => {
+            lastAttackable = yearMonth;
+            lastAttackableByNation.set(nationId, yearMonth);
+        };
+
         if (minWarTerm === null) {
             this.dipState = d평화;
         } else if (minWarTerm > 8) {
@@ -754,17 +764,27 @@ export class GeneralAI {
             this.dipState = d징병;
         } else {
             this.dipState = d직전;
+            markAttackable();
         }
 
-        const meta = asRecord(this.nation.meta);
-        const lastAttackable = readMetaNumber(meta, 'last_attackable', 0);
         if (Object.prototype.hasOwnProperty.call(warTargetNation, 0) && this.attackable) {
             this.dipState = d전쟁;
+            markAttackable();
         } else if (onWar > 0) {
             if (this.attackable) {
                 this.dipState = d전쟁;
+                markAttackable();
             } else if (lastAttackable >= yearMonth - 5) {
                 this.dipState = d전쟁;
+            }
+        }
+
+        if ((this.dipState === d평화 || this.dipState === d선포) && this.worldRef) {
+            const hasCrew =
+                this.general.crew > 0 ||
+                this.worldRef.listGenerals().some((general) => general.nationId === nationId && general.crew > 0);
+            if (hasCrew) {
+                this.dipState = d징병;
             }
         }
     }

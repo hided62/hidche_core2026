@@ -267,7 +267,17 @@ export class InMemoryTurnWorld {
     }
 
     getDiplomacyEntry(srcNationId: number, destNationId: number): TurnDiplomacy | null {
-        const entry = this.diplomacy.get(buildDiplomacyKey(srcNationId, destNationId));
+        if (srcNationId === destNationId) {
+            return null;
+        }
+        const key = buildDiplomacyKey(srcNationId, destNationId);
+        let entry = this.diplomacy.get(key);
+        if (!entry && this.nations.has(srcNationId) && this.nations.has(destNationId)) {
+            entry = buildDefaultDiplomacy(srcNationId, destNationId);
+            this.diplomacy.set(key, entry);
+            this.dirtyDiplomacyKeys.add(key);
+            this.createdDiplomacyKeys.add(key);
+        }
         if (!entry) {
             return null;
         }
@@ -278,6 +288,7 @@ export class InMemoryTurnWorld {
     }
 
     listDiplomacy(): TurnDiplomacy[] {
+        this.ensureDiplomacyMatrix();
         return Array.from(this.diplomacy.values()).map((entry) => ({
             ...entry,
             meta: { ...entry.meta },
@@ -530,6 +541,7 @@ export class InMemoryTurnWorld {
                 this.createdGeneralIds.add(createdGeneral.id);
             }
             if (result.created.nations) {
+                let addedNation = false;
                 for (const createdNation of result.created.nations) {
                     if (this.nations.has(createdNation.id)) {
                         continue;
@@ -537,6 +549,10 @@ export class InMemoryTurnWorld {
                     this.nations.set(createdNation.id, { ...createdNation });
                     this.dirtyNationIds.add(createdNation.id);
                     this.createdNationIds.add(createdNation.id);
+                    addedNation = true;
+                }
+                if (addedNation) {
+                    this.ensureDiplomacyMatrix();
                 }
             }
             if (result.created.troops) {

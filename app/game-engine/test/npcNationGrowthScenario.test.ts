@@ -239,6 +239,8 @@ describe('NPC 대형 시뮬레이션', () => {
         const turnTraces: TurnTrace[] = [];
         const traceByGeneralId = new Map<number, TurnTrace>();
 
+        const commandEnv = buildCommandEnv(snapshot.scenarioConfig, snapshot.unitSet);
+
         const handler = await createReservedTurnHandler({
             reservedTurns: reservedTurnStore,
             scenarioConfig: snapshot.scenarioConfig,
@@ -401,14 +403,20 @@ describe('NPC 대형 시뮬레이션', () => {
             }
         };
 
-        const assertWarReadiness = (minCount: number, minTrain = 70, minAtmos = 70) => {
+        const assertWarReadiness = (minReadyCount: number, minTrain: number, minAtmos: number) => {
             const recruited = world
                 .listGenerals()
                 .filter((general) => general.nationId > 0 && general.crew > 0 && general.crewTypeId > 0);
+            const maxTrain = recruited.reduce((max, general) => Math.max(max, general.train), 0);
+            const maxAtmos = recruited.reduce((max, general) => Math.max(max, general.atmos), 0);
             const ready = recruited.filter((general) => general.train >= minTrain && general.atmos >= minAtmos);
-            expect(ready.length).toBeGreaterThanOrEqual(minCount);
-        };
 
+            expect(recruited.length).toBeGreaterThan(0);
+            expect(maxTrain).toBeGreaterThan(0);
+            expect(maxAtmos).toBeGreaterThan(0);
+            expect(ready.length).toBeGreaterThanOrEqual(minReadyCount);
+        };
+        
         const assertDispatchRecorded = (year: number, month: number, minCount = 1) => {
             const matches = turnTraces.filter(
                 (trace) => trace.year === year && trace.month === month && trace.actionKey === 'che_출병'
@@ -527,9 +535,8 @@ describe('NPC 대형 시뮬레이션', () => {
             }
             const city = world.getCityById(general.cityId);
             const nation = general.nationId > 0 ? world.getNationById(general.nationId) : null;
-            const env = buildCommandEnv(snapshot.scenarioConfig, snapshot.unitSet);
             const { general: generalDefinitions, nation: nationDefinitions } = await buildReservedTurnDefinitions({
-                env,
+                env: commandEnv,
                 commandProfile: DEFAULT_TURN_COMMAND_PROFILE,
                 defaultActionKey: '휴식',
             });
@@ -557,8 +564,8 @@ describe('NPC 대형 시뮬레이션', () => {
                 month: state.currentMonth,
                 startYear,
                 relYear: state.currentYear - startYear,
-                openingPartYear: env.openingPartYear,
-                minAvailableRecruitPop: env.minAvailableRecruitPop,
+                openingPartYear: commandEnv.openingPartYear,
+                minAvailableRecruitPop: commandEnv.minAvailableRecruitPop,
                 cities: world.listCities(),
                 nations: world.listNations(),
                 map: LARGE_TEST_MAP,
@@ -618,7 +625,7 @@ describe('NPC 대형 시뮬레이션', () => {
                 scenarioMeta: snapshot.scenarioMeta,
                 map: LARGE_TEST_MAP,
                 unitSet: snapshot.unitSet,
-                commandEnv: env,
+                commandEnv,
                 generalDefinitions,
                 nationDefinitions,
                 generalFallback,

@@ -127,7 +127,7 @@ export const buildFrontStatePatches = (options: {
               .listNations()
               .filter((nation) => options.nationIds?.includes(nation.id))
         : options.worldView.listNations();
-    const nations = nationList.filter((nation) => nation.level > 0 && nation.capitalCityId);
+    const nations = nationList.filter((nation) => nation.level > 0);
     const patches: Array<{ id: number; patch: Partial<City> }> = [];
     for (const nation of nations) {
         const frontStates = resolveNationFrontStates(nation.id, connectionMap, cityIdsByNation, diplomacy);

@@ -3,7 +3,7 @@ import { valueFit } from '../../aiUtils.js';
 import { pickWeightedCandidate } from './helpers.js';
 
 export const do전투준비 = (ai: GeneralAI) => {
-    if ([0, 1].includes(ai.dipState)) {
+    if ([0, 1].includes(ai.dipState) && ai.general.crew <= 0) {
         return null;
     }
     const cmdList: Array<[ReturnType<GeneralAI['buildGeneralCandidate']>, number]> = [];
