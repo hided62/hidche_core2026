@@ -229,7 +229,7 @@ describe('trait modules', () => {
             listGenerals: () => [general, patient],
         };
         const rng: RandomGenerator = {
-            nextFloat: () => 0,
+            nextFloat1: () => 0,
             nextBool: () => true,
             nextInt: (minInclusive: number, _maxExclusive: number) => minInclusive,
         };

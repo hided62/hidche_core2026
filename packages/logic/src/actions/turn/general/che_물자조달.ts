@@ -53,7 +53,7 @@ export class ActionResolver<
         // For now, assume simplified or no bonus unless strictly required to port helper.
         // Assuming 1.0 for now if helper not available, or implement simple bonus.
         // Legacy: $score *= $rng->nextRange(0.8, 1.2);
-        score *= context.rng.nextFloat() * 0.4 + 0.8;
+        score *= context.rng.nextFloat1() * 0.4 + 0.8;
 
         // 3. Success/Fail Ratio
         let successRatio = 0.1;
@@ -63,7 +63,7 @@ export class ActionResolver<
         failRatio = this.pipeline.onCalcDomestic(context, '조달', 'fail', failRatio);
 
         // 4. Determine Outcome
-        const roll = context.rng.nextFloat();
+        const roll = context.rng.nextFloat1();
         let outcome: 'fail' | 'success' | 'normal' = 'normal';
 
         if (roll < failRatio) {
@@ -95,7 +95,7 @@ export class ActionResolver<
         // Stat Exp
         // Legacy: choose weighted among L/S/I
         const statChoice =
-            context.rng.nextFloat() * (general.stats.leadership + general.stats.strength + general.stats.intelligence);
+            context.rng.nextFloat1() * (general.stats.leadership + general.stats.strength + general.stats.intelligence);
         let statKey: 'leadership_exp' | 'strength_exp' | 'intel_exp' = 'leadership_exp';
 
         if (statChoice < general.stats.leadership) {

@@ -68,16 +68,16 @@ export const resolveTournamentBattle = (input: TournamentBattleInput): Tournamen
     let selected = 2;
 
     for (let phase = 1; phase <= maxTurns; phase += 1) {
-        const baseDamageAttacker = round(defenderStat * (rng.nextInt(21) + 90) / 130);
-        const baseDamageDefender = round(attackerStat * (rng.nextInt(21) + 90) / 130);
+        const baseDamageAttacker = round(defenderStat * (rng.nextInt(0, 22) + 90) / 130);
+        const baseDamageDefender = round(attackerStat * (rng.nextInt(0, 22) + 90) / 130);
         let damageAttacker = baseDamageAttacker;
         let damageDefender = baseDamageDefender;
 
-        if (attackerStat >= rng.nextInt(100)) {
-            damageDefender += round(attackerStat * (rng.nextInt(41) + 10) / 130);
+        if (attackerStat >= rng.nextInt(0, 101)) {
+            damageDefender += round(attackerStat * (rng.nextInt(0, 42) + 10) / 130);
         }
-        if (defenderStat >= rng.nextInt(100)) {
-            damageAttacker += round(defenderStat * (rng.nextInt(41) + 10) / 130);
+        if (defenderStat >= rng.nextInt(0, 101)) {
+            damageAttacker += round(defenderStat * (rng.nextInt(0, 42) + 10) / 130);
         }
 
         let criticalAttacker = false;
@@ -85,13 +85,13 @@ export const resolveTournamentBattle = (input: TournamentBattleInput): Tournamen
         let factorAttacker = 1;
         let factorDefender = 1;
 
-        if (energyBaseAttacker / 5 > energyAttacker && damageAttacker > damageDefender && attackerStat >= rng.nextInt(300)) {
-            factorDefender = round((rng.nextInt(301) + 200) / 100);
+        if (energyBaseAttacker / 5 > energyAttacker && damageAttacker > damageDefender && attackerStat >= rng.nextInt(0, 301)) {
+            factorDefender = round((rng.nextInt(0, 302) + 200) / 100);
             criticalAttacker = true;
             log.push(`<S>●</> <Y>${attacker.name}</>의 분노의 일격!`);
         }
-        if (energyBaseDefender / 5 > energyDefender && damageDefender > damageAttacker && defenderStat >= rng.nextInt(300)) {
-            factorAttacker = round((rng.nextInt(301) + 200) / 100);
+        if (energyBaseDefender / 5 > energyDefender && damageDefender > damageAttacker && defenderStat >= rng.nextInt(0, 301)) {
+            factorAttacker = round((rng.nextInt(0, 302) + 200) / 100);
             criticalDefender = true;
             log.push(`<S>●</> <Y>${defender.name}</>의 분노의 일격!`);
         }
@@ -100,18 +100,18 @@ export const resolveTournamentBattle = (input: TournamentBattleInput): Tournamen
         damageDefender = round(damageDefender * factorDefender);
 
         if (phase === 1) {
-            if (attackerStat * 0.9 > defenderStat && attackerStat >= rng.nextInt(400)) {
-                damageDefender += round(attackerStat * (rng.nextInt(31) + 70) / 100);
+            if (attackerStat * 0.9 > defenderStat && attackerStat >= rng.nextInt(0, 401)) {
+                damageDefender += round(attackerStat * (rng.nextInt(0, 32) + 70) / 100);
             }
-            if (defenderStat * 0.9 > attackerStat && defenderStat >= rng.nextInt(400)) {
-                damageAttacker += round(defenderStat * (rng.nextInt(31) + 70) / 100);
+            if (defenderStat * 0.9 > attackerStat && defenderStat >= rng.nextInt(0, 401)) {
+                damageAttacker += round(defenderStat * (rng.nextInt(0, 32) + 70) / 100);
             }
         } else {
-            if (!criticalAttacker && attackerStat >= rng.nextInt(1000)) {
-                damageDefender += round(attackerStat * (rng.nextInt(31) + 20) / 100);
+            if (!criticalAttacker && attackerStat >= rng.nextInt(0, 1001)) {
+                damageDefender += round(attackerStat * (rng.nextInt(0, 32) + 20) / 100);
             }
-            if (!criticalDefender && defenderStat >= rng.nextInt(1000)) {
-                damageAttacker += round(defenderStat * (rng.nextInt(31) + 20) / 100);
+            if (!criticalDefender && defenderStat >= rng.nextInt(0, 1001)) {
+                damageAttacker += round(defenderStat * (rng.nextInt(0, 32) + 20) / 100);
             }
         }
 

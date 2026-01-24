@@ -211,7 +211,7 @@ export class TestGameRunner {
                     nextBool: () => Math.random() < 0.5,
                     nextRange: (min: number, max: number) => Math.random() * (max - min) + min,
                     nextRangeInt: (min: number, max: number) => Math.floor(Math.random() * (max - min)) + min,
-                    nextFloat: () => Math.random(),
+                    nextFloat1: () => Math.random(),
                 } as any,
 
                 year: this.currentDate.getFullYear(),

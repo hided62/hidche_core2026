@@ -68,14 +68,14 @@ const getMetaNumber = (meta: Record<string, unknown>, key: string): number | nul
     return typeof raw === 'number' ? raw : null;
 };
 
-const randomRange = (rng: RandomGenerator, min: number, max: number): number => min + (max - min) * rng.nextFloat();
+const randomRange = (rng: RandomGenerator, min: number, max: number): number => min + (max - min) * rng.nextFloat1();
 
 const pickByWeight = (rng: RandomGenerator, weights: Record<DomesticCriticalPick, number>): DomesticCriticalPick => {
     const total = weights.fail + weights.normal + weights.success;
     if (total <= 0) {
         return 'normal';
     }
-    let cursor = rng.nextFloat() * total;
+    let cursor = rng.nextFloat1() * total;
     for (const key of ['fail', 'normal', 'success'] as const) {
         cursor -= weights[key];
         if (cursor <= 0) {

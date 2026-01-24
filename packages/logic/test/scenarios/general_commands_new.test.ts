@@ -175,7 +175,7 @@ describe('General Commands New Scenario', () => {
                         nextBool: () => true,
                         nextRange: (_min: number, max: number) => max,
                         nextRangeInt: (_min: number, max: number) => max,
-                        nextFloat: () => 0.9, // Ensure success
+                        nextFloat1: () => 0.9, // Ensure success
                     },
                 },
             },

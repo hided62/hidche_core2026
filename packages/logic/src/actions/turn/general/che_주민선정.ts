@@ -47,7 +47,7 @@ const addMetaNumber = (meta: Record<string, unknown>, key: string, delta: number
     return { ...meta, [key]: current + delta };
 };
 
-const randomRange = (rng: RandomGenerator, min: number, max: number): number => min + (max - min) * rng.nextFloat();
+const randomRange = (rng: RandomGenerator, min: number, max: number): number => min + (max - min) * rng.nextFloat1();
 
 const remainCityTrust = (): Constraint => ({
     name: 'remainCityTrust',

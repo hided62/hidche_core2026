@@ -1,5 +1,5 @@
 export interface RandomGenerator {
-    nextFloat(): number;
+    nextFloat1(): number;
     nextBool(probability: number): boolean;
     nextInt(minInclusive: number, maxExclusive: number): number;
 }

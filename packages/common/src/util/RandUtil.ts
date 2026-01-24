@@ -13,13 +13,17 @@ export class RandUtil {
         return this.nextFloat1() * range + min;
     }
 
-    public nextRangeInt(min: number, max: number): number {
-        const range = max - min;
-        return this.rng.nextInt(range) + min;
+    public nextRangeInt(minInclusive: number, maxInclusive: number): number {
+        const range = maxInclusive - minInclusive;
+        return this.rng.nextInt(range) + minInclusive;
     }
 
-    public nextInt(max?: number): number {
-        return this.rng.nextInt(max);
+    public nextInt(minInclusive: number, maxExclusive: number): number {
+        const span = maxExclusive - minInclusive;
+        if (span <= 1) {
+            return minInclusive;
+        }
+        return minInclusive + this.rng.nextInt(span - 1);
     }
 
     public nextBit(): boolean {

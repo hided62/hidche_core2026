@@ -121,7 +121,7 @@ class ReservedTurnRunner extends TestGameRunner {
 
                 // Simple RNG mock
                 const rng: RandomGenerator = {
-                    nextFloat: () => 0.5,
+                    nextFloat1: () => 0.5,
                     nextBool: () => true,
                     nextInt: (min: number, _max: number) => min,
                 };

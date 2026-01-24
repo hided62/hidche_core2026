@@ -91,7 +91,7 @@ const pickUsingWeightPair = <T>(rng: RandomGenerator, items: Array<[T, number]>)
     if (total <= 0) {
         return items[0]?.[0] ?? null;
     }
-    let cursor = rng.nextFloat() * total;
+    let cursor = rng.nextFloat1() * total;
     for (const [item, weight] of items) {
         if (weight <= 0) {
             continue;

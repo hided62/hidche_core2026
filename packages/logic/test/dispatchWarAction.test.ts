@@ -166,7 +166,7 @@ const aftermathConfig: WarAftermathConfig = {
 };
 
 const rng = {
-    nextFloat: () => 0.1,
+    nextFloat1: () => 0.1,
     nextBool: (probability: number) => probability >= 0.1,
     nextInt: (minInclusive: number, _maxExclusive: number) => minInclusive,
 };

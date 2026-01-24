@@ -4,7 +4,7 @@ import type { ScenarioMeta } from '@sammo-ts/logic/world/types.js';
 import type { MapDefinition, UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
 
 export interface ActionRandomSource {
-    nextFloat(): number;
+    nextFloat1(): number;
     nextBool(probability: number): boolean;
     nextInt(minInclusive: number, maxExclusive: number): number;
 }

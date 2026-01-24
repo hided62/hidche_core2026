@@ -22,7 +22,7 @@ import {
     resolveGeneralAction,
 } from '@sammo-ts/logic';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic';
-import { asRecord, LiteHashDRBG } from '@sammo-ts/common';
+import { asRecord, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 
 import type { ConstraintContext, StateView } from '@sammo-ts/logic';
 
@@ -76,31 +76,6 @@ const serializeSeed = (...values: Array<string | number>): string =>
         .map((value) => (typeof value === 'string' ? `str(${value.length},${value})` : `int(${Math.floor(value)})`))
         .join('|');
 
-class DeterministicRandom {
-    constructor(private readonly rng: LiteHashDRBG) {}
-
-    nextFloat(): number {
-        return this.rng.nextFloat1();
-    }
-
-    nextBool(probability: number): boolean {
-        if (probability >= 1) {
-            return true;
-        }
-        if (probability <= 0) {
-            return false;
-        }
-        return this.nextFloat() < probability;
-    }
-
-    nextInt(minInclusive: number, maxExclusive: number): number {
-        const span = maxExclusive - minInclusive;
-        if (span <= 1) {
-            return minInclusive;
-        }
-        return minInclusive + this.rng.nextInt(span - 1);
-    }
-}
 
 type WorldView = {
     getGeneralById(id: number): TurnGeneral | null;
@@ -539,7 +514,7 @@ export const createReservedTurnHandler = async (options: {
                         context.world.currentMonth,
                         currentGeneral.id
                     );
-                    return new DeterministicRandom(new LiteHashDRBG(rngSeed));
+                    return new RandUtil(new LiteHashDRBG(rngSeed));
                 };
 
                 const actionArgsRecord = extractArgsRecord(actionArgs);

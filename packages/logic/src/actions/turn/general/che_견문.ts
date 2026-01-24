@@ -132,7 +132,7 @@ const pickByWeight = (rng: GeneralActionResolveContext['rng']): { flags: number;
         const text = base.texts[0] ?? '';
         return { flags: base.flags, text };
     }
-    let cursor = rng.nextFloat() * total;
+    let cursor = rng.nextFloat1() * total;
     for (const entry of SIGHTSEEING_MESSAGES) {
         const weight = Math.max(entry.weight, 0);
         cursor -= weight;

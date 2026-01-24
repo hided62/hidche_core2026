@@ -47,7 +47,7 @@ const pickByWeight = <T extends string>(rng: DrillContext['rng'], weights: Recor
     if (total <= 0) {
         return first[0];
     }
-    let cursor = rng.nextFloat() * total;
+    let cursor = rng.nextFloat1() * total;
     for (const [key, weight] of entries) {
         if (weight <= 0) {
             continue;
