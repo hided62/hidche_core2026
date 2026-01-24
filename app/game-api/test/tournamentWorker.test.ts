@@ -28,6 +28,12 @@ class MemoryRedis {
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 
+const createNoopDaemonTransport = (): TurnDaemonTransport => ({
+    sendCommand: async () => 'ok',
+    requestCommand: async () => null,
+    requestStatus: async () => null,
+});
+
 const createTournamentState = (overrides: Partial<TournamentState> = {}): TournamentState => {
     const now = new Date().toISOString();
     return {
@@ -174,6 +180,8 @@ const runTournamentToCompletion = async (options: {
         throw new Error('토너먼트 상태가 없습니다.');
     }
 
+    const daemonTransport = createNoopDaemonTransport();
+
     for (let i = 0; i < 2000; i += 1) {
         if (state.stage === 0) {
             return state;
@@ -184,7 +192,7 @@ const runTournamentToCompletion = async (options: {
             await options.store.setState(state);
         }
         if (state.stage >= 1 && state.stage <= 6) {
-            state = await applyPreBattleStage(options.store, options.prisma, state, options.baseSeed);
+            state = await applyPreBattleStage(options.store, options.prisma, state, options.baseSeed, daemonTransport);
             continue;
         }
         if (state.stage >= 7 && state.stage <= 10) {
@@ -337,7 +345,7 @@ describe('tournament worker (in-memory)', () => {
 
         const initialState = state ?? createTournamentState({ stage: 1 });
         await store.setState(initialState);
-        const afterJoin = await applyPreBattleStage(store, prisma, initialState, 'seed');
+        const afterJoin = await applyPreBattleStage(store, prisma, initialState, 'seed', createNoopDaemonTransport());
         const participants = await store.getParticipants();
 
         expect(afterJoin.stage).toBe(2);

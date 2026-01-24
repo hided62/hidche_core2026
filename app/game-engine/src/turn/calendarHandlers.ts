@@ -2,10 +2,10 @@ import type { TurnCalendarHandler } from './inMemoryWorld.js';
 
 export const composeCalendarHandlers = (
     ...handlers: Array<TurnCalendarHandler | null | undefined>
-): TurnCalendarHandler | null => {
+): TurnCalendarHandler | undefined => {
     const resolved = handlers.filter(Boolean) as TurnCalendarHandler[];
     if (resolved.length === 0) {
-        return null;
+        return undefined;
     }
     return {
         onMonthChanged: (context) => {

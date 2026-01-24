@@ -13,7 +13,13 @@ export interface StatBlock {
     intelligence: number;
 }
 
-export type TriggerValue = boolean | number | string;
+export type TriggerValuePrimitive = boolean | number | string;
+
+export interface TriggerValueObject {
+    [key: string]: TriggerValuePrimitive | TriggerValueObject;
+}
+
+export type TriggerValue = TriggerValuePrimitive | TriggerValueObject;
 
 export interface GeneralTriggerState {
     // Trigger 시스템에서 사용하는 확장 슬롯.
