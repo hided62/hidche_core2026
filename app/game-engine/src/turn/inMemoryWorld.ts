@@ -183,6 +183,7 @@ export class InMemoryTurnWorld {
     private readonly createdDiplomacyKeys = new Set<string>();
     private readonly deletedTroopIds = new Set<number>();
     private readonly deletedGeneralIds = new Set<number>();
+    private readonly deletedNationIds = new Set<number>();
     private readonly logs: LogEntryDraft[] = [];
     private readonly scenarioConfig: ScenarioConfig;
     private checkpoint?: TurnCheckpoint;
@@ -373,6 +374,24 @@ export class InMemoryTurnWorld {
         this.dirtyTroopIds.delete(id);
         this.createdTroopIds.delete(id);
         this.deletedTroopIds.add(id);
+        return true;
+    }
+
+    removeNation(id: number): boolean {
+        if (!this.nations.has(id)) {
+            return false;
+        }
+        this.nations.delete(id);
+        this.dirtyNationIds.delete(id);
+        this.createdNationIds.delete(id);
+        this.deletedNationIds.add(id);
+        for (const [key, entry] of this.diplomacy) {
+            if (entry.fromNationId === id || entry.toNationId === id) {
+                this.diplomacy.delete(key);
+                this.dirtyDiplomacyKeys.delete(key);
+                this.createdDiplomacyKeys.delete(key);
+            }
+        }
         return true;
     }
 
@@ -586,6 +605,8 @@ export class InMemoryTurnWorld {
             }
         }
 
+        this.removeCollapsedNations();
+
         return nextTurnAt;
     }
 
@@ -632,6 +653,7 @@ export class InMemoryTurnWorld {
         troops: Troop[];
         deletedTroops: number[];
         deletedGenerals: number[];
+        deletedNations: number[];
         diplomacy: TurnDiplomacy[];
         logs: LogEntryDraft[];
         createdGenerals: TurnGeneral[];
@@ -668,6 +690,7 @@ export class InMemoryTurnWorld {
             .filter((entry): entry is TurnDiplomacy => Boolean(entry));
         const deletedTroops = Array.from(this.deletedTroopIds);
         const deletedGenerals = Array.from(this.deletedGeneralIds);
+        const deletedNations = Array.from(this.deletedNationIds);
         const logs = this.logs.splice(0, this.logs.length);
 
         this.dirtyGeneralIds.clear();
@@ -681,6 +704,7 @@ export class InMemoryTurnWorld {
         this.createdDiplomacyKeys.clear();
         this.deletedTroopIds.clear();
         this.deletedGeneralIds.clear();
+        this.deletedNationIds.clear();
 
         return {
             generals,
@@ -689,6 +713,7 @@ export class InMemoryTurnWorld {
             troops,
             deletedTroops,
             deletedGenerals,
+            deletedNations,
             diplomacy,
             logs,
             createdGenerals,
@@ -696,6 +721,45 @@ export class InMemoryTurnWorld {
             createdTroops,
             createdDiplomacy,
         };
+    }
+
+    private removeCollapsedNations(): void {
+        const collapsedNationIds: number[] = [];
+        for (const nation of this.nations.values()) {
+            if (nation.id <= 0) {
+                continue;
+            }
+            const meta = nation.meta as Record<string, unknown>;
+            if (meta.collapsed !== true) {
+                continue;
+            }
+            const cityCount = Array.from(this.cities.values()).filter((city) => city.nationId === nation.id).length;
+            if (cityCount > 0) {
+                continue;
+            }
+            collapsedNationIds.push(nation.id);
+        }
+
+        for (const nationId of collapsedNationIds) {
+            for (const general of this.generals.values()) {
+                if (general.nationId !== nationId) {
+                    continue;
+                }
+                const updated = applyGeneralPatch(general, {
+                    nationId: 0,
+                    officerLevel: 0,
+                    troopId: 0,
+                });
+                this.generals.set(general.id, normalizeGeneralTurnTime(updated, this.state.lastTurnTime));
+                this.dirtyGeneralIds.add(general.id);
+            }
+            for (const troop of Array.from(this.troops.values())) {
+                if (troop.nationId === nationId) {
+                    this.removeTroop(troop.id);
+                }
+            }
+            this.removeNation(nationId);
+        }
     }
 
     private ensureDiplomacyMatrix(): void {

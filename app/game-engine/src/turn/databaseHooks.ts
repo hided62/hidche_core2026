@@ -241,6 +241,7 @@ export const createDatabaseTurnHooks = async (
                 troops,
                 deletedTroops,
                 deletedGenerals,
+                deletedNations,
                 diplomacy,
                 logs,
                 createdGenerals,
@@ -306,6 +307,23 @@ export const createDatabaseTurnHooks = async (
             if (deletedGenerals.length > 0) {
                 await prisma.general.deleteMany({
                     where: { id: { in: deletedGenerals } },
+                });
+            }
+
+            if (deletedNations.length > 0) {
+                await prisma.diplomacy.deleteMany({
+                    where: {
+                        OR: [
+                            { srcNationId: { in: deletedNations } },
+                            { destNationId: { in: deletedNations } },
+                        ],
+                    },
+                });
+                await prisma.nationTurn.deleteMany({
+                    where: { nationId: { in: deletedNations } },
+                });
+                await prisma.nation.deleteMany({
+                    where: { id: { in: deletedNations } },
                 });
             }
 
