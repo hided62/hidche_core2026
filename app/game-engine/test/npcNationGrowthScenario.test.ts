@@ -22,6 +22,7 @@ import { createFrontStateHandler } from '../src/turn/frontStateHandler.js';
 import { composeCalendarHandlers } from '../src/turn/calendarHandlers.js';
 import { buildCommandEnv, buildReservedTurnDefinitions } from '../src/turn/reservedTurnCommands.js';
 import { LARGE_TEST_MAP, buildLargeTestCities } from './fixtures/largeTestMap.js';
+import { round } from 'es-toolkit';
 
 const mockDate = new Date('0179-08-01T00:00:00Z');
 
@@ -224,7 +225,13 @@ describe('NPC 대형 시뮬레이션', () => {
         type TurnTrace = {
             year: number;
             month: number;
+            nationId: number;
             generalId: number;
+            gold: number;
+            rice: number;
+            crew: number;
+            train: number;
+            atmos: number;
             actionText: string;
             actionKey: string;
             requestedAction: string;
@@ -269,7 +276,13 @@ describe('NPC 대형 시뮬레이션', () => {
                 const trace: TurnTrace = {
                     year: ctx.world.currentYear,
                     month: ctx.world.currentMonth,
+                    nationId: ctx.general.nationId,
                     generalId: ctx.general.id,
+                    gold: ctx.general.gold,
+                    rice: ctx.general.rice,
+                    crew: ctx.general.crew,
+                    train: ctx.general.train,
+                    atmos: ctx.general.atmos,
                     actionKey: 'unknown',
                     requestedAction: 'unknown',
                     usedFallback: false,
@@ -282,6 +295,9 @@ describe('NPC 대형 시뮬레이션', () => {
                 const actionLog = result.logs?.find((log) => log.category === LogCategory.ACTION);
                 trace.actionText = actionLog?.text ?? 'unknown';
                 trace.logs = result.logs ?? [];
+                if (ctx.general.nationId === 0) {
+                    return result;
+                }
                 turnTraces.push(trace);
                 return result;
             },
@@ -333,8 +349,8 @@ describe('NPC 대형 시뮬레이션', () => {
                     ? ` fallback(${trace.requestedAction} -> ${trace.actionKey}) ${trace.blockedReason ?? ''}`
                     : ` ${trace.requestedAction} -> ${trace.actionKey}`;
                 console.log(
-                    `- ${trace.year}-${String(trace.month).padStart(2, '0')} G${trace.generalId} ` +
-                        `${trace.ok ? 'OK' : 'FAIL'} ${action}${extra}`
+                    `- ${trace.year}-${String(trace.month).padStart(2, '0')} N${trace.nationId} G${trace.generalId} g${round(trace.gold)}/r${round(trace.rice)} c${trace.crew}/t${trace.train}/a${trace.atmos} ` +
+                    `${trace.ok ? 'OK' : 'FAIL'} ${action}${extra}`
                 );
             }
         };
@@ -416,7 +432,7 @@ describe('NPC 대형 시뮬레이션', () => {
             expect(maxAtmos).toBeGreaterThan(0);
             expect(ready.length).toBeGreaterThanOrEqual(minReadyCount);
         };
-        
+
         const assertDispatchRecorded = (year: number, month: number, minCount = 1) => {
             const matches = turnTraces.filter(
                 (trace) => trace.year === year && trace.month === month && trace.actionKey === 'che_출병'
@@ -520,9 +536,9 @@ describe('NPC 대형 시뮬레이션', () => {
             ['181-01', () => assertNationGeneralCount(10)],
             ['182-01', () => assertDomesticGrowthBy(182, 1)],
             ['182-10', () => assertNationRecruitCount(5)],
-            ['182-12', () => assertWarReadiness(10, 70, 70)],
-            //['183-01', () => assertDispatchRecorded(183, 1, 1)],
-            //['183-07', () => assertNoNeutralCities()],
+            ['183-01', () => assertWarReadiness(10, 70, 70)],
+            ['183-02', () => assertDispatchRecorded(183, 1, 1)],
+            ['183-07', () => assertNoNeutralCities()],
         ]);
 
         const toKey = (year: number, month: number) => `${year}-${String(month).padStart(2, '0')}`;
