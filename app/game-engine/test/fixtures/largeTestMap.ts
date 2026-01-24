@@ -12,7 +12,7 @@ export const LARGE_TEST_MAP: MapDefinition = {
             position: { x: 10, y: 10 },
             connections: [2, 3],
             max: {
-                population: 20000,
+                population: 300000,
                 agriculture: 2000,
                 commerce: 2000,
                 security: 2000,
@@ -20,7 +20,7 @@ export const LARGE_TEST_MAP: MapDefinition = {
                 wall: 1000,
             },
             initial: {
-                population: 10000,
+                population: 150000,
                 agriculture: 600,
                 commerce: 600,
                 security: 600,
@@ -36,7 +36,7 @@ export const LARGE_TEST_MAP: MapDefinition = {
             position: { x: 20, y: 10 },
             connections: [1, 4],
             max: {
-                population: 24000,
+                population: 400000,
                 agriculture: 2200,
                 commerce: 2200,
                 security: 2200,
@@ -44,7 +44,7 @@ export const LARGE_TEST_MAP: MapDefinition = {
                 wall: 1100,
             },
             initial: {
-                population: 12000,
+                population: 200000,
                 agriculture: 660,
                 commerce: 660,
                 security: 660,
@@ -60,7 +60,7 @@ export const LARGE_TEST_MAP: MapDefinition = {
             position: { x: 10, y: 20 },
             connections: [1, 5],
             max: {
-                population: 30000,
+                population: 500000,
                 agriculture: 2500,
                 commerce: 2500,
                 security: 2500,
@@ -68,7 +68,7 @@ export const LARGE_TEST_MAP: MapDefinition = {
                 wall: 1200,
             },
             initial: {
-                population: 15000,
+                population: 250000,
                 agriculture: 1200,
                 commerce: 1200,
                 security: 1200,
@@ -84,7 +84,7 @@ export const LARGE_TEST_MAP: MapDefinition = {
             position: { x: 30, y: 10 },
             connections: [2, 5],
             max: {
-                population: 32000,
+                population: 600000,
                 agriculture: 2600,
                 commerce: 2600,
                 security: 2600,
@@ -92,7 +92,7 @@ export const LARGE_TEST_MAP: MapDefinition = {
                 wall: 1300,
             },
             initial: {
-                population: 16000,
+                population: 300000,
                 agriculture: 1300,
                 commerce: 1300,
                 security: 1300,
@@ -108,7 +108,7 @@ export const LARGE_TEST_MAP: MapDefinition = {
             position: { x: 20, y: 20 },
             connections: [3, 4, 6],
             max: {
-                population: 20000,
+                population: 300000,
                 agriculture: 2000,
                 commerce: 2000,
                 security: 2000,
@@ -116,7 +116,7 @@ export const LARGE_TEST_MAP: MapDefinition = {
                 wall: 1000,
             },
             initial: {
-                population: 10000,
+                population: 150000,
                 agriculture: 600,
                 commerce: 600,
                 security: 600,
@@ -132,7 +132,7 @@ export const LARGE_TEST_MAP: MapDefinition = {
             position: { x: 30, y: 20 },
             connections: [5, 7],
             max: {
-                population: 24000,
+                population: 400000,
                 agriculture: 2200,
                 commerce: 2200,
                 security: 2200,
@@ -140,7 +140,7 @@ export const LARGE_TEST_MAP: MapDefinition = {
                 wall: 1100,
             },
             initial: {
-                population: 12000,
+                population: 200000,
                 agriculture: 660,
                 commerce: 660,
                 security: 660,
@@ -156,7 +156,7 @@ export const LARGE_TEST_MAP: MapDefinition = {
             position: { x: 40, y: 20 },
             connections: [6, 8],
             max: {
-                population: 30000,
+                population: 500000,
                 agriculture: 2500,
                 commerce: 2500,
                 security: 2500,
@@ -164,7 +164,7 @@ export const LARGE_TEST_MAP: MapDefinition = {
                 wall: 1200,
             },
             initial: {
-                population: 15000,
+                population: 250000,
                 agriculture: 1200,
                 commerce: 1200,
                 security: 1200,
@@ -180,7 +180,7 @@ export const LARGE_TEST_MAP: MapDefinition = {
             position: { x: 50, y: 20 },
             connections: [7, 9],
             max: {
-                population: 32000,
+                population: 600000,
                 agriculture: 2600,
                 commerce: 2600,
                 security: 2600,
@@ -188,7 +188,7 @@ export const LARGE_TEST_MAP: MapDefinition = {
                 wall: 1300,
             },
             initial: {
-                population: 16000,
+                population: 300000,
                 agriculture: 1300,
                 commerce: 1300,
                 security: 1300,
@@ -204,7 +204,7 @@ export const LARGE_TEST_MAP: MapDefinition = {
             position: { x: 60, y: 20 },
             connections: [8],
             max: {
-                population: 20000,
+                population: 300000,
                 agriculture: 2000,
                 commerce: 2000,
                 security: 2000,
@@ -212,7 +212,7 @@ export const LARGE_TEST_MAP: MapDefinition = {
                 wall: 1000,
             },
             initial: {
-                population: 10000,
+                population: 150000,
                 agriculture: 1000,
                 commerce: 1000,
                 security: 1000,

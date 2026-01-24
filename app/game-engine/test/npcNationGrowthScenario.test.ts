@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { LogEntryDraft, TurnSchedule, UnitSetDefinition } from '@sammo-ts/logic';
-import { LogCategory } from '@sammo-ts/logic';
+import type {
+    ConstraintContext,
+    LogEntryDraft,
+    RequirementKey,
+    StateView,
+    TurnSchedule,
+    UnitSetDefinition,
+} from '@sammo-ts/logic';
+import { DEFAULT_TURN_COMMAND_PROFILE, LogCategory, evaluateConstraints } from '@sammo-ts/logic';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 import type { GeneralAiDebugState } from '../src/turn/ai/generalAi.js';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
@@ -8,10 +15,13 @@ import { joinYearMonth } from '../src/turn/ai/aiUtils.js';
 import { InMemoryReservedTurnStore } from '../src/turn/reservedTurnStore.js';
 import { createReservedTurnHandler } from '../src/turn/reservedTurnHandler.js';
 import { InMemoryTurnProcessor } from '../src/turn/inMemoryTurnProcessor.js';
+import { GeneralAI } from '../src/turn/ai/generalAi.js';
+import { do징병 } from '../src/turn/ai/generalAiGeneralActions.js';
 import { createIncomeHandler } from '../src/turn/incomeHandler.js';
 import { createNpcTaxHandler } from '../src/turn/npcTaxHandler.js';
 import { createFrontStateHandler } from '../src/turn/frontStateHandler.js';
 import { composeCalendarHandlers } from '../src/turn/calendarHandlers.js';
+import { buildCommandEnv, buildReservedTurnDefinitions } from '../src/turn/reservedTurnCommands.js';
 import { LARGE_TEST_MAP, buildLargeTestCities } from './fixtures/largeTestMap.js';
 
 const mockDate = new Date('0179-08-01T00:00:00Z');
@@ -120,6 +130,19 @@ describe('NPC 대형 시뮬레이션', () => {
         }
 
         const cities = buildLargeTestCities();
+        const initialCityStats = new Map(
+            cities.map((city) => [
+                city.id,
+                {
+                    population: city.population,
+                    agriculture: city.agriculture,
+                    commerce: city.commerce,
+                    security: city.security,
+                    defence: city.defence,
+                    wall: city.wall,
+                },
+            ])
+        );
 
         const unitSet: UnitSetDefinition = {
             id: 'test_unit_set',
@@ -399,6 +422,63 @@ describe('NPC 대형 시뮬레이션', () => {
             expect(afterTotal).toBeGreaterThan(beforeTotal);
         };
 
+        const assertDomesticGrowthBy = (year: number, month: number) => {
+            const citiesNow = world.listCities().filter((city) => city.nationId > 0);
+            for (const city of citiesNow) {
+                const baseline = initialCityStats.get(city.id);
+                if (!baseline) {
+                    continue;
+                }
+                const delta = {
+                    population: city.population - baseline.population,
+                    agriculture: city.agriculture - baseline.agriculture,
+                    commerce: city.commerce - baseline.commerce,
+                    security: city.security - baseline.security,
+                    defence: city.defence - baseline.defence,
+                    wall: city.wall - baseline.wall,
+                };
+                console.log('[DEBUG] domestic delta', {
+                    year,
+                    month,
+                    cityId: city.id,
+                    nationId: city.nationId,
+                    delta,
+                });
+
+                const failures: string[] = [];
+                if (city.population <= baseline.population) failures.push('population');
+                if (city.agriculture <= baseline.agriculture) failures.push('agriculture');
+                if (city.commerce <= baseline.commerce) failures.push('commerce');
+                if (city.security <= baseline.security) failures.push('security');
+                if (city.defence <= baseline.defence) failures.push('defence');
+                if (city.wall <= baseline.wall) failures.push('wall');
+                if (failures.length > 0) {
+                    console.log('[DEBUG] domestic not grown', {
+                        year,
+                        month,
+                        cityId: city.id,
+                        nationId: city.nationId,
+                        failures,
+                        baseline,
+                        current: {
+                            population: city.population,
+                            agriculture: city.agriculture,
+                            commerce: city.commerce,
+                            security: city.security,
+                            defence: city.defence,
+                            wall: city.wall,
+                        },
+                    });
+                }
+                expect(city.population).toBeGreaterThan(baseline.population);
+                expect(city.agriculture).toBeGreaterThan(baseline.agriculture);
+                expect(city.commerce).toBeGreaterThan(baseline.commerce);
+                expect(city.security).toBeGreaterThan(baseline.security);
+                expect(city.defence).toBeGreaterThan(baseline.defence);
+                expect(city.wall).toBeGreaterThan(baseline.wall);
+            }
+        };
+
         const targetChecks = new Map<string, () => void>([
             ['179-09', () => assertUprisingCount(1)],
             ['179-10', () => assertUprisingCount(2)],
@@ -411,10 +491,121 @@ describe('NPC 대형 시뮬레이션', () => {
             ['180-07', () => assertSmallMediumCitiesFounded()],
             ['180-11', () => assertCityTrust(90)],
             ['181-01', () => assertNationGeneralCount(10)],
+            ['182-01', () => assertDomesticGrowthBy(182, 1)],
             ['182-10', () => assertNationRecruitCount(5)],
         ]);
 
         const toKey = (year: number, month: number) => `${year}-${String(month).padStart(2, '0')}`;
+
+        const debugRecruitConstraints = async (generalId: number) => {
+            const general = world.getGeneralById(generalId);
+            if (!general) {
+                console.log('[DEBUG] no general for recruit check', generalId);
+                return;
+            }
+            const city = world.getCityById(general.cityId);
+            const nation = general.nationId > 0 ? world.getNationById(general.nationId) : null;
+            const env = buildCommandEnv(snapshot.scenarioConfig, snapshot.unitSet);
+            const { general: generalDefinitions, nation: nationDefinitions } = await buildReservedTurnDefinitions({
+                env,
+                commandProfile: DEFAULT_TURN_COMMAND_PROFILE,
+                defaultActionKey: '휴식',
+            });
+            const definition = generalDefinitions.get('che_징병');
+            if (!definition) {
+                console.log('[DEBUG] no che_징병 definition');
+                return;
+            }
+            const args = {
+                crewType: snapshot.unitSet?.defaultCrewTypeId ?? 1100,
+                amount: general.stats.leadership * 100,
+            };
+            const parsedArgs = definition.parseArgs(args);
+            if (!parsedArgs) {
+                console.log('[DEBUG] che_징병 args invalid', args);
+                return;
+            }
+
+            const state = world.getState();
+            const startYear = snapshot.scenarioMeta?.startYear ?? 0;
+            const constraintEnv = {
+                currentYear: state.currentYear,
+                currentMonth: state.currentMonth,
+                year: state.currentYear,
+                month: state.currentMonth,
+                startYear,
+                relYear: state.currentYear - startYear,
+                openingPartYear: env.openingPartYear,
+                minAvailableRecruitPop: env.minAvailableRecruitPop,
+                cities: world.listCities(),
+                nations: world.listNations(),
+                map: LARGE_TEST_MAP,
+                unitSet: snapshot.unitSet,
+            };
+
+            const ctx: ConstraintContext = {
+                actorId: general.id,
+                cityId: general.cityId,
+                nationId: general.nationId,
+                args: parsedArgs as Record<string, unknown>,
+                env: constraintEnv,
+                mode: 'full',
+            };
+
+            const view: StateView = {
+                has: (req: RequirementKey) => {
+                    if (req.kind === 'general') return world.getGeneralById(req.id) !== null;
+                    if (req.kind === 'city') return world.getCityById(req.id) !== null;
+                    if (req.kind === 'nation') return world.getNationById(req.id) !== null;
+                    if (req.kind === 'generalList') return true;
+                    if (req.kind === 'nationList') return true;
+                    if (req.kind === 'env') return true;
+                    return false;
+                },
+                get: (req: RequirementKey) => {
+                    if (req.kind === 'general') return world.getGeneralById(req.id);
+                    if (req.kind === 'city') return world.getCityById(req.id);
+                    if (req.kind === 'nation') return world.getNationById(req.id);
+                    if (req.kind === 'generalList') return world.listGenerals();
+                    if (req.kind === 'nationList') return world.listNations();
+                    if (req.kind === 'env') return constraintEnv[req.key] ?? null;
+                    return null;
+                },
+            };
+
+            const constraints = definition.buildConstraints(ctx, parsedArgs as never);
+            const result = evaluateConstraints(constraints, ctx, view);
+            console.log('[DEBUG] che_징병 constraint result:', result);
+            for (const constraint of constraints) {
+                const single = evaluateConstraints([constraint], ctx, view);
+                if (single.kind !== 'allow') {
+                    console.log('[DEBUG] constraint blocked:', constraint.name, single);
+                }
+            }
+
+            const generalFallback = generalDefinitions.get('휴식')!;
+            const nationFallback = nationDefinitions.get('휴식')!;
+            const ai = new GeneralAI({
+                general,
+                city: city ?? undefined,
+                nation,
+                world: state,
+                worldRef: world,
+                reservedTurnProvider: reservedTurnStore,
+                scenarioConfig: snapshot.scenarioConfig,
+                scenarioMeta: snapshot.scenarioMeta,
+                map: LARGE_TEST_MAP,
+                unitSet: snapshot.unitSet,
+                commandEnv: env,
+                generalDefinitions,
+                nationDefinitions,
+                generalFallback,
+                nationFallback,
+            });
+            console.log('[DEBUG] can 징병:', ai.generalPolicy.can('징병'));
+            console.log('[DEBUG] priority includes 징병:', ai.generalPolicy.priority.includes('징병'));
+            console.log('[DEBUG] do징병 candidate:', do징병(ai));
+        };
 
         try {
             while (true) {
@@ -433,6 +624,10 @@ describe('NPC 대형 시뮬레이션', () => {
             const lastAiTrace = [...turnTraces].reverse().find((trace) => trace.aiState);
             if (lastAiTrace?.aiState) {
                 console.log('[DEBUG] last aiState:', lastAiTrace.aiState);
+            }
+            const debugGeneralId = lastAiTrace?.generalId ?? world.listGenerals()[0]?.id;
+            if (debugGeneralId) {
+                await debugRecruitConstraints(debugGeneralId);
             }
             dumpTraceSummary('NPC 대형 시뮬레이션 실패');
             const sampleNation = world.listNations().find((nation) => nation.level >= 1 && nation.capitalCityId);
