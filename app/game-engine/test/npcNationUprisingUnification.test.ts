@@ -94,14 +94,14 @@ const applyPost200Penalty = (world: InMemoryTurnWorld) => {
             continue;
         }
         const meta = city.meta ?? {};
-        const trust = typeof meta.trust === 'number' ? Math.floor(meta.trust * 0.9) : undefined;
+        const trust = typeof meta.trust === 'number' ? Math.floor(meta.trust * 0.5) : undefined;
         world.updateCity(city.id, {
-            population: Math.floor(city.population * 0.85),
-            agriculture: Math.floor(city.agriculture * 0.85),
-            commerce: Math.floor(city.commerce * 0.85),
-            security: Math.floor(city.security * 0.85),
-            defence: Math.floor(city.defence * 0.85),
-            wall: Math.floor(city.wall * 0.85),
+            population: Math.floor(city.population * 0.8),
+            agriculture: Math.floor(city.agriculture * 0.8),
+            commerce: Math.floor(city.commerce * 0.8),
+            security: Math.floor(city.security * 0.8),
+            defence: Math.floor(city.defence * 0.8),
+            wall: Math.floor(city.wall * 0.8),
             meta: trust !== undefined ? { ...meta, trust } : meta,
         });
     }
