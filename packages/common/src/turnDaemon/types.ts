@@ -115,7 +115,14 @@ export type TurnDaemonCommand =
           top16: number[];
           top8: number[];
           top4: number[];
-      };
+        }
+        | {
+            type: 'setNationMeta';
+            requestId?: string;
+            nationId: number;
+            updates: Record<string, unknown>;
+            expectedUpdatedAt?: string;
+        };
 
 export type TurnDaemonCommandResult =
     | {
@@ -207,7 +214,20 @@ export type TurnDaemonCommandResult =
           winnerId: number;
           runnerUpId: number;
           reason: string;
-      };
+        }
+        | {
+            type: 'setNationMeta';
+            ok: true;
+            nationId: number;
+            updatedAt: string;
+        }
+        | {
+            type: 'setNationMeta';
+            ok: false;
+            nationId: number;
+            reason: string;
+            currentUpdatedAt?: string;
+        };
 
 export type TurnDaemonEvent =
     | { type: 'status'; requestId?: string; status: TurnDaemonStatus }

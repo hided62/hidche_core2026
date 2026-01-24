@@ -8,6 +8,7 @@ import { findCrewTypeById, getTechCost } from '@sammo-ts/logic/world/unitSet.js'
 
 import { authedProcedure, router } from '../../trpc.js';
 import { loadUnitSetDefinitionByName } from '../../battleSim/unitSetLoader.js';
+import type { GameApiContext } from '../../context.js';
 import { getMyGeneral } from '../shared/general.js';
 import { resolveSecretPermission } from '../shared/secretPermission.js';
 
@@ -40,6 +41,33 @@ type NationPolicy = {
 type SetterInfo = {
     setter: string | null;
     date: string | null;
+};
+
+const updateNationMeta = async (
+    ctx: Pick<GameApiContext, 'turnDaemon'>,
+    nationId: number,
+    updates: Record<string, unknown>,
+    currentMeta: Record<string, unknown>
+): Promise<void> => {
+    const expectedUpdatedAt = typeof currentMeta._updatedAt === 'string' ? currentMeta._updatedAt : undefined;
+    const result = await ctx.turnDaemon.requestCommand({
+        type: 'setNationMeta',
+        nationId,
+        updates,
+        expectedUpdatedAt,
+    });
+    if (!result || result.type !== 'setNationMeta') {
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
+    }
+    if (!result.ok) {
+        if (result.reason === 'CONFLICT') {
+            throw new TRPCError({
+                code: 'CONFLICT',
+                message: '다른 사용자가 정책을 변경했습니다. 재시도하거나 현재 상태로 갱신해주세요.',
+            });
+        }
+        throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
+    }
 };
 
 const DEFAULT_NATION_PRIORITY = [
@@ -665,15 +693,14 @@ export const npcRouter = router({
                 valueSetTime: new Date().toISOString(),
             };
 
-            await ctx.db.nation.update({
-                where: { id: nation.id },
-                data: {
-                    meta: {
-                        ...nationMeta,
-                        npc_nation_policy: nextPolicyRoot,
-                    },
+            await updateNationMeta(
+                ctx,
+                nation.id,
+                {
+                    npc_nation_policy: nextPolicyRoot,
                 },
-            });
+                nationMeta
+            );
 
             return { ok: true };
         }),
@@ -722,15 +749,14 @@ export const npcRouter = router({
                 prioritySetTime: new Date().toISOString(),
             };
 
-            await ctx.db.nation.update({
-                where: { id: nation.id },
-                data: {
-                    meta: {
-                        ...nationMeta,
-                        npc_nation_policy: nextPolicyRoot,
-                    },
+            await updateNationMeta(
+                ctx,
+                nation.id,
+                {
+                    npc_nation_policy: nextPolicyRoot,
                 },
-            });
+                nationMeta
+            );
 
             return { ok: true };
         }),
@@ -778,15 +804,14 @@ export const npcRouter = router({
                 prioritySetTime: new Date().toISOString(),
             };
 
-            await ctx.db.nation.update({
-                where: { id: nation.id },
-                data: {
-                    meta: {
-                        ...nationMeta,
-                        npc_general_policy: nextPolicyRoot,
-                    },
+            await updateNationMeta(
+                ctx,
+                nation.id,
+                {
+                    npc_general_policy: nextPolicyRoot,
                 },
-            });
+                nationMeta
+            );
 
             return { ok: true };
         }),

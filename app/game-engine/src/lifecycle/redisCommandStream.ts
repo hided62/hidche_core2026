@@ -282,6 +282,18 @@ const normalizeCommand = (envelope: TurnDaemonCommandEnvelope): TurnDaemonComman
                 top4,
             };
         }
+        case 'setNationMeta': {
+            if (typeof command.nationId !== 'number' || !command.updates || typeof command.updates !== 'object') {
+                return null;
+            }
+            return {
+                type: 'setNationMeta',
+                requestId: envelope.requestId,
+                nationId: command.nationId,
+                updates: command.updates as Record<string, unknown>,
+                expectedUpdatedAt: typeof command.expectedUpdatedAt === 'string' ? command.expectedUpdatedAt : undefined,
+            };
+        }
         case 'getStatus': {
             const requestId = typeof command.requestId === 'string' ? command.requestId : envelope.requestId;
             return { type: 'getStatus', requestId };

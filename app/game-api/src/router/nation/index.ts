@@ -429,26 +429,35 @@ const assertNationEditable = (
 };
 
 const updateNationMeta = async (
-    ctx: Pick<GameApiContext, 'db'>,
+    ctx: Pick<GameApiContext, 'turnDaemon'>,
     nationId: number,
-    updates: Record<string, unknown>
+    updates: Record<string, unknown>,
+    currentMeta: Record<string, unknown>
 ): Promise<InputJsonValue> => {
-    const nation = await ctx.db.nation.findUnique({
-        where: { id: nationId },
-        select: { meta: true },
+    const expectedUpdatedAt = typeof currentMeta._updatedAt === 'string' ? currentMeta._updatedAt : undefined;
+    const result = await ctx.turnDaemon.requestCommand({
+        type: 'setNationMeta',
+        nationId,
+        updates,
+        expectedUpdatedAt,
     });
-    if (!nation) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Nation not found' });
+    if (!result || result.type !== 'setNationMeta') {
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
     }
-    const meta = asRecord(nation.meta);
-    const nextMeta = { ...meta, ...updates } as InputJsonValue;
-    await ctx.db.nation.update({
-        where: { id: nationId },
-        data: {
-            meta: nextMeta,
-        },
-    });
-    return nextMeta;
+    if (!result.ok) {
+        if (result.reason === 'CONFLICT') {
+            throw new TRPCError({
+                code: 'CONFLICT',
+                message: '다른 사용자가 정책을 변경했습니다. 재시도하거나 현재 상태로 갱신해주세요.',
+            });
+        }
+        throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
+    }
+    return {
+        ...currentMeta,
+        ...updates,
+        _updatedAt: result.updatedAt,
+    } as InputJsonValue;
 };
 
 const mapGeneralList = async (
@@ -1239,9 +1248,10 @@ export const nationRouter = router({
                 throw new TRPCError({ code: 'NOT_FOUND', message: 'Nation not found' });
             }
             assertNationEditable(me, nation.meta);
+            const nationMeta = asRecord(nation.meta);
             await updateNationMeta(ctx, me.nationId, {
                 notice: input.msg,
-            });
+            }, nationMeta);
             return { ok: true };
         }),
     setScoutMsg: authedProcedure
@@ -1261,9 +1271,10 @@ export const nationRouter = router({
                 throw new TRPCError({ code: 'NOT_FOUND', message: 'Nation not found' });
             }
             assertNationEditable(me, nation.meta);
+            const nationMeta = asRecord(nation.meta);
             await updateNationMeta(ctx, me.nationId, {
                 infoText: input.msg,
-            });
+            }, nationMeta);
             return { ok: true };
         }),
     setRate: authedProcedure
@@ -1283,9 +1294,10 @@ export const nationRouter = router({
                 throw new TRPCError({ code: 'NOT_FOUND', message: 'Nation not found' });
             }
             assertNationEditable(me, nation.meta);
+            const nationMeta = asRecord(nation.meta);
             await updateNationMeta(ctx, me.nationId, {
                 rate: input.amount,
-            });
+            }, nationMeta);
             return { ok: true };
         }),
     setBill: authedProcedure
@@ -1305,9 +1317,10 @@ export const nationRouter = router({
                 throw new TRPCError({ code: 'NOT_FOUND', message: 'Nation not found' });
             }
             assertNationEditable(me, nation.meta);
+            const nationMeta = asRecord(nation.meta);
             await updateNationMeta(ctx, me.nationId, {
                 bill: input.amount,
-            });
+            }, nationMeta);
             return { ok: true };
         }),
     setSecretLimit: authedProcedure
@@ -1327,9 +1340,10 @@ export const nationRouter = router({
                 throw new TRPCError({ code: 'NOT_FOUND', message: 'Nation not found' });
             }
             assertNationEditable(me, nation.meta);
+            const nationMeta = asRecord(nation.meta);
             await updateNationMeta(ctx, me.nationId, {
                 secretlimit: input.amount,
-            });
+            }, nationMeta);
             return { ok: true };
         }),
     setBlockWar: authedProcedure
@@ -1359,7 +1373,7 @@ export const nationRouter = router({
             await updateNationMeta(ctx, me.nationId, {
                 war: input.value ? 1 : 0,
                 available_war_setting_cnt: nextRemain,
-            });
+            }, meta);
             return { availableCnt: nextRemain };
         }),
     setBlockScout: authedProcedure
@@ -1379,9 +1393,10 @@ export const nationRouter = router({
                 throw new TRPCError({ code: 'NOT_FOUND', message: 'Nation not found' });
             }
             assertNationEditable(me, nation.meta);
+            const nationMeta = asRecord(nation.meta);
             await updateNationMeta(ctx, me.nationId, {
                 scout: input.value ? 1 : 0,
-            });
+            }, nationMeta);
             return { ok: true };
         }),
     getBattleCenter: authedProcedure.query(async ({ ctx }) => {

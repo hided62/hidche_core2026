@@ -41,6 +41,52 @@ interface TournamentRewardFinalizer {
     finalize(command: Extract<TurnDaemonCommand, { type: 'tournamentReward' }>): Promise<TurnDaemonCommandResult>;
 }
 
+async function handleSetNationMeta(
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'setNationMeta' }>
+): Promise<TurnDaemonCommandResult> {
+    const { world, hooks } = ctx;
+    const nation = world.getNationById(command.nationId);
+    if (!nation) {
+        return {
+            type: 'setNationMeta',
+            ok: false,
+            nationId: command.nationId,
+            reason: '국가 정보를 찾을 수 없습니다.',
+        };
+    }
+
+    const meta = (nation.meta ?? {}) as Record<string, unknown>;
+    const currentUpdatedAt = typeof meta._updatedAt === 'string' ? meta._updatedAt : undefined;
+    if (command.expectedUpdatedAt && currentUpdatedAt && command.expectedUpdatedAt !== currentUpdatedAt) {
+        return {
+            type: 'setNationMeta',
+            ok: false,
+            nationId: command.nationId,
+            reason: 'CONFLICT',
+            currentUpdatedAt,
+        };
+    }
+
+    const updatedAt = new Date().toISOString();
+    const nextMeta = {
+        ...meta,
+        ...command.updates,
+        _updatedAt: updatedAt,
+    };
+
+    world.updateNation(command.nationId, {
+        meta: nextMeta,
+    });
+    await flushWorld(world, hooks);
+    return {
+        type: 'setNationMeta',
+        ok: true,
+        nationId: command.nationId,
+        updatedAt,
+    };
+}
+
 async function handleTroopJoin(
     ctx: CommandHandlerContext,
     command: Extract<TurnDaemonCommand, { type: 'troopJoin' }>
@@ -614,6 +660,8 @@ export const createTurnDaemonCommandHandler = (options: {
                     return handleTournamentBettingPayout(ctx, command);
                 case 'tournamentReward':
                     return handleTournamentReward(ctx, command);
+                case 'setNationMeta':
+                    return handleSetNationMeta(ctx, command);
                 default:
                     return null;
             }
