@@ -239,7 +239,7 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
             },
         };
 
-        const { runUntil, getCollectedLogs } = await createTurnTestHarness({
+        const { runUntil, getCollectedLogs, getAndClearCollectedLogs } = await createTurnTestHarness({
             snapshot,
             state,
             schedule,
@@ -248,6 +248,26 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
             extraCalendarHandlers: [unificationHandler],
             collectLogs: true,
         });
+
+        const dumpMonthlyLogs = (label: string) => {
+            const logs = getAndClearCollectedLogs();
+            if (logs.length === 0) {
+                return;
+            }
+            const globalLogs = logs.filter((log) => log.scope === LogScope.SYSTEM);
+            if (globalLogs.length === 0) {
+                return;
+            }
+            console.log('[DEBUG] month global logs', {
+                label,
+                total: globalLogs.length,
+                logs: globalLogs.map((log) => ({
+                    category: log.category,
+                    format: log.format,
+                    text: log.text,
+                })),
+            });
+        };
 
         try {
             await runUntil((current) =>
@@ -281,6 +301,7 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
                     current.currentYear > target.year ||
                     (current.currentYear === target.year && current.currentMonth >= target.month)
                 );
+                dumpMonthlyLogs(`${target.year}-${String(target.month).padStart(2, '0')}`);
 
                 const activeNationCount = world
                     .listNations()
