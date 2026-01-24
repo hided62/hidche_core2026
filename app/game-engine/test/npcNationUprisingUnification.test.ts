@@ -83,30 +83,6 @@ const boostNationOneCities = (world: InMemoryTurnWorld) => {
     }
 };
 
-const applyPost200Penalty = (world: InMemoryTurnWorld) => {
-    const { currentYear } = world.getState();
-    if (currentYear < 200) {
-        return;
-    }
-    const cities = world.listCities();
-    for (const city of cities) {
-        if (city.nationId === 1) {
-            continue;
-        }
-        const meta = city.meta ?? {};
-        const trust = typeof meta.trust === 'number' ? Math.floor(meta.trust * 0.5) : undefined;
-        world.updateCity(city.id, {
-            population: Math.floor(city.population * 0.8),
-            agriculture: Math.floor(city.agriculture * 0.8),
-            commerce: Math.floor(city.commerce * 0.8),
-            security: Math.floor(city.security * 0.8),
-            defence: Math.floor(city.defence * 0.8),
-            wall: Math.floor(city.wall * 0.8),
-            meta: trust !== undefined ? { ...meta, trust } : meta,
-        });
-    }
-};
-
 const dumpWorldStatus = (world: InMemoryTurnWorld, label: string) => {
     const state = world.getState();
     const cities = world.listCities();
@@ -276,7 +252,6 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
                     return;
                 }
                 boostNationOneCities(world);
-                applyPost200Penalty(world);
                 const meta = world.getState().meta as Record<string, unknown>;
                 if (typeof meta.isUnited === 'number' && meta.isUnited !== 0) {
                     return;
