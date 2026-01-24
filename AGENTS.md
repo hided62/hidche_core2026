@@ -79,6 +79,8 @@ These are placeholders to align teams; adjust once packages exist.
 - When changes require unit tests, run the relevant tests.
   - For game engine changes, run (example):
     `pnpm --filter @sammo-ts/game-engine test npcNationUprisingUnification`.
+  - Do NOT insert `--` after `test` when passing a Vitest file/name filter; it breaks the filter here.
+    Use `pnpm --filter @sammo-ts/game-engine test npcNationTechResearch.test.ts` (no `--`).
 - When migrating existing functionality, keep text and log output identical to the legacy behavior unless there is a technical blocker.
 
 ## Build Profiles (Proposal)
