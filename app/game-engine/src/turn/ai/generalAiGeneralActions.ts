@@ -298,7 +298,7 @@ export const do징병 = (ai: GeneralAI) => {
     if (!city || !nation || !ai.unitSet || !ai.map) {
         return null;
     }
-    if ([0, 1].includes(ai.dipState)) {
+    if ([0, 1].includes(ai.dipState) && ai.general.npcState < 2) {
         return null;
     }
     if (!(ai.genType & t통솔장)) {

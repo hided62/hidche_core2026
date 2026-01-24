@@ -61,6 +61,15 @@ export class ActionDefinition<
             nationName = '㉥' + nationName;
         }
 
+        const npcNationPolicy =
+            general.npcState >= 2
+                ? {
+                      values: {
+                          minNPCRecruitCityPopulation: 0,
+                      },
+                  }
+                : undefined;
+
         const newNation: Nation = {
             id: newNationId,
             name: nationName,
@@ -79,6 +88,7 @@ export class ActionDefinition<
                 surlimit: 72,
                 secretlimit: 3,
                 gennum: 1,
+                ...(npcNationPolicy ? { npc_nation_policy: npcNationPolicy } : {}),
             },
         };
 

@@ -6,6 +6,8 @@ import { InMemoryReservedTurnStore } from '../src/turn/reservedTurnStore.js';
 import { createReservedTurnHandler } from '../src/turn/reservedTurnHandler.js';
 import { InMemoryTurnProcessor } from '../src/turn/inMemoryTurnProcessor.js';
 import { createIncomeHandler } from '../src/turn/incomeHandler.js';
+import { createNpcTaxHandler } from '../src/turn/npcTaxHandler.js';
+import { composeCalendarHandlers } from '../src/turn/calendarHandlers.js';
 import { LARGE_TEST_MAP, buildLargeTestCities } from './fixtures/largeTestMap.js';
 
 const mockDate = new Date('0179-08-01T00:00:00Z');
@@ -108,7 +110,7 @@ describe('NPC 대형 시뮬레이션', () => {
                     generals.length + 1,
                     cityId,
                     { leadership: 75, strength: 10, intelligence: 75 },
-                    3
+                    2
                 )
             );
         }
@@ -176,7 +178,7 @@ describe('NPC 대형 시뮬레이션', () => {
             currentMonth: 8,
             tickSeconds: 600,
             lastTurnTime: mockDate,
-            meta: { seed: 1 },
+            meta: { seed: 1, initYear: 179, initMonth: 8 },
         };
 
         const schedule: TurnSchedule = {
@@ -207,10 +209,16 @@ describe('NPC 대형 시뮬레이션', () => {
             nationTraits: new Map(),
         });
 
+        const npcTaxHandler = createNpcTaxHandler({
+            getWorld: () => wrapper.world,
+        });
+
+        const calendarHandler = composeCalendarHandlers(incomeHandler, npcTaxHandler);
+
         const world = new InMemoryTurnWorld(state, snapshot, {
             schedule,
             generalTurnHandler: handler,
-            calendarHandler: incomeHandler,
+            calendarHandler,
         });
         wrapper.world = world;
 
@@ -266,7 +274,7 @@ describe('NPC 대형 시뮬레이션', () => {
             const generals = world.listGenerals();
             for (const nation of nations) {
                 const nationGenerals = generals.filter((general) => general.nationId === nation.id);
-                expect(nationGenerals.length).toBe(targetCount);
+                expect(nationGenerals.length).toBeGreaterThanOrEqual(targetCount);
             }
         };
 

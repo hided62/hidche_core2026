@@ -387,9 +387,11 @@ export class GeneralAI {
         }
 
         if (this.general.npcState >= 2 && this.general.officerLevel === 12 && !this.nation?.capitalCityId) {
+            const worldMeta = asRecord(this.world.meta);
+            const initYear = readNumber(worldMeta.initYear, this.scenarioMeta?.startYear ?? this.startYear);
+            const initMonth = readNumber(worldMeta.initMonth, 1);
             const relYearMonth =
-                joinYearMonth(this.world.currentYear, this.world.currentMonth) -
-                joinYearMonth(this.scenarioMeta?.startYear ?? this.startYear, 1);
+                joinYearMonth(this.world.currentYear, this.world.currentMonth) - joinYearMonth(initYear, initMonth);
             if (relYearMonth > 1) {
                 const establish = generalActionHandlers['건국']?.(this);
                 if (establish) {

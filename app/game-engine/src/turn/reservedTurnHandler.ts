@@ -351,6 +351,32 @@ const resolveDefinition = (
     fallback: GeneralActionDefinition
 ): GeneralActionDefinition => definitions.get(actionKey) ?? fallback;
 
+const resolveNpcTaxRate = (cities: City[]): number => {
+    if (cities.length === 0) {
+        return 15;
+    }
+    let pop = 0;
+    let all = 0;
+    for (const city of cities) {
+        const popRatio = city.populationMax > 0 ? city.population / city.populationMax : 0;
+        pop += popRatio;
+        all += calcCityDevRatio(city);
+    }
+    pop /= cities.length;
+    all /= cities.length;
+    const avg = (pop + all) / 2;
+    if (avg > 0.95) {
+        return 25;
+    }
+    if (avg > 0.7) {
+        return 20;
+    }
+    if (avg > 0.5) {
+        return 15;
+    }
+    return 10;
+};
+
 export const createReservedTurnHandler = async (options: {
     reservedTurns: InMemoryReservedTurnStore;
     scenarioConfig: ScenarioConfig;
