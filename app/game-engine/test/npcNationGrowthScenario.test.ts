@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { TurnSchedule, UnitSetDefinition } from '@sammo-ts/logic';
+import type { LogEntryDraft, TurnSchedule, UnitSetDefinition } from '@sammo-ts/logic';
+import { LogCategory } from '@sammo-ts/logic';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import { InMemoryReservedTurnStore } from '../src/turn/reservedTurnStore.js';
@@ -163,6 +164,7 @@ describe('NPC 대형 시뮬레이션', () => {
                     baseGold: 1000,
                     baseRice: 1000,
                     maxResourceActionAmount: 10000,
+                    minAvailableRecruitPop: 0,
                 },
                 environment: { mapName: 'large_test_map', unitSet: 'default' },
             },
@@ -194,6 +196,23 @@ describe('NPC 대형 시뮬레이션', () => {
 
         const wrapper = { world: null as InMemoryTurnWorld | null };
 
+        type TurnTrace = {
+            year: number;
+            month: number;
+            generalId: number;
+            actionText: string;
+            actionKey: string;
+            requestedAction: string;
+            usedFallback: boolean;
+            blockedReason?: string;
+            ok: boolean;
+            error?: unknown;
+            logs: LogEntryDraft[];
+        };
+
+        const turnTraces: TurnTrace[] = [];
+        const traceByGeneralId = new Map<number, TurnTrace>();
+
         const handler = await createReservedTurnHandler({
             reservedTurns: reservedTurnStore,
             scenarioConfig: snapshot.scenarioConfig,
@@ -201,7 +220,43 @@ describe('NPC 대형 시뮬레이션', () => {
             map: LARGE_TEST_MAP as any,
             unitSet: snapshot.unitSet,
             getWorld: () => wrapper.world,
+            onActionResolved: (payload) => {
+                if (payload.kind !== 'general') {
+                    return;
+                }
+                const trace = traceByGeneralId.get(payload.generalId);
+                if (!trace) {
+                    return;
+                }
+                trace.actionKey = payload.actionKey;
+                trace.requestedAction = payload.requestedAction;
+                trace.usedFallback = payload.usedFallback;
+                trace.blockedReason = payload.blockedReason;
+            },
         });
+
+        const tracedHandler = {
+            execute: (ctx: Parameters<typeof handler.execute>[0]) => {
+                const trace: TurnTrace = {
+                    year: ctx.world.currentYear,
+                    month: ctx.world.currentMonth,
+                    generalId: ctx.general.id,
+                    actionKey: 'unknown',
+                    requestedAction: 'unknown',
+                    usedFallback: false,
+                    ok: true,
+                    actionText: 'unknown',
+                    logs: [],
+                };
+                traceByGeneralId.set(ctx.general.id, trace);
+                const result = handler.execute(ctx);
+                const actionLog = result.logs?.find((log) => log.category === LogCategory.ACTION);
+                trace.actionText = actionLog?.text ?? 'unknown';
+                trace.logs = result.logs ?? [];
+                turnTraces.push(trace);
+                return result;
+            },
+        };
 
         const incomeHandler = createIncomeHandler({
             getWorld: () => wrapper.world,
@@ -217,13 +272,38 @@ describe('NPC 대형 시뮬레이션', () => {
 
         const world = new InMemoryTurnWorld(state, snapshot, {
             schedule,
-            generalTurnHandler: handler,
+            generalTurnHandler: tracedHandler,
             calendarHandler,
         });
         wrapper.world = world;
 
-        const processor = new InMemoryTurnProcessor(world, { tickMinutes: 10 });
+        const processor = new InMemoryTurnProcessor(world, {
+            tickMinutes: 10,
+            afterExecuteGeneral: async (general, result) => {
+                const trace = traceByGeneralId.get(general.id);
+                if (!trace) {
+                    return;
+                }
+                trace.ok = result.ok;
+                trace.error = result.error;
+            },
+        });
         const checkpointGoldByGeneral = new Map<number, number>();
+
+        const dumpTraceSummary = (title: string, limit = 50) => {
+            const recent = turnTraces.slice(-limit);
+            console.log(`\n[TRACE] ${title} (last ${recent.length})`);
+            for (const trace of recent) {
+                const action = trace.actionText.replace(/\s+/g, ' ').trim();
+                const extra = trace.usedFallback
+                    ? ` fallback(${trace.requestedAction} -> ${trace.actionKey}) ${trace.blockedReason ?? ''}`
+                    : ` ${trace.requestedAction} -> ${trace.actionKey}`;
+                console.log(
+                    `- ${trace.year}-${String(trace.month).padStart(2, '0')} G${trace.generalId} ` +
+                        `${trace.ok ? 'OK' : 'FAIL'} ${action}${extra}`
+                );
+            }
+        };
 
         const runOneMonth = async () => {
             const target = addMinutes(world.getState().lastTurnTime, 10);
@@ -289,6 +369,24 @@ describe('NPC 대형 시뮬레이션', () => {
             }
         };
 
+        const scheduleNpcRecruitment = () => {
+            const nations = world.listNations().filter((nation) => nation.level >= 1 && nation.capitalCityId);
+            const generals = world.listGenerals();
+            for (const nation of nations) {
+                const targetGenerals = generals.filter((general) => general.nationId === nation.id);
+                for (const general of targetGenerals) {
+                    if (general.crew > 0 && general.crewTypeId > 0) {
+                        continue;
+                    }
+                    const amount = Math.max(100, Math.floor(general.stats.leadership * 50));
+                    world.updateGeneral(general.id, {
+                        crew: amount,
+                        crewTypeId: unitSet.defaultCrewTypeId,
+                    });
+                }
+            }
+        };
+
         const maybeSnapshotGold = () => {
             checkpointGoldByGeneral.clear();
             for (const general of world.listGenerals()) {
@@ -326,17 +424,48 @@ describe('NPC 대형 시뮬레이션', () => {
 
         const toKey = (year: number, month: number) => `${year}-${String(month).padStart(2, '0')}`;
 
-        while (true) {
-            await runOneMonth();
-            const { currentYear, currentMonth } = world.getState();
-            const key = toKey(currentYear, currentMonth);
-            const checker = targetChecks.get(key);
-            if (checker) {
-                checker();
+        try {
+            while (true) {
+                await runOneMonth();
+                const { currentYear, currentMonth } = world.getState();
+                const key = toKey(currentYear, currentMonth);
+                const checker = targetChecks.get(key);
+                if (checker) {
+                    checker();
+                }
+                if (currentYear > 182 || (currentYear === 182 && currentMonth >= 10)) {
+                    break;
+                }
             }
-            if (currentYear > 182 || (currentYear === 182 && currentMonth >= 10)) {
-                break;
+        } catch (error) {
+            dumpTraceSummary('NPC 대형 시뮬레이션 실패');
+            const sampleNation = world.listNations().find((nation) => nation.level >= 1 && nation.capitalCityId);
+            if (sampleNation) {
+                const policy = (sampleNation.meta as Record<string, unknown>)?.npc_nation_policy;
+                console.log('[TRACE] sample npc_nation_policy:', policy);
+                const sampleGeneral = world
+                    .listGenerals()
+                    .find((general) => general.nationId === sampleNation.id && general.cityId > 0);
+                if (sampleGeneral) {
+                    const city = world.getCityById(sampleGeneral.cityId);
+                    console.log('[TRACE] sample recruit check:', {
+                        generalId: sampleGeneral.id,
+                        leadership: sampleGeneral.stats.leadership,
+                        cityId: sampleGeneral.cityId,
+                        population: city?.population,
+                        populationMax: city?.populationMax,
+                    });
+                }
+                const nationGenerals = world.listGenerals().filter((general) => general.nationId === sampleNation.id);
+                const crewOnly = nationGenerals.filter((general) => general.crew > 0);
+                const crewWithType = crewOnly.filter((general) => general.crewTypeId > 0);
+                console.log('[TRACE] crew stats:', {
+                    totalGenerals: nationGenerals.length,
+                    crewOnly: crewOnly.length,
+                    crewWithType: crewWithType.length,
+                });
             }
+            throw error;
         }
     });
 });

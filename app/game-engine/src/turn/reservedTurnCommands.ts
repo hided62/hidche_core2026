@@ -54,6 +54,7 @@ export const buildCommandEnv = (config: ScenarioConfig, unitSet?: UnitSetDefinit
 
     return {
         develCost: resolveNumber(constValues, ['develCost', 'develcost', 'develrate'], 0),
+        minAvailableRecruitPop: resolveNumber(constValues, ['minAvailableRecruitPop'], 30000),
         trainDelta: resolveNumber(constValues, ['trainDelta'], 0),
         atmosDelta: resolveNumber(constValues, ['atmosDelta'], 0),
         maxTrainByCommand: resolveNumber(constValues, ['maxTrainByCommand'], 0),

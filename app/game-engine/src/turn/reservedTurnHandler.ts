@@ -46,7 +46,7 @@ const DEFAULT_ACTION = '휴식';
 const resolveConstraintEnv = (
     world: TurnWorldState,
     scenarioMeta: ScenarioMeta | undefined,
-    openingPartYear: number
+    env: TurnCommandEnv
 ): Record<string, unknown> => {
     const startYear = typeof scenarioMeta?.startYear === 'number' ? scenarioMeta.startYear : undefined;
     const relYear = typeof startYear === 'number' ? world.currentYear - startYear : undefined;
@@ -58,7 +58,8 @@ const resolveConstraintEnv = (
         month: world.currentMonth,
         startYear,
         relYear,
-        openingPartYear,
+        openingPartYear: env.openingPartYear,
+        minAvailableRecruitPop: env.minAvailableRecruitPop,
     };
 };
 
@@ -385,6 +386,15 @@ export const createReservedTurnHandler = async (options: {
     unitSet?: UnitSetDefinition;
     getWorld: () => InMemoryTurnWorld | null;
     commandProfile?: TurnCommandProfile;
+    onActionResolved?: (payload: {
+        kind: 'nation' | 'general';
+        generalId: number;
+        nationId: number | null;
+        requestedAction: string;
+        actionKey: string;
+        usedFallback: boolean;
+        blockedReason?: string;
+    }) => void;
 }): Promise<GeneralTurnHandler> => {
     const env = buildCommandEnv(options.scenarioConfig, options.unitSet);
     const commandProfile = options.commandProfile ?? DEFAULT_TURN_COMMAND_PROFILE;
@@ -466,7 +476,7 @@ export const createReservedTurnHandler = async (options: {
             const worldOverlay = worldRef ? createWorldOverlay(worldRef) : null;
             const worldView = worldOverlay?.view ?? worldRef;
             const baseConstraintEnv = {
-                ...resolveConstraintEnv(context.world, options.scenarioMeta, env.openingPartYear),
+                ...resolveConstraintEnv(context.world, options.scenarioMeta, env),
                 ...(options.map ? { map: options.map } : {}),
                 ...(options.unitSet ? { unitSet: options.unitSet } : {}),
             };
@@ -494,18 +504,22 @@ export const createReservedTurnHandler = async (options: {
                 fallbackDefinition: GeneralActionDefinition,
                 command: ReservedTurnEntry,
                 applyNextTurnAt: boolean
-            ): { nextTurnAt?: Date; actionKey: string } => {
+            ): { nextTurnAt?: Date; actionKey: string; usedFallback: boolean; blockedReason?: string } => {
                 const resolvedDefinition = resolveDefinition(command.action, definitionMap, fallbackDefinition);
                 const rawArgs = extractArgsRecord(command.args);
                 const parsedArgs = resolvedDefinition.parseArgs(rawArgs);
                 let definition = resolvedDefinition;
                 let actionArgs = parsedArgs ?? {};
                 let actionKey = definition.key;
+                let usedFallback = false;
+                let blockedReason: string | undefined = undefined;
 
                 if (parsedArgs === null) {
                     definition = fallbackDefinition;
                     actionArgs = definition.parseArgs({}) ?? {};
                     actionKey = definition.key;
+                    usedFallback = true;
+                    blockedReason = '예약된 명령을 실행하지 못했습니다.';
                     logs.push(createActionLog('예약된 명령을 실행하지 못했습니다.'));
                 }
 
@@ -532,7 +546,9 @@ export const createReservedTurnHandler = async (options: {
                     definition = fallbackDefinition;
                     actionArgs = definition.parseArgs({}) ?? {};
                     actionKey = definition.key;
+                    usedFallback = true;
                     const reason = result.kind === 'deny' ? result.reason : '조건을 확인할 수 없습니다.';
+                    blockedReason = reason;
                     const meta = result.kind === 'deny' ? { constraintName: result.constraintName } : undefined;
                     logs.push(createActionLog(reason, meta));
                 }
@@ -684,7 +700,7 @@ export const createReservedTurnHandler = async (options: {
                     }
                 }
 
-                return { nextTurnAt: applyNextTurnAt ? resolution.nextTurnAt : undefined, actionKey };
+                return { nextTurnAt: applyNextTurnAt ? resolution.nextTurnAt : undefined, actionKey, usedFallback, blockedReason };
             };
 
             if (currentNation && currentGeneral.officerLevel >= 5) {
@@ -716,7 +732,16 @@ export const createReservedTurnHandler = async (options: {
                         nationCommand = { action: candidate.action, args: candidate.args };
                     }
                 }
-                runAction(nationDefinitions, nationFallback, nationCommand, false);
+                const nationResult = runAction(nationDefinitions, nationFallback, nationCommand, false);
+                options.onActionResolved?.({
+                    kind: 'nation',
+                    generalId: currentGeneral.id,
+                    nationId: currentNation?.id ?? null,
+                    requestedAction: nationCommand.action,
+                    actionKey: nationResult.actionKey,
+                    usedFallback: nationResult.usedFallback,
+                    ...(nationResult.blockedReason ? { blockedReason: nationResult.blockedReason } : {}),
+                });
                 options.reservedTurns.shiftNationTurns(currentNation.id, currentGeneral.officerLevel, -1);
             }
 
@@ -745,6 +770,15 @@ export const createReservedTurnHandler = async (options: {
                 }
             }
             const generalResult = runAction(generalDefinitions, generalFallback, generalCommand, true);
+            options.onActionResolved?.({
+                kind: 'general',
+                generalId: currentGeneral.id,
+                nationId: currentNation?.id ?? null,
+                requestedAction: generalCommand.action,
+                actionKey: generalResult.actionKey,
+                usedFallback: generalResult.usedFallback,
+                ...(generalResult.blockedReason ? { blockedReason: generalResult.blockedReason } : {}),
+            });
             const nextTurnAt = generalResult.nextTurnAt;
             options.reservedTurns.shiftGeneralTurns(currentGeneral.id, -1);
 

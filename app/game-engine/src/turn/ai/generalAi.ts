@@ -53,6 +53,7 @@ const resolveConstraintEnv = (
         startYear,
         relYear,
         openingPartYear: env.openingPartYear,
+        minAvailableRecruitPop: env.minAvailableRecruitPop,
     };
 };
 

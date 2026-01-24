@@ -351,6 +351,10 @@ export const do징병 = (ai: GeneralAI) => {
     const goldCost = (picked.cost * getTechCost(tech) * crewAmount) / 100;
     const riceCost = crewAmount / 100;
 
+    if (ai.general.gold <= 0 || ai.general.rice <= 0) {
+        return null;
+    }
+
     if (ai.generalPolicy.can('모병') && ai.general.gold >= goldCost * 6) {
         const hire = ai.buildGeneralCandidate('che_모병', { crewType: crewTypeId, amount: crewAmount }, '징병');
         if (hire) {

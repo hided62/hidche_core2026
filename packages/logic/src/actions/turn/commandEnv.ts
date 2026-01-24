@@ -3,6 +3,7 @@ import type { WarActionModule } from '@sammo-ts/logic/war/actions.js';
 
 export interface TurnCommandEnv {
     develCost: number;
+    minAvailableRecruitPop?: number;
     trainDelta: number;
     atmosDelta: number;
     maxTrainByCommand: number;

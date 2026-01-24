@@ -20,7 +20,7 @@ export const LARGE_TEST_MAP: MapDefinition = {
                 wall: 1000,
             },
             initial: {
-                population: 6000,
+                population: 10000,
                 agriculture: 600,
                 commerce: 600,
                 security: 600,
@@ -44,7 +44,7 @@ export const LARGE_TEST_MAP: MapDefinition = {
                 wall: 1100,
             },
             initial: {
-                population: 7200,
+                population: 12000,
                 agriculture: 660,
                 commerce: 660,
                 security: 660,
@@ -116,7 +116,7 @@ export const LARGE_TEST_MAP: MapDefinition = {
                 wall: 1000,
             },
             initial: {
-                population: 6000,
+                population: 10000,
                 agriculture: 600,
                 commerce: 600,
                 security: 600,
@@ -140,7 +140,7 @@ export const LARGE_TEST_MAP: MapDefinition = {
                 wall: 1100,
             },
             initial: {
-                population: 7200,
+                population: 12000,
                 agriculture: 660,
                 commerce: 660,
                 security: 660,
