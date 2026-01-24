@@ -27,6 +27,7 @@ import { loadTurnWorldFromDatabase } from './worldLoader.js';
 import { shouldUseAi } from './ai/generalAi.js';
 import { createUnificationHandler } from './unificationHandler.js';
 import { createAuctionFinalizer } from '../auction/finalizer.js';
+import { createAuctionBidder } from '../auction/bidder.js';
 import { createTournamentRewardFinalizer } from '../tournament/finalizer.js';
 import { createTournamentAutoStartHandler } from './tournamentAutoStart.js';
 
@@ -185,6 +186,7 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
     let publishRealtimeEvent: ((event: RealtimeEvent) => Promise<void>) | null = null;
     let close = async () => {};
     let auctionFinalizer: Awaited<ReturnType<typeof createAuctionFinalizer>> | null = null;
+    let auctionBidder: Awaited<ReturnType<typeof createAuctionBidder>> | null = null;
     let tournamentRewardFinalizer: Awaited<ReturnType<typeof createTournamentRewardFinalizer>> | null = null;
     let redisCommandStream: RedisTurnDaemonCommandStream | null = null;
     let pauseGate: (() => Promise<boolean>) | undefined;
@@ -204,6 +206,11 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
         const dbHooks = await createDatabaseTurnHooks(options.databaseUrl, world, {
             reservedTurns: reservedTurnStoreHandle?.store,
         });
+        auctionBidder = await createAuctionBidder({
+            databaseUrl: options.databaseUrl,
+            world,
+            hooks: dbHooks.hooks,
+        });
         auctionFinalizer = await createAuctionFinalizer({
             databaseUrl: options.databaseUrl,
             world,
@@ -222,6 +229,9 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
             },
         };
         close = async () => {
+            if (auctionBidder) {
+                await auctionBidder.close();
+            }
             if (auctionFinalizer) {
                 await auctionFinalizer.close();
             }
@@ -313,6 +323,7 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
         world,
         hooks,
         auctionFinalizer: auctionFinalizer ?? undefined,
+        auctionBidder: auctionBidder ?? undefined,
         tournamentRewardFinalizer: tournamentRewardFinalizer ?? undefined,
     });
 

@@ -16,7 +16,7 @@ import {
     sumInheritanceItems,
     writeUserStateMeta,
 } from '../../services/inheritance.js';
-import type { WorldStateRow } from '../../context.js';
+import type { GameApiContext, WorldStateRow } from '../../context.js';
 
 const BUFF_KEYS: InheritBuffType[] = [
     'warAvoidRatio',
@@ -72,6 +72,33 @@ const resolveWorld = async (ctx: { db: { worldState: { findFirst: () => Promise<
         currentMonth: number;
         tickSeconds: number;
     };
+};
+
+const patchGeneral = async (
+    ctx: Pick<GameApiContext, 'turnDaemon'>,
+    generalId: number,
+    patch: {
+        meta?: Record<string, unknown>;
+        turnTime?: string;
+        stats?: {
+            leadership?: number;
+            strength?: number;
+            intelligence?: number;
+        };
+        specialWar?: string;
+    }
+): Promise<void> => {
+    const result = await ctx.turnDaemon.requestCommand({
+        type: 'patchGeneral',
+        generalId,
+        patch,
+    });
+    if (!result || result.type !== 'patchGeneral') {
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
+    }
+    if (!result.ok) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
+    }
 };
 
 const buildTurnTimeZoneList = (tickMinutes: number): string[] => {
@@ -306,13 +333,10 @@ export const inheritRouter = router({
             const buffText = BUFF_LABELS[input.type];
             const moreText = prevLevel > 0 ? '추가' : '';
             buff[input.type] = input.level;
-            await ctx.db.general.update({
-                where: { id: general.id },
-                data: {
-                    meta: {
-                        ...asRecord(general.meta),
-                        inheritBuff: serializeBuffRecord(buff),
-                    },
+            await patchGeneral(ctx, general.id, {
+                meta: {
+                    ...asRecord(general.meta),
+                    inheritBuff: serializeBuffRecord(buff),
                 },
             });
 
@@ -385,13 +409,10 @@ export const inheritRouter = router({
             const [warModule] = await loadWarTraitModules([input.specialKey], new WarTraitLoader());
             const warName = warModule?.name ?? input.specialKey;
 
-            await ctx.db.general.update({
-                where: { id: general.id },
-                data: {
-                    meta: {
-                        ...meta,
-                        inheritSpecificSpecialWar: input.specialKey,
-                    },
+            await patchGeneral(ctx, general.id, {
+                meta: {
+                    ...meta,
+                    inheritSpecificSpecialWar: input.specialKey,
                 },
             });
 
@@ -441,15 +462,12 @@ export const inheritRouter = router({
         const prevList = parseJson<string[]>(typeof meta.prev_types_special2 === 'string' ? meta.prev_types_special2 : null) ?? [];
         prevList.push(general.special2Code);
 
-        await ctx.db.general.update({
-            where: { id: general.id },
-            data: {
-                special2Code: 'None',
-                meta: {
-                    ...meta,
-                    inheritResetSpecialWar: nextLevel,
-                    prev_types_special2: JSON.stringify(prevList),
-                },
+        await patchGeneral(ctx, general.id, {
+            specialWar: 'None',
+            meta: {
+                ...meta,
+                inheritResetSpecialWar: nextLevel,
+                prev_types_special2: JSON.stringify(prevList),
             },
         });
 
@@ -496,14 +514,11 @@ export const inheritRouter = router({
             nextTurnTime = new Date(nextTurnTime.getTime() + tickMinutes * 60000);
         }
 
-        await ctx.db.general.update({
-            where: { id: general.id },
-            data: {
-                turnTime: nextTurnTime,
-                meta: {
-                    ...asRecord(general.meta),
-                    inheritResetTurnTime: nextLevel,
-                },
+        await patchGeneral(ctx, general.id, {
+            turnTime: nextTurnTime.toISOString(),
+            meta: {
+                ...asRecord(general.meta),
+                inheritResetTurnTime: nextLevel,
             },
         });
 
@@ -620,12 +635,11 @@ export const inheritRouter = router({
                 intel: input.intel + finalBonus[2],
             };
 
-            await ctx.db.general.update({
-                where: { id: general.id },
-                data: {
+            await patchGeneral(ctx, general.id, {
+                stats: {
                     leadership: nextStats.leadership,
                     strength: nextStats.strength,
-                    intel: nextStats.intel,
+                    intelligence: nextStats.intel,
                 },
             });
 
@@ -697,13 +711,10 @@ export const inheritRouter = router({
             throw new TRPCError({ code: 'BAD_REQUEST', message: '이미 구입 명령을 내렸습니다. 다음 턴까지 기다려주세요.' });
         }
 
-        await ctx.db.general.update({
-            where: { id: general.id },
-            data: {
-                meta: {
-                    ...meta,
-                    inheritRandomUnique: 1,
-                },
+        await patchGeneral(ctx, general.id, {
+            meta: {
+                ...meta,
+                inheritRandomUnique: 1,
             },
         });
 
@@ -755,17 +766,14 @@ export const inheritRouter = router({
                 throw new TRPCError({ code: 'BAD_REQUEST', message: '이미 유니크 경매 신청이 있습니다.' });
             }
 
-            await ctx.db.general.update({
-                where: { id: general.id },
-                data: {
-                    meta: {
-                        ...meta,
-                        inheritSpecificUnique: JSON.stringify({
-                            itemId: input.itemId,
-                            amount: input.amount,
-                            requestedAt: new Date().toISOString(),
-                        }),
-                    },
+            await patchGeneral(ctx, general.id, {
+                meta: {
+                    ...meta,
+                    inheritSpecificUnique: JSON.stringify({
+                        itemId: input.itemId,
+                        amount: input.amount,
+                        requestedAt: new Date().toISOString(),
+                    }),
                 },
             });
 

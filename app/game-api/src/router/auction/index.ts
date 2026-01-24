@@ -1,5 +1,4 @@
 import { TRPCError } from '@trpc/server';
-import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 
 import { authedProcedure, router } from '../../trpc.js';
@@ -8,8 +7,6 @@ import { buildAuctionTimerKeys } from '../../auction/keys.js';
 import { GamePrisma } from '@sammo-ts/infra';
 import { ItemLoader, isItemKey } from '@sammo-ts/logic';
 
-const COEFF_EXTENSION_MINUTES_PER_BID = 1 / 6;
-const MIN_EXTENSION_MINUTES_PER_BID = 1;
 
 const zBidInput = z.object({
     auctionId: z.number().int().positive(),
@@ -54,15 +51,6 @@ const parseDetail = (detail: unknown): AuctionDetail => {
         return {};
     }
     return detail as AuctionDetail;
-};
-
-const toTurnMinutes = (tickSeconds: number): number => Math.max(1, Math.round(tickSeconds / 60));
-
-const resolveTurnMinutes = async (db: DatabaseClient) => {
-    const rows = (await db.$queryRaw(
-        GamePrisma.sql`SELECT tick_seconds as "tickSeconds" FROM world_state ORDER BY id LIMIT 1`
-    )) as Array<{ tickSeconds: number }>;
-    return toTurnMinutes(rows[0]?.tickSeconds ?? 60);
 };
 
 const requireAuth = (ctx: GameApiContext): NonNullable<GameApiContext['auth']> => {
@@ -159,42 +147,6 @@ const loadMyPrevBid = async (
     return rows[0] ?? null;
 };
 
-const cancelAuction = async (
-    db: DatabaseClient,
-    auctionId: number,
-    reason: string
-) => {
-    const now = new Date();
-    await db.$executeRaw(
-        GamePrisma.sql`
-            UPDATE auction
-            SET status = 'CANCELED',
-                finished_at = ${now},
-                updated_at = ${now},
-                detail = jsonb_set(detail, '{cancelReason}', to_jsonb(${reason}), true)
-            WHERE id = ${auctionId}
-        `
-    );
-};
-
-const extendCloseDate = (options: {
-    now: Date;
-    closeAt: Date;
-    turnMinutes: number;
-    availableLatestBidCloseDate?: Date | null;
-}) => {
-    const { now, closeAt, turnMinutes, availableLatestBidCloseDate } = options;
-    const extendMinutes = Math.max(MIN_EXTENSION_MINUTES_PER_BID, turnMinutes * COEFF_EXTENSION_MINUTES_PER_BID);
-    const extended = new Date(now.getTime() + extendMinutes * 60 * 1000);
-    if (extended.getTime() <= closeAt.getTime()) {
-        return closeAt;
-    }
-    if (availableLatestBidCloseDate && extended.getTime() > availableLatestBidCloseDate.getTime()) {
-        return availableLatestBidCloseDate;
-    }
-    return extended;
-};
-
 const shouldUsePrevBid = (highestBid: AuctionBidRow | null, myPrevBid: AuctionBidRow | null): AuctionBidRow | null => {
     if (!myPrevBid) {
         return null;
@@ -206,13 +158,6 @@ const shouldUsePrevBid = (highestBid: AuctionBidRow | null, myPrevBid: AuctionBi
         return null;
     }
     return myPrevBid;
-};
-
-const runInTransaction = async <T>(db: DatabaseClient, fn: (tx: DatabaseClient) => Promise<T>): Promise<T> => {
-    if (db.$transaction) {
-        return db.$transaction(fn);
-    }
-    return fn(db);
 };
 
 export const auctionRouter = router({
@@ -260,71 +205,23 @@ export const auctionRouter = router({
             throw new TRPCError({ code: 'BAD_REQUEST', message: '금이 부족합니다.' });
         }
 
-        const eventId = randomUUID();
-        const eventAt = now;
-        const turnMinutes = await resolveTurnMinutes(ctx.db);
-        const availableLatestBidCloseDate = detail.availableLatestBidCloseDate
-            ? new Date(detail.availableLatestBidCloseDate)
-            : null;
-        const nextCloseAt = extendCloseDate({
-            now,
-            closeAt: auction.closeAt,
-            turnMinutes,
-            availableLatestBidCloseDate,
+        const result = await ctx.turnDaemon.requestCommand({
+            type: 'auctionBid',
+            auctionId: auction.id,
+            generalId: general.id,
+            amount: input.amount,
+            tryExtendCloseDate: true,
         });
-
-        await runInTransaction(ctx.db, async (tx) => {
-            await tx.$executeRaw(
-                GamePrisma.sql`
-                    INSERT INTO auction_bid (auction_id, general_id, amount, event_id, event_at, meta)
-                    VALUES (${auction.id}, ${general.id}, ${input.amount}, ${eventId}, ${eventAt}, ${JSON.stringify({ tryExtendCloseDate: true })}::jsonb)
-                `
-            );
-
-            await tx.general.update({
-                where: { id: general.id },
-                data: { gold: general.gold - morePoint },
-            });
-
-            if (highestBid && highestBid.generalId !== general.id && !myPrevBid) {
-                const prev = await tx.general.findUnique({ where: { id: highestBid.generalId } });
-                if (!prev) {
-                    await cancelAuction(tx, auction.id, '중복 입찰 등 문제가 발생하여 취소');
-                    throw new TRPCError({ code: 'CONFLICT', message: '경매가 취소되었습니다.' });
-                }
-                await tx.general.update({
-                    where: { id: prev.id },
-                    data: { gold: prev.gold + highestBid.amount },
-                });
-            }
-
-            const updated = await tx.$executeRaw(
-                GamePrisma.sql`
-                    UPDATE auction
-                    SET close_at = ${nextCloseAt},
-                        latest_event_id = ${eventId},
-                        latest_event_at = ${eventAt},
-                        updated_at = ${eventAt}
-                    WHERE id = ${auction.id}
-                      AND status = 'OPEN'
-                      AND (
-                        latest_event_at < ${eventAt}
-                        OR (latest_event_at = ${eventAt} AND latest_event_id < ${eventId})
-                      )
-                `
-            );
-
-            if (updated === 0) {
-                await cancelAuction(tx, auction.id, '중복 입찰 등 문제가 발생하여 취소');
-                await tx.general.update({
-                    where: { id: general.id },
-                    data: { gold: general.gold },
-                });
-                throw new TRPCError({ code: 'CONFLICT', message: '경매가 취소되었습니다.' });
-            }
-        });
+        if (!result || result.type !== 'auctionBid') {
+            throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
+        }
+        if (!result.ok) {
+            const code = result.reason.includes('취소') ? 'CONFLICT' : 'BAD_REQUEST';
+            throw new TRPCError({ code, message: result.reason });
+        }
 
         const timerKeys = buildAuctionTimerKeys(ctx.profile.name);
+        const nextCloseAt = new Date(result.closeAt);
         await ctx.redis.zAdd(timerKeys.timerKey, [{ score: nextCloseAt.getTime(), value: String(auction.id) }]);
 
         return { ok: true };
@@ -373,71 +270,23 @@ export const auctionRouter = router({
             throw new TRPCError({ code: 'BAD_REQUEST', message: '쌀이 부족합니다.' });
         }
 
-        const eventId = randomUUID();
-        const eventAt = now;
-        const turnMinutes = await resolveTurnMinutes(ctx.db);
-        const availableLatestBidCloseDate = detail.availableLatestBidCloseDate
-            ? new Date(detail.availableLatestBidCloseDate)
-            : null;
-        const nextCloseAt = extendCloseDate({
-            now,
-            closeAt: auction.closeAt,
-            turnMinutes,
-            availableLatestBidCloseDate,
+        const result = await ctx.turnDaemon.requestCommand({
+            type: 'auctionBid',
+            auctionId: auction.id,
+            generalId: general.id,
+            amount: input.amount,
+            tryExtendCloseDate: true,
         });
-
-        await runInTransaction(ctx.db, async (tx) => {
-            await tx.$executeRaw(
-                GamePrisma.sql`
-                    INSERT INTO auction_bid (auction_id, general_id, amount, event_id, event_at, meta)
-                    VALUES (${auction.id}, ${general.id}, ${input.amount}, ${eventId}, ${eventAt}, ${JSON.stringify({ tryExtendCloseDate: true })}::jsonb)
-                `
-            );
-
-            await tx.general.update({
-                where: { id: general.id },
-                data: { rice: general.rice - morePoint },
-            });
-
-            if (highestBid && highestBid.generalId !== general.id && !myPrevBid) {
-                const prev = await tx.general.findUnique({ where: { id: highestBid.generalId } });
-                if (!prev) {
-                    await cancelAuction(tx, auction.id, '중복 입찰 등 문제가 발생하여 취소');
-                    throw new TRPCError({ code: 'CONFLICT', message: '경매가 취소되었습니다.' });
-                }
-                await tx.general.update({
-                    where: { id: prev.id },
-                    data: { rice: prev.rice + highestBid.amount },
-                });
-            }
-
-            const updated = await tx.$executeRaw(
-                GamePrisma.sql`
-                    UPDATE auction
-                    SET close_at = ${nextCloseAt},
-                        latest_event_id = ${eventId},
-                        latest_event_at = ${eventAt},
-                        updated_at = ${eventAt}
-                    WHERE id = ${auction.id}
-                      AND status = 'OPEN'
-                      AND (
-                        latest_event_at < ${eventAt}
-                        OR (latest_event_at = ${eventAt} AND latest_event_id < ${eventId})
-                      )
-                `
-            );
-
-            if (updated === 0) {
-                await cancelAuction(tx, auction.id, '중복 입찰 등 문제가 발생하여 취소');
-                await tx.general.update({
-                    where: { id: general.id },
-                    data: { rice: general.rice },
-                });
-                throw new TRPCError({ code: 'CONFLICT', message: '경매가 취소되었습니다.' });
-            }
-        });
+        if (!result || result.type !== 'auctionBid') {
+            throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
+        }
+        if (!result.ok) {
+            const code = result.reason.includes('취소') ? 'CONFLICT' : 'BAD_REQUEST';
+            throw new TRPCError({ code, message: result.reason });
+        }
 
         const timerKeys = buildAuctionTimerKeys(ctx.profile.name);
+        const nextCloseAt = new Date(result.closeAt);
         await ctx.redis.zAdd(timerKeys.timerKey, [{ score: nextCloseAt.getTime(), value: String(auction.id) }]);
 
         return { ok: true };
@@ -550,84 +399,23 @@ export const auctionRouter = router({
             throw new TRPCError({ code: 'BAD_REQUEST', message: '유산포인트가 부족합니다.' });
         }
 
-        const eventId = randomUUID();
-        const eventAt = now;
-        const turnMinutes = await resolveTurnMinutes(ctx.db);
-        const availableLatestBidCloseDate = detail.availableLatestBidCloseDate
-            ? new Date(detail.availableLatestBidCloseDate)
-            : null;
-        const nextCloseAt = extendCloseDate({
-            now,
-            closeAt: auction.closeAt,
-            turnMinutes,
-            availableLatestBidCloseDate,
+        const result = await ctx.turnDaemon.requestCommand({
+            type: 'auctionBid',
+            auctionId: auction.id,
+            generalId: general.id,
+            amount: input.amount,
+            tryExtendCloseDate: input.tryExtendCloseDate ?? true,
         });
-
-        await runInTransaction(ctx.db, async (tx) => {
-            await tx.$executeRaw(
-                GamePrisma.sql`
-                    INSERT INTO auction_bid (auction_id, general_id, amount, event_id, event_at, meta)
-                    VALUES (
-                        ${auction.id},
-                        ${general.id},
-                        ${input.amount},
-                        ${eventId},
-                        ${eventAt},
-                        ${JSON.stringify({ tryExtendCloseDate: input.tryExtendCloseDate ?? true })}::jsonb
-                    )
-                `
-            );
-
-            const prevValue = inheritPoint?.value ?? 0;
-            await tx.inheritancePoint.upsert({
-                where: { userId_key: { userId: auth.user.id, key: 'previous' } },
-                update: { value: prevValue - morePoint },
-                create: { userId: auth.user.id, key: 'previous', value: prevValue - morePoint },
-            });
-
-            if (highestBid && highestBid.generalId !== general.id && !myPrevBid) {
-                const prev = await tx.general.findUnique({ where: { id: highestBid.generalId } });
-                if (!prev) {
-                    await cancelAuction(tx, auction.id, '중복 입찰 등 문제가 발생하여 취소');
-                    throw new TRPCError({ code: 'CONFLICT', message: '경매가 취소되었습니다.' });
-                }
-                const prevUserId = prev.userId ?? '';
-                if (prevUserId) {
-                    const prevPoint = await tx.inheritancePoint.findUnique({
-                        where: { userId_key: { userId: prevUserId, key: 'previous' } },
-                    });
-                    const nextValue = (prevPoint?.value ?? 0) + highestBid.amount;
-                    await tx.inheritancePoint.upsert({
-                        where: { userId_key: { userId: prevUserId, key: 'previous' } },
-                        update: { value: nextValue },
-                        create: { userId: prevUserId, key: 'previous', value: nextValue },
-                    });
-                }
-            }
-
-            const updated = await tx.$executeRaw(
-                GamePrisma.sql`
-                    UPDATE auction
-                    SET close_at = ${nextCloseAt},
-                        latest_event_id = ${eventId},
-                        latest_event_at = ${eventAt},
-                        updated_at = ${eventAt}
-                    WHERE id = ${auction.id}
-                      AND status = 'OPEN'
-                      AND (
-                        latest_event_at < ${eventAt}
-                        OR (latest_event_at = ${eventAt} AND latest_event_id < ${eventId})
-                      )
-                `
-            );
-
-            if (updated === 0) {
-                await cancelAuction(tx, auction.id, '중복 입찰 등 문제가 발생하여 취소');
-                throw new TRPCError({ code: 'CONFLICT', message: '경매가 취소되었습니다.' });
-            }
-        });
+        if (!result || result.type !== 'auctionBid') {
+            throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
+        }
+        if (!result.ok) {
+            const code = result.reason.includes('취소') ? 'CONFLICT' : 'BAD_REQUEST';
+            throw new TRPCError({ code, message: result.reason });
+        }
 
         const timerKeys = buildAuctionTimerKeys(ctx.profile.name);
+        const nextCloseAt = new Date(result.closeAt);
         await ctx.redis.zAdd(timerKeys.timerKey, [{ score: nextCloseAt.getTime(), value: String(auction.id) }]);
 
         return { ok: true };

@@ -6,6 +6,7 @@ import type {
     TurnRunResult,
 } from '../lifecycle/types.js';
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
+import type { TurnGeneral } from './types.js';
 
 const buildFlushResult = (world: InMemoryTurnWorld): TurnRunResult => {
     const state = world.getState();
@@ -30,11 +31,16 @@ interface CommandHandlerContext {
     world: InMemoryTurnWorld;
     hooks?: TurnDaemonHooks;
     auctionFinalizer?: AuctionFinalizer;
+    auctionBidder?: AuctionBidder;
     tournamentRewardFinalizer?: TournamentRewardFinalizer;
 }
 
 interface AuctionFinalizer {
     finalize(auctionId: number): Promise<TurnDaemonCommandResult>;
+}
+
+interface AuctionBidder {
+    bid(command: Extract<TurnDaemonCommand, { type: 'auctionBid' }>): Promise<TurnDaemonCommandResult>;
 }
 
 interface TournamentRewardFinalizer {
@@ -85,6 +91,109 @@ async function handleSetNationMeta(
         nationId: command.nationId,
         updatedAt,
     };
+}
+
+async function handleAdjustGeneralResources(
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'adjustGeneralResources' }>
+): Promise<TurnDaemonCommandResult> {
+    const { world, hooks } = ctx;
+    if (!command.adjustments || command.adjustments.length === 0) {
+        return { type: 'adjustGeneralResources', ok: false, reason: '조정 대상이 없습니다.' };
+    }
+
+    const targets = command.adjustments.map((adjustment) => {
+        const general = world.getGeneralById(adjustment.generalId);
+        return { adjustment, general };
+    });
+
+    for (const { adjustment, general } of targets) {
+        if (!general) {
+            continue;
+        }
+        const nextGold = general.gold + (adjustment.goldDelta ?? 0);
+        const nextRice = general.rice + (adjustment.riceDelta ?? 0);
+        if (nextGold < 0 || nextRice < 0) {
+            return { type: 'adjustGeneralResources', ok: false, reason: '자원이 부족합니다.' };
+        }
+    }
+
+    let processed = 0;
+    let missing = 0;
+    let totalGoldDelta = 0;
+    let totalRiceDelta = 0;
+
+    for (const { adjustment, general } of targets) {
+        if (!general) {
+            missing += 1;
+            continue;
+        }
+        const goldDelta = adjustment.goldDelta ?? 0;
+        const riceDelta = adjustment.riceDelta ?? 0;
+        world.updateGeneral(adjustment.generalId, {
+            gold: general.gold + goldDelta,
+            rice: general.rice + riceDelta,
+        });
+        processed += 1;
+        totalGoldDelta += goldDelta;
+        totalRiceDelta += riceDelta;
+    }
+
+    await flushWorld(world, hooks);
+    return {
+        type: 'adjustGeneralResources',
+        ok: true,
+        processed,
+        missing,
+        totalGoldDelta,
+        totalRiceDelta,
+    };
+}
+
+async function handlePatchGeneral(
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'patchGeneral' }>
+): Promise<TurnDaemonCommandResult> {
+    const { world, hooks } = ctx;
+    const general = world.getGeneralById(command.generalId);
+    if (!general) {
+        return {
+            type: 'patchGeneral',
+            ok: false,
+            generalId: command.generalId,
+            reason: '장수 정보를 찾을 수 없습니다.',
+        };
+    }
+
+    const patch: Partial<typeof general> = {};
+    if (command.patch.meta) {
+        patch.meta = {
+            ...general.meta,
+            ...command.patch.meta,
+        } as TurnGeneral['meta'];
+    }
+    if (command.patch.turnTime) {
+        const nextTurnTime = new Date(command.patch.turnTime);
+        if (!Number.isNaN(nextTurnTime.getTime())) {
+            patch.turnTime = nextTurnTime;
+        }
+    }
+    if (command.patch.stats) {
+        patch.stats = {
+            ...general.stats,
+            ...command.patch.stats,
+        };
+    }
+    if (typeof command.patch.specialWar === 'string') {
+        patch.role = {
+            ...general.role,
+            specialWar: command.patch.specialWar,
+        };
+    }
+
+    world.updateGeneral(command.generalId, patch);
+    await flushWorld(world, hooks);
+    return { type: 'patchGeneral', ok: true, generalId: command.generalId };
 }
 
 async function handleTroopJoin(
@@ -370,6 +479,21 @@ async function handleAuctionFinalize(
     return ctx.auctionFinalizer.finalize(command.auctionId);
 }
 
+async function handleAuctionBid(
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'auctionBid' }>
+): Promise<TurnDaemonCommandResult> {
+    if (!ctx.auctionBidder) {
+        return {
+            type: 'auctionBid',
+            ok: false,
+            auctionId: command.auctionId,
+            reason: '경매 입찰기가 준비되지 않았습니다.',
+        };
+    }
+    return ctx.auctionBidder.bid(command);
+}
+
 async function handleChangePermission(
     ctx: CommandHandlerContext,
     command: Extract<TurnDaemonCommand, { type: 'changePermission' }>
@@ -618,12 +742,14 @@ export const createTurnDaemonCommandHandler = (options: {
     world: InMemoryTurnWorld;
     hooks?: TurnDaemonHooks;
     auctionFinalizer?: AuctionFinalizer;
+    auctionBidder?: AuctionBidder;
     tournamentRewardFinalizer?: TournamentRewardFinalizer;
 }): TurnDaemonCommandHandler => {
     const ctx = {
         world: options.world,
         hooks: options.hooks,
         auctionFinalizer: options.auctionFinalizer,
+        auctionBidder: options.auctionBidder,
         tournamentRewardFinalizer: options.tournamentRewardFinalizer,
     };
 
@@ -648,6 +774,8 @@ export const createTurnDaemonCommandHandler = (options: {
                     return handleDropItem(ctx, command);
                 case 'auctionFinalize':
                     return handleAuctionFinalize(ctx, command);
+                case 'auctionBid':
+                    return handleAuctionBid(ctx, command);
                 case 'changePermission':
                     return handleChangePermission(ctx, command);
                 case 'kick':
@@ -662,6 +790,10 @@ export const createTurnDaemonCommandHandler = (options: {
                     return handleTournamentReward(ctx, command);
                 case 'setNationMeta':
                     return handleSetNationMeta(ctx, command);
+                case 'adjustGeneralResources':
+                    return handleAdjustGeneralResources(ctx, command);
+                case 'patchGeneral':
+                    return handlePatchGeneral(ctx, command);
                 default:
                     return null;
             }

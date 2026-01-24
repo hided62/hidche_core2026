@@ -681,8 +681,9 @@ const seedNpcBets = async (options: {
     store: TournamentStore;
     state: TournamentState;
     baseSeed: string;
+    daemonTransport: TurnDaemonTransport;
 }): Promise<void> => {
-    const { prisma, store, state, baseSeed } = options;
+    const { prisma, store, state, baseSeed, daemonTransport } = options;
     const existing = await store.getBettingEntries();
     if (existing.length > 0) {
         return;
@@ -737,14 +738,14 @@ const seedNpcBets = async (options: {
         entries.push({ generalId: npc.id as number, targetId, amount: betGold });
     }
 
-    await prisma.$transaction(
-        npcBetList.map((npc) =>
-            prisma.general.update({
-                where: { id: npc.id as number },
-                data: { gold: (npc.gold as number) - betGold },
-            })
-        )
-    );
+    await daemonTransport.sendCommand({
+        type: 'adjustGeneralResources',
+        reason: 'tournamentNpcBet',
+        adjustments: npcBetList.map((npc) => ({
+            generalId: npc.id as number,
+            goldDelta: -betGold,
+        })),
+    });
     await store.setBettingEntries(entries);
 };
 
@@ -752,7 +753,8 @@ export const applyPreBattleStage = async (
     store: TournamentStore,
     prisma: TournamentPrismaClient,
     state: TournamentState,
-    baseSeed: string
+    baseSeed: string,
+    daemonTransport: TurnDaemonTransport
 ): Promise<TournamentState> => {
     const participants = await store.getParticipants();
 
@@ -976,7 +978,7 @@ export const applyPreBattleStage = async (
             nextAt: resolveNextAt(state),
         };
         await store.setState(nextState);
-        await seedNpcBets({ prisma, store, state: nextState, baseSeed });
+        await seedNpcBets({ prisma, store, state: nextState, baseSeed, daemonTransport });
         return nextState;
     }
 
@@ -1115,7 +1117,13 @@ export const runTournamentWorker = async (): Promise<void> => {
             if (isBattleStage(state.stage)) {
                 nextState = await applyBattle(store, state, String(baseSeed));
             } else if (isPreBattleStage(state.stage)) {
-                nextState = await applyPreBattleStage(store, postgres.prisma, state, String(baseSeed));
+                nextState = await applyPreBattleStage(
+                    store,
+                    postgres.prisma,
+                    state,
+                    String(baseSeed),
+                    daemonTransport
+                );
             }
 
             await settleTournamentOutcome({

@@ -265,11 +265,17 @@ export const tournamentRouter = router({
             throw new TRPCError({ code: 'NOT_FOUND', message: '장수 정보를 찾을 수 없습니다.' });
         }
 
-        const nextMeta = { ...asRecord(general.meta), tnmt: 1 };
-        await ctx.db.general.update({
-            where: { id: general.id },
-            data: { meta: nextMeta },
+        const result = await ctx.turnDaemon.requestCommand({
+            type: 'setMySetting',
+            generalId: general.id,
+            settings: { tnmt: 1 },
         });
+        if (!result || result.type !== 'setMySetting') {
+            throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
+        }
+        if (!result.ok) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason ?? '요청에 실패했습니다.' });
+        }
 
         const already = participants.find((entry) => entry.id === general.id);
         if (already) {
@@ -403,10 +409,17 @@ export const tournamentRouter = router({
                 throw new TRPCError({ code: 'BAD_REQUEST', message: '소지금이 부족합니다.' });
             }
 
-            await ctx.db.general.update({
-                where: { id: general.id },
-                data: { gold: general.gold - input.amount },
+            const adjustResult = await ctx.turnDaemon.requestCommand({
+                type: 'adjustGeneralResources',
+                reason: 'tournamentBet',
+                adjustments: [{ generalId: general.id, goldDelta: -input.amount }],
             });
+            if (!adjustResult || adjustResult.type !== 'adjustGeneralResources') {
+                throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
+            }
+            if (!adjustResult.ok) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: adjustResult.reason });
+            }
 
             await store.appendBettingEntry({
                 generalId: general.id,

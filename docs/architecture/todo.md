@@ -14,6 +14,7 @@ Move items into the main docs once they are finalized.
 - [AI suggestion] Implement diplomacy/state transitions and monthly/command-based updates beyond read-only maps.
 - [AI suggestion] Integrate war/battle pipeline into turn processing (troop movement/war resolution hooks, not just isolated sim jobs).
 - [AI suggestion] Expand turn command catalog beyond the current subset (general/nation commands).
+- [AI suggestion] Replace growing switch-based command routing/serialization with a registry (command schema + handler map + validator) to reduce manual case additions.
 - [AI suggestion] Apply install settings (`join_mode`, `npcmode`, `show_img_level`, `tournament_trig`) to runtime rules/command constraints and UI behavior, beyond just storing them in world state.
 - [AI suggestion] Implement full auction finalization logic in the daemon (resource transfers, unique item grants, and log writes) once the auction schema is stabilized.
 

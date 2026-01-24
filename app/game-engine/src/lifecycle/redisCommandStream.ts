@@ -42,6 +42,9 @@ type TurnDaemonEventEnvelope = {
     event: TurnDaemonEvent;
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+    Boolean(value && typeof value === 'object' && !Array.isArray(value));
+
 const parseCommandEnvelope = (raw: string): TurnDaemonCommandEnvelope | null => {
     try {
         const parsed = JSON.parse(raw) as Partial<TurnDaemonCommandEnvelope>;
@@ -292,6 +295,77 @@ const normalizeCommand = (envelope: TurnDaemonCommandEnvelope): TurnDaemonComman
                 nationId: command.nationId,
                 updates: command.updates as Record<string, unknown>,
                 expectedUpdatedAt: typeof command.expectedUpdatedAt === 'string' ? command.expectedUpdatedAt : undefined,
+            };
+        }
+        case 'adjustGeneralResources': {
+            if (!Array.isArray(command.adjustments)) {
+                return null;
+            }
+            const adjustments = command.adjustments
+                .filter((entry) => entry && typeof entry.generalId === 'number')
+                .map((entry) => ({
+                    generalId: entry.generalId,
+                    goldDelta: typeof entry.goldDelta === 'number' ? entry.goldDelta : undefined,
+                    riceDelta: typeof entry.riceDelta === 'number' ? entry.riceDelta : undefined,
+                }))
+                .filter((entry) => entry.goldDelta !== undefined || entry.riceDelta !== undefined);
+            if (adjustments.length === 0) {
+                return null;
+            }
+            return {
+                type: 'adjustGeneralResources',
+                requestId: envelope.requestId,
+                reason: typeof command.reason === 'string' ? command.reason : undefined,
+                adjustments,
+            };
+        }
+        case 'patchGeneral': {
+            if (typeof command.generalId !== 'number' || !command.patch || typeof command.patch !== 'object') {
+                return null;
+            }
+            return {
+                type: 'patchGeneral',
+                requestId: envelope.requestId,
+                generalId: command.generalId,
+                patch: {
+                    meta: isRecord(command.patch.meta) ? command.patch.meta : undefined,
+                    turnTime: typeof command.patch.turnTime === 'string' ? command.patch.turnTime : undefined,
+                    stats: isRecord(command.patch.stats)
+                        ? {
+                              leadership:
+                                  typeof command.patch.stats.leadership === 'number'
+                                      ? command.patch.stats.leadership
+                                      : undefined,
+                              strength:
+                                  typeof command.patch.stats.strength === 'number'
+                                      ? command.patch.stats.strength
+                                      : undefined,
+                              intelligence:
+                                  typeof command.patch.stats.intelligence === 'number'
+                                      ? command.patch.stats.intelligence
+                                      : undefined,
+                          }
+                        : undefined,
+                    specialWar: typeof command.patch.specialWar === 'string' ? command.patch.specialWar : undefined,
+                },
+            };
+        }
+        case 'auctionBid': {
+            if (
+                typeof command.auctionId !== 'number' ||
+                typeof command.generalId !== 'number' ||
+                typeof command.amount !== 'number'
+            ) {
+                return null;
+            }
+            return {
+                type: 'auctionBid',
+                requestId: envelope.requestId,
+                auctionId: command.auctionId,
+                generalId: command.generalId,
+                amount: command.amount,
+                tryExtendCloseDate:
+                    typeof command.tryExtendCloseDate === 'boolean' ? command.tryExtendCloseDate : undefined,
             };
         }
         case 'getStatus': {

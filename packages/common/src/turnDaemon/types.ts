@@ -122,7 +122,40 @@ export type TurnDaemonCommand =
             nationId: number;
             updates: Record<string, unknown>;
             expectedUpdatedAt?: string;
-        };
+            }
+        | {
+                    type: 'adjustGeneralResources';
+                    requestId?: string;
+                    reason?: string;
+                    adjustments: Array<{
+                            generalId: number;
+                            goldDelta?: number;
+                            riceDelta?: number;
+                    }>;
+          }
+        | {
+              type: 'patchGeneral';
+              requestId?: string;
+              generalId: number;
+              patch: {
+                  meta?: Record<string, unknown>;
+                  turnTime?: string;
+                  stats?: {
+                      leadership?: number;
+                      strength?: number;
+                      intelligence?: number;
+                  };
+                  specialWar?: string;
+              };
+          }
+        | {
+              type: 'auctionBid';
+              requestId?: string;
+              auctionId: number;
+              generalId: number;
+              amount: number;
+              tryExtendCloseDate?: boolean;
+          };
 
 export type TurnDaemonCommandResult =
     | {
@@ -227,7 +260,43 @@ export type TurnDaemonCommandResult =
             nationId: number;
             reason: string;
             currentUpdatedAt?: string;
-        };
+            }
+            | {
+                type: 'adjustGeneralResources';
+                ok: true;
+                processed: number;
+                missing: number;
+                totalGoldDelta: number;
+                totalRiceDelta: number;
+            }
+            | {
+                type: 'adjustGeneralResources';
+                ok: false;
+                reason: string;
+                }
+                | {
+                    type: 'patchGeneral';
+                    ok: true;
+                    generalId: number;
+                }
+                | {
+                    type: 'patchGeneral';
+                    ok: false;
+                    generalId: number;
+                    reason: string;
+                    }
+                    | {
+                        type: 'auctionBid';
+                        ok: true;
+                        auctionId: number;
+                        closeAt: string;
+                    }
+                    | {
+                        type: 'auctionBid';
+                        ok: false;
+                        auctionId: number;
+                        reason: string;
+                    };
 
 export type TurnDaemonEvent =
     | { type: 'status'; requestId?: string; status: TurnDaemonStatus }
