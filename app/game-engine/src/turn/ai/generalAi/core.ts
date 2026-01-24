@@ -779,14 +779,7 @@ export class GeneralAI {
             }
         }
 
-        if ((this.dipState === d평화 || this.dipState === d선포) && this.worldRef) {
-            const hasCrew =
-                this.general.crew > 0 ||
-                this.worldRef.listGenerals().some((general) => general.nationId === nationId && general.crew > 0);
-            if (hasCrew) {
-                this.dipState = d징병;
-            }
-        }
+        // legacy GeneralAI.php 기준: 평화/선포 상태에서 병력 보유 여부로 d징병 전환하지 않음.
     }
 
     private calcRecentWarTurn(general: TurnGeneral): number {
