@@ -140,7 +140,7 @@ describe('che_NPC능동', () => {
             age: 20,
             npcState: 2, // NPC
             triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
-            meta: {},
+            meta: { killturn: 24 },
         };
         world.snapshot.generals.push(general);
 
@@ -195,7 +195,7 @@ describe('che_NPC능동', () => {
             age: 20,
             npcState: 0, // Human
             triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
-            meta: {},
+            meta: { killturn: 24 },
         };
         world.snapshot.generals.push(general);
 

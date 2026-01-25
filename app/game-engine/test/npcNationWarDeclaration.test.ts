@@ -29,7 +29,7 @@ const createNpcGeneral = (
         specialWar: null,
     },
     triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
-    meta: {},
+    meta: { killturn: 800 },
     officerLevel,
     experience: 0,
     dedication: 0,

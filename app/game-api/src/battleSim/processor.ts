@@ -122,6 +122,7 @@ const mapGeneralPayload = (payload: BattleSimJobPayload['attackerGeneral']): Gen
         meta: payload.inheritBuff ? { inheritBuff: JSON.stringify(payload.inheritBuff) } : {},
     },
     meta: {
+        killturn: 24,
         explevel: payload.explevel,
         turnTime: payload.turntime,
         recentWar: payload.recent_war ?? '',

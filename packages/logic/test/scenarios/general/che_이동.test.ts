@@ -92,7 +92,7 @@ describe('che_이동', () => {
             age: 20,
             npcState: 0,
             triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
-            meta: {},
+            meta: { killturn: 24 },
         };
         const nation: Nation = {
             id: 1,

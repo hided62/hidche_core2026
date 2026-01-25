@@ -44,6 +44,10 @@ export interface GeneralRole {
     items: GeneralItemSlots;
 }
 
+export type GeneralMeta = Record<string, TriggerValue> & {
+    killturn: number;
+};
+
 export interface General<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     id: GeneralId;
     name: string;
@@ -65,7 +69,7 @@ export interface General<TriggerState extends GeneralTriggerState = GeneralTrigg
     age: number;
     npcState: number;
     triggerState: TriggerState;
-    meta: Record<string, TriggerValue>;
+    meta: GeneralMeta;
 }
 
 export interface City {

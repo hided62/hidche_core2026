@@ -153,6 +153,7 @@ const buildGeneral = (strength: number): General => ({
         meta: {},
     },
     meta: {
+        killturn: 24,
         dex1: 5000,
     },
 });

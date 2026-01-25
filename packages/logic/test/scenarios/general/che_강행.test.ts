@@ -201,7 +201,7 @@ describe('che_강행', () => {
             age: 20,
             npcState: 0,
             triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
-            meta: {},
+            meta: { killturn: 24 },
         };
         const nation: Nation = {
             id: 1,
@@ -214,7 +214,7 @@ describe('che_강행', () => {
             power: 0,
             level: 1,
             typeCode: 'che_def',
-            meta: {},
+            meta: { killturn: 24 },
         };
         world.snapshot.generals.push(general);
         world.snapshot.nations.push(nation);
@@ -285,7 +285,7 @@ describe('che_강행', () => {
             age: 20,
             npcState: 0,
             triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
-            meta: {},
+            meta: { killturn: 24 },
         };
         const nation: Nation = {
             id: 1,
@@ -298,7 +298,7 @@ describe('che_강행', () => {
             power: 0,
             level: 1,
             typeCode: 'che_def',
-            meta: {},
+            meta: { killturn: 24 },
         };
         world.snapshot.generals.push(general);
         world.snapshot.nations.push(nation);
@@ -362,7 +362,7 @@ describe('che_강행', () => {
             age: 20,
             npcState: 0,
             triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
-            meta: {},
+            meta: { killturn: 24 },
         };
 
         const sub: General = {
@@ -391,7 +391,7 @@ describe('che_강행', () => {
             age: 20,
             npcState: 0,
             triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
-            meta: {},
+            meta: { killturn: 24 },
         };
 
         const nation: Nation = {

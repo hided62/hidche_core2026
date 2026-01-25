@@ -1,5 +1,12 @@
 import type { RandomGenerator } from '@sammo-ts/common';
-import type { City, General, GeneralTriggerState, Nation, TriggerValue } from '@sammo-ts/logic/domain/entities.js';
+import type {
+    City,
+    General,
+    GeneralMeta,
+    GeneralTriggerState,
+    Nation,
+    TriggerValue,
+} from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
     disallowDiplomacyBetweenStatus,
@@ -103,11 +110,7 @@ const getStatValue = (general: General, statKey: 'leadership' | 'strength' | 'in
     return general.stats.intelligence;
 };
 
-const addMetaNumber = (
-    meta: Record<string, TriggerValue>,
-    key: string,
-    delta: number
-): Record<string, TriggerValue> => {
+const addMetaNumber = (meta: GeneralMeta, key: string, delta: number): GeneralMeta => {
     const current = typeof meta[key] === 'number' ? (meta[key] as number) : 0;
     return { ...meta, [key]: current + delta };
 };

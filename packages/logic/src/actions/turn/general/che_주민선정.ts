@@ -1,5 +1,5 @@
 import type { RandomGenerator } from '@sammo-ts/common';
-import type { City, General, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
+import type { City, General, GeneralMeta, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext, RequirementKey } from '@sammo-ts/logic/constraints/types.js';
 import {
     notBeNeutral,
@@ -42,7 +42,7 @@ const getMetaNumber = (meta: Record<string, unknown>, key: string): number | nul
     return typeof raw === 'number' ? raw : null;
 };
 
-const addMetaNumber = (meta: Record<string, unknown>, key: string, delta: number): Record<string, unknown> => {
+const addMetaNumber = (meta: GeneralMeta, key: string, delta: number): GeneralMeta => {
     const current = getMetaNumber(meta, key) ?? 0;
     return { ...meta, [key]: current + delta };
 };

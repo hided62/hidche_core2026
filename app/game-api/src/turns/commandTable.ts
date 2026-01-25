@@ -77,6 +77,28 @@ const DEFAULT_CREW_TYPE_ID = 1100;
 const asTriggerRecord = (value: unknown): Record<string, TriggerValue> =>
     isRecord(value) ? (value as Record<string, TriggerValue>) : {};
 
+const readMetaNumber = (meta: Record<string, TriggerValue>, key: string): number | null => {
+    const value = meta[key];
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return value;
+    }
+    if (typeof value === 'string') {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) {
+            return parsed;
+        }
+    }
+    return null;
+};
+
+const ensureGeneralMeta = (meta: Record<string, TriggerValue>, generalId: number): General['meta'] => {
+    const killturn = readMetaNumber(meta, 'killturn');
+    if (killturn === null) {
+        throw new Error(`general.meta.killturn is required (generalId=${generalId}).`);
+    }
+    return { ...meta, killturn } as General['meta'];
+};
+
 const normalizeCode = (value: string | null | undefined): string | null => {
     if (!value || value === 'None') {
         return null;
@@ -238,7 +260,7 @@ const mapGeneralRow = (row: GeneralRow): General => ({
         modifiers: {},
         meta: {},
     },
-    meta: asTriggerRecord(row.meta),
+    meta: ensureGeneralMeta(asTriggerRecord(row.meta), row.id),
 });
 
 const mapCityRow = (row: CityRow): City => {

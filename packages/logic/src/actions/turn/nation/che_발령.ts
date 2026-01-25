@@ -1,4 +1,10 @@
-import type { City, General, GeneralTriggerState, TriggerValue } from '@sammo-ts/logic/domain/entities.js';
+import type {
+    City,
+    General,
+    GeneralMeta,
+    GeneralTriggerState,
+    TriggerValue,
+} from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
     alwaysFail,
@@ -72,11 +78,7 @@ const resolveLastAssignment = (context: AssignmentResolveContext): number => {
     return yearMonth;
 };
 
-const addMetaValue = (
-    meta: Record<string, TriggerValue>,
-    key: string,
-    value: TriggerValue
-): Record<string, TriggerValue> => ({
+const addMetaValue = (meta: GeneralMeta, key: string, value: TriggerValue): GeneralMeta => ({
     ...meta,
     [key]: value,
 });

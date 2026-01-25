@@ -82,7 +82,7 @@ export const createIncomeActionContext = (nation: Nation): GeneralActionContext 
             modifiers: {},
             meta: {},
         },
-        meta: {},
+        meta: { killturn: 0 },
     };
     return { general, nation };
 };

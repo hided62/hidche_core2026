@@ -21,7 +21,7 @@ const buildGeneral = (id: number, turnTime: Date): TurnGeneral => ({
         specialWar: null,
     },
     triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
-    meta: {},
+    meta: { killturn: 24 },
     officerLevel: 5,
     experience: 0,
     dedication: 0,

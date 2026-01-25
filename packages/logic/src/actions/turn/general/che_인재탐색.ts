@@ -1,5 +1,12 @@
 import type { RandomGenerator } from '@sammo-ts/common';
-import type { City, General, GeneralTriggerState, StatBlock, TriggerValue } from '@sammo-ts/logic/domain/entities.js';
+import type {
+    City,
+    General,
+    GeneralMeta,
+    GeneralTriggerState,
+    StatBlock,
+    TriggerValue,
+} from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import { reqGeneralGold, reqGeneralRice } from '@sammo-ts/logic/constraints/presets.js';
 import { GeneralActionPipeline, type GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
@@ -90,11 +97,7 @@ const addMetaValue = (
     meta[key] = value;
 };
 
-const addMetaNumber = (
-    meta: Record<string, TriggerValue>,
-    key: StatExpKey,
-    delta: number
-): Record<string, TriggerValue> => {
+const addMetaNumber = (meta: GeneralMeta, key: StatExpKey, delta: number): GeneralMeta => {
     const current = typeof meta[key] === 'number' ? (meta[key] as number) : 0;
     return { ...meta, [key]: current + delta };
 };
@@ -298,7 +301,8 @@ export class ActionResolver<
         const name = this.env.decorateName
             ? this.env.decorateName(resolvedCandidate.name, NPC_TYPE)
             : resolvedCandidate.name;
-        const meta: Record<string, TriggerValue> = {
+        const meta: GeneralMeta = {
+            killturn: context.general.meta.killturn,
             npcType: NPC_TYPE,
             crewTypeId: this.env.defaultCrewTypeId,
         };

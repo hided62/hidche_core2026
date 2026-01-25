@@ -1,4 +1,11 @@
-import type { City, General, GeneralTriggerState, Nation, TriggerValue } from '@sammo-ts/logic/domain/entities.js';
+import type {
+    City,
+    General,
+    GeneralMeta,
+    GeneralTriggerState,
+    Nation,
+    TriggerValue,
+} from '@sammo-ts/logic/domain/entities.js';
 import type { ScenarioDefinition, ScenarioGeneral } from '@sammo-ts/logic/scenario/types.js';
 import type {
     CitySeed,
@@ -56,6 +63,7 @@ const DEFAULT_NEUTRAL_NATION_COLOR = '#000000';
 const DEFAULT_GENERAL_GOLD = 1000;
 const DEFAULT_GENERAL_RICE = 1000;
 const DEFAULT_CREWTYPE_ID = 1100;
+const DEFAULT_GENERAL_KILLTURN = 24;
 const DEFAULT_CITY_TRUST = 50;
 const DEFAULT_CITY_TRADE = 100;
 const DEFAULT_CITY_SUPPLY_STATE = 1;
@@ -290,7 +298,8 @@ const buildGeneralSeeds = (
         };
         seeds.push(seed);
 
-        const generalMeta: Record<string, TriggerValue> = {
+        const generalMeta: GeneralMeta = {
+            killturn: DEFAULT_GENERAL_KILLTURN,
             npcType,
             crewTypeId: defaultCrewTypeId,
         };

@@ -92,7 +92,7 @@ const buildGeneral = (): General => ({
         modifiers: {},
         meta: {},
     },
-    meta: {},
+    meta: { killturn: 24 },
 });
 
 const buildCities = (): City[] => [

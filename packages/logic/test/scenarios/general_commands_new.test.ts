@@ -131,7 +131,7 @@ describe('General Commands New Scenario', () => {
                 items: { horse: null, weapon: null, book: null, item: null },
             },
             triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
-            meta: {},
+            meta: { killturn: 24 },
         };
 
         const snapshot: WorldSnapshot = {

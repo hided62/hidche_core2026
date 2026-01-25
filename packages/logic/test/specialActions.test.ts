@@ -60,7 +60,7 @@ const buildGeneral = (overrides: Partial<General> = {}): General => ({
         modifiers: {},
         meta: {},
     },
-    meta: {},
+    meta: { killturn: 24 },
     ...overrides,
 });
 

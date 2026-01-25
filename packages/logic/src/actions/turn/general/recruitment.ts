@@ -1,9 +1,9 @@
 import type {
     General,
+    GeneralMeta,
     GeneralRole,
     GeneralTriggerState,
     StatBlock,
-    TriggerValue,
 } from '@sammo-ts/logic/domain/entities.js';
 
 export interface GeneralRecruitmentInput<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
@@ -26,7 +26,7 @@ export interface GeneralRecruitmentInput<TriggerState extends GeneralTriggerStat
         specialDomestic: string | null;
         specialWar: string | null;
     };
-    meta?: Record<string, TriggerValue>;
+    meta: GeneralMeta;
     triggerState?: TriggerState;
 }
 
@@ -76,5 +76,5 @@ export const buildRecruitmentGeneral = <TriggerState extends GeneralTriggerState
     age: input.age,
     npcState: input.npcState,
     triggerState: input.triggerState ?? (createEmptyTriggerState() as TriggerState),
-    meta: input.meta ?? {},
+    meta: input.meta,
 });

@@ -74,7 +74,7 @@ describe('Domestic Affairs Scenario', () => {
                 items: { horse: null, weapon: null, book: null, item: null },
             },
             triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
-            meta: {},
+            meta: { killturn: 24 },
         };
 
         const snapshot: WorldSnapshot = {
@@ -208,7 +208,7 @@ describe('Domestic Affairs Scenario', () => {
                 items: { horse: null, weapon: null, book: null, item: null },
             },
             triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
-            meta: {},
+            meta: { killturn: 24 },
         };
 
         const snapshot: WorldSnapshot = {

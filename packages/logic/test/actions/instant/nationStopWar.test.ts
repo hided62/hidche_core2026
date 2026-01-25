@@ -85,7 +85,7 @@ const buildGeneral = (id: number, nationId: number, cityId: number, name = 'Test
         modifiers: {},
         meta: {},
     },
-    meta: {},
+    meta: { killturn: 24 },
 });
 
 const buildCity = (id: number, nationId: number): City => ({

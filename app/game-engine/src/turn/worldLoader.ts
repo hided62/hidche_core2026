@@ -38,6 +38,20 @@ const normalizeCode = (value: string | null | undefined): string | null => {
     return value;
 };
 
+const readMetaNumber = (meta: Record<string, unknown>, key: string): number | null => {
+    const value = meta[key];
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return value;
+    }
+    if (typeof value === 'string') {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) {
+            return parsed;
+        }
+    }
+    return null;
+};
+
 const zScenarioStatBlock = z.object({
     total: z.number(),
     min: z.number(),
@@ -120,6 +134,14 @@ const mapScenarioConfig = (raw: JsonValue): ScenarioConfig => {
 };
 
 const mapGeneralRow = (row: TurnEngineGeneralRow): TurnGeneral => ({
+    ...((): { meta: TurnGeneral['meta'] } => {
+        const meta = asTriggerRecord(row.meta) as Record<string, unknown>;
+        const killturn = readMetaNumber(meta, 'killturn');
+        if (killturn === null) {
+            throw new Error(`general.meta.killturn is required (generalId=${row.id}).`);
+        }
+        return { meta: { ...meta, killturn } as TurnGeneral['meta'] };
+    })(),
     id: row.id,
     name: row.name,
     nationId: row.nationId,
@@ -159,7 +181,7 @@ const mapGeneralRow = (row: TurnEngineGeneralRow): TurnGeneral => ({
         modifiers: {},
         meta: {},
     },
-    meta: asTriggerRecord(row.meta),
+    // meta는 상단에서 보장 처리됨.
     turnTime: row.turnTime,
     recentWarTime: row.recentWarTime ?? null,
 });

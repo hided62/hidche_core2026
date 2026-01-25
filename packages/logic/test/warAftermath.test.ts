@@ -123,7 +123,7 @@ const buildGeneral = (id: number, nationId: number, cityId: number): General => 
         modifiers: {},
         meta: {},
     },
-    meta: {},
+    meta: { killturn: 24 },
 });
 
 describe('war aftermath', () => {

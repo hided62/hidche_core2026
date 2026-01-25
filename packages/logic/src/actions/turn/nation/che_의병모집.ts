@@ -1,5 +1,5 @@
 import type { RandomGenerator } from '@sammo-ts/common';
-import type { GeneralTriggerState, StatBlock, TriggerValue } from '@sammo-ts/logic/domain/entities.js';
+import type { GeneralMeta, GeneralTriggerState, StatBlock, TriggerValue } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
     availableStrategicCommand,
@@ -268,7 +268,8 @@ export class ActionResolver<
             const birthYear = context.currentYear - baseAge;
             const deathYear = context.currentYear + deathYears;
             const stats = resolveStats(context, context.rng, this.env, candidate);
-            const meta: Record<string, TriggerValue> = {
+            const meta: GeneralMeta = {
+                killturn: randomRangeInt(context.rng, killTurnMin, killTurnMax),
                 npcType: NPC_TYPE,
                 crewTypeId: this.env.defaultCrewTypeId,
             };
@@ -278,7 +279,7 @@ export class ActionResolver<
             addMetaValue(meta, 'deathYear', deathYear);
             addMetaValue(meta, 'specAge', DEFAULT_SPEC_AGE);
             addMetaValue(meta, 'specAge2', DEFAULT_SPEC_AGE);
-            addMetaValue(meta, 'killturn', randomRangeInt(context.rng, killTurnMin, killTurnMax));
+            addMetaValue(meta, 'killturn', meta.killturn);
             addMetaValue(meta, 'text', candidate.text ?? null);
 
             const newGeneral = buildRecruitmentGeneral<TriggerState>({
