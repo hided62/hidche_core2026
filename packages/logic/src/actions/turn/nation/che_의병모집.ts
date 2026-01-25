@@ -46,6 +46,7 @@ export interface VolunteerRecruitResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > extends GeneralActionResolveContext<TriggerState> {
     currentYear: number;
+    currentMonth: number;
     startYear: number;
     averageNationGeneralCount: number;
     nationAverageStats?: StatBlock;
@@ -90,6 +91,20 @@ const DEFAULT_NPC_DEATH_YEARS = 10;
 const DEFAULT_KILLTURN_MIN = 64;
 const DEFAULT_KILLTURN_MAX = 70;
 const DEFAULT_SPEC_AGE = 19;
+
+const resolveKillturnFromDeathYear = (
+    currentYear: number,
+    currentMonth: number,
+    deathYear: number,
+    rng: RandomGenerator
+): number => {
+    if (!Number.isFinite(deathYear) || deathYear <= 0) {
+        return 0;
+    }
+    const deathMonth = randomRangeInt(rng, 1, 12);
+    const diff = (deathYear - currentYear) * 12 + (deathMonth - currentMonth);
+    return Math.max(diff, 0);
+};
 
 const addMetaValue = (
     meta: Record<string, TriggerValue>,
@@ -269,17 +284,21 @@ export class ActionResolver<
             const deathYear = context.currentYear + deathYears;
             const stats = resolveStats(context, context.rng, this.env, candidate);
             const meta: GeneralMeta = {
-                killturn: randomRangeInt(context.rng, killTurnMin, killTurnMax),
+                killturn: resolveKillturnFromDeathYear(
+                    context.currentYear,
+                    context.currentMonth,
+                    deathYear,
+                    context.rng
+                ),
                 npcType: NPC_TYPE,
                 crewTypeId: this.env.defaultCrewTypeId,
             };
             addMetaValue(meta, 'affinity', candidate.affinity ?? null);
             addMetaValue(meta, 'picture', candidate.picture ?? null);
             addMetaValue(meta, 'birthYear', birthYear);
-            addMetaValue(meta, 'deathYear', deathYear);
             addMetaValue(meta, 'specAge', DEFAULT_SPEC_AGE);
             addMetaValue(meta, 'specAge2', DEFAULT_SPEC_AGE);
-            addMetaValue(meta, 'killturn', meta.killturn);
+            addMetaValue(meta, 'killturn', meta.killturn || randomRangeInt(context.rng, killTurnMin, killTurnMax));
             addMetaValue(meta, 'text', candidate.text ?? null);
 
             const newGeneral = buildRecruitmentGeneral<TriggerState>({
@@ -357,6 +376,7 @@ export const actionContextBuilder: ActionContextBuilder = (base, options) => {
     return {
         ...base,
         currentYear: options.world.currentYear,
+        currentMonth: options.world.currentMonth,
         startYear: resolveStartYear(options.world, options.scenarioMeta),
         averageNationGeneralCount: buildAverageNationGeneralCount(options.worldRef),
         nationAverageStats: nationSummary.averageStats,

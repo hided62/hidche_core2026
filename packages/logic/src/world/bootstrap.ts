@@ -140,6 +140,20 @@ const resolveDeathYear = (deathYear: number, birthYear: number, startYear: numbe
     return 0;
 };
 
+const resolveKillturnFromDeathYear = (
+    currentYear: number | null,
+    currentMonth: number,
+    deathYear: number,
+    fallback: number
+): number => {
+    if (currentYear === null || !Number.isFinite(deathYear) || deathYear <= 0) {
+        return fallback;
+    }
+    const deathMonth = Math.floor(Math.random() * 12) + 1;
+    const diff = (deathYear - currentYear) * 12 + (deathMonth - currentMonth);
+    return Math.max(diff, 0);
+};
+
 const resolveAge = (startYear: number | null, birthYear: number): number => {
     if (startYear === null || birthYear <= 0) {
         return 20;
@@ -299,7 +313,7 @@ const buildGeneralSeeds = (
         seeds.push(seed);
 
         const generalMeta: GeneralMeta = {
-            killturn: DEFAULT_GENERAL_KILLTURN,
+            killturn: resolveKillturnFromDeathYear(scenario.startYear, 1, deathYear, DEFAULT_GENERAL_KILLTURN),
             npcType,
             crewTypeId: defaultCrewTypeId,
         };
@@ -313,7 +327,6 @@ const buildGeneralSeeds = (
         addTriggerMeta(generalMeta, 'book', row.book ?? undefined);
         addTriggerMeta(generalMeta, 'item', row.item ?? undefined);
         addTriggerMeta(generalMeta, 'birthYear', birthYear);
-        addTriggerMeta(generalMeta, 'deathYear', deathYear);
         addTriggerMeta(generalMeta, 'text', row.text ?? undefined);
 
         generals.push({

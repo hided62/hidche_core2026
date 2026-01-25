@@ -48,6 +48,7 @@ export interface TalentScoutResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > extends GeneralActionResolveContext<TriggerState> {
     currentYear: number;
+    currentMonth: number;
     worldSummary: TalentScoutWorldSummary;
     generalPool?: TalentScoutCandidate[];
     cityPool?: City[];
@@ -85,6 +86,20 @@ const DEFAULT_MIN_AGE = 20;
 const DEFAULT_MAX_AGE = 25;
 const DEFAULT_DEATH_MIN = 10;
 const DEFAULT_DEATH_MAX = 50;
+
+const resolveKillturnFromDeathYear = (
+    currentYear: number,
+    currentMonth: number,
+    deathYear: number,
+    rng: RandomGenerator
+): number => {
+    if (!Number.isFinite(deathYear) || deathYear <= 0) {
+        return 0;
+    }
+    const deathMonth = randomRangeInt(rng, 1, 12);
+    const diff = (deathYear - currentYear) * 12 + (deathMonth - currentMonth);
+    return Math.max(diff, 0);
+};
 
 const addMetaValue = (
     meta: Record<string, TriggerValue>,
@@ -302,14 +317,18 @@ export class ActionResolver<
             ? this.env.decorateName(resolvedCandidate.name, NPC_TYPE)
             : resolvedCandidate.name;
         const meta: GeneralMeta = {
-            killturn: context.general.meta.killturn,
+            killturn: resolveKillturnFromDeathYear(
+                context.currentYear,
+                context.currentMonth,
+                deathYear,
+                context.rng
+            ),
             npcType: NPC_TYPE,
             crewTypeId: this.env.defaultCrewTypeId,
         };
         addMetaValue(meta, 'affinity', resolvedCandidate.affinity ?? null);
         addMetaValue(meta, 'picture', resolvedCandidate.picture ?? null);
         addMetaValue(meta, 'birthYear', birthYear);
-        addMetaValue(meta, 'deathYear', deathYear);
         addMetaValue(meta, 'text', resolvedCandidate.text ?? null);
 
         const newGeneral = buildRecruitmentGeneral<TriggerState>({
@@ -393,6 +412,7 @@ export class ActionDefinition<
 export const actionContextBuilder: ActionContextBuilder = (base, options) => ({
     ...base,
     currentYear: options.world.currentYear,
+    currentMonth: options.world.currentMonth,
     worldSummary: buildWorldSummary(options.worldRef),
     createGeneralId: options.createGeneralId,
 });

@@ -1,6 +1,6 @@
 import { createGamePostgresConnector, type InputJsonValue, type TurnEngineEventCreateManyInput } from '@sammo-ts/infra';
 import { asRecord } from '@sammo-ts/common';
-import { buildScenarioBootstrap, type ScenarioBootstrapWarning, type WorldSeedPayload } from '@sammo-ts/logic';
+import { buildScenarioBootstrap, type GeneralMeta, type ScenarioBootstrapWarning, type WorldSeedPayload } from '@sammo-ts/logic';
 
 import type { MapLoaderOptions } from './mapLoader.js';
 import { loadMapDefinitionByName } from './mapLoader.js';
@@ -141,6 +141,20 @@ const resolveGeneralAge = (startYear: number | null, birthYear: number): number 
         return 20;
     }
     return Math.max(startYear - birthYear, 0);
+};
+
+const resolveKillturnFromDeathYear = (
+    currentYear: number,
+    currentMonth: number,
+    deathYear: number,
+    fallback: number
+): number => {
+    if (!Number.isFinite(deathYear) || deathYear <= 0) {
+        return fallback;
+    }
+    const deathMonth = Math.floor(Math.random() * 12) + 1;
+    const diff = (deathYear - currentYear) * 12 + (deathMonth - currentMonth);
+    return Math.max(diff, 0);
 };
 
 const buildEventRows = (rows: unknown[], targetOverride?: string): TurnEngineEventCreateManyInput[] => {
@@ -369,11 +383,30 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
                     specialCode: general.special ?? 'None',
                     special2Code: general.specialWar ?? 'None',
                     lastTurn: asJson({}),
-                    meta: asJson({
-                        npcType: general.npcType,
-                        crewTypeId: general.crewTypeId,
-                        ...general.meta,
-                    }),
+                    meta: asJson(
+                        (() => {
+                            const meta = { ...general.meta } as Record<string, unknown>;
+                            if (typeof meta.birthYear !== 'number' || !Number.isFinite(meta.birthYear)) {
+                                meta.birthYear = general.birthYear;
+                            }
+                            delete meta.deathYear;
+                            delete meta.deadYear;
+                            const fallbackKillturn =
+                                typeof meta.killturn === 'number' && Number.isFinite(meta.killturn) ? meta.killturn : 0;
+                            const killturn = resolveKillturnFromDeathYear(
+                                startState.currentYear,
+                                startState.currentMonth,
+                                general.deathYear,
+                                fallbackKillturn
+                            );
+                            return {
+                                ...meta,
+                                killturn,
+                                npcType: general.npcType,
+                                crewTypeId: general.crewTypeId,
+                            } satisfies GeneralMeta;
+                        })()
+                    ),
                     penalty: asJson({}),
                 })),
             });
