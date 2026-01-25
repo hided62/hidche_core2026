@@ -162,6 +162,46 @@ const normalizeGeneralTurnTime = (general: TurnGeneral, fallback: Date): TurnGen
     };
 };
 
+const readMetaNumber = (meta: Record<string, unknown>, key: string): number | null => {
+    const value = meta[key];
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return value;
+    }
+    if (typeof value === 'string') {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) {
+            return parsed;
+        }
+    }
+    return null;
+};
+
+const resolveWorldKillturn = (meta: Record<string, unknown>): number | null => {
+    const killturn = readMetaNumber(meta, 'killturn');
+    if (killturn !== null) {
+        return Math.floor(killturn);
+    }
+    return null;
+};
+
+const ensureGeneralKillturn = (general: TurnGeneral, worldKillturn: number | null): TurnGeneral => {
+    const meta = { ...general.meta } as Record<string, unknown>;
+    const existing = readMetaNumber(meta, 'killturn');
+    if (existing !== null) {
+        return general;
+    }
+    if (worldKillturn === null) {
+        throw new Error(`meta.killturn is required (generalId=${general.id}).`);
+    }
+    return {
+        ...general,
+        meta: {
+            ...meta,
+            killturn: worldKillturn,
+        },
+    };
+};
+
 export class InMemoryTurnWorld {
     // DB에서 읽어온 월드 상태를 메모리에 고정해 턴 처리를 담당한다.
     private readonly schedule: TurnSchedule;
@@ -200,8 +240,11 @@ export class InMemoryTurnWorld {
             } satisfies GeneralTurnHandler);
         this.calendarHandler = options.calendarHandler;
 
+        const worldKillturn = resolveWorldKillturn(this.state.meta);
         for (const general of snapshot.generals) {
-            this.generals.set(general.id, normalizeGeneralTurnTime({ ...general }, this.state.lastTurnTime));
+            const normalized = normalizeGeneralTurnTime({ ...general }, this.state.lastTurnTime);
+            const ensured = ensureGeneralKillturn(normalized, worldKillturn);
+            this.generals.set(general.id, ensured);
         }
         for (const city of snapshot.cities) {
             this.cities.set(city.id, { ...city });
@@ -571,10 +614,10 @@ export class InMemoryTurnWorld {
                 if (this.generals.has(createdGeneral.id)) {
                     continue;
                 }
-                this.generals.set(
-                    createdGeneral.id,
-                    normalizeGeneralTurnTime({ ...createdGeneral }, this.state.lastTurnTime)
-                );
+                const worldKillturn = resolveWorldKillturn(this.state.meta);
+                const normalized = normalizeGeneralTurnTime({ ...createdGeneral }, this.state.lastTurnTime);
+                const ensured = ensureGeneralKillturn(normalized, worldKillturn);
+                this.generals.set(createdGeneral.id, ensured);
                 this.dirtyGeneralIds.add(createdGeneral.id);
                 this.createdGeneralIds.add(createdGeneral.id);
             }

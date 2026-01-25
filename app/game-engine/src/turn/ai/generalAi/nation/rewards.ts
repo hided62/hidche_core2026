@@ -1,5 +1,5 @@
 import type { GeneralAI } from '../core.js';
-import { asRecord, readMetaNumber } from '../../aiUtils.js';
+import { asRecord, readRequiredMetaNumber } from '../../aiUtils.js';
 import { buildAwardCandidate, buildSeizureCandidate, pickWeightedCandidate, resolveAwardAmount } from './helpers.js';
 
 export const do유저장긴급포상 = (ai: GeneralAI) => {
@@ -81,7 +81,7 @@ export const doNPC긴급포상 = (ai: GeneralAI) => {
             continue;
         }
         for (const general of Object.values(ai.npcWarGenerals)) {
-            const killturn = readMetaNumber(asRecord(general.meta), 'killturn', 999);
+            const killturn = readRequiredMetaNumber(asRecord(general.meta), 'killturn', `generalId=${general.id}`);
             if (killturn <= 5) {
                 continue;
             }
@@ -115,7 +115,7 @@ export const doNPC포상 = (ai: GeneralAI) => {
             continue;
         }
         for (const general of Object.values(ai.npcWarGenerals)) {
-            const killturn = readMetaNumber(asRecord(general.meta), 'killturn', 999);
+            const killturn = readRequiredMetaNumber(asRecord(general.meta), 'killturn', `generalId=${general.id}`);
             if (killturn <= 5) {
                 continue;
             }
@@ -126,7 +126,7 @@ export const doNPC포상 = (ai: GeneralAI) => {
             candidates.push([buildAwardCandidate(ai, general.id, amount, resKey === 'gold', 'NPC포상'), amount]);
         }
         for (const general of Object.values(ai.npcCivilGenerals)) {
-            const killturn = readMetaNumber(asRecord(general.meta), 'killturn', 999);
+            const killturn = readRequiredMetaNumber(asRecord(general.meta), 'killturn', `generalId=${general.id}`);
             if (killturn <= 5) {
                 continue;
             }

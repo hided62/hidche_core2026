@@ -82,6 +82,14 @@ const defaultRunOptions = {
 } satisfies Required<Omit<TurnHarnessRunOptions, 'minutes'>>;
 
 export const createTurnTestHarness = async (options: TurnTestHarnessOptions) => {
+    const stateMeta = { ...options.state.meta } as Record<string, unknown>;
+    if (typeof stateMeta.killturn !== 'number' || !Number.isFinite(stateMeta.killturn)) {
+        stateMeta.killturn = 24;
+    }
+    const state: TurnWorldState = {
+        ...options.state,
+        meta: stateMeta,
+    };
     const mockPrisma = createMockPrisma();
     const reservedTurnStore = new InMemoryReservedTurnStore(mockPrisma as any, {
         maxGeneralTurns: 10,
@@ -126,7 +134,7 @@ export const createTurnTestHarness = async (options: TurnTestHarnessOptions) => 
         ...(options.extraCalendarHandlers ?? [])
     );
 
-    const world = new InMemoryTurnWorldClass(options.state, options.snapshot, {
+    const world = new InMemoryTurnWorldClass(state, options.snapshot, {
         schedule: options.schedule,
         generalTurnHandler,
         calendarHandler,

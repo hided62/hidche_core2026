@@ -1,5 +1,5 @@
 import type { GeneralAI } from '../core.js';
-import { asRecord, readMetaNumber } from '../../aiUtils.js';
+import { asRecord, readRequiredMetaNumber } from '../../aiUtils.js';
 import { t통솔장 } from './helpers.js';
 
 export const doNPC헌납 = (ai: GeneralAI) => {
@@ -64,7 +64,7 @@ export const doNPC헌납 = (ai: GeneralAI) => {
 };
 
 export const doNPC사망대비 = (ai: GeneralAI) => {
-    const killturn = readMetaNumber(asRecord(ai.general.meta), 'killturn', 999);
+    const killturn = readRequiredMetaNumber(asRecord(ai.general.meta), 'killturn', `generalId=${ai.general.id}`);
     if (killturn > 5) {
         return null;
     }

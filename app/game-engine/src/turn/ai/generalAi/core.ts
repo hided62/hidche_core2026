@@ -18,7 +18,15 @@ import type { ReservedTurnEntry } from '../../reservedTurnStore.js';
 import type { TurnGeneral, TurnWorldState } from '../../types.js';
 import type { AiCommandCandidate, AiReservedTurnProvider, AiWorldView } from '../types.js';
 import { AutorunGeneralPolicy, AutorunNationPolicy, AVAILABLE_INSTANT_TURN } from '../policies.js';
-import { asRecord, joinYearMonth, readMetaNumber, readNumber, roundTo, valueFit } from '../aiUtils.js';
+import {
+    asRecord,
+    joinYearMonth,
+    readMetaNumber,
+    readNumber,
+    readRequiredMetaNumber,
+    roundTo,
+    valueFit,
+} from '../aiUtils.js';
 import { searchAllDistanceByNationList } from '../distance.js';
 import { generalActionHandlers } from '../generalAiGeneralActions.js';
 import { nationActionHandlers } from '../generalAiNationActions.js';
@@ -554,7 +562,7 @@ export class GeneralAI {
                 continue;
             }
 
-            const killturn = readMetaNumber(asRecord(candidate.meta), 'killturn', 999);
+            const killturn = readRequiredMetaNumber(asRecord(candidate.meta), 'killturn', `generalId=${candidate.id}`);
             if (killturn <= 5) {
                 npcCivilGenerals[candidate.id] = candidate;
                 continue;

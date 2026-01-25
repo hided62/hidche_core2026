@@ -34,6 +34,21 @@ export const readString = (value: unknown, fallback = ''): string => (typeof val
 export const readMetaNumber = (meta: Record<string, unknown>, key: string, fallback = 0): number =>
     readNumber(meta[key], fallback);
 
+export const readRequiredMetaNumber = (meta: Record<string, unknown>, key: string, context?: string): number => {
+    const value = meta[key];
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return value;
+    }
+    if (typeof value === 'string') {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) {
+            return parsed;
+        }
+    }
+    const suffix = context ? ` (${context})` : '';
+    throw new Error(`meta.${key} is required${suffix}.`);
+};
+
 export const readMetaString = (meta: Record<string, unknown>, key: string, fallback = ''): string =>
     readString(meta[key], fallback);
 
