@@ -54,7 +54,7 @@ const buildGeneral = (): GeneralRow =>
         atmos: 0,
         age: 25,
         npcState: 0,
-        meta: {},
+        meta: { killturn: 24 },
     }) as unknown as GeneralRow;
 
 const buildCity = (): CityRow =>
