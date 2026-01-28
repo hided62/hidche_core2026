@@ -37,6 +37,13 @@ enum AuctionType {
     UNIQUE_ITEM
 }
 
+enum DiplomacyLetterState {
+    PROPOSED
+    ACTIVATED
+    CANCELLED
+    REPLACED
+}
+
 model WorldState {
     id           Int      @id @default(autoincrement())
     scenarioCode String   @map("scenario_code")
@@ -185,6 +192,25 @@ model Diplomacy {
 
     @@unique([srcNationId, destNationId])
     @@map("diplomacy")
+}
+
+model DiplomacyLetter {
+    id           Int                  @id @default(autoincrement())
+    srcNationId  Int                  @map("src_nation_id")
+    destNationId Int                  @map("dest_nation_id")
+    prevId       Int?                 @map("prev_id")
+    state        DiplomacyLetterState @default(PROPOSED)
+    textBrief    String               @map("text_brief")
+    textDetail   String               @map("text_detail")
+    date         DateTime             @default(now()) @map("date")
+    srcSignerId  Int                  @map("src_signer")
+    destSignerId Int?                 @map("dest_signer")
+    aux          Json                 @default(dbgenerated("'{}'::jsonb"))
+
+    @@index([srcNationId, destNationId])
+    @@index([destNationId, srcNationId])
+    @@index([state, date])
+    @@map("diplomacy_letter")
 }
 
 model Event {

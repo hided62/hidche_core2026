@@ -9,6 +9,7 @@ export interface DatabaseClient {
     city: GamePrisma.CityDelegate;
     nation: GamePrisma.NationDelegate;
     diplomacy: GamePrisma.DiplomacyDelegate;
+    diplomacyLetter: GamePrisma.DiplomacyLetterDelegate;
     generalTurn: GamePrisma.GeneralTurnDelegate;
     nationTurn: GamePrisma.NationTurnDelegate;
     troop: GamePrisma.TroopDelegate;

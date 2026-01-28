@@ -19,6 +19,7 @@ import MySettingsView from '../views/MySettingsView.vue';
 import BoardView from '../views/BoardView.vue';
 import NationAffairsView from '../views/NationAffairsView.vue';
 import ScoutMessageView from '../views/ScoutMessageView.vue';
+import DiplomacyView from '../views/DiplomacyView.vue';
 import { useSessionStore } from '../stores/session';
 
 const routes = [
@@ -76,6 +77,15 @@ const routes = [
         path: '/nation/recruit-message',
         name: 'nation-recruit-message',
         component: ScoutMessageView,
+        meta: {
+            requiresAuth: true,
+            requiresGeneral: true,
+        },
+    },
+    {
+        path: '/diplomacy',
+        name: 'diplomacy',
+        component: DiplomacyView,
         meta: {
             requiresAuth: true,
             requiresGeneral: true,
