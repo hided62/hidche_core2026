@@ -98,6 +98,7 @@ watch(
                 <RouterLink class="ghost" to="/diplomacy">외교부</RouterLink>
                 <RouterLink class="ghost" to="/chief-center">사령부</RouterLink>
                 <RouterLink class="ghost" to="/battle-center">감찰부</RouterLink>
+                <a class="ghost" href="/xe/community" target="_blank" rel="noopener">게시판</a>
                 <RouterLink class="ghost" to="/battle-simulator">전투 시뮬레이터</RouterLink>
                 <RouterLink class="ghost" to="/my-page">내 정보</RouterLink>
                 <RouterLink class="ghost" to="/tournament">토너먼트</RouterLink>
