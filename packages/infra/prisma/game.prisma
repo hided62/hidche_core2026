@@ -318,3 +318,36 @@ model InheritanceUserState {
 
     @@map("inheritance_user_state")
 }
+
+model BoardPost {
+    id              Int      @id @default(autoincrement())
+    nationId        Int      @map("nation_id")
+    isSecret        Boolean  @default(false) @map("is_secret")
+    authorGeneralId Int      @map("author_general_id")
+    authorName      String   @map("author_name")
+    title           String
+    contentHtml     String   @map("content_html")
+    createdAt       DateTime @default(now()) @map("created_at")
+    updatedAt       DateTime @updatedAt @map("updated_at")
+
+    comments BoardComment[]
+
+    @@index([nationId, isSecret, createdAt])
+    @@map("board_post")
+}
+
+model BoardComment {
+    id              Int      @id @default(autoincrement())
+    postId          Int      @map("post_id")
+    nationId        Int      @map("nation_id")
+    isSecret        Boolean  @default(false) @map("is_secret")
+    authorGeneralId Int      @map("author_general_id")
+    authorName      String   @map("author_name")
+    contentText     String   @map("content_text")
+    createdAt       DateTime @default(now()) @map("created_at")
+
+    post BoardPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+    @@index([postId, createdAt])
+    @@map("board_comment")
+}

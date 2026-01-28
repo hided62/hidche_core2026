@@ -33,6 +33,7 @@ Move items into the main docs once they are finalized.
 - [AI suggestion] Finalize static asset and web base URLs (`VITE_GAME_WEB_URL`, `VITE_GAME_ASSET_URL`) and document deployment mapping for legacy images.
 - [AI suggestion] Expand Join UI to cover inherit options (특기/도시/턴타임/보너스 스탯) using `join.getConfig` and `join.createGeneral` inputs.
 - [AI suggestion] Extend MessagePanel to support private/diplomacy targets and surface sender/receiver metadata from message payloads.
+- [AI suggestion] Port legacy TipTap-based editors (국가 방침/임관 권유) into game-frontend and reuse the new board image upload policy.
 
 ## Runtime and Operations (Lower Priority)
 

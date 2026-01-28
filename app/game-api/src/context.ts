@@ -66,6 +66,9 @@ export interface GameApiContext {
     turnDaemon: TurnDaemonTransport;
     battleSim: BattleSimTransport;
     profile: GameProfile;
+    uploadDir: string;
+    uploadPath: string;
+    uploadPublicUrl: string | null;
     auth: GameSessionTokenPayload | null;
     accessTokenStore: RedisAccessTokenStore;
     flushStore: FlushStore;
@@ -78,6 +81,9 @@ export const createGameApiContext = (options: {
     turnDaemon: TurnDaemonTransport;
     battleSim: BattleSimTransport;
     profile: GameProfile;
+    uploadDir: string;
+    uploadPath: string;
+    uploadPublicUrl: string | null;
     auth: GameSessionTokenPayload | null;
     accessTokenStore: RedisAccessTokenStore;
     flushStore: FlushStore;
@@ -89,6 +95,9 @@ export const createGameApiContext = (options: {
         turnDaemon: options.turnDaemon,
         battleSim: options.battleSim,
         profile: options.profile,
+        uploadDir: options.uploadDir,
+        uploadPath: options.uploadPath,
+        uploadPublicUrl: options.uploadPublicUrl,
         auth: options.auth,
         accessTokenStore: options.accessTokenStore,
         flushStore: options.flushStore,

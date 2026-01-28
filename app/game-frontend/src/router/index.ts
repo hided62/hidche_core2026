@@ -16,6 +16,9 @@ import NotFoundView from '../views/NotFoundView.vue';
 import TournamentView from '../views/TournamentView.vue';
 import MyPageView from '../views/MyPageView.vue';
 import MySettingsView from '../views/MySettingsView.vue';
+import BoardView from '../views/BoardView.vue';
+import NationAffairsView from '../views/NationAffairsView.vue';
+import ScoutMessageView from '../views/ScoutMessageView.vue';
 import { useSessionStore } from '../stores/session';
 
 const routes = [
@@ -55,6 +58,24 @@ const routes = [
         path: '/nation/cities',
         name: 'nation-cities',
         component: NationCitiesView,
+        meta: {
+            requiresAuth: true,
+            requiresGeneral: true,
+        },
+    },
+    {
+        path: '/nation/affairs',
+        name: 'nation-affairs',
+        component: NationAffairsView,
+        meta: {
+            requiresAuth: true,
+            requiresGeneral: true,
+        },
+    },
+    {
+        path: '/nation/recruit-message',
+        name: 'nation-recruit-message',
+        component: ScoutMessageView,
         meta: {
             requiresAuth: true,
             requiresGeneral: true,
@@ -109,6 +130,24 @@ const routes = [
         path: '/battle-simulator',
         name: 'battle-simulator',
         component: BattleSimulatorView,
+        meta: {
+            requiresAuth: true,
+            requiresGeneral: true,
+        },
+    },
+    {
+        path: '/board',
+        name: 'board',
+        component: BoardView,
+        meta: {
+            requiresAuth: true,
+            requiresGeneral: true,
+        },
+    },
+    {
+        path: '/board/secret',
+        name: 'board-secret',
+        component: BoardView,
         meta: {
             requiresAuth: true,
             requiresGeneral: true,

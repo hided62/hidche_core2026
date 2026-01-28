@@ -17,6 +17,7 @@ import { turnsRouter } from './router/turns/index.js';
 import { worldRouter } from './router/world/index.js';
 import { auctionRouter } from './router/auction/index.js';
 import { tournamentRouter } from './router/tournament/index.js';
+import { boardRouter } from './router/board/index.js';
 
 export const appRouter = router({
     health: healthRouter,
@@ -36,6 +37,7 @@ export const appRouter = router({
     turnDaemon: turnDaemonRouter,
     auction: auctionRouter,
     tournament: tournamentRouter,
+    board: boardRouter,
 });
 
 export type AppRouter = typeof appRouter;

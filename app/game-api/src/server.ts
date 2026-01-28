@@ -1,5 +1,7 @@
 import fastify, { type FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
+import fastifyStatic from '@fastify/static';
+import path from 'path';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import { buildGameEventChannel } from '@sammo-ts/common';
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
@@ -96,6 +98,11 @@ export const createGameApiServer = async () => {
         credentials: true,
     });
 
+    await app.register(fastifyStatic, {
+        root: path.resolve(process.cwd(), config.uploadDir),
+        prefix: config.uploadPath.endsWith('/') ? config.uploadPath : `${config.uploadPath}/`,
+    });
+
     await app.register(fastifyTRPCPlugin, {
         prefix: config.trpcPath,
         trpcOptions: {
@@ -113,6 +120,9 @@ export const createGameApiServer = async () => {
                         scenario: config.scenario,
                         name: config.profileName,
                     },
+                    uploadDir: path.resolve(process.cwd(), config.uploadDir),
+                    uploadPath: config.uploadPath,
+                    uploadPublicUrl: config.uploadPublicUrl,
                     auth,
                     accessTokenStore,
                     flushStore,

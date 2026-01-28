@@ -5,6 +5,9 @@ export interface GameApiConfig {
     port: number;
     trpcPath: string;
     eventsPath: string;
+    uploadPath: string;
+    uploadDir: string;
+    uploadPublicUrl: string | null;
     profile: string;
     scenario: string;
     profileName: string;
@@ -34,6 +37,9 @@ export const resolveGameApiConfigFromEnv = (env: NodeJS.ProcessEnv = process.env
         port: parseNumberWithFallback(env.GAME_API_PORT, 14000, 'GAME_API_PORT'),
         trpcPath: env.GAME_TRPC_PATH ?? env.TRPC_PATH ?? '/trpc',
         eventsPath: env.GAME_API_EVENTS_PATH ?? '/events',
+        uploadPath: env.GAME_UPLOAD_PATH ?? '/uploads',
+        uploadDir: env.GAME_UPLOAD_DIR ?? 'uploads',
+        uploadPublicUrl: env.GAME_UPLOAD_PUBLIC_URL ?? null,
         profile,
         scenario,
         profileName,
