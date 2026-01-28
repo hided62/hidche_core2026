@@ -1,6 +1,9 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { LogCategory, LogScope } from '@sammo-ts/infra';
+import { asRecord } from '@sammo-ts/common';
+
 import { authedProcedure, router } from '../../trpc.js';
 import { getMyGeneral } from '../shared/general.js';
 
@@ -10,6 +13,62 @@ const zGeneralSettings = z.object({
     use_treatment: z.number().int().optional(),
     use_auto_nation_turn: z.number().int().optional(),
 });
+
+const zGeneralLogType = z.enum(['generalHistory', 'battleDetail', 'battleResult', 'generalAction']);
+
+const readNumber = (value: unknown, fallback: number): number => {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return value;
+    }
+    if (typeof value === 'string') {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) {
+            return parsed;
+        }
+    }
+    return fallback;
+};
+
+const normalizeItemCode = (value: string | null): string | null => {
+    if (!value || value === 'None') {
+        return null;
+    }
+    return value;
+};
+
+const resolveUserSettings = (meta: Record<string, unknown>) => {
+    const settings = asRecord(meta.userSettings);
+    const mysetRaw = settings.myset;
+    const myset = typeof mysetRaw === 'number' && Number.isFinite(mysetRaw) ? mysetRaw : null;
+
+    return {
+        tnmt: readNumber(settings.tnmt, 1),
+        defence_train: readNumber(settings.defence_train, 80),
+        use_treatment: readNumber(settings.use_treatment, 10),
+        use_auto_nation_turn: readNumber(settings.use_auto_nation_turn, 1),
+        myset,
+    };
+};
+
+const resolvePenalty = (penalty: unknown): Record<string, number> => {
+    const penaltyRecord = asRecord(penalty);
+    const result: Record<string, number> = {};
+
+    for (const [key, value] of Object.entries(penaltyRecord)) {
+        if (typeof value === 'number' && Number.isFinite(value)) {
+            result[key] = value;
+            continue;
+        }
+        if (typeof value === 'string') {
+            const parsed = Number(value);
+            if (Number.isFinite(parsed)) {
+                result[key] = parsed;
+            }
+        }
+    }
+
+    return result;
+};
 
 export const generalRouter = router({
     me: authedProcedure.query(async ({ ctx }) => {
@@ -41,6 +100,12 @@ export const generalRouter = router({
                 injury: true,
                 experience: true,
                 dedication: true,
+                weaponCode: true,
+                horseCode: true,
+                bookCode: true,
+                itemCode: true,
+                meta: true,
+                penalty: true,
             },
         });
 
@@ -86,6 +151,10 @@ export const generalRouter = router({
                 : null,
         ]);
 
+        const metaRecord = asRecord(general.meta);
+        const settings = resolveUserSettings(metaRecord);
+        const penalties = resolvePenalty(general.penalty);
+
         return {
             general: {
                 id: general.id,
@@ -110,9 +179,17 @@ export const generalRouter = router({
                 injury: general.injury,
                 experience: general.experience,
                 dedication: general.dedication,
+                items: {
+                    horse: normalizeItemCode(general.horseCode),
+                    weapon: normalizeItemCode(general.weaponCode),
+                    book: normalizeItemCode(general.bookCode),
+                    item: normalizeItemCode(general.itemCode),
+                },
             },
             city,
             nation,
+            settings,
+            penalties,
         };
     }),
     dieOnPrestart: authedProcedure.mutation(async ({ ctx }) => {
@@ -184,6 +261,30 @@ export const generalRouter = router({
         if (!result.ok) {
             throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
         }
+
+        const metaRecord = asRecord(general.meta);
+        const prevSettings = asRecord(metaRecord.userSettings);
+        const prevMyset = typeof prevSettings.myset === 'number' && Number.isFinite(prevSettings.myset)
+            ? prevSettings.myset
+            : null;
+        const nextSettings = {
+            ...prevSettings,
+            ...input,
+        } as Record<string, unknown>;
+        if (typeof prevMyset === 'number') {
+            nextSettings.myset = Math.max(0, prevMyset - 1);
+        }
+
+        await ctx.db.general.update({
+            where: { id: general.id },
+            data: {
+                meta: {
+                    ...metaRecord,
+                    userSettings: nextSettings,
+                },
+            } as any,
+        });
+
         return { ok: true };
     }),
     dropItem: authedProcedure.input(z.object({ itemType: z.string() })).mutation(async ({ ctx, input }) => {
@@ -201,4 +302,40 @@ export const generalRouter = router({
         }
         return { ok: true };
     }),
+    getMyLog: authedProcedure
+        .input(
+            z.object({
+                type: zGeneralLogType,
+                beforeId: z.number().int().positive().optional(),
+            })
+        )
+        .query(async ({ ctx, input }) => {
+            const me = await getMyGeneral(ctx);
+
+            const categoryMap: Record<z.infer<typeof zGeneralLogType>, LogCategory> = {
+                generalHistory: LogCategory.HISTORY,
+                generalAction: LogCategory.ACTION,
+                battleResult: LogCategory.BATTLE_BRIEF,
+                battleDetail: LogCategory.BATTLE_DETAIL,
+            };
+
+            const logs = await ctx.db.logEntry.findMany({
+                where: {
+                    generalId: me.id,
+                    scope: LogScope.GENERAL,
+                    category: categoryMap[input.type],
+                    ...(input.beforeId ? { id: { lt: input.beforeId } } : {}),
+                },
+                orderBy: { id: 'desc' },
+                take: 24,
+            });
+
+            return {
+                type: input.type,
+                logs: logs.map((entry) => ({
+                    id: entry.id,
+                    text: entry.text,
+                })),
+            };
+        }),
 });

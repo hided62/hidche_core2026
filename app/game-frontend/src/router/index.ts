@@ -14,6 +14,8 @@ import BattleSimulatorView from '../views/BattleSimulatorView.vue';
 import NpcControlView from '../views/NpcControlView.vue';
 import NotFoundView from '../views/NotFoundView.vue';
 import TournamentView from '../views/TournamentView.vue';
+import MyPageView from '../views/MyPageView.vue';
+import MySettingsView from '../views/MySettingsView.vue';
 import { useSessionStore } from '../stores/session';
 
 const routes = [
@@ -107,6 +109,24 @@ const routes = [
         path: '/battle-simulator',
         name: 'battle-simulator',
         component: BattleSimulatorView,
+        meta: {
+            requiresAuth: true,
+            requiresGeneral: true,
+        },
+    },
+    {
+        path: '/my-page',
+        name: 'my-page',
+        component: MyPageView,
+        meta: {
+            requiresAuth: true,
+            requiresGeneral: true,
+        },
+    },
+    {
+        path: '/my-settings',
+        name: 'my-settings',
+        component: MySettingsView,
         meta: {
             requiresAuth: true,
             requiresGeneral: true,
