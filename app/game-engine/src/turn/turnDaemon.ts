@@ -31,6 +31,7 @@ import { createAuctionFinalizer } from '../auction/finalizer.js';
 import { createAuctionBidder } from '../auction/bidder.js';
 import { createTournamentRewardFinalizer } from '../tournament/finalizer.js';
 import { createTournamentAutoStartHandler } from './tournamentAutoStart.js';
+import { createYearbookHandler } from './yearbookHandler.js';
 
 export interface TurnDaemonRuntimeOptions {
     profile: string;
@@ -133,11 +134,17 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
         getWorldConfig: () => snapshot.worldConfig ?? null,
         getTickSeconds: () => worldRef?.getState().tickSeconds ?? null,
     });
+    const yearbookHandler = createYearbookHandler({
+        databaseUrl: options.databaseUrl,
+        profileName: options.profileName ?? options.profile,
+        getWorld: () => worldRef,
+    });
     const calendarHandler = composeCalendarHandlers(
         options.calendarHandler ?? unification?.handler,
         incomeHandler,
         frontStateHandler,
-        tournamentAutoStartHandler
+        tournamentAutoStartHandler,
+        yearbookHandler.handler
     );
     const worldOptions: InMemoryTurnWorldOptions = {
         schedule,
@@ -319,6 +326,7 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
         if (unification) {
             await unification.close();
         }
+        await yearbookHandler.close();
         if (redisConnector) {
             await redisConnector.disconnect();
         }

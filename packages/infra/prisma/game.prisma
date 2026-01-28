@@ -213,6 +213,21 @@ model DiplomacyLetter {
     @@map("diplomacy_letter")
 }
 
+model YearbookHistory {
+    id          Int      @id @default(autoincrement())
+    profileName String   @map("profile_name")
+    year        Int
+    month       Int
+    map         Json
+    nations     Json
+    hash        String   @default("")
+    createdAt   DateTime @default(now()) @map("created_at")
+
+    @@unique([profileName, year, month])
+    @@index([profileName, year, month])
+    @@map("yearbook_history")
+}
+
 model Event {
     id         Int      @id @default(autoincrement())
     targetCode String   @map("target_code")
