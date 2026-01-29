@@ -650,6 +650,7 @@ export const adminRouter = router({
                         color: z.string().min(1).max(32).nullable().optional(),
                         inGameNotice: z.string().max(4000).nullable().optional(),
                         profileImageUrl: z.string().max(2048).nullable().optional(),
+                        nextSeasonIdx: z.number().int().min(0).nullable().optional(),
                     }),
                 })
             )

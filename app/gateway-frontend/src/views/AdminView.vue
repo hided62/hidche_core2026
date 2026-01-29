@@ -204,6 +204,7 @@ type AdminClient = {
                     color?: string | null;
                     inGameNotice?: string | null;
                     profileImageUrl?: string | null;
+                    nextSeasonIdx?: number | null;
                 };
             }) => Promise<AdminProfile | null>;
         };
@@ -279,6 +280,7 @@ const profileEdits = ref<
             color: string;
             inGameNotice: string;
             profileImageUrl: string;
+            nextSeasonIdx: string;
         }
     >
 >({});
@@ -398,6 +400,10 @@ const ensureProfileBuffers = (profile: AdminProfile) => {
             color: String(meta.color ?? '#ffffff'),
             inGameNotice: String(meta.inGameNotice ?? ''),
             profileImageUrl: String(meta.profileImageUrl ?? ''),
+            nextSeasonIdx:
+                typeof meta.nextSeasonIdx === 'number' && Number.isFinite(meta.nextSeasonIdx)
+                    ? String(Math.floor(meta.nextSeasonIdx))
+                    : '',
         };
     }
     if (!profileActions.value[profile.profileName]) {
@@ -624,11 +630,21 @@ const updateProfileMeta = async (profileName: string) => {
     if (!edit) {
         return;
     }
+    const nextSeasonRaw = edit.nextSeasonIdx.trim();
+    const nextSeasonIdx = nextSeasonRaw === '' ? null : Number(nextSeasonRaw);
+    if (nextSeasonIdx !== null && (!Number.isFinite(nextSeasonIdx) || nextSeasonIdx < 0)) {
+        profileActionStatus.value = {
+            ...profileActionStatus.value,
+            [profileName]: '다음 시즌 번호는 0 이상 숫자여야 합니다.',
+        };
+        return;
+    }
     const patch = {
         korName: edit.korName.trim() || null,
         color: edit.color.trim() || null,
         inGameNotice: edit.inGameNotice.trim() || null,
         profileImageUrl: edit.profileImageUrl.trim() || null,
+        nextSeasonIdx: nextSeasonIdx === null ? null : Math.floor(nextSeasonIdx),
     };
     try {
         const updated = await adminClient.profiles.updateMeta.mutate({
@@ -1372,6 +1388,16 @@ onMounted(() => {
                                         type="text"
                                         class="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
                                     />
+                                    <label class="text-xs text-zinc-400">다음 시즌 번호</label>
+                                    <input
+                                        v-model="profileEdits[profile.profileName].nextSeasonIdx"
+                                        type="number"
+                                        min="0"
+                                        step="1"
+                                        class="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
+                                        placeholder="예: 12"
+                                    />
+                                    <div class="text-xs text-zinc-500">리셋 시 적용할 시즌 번호를 지정합니다.</div>
                                     <button
                                         class="bg-emerald-600 hover:bg-emerald-500 text-black font-semibold px-4 py-2 rounded"
                                         @click="updateProfileMeta(profile.profileName)"
