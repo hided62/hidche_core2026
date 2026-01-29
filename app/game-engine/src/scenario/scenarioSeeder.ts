@@ -35,6 +35,7 @@ export interface ScenarioInstallOptions {
     autorunUser?: ScenarioAutorunOptions | null;
     preopenAt?: Date | null;
     season?: number;
+    serverId?: string;
 }
 
 export interface ScenarioSeedOptions {
@@ -258,6 +259,9 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
     if (typeof install?.season === 'number' && Number.isFinite(install.season)) {
         worldMeta.season = Math.floor(install.season);
     }
+    if (typeof install?.serverId === 'string' && install.serverId.trim()) {
+        worldMeta.serverId = install.serverId.trim();
+    }
 
     const integrationSeed = process.env[INTEGRATION_WORLD_SEED_ENV];
     if (typeof integrationSeed === 'string' && integrationSeed.trim().length > 0) {
@@ -303,6 +307,43 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
                 meta: asJson(worldMeta),
             },
         });
+
+        if (typeof worldMeta.serverId === 'string' && worldMeta.serverId) {
+            await prisma.gameHistory.upsert({
+                where: { serverId: worldMeta.serverId },
+                create: {
+                    serverId: worldMeta.serverId,
+                    date: now,
+                    winnerNation: null,
+                    map: scenario.config.environment.mapName ?? null,
+                    season:
+                        typeof worldMeta.season === 'number' && Number.isFinite(worldMeta.season)
+                            ? Math.floor(worldMeta.season)
+                            : 1,
+                    scenario: options.scenarioId,
+                    scenarioName: String(seed.scenarioMeta?.title ?? ''),
+                    env: asJson({
+                        config: scenarioConfig,
+                        meta: worldMeta,
+                    }),
+                },
+                update: {
+                    date: now,
+                    winnerNation: null,
+                    map: scenario.config.environment.mapName ?? null,
+                    season:
+                        typeof worldMeta.season === 'number' && Number.isFinite(worldMeta.season)
+                            ? Math.floor(worldMeta.season)
+                            : 1,
+                    scenario: options.scenarioId,
+                    scenarioName: String(seed.scenarioMeta?.title ?? ''),
+                    env: asJson({
+                        config: scenarioConfig,
+                        meta: worldMeta,
+                    }),
+                },
+            });
+        }
 
         if (seed.nations.length > 0) {
             await prisma.nation.createMany({

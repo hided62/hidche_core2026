@@ -146,6 +146,53 @@ model General {
     @@map("general")
 }
 
+model RankData {
+    id        Int    @id @default(autoincrement())
+    nationId  Int    @default(0) @map("nation_id")
+    generalId Int    @map("general_id")
+    type      String @db.VarChar(20)
+    value     Int    @default(0)
+
+    @@unique([generalId, type])
+    @@index([type, value], name: "by_type")
+    @@index([nationId, type, value], name: "by_nation")
+    @@map("rank_data")
+}
+
+model HallOfFame {
+    id        Int      @id @default(autoincrement())
+    serverId  String   @map("server_id")
+    season    Int
+    scenario  Int
+    generalNo Int      @map("general_no")
+    type      String   @db.VarChar(20)
+    value     Float
+    owner     String?  @map("owner")
+    aux       Json     @default(dbgenerated("'{}'::jsonb"))
+
+    @@unique([serverId, type, generalNo])
+    @@unique([owner, serverId, type], name: "hall_owner")
+    @@index([serverId, type, value], name: "server_show")
+    @@index([season, scenario, type, value], name: "scenario")
+    @@map("hall")
+}
+
+model GameHistory {
+    id           Int      @id @default(autoincrement())
+    serverId     String   @map("server_id")
+    date         DateTime
+    winnerNation Int?     @map("winner_nation")
+    map          String?  @map("map")
+    season       Int
+    scenario     Int
+    scenarioName String   @map("scenario_name")
+    env          Json     @default(dbgenerated("'{}'::jsonb"))
+
+    @@unique([serverId])
+    @@index([date])
+    @@map("ng_games")
+}
+
 model Troop {
     troopLeaderId Int    @id @map("troop_leader")
     nationId      Int    @map("nation")

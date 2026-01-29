@@ -20,6 +20,7 @@ import { tournamentRouter } from './router/tournament/index.js';
 import { boardRouter } from './router/board/index.js';
 import { diplomacyRouter } from './router/diplomacy/index.js';
 import { yearbookRouter } from './router/yearbook/index.js';
+import { rankingRouter } from './router/ranking/index.js';
 
 export const appRouter = router({
     health: healthRouter,
@@ -42,6 +43,7 @@ export const appRouter = router({
     board: boardRouter,
     diplomacy: diplomacyRouter,
     yearbook: yearbookRouter,
+    ranking: rankingRouter,
 });
 
 export type AppRouter = typeof appRouter;

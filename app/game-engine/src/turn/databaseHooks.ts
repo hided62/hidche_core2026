@@ -13,6 +13,7 @@ import {
     type TurnEngineWorldStateUpdateInput,
 } from '@sammo-ts/infra';
 import { finalizeLogEntry, type LogEntryDraft } from '@sammo-ts/logic';
+import { asRecord, type RankDataType } from '@sammo-ts/common';
 
 import type { TurnDaemonHooks } from '../lifecycle/types.js';
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
@@ -31,6 +32,79 @@ const toCode = (value: string | null | undefined): string => (value && value !==
 const readMetaNumber = (meta: Record<string, unknown>, key: string): number | null => {
     const value = meta[key];
     return typeof value === 'number' && Number.isFinite(value) ? value : null;
+};
+
+const readRankMetaNumber = (meta: Record<string, unknown>, key: string): number => {
+    const value = meta[key];
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return Math.floor(value);
+    }
+    if (typeof value === 'string') {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) {
+            return Math.floor(parsed);
+        }
+    }
+    return 0;
+};
+
+const buildRankRows = (
+    general: ReturnType<InMemoryTurnWorld['consumeDirtyState']>['generals'][number]
+): Array<{ generalId: number; nationId: number; type: string; value: number }> => {
+    const meta = asRecord(general.meta);
+    const readMeta = (key: string) => readRankMetaNumber(meta, key);
+    const readRank = (key: string) => readRankMetaNumber(meta, `rank_${key}`);
+
+    const entries: Array<[RankDataType, number]> = [
+        ['experience', Math.floor(general.experience)],
+        ['dedication', Math.floor(general.dedication)],
+        ['firenum', readMeta('firenum')],
+        ['warnum', readRank('warnum')],
+        ['killnum', readRank('killnum')],
+        ['deathnum', readRank('deathnum')],
+        ['occupied', readRank('occupied')],
+        ['killcrew', readRank('killcrew')],
+        ['deathcrew', readRank('deathcrew')],
+        ['killcrew_person', readRank('killcrew_person')],
+        ['deathcrew_person', readRank('deathcrew_person')],
+        ['dex1', readMeta('dex1')],
+        ['dex2', readMeta('dex2')],
+        ['dex3', readMeta('dex3')],
+        ['dex4', readMeta('dex4')],
+        ['dex5', readMeta('dex5')],
+        ['ttw', readMeta('ttw')],
+        ['ttd', readMeta('ttd')],
+        ['ttl', readMeta('ttl')],
+        ['ttg', readMeta('ttg')],
+        ['ttp', readMeta('ttp')],
+        ['tlw', readMeta('tlw')],
+        ['tld', readMeta('tld')],
+        ['tll', readMeta('tll')],
+        ['tlg', readMeta('tlg')],
+        ['tlp', readMeta('tlp')],
+        ['tsw', readMeta('tsw')],
+        ['tsd', readMeta('tsd')],
+        ['tsl', readMeta('tsl')],
+        ['tsg', readMeta('tsg')],
+        ['tsp', readMeta('tsp')],
+        ['tiw', readMeta('tiw')],
+        ['tid', readMeta('tid')],
+        ['til', readMeta('til')],
+        ['tig', readMeta('tig')],
+        ['tip', readMeta('tip')],
+        ['betgold', readMeta('betgold')],
+        ['betwin', readMeta('betwin')],
+        ['betwingold', readMeta('betwingold')],
+        ['inherit_earned', readMeta('inherit_earned')],
+        ['inherit_spent', readMeta('inherit_spent')],
+    ];
+
+    return entries.map(([type, value]) => ({
+        generalId: general.id,
+        nationId: general.nationId,
+        type,
+        value,
+    }));
 };
 
 const buildGeneralUpdate = (
@@ -308,6 +382,9 @@ export const createDatabaseTurnHooks = async (
                 await prisma.general.deleteMany({
                     where: { id: { in: deletedGenerals } },
                 });
+                await prisma.rankData.deleteMany({
+                    where: { generalId: { in: deletedGenerals } },
+                });
             }
 
             if (deletedNations.length > 0) {
@@ -376,6 +453,28 @@ export const createDatabaseTurnHooks = async (
                         })
                     ),
             ]);
+
+            const rankTargets = [...createdGenerals, ...generals];
+            if (rankTargets.length > 0) {
+                const rankRows = rankTargets.flatMap(buildRankRows);
+                await Promise.all(
+                    rankRows.map((row) =>
+                        prisma.rankData.upsert({
+                            where: {
+                                generalId_type: {
+                                    generalId: row.generalId,
+                                    type: row.type,
+                                },
+                            },
+                            update: {
+                                nationId: row.nationId,
+                                value: row.value,
+                            },
+                            create: row,
+                        })
+                    )
+                );
+            }
 
             if (logs.length > 0) {
                 const logContext = {

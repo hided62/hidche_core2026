@@ -20,6 +20,8 @@ import BoardView from '../views/BoardView.vue';
 import NationAffairsView from '../views/NationAffairsView.vue';
 import ScoutMessageView from '../views/ScoutMessageView.vue';
 import DiplomacyView from '../views/DiplomacyView.vue';
+import BestGeneralView from '../views/BestGeneralView.vue';
+import HallOfFameView from '../views/HallOfFameView.vue';
 import { useSessionStore } from '../stores/session';
 
 const routes = [
@@ -162,6 +164,19 @@ const routes = [
             requiresAuth: true,
             requiresGeneral: true,
         },
+    },
+    {
+        path: '/best-general',
+        name: 'best-general',
+        component: BestGeneralView,
+        meta: {
+            requiresAuth: true,
+        },
+    },
+    {
+        path: '/hall-of-fame',
+        name: 'hall-of-fame',
+        component: HallOfFameView,
     },
     {
         path: '/my-page',

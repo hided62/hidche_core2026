@@ -321,6 +321,14 @@ const applySanctionsPatch = (current: UserSanctions, patch: SanctionsPatch): Use
 
 const buildAdminPassword = (): string => randomBytes(6).toString('hex');
 
+const buildServerId = (profileName: string, now: Date): string => {
+    const year = String(now.getFullYear()).slice(-2);
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const suffix = randomBytes(2).toString('hex');
+    return `${profileName}_${year}${month}${day}_${suffix}`;
+};
+
 // 프로필 메타를 안전하게 읽고, 패치를 병합한다.
 const readMetaObject = (value: unknown): Record<string, unknown> => {
     if (!value || typeof value !== 'object') {
@@ -881,11 +889,13 @@ export const adminRouter = router({
                 }
                 const season = nextSeasonIdx ?? baseSeason ?? 1;
 
+                const seedNow = new Date();
+                const serverId = buildServerId(updatedProfile.profileName, seedNow);
                 await seedProfileDatabase({
                     databaseUrl,
                     scenarioId: input.install.scenarioId,
                     tickSeconds: input.install.turnTermMinutes * 60,
-                    now: new Date(),
+                    now: seedNow,
                     installOptions: {
                         turnTermMinutes: input.install.turnTermMinutes,
                         sync: input.install.sync,
@@ -897,6 +907,7 @@ export const adminRouter = router({
                         tournamentTrig: input.install.tournamentTrig,
                         joinMode: input.install.joinMode,
                         season,
+                        serverId,
                         autorunUser: input.install.autorunUser
                             ? {
                                   limitMinutes: input.install.autorunUser.limitMinutes,

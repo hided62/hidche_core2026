@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { randomBytes } from 'node:crypto';
 
 import { type ScenarioInstallOptions } from '@sammo-ts/game-engine';
 import { createGamePostgresConnector, resolvePostgresConfigFromEnv } from '@sammo-ts/infra';
@@ -112,6 +113,14 @@ interface GatewayAdminActionResult {
 }
 
 const normalizeMeta = (value: unknown): Record<string, unknown> => (isRecord(value) ? value : {});
+
+const buildServerId = (profileName: string, now: Date): string => {
+    const year = String(now.getFullYear()).slice(-2);
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const suffix = randomBytes(2).toString('hex');
+    return `${profileName}_${year}${month}${day}_${suffix}`;
+};
 
 const readMetaNumber = (meta: Record<string, unknown>, key: string): number | null => {
     const raw = meta[key];
@@ -663,6 +672,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             }
             const workspace = await this.workspaceManager.prepare(commitSha);
             const resourceRoot = path.join(workspace.root, 'resources');
+            const serverId = buildServerId(profile.profileName, seedTime);
             await seedProfileDatabase({
                 databaseUrl: seedInfo.databaseUrl,
                 scenarioId: seedInfo.scenarioId,
@@ -671,6 +681,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 installOptions: {
                     ...(installOptions ?? {}),
                     season,
+                    serverId,
                 },
                 scenarioOptions: { scenarioRoot: path.join(resourceRoot, 'scenario') },
                 mapOptions: { mapRoot: path.join(resourceRoot, 'map') },

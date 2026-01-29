@@ -15,3 +15,4 @@ export * from './tournament/autoStart.js';
 export * from './turnDaemon/types.js';
 export * from './realtime/keys.js';
 export * from './realtime/types.js';
+export * from './ranking/types.js';
