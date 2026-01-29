@@ -134,6 +134,23 @@ export type TurnDaemonCommand =
                     }>;
           }
         | {
+              type: 'adjustGeneralMeta';
+              requestId?: string;
+              reason?: string;
+              adjustments: Array<{
+                  generalId: number;
+                  metaDelta: Record<string, number>;
+              }>;
+          }
+        | {
+              type: 'tournamentMatchResult';
+              requestId?: string;
+              tournamentType: number;
+              attackerId: number;
+              defenderId: number;
+              result: 'attacker' | 'defender' | 'draw';
+          }
+        | {
               type: 'patchGeneral';
               requestId?: string;
               generalId: number;
@@ -274,6 +291,34 @@ export type TurnDaemonCommandResult =
                 ok: false;
                 reason: string;
                 }
+            | {
+                type: 'adjustGeneralMeta';
+                ok: true;
+                processed: number;
+                missing: number;
+            }
+            | {
+                type: 'adjustGeneralMeta';
+                ok: false;
+                reason: string;
+            }
+            | {
+                type: 'tournamentMatchResult';
+                ok: true;
+                tournamentType: number;
+                attackerId: number;
+                defenderId: number;
+                result: 'attacker' | 'defender' | 'draw';
+            }
+            | {
+                type: 'tournamentMatchResult';
+                ok: false;
+                tournamentType: number;
+                attackerId: number;
+                defenderId: number;
+                result: 'attacker' | 'defender' | 'draw';
+                reason: string;
+            }
                 | {
                     type: 'patchGeneral';
                     ok: true;

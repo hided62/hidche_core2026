@@ -282,6 +282,12 @@ export const fillParticipants = async (options: {
     return result;
 };
 
+export type TournamentMatchOutcome = {
+    attackerId: number;
+    defenderId: number;
+    result: 'attacker' | 'defender' | 'draw';
+};
+
 export const applyGroupMatch = (
     participants: TournamentParticipantEntry[],
     attacker: TournamentParticipantEntry,
@@ -289,7 +295,7 @@ export const applyGroupMatch = (
     state: TournamentState,
     baseSeed: string,
     matchIndex: number
-): TournamentParticipantEntry[] => {
+): { participants: TournamentParticipantEntry[]; outcome: TournamentMatchOutcome } => {
     const result = resolveTournamentBattle({
         type: state.type,
         battleType: 0,
@@ -325,7 +331,14 @@ export const applyGroupMatch = (
 
     const glDelta = Math.round((result.totalDamage.defender - result.totalDamage.attacker) / 50);
 
-    return participants.map((entry) => {
+    const outcome: TournamentMatchOutcome = {
+        attackerId: attacker.id,
+        defenderId: defender.id,
+        result: result.draw ? 'draw' : result.winnerId === attacker.id ? 'attacker' : 'defender',
+    };
+
+    return {
+        participants: participants.map((entry) => {
         if (entry.id !== attacker.id && entry.id !== defender.id) {
             return entry;
         }
@@ -348,7 +361,9 @@ export const applyGroupMatch = (
         next.lose += 1;
         next.gl -= glDelta;
         return next;
-    });
+        }),
+        outcome,
+    };
 };
 
 export const sortByRanking = (entries: TournamentParticipantEntry[]): TournamentParticipantEntry[] =>
@@ -630,6 +645,14 @@ export const seedNpcBets = async (options: {
         adjustments: npcBetList.map((npc) => ({
             generalId: npc.id as number,
             goldDelta: -betGold,
+        })),
+    });
+    await daemonTransport.sendCommand({
+        type: 'adjustGeneralMeta',
+        reason: 'tournamentNpcBet',
+        adjustments: npcBetList.map((npc) => ({
+            generalId: npc.id as number,
+            metaDelta: { rank_betgold: betGold },
         })),
     });
     await store.setBettingEntries(entries);

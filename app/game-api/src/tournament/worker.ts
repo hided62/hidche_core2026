@@ -33,13 +33,15 @@ import {
     seedNpcBets,
     sleepMs,
     sortByRanking,
+    type TournamentMatchOutcome,
     type TournamentPrismaClient,
 } from './workerHelpers.js';
 
 export const applyBattle = async (
     store: TournamentStore,
     state: TournamentState,
-    baseSeed: string
+    baseSeed: string,
+    daemonTransport?: TurnDaemonTransport
 ): Promise<TournamentState> => {
     const matches = await store.getMatches();
     const participants = await store.getParticipants();
@@ -133,6 +135,16 @@ export const applyBattle = async (
     const nextMatches = matches.map((entry) => (entry.id === target.id ? updatedMatch : entry));
     await store.setMatches(nextMatches);
 
+    if (daemonTransport && attacker.id > 0 && defender.id > 0) {
+        await daemonTransport.sendCommand({
+            type: 'tournamentMatchResult',
+            tournamentType: state.type,
+            attackerId: attacker.id,
+            defenderId: defender.id,
+            result: result.draw ? 'draw' : result.winnerId === attacker.id ? 'attacker' : 'defender',
+        });
+    }
+
     const nextPhase = state.phase + 1;
     const nextState: TournamentState = {
         ...state,
@@ -192,6 +204,7 @@ export const applyPreBattleStage = async (
         let updated = participants.some((entry) => entry.groupId === undefined)
             ? assignGroupSlots(participants, 8, 8, 0)
             : participants;
+        const outcomes: TournamentMatchOutcome[] = [];
         for (let groupId = 0; groupId < 8; groupId += 1) {
             const groupEntries = updated.filter((entry) => entry.groupId === groupId);
             const attacker = groupEntries.find((entry) => entry.groupNo === pair[0]);
@@ -199,9 +212,27 @@ export const applyPreBattleStage = async (
             if (!attacker || !defender) {
                 continue;
             }
-            updated = applyGroupMatch(updated, attacker, defender, state, baseSeed, groupId);
+            const result = applyGroupMatch(updated, attacker, defender, state, baseSeed, groupId);
+            updated = result.participants;
+            outcomes.push(result.outcome);
         }
         await store.setParticipants(updated);
+
+        if (outcomes.length > 0) {
+            await Promise.all(
+                outcomes
+                    .filter((outcome) => outcome.attackerId > 0 && outcome.defenderId > 0)
+                    .map((outcome) =>
+                        daemonTransport.sendCommand({
+                            type: 'tournamentMatchResult',
+                            tournamentType: state.type,
+                            attackerId: outcome.attackerId,
+                            defenderId: outcome.defenderId,
+                            result: outcome.result,
+                        })
+                    )
+            );
+        }
 
         const maxPhase = 55;
         const isComplete = state.phase >= maxPhase;
@@ -310,6 +341,7 @@ export const applyPreBattleStage = async (
             throw new Error('본선 매치 구성을 찾을 수 없습니다.');
         }
         let updated = participants;
+        const outcomes: TournamentMatchOutcome[] = [];
         for (let groupId = 10; groupId < 18; groupId += 1) {
             const groupEntries = updated.filter((entry) => entry.groupId === groupId);
             const attacker = groupEntries.find((entry) => entry.groupNo === pair[0]);
@@ -317,9 +349,27 @@ export const applyPreBattleStage = async (
             if (!attacker || !defender) {
                 continue;
             }
-            updated = applyGroupMatch(updated, attacker, defender, state, baseSeed, groupId);
+            const result = applyGroupMatch(updated, attacker, defender, state, baseSeed, groupId);
+            updated = result.participants;
+            outcomes.push(result.outcome);
         }
         await store.setParticipants(updated);
+
+        if (outcomes.length > 0) {
+            await Promise.all(
+                outcomes
+                    .filter((outcome) => outcome.attackerId > 0 && outcome.defenderId > 0)
+                    .map((outcome) =>
+                        daemonTransport.sendCommand({
+                            type: 'tournamentMatchResult',
+                            tournamentType: state.type,
+                            attackerId: outcome.attackerId,
+                            defenderId: outcome.defenderId,
+                            result: outcome.result,
+                        })
+                    )
+            );
+        }
 
         const maxPhase = 5;
         if (state.phase >= maxPhase) {
@@ -509,7 +559,7 @@ export const runTournamentWorker = async (): Promise<void> => {
             const baseSeed = (worldState?.meta as Record<string, unknown> | null)?.hiddenSeed ?? 'tournament';
             let nextState = state;
             if (isBattleStage(state.stage)) {
-                nextState = await applyBattle(store, state, String(baseSeed));
+                nextState = await applyBattle(store, state, String(baseSeed), daemonTransport);
             } else if (isPreBattleStage(state.stage)) {
                 nextState = await applyPreBattleStage(
                     store,

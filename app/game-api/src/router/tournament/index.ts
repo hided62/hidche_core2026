@@ -421,6 +421,17 @@ export const tournamentRouter = router({
                 throw new TRPCError({ code: 'BAD_REQUEST', message: adjustResult.reason });
             }
 
+            await ctx.turnDaemon.sendCommand({
+                type: 'adjustGeneralMeta',
+                reason: 'tournamentBet',
+                adjustments: [
+                    {
+                        generalId: general.id,
+                        metaDelta: { rank_betgold: input.amount },
+                    },
+                ],
+            });
+
             await store.appendBettingEntry({
                 generalId: general.id,
                 targetId: input.targetId,

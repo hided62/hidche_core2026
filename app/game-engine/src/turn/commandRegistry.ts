@@ -165,6 +165,27 @@ const zAdjustGeneralResources = z
             .min(1),
     });
 
+const zAdjustGeneralMeta = z.object({
+    type: z.literal('adjustGeneralMeta'),
+    reason: z.string().optional(),
+    adjustments: z
+        .array(
+            z.object({
+                generalId: zFiniteNumber,
+                metaDelta: z.record(z.string(), zFiniteNumber),
+            })
+        )
+        .min(1),
+});
+
+const zTournamentMatchResult = z.object({
+    type: z.literal('tournamentMatchResult'),
+    tournamentType: zFiniteNumber,
+    attackerId: zFiniteNumber,
+    defenderId: zFiniteNumber,
+    result: z.enum(['attacker', 'defender', 'draw']),
+});
+
 const zPatchGeneral = z.object({
     type: z.literal('patchGeneral'),
     generalId: zFiniteNumber,
@@ -353,6 +374,22 @@ const normalizeAdjustGeneralResources: CommandNormalizer<'adjustGeneralResources
     return { ...command, requestId: envelope.requestId };
 };
 
+const normalizeAdjustGeneralMeta: CommandNormalizer<'adjustGeneralMeta'> = (envelope) => {
+    const command = parseWith(zAdjustGeneralMeta, envelope.command);
+    if (!command) {
+        return null;
+    }
+    return { ...command, requestId: envelope.requestId };
+};
+
+const normalizeTournamentMatchResult: CommandNormalizer<'tournamentMatchResult'> = (envelope) => {
+    const command = parseWith(zTournamentMatchResult, envelope.command);
+    if (!command) {
+        return null;
+    }
+    return { ...command, requestId: envelope.requestId };
+};
+
 const normalizePatchGeneral: CommandNormalizer<'patchGeneral'> = (envelope) => {
     const command = parseWith(zPatchGeneral, envelope.command);
     if (!command) {
@@ -396,6 +433,8 @@ const normalizers: CommandNormalizerMap = {
     tournamentReward: normalizeTournamentReward,
     setNationMeta: normalizeSetNationMeta,
     adjustGeneralResources: normalizeAdjustGeneralResources,
+    adjustGeneralMeta: normalizeAdjustGeneralMeta,
+    tournamentMatchResult: normalizeTournamentMatchResult,
     patchGeneral: normalizePatchGeneral,
     getStatus: normalizeGetStatus,
     run: normalizeRun,

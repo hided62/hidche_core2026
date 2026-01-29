@@ -150,6 +150,172 @@ async function handleAdjustGeneralResources(
     };
 }
 
+async function handleAdjustGeneralMeta(
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'adjustGeneralMeta' }>
+): Promise<TurnDaemonCommandResult> {
+    const { world, hooks } = ctx;
+    if (!command.adjustments || command.adjustments.length === 0) {
+        return {
+            type: 'adjustGeneralMeta',
+            ok: false,
+            reason: '메타 조정 대상이 없습니다.',
+        };
+    }
+
+    let processed = 0;
+    let missing = 0;
+
+    for (const adjustment of command.adjustments) {
+        if (!adjustment || typeof adjustment.generalId !== 'number') {
+            continue;
+        }
+        const general = world.getGeneralById(adjustment.generalId);
+        if (!general) {
+            missing += 1;
+            continue;
+        }
+        const nextMeta = { ...general.meta } as TurnGeneral['meta'];
+        for (const [key, delta] of Object.entries(adjustment.metaDelta ?? {})) {
+            if (typeof delta !== 'number' || !Number.isFinite(delta)) {
+                continue;
+            }
+            const current = typeof nextMeta[key] === 'number' ? Number(nextMeta[key]) : 0;
+            nextMeta[key] = current + delta;
+        }
+        world.updateGeneral(adjustment.generalId, { meta: nextMeta });
+        processed += 1;
+    }
+
+    await flushWorld(world, hooks);
+    return {
+        type: 'adjustGeneralMeta',
+        ok: true,
+        processed,
+        missing,
+    };
+}
+
+async function handleTournamentMatchResult(
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'tournamentMatchResult' }>
+): Promise<TurnDaemonCommandResult> {
+    const { world, hooks } = ctx;
+    const resolvePrefix = (type: number): string => {
+        switch (type) {
+            case 1:
+                return 'tl';
+            case 2:
+                return 'ts';
+            case 3:
+                return 'ti';
+            case 0:
+            default:
+                return 'tt';
+        }
+    };
+
+    const prefix = resolvePrefix(command.tournamentType);
+    const attacker = command.attackerId > 0 ? world.getGeneralById(command.attackerId) : null;
+    const defender = command.defenderId > 0 ? world.getGeneralById(command.defenderId) : null;
+    if (!attacker && !defender) {
+        return {
+            type: 'tournamentMatchResult',
+            ok: false,
+            tournamentType: command.tournamentType,
+            attackerId: command.attackerId,
+            defenderId: command.defenderId,
+            result: command.result,
+            reason: '장수 정보를 찾을 수 없습니다.',
+        };
+    }
+
+    const rankKey = (suffix: string): string => `rank_${prefix}${suffix}`;
+    const getRankNumber = (general: TurnGeneral | null, key: string): number =>
+        general && typeof general.meta[key] === 'number' ? Number(general.meta[key]) : 0;
+
+    const attackerG = getRankNumber(attacker, rankKey('g'));
+    const defenderG = getRankNumber(defender, rankKey('g'));
+
+    let attackerGDelta = 0;
+    let defenderGDelta = 0;
+    let attackerW = 0;
+    let attackerD = 0;
+    let attackerL = 0;
+    let defenderW = 0;
+    let defenderD = 0;
+    let defenderL = 0;
+
+    if (command.result === 'attacker') {
+        attackerW = 1;
+        defenderL = 1;
+        if (attackerG > defenderG) {
+            attackerGDelta = 1;
+            defenderGDelta = 0;
+        } else if (attackerG === defenderG) {
+            attackerGDelta = 2;
+            defenderGDelta = -1;
+        } else {
+            attackerGDelta = 3;
+            defenderGDelta = -2;
+        }
+    } else if (command.result === 'defender') {
+        attackerL = 1;
+        defenderW = 1;
+        if (defenderG > attackerG) {
+            defenderGDelta = 1;
+            attackerGDelta = 0;
+        } else if (attackerG === defenderG) {
+            defenderGDelta = 2;
+            attackerGDelta = -1;
+        } else {
+            defenderGDelta = 3;
+            attackerGDelta = -2;
+        }
+    } else {
+        attackerD = 1;
+        defenderD = 1;
+        if (attackerG > defenderG) {
+            attackerGDelta = 1;
+            defenderGDelta = -1;
+        } else if (attackerG === defenderG) {
+            attackerGDelta = 0;
+            defenderGDelta = 0;
+        } else {
+            attackerGDelta = -1;
+            defenderGDelta = 1;
+        }
+    }
+
+    if (attacker) {
+        const nextMeta = { ...attacker.meta } as TurnGeneral['meta'];
+        nextMeta[rankKey('w')] = getRankNumber(attacker, rankKey('w')) + attackerW;
+        nextMeta[rankKey('d')] = getRankNumber(attacker, rankKey('d')) + attackerD;
+        nextMeta[rankKey('l')] = getRankNumber(attacker, rankKey('l')) + attackerL;
+        nextMeta[rankKey('g')] = attackerG + attackerGDelta;
+        world.updateGeneral(attacker.id, { meta: nextMeta });
+    }
+
+    if (defender) {
+        const nextMeta = { ...defender.meta } as TurnGeneral['meta'];
+        nextMeta[rankKey('w')] = getRankNumber(defender, rankKey('w')) + defenderW;
+        nextMeta[rankKey('d')] = getRankNumber(defender, rankKey('d')) + defenderD;
+        nextMeta[rankKey('l')] = getRankNumber(defender, rankKey('l')) + defenderL;
+        nextMeta[rankKey('g')] = defenderG + defenderGDelta;
+        world.updateGeneral(defender.id, { meta: nextMeta });
+    }
+
+    await flushWorld(world, hooks);
+    return {
+        type: 'tournamentMatchResult',
+        ok: true,
+        tournamentType: command.tournamentType,
+        attackerId: command.attackerId,
+        defenderId: command.defenderId,
+        result: command.result,
+    };
+}
+
 async function handlePatchGeneral(
     ctx: CommandHandlerContext,
     command: Extract<TurnDaemonCommand, { type: 'patchGeneral' }>
@@ -691,6 +857,7 @@ async function handleTournamentBettingPayout(
     let processed = 0;
     let missing = 0;
     let totalPayout = 0;
+    const metaDeltas = new Map<number, { betwin: number; betwingold: number }>();
 
     for (const payout of command.payouts) {
         if (!payout || typeof payout.generalId !== 'number' || typeof payout.amount !== 'number') {
@@ -709,6 +876,26 @@ async function handleTournamentBettingPayout(
         });
         processed += 1;
         totalPayout += payout.amount;
+        const currentDelta = metaDeltas.get(payout.generalId) ?? { betwin: 0, betwingold: 0 };
+        metaDeltas.set(payout.generalId, {
+            betwin: currentDelta.betwin + 1,
+            betwingold: currentDelta.betwingold + payout.amount,
+        });
+    }
+
+    for (const [generalId, delta] of metaDeltas) {
+        const general = world.getGeneralById(generalId);
+        if (!general) {
+            continue;
+        }
+        const nextMeta = { ...general.meta } as TurnGeneral['meta'];
+        const betwinKey = 'rank_betwin';
+        const betwingoldKey = 'rank_betwingold';
+        const currentBetwin = typeof nextMeta[betwinKey] === 'number' ? Number(nextMeta[betwinKey]) : 0;
+        const currentBetwingold = typeof nextMeta[betwingoldKey] === 'number' ? Number(nextMeta[betwingoldKey]) : 0;
+        nextMeta[betwinKey] = currentBetwin + delta.betwin;
+        nextMeta[betwingoldKey] = currentBetwingold + delta.betwingold;
+        world.updateGeneral(generalId, { meta: nextMeta });
     }
 
     await flushWorld(world, hooks);
@@ -774,6 +961,9 @@ export const createTurnDaemonCommandHandler = (options: {
         tournamentReward: (command) => handleTournamentReward(ctx, command as Extract<TurnDaemonCommand, { type: 'tournamentReward' }>),
         setNationMeta: (command) => handleSetNationMeta(ctx, command as Extract<TurnDaemonCommand, { type: 'setNationMeta' }>),
         adjustGeneralResources: (command) => handleAdjustGeneralResources(ctx, command as Extract<TurnDaemonCommand, { type: 'adjustGeneralResources' }>),
+        adjustGeneralMeta: (command) => handleAdjustGeneralMeta(ctx, command as Extract<TurnDaemonCommand, { type: 'adjustGeneralMeta' }>),
+        tournamentMatchResult: (command) =>
+            handleTournamentMatchResult(ctx, command as Extract<TurnDaemonCommand, { type: 'tournamentMatchResult' }>),
         patchGeneral: (command) => handlePatchGeneral(ctx, command as Extract<TurnDaemonCommand, { type: 'patchGeneral' }>),
     };
 
