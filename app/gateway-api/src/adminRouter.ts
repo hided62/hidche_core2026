@@ -4,7 +4,7 @@ import path from 'node:path';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { resolvePostgresConfigFromEnv } from '@sammo-ts/infra';
+import { createGamePostgresConnector, resolvePostgresConfigFromEnv } from '@sammo-ts/infra';
 
 import { procedure, router } from './trpc.js';
 import { listScenarioPreviews, resolveGitCommitSha } from './scenario/scenarioCatalog.js';
@@ -327,6 +327,20 @@ const readMetaObject = (value: unknown): Record<string, unknown> => {
         return {};
     }
     return value as Record<string, unknown>;
+};
+
+const readMetaNumber = (meta: Record<string, unknown>, key: string): number | null => {
+    const raw = meta[key];
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+        return Math.floor(raw);
+    }
+    if (typeof raw === 'string') {
+        const parsed = Number(raw);
+        if (Number.isFinite(parsed)) {
+            return Math.floor(parsed);
+        }
+    }
+    return null;
 };
 
 const applyMetaPatch = (
@@ -850,6 +864,22 @@ export const adminRouter = router({
                     schema: updatedProfile.profile,
                 }).url;
                 const resourcesRoot = path.resolve(process.cwd(), 'resources');
+                const profileMeta = readMetaObject(updatedProfile.meta);
+                const nextSeasonIdx = readMetaNumber(profileMeta, 'nextSeasonIdx');
+                let baseSeason: number | null = null;
+                const connector = createGamePostgresConnector({ url: databaseUrl });
+                try {
+                    await connector.connect();
+                    const row = await connector.prisma.worldState.findFirst({
+                        select: { meta: true },
+                    });
+                    if (row) {
+                        baseSeason = readMetaNumber(readMetaObject(row.meta), 'season');
+                    }
+                } finally {
+                    await connector.disconnect();
+                }
+                const season = nextSeasonIdx ?? baseSeason ?? 1;
 
                 await seedProfileDatabase({
                     databaseUrl,
@@ -866,6 +896,7 @@ export const adminRouter = router({
                         showImgLevel: input.install.showImgLevel,
                         tournamentTrig: input.install.tournamentTrig,
                         joinMode: input.install.joinMode,
+                        season,
                         autorunUser: input.install.autorunUser
                             ? {
                                   limitMinutes: input.install.autorunUser.limitMinutes,

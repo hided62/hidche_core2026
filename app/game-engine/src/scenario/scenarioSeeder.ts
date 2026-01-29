@@ -34,6 +34,7 @@ export interface ScenarioInstallOptions {
     joinMode?: 'full' | 'onlyRandom';
     autorunUser?: ScenarioAutorunOptions | null;
     preopenAt?: Date | null;
+    season?: number;
 }
 
 export interface ScenarioSeedOptions {
@@ -253,6 +254,10 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
         opentime: formatDateTime(now),
         lastTurnTime: formatDateTime(now),
     };
+
+    if (typeof install?.season === 'number' && Number.isFinite(install.season)) {
+        worldMeta.season = Math.floor(install.season);
+    }
 
     const integrationSeed = process.env[INTEGRATION_WORLD_SEED_ENV];
     if (typeof integrationSeed === 'string' && integrationSeed.trim().length > 0) {

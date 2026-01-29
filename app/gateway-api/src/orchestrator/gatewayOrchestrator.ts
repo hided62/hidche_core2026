@@ -113,6 +113,20 @@ interface GatewayAdminActionResult {
 
 const normalizeMeta = (value: unknown): Record<string, unknown> => (isRecord(value) ? value : {});
 
+const readMetaNumber = (meta: Record<string, unknown>, key: string): number | null => {
+    const raw = meta[key];
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+        return Math.floor(raw);
+    }
+    if (typeof raw === 'string') {
+        const parsed = Number(raw);
+        if (Number.isFinite(parsed)) {
+            return Math.floor(parsed);
+        }
+    }
+    return null;
+};
+
 const normalizeStatus = (value: unknown): GatewayAdminActionStatus | null => {
     if (typeof value === 'string') {
         return value as GatewayAdminActionStatus;
@@ -615,6 +629,10 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             if (!seedInfo.scenarioId) {
                 return { status: 'FAILED', detail: 'scenarioId is missing' };
             }
+            const profileMeta = normalizeMeta(profile.meta);
+            const nextSeasonIdx = readMetaNumber(profileMeta, 'nextSeasonIdx');
+            const baseSeason = readMetaNumber(normalizeMeta(seedInfo.meta), 'season');
+            const season = nextSeasonIdx ?? baseSeason ?? 1;
             const seedTime =
                 openAt ??
                 (action.scheduledAt && action.action === 'RESET_SCHEDULED' ? new Date(action.scheduledAt) : this.now());
@@ -650,7 +668,10 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 scenarioId: seedInfo.scenarioId,
                 tickSeconds: seedInfo.tickSeconds,
                 now: seedTime,
-                installOptions: installOptions ?? undefined,
+                installOptions: {
+                    ...(installOptions ?? {}),
+                    season,
+                },
                 scenarioOptions: { scenarioRoot: path.join(resourceRoot, 'scenario') },
                 mapOptions: { mapRoot: path.join(resourceRoot, 'map') },
                 unitSetOptions: { unitSetRoot: path.join(resourceRoot, 'unitset') },
@@ -685,18 +706,19 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     private async resolveResetSeedInfo(
         profile: GatewayProfileRecord,
         overrides?: { scenarioId?: number | null; tickSeconds?: number }
-    ): Promise<{ databaseUrl: string; scenarioId: number | null; tickSeconds?: number }> {
+    ): Promise<{ databaseUrl: string; scenarioId: number | null; tickSeconds?: number; meta: Record<string, unknown> } > {
         const databaseUrl = resolvePostgresConfigFromEnv({
             env: this.processConfig.baseEnv ?? process.env,
             schema: profile.profile,
         }).url;
         let scenarioId = overrides?.scenarioId ?? parseScenarioId(profile.scenario);
         let tickSeconds: number | undefined = overrides?.tickSeconds;
+        let meta: Record<string, unknown> = {};
         const connector = createGamePostgresConnector({ url: databaseUrl });
         await connector.connect();
         try {
             const row = await connector.prisma.worldState.findFirst({
-                select: { scenarioCode: true, tickSeconds: true },
+                select: { scenarioCode: true, tickSeconds: true, meta: true },
             });
             if (row) {
                 if (scenarioId === null) {
@@ -708,11 +730,12 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 if (tickSeconds === undefined && typeof row.tickSeconds === 'number' && Number.isFinite(row.tickSeconds)) {
                     tickSeconds = row.tickSeconds;
                 }
+                meta = normalizeMeta(row.meta);
             }
         } finally {
             await connector.disconnect();
         }
-        return { databaseUrl, scenarioId, tickSeconds };
+        return { databaseUrl, scenarioId, tickSeconds, meta };
     }
 
     private async runBuildCommands(
