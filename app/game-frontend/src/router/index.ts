@@ -22,6 +22,8 @@ import ScoutMessageView from '../views/ScoutMessageView.vue';
 import DiplomacyView from '../views/DiplomacyView.vue';
 import BestGeneralView from '../views/BestGeneralView.vue';
 import HallOfFameView from '../views/HallOfFameView.vue';
+import DynastyListView from '../views/DynastyListView.vue';
+import DynastyDetailView from '../views/DynastyDetailView.vue';
 import { useSessionStore } from '../stores/session';
 
 const routes = [
@@ -177,6 +179,16 @@ const routes = [
         path: '/hall-of-fame',
         name: 'hall-of-fame',
         component: HallOfFameView,
+    },
+    {
+        path: '/dynasty',
+        name: 'dynasty-list',
+        component: DynastyListView,
+    },
+    {
+        path: '/dynasty/:id',
+        name: 'dynasty-detail',
+        component: DynastyDetailView,
     },
     {
         path: '/my-page',

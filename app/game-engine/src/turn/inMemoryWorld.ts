@@ -224,6 +224,11 @@ export class InMemoryTurnWorld {
     private readonly deletedTroopIds = new Set<number>();
     private readonly deletedGeneralIds = new Set<number>();
     private readonly deletedNationIds = new Set<number>();
+    private readonly deletedNationSnapshots: Array<{
+        nation: Nation;
+        generalIds: number[];
+        removedAt: Date;
+    }> = [];
     private readonly logs: LogEntryDraft[] = [];
     private readonly scenarioConfig: ScenarioConfig;
     private checkpoint?: TurnCheckpoint;
@@ -697,6 +702,7 @@ export class InMemoryTurnWorld {
         deletedTroops: number[];
         deletedGenerals: number[];
         deletedNations: number[];
+        deletedNationSnapshots: Array<{ nation: Nation; generalIds: number[]; removedAt: Date }>;
         diplomacy: TurnDiplomacy[];
         logs: LogEntryDraft[];
         createdGenerals: TurnGeneral[];
@@ -734,6 +740,7 @@ export class InMemoryTurnWorld {
         const deletedTroops = Array.from(this.deletedTroopIds);
         const deletedGenerals = Array.from(this.deletedGeneralIds);
         const deletedNations = Array.from(this.deletedNationIds);
+        const deletedNationSnapshots = this.deletedNationSnapshots.splice(0, this.deletedNationSnapshots.length);
         const logs = this.logs.splice(0, this.logs.length);
 
         this.dirtyGeneralIds.clear();
@@ -757,6 +764,7 @@ export class InMemoryTurnWorld {
             deletedTroops,
             deletedGenerals,
             deletedNations,
+            deletedNationSnapshots,
             diplomacy,
             logs,
             createdGenerals,
@@ -784,6 +792,17 @@ export class InMemoryTurnWorld {
         }
 
         for (const nationId of collapsedNationIds) {
+            const nation = this.nations.get(nationId);
+            if (nation) {
+                const generalIds = Array.from(this.generals.values())
+                    .filter((general) => general.nationId === nationId)
+                    .map((general) => general.id);
+                this.deletedNationSnapshots.push({
+                    nation: { ...nation },
+                    generalIds,
+                    removedAt: new Date(this.state.lastTurnTime.getTime()),
+                });
+            }
             for (const general of this.generals.values()) {
                 if (general.nationId !== nationId) {
                     continue;

@@ -193,6 +193,81 @@ model GameHistory {
     @@map("ng_games")
 }
 
+model OldNation {
+    id       Int      @id @default(autoincrement())
+    serverId String   @map("server_id")
+    nation   Int      @default(0)
+    data     Json     @default(dbgenerated("'{}'::jsonb"))
+    date     DateTime @default(now())
+
+    @@unique([serverId, nation])
+    @@index([serverId, nation], name: "by_server")
+    @@map("ng_old_nations")
+}
+
+model OldGeneral {
+    id            Int      @id @default(autoincrement())
+    serverId      String   @map("server_id")
+    generalNo     Int      @map("general_no")
+    owner         String?  @map("owner")
+    name          String
+    lastYearMonth Int      @map("last_yearmonth")
+    turnTime      DateTime @map("turntime")
+    data          Json     @default(dbgenerated("'{}'::jsonb"))
+
+    @@unique([serverId, generalNo], name: "by_no")
+    @@index([serverId, name], name: "by_name")
+    @@index([owner, serverId], name: "owner")
+    @@map("ng_old_generals")
+}
+
+model Emperor {
+    id           Int    @id @default(autoincrement()) @map("no")
+    serverId     String? @map("server_id")
+    phase        String? @default("")
+    nationCount  String? @map("nation_count")
+    nationName   String? @map("nation_name")
+    nationHist   String? @map("nation_hist")
+    genCount     String? @map("gen_count")
+    personalHist String? @map("personal_hist")
+    specialHist  String? @map("special_hist")
+    name         String? @default("")
+    type         String? @default("")
+    color        String? @default("")
+    year         Int?    @default(0)
+    month        Int?    @default(0)
+    power        Int?    @default(0)
+    gennum       Int?    @default(0)
+    citynum      Int?    @default(0)
+    pop          String? @default("0")
+    poprate      String? @default("")
+    gold         Int?    @default(0)
+    rice         Int?    @default(0)
+    l12name      String? @default("")
+    l12pic       String? @default("")
+    l11name      String? @default("")
+    l11pic       String? @default("")
+    l10name      String? @default("")
+    l10pic       String? @default("")
+    l9name       String? @default("")
+    l9pic        String? @default("")
+    l8name       String? @default("")
+    l8pic        String? @default("")
+    l7name       String? @default("")
+    l7pic        String? @default("")
+    l6name       String? @default("")
+    l6pic        String? @default("")
+    l5name       String? @default("")
+    l5pic        String? @default("")
+    tiger        String? @default("")
+    eagle        String? @default("")
+    gen          String? @default("")
+    history      Json    @default(dbgenerated("'{}'::jsonb"))
+    aux          Json    @default(dbgenerated("'{}'::jsonb"))
+
+    @@map("emperior")
+}
+
 model Troop {
     troopLeaderId Int    @id @map("troop_leader")
     nationId      Int    @map("nation")

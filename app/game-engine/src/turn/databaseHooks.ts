@@ -12,7 +12,7 @@ import {
     type TurnEngineTroopUpdateInput,
     type TurnEngineWorldStateUpdateInput,
 } from '@sammo-ts/infra';
-import { finalizeLogEntry, type LogEntryDraft } from '@sammo-ts/logic';
+import { finalizeLogEntry, LogCategory, LogScope, type LogEntryDraft } from '@sammo-ts/logic';
 import { asRecord, type RankDataType } from '@sammo-ts/common';
 
 import type { TurnDaemonHooks } from '../lifecycle/types.js';
@@ -316,6 +316,7 @@ export const createDatabaseTurnHooks = async (
                 deletedTroops,
                 deletedGenerals,
                 deletedNations,
+                deletedNationSnapshots,
                 diplomacy,
                 logs,
                 createdGenerals,
@@ -334,6 +335,77 @@ export const createDatabaseTurnHooks = async (
                 where: { id: state.id },
                 data: worldStateUpdate,
             });
+
+            const meta = asRecord(state.meta);
+            const serverId =
+                typeof meta.serverId === 'string' && meta.serverId.trim() ? meta.serverId.trim() : 'default';
+
+            if (deletedNationSnapshots.length > 0) {
+                const nationIds = deletedNationSnapshots.map((snapshot) => snapshot.nation.id);
+                const historyRows = await prisma.logEntry.findMany({
+                    where: {
+                        nationId: { in: nationIds },
+                        scope: LogScope.NATION,
+                        category: LogCategory.HISTORY,
+                    },
+                    orderBy: { id: 'asc' },
+                    select: { nationId: true, text: true },
+                });
+                const historyMap = new Map<number, string[]>();
+                for (const row of historyRows) {
+                    const bucket = historyMap.get(row.nationId ?? 0) ?? [];
+                    bucket.push(row.text);
+                    historyMap.set(row.nationId ?? 0, bucket);
+                }
+                await Promise.all(
+                    deletedNationSnapshots.map((snapshot) =>
+                        prisma.oldNation.upsert({
+                            where: {
+                                serverId_nation: {
+                                    serverId,
+                                    nation: snapshot.nation.id,
+                                },
+                            },
+                            update: {
+                                data: {
+                                    nation: snapshot.nation.id,
+                                    name: snapshot.nation.name,
+                                    color: snapshot.nation.color,
+                                    type: snapshot.nation.typeCode,
+                                    level: snapshot.nation.level,
+                                    gold: snapshot.nation.gold,
+                                    rice: snapshot.nation.rice,
+                                    power: snapshot.nation.power,
+                                    capitalCityId: snapshot.nation.capitalCityId,
+                                    generals: snapshot.generalIds,
+                                    history: historyMap.get(snapshot.nation.id) ?? [],
+                                    meta: snapshot.nation.meta ?? {},
+                                },
+                                date: snapshot.removedAt,
+                            },
+                            create: {
+                                serverId,
+                                nation: snapshot.nation.id,
+                                data: {
+                                    nation: snapshot.nation.id,
+                                    name: snapshot.nation.name,
+                                    color: snapshot.nation.color,
+                                    type: snapshot.nation.typeCode,
+                                    level: snapshot.nation.level,
+                                    gold: snapshot.nation.gold,
+                                    rice: snapshot.nation.rice,
+                                    power: snapshot.nation.power,
+                                    capitalCityId: snapshot.nation.capitalCityId,
+                                    generals: snapshot.generalIds,
+                                    history: historyMap.get(snapshot.nation.id) ?? [],
+                                    meta: snapshot.nation.meta ?? {},
+                                },
+                                date: snapshot.removedAt,
+                            },
+                        })
+                    )
+                );
+            }
 
             const createdIds = new Set(createdGenerals.map((general) => general.id));
             const createdNationIds = new Set(createdNations.map((nation) => nation.id));

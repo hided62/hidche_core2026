@@ -380,6 +380,358 @@ export const createUnificationHandler = (options: {
         });
     };
 
+    const settleDynasty = async (winnerNationId: number): Promise<void> => {
+        const world = options.getWorld();
+        if (!world) {
+            return;
+        }
+        await ready;
+        const prisma = connector.prisma;
+        const state = world.getState();
+        const meta = asRecord(state.meta);
+
+        const serverId =
+            typeof meta.serverId === 'string' && meta.serverId.trim()
+                ? meta.serverId.trim()
+                : options.profileName;
+        const serverName =
+            typeof meta.serverName === 'string' && meta.serverName.trim()
+                ? meta.serverName.trim()
+                : options.profileName;
+
+        const [serverCount, nationRows, cityRows, generalRows, rankRows, historyRows, oldNationRows] =
+            await Promise.all([
+                prisma.gameHistory.count(),
+                prisma.nation.findMany({
+                    select: {
+                        id: true,
+                        name: true,
+                        color: true,
+                        level: true,
+                        typeCode: true,
+                        gold: true,
+                        rice: true,
+                        meta: true,
+                        capitalCityId: true,
+                    },
+                }),
+                prisma.city.findMany({
+                    select: { nationId: true, population: true, populationMax: true },
+                }),
+                prisma.general.findMany({
+                    select: {
+                        id: true,
+                        userId: true,
+                        name: true,
+                        nationId: true,
+                        dedication: true,
+                        officerLevel: true,
+                        picture: true,
+                        imageServer: true,
+                        leadership: true,
+                        strength: true,
+                        intel: true,
+                        experience: true,
+                        gold: true,
+                        rice: true,
+                        crew: true,
+                        crewTypeId: true,
+                        train: true,
+                        atmos: true,
+                        age: true,
+                        startAge: true,
+                        npcState: true,
+                        personalCode: true,
+                        specialCode: true,
+                        special2Code: true,
+                        cityId: true,
+                        troopId: true,
+                        turnTime: true,
+                        meta: true,
+                    },
+                }),
+                prisma.rankData.findMany({
+                    where: {
+                        nationId: winnerNationId,
+                        type: { in: ['killnum', 'firenum'] },
+                    },
+                    select: { generalId: true, type: true, value: true },
+                }),
+                prisma.logEntry.findMany({
+                    where: {
+                        nationId: winnerNationId,
+                        scope: LogScope.NATION,
+                        category: LogCategory.HISTORY,
+                    },
+                    orderBy: { id: 'asc' },
+                    select: { text: true },
+                }),
+                prisma.oldNation.findMany({
+                    where: { serverId },
+                    select: { data: true },
+                }),
+            ]);
+
+        const winnerNation = nationRows.find((nation) => nation.id === winnerNationId);
+        if (!winnerNation) {
+            return;
+        }
+
+        const powerMap = new Map<number, number>();
+        for (const nation of world.listNations()) {
+            powerMap.set(nation.id, nation.power);
+        }
+
+        const winnerGenerals = generalRows.filter((general) => general.nationId === winnerNationId);
+        const winnerGeneralIds = winnerGenerals.map((general) => general.id);
+        const noNationGenerals = generalRows.filter((general) => general.nationId === 0);
+
+        const cityCount = cityRows.filter((city) => city.nationId === winnerNationId).length;
+        const popSum = cityRows
+            .filter((city) => city.nationId === winnerNationId)
+            .reduce((sum, city) => sum + city.population, 0);
+        const popMaxSum = cityRows
+            .filter((city) => city.nationId === winnerNationId)
+            .reduce((sum, city) => sum + city.populationMax, 0);
+        const popText = `${popSum} / ${popMaxSum}`;
+        const popRate = popMaxSum > 0 ? `${Math.round((popSum / popMaxSum) * 10000) / 100} %` : '0 %';
+
+        const officerMap = new Map<number, { name: string; picture: string | null }>();
+        for (const general of winnerGenerals) {
+            if (general.officerLevel < 5) {
+                continue;
+            }
+            if (!officerMap.has(general.officerLevel)) {
+                officerMap.set(general.officerLevel, { name: general.name, picture: general.picture ?? null });
+            }
+        }
+
+        const generalNameMap = new Map<number, string>();
+        for (const general of generalRows) {
+            generalNameMap.set(general.id, general.name);
+        }
+
+        const buildTopList = (type: 'killnum' | 'firenum', limit: number): string => {
+            const rows = rankRows
+                .filter((row) => row.type === type && row.value > 0)
+                .sort((a, b) => b.value - a.value)
+                .slice(0, limit);
+            return rows
+                .map((row) => `${generalNameMap.get(row.generalId) ?? '무명'}【${row.value.toLocaleString('ko-KR')}】`)
+                .join(', ');
+        };
+
+        const tiger = buildTopList('killnum', 5);
+        const eagle = buildTopList('firenum', 7);
+
+        const gen = winnerGenerals
+            .slice()
+            .sort((a, b) => b.dedication - a.dedication)
+            .map((general) => general.name)
+            .join(', ');
+
+        const nationNames: string[] = [];
+        const nationTypeCounts = new Map<string, number>();
+        for (const row of oldNationRows) {
+            const data = asRecord(row.data);
+            const name = typeof data.name === 'string' ? data.name : '';
+            const type = typeof data.type === 'string' ? data.type : '';
+            if (name) {
+                nationNames.push(name);
+            }
+            if (type) {
+                nationTypeCounts.set(type, (nationTypeCounts.get(type) ?? 0) + 1);
+            }
+        }
+        if (!nationNames.includes(winnerNation.name)) {
+            nationNames.push(winnerNation.name);
+        }
+        if (winnerNation.typeCode) {
+            nationTypeCounts.set(winnerNation.typeCode, (nationTypeCounts.get(winnerNation.typeCode) ?? 0) + 1);
+        }
+        const nationHist = Array.from(nationTypeCounts.entries())
+            .map(([key, count]) => `${key}(${count})`)
+            .join(', ');
+
+        const phase = `${serverName}${serverCount}기`;
+        const nationCount = `${Math.max(1, nationRows.length)} / ${Math.max(1, nationRows.length)}`;
+        const genCount = `${generalRows.length} / ${generalRows.length}`;
+
+        const history = historyRows.map((row) => row.text);
+
+        await prisma.oldNation.upsert({
+            where: {
+                serverId_nation: {
+                    serverId,
+                    nation: winnerNationId,
+                },
+            },
+            update: {
+                data: {
+                    nation: winnerNationId,
+                    name: winnerNation.name,
+                    color: winnerNation.color,
+                    type: winnerNation.typeCode,
+                    level: winnerNation.level,
+                    gold: winnerNation.gold,
+                    rice: winnerNation.rice,
+                    power: powerMap.get(winnerNationId) ?? 0,
+                    capitalCityId: winnerNation.capitalCityId,
+                    generals: winnerGeneralIds,
+                    history,
+                    meta: winnerNation.meta ?? {},
+                },
+                date: new Date(),
+            },
+            create: {
+                serverId,
+                nation: winnerNationId,
+                data: {
+                    nation: winnerNationId,
+                    name: winnerNation.name,
+                    color: winnerNation.color,
+                    type: winnerNation.typeCode,
+                    level: winnerNation.level,
+                    gold: winnerNation.gold,
+                    rice: winnerNation.rice,
+                    power: powerMap.get(winnerNationId) ?? 0,
+                    capitalCityId: winnerNation.capitalCityId,
+                    generals: winnerGeneralIds,
+                    history,
+                    meta: winnerNation.meta ?? {},
+                },
+            },
+        });
+
+        await prisma.oldNation.upsert({
+            where: {
+                serverId_nation: {
+                    serverId,
+                    nation: 0,
+                },
+            },
+            update: {
+                data: {
+                    nation: 0,
+                    name: '재야',
+                    color: '#000000',
+                    type: 'neutral',
+                    level: 0,
+                    gold: 0,
+                    rice: 0,
+                    power: 0,
+                    capitalCityId: null,
+                    generals: noNationGenerals.map((general) => general.id),
+                    history: [],
+                    meta: {},
+                },
+                date: new Date(),
+            },
+            create: {
+                serverId,
+                nation: 0,
+                data: {
+                    nation: 0,
+                    name: '재야',
+                    color: '#000000',
+                    type: 'neutral',
+                    level: 0,
+                    gold: 0,
+                    rice: 0,
+                    power: 0,
+                    capitalCityId: null,
+                    generals: noNationGenerals.map((general) => general.id),
+                    history: [],
+                    meta: {},
+                },
+            },
+        });
+
+        const oldGeneralTargets = generalRows.filter(
+            (general) => general.nationId === 0 || general.nationId === winnerNationId
+        );
+        await Promise.all(
+            oldGeneralTargets.map((general) =>
+                ((snapshot) =>
+                prisma.oldGeneral.upsert({
+                    where: {
+                        by_no: {
+                            serverId,
+                            generalNo: general.id,
+                        },
+                    },
+                    update: {
+                        owner: general.userId ?? null,
+                        name: general.name,
+                        lastYearMonth: state.currentYear * 100 + state.currentMonth,
+                        turnTime: general.turnTime,
+                        data: snapshot,
+                    },
+                    create: {
+                        serverId,
+                        generalNo: general.id,
+                        owner: general.userId ?? null,
+                        name: general.name,
+                        lastYearMonth: state.currentYear * 100 + state.currentMonth,
+                        turnTime: general.turnTime,
+                        data: snapshot,
+                    },
+                }))( {
+                    ...general,
+                    turnTime: general.turnTime.toISOString(),
+                })
+            )
+        );
+
+        await prisma.emperor.create({
+            data: {
+                serverId,
+                phase,
+                nationCount,
+                nationName: nationNames.join(', '),
+                nationHist,
+                genCount,
+                personalHist: '',
+                specialHist: '',
+                name: winnerNation.name,
+                type: winnerNation.typeCode,
+                color: winnerNation.color,
+                year: state.currentYear,
+                month: state.currentMonth,
+                power: powerMap.get(winnerNationId) ?? 0,
+                gennum: winnerGenerals.length,
+                citynum: cityCount,
+                pop: popText,
+                poprate: popRate,
+                gold: winnerNation.gold,
+                rice: winnerNation.rice,
+                l12name: officerMap.get(12)?.name ?? '',
+                l12pic: officerMap.get(12)?.picture ?? '',
+                l11name: officerMap.get(11)?.name ?? '',
+                l11pic: officerMap.get(11)?.picture ?? '',
+                l10name: officerMap.get(10)?.name ?? '',
+                l10pic: officerMap.get(10)?.picture ?? '',
+                l9name: officerMap.get(9)?.name ?? '',
+                l9pic: officerMap.get(9)?.picture ?? '',
+                l8name: officerMap.get(8)?.name ?? '',
+                l8pic: officerMap.get(8)?.picture ?? '',
+                l7name: officerMap.get(7)?.name ?? '',
+                l7pic: officerMap.get(7)?.picture ?? '',
+                l6name: officerMap.get(6)?.name ?? '',
+                l6pic: officerMap.get(6)?.picture ?? '',
+                l5name: officerMap.get(5)?.name ?? '',
+                l5pic: officerMap.get(5)?.picture ?? '',
+                tiger,
+                eagle,
+                gen,
+                history,
+                aux: {
+                    winnerNationId,
+                },
+            },
+        });
+    };
+
     const handler: TurnCalendarHandler = {
         onMonthChanged: (context) => {
             const world = options.getWorld();
@@ -407,6 +759,7 @@ export const createUnificationHandler = (options: {
             world.pushLog(buildUnificationLog(winner.name));
             void settleInheritance(winner.id, context.currentYear, context.currentMonth);
             void settleHallOfFame(winner.id);
+            void settleDynasty(winner.id);
         },
     };
 
