@@ -4,6 +4,9 @@ import type { ItemModule } from '../items/types.js';
 
 export type UniqueItemPool = Record<string, Record<string, number>>;
 
+export const UNIQUE_ACQUIRE_TYPES = ['아이템', '설문조사', '랜덤 임관', '건국'] as const;
+export type UniqueAcquireType = typeof UNIQUE_ACQUIRE_TYPES[number];
+
 export type UniqueLotteryConfig = {
     allItems: UniqueItemPool;
     maxUniqueItemLimit: Array<[number, number]>;
@@ -25,7 +28,7 @@ export type UniqueLotteryInput = {
     startYear: number;
     initYear: number;
     initMonth: number;
-    acquireType?: string;
+    acquireType?: UniqueAcquireType;
     inheritRandomUnique?: boolean;
 };
 
@@ -156,6 +159,7 @@ export const rollUniqueLottery = (input: UniqueLotteryInput): string | null => {
         acquireType,
         inheritRandomUnique,
     } = input;
+    const resolvedAcquireType = acquireType ?? '아이템';
 
     if (userCount <= 0) {
         return null;
@@ -215,9 +219,9 @@ export const rollUniqueLottery = (input: UniqueLotteryInput): string | null => {
         prob = 1 / (userCount * itemTypeCnt);
     }
 
-    if (acquireType === '설문조사') {
+    if (resolvedAcquireType === '설문조사') {
         prob = 1 / (userCount * itemTypeCnt * 0.7 / 3);
-    } else if (acquireType === '랜덤 임관') {
+    } else if (resolvedAcquireType === '랜덤 임관') {
         prob = 1 / (userCount * itemTypeCnt / 10 / 2);
     }
 
@@ -231,7 +235,7 @@ export const rollUniqueLottery = (input: UniqueLotteryInput): string | null => {
 
     if (inheritRandomUnique && availableBuyUnique) {
         prob = 1;
-    } else if (acquireType === '건국') {
+    } else if (resolvedAcquireType === '건국') {
         prob = 1;
     }
 
