@@ -115,14 +115,25 @@ export type TurnDaemonCommand =
           top16: number[];
           top8: number[];
           top4: number[];
-        }
-        | {
-            type: 'setNationMeta';
-            requestId?: string;
-            nationId: number;
-            updates: Record<string, unknown>;
-            expectedUpdatedAt?: string;
-            }
+      }
+    | {
+          type: 'voteReward';
+          requestId?: string;
+          voteId: number;
+          generalId: number;
+          goldReward: number;
+          unique?: {
+              expected: boolean;
+              itemKey?: string | null;
+          };
+      }
+    | {
+          type: 'setNationMeta';
+          requestId?: string;
+          nationId: number;
+          updates: Record<string, unknown>;
+          expectedUpdatedAt?: string;
+      }
         | {
                     type: 'adjustGeneralResources';
                     requestId?: string;
@@ -264,20 +275,36 @@ export type TurnDaemonCommandResult =
           winnerId: number;
           runnerUpId: number;
           reason: string;
-        }
-        | {
-            type: 'setNationMeta';
-            ok: true;
-            nationId: number;
-            updatedAt: string;
-        }
-        | {
-            type: 'setNationMeta';
-            ok: false;
-            nationId: number;
-            reason: string;
-            currentUpdatedAt?: string;
-            }
+      }
+    | {
+          type: 'voteReward';
+          ok: true;
+          voteId: number;
+          generalId: number;
+          awardedUnique: boolean;
+          itemKey?: string | null;
+          alreadyApplied?: boolean;
+      }
+    | {
+          type: 'voteReward';
+          ok: false;
+          voteId: number;
+          generalId: number;
+          reason: string;
+      }
+    | {
+          type: 'setNationMeta';
+          ok: true;
+          nationId: number;
+          updatedAt: string;
+      }
+    | {
+          type: 'setNationMeta';
+          ok: false;
+          nationId: number;
+          reason: string;
+          currentUpdatedAt?: string;
+      }
             | {
                 type: 'adjustGeneralResources';
                 ok: true;

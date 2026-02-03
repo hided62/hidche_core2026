@@ -5,6 +5,21 @@ import type {
     TurnDaemonCommandResult,
     TurnRunResult,
 } from '../lifecycle/types.js';
+import { asRecord, JosaUtil, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
+import {
+    LogCategory,
+    LogFormat,
+    LogScope,
+    ITEM_KEYS,
+    buildVoteUniqueSeed,
+    countOccupiedUniqueItems,
+    createItemModuleRegistry,
+    loadItemModules,
+    resolveUniqueConfig,
+    rollUniqueLottery,
+    type ItemModule,
+    type TriggerValue,
+} from '@sammo-ts/logic';
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
 import type { TurnGeneral } from './types.js';
 
@@ -25,6 +40,29 @@ const flushWorld = async (world: InMemoryTurnWorld, hooks?: TurnDaemonHooks): Pr
         return;
     }
     await hooks.flushChanges(buildFlushResult(world));
+};
+
+let itemRegistryPromise: Promise<Map<string, ItemModule>> | null = null;
+
+const getItemRegistry = async (): Promise<Map<string, ItemModule>> => {
+    if (!itemRegistryPromise) {
+        itemRegistryPromise = loadItemModules([...ITEM_KEYS]).then((modules) => createItemModuleRegistry(modules));
+    }
+    return itemRegistryPromise;
+};
+
+const readMetaNumber = (meta: Record<string, unknown>, key: string, fallback: number): number => {
+    const value = meta[key];
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return Math.floor(value);
+    }
+    if (typeof value === 'string') {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) {
+            return Math.floor(parsed);
+        }
+    }
+    return fallback;
 };
 
 interface CommandHandlerContext {
@@ -925,6 +963,207 @@ async function handleTournamentReward(
     return ctx.tournamentRewardFinalizer.finalize(command);
 }
 
+// 설문 보상은 API에서 전달된 RNG 결과를 재검증한 뒤 월드에 반영한다.
+async function handleVoteReward(
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'voteReward' }>
+): Promise<TurnDaemonCommandResult> {
+    const { world, hooks } = ctx;
+    const general = world.getGeneralById(command.generalId);
+    if (!general) {
+        return {
+            type: 'voteReward',
+            ok: false,
+            voteId: command.voteId,
+            generalId: command.generalId,
+            reason: '장수 정보를 찾을 수 없습니다.',
+        };
+    }
+
+    const baseMeta = general.meta;
+    const metaRecord = asRecord(baseMeta);
+    const existingRewards = asRecord(metaRecord.voteRewards);
+    const rewardKey = String(command.voteId);
+    if (Object.prototype.hasOwnProperty.call(existingRewards, rewardKey)) {
+        const existingValue = existingRewards[rewardKey];
+        const existingEntry = asRecord(existingValue);
+        const existingItemKey = typeof existingEntry.itemKey === 'string' ? existingEntry.itemKey : null;
+        const awarded = existingEntry.awarded === true || Boolean(existingItemKey);
+        return {
+            type: 'voteReward',
+            ok: true,
+            voteId: command.voteId,
+            generalId: command.generalId,
+            awardedUnique: awarded,
+            itemKey: existingItemKey ?? null,
+            alreadyApplied: true,
+        };
+    }
+
+    const worldState = world.getState();
+    const worldMeta = asRecord(worldState.meta);
+    const scenarioMeta = asRecord(worldMeta.scenarioMeta);
+    const startYear = readMetaNumber(scenarioMeta, 'startYear', worldState.currentYear);
+    const initYear = readMetaNumber(worldMeta, 'initYear', startYear);
+    const initMonth = readMetaNumber(worldMeta, 'initMonth', 1);
+    const scenarioId = readMetaNumber(worldMeta, 'scenarioId', 0);
+    const hiddenSeed = worldMeta.hiddenSeed ?? worldMeta.seed ?? worldState.id;
+
+    const itemRegistry = await getItemRegistry();
+    const configConst = asRecord(world.getScenarioConfig().const);
+    const uniqueConfig = resolveUniqueConfig(configConst);
+    const generals = world.listGenerals();
+    const occupiedUniqueCounts = countOccupiedUniqueItems(
+        generals.map((entry) => entry.role.items),
+        itemRegistry
+    );
+    const userCount = generals.filter((entry) => entry.npcState < 2).length;
+    const rngSeed = buildVoteUniqueSeed(
+        typeof hiddenSeed === 'string' || typeof hiddenSeed === 'number' ? hiddenSeed : String(hiddenSeed),
+        command.voteId,
+        command.generalId
+    );
+    const rng = new RandUtil(LiteHashDRBG.build(rngSeed));
+    const itemKey = rollUniqueLottery({
+        rng,
+        config: uniqueConfig,
+        itemRegistry,
+        generalItems: general.role.items,
+        occupiedUniqueCounts,
+        scenarioId,
+        userCount,
+        currentYear: worldState.currentYear,
+        currentMonth: worldState.currentMonth,
+        startYear,
+        initYear,
+        initMonth,
+        acquireType: '설문조사',
+    });
+
+    const expectedUnique = command.unique?.expected ?? false;
+    const expectedItemKey = command.unique?.itemKey ?? null;
+    if (expectedUnique !== Boolean(itemKey)) {
+        return {
+            type: 'voteReward',
+            ok: false,
+            voteId: command.voteId,
+            generalId: command.generalId,
+            reason: '유니크 판정이 일치하지 않습니다.',
+        };
+    }
+    if (expectedUnique) {
+        if (!expectedItemKey || !itemKey || expectedItemKey !== itemKey) {
+            return {
+                type: 'voteReward',
+                ok: false,
+                voteId: command.voteId,
+                generalId: command.generalId,
+                reason: '유니크 판정이 일치하지 않습니다.',
+            };
+        }
+    } else if (itemKey) {
+        return {
+            type: 'voteReward',
+            ok: false,
+            voteId: command.voteId,
+            generalId: command.generalId,
+            reason: '유니크 판정이 일치하지 않습니다.',
+        };
+    }
+
+    const rewardEntry: Record<string, TriggerValue> = {
+        awarded: Boolean(itemKey),
+        at: new Date().toISOString(),
+    };
+    if (itemKey) {
+        rewardEntry.itemKey = itemKey;
+    }
+
+    const nextVoteRewards: Record<string, TriggerValue> = {
+        ...(existingRewards as Record<string, TriggerValue>),
+        [rewardKey]: rewardEntry,
+    };
+
+    const nextMeta: TurnGeneral['meta'] = {
+        ...baseMeta,
+        voteRewards: nextVoteRewards,
+    };
+
+    const patch: Partial<TurnGeneral> = {
+        gold: general.gold + command.goldReward,
+        meta: nextMeta,
+    };
+
+    if (itemKey) {
+        const itemModule = itemRegistry.get(itemKey);
+        if (!itemModule) {
+            return {
+                type: 'voteReward',
+                ok: false,
+                voteId: command.voteId,
+                generalId: command.generalId,
+                reason: '유니크 아이템을 찾을 수 없습니다.',
+            };
+        }
+        patch.role = {
+            ...general.role,
+            items: {
+                ...general.role.items,
+                [itemModule.slot]: itemKey,
+            },
+        };
+
+        const nationName = world.getNationById(general.nationId)?.name ?? '재야';
+        const generalName = general.name;
+        const itemName = itemModule.name;
+        const itemRawName = itemModule.rawName;
+        const josaYi = JosaUtil.pick(generalName, '이');
+        const josaUl = JosaUtil.pick(itemRawName, '을');
+
+        world.pushLog({
+            scope: LogScope.GENERAL,
+            category: LogCategory.ACTION,
+            format: LogFormat.MONTH,
+            text: `<C>${itemName}</>${josaUl} 습득했습니다!`,
+            generalId: general.id,
+            meta: {},
+        });
+        world.pushLog({
+            scope: LogScope.GENERAL,
+            category: LogCategory.HISTORY,
+            format: LogFormat.YEAR_MONTH,
+            text: `<C>${itemName}</>${josaUl} 습득`,
+            generalId: general.id,
+            meta: {},
+        });
+        world.pushLog({
+            scope: LogScope.SYSTEM,
+            category: LogCategory.SUMMARY,
+            format: LogFormat.MONTH,
+            text: `<Y>${generalName}</>${josaYi} <C>${itemName}</>${josaUl} 습득했습니다!`,
+            meta: {},
+        });
+        world.pushLog({
+            scope: LogScope.SYSTEM,
+            category: LogCategory.HISTORY,
+            format: LogFormat.YEAR_MONTH,
+            text: `<C><b>【설문조사】</b></><D><b>${nationName}</b></>의 <Y>${generalName}</>${josaYi} <C>${itemName}</>${josaUl} 습득했습니다!`,
+            meta: {},
+        });
+    }
+
+    world.updateGeneral(command.generalId, patch);
+    await flushWorld(world, hooks);
+    return {
+        type: 'voteReward',
+        ok: true,
+        voteId: command.voteId,
+        generalId: command.generalId,
+        awardedUnique: Boolean(itemKey),
+        ...(itemKey ? { itemKey } : {}),
+    };
+}
+
 export const createTurnDaemonCommandHandler = (options: {
     world: InMemoryTurnWorld;
     hooks?: TurnDaemonHooks;
@@ -959,6 +1198,7 @@ export const createTurnDaemonCommandHandler = (options: {
         tournamentRefund: (command) => handleTournamentRefund(ctx, command as Extract<TurnDaemonCommand, { type: 'tournamentRefund' }>),
         tournamentBettingPayout: (command) => handleTournamentBettingPayout(ctx, command as Extract<TurnDaemonCommand, { type: 'tournamentBettingPayout' }>),
         tournamentReward: (command) => handleTournamentReward(ctx, command as Extract<TurnDaemonCommand, { type: 'tournamentReward' }>),
+        voteReward: (command) => handleVoteReward(ctx, command as Extract<TurnDaemonCommand, { type: 'voteReward' }>),
         setNationMeta: (command) => handleSetNationMeta(ctx, command as Extract<TurnDaemonCommand, { type: 'setNationMeta' }>),
         adjustGeneralResources: (command) => handleAdjustGeneralResources(ctx, command as Extract<TurnDaemonCommand, { type: 'adjustGeneralResources' }>),
         adjustGeneralMeta: (command) => handleAdjustGeneralMeta(ctx, command as Extract<TurnDaemonCommand, { type: 'adjustGeneralMeta' }>),

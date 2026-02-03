@@ -24,6 +24,7 @@ import BestGeneralView from '../views/BestGeneralView.vue';
 import HallOfFameView from '../views/HallOfFameView.vue';
 import DynastyListView from '../views/DynastyListView.vue';
 import DynastyDetailView from '../views/DynastyDetailView.vue';
+import SurveyView from '../views/SurveyView.vue';
 import { useSessionStore } from '../stores/session';
 
 const routes = [
@@ -194,6 +195,15 @@ const routes = [
         path: '/my-page',
         name: 'my-page',
         component: MyPageView,
+        meta: {
+            requiresAuth: true,
+            requiresGeneral: true,
+        },
+    },
+    {
+        path: '/survey',
+        name: 'survey',
+        component: SurveyView,
         meta: {
             requiresAuth: true,
             requiresGeneral: true,

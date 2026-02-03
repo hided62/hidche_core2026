@@ -514,3 +514,55 @@ model BoardComment {
     @@index([postId, createdAt])
     @@map("board_comment")
 }
+
+model VotePoll {
+    id             Int      @id @default(autoincrement())
+    title          String
+    body           String   @default("")
+    options        Json
+    multipleOptions Int     @default(1) @map("multiple_options")
+    revealMode     String   @map("reveal_mode")
+    openerGeneralId Int     @map("opener_general_id")
+    openerName     String   @map("opener_name")
+    startAt        DateTime @default(now()) @map("start_at")
+    endAt          DateTime? @map("end_at")
+    closedAt       DateTime? @map("closed_at")
+    createdAt      DateTime @default(now()) @map("created_at")
+    updatedAt      DateTime @updatedAt @map("updated_at")
+
+    votes    Vote[]
+    comments VoteComment[]
+
+    @@map("vote_poll")
+}
+
+model Vote {
+    id        Int      @id @default(autoincrement())
+    voteId    Int      @map("vote_id")
+    generalId Int      @map("general_id")
+    nationId  Int      @map("nation_id")
+    selection Json
+    createdAt DateTime @default(now()) @map("created_at")
+
+    poll VotePoll @relation(fields: [voteId], references: [id], onDelete: Cascade)
+
+    @@unique([voteId, generalId])
+    @@index([voteId])
+    @@map("vote")
+}
+
+model VoteComment {
+    id          Int      @id @default(autoincrement())
+    voteId      Int      @map("vote_id")
+    generalId   Int      @map("general_id")
+    nationId    Int      @map("nation_id")
+    generalName String   @map("general_name")
+    nationName  String   @map("nation_name")
+    text        String
+    createdAt   DateTime @default(now()) @map("created_at")
+
+    poll VotePoll @relation(fields: [voteId], references: [id], onDelete: Cascade)
+
+    @@index([voteId, createdAt])
+    @@map("vote_comment")
+}

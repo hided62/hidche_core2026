@@ -141,6 +141,19 @@ const zTournamentReward = z.object({
     top4: z.array(zFiniteNumber),
 });
 
+const zVoteReward = z.object({
+    type: z.literal('voteReward'),
+    voteId: zFiniteNumber,
+    generalId: zFiniteNumber,
+    goldReward: zFiniteNumber,
+    unique: z
+        .object({
+            expected: z.boolean(),
+            itemKey: z.string().nullable().optional(),
+        })
+        .optional(),
+});
+
 const zSetNationMeta = z.object({
     type: z.literal('setNationMeta'),
     nationId: zFiniteNumber,
@@ -358,6 +371,14 @@ const normalizeTournamentReward: CommandNormalizer<'tournamentReward'> = (envelo
     return { ...command, requestId: envelope.requestId };
 };
 
+const normalizeVoteReward: CommandNormalizer<'voteReward'> = (envelope) => {
+    const command = parseWith(zVoteReward, envelope.command);
+    if (!command) {
+        return null;
+    }
+    return { ...command, requestId: envelope.requestId };
+};
+
 const normalizeSetNationMeta: CommandNormalizer<'setNationMeta'> = (envelope) => {
     const command = parseWith(zSetNationMeta, envelope.command);
     if (!command) {
@@ -431,6 +452,7 @@ const normalizers: CommandNormalizerMap = {
     tournamentRefund: normalizeTournamentRefund,
     tournamentBettingPayout: normalizeTournamentBettingPayout,
     tournamentReward: normalizeTournamentReward,
+    voteReward: normalizeVoteReward,
     setNationMeta: normalizeSetNationMeta,
     adjustGeneralResources: normalizeAdjustGeneralResources,
     adjustGeneralMeta: normalizeAdjustGeneralMeta,
