@@ -7,6 +7,9 @@ const PHP_ROOT = path.join(ROOT_DIR, 'legacy', 'hwe', 'sammo', 'Command');
 const TS_ROOT = path.join(ROOT_DIR, 'packages', 'logic', 'src', 'actions');
 
 const DEFAULT_MODE = 'action';
+const DEFAULT_EXCLUDE_GUARDS = true;
+const DEFAULT_EXCLUDE_TARGET = true;
+const DEFAULT_IGNORE_FILE = 'tools/compare-command-logs.ignore.json';
 
 const ARG_HELP = `
 Usage: node tools/compare-command-logs.mjs [options]
@@ -14,8 +17,12 @@ Usage: node tools/compare-command-logs.mjs [options]
 Options:
     --mode action|history|all   Compare action logs (default), history logs, or all logs.
     --include <regex>           Only include command keys matching regex.
+    --include-guards            Include guard/invalid-state logs (default: excluded).
+    --include-target            Include target/broadcast logs (default: excluded).
     --strict                    Compare raw templates without normalization.
     --keep-date                 Keep <1>...</> date markers in normalized output.
+    --ignore-file <path>        JSON ignore list file (default: tools/compare-command-logs.ignore.json).
+    --checklist                 Output a markdown checklist for mismatches.
     --json                      Output JSON report.
     --help                      Show this help.
 `;
@@ -28,6 +35,11 @@ const includePattern = includeIndex >= 0 ? args[includeIndex + 1] : null;
 const strict = args.includes('--strict');
 const keepDate = args.includes('--keep-date');
 const asJson = args.includes('--json');
+const includeGuards = args.includes('--include-guards');
+const includeTarget = args.includes('--include-target');
+const checklist = args.includes('--checklist');
+const ignoreFileIndex = args.indexOf('--ignore-file');
+const ignoreFile = ignoreFileIndex >= 0 ? args[ignoreFileIndex + 1] : DEFAULT_IGNORE_FILE;
 
 if (args.includes('--help')) {
     console.log(ARG_HELP.trim());
@@ -41,6 +53,17 @@ if (!['action', 'history', 'all'].includes(mode)) {
 }
 
 const includeRegex = includePattern ? new RegExp(includePattern) : null;
+
+const guardPatterns = [
+    /정보를 찾지 못했습니다/,
+    /정보가 없습니다/,
+    /병종 정보를 확인할 수 없어/,
+    /현재 선택할 수 없는 병종입니다/,
+    /도시 정보가 없어/,
+];
+
+const excludeGuards = DEFAULT_EXCLUDE_GUARDS && !includeGuards;
+const excludeTarget = DEFAULT_EXCLUDE_TARGET && !includeTarget;
 
 const collectFiles = async (dir) => {
     const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -153,10 +176,50 @@ const scanToFirstArgumentEnd = (text, startIndex) => {
             if (depth > 0) {
                 depth -= 1;
             } else if (ch === ')') {
-                return { value: text.slice(startIndex, i), endIndex: i + 1 };
+                return { value: text.slice(startIndex, i), endIndex: i + 1, endedBy: ')' };
             }
         } else if (ch === ',' && depth === 0) {
-            return { value: text.slice(startIndex, i), endIndex: i + 1 };
+            return { value: text.slice(startIndex, i), endIndex: i + 1, endedBy: ',' };
+        }
+
+        i += 1;
+    }
+    return { value: text.slice(startIndex), endIndex: text.length, endedBy: null };
+};
+
+const scanToParenEnd = (text, startIndex) => {
+    let i = startIndex;
+    let depth = 0;
+    let quote = null;
+    let escaped = false;
+    while (i < text.length) {
+        const ch = text[i];
+        if (quote) {
+            if (escaped) {
+                escaped = false;
+            } else if (ch === '\\') {
+                escaped = true;
+            } else if (ch === quote) {
+                quote = null;
+            }
+            i += 1;
+            continue;
+        }
+
+        if (ch === '\'' || ch === '"') {
+            quote = ch;
+            i += 1;
+            continue;
+        }
+
+        if (ch === '(' || ch === '[' || ch === '{') {
+            depth += 1;
+        } else if (ch === ')' || ch === ']' || ch === '}') {
+            if (depth > 0) {
+                depth -= 1;
+            } else if (ch === ')') {
+                return { value: text.slice(startIndex, i), endIndex: i + 1 };
+            }
         }
 
         i += 1;
@@ -348,13 +411,24 @@ const extractPhpLogCalls = (text, assignments) => {
             break;
         }
         const startIndex = match.index + match[0].length;
-        const { value } = scanToFirstArgumentEnd(text, startIndex);
+        const { value, endIndex, endedBy } = scanToFirstArgumentEnd(text, startIndex);
+        let format = null;
+        if (endedBy === ',') {
+            const rest = text.slice(endIndex);
+            const afterComma = endIndex + (rest.match(/^\s*/)?.[0].length ?? 0);
+            const { value: secondArg } = scanToParenEnd(text, afterComma);
+            const formatMatch = secondArg.match(/ActionLogger::([A-Za-z_]+)/);
+            if (formatMatch) {
+                format = formatMatch[1];
+            }
+        }
         const parsed = parsePhpExprToTemplate(value, assignments, match.index);
         results.push({
             pos: match.index,
             raw: value.trim(),
             template: parsed.template,
             line: getLineNumber(lineStarts, match.index),
+            format,
         });
     }
 
@@ -376,11 +450,13 @@ const tsEnumValue = (node, enumName) => {
 
 const readOptionsInfo = (node) => {
     if (!node || !ts.isObjectLiteralExpression(node)) {
-        return { category: null, scope: null };
+        return { category: null, scope: null, format: null, hasGeneralId: false };
     }
 
     let category = null;
     let scope = null;
+    let format = null;
+    let hasGeneralId = false;
 
     for (const prop of node.properties) {
         if (!ts.isPropertyAssignment(prop)) {
@@ -396,38 +472,75 @@ const readOptionsInfo = (node) => {
         if (key === 'scope') {
             scope = tsEnumValue(prop.initializer, 'LogScope');
         }
+        if (key === 'format') {
+            format = tsEnumValue(prop.initializer, 'LogFormat');
+        }
+        if (key === 'generalId') {
+            hasGeneralId = true;
+        }
     }
 
-    return { category, scope };
+    return { category, scope, format, hasGeneralId };
 };
 
-const renderTsExpr = (expr) => {
+const renderTsExpr = (expr, constants) => {
     if (!expr) {
         return '${}';
     }
     if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) {
         return expr.text;
     }
+    if (ts.isIdentifier(expr)) {
+        const resolved = constants?.get(expr.text);
+        if (resolved !== undefined) {
+            return resolved;
+        }
+        return '${}';
+    }
     if (ts.isTemplateExpression(expr)) {
         let out = expr.head.text;
         for (const span of expr.templateSpans) {
-            out += '${}';
+            const inlined = renderTsExpr(span.expression, constants);
+            out += inlined === '${}' ? '${}' : inlined;
             out += span.literal.text;
         }
         return out;
     }
     if (ts.isBinaryExpression(expr) && expr.operatorToken.kind === ts.SyntaxKind.PlusToken) {
-        return `${renderTsExpr(expr.left)}${renderTsExpr(expr.right)}`;
+        return `${renderTsExpr(expr.left, constants)}${renderTsExpr(expr.right, constants)}`;
     }
     if (ts.isParenthesizedExpression(expr)) {
-        return renderTsExpr(expr.expression);
+        return renderTsExpr(expr.expression, constants);
     }
     return '${}';
 };
 
 const extractTsLogs = (filePath, text) => {
     const sourceFile = ts.createSourceFile(filePath, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    const constants = new Map();
     const results = [];
+
+    const collectConstants = (node) => {
+        if (ts.isVariableStatement(node)) {
+            const isConst = node.declarationList.flags & ts.NodeFlags.Const;
+            if (isConst) {
+                for (const decl of node.declarationList.declarations) {
+                    if (!ts.isIdentifier(decl.name) || !decl.initializer) {
+                        continue;
+                    }
+                    if (
+                        ts.isStringLiteral(decl.initializer) ||
+                        ts.isNoSubstitutionTemplateLiteral(decl.initializer)
+                    ) {
+                        constants.set(decl.name.text, decl.initializer.text);
+                    }
+                }
+            }
+        }
+        ts.forEachChild(node, collectConstants);
+    };
+
+    collectConstants(sourceFile);
 
     const visit = (node) => {
         if (ts.isCallExpression(node)) {
@@ -446,11 +559,13 @@ const extractTsLogs = (filePath, text) => {
                 const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart());
                 results.push({
                     kind: calleeName,
-                    template: renderTsExpr(firstArg),
+                    template: renderTsExpr(firstArg, constants),
                     raw: firstArg ? firstArg.getText(sourceFile) : '',
                     line: line + 1,
                     category: info.category,
                     scope: info.scope,
+                    format: info.format,
+                    hasGeneralId: info.hasGeneralId,
                     isProperty,
                 });
             }
@@ -470,11 +585,84 @@ const normalizeTemplate = (text) => {
     if (!keepDate) {
         out = out.replace(/<1>.*?<\/>/g, '');
     }
+    out = out.replace(/<\/?b>/g, '');
     out = out.replace(/\$\{[^}]*\}/g, '${}');
     out = out.replace(/\{\$[A-Za-z_][A-Za-z0-9_]*\}/g, '${}');
     out = out.replace(/\$[A-Za-z_][A-Za-z0-9_]*\b/g, '${}');
     out = out.replace(/\s+/g, ' ').trim();
     return out;
+};
+
+const isGuardLog = (template) => guardPatterns.some((pattern) => pattern.test(normalizeTemplate(template)));
+
+const isTargetLog = (entry) => {
+    if (!entry) {
+        return false;
+    }
+    if (entry.format === 'PLAIN') {
+        return true;
+    }
+    if (entry.hasGeneralId) {
+        return true;
+    }
+    return false;
+};
+
+const loadIgnoreConfig = async () => {
+    try {
+        const raw = await fs.readFile(path.join(ROOT_DIR, ignoreFile), 'utf-8');
+        const parsed = JSON.parse(raw);
+        return parsed ?? {};
+    } catch (error) {
+        if (error && error.code === 'ENOENT') {
+            return {};
+        }
+        throw error;
+    }
+};
+
+const compileIgnoreRules = (config) => {
+    const global = config.Global ?? {};
+    const normalizeList = (list) => (Array.isArray(list) ? list.map((item) => normalizeTemplate(String(item))) : []);
+    const compileRegex = (list) =>
+        Array.isArray(list) ? list.map((item) => new RegExp(String(item))) : [];
+
+    return {
+        globalTemplates: new Set(normalizeList(global.templates)),
+        globalRegex: compileRegex(global.regex),
+        perCommand: new Map(
+            Object.entries(config)
+                .filter(([key]) => key !== 'Global')
+                .map(([key, value]) => [
+                    key,
+                    {
+                        templates: new Set(normalizeList(value?.templates)),
+                        regex: compileRegex(value?.regex),
+                    },
+                ])
+        ),
+    };
+};
+
+const shouldIgnoreTemplate = (key, template, rules) => {
+    const normalized = normalizeTemplate(template);
+    if (rules.globalTemplates.has(normalized)) {
+        return true;
+    }
+    if (rules.globalRegex.some((regex) => regex.test(normalized))) {
+        return true;
+    }
+    const commandRule = rules.perCommand.get(key);
+    if (!commandRule) {
+        return false;
+    }
+    if (commandRule.templates.has(normalized)) {
+        return true;
+    }
+    if (commandRule.regex.some((regex) => regex.test(normalized))) {
+        return true;
+    }
+    return false;
 };
 
 const shouldIncludeTsEntry = (entry) => {
@@ -554,8 +742,21 @@ const loadPhpLogs = async () => {
             line: log.line,
             template: log.template,
             raw: log.raw,
+            format: log.format,
         }));
-        logsByKey.set(key, normalized);
+        const filtered = normalized.filter((entry) => {
+            if (excludeGuards && isGuardLog(entry.template)) {
+                return false;
+            }
+            if (excludeTarget && isTargetLog(entry)) {
+                return false;
+            }
+            return true;
+        });
+        if (filtered.length === 0) {
+            continue;
+        }
+        logsByKey.set(key, filtered);
     }
 
     return logsByKey;
@@ -591,18 +792,30 @@ const loadTsLogs = async () => {
                 raw: entry.raw,
                 category: entry.category,
                 scope: entry.scope,
+                format: entry.format,
+                hasGeneralId: entry.hasGeneralId,
             }));
 
-        if (filtered.length === 0) {
+        const filteredEntries = filtered.filter((entry) => {
+            if (excludeGuards && isGuardLog(entry.template)) {
+                return false;
+            }
+            if (excludeTarget && isTargetLog(entry)) {
+                return false;
+            }
+            return true;
+        });
+
+        if (filteredEntries.length === 0) {
             continue;
         }
-        logsByKey.set(key, filtered);
+        logsByKey.set(key, filteredEntries);
     }
 
     return logsByKey;
 };
 
-const buildReport = (phpLogs, tsLogs) => {
+const buildReport = (phpLogs, tsLogs, ignoreRules) => {
     const keys = new Set([...phpLogs.keys(), ...tsLogs.keys()]);
     const sortedKeys = [...keys].sort();
 
@@ -610,6 +823,7 @@ const buildReport = (phpLogs, tsLogs) => {
     const missingInPhp = [];
     const mismatches = [];
     const matches = [];
+    const ignored = [];
 
     for (const key of sortedKeys) {
         const phpEntries = phpLogs.get(key) ?? [];
@@ -626,12 +840,20 @@ const buildReport = (phpLogs, tsLogs) => {
         const phpSet = new Set(phpEntries.map((entry) => normalizeTemplate(entry.template)));
         const tsSet = new Set(tsEntries.map((entry) => normalizeTemplate(entry.template)));
 
-        const missing = [...phpSet].filter((item) => !tsSet.has(item));
-        const extra = [...tsSet].filter((item) => !phpSet.has(item));
+        const rawMissing = [...phpSet].filter((item) => !tsSet.has(item));
+        const rawExtra = [...tsSet].filter((item) => !phpSet.has(item));
+        const missing = rawMissing.filter((item) => !shouldIgnoreTemplate(key, item, ignoreRules));
+        const extra = rawExtra.filter((item) => !shouldIgnoreTemplate(key, item, ignoreRules));
+        const ignoredMissing = rawMissing.filter((item) => !missing.includes(item));
+        const ignoredExtra = rawExtra.filter((item) => !extra.includes(item));
+
         if (missing.length === 0 && extra.length === 0) {
             matches.push(key);
         } else {
             mismatches.push({ key, phpEntries, tsEntries, missing, extra });
+        }
+        if (ignoredMissing.length > 0 || ignoredExtra.length > 0) {
+            ignored.push({ key, missing: ignoredMissing, extra: ignoredExtra });
         }
     }
 
@@ -642,30 +864,66 @@ const buildReport = (phpLogs, tsLogs) => {
             sharedCommands: keys.size - missingInPhp.length - missingInTs.length,
             matches: matches.length,
             mismatches: mismatches.length,
+            ignored: ignored.length,
         },
         missingInTs,
         missingInPhp,
         mismatches,
+        ignored,
     };
+};
+
+const renderChecklist = (report) => {
+    const lines = [];
+    lines.push(`# Command Log Checklist`);
+    lines.push('');
+    lines.push(`Mode: ${mode}`);
+    lines.push(`Strict: ${strict ? 'on' : 'off'}`);
+    lines.push(`Keep date: ${keepDate ? 'on' : 'off'}`);
+    lines.push(`Exclude guards: ${excludeGuards ? 'on' : 'off'}`);
+    lines.push(`Exclude target: ${excludeTarget ? 'on' : 'off'}`);
+    lines.push(`Ignore file: ${ignoreFile}`);
+    lines.push('');
+
+    if (report.mismatches.length === 0) {
+        lines.push('- [x] All command logs match.');
+        return lines.join('\n');
+    }
+
+    for (const mismatch of report.mismatches) {
+        lines.push(`- [ ] ${mismatch.key}`);
+        if (mismatch.missing.length > 0) {
+            lines.push(`PHP only: ${mismatch.missing.join(' | ')}`);
+        }
+        if (mismatch.extra.length > 0) {
+            lines.push(`TS only: ${mismatch.extra.join(' | ')}`);
+        }
+    }
+    return lines.join('\n');
 };
 
 const main = async () => {
     const phpLogs = await loadPhpLogs();
     const tsLogs = await loadTsLogs();
-    const report = buildReport(phpLogs, tsLogs);
+    const ignoreConfig = await loadIgnoreConfig();
+    const ignoreRules = compileIgnoreRules(ignoreConfig);
+    const report = buildReport(phpLogs, tsLogs, ignoreRules);
 
     if (asJson) {
         console.log(JSON.stringify(report, null, 2));
         return;
     }
 
-    console.log(`Compare command logs (mode: ${mode}, strict: ${strict ? 'on' : 'off'}, keepDate: ${keepDate ? 'on' : 'off'})`);
+    console.log(
+        `Compare command logs (mode: ${mode}, strict: ${strict ? 'on' : 'off'}, keepDate: ${keepDate ? 'on' : 'off'}, excludeGuards: ${excludeGuards ? 'on' : 'off'}, excludeTarget: ${excludeTarget ? 'on' : 'off'})`
+    );
     console.log(`PHP commands: ${report.totals.phpCommands}`);
     console.log(`TS commands: ${report.totals.tsCommands}`);
     console.log(`Matched commands: ${report.totals.matches}`);
     console.log(`Mismatched commands: ${report.totals.mismatches}`);
     console.log(`Missing in TS: ${report.missingInTs.length}`);
     console.log(`Missing in PHP: ${report.missingInPhp.length}`);
+    console.log(`Ignored mismatches: ${report.totals.ignored}`);
 
     if (report.missingInTs.length > 0) {
         console.log('\nMissing in TS:');
@@ -697,6 +955,11 @@ const main = async () => {
                 console.log(line);
             }
         }
+    }
+
+    if (checklist) {
+        console.log('\nChecklist:');
+        console.log(renderChecklist(report));
     }
 };
 
