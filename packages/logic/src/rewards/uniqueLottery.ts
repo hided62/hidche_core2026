@@ -1,11 +1,22 @@
-import { asRecord, parseJson, type RandUtil } from '@sammo-ts/common';
-import type { GeneralItemSlots } from '../domain/entities.js';
+import { asRecord, JosaUtil, parseJson, type RandUtil } from '@sammo-ts/common';
+import type { General, GeneralItemSlots, GeneralTriggerState } from '../domain/entities.js';
+import type { GeneralActionResolveContext } from '../actions/engine.js';
+import { LogCategory, LogFormat, LogScope } from '../logging/types.js';
 import type { ItemModule } from '../items/types.js';
 
 export type UniqueItemPool = Record<string, Record<string, number>>;
 
 export const UNIQUE_ACQUIRE_TYPES = ['아이템', '설문조사', '랜덤 임관', '건국'] as const;
 export type UniqueAcquireType = typeof UNIQUE_ACQUIRE_TYPES[number];
+
+export type UniqueLotteryRequest = {
+    acquireType: UniqueAcquireType;
+    reason: string;
+};
+
+export type UniqueLotteryRunner = <TriggerState extends GeneralTriggerState = GeneralTriggerState>(
+    request: UniqueLotteryRequest & { general: General<TriggerState> }
+) => ItemModule | null;
 
 export type UniqueLotteryConfig = {
     allItems: UniqueItemPool;
@@ -138,6 +149,17 @@ const serializeSeed = (...values: Array<string | number>): string =>
     values
         .map((value) => (typeof value === 'string' ? `str(${value.length},${value})` : `int(${Math.floor(value)})`))
         .join('|');
+
+export const buildGenericUniqueSeed = (
+    hiddenSeed: string | number,
+    year: number,
+    month: number,
+    generalId: number,
+    reason?: string
+): string =>
+    reason !== undefined
+        ? serializeSeed(hiddenSeed, 'unique', year, month, generalId, reason)
+        : serializeSeed(hiddenSeed, 'unique', year, month, generalId);
 
 export const buildVoteUniqueSeed = (hiddenSeed: string | number, voteId: number, generalId: number): string =>
     serializeSeed(hiddenSeed, 'voteUnique', voteId, generalId);
@@ -279,4 +301,60 @@ export const rollUniqueLottery = (input: UniqueLotteryInput): string | null => {
     }
 
     return rng.choiceUsingWeightPair(availableUnique);
+};
+
+export const applyUniqueItemGain = <TriggerState extends GeneralTriggerState = GeneralTriggerState>(
+    context: GeneralActionResolveContext<TriggerState>,
+    itemModule: ItemModule,
+    acquireType: UniqueAcquireType
+): void => {
+    const general = context.general;
+    const nationName = context.nation?.name ?? '재야';
+    const generalName = general.name;
+    const itemName = itemModule.name;
+    const itemRawName = itemModule.rawName;
+    const josaYi = JosaUtil.pick(generalName, '이');
+    const josaUl = JosaUtil.pick(itemRawName, '을');
+
+    general.role.items[itemModule.slot] = itemModule.key;
+
+    context.addLog(`<C>${itemName}</>${josaUl} 습득했습니다!`, {
+        scope: LogScope.GENERAL,
+        category: LogCategory.ACTION,
+        format: LogFormat.MONTH,
+    });
+    context.addLog(`<C>${itemName}</>${josaUl} 습득`, {
+        scope: LogScope.GENERAL,
+        category: LogCategory.HISTORY,
+        format: LogFormat.YEAR_MONTH,
+    });
+    context.addLog(`<Y>${generalName}</>${josaYi} <C>${itemName}</>${josaUl} 습득했습니다!`, {
+        scope: LogScope.SYSTEM,
+        category: LogCategory.SUMMARY,
+        format: LogFormat.MONTH,
+    });
+    context.addLog(
+        `<C><b>【${acquireType}】</b></><D><b>${nationName}</b></>의 <Y>${generalName}</>${josaYi} <C>${itemName}</>${josaUl} 습득했습니다!`,
+        {
+            scope: LogScope.SYSTEM,
+            category: LogCategory.HISTORY,
+            format: LogFormat.YEAR_MONTH,
+        }
+    );
+};
+
+export const tryApplyUniqueLottery = <TriggerState extends GeneralTriggerState = GeneralTriggerState>(
+    context: GeneralActionResolveContext<TriggerState> & { uniqueLottery?: UniqueLotteryRunner },
+    request: UniqueLotteryRequest
+): boolean => {
+    const runner = context.uniqueLottery;
+    if (!runner) {
+        return false;
+    }
+    const itemModule = runner({ ...request, general: context.general });
+    if (!itemModule) {
+        return false;
+    }
+    applyUniqueItemGain(context, itemModule, request.acquireType);
+    return true;
 };

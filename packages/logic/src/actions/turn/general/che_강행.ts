@@ -19,6 +19,7 @@ import { LogCategory, LogFormat } from '@sammo-ts/logic/logging/types.js';
 import { JosaUtil } from '@sammo-ts/common';
 import { z } from 'zod';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
+import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import type { MapDefinition } from '@sammo-ts/logic/world/types.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
@@ -100,6 +101,8 @@ export class ActionResolver<
         const nextExp = general.experience + 100;
         const nextLeadershipExp =
             (typeof general.meta.leadership_exp === 'number' ? general.meta.leadership_exp : 0) + 1;
+
+        tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
 
         effects.push(
             createGeneralPatchEffect(

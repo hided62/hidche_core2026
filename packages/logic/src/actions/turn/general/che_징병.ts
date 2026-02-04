@@ -19,6 +19,7 @@ import type {
 import type { MapDefinition, UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { resolveStartYear } from '@sammo-ts/logic/actions/turn/actionContextHelpers.js';
+import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import { z } from 'zod';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { GeneralTurnCommandSpec } from './index.js';
@@ -392,6 +393,7 @@ export class ActionResolver<
         general.meta = addMetaNumber(general.meta, 'leadership_exp', 1);
 
         context.addLog(logMessage);
+        tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
 
         return { effects: [] };
     }

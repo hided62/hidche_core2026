@@ -1,4 +1,5 @@
 import type { City, General, Nation, Troop } from '@sammo-ts/logic/domain/entities.js';
+import type { UniqueLotteryRunner } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { ScenarioConfig } from '@sammo-ts/logic/scenario/types.js';
 import type { ScenarioMeta } from '@sammo-ts/logic/world/types.js';
 import type { MapDefinition, UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
@@ -18,6 +19,7 @@ export type ActionContextBase = {
     city?: City;
     nation?: Nation | null;
     rng: ActionRandomSource;
+    uniqueLottery?: UniqueLotteryRunner;
 };
 
 export type ActionResolveContext = ActionContextBase & Record<string, unknown>;

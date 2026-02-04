@@ -36,6 +36,7 @@ import type { WarActionModule } from '@sammo-ts/logic/war/actions.js';
 import { increaseMetaNumber, simpleSerialize } from '@sammo-ts/logic/war/utils.js';
 import type { MapDefinition, UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
+import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import {
     buildWarAftermathConfig,
     buildWarConfig,
@@ -508,6 +509,8 @@ export class ActionDefinition<
                 })
             );
         }
+
+        tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
 
         return { effects };
     }

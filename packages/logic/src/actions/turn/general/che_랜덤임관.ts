@@ -11,6 +11,7 @@ import type {
 } from '@sammo-ts/logic/actions/engine.js';
 import { createGeneralPatchEffect, createLogEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
+import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { resolveStartYear } from '@sammo-ts/logic/actions/turn/actionContextHelpers.js';
@@ -225,6 +226,8 @@ export class ActionDefinition<
                 }
             )
         );
+
+        tryApplyUniqueLottery(context, { acquireType: '랜덤 임관', reason: ACTION_NAME });
 
         return { effects };
     }

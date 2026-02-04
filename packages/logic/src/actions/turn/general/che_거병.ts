@@ -10,6 +10,7 @@ import {
 import { LogCategory, LogFormat } from '@sammo-ts/logic/logging/types.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { ActionContextBuilder, ActionContextBase } from '@sammo-ts/logic/actions/turn/actionContext.js';
+import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 
 export interface UprisingArgs { }
@@ -114,6 +115,8 @@ export class ActionDefinition<
             category: LogCategory.HISTORY,
             format: LogFormat.PLAIN,
         });
+
+        tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
 
         const effects = [
             createNationAddEffect(newNation),

@@ -6,6 +6,7 @@ import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition
 import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
+import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import type { UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
 import { JosaUtil } from '@sammo-ts/common';
@@ -156,6 +157,7 @@ export class ActionDefinition<
         general.rice = Math.max(0, general.rice - cost);
 
         context.addLog(logText);
+        tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
 
         return { effects: [] };
     }

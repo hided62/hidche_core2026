@@ -5,6 +5,7 @@ import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition
 import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
+import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import { setMetaNumber } from '@sammo-ts/logic/war/utils.js';
 
@@ -54,6 +55,7 @@ export class ActionDefinition<
         general.role.specialWar = null;
         setMetaNumber(general.meta, 'specAge2', general.age + 1);
         context.addLog('새로운 전투 특기를 가질 준비가 되었습니다.');
+        tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
         return { effects: [] };
     }
 }

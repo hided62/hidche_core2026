@@ -12,6 +12,7 @@ import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition
 import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
+import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import { clamp } from 'es-toolkit';
 import type { GeneralTurnCommandSpec } from './index.js';
 
@@ -68,6 +69,7 @@ export class ActionDefinition<
         general.rice = Math.max(0, general.rice - costRice);
 
         context.addLog(`인구가 ${nextValue - current} 증가했습니다.`);
+        tryApplyUniqueLottery(context, { acquireType: '아이템', reason: '정착 장려' });
 
         return { effects: [] };
     }

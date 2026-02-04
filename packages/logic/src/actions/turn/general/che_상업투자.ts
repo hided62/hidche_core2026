@@ -20,6 +20,7 @@ import type {
 } from '@sammo-ts/logic/actions/engine.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
+import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import { clamp } from 'es-toolkit';
 
@@ -255,6 +256,7 @@ export class ActionResolver<
         const pickLabel = result.pick === 'success' ? '성공' : result.pick === 'fail' ? '실패' : '완료';
         const logMessage = `${ACTION_NAME} ${pickLabel}: +${Math.round(result.score)}`;
         context.addLog(logMessage);
+        tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
 
         return { effects: [] };
     }

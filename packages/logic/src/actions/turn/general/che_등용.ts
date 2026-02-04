@@ -19,6 +19,7 @@ import { LogCategory, LogScope } from '@sammo-ts/logic/logging/types.js';
 import { z } from 'zod';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { ActionContextBase, ActionContextOptions } from '@sammo-ts/logic/actions/turn/actionContext.js';
+import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import { parseArgsWithSchema } from '../parseArgs.js';
 
@@ -98,6 +99,8 @@ export class ActionResolver<
         const reqGold = develCost + extraCost;
 
         const effects: GeneralActionEffect<TriggerState>[] = [];
+
+        tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
 
         effects.push(
             createGeneralPatchEffect(

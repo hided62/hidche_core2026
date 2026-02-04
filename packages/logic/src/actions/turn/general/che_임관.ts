@@ -8,6 +8,7 @@ import { LogCategory, LogFormat } from '@sammo-ts/logic/logging/types.js';
 import { z } from 'zod';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
+import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import { parseArgsWithSchema } from '../parseArgs.js';
 
@@ -58,6 +59,8 @@ export class ActionDefinition<
             category: LogCategory.ACTION,
             format: LogFormat.MONTH,
         });
+
+        tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
 
         const effects = [
             createGeneralPatchEffect<TriggerState>({

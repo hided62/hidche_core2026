@@ -11,6 +11,7 @@ import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition
 import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
+import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 
 export interface TechResearchArgs {}
@@ -79,6 +80,7 @@ export class ActionDefinition<
         general.gold = Math.max(0, general.gold - costGold);
 
         context.addLog(`${ACTION_NAME}로 기술이 ${applied} 상승했습니다.`);
+        tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
 
         return { effects: [] };
     }

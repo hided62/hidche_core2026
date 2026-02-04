@@ -20,6 +20,15 @@ import {
     defaultActionContextBuilder,
     evaluateConstraints,
     resolveGeneralAction,
+    ITEM_KEYS,
+    buildGenericUniqueSeed,
+    countOccupiedUniqueItems,
+    createItemModuleRegistry,
+    loadItemModules,
+    resolveUniqueConfig,
+    rollUniqueLottery,
+    type ItemModule,
+    type UniqueLotteryRunner,
 } from '@sammo-ts/logic';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic';
 import { asRecord, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
@@ -75,6 +84,122 @@ const serializeSeed = (...values: Array<string | number>): string =>
     values
         .map((value) => (typeof value === 'string' ? `str(${value.length},${value})` : `int(${Math.floor(value)})`))
         .join('|');
+
+const joinYearMonth = (year: number, month: number): number => year * 12 + month - 1;
+
+const readMetaNumber = (meta: Record<string, unknown>, key: string, fallback: number): number => {
+    const value = meta[key];
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return Math.floor(value);
+    }
+    if (typeof value === 'string') {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) {
+            return Math.floor(parsed);
+        }
+    }
+    return fallback;
+};
+
+const readMetaBool = (meta: Record<string, unknown>, key: string, fallback = false): boolean => {
+    const value = meta[key];
+    if (typeof value === 'boolean') {
+        return value;
+    }
+    if (typeof value === 'number') {
+        return value !== 0;
+    }
+    if (typeof value === 'string') {
+        const lowered = value.toLowerCase();
+        if (lowered === 'true' || lowered === '1') {
+            return true;
+        }
+        if (lowered === 'false' || lowered === '0') {
+            return false;
+        }
+    }
+    return fallback;
+};
+
+const resolveStartYear = (world: TurnWorldState, scenarioMeta?: ScenarioMeta): number => {
+    if (typeof scenarioMeta?.startYear === 'number') {
+        return scenarioMeta.startYear;
+    }
+    const worldMeta = asRecord(world.meta);
+    const scenarioMetaRecord = asRecord(worldMeta.scenarioMeta);
+    return readMetaNumber(scenarioMetaRecord, 'startYear', world.currentYear);
+};
+
+const buildUniqueLotteryRunner = (options: {
+    world: TurnWorldState;
+    worldView: WorldView | null;
+    scenarioMeta?: ScenarioMeta;
+    seedBase: string;
+    itemRegistry: Map<string, ItemModule>;
+    uniqueConfig: ReturnType<typeof resolveUniqueConfig>;
+}): UniqueLotteryRunner => {
+    if (!options.worldView) {
+        return () => null;
+    }
+    const worldView = options.worldView;
+    const world = options.world;
+    const worldMeta = asRecord(world.meta);
+    const startYear = resolveStartYear(world, options.scenarioMeta);
+    const initYear = readMetaNumber(worldMeta, 'initYear', startYear);
+    const initMonth = readMetaNumber(worldMeta, 'initMonth', 1);
+    const scenarioId = readMetaNumber(worldMeta, 'scenarioId', 0);
+    const minMonthToAllowInherit = options.uniqueConfig.minMonthToAllowInheritItem;
+
+    return ({ acquireType, reason, general }) => {
+        if (general.npcState >= 2) {
+            return null;
+        }
+        const allGenerals = worldView.listGenerals();
+        const userCount = allGenerals.filter((entry) => entry.npcState < 2).length;
+        if (userCount <= 0) {
+            return null;
+        }
+        const generalItemsList = allGenerals.map((entry) =>
+            entry.id === general.id ? general.role.items : entry.role.items
+        );
+        const occupiedUniqueCounts = countOccupiedUniqueItems(generalItemsList, options.itemRegistry);
+        const rngSeed = buildGenericUniqueSeed(
+            options.seedBase,
+            world.currentYear,
+            world.currentMonth,
+            general.id,
+            reason
+        );
+        const rng = new RandUtil(LiteHashDRBG.build(rngSeed));
+        const inheritRandomUnique = readMetaBool(asRecord(general.meta), 'inheritRandomUnique', false);
+        const relMonthByInit =
+            joinYearMonth(world.currentYear, world.currentMonth) - joinYearMonth(initYear, initMonth);
+        const availableBuyUnique = relMonthByInit >= minMonthToAllowInherit;
+        const itemKey = rollUniqueLottery({
+            rng,
+            config: options.uniqueConfig,
+            itemRegistry: options.itemRegistry,
+            generalItems: general.role.items,
+            occupiedUniqueCounts,
+            scenarioId,
+            userCount,
+            currentYear: world.currentYear,
+            currentMonth: world.currentMonth,
+            startYear,
+            initYear,
+            initMonth,
+            acquireType,
+            inheritRandomUnique,
+        });
+        if (!itemKey) {
+            return null;
+        }
+        if (inheritRandomUnique && availableBuyUnique) {
+            delete asRecord(general.meta).inheritRandomUnique;
+        }
+        return options.itemRegistry.get(itemKey) ?? null;
+    };
+};
 
 
 type WorldView = {
@@ -349,6 +474,8 @@ export const createReservedTurnHandler = async (options: {
     }) => void;
 }): Promise<GeneralTurnHandler> => {
     const env = buildCommandEnv(options.scenarioConfig, options.unitSet);
+    const itemRegistry = createItemModuleRegistry(await loadItemModules([...ITEM_KEYS]));
+    const uniqueConfig = resolveUniqueConfig(asRecord(options.scenarioConfig.const));
     const commandProfile = options.commandProfile ?? DEFAULT_TURN_COMMAND_PROFILE;
     const { general: generalDefinitions, nation: nationDefinitions } = await buildReservedTurnDefinitions({
         env,
@@ -518,11 +645,20 @@ export const createReservedTurnHandler = async (options: {
                 };
 
                 const actionArgsRecord = extractArgsRecord(actionArgs);
+                const uniqueLottery = buildUniqueLotteryRunner({
+                    world: context.world,
+                    worldView,
+                    scenarioMeta: options.scenarioMeta,
+                    seedBase,
+                    itemRegistry,
+                    uniqueConfig,
+                });
                 let baseContext: ActionContextBase = {
                     general: currentGeneral,
                     city: currentCity,
                     nation: currentNation,
                     rng: buildRng(actionKey),
+                    uniqueLottery,
                 };
                 let specificContext = buildActionContext(
                     actionKey,

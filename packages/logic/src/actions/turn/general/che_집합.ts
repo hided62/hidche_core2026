@@ -16,6 +16,7 @@ import type {
 import { createGeneralPatchEffect, createLogEffect } from '@sammo-ts/logic/actions/engine.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
+import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import { JosaUtil } from '@sammo-ts/common';
@@ -78,6 +79,7 @@ export class ActionDefinition<
         general.experience += 70;
         general.dedication += 100;
         increaseMetaNumber(general.meta, 'leadership_exp', 1);
+        tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
 
         return { effects };
     }

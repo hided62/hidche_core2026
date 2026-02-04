@@ -5,6 +5,7 @@ import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition
 import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
+import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import { clamp } from 'es-toolkit';
 
@@ -64,6 +65,7 @@ export class ActionDefinition<
         general.gold = Math.max(0, general.gold - costGold);
 
         context.addLog(`${ACTION_NAME}을 통해 훈련도가 ${applied} 증가했습니다.`);
+        tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
 
         return { effects: [] };
     }

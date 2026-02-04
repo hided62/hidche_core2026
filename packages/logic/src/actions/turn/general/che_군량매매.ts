@@ -7,6 +7,7 @@ import { LogFormat } from '@sammo-ts/logic/logging/types.js';
 import { z } from 'zod';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
+import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import { parseArgsWithSchema } from '../parseArgs.js';
 
@@ -111,6 +112,8 @@ export class ActionDefinition<
         // 경험치 및 명성 증가
         general.experience += 30;
         general.dedication += 50;
+
+        tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
 
         return { effects: [] };
     }

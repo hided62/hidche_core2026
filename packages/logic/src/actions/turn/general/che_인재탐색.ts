@@ -23,6 +23,7 @@ import { JosaUtil } from '@sammo-ts/common';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { buildWorldSummary } from '@sammo-ts/logic/actions/turn/actionContextHelpers.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
+import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 
 export interface TalentScoutArgs {}
@@ -292,6 +293,7 @@ export class ActionResolver<
                 category: LogCategory.ACTION,
                 format: LogFormat.MONTH,
             });
+            tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
             return { effects: [] };
         }
 
@@ -368,6 +370,8 @@ export class ActionResolver<
             category: LogCategory.HISTORY,
             format: LogFormat.YEAR_MONTH,
         });
+
+        tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
 
         return {
             effects: [createGeneralAddEffect(newGeneral)],

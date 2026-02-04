@@ -20,6 +20,7 @@ import { LogCategory, LogFormat } from '@sammo-ts/logic/logging/types.js';
 import { JosaUtil } from '@sammo-ts/common';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
+import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 
 export interface ReturnArgs {}
@@ -114,6 +115,8 @@ export class ActionResolver<
 
         const exp = 70;
         const ded = 100;
+
+        tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
 
         effects.push(
             createGeneralPatchEffect(
