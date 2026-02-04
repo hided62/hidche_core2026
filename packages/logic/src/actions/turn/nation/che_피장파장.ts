@@ -105,12 +105,13 @@ export class ActionResolver<
         const nationName = nation?.name ?? '아국';
         const destNationName = destNation.name;
         const targetCommandName = STRATEGIC_COMMANDS[args.commandType] ?? args.commandType;
-        const actionJosa = JosaUtil.pick(ACTION_NAME, '을');
+        const actionName = ACTION_NAME;
+        const actionJosa = JosaUtil.pick(actionName, '을');
 
         general.experience += EXP_DED_GAIN;
         general.dedication += EXP_DED_GAIN;
 
-        context.addLog(`<G><b>${targetCommandName}</b></> 전략의 ${ACTION_NAME} 발동!`, {
+        context.addLog(`<G><b>${targetCommandName}</b></> 전략의 ${actionName} 발동!`, {
             format: LogFormat.MONTH,
         });
         context.addLog(

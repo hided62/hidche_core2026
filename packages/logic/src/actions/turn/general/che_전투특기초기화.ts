@@ -54,7 +54,8 @@ export class ActionDefinition<
         const general = context.general;
         general.role.specialWar = null;
         setMetaNumber(general.meta, 'specAge2', general.age + 1);
-        context.addLog('새로운 전투 특기를 가질 준비가 되었습니다.');
+        const specialName = ACTION_NAME.replace(' 초기화', '');
+        context.addLog(`새로운 ${specialName}를 가질 준비가 되었습니다.`);
         tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
         return { effects: [] };
     }

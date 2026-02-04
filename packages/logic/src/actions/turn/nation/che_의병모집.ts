@@ -236,8 +236,9 @@ export class ActionResolver<
         general.experience += expGain;
         general.dedication += dedGain;
 
-        context.addLog(`${ACTION_NAME} 발동!`);
-        context.addLog(`${ACTION_NAME} 발동`, {
+        const actionName = ACTION_NAME;
+        context.addLog(`${actionName} 발동!`);
+        context.addLog(`${actionName} 발동`, {
             category: LogCategory.HISTORY,
             format: LogFormat.YEAR_MONTH,
         });
@@ -245,8 +246,8 @@ export class ActionResolver<
         if (nation) {
             const generalName = general.name;
             const generalJosa = JosaUtil.pick(generalName, '이');
-            const actionJosa = JosaUtil.pick(ACTION_NAME, '을');
-            context.addLog(`<Y>${generalName}</>${generalJosa} <M>${ACTION_NAME}</>${actionJosa} 발동했습니다.`, {
+            const actionJosa = JosaUtil.pick(actionName, '을');
+            context.addLog(`<Y>${generalName}</>${generalJosa} <M>${actionName}</>${actionJosa} 발동했습니다.`, {
                 scope: LogScope.NATION,
                 category: LogCategory.HISTORY,
                 nationId: nation.id,

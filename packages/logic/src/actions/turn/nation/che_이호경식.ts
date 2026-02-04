@@ -85,14 +85,15 @@ export class ActionResolver<
         const nationName = nation?.name ?? '아국';
         const nationJosa = JosaUtil.pick(nationName, '이');
         const destNationName = context.destNation.name;
-        const actionJosa = JosaUtil.pick(ACTION_NAME, '을');
+        const actionName = ACTION_NAME;
+        const actionJosa = JosaUtil.pick(actionName, '을');
         const broadcastMessage = `<Y>${generalName}</>${generalJosa} <G><b>${destNationName}</b></>에 <M>${ACTION_NAME}</>${actionJosa} 발동하였습니다.`;
 
         general.experience += EXP_DED_GAIN;
         general.dedication += EXP_DED_GAIN;
 
-        context.addLog(`${ACTION_NAME} 발동!`, { format: LogFormat.MONTH });
-        context.addLog(`<D><b>${destNationName}</b></>에 <M>${ACTION_NAME}</>${actionJosa} 발동`, {
+        context.addLog(`${actionName} 발동!`, { format: LogFormat.MONTH });
+        context.addLog(`<D><b>${destNationName}</b></>에 <M>${actionName}</>${actionJosa} 발동`, {
             category: LogCategory.HISTORY,
             format: LogFormat.YEAR_MONTH,
         });
