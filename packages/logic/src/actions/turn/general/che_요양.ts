@@ -45,14 +45,13 @@ export class ActionDefinition<
         const general = context.general;
         const delta = this.env.injuryDelta ?? DEFAULT_INJURY_DELTA;
         const nextInjury = Math.max(0, general.injury - delta);
-        const applied = general.injury - nextInjury;
         const costGold = this.env.costGold ?? 0;
 
         // 직접 수정 (Immer Draft)
         general.injury = nextInjury;
         general.gold = Math.max(0, general.gold - costGold);
 
-        context.addLog(`${ACTION_NAME}으로 부상이 ${applied} 회복되었습니다.`);
+        context.addLog(`건강 회복을 위해 요양합니다.`);
 
         return { effects: [] };
     }

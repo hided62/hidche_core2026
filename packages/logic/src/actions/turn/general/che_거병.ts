@@ -96,12 +96,12 @@ export class ActionDefinition<
         const cityName = context.city?.name ?? '??';
 
         context.addLog(`거병에 성공하였습니다.`, {
-            category: LogCategory.USER,
-            format: LogFormat.PLAIN,
-        });
-        context.addLog(`${general.name}${josaYi} ${cityName}에 거병하였습니다.`, {
             category: LogCategory.ACTION,
             format: LogFormat.MONTH,
+        });
+        context.addLog(`${general.name}${josaYi} ${cityName}에 거병하였습니다.`, {
+            category: LogCategory.USER,
+            format: LogFormat.PLAIN,
         });
         context.addLog(`【거병】${general.name}${josaYi} 세력을 결성하였습니다.`, {
             category: LogCategory.HISTORY,

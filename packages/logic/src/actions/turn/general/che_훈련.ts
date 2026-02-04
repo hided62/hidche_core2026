@@ -64,7 +64,7 @@ export class ActionDefinition<
         general.train = nextTrain;
         general.gold = Math.max(0, general.gold - costGold);
 
-        context.addLog(`${ACTION_NAME}을 통해 훈련도가 ${applied} 증가했습니다.`);
+        context.addLog(`훈련치가 <C>${applied}</> 상승했습니다.`);
         tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
 
         return { effects: [] };

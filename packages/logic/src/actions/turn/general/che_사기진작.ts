@@ -70,7 +70,7 @@ export class ActionDefinition<
         general.atmos = nextAtmos;
         general.gold = Math.max(0, general.gold - costGold);
 
-        context.addLog(`${ACTION_NAME}로 사기가 ${applied} 증가했습니다.`);
+        context.addLog(`사기치가 <C>${applied}</> 상승했습니다.`);
         tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
 
         return { effects: [] };

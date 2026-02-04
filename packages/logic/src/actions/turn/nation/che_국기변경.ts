@@ -143,7 +143,7 @@ export class ActionDefinition<
                 }
             ),
             // General Action Log
-            createLogEffect(`<span style='color:${color};'><b>국기</b></span>를 변경하였습니다.`, {
+            createLogEffect(`<span style='color:${color};'><b>국기</b></span>를 변경하였습니다`, {
                 scope: LogScope.GENERAL,
                 category: LogCategory.ACTION,
                 format: LogFormat.MONTH,
