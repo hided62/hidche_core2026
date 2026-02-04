@@ -62,7 +62,7 @@ export class ActionResolver<
         const nextExp = Math.floor(general.experience * (1 - penaltyRatio));
         const nextDed = Math.floor(general.dedication * (1 - penaltyRatio));
 
-        context.addLog(`하야하여 재야로 돌아갑니다.`, {
+        context.addLog(`<D><b>${nation.name}</b></>에서 하야했습니다.`, {
             category: LogCategory.ACTION,
             format: LogFormat.MONTH,
         });

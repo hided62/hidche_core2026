@@ -152,14 +152,15 @@ export class ActionResolver<
             );
         }
 
+        const commandName = ACTION_NAME;
         const destCityName = destCity.name;
-        ctx.addLog(`<G>${destCityName}</>에 ${ACTION_NAME}${JosaUtil.pick(ACTION_NAME, '이')} 성공했습니다.`, {
+        ctx.addLog(`<G><b>${destCityName}</b></>에 ${commandName}${JosaUtil.pick(commandName, '이')} 성공했습니다.`, {
             category: LogCategory.ACTION,
             format: LogFormat.MONTH,
         });
-        ctx.addLog(`금 ${stolenGold}, 쌀 ${stolenRice} 을 획득했습니다.`, {
+        ctx.addLog(`금<C>${stolenGold}</> 쌀<C>${stolenRice}</>을 획득했습니다.`, {
             category: LogCategory.ACTION,
-            format: LogFormat.MONTH,
+            format: LogFormat.PLAIN,
         });
 
         effects.push(

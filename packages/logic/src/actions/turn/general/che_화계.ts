@@ -30,6 +30,7 @@ import type {
 } from '@sammo-ts/logic/actions/engine.js';
 import { createCityPatchEffect, createGeneralPatchEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
+import { JosaUtil } from '@sammo-ts/common';
 import { z } from 'zod';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
@@ -296,10 +297,15 @@ export class ActionResolver<
         general.dedication = nextDedication;
         general.meta = metaUpdated;
 
+        const commandName = ACTION_NAME;
+
         if (!result.success) {
-            context.addLog(`<G><b>${context.destCity.name}</b></>에 ${ACTION_NAME} 실패했습니다.`, {
-                format: LogFormat.MONTH,
-            });
+            context.addLog(
+                `<G><b>${context.destCity.name}</b></>에 ${commandName}${JosaUtil.pick(commandName, '이')} 실패했습니다.`,
+                {
+                    format: LogFormat.MONTH,
+                }
+            );
             return { effects: [] };
         }
 
@@ -325,9 +331,12 @@ export class ActionResolver<
             category: LogCategory.SUMMARY,
             format: LogFormat.MONTH,
         });
-        context.addLog(`<G><b>${context.destCity.name}</b></>에 ${ACTION_NAME} 성공했습니다.`, {
+        context.addLog(
+            `<G><b>${context.destCity.name}</b></>에 ${commandName}${JosaUtil.pick(commandName, '이')} 성공했습니다.`,
+            {
             format: LogFormat.MONTH,
-        });
+            }
+        );
         context.addLog(
             `도시의 농업이 <C>${result.agriDamage}</>, 상업이 <C>${result.commDamage}</>만큼 감소하고, 장수 <C>${result.injuryCount}</>명이 부상 당했습니다.`,
             {

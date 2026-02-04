@@ -71,14 +71,15 @@ export class ActionResolver<
         const actualWallDmg = destCity.wall - newWall;
 
         // Log
+        const commandName = ACTION_NAME;
         const destCityName = destCity.name;
-        ctx.addLog(`<G>${destCityName}</>에 ${ACTION_NAME}${JosaUtil.pick(ACTION_NAME, '이')} 성공했습니다.`, {
+        ctx.addLog(`<G><b>${destCityName}</b></>에 ${commandName}${JosaUtil.pick(commandName, '이')} 성공했습니다.`, {
             category: LogCategory.ACTION,
             format: LogFormat.MONTH,
         });
         ctx.addLog(`수비가 ${actualDefDmg}, 성벽이 ${actualWallDmg} 만큼 감소했습니다.`, {
             category: LogCategory.ACTION,
-            format: LogFormat.MONTH,
+            format: LogFormat.PLAIN,
         });
 
         // City Update

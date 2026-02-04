@@ -71,14 +71,15 @@ export class ActionResolver<
         const actualTrustDmg = currentTrust - newTrust;
 
         // Log
+        const commandName = ACTION_NAME;
         const destCityName = destCity.name;
-        ctx.addLog(`<G>${destCityName}</>에 ${ACTION_NAME}${JosaUtil.pick(ACTION_NAME, '이')} 성공했습니다.`, {
+        ctx.addLog(`<G><b>${destCityName}</b></>에 ${commandName}${JosaUtil.pick(commandName, '이')} 성공했습니다.`, {
             category: LogCategory.ACTION,
             format: LogFormat.MONTH,
         });
         ctx.addLog(`치안이 ${actualSecuDmg}, 민심이 ${actualTrustDmg.toFixed(1)} 만큼 감소했습니다.`, {
             category: LogCategory.ACTION,
-            format: LogFormat.MONTH,
+            format: LogFormat.PLAIN,
         });
 
         // City Update
