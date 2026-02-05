@@ -115,6 +115,10 @@ export class ActionDefinition<
             category: LogCategory.USER,
             format: LogFormat.PLAIN,
         });
+        context.addLog(`<D><b>${args.nationName}</b></>${josaUl} 건국하였습니다.`, {
+            category: LogCategory.ACTION,
+            format: LogFormat.MONTH,
+        });
         context.addLog(`${general.name}${josaYi} ${city?.name}에 국가를 건설하였습니다.`, {
             category: LogCategory.ACTION,
             format: LogFormat.MONTH,

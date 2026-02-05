@@ -13,6 +13,7 @@ import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js'
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
+import { JosaUtil } from '@sammo-ts/common';
 
 export interface TechResearchArgs {}
 
@@ -79,7 +80,10 @@ export class ActionDefinition<
         nation.meta = { ...nation.meta, tech: nextTech };
         general.gold = Math.max(0, general.gold - costGold);
 
-        context.addLog(`${ACTION_NAME}로 기술이 ${applied} 상승했습니다.`);
+        const logName = ACTION_NAME.replace(' ', '');
+        const josaUl = JosaUtil.pick(logName, '을');
+        const scoreText = applied.toLocaleString();
+        context.addLog(`${logName}${josaUl} 하여 <C>${scoreText}</> 상승했습니다.`);
         tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
 
         return { effects: [] };

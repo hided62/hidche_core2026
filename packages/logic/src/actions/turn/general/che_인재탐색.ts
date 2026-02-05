@@ -357,7 +357,9 @@ export class ActionResolver<
 
         const nameObjJosa = JosaUtil.pick(name, '을');
         const nameSubjJosa = JosaUtil.pick(name, '이');
-        context.addLog(`인재 <Y>${name}</>${nameObjJosa} 발견했습니다.`, {
+        const recruitVerb = randomRangeInt(context.rng, 0, 1) === 0 ? '발견' : '등용';
+        const nameRa = JosaUtil.pick(name, '라');
+        context.addLog(`<Y>${name}</>${nameRa}는 <C>인재</>를 ${recruitVerb}하였습니다!`, {
             category: LogCategory.ACTION,
             format: LogFormat.MONTH,
         });

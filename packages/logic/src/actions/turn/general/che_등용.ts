@@ -123,6 +123,12 @@ export class ActionResolver<
             category: LogCategory.ACTION,
         });
 
+        if (!ctx.nation) {
+            ctx.addLog(`<Y>${destGeneral.name}</>에게 등용 권유 서신을 보내지 못했습니다. 국가 정보가 없습니다.`, {
+                category: LogCategory.ACTION,
+            });
+        }
+
         effects.push(
             createLogEffect(
                 `<Y>${general.name}</>(${ctx.nation?.name ?? '재야'})로 부터 등용 권유 서신이 도착했습니다.`,

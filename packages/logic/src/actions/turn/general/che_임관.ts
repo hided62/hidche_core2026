@@ -55,7 +55,8 @@ export class ActionDefinition<
         context: GeneralActionResolveContext<TriggerState>,
         args: AppointmentArgs
     ): GeneralActionOutcome<TriggerState> {
-        context.addLog(`${ACTION_NAME}을 신청했습니다. (국가 ${args.destNationId})`, {
+        const destNationName = context.nation?.name ?? `${args.destNationId}`;
+        context.addLog(`<D>${destNationName}</>에 임관했습니다.`, {
             category: LogCategory.ACTION,
             format: LogFormat.MONTH,
         });

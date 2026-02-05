@@ -348,11 +348,12 @@ export class ActionDefinition<
             } else {
                 const targetName = finalTargetCity.name;
                 const josaRoTarget = JosaUtil.pick(targetName, '로');
+                const josaUl = JosaUtil.pick(destCity.name, '을');
                 context.addLog(
                     `가까운 경로에 적군 도시가 없습니다. <G><b>${destCity.name}</b></>${josaRo} 이동합니다.`
                 );
                 context.addLog(
-                    `<G><b>${targetName}</b></>${josaRoTarget} 가는 도중 <G><b>${destCity.name}</b></>을 거치기로 합니다.`
+                    `<G><b>${targetName}</b></>${josaRoTarget} 가는 도중 <G><b>${destCity.name}</b></>${josaUl} 거치기로 합니다.`
                 );
             }
             return {

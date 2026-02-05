@@ -350,9 +350,7 @@ export class ActionResolver<
         let nextCrew = general.crew;
         let nextTrain = general.train;
         let nextAtmos = general.atmos;
-        let logMessage = '';
-
-        const crewLabel = `${crewType.name} ${appliedCrew}명`;
+        const crewLabel = `${crewType.name} <C>${appliedCrew.toLocaleString()}</>명`;
         if (crewType.id === general.crewTypeId && general.crew > 0) {
             nextCrew = general.crew + appliedCrew;
             nextTrain = Math.round(
@@ -361,13 +359,13 @@ export class ActionResolver<
             nextAtmos = Math.round(
                 (general.crew * general.atmos + appliedCrew * setAtmos) / (general.crew + appliedCrew)
             );
-            logMessage = `${crewLabel} 추가 ${ACTION_NAME}했습니다.`;
+            context.addLog(`${crewLabel} 추가${ACTION_NAME}했습니다.`);
         } else {
             nextCrewTypeId = crewType.id;
             nextCrew = appliedCrew;
             nextTrain = Math.round(setTrain);
             nextAtmos = Math.round(setAtmos);
-            logMessage = `${crewLabel} ${ACTION_NAME}했습니다.`;
+            context.addLog(`${crewLabel} ${ACTION_NAME}했습니다.`);
         }
 
         const nextGold = Math.max(0, general.gold - plan.gold);
@@ -392,7 +390,6 @@ export class ActionResolver<
         general.dedication += dedGain;
         general.meta = addMetaNumber(general.meta, 'leadership_exp', 1);
 
-        context.addLog(logMessage);
         tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
 
         return { effects: [] };

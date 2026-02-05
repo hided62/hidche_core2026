@@ -12,6 +12,7 @@ import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition
 import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
 import { createLogEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
+import { JosaUtil } from '@sammo-ts/common';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { NationTurnCommandSpec } from './index.js';
@@ -59,9 +60,12 @@ export class ActionDefinition<
         _context: GeneralActionResolveContext<TriggerState>,
         args: NonAggressionCancelProposalArgs
     ): GeneralActionOutcome<TriggerState> {
+        const destNationName =
+            (_context as { destNation?: { name?: string } }).destNation?.name ?? `국가${args.destNationId}`;
+        const josaRo = JosaUtil.pick(destNationName, '로');
         return {
             effects: [
-                createLogEffect(`${ACTION_NAME}을 준비했습니다. (국가 ${args.destNationId})`, {
+                createLogEffect(`<D><b>${destNationName}</b></>${josaRo} 불가침 파기 제의 서신을 보냈습니다.`, {
                     scope: LogScope.GENERAL,
                     category: LogCategory.ACTION,
                     format: LogFormat.MONTH,

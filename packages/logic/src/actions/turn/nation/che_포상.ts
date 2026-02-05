@@ -133,7 +133,7 @@ export class ActionResolver<
 
         const amountJosa = JosaUtil.pick(amountText, '을');
         effects.push(
-            createLogEffect(`${label} ${amountText}${amountJosa} 포상으로 받았습니다.`, {
+            createLogEffect(`${label} <C>${amountText}</>${amountJosa} 포상으로 받았습니다.`, {
                 scope: LogScope.GENERAL,
                 category: LogCategory.ACTION,
                 generalId: context.destGeneral.id,
@@ -141,11 +141,14 @@ export class ActionResolver<
             })
         );
         effects.push(
-            createLogEffect(`<Y>${context.destGeneral.name}</>에게 ${label} ${amountText}${amountJosa} 수여했습니다.`, {
+            createLogEffect(
+                `<Y>${context.destGeneral.name}</>에게 ${label} <C>${amountText}</>${amountJosa} 수여했습니다.`,
+                {
                 scope: LogScope.GENERAL,
                 category: LogCategory.ACTION,
                 format: LogFormat.MONTH,
-            })
+            }
+            )
         );
 
         return { effects };

@@ -133,10 +133,7 @@ export class ActionDefinition<
         const baseScore = Math.round((general.crew * general.train * general.atmos) / 20 / 10000);
         const score = baseScore * multiplier;
         const armTypeName = resolveArmTypeName(context.unitSet, crewType.armType);
-        const logPrefix = pick === 'success' ? '단련이 일취월장하여' : pick === 'fail' ? '단련이 지지부진하여' : '';
-        const logText = logPrefix
-            ? `${logPrefix} ${armTypeName} 숙련도가 ${score} 향상되었습니다.`
-            : `${armTypeName} 숙련도가 ${score} 향상되었습니다.`;
+        const scoreText = score.toLocaleString();
 
         const dexKey = `dex${crewType.armType}`;
         const nextDex = getMetaNumber(general.meta, dexKey, 0) + score;
@@ -156,7 +153,17 @@ export class ActionDefinition<
         general.gold = Math.max(0, general.gold - cost);
         general.rice = Math.max(0, general.rice - cost);
 
-        context.addLog(logText);
+        if (pick === 'success') {
+            context.addLog(
+                `단련이 <S>일취월장</>하여 ${armTypeName} 숙련도가 <C>${scoreText}</> 향상되었습니다.`
+            );
+        } else if (pick === 'fail') {
+            context.addLog(
+                `단련이 <span class='ev_failed'>지지부진</span>하여 ${armTypeName} 숙련도가 <C>${scoreText}</> 향상되었습니다.`
+            );
+        } else {
+            context.addLog(`${armTypeName} 숙련도가 <C>${scoreText}</> 향상되었습니다.`);
+        }
         tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
 
         return { effects: [] };

@@ -40,12 +40,10 @@ export class ActionDefinition<
         const maxPop = city.populationMax;
 
         const nextPop = clamp(currentPop + crew, 0, maxPop);
-        const addedPop = nextPop - currentPop;
-
         general.crew = 0;
         city.population = nextPop;
 
-        context.addLog(`병사들을 소집해제하여 인구가 ${addedPop} 증가했습니다.`);
+        context.addLog(`병사들을 <R>소집해제</>하였습니다.`);
 
         return { effects: [] };
     }

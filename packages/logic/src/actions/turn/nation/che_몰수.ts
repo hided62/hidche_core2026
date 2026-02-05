@@ -117,6 +117,7 @@ export class ActionDefinition<
 
         const amountText = actualAmount.toLocaleString();
         const josaUl = JosaUtil.pick(amountText, '을');
+        const destGeneralName = destGeneral.name;
 
         const effects: Array<GeneralActionEffect<TriggerState>> = [
             createGeneralPatchEffect(
@@ -132,7 +133,7 @@ export class ActionDefinition<
                 nation.id
             ),
             // Actor General Action Log
-            createLogEffect(`<Y>${destGeneral.name}</>에게서 ${resName} <C>${amountText}</>${josaUl} 몰수했습니다.`, {
+            createLogEffect(`<Y>${destGeneralName}</>에게서 ${resName} <C>${amountText}</>${josaUl} 몰수했습니다.`, {
                 scope: LogScope.GENERAL,
                 category: LogCategory.ACTION,
                 format: LogFormat.MONTH,

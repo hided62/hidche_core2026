@@ -1,4 +1,5 @@
 import type { RandomGenerator } from '@sammo-ts/common';
+import { JosaUtil } from '@sammo-ts/common';
 import type { City, General, GeneralMeta, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext, RequirementKey, StateView } from '@sammo-ts/logic/constraints/types.js';
 import {
@@ -253,9 +254,18 @@ export class ActionResolver<
                 ? { ...metaWithStatExp, max_domestic_critical: result.score }
                 : { ...metaWithStatExp, max_domestic_critical: 0 };
 
-        const pickLabel = result.pick === 'success' ? '성공' : result.pick === 'fail' ? '실패' : '완료';
-        const logMessage = `${ACTION_NAME} ${pickLabel}: +${Math.round(result.score)}`;
-        context.addLog(logMessage);
+        const scoreText = Math.round(result.score).toLocaleString();
+        const logName = ACTION_NAME.replace(' ', '');
+        const josaUl = JosaUtil.pick(logName, '을');
+        if (result.pick === 'fail') {
+            context.addLog(
+                `${logName}${josaUl} <span class='ev_failed'>실패</span>하여 <C>${scoreText}</> 상승했습니다.`
+            );
+        } else if (result.pick === 'success') {
+            context.addLog(`${logName}${josaUl} <S>성공</>하여 <C>${scoreText}</> 상승했습니다.`);
+        } else {
+            context.addLog(`${logName}${josaUl} 하여 <C>${scoreText}</> 상승했습니다.`);
+        }
         tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
 
         return { effects: [] };

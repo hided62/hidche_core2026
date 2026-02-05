@@ -1,4 +1,5 @@
 import type { RandomGenerator } from '@sammo-ts/common';
+import { JosaUtil } from '@sammo-ts/common';
 import type { City, General, GeneralMeta, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext, RequirementKey } from '@sammo-ts/logic/constraints/types.js';
 import {
@@ -165,7 +166,10 @@ export class ActionDefinition<
         general.dedication += result.dedication;
         general.meta = { ...addMetaNumber(general.meta, STAT_EXP_KEY, 1), max_domestic_critical: 0 };
 
-        context.addLog(`민심이 ${result.trustDelta.toFixed(1)} 상승했습니다.`);
+        const scoreText = result.trustDelta.toFixed(1);
+        const logName = ACTION_NAME.replace(' ', '');
+        const josaUl = JosaUtil.pick(logName, '을');
+        context.addLog(`${logName}${josaUl} 하여 <C>${scoreText}</> 상승했습니다.`);
         tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
         return { effects: [] };
     }

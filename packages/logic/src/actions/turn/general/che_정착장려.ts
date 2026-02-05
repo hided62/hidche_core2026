@@ -15,6 +15,7 @@ import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/action
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import { clamp } from 'es-toolkit';
 import type { GeneralTurnCommandSpec } from './index.js';
+import { JosaUtil } from '@sammo-ts/common';
 
 export interface SettlementArgs {}
 
@@ -68,7 +69,10 @@ export class ActionDefinition<
         city.population = nextValue;
         general.rice = Math.max(0, general.rice - costRice);
 
-        context.addLog(`인구가 ${nextValue - current} 증가했습니다.`);
+        const scoreText = (nextValue - current).toLocaleString();
+        const logName = this.name.replace(' ', '');
+        const josaUl = JosaUtil.pick(logName, '을');
+        context.addLog(`${logName}${josaUl} 하여 주민이 <C>${scoreText}</>명 증가했습니다.`);
         tryApplyUniqueLottery(context, { acquireType: '아이템', reason: '정착 장려' });
 
         return { effects: [] };

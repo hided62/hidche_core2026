@@ -586,6 +586,7 @@ const normalizeTemplate = (text) => {
         out = out.replace(/<1>.*?<\/>/g, '');
     }
     out = out.replace(/<\/?b>/g, '');
+    out = out.replace(/\{\$\{[^}]*\}[^}]*\}/g, '${}');
     out = out.replace(/\$\{[^}]*\}/g, '${}');
     out = out.replace(/\{\$[A-Za-z_][A-Za-z0-9_]*\}/g, '${}');
     out = out.replace(/\$[A-Za-z_][A-Za-z0-9_]*\b/g, '${}');

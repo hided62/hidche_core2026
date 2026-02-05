@@ -86,6 +86,7 @@ export class ActionDefinition<
 
         const josaYi = JosaUtil.pick(generalName, '이');
         const josaYiNation = JosaUtil.pick(newNationName, '이');
+        const josaRo = JosaUtil.pick(newNationName, '로');
 
         const effects: Array<GeneralActionEffect<TriggerState>> = [
             createNationPatchEffect(
@@ -99,14 +100,14 @@ export class ActionDefinition<
                 nation.id
             ),
             // Global Action Log
-            createLogEffect(`<Y>${generalName}</>${josaYi} 국호를 <D><b>${newNationName}</b></>로 변경하였습니다.`, {
+            createLogEffect(`<Y>${generalName}</>${josaYi} 국호를 <D><b>${newNationName}</b></>${josaRo} 변경합니다.`, {
                 scope: LogScope.SYSTEM,
                 category: LogCategory.ACTION,
                 format: LogFormat.PLAIN,
             }),
             // Global History Log
             createLogEffect(
-                `<S><b>【${ACTION_NAME}】</b></><D><b>${oldNationName}</b></>${josaYiNation} 국호를 <D><b>${newNationName}</b></>로 변경하였습니다.`,
+                `<S><b>【${ACTION_NAME}】</b></><D><b>${oldNationName}</b></>${josaYiNation} 국호를 <D><b>${newNationName}</b></>${josaRo} 변경합니다.`,
                 {
                     scope: LogScope.SYSTEM,
                     category: LogCategory.HISTORY,
@@ -114,14 +115,14 @@ export class ActionDefinition<
                 }
             ),
             // Actor Nation History Log
-            createLogEffect(`<Y>${generalName}</>${josaYi} 국호를 <D><b>${newNationName}</b></>로 변경하였습니다.`, {
+            createLogEffect(`<Y>${generalName}</>${josaYi} 국호를 <D><b>${newNationName}</b></>${josaRo} 변경`, {
                 scope: LogScope.NATION,
                 nationId: nation.id,
                 category: LogCategory.HISTORY,
                 format: LogFormat.YEAR_MONTH,
             }),
             // General Action Log
-            createLogEffect(`국호를 <D><b>${newNationName}</b></>로 변경하였습니다.`, {
+            createLogEffect(`국호를 <D><b>${newNationName}</b></>${josaRo} 변경합니다.`, {
                 scope: LogScope.GENERAL,
                 category: LogCategory.ACTION,
                 format: LogFormat.MONTH,
