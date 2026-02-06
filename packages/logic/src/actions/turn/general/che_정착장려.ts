@@ -18,6 +18,39 @@ import type { GeneralTurnCommandSpec } from './index.js';
 import { JosaUtil } from '@sammo-ts/common';
 
 export interface SettlementArgs {}
+type SettlementPick = 'success' | 'normal' | 'fail';
+
+const pickByWeight = <T extends string>(rng: GeneralActionResolveContext['rng'], weights: Record<T, number>): T => {
+    const entries = Object.entries(weights) as Array<[T, number]>;
+    const first = entries[0];
+    if (!first) {
+        throw new Error('Empty weights');
+    }
+
+    let total = 0;
+    for (const [, weight] of entries) {
+        if (weight > 0) {
+            total += weight;
+        }
+    }
+    if (total <= 0) {
+        return first[0];
+    }
+
+    let cursor = rng.nextFloat1() * total;
+    for (const [key, weight] of entries) {
+        if (weight <= 0) {
+            continue;
+        }
+        cursor -= weight;
+        if (cursor <= 0) {
+            return key;
+        }
+    }
+
+    const last = entries[entries.length - 1];
+    return last ? last[0] : first[0];
+};
 
 export class ActionDefinition<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -59,7 +92,14 @@ export class ActionDefinition<
             return { effects: [] };
         }
 
-        const baseAmount = 1000;
+        const pick = pickByWeight<SettlementPick>(context.rng, {
+            fail: 0.2,
+            success: 0.2,
+            normal: 0.6,
+        });
+
+        const scoreCoef = pick === 'success' ? 1.3 : pick === 'fail' ? 0.7 : 1;
+        const baseAmount = Math.round(1000 * scoreCoef);
         const current = city.population;
         const max = city.populationMax;
 
@@ -72,7 +112,15 @@ export class ActionDefinition<
         const scoreText = (nextValue - current).toLocaleString();
         const logName = this.name.replace(' ', '');
         const josaUl = JosaUtil.pick(logName, '을');
-        context.addLog(`${logName}${josaUl} 하여 주민이 <C>${scoreText}</>명 증가했습니다.`);
+        if (pick === 'fail') {
+            context.addLog(
+                `${logName}${josaUl} <span class='ev_failed'>실패</span>하여 주민이 <C>${scoreText}</>명 증가했습니다.`
+            );
+        } else if (pick === 'success') {
+            context.addLog(`${logName}${josaUl} <S>성공</>하여 주민이 <C>${scoreText}</>명 증가했습니다.`);
+        } else {
+            context.addLog(`${logName}${josaUl} 하여 주민이 <C>${scoreText}</>명 증가했습니다.`);
+        }
         tryApplyUniqueLottery(context, { acquireType: '아이템', reason: '정착 장려' });
 
         return { effects: [] };

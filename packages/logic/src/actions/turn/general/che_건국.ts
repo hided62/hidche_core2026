@@ -16,13 +16,14 @@ import {
     createGeneralPatchEffect,
     createNationPatchEffect,
 } from '@sammo-ts/logic/actions/engine.js';
-import { LogCategory, LogFormat } from '@sammo-ts/logic/logging/types.js';
+import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import { z } from 'zod';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import { parseArgsWithSchema } from '../parseArgs.js';
+import { JosaUtil } from '@sammo-ts/common';
 
 const ACTION_NAME = '건국';
 const ARGS_SCHEMA = z.object({
@@ -107,31 +108,33 @@ export class ActionDefinition<
         }
         const color = NATION_COLORS[args.colorType];
 
-        const josaUl = '을'; // Mock JosaUtil.pick
-        const josaYi = '이';
+        const josaNationUl = JosaUtil.pick(args.nationName, '을');
+        const josaNationYi = JosaUtil.pick(args.nationName, '이');
+        const josaGeneralYi = JosaUtil.pick(general.name, '이');
         const city = context.city;
 
-        context.addLog(`${args.nationName}${josaUl} 건국하였습니다.`, {
+        context.addLog(`${args.nationName}${josaNationUl} 건국하였습니다.`, {
             category: LogCategory.USER,
             format: LogFormat.PLAIN,
         });
-        context.addLog(`<D><b>${args.nationName}</b></>${josaUl} 건국하였습니다.`, {
+        context.addLog(`<D><b>${args.nationName}</b></>${josaNationUl} 건국하였습니다.`, {
             category: LogCategory.ACTION,
             format: LogFormat.MONTH,
         });
-        context.addLog(`${general.name}${josaYi} ${city?.name}에 국가를 건설하였습니다.`, {
+        context.addLog(`${general.name}${josaGeneralYi} ${city?.name}에 국가를 건설하였습니다.`, {
             category: LogCategory.ACTION,
-            format: LogFormat.MONTH,
+            scope: LogScope.SYSTEM,
+            format: LogFormat.PLAIN,
         });
-        context.addLog(`【건국】${args.nationType} ${args.nationName}${josaYi} 새로이 등장하였습니다.`, {
+        context.addLog(`【건국】${args.nationType} ${args.nationName}${josaNationYi} 새로이 등장하였습니다.`, {
             category: LogCategory.HISTORY,
             format: LogFormat.PLAIN,
         });
-        context.addLog(`${args.nationName}${josaUl} 건국`, {
+        context.addLog(`${args.nationName}${josaNationUl} 건국`, {
             category: LogCategory.HISTORY,
             format: LogFormat.PLAIN,
         });
-        context.addLog(`${general.name}${josaYi} ${args.nationName}${josaUl} 건국`, {
+        context.addLog(`${general.name}${josaGeneralYi} ${args.nationName}${josaNationUl} 건국`, {
             category: LogCategory.HISTORY,
             format: LogFormat.PLAIN,
         });

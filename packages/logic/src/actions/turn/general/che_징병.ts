@@ -37,6 +37,7 @@ export interface RecruitEnvironment {
     defaultAtmos?: number;
     minAvailableRecruitPop?: number;
     defaultTrust?: number;
+    actionName?: string;
 }
 
 export interface RecruitResolveContext<
@@ -350,7 +351,7 @@ export class ActionResolver<
         let nextCrew = general.crew;
         let nextTrain = general.train;
         let nextAtmos = general.atmos;
-        const crewLabel = `${crewType.name} <C>${appliedCrew.toLocaleString()}</>명`;
+        const actionName = this.env.actionName ?? ACTION_NAME;
         if (crewType.id === general.crewTypeId && general.crew > 0) {
             nextCrew = general.crew + appliedCrew;
             nextTrain = Math.round(
@@ -359,13 +360,13 @@ export class ActionResolver<
             nextAtmos = Math.round(
                 (general.crew * general.atmos + appliedCrew * setAtmos) / (general.crew + appliedCrew)
             );
-            context.addLog(`${crewLabel} 추가${ACTION_NAME}했습니다.`);
+            context.addLog(`${crewType.name} <C>${appliedCrew.toLocaleString()}</>명을 추가${actionName}했습니다.`);
         } else {
             nextCrewTypeId = crewType.id;
             nextCrew = appliedCrew;
             nextTrain = Math.round(setTrain);
             nextAtmos = Math.round(setAtmos);
-            context.addLog(`${crewLabel} ${ACTION_NAME}했습니다.`);
+            context.addLog(`${crewType.name} <C>${appliedCrew.toLocaleString()}</>명을 ${actionName}했습니다.`);
         }
 
         const nextGold = Math.max(0, general.gold - plan.gold);
