@@ -15,8 +15,8 @@ const ACTION_NAME = '내정 특기 초기화';
 const hasSpecial = (value: string | null | undefined): boolean =>
     value !== null && value !== undefined && value !== 'None';
 
-const reqDomesticSpecial = (): Constraint => ({
-    name: 'ReqGeneralDomesticSpecial',
+const reqGeneralValue = (): Constraint => ({
+    name: 'reqGeneralValue',
     requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
     test: (ctx, view) => {
         const general = readGeneral(ctx, view);
@@ -42,8 +42,12 @@ export class ActionDefinition<
         return {};
     }
 
+    buildMinConstraints(_ctx: ConstraintContext, _args: ResetSpecialDomesticArgs): Constraint[] {
+        return [reqGeneralValue()];
+    }
+
     buildConstraints(_ctx: ConstraintContext, _args: ResetSpecialDomesticArgs): Constraint[] {
-        return [reqDomesticSpecial()];
+        return [reqGeneralValue()];
     }
 
     resolve(

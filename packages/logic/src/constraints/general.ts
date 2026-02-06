@@ -145,6 +145,98 @@ export const reqGeneralCrew = (): Constraint => ({
     },
 });
 
+export const reqGeneralTrainMargin = (maxTrain: number): Constraint => ({
+    name: 'reqGeneralTrainMargin',
+    requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
+    test: (ctx, view) => {
+        const generalReq: RequirementKey = { kind: 'general', id: ctx.actorId };
+        if (!view.has(generalReq)) {
+            return unknownOrDeny(ctx, [generalReq], '장수 정보가 없습니다.');
+        }
+        const general = view.get(generalReq) as General | null;
+        if (!general) {
+            return unknownOrDeny(ctx, [generalReq], '장수 정보가 없습니다.');
+        }
+        if (general.train < maxTrain) {
+            return allow();
+        }
+        return { kind: 'deny', reason: '병사들은 이미 정예병사들입니다.' };
+    },
+});
+
+export const reqGeneralAtmosMargin = (maxAtmos: number): Constraint => ({
+    name: 'reqGeneralAtmosMargin',
+    requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
+    test: (ctx, view) => {
+        const generalReq: RequirementKey = { kind: 'general', id: ctx.actorId };
+        if (!view.has(generalReq)) {
+            return unknownOrDeny(ctx, [generalReq], '장수 정보가 없습니다.');
+        }
+        const general = view.get(generalReq) as General | null;
+        if (!general) {
+            return unknownOrDeny(ctx, [generalReq], '장수 정보가 없습니다.');
+        }
+        if (general.atmos < maxAtmos) {
+            return allow();
+        }
+        return { kind: 'deny', reason: '이미 사기는 하늘을 찌를듯 합니다.' };
+    },
+});
+
+export const allowJoinAction = (): Constraint => ({
+    name: 'allowJoinAction',
+    requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
+    test: (ctx, view) => {
+        const generalReq: RequirementKey = { kind: 'general', id: ctx.actorId };
+        if (!view.has(generalReq)) {
+            return unknownOrDeny(ctx, [generalReq], '장수 정보가 없습니다.');
+        }
+        const general = view.get(generalReq) as General | null;
+        if (!general) {
+            return unknownOrDeny(ctx, [generalReq], '장수 정보가 없습니다.');
+        }
+
+        const makelimit = typeof general.meta.makelimit === 'number' ? general.meta.makelimit : 0;
+        if (makelimit === 0) {
+            return allow();
+        }
+
+        const joinActionLimit = typeof ctx.env.joinActionLimit === 'number' ? ctx.env.joinActionLimit : 12;
+        return { kind: 'deny', reason: `재야가 된지 ${joinActionLimit}턴이 지나야 합니다.` };
+    },
+});
+
+export const noPenalty = (penaltyKey: string): Constraint => ({
+    name: 'noPenalty',
+    requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
+    test: (ctx, view) => {
+        const generalReq: RequirementKey = { kind: 'general', id: ctx.actorId };
+        if (!view.has(generalReq)) {
+            return unknownOrDeny(ctx, [generalReq], '장수 정보가 없습니다.');
+        }
+        const general = view.get(generalReq) as General | null;
+        if (!general) {
+            return unknownOrDeny(ctx, [generalReq], '장수 정보가 없습니다.');
+        }
+
+        const penalty = general.meta.penalty;
+        if (!penalty || typeof penalty !== 'object' || Array.isArray(penalty)) {
+            return allow();
+        }
+
+        const penaltyMap = penalty as Record<string, unknown>;
+        if (!Object.prototype.hasOwnProperty.call(penaltyMap, penaltyKey)) {
+            return allow();
+        }
+
+        const reason = penaltyMap[penaltyKey];
+        return {
+            kind: 'deny',
+            reason: `징계 사유: ${typeof reason === 'string' ? reason : String(reason)}`,
+        };
+    },
+});
+
 export const reqGeneralCrewMargin = (
     getCrewTypeId: (ctx: ConstraintContext, view: StateView) => number | null,
     requirements: RequirementKey[] = []

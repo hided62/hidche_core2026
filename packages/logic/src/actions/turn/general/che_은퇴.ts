@@ -22,8 +22,8 @@ const ACTION_KEY = 'che_은퇴';
 
 const REQ_AGE = 60;
 
-const reqAge = (): Constraint => ({
-    name: 'ReqAge',
+const reqGeneralValue = (): Constraint => ({
+    name: 'reqGeneralValue',
     requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
     test: (ctx, view) => {
         const generalKey: RequirementKey = { kind: 'general', id: ctx.actorId };
@@ -118,7 +118,7 @@ export class ActionDefinition<
     }
 
     buildConstraints(_ctx: ConstraintContext, _args: RetireArgs): Constraint[] {
-        return [reqAge()];
+        return [reqGeneralValue()];
     }
 
     resolve(context: GeneralActionResolveContext<TriggerState>, args: RetireArgs): GeneralActionOutcome<TriggerState> {

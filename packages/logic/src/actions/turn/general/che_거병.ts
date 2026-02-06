@@ -1,6 +1,6 @@
 import type { GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
-import { beNeutral } from '@sammo-ts/logic/constraints/presets.js';
+import { allowJoinAction, beNeutral, beOpeningPart, noPenalty } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
 import {
@@ -33,7 +33,7 @@ export class ActionDefinition<
     }
 
     buildConstraints(_ctx: ConstraintContext, _args: UprisingArgs): Constraint[] {
-        return [beNeutral()];
+        return [beNeutral(), beOpeningPart(), allowJoinAction(), noPenalty('noFoundNation')];
     }
 
     resolve(

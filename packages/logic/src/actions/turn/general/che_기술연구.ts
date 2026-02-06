@@ -5,6 +5,7 @@ import {
     notWanderingNation,
     occupiedCity,
     reqGeneralGold,
+    reqGeneralRice,
     suppliedCity,
 } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
@@ -52,7 +53,14 @@ export class ActionDefinition<
 
     buildConstraints(_ctx: ConstraintContext, _args: TechResearchArgs): Constraint[] {
         const getRequiredGold = (_context: ConstraintContext, _view: StateView): number => this.env.costGold ?? 0;
-        return [notBeNeutral(), notWanderingNation(), occupiedCity(), suppliedCity(), reqGeneralGold(getRequiredGold)];
+        return [
+            notBeNeutral(),
+            notWanderingNation(),
+            occupiedCity(),
+            suppliedCity(),
+            reqGeneralGold(getRequiredGold),
+            reqGeneralRice(() => 0),
+        ];
     }
 
     resolve(

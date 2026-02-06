@@ -4,8 +4,10 @@ import {
     notBeNeutral,
     notWanderingNation,
     occupiedCity,
+    reqGeneralAtmosMargin,
     reqGeneralCrew,
     reqGeneralGold,
+    reqGeneralRice,
 } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
@@ -49,7 +51,19 @@ export class ActionDefinition<
 
     buildConstraints(_ctx: ConstraintContext, _args: BoostMoraleArgs): Constraint[] {
         const getRequiredGold = (_context: ConstraintContext, _view: StateView): number => this.env.costGold ?? 0;
-        return [notBeNeutral(), notWanderingNation(), occupiedCity(), reqGeneralCrew(), reqGeneralGold(getRequiredGold)];
+        const maxAtmos =
+            this.env.maxAtmosByCommand && this.env.maxAtmosByCommand > 0
+                ? this.env.maxAtmosByCommand
+                : DEFAULT_MAX_ATMOS;
+        return [
+            notBeNeutral(),
+            notWanderingNation(),
+            occupiedCity(),
+            reqGeneralCrew(),
+            reqGeneralGold(getRequiredGold),
+            reqGeneralRice(() => 0),
+            reqGeneralAtmosMargin(maxAtmos),
+        ];
     }
 
     resolve(

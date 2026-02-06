@@ -1,6 +1,5 @@
 import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
-import type { Constraint, ConstraintContext, StateView } from '@sammo-ts/logic/constraints/types.js';
-import { notBeNeutral, reqGeneralGold } from '@sammo-ts/logic/constraints/presets.js';
+import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
@@ -34,8 +33,7 @@ export class ActionDefinition<
     }
 
     buildConstraints(_ctx: ConstraintContext, _args: RecoveryArgs): Constraint[] {
-        const getRequiredGold = (_context: ConstraintContext, _view: StateView): number => this.env.costGold ?? 0;
-        return [notBeNeutral(), reqGeneralGold(getRequiredGold)];
+        return [];
     }
 
     resolve(

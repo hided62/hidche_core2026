@@ -4,7 +4,8 @@ import {
     notBeNeutral,
     notWanderingNation,
     occupiedCity,
-    remainCityCapacityByMax,
+    remainCityCapacity,
+    reqGeneralGold,
     reqGeneralRice,
     suppliedCity,
 } from '@sammo-ts/logic/constraints/presets.js';
@@ -76,7 +77,8 @@ export class ActionDefinition<
             notWanderingNation(),
             occupiedCity(),
             suppliedCity(),
-            remainCityCapacityByMax('population', 'populationMax', '인구'),
+            reqGeneralGold(() => 0),
+            remainCityCapacity('population', '인구'),
             reqGeneralRice(getRequiredRice),
         ];
     }

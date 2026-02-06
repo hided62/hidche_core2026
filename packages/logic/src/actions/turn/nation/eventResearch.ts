@@ -24,8 +24,8 @@ export interface EventResearchConfig {
     category?: string;
 }
 
-const requireNationAux = (auxKey: string, actionName: string): Constraint => ({
-    name: 'requireNationAux',
+const reqNationAuxValue = (auxKey: string, actionName: string): Constraint => ({
+    name: 'reqNationAuxValue',
     requires: (ctx) => (ctx.nationId !== undefined ? [{ kind: 'nation', id: ctx.nationId }] : []),
     test: (ctx: ConstraintContext, view: StateView) => {
         if (ctx.nationId === undefined) {
@@ -69,13 +69,25 @@ export const createEventResearchCommand = (config: EventResearchConfig): {
             return {};
         }
 
+        buildMinConstraints(_ctx: ConstraintContext, _args: Record<string, never>): Constraint[] {
+            void _ctx;
+            void _args;
+            return [
+                occupiedCity(),
+                beChief(),
+                reqNationAuxValue(config.auxKey, ACTION_NAME),
+                reqNationGold(() => this.env.baseGold + COST),
+                reqNationRice(() => this.env.baseRice + COST),
+            ];
+        }
+
         buildConstraints(_ctx: ConstraintContext, _args: Record<string, never>): Constraint[] {
             void _ctx;
             void _args;
             return [
                 occupiedCity(),
                 beChief(),
-                requireNationAux(config.auxKey, ACTION_NAME),
+                reqNationAuxValue(config.auxKey, ACTION_NAME),
                 reqNationGold(() => this.env.baseGold + COST),
                 reqNationRice(() => this.env.baseRice + COST),
             ];

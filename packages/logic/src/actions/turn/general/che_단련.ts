@@ -62,8 +62,8 @@ const pickByWeight = <T extends string>(rng: DrillContext['rng'], weights: Recor
     return last ? last[0] : first[0];
 };
 
-const reqGeneralStat = (key: 'train' | 'atmos', label: string, minValue: number): Constraint => ({
-    name: `ReqGeneral${label}`,
+const reqGeneralValue = (key: 'train' | 'atmos', label: string, minValue: number): Constraint => ({
+    name: 'reqGeneralValue',
     requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
     test: (ctx, view) => {
         const general = readGeneral(ctx, view);
@@ -103,8 +103,8 @@ export class ActionDefinition<
         return [
             notBeNeutral(),
             reqGeneralCrew(),
-            reqGeneralStat('train', '훈련', trainLow),
-            reqGeneralStat('atmos', '사기', atmosLow),
+            reqGeneralValue('train', '훈련', trainLow),
+            reqGeneralValue('atmos', '사기', atmosLow),
             reqGeneralGold(getRequiredGold),
             reqGeneralRice(getRequiredRice),
         ];

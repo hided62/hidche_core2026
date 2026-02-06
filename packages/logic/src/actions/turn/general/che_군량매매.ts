@@ -1,6 +1,12 @@
 import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
-import { occupiedCity, reqGeneralGold, reqGeneralRice, suppliedCity } from '@sammo-ts/logic/constraints/presets.js';
+import {
+    occupiedCity,
+    reqCityTrader,
+    reqGeneralGold,
+    reqGeneralRice,
+    suppliedCity,
+} from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
 import { LogFormat } from '@sammo-ts/logic/logging/types.js';
@@ -39,11 +45,11 @@ export class ActionDefinition<
     }
 
     buildMinConstraints(_ctx: ConstraintContext, _args: TradeArgs): Constraint[] {
-        return [occupiedCity(), suppliedCity()];
+        return [reqCityTrader(), occupiedCity({ allowNeutral: true }), suppliedCity()];
     }
 
     buildConstraints(_ctx: ConstraintContext, args: TradeArgs): Constraint[] {
-        const constraints: Constraint[] = [occupiedCity(), suppliedCity()];
+        const constraints: Constraint[] = [reqCityTrader(), occupiedCity({ allowNeutral: true }), suppliedCity()];
         if (args.buyRice) {
             constraints.push(reqGeneralGold(() => 1));
         } else {

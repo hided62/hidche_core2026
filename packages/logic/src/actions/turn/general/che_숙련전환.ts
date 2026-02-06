@@ -52,6 +52,12 @@ export class ActionDefinition<
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
+    buildMinConstraints(_ctx: ConstraintContext, _args: DexTransferArgs): Constraint[] {
+        const getRequiredGold = (_context: ConstraintContext, _view: StateView): number => this.env.develCost ?? 0;
+        const getRequiredRice = (_context: ConstraintContext, _view: StateView): number => this.env.develCost ?? 0;
+        return [notBeNeutral(), occupiedCity(), reqGeneralGold(getRequiredGold), reqGeneralRice(getRequiredRice)];
+    }
+
     buildConstraints(_ctx: ConstraintContext, _args: DexTransferArgs): Constraint[] {
         const getRequiredGold = (_context: ConstraintContext, _view: StateView): number => this.env.develCost ?? 0;
         const getRequiredRice = (_context: ConstraintContext, _view: StateView): number => this.env.develCost ?? 0;

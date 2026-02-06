@@ -1,6 +1,12 @@
 import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
-import type { Constraint, ConstraintContext, StateView } from '@sammo-ts/logic/constraints/types.js';
-import { notBeNeutral, notWanderingNation, occupiedCity, reqGeneralCrew, reqGeneralGold } from '@sammo-ts/logic/constraints/presets.js';
+import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
+import {
+    notBeNeutral,
+    notWanderingNation,
+    occupiedCity,
+    reqGeneralCrew,
+    reqGeneralTrainMargin,
+} from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
@@ -42,8 +48,11 @@ export class ActionDefinition<
     }
 
     buildConstraints(_ctx: ConstraintContext, _args: TrainingArgs): Constraint[] {
-        const getRequiredGold = (_context: ConstraintContext, _view: StateView): number => this.env.costGold ?? 0;
-        return [notBeNeutral(), notWanderingNation(), occupiedCity(), reqGeneralCrew(), reqGeneralGold(getRequiredGold)];
+        const maxTrain =
+            this.env.maxTrainByCommand && this.env.maxTrainByCommand > 0
+                ? this.env.maxTrainByCommand
+                : DEFAULT_MAX_TRAIN;
+        return [notBeNeutral(), notWanderingNation(), occupiedCity(), reqGeneralCrew(), reqGeneralTrainMargin(maxTrain)];
     }
 
     resolve(

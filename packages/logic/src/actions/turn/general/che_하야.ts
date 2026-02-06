@@ -1,6 +1,6 @@
 import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
-import { notBeNeutral } from '@sammo-ts/logic/constraints/presets.js';
+import { notBeNeutral, notLord } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionOutcome,
@@ -106,7 +106,7 @@ export class ActionDefinition<
     }
 
     buildConstraints(_ctx: ConstraintContext, _args: ResignArgs): Constraint[] {
-        return [notBeNeutral()];
+        return [notBeNeutral(), notLord()];
     }
 
     resolve(context: GeneralActionResolveContext<TriggerState>, args: ResignArgs): GeneralActionOutcome<TriggerState> {

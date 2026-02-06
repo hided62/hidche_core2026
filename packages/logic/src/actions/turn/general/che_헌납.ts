@@ -2,7 +2,6 @@ import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
     notBeNeutral,
-    notWanderingNation,
     occupiedCity,
     reqGeneralGold,
     reqGeneralRice,
@@ -107,9 +106,9 @@ export class ActionDefinition<
 
     buildConstraints(_ctx: ConstraintContext, args: DonateArgs): Constraint[] {
         if (args.isGold) {
-            return [notBeNeutral(), notWanderingNation(), occupiedCity(), suppliedCity(), reqGeneralGold(() => args.amount)];
+            return [notBeNeutral(), occupiedCity(), suppliedCity(), reqGeneralGold(() => args.amount)];
         }
-        return [notBeNeutral(), notWanderingNation(), occupiedCity(), suppliedCity(), reqGeneralRice(() => args.amount)];
+        return [notBeNeutral(), occupiedCity(), suppliedCity(), reqGeneralRice(() => args.amount)];
     }
 
     resolve(context: GeneralActionResolveContext<TriggerState>, args: DonateArgs): GeneralActionOutcome<TriggerState> {

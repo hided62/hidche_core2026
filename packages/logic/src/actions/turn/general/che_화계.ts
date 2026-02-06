@@ -10,7 +10,6 @@ import type {
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
     disallowDiplomacyBetweenStatus,
-    existsDestCity,
     notBeNeutral,
     notNeutralDestCity,
     notOccupiedDestCity,
@@ -393,7 +392,6 @@ export class ActionDefinition<
             notBeNeutral(),
             occupiedCity(),
             suppliedCity(),
-            existsDestCity(),
             notOccupiedDestCity(),
             notNeutralDestCity(),
             reqGeneralGold(() => gold),

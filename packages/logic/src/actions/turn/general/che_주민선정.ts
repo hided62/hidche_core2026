@@ -6,6 +6,7 @@ import {
     notBeNeutral,
     notWanderingNation,
     occupiedCity,
+    reqGeneralGold,
     reqGeneralRice,
     suppliedCity,
 } from '@sammo-ts/logic/constraints/presets.js';
@@ -134,6 +135,7 @@ export class ActionDefinition<
             notWanderingNation(),
             occupiedCity(),
             suppliedCity(),
+            reqGeneralGold(() => 0, requirements),
             reqGeneralRice(getRiceCost, requirements),
             remainCityTrust(),
         ];

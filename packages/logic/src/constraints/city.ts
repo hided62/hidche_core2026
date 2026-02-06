@@ -109,6 +109,42 @@ export const suppliedCity = (): Constraint => ({
     },
 });
 
+export const reqCityTrader = (): Constraint => ({
+    name: 'reqCityTrader',
+    requires: (ctx) => {
+        const reqs: RequirementKey[] = [{ kind: 'general', id: ctx.actorId }];
+        if (ctx.cityId !== undefined) {
+            reqs.push({ kind: 'city', id: ctx.cityId });
+        }
+        return reqs;
+    },
+    test: (ctx, view) => {
+        const generalReq: RequirementKey = { kind: 'general', id: ctx.actorId };
+        if (!view.has(generalReq)) {
+            return unknownOrDeny(ctx, [generalReq], '장수 정보가 없습니다.');
+        }
+        const general = view.get(generalReq) as General | null;
+        if (!general) {
+            return unknownOrDeny(ctx, [generalReq], '장수 정보가 없습니다.');
+        }
+
+        const city = readCity(view, ctx.cityId);
+        if (!city) {
+            if (ctx.cityId === undefined) {
+                return unknownOrDeny(ctx, [], '도시 정보가 없습니다.');
+            }
+            const req: RequirementKey = { kind: 'city', id: ctx.cityId };
+            return unknownOrDeny(ctx, [req], '도시 정보가 없습니다.');
+        }
+
+        const trade = readMetaNumberFromUnknown(city.meta, 'trade');
+        if (trade !== null || general.npcState >= 2) {
+            return allow();
+        }
+        return { kind: 'deny', reason: '도시에 상인이 없습니다.' };
+    },
+});
+
 export const suppliedDestCity = (): Constraint => ({
     name: 'suppliedDestCity',
     requires: (ctx) =>

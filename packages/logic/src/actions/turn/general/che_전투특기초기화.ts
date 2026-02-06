@@ -16,8 +16,8 @@ const ACTION_NAME = '전투 특기 초기화';
 const hasSpecial = (value: string | null | undefined): boolean =>
     value !== null && value !== undefined && value !== 'None';
 
-const reqWarSpecial = (): Constraint => ({
-    name: 'ReqGeneralWarSpecial',
+const reqGeneralValue = (): Constraint => ({
+    name: 'reqGeneralValue',
     requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
     test: (ctx, view) => {
         const general = readGeneral(ctx, view);
@@ -43,8 +43,12 @@ export class ActionDefinition<
         return {};
     }
 
+    buildMinConstraints(_ctx: ConstraintContext, _args: ResetSpecialWarArgs): Constraint[] {
+        return [reqGeneralValue()];
+    }
+
     buildConstraints(_ctx: ConstraintContext, _args: ResetSpecialWarArgs): Constraint[] {
-        return [reqWarSpecial()];
+        return [reqGeneralValue()];
     }
 
     resolve(
