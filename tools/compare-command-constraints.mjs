@@ -310,6 +310,8 @@ const ALWAYS_FAIL_TS_ALIASES = new Set([
     'reqfuturetreatyterm',
     'reqvalidstrategiccommandtype',
     'hasroutetodestcity',
+    'requirecapitalcity',
+    'reqaidwithinlimit',
 ]);
 
 const canonicalizeConstraintName = (side, normalizedName) => {

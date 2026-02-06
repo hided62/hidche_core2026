@@ -1,14 +1,14 @@
 import type { City, GeneralTriggerState, Nation, TriggerValue } from '@sammo-ts/logic/domain/entities.js';
-import type { Constraint, ConstraintContext, StateView } from '@sammo-ts/logic/constraints/types.js';
+import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
     beChief,
-    disallowDiplomacyBetweenStatus,
+    disallowDiplomacyStatus,
     occupiedCity,
     occupiedDestCity,
+    reqNationValue,
     suppliedCity,
     suppliedDestCity,
 } from '@sammo-ts/logic/constraints/presets.js';
-import { allow, unknownOrDeny } from '@sammo-ts/logic/constraints/helpers.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionEffect,
@@ -42,45 +42,6 @@ export interface ScorchedEarthResolveContext<
 const ACTION_NAME = '초토화';
 const PRE_REQ_TURN = 2;
 const POST_REQ_TURN = 24;
-
-const requireNoDiplomacyLimit = (): Constraint => ({
-    name: 'requireNoDiplomacyLimit',
-    requires: (ctx) => (ctx.nationId !== undefined ? [{ kind: 'nation', id: ctx.nationId }] : []),
-    test: (ctx: ConstraintContext, view: StateView) => {
-        const nationId = ctx.nationId;
-        if (nationId === undefined) {
-            return unknownOrDeny(ctx, [], '국가 정보가 없습니다.');
-        }
-        const nation = view.get({ kind: 'nation', id: nationId }) as Nation | null;
-        if (!nation) {
-            return unknownOrDeny(ctx, [{ kind: 'nation', id: nationId }], '국가 정보가 없습니다.');
-        }
-        const surlimit = typeof nation.meta?.surlimit === 'number' ? Number(nation.meta.surlimit) : 0;
-        if (surlimit > 0) {
-            return { kind: 'deny', reason: '외교제한 턴이 남아있습니다.' };
-        }
-        return allow();
-    },
-});
-
-const notCapitalCity = (destCityId: number): Constraint => ({
-    name: 'notCapitalCity',
-    requires: (ctx) => (ctx.nationId !== undefined ? [{ kind: 'nation', id: ctx.nationId }] : []),
-    test: (ctx: ConstraintContext, view: StateView) => {
-        const nationId = ctx.nationId;
-        if (nationId === undefined) {
-            return unknownOrDeny(ctx, [], '국가 정보가 없습니다.');
-        }
-        const nation = view.get({ kind: 'nation', id: nationId }) as Nation | null;
-        if (!nation) {
-            return unknownOrDeny(ctx, [{ kind: 'nation', id: nationId }], '국가 정보가 없습니다.');
-        }
-        if (nation.capitalCityId === destCityId) {
-            return { kind: 'deny', reason: '수도입니다.' };
-        }
-        return allow();
-    },
-});
 
 const calcReturnAmount = (destCity: City): number => {
     let amount = destCity.population / 5;
@@ -117,7 +78,12 @@ export class ActionDefinition<
     }
 
     buildMinConstraints(_ctx: ConstraintContext, _args: ScorchedEarthArgs): Constraint[] {
-        return [occupiedCity(), beChief(), suppliedCity(), requireNoDiplomacyLimit()];
+        return [
+            occupiedCity(),
+            beChief(),
+            suppliedCity(),
+            reqNationValue('surlimit', '제한 턴', '==', 0, '외교제한 턴이 남아있습니다.'),
+        ];
     }
 
     buildConstraints(_ctx: ConstraintContext, args: ScorchedEarthArgs): Constraint[] {
@@ -128,9 +94,9 @@ export class ActionDefinition<
             beChief(),
             suppliedCity(),
             suppliedDestCity(),
-            notCapitalCity(args.destCityId),
-            requireNoDiplomacyLimit(),
-            disallowDiplomacyBetweenStatus({
+            reqNationValue('capitalCityId', '수도', '!=', args.destCityId, '수도입니다.'),
+            reqNationValue('surlimit', '제한 턴', '==', 0, '외교제한 턴이 남아있습니다.'),
+            disallowDiplomacyStatus({
                 0: '평시에만 가능합니다.',
             }),
         ];

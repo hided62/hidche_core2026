@@ -1,6 +1,6 @@
 import type { City, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext, StateView } from '@sammo-ts/logic/constraints/types.js';
-import { beChief, occupiedCity, suppliedCity } from '@sammo-ts/logic/constraints/presets.js';
+import { beChief, notBeNeutral, occupiedCity, suppliedCity } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionEffect,
@@ -13,6 +13,7 @@ import { JosaUtil } from '@sammo-ts/common';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { NationTurnCommandSpec } from './index.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
+import type { MapDefinition } from '@sammo-ts/logic/world/types.js';
 
 export interface ReduceCityArgs {}
 
@@ -31,6 +32,64 @@ const DEFAULT_COST = 60000;
 const COST_COEF = 500;
 const MIN_POP = 30000;
 
+const requireCapitalCity = (reason: string): Constraint => ({
+    name: 'requireCapitalCity',
+    requires: (ctx) => (ctx.nationId !== undefined ? [{ kind: 'nation', id: ctx.nationId }] : []),
+    test: (ctx: ConstraintContext, view: StateView) => {
+        if (ctx.nationId === undefined) {
+            return { kind: 'deny', reason };
+        }
+        const nation = view.get({ kind: 'nation', id: ctx.nationId }) as Nation | undefined;
+        if (!nation || !nation.capitalCityId) {
+            return { kind: 'deny', reason };
+        }
+        return { kind: 'allow' };
+    },
+});
+
+const reqDestCityValue = (
+    comp: '>' | '<' | '>=' | '<=',
+    required: number | 'origin',
+    reason: string
+): Constraint => ({
+    name: 'reqDestCityValue',
+    requires: (ctx) =>
+        ctx.nationId !== undefined ? [{ kind: 'nation', id: ctx.nationId }, { kind: 'env', key: 'map' }] : [],
+    test: (ctx: ConstraintContext, view: StateView) => {
+        if (ctx.nationId === undefined) {
+            return { kind: 'deny', reason };
+        }
+        const nation = view.get({ kind: 'nation', id: ctx.nationId }) as Nation | undefined;
+        if (!nation || !nation.capitalCityId) {
+            return { kind: 'deny', reason: '방랑상태에서는 불가능합니다.' };
+        }
+        const city = view.get({ kind: 'city', id: nation.capitalCityId }) as City | undefined;
+        if (!city) {
+            return { kind: 'deny', reason: '수도 정보를 찾을 수 없습니다.' };
+        }
+        const compareTarget =
+            required === 'origin'
+                ? ((view.get({ kind: 'env', key: 'map' }) as MapDefinition | undefined)?.cities.find(
+                      (mapCity) => mapCity.id === nation.capitalCityId
+                  )?.level ??
+                  0)
+                : required;
+        const level = city.level;
+        const allow =
+            comp === '>'
+                ? level > compareTarget
+                : comp === '<'
+                  ? level < compareTarget
+                  : comp === '>='
+                    ? level >= compareTarget
+                    : level <= compareTarget;
+        if (allow) {
+            return { kind: 'allow' };
+        }
+        return { kind: 'deny', reason };
+    },
+});
+
 export class ActionDefinition<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionDefinition<TriggerState, ReduceCityArgs, ReduceCityResolveContext<TriggerState>> {
@@ -44,7 +103,7 @@ export class ActionDefinition<
     }
 
     buildMinConstraints(_ctx: ConstraintContext, _args: ReduceCityArgs): Constraint[] {
-        return [occupiedCity(), beChief(), suppliedCity()];
+        return [notBeNeutral()];
     }
 
     private getRecoverAmount(): number {
@@ -53,28 +112,13 @@ export class ActionDefinition<
 
     buildConstraints(_ctx: ConstraintContext, _args: ReduceCityArgs): Constraint[] {
         return [
+            notBeNeutral(),
             occupiedCity(),
             beChief(),
             suppliedCity(),
-            {
-                name: 'reducibleCity',
-                requires: (ctx) => [
-                    { kind: 'nation', id: ctx.nationId! },
-                    { kind: 'city', id: 0 },
-                ],
-                test: (ctx: ConstraintContext, view: StateView) => {
-                    const nation = view.get({ kind: 'nation', id: ctx.nationId! }) as Nation | undefined;
-                    const capitalCityId = nation?.capitalCityId;
-
-                    if (!capitalCityId) return { kind: 'deny', reason: '방랑상태에서는 불가능합니다.' };
-
-                    const capitalCity = view.get({ kind: 'city', id: capitalCityId }) as City | undefined;
-                    if (!capitalCity) return { kind: 'deny', reason: '수도 정보를 찾을 수 없습니다.' };
-                    if (capitalCity.level <= 4) return { kind: 'deny', reason: '더이상 감축할 수 없습니다.' };
-
-                    return { kind: 'allow' };
-                },
-            },
+            requireCapitalCity('방랑상태에서는 불가능합니다.'),
+            reqDestCityValue('>', 4, '더이상 감축할 수 없습니다.'),
+            reqDestCityValue('>', 'origin', '더이상 감축할 수 없습니다.'),
         ];
     }
 

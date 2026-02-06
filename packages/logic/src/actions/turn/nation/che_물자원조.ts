@@ -6,6 +6,10 @@ import {
     suppliedCity,
     differentDestNation,
     existsDestNation,
+    reqDestNationValue,
+    reqNationGold,
+    reqNationRice,
+    reqNationValue,
 } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
@@ -39,6 +43,25 @@ const ACTION_NAME = '원조';
 const COEF_AID_AMOUNT = 10000;
 const POST_REQ_TURN = 12;
 
+const reqAidWithinLimit = (goldAmount: number, riceAmount: number): Constraint => ({
+    name: 'reqAidWithinLimit',
+    requires: (ctx) => (ctx.nationId !== undefined ? [{ kind: 'nation', id: ctx.nationId }] : []),
+    test: (ctx: ConstraintContext, view: StateView) => {
+        if (ctx.nationId === undefined) {
+            return { kind: 'deny', reason: '국가 정보가 없습니다.' };
+        }
+        const nation = view.get({ kind: 'nation', id: ctx.nationId }) as Nation | undefined;
+        if (!nation) {
+            return { kind: 'deny', reason: '국가 정보가 없습니다.' };
+        }
+        const limit = nation.level * COEF_AID_AMOUNT;
+        if (goldAmount > limit || riceAmount > limit) {
+            return { kind: 'deny', reason: '작위 제한량 이상은 보낼 수 없습니다.' };
+        }
+        return { kind: 'allow' };
+    },
+});
+
 export class ActionDefinition<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionDefinition<TriggerState, MaterialAidArgs, MaterialAidResolveContext<TriggerState>> {
@@ -52,22 +75,7 @@ export class ActionDefinition<
     }
 
     buildMinConstraints(_ctx: ConstraintContext, _args: MaterialAidArgs): Constraint[] {
-        return [
-            occupiedCity(),
-            beChief(),
-            suppliedCity(),
-            {
-                name: 'nationSurlimit',
-                requires: (ctx) => [{ kind: 'nation', id: ctx.nationId! }],
-                test: (_ctx: ConstraintContext, view: StateView) => {
-                    const nation = view.get({ kind: 'nation', id: _ctx.nationId! }) as Nation | undefined;
-                    const surlimitRaw = nation?.meta.surlimit;
-                    const surlimit = typeof surlimitRaw === 'number' ? surlimitRaw : 0;
-                    if (surlimit > 0) return { kind: 'deny', reason: '외교제한중입니다.' };
-                    return { kind: 'allow' };
-                },
-            },
-        ];
+        return [occupiedCity(), beChief(), suppliedCity(), reqNationValue('surlimit', '외교제한', '==', 0, '외교제한중입니다.')];
     }
 
     buildConstraints(_ctx: ConstraintContext, args: MaterialAidArgs): Constraint[] {
@@ -78,40 +86,11 @@ export class ActionDefinition<
             suppliedCity(),
             existsDestNation(),
             differentDestNation(),
-            {
-                name: 'aidLimit',
-                requires: (ctx) => [{ kind: 'nation', id: ctx.nationId! }],
-                test: (ctx: ConstraintContext, view: StateView) => {
-                    const nation = view.get({ kind: 'nation', id: ctx.nationId! }) as Nation | undefined;
-                    const limit = (nation?.level ?? 1) * COEF_AID_AMOUNT;
-                    if (goldAmount > limit || riceAmount > limit) {
-                        return { kind: 'deny', reason: '작위 제한량 이상은 보낼 수 없습니다.' };
-                    }
-                    return { kind: 'allow' };
-                },
-            },
-            {
-                name: 'nationSurlimit',
-                requires: (ctx) => [{ kind: 'nation', id: ctx.nationId! }],
-                test: (_ctx: ConstraintContext, view: StateView) => {
-                    const nation = view.get({ kind: 'nation', id: _ctx.nationId! }) as Nation | undefined;
-                    const surlimitRaw = nation?.meta.surlimit;
-                    const surlimit = typeof surlimitRaw === 'number' ? surlimitRaw : 0;
-                    if (surlimit > 0) return { kind: 'deny', reason: '외교제한중입니다.' };
-                    return { kind: 'allow' };
-                },
-            },
-            {
-                name: 'destNationSurlimit',
-                requires: () => [{ kind: 'nation', id: args.destNationId }],
-                test: (_ctx: ConstraintContext, view: StateView) => {
-                    const destNation = view.get({ kind: 'nation', id: args.destNationId }) as Nation | undefined;
-                    const surlimitRaw = destNation?.meta.surlimit;
-                    const surlimit = typeof surlimitRaw === 'number' ? surlimitRaw : 0;
-                    if (surlimit > 0) return { kind: 'deny', reason: '상대국이 외교제한중입니다.' };
-                    return { kind: 'allow' };
-                },
-            },
+            reqAidWithinLimit(goldAmount, riceAmount),
+            reqNationGold(() => this.env.baseGold + (goldAmount > 0 ? 1 : 0)),
+            reqNationRice(() => this.env.baseRice + (riceAmount > 0 ? 1 : 0)),
+            reqNationValue('surlimit', '외교제한', '==', 0, '외교제한중입니다.'),
+            reqDestNationValue('surlimit', '외교제한', '==', 0, '상대국이 외교제한중입니다.'),
         ];
     }
 

@@ -2,6 +2,7 @@ import type { City, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/e
 import type { Constraint, ConstraintContext, StateView } from '@sammo-ts/logic/constraints/types.js';
 import {
     beChief,
+    notBeNeutral,
     occupiedCity,
     suppliedCity,
     reqNationGold,
@@ -36,6 +37,52 @@ const WALL_INCREASE = 2000;
 const DEFAULT_COST = 60000;
 const COST_COEF = 500;
 
+const requireCapitalCity = (reason: string): Constraint => ({
+    name: 'requireCapitalCity',
+    requires: (ctx) => (ctx.nationId !== undefined ? [{ kind: 'nation', id: ctx.nationId }] : []),
+    test: (ctx: ConstraintContext, view: StateView) => {
+        if (ctx.nationId === undefined) {
+            return { kind: 'deny', reason };
+        }
+        const nation = view.get({ kind: 'nation', id: ctx.nationId }) as Nation | undefined;
+        if (!nation || !nation.capitalCityId) {
+            return { kind: 'deny', reason };
+        }
+        return { kind: 'allow' };
+    },
+});
+
+const reqDestCityValue = (comp: '>' | '<' | '>=' | '<=', required: number, reason: string): Constraint => ({
+    name: 'reqDestCityValue',
+    requires: (ctx) => (ctx.nationId !== undefined ? [{ kind: 'nation', id: ctx.nationId }] : []),
+    test: (ctx: ConstraintContext, view: StateView) => {
+        if (ctx.nationId === undefined) {
+            return { kind: 'deny', reason };
+        }
+        const nation = view.get({ kind: 'nation', id: ctx.nationId }) as Nation | undefined;
+        if (!nation || !nation.capitalCityId) {
+            return { kind: 'deny', reason: '방랑상태에서는 불가능합니다.' };
+        }
+        const city = view.get({ kind: 'city', id: nation.capitalCityId }) as City | undefined;
+        if (!city) {
+            return { kind: 'deny', reason: '수도 정보를 찾을 수 없습니다.' };
+        }
+        const level = city.level;
+        const allow =
+            comp === '>'
+                ? level > required
+                : comp === '<'
+                  ? level < required
+                  : comp === '>='
+                    ? level >= required
+                    : level <= required;
+        if (allow) {
+            return { kind: 'allow' };
+        }
+        return { kind: 'deny', reason };
+    },
+});
+
 export class ActionDefinition<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionDefinition<TriggerState, ExpandCityArgs, ExpandCityResolveContext<TriggerState>> {
@@ -49,7 +96,7 @@ export class ActionDefinition<
     }
 
     buildMinConstraints(_ctx: ConstraintContext, _args: ExpandCityArgs): Constraint[] {
-        return [occupiedCity(), beChief(), suppliedCity()];
+        return [notBeNeutral()];
     }
 
     private getCost(): number {
@@ -59,31 +106,15 @@ export class ActionDefinition<
     buildConstraints(_ctx: ConstraintContext, _args: ExpandCityArgs): Constraint[] {
         const cost = this.getCost();
         return [
+            notBeNeutral(),
             occupiedCity(),
             beChief(),
             suppliedCity(),
+            requireCapitalCity('방랑상태에서는 불가능합니다.'),
+            reqDestCityValue('>', 3, '수진, 진, 관문에서는 불가능합니다.'),
+            reqDestCityValue('<', 8, '더이상 증축할 수 없습니다.'),
             reqNationGold(() => this.env.baseGold + cost),
             reqNationRice(() => this.env.baseRice + cost),
-            {
-                name: 'expandableCity',
-                requires: (ctx) => [
-                    { kind: 'nation', id: ctx.nationId! },
-                    { kind: 'city', id: 0 },
-                ],
-                test: (ctx: ConstraintContext, view: StateView) => {
-                    const nation = view.get({ kind: 'nation', id: ctx.nationId! }) as Nation | undefined;
-                    const capitalCityId = nation?.capitalCityId;
-
-                    if (!capitalCityId) return { kind: 'deny', reason: '방랑상태에서는 불가능합니다.' };
-
-                    const capitalCity = view.get({ kind: 'city', id: capitalCityId }) as City | undefined;
-                    if (!capitalCity) return { kind: 'deny', reason: '수도 정보를 찾을 수 없습니다.' };
-                    if (capitalCity.level <= 3) return { kind: 'deny', reason: '수진, 진, 관문에서는 불가능합니다.' };
-                    if (capitalCity.level >= 8) return { kind: 'deny', reason: '더이상 증축할 수 없습니다.' };
-
-                    return { kind: 'allow' };
-                },
-            },
         ];
     }
 

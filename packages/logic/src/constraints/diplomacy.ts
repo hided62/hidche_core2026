@@ -92,6 +92,11 @@ export const disallowDiplomacyBetweenStatus = (disallowList: Record<number, stri
     },
 });
 
+export const disallowDiplomacyStatus = (disallowList: Record<number, string>): Constraint => ({
+    ...disallowDiplomacyBetweenStatus(disallowList),
+    name: 'disallowDiplomacyStatus',
+});
+
 export const allowDiplomacyBetweenStatus = (allowList: number[], reason: string): Constraint => ({
     name: 'allowDiplomacyBetweenStatus',
     requires: (ctx) => {
