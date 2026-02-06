@@ -1,6 +1,5 @@
 import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
-import { mustBeNPC, existsDestCity } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionOutcome,
@@ -40,6 +39,9 @@ export class ActionResolver<
     resolve(context: NPCSelfResolveContext<TriggerState>, args: NPCSelfArgs): GeneralActionOutcome<TriggerState> {
         const general = context.general;
         const effects: GeneralActionEffect<TriggerState>[] = [];
+        if (general.npcState < 2) {
+            throw new Error('NPC가 아닙니다.');
+        }
 
         if (args.optionText === '순간이동') {
             if (args.destCityId === undefined) {
@@ -98,13 +100,9 @@ export class ActionDefinition<
     }
 
     buildConstraints(_ctx: ConstraintContext, args: NPCSelfArgs): Constraint[] {
-        const constraints = [mustBeNPC()];
-
-        if (args.optionText === '순간이동') {
-            constraints.push(existsDestCity());
-        }
-
-        return constraints;
+        void _ctx;
+        void args;
+        return [];
     }
 
     resolve(context: NPCSelfResolveContext<TriggerState>, args: NPCSelfArgs): GeneralActionOutcome<TriggerState> {

@@ -1,6 +1,6 @@
-import type { GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
-import type { Constraint, ConstraintContext, StateView } from '@sammo-ts/logic/constraints/types.js';
-import { beChief, occupiedCity, suppliedCity, checkNationNameDuplicate } from '@sammo-ts/logic/constraints/presets.js';
+import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
+import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
+import { beChief, occupiedCity, suppliedCity, reqNationAuxValue } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionEffect,
@@ -37,37 +37,17 @@ export class ActionDefinition<
             occupiedCity(),
             beChief(),
             suppliedCity(),
-            {
-                name: 'canChangeNationName',
-                requires: (ctx) => [{ kind: 'nation', id: ctx.nationId! }],
-                test: (_ctx: ConstraintContext, view: StateView) => {
-                    const nation = view.get({ kind: 'nation', id: _ctx.nationId! }) as Nation | undefined;
-                    const canChangeRaw = nation?.meta[`can_${ACTION_NAME}`];
-                    const canChange = (typeof canChangeRaw === 'number' ? canChangeRaw : 0) !== 0;
-                    if (!canChange) return { kind: 'deny', reason: '더이상 변경이 불가능합니다.' };
-                    return { kind: 'allow' };
-                },
-            },
+            reqNationAuxValue(`can_${ACTION_NAME}`, 0, '>', 0, '더이상 변경이 불가능합니다.'),
         ];
     }
 
-    buildConstraints(_ctx: ConstraintContext, args: ChangeNationNameArgs): Constraint[] {
+    buildConstraints(_ctx: ConstraintContext, _args: ChangeNationNameArgs): Constraint[] {
+        void _args;
         return [
             occupiedCity(),
             beChief(),
             suppliedCity(),
-            checkNationNameDuplicate(args.nationName),
-            {
-                name: 'canChangeNationName',
-                requires: (ctx) => [{ kind: 'nation', id: ctx.nationId! }],
-                test: (_ctx: ConstraintContext, view: StateView) => {
-                    const nation = view.get({ kind: 'nation', id: _ctx.nationId! }) as Nation | undefined;
-                    const canChangeRaw = nation?.meta[`can_${ACTION_NAME}`];
-                    const canChange = (typeof canChangeRaw === 'number' ? canChangeRaw : 0) !== 0;
-                    if (!canChange) return { kind: 'deny', reason: '더이상 변경이 불가능합니다.' };
-                    return { kind: 'allow' };
-                },
-            },
+            reqNationAuxValue(`can_${ACTION_NAME}`, 0, '>', 0, '더이상 변경이 불가능합니다.'),
         ];
     }
 

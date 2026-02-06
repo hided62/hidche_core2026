@@ -1,11 +1,10 @@
 import type { General, GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
-import type { Constraint, ConstraintContext, RequirementKey } from '@sammo-ts/logic/constraints/types.js';
+import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
     notSameDestCity,
-    existsDestCity,
+    nearCity,
     reqGeneralGold,
-    unknownOrDeny,
-    resolveDestCityId,
+    reqGeneralRice,
 } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
@@ -39,38 +38,6 @@ const ARGS_SCHEMA = z.object({
     destCityId: z.number(),
 });
 export type MoveArgs = z.infer<typeof ARGS_SCHEMA>;
-
-// Helper for map connectivity
-const connectedCity = (): Constraint => ({
-    name: 'ConnectedCity',
-    requires: (ctx) => {
-        const reqs: RequirementKey[] = [];
-        if (ctx.cityId !== undefined) reqs.push({ kind: 'city', id: ctx.cityId });
-        const destCityId = resolveDestCityId(ctx);
-        if (destCityId !== undefined) reqs.push({ kind: 'destCity', id: destCityId });
-        reqs.push({ kind: 'env', key: 'map' });
-        return reqs;
-    },
-    test: (ctx, view) => {
-        const map = view.get({ kind: 'env', key: 'map' }) as MapDefinition | null;
-        if (!map) return unknownOrDeny(ctx, [], '지도 정보가 없습니다.');
-
-        const currentCityId = ctx.cityId;
-        const destCityId = resolveDestCityId(ctx);
-
-        if (currentCityId === undefined || destCityId === undefined) {
-            return unknownOrDeny(ctx, [], '도시 정보가 없습니다.');
-        }
-
-        const currentCityDef = map.cities.find((c) => c.id === currentCityId);
-        if (!currentCityDef) return unknownOrDeny(ctx, [], '출발 도시 정보가 없습니다.');
-
-        if (currentCityDef.connections.includes(destCityId)) {
-            return { kind: 'allow' };
-        }
-        return { kind: 'deny', reason: '인접하지 않은 도시입니다.' };
-    },
-});
 
 export class ActionResolver<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -169,20 +136,20 @@ export class ActionDefinition<
                 const develCost = ctx.env.develCost as number;
                 return develCost ?? 0;
             }),
+            reqGeneralRice(() => 0),
         ];
     }
 
     buildConstraints(ctx: ConstraintContext, _args: MoveArgs): Constraint[] {
-        const constraints = [
-            existsDestCity(),
+        return [
             notSameDestCity(),
-            connectedCity(),
+            nearCity(1),
             reqGeneralGold(() => {
                 const develCost = ctx.env.develCost as number;
                 return develCost ?? 0;
             }),
+            reqGeneralRice(() => 0),
         ];
-        return constraints;
     }
 
     resolve(context: MoveResolveContext<TriggerState>, args: MoveArgs): GeneralActionOutcome<TriggerState> {

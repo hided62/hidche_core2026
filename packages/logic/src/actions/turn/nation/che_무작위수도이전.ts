@@ -1,6 +1,6 @@
-import type { GeneralTriggerState, Nation, City, General } from '@sammo-ts/logic/domain/entities.js';
-import type { Constraint, ConstraintContext, StateView } from '@sammo-ts/logic/constraints/types.js';
-import { beMonarch, occupiedCity, suppliedCity } from '@sammo-ts/logic/constraints/presets.js';
+import type { GeneralTriggerState, City, General } from '@sammo-ts/logic/domain/entities.js';
+import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
+import { beLord, occupiedCity, suppliedCity, beOpeningPart, reqNationAuxValue } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionEffect,
@@ -45,21 +45,15 @@ export class ActionDefinition<
     }
 
     buildConstraints(_ctx: ConstraintContext, _args: RandomMoveCapitalArgs): Constraint[] {
+        void _ctx;
+        void _args;
+
         return [
             occupiedCity(),
-            beMonarch(),
+            beLord(),
             suppliedCity(),
-            {
-                name: 'canRandomMoveCapital',
-                requires: (ctx) => [{ kind: 'nation', id: ctx.nationId! }],
-                test: (ctx: ConstraintContext, view: StateView) => {
-                    const nation = view.get({ kind: 'nation', id: ctx.nationId! }) as Nation | undefined;
-                    const canMoveRaw = nation?.meta[`can_무작위수도이전`];
-                    const canMove = (typeof canMoveRaw === 'number' ? canMoveRaw : 0) > 0;
-                    if (!canMove) return { kind: 'deny', reason: '더이상 변경이 불가능합니다.' };
-                    return { kind: 'allow' };
-                },
-            },
+            beOpeningPart(),
+            reqNationAuxValue('can_무작위수도이전', 0, '>', 0, '더이상 변경이 불가능합니다.'),
         ];
     }
 

@@ -2,7 +2,7 @@ import type { RandomGenerator } from '@sammo-ts/common';
 import { asRecord, JosaUtil } from '@sammo-ts/common';
 import type { General, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
-import { beNeutral } from '@sammo-ts/logic/constraints/presets.js';
+import { beNeutral, allowJoinAction } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionEffect,
@@ -134,11 +134,11 @@ export class ActionDefinition<
     }
 
     buildMinConstraints(_ctx: ConstraintContext, _args: RandomAppointmentArgs): Constraint[] {
-        return [beNeutral()];
+        return [];
     }
 
     buildConstraints(_ctx: ConstraintContext, _args: RandomAppointmentArgs): Constraint[] {
-        return [beNeutral()];
+        return [beNeutral(), allowJoinAction()];
     }
 
     resolve(

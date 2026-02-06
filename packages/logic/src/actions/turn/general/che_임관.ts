@@ -1,6 +1,13 @@
 import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
-import { beNeutral, existsDestNation } from '@sammo-ts/logic/constraints/presets.js';
+import {
+    beNeutral,
+    existsDestNation,
+    reqEnvValue,
+    allowJoinAction,
+    noPenalty,
+    allowJoinDestNation,
+} from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
 import { createGeneralPatchEffect } from '@sammo-ts/logic/actions/engine.js';
@@ -44,11 +51,28 @@ export class ActionDefinition<
     }
 
     buildMinConstraints(_ctx: ConstraintContext, _args: AppointmentArgs): Constraint[] {
-        return [beNeutral()];
+        return [
+            reqEnvValue('join_mode', '!=', 'onlyRandom', '랜덤 임관만 가능합니다'),
+            beNeutral(),
+            allowJoinAction(),
+            noPenalty('noChosenAssignment'),
+        ];
     }
 
     buildConstraints(_ctx: ConstraintContext, _args: AppointmentArgs): Constraint[] {
-        return [beNeutral(), existsDestNation()];
+        const env = _ctx.env;
+        const year = typeof env.year === 'number' ? env.year : 0;
+        const startYear = typeof env.startyear === 'number' ? env.startyear : 0;
+        const relYear = year - startYear;
+
+        return [
+            reqEnvValue('join_mode', '!=', 'onlyRandom', '랜덤 임관만 가능합니다'),
+            beNeutral(),
+            existsDestNation(),
+            allowJoinDestNation(relYear),
+            allowJoinAction(),
+            noPenalty('noChosenAssignment'),
+        ];
     }
 
     resolve(

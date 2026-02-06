@@ -1,13 +1,14 @@
 import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
-    beMonarch,
-    beWanderingNation,
-    beNeutralCity,
-    reqCityLevel,
-    reqNationGeneralCount,
+    beLord,
+    wanderingNation,
+    reqNationValue,
     checkNationNameDuplicate,
     beOpeningPart,
+    constructableCity,
+    allowJoinAction,
+    noPenalty,
 } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
@@ -80,18 +81,19 @@ export class ActionDefinition<
     }
 
     buildMinConstraints(_ctx: ConstraintContext, _args: FoundingArgs): Constraint[] {
-        return [beOpeningPart(), beWanderingNation()];
+        return [beOpeningPart(), reqNationValue('level', '국가규모', '==', 0, '정식 국가가 아니어야합니다.'), noPenalty('noFoundNation')];
     }
 
     buildConstraints(_ctx: ConstraintContext, args: FoundingArgs): Constraint[] {
         return [
             beOpeningPart(),
-            beMonarch(),
-            beWanderingNation(),
-            reqNationGeneralCount(2),
-            beNeutralCity(),
-            reqCityLevel([5, 6]), // 소, 중 도시
+            beLord(),
+            wanderingNation(),
+            reqNationValue('gennum', '수하 장수', '>=', 2),
             checkNationNameDuplicate(args.nationName),
+            allowJoinAction(),
+            constructableCity(),
+            noPenalty('noFoundNation'),
         ];
     }
 

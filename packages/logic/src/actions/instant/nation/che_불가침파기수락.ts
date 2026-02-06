@@ -3,12 +3,11 @@ import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/
 import {
     allowDiplomacyBetweenStatus,
     beChief,
-    destGeneralInDestNation,
     existsDestGeneral,
     existsDestNation,
     notBeNeutral,
+    reqDestNationValue,
 } from '@sammo-ts/logic/constraints/presets.js';
-import { allow, unknownOrDeny } from '@sammo-ts/logic/constraints/helpers.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
 import { createDiplomacyPatchEffect, createLogEffect } from '@sammo-ts/logic/actions/engine.js';
@@ -37,21 +36,6 @@ const parseGeneralId = (raw: unknown): number | null => {
     return raw > 0 ? Math.floor(raw) : null;
 };
 
-const notSameDestGeneral = (): Constraint => ({
-    name: 'NotSameDestGeneral',
-    requires: () => [{ kind: 'arg', key: 'destGeneralId' }],
-    test: (ctx) => {
-        const destGeneralId = ctx.args.destGeneralId;
-        if (typeof destGeneralId !== 'number') {
-            return unknownOrDeny(ctx, [{ kind: 'arg', key: 'destGeneralId' }], '장수 정보가 없습니다.');
-        }
-        if (destGeneralId === ctx.actorId) {
-            return { kind: 'deny', reason: '대상이 올바르지 않습니다.' };
-        }
-        return allow();
-    },
-});
-
 // 불가침 파기 수락은 메시지와 연결되는 즉시 국가 커맨드로 사용한다.
 export class ActionDefinition<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -75,8 +59,7 @@ export class ActionDefinition<
             notBeNeutral(),
             existsDestNation(),
             existsDestGeneral(),
-            destGeneralInDestNation(),
-            notSameDestGeneral(),
+            reqDestNationValue('level', '국가규모', '>', 0, '상대국 정보가 없습니다.'),
             allowDiplomacyBetweenStatus([DIPLOMACY_NON_AGGRESSION], '불가침 중인 상대국에게만 가능합니다.'),
         ];
     }

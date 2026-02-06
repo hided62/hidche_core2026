@@ -2,10 +2,13 @@ import type { City, GeneralTriggerState } from '@sammo-ts/logic/domain/entities.
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
     notBeNeutral,
+    occupiedCity,
+    suppliedCity,
     notOccupiedDestCity,
+    notNeutralDestCity,
     reqGeneralGold,
     reqGeneralRice,
-    existsDestCity,
+    disallowDiplomacyBetweenStatus,
 } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
@@ -133,15 +136,26 @@ export class ActionDefinition<
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
+    buildMinConstraints(ctx: ConstraintContext, _args: DestroyArgs): Constraint[] {
+        const env = ctx.env;
+        const cost = (env.develCost as number) ?? 100;
+        return [notBeNeutral(), occupiedCity(), suppliedCity(), reqGeneralGold(() => cost), reqGeneralRice(() => cost)];
+    }
+
     buildConstraints(ctx: ConstraintContext, _args: DestroyArgs): Constraint[] {
         const env = ctx.env;
         const cost = (env.develCost as number) ?? 100;
         return [
             notBeNeutral(),
-            existsDestCity(),
+            occupiedCity(),
+            suppliedCity(),
+            notOccupiedDestCity(),
+            notNeutralDestCity(),
             reqGeneralGold(() => cost),
             reqGeneralRice(() => cost),
-            notOccupiedDestCity(),
+            disallowDiplomacyBetweenStatus({
+                7: '불가침국입니다.',
+            }),
         ];
     }
 

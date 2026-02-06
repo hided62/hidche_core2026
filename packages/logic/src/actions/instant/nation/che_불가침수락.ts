@@ -2,12 +2,12 @@ import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
     beChief,
-    destGeneralInDestNation,
     disallowDiplomacyBetweenStatus,
     existsDestGeneral,
     existsDestNation,
     notBeNeutral,
     occupiedCity,
+    reqDestNationValue,
     suppliedCity,
 } from '@sammo-ts/logic/constraints/presets.js';
 import { allow, unknownOrDeny } from '@sammo-ts/logic/constraints/helpers.js';
@@ -64,8 +64,8 @@ const parseMonth = (raw: unknown): number | null => {
 
 const resolveMonthIndex = (year: number, month: number): number => year * 12 + month - 1;
 
-const requireFutureTerm = (): Constraint => ({
-    name: 'RequireNonAggressionFutureTerm',
+const reqFutureTreatyTerm = (): Constraint => ({
+    name: 'reqFutureTreatyTerm',
     requires: () => [
         { kind: 'arg', key: 'year' },
         { kind: 'arg', key: 'month' },
@@ -114,21 +114,6 @@ const requireFutureTerm = (): Constraint => ({
     },
 });
 
-const notSameDestGeneral = (): Constraint => ({
-    name: 'NotSameDestGeneral',
-    requires: () => [{ kind: 'arg', key: 'destGeneralId' }],
-    test: (ctx) => {
-        const destGeneralId = ctx.args.destGeneralId;
-        if (typeof destGeneralId !== 'number') {
-            return unknownOrDeny(ctx, [{ kind: 'arg', key: 'destGeneralId' }], '장수 정보가 없습니다.');
-        }
-        if (destGeneralId === ctx.actorId) {
-            return { kind: 'deny', reason: '대상이 올바르지 않습니다.' };
-        }
-        return allow();
-    },
-});
-
 // 불가침 수락은 메시지와 연결되는 즉시 국가 커맨드로 사용한다.
 export class ActionDefinition<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -161,9 +146,8 @@ export class ActionDefinition<
             suppliedCity(),
             existsDestNation(),
             existsDestGeneral(),
-            destGeneralInDestNation(),
-            notSameDestGeneral(),
-            requireFutureTerm(),
+            reqDestNationValue('level', '국가규모', '>', 0, '상대국 정보가 없습니다.'),
+            reqFutureTreatyTerm(),
             disallowDiplomacyBetweenStatus({
                 0: '아국과 이미 교전중입니다.',
                 1: '아국과 이미 선포중입니다.',

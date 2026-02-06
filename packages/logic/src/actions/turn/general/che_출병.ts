@@ -1,16 +1,14 @@
 import type { City, General, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext, StateView } from '@sammo-ts/logic/constraints/types.js';
 import {
-    existsDestCity,
     hasRouteWithEnemy,
     notBeNeutral,
-    notOccupiedDestCity,
     notOpeningPart,
     notSameDestCity,
     occupiedCity,
     reqGeneralCrew,
     reqGeneralRice,
-    suppliedCity,
+    allowWar,
 } from '@sammo-ts/logic/constraints/presets.js';
 import { readGeneral } from '@sammo-ts/logic/constraints/helpers.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
@@ -268,7 +266,6 @@ export class ActionDefinition<
             notOpeningPart(relYear + 2, openingPartYear),
             notBeNeutral(),
             occupiedCity(),
-            suppliedCity(),
             reqGeneralCrew(),
             reqGeneralRice(getRequiredRice),
         ];
@@ -282,11 +279,9 @@ export class ActionDefinition<
             notSameDestCity(),
             notBeNeutral(),
             occupiedCity(),
-            suppliedCity(),
             reqGeneralCrew(),
             reqGeneralRice(getRequiredRice),
-            existsDestCity(),
-            notOccupiedDestCity(),
+            allowWar(),
             hasRouteWithEnemy(),
         ];
     }

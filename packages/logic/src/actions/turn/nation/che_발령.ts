@@ -7,7 +7,7 @@ import type {
 } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
-    alwaysFail,
+    denyWithReason,
     beChief,
     existsDestGeneral,
     friendlyDestGeneral,
@@ -161,7 +161,7 @@ export class ActionDefinition<
     buildConstraints(ctx: ConstraintContext, _args: AssignmentArgs): Constraint[] {
         void _args;
         if (ctx.destGeneralId === ctx.actorId) {
-            return [alwaysFail('본인입니다')];
+            return [denyWithReason('본인입니다')];
         }
         return [
             beChief(),

@@ -2,10 +2,12 @@ import type { General, GeneralTriggerState, Nation } from '@sammo-ts/logic/domai
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
     existsDestNation,
-    existsDestGeneral,
-    notSameDestNation,
-    destGeneralInDestNation,
-    notLord,
+    beNeutral,
+    allowJoinDestNation,
+    reqDestNationValue,
+    differentDestNation,
+    reqGeneralValue,
+    reqEnvValue,
     readMetaNumberFromUnknown,
 } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
@@ -186,7 +188,20 @@ export class ActionDefinition<
     }
 
     buildConstraints(_ctx: ConstraintContext, _args: AcceptScoutArgs): Constraint[] {
-        return [existsDestNation(), existsDestGeneral(), notSameDestNation(), destGeneralInDestNation(), notLord()];
+        const env = _ctx.env;
+        const year = typeof env.year === 'number' ? env.year : 0;
+        const startYear = typeof env.startyear === 'number' ? env.startyear : 0;
+        const relYear = year - startYear;
+
+        return [
+            reqEnvValue('join_mode', '!=', 'onlyRandom', '랜덤 임관만 가능합니다'),
+            existsDestNation(),
+            beNeutral(),
+            allowJoinDestNation(relYear),
+            reqDestNationValue('level', '국가규모', '>', 0, '방랑군에는 임관할 수 없습니다.'),
+            differentDestNation(),
+            reqGeneralValue('officerLevel', '직위', '!=', 12, '군주는 등용장을 수락할 수 없습니다'),
+        ];
     }
 
     resolve(

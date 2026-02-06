@@ -4,6 +4,9 @@ import {
     beChief,
     occupiedCity,
     occupiedDestCity,
+    reqNationGold,
+    reqNationRice,
+    reqNationValue,
     suppliedCity,
     suppliedDestCity,
 } from '@sammo-ts/logic/constraints/presets.js';
@@ -36,6 +39,30 @@ export interface MoveCapitalResolveContext<
 }
 
 const ACTION_NAME = '천도';
+
+const hasRouteToDestCity = (destCityID: number, develCost: number): Constraint => ({
+    name: 'hasRouteToDestCity',
+    requires: (ctx) => [{ kind: 'nation', id: ctx.nationId! }, { kind: 'env', key: 'map' }],
+    test: (ctx: ConstraintContext, view: StateView) => {
+        const nation = view.get({ kind: 'nation', id: ctx.nationId! }) as Nation | undefined;
+        const map = view.get({ kind: 'env', key: 'map' }) as MapDefinition | undefined;
+        if (!nation || !map || nation.capitalCityId === undefined || nation.capitalCityId === null) {
+            return { kind: 'allow' };
+        }
+        const dist = calcDistance(nation.capitalCityId, destCityID, map);
+        if (dist >= 50) {
+            return { kind: 'deny', reason: '천도 대상으로 도달할 방법이 없습니다.' };
+        }
+        const cost = develCost * 5 * Math.pow(2, dist);
+        if (nation.gold < cost + 1000) {
+            return { kind: 'allow' };
+        }
+        if (nation.rice < cost + 1000) {
+            return { kind: 'allow' };
+        }
+        return { kind: 'allow' };
+    },
+});
 
 const calcDistance = (fromCityId: number, toCityId: number, map: MapDefinition): number => {
     if (fromCityId === toCityId) return 0;
@@ -83,6 +110,21 @@ export class ActionDefinition<
 
     buildConstraints(_ctx: ConstraintContext, args: MoveCapitalArgs): Constraint[] {
         const develcost = this.env.develCost;
+        const baseGold = this.env.baseGold ?? 1000;
+        const baseRice = this.env.baseRice ?? 1000;
+
+        const getRequiredCost = (ctx: ConstraintContext, view: StateView): number => {
+            const nation = view.get({ kind: 'nation', id: ctx.nationId! }) as Nation | undefined;
+            const map = view.get({ kind: 'env', key: 'map' }) as MapDefinition | undefined;
+            if (!nation || !map || nation.capitalCityId === undefined || nation.capitalCityId === null) {
+                return 0;
+            }
+            const dist = calcDistance(nation.capitalCityId, args.destCityID, map);
+            if (dist >= 50) {
+                return 0;
+            }
+            return develcost * 5 * Math.pow(2, dist);
+        };
 
         return [
             occupiedCity(),
@@ -90,40 +132,10 @@ export class ActionDefinition<
             beChief(),
             suppliedCity(),
             suppliedDestCity(),
-            {
-                name: 'notCurrentCapital',
-                requires: (ctx) => [{ kind: 'nation', id: ctx.nationId! }],
-                test: (ctx: ConstraintContext, view: StateView) => {
-                    const nation = view.get({ kind: 'nation', id: ctx.nationId! }) as Nation | undefined;
-                    if (nation?.capitalCityId === args.destCityID) {
-                        return { kind: 'deny', reason: '이미 수도입니다.' };
-                    }
-                    return { kind: 'allow' };
-                },
-            },
-            {
-                name: 'reqMoveCapitalCost',
-                requires: (ctx) => [
-                    { kind: 'nation', id: ctx.nationId! },
-                    { kind: 'env', key: 'map' },
-                ],
-                test: (ctx: ConstraintContext, view: StateView) => {
-                    const nation = view.get({ kind: 'nation', id: ctx.nationId! }) as Nation | undefined;
-                    const map = view.get({ kind: 'env', key: 'map' }) as MapDefinition | undefined;
-                    if (!map || !nation || nation.capitalCityId === undefined || nation.capitalCityId === null)
-                        return { kind: 'allow' };
-
-                    const dist = calcDistance(nation.capitalCityId, args.destCityID, map);
-                    const cost = develcost * 5 * Math.pow(2, dist);
-
-                    if (nation.gold < cost + 1000)
-                        return { kind: 'deny', reason: `금이 부족합니다. (필요: ${cost + 1000})` };
-                    if (nation.rice < cost + 1000)
-                        return { kind: 'deny', reason: `쌀이 부족합니다. (필요: ${cost + 1000})` };
-
-                    return { kind: 'allow' };
-                },
-            },
+            hasRouteToDestCity(args.destCityID, develcost),
+            reqNationValue('capitalCityId', '수도', '!=', args.destCityID, '이미 수도입니다.'),
+            reqNationGold((ctx, view) => baseGold + getRequiredCost(ctx, view), [{ kind: 'env', key: 'map' }]),
+            reqNationRice((ctx, view) => baseRice + getRequiredCost(ctx, view), [{ kind: 'env', key: 'map' }]),
         ];
     }
 

@@ -4,7 +4,6 @@ import {
     notOccupiedDestCity,
     reqGeneralGold,
     reqGeneralRice,
-    existsDestCity,
     notBeNeutral,
 } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
@@ -297,11 +296,9 @@ export class ActionDefinition<
         const env = ctx.env;
         const cost = ((env.develCost as number) ?? 100) * 3;
         return [
-            notBeNeutral(),
-            existsDestCity(),
+            notOccupiedDestCity(),
             reqGeneralGold(() => cost),
             reqGeneralRice(() => cost),
-            notOccupiedDestCity(),
         ];
     }
 

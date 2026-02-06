@@ -61,7 +61,7 @@ export class ActionDefinition<
             suppliedCity(),
             beChief(),
             {
-                name: 'declareWarYearLimit',
+                name: 'reqEnvValue',
                 requires: () => [],
                 test: () => {
                     if (relYear >= 1) return { kind: 'allow' };
@@ -83,7 +83,7 @@ export class ActionDefinition<
             nearNation(),
             // legacy: startYear + 1. 0-indexed relYear로는 1
             {
-                name: 'declareWarYearLimit',
+                name: 'reqEnvValue',
                 requires: () => [],
                 test: () => {
                     if (relYear >= 1) return { kind: 'allow' };

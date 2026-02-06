@@ -73,6 +73,82 @@ const collectFiles = async (dir) => {
     return files;
 };
 
+const maskPhpComments = (text) => {
+    const chars = [...text];
+    let i = 0;
+    let quote = null;
+    let escaped = false;
+
+    const maskRange = (start, end) => {
+        for (let idx = start; idx < end; idx += 1) {
+            if (chars[idx] !== '\n') {
+                chars[idx] = ' ';
+            }
+        }
+    };
+
+    while (i < chars.length) {
+        const ch = chars[i];
+        const next = i + 1 < chars.length ? chars[i + 1] : '';
+
+        if (quote) {
+            if (escaped) {
+                escaped = false;
+            } else if (ch === '\\') {
+                escaped = true;
+            } else if (ch === quote) {
+                quote = null;
+            }
+            i += 1;
+            continue;
+        }
+
+        if (ch === '\'' || ch === '"') {
+            quote = ch;
+            i += 1;
+            continue;
+        }
+
+        if (ch === '/' && next === '/') {
+            const start = i;
+            i += 2;
+            while (i < chars.length && chars[i] !== '\n') {
+                i += 1;
+            }
+            maskRange(start, i);
+            continue;
+        }
+
+        if (ch === '#') {
+            const start = i;
+            i += 1;
+            while (i < chars.length && chars[i] !== '\n') {
+                i += 1;
+            }
+            maskRange(start, i);
+            continue;
+        }
+
+        if (ch === '/' && next === '*') {
+            const start = i;
+            i += 2;
+            while (i < chars.length - 1) {
+                if (chars[i] === '*' && chars[i + 1] === '/') {
+                    i += 2;
+                    break;
+                }
+                i += 1;
+            }
+            maskRange(start, i);
+            continue;
+        }
+
+        i += 1;
+    }
+
+    return chars.join('');
+};
+
 const buildLineIndex = (text) => {
     const starts = [0];
     for (let i = 0; i < text.length; i += 1) {
@@ -226,6 +302,23 @@ const normalizeConstraintName = (name) => {
     return base[0]?.toLowerCase() + base.slice(1);
 };
 
+const ALWAYS_FAIL_TS_ALIASES = new Set([
+    'denywithreason',
+    'notselfdestgeneral',
+    'targetmustnotbelord',
+    'reqminimumtreatyterm',
+    'reqfuturetreatyterm',
+    'reqvalidstrategiccommandtype',
+    'hasroutetodestcity',
+]);
+
+const canonicalizeConstraintName = (side, normalizedName) => {
+    if (side === 'ts' && ALWAYS_FAIL_TS_ALIASES.has(normalizedName.toLowerCase())) {
+        return 'alwaysFail';
+    }
+    return normalizedName;
+};
+
 const splitNameTokens = (name) => {
     if (!name) {
         return [];
@@ -361,7 +454,7 @@ const normalizeTsExpression = (expr) => {
 };
 
 const makeConstraintEntry = ({ side, kind, name, args, file, line, raw }) => {
-    const normalizedName = normalizeConstraintName(name);
+    const normalizedName = canonicalizeConstraintName(side, normalizeConstraintName(name));
     const argsKey = args?.length ? args.join('|') : '';
     return {
         side,
@@ -435,6 +528,10 @@ const extractPhpFileConstraints = (file, text) => {
         full: [],
         min: [],
     };
+    const assigned = {
+        full: false,
+        min: false,
+    };
 
     const regex = /\$this->(fullConditionConstraints|minConditionConstraints)\s*(\[\s*\])?\s*=/g;
     while (true) {
@@ -443,6 +540,7 @@ const extractPhpFileConstraints = (file, text) => {
             break;
         }
         const target = match[1] === 'fullConditionConstraints' ? 'full' : 'min';
+        assigned[target] = true;
         const start = match.index + match[0].length;
         const { value, endIndex } = scanToDelimiter(text, start, ';');
         const expr = value.trim();
@@ -470,7 +568,71 @@ const extractPhpFileConstraints = (file, text) => {
         regex.lastIndex = endIndex;
     }
 
-    return byKind;
+    const classMatch =
+        /class\s+([\\\p{L}_][\\\p{L}\p{N}_]*)\s+extends\s+([\\\p{L}_][\\\p{L}\p{N}_]*)/mu.exec(text);
+    const parentClass = classMatch?.[2]?.split('\\').pop() ?? null;
+
+    return {
+        ...byKind,
+        assigned,
+        parentClass,
+    };
+};
+
+const resolvePhpInheritance = (byCommand) => {
+    const resolved = new Map();
+    const visiting = new Set();
+
+    const resolveOne = (key) => {
+        if (resolved.has(key)) {
+            return resolved.get(key);
+        }
+        const current = byCommand.get(key);
+        if (!current) {
+            const empty = { full: [], min: [], assigned: { full: true, min: true }, parentClass: null };
+            resolved.set(key, empty);
+            return empty;
+        }
+        if (visiting.has(key)) {
+            return current;
+        }
+        visiting.add(key);
+
+        let parentResolved = null;
+        if (current.parentClass) {
+            const dir = key.split('/')[0];
+            const parentKey = `${dir}/${current.parentClass}`;
+            if (byCommand.has(parentKey)) {
+                parentResolved = resolveOne(parentKey);
+            }
+        }
+
+        const merged = {
+            ...current,
+            full:
+                current.assigned?.full === true
+                    ? current.full
+                    : parentResolved?.full
+                      ? [...parentResolved.full]
+                      : current.full,
+            min:
+                current.assigned?.min === true
+                    ? current.min
+                    : parentResolved?.min
+                      ? [...parentResolved.min]
+                      : current.min,
+        };
+
+        resolved.set(key, merged);
+        visiting.delete(key);
+        return merged;
+    };
+
+    for (const key of byCommand.keys()) {
+        resolveOne(key);
+    }
+
+    return resolved;
 };
 
 const readStringLikeProperty = (objLiteral, keyName) => {
@@ -863,24 +1025,98 @@ const extractTsMethodConstraints = (methodDecl, sourceFile, side, kind, file, fa
     return dedupeEntries(results);
 };
 
+const normalizeTsImportToFile = (baseFile, specifier) => {
+    if (!specifier.startsWith('.')) {
+        return null;
+    }
+    const resolved = path.resolve(path.dirname(baseFile), specifier);
+    if (resolved.endsWith('.js')) {
+        return `${resolved.slice(0, -3)}.ts`;
+    }
+    if (resolved.endsWith('.ts')) {
+        return resolved;
+    }
+    return `${resolved}.ts`;
+};
+
 const extractTsFileConstraints = (file, text) => {
     const sourceFile = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
     const factorySet = collectTsConstraintFactories(sourceFile);
     const relFile = path.relative(ROOT_DIR, file);
+    const imports = new Map();
+
+    const visitImport = (node) => {
+        if (ts.isImportDeclaration(node)) {
+            const moduleText = ts.isStringLiteral(node.moduleSpecifier) ? node.moduleSpecifier.text : null;
+            if (moduleText) {
+                const named = node.importClause?.namedBindings;
+                if (named && ts.isNamedImports(named)) {
+                    for (const element of named.elements) {
+                        imports.set(element.name.text, moduleText);
+                    }
+                }
+                if (node.importClause?.name) {
+                    imports.set(node.importClause.name.text, moduleText);
+                }
+            }
+        }
+        ts.forEachChild(node, visitImport);
+    };
+    visitImport(sourceFile);
+
     const byKind = {
         full: [],
         min: [],
     };
+    const assigned = {
+        full: false,
+        min: false,
+    };
+    let parentFile = null;
 
     const visit = (node) => {
+        if (!parentFile && ts.isVariableDeclaration(node) && node.initializer && ts.isCallExpression(node.initializer)) {
+            const callee = node.initializer.expression;
+            if (ts.isIdentifier(callee)) {
+                const moduleText = imports.get(callee.text);
+                if (moduleText) {
+                    parentFile = normalizeTsImportToFile(file, moduleText);
+                }
+            }
+        }
+
+        if (ts.isClassDeclaration(node)) {
+            const className = node.name?.text ?? null;
+            if (className === 'ActionDefinition' && node.heritageClauses) {
+                for (const heritage of node.heritageClauses) {
+                    if (heritage.token !== ts.SyntaxKind.ExtendsKeyword) {
+                        continue;
+                    }
+                    const typeNode = heritage.types[0];
+                    if (!typeNode) {
+                        continue;
+                    }
+                    const expr = typeNode.expression;
+                    if (ts.isIdentifier(expr)) {
+                        const moduleText = imports.get(expr.text);
+                        if (moduleText) {
+                            parentFile = normalizeTsImportToFile(file, moduleText);
+                        }
+                    }
+                }
+            }
+        }
+
         if (ts.isMethodDeclaration(node) && ts.isIdentifier(node.name)) {
             const name = node.name.text;
             if (name === 'buildConstraints') {
+                assigned.full = true;
                 byKind.full.push(
                     ...extractTsMethodConstraints(node, sourceFile, 'ts', 'full', relFile, factorySet)
                 );
             }
             if (name === 'buildMinConstraints') {
+                assigned.min = true;
                 byKind.min.push(
                     ...extractTsMethodConstraints(node, sourceFile, 'ts', 'min', relFile, factorySet)
                 );
@@ -892,7 +1128,11 @@ const extractTsFileConstraints = (file, text) => {
 
     byKind.full = dedupeEntries(byKind.full);
     byKind.min = dedupeEntries(byKind.min);
-    return byKind;
+    return {
+        ...byKind,
+        assigned,
+        parentFile,
+    };
 };
 
 const includeCommand = (key) => {
@@ -922,18 +1162,23 @@ const loadPhpConstraints = async () => {
         }
 
         const text = await fs.readFile(file, 'utf-8');
-        const extracted = extractPhpFileConstraints(file, text);
+        const extracted = extractPhpFileConstraints(file, maskPhpComments(text));
         byCommand.set(key, extracted);
     }
 
-    return byCommand;
+    return resolvePhpInheritance(byCommand);
 };
 
 const loadTsConstraints = async () => {
     const files = (await collectFiles(TS_ROOT)).filter((file) => file.endsWith('.ts'));
-    const byCommand = new Map();
+    const byFile = new Map();
+    const commandFileByKey = new Map();
 
     for (const file of files) {
+        const text = await fs.readFile(file, 'utf-8');
+        const extracted = extractTsFileConstraints(file, text);
+        byFile.set(file, extracted);
+
         const baseName = path.basename(file, '.ts');
         if (!/^che_|^cr_|^event_|^휴식$/.test(baseName)) {
             continue;
@@ -948,10 +1193,61 @@ const loadTsConstraints = async () => {
         if (!key || !includeCommand(key)) {
             continue;
         }
+        commandFileByKey.set(key, file);
+    }
 
-        const text = await fs.readFile(file, 'utf-8');
-        const extracted = extractTsFileConstraints(file, text);
-        byCommand.set(key, extracted);
+    const resolvedByFile = new Map();
+    const resolving = new Set();
+
+    const resolveFile = (file) => {
+        if (resolvedByFile.has(file)) {
+            return resolvedByFile.get(file);
+        }
+        const current = byFile.get(file);
+        if (!current) {
+            const empty = {
+                full: [],
+                min: [],
+                assigned: { full: true, min: true },
+                parentFile: null,
+            };
+            resolvedByFile.set(file, empty);
+            return empty;
+        }
+        if (resolving.has(file)) {
+            return current;
+        }
+        resolving.add(file);
+
+        let parentResolved = null;
+        if (current.parentFile && byFile.has(current.parentFile)) {
+            parentResolved = resolveFile(current.parentFile);
+        }
+
+        const merged = {
+            ...current,
+            full:
+                current.assigned?.full === true
+                    ? current.full
+                    : parentResolved?.full
+                      ? [...parentResolved.full]
+                      : current.full,
+            min:
+                current.assigned?.min === true
+                    ? current.min
+                    : parentResolved?.min
+                      ? [...parentResolved.min]
+                      : current.min,
+        };
+
+        resolvedByFile.set(file, merged);
+        resolving.delete(file);
+        return merged;
+    };
+
+    const byCommand = new Map();
+    for (const [key, file] of commandFileByKey.entries()) {
+        byCommand.set(key, resolveFile(file));
     }
 
     return byCommand;

@@ -6,6 +6,9 @@ import {
     suppliedCity,
     existsDestGeneral,
     resolveDestGeneralId,
+    reqGeneralGold,
+    reqGeneralRice,
+    reqEnvValue,
 } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
@@ -61,8 +64,8 @@ const differentNationDestGeneral = (): Constraint => ({
     },
 });
 
-const notDestGeneralLord = (): Constraint => ({
-    name: 'NotDestGeneralLord',
+const targetMustNotBeLord = (): Constraint => ({
+    name: 'targetMustNotBeLord',
     requires: (ctx) => {
         const destGeneralId = resolveDestGeneralId(ctx);
         if (destGeneralId === undefined) return [];
@@ -73,8 +76,8 @@ const notDestGeneralLord = (): Constraint => ({
         const destGeneral =
             destId !== undefined ? (view.get({ kind: 'destGeneral', id: destId }) as General | null) : null;
         if (!destGeneral) return { kind: 'deny', reason: '장수 정보가 없습니다.' };
-        if (destGeneral.officerLevel !== 12) return { kind: 'allow' };
-        return { kind: 'deny', reason: '군주에게는 등용장을 보낼 수 없습니다.' };
+        if (destGeneral.officerLevel === 12) return { kind: 'deny', reason: '군주에게는 등용장을 보낼 수 없습니다.' };
+        return { kind: 'allow' };
     },
 });
 
@@ -160,38 +163,37 @@ export class ActionDefinition<
     }
 
     buildMinConstraints(_ctx: ConstraintContext, _args: EmployArgs): Constraint[] {
-        return [notBeNeutral(), occupiedCity(), suppliedCity()];
+        return [
+            reqEnvValue('join_mode', '!=', 'onlyRandom', '랜덤 임관만 가능합니다'),
+            notBeNeutral(),
+            occupiedCity(),
+            suppliedCity(),
+        ];
     }
 
     buildConstraints(_ctx: ConstraintContext, args: EmployArgs): Constraint[] {
         const develCost = this.env.develCost ?? 100;
 
-        const reqCostConstraint: Constraint = {
-            name: 'ReqScoutCost',
-            requires: (c) => [
-                { kind: 'general', id: c.actorId },
-                { kind: 'destGeneral', id: args.destGeneralId },
-            ],
-            test: (c, view) => {
-                const gen = view.get({ kind: 'general', id: c.actorId }) as General | null;
-                const dest = view.get({ kind: 'destGeneral', id: args.destGeneralId }) as General | null;
-                if (!gen || !dest) return { kind: 'deny', reason: '정보 부족' };
-
-                const cost = develCost + Math.floor((dest.experience + dest.dedication) / 1000) * 10;
-                if (gen.gold >= cost) return { kind: 'allow' };
-                return { kind: 'deny', reason: `자금 ${cost}이 필요합니다.` };
-            },
-        };
-
-        return [
+        const constraints: Constraint[] = [
+            reqEnvValue('join_mode', '!=', 'onlyRandom', '랜덤 임관만 가능합니다'),
             notBeNeutral(),
             occupiedCity(),
             suppliedCity(),
             existsDestGeneral(),
             differentNationDestGeneral(),
-            notDestGeneralLord(),
-            reqCostConstraint,
+            reqGeneralGold(
+                (_c, view) => {
+                    const dest = view.get({ kind: 'destGeneral', id: args.destGeneralId }) as General | null;
+                    if (!dest) return develCost;
+                    return develCost + Math.floor((dest.experience + dest.dedication) / 1000) * 10;
+                },
+                [{ kind: 'destGeneral', id: args.destGeneralId }]
+            ),
+            reqGeneralRice(() => 0),
         ];
+
+        constraints.push(targetMustNotBeLord());
+        return constraints;
     }
 
     resolve(context: GeneralActionResolveContext<TriggerState>, args: EmployArgs): GeneralActionOutcome<TriggerState> {

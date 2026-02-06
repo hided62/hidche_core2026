@@ -1,6 +1,33 @@
 import type { City, General, Nation } from '@sammo-ts/logic/domain/entities.js';
-import { allow, readGeneral, readMetaNumber, readNation, resolveDestNationId, unknownOrDeny } from './helpers.js';
+import {
+    allow,
+    compareValues,
+    parsePercent,
+    readGeneral,
+    readMetaNumber,
+    readNation,
+    resolveDestNationId,
+    unknownOrDeny,
+    type CompareOperator,
+} from './helpers.js';
 import type { Constraint, ConstraintContext, RequirementKey, StateView } from './types.js';
+
+const readNationField = (nation: Nation, key: string): unknown => {
+    const source = nation as unknown as Record<string, unknown>;
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
+        return source[key];
+    }
+    return nation.meta[key];
+};
+
+const readNationMaxField = (nation: Nation, key: string): unknown => {
+    const maxKey = `${key}_max`;
+    const source = nation as unknown as Record<string, unknown>;
+    if (Object.prototype.hasOwnProperty.call(source, maxKey)) {
+        return source[maxKey];
+    }
+    return nation.meta[maxKey];
+};
 
 export const notWanderingNation = (): Constraint => ({
     name: 'notWanderingNation',
@@ -23,6 +50,25 @@ export const notWanderingNation = (): Constraint => ({
 
 export const beWanderingNation = (): Constraint => ({
     name: 'beWanderingNation',
+    requires: (ctx) => (ctx.nationId !== undefined ? [{ kind: 'nation', id: ctx.nationId }] : []),
+    test: (ctx, view) => {
+        const nation = readNation(view, ctx.nationId);
+        if (!nation) {
+            if (ctx.nationId === undefined) {
+                return unknownOrDeny(ctx, [], '국가 정보가 없습니다.');
+            }
+            const req: RequirementKey = { kind: 'nation', id: ctx.nationId };
+            return unknownOrDeny(ctx, [req], '국가 정보가 없습니다.');
+        }
+        if (nation.level === 0) {
+            return allow();
+        }
+        return { kind: 'deny', reason: '방랑군이 아닙니다.' };
+    },
+});
+
+export const wanderingNation = (): Constraint => ({
+    name: 'wanderingNation',
     requires: (ctx) => (ctx.nationId !== undefined ? [{ kind: 'nation', id: ctx.nationId }] : []),
     test: (ctx, view) => {
         const nation = readNation(view, ctx.nationId);
@@ -270,6 +316,148 @@ export const checkNationNameDuplicate = (name: string): Constraint => ({
             return { kind: 'deny', reason: '이미 존재하는 국가 이름입니다.' };
         }
         return allow();
+    },
+});
+
+export const reqNationValue = (
+    key: string,
+    keyNick: string,
+    comp: CompareOperator,
+    reqVal: number | string,
+    errMsg: string | null = null
+): Constraint => ({
+    name: 'reqNationValue',
+    requires: (ctx) => (ctx.nationId !== undefined ? [{ kind: 'nation', id: ctx.nationId }] : []),
+    test: (ctx, view) => {
+        const nation = readNation(view, ctx.nationId);
+        if (!nation) {
+            if (ctx.nationId === undefined) {
+                return unknownOrDeny(ctx, [], '국가 정보가 없습니다.');
+            }
+            const req: RequirementKey = { kind: 'nation', id: ctx.nationId };
+            return unknownOrDeny(ctx, [req], '국가 정보가 없습니다.');
+        }
+
+        const target = readNationField(nation, key);
+        let required: unknown = reqVal;
+        if (typeof reqVal === 'string') {
+            const ratio = parsePercent(reqVal);
+            if (ratio !== null) {
+                const maxValue = readNationMaxField(nation, key);
+                if (typeof maxValue === 'number') {
+                    required = maxValue * ratio;
+                }
+            }
+        }
+
+        if (compareValues(target, comp, required)) {
+            return allow();
+        }
+        if (errMsg) {
+            return { kind: 'deny', reason: errMsg };
+        }
+        return { kind: 'deny', reason: `${keyNick} 조건을 만족하지 않습니다.` };
+    },
+});
+
+export const reqDestNationValue = (
+    key: string,
+    keyNick: string,
+    comp: CompareOperator,
+    reqVal: number | string,
+    errMsg: string | null = null
+): Constraint => ({
+    name: 'reqDestNationValue',
+    requires: (ctx) => {
+        const destNationId = resolveDestNationId(ctx);
+        if (destNationId === undefined) {
+            return [];
+        }
+        return [{ kind: 'destNation', id: destNationId }];
+    },
+    test: (ctx, view) => {
+        const destNationId = resolveDestNationId(ctx);
+        if (destNationId === undefined) {
+            return unknownOrDeny(ctx, [], '상대 국가 정보가 없습니다.');
+        }
+        const req: RequirementKey = { kind: 'destNation', id: destNationId };
+        if (!view.has(req)) {
+            return unknownOrDeny(ctx, [req], '상대 국가 정보가 없습니다.');
+        }
+        const nation = view.get(req) as Nation | null;
+        if (!nation) {
+            return unknownOrDeny(ctx, [req], '상대 국가 정보가 없습니다.');
+        }
+
+        const target = readNationField(nation, key);
+        let required: unknown = reqVal;
+        if (typeof reqVal === 'string') {
+            const ratio = parsePercent(reqVal);
+            if (ratio !== null) {
+                const maxValue = readNationMaxField(nation, key);
+                if (typeof maxValue === 'number') {
+                    required = maxValue * ratio;
+                }
+            }
+        }
+
+        if (compareValues(target, comp, required)) {
+            return allow();
+        }
+        if (errMsg) {
+            return { kind: 'deny', reason: errMsg };
+        }
+        return { kind: 'deny', reason: `${keyNick} 조건을 만족하지 않습니다.` };
+    },
+});
+
+export const allowWar = (): Constraint => ({
+    name: 'allowWar',
+    requires: (ctx) => (ctx.nationId !== undefined ? [{ kind: 'nation', id: ctx.nationId }] : []),
+    test: (ctx, view) => {
+        const nation = readNation(view, ctx.nationId);
+        if (!nation) {
+            if (ctx.nationId === undefined) {
+                return unknownOrDeny(ctx, [], '국가 정보가 없습니다.');
+            }
+            const req: RequirementKey = { kind: 'nation', id: ctx.nationId };
+            return unknownOrDeny(ctx, [req], '국가 정보가 없습니다.');
+        }
+
+        const source = nation as unknown as Record<string, unknown>;
+        const war = typeof source.war === 'number' ? source.war : nation.meta.war;
+        if (typeof war !== 'number' || war === 0) {
+            return allow();
+        }
+        return { kind: 'deny', reason: '현재 전쟁 금지입니다.' };
+    },
+});
+
+export const reqNationAuxValue = (
+    key: string,
+    defaultValue: number,
+    comp: CompareOperator,
+    reqVal: number,
+    errMsg: string
+): Constraint => ({
+    name: 'reqNationAuxValue',
+    requires: (ctx) => (ctx.nationId !== undefined ? [{ kind: 'nation', id: ctx.nationId }] : []),
+    test: (ctx, view) => {
+        const nation = readNation(view, ctx.nationId);
+        if (!nation) {
+            if (ctx.nationId === undefined) {
+                return unknownOrDeny(ctx, [], '국가 정보가 없습니다.');
+            }
+            const req: RequirementKey = { kind: 'nation', id: ctx.nationId };
+            return unknownOrDeny(ctx, [req], '국가 정보가 없습니다.');
+        }
+
+        const raw = nation.meta[key];
+        const target = typeof raw === 'number' ? raw : defaultValue;
+        if (compareValues(target, comp, reqVal)) {
+            return allow();
+        }
+        return { kind: 'deny', reason: errMsg };
     },
 });
 

@@ -1,7 +1,7 @@
 import type { General, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext, RequirementKey, StateView } from '@sammo-ts/logic/constraints/types.js';
 import {
-    alwaysFail,
+    denyWithReason,
     beChief,
     existsDestGeneral,
     friendlyDestGeneral,
@@ -200,7 +200,7 @@ export class ActionDefinition<
         }
 
         if (ctx.destGeneralId === ctx.actorId) {
-            return [alwaysFail('본인입니다')];
+            return [denyWithReason('본인입니다')];
         }
 
         const getRequired = (_ctx: ConstraintContext, _view: StateView): number =>

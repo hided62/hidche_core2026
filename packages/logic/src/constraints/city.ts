@@ -499,6 +499,28 @@ export const beNeutralCity = (): Constraint => ({
     },
 });
 
+export const constructableCity = (): Constraint => ({
+    name: 'constructableCity',
+    requires: (ctx) => (ctx.cityId !== undefined ? [{ kind: 'city', id: ctx.cityId }] : []),
+    test: (ctx, view) => {
+        const city = readCity(view, ctx.cityId);
+        if (!city) {
+            if (ctx.cityId === undefined) {
+                return unknownOrDeny(ctx, [], '도시 정보가 없습니다.');
+            }
+            const req: RequirementKey = { kind: 'city', id: ctx.cityId };
+            return unknownOrDeny(ctx, [req], '도시 정보가 없습니다.');
+        }
+        if (city.nationId !== 0) {
+            return { kind: 'deny', reason: '공백지가 아닙니다.' };
+        }
+        if (![5, 6].includes(city.level)) {
+            return { kind: 'deny', reason: '중, 소 도시에만 가능합니다.' };
+        }
+        return allow();
+    },
+});
+
 export const reqCityLevel = (levels: number[]): Constraint => ({
     name: 'reqCityLevel',
     requires: (ctx) => (ctx.cityId !== undefined ? [{ kind: 'city', id: ctx.cityId }] : []),

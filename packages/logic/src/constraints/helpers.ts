@@ -120,3 +120,28 @@ export const parsePercent = (value: string): number | null => {
     }
     return Number(match[1]) / 100;
 };
+
+export type CompareOperator = '>' | '>=' | '==' | '<=' | '<' | '!=' | '===' | '!==';
+
+export const compareValues = (target: unknown, op: CompareOperator, source: unknown): boolean => {
+    const lhs = target as any;
+    const rhs = source as any;
+    switch (op) {
+        case '<':
+            return lhs < rhs;
+        case '<=':
+            return lhs <= rhs;
+        case '==':
+            return lhs == rhs;
+        case '!=':
+            return lhs != rhs;
+        case '===':
+            return lhs === rhs;
+        case '!==':
+            return lhs !== rhs;
+        case '>=':
+            return lhs >= rhs;
+        case '>':
+            return lhs > rhs;
+    }
+};

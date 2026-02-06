@@ -37,8 +37,8 @@ const MIN_TERM_MONTHS = 6;
 
 const resolveMonthIndex = (year: number, month: number): number => year * 12 + month - 1;
 
-const requireMinimumTerm = (minMonths: number): Constraint => ({
-    name: 'RequireNonAggressionMinimumTerm',
+const reqMinimumTreatyTerm = (minMonths: number): Constraint => ({
+    name: 'reqMinimumTreatyTerm',
     requires: () => [
         { kind: 'arg', key: 'year' },
         { kind: 'arg', key: 'month' },
@@ -108,7 +108,7 @@ export class ActionDefinition<
             notBeNeutral(),
             existsDestNation(),
             differentDestNation(),
-            requireMinimumTerm(MIN_TERM_MONTHS),
+            reqMinimumTreatyTerm(MIN_TERM_MONTHS),
             disallowDiplomacyBetweenStatus({
                 0: '아국과 이미 교전중입니다.',
                 1: '아국과 이미 선포중입니다.',

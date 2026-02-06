@@ -80,7 +80,7 @@ export class ActionDefinition<
             existsDestGeneral(),
             friendlyDestGeneral(),
             {
-                name: 'notSelf',
+                name: 'notSelfDestGeneral',
                 requires: () => [],
                 test: (ctx: ConstraintContext) => {
                     if (ctx.actorId === args.destGeneralID) {

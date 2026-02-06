@@ -71,8 +71,8 @@ const ARGS_SCHEMA = z.object({
         .refine((value) => value !== 'che_피장파장', '같은 전략은 선택할 수 없습니다.'),
 });
 
-const requireCommandType = (): Constraint => ({
-    name: 'requireStrategicCommandType',
+const reqValidStrategicCommandType = (): Constraint => ({
+    name: 'reqValidStrategicCommandType',
     requires: () => [{ kind: 'arg', key: 'commandType' }],
     test: (ctx) => {
         const commandType = ctx.args.commandType;
@@ -225,7 +225,7 @@ export class ActionDefinition<
             existsDestNation(),
             allowDiplomacyBetweenStatus([0, 1], '선포, 전쟁중인 상대국에게만 가능합니다.'),
             availableStrategicCommand(),
-            requireCommandType(),
+            reqValidStrategicCommandType(),
         ];
     }
 

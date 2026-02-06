@@ -48,6 +48,12 @@ const PRE_REQ_TURN = 2;
 const EXP_DED_GAIN = 5 * (PRE_REQ_TURN + 1);
 const DAMAGE_RATE = 0.2;
 
+const battleGroundCity = (): Constraint => ({
+    name: 'battleGroundCity',
+    requires: (ctx) => allowDiplomacyBetweenStatus([0], '교전중인 국가의 도시가 아닙니다.').requires(ctx),
+    test: (ctx, view) => allowDiplomacyBetweenStatus([0], '교전중인 국가의 도시가 아닙니다.').test(ctx, view),
+});
+
 // 수몰 쿨타임 계산을 담당한다.
 export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     private readonly pipeline: GeneralActionPipeline<TriggerState>;
@@ -189,7 +195,7 @@ export class ActionDefinition<
             beChief(),
             notNeutralDestCity(),
             notOccupiedDestCity(),
-            allowDiplomacyBetweenStatus([0], '교전중인 국가의 도시가 아닙니다.'),
+            battleGroundCity(),
             availableStrategicCommand(),
         ];
     }

@@ -1,6 +1,12 @@
 import type { City, General, GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext, RequirementKey } from '@sammo-ts/logic/constraints/types.js';
-import { allow, notWanderingNation, unknownOrDeny } from '@sammo-ts/logic/constraints/presets.js';
+import {
+    allow,
+    notWanderingNation,
+    unknownOrDeny,
+    notOpeningPart,
+    allowDiplomacyStatus,
+} from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionOutcome,
@@ -184,7 +190,14 @@ export class ActionDefinition<
     }
 
     buildConstraints(_ctx: ConstraintContext, _args: WanderArgs): Constraint[] {
-        return [beLord(), notWanderingNation()];
+        const relYear = typeof _ctx.env.relYear === 'number' ? _ctx.env.relYear : 0;
+        const openingPartYear = typeof _ctx.env.openingPartYear === 'number' ? _ctx.env.openingPartYear : 0;
+        return [
+            beLord(),
+            notWanderingNation(),
+            notOpeningPart(relYear, openingPartYear),
+            allowDiplomacyStatus([2, 7], '방랑할 수 없는 외교상태입니다.'),
+        ];
     }
 
     resolve(context: WanderResolveContext<TriggerState>, args: WanderArgs): GeneralActionOutcome<TriggerState> {

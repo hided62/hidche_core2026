@@ -1,7 +1,7 @@
 import type { General, GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
-    alwaysFail,
+    denyWithReason,
     beChief,
     existsDestGeneral,
     friendlyDestGeneral,
@@ -54,7 +54,7 @@ export class ActionDefinition<
 
     buildConstraints(ctx: ConstraintContext, _args: TroopKickArgs): Constraint[] {
         if (ctx.destGeneralId !== undefined && ctx.destGeneralId === ctx.actorId) {
-            return [alwaysFail('본인입니다')];
+            return [denyWithReason('본인입니다')];
         }
         return [notBeNeutral(), beChief(), existsDestGeneral(), friendlyDestGeneral()];
     }

@@ -1,6 +1,36 @@
 import type { General } from '@sammo-ts/logic/domain/entities.js';
-import { allow, readDestGeneral, resolveDestGeneralId, resolveDestNationId, unknownOrDeny } from './helpers.js';
+import {
+    allow,
+    compareValues,
+    readDestGeneral,
+    resolveDestGeneralId,
+    resolveDestNationId,
+    unknownOrDeny,
+    type CompareOperator,
+} from './helpers.js';
 import type { Constraint, ConstraintContext, RequirementKey, StateView } from './types.js';
+
+const readNumericField = (source: Record<string, unknown>, key: string): number | null => {
+    const value = source[key];
+    return typeof value === 'number' ? value : null;
+};
+
+const readStringField = (source: Record<string, unknown>, key: string): string | null => {
+    const value = source[key];
+    return typeof value === 'string' ? value : null;
+};
+
+const readNationNumeric = (nation: Record<string, unknown>, key: string): number | null => {
+    const direct = readNumericField(nation, key);
+    if (direct !== null) {
+        return direct;
+    }
+    const meta = nation.meta;
+    if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
+        return null;
+    }
+    return readNumericField(meta as Record<string, unknown>, key);
+};
 
 export const notBeNeutral = (): Constraint => ({
     name: 'notBeNeutral',
@@ -61,6 +91,25 @@ export const beChief = (): Constraint => ({
 
 export const beMonarch = (): Constraint => ({
     name: 'beMonarch',
+    requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
+    test: (ctx, view) => {
+        const req: RequirementKey = { kind: 'general', id: ctx.actorId };
+        if (!view.has(req)) {
+            return unknownOrDeny(ctx, [req], '장수 정보가 없습니다.');
+        }
+        const general = view.get(req) as General | null;
+        if (!general) {
+            return unknownOrDeny(ctx, [req], '장수 정보가 없습니다.');
+        }
+        if (general.officerLevel === 12) {
+            return allow();
+        }
+        return { kind: 'deny', reason: '군주가 아닙니다.' };
+    },
+});
+
+export const beLord = (): Constraint => ({
+    name: 'beLord',
     requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
     test: (ctx, view) => {
         const req: RequirementKey = { kind: 'general', id: ctx.actorId };
@@ -234,6 +283,110 @@ export const noPenalty = (penaltyKey: string): Constraint => ({
             kind: 'deny',
             reason: `징계 사유: ${typeof reason === 'string' ? reason : String(reason)}`,
         };
+    },
+});
+
+export const reqGeneralValue = (
+    key: string,
+    keyNick: string,
+    comp: CompareOperator,
+    reqVal: unknown,
+    errMsg: string | null = null
+): Constraint => ({
+    name: 'reqGeneralValue',
+    requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
+    test: (ctx, view) => {
+        const req: RequirementKey = { kind: 'general', id: ctx.actorId };
+        if (!view.has(req)) {
+            return unknownOrDeny(ctx, [req], '장수 정보가 없습니다.');
+        }
+        const general = view.get(req) as General | null;
+        if (!general) {
+            return unknownOrDeny(ctx, [req], '장수 정보가 없습니다.');
+        }
+        const source = general as unknown as Record<string, unknown>;
+        let target = source[key];
+        if (target === undefined && source.meta && typeof source.meta === 'object' && !Array.isArray(source.meta)) {
+            target = (source.meta as Record<string, unknown>)[key];
+        }
+
+        if (compareValues(target, comp, reqVal)) {
+            return allow();
+        }
+        if (errMsg) {
+            return { kind: 'deny', reason: errMsg };
+        }
+        return { kind: 'deny', reason: `${keyNick} 조건을 만족하지 않습니다.` };
+    },
+});
+
+export const allowJoinDestNation = (relYear: number): Constraint => ({
+    name: 'allowJoinDestNation',
+    requires: (ctx) => {
+        const reqs: RequirementKey[] = [
+            { kind: 'general', id: ctx.actorId },
+            { kind: 'env', key: 'openingPartYear' },
+            { kind: 'env', key: 'initialNationGenLimit' },
+            { kind: 'env', key: 'maxGeneral' },
+        ];
+        const destNationId = resolveDestNationId(ctx);
+        if (destNationId !== undefined) {
+            reqs.push({ kind: 'destNation', id: destNationId });
+        }
+        return reqs;
+    },
+    test: (ctx, view) => {
+        const generalReq: RequirementKey = { kind: 'general', id: ctx.actorId };
+        if (!view.has(generalReq)) {
+            return unknownOrDeny(ctx, [generalReq], '장수 정보가 없습니다.');
+        }
+        const general = view.get(generalReq) as General | null;
+        if (!general) {
+            return unknownOrDeny(ctx, [generalReq], '장수 정보가 없습니다.');
+        }
+
+        const destNationId = resolveDestNationId(ctx);
+        if (destNationId === undefined) {
+            return unknownOrDeny(ctx, [], '국가 정보가 없습니다.');
+        }
+        const destReq: RequirementKey = { kind: 'destNation', id: destNationId };
+        if (!view.has(destReq)) {
+            return unknownOrDeny(ctx, [destReq], '국가 정보가 없습니다.');
+        }
+        const destNation = view.get(destReq) as Record<string, unknown> | null;
+        if (!destNation) {
+            return unknownOrDeny(ctx, [destReq], '국가 정보가 없습니다.');
+        }
+
+        const openingPartYear = view.get({ kind: 'env', key: 'openingPartYear' }) as number | null;
+        const initialNationGenLimit = view.get({ kind: 'env', key: 'initialNationGenLimit' }) as number | null;
+        const defaultMaxGeneral = view.get({ kind: 'env', key: 'maxGeneral' }) as number | null;
+
+        const gennum = readNationNumeric(destNation, 'gennum') ?? 0;
+        const scout = readNationNumeric(destNation, 'scout') ?? 0;
+        const name = readStringField(destNation, 'name') ?? '';
+
+        const openingLimit = typeof openingPartYear === 'number' ? openingPartYear : 0;
+        const initialLimit = typeof initialNationGenLimit === 'number' ? initialNationGenLimit : 0;
+        const normalLimit = typeof defaultMaxGeneral === 'number' ? defaultMaxGeneral : initialLimit;
+        const genLimit = relYear < openingLimit ? initialLimit : normalLimit;
+        if (genLimit > 0 && gennum >= genLimit) {
+            return { kind: 'deny', reason: '임관이 제한되고 있습니다.' };
+        }
+
+        if (scout === 1) {
+            return { kind: 'deny', reason: '임관이 금지되어 있습니다.' };
+        }
+
+        if (general.npcState < 2 && name.startsWith('ⓤ')) {
+            return { kind: 'deny', reason: '유저장은 태수국에 임관할 수 없습니다.' };
+        }
+
+        if (general.npcState !== 9 && name.startsWith('ⓞ')) {
+            return { kind: 'deny', reason: '이민족 국가에 임관할 수 없습니다.' };
+        }
+
+        return allow();
     },
 });
 

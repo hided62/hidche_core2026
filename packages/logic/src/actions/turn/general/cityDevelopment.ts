@@ -4,8 +4,9 @@ import {
     notBeNeutral,
     notWanderingNation,
     occupiedCity,
-    remainCityCapacityByMax,
+    remainCityCapacity,
     reqGeneralGold,
+    reqGeneralRice,
     suppliedCity,
 } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
@@ -61,8 +62,9 @@ export class CityDevelopmentActionDefinition<
             notWanderingNation(),
             occupiedCity(),
             suppliedCity(),
-            remainCityCapacityByMax(this.config.statKey, this.config.maxKey, this.config.label),
+            remainCityCapacity(this.config.statKey, this.config.label),
             reqGeneralGold(getRequiredGold),
+            reqGeneralRice(() => 0),
         ];
     }
 
