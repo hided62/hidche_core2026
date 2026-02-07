@@ -400,16 +400,95 @@ const findPhpAssignments = (text) => {
     return assignments;
 };
 
+const PHP_LOG_METHODS = {
+    pushGeneralActionLog: { scope: 'GENERAL', category: 'ACTION', generalMethod: true },
+    pushGeneralHistoryLog: { scope: 'GENERAL', category: 'HISTORY', generalMethod: true },
+    pushNationalActionLog: { scope: 'NATION', category: 'ACTION', generalMethod: false },
+    pushNationalHistoryLog: { scope: 'NATION', category: 'HISTORY', generalMethod: false },
+    pushGlobalActionLog: { scope: 'SYSTEM', category: 'ACTION', generalMethod: false },
+    pushGlobalHistoryLog: { scope: 'SYSTEM', category: 'HISTORY', generalMethod: false },
+};
+
+const findPhpActorGeneralVars = (text) => {
+    const vars = new Set();
+    const regex = /\$([A-Za-z_][A-Za-z0-9_]*)\s*=\s*\$this->generalObj\s*;/g;
+    while (true) {
+        const match = regex.exec(text);
+        if (!match) {
+            break;
+        }
+        vars.add(match[1]);
+    }
+    return vars;
+};
+
+const findPhpActorLoggerVars = (text, actorGeneralVars) => {
+    const vars = new Set(['logger']);
+    const regex =
+        /\$([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(\$this->generalObj|\$[A-Za-z_][A-Za-z0-9_]*)\s*->\s*getLogger\s*\(\s*\)\s*;/g;
+    while (true) {
+        const match = regex.exec(text);
+        if (!match) {
+            break;
+        }
+        const lhs = match[1];
+        const rhs = match[2];
+        if (rhs === '$this->generalObj') {
+            vars.add(lhs);
+            continue;
+        }
+        const generalVar = rhs.slice(1);
+        if (actorGeneralVars.has(generalVar)) {
+            vars.add(lhs);
+        }
+    }
+    return vars;
+};
+
+const isPhpActorLoggerExpr = (calleeExpr, actorGeneralVars, actorLoggerVars) => {
+    if (!calleeExpr) {
+        return false;
+    }
+
+    if (calleeExpr.includes('$this->generalObj->getLogger(')) {
+        return true;
+    }
+
+    for (const actorGeneralVar of actorGeneralVars) {
+        if (calleeExpr.includes(`$${actorGeneralVar}->getLogger(`)) {
+            return true;
+        }
+    }
+
+    const variableOnly = calleeExpr.match(/^\$([A-Za-z_][A-Za-z0-9_]*)$/);
+    if (variableOnly) {
+        return actorLoggerVars.has(variableOnly[1]);
+    }
+
+    return false;
+};
+
 const extractPhpLogCalls = (text, assignments) => {
     const results = [];
-    const regex = /pushGeneralActionLog\s*\(/g;
     const lineStarts = buildLineIndex(text);
+    const actorGeneralVars = findPhpActorGeneralVars(text);
+    const actorLoggerVars = findPhpActorLoggerVars(text, actorGeneralVars);
+    const regex =
+        /([$\w><:\-\(\)]+)\s*->\s*(pushGeneralActionLog|pushGeneralHistoryLog|pushNationalActionLog|pushNationalHistoryLog|pushGlobalActionLog|pushGlobalHistoryLog)\s*\(/g;
 
     while (true) {
         const match = regex.exec(text);
         if (!match) {
             break;
         }
+
+        const calleeExpr = match[1]?.trim() ?? '';
+        const methodName = match[2];
+        const methodMeta = PHP_LOG_METHODS[methodName];
+        if (!methodMeta) {
+            continue;
+        }
+
         const startIndex = match.index + match[0].length;
         const { value, endIndex, endedBy } = scanToFirstArgumentEnd(text, startIndex);
         let format = null;
@@ -422,13 +501,19 @@ const extractPhpLogCalls = (text, assignments) => {
                 format = formatMatch[1];
             }
         }
+
         const parsed = parsePhpExprToTemplate(value, assignments, match.index);
+        const hasGeneralId = methodMeta.generalMethod && !isPhpActorLoggerExpr(calleeExpr, actorGeneralVars, actorLoggerVars);
+
         results.push({
             pos: match.index,
             raw: value.trim(),
             template: parsed.template,
             line: getLineNumber(lineStarts, match.index),
             format,
+            category: methodMeta.category,
+            scope: methodMeta.scope,
+            hasGeneralId,
         });
     }
 
@@ -574,7 +659,80 @@ const extractTsLogs = (filePath, text) => {
     };
 
     visit(sourceFile);
-    return results;
+
+    if (results.length > 0) {
+        return results;
+    }
+
+    // Wrapper 파일(event_*.ts)에서 팩토리 호출만 있는 경우 로그를 보완 추출한다.
+    const factoryResults = [];
+    const visitFactory = (node) => {
+        if (!ts.isCallExpression(node) || !ts.isIdentifier(node.expression)) {
+            ts.forEachChild(node, visitFactory);
+            return;
+        }
+        if (node.expression.text !== 'createEventResearchCommand') {
+            ts.forEachChild(node, visitFactory);
+            return;
+        }
+        const [arg] = node.arguments;
+        if (!arg || !ts.isObjectLiteralExpression(arg)) {
+            ts.forEachChild(node, visitFactory);
+            return;
+        }
+        const nameProp = arg.properties.find(
+            (prop) =>
+                ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) && prop.name.text === 'name'
+        );
+        if (!nameProp || !ts.isPropertyAssignment(nameProp)) {
+            ts.forEachChild(node, visitFactory);
+            return;
+        }
+        const nameExpr = nameProp.initializer;
+        if (!ts.isStringLiteral(nameExpr) && !ts.isNoSubstitutionTemplateLiteral(nameExpr)) {
+            ts.forEachChild(node, visitFactory);
+            return;
+        }
+        const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart());
+        factoryResults.push(
+            {
+                kind: 'factory',
+                template: '<M>${}</> 완료',
+                raw: '`<M>${ACTION_NAME}</> 완료`',
+                line: line + 1,
+                category: 'ACTION',
+                scope: 'GENERAL',
+                format: 'MONTH',
+                hasGeneralId: false,
+                isProperty: false,
+            },
+            {
+                kind: 'factory',
+                template: '<M>${}</> 완료',
+                raw: '`<M>${ACTION_NAME}</> 완료`',
+                line: line + 1,
+                category: 'HISTORY',
+                scope: 'GENERAL',
+                format: 'YEAR_MONTH',
+                hasGeneralId: false,
+                isProperty: false,
+            },
+            {
+                kind: 'factory',
+                template: '<Y>${}</>${} <M>${}</> 완료',
+                raw: '`<Y>${generalName}</>${josaYi} <M>${ACTION_NAME}</> 완료`',
+                line: line + 1,
+                category: 'HISTORY',
+                scope: 'NATION',
+                format: 'YEAR_MONTH',
+                hasGeneralId: false,
+                isProperty: false,
+            }
+        );
+        ts.forEachChild(node, visitFactory);
+    };
+    visitFactory(sourceFile);
+    return factoryResults;
 };
 
 const normalizeTemplate = (text) => {
@@ -600,13 +758,7 @@ const isTargetLog = (entry) => {
     if (!entry) {
         return false;
     }
-    if (entry.format === 'PLAIN') {
-        return true;
-    }
-    if (entry.hasGeneralId) {
-        return true;
-    }
-    return false;
+    return !!entry.hasGeneralId;
 };
 
 const loadIgnoreConfig = async () => {
@@ -666,7 +818,7 @@ const shouldIgnoreTemplate = (key, template, rules) => {
     return false;
 };
 
-const shouldIncludeTsEntry = (entry) => {
+const shouldIncludeEntryByMode = (entry) => {
     if (mode === 'all') {
         return true;
     }
@@ -743,9 +895,15 @@ const loadPhpLogs = async () => {
             line: log.line,
             template: log.template,
             raw: log.raw,
+            category: log.category,
+            scope: log.scope,
             format: log.format,
+            hasGeneralId: log.hasGeneralId,
         }));
         const filtered = normalized.filter((entry) => {
+            if (!shouldIncludeEntryByMode(entry)) {
+                return false;
+            }
             if (excludeGuards && isGuardLog(entry.template)) {
                 return false;
             }
@@ -785,7 +943,7 @@ const loadTsLogs = async () => {
         const text = await fs.readFile(file, 'utf-8');
         const entries = extractTsLogs(file, text);
         const filtered = entries
-            .filter((entry) => shouldIncludeTsEntry(entry))
+            .filter((entry) => shouldIncludeEntryByMode(entry))
             .map((entry) => ({
                 file: path.relative(ROOT_DIR, file),
                 line: entry.line,
