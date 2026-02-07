@@ -8,6 +8,8 @@ const TS_ROOT = path.join(ROOT_DIR, 'packages', 'logic', 'src', 'actions');
 
 const DEFAULT_MODE = 'all';
 const DEFAULT_SIMILARITY = 0.6;
+const DEFAULT_USE_COMPAT = true;
+const DEFAULT_COMPAT_FILE = 'tools/compare-command-constraints.compat.json';
 
 const HELP_TEXT = `
 Usage: node tools/compare-command-constraints.mjs [options]
@@ -22,6 +24,9 @@ Options:
   --strict                 Compare with argument signatures.
   --json                   Print JSON report.
   --show-matches           Print matched command keys.
+  --show-compat            Print compatibility-matched pairs.
+  --no-compat              Disable compatibility alias rules (default: enabled).
+  --compat-file <path>     Compatibility rules JSON file (default: tools/compare-command-constraints.compat.json).
   --similarity <0..1>      Near-match threshold for non-strict mode (default: 0.6).
   --help                   Show this help.
 `;
@@ -52,12 +57,18 @@ const includeRegex = includePattern ? new RegExp(includePattern) : null;
 const strict = args.includes('--strict');
 const asJson = args.includes('--json');
 const showMatches = args.includes('--show-matches');
+const showCompat = args.includes('--show-compat');
+const useCompat = DEFAULT_USE_COMPAT && !args.includes('--no-compat');
+const compatFile = readArgValue('--compat-file') ?? DEFAULT_COMPAT_FILE;
 const similarityArg = readArgValue('--similarity');
 const similarityThreshold = similarityArg === null ? DEFAULT_SIMILARITY : Number(similarityArg);
 if (!Number.isFinite(similarityThreshold) || similarityThreshold < 0 || similarityThreshold > 1) {
     console.error(`Invalid --similarity: ${similarityArg}`);
     process.exit(1);
 }
+
+let compatibilityRules = [];
+let loadedCompatFile = null;
 
 const collectFiles = async (dir) => {
     const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -370,6 +381,255 @@ const nameSimilarity = (a, b) => {
     }
     const unionSize = new Set([...setA, ...setB]).size;
     return unionSize > 0 ? common / unionSize : 0;
+};
+
+const stripWrappingQuotes = (value) => {
+    const text = String(value ?? '').trim();
+    if (!text) {
+        return '';
+    }
+    if (
+        (text.startsWith('\'') && text.endsWith('\'')) ||
+        (text.startsWith('"') && text.endsWith('"')) ||
+        (text.startsWith('`') && text.endsWith('`'))
+    ) {
+        return text.slice(1, -1);
+    }
+    return text;
+};
+
+const parseNumberishArg = (value) => {
+    const text = stripWrappingQuotes(value);
+    if (!/^[-+]?\d+(\.\d+)?$/.test(text)) {
+        return null;
+    }
+    const parsed = Number(text);
+    return Number.isFinite(parsed) ? parsed : null;
+};
+
+const normalizeFieldToken = (value) => stripWrappingQuotes(value).replace(/_/g, '').toLowerCase();
+const normalizeCompToken = (value) => stripWrappingQuotes(value).trim();
+const normalizeRuleConstraintName = (side, name) => canonicalizeConstraintName(side, normalizeConstraintName(name));
+
+const normalizeByTransform = (value, transform) => {
+    if (transform === 'field') {
+        return normalizeFieldToken(value);
+    }
+    if (transform === 'comp') {
+        return normalizeCompToken(value);
+    }
+    if (transform === 'raw') {
+        return String(value ?? '').trim();
+    }
+    if (transform === 'lower') {
+        return stripWrappingQuotes(value).toLowerCase();
+    }
+    return stripWrappingQuotes(value);
+};
+
+const toArrayOrEmpty = (value) => {
+    if (!value) {
+        return [];
+    }
+    return Array.isArray(value) ? value : [];
+};
+
+const toRuleNameSet = (side, spec, ruleId) => {
+    const names = [];
+    if (typeof spec.name === 'string') {
+        names.push(spec.name);
+    }
+    for (const item of toArrayOrEmpty(spec.nameAny)) {
+        if (typeof item === 'string') {
+            names.push(item);
+        }
+    }
+    if (names.length === 0) {
+        throw new Error(`Compatibility rule "${ruleId}" must have "${side}.name" or "${side}.nameAny".`);
+    }
+    const normalizedNames = names.map((name) => normalizeRuleConstraintName(side, name)).filter((name) => !!name);
+    if (normalizedNames.length === 0) {
+        throw new Error(`Compatibility rule "${ruleId}" has no valid "${side}" constraint name.`);
+    }
+    return new Set(normalizedNames);
+};
+
+const parseRuleIndex = (value, ruleId, kind) => {
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed < 0) {
+        throw new Error(`Compatibility rule "${ruleId}" has invalid ${kind} index: ${String(value)}`);
+    }
+    return parsed;
+};
+
+const compileRuleSideSpec = (side, sideSpec, ruleId) => {
+    if (!sideSpec || typeof sideSpec !== 'object' || Array.isArray(sideSpec)) {
+        throw new Error(`Compatibility rule "${ruleId}" is missing valid "${side}" spec.`);
+    }
+
+    const names = toRuleNameSet(side, sideSpec, ruleId);
+    const equals = toArrayOrEmpty(sideSpec.equals).map((cond, idx) => {
+        if (!cond || typeof cond !== 'object' || Array.isArray(cond)) {
+            throw new Error(`Compatibility rule "${ruleId}" has invalid ${side}.equals[${idx}]`);
+        }
+        const index = parseRuleIndex(cond.index, ruleId, `${side}.equals[${idx}]`);
+        const transform = typeof cond.transform === 'string' ? cond.transform : 'text';
+        const hasValue = Object.prototype.hasOwnProperty.call(cond, 'value');
+        const valueAnyRaw = toArrayOrEmpty(cond.valueAny);
+        const valueAny = valueAnyRaw.map((item) => normalizeByTransform(item, transform));
+        if (!hasValue && valueAny.length === 0) {
+            throw new Error(`Compatibility rule "${ruleId}" has no value in ${side}.equals[${idx}]`);
+        }
+        const expected = hasValue ? normalizeByTransform(cond.value, transform) : null;
+        return {
+            index,
+            transform,
+            expected,
+            expectedAny: valueAny,
+        };
+    });
+
+    const numberEquals = toArrayOrEmpty(sideSpec.numberEquals).map((cond, idx) => {
+        if (!cond || typeof cond !== 'object' || Array.isArray(cond)) {
+            throw new Error(`Compatibility rule "${ruleId}" has invalid ${side}.numberEquals[${idx}]`);
+        }
+        const index = parseRuleIndex(cond.index, ruleId, `${side}.numberEquals[${idx}]`);
+        const expected = Number(cond.value);
+        if (!Number.isFinite(expected)) {
+            throw new Error(`Compatibility rule "${ruleId}" has invalid number in ${side}.numberEquals[${idx}]`);
+        }
+        return { index, expected };
+    });
+
+    const numberBinds = toArrayOrEmpty(sideSpec.numberBinds).map((cond, idx) => {
+        if (!cond || typeof cond !== 'object' || Array.isArray(cond)) {
+            throw new Error(`Compatibility rule "${ruleId}" has invalid ${side}.numberBinds[${idx}]`);
+        }
+        const index = parseRuleIndex(cond.index, ruleId, `${side}.numberBinds[${idx}]`);
+        const bind = typeof cond.bind === 'string' ? cond.bind.trim() : '';
+        if (!bind) {
+            throw new Error(`Compatibility rule "${ruleId}" has empty bind in ${side}.numberBinds[${idx}]`);
+        }
+        return { index, bind };
+    });
+
+    return {
+        names,
+        equals,
+        numberEquals,
+        numberBinds,
+    };
+};
+
+const compileCompatibilityRules = (parsed) => {
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('Compatibility file must be a JSON object.');
+    }
+    const rawRules = toArrayOrEmpty(parsed.rules);
+    const compiled = [];
+    for (let idx = 0; idx < rawRules.length; idx += 1) {
+        const rule = rawRules[idx];
+        if (!rule || typeof rule !== 'object' || Array.isArray(rule)) {
+            throw new Error(`Compatibility rule at index ${idx} must be an object.`);
+        }
+        const ruleId =
+            typeof rule.id === 'string' && rule.id.trim().length > 0 ? rule.id.trim() : `compat_rule_${idx + 1}`;
+        compiled.push({
+            id: ruleId,
+            noteTemplate: typeof rule.noteTemplate === 'string' ? rule.noteTemplate : '',
+            php: compileRuleSideSpec('php', rule.php, ruleId),
+            ts: compileRuleSideSpec('ts', rule.ts, ruleId),
+        });
+    }
+    return compiled;
+};
+
+const formatCompatibilityNote = (template, bindings) => {
+    if (!template) {
+        const keys = Object.keys(bindings);
+        if (keys.length === 0) {
+            return '';
+        }
+        return keys.map((key) => `${key}=${bindings[key]}`).join(', ');
+    }
+    return template.replace(/\{([A-Za-z0-9_]+)\}/g, (_match, key) => {
+        const value = bindings[key];
+        return value === undefined ? '' : String(value);
+    });
+};
+
+const matchRuleSide = (entry, sideSpec, initialBindings) => {
+    if (!sideSpec.names.has(entry.normalizedName)) {
+        return null;
+    }
+    const bindings = { ...initialBindings };
+    for (const eq of sideSpec.equals) {
+        if (eq.index >= entry.args.length) {
+            return null;
+        }
+        const actual = normalizeByTransform(entry.args[eq.index], eq.transform);
+        if (eq.expected !== null && actual === eq.expected) {
+            continue;
+        }
+        if (eq.expectedAny.length > 0 && eq.expectedAny.includes(actual)) {
+            continue;
+        }
+        return null;
+    }
+    for (const cond of sideSpec.numberEquals) {
+        if (cond.index >= entry.args.length) {
+            return null;
+        }
+        const actual = parseNumberishArg(entry.args[cond.index]);
+        if (actual === null || actual !== cond.expected) {
+            return null;
+        }
+    }
+    for (const bind of sideSpec.numberBinds) {
+        if (bind.index >= entry.args.length) {
+            return null;
+        }
+        const actual = parseNumberishArg(entry.args[bind.index]);
+        if (actual === null) {
+            return null;
+        }
+        if (Object.prototype.hasOwnProperty.call(bindings, bind.bind) && bindings[bind.bind] !== actual) {
+            return null;
+        }
+        bindings[bind.bind] = actual;
+    }
+    return bindings;
+};
+
+const findCompatibilityMatch = (phpEntry, tsEntry) => {
+    for (const rule of compatibilityRules) {
+        const afterPhp = matchRuleSide(phpEntry, rule.php, {});
+        if (!afterPhp) {
+            continue;
+        }
+        const afterTs = matchRuleSide(tsEntry, rule.ts, afterPhp);
+        if (!afterTs) {
+            continue;
+        }
+        return {
+            ruleId: rule.id,
+            note: formatCompatibilityNote(rule.noteTemplate, afterTs),
+        };
+    }
+    return null;
+};
+
+const loadCompatibilityRules = async () => {
+    compatibilityRules = [];
+    loadedCompatFile = null;
+    if (!useCompat) {
+        return;
+    }
+    const resolvedFile = path.resolve(ROOT_DIR, compatFile);
+    const text = await fs.readFile(resolvedFile, 'utf-8');
+    const parsed = JSON.parse(text);
+    compatibilityRules = compileCompatibilityRules(parsed);
+    loadedCompatFile = path.relative(ROOT_DIR, resolvedFile);
 };
 
 const normalizePhpArgument = (argText) => {
@@ -1294,6 +1554,57 @@ const pairNearMatches = (missing, extra) => {
     return { near, unresolvedMissing, unresolvedExtra };
 };
 
+const pairCompatibleMatches = (phpIndex, tsIndex, missing, extra) => {
+    const usedTs = new Set();
+    const compatible = [];
+    const unresolvedMissing = [];
+
+    for (const phpName of missing) {
+        const phpEntries = phpIndex.get(phpName) ?? [];
+        let selected = null;
+
+        for (const tsName of extra) {
+            if (usedTs.has(tsName)) {
+                continue;
+            }
+            const tsEntries = tsIndex.get(tsName) ?? [];
+            for (const phpEntry of phpEntries) {
+                for (const tsEntry of tsEntries) {
+                    const matched = findCompatibilityMatch(phpEntry, tsEntry);
+                    if (!matched) {
+                        continue;
+                    }
+                    selected = {
+                        phpName,
+                        tsName,
+                        ruleId: matched.ruleId,
+                        note: matched.note,
+                        phpEntry,
+                        tsEntry,
+                    };
+                    break;
+                }
+                if (selected) {
+                    break;
+                }
+            }
+            if (selected) {
+                break;
+            }
+        }
+
+        if (!selected) {
+            unresolvedMissing.push(phpName);
+            continue;
+        }
+        usedTs.add(selected.tsName);
+        compatible.push(selected);
+    }
+
+    const unresolvedExtra = extra.filter((name) => !usedTs.has(name));
+    return { compatible, unresolvedMissing, unresolvedExtra };
+};
+
 const compareConstraintSet = (phpEntries, tsEntries, kind) => {
     const phpIndex = indexByName(phpEntries);
     const tsIndex = indexByName(tsEntries);
@@ -1303,8 +1614,15 @@ const compareConstraintSet = (phpEntries, tsEntries, kind) => {
     let missingInTs = phpKeys.filter((key) => !tsIndex.has(key));
     let extraInTs = tsKeys.filter((key) => !phpIndex.has(key));
     let near = [];
+    let compatible = [];
 
     if (!strict) {
+        if (useCompat) {
+            const compatPair = pairCompatibleMatches(phpIndex, tsIndex, missingInTs, extraInTs);
+            compatible = compatPair.compatible;
+            missingInTs = compatPair.unresolvedMissing;
+            extraInTs = compatPair.unresolvedExtra;
+        }
         const nearPair = pairNearMatches(missingInTs, extraInTs);
         near = nearPair.near;
         missingInTs = nearPair.unresolvedMissing;
@@ -1345,6 +1663,7 @@ const compareConstraintSet = (phpEntries, tsEntries, kind) => {
         tsUnique: tsKeys.length,
         missingInTs,
         extraInTs,
+        compatible,
         near,
         argDiffs,
         phpIndex,
@@ -1413,6 +1732,14 @@ const buildReport = (phpByCommand, tsByCommand) => {
         match: comparedCommands.filter((item) => item.status === 'MATCH').length,
         nearMatch: comparedCommands.filter((item) => item.status === 'NEAR_MATCH').length,
         mismatch: comparedCommands.filter((item) => item.status === 'MISMATCH').length,
+        compatibleMatch: comparedCommands.reduce((sum, command) => {
+            const activeKinds = mode === 'all' ? ['full', 'min'] : [mode];
+            let count = 0;
+            for (const kind of activeKinds) {
+                count += command[kind]?.compatible?.length ?? 0;
+            }
+            return sum + count;
+        }, 0),
         missingCommandInTs: missingCommandInTs.length,
         missingCommandInPhp: missingCommandInPhp.length,
     };
@@ -1440,14 +1767,18 @@ const renderEntryBucket = (index, name) => {
 
 const printReport = (report) => {
     console.log(
-        `Compare command constraints (mode: ${mode}, strict: ${strict ? 'on' : 'off'}, similarity: ${similarityThreshold})`
+        `Compare command constraints (mode: ${mode}, strict: ${strict ? 'on' : 'off'}, compat: ${useCompat ? 'on' : 'off'}, similarity: ${similarityThreshold})`
     );
+    if (useCompat) {
+        console.log(`Compatibility rules: ${compatibilityRules.length} (${loadedCompatFile ?? compatFile})`);
+    }
     console.log(`PHP commands: ${report.totals.phpCommands}`);
     console.log(`TS commands: ${report.totals.tsCommands}`);
     console.log(`Compared commands: ${report.totals.comparedCommands}`);
     console.log(`Match: ${report.totals.match}`);
     console.log(`Near match: ${report.totals.nearMatch}`);
     console.log(`Mismatch: ${report.totals.mismatch}`);
+    console.log(`Compatibility match: ${report.totals.compatibleMatch}`);
     console.log(`Missing command in TS: ${report.totals.missingCommandInTs}`);
     console.log(`Missing command in PHP: ${report.totals.missingCommandInPhp}`);
 
@@ -1492,6 +1823,14 @@ const printReport = (report) => {
                         console.log(`    - ${renderEntryBucket(result.tsIndex, name)}`);
                     }
                 }
+                if (result.compatible.length > 0) {
+                    console.log(`  Compatibility match (${result.compatible.length}):`);
+                    for (const compat of result.compatible) {
+                        console.log(
+                            `    - PHP "${compat.phpName}" <-> TS "${compat.tsName}" via ${compat.ruleId} (${compat.note})`
+                        );
+                    }
+                }
                 if (result.near.length > 0) {
                     console.log(`  Near match (${result.near.length}):`);
                     for (const pair of result.near) {
@@ -1519,9 +1858,31 @@ const printReport = (report) => {
             }
         }
     }
+
+    if (showCompat) {
+        const activeKinds = mode === 'all' ? ['full', 'min'] : [mode];
+        const compatLines = [];
+        for (const command of report.commands) {
+            for (const kind of activeKinds) {
+                const list = command[kind]?.compatible ?? [];
+                for (const compat of list) {
+                    compatLines.push(
+                        `${command.key} [${kind}] PHP "${compat.phpName}" <-> TS "${compat.tsName}" via ${compat.ruleId} (${compat.note})`
+                    );
+                }
+            }
+        }
+        if (compatLines.length > 0) {
+            console.log('\nCompatibility details:');
+            for (const line of compatLines) {
+                console.log(`- ${line}`);
+            }
+        }
+    }
 };
 
 const main = async () => {
+    await loadCompatibilityRules();
     const [phpByCommand, tsByCommand] = await Promise.all([loadPhpConstraints(), loadTsConstraints()]);
     const report = buildReport(phpByCommand, tsByCommand);
     if (asJson) {

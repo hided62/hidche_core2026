@@ -1,0 +1,80 @@
+{
+    "rules": [
+        {
+            "id": "reqNationValue(gennum)>=N -> reqNationGeneralCount(N)",
+            "noteTemplate": "gennum >= {min}",
+            "php": {
+                "name": "reqNationValue",
+                "equals": [
+                    { "index": 0, "value": "gennum", "transform": "field" },
+                    { "index": 2, "value": ">=", "transform": "comp" }
+                ],
+                "numberBinds": [{ "index": 3, "bind": "min" }]
+            },
+            "ts": {
+                "name": "reqNationGeneralCount",
+                "numberBinds": [{ "index": 0, "bind": "min" }]
+            }
+        },
+        {
+            "id": "reqGeneralValue(officer_level==12) -> beLord/beMonarch",
+            "noteTemplate": "officer_level == 12",
+            "php": {
+                "name": "reqGeneralValue",
+                "equals": [
+                    { "index": 0, "value": "officer_level", "transform": "field" },
+                    { "index": 2, "value": "==", "transform": "comp" }
+                ],
+                "numberEquals": [{ "index": 3, "value": 12 }]
+            },
+            "ts": {
+                "nameAny": ["beLord", "beMonarch"]
+            }
+        },
+        {
+            "id": "reqGeneralValue(officer_level!=12) -> notLord",
+            "noteTemplate": "officer_level != 12",
+            "php": {
+                "name": "reqGeneralValue",
+                "equals": [
+                    { "index": 0, "value": "officer_level", "transform": "field" },
+                    { "index": 2, "value": "!=", "transform": "comp" }
+                ],
+                "numberEquals": [{ "index": 3, "value": 12 }]
+            },
+            "ts": {
+                "name": "notLord"
+            }
+        },
+        {
+            "id": "reqGeneralValue(nation==0) -> beNeutral",
+            "noteTemplate": "nation == 0",
+            "php": {
+                "name": "reqGeneralValue",
+                "equals": [
+                    { "index": 0, "valueAny": ["nation", "nation_id"], "transform": "field" },
+                    { "index": 2, "value": "==", "transform": "comp" }
+                ],
+                "numberEquals": [{ "index": 3, "value": 0 }]
+            },
+            "ts": {
+                "name": "beNeutral"
+            }
+        },
+        {
+            "id": "reqGeneralValue(nation!=0) -> notBeNeutral",
+            "noteTemplate": "nation != 0",
+            "php": {
+                "name": "reqGeneralValue",
+                "equals": [
+                    { "index": 0, "valueAny": ["nation", "nation_id"], "transform": "field" },
+                    { "index": 2, "value": "!=", "transform": "comp" }
+                ],
+                "numberEquals": [{ "index": 3, "value": 0 }]
+            },
+            "ts": {
+                "name": "notBeNeutral"
+            }
+        }
+    ]
+}
