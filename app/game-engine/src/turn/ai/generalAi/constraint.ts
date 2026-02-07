@@ -11,6 +11,14 @@ export const resolveConstraintEnv = (
 ): ConstraintEnv => {
     const startYear = typeof scenarioMeta?.startYear === 'number' ? scenarioMeta.startYear : undefined;
     const relYear = typeof startYear === 'number' ? world.currentYear - startYear : undefined;
+    const worldMeta = world.meta as Record<string, unknown>;
+    const rawKillturn = worldMeta.killturn;
+    const killturn =
+        typeof rawKillturn === 'number'
+            ? rawKillturn
+            : typeof rawKillturn === 'string'
+              ? Number(rawKillturn)
+              : undefined;
 
     return {
         currentYear: world.currentYear,
@@ -21,5 +29,6 @@ export const resolveConstraintEnv = (
         relYear,
         openingPartYear: env.openingPartYear,
         minAvailableRecruitPop: env.minAvailableRecruitPop,
+        ...(Number.isFinite(killturn) ? { killturn } : {}),
     };
 };

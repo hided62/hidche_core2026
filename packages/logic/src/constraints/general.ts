@@ -286,6 +286,74 @@ export const noPenalty = (penaltyKey: string): Constraint => ({
     },
 });
 
+export const allowRebellion = (): Constraint => ({
+    name: 'allowRebellion',
+    requires: (ctx) => [
+        { kind: 'general', id: ctx.actorId },
+        { kind: 'generalList' },
+        { kind: 'env', key: 'killturn' },
+    ],
+    test: (ctx, view) => {
+        const generalReq: RequirementKey = { kind: 'general', id: ctx.actorId };
+        if (!view.has(generalReq)) {
+            return unknownOrDeny(ctx, [generalReq], '장수 정보가 없습니다.');
+        }
+        const general = view.get(generalReq) as General | null;
+        if (!general) {
+            return unknownOrDeny(ctx, [generalReq], '장수 정보가 없습니다.');
+        }
+        if (general.nationId === 0) {
+            return { kind: 'deny', reason: '재야입니다.' };
+        }
+
+        const generalListReq: RequirementKey = { kind: 'generalList' };
+        if (!view.has(generalListReq)) {
+            return unknownOrDeny(ctx, [generalListReq], '장수 정보가 없습니다.');
+        }
+        const generals = view.get(generalListReq) as General[] | null;
+        if (!generals) {
+            return unknownOrDeny(ctx, [generalListReq], '장수 정보가 없습니다.');
+        }
+
+        const lord = generals.find((entry) => entry.nationId === general.nationId && entry.officerLevel === 12);
+        if (!lord) {
+            return unknownOrDeny(ctx, [generalListReq], '군주 정보가 없습니다.');
+        }
+        if (lord.id === general.id) {
+            return { kind: 'deny', reason: '이미 군주입니다.' };
+        }
+
+        const envReq: RequirementKey = { kind: 'env', key: 'killturn' };
+        if (!view.has(envReq)) {
+            return unknownOrDeny(ctx, [envReq], '턴 정보가 없습니다.');
+        }
+        const rawKillturn = view.get(envReq);
+        const worldKillturn =
+            typeof rawKillturn === 'number'
+                ? rawKillturn
+                : typeof rawKillturn === 'string'
+                  ? Number(rawKillturn)
+                  : NaN;
+        if (!Number.isFinite(worldKillturn)) {
+            return unknownOrDeny(ctx, [envReq], '턴 정보가 없습니다.');
+        }
+
+        const lordKillturn = typeof lord.meta.killturn === 'number' ? lord.meta.killturn : NaN;
+        if (!Number.isFinite(lordKillturn)) {
+            return unknownOrDeny(ctx, [generalListReq], '군주 정보가 없습니다.');
+        }
+        if (lordKillturn >= worldKillturn) {
+            return { kind: 'deny', reason: '군주가 활동중입니다.' };
+        }
+
+        if ([2, 3, 6, 9].includes(lord.npcState)) {
+            return { kind: 'deny', reason: '군주가 NPC입니다.' };
+        }
+
+        return allow();
+    },
+});
+
 export const reqGeneralValue = (
     key: string,
     keyNick: string,

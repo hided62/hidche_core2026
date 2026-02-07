@@ -1,6 +1,16 @@
 import type { GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
 import type { WarActionModule } from '@sammo-ts/logic/war/actions.js';
 
+export interface TurnCommandItemCatalogEntry {
+    slot: 'horse' | 'weapon' | 'book' | 'item';
+    name: string;
+    rawName: string;
+    cost: number | null;
+    reqSecu: number;
+    buyable: boolean;
+    unique: boolean;
+}
+
 export interface TurnCommandEnv {
     develCost: number;
     minAvailableRecruitPop?: number;
@@ -25,6 +35,7 @@ export interface TurnCommandEnv {
     baseGold: number;
     baseRice: number;
     maxResourceActionAmount: number;
+    itemCatalog?: Record<string, TurnCommandItemCatalogEntry>;
     generalActionModules?: Array<GeneralActionModule>;
     warActionModules?: Array<WarActionModule>;
 }

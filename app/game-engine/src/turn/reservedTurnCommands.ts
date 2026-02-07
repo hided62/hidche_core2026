@@ -136,6 +136,20 @@ export const buildReservedTurnDefinitions = async (options: {
     nation: Map<string, GeneralActionDefinition>;
 }> => {
     const itemModules = await loadItemModules([...ITEM_KEYS]);
+    options.env.itemCatalog = Object.fromEntries(
+        itemModules.map((item) => [
+            item.key,
+            {
+                slot: item.slot,
+                name: item.name,
+                rawName: item.rawName,
+                cost: item.cost,
+                reqSecu: item.reqSecu,
+                buyable: item.buyable,
+                unique: item.unique,
+            },
+        ])
+    );
     const itemRegistry = createItemModuleRegistry(itemModules);
     const itemActionModules = createItemActionModules(itemRegistry);
     const inheritBuffModules = createInheritBuffModules();

@@ -64,6 +64,13 @@ const resolveConstraintEnv = (
     const relYear = typeof startYear === 'number' ? world.currentYear - startYear : undefined;
     const joinModeRaw = worldMeta.join_mode ?? worldMeta.joinMode;
     const joinMode = joinModeRaw === 'onlyRandom' ? 'onlyRandom' : 'full';
+    const killturnRaw = worldMeta.killturn;
+    const killturn =
+        typeof killturnRaw === 'number'
+            ? killturnRaw
+            : typeof killturnRaw === 'string'
+              ? Number(killturnRaw)
+              : undefined;
 
     return {
         ...env,
@@ -76,6 +83,7 @@ const resolveConstraintEnv = (
         openingPartYear: env.openingPartYear,
         minAvailableRecruitPop: env.minAvailableRecruitPop,
         join_mode: joinMode,
+        ...(Number.isFinite(killturn) ? { killturn } : {}),
     };
 };
 

@@ -51,6 +51,41 @@ export const occupiedCity = (options: { allowNeutral?: boolean } = {}): Constrai
     },
 });
 
+export const notOccupiedCity = (): Constraint => ({
+    name: 'notOccupiedCity',
+    requires: (ctx) => {
+        const reqs: RequirementKey[] = [{ kind: 'general', id: ctx.actorId }];
+        if (ctx.cityId !== undefined) {
+            reqs.push({ kind: 'city', id: ctx.cityId });
+        }
+        return reqs;
+    },
+    test: (ctx, view) => {
+        const generalReq: RequirementKey = { kind: 'general', id: ctx.actorId };
+        if (!view.has(generalReq)) {
+            return unknownOrDeny(ctx, [generalReq], '장수 정보가 없습니다.');
+        }
+        const general = view.get(generalReq) as General | null;
+        if (!general) {
+            return unknownOrDeny(ctx, [generalReq], '장수 정보가 없습니다.');
+        }
+
+        const cityId = ctx.cityId ?? general.cityId;
+        const cityReq: RequirementKey = { kind: 'city', id: cityId };
+        if (!view.has(cityReq)) {
+            return unknownOrDeny(ctx, [cityReq], '도시 정보가 없습니다.');
+        }
+        const city = view.get(cityReq) as City | null;
+        if (!city) {
+            return unknownOrDeny(ctx, [cityReq], '도시 정보가 없습니다.');
+        }
+        if (city.nationId !== general.nationId) {
+            return allow();
+        }
+        return { kind: 'deny', reason: '아국입니다.' };
+    },
+});
+
 export const occupiedDestCity = (): Constraint => ({
     name: 'occupiedDestCity',
     requires: (ctx) => {
@@ -498,6 +533,8 @@ export const beNeutralCity = (): Constraint => ({
         return { kind: 'deny', reason: '공백지가 아닙니다.' };
     },
 });
+
+export const neutralCity = (): Constraint => beNeutralCity();
 
 export const constructableCity = (): Constraint => ({
     name: 'constructableCity',

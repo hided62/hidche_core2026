@@ -13,5 +13,23 @@
             "다음 턴부터 건국할 수 있습니다."
         ],
         "regex": []
+    },
+    "General/che_모반시도": {
+        "templates": [
+            "<Y>${}</>에게 군주의 자리를 뺏겼습니다."
+        ],
+        "regex": []
+    },
+    "General/che_선양": {
+        "templates": [
+            "<Y>${}</>에게서 군주의 자리를 물려받습니다."
+        ],
+        "regex": []
+    },
+    "General/che_장비매매": {
+        "templates": [
+            "${}"
+        ],
+        "regex": []
     }
 }
