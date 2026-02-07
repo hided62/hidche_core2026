@@ -479,7 +479,7 @@ export class ActionDefinition<
                 crewType ?? undefined
             ).rice;
         };
-        const checkCrewTypeAvailable = (): Constraint => ({
+        const availableRecruitCrewType = (): Constraint => ({
             name: 'AvailableRecruitCrewType',
             requires: () => requirements,
             test: (context, view) => {
@@ -513,7 +513,7 @@ export class ActionDefinition<
         ];
 
         if (ctx.mode === 'full') {
-            constraints.push(checkCrewTypeAvailable());
+            constraints.push(availableRecruitCrewType());
         }
 
         return constraints;
