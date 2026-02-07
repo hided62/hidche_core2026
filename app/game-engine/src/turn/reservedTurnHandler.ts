@@ -59,10 +59,14 @@ const resolveConstraintEnv = (
     scenarioMeta: ScenarioMeta | undefined,
     env: TurnCommandEnv
 ): Record<string, unknown> => {
+    const worldMeta = asRecord(world.meta);
     const startYear = typeof scenarioMeta?.startYear === 'number' ? scenarioMeta.startYear : undefined;
     const relYear = typeof startYear === 'number' ? world.currentYear - startYear : undefined;
+    const joinModeRaw = worldMeta.join_mode ?? worldMeta.joinMode;
+    const joinMode = joinModeRaw === 'onlyRandom' ? 'onlyRandom' : 'full';
 
     return {
+        ...env,
         currentYear: world.currentYear,
         currentMonth: world.currentMonth,
         year: world.currentYear,
@@ -71,6 +75,7 @@ const resolveConstraintEnv = (
         relYear,
         openingPartYear: env.openingPartYear,
         minAvailableRecruitPop: env.minAvailableRecruitPop,
+        join_mode: joinMode,
     };
 };
 

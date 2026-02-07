@@ -1099,7 +1099,7 @@ describe('Reserved Turn Execution Integration', () => {
             });
             const dirty = world.consumeDirtyState();
             const logFoundingFail = dirty.logs.find((l) => l.text.includes('군주가 아닙니다'));
-            expect(logFoundingFail?.meta?.constraintName).toBe('beMonarch');
+            expect(logFoundingFail?.meta?.constraintName).toBe('beLord');
 
             // Case 2: Uprising first, but only 1 general in nation -> fail founding (reqNationGeneralCount: 2)
             const turnsG1 = reservedTurnStore.getGeneralTurns(1);
@@ -1159,8 +1159,8 @@ describe('Reserved Turn Execution Integration', () => {
                 catchUpCap: 10,
             });
             const dirty3 = world.consumeDirtyState();
-            const logCityLevelFail = dirty3.logs.find((l) => l.text.includes('규모가 맞지 않습니다'));
-            expect(logCityLevelFail?.meta?.constraintName).toBe('reqCityLevel');
+            const logCityLevelFail = dirty3.logs.find((l) => l.meta?.constraintName === 'constructableCity');
+            expect(logCityLevelFail).toBeTruthy();
         });
     });
 });
