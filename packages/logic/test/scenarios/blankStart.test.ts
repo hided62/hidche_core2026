@@ -314,7 +314,7 @@ describe('Blank Start Scenario', () => {
         const resLevel = evaluateActionConstraints(foundNationDef, ctx, view, FOUNDING_ARGS);
         expect(resLevel.kind).toBe('deny');
         if (resLevel.kind === 'deny') {
-            expect(resLevel.constraintName).toBe('reqCityLevel');
+            expect(resLevel.constraintName).toBe('constructableCity');
         }
     });
 

@@ -385,7 +385,7 @@ describe('che_등용수락', () => {
         const monarch: General = {
             id: 1,
             name: 'Monarch',
-            nationId: 1,
+            nationId: 0,
             cityId: 101,
             troopId: 0,
             stats: { leadership: 50, strength: 50, intelligence: 50 },
@@ -408,19 +408,6 @@ describe('che_등용수락', () => {
             age: 20,
             npcState: 0,
             triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
-            meta: { killturn: 24 },
-        };
-        const nation1: Nation = {
-            id: 1,
-            name: 'Nation1',
-            color: '#000',
-            capitalCityId: 101,
-            chiefGeneralId: 1,
-            gold: 0,
-            rice: 0,
-            power: 0,
-            level: 1,
-            typeCode: 'che_def',
             meta: { killturn: 24 },
         };
         const recruiterGen: General = {
@@ -462,7 +449,6 @@ describe('che_등용수락', () => {
 
         world.snapshot.generals.push(monarch);
         world.snapshot.generals.push(recruiterGen);
-        world.snapshot.nations.push(nation1);
         world.snapshot.nations.push(nation2);
 
         const { commandSpec } = await import('../../../src/actions/turn/general/che_등용수락.js');
@@ -475,7 +461,7 @@ describe('che_등용수락', () => {
         const result = evaluateActionConstraints(def, ctx, view, args);
         expect(result.kind).toBe('deny');
         if (result.kind === 'deny') {
-            expect(result.constraintName).toMatch(/NotLord/i);
+            expect(result.constraintName).toBe('reqGeneralValue');
         }
     });
 
@@ -565,7 +551,7 @@ describe('che_등용수락', () => {
         const result = evaluateActionConstraints(def, ctx, view, args);
         expect(result.kind).toBe('deny');
         if (result.kind === 'deny') {
-            expect(result.constraintName).toMatch(/notSameDestNation/i);
+            expect(result.constraintName).toBe('beNeutral');
         }
     });
 });

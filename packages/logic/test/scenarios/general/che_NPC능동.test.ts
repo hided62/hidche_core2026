@@ -159,7 +159,7 @@ describe('che_NPC능동', () => {
         expect(updated?.cityId).toBe(destCityId);
     });
 
-    it('should deny non-NPC general', async () => {
+    it('should reject non-NPC general at resolve stage', async () => {
         const bootstrapResult = buildScenarioBootstrap({
             scenario: MOCK_SCENARIO_BASE,
             map: MINIMAL_MAP,
@@ -209,10 +209,19 @@ describe('che_NPC능동', () => {
 
         const result = evaluateActionConstraints(def, ctx, view, args);
 
-        expect(result.kind).toBe('deny');
-        if (result.kind === 'deny') {
-            expect(result.constraintName).toBe('mustBeNPC');
-        }
+        expect(result.kind).toBe('allow');
+
+        const runner = new TestGameRunner(world, 200, 1);
+        await expect(
+            runner.runTurn([
+                {
+                    generalId: general.id,
+                    commandKey: 'che_NPC능동',
+                    resolver: def,
+                    args,
+                },
+            ])
+        ).rejects.toThrow('NPC가 아닙니다.');
     });
 
     it('should fail if args are invalid', async () => {
