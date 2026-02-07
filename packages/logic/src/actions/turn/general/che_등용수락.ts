@@ -18,7 +18,7 @@ import type {
     GeneralActionEffect,
 } from '@sammo-ts/logic/actions/engine.js';
 import { createGeneralPatchEffect, createNationPatchEffect } from '@sammo-ts/logic/actions/engine.js';
-import { LogCategory, LogFormat } from '@sammo-ts/logic/logging/types.js';
+import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import { JosaUtil } from '@sammo-ts/common';
 import { z } from 'zod';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
@@ -76,6 +76,7 @@ export class ActionResolver<
 
         // Global Log
         context.addLog(`<Y>${generalName}</>${josaYi} <D><b>${destNationName}</b></>${josaRo} <S>망명</>하였습니다.`, {
+            scope: LogScope.SYSTEM,
             category: LogCategory.ACTION,
             format: LogFormat.PLAIN,
         });

@@ -157,7 +157,7 @@ export class ActionDefinition<
             ),
             // Dest Nation History Log
             createLogEffect(
-                `<D><b>${nationName}</b></>로부터 금<C>${goldText}</> 쌀<C>${riceText}</>${josaUlRice} 지원 받음`,
+                `<D><b>${nationName}</b></>${JosaUtil.pick(nationName, '부터')} 금<C>${goldText}</> 쌀<C>${riceText}</>${josaUlRice} 지원 받음`,
                 {
                     scope: LogScope.NATION,
                     nationId: destNation.id,
@@ -170,6 +170,11 @@ export class ActionDefinition<
                 scope: LogScope.GENERAL,
                 category: LogCategory.ACTION,
                 format: LogFormat.MONTH,
+            }),
+            createLogEffect(`<D><b>${destNation.name}</b></>${josaRo} 물자를 지원합니다.`, {
+                scope: LogScope.GENERAL,
+                category: LogCategory.ACTION,
+                format: LogFormat.PLAIN,
             }),
         ];
 

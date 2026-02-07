@@ -88,9 +88,9 @@ export class ActionDefinition<
             general.gold = Math.max(0, general.gold - sellAmount);
             general.rice += buyAmount;
             context.addLog(
-                `군량 ${Math.round(buyAmount).toLocaleString()}을 사서 자금 ${Math.round(
+                `군량 <C>${Math.round(buyAmount).toLocaleString()}</>을 사서 자금 <C>${Math.round(
                     sellAmount
-                ).toLocaleString()}을 썼습니다.`,
+                ).toLocaleString()}</>을 썼습니다.`,
                 { format: LogFormat.PLAIN }
             );
         } else {
@@ -101,9 +101,9 @@ export class ActionDefinition<
             general.rice = Math.max(0, general.rice - sellAmount);
             general.gold += buyAmount;
             context.addLog(
-                `군량 ${Math.round(sellAmount).toLocaleString()}을 팔아 자금 ${Math.round(
+                `군량 <C>${Math.round(sellAmount).toLocaleString()}</>을 팔아 자금 <C>${Math.round(
                     buyAmount
-                ).toLocaleString()}을 얻었습니다.`,
+                ).toLocaleString()}</>을 얻었습니다.`,
                 { format: LogFormat.PLAIN }
             );
         }

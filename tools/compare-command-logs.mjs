@@ -19,6 +19,7 @@ Options:
     --include <regex>           Only include command keys matching regex.
     --include-guards            Include guard/invalid-state logs (default: excluded).
     --include-target            Include target/broadcast logs (default: excluded).
+    --count-sensitive           Compare duplicated template counts (default: off).
     --strict                    Compare raw templates without normalization.
     --keep-date                 Keep <1>...</> date markers in normalized output.
     --ignore-file <path>        JSON ignore list file (default: tools/compare-command-logs.ignore.json).
@@ -37,6 +38,7 @@ const keepDate = args.includes('--keep-date');
 const asJson = args.includes('--json');
 const includeGuards = args.includes('--include-guards');
 const includeTarget = args.includes('--include-target');
+const countSensitive = args.includes('--count-sensitive');
 const checklist = args.includes('--checklist');
 const ignoreFileIndex = args.indexOf('--ignore-file');
 const ignoreFile = ignoreFileIndex >= 0 ? args[ignoreFileIndex + 1] : DEFAULT_IGNORE_FILE;
@@ -568,7 +570,7 @@ const readOptionsInfo = (node) => {
     return { category, scope, format, hasGeneralId };
 };
 
-const renderTsExpr = (expr, constants) => {
+const renderTsExpr = (expr, resolveConst) => {
     if (!expr) {
         return '${}';
     }
@@ -576,8 +578,8 @@ const renderTsExpr = (expr, constants) => {
         return expr.text;
     }
     if (ts.isIdentifier(expr)) {
-        const resolved = constants?.get(expr.text);
-        if (resolved !== undefined) {
+        const resolved = resolveConst?.(expr.text);
+        if (resolved != null) {
             return resolved;
         }
         return '${}';
@@ -585,17 +587,17 @@ const renderTsExpr = (expr, constants) => {
     if (ts.isTemplateExpression(expr)) {
         let out = expr.head.text;
         for (const span of expr.templateSpans) {
-            const inlined = renderTsExpr(span.expression, constants);
+            const inlined = renderTsExpr(span.expression, resolveConst);
             out += inlined === '${}' ? '${}' : inlined;
             out += span.literal.text;
         }
         return out;
     }
     if (ts.isBinaryExpression(expr) && expr.operatorToken.kind === ts.SyntaxKind.PlusToken) {
-        return `${renderTsExpr(expr.left, constants)}${renderTsExpr(expr.right, constants)}`;
+        return `${renderTsExpr(expr.left, resolveConst)}${renderTsExpr(expr.right, resolveConst)}`;
     }
     if (ts.isParenthesizedExpression(expr)) {
-        return renderTsExpr(expr.expression, constants);
+        return renderTsExpr(expr.expression, resolveConst);
     }
     return '${}';
 };
@@ -626,6 +628,7 @@ const extractTsLogs = (filePath, text) => {
     };
 
     collectConstants(sourceFile);
+    const resolveConst = (name) => constants.get(name) ?? null;
 
     const visit = (node) => {
         if (ts.isCallExpression(node)) {
@@ -644,7 +647,7 @@ const extractTsLogs = (filePath, text) => {
                 const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart());
                 results.push({
                     kind: calleeName,
-                    template: renderTsExpr(firstArg, constants),
+                    template: renderTsExpr(firstArg, resolveConst),
                     raw: firstArg ? firstArg.getText(sourceFile) : '',
                     line: line + 1,
                     category: info.category,
@@ -869,6 +872,26 @@ const formatEntries = (entries) => {
     return lines;
 };
 
+const buildTemplateCountMap = (entries) => {
+    const map = new Map();
+    for (const entry of entries) {
+        const template = normalizeTemplate(entry.template);
+        map.set(template, (map.get(template) ?? 0) + 1);
+    }
+    return map;
+};
+
+const diffTemplateCounts = (lhsCounts, rhsCounts) => {
+    const items = [];
+    for (const [template, lhsCount] of lhsCounts.entries()) {
+        const rhsCount = rhsCounts.get(template) ?? 0;
+        if (lhsCount > rhsCount) {
+            items.push({ template, count: lhsCount - rhsCount });
+        }
+    }
+    return items;
+};
+
 const loadPhpLogs = async () => {
     const files = (await collectFiles(PHP_ROOT)).filter((file) => file.endsWith('.php'));
     const logsByKey = new Map();
@@ -996,23 +1019,57 @@ const buildReport = (phpLogs, tsLogs, ignoreRules) => {
             continue;
         }
 
-        const phpSet = new Set(phpEntries.map((entry) => normalizeTemplate(entry.template)));
-        const tsSet = new Set(tsEntries.map((entry) => normalizeTemplate(entry.template)));
+        const rawMissingDetails = [];
+        const rawExtraDetails = [];
+        if (countSensitive) {
+            const phpCounts = buildTemplateCountMap(phpEntries);
+            const tsCounts = buildTemplateCountMap(tsEntries);
+            rawMissingDetails.push(...diffTemplateCounts(phpCounts, tsCounts));
+            rawExtraDetails.push(...diffTemplateCounts(tsCounts, phpCounts));
+        } else {
+            const phpSet = new Set(phpEntries.map((entry) => normalizeTemplate(entry.template)));
+            const tsSet = new Set(tsEntries.map((entry) => normalizeTemplate(entry.template)));
+            for (const template of phpSet) {
+                if (!tsSet.has(template)) {
+                    rawMissingDetails.push({ template, count: 1 });
+                }
+            }
+            for (const template of tsSet) {
+                if (!phpSet.has(template)) {
+                    rawExtraDetails.push({ template, count: 1 });
+                }
+            }
+        }
 
-        const rawMissing = [...phpSet].filter((item) => !tsSet.has(item));
-        const rawExtra = [...tsSet].filter((item) => !phpSet.has(item));
-        const missing = rawMissing.filter((item) => !shouldIgnoreTemplate(key, item, ignoreRules));
-        const extra = rawExtra.filter((item) => !shouldIgnoreTemplate(key, item, ignoreRules));
-        const ignoredMissing = rawMissing.filter((item) => !missing.includes(item));
-        const ignoredExtra = rawExtra.filter((item) => !extra.includes(item));
+        const missingDetails = rawMissingDetails.filter(
+            (item) => !shouldIgnoreTemplate(key, item.template, ignoreRules)
+        );
+        const extraDetails = rawExtraDetails.filter((item) => !shouldIgnoreTemplate(key, item.template, ignoreRules));
+        const ignoredMissingDetails = rawMissingDetails.filter(
+            (item) => !missingDetails.some((kept) => kept.template === item.template)
+        );
+        const ignoredExtraDetails = rawExtraDetails.filter(
+            (item) => !extraDetails.some((kept) => kept.template === item.template)
+        );
+
+        const missing = missingDetails.map((item) => item.template);
+        const extra = extraDetails.map((item) => item.template);
+        const ignoredMissing = ignoredMissingDetails.map((item) => item.template);
+        const ignoredExtra = ignoredExtraDetails.map((item) => item.template);
 
         if (missing.length === 0 && extra.length === 0) {
             matches.push(key);
         } else {
-            mismatches.push({ key, phpEntries, tsEntries, missing, extra });
+            mismatches.push({ key, phpEntries, tsEntries, missing, extra, missingDetails, extraDetails });
         }
         if (ignoredMissing.length > 0 || ignoredExtra.length > 0) {
-            ignored.push({ key, missing: ignoredMissing, extra: ignoredExtra });
+            ignored.push({
+                key,
+                missing: ignoredMissing,
+                extra: ignoredExtra,
+                missingDetails: ignoredMissingDetails,
+                extraDetails: ignoredExtraDetails,
+            });
         }
     }
 
@@ -1074,7 +1131,7 @@ const main = async () => {
     }
 
     console.log(
-        `Compare command logs (mode: ${mode}, strict: ${strict ? 'on' : 'off'}, keepDate: ${keepDate ? 'on' : 'off'}, excludeGuards: ${excludeGuards ? 'on' : 'off'}, excludeTarget: ${excludeTarget ? 'on' : 'off'})`
+        `Compare command logs (mode: ${mode}, strict: ${strict ? 'on' : 'off'}, keepDate: ${keepDate ? 'on' : 'off'}, excludeGuards: ${excludeGuards ? 'on' : 'off'}, excludeTarget: ${excludeTarget ? 'on' : 'off'}, countSensitive: ${countSensitive ? 'on' : 'off'})`
     );
     console.log(`PHP commands: ${report.totals.phpCommands}`);
     console.log(`TS commands: ${report.totals.tsCommands}`);
@@ -1102,6 +1159,20 @@ const main = async () => {
         console.log('\nMismatch Details:');
         for (const mismatch of report.mismatches) {
             console.log(`\n== ${mismatch.key} ==`);
+            if (mismatch.missingDetails.length > 0) {
+                console.log(
+                    `PHP only: ${mismatch.missingDetails
+                        .map((item) => (item.count > 1 ? `${item.template} x${item.count}` : item.template))
+                        .join(' | ')}`
+                );
+            }
+            if (mismatch.extraDetails.length > 0) {
+                console.log(
+                    `TS only: ${mismatch.extraDetails
+                        .map((item) => (item.count > 1 ? `${item.template} x${item.count}` : item.template))
+                        .join(' | ')}`
+                );
+            }
             const phpLines = formatEntries(mismatch.phpEntries);
             const tsLines = formatEntries(mismatch.tsEntries);
 

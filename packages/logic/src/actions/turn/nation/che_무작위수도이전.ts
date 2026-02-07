@@ -116,7 +116,7 @@ export class ActionDefinition<
             ),
             // Global Action Log
             createLogEffect(
-                `<Y>${generalName}</>${josaYi} <G><b>${destCityName}</b></>${josaRo} <M>수도 이전</}하였습니다.`,
+                `<Y>${generalName}</>${josaYi} <G><b>${destCityName}</b></>${josaRo} <M>수도 이전</>하였습니다.`,
                 {
                     scope: LogScope.SYSTEM,
                     category: LogCategory.ACTION,
@@ -125,7 +125,7 @@ export class ActionDefinition<
             ),
             // Global History Log
             createLogEffect(
-                `<S><b>【${ACTION_NAME}】</b></><D><b>${nationName}</b></>${josaYiNation} <G><b>${destCityName}</b></>${josaRo} <M>수도 이전</}하였습니다.`,
+                `<S><b>【${ACTION_NAME}】</b></><D><b>${nationName}</b></>${josaYiNation} <G><b>${destCityName}</b></>${josaRo} <M>수도 이전</>하였습니다.`,
                 {
                     scope: LogScope.SYSTEM,
                     category: LogCategory.HISTORY,
@@ -134,7 +134,7 @@ export class ActionDefinition<
             ),
             // Actor Nation History Log
             createLogEffect(
-                `<Y>${generalName}</>${josaYi} <G><b>${destCityName}</b></>${josaRo} <M>${ACTION_NAME}</} `,
+                `<Y>${generalName}</>${josaYi} <G><b>${destCityName}</b></>${josaRo} <M>${ACTION_NAME}</>`,
                 {
                     scope: LogScope.NATION,
                     nationId: nation.id,

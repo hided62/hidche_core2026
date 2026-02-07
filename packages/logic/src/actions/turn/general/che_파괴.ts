@@ -72,6 +72,7 @@ export class ActionResolver<
 
         const actualDefDmg = destCity.defence - newDef;
         const actualWallDmg = destCity.wall - newWall;
+        const injuryCount = 0;
 
         // Log
         const commandName = ACTION_NAME;
@@ -80,10 +81,13 @@ export class ActionResolver<
             category: LogCategory.ACTION,
             format: LogFormat.MONTH,
         });
-        ctx.addLog(`수비가 ${actualDefDmg}, 성벽이 ${actualWallDmg} 만큼 감소했습니다.`, {
-            category: LogCategory.ACTION,
-            format: LogFormat.PLAIN,
-        });
+        ctx.addLog(
+            `도시의 수비가 <C>${actualDefDmg}</>, 성벽이 <C>${actualWallDmg}</>만큼 감소하고, 장수 <C>${injuryCount}</>명이 부상 당했습니다.`,
+            {
+                category: LogCategory.ACTION,
+                format: LogFormat.PLAIN,
+            }
+        );
 
         // City Update
         effects.push(

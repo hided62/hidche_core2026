@@ -118,11 +118,8 @@ export class ActionDefinition<
         const nationName = context.nation?.name ?? '아국';
         const destNationName = context.destNation.name;
         const generalName = context.general.name;
-        const josaGa = JosaUtil.pick(nationName, '가');
-        const josaGaGeneral = JosaUtil.pick(generalName, '이');
-
-        const broadcastMessage = `<Y>${nationName}</>${josaGa} <Y>${destNationName}</>에게 <R>${ACTION_NAME}</>하였습니다!`;
-        const historyMessage = `<Y>${nationName}</>${josaGa} <Y>${destNationName}</>에게 <R>${ACTION_NAME}</>`;
+        const josaYiGeneral = JosaUtil.pick(generalName, '이');
+        const josaYiNation = JosaUtil.pick(nationName, '이');
 
         const effects: Array<GeneralActionEffect<TriggerState>> = [
             createDiplomacyPatchEffect(nationId, args.destNationId, {
@@ -133,35 +130,47 @@ export class ActionDefinition<
                 state: DIPLOMACY_DECLARE,
                 term: DECLARE_TERM,
             }),
-            // Global Action Log
-            createLogEffect(broadcastMessage, {
-                scope: LogScope.SYSTEM,
+            // General Action Log
+            createLogEffect(`<D><b>${destNationName}</b></>에 선전 포고 했습니다.`, {
+                scope: LogScope.GENERAL,
                 category: LogCategory.ACTION,
-                format: LogFormat.PLAIN,
+                format: LogFormat.MONTH,
             }),
-            // Global History Log
-            createLogEffect(historyMessage, {
-                scope: LogScope.SYSTEM,
+            // General History Log
+            createLogEffect(`<D><b>${destNationName}</b></>에 선전 포고`, {
+                scope: LogScope.GENERAL,
                 category: LogCategory.HISTORY,
                 format: LogFormat.YEAR_MONTH,
             }),
             // Actor Nation History Log
-            createLogEffect(historyMessage, {
+            createLogEffect(`<Y>${generalName}</>${josaYiGeneral} <D><b>${destNationName}</b></>에 선전 포고`, {
                 scope: LogScope.NATION,
                 nationId: nationId,
                 category: LogCategory.HISTORY,
                 format: LogFormat.YEAR_MONTH,
             }),
             // Target Nation History Log
-            createLogEffect(historyMessage, {
+            createLogEffect(`<D><b>${nationName}</b></>의 <Y>${generalName}</>${josaYiGeneral} 아국에 선전 포고`, {
                 scope: LogScope.NATION,
                 nationId: args.destNationId,
                 category: LogCategory.HISTORY,
                 format: LogFormat.YEAR_MONTH,
             }),
+            // Global Action Log
+            createLogEffect(`<Y>${generalName}</>${josaYiGeneral} <D><b>${destNationName}</b></>에 <M>선전 포고</> 하였습니다.`, {
+                scope: LogScope.SYSTEM,
+                category: LogCategory.ACTION,
+                format: LogFormat.PLAIN,
+            }),
+            // Global History Log
+            createLogEffect(`<R><b>【선포】</b></><D><b>${nationName}</b></>${josaYiNation} <D><b>${destNationName}</b></>에 선전 포고 하였습니다.`, {
+                scope: LogScope.SYSTEM,
+                category: LogCategory.HISTORY,
+                format: LogFormat.YEAR_MONTH,
+            }),
             // National Message (국메)
             createLogEffect(
-                `【국메】<Y>${generalName}</>${josaGaGeneral} <Y>${destNationName}</>에게 <R>${ACTION_NAME}</>하였습니다!`,
+                `【국메】<Y>${generalName}</>${josaYiGeneral} <Y>${destNationName}</>에게 <R>${ACTION_NAME}</>하였습니다!`,
                 {
                     scope: LogScope.NATION,
                     nationId: nationId,

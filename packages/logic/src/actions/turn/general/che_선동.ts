@@ -72,6 +72,7 @@ export class ActionResolver<
 
         const actualSecuDmg = destCity.security - newSecu;
         const actualTrustDmg = currentTrust - newTrust;
+        const injuryCount = 0;
 
         // Log
         const commandName = ACTION_NAME;
@@ -80,10 +81,15 @@ export class ActionResolver<
             category: LogCategory.ACTION,
             format: LogFormat.MONTH,
         });
-        ctx.addLog(`치안이 ${actualSecuDmg}, 민심이 ${actualTrustDmg.toFixed(1)} 만큼 감소했습니다.`, {
+        ctx.addLog(
+            `도시의 치안이 <C>${actualSecuDmg}</>, 민심이 <C>${actualTrustDmg.toFixed(
+                1
+            )}</>만큼 감소하고, 장수 <C>${injuryCount}</>명이 부상 당했습니다.`,
+            {
             category: LogCategory.ACTION,
             format: LogFormat.PLAIN,
-        });
+            }
+        );
 
         // City Update
         effects.push(

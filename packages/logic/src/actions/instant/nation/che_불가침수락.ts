@@ -15,6 +15,7 @@ import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition
 import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
 import { createDiplomacyPatchEffect, createLogEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
+import { JosaUtil } from '@sammo-ts/common';
 
 export interface NonAggressionAcceptArgs {
     destNationId: number;
@@ -175,6 +176,8 @@ export class ActionDefinition<
         const currentMonth = resolveMonthIndex(context.currentYear, context.currentMonth);
         const targetMonth = args.year * 12 + args.month;
         const term = Math.max(0, targetMonth - currentMonth);
+        const destNationName = String(args.destNationId);
+        const josaWa = JosaUtil.pick(destNationName, '와');
 
         return {
             effects: [
@@ -186,11 +189,14 @@ export class ActionDefinition<
                     state: DIPLOMACY_NON_AGGRESSION,
                     term,
                 }),
-                createLogEffect(`${ACTION_NAME}을 실행했습니다. (국가 ${args.destNationId})`, {
+                createLogEffect(
+                    `<D><b>${destNationName}</b></>${josaWa} <C>${args.year}</>년 <C>${args.month}</>월까지 불가침에 성공했습니다.`,
+                    {
                     scope: LogScope.GENERAL,
                     category: LogCategory.ACTION,
                     format: LogFormat.MONTH,
-                }),
+                    }
+                ),
             ],
         };
     }

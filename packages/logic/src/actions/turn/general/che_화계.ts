@@ -325,7 +325,8 @@ export class ActionResolver<
             )
         );
 
-        context.addLog(`<G><b>${context.destCity.name}</b></>이 불타고 있습니다.`, {
+        const destCityName = context.destCity.name;
+        context.addLog(`<G><b>${destCityName}</b></>${JosaUtil.pick(destCityName, '이')} 불타고 있습니다.`, {
             scope: LogScope.SYSTEM,
             category: LogCategory.SUMMARY,
             format: LogFormat.MONTH,
@@ -342,6 +343,13 @@ export class ActionResolver<
                 format: LogFormat.PLAIN,
             }
         );
+
+        const itemCode = general.role.items.item;
+        if (typeof itemCode === 'string' && itemCode.length > 0) {
+            context.addLog(`<C>${itemCode}</>${JosaUtil.pick(itemCode, '을')} 사용!`, {
+                format: LogFormat.PLAIN,
+            });
+        }
 
         for (const injured of result.injuredGenerals) {
             // 타겟 장수는 Draft가 아니므로 Effect 반환

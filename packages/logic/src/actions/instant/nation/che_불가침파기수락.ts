@@ -12,6 +12,7 @@ import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition
 import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
 import { createDiplomacyPatchEffect, createLogEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
+import { JosaUtil } from '@sammo-ts/common';
 
 export interface NonAggressionCancelAcceptArgs {
     destNationId: number;
@@ -81,6 +82,9 @@ export class ActionDefinition<
             };
         }
 
+        const destNationName = String(args.destNationId);
+        const josaWa = JosaUtil.pick(destNationName, '와');
+
         return {
             effects: [
                 createDiplomacyPatchEffect(nationId, args.destNationId, {
@@ -91,7 +95,7 @@ export class ActionDefinition<
                     state: DIPLOMACY_NEUTRAL,
                     term: 0,
                 }),
-                createLogEffect(`${ACTION_NAME}을 실행했습니다. (국가 ${args.destNationId})`, {
+                createLogEffect(`<D><b>${destNationName}</b></>${josaWa}의 불가침을 파기했습니다.`, {
                     scope: LogScope.GENERAL,
                     category: LogCategory.ACTION,
                     format: LogFormat.MONTH,
