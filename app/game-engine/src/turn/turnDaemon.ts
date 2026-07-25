@@ -34,10 +34,7 @@ import { createTournamentRewardFinalizer } from '../tournament/finalizer.js';
 import { createTournamentAutoStartHandler } from './tournamentAutoStart.js';
 import { createYearbookHandler } from './yearbookHandler.js';
 import { createMonthlyEventHandler, type MonthlyEventActionHandler } from './monthlyEventHandler.js';
-import {
-    DatabaseTurnDaemonLease,
-    TurnDaemonLeaseUnavailableError,
-} from '../lifecycle/databaseTurnDaemonLease.js';
+import { DatabaseTurnDaemonLease, TurnDaemonLeaseUnavailableError } from '../lifecycle/databaseTurnDaemonLease.js';
 
 export interface TurnDaemonRuntimeOptions {
     profile: string;
@@ -95,21 +92,12 @@ const resolveRedisConfig = (redisUrl?: string, env: NodeJS.ProcessEnv = process.
     return resolveRedisConfigFromEnv(env);
 };
 
-export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions): Promise<TurnDaemonRuntime> => {
+const createTurnDaemonRuntimeWithLease = async (
+    options: TurnDaemonRuntimeOptions,
+    databaseFlushEnabled: boolean,
+    turnDaemonLease: DatabaseTurnDaemonLease | null
+): Promise<TurnDaemonRuntime> => {
     // DB에서 월드를 읽고 턴 데몬을 구동할 런타임을 만든다.
-    const databaseFlushEnabled = options.enableDatabaseFlush ?? true;
-    const turnDaemonLease = databaseFlushEnabled
-        ? await DatabaseTurnDaemonLease.connect(options.databaseUrl, {
-              profile: options.profileName ?? options.profile,
-              ownerId: options.leaseOwnerId,
-              leaseDurationMs: options.leaseDurationMs,
-              heartbeat: options.enableLeaseHeartbeat,
-          })
-        : null;
-    if (turnDaemonLease && !(await turnDaemonLease.acquire())) {
-        await turnDaemonLease.close();
-        throw new TurnDaemonLeaseUnavailableError(options.profileName ?? options.profile);
-    }
     const { state, snapshot } = await loadTurnWorldFromDatabase({
         databaseUrl: options.databaseUrl,
         mapOptions: options.mapOptions,
@@ -495,4 +483,26 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
         hooks,
         close,
     };
+};
+
+export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions): Promise<TurnDaemonRuntime> => {
+    const databaseFlushEnabled = options.enableDatabaseFlush ?? true;
+    const turnDaemonLease = databaseFlushEnabled
+        ? await DatabaseTurnDaemonLease.connect(options.databaseUrl, {
+              profile: options.profileName ?? options.profile,
+              ownerId: options.leaseOwnerId,
+              leaseDurationMs: options.leaseDurationMs,
+              heartbeat: options.enableLeaseHeartbeat,
+          })
+        : null;
+    if (turnDaemonLease && !(await turnDaemonLease.acquire())) {
+        await turnDaemonLease.close();
+        throw new TurnDaemonLeaseUnavailableError(options.profileName ?? options.profile);
+    }
+    try {
+        return await createTurnDaemonRuntimeWithLease(options, databaseFlushEnabled, turnDaemonLease);
+    } catch (error) {
+        await turnDaemonLease?.close();
+        throw error;
+    }
 };

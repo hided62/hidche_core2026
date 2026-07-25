@@ -35,8 +35,7 @@ type LeaseRow = {
     fencing_epoch: bigint;
 };
 
-const normalizeLeaseDuration = (value?: number): number =>
-    Math.max(1_000, Math.floor(value ?? 30_000));
+const normalizeLeaseDuration = (value?: number): number => Math.max(1_000, Math.floor(value ?? 30_000));
 
 export class DatabaseTurnDaemonLease {
     private readonly db: GamePrismaClient;

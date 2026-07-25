@@ -2,10 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createGamePostgresConnector, type GamePrisma, type GamePrismaClient } from '@sammo-ts/infra';
 
-import {
-    DatabaseTurnDaemonLease,
-    TurnDaemonLeaseLostError,
-} from '../src/lifecycle/databaseTurnDaemonLease.js';
+import { DatabaseTurnDaemonLease, TurnDaemonLeaseLostError } from '../src/lifecycle/databaseTurnDaemonLease.js';
 
 const databaseUrl = process.env.TURN_DAEMON_LEASE_DATABASE_URL ?? process.env.INPUT_EVENT_DATABASE_URL;
 const integration = describe.skipIf(!databaseUrl);
