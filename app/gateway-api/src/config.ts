@@ -16,6 +16,8 @@ export interface GatewayApiConfig {
     kakaoAdminKey?: string;
     kakaoRedirectUri: string;
     publicBaseUrl: string;
+    userIconDir: string;
+    userIconPublicUrl: string;
     adminLocalAccountEnabled: boolean;
     orchestratorEnabled: boolean;
     orchestratorReconcileIntervalMs: number;
@@ -81,6 +83,8 @@ export const resolveGatewayApiConfigFromEnv = (env: NodeJS.ProcessEnv = process.
         kakaoAdminKey: env.KAKAO_ADMIN_KEY,
         kakaoRedirectUri,
         publicBaseUrl,
+        userIconDir: env.GATEWAY_USER_ICON_DIR ?? 'uploads/user-icons',
+        userIconPublicUrl: env.GATEWAY_USER_ICON_PUBLIC_URL ?? `${publicBaseUrl.replace(/\/$/, '')}/user-icons`,
         adminLocalAccountEnabled: parseBooleanWithFallback(env.GATEWAY_ADMIN_LOCAL_ACCOUNT_ENABLED, false),
         orchestratorEnabled: parseBooleanWithFallback(env.GATEWAY_ORCHESTRATOR_ENABLED, false),
         orchestratorReconcileIntervalMs: parseNumberWithFallback(

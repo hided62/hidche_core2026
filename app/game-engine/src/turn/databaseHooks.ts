@@ -492,6 +492,7 @@ export const createDatabaseTurnHooks = async (
                         name: nation.name,
                         color: nation.color,
                         capitalCityId: nation.capitalCityId,
+                        chiefGeneralId: nation.chiefGeneralId,
                         gold: nation.gold,
                         rice: nation.rice,
                         level: nation.level,

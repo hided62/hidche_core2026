@@ -10,6 +10,7 @@ import { procedure, router } from './trpc.js';
 import { toPublicUser } from './auth/userRepository.js';
 import type { UserOAuthInfo } from './auth/userRepository.js';
 import { adminRouter } from './adminRouter.js';
+import { accountRouter } from './account/router.js';
 
 const zUsername = z.string().min(2).max(32);
 const zPassword = z.string().min(6).max(128);
@@ -61,6 +62,7 @@ export const appRouter = router({
             }),
     }),
     admin: adminRouter,
+    account: accountRouter,
     auth: router({
         bootstrapLocal: procedure
             .input(
@@ -328,6 +330,12 @@ export const appRouter = router({
                     throw new TRPCError({
                         code: 'UNAUTHORIZED',
                         message: 'Invalid username or password.',
+                    });
+                }
+                if (user.deleteAfter) {
+                    throw new TRPCError({
+                        code: 'FORBIDDEN',
+                        message: 'Account deletion is pending.',
                     });
                 }
                 const ok = await ctx.users.verifyPassword(user, input.password);

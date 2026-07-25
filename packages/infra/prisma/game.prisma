@@ -1,47 +1,47 @@
 generator client {
-    provider = "prisma-client-js"
-    output   = "./generated/game"
-    engineType = "binary"
+  provider   = "prisma-client-js"
+  output     = "./generated/game"
+  engineType = "binary"
 }
 
 datasource db {
-    provider = "postgresql"
+  provider = "postgresql"
 }
 
 enum LogScope {
-    SYSTEM
-    NATION
-    GENERAL
-    USER
+  SYSTEM
+  NATION
+  GENERAL
+  USER
 }
 
 enum LogCategory {
-    HISTORY
-    SUMMARY
-    ACTION
-    BATTLE_BRIEF
-    BATTLE_DETAIL
-    USER
+  HISTORY
+  SUMMARY
+  ACTION
+  BATTLE_BRIEF
+  BATTLE_DETAIL
+  USER
 }
 
 enum AuctionStatus {
-    OPEN
-    FINALIZING
-    FINISHED
-    CANCELED
+  OPEN
+  FINALIZING
+  FINISHED
+  CANCELED
 }
 
 enum AuctionType {
-    BUY_RICE
-    SELL_RICE
-    UNIQUE_ITEM
+  BUY_RICE
+  SELL_RICE
+  UNIQUE_ITEM
 }
 
 enum DiplomacyLetterState {
-    PROPOSED
-    ACTIVATED
-    CANCELLED
-    REPLACED
+  PROPOSED
+  ACTIVATED
+  CANCELLED
+  REPLACED
 }
 
 enum InputEventStatus {
@@ -78,538 +78,561 @@ model InputEvent {
 }
 
 model WorldState {
-    id           Int      @id @default(autoincrement())
-    scenarioCode String   @map("scenario_code")
-    currentYear  Int      @map("current_year")
-    currentMonth Int      @map("current_month")
-    tickSeconds  Int      @map("tick_seconds")
-    config       Json     @default(dbgenerated("'{}'::jsonb"))
-    meta         Json     @default(dbgenerated("'{}'::jsonb"))
-    updatedAt    DateTime @updatedAt @map("updated_at")
+  id           Int      @id @default(autoincrement())
+  scenarioCode String   @map("scenario_code")
+  currentYear  Int      @map("current_year")
+  currentMonth Int      @map("current_month")
+  tickSeconds  Int      @map("tick_seconds")
+  config       Json     @default(dbgenerated("'{}'::jsonb"))
+  meta         Json     @default(dbgenerated("'{}'::jsonb"))
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
-    @@map("world_state")
+  @@map("world_state")
 }
 
 model Nation {
-    id            Int     @id
-    name          String
-    color         String
-    capitalCityId Int?    @map("capital_city_id")
-    gold          Int     @default(0)
-    rice          Int     @default(0)
-    tech          Float   @default(0)
-    level         Int     @default(0)
-    typeCode      String  @default("che_중립") @map("type_code")
-    meta          Json    @default(dbgenerated("'{}'::jsonb"))
+  id             Int    @id
+  name           String
+  color          String
+  capitalCityId  Int?   @map("capital_city_id")
+  chiefGeneralId Int?   @map("chief_general_id")
+  gold           Int    @default(0)
+  rice           Int    @default(0)
+  tech           Float  @default(0)
+  level          Int    @default(0)
+  typeCode       String @default("che_중립") @map("type_code")
+  meta           Json   @default(dbgenerated("'{}'::jsonb"))
 
-    @@map("nation")
+  @@map("nation")
 }
 
 model City {
-    id             Int  @id
-    name           String
-    level          Int
-    nationId       Int  @default(0) @map("nation_id")
-    supplyState    Int  @default(1) @map("supply_state")
-    frontState     Int  @default(0) @map("front_state")
-    population     Int  @map("pop")
-    populationMax  Int  @map("pop_max")
-    agriculture    Int  @map("agri")
-    agricultureMax Int  @map("agri_max")
-    commerce       Int  @map("comm")
-    commerceMax    Int  @map("comm_max")
-    security       Int  @map("secu")
-    securityMax    Int  @map("secu_max")
-    trust          Int  @default(0)
-    trade          Int  @default(100)
-    defence        Int  @map("def")
-    defenceMax     Int  @map("def_max")
-    wall           Int  @map("wall")
-    wallMax        Int  @map("wall_max")
-    region         Int
-    conflict       Json @default(dbgenerated("'{}'::jsonb"))
-    meta           Json @default(dbgenerated("'{}'::jsonb"))
+  id             Int    @id
+  name           String
+  level          Int
+  nationId       Int    @default(0) @map("nation_id")
+  supplyState    Int    @default(1) @map("supply_state")
+  frontState     Int    @default(0) @map("front_state")
+  population     Int    @map("pop")
+  populationMax  Int    @map("pop_max")
+  agriculture    Int    @map("agri")
+  agricultureMax Int    @map("agri_max")
+  commerce       Int    @map("comm")
+  commerceMax    Int    @map("comm_max")
+  security       Int    @map("secu")
+  securityMax    Int    @map("secu_max")
+  trust          Int    @default(0)
+  trade          Int    @default(100)
+  defence        Int    @map("def")
+  defenceMax     Int    @map("def_max")
+  wall           Int    @map("wall")
+  wallMax        Int    @map("wall_max")
+  region         Int
+  conflict       Json   @default(dbgenerated("'{}'::jsonb"))
+  meta           Json   @default(dbgenerated("'{}'::jsonb"))
 
-    @@map("city")
+  @@map("city")
 }
 
 model General {
-    id            Int      @id
-    userId        String?  @map("user_id")
-    name          String
-    nationId      Int      @default(0) @map("nation_id")
-    cityId        Int      @default(0) @map("city_id")
-    troopId       Int      @default(0) @map("troop_id")
-    npcState      Int      @default(0) @map("npc_state")
-    affinity      Int?
-    bornYear      Int      @default(180) @map("born_year")
-    deadYear      Int      @default(300) @map("dead_year")
-    picture       String?
-    imageServer   Int      @default(0) @map("image_server")
-    leadership    Int      @default(50)
-    strength      Int      @default(50)
-    intel         Int      @default(50)
-    injury        Int      @default(0)
-    experience    Int      @default(0)
-    dedication    Int      @default(0)
-    officerLevel  Int      @default(0) @map("officer_level")
-    gold          Int      @default(1000)
-    rice          Int      @default(1000)
-    crew          Int      @default(0)
-    crewTypeId    Int      @default(0) @map("crew_type_id")
-    train         Int      @default(0)
-    atmos         Int      @default(0)
-    weaponCode    String   @default("None") @map("weapon_code")
-    bookCode      String   @default("None") @map("book_code")
-    horseCode     String   @default("None") @map("horse_code")
-    itemCode      String   @default("None") @map("item_code")
-    turnTime      DateTime @map("turn_time")
-    recentWarTime DateTime? @map("recent_war_time")
-    age           Int      @default(20)
-    startAge      Int      @default(20) @map("start_age")
-    personalCode  String   @default("None") @map("personal_code")
-    specialCode   String   @default("None") @map("special_code")
-    special2Code  String   @default("None") @map("special2_code")
-    lastTurn      Json     @default(dbgenerated("'{}'::jsonb")) @map("last_turn")
-    meta          Json     @default(dbgenerated("'{}'::jsonb"))
-    penalty       Json     @default(dbgenerated("'{}'::jsonb"))
-    createdAt     DateTime @default(now()) @map("created_at")
-    updatedAt     DateTime @default(now()) @map("updated_at")
+  id            Int       @id
+  userId        String?   @map("user_id")
+  name          String
+  nationId      Int       @default(0) @map("nation_id")
+  cityId        Int       @default(0) @map("city_id")
+  troopId       Int       @default(0) @map("troop_id")
+  npcState      Int       @default(0) @map("npc_state")
+  affinity      Int?
+  bornYear      Int       @default(180) @map("born_year")
+  deadYear      Int       @default(300) @map("dead_year")
+  picture       String?
+  imageServer   Int       @default(0) @map("image_server")
+  leadership    Int       @default(50)
+  strength      Int       @default(50)
+  intel         Int       @default(50)
+  injury        Int       @default(0)
+  experience    Int       @default(0)
+  dedication    Int       @default(0)
+  officerLevel  Int       @default(0) @map("officer_level")
+  gold          Int       @default(1000)
+  rice          Int       @default(1000)
+  crew          Int       @default(0)
+  crewTypeId    Int       @default(0) @map("crew_type_id")
+  train         Int       @default(0)
+  atmos         Int       @default(0)
+  weaponCode    String    @default("None") @map("weapon_code")
+  bookCode      String    @default("None") @map("book_code")
+  horseCode     String    @default("None") @map("horse_code")
+  itemCode      String    @default("None") @map("item_code")
+  turnTime      DateTime  @map("turn_time")
+  recentWarTime DateTime? @map("recent_war_time")
+  age           Int       @default(20)
+  startAge      Int       @default(20) @map("start_age")
+  personalCode  String    @default("None") @map("personal_code")
+  specialCode   String    @default("None") @map("special_code")
+  special2Code  String    @default("None") @map("special2_code")
+  lastTurn      Json      @default(dbgenerated("'{}'::jsonb")) @map("last_turn")
+  meta          Json      @default(dbgenerated("'{}'::jsonb"))
+  penalty       Json      @default(dbgenerated("'{}'::jsonb"))
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @default(now()) @map("updated_at")
 
-    @@map("general")
+  @@map("general")
 }
 
 model GeneralAccessLog {
-    id                Int       @id @default(autoincrement())
-    generalId         Int       @unique @map("general_id")
-    userId            String?   @map("user_id")
-    lastRefresh       DateTime? @map("last_refresh")
-    refresh           Int       @default(0)
-    refreshTotal      Int       @default(0) @map("refresh_total")
-    refreshScore      Int       @default(0) @map("refresh_score")
-    refreshScoreTotal Int       @default(0) @map("refresh_score_total")
+  id                Int       @id @default(autoincrement())
+  generalId         Int       @unique @map("general_id")
+  userId            String?   @map("user_id")
+  lastRefresh       DateTime? @map("last_refresh")
+  refresh           Int       @default(0)
+  refreshTotal      Int       @default(0) @map("refresh_total")
+  refreshScore      Int       @default(0) @map("refresh_score")
+  refreshScoreTotal Int       @default(0) @map("refresh_score_total")
 
-    @@index([userId])
-    @@map("general_access_log")
+  @@index([userId])
+  @@map("general_access_log")
+}
+
+model MessageReadState {
+  generalId              Int      @id @map("general_id")
+  latestPrivateMessage   Int      @default(0) @map("latest_private_message")
+  latestDiplomacyMessage Int      @default(0) @map("latest_diplomacy_message")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  @@map("message_read_state")
+}
+
+model Message {
+  id         Int      @id @default(autoincrement())
+  mailbox    Int
+  type       String
+  src        Int
+  dest       Int
+  time       DateTime
+  validUntil DateTime @map("valid_until")
+  message    Json
+
+  @@map("message")
 }
 
 model RankData {
-    id        Int    @id @default(autoincrement())
-    nationId  Int    @default(0) @map("nation_id")
-    generalId Int    @map("general_id")
-    type      String @db.VarChar(20)
-    value     Int    @default(0)
+  id        Int    @id @default(autoincrement())
+  nationId  Int    @default(0) @map("nation_id")
+  generalId Int    @map("general_id")
+  type      String @db.VarChar(20)
+  value     Int    @default(0)
 
-    @@unique([generalId, type])
-    @@index([type, value], name: "by_type")
-    @@index([nationId, type, value], name: "by_nation")
-    @@map("rank_data")
+  @@unique([generalId, type])
+  @@index([type, value], name: "by_type")
+  @@index([nationId, type, value], name: "by_nation")
+  @@map("rank_data")
 }
 
 model HallOfFame {
-    id        Int      @id @default(autoincrement())
-    serverId  String   @map("server_id")
-    season    Int
-    scenario  Int
-    generalNo Int      @map("general_no")
-    type      String   @db.VarChar(20)
-    value     Float
-    owner     String?  @map("owner")
-    aux       Json     @default(dbgenerated("'{}'::jsonb"))
+  id        Int     @id @default(autoincrement())
+  serverId  String  @map("server_id")
+  season    Int
+  scenario  Int
+  generalNo Int     @map("general_no")
+  type      String  @db.VarChar(20)
+  value     Float
+  owner     String? @map("owner")
+  aux       Json    @default(dbgenerated("'{}'::jsonb"))
 
-    @@unique([serverId, type, generalNo])
-    @@unique([owner, serverId, type], name: "hall_owner")
-    @@index([serverId, type, value], name: "server_show")
-    @@index([season, scenario, type, value], name: "scenario")
-    @@map("hall")
+  @@unique([serverId, type, generalNo])
+  @@unique([owner, serverId, type], name: "hall_owner")
+  @@index([serverId, type, value], name: "server_show")
+  @@index([season, scenario, type, value], name: "scenario")
+  @@map("hall")
 }
 
 model GameHistory {
-    id           Int      @id @default(autoincrement())
-    serverId     String   @map("server_id")
-    date         DateTime
-    winnerNation Int?     @map("winner_nation")
-    map          String?  @map("map")
-    season       Int
-    scenario     Int
-    scenarioName String   @map("scenario_name")
-    env          Json     @default(dbgenerated("'{}'::jsonb"))
+  id           Int      @id @default(autoincrement())
+  serverId     String   @map("server_id")
+  date         DateTime
+  winnerNation Int?     @map("winner_nation")
+  map          String?  @map("map")
+  season       Int
+  scenario     Int
+  scenarioName String   @map("scenario_name")
+  env          Json     @default(dbgenerated("'{}'::jsonb"))
 
-    @@unique([serverId])
-    @@index([date])
-    @@map("ng_games")
+  @@unique([serverId])
+  @@index([date])
+  @@map("ng_games")
 }
 
 model OldNation {
-    id       Int      @id @default(autoincrement())
-    serverId String   @map("server_id")
-    nation   Int      @default(0)
-    data     Json     @default(dbgenerated("'{}'::jsonb"))
-    date     DateTime @default(now())
+  id       Int      @id @default(autoincrement())
+  serverId String   @map("server_id")
+  nation   Int      @default(0)
+  data     Json     @default(dbgenerated("'{}'::jsonb"))
+  date     DateTime @default(now())
 
-    @@unique([serverId, nation])
-    @@index([serverId, nation], name: "by_server")
-    @@map("ng_old_nations")
+  @@unique([serverId, nation])
+  @@index([serverId, nation], name: "by_server")
+  @@map("ng_old_nations")
 }
 
 model OldGeneral {
-    id            Int      @id @default(autoincrement())
-    serverId      String   @map("server_id")
-    generalNo     Int      @map("general_no")
-    owner         String?  @map("owner")
-    name          String
-    lastYearMonth Int      @map("last_yearmonth")
-    turnTime      DateTime @map("turntime")
-    data          Json     @default(dbgenerated("'{}'::jsonb"))
+  id            Int      @id @default(autoincrement())
+  serverId      String   @map("server_id")
+  generalNo     Int      @map("general_no")
+  owner         String?  @map("owner")
+  name          String
+  lastYearMonth Int      @map("last_yearmonth")
+  turnTime      DateTime @map("turntime")
+  data          Json     @default(dbgenerated("'{}'::jsonb"))
 
-    @@unique([serverId, generalNo], name: "by_no")
-    @@index([serverId, name], name: "by_name")
-    @@index([owner, serverId], name: "owner")
-    @@map("ng_old_generals")
+  @@unique([serverId, generalNo], name: "by_no")
+  @@index([serverId, name], name: "by_name")
+  @@index([owner, serverId], name: "owner")
+  @@map("ng_old_generals")
 }
 
 model Emperor {
-    id           Int    @id @default(autoincrement()) @map("no")
-    serverId     String? @map("server_id")
-    phase        String? @default("")
-    nationCount  String? @map("nation_count")
-    nationName   String? @map("nation_name")
-    nationHist   String? @map("nation_hist")
-    genCount     String? @map("gen_count")
-    personalHist String? @map("personal_hist")
-    specialHist  String? @map("special_hist")
-    name         String? @default("")
-    type         String? @default("")
-    color        String? @default("")
-    year         Int?    @default(0)
-    month        Int?    @default(0)
-    power        Int?    @default(0)
-    gennum       Int?    @default(0)
-    citynum      Int?    @default(0)
-    pop          String? @default("0")
-    poprate      String? @default("")
-    gold         Int?    @default(0)
-    rice         Int?    @default(0)
-    l12name      String? @default("")
-    l12pic       String? @default("")
-    l11name      String? @default("")
-    l11pic       String? @default("")
-    l10name      String? @default("")
-    l10pic       String? @default("")
-    l9name       String? @default("")
-    l9pic        String? @default("")
-    l8name       String? @default("")
-    l8pic        String? @default("")
-    l7name       String? @default("")
-    l7pic        String? @default("")
-    l6name       String? @default("")
-    l6pic        String? @default("")
-    l5name       String? @default("")
-    l5pic        String? @default("")
-    tiger        String? @default("")
-    eagle        String? @default("")
-    gen          String? @default("")
-    history      Json    @default(dbgenerated("'{}'::jsonb"))
-    aux          Json    @default(dbgenerated("'{}'::jsonb"))
+  id           Int     @id @default(autoincrement()) @map("no")
+  serverId     String? @map("server_id")
+  phase        String? @default("")
+  nationCount  String? @map("nation_count")
+  nationName   String? @map("nation_name")
+  nationHist   String? @map("nation_hist")
+  genCount     String? @map("gen_count")
+  personalHist String? @map("personal_hist")
+  specialHist  String? @map("special_hist")
+  name         String? @default("")
+  type         String? @default("")
+  color        String? @default("")
+  year         Int?    @default(0)
+  month        Int?    @default(0)
+  power        Int?    @default(0)
+  gennum       Int?    @default(0)
+  citynum      Int?    @default(0)
+  pop          String? @default("0")
+  poprate      String? @default("")
+  gold         Int?    @default(0)
+  rice         Int?    @default(0)
+  l12name      String? @default("")
+  l12pic       String? @default("")
+  l11name      String? @default("")
+  l11pic       String? @default("")
+  l10name      String? @default("")
+  l10pic       String? @default("")
+  l9name       String? @default("")
+  l9pic        String? @default("")
+  l8name       String? @default("")
+  l8pic        String? @default("")
+  l7name       String? @default("")
+  l7pic        String? @default("")
+  l6name       String? @default("")
+  l6pic        String? @default("")
+  l5name       String? @default("")
+  l5pic        String? @default("")
+  tiger        String? @default("")
+  eagle        String? @default("")
+  gen          String? @default("")
+  history      Json    @default(dbgenerated("'{}'::jsonb"))
+  aux          Json    @default(dbgenerated("'{}'::jsonb"))
 
-    @@map("emperior")
+  @@map("emperior")
 }
 
 model Troop {
-    troopLeaderId Int    @id @map("troop_leader")
-    nationId      Int    @map("nation")
-    name          String
+  troopLeaderId Int    @id @map("troop_leader")
+  nationId      Int    @map("nation")
+  name          String
 
-    @@map("troop")
+  @@map("troop")
 }
 
 model GeneralTurn {
-    id         Int      @id @default(autoincrement())
-    generalId  Int      @map("general_id")
-    turnIdx    Int      @map("turn_idx")
-    actionCode String   @map("action_code")
-    arg        Json     @default(dbgenerated("'{}'::jsonb"))
-    createdAt  DateTime @default(now()) @map("created_at")
+  id         Int      @id @default(autoincrement())
+  generalId  Int      @map("general_id")
+  turnIdx    Int      @map("turn_idx")
+  actionCode String   @map("action_code")
+  arg        Json     @default(dbgenerated("'{}'::jsonb"))
+  createdAt  DateTime @default(now()) @map("created_at")
 
-    @@unique([generalId, turnIdx])
-    @@map("general_turn")
+  @@unique([generalId, turnIdx])
+  @@map("general_turn")
 }
 
 model NationTurn {
-    id           Int      @id @default(autoincrement())
-    nationId     Int      @map("nation_id")
-    officerLevel Int      @map("officer_level")
-    turnIdx      Int      @map("turn_idx")
-    actionCode   String   @map("action_code")
-    arg          Json     @default(dbgenerated("'{}'::jsonb"))
-    createdAt    DateTime @default(now()) @map("created_at")
+  id           Int      @id @default(autoincrement())
+  nationId     Int      @map("nation_id")
+  officerLevel Int      @map("officer_level")
+  turnIdx      Int      @map("turn_idx")
+  actionCode   String   @map("action_code")
+  arg          Json     @default(dbgenerated("'{}'::jsonb"))
+  createdAt    DateTime @default(now()) @map("created_at")
 
-    @@unique([nationId, officerLevel, turnIdx])
-    @@map("nation_turn")
+  @@unique([nationId, officerLevel, turnIdx])
+  @@map("nation_turn")
 }
 
 model Diplomacy {
-    id           Int      @id @default(autoincrement())
-    srcNationId  Int      @map("src_nation_id")
-    destNationId Int      @map("dest_nation_id")
-    stateCode    Int      @map("state_code")
-    term         Int      @default(0)
-    isDead       Boolean  @default(false) @map("is_dead")
-    isShowing    Boolean  @default(true) @map("is_showing")
-    meta         Json     @default(dbgenerated("'{}'::jsonb"))
-    createdAt    DateTime @default(now()) @map("created_at")
+  id           Int      @id @default(autoincrement())
+  srcNationId  Int      @map("src_nation_id")
+  destNationId Int      @map("dest_nation_id")
+  stateCode    Int      @map("state_code")
+  term         Int      @default(0)
+  isDead       Boolean  @default(false) @map("is_dead")
+  isShowing    Boolean  @default(true) @map("is_showing")
+  meta         Json     @default(dbgenerated("'{}'::jsonb"))
+  createdAt    DateTime @default(now()) @map("created_at")
 
-    @@unique([srcNationId, destNationId])
-    @@map("diplomacy")
+  @@unique([srcNationId, destNationId])
+  @@map("diplomacy")
 }
 
 model DiplomacyLetter {
-    id           Int                  @id @default(autoincrement())
-    srcNationId  Int                  @map("src_nation_id")
-    destNationId Int                  @map("dest_nation_id")
-    prevId       Int?                 @map("prev_id")
-    state        DiplomacyLetterState @default(PROPOSED)
-    textBrief    String               @map("text_brief")
-    textDetail   String               @map("text_detail")
-    date         DateTime             @default(now()) @map("date")
-    srcSignerId  Int                  @map("src_signer")
-    destSignerId Int?                 @map("dest_signer")
-    aux          Json                 @default(dbgenerated("'{}'::jsonb"))
+  id           Int                  @id @default(autoincrement())
+  srcNationId  Int                  @map("src_nation_id")
+  destNationId Int                  @map("dest_nation_id")
+  prevId       Int?                 @map("prev_id")
+  state        DiplomacyLetterState @default(PROPOSED)
+  textBrief    String               @map("text_brief")
+  textDetail   String               @map("text_detail")
+  date         DateTime             @default(now()) @map("date")
+  srcSignerId  Int                  @map("src_signer")
+  destSignerId Int?                 @map("dest_signer")
+  aux          Json                 @default(dbgenerated("'{}'::jsonb"))
 
-    @@index([srcNationId, destNationId])
-    @@index([destNationId, srcNationId])
-    @@index([state, date])
-    @@map("diplomacy_letter")
+  @@index([srcNationId, destNationId])
+  @@index([destNationId, srcNationId])
+  @@index([state, date])
+  @@map("diplomacy_letter")
 }
 
 model YearbookHistory {
-    id          Int      @id @default(autoincrement())
-    profileName String   @map("profile_name")
-    year        Int
-    month       Int
-    map         Json
-    nations     Json
-    hash        String   @default("")
-    createdAt   DateTime @default(now()) @map("created_at")
+  id          Int      @id @default(autoincrement())
+  profileName String   @map("profile_name")
+  year        Int
+  month       Int
+  map         Json
+  nations     Json
+  hash        String   @default("")
+  createdAt   DateTime @default(now()) @map("created_at")
 
-    @@unique([profileName, year, month])
-    @@index([profileName, year, month])
-    @@map("yearbook_history")
+  @@unique([profileName, year, month])
+  @@index([profileName, year, month])
+  @@map("yearbook_history")
 }
 
 model Event {
-    id         Int      @id @default(autoincrement())
-    targetCode String   @map("target_code")
-    priority   Int      @default(0)
-    condition  Json     @default(dbgenerated("'{}'::jsonb"))
-    action     Json     @default(dbgenerated("'{}'::jsonb"))
-    meta       Json     @default(dbgenerated("'{}'::jsonb"))
-    createdAt  DateTime @default(now()) @map("created_at")
+  id         Int      @id @default(autoincrement())
+  targetCode String   @map("target_code")
+  priority   Int      @default(0)
+  condition  Json     @default(dbgenerated("'{}'::jsonb"))
+  action     Json     @default(dbgenerated("'{}'::jsonb"))
+  meta       Json     @default(dbgenerated("'{}'::jsonb"))
+  createdAt  DateTime @default(now()) @map("created_at")
 
-    @@map("event")
+  @@map("event")
 }
 
 model LogEntry {
-    id        Int         @id @default(autoincrement())
-    scope     LogScope
-    category  LogCategory
-    subType   String?     @map("sub_type")
-    year      Int
-    month     Int
-    text      String
-    generalId Int?        @map("general_id")
-    nationId  Int?        @map("nation_id")
-    userId    Int?        @map("user_id")
-    meta      Json        @default(dbgenerated("'{}'::jsonb"))
-    createdAt DateTime    @default(now()) @map("created_at")
+  id        Int         @id @default(autoincrement())
+  scope     LogScope
+  category  LogCategory
+  subType   String?     @map("sub_type")
+  year      Int
+  month     Int
+  text      String
+  generalId Int?        @map("general_id")
+  nationId  Int?        @map("nation_id")
+  userId    Int?        @map("user_id")
+  meta      Json        @default(dbgenerated("'{}'::jsonb"))
+  createdAt DateTime    @default(now()) @map("created_at")
 
-    @@index([scope, category, id])
-    @@index([generalId, category, id])
-    @@index([nationId, category, id])
-    @@index([userId, category, id])
-    @@map("log_entry")
+  @@index([scope, category, id])
+  @@index([generalId, category, id])
+  @@index([nationId, category, id])
+  @@index([userId, category, id])
+  @@map("log_entry")
 }
 
 model ErrorLog {
-    id        Int      @id @default(autoincrement())
-    category  String
-    source    String?  @map("source")
-    message   String
-    trace     String?
-    context   Json     @default(dbgenerated("'{}'::jsonb"))
-    createdAt DateTime @default(now()) @map("created_at")
+  id        Int      @id @default(autoincrement())
+  category  String
+  source    String?  @map("source")
+  message   String
+  trace     String?
+  context   Json     @default(dbgenerated("'{}'::jsonb"))
+  createdAt DateTime @default(now()) @map("created_at")
 
-    @@index([category, id])
-    @@map("error_log")
+  @@index([category, id])
+  @@map("error_log")
 }
 
 model InheritancePoint {
-    id        Int      @id @default(autoincrement())
-    userId    String   @map("user_id")
-    key       String
-    value     Float    @default(0)
-    aux       Json     @default(dbgenerated("'{}'::jsonb"))
-    updatedAt DateTime @updatedAt @map("updated_at")
+  id        Int      @id @default(autoincrement())
+  userId    String   @map("user_id")
+  key       String
+  value     Float    @default(0)
+  aux       Json     @default(dbgenerated("'{}'::jsonb"))
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-    @@unique([userId, key])
-    @@index([userId])
-    @@map("inheritance_point")
+  @@unique([userId, key])
+  @@index([userId])
+  @@map("inheritance_point")
 }
 
 model InheritanceLog {
-    id        Int      @id @default(autoincrement())
-    userId    String   @map("user_id")
-    year      Int
-    month     Int
-    text      String
-    createdAt DateTime @default(now()) @map("created_at")
+  id        Int      @id @default(autoincrement())
+  userId    String   @map("user_id")
+  year      Int
+  month     Int
+  text      String
+  createdAt DateTime @default(now()) @map("created_at")
 
-    @@index([userId, id])
-    @@map("inheritance_log")
+  @@index([userId, id])
+  @@map("inheritance_log")
 }
 
 model InheritanceResult {
-    id        Int      @id @default(autoincrement())
-    serverId  String   @map("server_id")
-    owner     String   @map("owner")
-    generalId Int      @map("general_id")
-    year      Int
-    month     Int
-    value     Json     @default(dbgenerated("'{}'::jsonb"))
-    createdAt DateTime @default(now()) @map("created_at")
+  id        Int      @id @default(autoincrement())
+  serverId  String   @map("server_id")
+  owner     String   @map("owner")
+  generalId Int      @map("general_id")
+  year      Int
+  month     Int
+  value     Json     @default(dbgenerated("'{}'::jsonb"))
+  createdAt DateTime @default(now()) @map("created_at")
 
-    @@index([serverId, owner])
-    @@map("inheritance_result")
+  @@index([serverId, owner])
+  @@map("inheritance_result")
 }
 
 model Auction {
-    id            Int           @id @default(autoincrement())
-    type          AuctionType
-    targetCode    String?       @map("target_code")
-    hostGeneralId Int           @map("host_general_id")
-    hostName      String?       @map("host_name")
-    detail        Json          @default(dbgenerated("'{}'::jsonb"))
-    status        AuctionStatus @default(OPEN)
-    closeAt       DateTime      @map("close_at")
-    latestEventId String        @default("") @map("latest_event_id")
-    latestEventAt DateTime      @default(now()) @map("latest_event_at")
-    finalizingAt  DateTime?     @map("finalizing_at")
-    finishedAt    DateTime?     @map("finished_at")
-    createdAt     DateTime      @default(now()) @map("created_at")
-    updatedAt     DateTime      @updatedAt @map("updated_at")
+  id            Int           @id @default(autoincrement())
+  type          AuctionType
+  targetCode    String?       @map("target_code")
+  hostGeneralId Int           @map("host_general_id")
+  hostName      String?       @map("host_name")
+  detail        Json          @default(dbgenerated("'{}'::jsonb"))
+  status        AuctionStatus @default(OPEN)
+  closeAt       DateTime      @map("close_at")
+  latestEventId String        @default("") @map("latest_event_id")
+  latestEventAt DateTime      @default(now()) @map("latest_event_at")
+  finalizingAt  DateTime?     @map("finalizing_at")
+  finishedAt    DateTime?     @map("finished_at")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
 
-    bids AuctionBid[]
+  bids AuctionBid[]
 
-    @@index([status, closeAt])
-    @@map("auction")
+  @@index([status, closeAt])
+  @@map("auction")
 }
 
 model AuctionBid {
-    id        Int      @id @default(autoincrement())
-    auctionId Int      @map("auction_id")
-    generalId Int      @map("general_id")
-    amount    Int
-    eventId   String   @map("event_id")
-    eventAt   DateTime @map("event_at")
-    meta      Json     @default(dbgenerated("'{}'::jsonb"))
-    createdAt DateTime @default(now()) @map("created_at")
+  id        Int      @id @default(autoincrement())
+  auctionId Int      @map("auction_id")
+  generalId Int      @map("general_id")
+  amount    Int
+  eventId   String   @map("event_id")
+  eventAt   DateTime @map("event_at")
+  meta      Json     @default(dbgenerated("'{}'::jsonb"))
+  createdAt DateTime @default(now()) @map("created_at")
 
-    auction Auction @relation(fields: [auctionId], references: [id], onDelete: Cascade)
+  auction Auction @relation(fields: [auctionId], references: [id], onDelete: Cascade)
 
-    @@index([auctionId, amount])
-    @@index([auctionId, eventAt])
-    @@map("auction_bid")
+  @@index([auctionId, amount])
+  @@index([auctionId, eventAt])
+  @@map("auction_bid")
 }
 
 model InheritanceUserState {
-    userId    String   @id @map("user_id")
-    meta      Json     @default(dbgenerated("'{}'::jsonb"))
-    updatedAt DateTime @updatedAt @map("updated_at")
+  userId    String   @id @map("user_id")
+  meta      Json     @default(dbgenerated("'{}'::jsonb"))
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-    @@map("inheritance_user_state")
+  @@map("inheritance_user_state")
 }
 
 model BoardPost {
-    id              Int      @id @default(autoincrement())
-    nationId        Int      @map("nation_id")
-    isSecret        Boolean  @default(false) @map("is_secret")
-    authorGeneralId Int      @map("author_general_id")
-    authorName      String   @map("author_name")
-    title           String
-    contentHtml     String   @map("content_html")
-    createdAt       DateTime @default(now()) @map("created_at")
-    updatedAt       DateTime @updatedAt @map("updated_at")
+  id              Int      @id @default(autoincrement())
+  nationId        Int      @map("nation_id")
+  isSecret        Boolean  @default(false) @map("is_secret")
+  authorGeneralId Int      @map("author_general_id")
+  authorName      String   @map("author_name")
+  title           String
+  contentHtml     String   @map("content_html")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
-    comments BoardComment[]
+  comments BoardComment[]
 
-    @@index([nationId, isSecret, createdAt])
-    @@map("board_post")
+  @@index([nationId, isSecret, createdAt])
+  @@map("board_post")
 }
 
 model BoardComment {
-    id              Int      @id @default(autoincrement())
-    postId          Int      @map("post_id")
-    nationId        Int      @map("nation_id")
-    isSecret        Boolean  @default(false) @map("is_secret")
-    authorGeneralId Int      @map("author_general_id")
-    authorName      String   @map("author_name")
-    contentText     String   @map("content_text")
-    createdAt       DateTime @default(now()) @map("created_at")
+  id              Int      @id @default(autoincrement())
+  postId          Int      @map("post_id")
+  nationId        Int      @map("nation_id")
+  isSecret        Boolean  @default(false) @map("is_secret")
+  authorGeneralId Int      @map("author_general_id")
+  authorName      String   @map("author_name")
+  contentText     String   @map("content_text")
+  createdAt       DateTime @default(now()) @map("created_at")
 
-    post BoardPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  post BoardPost @relation(fields: [postId], references: [id], onDelete: Cascade)
 
-    @@index([postId, createdAt])
-    @@map("board_comment")
+  @@index([postId, createdAt])
+  @@map("board_comment")
 }
 
 model VotePoll {
-    id             Int      @id @default(autoincrement())
-    title          String
-    body           String   @default("")
-    options        Json
-    multipleOptions Int     @default(1) @map("multiple_options")
-    revealMode     String   @map("reveal_mode")
-    openerGeneralId Int     @map("opener_general_id")
-    openerName     String   @map("opener_name")
-    startAt        DateTime @default(now()) @map("start_at")
-    endAt          DateTime? @map("end_at")
-    closedAt       DateTime? @map("closed_at")
-    createdAt      DateTime @default(now()) @map("created_at")
-    updatedAt      DateTime @updatedAt @map("updated_at")
+  id              Int       @id @default(autoincrement())
+  title           String
+  body            String    @default("")
+  options         Json
+  multipleOptions Int       @default(1) @map("multiple_options")
+  revealMode      String    @map("reveal_mode")
+  openerGeneralId Int       @map("opener_general_id")
+  openerName      String    @map("opener_name")
+  startAt         DateTime  @default(now()) @map("start_at")
+  endAt           DateTime? @map("end_at")
+  closedAt        DateTime? @map("closed_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
-    votes    Vote[]
-    comments VoteComment[]
+  votes    Vote[]
+  comments VoteComment[]
 
-    @@map("vote_poll")
+  @@map("vote_poll")
 }
 
 model Vote {
-    id        Int      @id @default(autoincrement())
-    voteId    Int      @map("vote_id")
-    generalId Int      @map("general_id")
-    nationId  Int      @map("nation_id")
-    selection Json
-    createdAt DateTime @default(now()) @map("created_at")
+  id        Int      @id @default(autoincrement())
+  voteId    Int      @map("vote_id")
+  generalId Int      @map("general_id")
+  nationId  Int      @map("nation_id")
+  selection Json
+  createdAt DateTime @default(now()) @map("created_at")
 
-    poll VotePoll @relation(fields: [voteId], references: [id], onDelete: Cascade)
+  poll VotePoll @relation(fields: [voteId], references: [id], onDelete: Cascade)
 
-    @@unique([voteId, generalId])
-    @@index([voteId])
-    @@map("vote")
+  @@unique([voteId, generalId])
+  @@index([voteId])
+  @@map("vote")
 }
 
 model VoteComment {
-    id          Int      @id @default(autoincrement())
-    voteId      Int      @map("vote_id")
-    generalId   Int      @map("general_id")
-    nationId    Int      @map("nation_id")
-    generalName String   @map("general_name")
-    nationName  String   @map("nation_name")
-    text        String
-    createdAt   DateTime @default(now()) @map("created_at")
+  id          Int      @id @default(autoincrement())
+  voteId      Int      @map("vote_id")
+  generalId   Int      @map("general_id")
+  nationId    Int      @map("nation_id")
+  generalName String   @map("general_name")
+  nationName  String   @map("nation_name")
+  text        String
+  createdAt   DateTime @default(now()) @map("created_at")
 
-    poll VotePoll @relation(fields: [voteId], references: [id], onDelete: Cascade)
+  poll VotePoll @relation(fields: [voteId], references: [id], onDelete: Cascade)
 
-    @@index([voteId, createdAt])
-    @@map("vote_comment")
+  @@index([voteId, createdAt])
+  @@map("vote_comment")
 }

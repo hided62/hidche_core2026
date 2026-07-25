@@ -43,6 +43,9 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createSimp
                 oauthId: input.oauth?.id,
                 email: input.oauth?.email,
                 oauthInfo: input.oauth?.info,
+                picture: 'default.jpg',
+                imageServer: 0,
+                thirdPartyUse: true,
                 passwordSalt: salt,
                 passwordHash: hasher.hash(input.password, salt),
                 createdAt: new Date().toISOString(),
@@ -92,6 +95,35 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createSimp
             for (const user of usersByName.values()) {
                 if (user.id === userId) {
                     user.sanctions = { ...sanctions };
+                    return;
+                }
+            }
+            throw new Error('User not found.');
+        },
+        async updateIcon(userId: string, picture: string, imageServer: number, updatedAt: Date): Promise<void> {
+            for (const user of usersByName.values()) {
+                if (user.id === userId) {
+                    user.picture = picture;
+                    user.imageServer = imageServer;
+                    user.iconUpdatedAt = updatedAt.toISOString();
+                    return;
+                }
+            }
+            throw new Error('User not found.');
+        },
+        async setThirdPartyUse(userId: string, allowed: boolean): Promise<void> {
+            for (const user of usersByName.values()) {
+                if (user.id === userId) {
+                    user.thirdPartyUse = allowed;
+                    return;
+                }
+            }
+            throw new Error('User not found.');
+        },
+        async scheduleDeletion(userId: string, deleteAfter: Date): Promise<void> {
+            for (const user of usersByName.values()) {
+                if (user.id === userId) {
+                    user.deleteAfter = deleteAfter.toISOString();
                     return;
                 }
             }

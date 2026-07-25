@@ -18,6 +18,8 @@ export interface GatewayApiContext {
     kakaoClient: KakaoOAuthClient;
     oauthSessions: OAuthSessionStore;
     publicBaseUrl: string;
+    userIconDir: string;
+    userIconPublicUrl: string;
     adminLocalAccountEnabled: boolean;
     profiles: GatewayProfileRepository;
     orchestrator: GatewayOrchestratorHandle;
@@ -36,6 +38,8 @@ export const createGatewayApiContext = (options: {
     kakaoClient: KakaoOAuthClient;
     oauthSessions: OAuthSessionStore;
     publicBaseUrl: string;
+    userIconDir?: string;
+    userIconPublicUrl?: string;
     adminLocalAccountEnabled: boolean;
     profiles: GatewayProfileRepository;
     orchestrator: GatewayOrchestratorHandle;
@@ -51,6 +55,8 @@ export const createGatewayApiContext = (options: {
     kakaoClient: options.kakaoClient,
     oauthSessions: options.oauthSessions,
     publicBaseUrl: options.publicBaseUrl,
+    userIconDir: options.userIconDir ?? 'uploads/user-icons',
+    userIconPublicUrl: options.userIconPublicUrl ?? `${options.publicBaseUrl.replace(/\/$/, '')}/user-icons`,
     adminLocalAccountEnabled: options.adminLocalAccountEnabled,
     profiles: options.profiles,
     orchestrator: options.orchestrator,

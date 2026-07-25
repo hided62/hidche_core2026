@@ -1,5 +1,8 @@
 import fastify, { type FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
+import fastifyStatic from '@fastify/static';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import {
     createGatewayPostgresConnector,
@@ -60,6 +63,12 @@ export const createGatewayApiServer = async () => {
         origin: true,
         credentials: true,
     });
+    await fs.mkdir(path.resolve(process.cwd(), config.userIconDir), { recursive: true });
+    await app.register(fastifyStatic, {
+        root: path.resolve(process.cwd(), config.userIconDir),
+        prefix: '/user-icons/',
+        decorateReply: false,
+    });
 
     await app.register(fastifyTRPCPlugin, {
         prefix: config.trpcPath,
@@ -75,6 +84,8 @@ export const createGatewayApiServer = async () => {
                     kakaoClient,
                     oauthSessions,
                     publicBaseUrl: config.publicBaseUrl,
+                    userIconDir: path.resolve(process.cwd(), config.userIconDir),
+                    userIconPublicUrl: config.userIconPublicUrl,
                     adminLocalAccountEnabled: config.adminLocalAccountEnabled,
                     profiles,
                     orchestrator,
