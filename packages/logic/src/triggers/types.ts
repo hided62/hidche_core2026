@@ -48,6 +48,7 @@ export type WarStatName =
     | 'killRice'
     | 'criticalDamageRange'
     | 'warMagicSuccessDamage'
+    | 'warMagicFailDamage'
     | 'warMagicTrialProb'
     | 'warMagicSuccessProb'
     | 'addDex'

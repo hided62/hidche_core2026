@@ -9,7 +9,13 @@ import { WarActionPipeline, type WarActionModule } from './actions.js';
 import { createCrewTypeWarTriggerRegistry } from './crewTypeTriggers.js';
 import { WarCrewType } from './crewType.js';
 import { WarTriggerCaller, createWarTriggerEnv, type WarTriggerRegistry } from './triggers.js';
-import type { WarBattleInput, WarBattleOutcome, WarGeneralInput, WarUnitReport } from './types.js';
+import type {
+    WarBattleInput,
+    WarBattleOutcome,
+    WarBattleTraceUnitSnapshot,
+    WarGeneralInput,
+    WarUnitReport,
+} from './types.js';
 import { getMetaNumber } from './utils.js';
 import { WarUnitCity, WarUnitGeneral, type WarUnit } from './units.js';
 
@@ -77,7 +83,7 @@ const buildBattleInitTriggers = (unit: WarUnit, registry: WarTriggerRegistry): W
     if (unit instanceof WarUnitGeneral) {
         const context = unit.getActionContext();
         caller.merge(unit.getActionPipeline().getBattleInitTriggerList(context));
-    } else {
+    } else if (!(unit instanceof WarUnitCity && unit.isSiege())) {
         appendCrewTypeTriggers(caller, unit, unit.getCrewType().initSkillTrigger, registry);
     }
     return caller;
@@ -86,12 +92,10 @@ const buildBattleInitTriggers = (unit: WarUnit, registry: WarTriggerRegistry): W
 const buildBattlePhaseTriggers = (unit: WarUnit, registry: WarTriggerRegistry): WarTriggerCaller => {
     const caller = new WarTriggerCaller();
     if (unit instanceof WarUnitGeneral) {
-        if (registry['che_필살']) {
-            appendCrewTypeTriggers(caller, unit, ['che_필살'], registry);
-        }
+        appendCrewTypeTriggers(caller, unit, ['che_필살', 'che_회피', 'che_계략'], registry);
         const context = unit.getActionContext();
         caller.merge(unit.getActionPipeline().getBattlePhaseTriggerList(context));
-    } else {
+    } else if (!(unit instanceof WarUnitCity && unit.isSiege())) {
         appendCrewTypeTriggers(caller, unit, unit.getCrewType().phaseSkillTrigger, registry);
     }
     return caller;
@@ -189,6 +193,57 @@ const resolveUnitReport = (unit: WarUnit): WarUnitReport => {
         isAttacker: unit.isAttacker(),
         killed: unit.getKilled(),
         dead: unit.getDead(),
+    };
+};
+
+const buildTraceUnitSnapshot = (
+    unit: WarUnit,
+    defenderCity: City
+): WarBattleTraceUnitSnapshot => {
+    const common = {
+        kind: unit instanceof WarUnitGeneral ? ('general' as const) : ('city' as const),
+        id: unit instanceof WarUnitGeneral ? unit.getGeneral().id : (unit as WarUnitCity).getCityId(),
+        name: unit.getName(),
+        isAttacker: unit.isAttacker(),
+        crewTypeId: unit.getCrewType().id,
+        phase: unit.getPhase(),
+        realPhase: unit.getRealPhase(),
+        maxPhase: unit.getMaxPhase(),
+        hp: unit.getHP(),
+        rawWarPower: unit.getRawWarPower(),
+        warPower: unit.getWarPower(),
+        warPowerMultiplier: unit.getWarPowerMultiply(),
+        killed: unit.getKilled(),
+        dead: unit.getDead(),
+        activatedSkills: unit.getActivatedSkillLog(),
+    };
+    if (unit instanceof WarUnitGeneral) {
+        const general = unit.getGeneral();
+        return {
+            ...common,
+            general: {
+                crew: general.crew,
+                rice: general.rice,
+                train: general.train,
+                atmos: general.atmos,
+                injury: general.injury,
+                experience: general.experience,
+                dedication: general.dedication,
+                dex1: getMetaNumber(general.meta, 'dex1'),
+                dex2: getMetaNumber(general.meta, 'dex2'),
+                dex3: getMetaNumber(general.meta, 'dex3'),
+                dex4: getMetaNumber(general.meta, 'dex4'),
+                dex5: getMetaNumber(general.meta, 'dex5'),
+            },
+        };
+    }
+    return {
+        ...common,
+        cityState: {
+            defence: defenderCity.defence,
+            wall: defenderCity.wall,
+            population: defenderCity.population,
+        },
     };
 };
 
@@ -307,6 +362,22 @@ export const resolveWarBattle = <TriggerState extends GeneralTriggerState = Gene
     defender = getNextDefender(null, true);
     let conquerCity = false;
     let logWritten = false;
+    let traceSeq = 0;
+    const emitTrace = (
+        event: string,
+        currentDefender: WarUnit<TriggerState> | null,
+        details: Record<string, unknown> = {}
+    ): void => {
+        input.trace?.({
+            seq: traceSeq++,
+            event,
+            attacker: buildTraceUnitSnapshot(attackerUnit, input.defenderCity),
+            defender: currentDefender ? buildTraceUnitSnapshot(currentDefender, input.defenderCity) : null,
+            city: buildTraceUnitSnapshot(cityUnit, input.defenderCity),
+            details,
+        });
+    };
+    emitTrace('battle_start', defender, { seed: input.seed ?? '' });
 
     const attackerNationName = (attackerUnit.getNationVar('name') as string | null) ?? 'UNKNOWN';
     const attackerName = attackerUnit.getName();
@@ -349,6 +420,7 @@ export const resolveWarBattle = <TriggerState extends GeneralTriggerState = Gene
                 );
 
                 conquerCity = true;
+                emitTrace('supply_retreat', defender);
                 break;
             }
         }
@@ -409,17 +481,31 @@ export const resolveWarBattle = <TriggerState extends GeneralTriggerState = Gene
             const initCaller = buildBattleInitTriggers(attackerUnit, triggerRegistry);
             initCaller.merge(buildBattleInitTriggers(defender, triggerRegistry));
             initCaller.fire({ rng, attacker: attackerUnit, defender }, createWarTriggerEnv());
+            emitTrace('opponent_initialized', defender);
         }
 
         attackerUnit.beginPhase();
         defender.beginPhase();
+        emitTrace('phase_power', defender, {
+            attackerAttack: attackerUnit.getComputedAttack(),
+            attackerDefence: attackerUnit.getComputedDefence(),
+            attackerTrain: attackerUnit.getComputedTrain(),
+            attackerAtmos: attackerUnit.getComputedAtmos(),
+            defenderAttack: defender.getComputedAttack(),
+            defenderDefence: defender.getComputedDefence(),
+            defenderTrain: defender.getComputedTrain(),
+            defenderAtmos: defender.getComputedAtmos(),
+        });
 
         const battleCaller = buildBattlePhaseTriggers(attackerUnit, triggerRegistry);
         battleCaller.merge(buildBattlePhaseTriggers(defender, triggerRegistry));
         battleCaller.fire({ rng, attacker: attackerUnit, defender }, createWarTriggerEnv());
+        emitTrace('phase_triggered', defender);
 
         let deadDefender = attackerUnit.calcDamage();
         let deadAttacker = defender.calcDamage();
+        const rawDeadAttacker = deadAttacker;
+        const rawDeadDefender = deadDefender;
 
         const attackerHP = attackerUnit.getHP();
         const defenderHP = defender.getHP();
@@ -445,6 +531,14 @@ export const resolveWarBattle = <TriggerState extends GeneralTriggerState = Gene
 
         attackerUnit.increaseKilled(deadDefender);
         defender.increaseKilled(deadAttacker);
+        emitTrace('phase_damage', defender, {
+            rawDeadAttacker,
+            rawDeadDefender,
+            deadAttacker,
+            deadDefender,
+            attackerHpBefore: attackerHP,
+            defenderHpBefore: defenderHP,
+        });
 
         const phaseNickname = defender.getPhase() < 0 ? '先' : `${attackerUnit.getPhase() + 1} `;
 
@@ -464,9 +558,11 @@ export const resolveWarBattle = <TriggerState extends GeneralTriggerState = Gene
 
         attackerUnit.addPhase();
         defender.addPhase();
+        emitTrace('phase_end', defender);
 
         const attackerState = attackerUnit.continueWar();
         if (!attackerState.canContinue) {
+            emitTrace('attacker_stopped', defender, { noRice: attackerState.noRice });
             logWritten = true;
 
             attackerUnit.logBattleResult();
@@ -500,6 +596,7 @@ export const resolveWarBattle = <TriggerState extends GeneralTriggerState = Gene
 
         const defenderState = defender.continueWar();
         if (!defenderState.canContinue) {
+            emitTrace('defender_stopped', defender, { noRice: defenderState.noRice });
             logWritten = true;
 
             attackerUnit.logBattleResult();
@@ -555,6 +652,7 @@ export const resolveWarBattle = <TriggerState extends GeneralTriggerState = Gene
 
             defender.finishBattle();
             defender = getNextDefender(defender, true);
+            emitTrace('opponent_switched', defender);
         }
     }
 
@@ -586,6 +684,7 @@ export const resolveWarBattle = <TriggerState extends GeneralTriggerState = Gene
             );
         }
     }
+    emitTrace('battle_end', defender, { conquered: conquerCity });
 
     const logs = flushLoggers([attackerLogger, ...defenderGenerals.map((unit) => unit.getLogger())]);
 

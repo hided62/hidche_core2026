@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 
+import type { RandUtil } from '@sammo-ts/common';
 import {
     formatLogText,
     getTechCost,
@@ -13,6 +14,16 @@ import {
     ITEM_KEYS,
     loadItemModules,
     createInheritBuffModules,
+    createTraitModuleRegistry,
+    DOMESTIC_TRAIT_KEYS,
+    loadDomesticTraitModules,
+    loadNationTraitModules,
+    loadPersonalityTraitModules,
+    loadWarTraitModules,
+    NATION_TRAIT_KEYS,
+    PERSONALITY_TRAIT_KEYS,
+    TraitWarActionRouter,
+    WAR_TRAIT_KEYS,
     compileCrewTypeCatalog,
     createCrewTypeWarTriggerRegistry,
     type City,
@@ -21,7 +32,9 @@ import {
     type UnitSetDefinition,
     type WarBattleOutcome,
     type WarActionModule,
+    type WarActionContext,
     type WarUnitReport,
+    type WarBattleTraceEvent,
     type CrewTypeDefinition,
 } from '@sammo-ts/logic';
 
@@ -35,10 +48,50 @@ const itemWarModules: WarActionModule[] = createItemActionModules(
     createItemModuleRegistry(await loadItemModules([...ITEM_KEYS]))
 ).war;
 const crewTypeWarTriggerRegistry = createCrewTypeWarTriggerRegistry();
+const traitRegistry = createTraitModuleRegistry({
+    domestic: await loadDomesticTraitModules([...DOMESTIC_TRAIT_KEYS]),
+    war: await loadWarTraitModules([...WAR_TRAIT_KEYS]),
+    personality: await loadPersonalityTraitModules([...PERSONALITY_TRAIT_KEYS]),
+    nation: await loadNationTraitModules([...NATION_TRAIT_KEYS]),
+});
+const traitWarModules: WarActionModule[] = [
+    new TraitWarActionRouter('nation', traitRegistry),
+    {
+        onCalcStat: (context: WarActionContext, statName, value) => {
+            if (statName !== 'leadership' || typeof value !== 'number') {
+                return value;
+            }
+            let officerLevel = context.general.officerLevel;
+            // Legacy simulator payload omits general.city, so low city offices are
+            // always downgraded by TriggerOfficerLevel's officer_city comparison.
+            if (officerLevel >= 2 && officerLevel <= 4) {
+                officerLevel = 1;
+            }
+            const nationLevel = context.nation?.level ?? 0;
+            const leadershipBonus = officerLevel === 12 ? nationLevel * 2 : officerLevel >= 5 ? nationLevel : 0;
+            return value + leadershipBonus;
+        },
+        getWarPowerMultiplier: (context: WarActionContext) => {
+            let officerLevel = context.general.officerLevel;
+            if (officerLevel >= 2 && officerLevel <= 4) {
+                officerLevel = 1;
+            }
+            if (officerLevel === 12) return [1.07, 0.93];
+            if (officerLevel === 11) return [1.05, 0.95];
+            if ([10, 8, 6].includes(officerLevel)) return [1.1, 1];
+            if ([9, 7, 5].includes(officerLevel)) return [1, 0.9];
+            if ([4, 3, 2].includes(officerLevel)) return [1.05, 0.95];
+            return [1, 1];
+        },
+    },
+    new TraitWarActionRouter('domestic', traitRegistry),
+    new TraitWarActionRouter('war', traitRegistry),
+    new TraitWarActionRouter('personality', traitRegistry),
+];
 
 const buildWarActionModules = (unitSet: UnitSetDefinition): WarActionModule[] => {
     const crewTypeCatalog = compileCrewTypeCatalog(unitSet, crewTypeWarTriggerRegistry);
-    return [crewTypeCatalog.warActionModule, inheritBuffModules.war, ...itemWarModules];
+    return [...traitWarModules, crewTypeCatalog.warActionModule, inheritBuffModules.war, ...itemWarModules];
 };
 
 const normalizeItemCode = (value: string | null): string | null => (value === 'None' ? null : value);
@@ -284,7 +337,15 @@ const resolveDefenderOrderPayload = (payload: BattleSimJobPayload): number[] => 
     });
 };
 
-export const processBattleSimJob = (payload: BattleSimJobPayload): BattleSimResultPayload => {
+export interface BattleSimProcessorOptions {
+    trace?: (event: WarBattleTraceEvent) => void;
+    rngFactory?: (seed: string) => RandUtil;
+}
+
+export const processBattleSimJob = (
+    payload: BattleSimJobPayload,
+    options: BattleSimProcessorOptions = {}
+): BattleSimResultPayload => {
     if (payload.action === 'reorder') {
         return {
             result: true,
@@ -333,6 +394,7 @@ export const processBattleSimJob = (payload: BattleSimJobPayload): BattleSimResu
 
         const outcome = resolveWarBattle({
             seed,
+            rng: options.rngFactory?.(seed),
             unitSet: payload.unitSet,
             config: payload.config,
             time: payload.time,
@@ -350,6 +412,7 @@ export const processBattleSimJob = (payload: BattleSimJobPayload): BattleSimResu
             })),
             defenderCity,
             defenderNation,
+            trace: options.trace,
         });
 
         lastBattle = outcome;

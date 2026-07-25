@@ -99,6 +99,7 @@ export const buildBattleSimEnvironment = async (
         maxAtmosByCommand: resolveNumber(constValues, ['maxAtmosByCommand'], DEFAULT_WAR_CONFIG.maxAtmosByCommand),
         maxTrainByWar: resolveNumber(constValues, ['maxTrainByWar'], DEFAULT_WAR_CONFIG.maxTrainByWar),
         maxAtmosByWar: resolveNumber(constValues, ['maxAtmosByWar'], DEFAULT_WAR_CONFIG.maxAtmosByWar),
+        maxGeneralStat: resolveNumber(constValues, ['maxLevel'], 255),
         castleCrewTypeId,
         armTypes: {
             footman: 1,

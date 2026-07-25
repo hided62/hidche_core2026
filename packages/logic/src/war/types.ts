@@ -23,6 +23,7 @@ export interface WarEngineConfig {
     maxAtmosByCommand: number;
     maxTrainByWar: number;
     maxAtmosByWar: number;
+    maxGeneralStat?: number;
     castleCrewTypeId: number;
     armTypes: WarArmTypes;
 }
@@ -53,6 +54,53 @@ export interface WarBattleInput<TriggerState extends GeneralTriggerState = Gener
     defenderNation: Nation | null;
     triggerRegistry?: WarTriggerRegistry;
     loggerFactory?: (options: { generalId?: number; nationId?: number }) => ActionLogger;
+    trace?: (event: WarBattleTraceEvent) => void;
+}
+
+export interface WarBattleTraceUnitSnapshot {
+    kind: 'general' | 'city';
+    id: number;
+    name: string;
+    isAttacker: boolean;
+    crewTypeId: number;
+    phase: number;
+    realPhase: number;
+    maxPhase: number;
+    hp: number;
+    rawWarPower: number;
+    warPower: number;
+    warPowerMultiplier: number;
+    killed: number;
+    dead: number;
+    activatedSkills: Record<string, number>;
+    general?: {
+        crew: number;
+        rice: number;
+        train: number;
+        atmos: number;
+        injury: number;
+        experience: number;
+        dedication: number;
+        dex1: number;
+        dex2: number;
+        dex3: number;
+        dex4: number;
+        dex5: number;
+    };
+    cityState?: {
+        defence: number;
+        wall: number;
+        population: number;
+    };
+}
+
+export interface WarBattleTraceEvent {
+    seq: number;
+    event: string;
+    attacker: WarBattleTraceUnitSnapshot;
+    defender: WarBattleTraceUnitSnapshot | null;
+    city: WarBattleTraceUnitSnapshot;
+    details: Record<string, unknown>;
 }
 
 export interface WarUnitReport {

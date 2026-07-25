@@ -1,0 +1,52 @@
+{
+  "seed": "battle-differential-basic-v1",
+  "year": 200,
+  "month": 1,
+  "startYear": 180,
+  "repeatCnt": 1,
+  "action": "battle",
+  "attackerGeneral": {
+    "no": 1, "name": "공격자", "nation": 1, "turntime": "2026-01-01 00:00:00",
+    "personal": "che_안전", "special2": "che_징병", "crew": 1000, "crewtype": 1100,
+    "atmos": 100, "train": 100, "intel": 70, "intel_exp": 0, "book": "None",
+    "strength": 70, "strength_exp": 0, "weapon": "None", "injury": 0,
+    "leadership": 70, "leadership_exp": 0, "horse": "None", "item": "None",
+    "explevel": 0, "experience": 100, "dedication": 100, "officer_level": 3,
+    "officer_city": 1, "gold": 1000, "rice": 10000, "dex1": 0, "dex2": 0,
+    "dex3": 0, "dex4": 0, "dex5": 0, "defence_train": 0, "recent_war": null,
+    "warnum": 0, "killnum": 0, "killcrew": 0
+  },
+  "attackerCity": {
+    "city": 1, "nation": 1, "supply": 1, "name": "공격도시", "pop": 10000,
+    "agri": 1000, "comm": 1000, "secu": 1000, "def": 100, "wall": 100,
+    "trust": 100, "level": 2, "pop_max": 10000, "agri_max": 1000,
+    "comm_max": 1000, "secu_max": 1000, "def_max": 200, "wall_max": 200,
+    "dead": 0, "state": 0, "conflict": "{}"
+  },
+  "attackerNation": {
+    "type": "che_유가", "tech": 1000, "level": 1, "capital": 1, "nation": 1,
+    "name": "공격국", "gold": 1000, "rice": 10000, "gennum": 1
+  },
+  "defenderGenerals": [{
+    "no": 2, "name": "수비자", "nation": 2, "turntime": "2026-01-01 00:00:00",
+    "personal": "che_안전", "special2": "che_징병", "crew": 1000, "crewtype": 1100,
+    "atmos": 100, "train": 100, "intel": 60, "intel_exp": 0, "book": "None",
+    "strength": 60, "strength_exp": 0, "weapon": "None", "injury": 0,
+    "leadership": 60, "leadership_exp": 0, "horse": "None", "item": "None",
+    "explevel": 0, "experience": 100, "dedication": 100, "officer_level": 3,
+    "officer_city": 2, "gold": 1000, "rice": 10000, "dex1": 0, "dex2": 0,
+    "dex3": 0, "dex4": 0, "dex5": 0, "defence_train": 0, "recent_war": null,
+    "warnum": 0, "killnum": 0, "killcrew": 0
+  }],
+  "defenderCity": {
+    "city": 2, "nation": 2, "supply": 1, "name": "수비도시", "pop": 10000,
+    "agri": 1000, "comm": 1000, "secu": 1000, "def": 100, "wall": 100,
+    "trust": 100, "level": 2, "pop_max": 10000, "agri_max": 1000,
+    "comm_max": 1000, "secu_max": 1000, "def_max": 200, "wall_max": 200,
+    "dead": 0, "state": 0, "conflict": "{}"
+  },
+  "defenderNation": {
+    "type": "che_유가", "tech": 1000, "level": 1, "capital": 2, "nation": 2,
+    "name": "수비국", "gold": 1000, "rice": 10000, "gennum": 1
+  }
+}

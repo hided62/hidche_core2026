@@ -147,14 +147,33 @@ export class WarUnitGeneral<
         return phase + this.bonusPhase;
     }
 
-    private resolveStatValue(statName: keyof StatBlock, base: number): number {
-        return this.actionPipeline.onCalcStat(this.getActionContext(), statName, base);
+    public getComputedStat(
+        statName: keyof StatBlock,
+        base: number,
+        options: { withInjury?: boolean; withStatAdjust?: boolean; withActions?: boolean } = {}
+    ): number {
+        const withInjury = options.withInjury ?? true;
+        const withStatAdjust = options.withStatAdjust ?? true;
+        const withActions = options.withActions ?? true;
+        const injuryRatio = withInjury ? (100 - this.general.injury) / 100 : 1;
+        let value = base * injuryRatio;
+        if (withStatAdjust && statName === 'strength') {
+            value += round((this.general.stats.intelligence * injuryRatio) / 4);
+        } else if (withStatAdjust && statName === 'intelligence') {
+            value += round((this.general.stats.strength * injuryRatio) / 4);
+        }
+        const maxGeneralStat = this.config.maxGeneralStat ?? 255;
+        value = clamp(value, 0, maxGeneralStat);
+        if (withActions) {
+            value = this.actionPipeline.onCalcStat(this.getActionContext(), statName, value);
+        }
+        return clamp(value, 0, maxGeneralStat);
     }
 
-    private resolveMainStat(armType: number): number {
-        const leadership = this.resolveStatValue('leadership', this.general.stats.leadership);
-        const strength = this.resolveStatValue('strength', this.general.stats.strength);
-        const intelligence = this.resolveStatValue('intelligence', this.general.stats.intelligence);
+    private resolveMainStat(armType: number, withInjury = true): number {
+        const leadership = this.getComputedStat('leadership', this.general.stats.leadership, { withInjury });
+        const strength = this.getComputedStat('strength', this.general.stats.strength, { withInjury });
+        const intelligence = this.getComputedStat('intelligence', this.general.stats.intelligence, { withInjury });
 
         if (armType === this.config.armTypes.wizard) {
             return intelligence;
@@ -173,20 +192,22 @@ export class WarUnitGeneral<
         if (!(oppose instanceof WarUnitGeneral)) {
             return value;
         }
-        return oppose.getActionPipeline().onCalcOpposeStat(this.getActionContext(), statName, value, aux);
+        return oppose.getActionPipeline().onCalcOpposeStat(oppose.getActionContext(), statName, value, aux);
     }
 
     public override getDex(crewType: WarCrewType): number {
-        const armType =
+        const storedArmType =
             crewType.armType === this.config.armTypes.castle
                 ? (this.config.armTypes.siege ?? crewType.armType)
                 : crewType.armType;
-        const base = getMetaNumber(this.general.meta, `${META_DEX_PREFIX}${armType}`);
+        const base = getMetaNumber(this.general.meta, `${META_DEX_PREFIX}${storedArmType}`);
         const aux = {
             isAttacker: this.isAttacker(),
             opposeType: this.oppose?.getCrewType() ?? null,
         };
-        const statName = toDexStatName(armType);
+        // Legacy stores castle dexterity in the siege column, but still exposes
+        // the requested castle arm type to trait handlers as `dex0`.
+        const statName = toDexStatName(crewType.armType);
         let dex = this.actionPipeline.onCalcStat(this.getActionContext(), statName, base, aux);
         dex = this.resolveOpposeStatValue(statName, dex, aux);
         return dex;
@@ -236,7 +257,7 @@ export class WarUnitGeneral<
             return 0;
         }
 
-        const mainStat = this.resolveMainStat(armType);
+        const mainStat = this.resolveMainStat(armType, false);
         const coef =
             armType === this.config.armTypes.wizard ||
             armType === this.config.armTypes.siege ||
@@ -318,7 +339,10 @@ export class WarUnitGeneral<
     }
 
     public addDex(crewType: WarCrewType, exp: number): void {
-        const armType = crewType.armType;
+        const armType =
+            crewType.armType === this.config.armTypes.castle
+                ? (this.config.armTypes.siege ?? crewType.armType)
+                : crewType.armType;
         const key = `${META_DEX_PREFIX}${armType}`;
         const base = getMetaNumber(this.general.meta, key);
         this.general.meta[key] = round(base + exp);
