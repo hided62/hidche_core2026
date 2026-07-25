@@ -50,6 +50,7 @@ import { createUpdateCitySupplyHandler } from './monthlyCitySupplyAction.js';
 import { createUpdateNationLevelHandler } from './monthlyNationLevelAction.js';
 import { createProcessSemiAnnualHandler } from './monthlySemiAnnualAction.js';
 import { createProcessWarIncomeHandler } from './monthlyWarIncomeAction.js';
+import { createCreateAdminNpcHandler } from './monthlyCreateAdminNpcAction.js';
 import { DatabaseTurnDaemonLease, TurnDaemonLeaseUnavailableError } from '../lifecycle/databaseTurnDaemonLease.js';
 
 export interface TurnDaemonRuntimeOptions {
@@ -217,6 +218,7 @@ const createTurnDaemonRuntimeWithLease = async (
             nationTraits: nationTraitMap,
         })
     );
+    eventActions.set('CreateAdminNPC', createCreateAdminNpcHandler());
     if (reservedTurnStoreHandle) {
         eventActions.set(
             'UpdateNationLevel',
