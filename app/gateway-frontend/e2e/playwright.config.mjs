@@ -6,7 +6,7 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../.
 
 export default defineConfig({
     testDir: '.',
-    testMatch: 'server-operations.spec.ts',
+    testMatch: ['server-operations.spec.ts', 'lobby-admin-navigation.spec.ts'],
     fullyParallel: false,
     workers: 1,
     timeout: 30_000,
