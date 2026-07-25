@@ -1025,6 +1025,74 @@ export class InMemoryTurnWorld {
         return changes;
     }
 
+    collapseNation(nationId: number): boolean {
+        const nation = this.nations.get(nationId);
+        if (!nation) {
+            return false;
+        }
+        const generalIds = Array.from(this.generals.values())
+            .filter((general) => general.nationId === nationId)
+            .map((general) => general.id);
+
+        // Legacy deleteNation() calls DeleteConflict() before removing the
+        // nation. Without this, a later conquest can award a city to a
+        // nation ID that no longer exists.
+        for (const city of this.cities.values()) {
+            const rawConflict = city.meta.conflict;
+            if (rawConflict === null || rawConflict === undefined) {
+                continue;
+            }
+            let conflict: Record<string, unknown>;
+            try {
+                const parsed = typeof rawConflict === 'string' ? (JSON.parse(rawConflict) as unknown) : rawConflict;
+                if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+                    continue;
+                }
+                conflict = { ...(parsed as Record<string, unknown>) };
+            } catch {
+                continue;
+            }
+            const key = String(nationId);
+            if (!Object.prototype.hasOwnProperty.call(conflict, key)) {
+                continue;
+            }
+            delete conflict[key];
+            this.cities.set(city.id, {
+                ...city,
+                meta: {
+                    ...city.meta,
+                    conflict: JSON.stringify(conflict),
+                },
+            });
+            this.dirtyCityIds.add(city.id);
+        }
+
+        this.deletedNationSnapshots.push({
+            nation: { ...nation },
+            generalIds,
+            removedAt: new Date(this.state.lastTurnTime.getTime()),
+        });
+        for (const general of this.generals.values()) {
+            if (general.nationId !== nationId) {
+                continue;
+            }
+            const updated = applyGeneralPatch(general, {
+                nationId: 0,
+                officerLevel: 0,
+                troopId: 0,
+            });
+            this.generals.set(general.id, normalizeGeneralTurnTime(updated, this.state.lastTurnTime));
+            this.dirtyGeneralIds.add(general.id);
+        }
+        for (const troop of Array.from(this.troops.values())) {
+            if (troop.nationId === nationId) {
+                this.removeTroop(troop.id);
+            }
+        }
+        this.removeNation(nationId);
+        return true;
+    }
+
     private removeCollapsedNations(): void {
         const collapsedNationIds: number[] = [];
         for (const nation of this.nations.values()) {
@@ -1043,68 +1111,7 @@ export class InMemoryTurnWorld {
         }
 
         for (const nationId of collapsedNationIds) {
-            // Legacy deleteNation() calls DeleteConflict() before removing the
-            // nation. Without this, a later conquest can award a city to a
-            // nation ID that no longer exists.
-            for (const city of this.cities.values()) {
-                const rawConflict = city.meta.conflict;
-                if (rawConflict === null || rawConflict === undefined) {
-                    continue;
-                }
-                let conflict: Record<string, unknown>;
-                try {
-                    const parsed = typeof rawConflict === 'string' ? (JSON.parse(rawConflict) as unknown) : rawConflict;
-                    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-                        continue;
-                    }
-                    conflict = { ...(parsed as Record<string, unknown>) };
-                } catch {
-                    continue;
-                }
-                const key = String(nationId);
-                if (!Object.prototype.hasOwnProperty.call(conflict, key)) {
-                    continue;
-                }
-                delete conflict[key];
-                this.cities.set(city.id, {
-                    ...city,
-                    meta: {
-                        ...city.meta,
-                        conflict: JSON.stringify(conflict),
-                    },
-                });
-                this.dirtyCityIds.add(city.id);
-            }
-
-            const nation = this.nations.get(nationId);
-            if (nation) {
-                const generalIds = Array.from(this.generals.values())
-                    .filter((general) => general.nationId === nationId)
-                    .map((general) => general.id);
-                this.deletedNationSnapshots.push({
-                    nation: { ...nation },
-                    generalIds,
-                    removedAt: new Date(this.state.lastTurnTime.getTime()),
-                });
-            }
-            for (const general of this.generals.values()) {
-                if (general.nationId !== nationId) {
-                    continue;
-                }
-                const updated = applyGeneralPatch(general, {
-                    nationId: 0,
-                    officerLevel: 0,
-                    troopId: 0,
-                });
-                this.generals.set(general.id, normalizeGeneralTurnTime(updated, this.state.lastTurnTime));
-                this.dirtyGeneralIds.add(general.id);
-            }
-            for (const troop of Array.from(this.troops.values())) {
-                if (troop.nationId === nationId) {
-                    this.removeTroop(troop.id);
-                }
-            }
-            this.removeNation(nationId);
+            this.collapseNation(nationId);
         }
     }
 

@@ -27,6 +27,7 @@ import { composeCalendarHandlers } from './calendarHandlers.js';
 import { createIncomeHandler } from './incomeHandler.js';
 import { createNationTurnMonthlyHandler } from './nationTurnMonthlyHandler.js';
 import { createMonthlyBoundaryPreHandler } from './monthlyBoundaryPreHandler.js';
+import { createMonthlyWanderHandler } from './monthlyWanderHandler.js';
 import {
     createMonthlyDiplomacyHandler,
     createMonthlyNationCountHandler,
@@ -467,6 +468,11 @@ const createTurnDaemonRuntimeWithLease = async (
     const monthlyWarSettingHandler = createMonthlyWarSettingHandler({
         getWorld: () => worldRef,
     });
+    const monthlyWanderHandler = createMonthlyWanderHandler({
+        getWorld: () => worldRef,
+        startYear: snapshot.scenarioMeta?.startYear ?? state.currentYear,
+        commandEnv: monthlyCommandEnv,
+    });
     const frontStateHandler = createFrontStateHandler({
         getWorld: () => worldRef,
         map: snapshot.map ?? null,
@@ -497,6 +503,7 @@ const createTurnDaemonRuntimeWithLease = async (
         monthlyNationStatsHandler,
         monthlyDiplomacyHandler,
         monthlyWarSettingHandler,
+        monthlyWanderHandler,
         monthlyNationCountHandler,
         options.calendarHandler ?? unification?.handler,
         hasEventAction('ProcessIncome') ? null : incomeHandler,
