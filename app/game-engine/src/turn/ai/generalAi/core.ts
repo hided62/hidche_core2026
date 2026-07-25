@@ -36,7 +36,7 @@ import { WorldStateView } from './worldStateView.js';
 import type { GeneralAIOptions, GeneralAiDebugState } from './types.js';
 
 const ACTION_REST = '휴식';
-const lastAttackableByNation = new Map<number, number>();
+const lastAttackableByWorld = new WeakMap<object, Map<number, number>>();
 
 const t무장 = 1;
 const t지장 = 2;
@@ -129,11 +129,12 @@ export class GeneralAI {
     private readonly reservedTurnProvider: AiReservedTurnProvider;
 
     constructor(options: GeneralAIOptions) {
-        this.general = options.general;
+        this.general = { ...options.general, meta: { ...options.general.meta } };
         this.city = options.city;
-        this.nation =
+        const nation =
             options.nation ??
-            (options.general.nationId > 0 ? options.worldRef?.getNationById(options.general.nationId) ?? null : null);
+            (options.general.nationId > 0 ? (options.worldRef?.getNationById(options.general.nationId) ?? null) : null);
+        this.nation = nation ? { ...nation, meta: { ...nation.meta } } : nation;
         this.world = options.world;
         this.worldRef = options.worldRef;
         this.map = options.map;
@@ -255,25 +256,39 @@ export class GeneralAI {
             return null;
         }
 
+        const npcMessage = asRecord(this.general.meta).npcmsg;
+        if (npcMessage && this.rng.nextBool((this.aiConst.npcMessageFreqByDay * this.turnTermMinutes) / (60 * 24))) {
+            // 메시지 영속화는 turn handler가 담당한다. 여기서는 레거시와 같은 RNG 소비를 보존한다.
+        }
+
+        if (this.general.npcState >= 2) {
+            this.general.meta = { ...this.general.meta, defence_train: 80 };
+        }
+
+        if (this.general.officerLevel === 12 && this.generalPolicy.can('선양')) {
+            const abdication = generalActionHandlers['선양']?.(this);
+            if (abdication) {
+                return abdication;
+            }
+        }
+
         if (this.general.npcState === 5) {
+            if (this.general.nationId === 0) {
+                this.general.meta = { ...this.general.meta, killturn: 1 };
+                return { action: reservedTurn.action, args: reservedTurn.args, reason: '사망' };
+            }
             const result = generalActionHandlers['집합']?.(this);
             return result ?? this.buildGeneralCandidate(ACTION_REST, {}, 'npc_troop');
         }
 
         if (reservedTurn.action !== ACTION_REST) {
-            const reservedCandidate = this.buildGeneralCandidate(reservedTurn.action, reservedTurn.args, 'reserved');
-            if (reservedCandidate) {
-                return reservedCandidate;
-            }
+            return { action: reservedTurn.action, args: reservedTurn.args, reason: 'do예약턴' };
         }
 
         if (
             readMetaNumber(asRecord(this.general.meta), 'injury', this.general.injury) > this.nationPolicy.cureThreshold
         ) {
-            const heal = this.buildGeneralCandidate('che_요양', {}, 'heal');
-            if (heal) {
-                return heal;
-            }
+            return { action: 'che_요양', args: {}, reason: 'do요양' };
         }
 
         if ([2, 3].includes(this.general.npcState) && this.general.nationId === 0) {
@@ -293,7 +308,7 @@ export class GeneralAI {
         }
 
         if (this.general.npcState < 2 && this.general.nationId === 0 && !this.generalPolicy.can('국가선택')) {
-            return this.buildGeneralCandidate(ACTION_REST, {}, 'neutral_user');
+            return { action: reservedTurn.action, args: reservedTurn.args, reason: '재야유저' };
         }
 
         if (this.general.npcState >= 2 && this.general.officerLevel === 12 && !this.nation?.capitalCityId) {
@@ -311,6 +326,12 @@ export class GeneralAI {
             const move = generalActionHandlers['방랑군이동']?.(this);
             if (move) {
                 return move;
+            }
+            if (relYearMonth > 1) {
+                const disband = generalActionHandlers['해산']?.(this);
+                if (disband) {
+                    return disband;
+                }
             }
         }
 
@@ -757,11 +778,17 @@ export class GeneralAI {
 
         const declareTerms = warTargets.filter((entry) => entry.state === 1).map((entry) => entry.term);
         const minWarTerm = declareTerms.length > 0 ? Math.min(...declareTerms) : null;
-        let lastAttackable = lastAttackableByNation.get(nationId) ??
-            readMetaNumber(asRecord(this.nation.meta), 'last_attackable', 0);
+        let worldLastAttackable = lastAttackableByWorld.get(this.world.meta);
+        if (!worldLastAttackable) {
+            worldLastAttackable = new Map();
+            lastAttackableByWorld.set(this.world.meta, worldLastAttackable);
+        }
+        let lastAttackable =
+            worldLastAttackable.get(nationId) ?? readMetaNumber(asRecord(this.nation.meta), 'last_attackable', 0);
         const markAttackable = () => {
             lastAttackable = yearMonth;
-            lastAttackableByNation.set(nationId, yearMonth);
+            worldLastAttackable.set(nationId, yearMonth);
+            this.nation!.meta = { ...this.nation!.meta, last_attackable: yearMonth };
         };
 
         if (minWarTerm === null) {

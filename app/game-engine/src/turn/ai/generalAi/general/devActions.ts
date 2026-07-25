@@ -1,6 +1,19 @@
 import type { GeneralAI } from '../core.js';
-import { valueFit } from '../../aiUtils.js';
+import { asRecord, readMetaNumber, valueFit } from '../../aiUtils.js';
 import { pickWeightedCandidate, resolveCityTrust, t무장, t지장, t통솔장 } from './helpers.js';
+
+const isTechLimited = (ai: GeneralAI, tech: number): boolean => {
+    const relativeYear = Math.max(0, ai.world.currentYear - ai.startYear);
+    const levelIncreaseYears = ai.commandEnv.techLevelIncYear ?? 5;
+    const initialAllowedLevel = ai.commandEnv.initialAllowedTechLevel ?? 1;
+    const relativeMaxLevel = valueFit(
+        Math.floor(relativeYear / levelIncreaseYears) + initialAllowedLevel,
+        1,
+        ai.commandEnv.maxTechLevel
+    );
+    const currentLevel = valueFit(Math.floor(tech / 1000), 0, ai.commandEnv.maxTechLevel);
+    return currentLevel >= relativeMaxLevel;
+};
 
 export const do일반내정 = (ai: GeneralAI) => {
     const city = ai.city;
@@ -14,6 +27,7 @@ export const do일반내정 = (ai: GeneralAI) => {
     }
 
     const develRate = ai.calcCityDevelRate(city);
+    const tech = readMetaNumber(asRecord(nation.meta), 'tech', 0);
     const isSpringSummer = ai.world.currentMonth <= 6;
     const cmdList: Array<[ReturnType<GeneralAI['buildGeneralCandidate']>, number]> = [];
 
@@ -64,7 +78,13 @@ export const do일반내정 = (ai: GeneralAI) => {
     }
 
     if (ai.genType & t지장) {
-        cmdList.push([ai.buildGeneralCandidate('che_기술연구', {}, '일반내정'), ai.general.stats.intelligence]);
+        if (!isTechLimited(ai, tech)) {
+            const nextTech = (tech % 1000) + 1;
+            const weight = !isTechLimited(ai, tech + 1000)
+                ? ai.general.stats.intelligence / (nextTech / 2000)
+                : ai.general.stats.intelligence;
+            cmdList.push([ai.buildGeneralCandidate('che_기술연구', {}, '일반내정'), weight]);
+        }
         if (develRate.agri[0] < 1) {
             cmdList.push([
                 ai.buildGeneralCandidate('che_농지개간', {}, '일반내정'),
@@ -119,6 +139,7 @@ export const do전쟁내정 = (ai: GeneralAI) => {
         return null;
     }
     const develRate = ai.calcCityDevelRate(city);
+    const tech = readMetaNumber(asRecord(nation.meta), 'tech', 0);
     const isSpringSummer = ai.world.currentMonth <= 6;
     const cmdList: Array<[ReturnType<GeneralAI['buildGeneralCandidate']>, number]> = [];
 
@@ -130,10 +151,9 @@ export const do전쟁내정 = (ai: GeneralAI) => {
             ]);
         }
         if (develRate.pop[0] < 0.8) {
-            const weight =
-                city.frontState > 0
-                    ? ai.general.stats.leadership / valueFit(develRate.pop[0], 0.001)
-                    : ai.general.stats.leadership / valueFit(develRate.pop[0], 0.001) / 2;
+            const weight = [1, 3].includes(city.frontState)
+                ? ai.general.stats.leadership / valueFit(develRate.pop[0], 0.001)
+                : ai.general.stats.leadership / valueFit(develRate.pop[0], 0.001) / 2;
             cmdList.push([ai.buildGeneralCandidate('che_정착장려', {}, '전쟁내정'), weight]);
         }
     }
@@ -160,27 +180,31 @@ export const do전쟁내정 = (ai: GeneralAI) => {
     }
 
     if (ai.genType & t지장) {
-        cmdList.push([ai.buildGeneralCandidate('che_기술연구', {}, '전쟁내정'), ai.general.stats.intelligence]);
+        if (!isTechLimited(ai, tech)) {
+            const nextTech = (tech % 1000) + 1;
+            const weight = !isTechLimited(ai, tech + 1000)
+                ? ai.general.stats.intelligence / (nextTech / 3000)
+                : ai.general.stats.intelligence;
+            cmdList.push([ai.buildGeneralCandidate('che_기술연구', {}, '전쟁내정'), weight]);
+        }
         if (develRate.agri[0] < 0.5) {
-            const weight =
-                city.frontState > 0
-                    ? ((isSpringSummer ? 1.2 : 0.8) * ai.general.stats.intelligence) /
-                      4 /
-                      valueFit(develRate.agri[0], 0.001, 1)
-                    : ((isSpringSummer ? 1.2 : 0.8) * ai.general.stats.intelligence) /
-                      2 /
-                      valueFit(develRate.agri[0], 0.001, 1);
+            const weight = [1, 3].includes(city.frontState)
+                ? ((isSpringSummer ? 1.2 : 0.8) * ai.general.stats.intelligence) /
+                  4 /
+                  valueFit(develRate.agri[0], 0.001, 1)
+                : ((isSpringSummer ? 1.2 : 0.8) * ai.general.stats.intelligence) /
+                  2 /
+                  valueFit(develRate.agri[0], 0.001, 1);
             cmdList.push([ai.buildGeneralCandidate('che_농지개간', {}, '전쟁내정'), weight]);
         }
         if (develRate.comm[0] < 0.5) {
-            const weight =
-                city.frontState > 0
-                    ? ((isSpringSummer ? 0.8 : 1.2) * ai.general.stats.intelligence) /
-                      4 /
-                      valueFit(develRate.comm[0], 0.001, 1)
-                    : ((isSpringSummer ? 0.8 : 1.2) * ai.general.stats.intelligence) /
-                      2 /
-                      valueFit(develRate.comm[0], 0.001, 1);
+            const weight = [1, 3].includes(city.frontState)
+                ? ((isSpringSummer ? 0.8 : 1.2) * ai.general.stats.intelligence) /
+                  4 /
+                  valueFit(develRate.comm[0], 0.001, 1)
+                : ((isSpringSummer ? 0.8 : 1.2) * ai.general.stats.intelligence) /
+                  2 /
+                  valueFit(develRate.comm[0], 0.001, 1);
             cmdList.push([ai.buildGeneralCandidate('che_상업투자', {}, '전쟁내정'), weight]);
         }
     }

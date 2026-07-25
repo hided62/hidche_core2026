@@ -14,7 +14,25 @@ export const do천도 = (ai: GeneralAI) => {
         return null;
     }
 
-    const cityIds = nationCities.map((city) => city.id);
+    const nationCityIds = new Set(nationCities.map((city) => city.id));
+    const connectedCityIds = new Set<number>([ai.nation.capitalCityId]);
+    const queue = [ai.nation.capitalCityId];
+    while (queue.length > 0) {
+        const cityId = queue.shift()!;
+        const connections = ai.map.cities.find((city) => city.id === cityId)?.connections ?? [];
+        for (const nextCityId of connections) {
+            if (!nationCityIds.has(nextCityId) || connectedCityIds.has(nextCityId)) {
+                continue;
+            }
+            connectedCityIds.add(nextCityId);
+            queue.push(nextCityId);
+        }
+    }
+    if (connectedCityIds.size <= 1) {
+        return null;
+    }
+
+    const cityIds = Array.from(connectedCityIds);
     const distanceList = searchAllDistanceByCityList(ai.map, cityIds);
     const capitalId = ai.nation.capitalCityId;
     if (!distanceList[capitalId]) {
@@ -28,7 +46,7 @@ export const do천도 = (ai: GeneralAI) => {
     }
 
     const cityScores: Record<number, number> = {};
-    for (const city of nationCities) {
+    for (const city of nationCities.filter((candidate) => connectedCityIds.has(candidate.id))) {
         const sumDistance = Object.values(distanceList[city.id] ?? {}).reduce((acc, value) => acc + value, 0);
         if (sumDistance <= 0) {
             continue;
@@ -39,7 +57,7 @@ export const do천도 = (ai: GeneralAI) => {
 
     const sorted = Object.entries(cityScores).sort((a, b) => b[1] - a[1]);
     const topLimit = Math.ceil(sorted.length * 0.25);
-    for (let idx = 0; idx < Math.min(topLimit, sorted.length); idx += 1) {
+    for (let idx = 0; idx <= Math.min(topLimit, sorted.length - 1); idx += 1) {
         if (Number(sorted[idx][0]) === capitalId) {
             return null;
         }
@@ -62,5 +80,5 @@ export const do천도 = (ai: GeneralAI) => {
         }
     }
 
-    return ai.buildNationCandidate('che_천도', { destCityId: targetCityId }, '천도');
+    return ai.buildNationCandidate('che_천도', { destCityID: targetCityId }, '천도');
 };
