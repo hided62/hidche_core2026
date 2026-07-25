@@ -1,4 +1,10 @@
-import { LogCategory, LogScope, type TurnCommandProfile, type TurnSchedule } from '@sammo-ts/logic';
+import {
+    LogCategory,
+    LogScope,
+    loadActionModuleBundle,
+    type TurnCommandProfile,
+    type TurnSchedule,
+} from '@sammo-ts/logic';
 import { buildGameEventChannel, type RealtimeEvent } from '@sammo-ts/common';
 import { createGamePostgresConnector, createRedisConnector, resolveRedisConfigFromEnv } from '@sammo-ts/infra';
 import { NATION_TRAIT_KEYS, NationTraitLoader, loadNationTraitModules } from '@sammo-ts/logic';
@@ -39,6 +45,7 @@ import {
     createRandomizeCityTradeRateHandler,
     type MonthlyEventActionHandler,
 } from './monthlyEventHandler.js';
+import { createRaiseDisasterHandler } from './monthlyDisasterAction.js';
 import { DatabaseTurnDaemonLease, TurnDaemonLeaseUnavailableError } from '../lifecycle/databaseTurnDaemonLease.js';
 
 export interface TurnDaemonRuntimeOptions {
@@ -127,6 +134,7 @@ const createTurnDaemonRuntimeWithLease = async (
     let redisConnector: ReturnType<typeof createRedisConnector> | null = null;
     const nationTraits = await loadNationTraitModules([...NATION_TRAIT_KEYS], new NationTraitLoader());
     const nationTraitMap = new Map(nationTraits.map((module) => [module.key, module]));
+    const monthlyActionModules = await loadActionModuleBundle(snapshot.unitSet);
     const unification = options.calendarHandler
         ? null
         : createUnificationHandler({
@@ -150,6 +158,13 @@ const createTurnDaemonRuntimeWithLease = async (
         'RandomizeCityTradeRate',
         createRandomizeCityTradeRateHandler({
             getWorld: () => worldRef,
+        })
+    );
+    eventActions.set(
+        'RaiseDisaster',
+        createRaiseDisasterHandler({
+            getWorld: () => worldRef,
+            generalActionModules: monthlyActionModules.general,
         })
     );
     eventActions.set('ProcessIncome', (_args, environment) => {

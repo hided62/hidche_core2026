@@ -36,6 +36,7 @@ export type GeneralStatName =
     | 'dedication'
     | 'sabotageDefence'
     | 'sabotageAttack'
+    | 'injuryProb'
     | 'addDex';
 
 export type WarStatName =
