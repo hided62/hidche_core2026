@@ -59,6 +59,8 @@ import {
     createInvaderEndingHandler,
     createRaiseInvaderHandler,
 } from './monthlyInvaderAction.js';
+import { createChangeCityHandler } from './monthlyChangeCityAction.js';
+import { createProvideNpcTroopLeaderHandler } from './monthlyProvideNpcTroopLeaderAction.js';
 import { buildCommandEnv } from './reservedTurnCommands.js';
 import { DatabaseTurnDaemonLease, TurnDaemonLeaseUnavailableError } from '../lifecycle/databaseTurnDaemonLease.js';
 
@@ -183,7 +185,8 @@ const createTurnDaemonRuntimeWithLease = async (
         hasEventAction('RegNeutralNPC') ||
         hasEventAction('RaiseNPCNation') ||
         hasEventAction('RaiseInvader') ||
-        hasEventAction('AutoDeleteInvader');
+        hasEventAction('AutoDeleteInvader') ||
+        hasEventAction('ProvideNPCTroopLeader');
     const reservedTurnStoreHandle =
         options.generalTurnHandler && !eventRequiresReservedTurns
             ? null
@@ -300,6 +303,14 @@ const createTurnDaemonRuntimeWithLease = async (
             })
         );
         eventActions.set(
+            'ProvideNPCTroopLeader',
+            createProvideNpcTroopLeaderHandler({
+                getWorld: () => worldRef,
+                reservedTurns: reservedTurnStoreHandle.store,
+                env: monthlyCommandEnv,
+            })
+        );
+        eventActions.set(
             'UpdateNationLevel',
             createUpdateNationLevelHandler({
                 getWorld: () => worldRef,
@@ -312,6 +323,12 @@ const createTurnDaemonRuntimeWithLease = async (
     eventActions.set(
         'InvaderEnding',
         createInvaderEndingHandler({
+            getWorld: () => worldRef,
+        })
+    );
+    eventActions.set(
+        'ChangeCity',
+        createChangeCityHandler({
             getWorld: () => worldRef,
         })
     );
