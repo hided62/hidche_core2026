@@ -1,8 +1,7 @@
 import type { ScenarioConfig } from '@sammo-ts/logic/scenario/types.js';
 import type { General, GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { ItemModule } from './types.js';
-
-const ITEM_REMAIN_PREFIX = 'itemRemain:';
+import { consumeEquippedItemCharge, ensureItemInventory, getEquippedItemInstance } from './inventory.js';
 
 const toBoolean = (value: unknown): boolean => {
     if (typeof value === 'boolean') {
@@ -28,12 +27,11 @@ export const isInventoryEnabled = (config: ScenarioConfig): boolean => {
 export const listEquippedItemKeys = <TriggerState extends GeneralTriggerState>(
     general: General<TriggerState>
 ): string[] => {
-    const items = [
-        general.role.items.horse,
-        general.role.items.weapon,
-        general.role.items.book,
-        general.role.items.item,
-    ];
+    const inventory = ensureItemInventory(general);
+    const items = (['horse', 'weapon', 'book', 'item'] as const).map((slot) => {
+        const instanceId = inventory.equipped[slot];
+        return instanceId ? (inventory.instances[instanceId]?.itemKey ?? null) : null;
+    });
     const seen = new Set<string>();
     const result: string[] = [];
     for (const key of items) {
@@ -50,7 +48,8 @@ export const getItemRemain = <TriggerState extends GeneralTriggerState>(
     general: General<TriggerState>,
     itemKey: string
 ): number | null => {
-    const value = general.triggerState.counters[`${ITEM_REMAIN_PREFIX}${itemKey}`];
+    const instance = getEquippedItemInstance(general, 'item');
+    const value = instance?.itemKey === itemKey ? instance.state.charges : undefined;
     return typeof value === 'number' && value > 0 ? value : null;
 };
 
@@ -59,12 +58,15 @@ export const setItemRemain = <TriggerState extends GeneralTriggerState>(
     itemKey: string,
     remain: number | null
 ): void => {
-    const key = `${ITEM_REMAIN_PREFIX}${itemKey}`;
-    if (remain === null || remain <= 0) {
-        delete general.triggerState.counters[key];
+    const instance = getEquippedItemInstance(general, 'item');
+    if (!instance || instance.itemKey !== itemKey) {
         return;
     }
-    general.triggerState.counters[key] = remain;
+    if (remain === null || remain <= 0) {
+        delete instance.state.charges;
+        return;
+    }
+    instance.state.charges = remain;
 };
 
 export const consumeItemRemain = <TriggerState extends GeneralTriggerState>(
@@ -72,13 +74,7 @@ export const consumeItemRemain = <TriggerState extends GeneralTriggerState>(
     itemKey: string,
     fallbackRemain = 1
 ): boolean => {
-    const remain = getItemRemain(general, itemKey) ?? fallbackRemain;
-    if (remain > 1) {
-        setItemRemain(general, itemKey, remain - 1);
-        return false;
-    }
-    setItemRemain(general, itemKey, null);
-    return true;
+    return consumeEquippedItemCharge(general, 'item', itemKey, fallbackRemain);
 };
 
 export const canAcquireItem = <TriggerState extends GeneralTriggerState>(options: {

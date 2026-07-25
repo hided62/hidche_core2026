@@ -2,6 +2,7 @@ import { JosaUtil } from '@sammo-ts/common';
 import { TriggerPriority } from '@sammo-ts/logic/triggers/core.js';
 import { BaseGeneralTrigger, type GeneralTriggerContext } from '@sammo-ts/logic/triggers/general.js';
 import type { General } from '@sammo-ts/logic/domain/entities.js';
+import { getEquippedItemInstance } from '@sammo-ts/logic/items/inventory.js';
 
 interface ItemHealOptions {
     itemKey: string;
@@ -23,7 +24,7 @@ export class CheItemHealTrigger extends BaseGeneralTrigger {
 
     action(context: GeneralTriggerContext, env: Record<string, unknown>): Record<string, unknown> {
         const { general } = context;
-        if (general.role.items.item !== this.options.itemKey) {
+        if (getEquippedItemInstance(general, 'item')?.itemKey !== this.options.itemKey) {
             return env;
         }
         if (general.injury < this.options.injuryTarget) {
@@ -36,9 +37,7 @@ export class CheItemHealTrigger extends BaseGeneralTrigger {
         const josa = JosaUtil.pick(this.options.itemRawName, '을');
         context.log?.push(`<C>${this.options.itemName}</>${josa} 사용하여 치료합니다!`);
 
-        if (this.options.consume()) {
-            general.role.items.item = null;
-        }
+        this.options.consume();
 
         return env;
     }

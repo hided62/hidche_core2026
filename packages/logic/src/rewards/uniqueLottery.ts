@@ -3,11 +3,12 @@ import type { General, GeneralItemSlots, GeneralTriggerState } from '../domain/e
 import type { GeneralActionResolveContext } from '../actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '../logging/types.js';
 import type { ItemModule } from '../items/types.js';
+import { equipNewItem } from '../items/inventory.js';
 
 export type UniqueItemPool = Record<string, Record<string, number>>;
 
 export const UNIQUE_ACQUIRE_TYPES = ['아이템', '설문조사', '랜덤 임관', '건국'] as const;
-export type UniqueAcquireType = typeof UNIQUE_ACQUIRE_TYPES[number];
+export type UniqueAcquireType = (typeof UNIQUE_ACQUIRE_TYPES)[number];
 
 export type UniqueLotteryRequest = {
     acquireType: UniqueAcquireType;
@@ -230,8 +231,7 @@ export const rollUniqueLottery = (input: UniqueLotteryInput): string | null => {
         return null;
     }
 
-    const relMonthByInit =
-        joinYearMonth(currentYear, currentMonth) - joinYearMonth(initYear, initMonth);
+    const relMonthByInit = joinYearMonth(currentYear, currentMonth) - joinYearMonth(initYear, initMonth);
     const availableBuyUnique = relMonthByInit >= config.minMonthToAllowInheritItem;
 
     let prob: number;
@@ -242,9 +242,9 @@ export const rollUniqueLottery = (input: UniqueLotteryInput): string | null => {
     }
 
     if (resolvedAcquireType === '설문조사') {
-        prob = 1 / (userCount * itemTypeCnt * 0.7 / 3);
+        prob = 1 / ((userCount * itemTypeCnt * 0.7) / 3);
     } else if (resolvedAcquireType === '랜덤 임관') {
-        prob = 1 / (userCount * itemTypeCnt / 10 / 2);
+        prob = 1 / ((userCount * itemTypeCnt) / 10 / 2);
     }
 
     prob *= config.uniqueTrialCoef;
@@ -316,7 +316,9 @@ export const applyUniqueItemGain = <TriggerState extends GeneralTriggerState = G
     const josaYi = JosaUtil.pick(generalName, '이');
     const josaUl = JosaUtil.pick(itemRawName, '을');
 
-    general.role.items[itemModule.slot] = itemModule.key;
+    equipNewItem(general, itemModule.slot, itemModule.key, {
+        ...(itemModule.initialCharges === undefined ? {} : { charges: itemModule.initialCharges }),
+    });
 
     context.addLog(`<C>${itemName}</>${josaUl} 습득했습니다!`, {
         scope: LogScope.GENERAL,

@@ -146,6 +146,7 @@ export const buildReservedTurnDefinitions = async (options: {
                 reqSecu: item.reqSecu,
                 buyable: item.buyable,
                 unique: item.unique,
+                ...(item.initialCharges === undefined ? {} : { initialCharges: item.initialCharges }),
             },
         ])
     );

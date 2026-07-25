@@ -26,6 +26,7 @@ export interface ItemModule<TriggerState extends GeneralTriggerState = GeneralTr
     cost: number | null;
     buyable: boolean;
     consumable: boolean;
+    initialCharges?: number;
     reqSecu: number;
     unique: boolean;
 

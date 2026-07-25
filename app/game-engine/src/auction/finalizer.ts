@@ -1,5 +1,6 @@
 import { createGamePostgresConnector, GamePrisma } from '@sammo-ts/infra';
 import { ActionLogger, ItemLoader, LogFormat, UserLogger, isItemKey } from '@sammo-ts/logic';
+import { cloneItemInventory, ensureItemInventory, equipNewItem } from '@sammo-ts/logic/items/index.js';
 import { JosaUtil } from '@sammo-ts/common';
 
 import type { TurnDaemonCommandResult } from '../lifecycle/types.js';
@@ -392,14 +393,17 @@ export const createAuctionFinalizer = async (options: {
                         };
                     }
                 }
+                const nextBidder = {
+                    ...bidder,
+                    role: { ...bidder.role, items: { ...bidder.role.items } },
+                    itemInventory: cloneItemInventory(ensureItemInventory(bidder)),
+                };
+                equipNewItem(nextBidder, slot, itemKey, {
+                    ...(itemModule.initialCharges === undefined ? {} : { charges: itemModule.initialCharges }),
+                });
                 world.updateGeneral(bidder.id, {
-                    role: {
-                        ...bidder.role,
-                        items: {
-                            ...bidder.role.items,
-                            [slot]: itemKey,
-                        },
-                    },
+                    role: nextBidder.role,
+                    itemInventory: nextBidder.itemInventory,
                 });
 
                 const bidderLogger = new ActionLogger({ generalId: bidder.id, nationId: bidder.nationId });

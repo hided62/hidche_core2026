@@ -13,14 +13,17 @@ import { createGeneralPatchEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import { JosaUtil } from '@sammo-ts/common';
 import { z } from 'zod';
-import type {
-    TurnCommandEnv,
-    TurnCommandItemCatalogEntry,
-} from '@sammo-ts/logic/actions/turn/commandEnv.js';
+import type { TurnCommandEnv, TurnCommandItemCatalogEntry } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import { parseArgsWithSchema } from '../parseArgs.js';
+import {
+    cloneItemInventory,
+    ensureItemInventory,
+    equipNewItem,
+    removeEquippedItem,
+} from '@sammo-ts/logic/items/inventory.js';
 
 const ACTION_NAME = '장비매매';
 const ACTION_KEY = 'che_장비매매';
@@ -140,7 +143,10 @@ export class ActionDefinition<
         return constraints;
     }
 
-    resolve(context: GeneralActionResolveContext<TriggerState>, args: TradeItemArgs): GeneralActionOutcome<TriggerState> {
+    resolve(
+        context: GeneralActionResolveContext<TriggerState>,
+        args: TradeItemArgs
+    ): GeneralActionOutcome<TriggerState> {
         const general = context.general;
         const nation = context.nation;
 
@@ -161,13 +167,18 @@ export class ActionDefinition<
         const josaUl = JosaUtil.pick(itemRawName, '을');
 
         const nextGold = buying ? Math.max(0, general.gold - itemCost) : general.gold + Math.floor(itemCost / 2);
-        const nextRole = {
-            ...general.role,
-            items: {
-                ...general.role.items,
-                [itemType]: buying ? finalItemCode : null,
-            },
+        const nextGeneral = {
+            ...general,
+            role: { ...general.role, items: { ...general.role.items } },
+            itemInventory: cloneItemInventory(ensureItemInventory(general)),
         };
+        if (buying) {
+            equipNewItem(nextGeneral, itemType, finalItemCode, {
+                ...(item?.initialCharges === undefined ? {} : { charges: item.initialCharges }),
+            });
+        } else {
+            removeEquippedItem(nextGeneral, itemType);
+        }
 
         if (buying) {
             context.addLog(`<C>${itemName}</>${josaUl} 구입했습니다.`, {
@@ -189,10 +200,13 @@ export class ActionDefinition<
                 scope: LogScope.SYSTEM,
                 category: LogCategory.ACTION,
             });
-            context.addLog(`<R><b>【판매】</b></><D><b>${nation.name}</b></>의 <Y>${general.name}</>${josaYi} <C>${itemName}</>${josaUl} 판매했습니다!`, {
-                scope: LogScope.SYSTEM,
-                category: LogCategory.HISTORY,
-            });
+            context.addLog(
+                `<R><b>【판매】</b></><D><b>${nation.name}</b></>의 <Y>${general.name}</>${josaYi} <C>${itemName}</>${josaUl} 판매했습니다!`,
+                {
+                    scope: LogScope.SYSTEM,
+                    category: LogCategory.HISTORY,
+                }
+            );
         }
 
         tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
@@ -202,7 +216,8 @@ export class ActionDefinition<
                 createGeneralPatchEffect<TriggerState>({
                     gold: nextGold,
                     experience: general.experience + 10,
-                    role: nextRole,
+                    role: nextGeneral.role,
+                    itemInventory: nextGeneral.itemInventory,
                 }),
             ],
         };

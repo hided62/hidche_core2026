@@ -8,7 +8,16 @@ import {
     type TurnEngineNationRow,
     type TurnEngineTroopRow,
 } from '@sammo-ts/infra';
-import type { City, Nation, ScenarioConfig, ScenarioMeta, Troop, TriggerValue } from '@sammo-ts/logic';
+import type {
+    City,
+    GeneralItemSlots,
+    Nation,
+    ScenarioConfig,
+    ScenarioMeta,
+    Troop,
+    TriggerValue,
+} from '@sammo-ts/logic';
+import { projectItemSlots, readItemInventoryFromMeta } from '@sammo-ts/logic/items/index.js';
 import { z } from 'zod';
 import { asRecord, isRecord } from '@sammo-ts/common';
 
@@ -133,58 +142,64 @@ const mapScenarioConfig = (raw: JsonValue): ScenarioConfig => {
     return parsed.data;
 };
 
-const mapGeneralRow = (row: TurnEngineGeneralRow): TurnGeneral => ({
-    ...((): { meta: TurnGeneral['meta'] } => {
-        const meta = asTriggerRecord(row.meta) as Record<string, unknown>;
-        const killturn = readMetaNumber(meta, 'killturn');
-        if (killturn === null) {
-            throw new Error(`general.meta.killturn is required (generalId=${row.id}).`);
-        }
-        return { meta: { ...meta, killturn } as TurnGeneral['meta'] };
-    })(),
-    id: row.id,
-    name: row.name,
-    nationId: row.nationId,
-    cityId: row.cityId,
-    troopId: row.troopId,
-    stats: {
-        leadership: row.leadership,
-        strength: row.strength,
-        intelligence: row.intel,
-    },
-    experience: row.experience,
-    dedication: row.dedication,
-    officerLevel: row.officerLevel,
-    role: {
-        personality: normalizeCode(row.personalCode),
-        specialDomestic: normalizeCode(row.specialCode),
-        specialWar: normalizeCode(row.special2Code),
-        items: {
-            horse: normalizeCode(row.horseCode),
-            weapon: normalizeCode(row.weaponCode),
-            book: normalizeCode(row.bookCode),
-            item: normalizeCode(row.itemCode),
+const mapGeneralRow = (row: TurnEngineGeneralRow): TurnGeneral => {
+    const legacySlots: GeneralItemSlots = {
+        horse: normalizeCode(row.horseCode),
+        weapon: normalizeCode(row.weaponCode),
+        book: normalizeCode(row.bookCode),
+        item: normalizeCode(row.itemCode),
+    };
+    const rawMeta = asTriggerRecord(row.meta) as Record<string, unknown>;
+    const itemInventory = readItemInventoryFromMeta(rawMeta, legacySlots);
+    return {
+        ...((): { meta: TurnGeneral['meta'] } => {
+            const meta = rawMeta;
+            const killturn = readMetaNumber(meta, 'killturn');
+            if (killturn === null) {
+                throw new Error(`general.meta.killturn is required (generalId=${row.id}).`);
+            }
+            return { meta: { ...meta, killturn } as TurnGeneral['meta'] };
+        })(),
+        id: row.id,
+        name: row.name,
+        nationId: row.nationId,
+        cityId: row.cityId,
+        troopId: row.troopId,
+        stats: {
+            leadership: row.leadership,
+            strength: row.strength,
+            intelligence: row.intel,
         },
-    },
-    injury: row.injury,
-    gold: row.gold,
-    rice: row.rice,
-    crew: row.crew,
-    crewTypeId: row.crewTypeId,
-    train: row.train,
-    atmos: row.atmos,
-    age: row.age,
-    npcState: row.npcState,
-    triggerState: {
-        flags: {},
-        counters: {},
-        modifiers: {},
-        meta: {},
-    },
-    // meta는 상단에서 보장 처리됨.
-    turnTime: row.turnTime,
-    recentWarTime: row.recentWarTime ?? null,
-});
+        experience: row.experience,
+        dedication: row.dedication,
+        officerLevel: row.officerLevel,
+        role: {
+            personality: normalizeCode(row.personalCode),
+            specialDomestic: normalizeCode(row.specialCode),
+            specialWar: normalizeCode(row.special2Code),
+            items: projectItemSlots(itemInventory),
+        },
+        injury: row.injury,
+        gold: row.gold,
+        rice: row.rice,
+        crew: row.crew,
+        crewTypeId: row.crewTypeId,
+        train: row.train,
+        atmos: row.atmos,
+        age: row.age,
+        npcState: row.npcState,
+        triggerState: {
+            flags: {},
+            counters: {},
+            modifiers: {},
+            meta: {},
+        },
+        itemInventory,
+        // meta는 상단에서 보장 처리됨.
+        turnTime: row.turnTime,
+        recentWarTime: row.recentWarTime ?? null,
+    };
+};
 
 const mapCityRow = (row: TurnEngineCityRow): City => {
     const meta = asTriggerRecord(row.meta);

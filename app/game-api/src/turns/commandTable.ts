@@ -3,6 +3,7 @@ import type {
     Constraint,
     ConstraintContext,
     General,
+    GeneralItemSlots,
     GeneralActionDefinition,
     GeneralTurnCommandSpec,
     Nation,
@@ -13,6 +14,7 @@ import type {
     TriggerValue,
 } from '@sammo-ts/logic';
 import { evaluateConstraints, loadGeneralTurnCommandSpecs, loadNationTurnCommandSpecs } from '@sammo-ts/logic';
+import { projectItemSlots, readItemInventoryFromMeta } from '@sammo-ts/logic/items/index.js';
 import { asRecord, isRecord } from '@sammo-ts/common';
 
 import type { CityRow, GeneralRow, NationRow, WorldStateRow } from '../context.js';
@@ -220,48 +222,54 @@ const buildConstraintEnv = (worldState: WorldStateRow): Record<string, unknown> 
     };
 };
 
-const mapGeneralRow = (row: GeneralRow): General => ({
-    id: row.id,
-    name: row.name,
-    nationId: row.nationId,
-    cityId: row.cityId,
-    troopId: row.troopId,
-    stats: {
-        leadership: row.leadership,
-        strength: row.strength,
-        intelligence: row.intel,
-    },
-    experience: row.experience,
-    dedication: row.dedication,
-    officerLevel: row.officerLevel,
-    role: {
-        personality: normalizeCode(row.personalCode),
-        specialDomestic: normalizeCode(row.specialCode),
-        specialWar: normalizeCode(row.special2Code),
-        items: {
-            horse: normalizeCode(row.horseCode),
-            weapon: normalizeCode(row.weaponCode),
-            book: normalizeCode(row.bookCode),
-            item: normalizeCode(row.itemCode),
+const mapGeneralRow = (row: GeneralRow): General => {
+    const legacySlots: GeneralItemSlots = {
+        horse: normalizeCode(row.horseCode),
+        weapon: normalizeCode(row.weaponCode),
+        book: normalizeCode(row.bookCode),
+        item: normalizeCode(row.itemCode),
+    };
+    const meta = ensureGeneralMeta(asTriggerRecord(row.meta), row.id);
+    const itemInventory = readItemInventoryFromMeta(meta, legacySlots);
+    return {
+        id: row.id,
+        name: row.name,
+        nationId: row.nationId,
+        cityId: row.cityId,
+        troopId: row.troopId,
+        stats: {
+            leadership: row.leadership,
+            strength: row.strength,
+            intelligence: row.intel,
         },
-    },
-    injury: row.injury,
-    gold: row.gold,
-    rice: row.rice,
-    crew: row.crew,
-    crewTypeId: row.crewTypeId,
-    train: row.train,
-    atmos: row.atmos,
-    age: row.age,
-    npcState: row.npcState,
-    triggerState: {
-        flags: {},
-        counters: {},
-        modifiers: {},
-        meta: {},
-    },
-    meta: ensureGeneralMeta(asTriggerRecord(row.meta), row.id),
-});
+        experience: row.experience,
+        dedication: row.dedication,
+        officerLevel: row.officerLevel,
+        role: {
+            personality: normalizeCode(row.personalCode),
+            specialDomestic: normalizeCode(row.specialCode),
+            specialWar: normalizeCode(row.special2Code),
+            items: projectItemSlots(itemInventory),
+        },
+        injury: row.injury,
+        gold: row.gold,
+        rice: row.rice,
+        crew: row.crew,
+        crewTypeId: row.crewTypeId,
+        train: row.train,
+        atmos: row.atmos,
+        age: row.age,
+        npcState: row.npcState,
+        triggerState: {
+            flags: {},
+            counters: {},
+            modifiers: {},
+            meta: {},
+        },
+        itemInventory,
+        meta,
+    };
+};
 
 const mapCityRow = (row: CityRow): City => {
     const meta = asTriggerRecord(row.meta);

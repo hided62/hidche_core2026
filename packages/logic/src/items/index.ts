@@ -572,3 +572,17 @@ export {
     getItemRemain,
     setItemRemain,
 } from './utils.js';
+export {
+    cloneItemInventory,
+    consumeEquippedItemCharge,
+    createItemInventoryFromSlots,
+    ensureItemInventory,
+    equipNewItem,
+    getEquippedItemInstance,
+    parseItemInventory,
+    projectItemSlots,
+    readItemInventoryFromMeta,
+    removeEquippedItem,
+    serializeItemInventory,
+    withSerializedItemInventory,
+} from './inventory.js';

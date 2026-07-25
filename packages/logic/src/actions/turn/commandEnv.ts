@@ -10,6 +10,7 @@ export interface TurnCommandItemCatalogEntry {
     reqSecu: number;
     buyable: boolean;
     unique: boolean;
+    initialCharges?: number;
 }
 
 export interface TurnCommandEnv {

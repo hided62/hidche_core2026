@@ -20,6 +20,12 @@ import {
     type ItemModule,
     type TriggerValue,
 } from '@sammo-ts/logic';
+import {
+    cloneItemInventory,
+    ensureItemInventory,
+    equipNewItem,
+    removeEquippedItem,
+} from '@sammo-ts/logic/items/index.js';
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
 import type { TurnGeneral } from './types.js';
 
@@ -622,21 +628,22 @@ async function handleDropItem(
     if (!general) {
         return { type: 'dropItem', ok: false, generalId: command.generalId, reason: '장수 정보를 찾을 수 없습니다.' };
     }
-    const { itemType } = command;
-    const items = { ...general.role.items };
-    if (items.horse === itemType) items.horse = null;
-    else if (items.weapon === itemType) items.weapon = null;
-    else if (items.book === itemType) items.book = null;
-    else if (items.item === itemType) items.item = null;
-    else {
+    const slot = (['horse', 'weapon', 'book', 'item'] as const).find(
+        (candidate) => general.role.items[candidate] === command.itemType
+    );
+    if (!slot) {
         return { type: 'dropItem', ok: false, generalId: command.generalId, reason: '아이템을 가지고 있지 않습니다.' };
     }
+    const nextGeneral = {
+        ...general,
+        role: { ...general.role, items: { ...general.role.items } },
+        itemInventory: cloneItemInventory(ensureItemInventory(general)),
+    };
+    removeEquippedItem(nextGeneral, slot);
 
     world.updateGeneral(command.generalId, {
-        role: {
-            ...general.role,
-            items,
-        },
+        role: nextGeneral.role,
+        itemInventory: nextGeneral.itemInventory,
     });
     return { type: 'dropItem', ok: true, generalId: command.generalId };
 }
@@ -1068,13 +1075,16 @@ async function handleVoteReward(
                 reason: '유니크 아이템을 찾을 수 없습니다.',
             };
         }
-        patch.role = {
-            ...general.role,
-            items: {
-                ...general.role.items,
-                [itemModule.slot]: itemKey,
-            },
+        const nextGeneral = {
+            ...general,
+            role: { ...general.role, items: { ...general.role.items } },
+            itemInventory: cloneItemInventory(ensureItemInventory(general)),
         };
+        equipNewItem(nextGeneral, itemModule.slot, itemKey, {
+            ...(itemModule.initialCharges === undefined ? {} : { charges: itemModule.initialCharges }),
+        });
+        patch.role = nextGeneral.role;
+        patch.itemInventory = nextGeneral.itemInventory;
 
         const nationName = world.getNationById(general.nationId)?.name ?? '재야';
         const generalName = general.name;

@@ -36,6 +36,25 @@ export interface GeneralItemSlots {
     item: string | null;
 }
 
+export type GeneralItemSlot = keyof GeneralItemSlots;
+
+export interface GeneralItemInstanceState {
+    charges?: number;
+    values: Record<string, TriggerValue>;
+}
+
+export interface GeneralItemInstance {
+    id: string;
+    itemKey: string;
+    state: GeneralItemInstanceState;
+}
+
+export interface GeneralItemInventory {
+    nextInstanceId: number;
+    instances: Record<string, GeneralItemInstance>;
+    equipped: Partial<Record<GeneralItemSlot, string>>;
+}
+
 export interface GeneralRole {
     // General.php의 raw 컬럼을 그대로 유지하는 역할 데이터.
     personality: string | null;
@@ -69,6 +88,8 @@ export interface General<TriggerState extends GeneralTriggerState = GeneralTrigg
     age: number;
     npcState: number;
     triggerState: TriggerState;
+    // 아이템의 canonical 소유/상태 모델. role.items는 레거시 DB 컬럼/API용 projection이다.
+    itemInventory?: GeneralItemInventory;
     meta: GeneralMeta;
 }
 

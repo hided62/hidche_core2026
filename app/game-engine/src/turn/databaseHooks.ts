@@ -27,6 +27,7 @@ import type { TurnDaemonCommandResult, TurnDaemonHooks } from '../lifecycle/type
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
 import type { InMemoryReservedTurnStore } from './reservedTurnStore.js';
 import { buildDiplomacyMeta } from '@sammo-ts/logic';
+import { ensureItemInventory, withSerializedItemInventory } from '@sammo-ts/logic/items/index.js';
 
 export interface DatabaseTurnHooks {
     hooks: TurnDaemonHooks;
@@ -144,7 +145,7 @@ const buildGeneralUpdate = (
     personalCode: toCode(general.role.personality),
     specialCode: toCode(general.role.specialDomestic),
     special2Code: toCode(general.role.specialWar),
-    meta: asJson(general.meta),
+    meta: asJson(withSerializedItemInventory(general.meta, ensureItemInventory(general))),
     turnTime: general.turnTime,
     recentWarTime: general.recentWarTime ?? null,
 });
@@ -179,7 +180,7 @@ const buildGeneralCreate = (
     personalCode: toCode(general.role.personality),
     specialCode: toCode(general.role.specialDomestic),
     special2Code: toCode(general.role.specialWar),
-    meta: asJson(general.meta),
+    meta: asJson(withSerializedItemInventory(general.meta, ensureItemInventory(general))),
     turnTime: general.turnTime,
     recentWarTime: general.recentWarTime ?? null,
 });
