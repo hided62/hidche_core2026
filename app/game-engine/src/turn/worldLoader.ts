@@ -11,6 +11,7 @@ import {
 import type {
     City,
     GeneralItemSlots,
+    GeneralLastTurn,
     Nation,
     ScenarioConfig,
     ScenarioMeta,
@@ -39,6 +40,17 @@ type JsonRecord = Record<string, unknown>;
 
 const asTriggerRecord = (value: unknown): Record<string, TriggerValue> =>
     isRecord(value) ? (value as Record<string, TriggerValue>) : {};
+
+const normalizeGeneralLastTurn = (value: unknown): GeneralLastTurn => {
+    const raw = asRecord(value);
+    const arg = asRecord(raw.arg);
+    return {
+        command: typeof raw.command === 'string' ? raw.command : '휴식',
+        ...(Object.keys(arg).length > 0 ? { arg } : {}),
+        ...(typeof raw.term === 'number' && Number.isFinite(raw.term) ? { term: Math.floor(raw.term) } : {}),
+        ...(typeof raw.seq === 'number' && Number.isFinite(raw.seq) ? { seq: Math.floor(raw.seq) } : {}),
+    };
+};
 
 const normalizeCode = (value: string | null | undefined): string | null => {
     if (!value || value === 'None') {
@@ -195,6 +207,7 @@ const mapGeneralRow = (row: TurnEngineGeneralRow): TurnGeneral => {
             meta: {},
         },
         itemInventory,
+        lastTurn: normalizeGeneralLastTurn(row.lastTurn),
         // meta는 상단에서 보장 처리됨.
         turnTime: row.turnTime,
         recentWarTime: row.recentWarTime ?? null,
@@ -224,6 +237,7 @@ const mapCityRow = (row: TurnEngineCityRow): City => {
         defenceMax: row.defenceMax,
         wall: row.wall,
         wallMax: row.wallMax,
+        conflict: asTriggerRecord(row.conflict),
         meta: {
             ...meta,
             trust: row.trust,

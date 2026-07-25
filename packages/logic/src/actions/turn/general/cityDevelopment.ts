@@ -20,7 +20,7 @@ export interface CityDevelopmentEnvironment {
     amount?: number;
 }
 
-type NumberKeys<T> = { [K in keyof T]: T[K] extends number ? K : never }[keyof T];
+type NumberKeys<T> = { [K in keyof T]-?: T[K] extends number ? K : never }[keyof T];
 
 export interface CityDevelopmentConfig {
     key: string;

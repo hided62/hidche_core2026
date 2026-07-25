@@ -255,8 +255,8 @@ export class ActionResolver<
                     ...general,
                     gold: Math.max(0, general.gold - cost),
                     rice: Math.max(0, general.rice - cost),
-                    experience: general.experience + 50,
-                    dedication: general.dedication + 30,
+                    experience: general.experience + ctx.rng.nextInt(1, 101),
+                    dedication: general.dedication + ctx.rng.nextInt(1, 71),
                     meta: {
                         ...general.meta,
                         leadership_exp:
@@ -276,6 +276,9 @@ export class ActionDefinition<
 > implements GeneralActionDefinition<TriggerState, SpyArgs, GeneralActionResolveContext<TriggerState>> {
     public readonly key = ACTION_KEY;
     public readonly name = ACTION_NAME;
+    getInheritanceActiveActionAmount(): number {
+        return 0.5;
+    }
     private readonly resolver: ActionResolver<TriggerState>;
 
     constructor() {
@@ -295,11 +298,7 @@ export class ActionDefinition<
     buildConstraints(ctx: ConstraintContext, _args: SpyArgs): Constraint[] {
         const env = ctx.env;
         const cost = ((env.develCost as number) ?? 100) * 3;
-        return [
-            notOccupiedDestCity(),
-            reqGeneralGold(() => cost),
-            reqGeneralRice(() => cost),
-        ];
+        return [notOccupiedDestCity(), reqGeneralGold(() => cost), reqGeneralRice(() => cost)];
     }
 
     resolve(context: GeneralActionResolveContext<TriggerState>, args: SpyArgs): GeneralActionOutcome<TriggerState> {

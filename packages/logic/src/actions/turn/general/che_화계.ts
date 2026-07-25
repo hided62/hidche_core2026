@@ -32,11 +32,16 @@ import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.
 import { JosaUtil } from '@sammo-ts/common';
 import { z } from 'zod';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
-import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
+import type {
+    ActionContextBase,
+    ActionContextBuilder,
+    ActionContextOptions,
+} from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import { clamp } from 'es-toolkit';
 import { parseArgsWithSchema } from '../parseArgs.js';
 import { consumeSuccessfulStrategyItem } from './strategyItemConsumption.js';
+import { searchDistance } from '@sammo-ts/logic/world/distance.js';
 
 export interface FireAttackEnvironment {
     develCost: number;
@@ -50,6 +55,8 @@ export interface FireAttackEnvironment {
     getDistance?: (sourceCityId: number, destCityId: number) => number | null;
     getDefenceCorrection?: (context: FireAttackContext, defender: General) => number;
     getInjuryProbability?: (context: FireAttackContext, defender: General) => number;
+    damageMode?: 'fire' | 'agitate' | 'destroy' | 'seize';
+    injuryGeneral?: boolean;
 }
 
 export interface FireAttackContext<
@@ -61,6 +68,7 @@ export interface FireAttackContext<
     destCity: City;
     destNation?: Nation | null;
     destGenerals: General<TriggerState>[];
+    distance?: number;
 }
 
 export interface FireAttackResolveContext<
@@ -69,6 +77,7 @@ export interface FireAttackResolveContext<
     destCity: City;
     destNation?: Nation | null;
     destGenerals: General<TriggerState>[];
+    distance?: number;
 }
 
 export interface FireAttackResult<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
@@ -145,7 +154,7 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
         let probCorrection = 0;
         let affectCount = 0;
 
-        for (const defender of context.destGenerals) {
+        for (const defender of context.destGenerals ?? []) {
             if (defender.nationId !== destNationId) {
                 continue;
             }
@@ -166,7 +175,7 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
 
     resolve(context: FireAttackContext<TriggerState>, rng: RandomGenerator): FireAttackResult<TriggerState> {
         const { gold: costGold, rice: costRice } = this.getCost();
-        const distance = this.env.getDistance?.(context.general.cityId, context.destCity.id) ?? 99;
+        const distance = context.distance ?? this.env.getDistance?.(context.general.cityId, context.destCity.id) ?? 99;
 
         const attackProb = this.calcAttackProb(context);
         const defenceProb = this.calcDefenceProb(context);
@@ -175,10 +184,6 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
         probability = clamp(probability, 0, this.env.maxSuccessProbability ?? DEFAULT_MAX_PROB);
 
         const success = rng.nextBool(probability);
-        const expRange: [number, number] = success ? [201, 300] : [1, 100];
-        const dedRange: [number, number] = success ? [141, 210] : [1, 70];
-        const exp = randomRangeInt(rng, expRange[0], expRange[1]);
-        const dedication = randomRangeInt(rng, dedRange[0], dedRange[1]);
 
         if (!success) {
             return {
@@ -187,8 +192,8 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
                 distance,
                 costGold,
                 costRice,
-                exp,
-                dedication,
+                exp: randomRangeInt(rng, 1, 100),
+                dedication: randomRangeInt(rng, 1, 70),
                 agriDamage: 0,
                 commDamage: 0,
                 injuryCount: 0,
@@ -196,23 +201,12 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
             };
         }
 
-        const agriDamage = clamp(
-            randomRangeInt(rng, this.env.sabotageDamageMin, this.env.sabotageDamageMax),
-            0,
-            context.destCity.agriculture
-        );
-        const commDamage = clamp(
-            randomRangeInt(rng, this.env.sabotageDamageMin, this.env.sabotageDamageMax),
-            0,
-            context.destCity.commerce
-        );
-
         const injuryProbDefault = 0.3;
         const injuredGenerals: Array<{
             id: number;
             patch: Partial<General<TriggerState>>;
         }> = [];
-        for (const defender of context.destGenerals) {
+        for (const defender of this.env.injuryGeneral === false ? [] : (context.destGenerals ?? [])) {
             if (defender.nationId !== context.destCity.nationId) {
                 continue;
             }
@@ -226,9 +220,54 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
                 patch: {
                     injury: clamp(defender.injury + injuryAmount, 0, INJURY_MAX),
                     crew: Math.floor(defender.crew * 0.98),
+                    atmos: Math.floor(defender.atmos * 0.98),
                     train: Math.floor(defender.train * 0.98),
                 },
             });
+        }
+
+        const damageMode = this.env.damageMode ?? 'fire';
+        let agriDamage: number;
+        let commDamage: number;
+        if (damageMode === 'agitate') {
+            agriDamage = clamp(
+                randomRangeInt(rng, this.env.sabotageDamageMin, this.env.sabotageDamageMax),
+                0,
+                context.destCity.security
+            );
+            const trust = typeof context.destCity.meta.trust === 'number' ? context.destCity.meta.trust : 0;
+            commDamage = clamp(
+                (this.env.sabotageDamageMin +
+                    rng.nextFloat1() * (this.env.sabotageDamageMax - this.env.sabotageDamageMin)) /
+                    50,
+                0,
+                trust
+            );
+        } else if (damageMode === 'destroy') {
+            agriDamage = clamp(
+                randomRangeInt(rng, this.env.sabotageDamageMin, this.env.sabotageDamageMax),
+                0,
+                context.destCity.defence
+            );
+            commDamage = clamp(
+                randomRangeInt(rng, this.env.sabotageDamageMin, this.env.sabotageDamageMax),
+                0,
+                context.destCity.wall
+            );
+        } else if (damageMode === 'seize') {
+            agriDamage = randomRangeInt(rng, this.env.sabotageDamageMin, this.env.sabotageDamageMax);
+            commDamage = randomRangeInt(rng, this.env.sabotageDamageMin, this.env.sabotageDamageMax);
+        } else {
+            agriDamage = clamp(
+                randomRangeInt(rng, this.env.sabotageDamageMin, this.env.sabotageDamageMax),
+                0,
+                context.destCity.agriculture
+            );
+            commDamage = clamp(
+                randomRangeInt(rng, this.env.sabotageDamageMin, this.env.sabotageDamageMax),
+                0,
+                context.destCity.commerce
+            );
         }
 
         return {
@@ -237,8 +276,8 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
             distance,
             costGold,
             costRice,
-            exp,
-            dedication,
+            exp: randomRangeInt(rng, 201, 300),
+            dedication: randomRangeInt(rng, 141, 210),
             agriDamage,
             commDamage,
             injuryCount: injuredGenerals.length,
@@ -414,8 +453,30 @@ export class ActionDefinition<
     }
 }
 
-// 예약 턴 실행은 기본 컨텍스트만 사용한다.
-export const actionContextBuilder = defaultActionContextBuilder;
+export const buildStrategyActionContext = (base: ActionContextBase, options: ActionContextOptions) => {
+    const destCityId = options.actionArgs.destCityId;
+    if (typeof destCityId !== 'number' || !options.worldRef) {
+        return null;
+    }
+    const destCity = options.worldRef.getCityById(destCityId);
+    if (!destCity) {
+        return null;
+    }
+    const destNation = destCity.nationId > 0 ? options.worldRef.getNationById(destCity.nationId) : null;
+    const destGenerals = options.worldRef
+        .listGenerals()
+        .filter((general) => general.cityId === destCity.id && general.nationId === destCity.nationId);
+    const distance = options.map ? (searchDistance(options.map, base.general.cityId, 5)[destCity.id] ?? 99) : 99;
+    return {
+        ...base,
+        destCity,
+        destNation,
+        destGenerals,
+        distance,
+    };
+};
+
+export const actionContextBuilder: ActionContextBuilder = buildStrategyActionContext;
 
 export const commandSpec: GeneralTurnCommandSpec = {
     key: 'che_화계',

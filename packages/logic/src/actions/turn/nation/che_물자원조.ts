@@ -130,12 +130,18 @@ export class ActionDefinition<
 
         const broadcastMessage = `<D><b>${destNation.name}</b></>${josaRo} 금<C>${goldText}</> 쌀<C>${riceText}</>을 지원했습니다.`;
         const recvAssist =
-            typeof destNation.meta.recv_assist === 'object' && destNation.meta.recv_assist !== null
+            typeof destNation.meta.recv_assist === 'object' &&
+            destNation.meta.recv_assist !== null &&
+            !Array.isArray(destNation.meta.recv_assist)
                 ? { ...destNation.meta.recv_assist }
                 : {};
         const recvKey = `n${nation.id}`;
         const priorEntry =
-            typeof recvAssist[recvKey] === 'object' && recvAssist[recvKey] !== null ? recvAssist[recvKey] : {};
+            typeof recvAssist[recvKey] === 'object' &&
+            recvAssist[recvKey] !== null &&
+            !Array.isArray(recvAssist[recvKey])
+                ? recvAssist[recvKey]
+                : {};
         const priorAmount = Number(priorEntry['1'] ?? 0);
         recvAssist[recvKey] = {
             0: nation.id,

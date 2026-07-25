@@ -16,10 +16,10 @@ export interface StatBlock {
 export type TriggerValuePrimitive = boolean | number | string;
 
 export interface TriggerValueObject {
-    [key: string]: TriggerValuePrimitive | TriggerValueObject;
+    [key: string]: TriggerValue;
 }
 
-export type TriggerValue = TriggerValuePrimitive | TriggerValueObject;
+export type TriggerValue = TriggerValuePrimitive | TriggerValueObject | TriggerValue[];
 
 export interface GeneralTriggerState {
     // Trigger 시스템에서 사용하는 확장 슬롯.
@@ -67,6 +67,14 @@ export type GeneralMeta = Record<string, TriggerValue> & {
     killturn: number;
 };
 
+// 레거시 general.last_turn JSON. 연속 실행 턴의 선행 턴 누적 상태를 보존한다.
+export interface GeneralLastTurn {
+    command: string;
+    arg?: Record<string, unknown>;
+    term?: number;
+    seq?: number;
+}
+
 export interface General<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     id: GeneralId;
     name: string;
@@ -91,6 +99,7 @@ export interface General<TriggerState extends GeneralTriggerState = GeneralTrigg
     // 아이템의 canonical 소유/상태 모델. role.items는 레거시 DB 컬럼/API용 projection이다.
     itemInventory?: GeneralItemInventory;
     meta: GeneralMeta;
+    lastTurn?: GeneralLastTurn;
 }
 
 export interface City {
@@ -113,6 +122,7 @@ export interface City {
     defenceMax: number;
     wall: number;
     wallMax: number;
+    conflict?: Record<string, TriggerValue>;
     meta: Record<string, TriggerValue>;
 }
 

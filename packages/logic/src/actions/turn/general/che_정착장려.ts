@@ -1,5 +1,5 @@
 import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
-import type { Constraint, ConstraintContext, StateView } from '@sammo-ts/logic/constraints/types.js';
+import type { Constraint, ConstraintContext, RequirementKey, StateView } from '@sammo-ts/logic/constraints/types.js';
 import {
     notBeNeutral,
     notWanderingNation,
@@ -12,74 +12,69 @@ import {
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
-import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
-import { clamp } from 'es-toolkit';
 import type { GeneralTurnCommandSpec } from './index.js';
+import {
+    actionContextBuilder,
+    buildDomesticContextFromView,
+    CommandResolver,
+    type DomesticActionContext,
+    type InvestmentConfig,
+} from './che_상업투자.js';
 import { JosaUtil } from '@sammo-ts/common';
+import { clamp } from 'es-toolkit';
 
 export interface SettlementArgs {}
-type SettlementPick = 'success' | 'normal' | 'fail';
 
-const pickByWeight = <T extends string>(rng: GeneralActionResolveContext['rng'], weights: Record<T, number>): T => {
-    const entries = Object.entries(weights) as Array<[T, number]>;
-    const first = entries[0];
-    if (!first) {
-        throw new Error('Empty weights');
-    }
-
-    let total = 0;
-    for (const [, weight] of entries) {
-        if (weight > 0) {
-            total += weight;
-        }
-    }
-    if (total <= 0) {
-        return first[0];
-    }
-
-    let cursor = rng.nextFloat1() * total;
-    for (const [key, weight] of entries) {
-        if (weight <= 0) {
-            continue;
-        }
-        cursor -= weight;
-        if (cursor <= 0) {
-            return key;
-        }
-    }
-
-    const last = entries[entries.length - 1];
-    return last ? last[0] : first[0];
+const ACTION_NAME = '정착 장려';
+const CONFIG: InvestmentConfig = {
+    key: 'che_정착장려',
+    name: ACTION_NAME,
+    actionKey: '인구',
+    statKey: 'leadership',
+    statExpKey: 'leadership_exp',
+    cityKey: 'commerce',
+    cityMaxKey: 'commerceMax',
+    frontDebuff: 1,
+    useCityTrust: false,
+    scaleSuccessByTrust: false,
 };
 
 export class ActionDefinition<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionDefinition<TriggerState, SettlementArgs> {
-    public readonly key = 'che_정착장려';
-    public readonly name = '정착 장려';
-    private readonly env: { develCost?: number };
+    public readonly key = CONFIG.key;
+    public readonly name = ACTION_NAME;
+    private readonly command: CommandResolver<TriggerState>;
 
-    constructor(env: { develCost?: number } = {}) {
-        this.env = env;
+    constructor(env: TurnCommandEnv) {
+        this.command = new CommandResolver(
+            env.generalActionModules ?? [],
+            { ...env, develCost: env.develCost * 2 },
+            CONFIG
+        );
     }
 
     parseArgs(_raw: unknown): SettlementArgs | null {
         return {};
     }
 
-    buildConstraints(_ctx: ConstraintContext, _args: SettlementArgs): Constraint[] {
-        const getRequiredRice = (_context: ConstraintContext, _view: StateView): number =>
-            (this.env.develCost ?? 0) * 2;
-
+    buildConstraints(ctx: ConstraintContext, _args: SettlementArgs): Constraint[] {
+        const requirements: RequirementKey[] = [];
+        if (ctx.cityId !== undefined) requirements.push({ kind: 'city', id: ctx.cityId });
+        if (ctx.nationId !== undefined) requirements.push({ kind: 'nation', id: ctx.nationId });
+        const getRiceCost = (context: ConstraintContext, view: StateView): number => {
+            const domesticContext = buildDomesticContextFromView<TriggerState>(context, view);
+            return domesticContext ? this.command.getCost(domesticContext).gold : 0;
+        };
         return [
             notBeNeutral(),
             notWanderingNation(),
             occupiedCity(),
             suppliedCity(),
-            reqGeneralGold(() => 0),
-            remainCityCapacity('population', '인구'),
-            reqGeneralRice(getRequiredRice),
+            reqGeneralGold(() => 0, requirements),
+            reqGeneralRice(getRiceCost, requirements),
+            remainCityCapacity('population', ACTION_NAME),
         ];
     }
 
@@ -87,54 +82,46 @@ export class ActionDefinition<
         context: GeneralActionResolveContext<TriggerState>,
         _args: SettlementArgs
     ): GeneralActionOutcome<TriggerState> {
-        const general = context.general;
-        const city = context.city;
-        if (!city) {
+        if (!context.city) {
             context.addLog('도시 정보를 찾지 못했습니다.');
             return { effects: [] };
         }
+        const domesticContext = context as DomesticActionContext<TriggerState>;
+        const result = this.command.resolve(domesticContext, context.rng);
+        const populationGain = result.score * 10;
+        context.city.population = clamp(context.city.population + populationGain, 0, context.city.populationMax);
+        context.general.rice = Math.max(0, context.general.rice - result.costGold);
+        context.general.experience += result.exp;
+        context.general.dedication += result.dedication;
+        const leadershipExp =
+            typeof context.general.meta.leadership_exp === 'number' ? context.general.meta.leadership_exp : 0;
+        context.general.meta = {
+            ...context.general.meta,
+            leadership_exp: leadershipExp + 1,
+            max_domestic_critical: result.pick === 'success' ? result.score : 0,
+        };
 
-        const pick = pickByWeight<SettlementPick>(context.rng, {
-            fail: 0.2,
-            success: 0.2,
-            normal: 0.6,
-        });
-
-        const scoreCoef = pick === 'success' ? 1.3 : pick === 'fail' ? 0.7 : 1;
-        const baseAmount = Math.round(1000 * scoreCoef);
-        const current = city.population;
-        const max = city.populationMax;
-
-        const nextValue = clamp(current + baseAmount, 0, max);
-        const costRice = (this.env.develCost ?? 0) * 2;
-
-        city.population = nextValue;
-        general.rice = Math.max(0, general.rice - costRice);
-
-        const scoreText = (nextValue - current).toLocaleString();
-        const logName = this.name.replace(' ', '');
-        const josaUl = JosaUtil.pick(logName, '을');
-        if (pick === 'fail') {
+        const scoreText = populationGain.toLocaleString();
+        const josaUl = JosaUtil.pick(ACTION_NAME, '을');
+        if (result.pick === 'fail') {
             context.addLog(
-                `${logName}${josaUl} <span class='ev_failed'>실패</span>하여 주민이 <C>${scoreText}</>명 증가했습니다.`
+                `${ACTION_NAME}${josaUl} <span class='ev_failed'>실패</span>하여 주민이 <C>${scoreText}</>명 증가했습니다.`
             );
-        } else if (pick === 'success') {
-            context.addLog(`${logName}${josaUl} <S>성공</>하여 주민이 <C>${scoreText}</>명 증가했습니다.`);
+        } else if (result.pick === 'success') {
+            context.addLog(`${ACTION_NAME}${josaUl} <S>성공</>하여 주민이 <C>${scoreText}</>명 증가했습니다.`);
         } else {
-            context.addLog(`${logName}${josaUl} 하여 주민이 <C>${scoreText}</>명 증가했습니다.`);
+            context.addLog(`${ACTION_NAME}${josaUl} 하여 주민이 <C>${scoreText}</>명 증가했습니다.`);
         }
-        tryApplyUniqueLottery(context, { acquireType: '아이템', reason: '정착 장려' });
-
+        tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
         return { effects: [] };
     }
 }
 
-export const actionContextBuilder = defaultActionContextBuilder;
+export { actionContextBuilder };
 
 export const commandSpec: GeneralTurnCommandSpec = {
     key: 'che_정착장려',
     category: '내정',
     reqArg: false,
-
-    createDefinition: (env: TurnCommandEnv) => new ActionDefinition({ develCost: env.develCost }),
+    createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env),
 };

@@ -1,4 +1,4 @@
-import type { City, GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
+import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
     notBeNeutral,
@@ -25,13 +25,17 @@ import type { ActionContextBase, ActionContextOptions } from '@sammo-ts/logic/ac
 import type { GeneralTurnCommandSpec } from './index.js';
 import { JosaUtil } from '@sammo-ts/common';
 import { parseArgsWithSchema } from '../parseArgs.js';
-import { GeneralActionPipeline, type GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
+import { GeneralActionPipeline } from '@sammo-ts/logic/triggers/general-action.js';
 import { consumeSuccessfulStrategyItem } from './strategyItemConsumption.js';
+import {
+    buildStrategyActionContext,
+    CommandResolver as StrategyCommandResolver,
+    type FireAttackResolveContext,
+} from './che_화계.js';
 
 export interface AgitateResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
-> extends GeneralActionResolveContext<TriggerState> {
-    destCity?: City;
+> extends FireAttackResolveContext<TriggerState> {
     env?: TurnCommandEnv;
 }
 
@@ -47,39 +51,51 @@ export class ActionResolver<
 > implements GeneralActionResolver<TriggerState, AgitateArgs> {
     readonly key = ACTION_KEY;
     private readonly pipeline: GeneralActionPipeline<TriggerState>;
+    private readonly command: StrategyCommandResolver<TriggerState>;
 
-    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined> = []) {
+    constructor(env: TurnCommandEnv) {
+        const modules = env.generalActionModules ?? [];
         this.pipeline = new GeneralActionPipeline(modules);
+        this.command = new StrategyCommandResolver<TriggerState>(modules, {
+            ...env,
+            statKey: 'leadership',
+            damageMode: 'agitate',
+        });
     }
 
     resolve(context: GeneralActionResolveContext<TriggerState>, args: AgitateArgs): GeneralActionOutcome<TriggerState> {
         const ctx = context as AgitateResolveContext<TriggerState>;
         const general = ctx.general;
-        const { destCityId } = args;
         const destCity = ctx.destCity;
         if (!destCity) throw new Error('Target city missing');
-
-        const env = ctx.env;
-        const cost = env?.develCost ?? 100;
-
         const effects: GeneralActionEffect<TriggerState>[] = [];
-
-        // Damage calc
-        const min = env?.sabotageDamageMin ?? 10;
-        const max = env?.sabotageDamageMax ?? 30;
-        const rng = ctx.rng;
-        if (!rng) throw new Error('RNG missing');
-
-        const secuDmg = rng.nextInt(min, max + 1);
-        const trustDmg = rng.nextInt(min, max + 1) / 50;
-
-        const newSecu = Math.max(0, destCity.security - secuDmg);
+        const city = ctx.city;
+        if (!city) throw new Error('Source city missing');
+        const result = this.command.resolve(
+            {
+                ...ctx,
+                city,
+                destCity,
+                destGenerals: ctx.destGenerals,
+            },
+            ctx.rng
+        );
+        general.gold = Math.max(0, general.gold - result.costGold);
+        general.rice = Math.max(0, general.rice - result.costRice);
+        general.experience += result.exp;
+        general.dedication += result.dedication;
+        general.meta.leadership_exp =
+            (typeof general.meta.leadership_exp === 'number' ? general.meta.leadership_exp : 0) + 1;
+        if (!result.success) {
+            ctx.addLog(
+                `<G><b>${destCity.name}</b></>에 ${ACTION_NAME}${JosaUtil.pick(ACTION_NAME, '이')} 실패했습니다.`
+            );
+            return { effects };
+        }
+        general.meta.firenum = (typeof general.meta.firenum === 'number' ? general.meta.firenum : 0) + 1;
+        const newSecu = Math.max(0, destCity.security - result.agriDamage);
         const currentTrust = typeof destCity.meta.trust === 'number' ? destCity.meta.trust : 50;
-        const newTrust = Math.max(0, currentTrust - trustDmg);
-
-        const actualSecuDmg = destCity.security - newSecu;
-        const actualTrustDmg = currentTrust - newTrust;
-        const injuryCount = 0;
+        const newTrust = Math.max(0, currentTrust - result.commDamage);
 
         // Log
         const commandName = ACTION_NAME;
@@ -89,9 +105,9 @@ export class ActionResolver<
             format: LogFormat.MONTH,
         });
         ctx.addLog(
-            `도시의 치안이 <C>${actualSecuDmg}</>, 민심이 <C>${actualTrustDmg.toFixed(
+            `도시의 치안이 <C>${result.agriDamage}</>, 민심이 <C>${result.commDamage.toFixed(
                 1
-            )}</>만큼 감소하고, 장수 <C>${injuryCount}</>명이 부상 당했습니다.`,
+            )}</>만큼 감소하고, 장수 <C>${result.injuryCount}</>명이 부상 당했습니다.`,
             {
                 category: LogCategory.ACTION,
                 format: LogFormat.PLAIN,
@@ -110,30 +126,14 @@ export class ActionResolver<
                         trust: newTrust,
                     },
                 },
-                destCityId
+                args.destCityId
             )
         );
 
         consumeSuccessfulStrategyItem(this.pipeline, context);
-
-        // General Update (Cost + Exp + LeaderExp)
-        effects.push(
-            createGeneralPatchEffect(
-                {
-                    ...general,
-                    gold: Math.max(0, general.gold - cost),
-                    rice: Math.max(0, general.rice - cost),
-                    experience: general.experience + 50,
-                    dedication: general.dedication + 30,
-                    meta: {
-                        ...general.meta,
-                        leadership_exp:
-                            (typeof general.meta.leadership_exp === 'number' ? general.meta.leadership_exp : 0) + 1,
-                    },
-                },
-                general.id
-            )
-        );
+        for (const injured of result.injuredGenerals) {
+            effects.push(createGeneralPatchEffect(injured.patch, injured.id));
+        }
 
         return { effects };
     }
@@ -147,9 +147,7 @@ export class ActionDefinition<
     private readonly resolver: ActionResolver<TriggerState>;
 
     constructor(env: TurnCommandEnv) {
-        this.resolver = new ActionResolver<TriggerState>(
-            (env.generalActionModules ?? []) as GeneralActionModule<TriggerState>[]
-        );
+        this.resolver = new ActionResolver<TriggerState>(env);
     }
 
     parseArgs(raw: unknown): AgitateArgs | null {
@@ -158,13 +156,13 @@ export class ActionDefinition<
 
     buildMinConstraints(ctx: ConstraintContext, _args: AgitateArgs): Constraint[] {
         const env = ctx.env;
-        const cost = (env.develCost as number) ?? 100;
+        const cost = ((env.develCost as number) ?? 100) * 5;
         return [notBeNeutral(), occupiedCity(), suppliedCity(), reqGeneralGold(() => cost), reqGeneralRice(() => cost)];
     }
 
     buildConstraints(ctx: ConstraintContext, _args: AgitateArgs): Constraint[] {
         const env = ctx.env;
-        const cost = (env.develCost as number) ?? 100;
+        const cost = ((env.develCost as number) ?? 100) * 5;
         return [
             notBeNeutral(),
             occupiedCity(),
@@ -185,14 +183,10 @@ export class ActionDefinition<
 }
 
 export const actionContextBuilder = (base: ActionContextBase, options: ActionContextOptions) => {
-    const destCityId = options.actionArgs?.destCityId;
-    let destCity = null;
-    if (typeof destCityId === 'number' && options.worldRef) {
-        destCity = options.worldRef.getCityById(destCityId);
-    }
+    const strategyContext = buildStrategyActionContext(base, options);
+    if (!strategyContext) return null;
     return {
-        ...base,
-        destCity,
+        ...strategyContext,
         env: options.scenarioConfig.const as unknown as TurnCommandEnv,
     };
 };

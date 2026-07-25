@@ -145,6 +145,7 @@ const buildGeneralUpdate = (
     personalCode: toCode(general.role.personality),
     specialCode: toCode(general.role.specialDomestic),
     special2Code: toCode(general.role.specialWar),
+    lastTurn: asJson(general.lastTurn ?? { command: '휴식' }),
     meta: asJson(withSerializedItemInventory(general.meta, ensureItemInventory(general))),
     turnTime: general.turnTime,
     recentWarTime: general.recentWarTime ?? null,
@@ -180,6 +181,7 @@ const buildGeneralCreate = (
     personalCode: toCode(general.role.personality),
     specialCode: toCode(general.role.specialDomestic),
     special2Code: toCode(general.role.specialWar),
+    lastTurn: asJson(general.lastTurn ?? { command: '휴식' }),
     meta: asJson(withSerializedItemInventory(general.meta, ensureItemInventory(general))),
     turnTime: general.turnTime,
     recentWarTime: general.recentWarTime ?? null,
@@ -214,6 +216,7 @@ const buildCityUpdate = (
         defenceMax: city.defenceMax,
         wall: city.wall,
         wallMax: city.wallMax,
+        ...(city.conflict ? { conflict: asJson(city.conflict) } : {}),
         meta: asJson(meta),
     };
 

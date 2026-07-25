@@ -1,11 +1,6 @@
 import type { General, GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
-import {
-    notSameDestCity,
-    nearCity,
-    reqGeneralGold,
-    reqGeneralRice,
-} from '@sammo-ts/logic/constraints/presets.js';
+import { notSameDestCity, nearCity, reqGeneralGold, reqGeneralRice } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionOutcome,
@@ -13,8 +8,8 @@ import type {
     GeneralActionResolver,
     GeneralActionEffect,
 } from '@sammo-ts/logic/actions/engine.js';
-import { createGeneralPatchEffect } from '@sammo-ts/logic/actions/engine.js';
-import { LogCategory, LogFormat } from '@sammo-ts/logic/logging/types.js';
+import { createGeneralPatchEffect, createLogEffect } from '@sammo-ts/logic/actions/engine.js';
+import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import { JosaUtil } from '@sammo-ts/common';
 import { z } from 'zod';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
@@ -125,16 +120,6 @@ export class ActionResolver<
         if (isRoamingLeader && moveTargets.length > 1) {
             for (const target of moveTargets) {
                 if (target.id === general.id) continue;
-
-                // Legacy: "방랑군 세력이 <G><b>{$destCityName}</b></>{$josaRo} 강행했습니다." (LOG_PLAIN)
-                // NOTE: We need a way to push log to OTHER general's logger.
-                // In current engine, we return effects. Log effects?
-                // Currently addLog attaches provided logs to turnLog (which is for the actor).
-                // To log for OTHERS, we might need specific effect or handle it differently.
-                // For now, I will omit logs for others or use a special effect if available.
-                // The legacy TS porting pattern for "others" logs isn't fully standardized yet in shared snippets.
-                // Assuming createGeneralPatchEffect handles state. Logs for others might be missing in this iteration unless I find `createLogEffect`.
-
                 effects.push(
                     createGeneralPatchEffect(
                         {
@@ -142,7 +127,13 @@ export class ActionResolver<
                             cityId: destCityId,
                         },
                         target.id
-                    )
+                    ),
+                    createLogEffect(`방랑군 세력이 <G><b>${destCityName}</b></>${josaRo} 강행했습니다.`, {
+                        scope: LogScope.GENERAL,
+                        category: LogCategory.ACTION,
+                        format: LogFormat.PLAIN,
+                        generalId: target.id,
+                    })
                 );
             }
         }
@@ -188,11 +179,12 @@ export class ActionDefinition<
 }
 
 export const actionContextBuilder: ActionContextBuilder = (base, options) => {
+    const rawCost = options.scenarioConfig.const.develCost ?? options.scenarioConfig.const.develcost;
     return {
         ...base,
         moveGenerals: options.worldRef?.listGenerals() ?? [],
         map: options.map,
-        startDevelCost: options.scenarioConfig.const.develCost as number | undefined,
+        startDevelCost: typeof rawCost === 'number' ? rawCost : 0,
     };
 };
 

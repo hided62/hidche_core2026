@@ -1,4 +1,5 @@
 import type { City, General, GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
+import { JosaUtil } from '@sammo-ts/common';
 import type { Constraint, ConstraintContext, RequirementKey } from '@sammo-ts/logic/constraints/types.js';
 import {
     allow,
@@ -20,7 +21,7 @@ import {
     createCityPatchEffect,
     createDiplomacyPatchEffect,
 } from '@sammo-ts/logic/actions/engine.js';
-import { LogCategory, LogFormat } from '@sammo-ts/logic/logging/types.js';
+import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
@@ -74,7 +75,24 @@ export class ActionResolver<
             category: LogCategory.ACTION,
             format: LogFormat.MONTH,
         });
-        // TODO: Global logs
+        const josaYi = JosaUtil.pick(general.name, '이');
+        const josaUn = JosaUtil.pick(general.name, '은');
+        const josaUl = JosaUtil.pick(nation.name, '을');
+        context.addLog(`<Y>${general.name}</>${josaYi} 방랑의 길을 떠납니다.`, {
+            scope: LogScope.SYSTEM,
+            category: LogCategory.ACTION,
+            format: LogFormat.RAWTEXT,
+        });
+        context.addLog(`<R><b>【방랑】</b></><D><b>${general.name}</b></>${josaUn} <R>방랑</>의 길을 떠납니다.`, {
+            scope: LogScope.SYSTEM,
+            category: LogCategory.HISTORY,
+            format: LogFormat.RAWTEXT,
+        });
+        context.addLog(`<D><b>${nation.name}</b></>${josaUl} 버리고 방랑`, {
+            scope: LogScope.GENERAL,
+            category: LogCategory.HISTORY,
+            format: LogFormat.YEAR_MONTH,
+        });
 
         // 2. Nation Update
         effects.push(
@@ -99,9 +117,11 @@ export class ActionResolver<
             createGeneralPatchEffect(
                 {
                     ...general,
-                    // meta: { ...general.meta, makelimit: 12 }, // If used. Legacy uses makelimit column. New entity might not have it.
-                    // If `makelimit` is not in entity, ignore for now or check meta.
-                    // officerLevel is already 12.
+                    meta: {
+                        ...general.meta,
+                        makelimit: 12,
+                        officer_city: 0,
+                    },
                 },
                 general.id
             )
@@ -122,7 +142,11 @@ export class ActionResolver<
                             {
                                 ...other,
                                 officerLevel: 1,
-                                // officer_city? logic probably means unassigned.
+                                meta: {
+                                    ...other.meta,
+                                    makelimit: 12,
+                                    officer_city: 0,
+                                },
                             },
                             other.id
                         )
@@ -142,9 +166,7 @@ export class ActionResolver<
                             ...city,
                             nationId: 0,
                             frontState: 0,
-                            // conflict: {} // Legacy clears conflict.
-                            // Assuming conflict is stored in meta or handled separately.
-                            // If conflict is part of state, reset it.
+                            conflict: {},
                         },
                         city.id
                     )
@@ -179,6 +201,9 @@ export class ActionDefinition<
 > implements GeneralActionDefinition<TriggerState, WanderArgs, WanderResolveContext<TriggerState>> {
     public readonly key = ACTION_KEY;
     public readonly name = ACTION_NAME;
+    getInheritanceActiveActionAmount(): number {
+        return 1;
+    }
     private readonly resolver: ActionResolver<TriggerState>;
 
     constructor() {

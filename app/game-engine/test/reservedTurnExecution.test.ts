@@ -306,11 +306,11 @@ describe('Reserved Turn Execution Integration', () => {
         // Gen 2 stayed in City 1?
         expect(finalGen2.cityId).toBe(1);
 
-        // City 1 Agric increased (100 -> 300)
-        expect(finalCity1.agriculture).toBeGreaterThanOrEqual(300);
+        // 레거시 내정식은 고정 증가량이 아니라 능력치·경험·난수·치명 배율을 사용한다.
+        expect(finalCity1.agriculture).toBe(206);
 
-        // City 1 Commerce increased (100 -> ~178)
-        expect(finalCity1.commerce).toBeGreaterThanOrEqual(170);
+        // 레거시 상업 투자식(지력·민심·경험·난수·치명 배율)을 고정 seed로 계산한 결과.
+        expect(finalCity1.commerce).toBe(124);
 
         // Gen 1 reserved turns should be shifted and empty/default
         const gen1Turns = reservedTurnStore.getGeneralTurns(1);
@@ -422,9 +422,7 @@ describe('Reserved Turn Execution Integration', () => {
             meta: {},
         };
 
-        const invalidRows = [
-            { generalId: 1, turnIdx: 0, actionCode: 'che_이동', arg: { destCityId: 'bad' } },
-        ];
+        const invalidRows = [{ generalId: 1, turnIdx: 0, actionCode: 'che_이동', arg: { destCityId: 'bad' } }];
 
         const mockPrisma = createMockPrisma(invalidRows);
         const reservedTurnStore = new InMemoryReservedTurnStore(mockPrisma as any, {
@@ -585,9 +583,7 @@ describe('Reserved Turn Execution Integration', () => {
             meta: {},
         };
 
-        const invalidRows = [
-            { generalId: 1, turnIdx: 0, actionCode: 'che_이동', arg: { destCityId: 1 } },
-        ];
+        const invalidRows = [{ generalId: 1, turnIdx: 0, actionCode: 'che_이동', arg: { destCityId: 1 } }];
 
         const mockPrisma = createMockPrisma(invalidRows);
         const reservedTurnStore = new InMemoryReservedTurnStore(mockPrisma as any, {

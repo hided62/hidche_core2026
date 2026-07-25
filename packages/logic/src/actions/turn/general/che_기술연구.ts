@@ -1,5 +1,5 @@
 import type { GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
-import type { Constraint, ConstraintContext, StateView } from '@sammo-ts/logic/constraints/types.js';
+import type { Constraint, ConstraintContext, RequirementKey, StateView } from '@sammo-ts/logic/constraints/types.js';
 import {
     notBeNeutral,
     notWanderingNation,
@@ -9,106 +9,153 @@ import {
     suppliedCity,
 } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
-import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
+import type { GeneralActionOutcome } from '@sammo-ts/logic/actions/engine.js';
+import type {
+    ActionContextBase,
+    ActionContextBuilder,
+    ActionContextOptions,
+} from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
-import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
+import {
+    buildDomesticContextFromView,
+    CommandResolver,
+    type DomesticActionContext,
+    type InvestmentConfig,
+} from './che_상업투자.js';
 import { JosaUtil } from '@sammo-ts/common';
+import { clamp } from 'es-toolkit';
 
 export interface TechResearchArgs {}
 
-export interface TechResearchEnvironment {
-    costGold?: number;
-    techDelta?: number;
-    maxTechLevel?: number;
+interface TechResearchContext<
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
+> extends DomesticActionContext<TriggerState> {
+    nation: Nation;
+    nationGeneralCount: number;
 }
 
 const ACTION_NAME = '기술 연구';
-const DEFAULT_TECH_DELTA = 1;
+const CONFIG: InvestmentConfig = {
+    key: 'che_기술연구',
+    name: ACTION_NAME,
+    actionKey: '기술',
+    statKey: 'intelligence',
+    statExpKey: 'intel_exp',
+    cityKey: 'commerce',
+    cityMaxKey: 'commerceMax',
+    frontDebuff: 1,
+};
 
-const readTech = (nation: Nation | null | undefined): number => {
-    if (!nation) {
-        return 0;
-    }
+const readTech = (nation: Nation): number => {
     const tech = nation.meta.tech;
-    return typeof tech === 'number' ? tech : 0;
+    return typeof tech === 'number' && Number.isFinite(tech) ? tech : 0;
 };
 
 export class ActionDefinition<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
-> implements GeneralActionDefinition<TriggerState, TechResearchArgs> {
-    public readonly key = 'che_기술연구';
+> implements GeneralActionDefinition<TriggerState, TechResearchArgs, TechResearchContext<TriggerState>> {
+    public readonly key = CONFIG.key;
     public readonly name = ACTION_NAME;
-    private readonly env: TechResearchEnvironment;
+    private readonly command: CommandResolver<TriggerState>;
 
-    constructor(env: TechResearchEnvironment = {}) {
-        this.env = env;
+    constructor(private readonly env: TurnCommandEnv) {
+        this.command = new CommandResolver(env.generalActionModules ?? [], env, CONFIG);
     }
 
     parseArgs(_raw: unknown): TechResearchArgs | null {
-        void _raw;
         return {};
     }
 
-    buildConstraints(_ctx: ConstraintContext, _args: TechResearchArgs): Constraint[] {
-        const getRequiredGold = (_context: ConstraintContext, _view: StateView): number => this.env.costGold ?? 0;
+    buildConstraints(ctx: ConstraintContext, _args: TechResearchArgs): Constraint[] {
+        const requirements: RequirementKey[] = [];
+        if (ctx.cityId !== undefined) requirements.push({ kind: 'city', id: ctx.cityId });
+        if (ctx.nationId !== undefined) requirements.push({ kind: 'nation', id: ctx.nationId });
+        const getCost = (context: ConstraintContext, view: StateView): number => {
+            const domesticContext = buildDomesticContextFromView<TriggerState>(context, view);
+            return domesticContext ? this.command.getCost(domesticContext).gold : 0;
+        };
         return [
             notBeNeutral(),
             notWanderingNation(),
             occupiedCity(),
             suppliedCity(),
-            reqGeneralGold(getRequiredGold),
-            reqGeneralRice(() => 0),
+            reqGeneralGold(getCost, requirements),
+            reqGeneralRice(() => 0, requirements),
         ];
     }
 
-    resolve(
-        context: GeneralActionResolveContext<TriggerState>,
-        _args: TechResearchArgs
-    ): GeneralActionOutcome<TriggerState> {
-        const general = context.general;
-        const nation = context.nation;
-        if (!nation) {
-            context.addLog('국가 정보를 찾지 못했습니다.');
-            return { effects: [] };
+    resolve(context: TechResearchContext<TriggerState>, _args: TechResearchArgs): GeneralActionOutcome<TriggerState> {
+        const result = this.command.resolve(context, context.rng);
+        let techScore = result.score;
+        const currentTech = readTech(context.nation);
+        const relYear = context.relYear ?? 0;
+        const techLevelIncYear = this.env.techLevelIncYear ?? 5;
+        const initialAllowedTechLevel = this.env.initialAllowedTechLevel ?? 1;
+        const relativeMaxTech = clamp(
+            Math.floor(relYear / techLevelIncYear) + initialAllowedTechLevel,
+            1,
+            this.env.maxTechLevel
+        );
+        const currentTechLevel = clamp(Math.floor(currentTech / 1000), 0, this.env.maxTechLevel);
+        if (currentTechLevel >= relativeMaxTech) {
+            techScore /= 4;
         }
 
-        const delta = this.env.techDelta ?? DEFAULT_TECH_DELTA;
-        const currentTech = readTech(nation);
-        const maxTech =
-            typeof this.env.maxTechLevel === 'number' && this.env.maxTechLevel > 0
-                ? this.env.maxTechLevel
-                : currentTech + delta;
-        const nextTech = Math.min(currentTech + delta, maxTech);
-        const applied = nextTech - currentTech;
-        const costGold = this.env.costGold ?? 0;
+        context.nation.meta = {
+            ...context.nation.meta,
+            tech: currentTech + techScore / Math.max(context.nationGeneralCount, this.env.initialNationGenLimit),
+        };
+        context.general.gold = Math.max(0, context.general.gold - result.costGold);
+        context.general.experience += result.exp;
+        context.general.dedication += result.dedication;
+        const intelExp = typeof context.general.meta.intel_exp === 'number' ? context.general.meta.intel_exp : 0;
+        context.general.meta = {
+            ...context.general.meta,
+            intel_exp: intelExp + 1,
+            max_domestic_critical: result.pick === 'success' ? result.score : 0,
+        };
 
-        // 직접 수정 (Immer Draft)
-        nation.meta = { ...nation.meta, tech: nextTech };
-        general.gold = Math.max(0, general.gold - costGold);
-
-        const logName = ACTION_NAME.replace(' ', '');
-        const josaUl = JosaUtil.pick(logName, '을');
-        const scoreText = applied.toLocaleString();
-        context.addLog(`${logName}${josaUl} 하여 <C>${scoreText}</> 상승했습니다.`);
+        const scoreText = Math.round(result.score).toLocaleString();
+        const josaUl = JosaUtil.pick(ACTION_NAME, '을');
+        if (result.pick === 'fail') {
+            context.addLog(
+                `${ACTION_NAME}${josaUl} <span class='ev_failed'>실패</span>하여 <C>${scoreText}</> 상승했습니다.`
+            );
+        } else if (result.pick === 'success') {
+            context.addLog(`${ACTION_NAME}${josaUl} <S>성공</>하여 <C>${scoreText}</> 상승했습니다.`);
+        } else {
+            context.addLog(`${ACTION_NAME}${josaUl} 하여 <C>${scoreText}</> 상승했습니다.`);
+        }
         tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
-
         return { effects: [] };
     }
 }
 
-// 예약 턴 실행은 기본 컨텍스트만 사용한다.
-export const actionContextBuilder = defaultActionContextBuilder;
+export const actionContextBuilder: ActionContextBuilder = (
+    base: ActionContextBase,
+    options: ActionContextOptions
+): (ActionContextBase & Record<string, unknown>) | null => {
+    if (!base.city || !base.nation || !options.worldRef) {
+        return null;
+    }
+    return {
+        ...base,
+        city: base.city,
+        nation: base.nation,
+        nationGeneralCount: options.worldRef.listGenerals().filter((general) => general.nationId === base.nation!.id)
+            .length,
+        relYear:
+            typeof options.scenarioMeta?.startYear === 'number'
+                ? options.world.currentYear - options.scenarioMeta.startYear
+                : 0,
+    };
+};
 
 export const commandSpec: GeneralTurnCommandSpec = {
     key: 'che_기술연구',
     category: '내정',
     reqArg: false,
-
-    createDefinition: (env: TurnCommandEnv) =>
-        new ActionDefinition({
-            costGold: env.develCost,
-            maxTechLevel: env.maxTechLevel,
-        }),
+    createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env),
 };

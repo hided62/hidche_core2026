@@ -5,8 +5,8 @@ import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition
 import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
-import { clamp } from 'es-toolkit';
 import type { GeneralTurnCommandSpec } from './index.js';
+import { GeneralActionPipeline } from '@sammo-ts/logic/triggers/general-action.js';
 
 export interface DisbandArgs {}
 
@@ -15,6 +15,11 @@ export class ActionDefinition<
 > implements GeneralActionDefinition<TriggerState, DisbandArgs> {
     public readonly key = 'che_소집해제';
     public readonly name = '소집해제';
+    private readonly pipeline: GeneralActionPipeline<TriggerState>;
+
+    constructor(env: TurnCommandEnv) {
+        this.pipeline = new GeneralActionPipeline(env.generalActionModules ?? []);
+    }
 
     parseArgs(_raw: unknown): DisbandArgs | null {
         return {};
@@ -35,13 +40,11 @@ export class ActionDefinition<
             return { effects: [] };
         }
 
-        const crew = general.crew;
-        const currentPop = city.population;
-        const maxPop = city.populationMax;
-
-        const nextPop = clamp(currentPop + crew, 0, maxPop);
+        const crewUp = this.pipeline.onCalcDomestic(context, '징집인구', 'score', general.crew);
         general.crew = 0;
-        city.population = nextPop;
+        city.population += Math.trunc(crewUp);
+        general.experience += 70;
+        general.dedication += 100;
 
         context.addLog(`병사들을 <R>소집해제</>하였습니다.`);
 
@@ -56,5 +59,5 @@ export const commandSpec: GeneralTurnCommandSpec = {
     category: '군사',
     reqArg: false,
 
-    createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
+    createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env),
 };

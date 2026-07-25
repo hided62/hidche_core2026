@@ -290,6 +290,26 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
         const base = this.pipeline.onCalcDomestic(context, '징집인구', 'score', amount);
         return Math.round(base);
     }
+
+    getDexGain(
+        context: RecruitCalcContext<TriggerState>,
+        armType: number,
+        amount: number
+    ): {
+        key: string;
+        amount: number;
+    } | null {
+        const dexArmType = armType === 0 ? 5 : armType;
+        if (dexArmType < 0) {
+            return null;
+        }
+        const typeMultiplier = dexArmType === 4 || dexArmType === 5 ? 0.9 : 1;
+        const amountWithType = (amount / 100) * typeMultiplier;
+        return {
+            key: `dex${dexArmType}`,
+            amount: this.pipeline.onCalcStat(context, 'addDex', amountWithType, { armType: dexArmType }),
+        };
+    }
 }
 
 export class ActionResolver<
@@ -347,32 +367,36 @@ export class ActionResolver<
         const trustLoss = city.population > 0 ? (recruitPop / city.population / costOffset) * 100 : 0;
         const nextTrust = Math.max(baseTrust - trustLoss, 0);
 
-        let nextCrewTypeId = general.crewTypeId;
-        let nextCrew = general.crew;
-        let nextTrain = general.train;
-        let nextAtmos = general.atmos;
         const actionName = this.env.actionName ?? ACTION_NAME;
-        if (crewType.id === general.crewTypeId && general.crew > 0) {
-            nextCrew = general.crew + appliedCrew;
-            nextTrain = Math.round(
-                (general.crew * general.train + appliedCrew * setTrain) / (general.crew + appliedCrew)
-            );
-            nextAtmos = Math.round(
-                (general.crew * general.atmos + appliedCrew * setAtmos) / (general.crew + appliedCrew)
-            );
-            context.addLog(`${crewType.name} <C>${appliedCrew.toLocaleString()}</>명을 추가${actionName}했습니다.`);
-        } else {
-            nextCrewTypeId = crewType.id;
-            nextCrew = appliedCrew;
-            nextTrain = Math.round(setTrain);
-            nextAtmos = Math.round(setAtmos);
-            context.addLog(`${crewType.name} <C>${appliedCrew.toLocaleString()}</>명을 ${actionName}했습니다.`);
-        }
+        const [nextCrewTypeId, nextCrew, nextTrain, nextAtmos] =
+            crewType.id === general.crewTypeId && general.crew > 0
+                ? (() => {
+                      context.addLog(
+                          `${crewType.name} <C>${appliedCrew.toLocaleString()}</>명을 추가${actionName}했습니다.`
+                      );
+                      return [
+                          general.crewTypeId,
+                          general.crew + appliedCrew,
+                          Math.round(
+                              (general.crew * general.train + appliedCrew * setTrain) / (general.crew + appliedCrew)
+                          ),
+                          Math.round(
+                              (general.crew * general.atmos + appliedCrew * setAtmos) / (general.crew + appliedCrew)
+                          ),
+                      ] as const;
+                  })()
+                : (() => {
+                      context.addLog(
+                          `${crewType.name} <C>${appliedCrew.toLocaleString()}</>명을 ${actionName}했습니다.`
+                      );
+                      return [crewType.id, appliedCrew, Math.round(setTrain), Math.round(setAtmos)] as const;
+                  })();
 
         const nextGold = Math.max(0, general.gold - plan.gold);
         const nextRice = Math.max(0, general.rice - plan.rice);
         const expGain = Math.round(appliedCrew / 100);
         const dedGain = Math.round(appliedCrew / 100);
+        const dexGain = this.command.getDexGain(context, crewType.armType, appliedCrew);
 
         // 직접 수정 (Immer Draft)
         city.population = nextPopulation;
@@ -390,6 +414,9 @@ export class ActionResolver<
         general.experience += expGain;
         general.dedication += dedGain;
         general.meta = addMetaNumber(general.meta, 'leadership_exp', 1);
+        if (dexGain) {
+            general.meta = addMetaNumber(general.meta, dexGain.key, dexGain.amount);
+        }
 
         tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
 

@@ -287,7 +287,8 @@ describe('NPC 일반 내정 턴', () => {
         const afterCity = world.getCityById(1)!;
         expect(afterCity).toMatchObject({
             ...beforeStats,
-            security: 1050,
+            // 레거시 내정 수식과 고정 seed의 치명/실패 배율을 적용한 값.
+            security: 1063,
         });
         expect(world.getGeneralById(1)!.turnTime.getTime()).toBe(addMinutes(mockDate, 10).getTime());
     });

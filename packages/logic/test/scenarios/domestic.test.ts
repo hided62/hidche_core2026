@@ -141,7 +141,8 @@ describe('Domestic Affairs Scenario', () => {
 
         // 4. Verify
         const updatedCity = world.getCity(1)!;
-        expect(updatedCity.agriculture).toBe(600);
+        // 레거시 che_농지개간: 능력치·경험등급·0.8~1.2 난수·성공 배율을 모두 반영한다.
+        expect(updatedCity.agriculture).toBe(664);
     });
 
     it('should not increase agriculture when city is already maxed', async () => {

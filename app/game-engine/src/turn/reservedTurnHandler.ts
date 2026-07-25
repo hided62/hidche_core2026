@@ -17,7 +17,9 @@ import type {
 import {
     DEFAULT_TURN_COMMAND_PROFILE,
     GeneralTurnCommandLoader,
+    GeneralActionPipeline,
     NationTurnCommandLoader,
+    createGeneralTriggerContext,
     defaultActionContextBuilder,
     evaluateConstraints,
     resolveGeneralAction,
@@ -101,7 +103,7 @@ const serializeSeed = (...values: Array<string | number>): string =>
 
 const joinYearMonth = (year: number, month: number): number => year * 12 + month - 1;
 
-type NationLastTurn = {
+type LegacyLastTurn = {
     command: string;
     arg?: Record<string, unknown>;
     term?: number;
@@ -110,7 +112,7 @@ type NationLastTurn = {
 
 const nationLastTurnKey = (officerLevel: number): string => `turn_last_${officerLevel}`;
 
-const normalizeLastTurn = (value: unknown): NationLastTurn => {
+const normalizeLastTurn = (value: unknown): LegacyLastTurn => {
     const raw = asRecord(value);
     return {
         command: typeof raw.command === 'string' ? raw.command : '휴식',
@@ -125,6 +127,18 @@ const sameArgs = (left: Record<string, unknown> | undefined, right: Record<strin
 
 const readNextAvailableTurn = (nation: Nation, actionName: string): number | null => {
     const raw = asRecord(nation.meta)[`next_execute_${actionName}`];
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+        return Math.floor(raw);
+    }
+    if (typeof raw === 'string') {
+        const parsed = Number(raw);
+        return Number.isFinite(parsed) ? Math.floor(parsed) : null;
+    }
+    return null;
+};
+
+const readGeneralNextAvailableTurn = (general: TurnGeneral, actionName: string): number | null => {
+    const raw = asRecord(general.meta)[`next_execute_${actionName}`];
     if (typeof raw === 'number' && Number.isFinite(raw)) {
         return Math.floor(raw);
     }
@@ -631,7 +645,8 @@ export const createReservedTurnHandler = async (options: {
                 definitionMap: Map<string, GeneralActionDefinition>,
                 fallbackDefinition: GeneralActionDefinition,
                 command: ReservedTurnEntry,
-                applyNextTurnAt: boolean
+                applyNextTurnAt: boolean,
+                alternativeDepth = 0
             ): { nextTurnAt?: Date; actionKey: string; usedFallback: boolean; blockedReason?: string } => {
                 const resolvedDefinition = resolveDefinition(command.action, definitionMap, fallbackDefinition);
                 const rawArgs = extractArgsRecord(command.args);
@@ -680,9 +695,12 @@ export const createReservedTurnHandler = async (options: {
                     const meta = result.kind === 'deny' ? { constraintName: result.constraintName } : undefined;
                     logs.push(createActionLog(reason, meta));
                 }
-                if (kind === 'nation' && !usedFallback && currentNation) {
+                if (!usedFallback && (kind === 'general' || currentNation)) {
                     const currentYearMonth = joinYearMonth(context.world.currentYear, context.world.currentMonth);
-                    const nextAvailableTurn = readNextAvailableTurn(currentNation, definition.name);
+                    const nextAvailableTurn =
+                        kind === 'general'
+                            ? readGeneralNextAvailableTurn(currentGeneral, definition.name)
+                            : readNextAvailableTurn(currentNation!, definition.name);
                     if (nextAvailableTurn !== null && currentYearMonth < nextAvailableTurn) {
                         const remainTurn = nextAvailableTurn - currentYearMonth;
                         definition = fallbackDefinition;
@@ -698,10 +716,11 @@ export const createReservedTurnHandler = async (options: {
                 const buildRng = (key: string) => {
                     const rngSeed = serializeSeed(
                         seedBase,
-                        key,
+                        kind === 'general' ? 'generalCommand' : 'nationCommand',
                         context.world.currentYear,
                         context.world.currentMonth,
-                        currentGeneral.id
+                        currentGeneral.id,
+                        key
                     );
                     return new RandUtil(new LiteHashDRBG(rngSeed));
                 };
@@ -759,19 +778,27 @@ export const createReservedTurnHandler = async (options: {
                     getPreReqTurn?: (context: ActionContextBase, args: unknown) => number;
                     getPostReqTurn?: (context: ActionContextBase, args: unknown) => number;
                     getStackSequence?: (context: ActionContextBase, args: unknown) => number | null;
+                    getProgressText?: (
+                        context: ActionContextBase,
+                        args: unknown,
+                        term: number,
+                        termMax: number
+                    ) => string;
+                    getInheritanceActiveActionAmount?: (context: ActionContextBase, args: unknown) => number;
                 };
-                const preReqTurn =
-                    kind === 'nation' && !usedFallback
-                        ? Math.max(0, Math.floor(executionDefinition.getPreReqTurn?.(actionContext, actionArgs) ?? 0))
-                        : 0;
-                const postReqTurn =
-                    kind === 'nation' && !usedFallback
-                        ? Math.max(0, Math.floor(executionDefinition.getPostReqTurn?.(actionContext, actionArgs) ?? 0))
-                        : 0;
+                const preReqTurn = !usedFallback
+                    ? Math.max(0, Math.floor(executionDefinition.getPreReqTurn?.(actionContext, actionArgs) ?? 0))
+                    : 0;
+                const postReqTurn = !usedFallback
+                    ? Math.max(0, Math.floor(executionDefinition.getPostReqTurn?.(actionContext, actionArgs) ?? 0))
+                    : 0;
 
-                if (kind === 'nation' && !usedFallback && currentNation && preReqTurn > 0) {
+                if (!usedFallback && preReqTurn > 0 && (kind === 'general' || currentNation)) {
                     const metaKey = nationLastTurnKey(currentGeneral.officerLevel);
-                    const lastTurn = normalizeLastTurn(asRecord(currentNation.meta)[metaKey]);
+                    const lastTurn =
+                        kind === 'general'
+                            ? normalizeLastTurn(currentGeneral.lastTurn)
+                            : normalizeLastTurn(asRecord(currentNation!.meta)[metaKey]);
                     const stackSequence = executionDefinition.getStackSequence?.(actionContext, actionArgs) ?? null;
                     const sequenceChanged =
                         stackSequence !== null && (lastTurn.seq === undefined || lastTurn.seq < stackSequence);
@@ -782,26 +809,39 @@ export const createReservedTurnHandler = async (options: {
                     const nextTerm = continuing ? (lastTurn.term ?? 0) + 1 : 1;
 
                     if (!continuing || (lastTurn.term ?? 0) < preReqTurn) {
-                        const nextLastTurn: NationLastTurn = {
+                        const nextLastTurn: LegacyLastTurn = {
                             command: definition.name,
                             ...(Object.keys(actionArgsRecord).length > 0 ? { arg: actionArgsRecord } : undefined),
                             term: nextTerm,
                             ...(stackSequence !== null ? { seq: stackSequence } : undefined),
                         };
-                        const nextNation: Nation = {
-                            ...currentNation,
-                            meta: {
-                                ...currentNation.meta,
-                                [metaKey]: nextLastTurn,
-                            } as Nation['meta'],
-                        };
-                        currentNation = nextNation;
-                        worldOverlay?.syncNation(nextNation);
-                        logs.push(createActionLog(`${definition.name} 수행중... (${nextTerm}/${preReqTurn + 1})`));
+                        if (kind === 'general') {
+                            currentGeneral = {
+                                ...currentGeneral,
+                                lastTurn: nextLastTurn,
+                            };
+                            worldOverlay?.syncGeneral(currentGeneral);
+                        } else {
+                            const nextNation: Nation = {
+                                ...currentNation!,
+                                meta: {
+                                    ...currentNation!.meta,
+                                    [metaKey]: nextLastTurn,
+                                } as Nation['meta'],
+                            };
+                            currentNation = nextNation;
+                            worldOverlay?.syncNation(nextNation);
+                        }
+                        const termMax = preReqTurn + 1;
+                        const progressText =
+                            executionDefinition.getProgressText?.(actionContext, actionArgs, nextTerm, termMax) ??
+                            `${definition.name} 수행중... (${nextTerm}/${termMax})`;
+                        logs.push(createActionLog(progressText));
                         return { actionKey, usedFallback, blockedReason };
                     }
                 }
 
+                const lastTurnBeforeExecution = JSON.stringify(currentGeneral.lastTurn ?? {});
                 const resolution = resolveGeneralAction(
                     definition,
                     actionContext,
@@ -815,11 +855,30 @@ export const createReservedTurnHandler = async (options: {
                 currentGeneral = resolution.general as TurnGeneral;
                 currentCity = resolution.city ?? currentCity;
                 currentNation = resolution.nation ?? currentNation;
-                if (kind === 'nation' && !usedFallback && definition.countsAsInheritanceActiveAction) {
+                if (
+                    !resolution.alternative &&
+                    kind === 'nation' &&
+                    !usedFallback &&
+                    definition.countsAsInheritanceActiveAction
+                ) {
                     const meta = { ...currentGeneral.meta };
                     const active = typeof meta.inherit_active_action === 'number' ? meta.inherit_active_action : 0;
                     meta.inherit_active_action = active + 1;
                     currentGeneral = { ...currentGeneral, meta };
+                }
+                if (
+                    !resolution.alternative &&
+                    kind === 'general' &&
+                    !usedFallback &&
+                    executionDefinition.getInheritanceActiveActionAmount
+                ) {
+                    const amount = executionDefinition.getInheritanceActiveActionAmount(actionContext, actionArgs);
+                    if (Number.isFinite(amount) && amount !== 0) {
+                        const meta = { ...currentGeneral.meta };
+                        const active = typeof meta.inherit_active_action === 'number' ? meta.inherit_active_action : 0;
+                        meta.inherit_active_action = active + amount;
+                        currentGeneral = { ...currentGeneral, meta };
+                    }
                 }
 
                 if (!currentNation && resolution.created?.nations) {
@@ -827,7 +886,28 @@ export const createReservedTurnHandler = async (options: {
                         (resolution.created.nations as Nation[]).find((n) => n.id === currentGeneral.nationId) ??
                         currentNation;
                 }
-                if (kind === 'nation' && !usedFallback && currentNation) {
+                if (!resolution.alternative && kind === 'general' && !usedFallback) {
+                    const actionChangedLastTurn =
+                        JSON.stringify(currentGeneral.lastTurn ?? {}) !== lastTurnBeforeExecution;
+                    const nextMeta = { ...currentGeneral.meta };
+                    if (postReqTurn > 0) {
+                        nextMeta[`next_execute_${definition.name}`] =
+                            joinYearMonth(context.world.currentYear, context.world.currentMonth) +
+                            postReqTurn -
+                            preReqTurn;
+                    }
+                    currentGeneral = {
+                        ...currentGeneral,
+                        meta: nextMeta,
+                        lastTurn: actionChangedLastTurn
+                            ? currentGeneral.lastTurn
+                            : {
+                                  command: definition.name,
+                                  ...(Object.keys(actionArgsRecord).length > 0 ? { arg: actionArgsRecord } : undefined),
+                              },
+                    };
+                }
+                if (!resolution.alternative && kind === 'nation' && !usedFallback && currentNation) {
                     const metaKey = nationLastTurnKey(currentGeneral.officerLevel);
                     const nextMeta: Record<string, unknown> = {
                         ...currentNation.meta,
@@ -835,7 +915,7 @@ export const createReservedTurnHandler = async (options: {
                             command: definition.name,
                             ...(Object.keys(actionArgsRecord).length > 0 ? { arg: actionArgsRecord } : undefined),
                             term: 0,
-                        } satisfies NationLastTurn,
+                        } satisfies LegacyLastTurn,
                     };
                     if (postReqTurn > 0) {
                         nextMeta[`next_execute_${definition.name}`] =
@@ -951,6 +1031,23 @@ export const createReservedTurnHandler = async (options: {
                     }
                 }
 
+                if (resolution.alternative) {
+                    if (alternativeDepth >= 5) {
+                        throw new Error('Command fallback loop limit exceeded');
+                    }
+                    return runAction(
+                        kind,
+                        definitionMap,
+                        fallbackDefinition,
+                        {
+                            action: resolution.alternative.commandKey,
+                            args: extractArgsRecord(resolution.alternative.args),
+                        },
+                        applyNextTurnAt,
+                        alternativeDepth + 1
+                    );
+                }
+
                 return {
                     nextTurnAt: applyNextTurnAt ? resolution.nextTurnAt : undefined,
                     actionKey,
@@ -959,7 +1056,98 @@ export const createReservedTurnHandler = async (options: {
                 };
             };
 
-            if (currentNation && currentGeneral.officerLevel >= 5) {
+            const preprocessRng = new RandUtil(
+                new LiteHashDRBG(
+                    serializeSeed(
+                        buildSeedBase(context.world),
+                        'preprocess',
+                        context.world.currentYear,
+                        context.world.currentMonth,
+                        currentGeneral.id
+                    )
+                )
+            );
+            currentGeneral = {
+                ...currentGeneral,
+                role: {
+                    ...currentGeneral.role,
+                    items: { ...currentGeneral.role.items },
+                },
+                meta: { ...currentGeneral.meta },
+                triggerState: {
+                    ...currentGeneral.triggerState,
+                    flags: { ...currentGeneral.triggerState.flags },
+                    counters: { ...currentGeneral.triggerState.counters },
+                    modifiers: { ...currentGeneral.triggerState.modifiers },
+                    meta: { ...currentGeneral.triggerState.meta },
+                },
+            };
+            if (currentGeneral.npcState < 2) {
+                const lived =
+                    typeof currentGeneral.meta.inherit_lived_month === 'number'
+                        ? currentGeneral.meta.inherit_lived_month
+                        : 0;
+                currentGeneral.meta.inherit_lived_month = lived + 1;
+            }
+            currentCity = currentCity ? { ...currentCity, meta: { ...currentCity.meta } } : currentCity;
+            const preTurnPipeline = new GeneralActionPipeline(env.generalActionModules ?? []);
+            const preTurnContext = createGeneralTriggerContext({
+                general: currentGeneral,
+                nation: currentNation,
+                worldView: worldView ?? undefined,
+                rng: preprocessRng,
+                log: {
+                    push: (message: string) => logs.push(createActionLog(message)),
+                },
+            });
+            preTurnPipeline.getPreTurnExecuteTriggerList(preTurnContext).fire(preTurnContext, baseConstraintEnv);
+            if (currentGeneral.injury > 0 && !preTurnContext.skill.has('pre.부상경감')) {
+                currentGeneral.injury = Math.max(0, currentGeneral.injury - 10);
+                preTurnContext.skill.activate('pre.부상경감');
+            }
+            if (currentGeneral.crew >= 100) {
+                const consumeRice = Math.trunc(currentGeneral.crew / 100);
+                if (consumeRice <= currentGeneral.rice) {
+                    currentGeneral.rice -= consumeRice;
+                } else {
+                    const releasedCrew = preTurnPipeline.onCalcDomestic(
+                        preTurnContext,
+                        '징집인구',
+                        'score',
+                        currentGeneral.crew
+                    );
+                    if (currentCity) {
+                        currentCity.population += releasedCrew;
+                    }
+                    currentGeneral.crew = 0;
+                    currentGeneral.rice = 0;
+                    logs.push(createActionLog('군량이 모자라 병사들이 <R>소집해제</>되었습니다!'));
+                    preTurnContext.skill.activate('pre.소집해제');
+                }
+                preTurnContext.skill.activate('pre.병력군량소모');
+            }
+            worldOverlay?.syncGeneral(currentGeneral);
+            if (currentCity) {
+                worldOverlay?.syncCity(currentCity);
+            }
+
+            const blockCode = typeof currentGeneral.meta.block === 'number' ? Math.trunc(currentGeneral.meta.block) : 0;
+            const isBlocked = blockCode === 2 || blockCode === 3;
+            if (isBlocked) {
+                currentGeneral.meta.killturn = Math.max(
+                    0,
+                    typeof currentGeneral.meta.killturn === 'number' ? currentGeneral.meta.killturn - 1 : 0
+                );
+                logs.push(
+                    createActionLog(
+                        blockCode === 2
+                            ? '현재 멀티, 또는 비매너로 인한<R>블럭</> 대상자입니다.'
+                            : '현재 악성유저로 분류되어 <R>블럭</> 대상자입니다.'
+                    )
+                );
+            }
+
+            if (!isBlocked && currentNation && currentGeneral.officerLevel >= 5) {
                 let nationCommand = options.reservedTurns.getNationTurn(
                     currentNation.id,
                     currentGeneral.officerLevel,
@@ -1003,9 +1191,13 @@ export const createReservedTurnHandler = async (options: {
                 });
                 options.reservedTurns.shiftNationTurns(currentNation.id, currentGeneral.officerLevel, -1);
             }
+            if (isBlocked && currentNation && currentGeneral.officerLevel >= 5) {
+                options.reservedTurns.shiftNationTurns(currentNation.id, currentGeneral.officerLevel, -1);
+            }
 
             let generalCommand = options.reservedTurns.getGeneralTurn(currentGeneral.id, 0);
             let generalAiState: ReturnType<GeneralAI['getDebugState']> | undefined;
+            let generalAutorunMode = false;
             if (worldView && shouldUseAi(currentGeneral, context.world)) {
                 const ai = new GeneralAI({
                     general: currentGeneral,
@@ -1026,11 +1218,20 @@ export const createReservedTurnHandler = async (options: {
                 });
                 const candidate = ai.chooseGeneralTurn(generalCommand);
                 if (candidate) {
+                    generalAutorunMode =
+                        candidate.action !== generalCommand.action ||
+                        JSON.stringify(candidate.args ?? {}) !== JSON.stringify(generalCommand.args ?? {});
                     generalCommand = { action: candidate.action, args: candidate.args };
                 }
                 generalAiState = ai.getDebugState();
             }
-            const generalResult = runAction('general', generalDefinitions, generalFallback, generalCommand, true);
+            const generalResult = isBlocked
+                ? {
+                      actionKey: DEFAULT_ACTION,
+                      usedFallback: true,
+                      blockedReason: '블럭 대상자입니다.',
+                  }
+                : runAction('general', generalDefinitions, generalFallback, generalCommand, true);
             options.onActionResolved?.({
                 kind: 'general',
                 generalId: currentGeneral.id,
@@ -1044,20 +1245,42 @@ export const createReservedTurnHandler = async (options: {
             const nextTurnAt = generalResult.nextTurnAt;
             options.reservedTurns.shiftGeneralTurns(currentGeneral.id, -1);
 
-            const worldMeta = asRecord(context.world.meta);
-            if (currentGeneral.npcState < 2 && !(typeof worldMeta.isUnited === 'number' && worldMeta.isUnited !== 0)) {
+            if (!isBlocked) {
                 const meta = { ...currentGeneral.meta };
-                const lived = typeof meta.inherit_lived_month === 'number' ? meta.inherit_lived_month : 0;
-                const active = typeof meta.inherit_active_action === 'number' ? meta.inherit_active_action : 0;
-                meta.inherit_lived_month = lived + 1;
-                if (generalResult.actionKey !== DEFAULT_ACTION) {
-                    meta.inherit_active_action = active + 1;
+                const currentKillturn =
+                    typeof meta.killturn === 'number' && Number.isFinite(meta.killturn) ? meta.killturn : 0;
+                const worldKillturn = readMetaNumber(asRecord(context.world.meta), 'killturn', currentKillturn);
+                const requestedRest = generalCommand.action === DEFAULT_ACTION;
+                if (
+                    currentGeneral.npcState >= 2 ||
+                    currentKillturn > worldKillturn ||
+                    generalAutorunMode ||
+                    requestedRest
+                ) {
+                    meta.killturn = Math.max(0, currentKillturn - 1);
                 } else {
-                    meta.inherit_active_action = active;
+                    meta.killturn = worldKillturn;
                 }
                 currentGeneral = { ...currentGeneral, meta };
                 worldOverlay?.syncGeneral(currentGeneral);
             }
+            currentGeneral = {
+                ...currentGeneral,
+                meta: {
+                    ...currentGeneral.meta,
+                    myset: Math.min(
+                        9,
+                        (typeof currentGeneral.meta.myset === 'number' ? currentGeneral.meta.myset : 0) + 3
+                    ),
+                },
+            };
+            currentGeneral = {
+                ...currentGeneral,
+                triggerState: {
+                    ...currentGeneral.triggerState,
+                    flags: {},
+                },
+            };
 
             const result: GeneralTurnResult = {
                 general: currentGeneral,

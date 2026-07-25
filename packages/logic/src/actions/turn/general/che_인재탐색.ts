@@ -275,6 +275,10 @@ export class ActionResolver<
 
         const statKey = pickStatExpKey(context.rng, general);
         const metaAfter = found ? addMetaNumber(general.meta, statKey, 3) : addMetaNumber(general.meta, statKey, 1);
+        if (found) {
+            const active = typeof metaAfter.inherit_active_action === 'number' ? metaAfter.inherit_active_action : 0;
+            metaAfter.inherit_active_action = active + Math.max(Math.sqrt(1 / prop), 1);
+        }
 
         const nextGold = Math.max(0, general.gold - reqGold);
         const nextRice = Math.max(0, general.rice - reqRice);
@@ -319,12 +323,7 @@ export class ActionResolver<
             ? this.env.decorateName(resolvedCandidate.name, NPC_TYPE)
             : resolvedCandidate.name;
         const meta: GeneralMeta = {
-            killturn: resolveKillturnFromDeathYear(
-                context.currentYear,
-                context.currentMonth,
-                deathYear,
-                context.rng
-            ),
+            killturn: resolveKillturnFromDeathYear(context.currentYear, context.currentMonth, deathYear, context.rng),
             npcType: NPC_TYPE,
             crewTypeId: this.env.defaultCrewTypeId,
         };

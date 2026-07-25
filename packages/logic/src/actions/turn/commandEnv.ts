@@ -19,6 +19,7 @@ export interface TurnCommandEnv {
     minAvailableRecruitPop?: number;
     trainDelta: number;
     atmosDelta: number;
+    trainSideEffectByAtmosTurn?: number;
     maxTrainByCommand: number;
     maxAtmosByCommand: number;
     sabotageDefaultProb: number;
@@ -35,6 +36,9 @@ export interface TurnCommandEnv {
     defaultSpecialWar: string | null;
     initialNationGenLimit: number;
     maxTechLevel: number;
+    maxStatLevel?: number;
+    techLevelIncYear?: number;
+    initialAllowedTechLevel?: number;
     baseGold: number;
     baseRice: number;
     maxResourceActionAmount: number;

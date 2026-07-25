@@ -19,6 +19,7 @@ import { parseArgsWithSchema } from '../parseArgs.js';
 
 export interface TradeEnvironment {
     exchangeFee?: number;
+    maxResourceActionAmount?: number;
 }
 
 const ACTION_NAME = '군량매매';
@@ -41,7 +42,13 @@ export class ActionDefinition<
     }
 
     parseArgs(raw: unknown): TradeArgs | null {
-        return parseArgsWithSchema(ARGS_SCHEMA, raw);
+        const parsed = parseArgsWithSchema(ARGS_SCHEMA, raw);
+        if (!parsed || !Number.isFinite(parsed.amount)) {
+            return null;
+        }
+        const maxAmount = this.env.maxResourceActionAmount ?? 10_000;
+        const amount = Math.max(100, Math.min(Math.round(parsed.amount / 100) * 100, maxAmount));
+        return { buyRice: parsed.buyRice, amount };
     }
 
     buildMinConstraints(_ctx: ConstraintContext, _args: TradeArgs): Constraint[] {
@@ -69,13 +76,13 @@ export class ActionDefinition<
         const rate = tradeRate / 100;
         const fee = this.env.exchangeFee ?? DEFAULT_EXCHANGE_FEE;
 
-        let buyAmount = 0;
-        let sellAmount = 0;
-        let tax = 0;
+        let tax: number;
 
         if (args.buyRice) {
             const requestedSell = Math.min(args.amount * rate, general.gold);
             tax = requestedSell * fee;
+            let sellAmount: number;
+            let buyAmount: number;
             if (requestedSell + tax > general.gold) {
                 sellAmount = general.gold;
                 tax = sellAmount * (fee / (1 + fee));
@@ -85,8 +92,8 @@ export class ActionDefinition<
                 sellAmount = requestedSell + tax;
                 buyAmount = args.amount;
             }
-            general.gold = Math.max(0, general.gold - sellAmount);
-            general.rice += buyAmount;
+            general.gold = Math.max(0, Math.round(general.gold - sellAmount));
+            general.rice = Math.round(general.rice + buyAmount);
             context.addLog(
                 `군량 <C>${Math.round(buyAmount).toLocaleString()}</>을 사서 자금 <C>${Math.round(
                     sellAmount
@@ -94,12 +101,12 @@ export class ActionDefinition<
                 { format: LogFormat.PLAIN }
             );
         } else {
-            sellAmount = Math.min(args.amount, general.rice);
+            const sellAmount = Math.min(args.amount, general.rice);
             const grossBuy = sellAmount * rate;
             tax = grossBuy * fee;
-            buyAmount = grossBuy - tax;
-            general.rice = Math.max(0, general.rice - sellAmount);
-            general.gold += buyAmount;
+            const buyAmount = grossBuy - tax;
+            general.rice = Math.max(0, Math.round(general.rice - sellAmount));
+            general.gold = Math.round(general.gold + buyAmount);
             context.addLog(
                 `군량 <C>${Math.round(sellAmount).toLocaleString()}</>을 팔아 자금 <C>${Math.round(
                     buyAmount
@@ -112,12 +119,30 @@ export class ActionDefinition<
         if (context.nation) {
             const nation = context.nation;
             const currentGold = (nation.gold as number) ?? 0;
-            nation.gold = currentGold + tax;
+            nation.gold = currentGold + Math.trunc(tax);
         }
 
         // 경험치 및 명성 증가
         general.experience += 30;
         general.dedication += 50;
+        const weightedStats = [
+            ['leadership_exp', general.stats.leadership],
+            ['strength_exp', general.stats.strength],
+            ['intel_exp', general.stats.intelligence],
+        ] as const;
+        const totalWeight = weightedStats.reduce((sum, [, weight]) => sum + Math.max(0, weight), 0);
+        let pick = context.rng.nextFloat1() * totalWeight;
+        let statKey: (typeof weightedStats)[number][0] = weightedStats[weightedStats.length - 1]![0];
+        for (const [key, weight] of weightedStats) {
+            if (pick <= Math.max(0, weight)) {
+                statKey = key;
+                break;
+            }
+            pick -= Math.max(0, weight);
+        }
+        const statRaw = general.meta[statKey];
+        const statExp = typeof statRaw === 'number' ? statRaw : 0;
+        general.meta[statKey] = statExp + 1;
 
         tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
 
@@ -136,5 +161,8 @@ export const commandSpec: GeneralTurnCommandSpec = {
         amount: 'number',
     },
     argsSchema: ARGS_SCHEMA,
-    createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
+    createDefinition: (env: TurnCommandEnv) =>
+        new ActionDefinition({
+            maxResourceActionAmount: env.maxResourceActionAmount,
+        }),
 };

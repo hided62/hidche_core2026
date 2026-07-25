@@ -195,6 +195,7 @@ describe('General Commands New Scenario', () => {
 
         // 2. Donate
         const donateDef = donateSpec.createDefinition(systemEnv);
+        const expBeforeDonate = world.getGeneral(1)!.experience;
         await runner.runTurn([
             {
                 generalId: 1,
@@ -207,6 +208,8 @@ describe('General Commands New Scenario', () => {
         const g1_after_donate = world.getGeneral(1)!;
         const n1_after_donate = world.getNation(1)!;
         expect(g1_after_donate.gold).toBe(900); // 1000 - 100 (Procure cost 0)
+        expect(g1_after_donate.experience).toBe(expBeforeDonate + 70);
+        expect(g1_after_donate.meta.leadership_exp).toBe(1);
         expect(n1_after_donate.gold).toBeGreaterThan(10100); // 10000 + Procure + 100
 
         // 3. Move
@@ -270,7 +273,8 @@ describe('General Commands New Scenario', () => {
 
         const g1_after_retire = world.getGeneral(1)!;
         expect(g1_after_retire.age).toBe(20);
-        expect(g1_after_retire.experience).toBe(0);
+        // General::rebirth()는 앞선 명령으로 누적된 경험을 초기화하지 않고 절반으로 줄인다.
+        expect(g1_after_retire.experience).toBe(142);
     });
 
     it('should execute employ and sabotage commands', async () => {
@@ -414,6 +418,7 @@ describe('General Commands New Scenario', () => {
 
         // 1. Employ (G1 -> G2)
         const employDef = employSpec.createDefinition(systemEnv);
+        const goldBeforeEmploy = world.getGeneral(1)!.gold;
         await runner.runTurn([
             {
                 generalId: 1,
@@ -423,6 +428,8 @@ describe('General Commands New Scenario', () => {
                 context: { destGeneral: gen2, env: systemEnv }, // Manual inject for resolver context
             },
         ]);
+        // 레거시 비용: round(develcost + (대상 경험 + 공헌) / 1000) * 10.
+        expect(world.getGeneral(1)!.gold).toBe(goldBeforeEmploy - 1_000);
 
         // Verify Logs? (Runner doesn't expose logs easily, but we checks no throw)
 
@@ -500,7 +507,22 @@ describe('General Commands New Scenario', () => {
                 commandKey: 'che_선동',
                 resolver: agitateDef,
                 args: { destCityId: 2 },
-                context: { destCity: city2, env: systemEnv },
+                context: {
+                    destCity: city2,
+                    destNation: nation2,
+                    destGenerals: [gen2],
+                    env: systemEnv,
+                    rng: {
+                        real: () => 0,
+                        int: (min: number, _max: number) => min,
+                        nextInt: (min: number, _max: number) => min,
+                        next: () => 0,
+                        nextBool: () => true,
+                        nextRange: (min: number, _max: number) => min,
+                        nextRangeInt: (min: number, _max: number) => min,
+                        nextFloat1: () => 0,
+                    },
+                },
             },
         ]);
 
@@ -521,7 +543,24 @@ describe('General Commands New Scenario', () => {
                 commandKey: 'che_탈취',
                 resolver: seizeDef,
                 args: { destCityId: 2 },
-                context: { destCity: city2, destNation: nation2, env: systemEnv },
+                context: {
+                    destCity: city2,
+                    destNation: nation2,
+                    destGenerals: [gen2],
+                    env: systemEnv,
+                    year: 200,
+                    startYear: 200,
+                    rng: {
+                        real: () => 0,
+                        int: (min: number, _max: number) => min,
+                        nextInt: (min: number, _max: number) => min,
+                        next: () => 0,
+                        nextBool: () => true,
+                        nextRange: (min: number, _max: number) => min,
+                        nextRangeInt: (min: number, _max: number) => min,
+                        nextFloat1: () => 0,
+                    },
+                },
             },
         ]);
 
@@ -530,7 +569,8 @@ describe('General Commands New Scenario', () => {
 
         const g1_after_seize = world.getGeneral(1)!;
 
-        expect(g1_after_seize.gold).toBeGreaterThan(goldBeforeSeize - systemEnv.develCost);
+        // 레거시는 개발비의 5배를 먼저 소모한 뒤 탈취량의 30%를 개인 몫으로 지급한다.
+        expect(g1_after_seize.gold).toBe(goldBeforeSeize - systemEnv.develCost * 5 + 1);
         expect(getEquippedItemInstance(g1_after_seize, 'item')).toBeNull();
     });
 });

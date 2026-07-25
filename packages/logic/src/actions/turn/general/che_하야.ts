@@ -1,4 +1,4 @@
-import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
+import type { General, GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import { notBeNeutral, notLord } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
@@ -8,12 +8,18 @@ import type {
     GeneralActionResolver,
 } from '@sammo-ts/logic/actions/engine.js';
 import { createGeneralPatchEffect, createNationPatchEffect } from '@sammo-ts/logic/actions/engine.js';
-import { LogCategory, LogFormat } from '@sammo-ts/logic/logging/types.js';
+import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
-import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
+import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
+import { JosaUtil } from '@sammo-ts/common';
 
 export interface ResignArgs {}
+interface ResignContext<
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
+> extends GeneralActionResolveContext<TriggerState> {
+    troopMembers: General<TriggerState>[];
+}
 
 const ACTION_NAME = '하야';
 const ACTION_KEY = 'che_하야';
@@ -22,8 +28,9 @@ export class ActionResolver<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionResolver<TriggerState, ResignArgs> {
     readonly key = ACTION_KEY;
+    constructor(private readonly env: TurnCommandEnv) {}
 
-    resolve(context: GeneralActionResolveContext<TriggerState>, _args: ResignArgs): GeneralActionOutcome<TriggerState> {
+    resolve(context: ResignContext<TriggerState>, _args: ResignArgs): GeneralActionOutcome<TriggerState> {
         const general = context.general;
         const nation = context.nation;
 
@@ -31,11 +38,11 @@ export class ActionResolver<
             throw new Error('Resign requires a nation context.');
         }
 
-        const effects = [];
+        const effects: GeneralActionOutcome<TriggerState>['effects'] = [];
 
         // Return resources
-        const maxKeepGold = 1000;
-        const maxKeepRice = 1000;
+        const maxKeepGold = this.env.defaultNpcGold;
+        const maxKeepRice = this.env.defaultNpcRice;
 
         const newGold = Math.min(general.gold, maxKeepGold);
         const newRice = Math.min(general.rice, maxKeepRice);
@@ -57,14 +64,24 @@ export class ActionResolver<
         }
 
         // Penalty
-        const betrayal = (general.meta.betrayal as number) ?? 0;
-        const penaltyRatio = 0.1 + betrayal * 0.05;
+        const betrayal = typeof general.meta.betray === 'number' ? general.meta.betray : 0;
+        const penaltyRatio = betrayal * 0.1;
         const nextExp = Math.floor(general.experience * (1 - penaltyRatio));
         const nextDed = Math.floor(general.dedication * (1 - penaltyRatio));
 
         context.addLog(`<D><b>${nation.name}</b></>에서 하야했습니다.`, {
             category: LogCategory.ACTION,
             format: LogFormat.MONTH,
+        });
+        context.addLog(`<D><b>${nation.name}</b></>에서 하야`, {
+            category: LogCategory.HISTORY,
+            format: LogFormat.YEAR_MONTH,
+        });
+        const josaYi = JosaUtil.pick(general.name, '이');
+        context.addLog(`<Y>${general.name}</>${josaYi} <D><b>${nation.name}</b></>에서 <R>하야</>했습니다.`, {
+            scope: LogScope.SYSTEM,
+            category: LogCategory.ACTION,
+            format: LogFormat.RAWTEXT,
         });
 
         effects.push(
@@ -73,16 +90,38 @@ export class ActionResolver<
                     ...general,
                     nationId: 0,
                     officerLevel: 0,
+                    troopId: 0,
                     gold: newGold,
                     rice: newRice,
                     experience: nextExp,
                     dedication: nextDed,
                     meta: {
                         ...general.meta,
-                        betrayal: betrayal + 1,
+                        betray: Math.min(9, betrayal + 1),
+                        belong: 0,
+                        makelimit: 12,
+                        officer_city: 0,
+                        permission: 'normal',
                     },
                 },
                 general.id
+            )
+        );
+        if (general.troopId === general.id) {
+            for (const member of context.troopMembers) {
+                effects.push(createGeneralPatchEffect({ troopId: 0 }, member.id));
+            }
+        }
+        const gennum = typeof nation.meta.gennum === 'number' ? nation.meta.gennum : 0;
+        effects.push(
+            createNationPatchEffect(
+                {
+                    meta: {
+                        ...nation.meta,
+                        gennum: Math.max(0, gennum - (general.npcState === 5 ? 0 : 1)),
+                    },
+                },
+                nation.id
             )
         );
 
@@ -92,13 +131,16 @@ export class ActionResolver<
 
 export class ActionDefinition<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
-> implements GeneralActionDefinition<TriggerState, ResignArgs, GeneralActionResolveContext<TriggerState>> {
+> implements GeneralActionDefinition<TriggerState, ResignArgs, ResignContext<TriggerState>> {
     public readonly key = ACTION_KEY;
     public readonly name = ACTION_NAME;
+    getInheritanceActiveActionAmount(): number {
+        return 1;
+    }
     private readonly resolver: ActionResolver<TriggerState>;
 
-    constructor() {
-        this.resolver = new ActionResolver();
+    constructor(env: TurnCommandEnv) {
+        this.resolver = new ActionResolver(env);
     }
 
     parseArgs(_raw: unknown): ResignArgs | null {
@@ -109,17 +151,20 @@ export class ActionDefinition<
         return [notBeNeutral(), notLord()];
     }
 
-    resolve(context: GeneralActionResolveContext<TriggerState>, args: ResignArgs): GeneralActionOutcome<TriggerState> {
+    resolve(context: ResignContext<TriggerState>, args: ResignArgs): GeneralActionOutcome<TriggerState> {
         return this.resolver.resolve(context, args);
     }
 }
 
-export const actionContextBuilder = defaultActionContextBuilder;
+export const actionContextBuilder: ActionContextBuilder = (base, options) => ({
+    ...base,
+    troopMembers: options.worldRef?.listGenerals().filter((general) => general.troopId === base.general.id) ?? [],
+});
 
 export const commandSpec: GeneralTurnCommandSpec = {
     key: ACTION_KEY,
     category: '인사',
     reqArg: false,
 
-    createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
+    createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env),
 };

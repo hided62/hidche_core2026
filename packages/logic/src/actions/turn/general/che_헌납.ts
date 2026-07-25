@@ -50,9 +50,8 @@ export class ActionResolver<
 
         const realAmount = Math.max(0, Math.min(amount, currentRes));
 
-        // Exp/Ded calculation
-        const exp = Math.floor(realAmount / 100);
-        const ded = Math.floor(realAmount / 50);
+        const exp = 70;
+        const ded = 100;
 
         const amountText = realAmount.toLocaleString();
         context.addLog(`${resName} <C>${amountText}</>을 헌납했습니다.`, {
@@ -70,6 +69,11 @@ export class ActionResolver<
                         [resKey]: currentRes - realAmount,
                         experience: general.experience + exp,
                         dedication: general.dedication + ded,
+                        meta: {
+                            ...general.meta,
+                            leadership_exp:
+                                (typeof general.meta.leadership_exp === 'number' ? general.meta.leadership_exp : 0) + 1,
+                        },
                     },
                     general.id
                 ),

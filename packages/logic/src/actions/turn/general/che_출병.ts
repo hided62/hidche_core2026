@@ -241,6 +241,9 @@ export class ActionDefinition<
 > implements GeneralActionDefinition<TriggerState, DispatchArgs, DispatchResolveContext<TriggerState>> {
     public readonly key = 'che_출병';
     public readonly name = ACTION_NAME;
+    getInheritanceActiveActionAmount(): number {
+        return 1;
+    }
     private readonly warModules: Array<WarActionModule<TriggerState>>;
 
     constructor(modules: Array<WarActionModule<TriggerState> | null | undefined> = []) {

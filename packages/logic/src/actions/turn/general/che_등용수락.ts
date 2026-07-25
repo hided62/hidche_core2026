@@ -94,8 +94,8 @@ export class ActionResolver<
 
         // 3. Betrayal Logic
         // Legacy: GameConst::$defaultGold (usually 1000/2000).
-        const safeGold = this.env.baseGold || 1000;
-        const safeRice = this.env.baseRice || 1000;
+        const safeGold = this.env.defaultNpcGold;
+        const safeRice = this.env.defaultNpcRice;
 
         let newGold = general.gold;
         let newRice = general.rice;
@@ -137,7 +137,7 @@ export class ActionResolver<
             // Apply penalty
             newExp = Math.floor(newExp * Math.max(0, penaltyFactor));
             newDed = Math.floor(newDed * Math.max(0, penaltyFactor));
-            newBetray += 1;
+            newBetray = Math.min(9, newBetray + 1);
         } else {
             // Neutral -> Join: Grant Bonus
             newExp += 100;
@@ -161,13 +161,65 @@ export class ActionResolver<
                     troopId: 0, // Quit troop
                     meta: {
                         ...general.meta,
+                        belong: 1,
+                        permission: 'normal',
                         officer_city: 0,
                         betray: newBetray,
+                        ...(general.npcState < 2
+                            ? {
+                                  killturn:
+                                      typeof context.general.meta.killturn === 'number'
+                                          ? context.general.meta.killturn
+                                          : 0,
+                              }
+                            : {}),
                     },
                 },
                 general.id
             )
         );
+        if (currentNation && currentNation.id !== 0) {
+            const currentCount = typeof currentNation.meta.gennum === 'number' ? currentNation.meta.gennum : 0;
+            effects.push(
+                createNationPatchEffect(
+                    {
+                        meta: {
+                            ...currentNation.meta,
+                            gennum: Math.max(0, currentCount - 1),
+                        },
+                    },
+                    currentNation.id
+                )
+            );
+        }
+        const destCount = typeof destNation.meta.gennum === 'number' ? destNation.meta.gennum : 0;
+        effects.push(
+            createNationPatchEffect(
+                {
+                    meta: {
+                        ...destNation.meta,
+                        gennum: destCount + 1,
+                    },
+                },
+                destNation.id
+            )
+        );
+        context.addLog(`<D><b>${destNationName}</b></>${josaRo} 망명`, {
+            category: LogCategory.HISTORY,
+            format: LogFormat.YEAR_MONTH,
+        });
+        context.addLog(`<Y>${generalName}</> 등용에 성공했습니다.`, {
+            scope: LogScope.GENERAL,
+            generalId: destGeneral.id,
+            category: LogCategory.ACTION,
+            format: LogFormat.PLAIN,
+        });
+        context.addLog(`<Y>${generalName}</> 등용에 성공`, {
+            scope: LogScope.GENERAL,
+            generalId: destGeneral.id,
+            category: LogCategory.HISTORY,
+            format: LogFormat.YEAR_MONTH,
+        });
 
         return { effects };
     }
@@ -178,6 +230,9 @@ export class ActionDefinition<
 > implements GeneralActionDefinition<TriggerState, AcceptScoutArgs, AcceptScoutResolveContext<TriggerState>> {
     public readonly key = ACTION_KEY;
     public readonly name = ACTION_NAME;
+    getInheritanceActiveActionAmount(): number {
+        return 1;
+    }
     private readonly resolver: ActionResolver<TriggerState>;
 
     constructor(env: TurnCommandEnv) {

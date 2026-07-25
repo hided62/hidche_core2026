@@ -36,6 +36,9 @@ export class ActionDefinition<
 > implements GeneralActionDefinition<TriggerState, AbdicationArgs, AbdicationResolveContext<TriggerState>> {
     public readonly key = ACTION_KEY;
     public readonly name = ACTION_NAME;
+    getInheritanceActiveActionAmount(): number {
+        return 1;
+    }
 
     parseArgs(raw: unknown): AbdicationArgs | null {
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
@@ -49,7 +52,10 @@ export class ActionDefinition<
         return [beLord(), existsDestGeneral(), friendlyDestGeneral()];
     }
 
-    resolve(context: AbdicationResolveContext<TriggerState>, _args: AbdicationArgs): GeneralActionOutcome<TriggerState> {
+    resolve(
+        context: AbdicationResolveContext<TriggerState>,
+        _args: AbdicationArgs
+    ): GeneralActionOutcome<TriggerState> {
         const general = context.general;
         const nation = context.nation;
         const destGeneral = context.destGeneral;
@@ -81,10 +87,13 @@ export class ActionDefinition<
         const josaYi = JosaUtil.pick(general.name, '이');
         const effects: Array<GeneralActionEffect<TriggerState>> = [];
 
-        context.addLog(`<Y><b>【선양】</b></><Y>${general.name}</>${josaYi} <D><b>${nation.name}</b></>의 군주 자리를 <Y>${destGeneral.name}</>에게 선양했습니다.`, {
-            scope: LogScope.SYSTEM,
-            category: LogCategory.HISTORY,
-        });
+        context.addLog(
+            `<Y><b>【선양】</b></><Y>${general.name}</>${josaYi} <D><b>${nation.name}</b></>의 군주 자리를 <Y>${destGeneral.name}</>에게 선양했습니다.`,
+            {
+                scope: LogScope.SYSTEM,
+                category: LogCategory.HISTORY,
+            }
+        );
         context.addLog(`<Y>${general.name}</>${josaYi} <Y>${destGeneral.name}</>에게 선양`, {
             scope: LogScope.NATION,
             category: LogCategory.HISTORY,

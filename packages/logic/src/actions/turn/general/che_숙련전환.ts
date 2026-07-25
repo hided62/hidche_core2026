@@ -21,6 +21,7 @@ export interface DexTransferContext<
 
 export interface DexTransferEnvironment {
     develCost?: number;
+    unitSet?: UnitSetDefinition;
 }
 
 const ACTION_NAME = '숙련전환';
@@ -49,7 +50,19 @@ export class ActionDefinition<
     }
 
     parseArgs(raw: unknown): DexTransferArgs | null {
-        return parseArgsWithSchema(ARGS_SCHEMA, raw);
+        const parsed = parseArgsWithSchema(ARGS_SCHEMA, raw);
+        if (!parsed) {
+            return null;
+        }
+        const armTypes = this.env.unitSet?.armTypes;
+        if (
+            armTypes &&
+            (!Object.prototype.hasOwnProperty.call(armTypes, String(parsed.srcArmType)) ||
+                !Object.prototype.hasOwnProperty.call(armTypes, String(parsed.destArmType)))
+        ) {
+            return null;
+        }
+        return parsed;
     }
 
     buildMinConstraints(_ctx: ConstraintContext, _args: DexTransferArgs): Constraint[] {
@@ -104,5 +117,9 @@ export const commandSpec: GeneralTurnCommandSpec = {
     reqArg: true,
     availabilityArgs: { srcArmType: 0, destArmType: 0 },
     argsSchema: ARGS_SCHEMA,
-    createDefinition: (env: TurnCommandEnv) => new ActionDefinition({ develCost: env.develCost }),
+    createDefinition: (env: TurnCommandEnv) =>
+        new ActionDefinition({
+            develCost: env.develCost,
+            ...(env.unitSet ? { unitSet: env.unitSet } : {}),
+        }),
 };

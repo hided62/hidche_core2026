@@ -10,6 +10,7 @@ const DEFAULT_MODE = 'action';
 const DEFAULT_EXCLUDE_GUARDS = true;
 const DEFAULT_EXCLUDE_TARGET = true;
 const DEFAULT_IGNORE_FILE = 'tools/compare-command-logs.ignore.json';
+const PHP_INHERITED_LOG_SOURCE_WHEN_EMPTY = new Map([['General/che_내정특기초기화', 'General/che_전투특기초기화']]);
 
 const ARG_HELP = `
 Usage: node tools/compare-command-logs.mjs [options]
@@ -894,6 +895,7 @@ const diffTemplateCounts = (lhsCounts, rhsCounts) => {
 const loadPhpLogs = async () => {
     const files = (await collectFiles(PHP_ROOT)).filter((file) => file.endsWith('.php'));
     const logsByKey = new Map();
+    const sourceByKey = new Map();
 
     for (const file of files) {
         const baseName = path.basename(file, '.php');
@@ -909,6 +911,7 @@ const loadPhpLogs = async () => {
         const text = await fs.readFile(file, 'utf-8');
         const assignments = findPhpAssignments(text);
         const logs = extractPhpLogCalls(text, assignments);
+        sourceByKey.set(key, { file, logs });
         if (logs.length === 0) {
             continue;
         }
@@ -938,6 +941,42 @@ const loadPhpLogs = async () => {
             continue;
         }
         logsByKey.set(key, filtered);
+    }
+
+    for (const [key, parentKey] of PHP_INHERITED_LOG_SOURCE_WHEN_EMPTY) {
+        if (!filterCommandKey(key) || logsByKey.has(key)) {
+            continue;
+        }
+        const parent = sourceByKey.get(parentKey);
+        if (!parent) {
+            continue;
+        }
+        const inherited = parent.logs
+            .map((log) => ({
+                file: path.relative(ROOT_DIR, parent.file),
+                line: log.line,
+                template: log.template,
+                raw: log.raw,
+                category: log.category,
+                scope: log.scope,
+                format: log.format,
+                hasGeneralId: log.hasGeneralId,
+            }))
+            .filter((entry) => {
+                if (!shouldIncludeEntryByMode(entry)) {
+                    return false;
+                }
+                if (excludeGuards && isGuardLog(entry.template)) {
+                    return false;
+                }
+                if (excludeTarget && isTargetLog(entry)) {
+                    return false;
+                }
+                return true;
+            });
+        if (inherited.length > 0) {
+            logsByKey.set(key, inherited);
+        }
     }
 
     return logsByKey;
