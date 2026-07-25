@@ -1,6 +1,12 @@
 import type { GeneralTriggerState, City, General } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
-import { beLord, occupiedCity, suppliedCity, beOpeningPart, reqNationAuxValue } from '@sammo-ts/logic/constraints/presets.js';
+import {
+    beLord,
+    occupiedCity,
+    suppliedCity,
+    beOpeningPart,
+    reqNationAuxValue,
+} from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionEffect,
@@ -39,6 +45,7 @@ export class ActionDefinition<
 > {
     public readonly key = 'che_무작위수도이전';
     public readonly name = ACTION_NAME;
+    public readonly countsAsInheritanceActiveAction = true;
 
     parseArgs(_raw: unknown): RandomMoveCapitalArgs | null {
         return {};
@@ -55,6 +62,10 @@ export class ActionDefinition<
             beOpeningPart(),
             reqNationAuxValue('can_무작위수도이전', 0, '>', 0, '더이상 변경이 불가능합니다.'),
         ];
+    }
+
+    getPreReqTurn(): number {
+        return 1;
     }
 
     resolve(
@@ -142,6 +153,11 @@ export class ActionDefinition<
                     format: LogFormat.YEAR_MONTH,
                 }
             ),
+            createLogEffect(`<G><b>${destCityName}</b></>${josaRo} <M>${ACTION_NAME}</>`, {
+                scope: LogScope.GENERAL,
+                category: LogCategory.HISTORY,
+                format: LogFormat.YEAR_MONTH,
+            }),
             // General Action Log
             createLogEffect(`<G><b>${destCityName}</b></>${josaRo} 국가를 옮겼습니다.`, {
                 scope: LogScope.GENERAL,

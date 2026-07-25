@@ -1,4 +1,4 @@
-import type { City, LogEntryDraft, Nation, ScenarioConfig, Troop, TurnSchedule } from '@sammo-ts/logic';
+import type { City, LogEntryDraft, MessageDraft, Nation, ScenarioConfig, Troop, TurnSchedule } from '@sammo-ts/logic';
 import { getNextTurnAt } from '@sammo-ts/logic';
 
 import type { TurnCheckpoint } from '../lifecycle/types.js';
@@ -25,6 +25,7 @@ export interface GeneralTurnResult {
     nation?: Nation | null;
     nextTurnAt?: Date;
     logs?: LogEntryDraft[];
+    messages?: MessageDraft[];
     patches?: {
         generals: Array<{ id: number; patch: Partial<TurnGeneral> }>;
         cities: Array<{ id: number; patch: Partial<City> }>;
@@ -79,6 +80,7 @@ export interface TurnWorldChanges {
     deletedNationSnapshots: Array<{ nation: Nation; generalIds: number[]; removedAt: Date }>;
     diplomacy: TurnDiplomacy[];
     logs: LogEntryDraft[];
+    messages: MessageDraft[];
     createdGenerals: TurnGeneral[];
     createdNations: Nation[];
     createdTroops: Troop[];
@@ -247,6 +249,7 @@ export class InMemoryTurnWorld {
         removedAt: Date;
     }> = [];
     private readonly logs: LogEntryDraft[] = [];
+    private readonly messages: MessageDraft[] = [];
     private readonly scenarioConfig: ScenarioConfig;
     private checkpoint?: TurnCheckpoint;
     private state: TurnWorldState;
@@ -587,6 +590,9 @@ export class InMemoryTurnWorld {
         if (result.logs && result.logs.length > 0) {
             this.logs.push(...result.logs);
         }
+        if (result.messages && result.messages.length > 0) {
+            this.messages.push(...result.messages);
+        }
         if (result.patches) {
             for (const patch of result.patches.generals) {
                 const target = this.generals.get(patch.id);
@@ -744,6 +750,7 @@ export class InMemoryTurnWorld {
         const deletedNations = Array.from(this.deletedNationIds);
         const deletedNationSnapshots = this.deletedNationSnapshots.slice();
         const logs = this.logs.slice();
+        const messages = this.messages.slice();
 
         return {
             generals,
@@ -756,6 +763,7 @@ export class InMemoryTurnWorld {
             deletedNationSnapshots,
             diplomacy,
             logs,
+            messages,
             createdGenerals,
             createdNations,
             createdTroops,
@@ -782,6 +790,7 @@ export class InMemoryTurnWorld {
         for (const id of changes.deletedNations) this.deletedNationIds.delete(id);
         this.deletedNationSnapshots.splice(0, changes.deletedNationSnapshots.length);
         this.logs.splice(0, changes.logs.length);
+        this.messages.splice(0, changes.messages.length);
     }
 
     consumeDirtyState(): TurnWorldChanges {

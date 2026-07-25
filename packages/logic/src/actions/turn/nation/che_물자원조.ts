@@ -1,4 +1,4 @@
-import type { GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
+import type { General, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext, StateView } from '@sammo-ts/logic/constraints/types.js';
 import {
     beChief,
@@ -27,16 +27,23 @@ import { clamp } from 'es-toolkit';
 import { z } from 'zod';
 import { parseArgsWithSchema } from '../parseArgs.js';
 
-const ARGS_SCHEMA = z.object({
-    destNationId: z.number(),
-    amountList: z.tuple([z.number(), z.number()]),
-});
+const ARGS_SCHEMA = z
+    .object({
+        destNationId: z.number().int().positive(),
+        amountList: z.tuple([z.number().int().nonnegative(), z.number().int().nonnegative()]),
+    })
+    .refine(({ amountList }) => amountList[0] > 0 || amountList[1] > 0, {
+        message: '지원량은 0보다 커야 합니다.',
+        path: ['amountList'],
+    });
 export type MaterialAidArgs = z.infer<typeof ARGS_SCHEMA>;
 
 export interface MaterialAidResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > extends GeneralActionResolveContext<TriggerState> {
     destNation: Nation;
+    friendlyChiefs: Array<General<TriggerState>>;
+    destNationChiefs: Array<General<TriggerState>>;
 }
 
 const ACTION_NAME = '원조';
@@ -75,7 +82,12 @@ export class ActionDefinition<
     }
 
     buildMinConstraints(_ctx: ConstraintContext, _args: MaterialAidArgs): Constraint[] {
-        return [occupiedCity(), beChief(), suppliedCity(), reqNationValue('surlimit', '외교제한', '==', 0, '외교제한중입니다.')];
+        return [
+            occupiedCity(),
+            beChief(),
+            suppliedCity(),
+            reqNationValue('surlimit', '외교제한', '==', 0, '외교제한중입니다.'),
+        ];
     }
 
     buildConstraints(_ctx: ConstraintContext, args: MaterialAidArgs): Constraint[] {
@@ -111,11 +123,24 @@ export class ActionDefinition<
 
         const goldText = actualGold.toLocaleString();
         const riceText = actualRice.toLocaleString();
+        const nationName = nation.name;
         const josaUlRice = JosaUtil.pick(riceText, '을');
         const josaRo = JosaUtil.pick(destNation.name, '로');
-        const nationName = nation.name;
+        const josaRoSrc = JosaUtil.pick(nationName, '로');
 
         const broadcastMessage = `<D><b>${destNation.name}</b></>${josaRo} 금<C>${goldText}</> 쌀<C>${riceText}</>을 지원했습니다.`;
+        const recvAssist =
+            typeof destNation.meta.recv_assist === 'object' && destNation.meta.recv_assist !== null
+                ? { ...destNation.meta.recv_assist }
+                : {};
+        const recvKey = `n${nation.id}`;
+        const priorEntry =
+            typeof recvAssist[recvKey] === 'object' && recvAssist[recvKey] !== null ? recvAssist[recvKey] : {};
+        const priorAmount = Number(priorEntry['1'] ?? 0);
+        recvAssist[recvKey] = {
+            0: nation.id,
+            1: (Number.isFinite(priorAmount) ? priorAmount : 0) + actualGold + actualRice,
+        };
 
         const effects: Array<GeneralActionEffect<TriggerState>> = [
             createNationPatchEffect(
@@ -133,6 +158,10 @@ export class ActionDefinition<
                 {
                     gold: destNation.gold + actualGold,
                     rice: destNation.rice + actualRice,
+                    meta: {
+                        ...destNation.meta,
+                        recv_assist: recvAssist,
+                    },
                 },
                 destNation.id
             ),
@@ -149,6 +178,14 @@ export class ActionDefinition<
             createLogEffect(
                 `<D><b>${destNation.name}</b></>${josaRo} 금<C>${goldText}</> 쌀<C>${riceText}</>${josaUlRice} 지원`,
                 {
+                    scope: LogScope.GENERAL,
+                    category: LogCategory.HISTORY,
+                    format: LogFormat.YEAR_MONTH,
+                }
+            ),
+            createLogEffect(
+                `<D><b>${destNation.name}</b></>${josaRo} 금<C>${goldText}</> 쌀<C>${riceText}</>${josaUlRice} 지원`,
+                {
                     scope: LogScope.NATION,
                     nationId: nation.id,
                     category: LogCategory.HISTORY,
@@ -157,7 +194,7 @@ export class ActionDefinition<
             ),
             // Dest Nation History Log
             createLogEffect(
-                `<D><b>${nationName}</b></>${JosaUtil.pick(nationName, '부터')} 금<C>${goldText}</> 쌀<C>${riceText}</>${josaUlRice} 지원 받음`,
+                `<D><b>${nationName}</b></>${josaRoSrc}부터 금<C>${goldText}</> 쌀<C>${riceText}</>${josaUlRice} 지원 받음`,
                 {
                     scope: LogScope.NATION,
                     nationId: destNation.id,
@@ -178,6 +215,30 @@ export class ActionDefinition<
             }),
         ];
 
+        for (const chief of context.friendlyChiefs) {
+            if (chief.id !== general.id) {
+                effects.push(
+                    createLogEffect(broadcastMessage, {
+                        scope: LogScope.GENERAL,
+                        category: LogCategory.ACTION,
+                        generalId: chief.id,
+                        format: LogFormat.PLAIN,
+                    })
+                );
+            }
+        }
+        const destBroadcastMessage = `<D><b>${nationName}</b></>에서 금<C>${goldText}</> 쌀<C>${riceText}</>${josaUlRice} 원조했습니다.`;
+        for (const chief of context.destNationChiefs) {
+            effects.push(
+                createLogEffect(destBroadcastMessage, {
+                    scope: LogScope.GENERAL,
+                    category: LogCategory.ACTION,
+                    generalId: chief.id,
+                    format: LogFormat.PLAIN,
+                })
+            );
+        }
+
         general.experience += 5;
         general.dedication += 5;
 
@@ -194,10 +255,15 @@ export const actionContextBuilder: ActionContextBuilder<MaterialAidArgs> = (base
 
     const destNation = worldRef.getNationById(destNationId);
     if (!destNation) return null;
+    const generals = worldRef.listGenerals();
 
     return {
         ...base,
         destNation,
+        friendlyChiefs: generals.filter(
+            (general) => general.nationId === base.general.nationId && general.officerLevel >= 5
+        ),
+        destNationChiefs: generals.filter((general) => general.nationId === destNationId && general.officerLevel >= 5),
     };
 };
 

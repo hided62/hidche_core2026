@@ -19,6 +19,7 @@ import { createGatewayAdminActionConsumer } from './gatewayAdminActions.js';
 import { createGatewayProfileGate } from './gatewayProfileGate.js';
 import { composeCalendarHandlers } from './calendarHandlers.js';
 import { createIncomeHandler } from './incomeHandler.js';
+import { createNationTurnMonthlyHandler } from './nationTurnMonthlyHandler.js';
 import { createFrontStateHandler } from './frontStateHandler.js';
 import { createReservedTurnHandler } from './reservedTurnHandler.js';
 import { createReservedTurnStore } from './reservedTurnStore.js';
@@ -124,6 +125,9 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
         scenarioConfig: snapshot.scenarioConfig,
         nationTraits: nationTraitMap,
     });
+    const nationTurnMonthlyHandler = createNationTurnMonthlyHandler({
+        getWorld: () => worldRef,
+    });
     const frontStateHandler = createFrontStateHandler({
         getWorld: () => worldRef,
         map: snapshot.map ?? null,
@@ -141,6 +145,7 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
     });
     const calendarHandler = composeCalendarHandlers(
         options.calendarHandler ?? unification?.handler,
+        nationTurnMonthlyHandler,
         incomeHandler,
         frontStateHandler,
         tournamentAutoStartHandler,

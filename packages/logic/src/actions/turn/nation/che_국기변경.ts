@@ -54,7 +54,11 @@ const NATION_COLORS = [
 ];
 
 const ARGS_SCHEMA = z.object({
-    colorType: z.number().int().min(0).max(NATION_COLORS.length - 1),
+    colorType: z
+        .number()
+        .int()
+        .min(0)
+        .max(NATION_COLORS.length - 1),
 });
 export type ChangeFlagArgs = z.infer<typeof ARGS_SCHEMA>;
 
@@ -63,6 +67,7 @@ export class ActionDefinition<
 > implements GeneralActionDefinition<TriggerState, ChangeFlagArgs> {
     public readonly key = 'che_국기변경';
     public readonly name = ACTION_NAME;
+    public readonly countsAsInheritanceActiveAction = true;
 
     parseArgs(raw: unknown): ChangeFlagArgs | null {
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
@@ -141,6 +146,11 @@ export class ActionDefinition<
                     format: LogFormat.YEAR_MONTH,
                 }
             ),
+            createLogEffect(`<span style='color:${color};'><b>국기</b></span>를 변경`, {
+                scope: LogScope.GENERAL,
+                category: LogCategory.HISTORY,
+                format: LogFormat.YEAR_MONTH,
+            }),
             // General Action Log
             createLogEffect(`<span style='color:${color};'><b>국기</b></span>를 변경하였습니다`, {
                 scope: LogScope.GENERAL,

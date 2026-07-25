@@ -8,6 +8,7 @@ import {
     occupiedCity,
 } from '@sammo-ts/logic/constraints/presets.js';
 import { allow, unknownOrDeny } from '@sammo-ts/logic/constraints/helpers.js';
+import { GeneralActionPipeline, type GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionEffect,
@@ -15,7 +16,7 @@ import type {
     GeneralActionResolveContext,
     GeneralActionResolver,
 } from '@sammo-ts/logic/actions/engine.js';
-import { createLogEffect } from '@sammo-ts/logic/actions/engine.js';
+import { createLogEffect, createNationPatchEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
@@ -32,10 +33,12 @@ export interface CounterStrategyResolveContext<
     destNation: Nation;
     friendlyGenerals: Array<General<TriggerState>>;
     destNationGenerals: Array<General<TriggerState>>;
+    currentYearMonth: number;
 }
 
 const ACTION_NAME = '피장파장';
 const DEFAULT_GLOBAL_DELAY = 8;
+const TARGET_DELAY = 60;
 const PRE_REQ_TURN = 1;
 const EXP_DED_GAIN = 5 * (PRE_REQ_TURN + 1);
 
@@ -89,11 +92,53 @@ const reqValidStrategicCommandType = (): Constraint => ({
     },
 });
 
+const alwaysFail = (commandType: CounterStrategyArgs['commandType']): Constraint => ({
+    // Legacy inserts AlwaysFail when the selected strategy is still cooling down.
+    name: 'alwaysFail',
+    requires: (ctx) => (ctx.nationId !== undefined ? [{ kind: 'nation', id: ctx.nationId }] : []),
+    test: (ctx, view) => {
+        if (ctx.nationId === undefined) {
+            return { kind: 'deny', reason: '국가 정보가 없습니다.' };
+        }
+        const nation = view.get({ kind: 'nation', id: ctx.nationId }) as Nation | undefined;
+        if (!nation) {
+            return { kind: 'deny', reason: '국가 정보가 없습니다.' };
+        }
+        const raw = nation.meta[`next_execute_${STRATEGIC_COMMANDS[commandType]}`];
+        const nextAvailable = typeof raw === 'number' ? raw : Number(raw ?? 0);
+        const year = Number(ctx.env.currentYear ?? ctx.env.year);
+        const month = Number(ctx.env.currentMonth ?? ctx.env.month);
+        if (!Number.isFinite(year) || !Number.isFinite(month)) {
+            return { kind: 'unknown', missing: [{ kind: 'env', key: 'currentYear' }] };
+        }
+        const currentYearMonth = Math.floor(year) * 12 + Math.floor(month) - 1;
+        if (Number.isFinite(nextAvailable) && nextAvailable > currentYearMonth) {
+            return { kind: 'deny', reason: '해당 전략을 아직 사용할 수 없습니다' };
+        }
+        return allow();
+    },
+});
+
 // 피장파장 실행 결과를 계산한다.
 export class ActionResolver<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionResolver<TriggerState, CounterStrategyArgs> {
     readonly key = 'che_피장파장';
+    private readonly pipeline: GeneralActionPipeline<TriggerState>;
+
+    constructor(
+        modules: Array<GeneralActionModule<TriggerState> | null | undefined> = [],
+        private readonly initialNationGenLimit = 10
+    ) {
+        this.pipeline = new GeneralActionPipeline(modules);
+    }
+
+    getTargetPostReqTurn(context: CounterStrategyResolveContext<TriggerState>): number {
+        const genCount = Math.max(context.friendlyGenerals.length, this.initialNationGenLimit);
+        const base = Math.round(Math.sqrt(genCount * 2) * 10);
+        const triggered = Math.round(this.pipeline.onCalcStrategic(context, ACTION_NAME, 'delay', base));
+        return Math.max(triggered, Math.round(TARGET_DELAY * 1.2));
+    }
 
     resolve(
         context: CounterStrategyResolveContext<TriggerState>,
@@ -105,6 +150,7 @@ export class ActionResolver<
         const nationName = nation?.name ?? '아국';
         const destNationName = destNation.name;
         const targetCommandName = STRATEGIC_COMMANDS[args.commandType] ?? args.commandType;
+        const currentYearMonth = Number.isFinite(context.currentYearMonth) ? context.currentYearMonth : 0;
         const actionName = ACTION_NAME;
         const actionJosa = JosaUtil.pick(actionName, '을');
 
@@ -117,8 +163,8 @@ export class ActionResolver<
         context.addLog(
             `<D><b>${destNationName}</b></>에 <G><b>${targetCommandName}</b></> <M>${ACTION_NAME}</>${actionJosa} 발동`,
             {
-            category: LogCategory.HISTORY,
-            format: LogFormat.YEAR_MONTH,
+                category: LogCategory.HISTORY,
+                format: LogFormat.YEAR_MONTH,
             }
         );
 
@@ -159,6 +205,7 @@ export class ActionResolver<
             nation.meta = {
                 ...(nation.meta as object),
                 strategic_cmd_limit: globalDelay,
+                [`next_execute_${targetCommandName}`]: currentYearMonth + this.getTargetPostReqTurn(context),
             };
             effects.push(
                 createLogEffect(broadcastMessage, {
@@ -169,6 +216,22 @@ export class ActionResolver<
                 })
             );
         }
+
+        const destMeta = destNation.meta;
+        const destKey = `next_execute_${targetCommandName}`;
+        const destRaw = destMeta[destKey];
+        const destNext = typeof destRaw === 'number' ? destRaw : Number(destRaw ?? 0);
+        effects.push(
+            createNationPatchEffect(
+                {
+                    meta: {
+                        ...destMeta,
+                        [destKey]: Math.max(Number.isFinite(destNext) ? destNext : 0, currentYearMonth) + TARGET_DELAY,
+                    },
+                },
+                destNation.id
+            )
+        );
 
         effects.push(
             createLogEffect(
@@ -206,7 +269,11 @@ export class ActionDefinition<
 > implements GeneralActionDefinition<TriggerState, CounterStrategyArgs, CounterStrategyResolveContext<TriggerState>> {
     public readonly key = 'che_피장파장';
     public readonly name = ACTION_NAME;
-    private readonly resolver = new ActionResolver<TriggerState>();
+    private readonly resolver: ActionResolver<TriggerState>;
+
+    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined> = [], initialNationGenLimit = 10) {
+        this.resolver = new ActionResolver(modules, initialNationGenLimit);
+    }
 
     parseArgs(raw: unknown): CounterStrategyArgs | null {
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
@@ -226,10 +293,22 @@ export class ActionDefinition<
             allowDiplomacyBetweenStatus([0, 1], '선포, 전쟁중인 상대국에게만 가능합니다.'),
             availableStrategicCommand(),
             reqValidStrategicCommandType(),
+            alwaysFail(_args.commandType),
         ];
     }
 
-    resolve(context: CounterStrategyResolveContext<TriggerState>, args: CounterStrategyArgs): GeneralActionOutcome<TriggerState> {
+    getPreReqTurn(): number {
+        return PRE_REQ_TURN;
+    }
+
+    getPostReqTurn(): number {
+        return 8;
+    }
+
+    resolve(
+        context: CounterStrategyResolveContext<TriggerState>,
+        args: CounterStrategyArgs
+    ): GeneralActionOutcome<TriggerState> {
         return this.resolver.resolve(context, args);
     }
 }
@@ -256,6 +335,7 @@ export const actionContextBuilder: ActionContextBuilder<CounterStrategyArgs> = (
         destNation,
         friendlyGenerals,
         destNationGenerals,
+        currentYearMonth: options.world.currentYear * 12 + options.world.currentMonth - 1,
     };
 };
 
@@ -265,5 +345,6 @@ export const commandSpec: NationTurnCommandSpec = {
     reqArg: true,
     availabilityArgs: { destNationId: 0, commandType: '' },
     argsSchema: ARGS_SCHEMA,
-    createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
+    createDefinition: (env: TurnCommandEnv) =>
+        new ActionDefinition(env.generalActionModules ?? [], env.initialNationGenLimit),
 };

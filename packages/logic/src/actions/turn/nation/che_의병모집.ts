@@ -221,6 +221,11 @@ export class ActionResolver<
         this.command = new CommandResolver(modules, env);
     }
 
+    getPostReqTurn(context: VolunteerRecruitResolveContext<TriggerState>): number {
+        const value = context.nation ? readMetaNumber(context.nation.meta, 'gennum') : null;
+        return this.command.getPostDelay(context, value ?? 0);
+    }
+
     resolve(
         context: VolunteerRecruitResolveContext<TriggerState>,
         _args: VolunteerRecruitArgs
@@ -361,6 +366,14 @@ export class ActionDefinition<
             availableStrategicCommand(),
             notOpeningPart(relYear, this.env.openingPartYear),
         ];
+    }
+
+    getPreReqTurn(): number {
+        return DEFAULT_PRE_TURN;
+    }
+
+    getPostReqTurn(context: VolunteerRecruitResolveContext<TriggerState>): number {
+        return this.resolver.getPostReqTurn(context);
     }
 
     resolve(

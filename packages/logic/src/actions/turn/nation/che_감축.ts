@@ -47,14 +47,15 @@ const requireCapitalCity = (reason: string): Constraint => ({
     },
 });
 
-const reqDestCityValue = (
-    comp: '>' | '<' | '>=' | '<=',
-    required: number | 'origin',
-    reason: string
-): Constraint => ({
+const reqDestCityValue = (comp: '>' | '<' | '>=' | '<=', required: number | 'origin', reason: string): Constraint => ({
     name: 'reqDestCityValue',
     requires: (ctx) =>
-        ctx.nationId !== undefined ? [{ kind: 'nation', id: ctx.nationId }, { kind: 'env', key: 'map' }] : [],
+        ctx.nationId !== undefined
+            ? [
+                  { kind: 'nation', id: ctx.nationId },
+                  { kind: 'env', key: 'map' },
+              ]
+            : [],
     test: (ctx: ConstraintContext, view: StateView) => {
         if (ctx.nationId === undefined) {
             return { kind: 'deny', reason };
@@ -71,8 +72,7 @@ const reqDestCityValue = (
             required === 'origin'
                 ? ((view.get({ kind: 'env', key: 'map' }) as MapDefinition | undefined)?.cities.find(
                       (mapCity) => mapCity.id === nation.capitalCityId
-                  )?.level ??
-                  0)
+                  )?.level ?? 0)
                 : required;
         const level = city.level;
         const allow =
@@ -95,6 +95,7 @@ export class ActionDefinition<
 > implements GeneralActionDefinition<TriggerState, ReduceCityArgs, ReduceCityResolveContext<TriggerState>> {
     public readonly key = 'che_감축';
     public readonly name = ACTION_NAME;
+    public readonly countsAsInheritanceActiveAction = true;
 
     constructor(private readonly env: TurnCommandEnv) {}
 
@@ -120,6 +121,15 @@ export class ActionDefinition<
             reqDestCityValue('>', 4, '더이상 감축할 수 없습니다.'),
             reqDestCityValue('>', 'origin', '더이상 감축할 수 없습니다.'),
         ];
+    }
+
+    getPreReqTurn(): number {
+        return 5;
+    }
+
+    getStackSequence(context: ReduceCityResolveContext<TriggerState>): number {
+        const value = context.nation?.meta.capset;
+        return typeof value === 'number' && Number.isFinite(value) ? Math.floor(value) : 0;
     }
 
     resolve(
@@ -163,6 +173,10 @@ export class ActionDefinition<
                 {
                     gold: nation.gold + recoverAmount,
                     rice: nation.rice + recoverAmount,
+                    meta: {
+                        ...nation.meta,
+                        capset: (typeof nation.meta.capset === 'number' ? nation.meta.capset : 0) + 1,
+                    },
                 },
                 nation.id
             ),
@@ -194,6 +208,11 @@ export class ActionDefinition<
                     format: LogFormat.YEAR_MONTH,
                 }
             ),
+            createLogEffect(`<G><b>${destCityName}</b></>${josaUl} <M>${ACTION_NAME}</>`, {
+                scope: LogScope.GENERAL,
+                category: LogCategory.HISTORY,
+                format: LogFormat.YEAR_MONTH,
+            }),
             // General Action Log
             createLogEffect(`<G><b>${destCityName}</b></>${josaUl} ${ACTION_NAME}했습니다.`, {
                 scope: LogScope.GENERAL,

@@ -36,35 +36,43 @@ export interface MoveCapitalResolveContext<
 > extends GeneralActionResolveContext<TriggerState> {
     destCity: City;
     map: MapDefinition;
+    nationCities: City[];
 }
 
 const ACTION_NAME = '천도';
 
-const hasRouteToDestCity = (destCityID: number, develCost: number): Constraint => ({
+const hasRouteToDestCity = (destCityID: number): Constraint => ({
     name: 'hasRouteToDestCity',
-    requires: (ctx) => [{ kind: 'nation', id: ctx.nationId! }, { kind: 'env', key: 'map' }],
+    requires: (ctx) => [
+        { kind: 'nation', id: ctx.nationId! },
+        { kind: 'env', key: 'map' },
+        { kind: 'env', key: 'cities' },
+    ],
     test: (ctx: ConstraintContext, view: StateView) => {
         const nation = view.get({ kind: 'nation', id: ctx.nationId! }) as Nation | undefined;
         const map = view.get({ kind: 'env', key: 'map' }) as MapDefinition | undefined;
+        const cities = view.get({ kind: 'env', key: 'cities' }) as City[] | undefined;
         if (!nation || !map || nation.capitalCityId === undefined || nation.capitalCityId === null) {
             return { kind: 'allow' };
         }
-        const dist = calcDistance(nation.capitalCityId, destCityID, map);
-        if (dist >= 50) {
+        const allowedCityIds = new Set(
+            (cities ?? []).filter((city) => city.nationId === nation.id).map((city) => city.id)
+        );
+        const dist = calcDistance(nation.capitalCityId, destCityID, map, allowedCityIds);
+        if (dist === null) {
             return { kind: 'deny', reason: '천도 대상으로 도달할 방법이 없습니다.' };
-        }
-        const cost = develCost * 5 * Math.pow(2, dist);
-        if (nation.gold < cost + 1000) {
-            return { kind: 'allow' };
-        }
-        if (nation.rice < cost + 1000) {
-            return { kind: 'allow' };
         }
         return { kind: 'allow' };
     },
 });
 
-const calcDistance = (fromCityId: number, toCityId: number, map: MapDefinition): number => {
+const calcDistance = (
+    fromCityId: number,
+    toCityId: number,
+    map: MapDefinition,
+    allowedCityIds?: ReadonlySet<number>
+): number | null => {
+    if (allowedCityIds && !allowedCityIds.has(toCityId)) return null;
     if (fromCityId === toCityId) return 0;
 
     const connections = new Map<number, number[]>();
@@ -82,6 +90,9 @@ const calcDistance = (fromCityId: number, toCityId: number, map: MapDefinition):
 
         const nextNodes = connections.get(current) ?? [];
         for (const next of nextNodes) {
+            if (allowedCityIds && !allowedCityIds.has(next)) {
+                continue;
+            }
             if (!visited.has(next)) {
                 visited.add(next);
                 queue.push([next, dist + 1]);
@@ -89,7 +100,7 @@ const calcDistance = (fromCityId: number, toCityId: number, map: MapDefinition):
         }
     }
 
-    return 50;
+    return null;
 };
 
 export class ActionDefinition<
@@ -97,6 +108,7 @@ export class ActionDefinition<
 > implements GeneralActionDefinition<TriggerState, MoveCapitalArgs, MoveCapitalResolveContext<TriggerState>> {
     public readonly key = 'che_천도';
     public readonly name = ACTION_NAME;
+    public readonly countsAsInheritanceActiveAction = true;
 
     constructor(private readonly env: TurnCommandEnv) {}
 
@@ -119,8 +131,12 @@ export class ActionDefinition<
             if (!nation || !map || nation.capitalCityId === undefined || nation.capitalCityId === null) {
                 return 0;
             }
-            const dist = calcDistance(nation.capitalCityId, args.destCityID, map);
-            if (dist >= 50) {
+            const cities = view.get({ kind: 'env', key: 'cities' }) as City[] | undefined;
+            const allowedCityIds = new Set(
+                (cities ?? []).filter((city) => city.nationId === nation.id).map((city) => city.id)
+            );
+            const dist = calcDistance(nation.capitalCityId, args.destCityID, map, allowedCityIds);
+            if (dist === null) {
                 return 0;
             }
             return develcost * 5 * Math.pow(2, dist);
@@ -132,11 +148,36 @@ export class ActionDefinition<
             beChief(),
             suppliedCity(),
             suppliedDestCity(),
-            hasRouteToDestCity(args.destCityID, develcost),
+            hasRouteToDestCity(args.destCityID),
             reqNationValue('capitalCityId', '수도', '!=', args.destCityID, '이미 수도입니다.'),
-            reqNationGold((ctx, view) => baseGold + getRequiredCost(ctx, view), [{ kind: 'env', key: 'map' }]),
-            reqNationRice((ctx, view) => baseRice + getRequiredCost(ctx, view), [{ kind: 'env', key: 'map' }]),
+            reqNationGold(
+                (ctx, view) => baseGold + getRequiredCost(ctx, view),
+                [
+                    { kind: 'env', key: 'map' },
+                    { kind: 'env', key: 'cities' },
+                ]
+            ),
+            reqNationRice(
+                (ctx, view) => baseRice + getRequiredCost(ctx, view),
+                [
+                    { kind: 'env', key: 'map' },
+                    { kind: 'env', key: 'cities' },
+                ]
+            ),
         ];
+    }
+
+    getPreReqTurn(context: MoveCapitalResolveContext<TriggerState>, args: MoveCapitalArgs): number {
+        if (!context.nation?.capitalCityId) {
+            return 0;
+        }
+        const allowedCityIds = new Set(context.nationCities.map((city) => city.id));
+        return (calcDistance(context.nation.capitalCityId, args.destCityID, context.map, allowedCityIds) ?? 0) * 2;
+    }
+
+    getStackSequence(context: MoveCapitalResolveContext<TriggerState>): number {
+        const value = context.nation?.meta.capset;
+        return typeof value === 'number' && Number.isFinite(value) ? Math.floor(value) : 0;
     }
 
     resolve(
@@ -148,9 +189,12 @@ export class ActionDefinition<
             return { effects: [createLogEffect('국가 정보가 없습니다.', { scope: LogScope.GENERAL })] };
         }
 
-        const dist = calcDistance(nation.capitalCityId, args.destCityID, map);
-        const cost = this.env.develCost * 5 * Math.pow(2, dist);
-
+        const nationCities = context.nationCities ?? [];
+        const allowedCityIds = nationCities.length > 0 ? new Set(nationCities.map((city) => city.id)) : undefined;
+        const dist = calcDistance(nation.capitalCityId, args.destCityID, map, allowedCityIds);
+        if (dist === null) {
+            return { effects: [createLogEffect('천도 대상으로 도달할 방법이 없습니다.', { scope: LogScope.GENERAL })] };
+        }
         const generalName = general.name;
         const nationName = nation.name;
         const destCityName = destCity.name;
@@ -163,8 +207,11 @@ export class ActionDefinition<
             createNationPatchEffect(
                 {
                     capitalCityId: args.destCityID,
-                    gold: nation.gold - cost,
-                    rice: nation.rice - cost,
+                    // ref는 비용 보유를 제약에서 검사하지만 실행 시 차감하지 않는다.
+                    meta: {
+                        ...nation.meta,
+                        capset: (typeof nation.meta.capset === 'number' ? nation.meta.capset : 0) + 1,
+                    },
                 },
                 nation.id
             ),
@@ -196,6 +243,11 @@ export class ActionDefinition<
                     format: LogFormat.YEAR_MONTH,
                 }
             ),
+            createLogEffect(`<G><b>${destCityName}</b></>${josaRo} <M>${ACTION_NAME}</>명령`, {
+                scope: LogScope.GENERAL,
+                category: LogCategory.HISTORY,
+                format: LogFormat.YEAR_MONTH,
+            }),
             // General Action Log
             createLogEffect(`<G><b>${destCityName}</b></>${josaRo} ${ACTION_NAME}했습니다.`, {
                 scope: LogScope.GENERAL,
@@ -226,6 +278,7 @@ export const actionContextBuilder: ActionContextBuilder<MoveCapitalArgs> = (base
         ...base,
         destCity,
         map,
+        nationCities: worldRef.listCities().filter((city) => city.nationId === base.general.nationId),
     };
 };
 

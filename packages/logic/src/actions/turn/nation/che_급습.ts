@@ -53,8 +53,17 @@ const TERM_REDUCE = 3;
 export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     private readonly pipeline: GeneralActionPipeline<TriggerState>;
 
-    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>) {
+    constructor(
+        modules: Array<GeneralActionModule<TriggerState> | null | undefined>,
+        private readonly initialNationGenLimit = 10
+    ) {
         this.pipeline = new GeneralActionPipeline(modules);
+    }
+
+    getPostReqTurn(context: RaidResolveContext<TriggerState>): number {
+        const genCount = Math.max(context.friendlyGenerals.length, this.initialNationGenLimit);
+        const base = Math.round(Math.sqrt(genCount * 16) * 10);
+        return Math.round(this.pipeline.onCalcStrategic(context, ACTION_NAME, 'delay', base));
     }
 
     getGlobalDelay(context: RaidResolveContext<TriggerState>): number {
@@ -69,8 +78,12 @@ export class ActionResolver<
     readonly key = 'che_급습';
     private readonly command: CommandResolver<TriggerState>;
 
-    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>) {
-        this.command = new CommandResolver(modules);
+    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>, initialNationGenLimit = 10) {
+        this.command = new CommandResolver(modules, initialNationGenLimit);
+    }
+
+    getPostReqTurn(context: RaidResolveContext<TriggerState>): number {
+        return this.command.getPostReqTurn(context);
     }
 
     resolve(context: RaidResolveContext<TriggerState>, _args: RaidArgs): GeneralActionOutcome<TriggerState> {
@@ -167,8 +180,8 @@ export class ActionDefinition<
     public readonly name = ACTION_NAME;
     private readonly resolver: ActionResolver<TriggerState>;
 
-    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>) {
-        this.resolver = new ActionResolver(modules);
+    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>, initialNationGenLimit = 10) {
+        this.resolver = new ActionResolver(modules, initialNationGenLimit);
     }
 
     parseArgs(raw: unknown): RaidArgs | null {
@@ -189,6 +202,10 @@ export class ActionDefinition<
             allowDiplomacyWithTerm(1, 12, '선포 12개월 이상인 상대국에만 가능합니다.'),
             availableStrategicCommand(),
         ];
+    }
+
+    getPostReqTurn(context: RaidResolveContext<TriggerState>): number {
+        return this.resolver.getPostReqTurn(context);
     }
 
     resolve(context: RaidResolveContext<TriggerState>, args: RaidArgs): GeneralActionOutcome<TriggerState> {
@@ -235,5 +252,6 @@ export const commandSpec: NationTurnCommandSpec = {
     reqArg: true,
     availabilityArgs: { destNationId: 0 },
     argsSchema: ARGS_SCHEMA,
-    createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env.generalActionModules ?? []),
+    createDefinition: (env: TurnCommandEnv) =>
+        new ActionDefinition(env.generalActionModules ?? [], env.initialNationGenLimit),
 };

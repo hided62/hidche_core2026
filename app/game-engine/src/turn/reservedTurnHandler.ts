@@ -5,6 +5,7 @@ import type {
     GeneralActionDefinition,
     LogEntryDraft,
     MapDefinition,
+    MessageDraft,
     Nation,
     ScenarioConfig,
     ScenarioMeta,
@@ -99,6 +100,40 @@ const serializeSeed = (...values: Array<string | number>): string =>
         .join('|');
 
 const joinYearMonth = (year: number, month: number): number => year * 12 + month - 1;
+
+type NationLastTurn = {
+    command: string;
+    arg?: Record<string, unknown>;
+    term?: number;
+    seq?: number;
+};
+
+const nationLastTurnKey = (officerLevel: number): string => `turn_last_${officerLevel}`;
+
+const normalizeLastTurn = (value: unknown): NationLastTurn => {
+    const raw = asRecord(value);
+    return {
+        command: typeof raw.command === 'string' ? raw.command : '휴식',
+        ...(asRecord(raw.arg) && Object.keys(asRecord(raw.arg)).length > 0 ? { arg: asRecord(raw.arg) } : undefined),
+        ...(typeof raw.term === 'number' && Number.isFinite(raw.term) ? { term: Math.floor(raw.term) } : undefined),
+        ...(typeof raw.seq === 'number' && Number.isFinite(raw.seq) ? { seq: Math.floor(raw.seq) } : undefined),
+    };
+};
+
+const sameArgs = (left: Record<string, unknown> | undefined, right: Record<string, unknown>): boolean =>
+    JSON.stringify(left ?? {}) === JSON.stringify(right);
+
+const readNextAvailableTurn = (nation: Nation, actionName: string): number | null => {
+    const raw = asRecord(nation.meta)[`next_execute_${actionName}`];
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+        return Math.floor(raw);
+    }
+    if (typeof raw === 'string') {
+        const parsed = Number(raw);
+        return Number.isFinite(parsed) ? Math.floor(parsed) : null;
+    }
+    return null;
+};
 
 const readMetaNumber = (meta: Record<string, unknown>, key: string, fallback: number): number => {
     const value = meta[key];
@@ -213,7 +248,6 @@ const buildUniqueLotteryRunner = (options: {
         return options.itemRegistry.get(itemKey) ?? null;
     };
 };
-
 
 type WorldView = {
     getGeneralById(id: number): TurnGeneral | null;
@@ -573,6 +607,7 @@ export const createReservedTurnHandler = async (options: {
                 ...(options.unitSet ? { unitSet: options.unitSet } : {}),
             };
             const logs: LogEntryDraft[] = [];
+            const messages: MessageDraft[] = [];
             const patches = {
                 generals: [] as Array<{ id: number; patch: Partial<TurnGeneral> }>,
                 cities: [] as Array<{ id: number; patch: Partial<City> }>,
@@ -592,6 +627,7 @@ export const createReservedTurnHandler = async (options: {
             let currentNation = context.nation ?? null;
 
             const runAction = (
+                kind: 'nation' | 'general',
                 definitionMap: Map<string, GeneralActionDefinition>,
                 fallbackDefinition: GeneralActionDefinition,
                 command: ReservedTurnEntry,
@@ -644,6 +680,19 @@ export const createReservedTurnHandler = async (options: {
                     const meta = result.kind === 'deny' ? { constraintName: result.constraintName } : undefined;
                     logs.push(createActionLog(reason, meta));
                 }
+                if (kind === 'nation' && !usedFallback && currentNation) {
+                    const currentYearMonth = joinYearMonth(context.world.currentYear, context.world.currentMonth);
+                    const nextAvailableTurn = readNextAvailableTurn(currentNation, definition.name);
+                    if (nextAvailableTurn !== null && currentYearMonth < nextAvailableTurn) {
+                        const remainTurn = nextAvailableTurn - currentYearMonth;
+                        definition = fallbackDefinition;
+                        actionArgs = definition.parseArgs({}) ?? {};
+                        actionKey = definition.key;
+                        usedFallback = true;
+                        blockedReason = `${remainTurn}턴 더 기다려야 합니다`;
+                        logs.push(createActionLog(blockedReason));
+                    }
+                }
 
                 const seedBase = buildSeedBase(context.world);
                 const buildRng = (key: string) => {
@@ -694,6 +743,8 @@ export const createReservedTurnHandler = async (options: {
                     definition = fallbackDefinition;
                     actionArgs = definition.parseArgs({}) ?? {};
                     actionKey = definition.key;
+                    usedFallback = true;
+                    blockedReason = '예약된 명령을 실행하지 못했습니다.';
                     logs.push(createActionLog('예약된 명령을 실행하지 못했습니다.'));
                     baseContext = {
                         general: currentGeneral,
@@ -704,6 +755,52 @@ export const createReservedTurnHandler = async (options: {
                     specificContext = baseContext;
                 }
                 const actionContext = specificContext ?? baseContext;
+                const executionDefinition = definition as unknown as {
+                    getPreReqTurn?: (context: ActionContextBase, args: unknown) => number;
+                    getPostReqTurn?: (context: ActionContextBase, args: unknown) => number;
+                    getStackSequence?: (context: ActionContextBase, args: unknown) => number | null;
+                };
+                const preReqTurn =
+                    kind === 'nation' && !usedFallback
+                        ? Math.max(0, Math.floor(executionDefinition.getPreReqTurn?.(actionContext, actionArgs) ?? 0))
+                        : 0;
+                const postReqTurn =
+                    kind === 'nation' && !usedFallback
+                        ? Math.max(0, Math.floor(executionDefinition.getPostReqTurn?.(actionContext, actionArgs) ?? 0))
+                        : 0;
+
+                if (kind === 'nation' && !usedFallback && currentNation && preReqTurn > 0) {
+                    const metaKey = nationLastTurnKey(currentGeneral.officerLevel);
+                    const lastTurn = normalizeLastTurn(asRecord(currentNation.meta)[metaKey]);
+                    const stackSequence = executionDefinition.getStackSequence?.(actionContext, actionArgs) ?? null;
+                    const sequenceChanged =
+                        stackSequence !== null && (lastTurn.seq === undefined || lastTurn.seq < stackSequence);
+                    const continuing =
+                        lastTurn.command === definition.name &&
+                        sameArgs(lastTurn.arg, actionArgsRecord) &&
+                        !sequenceChanged;
+                    const nextTerm = continuing ? (lastTurn.term ?? 0) + 1 : 1;
+
+                    if (!continuing || (lastTurn.term ?? 0) < preReqTurn) {
+                        const nextLastTurn: NationLastTurn = {
+                            command: definition.name,
+                            ...(Object.keys(actionArgsRecord).length > 0 ? { arg: actionArgsRecord } : undefined),
+                            term: nextTerm,
+                            ...(stackSequence !== null ? { seq: stackSequence } : undefined),
+                        };
+                        const nextNation: Nation = {
+                            ...currentNation,
+                            meta: {
+                                ...currentNation.meta,
+                                [metaKey]: nextLastTurn,
+                            } as Nation['meta'],
+                        };
+                        currentNation = nextNation;
+                        worldOverlay?.syncNation(nextNation);
+                        logs.push(createActionLog(`${definition.name} 수행중... (${nextTerm}/${preReqTurn + 1})`));
+                        return { actionKey, usedFallback, blockedReason };
+                    }
+                }
 
                 const resolution = resolveGeneralAction(
                     definition,
@@ -718,11 +815,38 @@ export const createReservedTurnHandler = async (options: {
                 currentGeneral = resolution.general as TurnGeneral;
                 currentCity = resolution.city ?? currentCity;
                 currentNation = resolution.nation ?? currentNation;
+                if (kind === 'nation' && !usedFallback && definition.countsAsInheritanceActiveAction) {
+                    const meta = { ...currentGeneral.meta };
+                    const active = typeof meta.inherit_active_action === 'number' ? meta.inherit_active_action : 0;
+                    meta.inherit_active_action = active + 1;
+                    currentGeneral = { ...currentGeneral, meta };
+                }
 
                 if (!currentNation && resolution.created?.nations) {
                     currentNation =
                         (resolution.created.nations as Nation[]).find((n) => n.id === currentGeneral.nationId) ??
                         currentNation;
+                }
+                if (kind === 'nation' && !usedFallback && currentNation) {
+                    const metaKey = nationLastTurnKey(currentGeneral.officerLevel);
+                    const nextMeta: Record<string, unknown> = {
+                        ...currentNation.meta,
+                        [metaKey]: {
+                            command: definition.name,
+                            ...(Object.keys(actionArgsRecord).length > 0 ? { arg: actionArgsRecord } : undefined),
+                            term: 0,
+                        } satisfies NationLastTurn,
+                    };
+                    if (postReqTurn > 0) {
+                        nextMeta[`next_execute_${definition.name}`] =
+                            joinYearMonth(context.world.currentYear, context.world.currentMonth) +
+                            postReqTurn -
+                            preReqTurn;
+                    }
+                    currentNation = {
+                        ...currentNation,
+                        meta: nextMeta as Nation['meta'],
+                    };
                 }
 
                 logs.push(...resolution.logs);
@@ -738,15 +862,16 @@ export const createReservedTurnHandler = async (options: {
 
                 if (resolution.effects.length > 0) {
                     for (const effect of resolution.effects) {
-                        if (effect.type !== 'diplomacy:patch') {
-                            continue;
+                        if (effect.type === 'message:add') {
+                            messages.push(effect.draft);
+                        } else if (effect.type === 'diplomacy:patch') {
+                            diplomacyPatches.push({
+                                srcNationId: effect.srcNationId,
+                                destNationId: effect.destNationId,
+                                patch: effect.patch,
+                            });
+                            worldOverlay?.applyDiplomacyPatch(effect.srcNationId, effect.destNationId, effect.patch);
                         }
-                        diplomacyPatches.push({
-                            srcNationId: effect.srcNationId,
-                            destNationId: effect.destNationId,
-                            patch: effect.patch,
-                        });
-                        worldOverlay?.applyDiplomacyPatch(effect.srcNationId, effect.destNationId, effect.patch);
                     }
                 }
 
@@ -826,7 +951,12 @@ export const createReservedTurnHandler = async (options: {
                     }
                 }
 
-                return { nextTurnAt: applyNextTurnAt ? resolution.nextTurnAt : undefined, actionKey, usedFallback, blockedReason };
+                return {
+                    nextTurnAt: applyNextTurnAt ? resolution.nextTurnAt : undefined,
+                    actionKey,
+                    usedFallback,
+                    blockedReason,
+                };
             };
 
             if (currentNation && currentGeneral.officerLevel >= 5) {
@@ -860,7 +990,7 @@ export const createReservedTurnHandler = async (options: {
                     }
                     nationAiState = ai.getDebugState();
                 }
-                const nationResult = runAction(nationDefinitions, nationFallback, nationCommand, false);
+                const nationResult = runAction('nation', nationDefinitions, nationFallback, nationCommand, false);
                 options.onActionResolved?.({
                     kind: 'nation',
                     generalId: currentGeneral.id,
@@ -900,7 +1030,7 @@ export const createReservedTurnHandler = async (options: {
                 }
                 generalAiState = ai.getDebugState();
             }
-            const generalResult = runAction(generalDefinitions, generalFallback, generalCommand, true);
+            const generalResult = runAction('general', generalDefinitions, generalFallback, generalCommand, true);
             options.onActionResolved?.({
                 kind: 'general',
                 generalId: currentGeneral.id,
@@ -935,6 +1065,7 @@ export const createReservedTurnHandler = async (options: {
                 nation: currentNation,
                 nextTurnAt,
                 logs,
+                ...(messages.length > 0 ? { messages } : undefined),
                 patches,
                 ...(diplomacyPatches.length > 0 ? { diplomacyPatches } : undefined),
                 created:

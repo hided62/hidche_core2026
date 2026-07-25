@@ -58,8 +58,17 @@ const battleGroundCity = (): Constraint => ({
 export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     private readonly pipeline: GeneralActionPipeline<TriggerState>;
 
-    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>) {
+    constructor(
+        modules: Array<GeneralActionModule<TriggerState> | null | undefined>,
+        private readonly initialNationGenLimit = 10
+    ) {
         this.pipeline = new GeneralActionPipeline(modules);
+    }
+
+    getPostReqTurn(context: FloodResolveContext<TriggerState>): number {
+        const genCount = Math.max(context.friendlyGenerals.length, this.initialNationGenLimit);
+        const base = Math.round(Math.sqrt(genCount * 4) * 10);
+        return Math.round(this.pipeline.onCalcStrategic(context, ACTION_NAME, 'delay', base));
     }
 
     getGlobalDelay(context: FloodResolveContext<TriggerState>): number {
@@ -74,8 +83,12 @@ export class ActionResolver<
     readonly key = 'che_수몰';
     private readonly command: CommandResolver<TriggerState>;
 
-    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>) {
-        this.command = new CommandResolver(modules);
+    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>, initialNationGenLimit = 10) {
+        this.command = new CommandResolver(modules, initialNationGenLimit);
+    }
+
+    getPostReqTurn(context: FloodResolveContext<TriggerState>): number {
+        return this.command.getPostReqTurn(context);
     }
 
     resolve(context: FloodResolveContext<TriggerState>, _args: FloodArgs): GeneralActionOutcome<TriggerState> {
@@ -175,8 +188,8 @@ export class ActionDefinition<
     public readonly name = ACTION_NAME;
     private readonly resolver: ActionResolver<TriggerState>;
 
-    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>) {
-        this.resolver = new ActionResolver(modules);
+    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>, initialNationGenLimit = 10) {
+        this.resolver = new ActionResolver(modules, initialNationGenLimit);
     }
 
     parseArgs(raw: unknown): FloodArgs | null {
@@ -198,6 +211,14 @@ export class ActionDefinition<
             battleGroundCity(),
             availableStrategicCommand(),
         ];
+    }
+
+    getPreReqTurn(): number {
+        return PRE_REQ_TURN;
+    }
+
+    getPostReqTurn(context: FloodResolveContext<TriggerState>): number {
+        return this.resolver.getPostReqTurn(context);
     }
 
     resolve(context: FloodResolveContext<TriggerState>, args: FloodArgs): GeneralActionOutcome<TriggerState> {
@@ -238,5 +259,6 @@ export const commandSpec: NationTurnCommandSpec = {
     reqArg: true,
     availabilityArgs: { destCityId: 0 },
     argsSchema: ARGS_SCHEMA,
-    createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env.generalActionModules ?? []),
+    createDefinition: (env: TurnCommandEnv) =>
+        new ActionDefinition(env.generalActionModules ?? [], env.initialNationGenLimit),
 };

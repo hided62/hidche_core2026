@@ -27,6 +27,7 @@ export class ActionDefinition<
 > implements GeneralActionDefinition<TriggerState, ChangeNationNameArgs> {
     public readonly key = 'che_국호변경';
     public readonly name = ACTION_NAME;
+    public readonly countsAsInheritanceActiveAction = true;
 
     parseArgs(raw: unknown): ChangeNationNameArgs | null {
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
@@ -98,6 +99,11 @@ export class ActionDefinition<
             createLogEffect(`<Y>${generalName}</>${josaYi} 국호를 <D><b>${newNationName}</b></>${josaRo} 변경`, {
                 scope: LogScope.NATION,
                 nationId: nation.id,
+                category: LogCategory.HISTORY,
+                format: LogFormat.YEAR_MONTH,
+            }),
+            createLogEffect(`국호를 <D><b>${newNationName}</b></>${josaRo} 변경`, {
+                scope: LogScope.GENERAL,
                 category: LogCategory.HISTORY,
                 format: LogFormat.YEAR_MONTH,
             }),

@@ -1,4 +1,4 @@
-import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
+import type { GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
     beChief,
@@ -10,7 +10,7 @@ import {
 import { allow, unknownOrDeny } from '@sammo-ts/logic/constraints/helpers.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
-import { createLogEffect } from '@sammo-ts/logic/actions/engine.js';
+import { createLogEffect, createMessageEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import { JosaUtil } from '@sammo-ts/common';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
@@ -31,6 +31,14 @@ const ARGS_SCHEMA = z.object({
     ),
 });
 export type NonAggressionProposalArgs = z.infer<typeof ARGS_SCHEMA>;
+
+interface NonAggressionProposalContext<
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
+> extends GeneralActionResolveContext<TriggerState> {
+    destNation: Nation;
+    messageValidMinutes: number;
+    messageTime: Date;
+}
 
 const ACTION_NAME = '불가침 제의';
 const MIN_TERM_MONTHS = 6;
@@ -90,7 +98,11 @@ const reqMinimumTreatyTerm = (minMonths: number): Constraint => ({
 // 불가침 제의를 처리하는 국가 커맨드.
 export class ActionDefinition<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
-> implements GeneralActionDefinition<TriggerState, NonAggressionProposalArgs> {
+> implements GeneralActionDefinition<
+    TriggerState,
+    NonAggressionProposalArgs,
+    NonAggressionProposalContext<TriggerState>
+> {
     public readonly key = 'che_불가침제의';
     public readonly name = ACTION_NAME;
 
@@ -117,14 +129,42 @@ export class ActionDefinition<
     }
 
     resolve(
-        _context: GeneralActionResolveContext<TriggerState>,
+        context: NonAggressionProposalContext<TriggerState>,
         args: NonAggressionProposalArgs
     ): GeneralActionOutcome<TriggerState> {
-        const destNationName =
-            (_context as { destNation?: { name?: string } }).destNation?.name ?? `국가${args.destNationId}`;
+        const { general, nation, destNation } = context;
+        if (!nation) {
+            return { effects: [createLogEffect('국가 정보가 없습니다.')] };
+        }
+        const destNationName = destNation.name;
         const josaRo = JosaUtil.pick(destNationName, '로');
+        const josaWa = JosaUtil.pick(nation.name, '와');
+        const validUntil = new Date(context.messageTime.getTime() + context.messageValidMinutes * 60_000);
         return {
             effects: [
+                createMessageEffect({
+                    msgType: 'diplomacy',
+                    src: {
+                        generalId: general.id,
+                        generalName: general.name,
+                        nationId: nation.id,
+                        nationName: nation.name,
+                        color: nation.color,
+                        icon: '',
+                    },
+                    dest: {
+                        generalId: 0,
+                        generalName: '',
+                        nationId: destNation.id,
+                        nationName: destNation.name,
+                        color: destNation.color,
+                        icon: '',
+                    },
+                    text: `${nation.name}${josaWa} ${args.year}년 ${args.month}월까지 불가침 제의 서신`,
+                    time: context.messageTime,
+                    validUntil,
+                    option: { action: 'noAggression', year: args.year, month: args.month },
+                }),
                 createLogEffect(`<D><b>${destNationName}</b></>${josaRo} 불가침 제의 서신을 보냈습니다.`, {
                     scope: LogScope.GENERAL,
                     category: LogCategory.ACTION,
@@ -136,11 +176,18 @@ export class ActionDefinition<
 }
 
 // 예약 턴 실행에 필요한 날짜 정보를 제공한다.
-export const actionContextBuilder: ActionContextBuilder = (base, options) => ({
-    ...base,
-    currentYear: options.world.currentYear,
-    currentMonth: options.world.currentMonth,
-});
+export const actionContextBuilder: ActionContextBuilder<NonAggressionProposalArgs> = (base, options) => {
+    const destNation = options.worldRef?.getNationById(options.actionArgs.destNationId);
+    if (!destNation) {
+        return null;
+    }
+    return {
+        ...base,
+        destNation,
+        messageTime: base.general.turnTime,
+        messageValidMinutes: Math.max(30, Math.floor((options.world.tickSeconds / 60) * 3)),
+    };
+};
 
 export const commandSpec: NationTurnCommandSpec = {
     key: 'che_불가침제의',
