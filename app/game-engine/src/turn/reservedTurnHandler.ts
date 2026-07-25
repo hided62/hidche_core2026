@@ -716,6 +716,7 @@ export const createReservedTurnHandler = async (options: {
     unitSet?: UnitSetDefinition;
     getWorld: () => InMemoryTurnWorld | null;
     commandProfile?: TurnCommandProfile;
+    commandEnv?: TurnCommandEnv;
     commandRngFactory?: (input: { kind: 'nation' | 'general'; actionKey: string; seed: string }) => RandUtil;
     onActionResolved?: (payload: {
         kind: 'nation' | 'general';
@@ -728,7 +729,7 @@ export const createReservedTurnHandler = async (options: {
         aiState?: ReturnType<GeneralAI['getDebugState']>;
     }) => void;
 }): Promise<GeneralTurnHandler> => {
-    const env = buildCommandEnv(options.scenarioConfig, options.unitSet);
+    const env = options.commandEnv ?? buildCommandEnv(options.scenarioConfig, options.unitSet);
     const itemRegistry = createItemModuleRegistry(await loadItemModules([...ITEM_KEYS]));
     const uniqueConfig = resolveUniqueConfig(asRecord(options.scenarioConfig.const));
     if (Object.keys(uniqueConfig.allItems).length === 0) {

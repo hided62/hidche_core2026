@@ -5,6 +5,7 @@ import {
     type TurnEngineDatabaseClient,
     type TurnEngineDiplomacyRow,
     type TurnEngineGeneralRow,
+    type TurnEngineGeneralAccessLogRow,
     type TurnEngineInheritancePointRow,
     type TurnEngineRankDataRow,
     type TurnEngineNationRow,
@@ -170,7 +171,8 @@ const GENERAL_RANK_META_PREFIX_TYPES = new Set([
 const mapGeneralRow = (
     row: TurnEngineGeneralRow,
     rankRows: readonly TurnEngineRankDataRow[],
-    inheritanceRows: readonly TurnEngineInheritancePointRow[]
+    inheritanceRows: readonly TurnEngineInheritancePointRow[],
+    accessRow?: TurnEngineGeneralAccessLogRow
 ): TurnGeneral => {
     const legacySlots: GeneralItemSlots = {
         horse: normalizeCode(row.horseCode),
@@ -243,6 +245,7 @@ const mapGeneralRow = (
         turnTime: row.turnTime,
         recentWarTime: row.recentWarTime ?? null,
         inheritancePoints,
+        ...(accessRow ? { refreshScoreTotal: accessRow.refreshScoreTotal } : {}),
     };
 };
 
@@ -340,19 +343,29 @@ export const loadTurnWorldFromDatabase = async (options: TurnWorldLoaderOptions)
             throw new Error('world_state row is required to start turn daemon.');
         }
 
-        const [generalRows, rankRows, inheritanceRows, cityRows, nationRows, diplomacyRows, troopRows, eventRows] =
-            await Promise.all([
-                prisma.general.findMany(),
-                prisma.rankData.findMany(),
-                prisma.inheritancePoint.findMany(),
-                prisma.city.findMany(),
-                prisma.nation.findMany(),
-                prisma.diplomacy.findMany(),
-                prisma.troop.findMany(),
-                prisma.event.findMany({
-                    orderBy: [{ priority: 'desc' }, { id: 'asc' }],
-                }),
-            ]);
+        const [
+            generalRows,
+            rankRows,
+            inheritanceRows,
+            accessRows,
+            cityRows,
+            nationRows,
+            diplomacyRows,
+            troopRows,
+            eventRows,
+        ] = await Promise.all([
+            prisma.general.findMany(),
+            prisma.rankData.findMany(),
+            prisma.inheritancePoint.findMany(),
+            prisma.generalAccessLog.findMany(),
+            prisma.city.findMany(),
+            prisma.nation.findMany(),
+            prisma.diplomacy.findMany(),
+            prisma.troop.findMany(),
+            prisma.event.findMany({
+                orderBy: [{ priority: 'desc' }, { id: 'asc' }],
+            }),
+        ]);
 
         const ranksByGeneral = new Map<number, TurnEngineRankDataRow[]>();
         for (const row of rankRows) {
@@ -366,11 +379,13 @@ export const loadTurnWorldFromDatabase = async (options: TurnWorldLoaderOptions)
             bucket.push(row);
             inheritanceByUser.set(row.userId, bucket);
         }
+        const accessByGeneral = new Map(accessRows.map((row) => [row.generalId, row]));
         const generals = generalRows.map((row) =>
             mapGeneralRow(
                 row,
                 ranksByGeneral.get(row.id) ?? [],
-                row.userId ? (inheritanceByUser.get(row.userId) ?? []) : []
+                row.userId ? (inheritanceByUser.get(row.userId) ?? []) : [],
+                accessByGeneral.get(row.id)
             )
         );
         const cities = cityRows.map(mapCityRow);

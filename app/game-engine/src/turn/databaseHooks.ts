@@ -887,6 +887,24 @@ export const createDatabaseTurnHooks = async (
                             data: buildGeneralUpdate(general),
                         })
                     ),
+                ...generals
+                    .filter(
+                        (general) =>
+                            typeof general.refreshScoreTotal === 'number' && Number.isFinite(general.refreshScoreTotal)
+                    )
+                    .map((general) =>
+                        prisma.generalAccessLog.upsert({
+                            where: { generalId: general.id },
+                            update: {
+                                refreshScoreTotal: Math.floor(general.refreshScoreTotal ?? 0),
+                            },
+                            create: {
+                                generalId: general.id,
+                                userId: general.userId ?? null,
+                                refreshScoreTotal: Math.floor(general.refreshScoreTotal ?? 0),
+                            },
+                        })
+                    ),
                 ...cities.map((city) =>
                     prisma.city.update({
                         where: { id: city.id },

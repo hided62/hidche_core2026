@@ -56,12 +56,9 @@ const buildMapSnapshot = (world: InMemoryTurnWorld, year: number, month: number)
         return [city.id, city.level, stateValue, city.nationId, region, supplyFlag];
     });
 
-    const nationList: MapNationCompact[] = world.listNations().map((nation) => [
-        nation.id,
-        nation.name,
-        nation.color,
-        nation.capitalCityId ?? 0,
-    ]);
+    const nationList: MapNationCompact[] = world
+        .listNations()
+        .map((nation) => [nation.id, nation.name, nation.color, nation.capitalCityId ?? 0]);
 
     return {
         result: true,
@@ -84,8 +81,7 @@ const buildNationSnapshot = (world: InMemoryTurnWorld): YearbookNation[] => {
 
     for (const city of cities) {
         const entry = cityStatsByNation.get(city.nationId) ?? { popSum: 0, valueSum: 0, maxSum: 0 };
-        const valueSum =
-            city.population + city.agriculture + city.commerce + city.security + city.wall + city.defence;
+        const valueSum = city.population + city.agriculture + city.commerce + city.security + city.wall + city.defence;
         const maxSum =
             city.populationMax +
             city.agricultureMax +
@@ -152,40 +148,38 @@ export const createYearbookHandler = (options: {
     const ready = connector.connect();
 
     const handler: TurnCalendarHandler = {
-        onMonthChanged: (context) => {
+        beforeMonthChanged: async (context) => {
             const world = options.getWorld();
             if (!world) {
                 return;
             }
-            void (async () => {
-                await ready;
-                const map = buildMapSnapshot(world, context.previousYear, context.previousMonth);
-                const nations = buildNationSnapshot(world);
-                const hash = buildHash(map, nations);
+            await ready;
+            const map = buildMapSnapshot(world, context.previousYear, context.previousMonth);
+            const nations = buildNationSnapshot(world);
+            const hash = buildHash(map, nations);
 
-                await connector.prisma.yearbookHistory.upsert({
-                    where: {
-                        profileName_year_month: {
-                            profileName: options.profileName,
-                            year: context.previousYear,
-                            month: context.previousMonth,
-                        },
-                    },
-                    update: {
-                        map,
-                        nations,
-                        hash,
-                    },
-                    create: {
+            await connector.prisma.yearbookHistory.upsert({
+                where: {
+                    profileName_year_month: {
                         profileName: options.profileName,
                         year: context.previousYear,
                         month: context.previousMonth,
-                        map,
-                        nations,
-                        hash,
                     },
-                });
-            })();
+                },
+                update: {
+                    map,
+                    nations,
+                    hash,
+                },
+                create: {
+                    profileName: options.profileName,
+                    year: context.previousYear,
+                    month: context.previousMonth,
+                    map,
+                    nations,
+                    hash,
+                },
+            });
         },
     };
 

@@ -15,11 +15,56 @@ const decrementLimit = (value: unknown): number => {
     return 0;
 };
 
-// ref preUpdateMonthly(): 전략 제한과 외교 제한은 매 월턴마다 1씩 감소한다.
+const readRate = (value: unknown): number => {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return value;
+    }
+    if (typeof value === 'string') {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) {
+            return parsed;
+        }
+    }
+    return 20;
+};
+
+const readSpyRemain = (value: unknown): number => {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return value;
+    }
+    if (typeof value === 'string') {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) {
+            return parsed;
+        }
+    }
+    return 0;
+};
+
+const decrementSpy = (value: unknown): Record<string, number> => {
+    let raw: unknown = value;
+    if (typeof value === 'string') {
+        try {
+            raw = JSON.parse(value);
+        } catch {
+            raw = {};
+        }
+    }
+    const result: Record<string, number> = {};
+    for (const [cityId, remain] of Object.entries(asRecord(raw))) {
+        const numeric = readSpyRemain(remain);
+        if (numeric > 1) {
+            result[cityId] = numeric - 1;
+        }
+    }
+    return result;
+};
+
+// ref preUpdateMonthly(): 국가 제한·세율·첩보는 MONTH action보다 먼저 갱신한다.
 export const createNationTurnMonthlyHandler = (options: {
     getWorld: () => InMemoryTurnWorld | null;
 }): TurnCalendarHandler => ({
-    onMonthChanged: () => {
+    beforeMonthChanged: () => {
         const world = options.getWorld();
         if (!world) {
             return;
@@ -31,6 +76,8 @@ export const createNationTurnMonthlyHandler = (options: {
                     ...nation.meta,
                     strategic_cmd_limit: decrementLimit(meta.strategic_cmd_limit),
                     surlimit: decrementLimit(meta.surlimit),
+                    rate_tmp: readRate(meta.rate),
+                    spy: decrementSpy(meta.spy),
                 },
             });
         }

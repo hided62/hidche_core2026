@@ -164,10 +164,20 @@ describe('레거시 사령부 턴 실행 호환성', () => {
         );
     });
 
-    it('월 경계마다 전략·외교 제한을 1씩 감소시키고 0 아래로 내리지 않는다', () => {
+    it('MONTH action 전에 전략·외교 제한, 임시 세율, 첩보 기간을 갱신한다', () => {
         const updates: Array<{ id: number; patch: Record<string, unknown> }> = [];
         const nations = [
-            { id: 1, meta: { strategic_cmd_limit: 2, surlimit: '1', keep: true } },
+            {
+                id: 1,
+                meta: {
+                    strategic_cmd_limit: 2,
+                    surlimit: '1',
+                    rate: 35,
+                    rate_tmp: 10,
+                    spy: '{"1":1,"2":2}',
+                    keep: true,
+                },
+            },
             { id: 2, meta: { strategic_cmd_limit: 0, surlimit: 0 } },
         ];
         const handler = createNationTurnMonthlyHandler({
@@ -178,16 +188,32 @@ describe('레거시 사령부 턴 실행 호환성', () => {
                 }) as never,
         });
 
-        handler.onMonthChanged?.({} as never);
+        handler.beforeMonthChanged?.({} as never);
 
         expect(updates).toEqual([
             {
                 id: 1,
-                patch: { meta: { strategic_cmd_limit: 1, surlimit: 0, keep: true } },
+                patch: {
+                    meta: {
+                        strategic_cmd_limit: 1,
+                        surlimit: 0,
+                        rate: 35,
+                        rate_tmp: 35,
+                        spy: { 2: 1 },
+                        keep: true,
+                    },
+                },
             },
             {
                 id: 2,
-                patch: { meta: { strategic_cmd_limit: 0, surlimit: 0 } },
+                patch: {
+                    meta: {
+                        strategic_cmd_limit: 0,
+                        surlimit: 0,
+                        rate_tmp: 20,
+                        spy: {},
+                    },
+                },
             },
         ]);
     });
