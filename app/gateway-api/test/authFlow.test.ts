@@ -8,6 +8,7 @@ import { createGatewayApiContext } from '../src/context.js';
 import { InMemoryProfileStatusService } from '../src/lobby/profileStatusService.js';
 import { appRouter } from '../src/router.js';
 import type { GatewayPrismaClient } from '@sammo-ts/infra';
+import { decryptGameSessionToken } from '@sammo-ts/common/auth/gameToken';
 
 const buildCaller = () => {
     const users = createInMemoryUserRepository();
@@ -87,13 +88,47 @@ const buildCaller = () => {
             orchestrator,
             profileStatus,
             requestHeaders: {},
-            prisma: {} as unknown as GatewayPrismaClient,
+            prisma: {
+                appUser: {
+                    findFirst: async () => null,
+                },
+            } as unknown as GatewayPrismaClient,
         })
     );
     return { caller, oauthSessions };
 };
 
 describe('gateway auth flow', () => {
+    it('carries the bootstrap superuser role into game sessions', async () => {
+        const previousToken = process.env.GATEWAY_BOOTSTRAP_TOKEN;
+        process.env.GATEWAY_BOOTSTRAP_TOKEN = 'bootstrap-test-token';
+        try {
+            const { caller } = buildCaller();
+            const bootstrap = await caller.auth.bootstrapLocal({
+                token: 'bootstrap-test-token',
+                username: 'admin',
+                password: 'secretpass',
+                displayName: 'Admin',
+            });
+
+            expect(bootstrap.user.roles).toEqual(['superuser']);
+
+            const issued = await caller.auth.issueGameSession({
+                sessionToken: bootstrap.sessionToken,
+                profile: 'che:default',
+            });
+            const payload = decryptGameSessionToken(issued.gameToken, 'test-secret');
+
+            expect(payload?.user.roles).toEqual(['superuser']);
+        } finally {
+            if (previousToken === undefined) {
+                delete process.env.GATEWAY_BOOTSTRAP_TOKEN;
+            } else {
+                process.env.GATEWAY_BOOTSTRAP_TOKEN = previousToken;
+            }
+        }
+    });
+
     it('registers and issues a game session', async () => {
         const { caller, oauthSessions } = buildCaller();
         const oauthSession = await oauthSessions.createSession({

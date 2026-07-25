@@ -13,6 +13,7 @@ import {
     shiftGeneralTurns,
     shiftNationTurns,
 } from '../../turns/reservedTurns.js';
+import { getOwnedGeneral } from '../shared/general.js';
 
 const buildShiftAmountSchema = (maxTurns: number) =>
     z
@@ -34,20 +35,13 @@ export const turnsRouter = router({
         .query(async ({ ctx, input }) => {
             const [worldState, general] = await Promise.all([
                 ctx.db.worldState.findFirst(),
-                ctx.db.general.findUnique({ where: { id: input.generalId } }),
+                getOwnedGeneral(ctx, input.generalId),
             ]);
 
             if (!worldState) {
                 throw new TRPCError({
                     code: 'PRECONDITION_FAILED',
                     message: 'World state is not initialized.',
-                });
-            }
-
-            if (!general) {
-                throw new TRPCError({
-                    code: 'NOT_FOUND',
-                    message: 'General not found.',
                 });
             }
 
@@ -85,15 +79,7 @@ export const turnsRouter = router({
                 })
             )
             .query(async ({ ctx, input }) => {
-                const general = await ctx.db.general.findUnique({
-                    where: { id: input.generalId },
-                });
-                if (!general) {
-                    throw new TRPCError({
-                        code: 'NOT_FOUND',
-                        message: 'General not found.',
-                    });
-                }
+                await getOwnedGeneral(ctx, input.generalId);
 
                 return listGeneralTurns(ctx.db, input.generalId);
             }),
@@ -104,15 +90,7 @@ export const turnsRouter = router({
                 })
             )
             .query(async ({ ctx, input }) => {
-                const general = await ctx.db.general.findUnique({
-                    where: { id: input.generalId },
-                });
-                if (!general) {
-                    throw new TRPCError({
-                        code: 'NOT_FOUND',
-                        message: 'General not found.',
-                    });
-                }
+                const general = await getOwnedGeneral(ctx, input.generalId);
                 if (general.nationId <= 0) {
                     throw new TRPCError({
                         code: 'PRECONDITION_FAILED',
@@ -142,15 +120,7 @@ export const turnsRouter = router({
                 })
             )
             .mutation(async ({ ctx, input }) => {
-                const general = await ctx.db.general.findUnique({
-                    where: { id: input.generalId },
-                });
-                if (!general) {
-                    throw new TRPCError({
-                        code: 'NOT_FOUND',
-                        message: 'General not found.',
-                    });
-                }
+                await getOwnedGeneral(ctx, input.generalId);
 
                 const turns = await setGeneralTurn(
                     ctx.db,
@@ -169,15 +139,7 @@ export const turnsRouter = router({
                 })
             )
             .mutation(async ({ ctx, input }) => {
-                const general = await ctx.db.general.findUnique({
-                    where: { id: input.generalId },
-                });
-                if (!general) {
-                    throw new TRPCError({
-                        code: 'NOT_FOUND',
-                        message: 'General not found.',
-                    });
-                }
+                await getOwnedGeneral(ctx, input.generalId);
 
                 const turns = await shiftGeneralTurns(ctx.db, input.generalId, input.amount);
                 return { ok: true, turns };
@@ -196,15 +158,7 @@ export const turnsRouter = router({
                 })
             )
             .mutation(async ({ ctx, input }) => {
-                const general = await ctx.db.general.findUnique({
-                    where: { id: input.generalId },
-                });
-                if (!general) {
-                    throw new TRPCError({
-                        code: 'NOT_FOUND',
-                        message: 'General not found.',
-                    });
-                }
+                const general = await getOwnedGeneral(ctx, input.generalId);
                 if (general.nationId <= 0) {
                     throw new TRPCError({
                         code: 'PRECONDITION_FAILED',
@@ -236,15 +190,7 @@ export const turnsRouter = router({
                 })
             )
             .mutation(async ({ ctx, input }) => {
-                const general = await ctx.db.general.findUnique({
-                    where: { id: input.generalId },
-                });
-                if (!general) {
-                    throw new TRPCError({
-                        code: 'NOT_FOUND',
-                        message: 'General not found.',
-                    });
-                }
+                const general = await getOwnedGeneral(ctx, input.generalId);
                 if (general.nationId <= 0) {
                     throw new TRPCError({
                         code: 'PRECONDITION_FAILED',

@@ -2,6 +2,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { authedProcedure, router } from '../../trpc.js';
+import { getOwnedGeneral } from '../shared/general.js';
 
 export const troopRouter = router({
     join: authedProcedure
@@ -12,9 +13,10 @@ export const troopRouter = router({
             })
         )
         .mutation(async ({ ctx, input }) => {
+            const general = await getOwnedGeneral(ctx, input.generalId);
             const result = await ctx.turnDaemon.requestCommand({
                 type: 'troopJoin',
-                generalId: input.generalId,
+                generalId: general.id,
                 troopId: input.troopId,
             });
             if (!result) {
@@ -45,9 +47,10 @@ export const troopRouter = router({
             })
         )
         .mutation(async ({ ctx, input }) => {
+            const general = await getOwnedGeneral(ctx, input.generalId);
             const result = await ctx.turnDaemon.requestCommand({
                 type: 'troopExit',
-                generalId: input.generalId,
+                generalId: general.id,
             });
             if (!result) {
                 throw new TRPCError({

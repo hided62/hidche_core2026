@@ -99,10 +99,14 @@ export const appRouter = router({
                     password: input.password,
                     displayName: input.displayName,
                 });
-                await ctx.users.updateRoles(created.id, ['superuser']);
-                const session = await ctx.sessions.createSession(created);
+                const bootstrappedUser = {
+                    ...created,
+                    roles: ['superuser'],
+                };
+                await ctx.users.updateRoles(created.id, bootstrappedUser.roles);
+                const session = await ctx.sessions.createSession(bootstrappedUser);
                 return {
-                    user: toPublicUser(created),
+                    user: toPublicUser(bootstrappedUser),
                     sessionToken: session.sessionToken,
                     issuedAt: session.issuedAt,
                 };

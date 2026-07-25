@@ -75,12 +75,15 @@ For profile alignment:
    - Wait for PM2 to report the processes as `online`.
 
 5) **Verify API <-> daemon**
-   - Call `turnDaemon.status` over tRPC and expect a non-null status.
+   - Exchange a gateway session carrying `superuser`, `admin`, or
+     `admin.profiles.manage[:<profile>]` for a game access token.
+   - Call `turnDaemon.status` with that administrator token and expect a
+     non-null status.
    - Send a mutation command that expects a result (e.g., `troop.join`) and
      verify `commandResult` is received.
 
 6) **Verify realtime events**
-   - Trigger a run via `turnDaemon.run`.
+   - Trigger a run via `turnDaemon.run` with the administrator token.
    - Subscribe to `sammo:${profileName}:realtime:events` and wait for
      `turnCompleted`.
 
@@ -94,7 +97,9 @@ For profile alignment:
 Mandatory checks:
 
 - PM2 reports both processes as online.
-- `turnDaemon.status` responds within the timeout.
+- Authenticated profile administration is required for every
+  `turnDaemon.run/pause/resume/status` call.
+- `turnDaemon.status` responds within the timeout for the administrator token.
 - A command with `commandResult` returns a success response.
 - A `turnCompleted` realtime event is observed after a `run` command.
 

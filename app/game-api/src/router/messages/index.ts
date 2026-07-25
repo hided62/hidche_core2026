@@ -18,6 +18,7 @@ import {
     type MessageView,
 } from '../../messages/store.js';
 import { publishRealtimeEvent } from '../../realtime/publisher.js';
+import { getOwnedGeneral } from '../shared/general.js';
 
 const zMessageType = z.enum(['private', 'public', 'national', 'diplomacy']);
 
@@ -30,15 +31,7 @@ export const messagesRouter = router({
             })
         )
         .query(async ({ ctx, input }) => {
-            const general = await ctx.db.general.findUnique({
-                where: { id: input.generalId },
-            });
-            if (!general) {
-                throw new TRPCError({
-                    code: 'NOT_FOUND',
-                    message: 'General not found.',
-                });
-            }
+            const general = await getOwnedGeneral(ctx, input.generalId);
 
             const sequence = input.sequence ?? -1;
             const nationId = general.nationId;
@@ -138,15 +131,7 @@ export const messagesRouter = router({
             })
         )
         .query(async ({ ctx, input }) => {
-            const general = await ctx.db.general.findUnique({
-                where: { id: input.generalId },
-            });
-            if (!general) {
-                throw new TRPCError({
-                    code: 'NOT_FOUND',
-                    message: 'General not found.',
-                });
-            }
+            const general = await getOwnedGeneral(ctx, input.generalId);
 
             const nationId = general.nationId;
             const mailboxes = {
@@ -190,15 +175,7 @@ export const messagesRouter = router({
             })
         )
         .mutation(async ({ ctx, input }) => {
-            const general = await ctx.db.general.findUnique({
-                where: { id: input.generalId },
-            });
-            if (!general) {
-                throw new TRPCError({
-                    code: 'NOT_FOUND',
-                    message: 'General not found.',
-                });
-            }
+            const general = await getOwnedGeneral(ctx, input.generalId);
 
             const src = await buildTargetFromGeneral(ctx.db, general);
             const now = new Date();

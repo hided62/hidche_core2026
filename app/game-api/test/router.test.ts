@@ -26,7 +26,7 @@ const profile: GameProfile = {
 const buildGeneralRow = (overrides?: Partial<GeneralRow>): GeneralRow => {
     const base: GeneralRow = {
         id: 1,
-        userId: null,
+        userId: 'user-1',
         name: '테스트',
         nationId: 0,
         cityId: 1,
@@ -123,7 +123,7 @@ const buildContext = (options?: {
         },
         profile.name
     );
-    const auth: GameSessionTokenPayload = options?.auth ?? {
+    const defaultAuth: GameSessionTokenPayload = {
         version: 1,
         profile: profile.name,
         issuedAt: new Date('2026-01-01T00:00:00Z').toISOString(),
@@ -133,10 +133,11 @@ const buildContext = (options?: {
             id: 'user-1',
             username: 'tester',
             displayName: 'Tester',
-            roles: [],
+            roles: ['admin'],
         },
         sanctions: {},
     };
+    const auth = options && 'auth' in options ? (options.auth ?? null) : defaultAuth;
     return {
         db: db as unknown as DatabaseClient,
         turnDaemon: transport,
@@ -172,8 +173,8 @@ describe('appRouter', () => {
             currentYear: 1,
             currentMonth: 2,
             tickSeconds: 600,
-            config: { seed: 123 },
-            meta: { label: 'sample' },
+            config: { maxUserCnt: 500, hiddenSeed: 'config-secret' },
+            meta: { otherTextInfo: 'sample', hiddenSeed: 'meta-secret' },
             updatedAt: new Date('2026-01-01T00:00:00Z'),
         };
 
@@ -182,7 +183,48 @@ describe('appRouter', () => {
 
         expect(response?.scenarioCode).toBe('default');
         expect(response?.currentYear).toBe(1);
+        expect(response?.config).toEqual({ maxUserCnt: 500 });
+        expect(response?.meta).toEqual({ otherTextInfo: 'sample' });
         expect(response?.updatedAt).toBe('2026-01-01T00:00:00.000Z');
+    });
+
+    it('requires profile administration permission for turn daemon control', async () => {
+        const auth: GameSessionTokenPayload = {
+            version: 1,
+            profile: profile.name,
+            issuedAt: '2026-01-01T00:00:00.000Z',
+            expiresAt: '2026-01-02T00:00:00.000Z',
+            sessionId: 'session-user',
+            user: {
+                id: 'user-1',
+                username: 'tester',
+                displayName: 'Tester',
+                roles: ['user'],
+            },
+            sanctions: {},
+        };
+        const caller = appRouter.createCaller(buildContext({ auth }));
+
+        await expect(caller.turnDaemon.run({ reason: 'manual' })).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+        });
+        await expect(caller.turnDaemon.pause()).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+        });
+        await expect(caller.turnDaemon.resume()).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+        });
+        await expect(caller.turnDaemon.status()).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+        });
+    });
+
+    it('rejects unauthenticated turn daemon control', async () => {
+        const caller = appRouter.createCaller(buildContext({ auth: null }));
+
+        await expect(caller.turnDaemon.pause()).rejects.toMatchObject({
+            code: 'UNAUTHORIZED',
+        });
     });
 
     it('returns status from transport', async () => {
@@ -237,5 +279,100 @@ describe('appRouter', () => {
 
         expect(response[0]?.action).toBe('che_포상');
         expect(response[0]?.index).toBe(0);
+    });
+
+    it('rejects another user general across actor-owned routers', async () => {
+        const general = buildGeneralRow({ id: 15, userId: 'user-2' });
+        const transport = new InMemoryTurnDaemonTransport();
+        const caller = appRouter.createCaller(buildContext({ general, transport }));
+
+        await expect(caller.turns.getCommandTable({ generalId: general.id })).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+        });
+        await expect(caller.turns.reserved.getGeneral({ generalId: general.id })).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+        });
+        await expect(caller.turns.reserved.getNation({ generalId: general.id })).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+        });
+        await expect(
+            caller.turns.reserved.setGeneral({
+                generalId: general.id,
+                turnIndex: 0,
+                action: '휴식',
+            })
+        ).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+        });
+        await expect(
+            caller.turns.reserved.shiftGeneral({
+                generalId: general.id,
+                amount: 1,
+            })
+        ).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+        });
+        await expect(
+            caller.turns.reserved.setNation({
+                generalId: general.id,
+                turnIndex: 0,
+                action: '휴식',
+            })
+        ).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+        });
+        await expect(
+            caller.turns.reserved.shiftNation({
+                generalId: general.id,
+                amount: 1,
+            })
+        ).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+        });
+        await expect(caller.messages.getRecent({ generalId: general.id })).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+        });
+        await expect(
+            caller.messages.getOld({
+                generalId: general.id,
+                to: 1,
+                type: 'private',
+            })
+        ).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+        });
+        await expect(
+            caller.messages.send({
+                generalId: general.id,
+                mailbox: 0,
+                text: 'test',
+            })
+        ).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+        });
+        await expect(caller.troop.join({ generalId: general.id, troopId: 3 })).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+        });
+        await expect(caller.troop.exit({ generalId: general.id })).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+        });
+        await expect(
+            caller.world.getMap({
+                generalId: general.id,
+                showMe: true,
+            })
+        ).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+        });
+        expect(transport.commands).toHaveLength(0);
+    });
+
+    it('rejects unauthenticated general-scoped map views', async () => {
+        const general = buildGeneralRow({ id: 16 });
+        const caller = appRouter.createCaller(buildContext({ general, auth: null }));
+
+        await expect(caller.world.getMap({ generalId: general.id })).rejects.toMatchObject({
+            code: 'UNAUTHORIZED',
+        });
     });
 });

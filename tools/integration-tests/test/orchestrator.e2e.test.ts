@@ -192,10 +192,14 @@ const cleanupPm2 = async (manager: Pm2ProcessManager, names: string[]) => {
     for (const name of names) {
         try {
             await manager.stop(name);
-        } catch {}
+        } catch {
+            // Cleanup is best-effort when the process is already stopped.
+        }
         try {
             await manager.delete(name);
-        } catch {}
+        } catch {
+            // Cleanup is best-effort when the process is already deleted.
+        }
     }
 };
 
@@ -237,7 +241,9 @@ const waitForHttpOk = async (url: string, timeoutMs = 15_000) => {
             if (status >= 200 && status < 300) {
                 return;
             }
-        } catch {}
+        } catch {
+            // The service can refuse connections while PM2 is still starting it.
+        }
         await sleep(250);
     }
     throw new Error(`health check timeout: ${url}`);
@@ -445,10 +451,12 @@ describe('pm2 orchestrator e2e', () => {
         const gatewayUrl = `http://localhost:${gatewayServer.config.port}`;
         const gameUrl = `http://localhost:${apiPort}`;
         const adminSessionRef: { value?: string } = {};
+        const adminGameAccessRef: { value?: string } = {};
         const accessTokenRef: { value?: string } = {};
         const gatewayClient = createGatewayClient(gatewayUrl, gatewayServer.config.trpcPath, adminSessionRef);
         const gameTrpcPath = process.env.GAME_TRPC_PATH ?? process.env.TRPC_PATH ?? '/trpc';
         const gameClientPublic = createGameClient(gameUrl, gameTrpcPath, { value: undefined });
+        const gameClientAdmin = createGameClient(gameUrl, gameTrpcPath, adminGameAccessRef);
         const gameClientAuthed = createGameClient(gameUrl, gameTrpcPath, accessTokenRef);
 
         const bootstrap = await gatewayClient.auth.bootstrapLocal.mutate({
@@ -496,7 +504,16 @@ describe('pm2 orchestrator e2e', () => {
 
         await waitForHttpOk(`${gameUrl}/healthz`);
 
-        await waitForTurnDaemonStatus(gameClientPublic);
+        const adminGameSession = await gatewayClient.auth.issueGameSession.mutate({
+            sessionToken: adminSessionRef.value ?? '',
+            profile: profileName,
+        });
+        const adminAccess = await gameClientPublic.auth.exchangeGatewayToken.mutate({
+            gatewayToken: adminGameSession.gameToken,
+        });
+        adminGameAccessRef.value = adminAccess.accessToken;
+
+        await waitForTurnDaemonStatus(gameClientAdmin);
 
         const login = await gatewayClient.auth.login.mutate({
             username: 'e2e-user',
@@ -547,7 +564,7 @@ describe('pm2 orchestrator e2e', () => {
             timeoutMs: 30_000,
         });
 
-        const runStatus = await runTurn(gameClientPublic);
+        const runStatus = await runTurn(gameClientAdmin);
         expect(runStatus.lastRunAt).toBeTruthy();
 
         const realtimeEvent = await ssePromise;

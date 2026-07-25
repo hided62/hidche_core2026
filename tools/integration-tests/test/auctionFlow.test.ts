@@ -293,6 +293,15 @@ describe('auction integration flow', () => {
             },
         });
 
+        const adminGatewayToken = await gatewayClient.auth.issueGameSession.mutate({
+            sessionToken: adminSessionRef.value ?? '',
+            profile: 'che:2',
+        });
+        const adminAccess = await gameClient.auth.exchangeGatewayToken.mutate({
+            gatewayToken: adminGatewayToken.gameToken,
+        });
+        gameAccessRef.value = adminAccess.accessToken;
+
         for (const user of demoUsers) {
             const login = await gatewayClient.auth.login.mutate({
                 username: user.username,

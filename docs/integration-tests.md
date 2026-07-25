@@ -69,5 +69,5 @@ These are loaded from `.env.ci` and can be overridden per run.
 - `auth.bootstrapLocal` only works when no users exist; the test resets the DB
   to satisfy this precondition.
 - `profiles.installNow` seeds the scenario and auto-creates the admin general.
-- The test runs turn processing via `turnDaemon.run` and validates founding
-  rules at the third turn.
+- The test runs turn processing via administrator-authorized
+  `turnDaemon.run` and validates founding rules at the third turn.

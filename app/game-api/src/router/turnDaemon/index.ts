@@ -1,6 +1,7 @@
+import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { procedure, router } from '../../trpc.js';
+import { authedProcedure, router } from '../../trpc.js';
 
 const zRunReason = z.enum(['schedule', 'manual', 'poke']);
 
@@ -10,8 +11,27 @@ const zTurnRunBudget = z.object({
     catchUpCap: z.number().int().positive(),
 });
 
+const turnDaemonAdminProcedure = authedProcedure.use(({ ctx, next }) => {
+    const roles = ctx.auth?.user.roles ?? [];
+    const profileName = ctx.profile.name;
+    const canManageProfile =
+        roles.includes('superuser') ||
+        roles.includes('admin') ||
+        roles.includes('admin.superuser') ||
+        roles.includes('admin.profiles.manage') ||
+        roles.includes('admin.profiles.manage:*') ||
+        roles.includes(`admin.profiles.manage:${profileName}`);
+    if (!canManageProfile) {
+        throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'Profile administration permission is required.',
+        });
+    }
+    return next();
+});
+
 export const turnDaemonRouter = router({
-    run: procedure
+    run: turnDaemonAdminProcedure
         .input(
             z.object({
                 reason: zRunReason,
@@ -28,7 +48,7 @@ export const turnDaemonRouter = router({
             });
             return { accepted: true, requestId };
         }),
-    pause: procedure
+    pause: turnDaemonAdminProcedure
         .input(
             z
                 .object({
@@ -43,7 +63,7 @@ export const turnDaemonRouter = router({
             });
             return { accepted: true, requestId };
         }),
-    resume: procedure
+    resume: turnDaemonAdminProcedure
         .input(
             z
                 .object({
@@ -58,7 +78,7 @@ export const turnDaemonRouter = router({
             });
             return { accepted: true, requestId };
         }),
-    status: procedure
+    status: turnDaemonAdminProcedure
         .input(
             z
                 .object({

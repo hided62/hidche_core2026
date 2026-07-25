@@ -1,18 +1,23 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import type { WorldStateRow } from '../../context.js';
+import {
+    type WorldStateRow,
+    zWorldStateConfig,
+    zWorldStateMeta,
+} from '../../context.js';
 import { procedure, router } from '../../trpc.js';
 import { loadWorldMap } from '../../maps/worldMap.js';
 import { loadMapLayout } from '../../maps/mapLayout.js';
+import { getOwnedGeneral } from '../shared/general.js';
 
 const toWorldStateSnapshot = (row: WorldStateRow) => ({
     scenarioCode: row.scenarioCode,
     currentYear: row.currentYear,
     currentMonth: row.currentMonth,
     tickSeconds: row.tickSeconds,
-    config: row.config,
-    meta: row.meta,
+    config: zWorldStateConfig.parse(row.config),
+    meta: zWorldStateMeta.parse(row.meta),
     updatedAt: row.updatedAt.toISOString(),
 });
 
@@ -34,6 +39,9 @@ export const worldRouter = router({
             })
         )
         .query(async ({ ctx, input }) => {
+            if (input.generalId !== undefined) {
+                await getOwnedGeneral(ctx, input.generalId);
+            }
             const map = await loadWorldMap(ctx, input);
             if (!map) {
                 throw new TRPCError({
