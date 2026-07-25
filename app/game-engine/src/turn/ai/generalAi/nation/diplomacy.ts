@@ -3,6 +3,18 @@ import { asRecord, joinYearMonth, parseYearMonth, readMetaNumber } from '../../a
 import { isNeighbor } from '../../distance.js';
 import { resolveNationIncome } from './helpers.js';
 
+const isTechLimited = (ai: GeneralAI, tech: number): boolean => {
+    const relativeYear = Math.max(0, ai.world.currentYear - ai.startYear);
+    const levelIncreaseYears = ai.commandEnv.techLevelIncYear ?? 5;
+    const initialAllowedLevel = ai.commandEnv.initialAllowedTechLevel ?? 1;
+    const relativeMaxLevel = Math.max(
+        1,
+        Math.min(Math.floor(relativeYear / levelIncreaseYears) + initialAllowedLevel, ai.commandEnv.maxTechLevel)
+    );
+    const techLevel = Math.max(0, Math.min(Math.floor(tech / 1000), ai.commandEnv.maxTechLevel));
+    return techLevel >= relativeMaxLevel;
+};
+
 export const do불가침제의 = (ai: GeneralAI) => {
     if (!ai.nation || ai.general.officerLevel < 12) {
         return null;
@@ -66,11 +78,16 @@ export const do불가침제의 = (ai: GeneralAI) => {
     }
 
     const [targetYear, targetMonth] = parseYearMonth(Math.floor(yearMonth + diplomatMonth));
-    return ai.buildNationCandidate(
+    const result = ai.buildNationCandidate(
         'che_불가침제의',
         { destNationId, year: targetYear, month: targetMonth },
         '불가침제의'
     );
+    if (result) {
+        const nextTry = { ...respAssistTry, [`n${destNationId}`]: [destNationId, yearMonth] };
+        asRecord(ai.nation.meta).resp_assist_try = nextTry;
+    }
+    return result;
 };
 
 export const do선전포고 = (ai: GeneralAI) => {
@@ -90,6 +107,10 @@ export const do선전포고 = (ai: GeneralAI) => {
         return null;
     }
     if (!ai.map || !ai.worldRef) {
+        return null;
+    }
+    const currentTech = readMetaNumber(asRecord(ai.nation.meta), 'tech', 0);
+    if (!isTechLimited(ai, currentTech + 1000)) {
         return null;
     }
 
@@ -134,9 +155,26 @@ export const do선전포고 = (ai: GeneralAI) => {
         return null;
     }
 
+    const lowTargetNations = new Set(
+        ai.worldRef
+            .listDiplomacy()
+            .filter((entry) => entry.fromNationId !== currentNationId && (entry.state === 0 || entry.state === 1))
+            .map((entry) => entry.fromNationId)
+    );
     const weight: Record<number, number> = {};
+    const warWeight: Record<number, number> = {};
     for (const nation of neighbors) {
-        weight[nation.id] = 1 / Math.sqrt(nation.power + 1);
+        const target = lowTargetNations.has(nation.id) ? warWeight : weight;
+        target[nation.id] = 1 / Math.sqrt(nation.power + 1);
+    }
+    if (Object.keys(weight).length === 0) {
+        if (Object.keys(warWeight).length === 0 || lowTargetNations.size === 0) {
+            return null;
+        }
+        if (ai.rng.nextBool(1 / lowTargetNations.size)) {
+            return null;
+        }
+        Object.assign(weight, warWeight);
     }
 
     const destNationId = Number(ai.rng.choiceUsingWeight(weight));

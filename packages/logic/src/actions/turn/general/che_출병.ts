@@ -403,7 +403,11 @@ export class ActionDefinition<
         const defenderNation = defenderCity.nationId > 0 ? (nationMap.get(defenderCity.nationId) ?? null) : null;
 
         const defenderGenerals = generals.filter(
-            (general) => general.cityId === defenderCity.id && general.nationId === defenderCity.nationId
+            (general) =>
+                general.cityId === defenderCity.id &&
+                general.nationId === defenderCity.nationId &&
+                general.crew > 0 &&
+                (unitSet.crewTypes?.some((crewType) => crewType.id === general.crewTypeId) ?? false)
         );
 
         const battle = resolveWarBattle({

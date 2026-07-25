@@ -1,4 +1,5 @@
 import type { GeneralAI } from '../core.js';
+import { asRecord, readRequiredMetaNumber } from '../../aiUtils.js';
 import { t통솔장 } from './helpers.js';
 
 export const do후방워프 = (ai: GeneralAI) => {
@@ -7,6 +8,9 @@ export const do후방워프 = (ai: GeneralAI) => {
         return null;
     }
     if ([0, 1].includes(ai.dipState)) {
+        return null;
+    }
+    if (!ai.generalPolicy.can('징병')) {
         return null;
     }
     if (!(ai.genType & t통솔장)) {
@@ -104,6 +108,7 @@ export const do전방워프 = (ai: GeneralAI) => {
     }
 
     ai.categorizeNationCities();
+    ai.categorizeNationGeneral();
     const candidateCities: Record<number, number> = {};
     for (const frontCity of Object.values(ai.frontCities)) {
         if (frontCity.supplyState <= 0) {
@@ -195,4 +200,11 @@ export const do귀환 = (ai: GeneralAI) => {
     return ai.buildGeneralCandidate('che_귀환', {}, '귀환');
 };
 
-export const do집합 = (ai: GeneralAI) => ai.buildGeneralCandidate('che_집합', {}, '집합');
+export const do집합 = (ai: GeneralAI) => {
+    if (ai.general.npcState === 5) {
+        const killturn = readRequiredMetaNumber(asRecord(ai.general.meta), 'killturn', `generalId=${ai.general.id}`);
+        const nextKillturn = ((killturn + ai.rng.nextRangeInt(2, 4)) % 5) + 70;
+        ai.general.meta = { ...ai.general.meta, killturn: nextKillturn };
+    }
+    return ai.buildGeneralCandidate('che_집합', {}, '집합');
+};
