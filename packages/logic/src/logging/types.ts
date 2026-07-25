@@ -28,6 +28,9 @@ export interface LogEntryDraft {
     subType?: string;
     meta?: Record<string, unknown>;
     format?: LogFormat;
+    /** 월 경계 전 action처럼 flush 시점과 다른 달에 귀속되는 로그의 명시적 날짜. */
+    year?: number;
+    month?: number;
 }
 
 export interface LogEntryRecord {
