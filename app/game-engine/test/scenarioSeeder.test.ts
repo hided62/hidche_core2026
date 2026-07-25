@@ -16,6 +16,15 @@ type ScenarioSeederPrismaClient = {
     };
     city: {
         count(): Promise<number>;
+        findUnique(args: { where: { id: number } }): Promise<{
+            population: number;
+            agriculture: number;
+            commerce: number;
+            security: number;
+            trust: number;
+            defence: number;
+            wall: number;
+        } | null>;
     };
     general: {
         count(): Promise<number>;
@@ -25,6 +34,9 @@ type ScenarioSeederPrismaClient = {
         findFirst(args: {
             where: { srcNationId: number; destNationId: number };
         }): Promise<{ stateCode: number; term: number } | null>;
+    };
+    event: {
+        count(): Promise<number>;
     };
     worldState: {
         findFirst(): Promise<{
@@ -50,7 +62,7 @@ const requiredTables = [
 const hasRequiredTables = async (prisma: ScenarioSeederPrismaClient, schemaName: string): Promise<boolean> => {
     for (const table of requiredTables) {
         const result = (await prisma.$queryRawUnsafe(
-            `SELECT to_regclass('${schemaName}.${table}') as regclass`
+            `SELECT to_regclass('${schemaName}.${table}')::text as regclass`
         )) as Array<{ regclass: string | null }>;
         if (!Array.isArray(result) || result.length === 0 || result[0]?.regclass === null) {
             return false;
@@ -90,18 +102,51 @@ describeDb('scenario database seed', () => {
         await connector.connect();
         try {
             const prisma = connector.prisma as unknown as ScenarioSeederPrismaClient;
-            const [nationCount, cityCount, generalCount, diplomacyCount] = await Promise.all([
+            const [nationCount, cityCount, generalCount, diplomacyCount, eventCount] = await Promise.all([
                 prisma.nation.count(),
                 prisma.city.count(),
                 prisma.general.count(),
                 prisma.diplomacy.count(),
+                prisma.event.count(),
             ]);
 
             expect(nationCount).toBe(seed.nations.length);
             expect(cityCount).toBe(seed.cities.length);
             expect(generalCount).toBe(seed.generals.length);
             expect(diplomacyCount).toBe(seed.nations.length * Math.max(0, seed.nations.length - 1));
+            expect(eventCount).toBe(seed.events.length);
             expect(generalCount).toBeGreaterThan(0);
+
+            const freeCity = seed.cities.find((city) => city.nationId === 0);
+            const occupiedCity = seed.cities.find((city) => city.nationId !== 0);
+            expect(freeCity).toMatchObject({
+                population: freeCity ? Math.round(freeCity.populationMax * 0.7) : undefined,
+                agriculture: freeCity ? Math.round(freeCity.agricultureMax * 0.7) : undefined,
+                commerce: freeCity ? Math.round(freeCity.commerceMax * 0.7) : undefined,
+                security: freeCity ? Math.round(freeCity.securityMax * 0.7) : undefined,
+                trust: 80,
+            });
+            expect(occupiedCity).toMatchObject({
+                population: occupiedCity ? Math.round(occupiedCity.populationMax * 0.7) : undefined,
+                defence: occupiedCity ? Math.round(occupiedCity.defenceMax * 0.7) : undefined,
+                wall: occupiedCity ? Math.round(occupiedCity.wallMax * 0.7) : undefined,
+                trust: 80,
+            });
+            for (const city of [freeCity, occupiedCity]) {
+                expect(city).toBeDefined();
+                if (!city) {
+                    continue;
+                }
+                expect(await prisma.city.findUnique({ where: { id: city.id } })).toMatchObject({
+                    population: city.population,
+                    agriculture: city.agriculture,
+                    commerce: city.commerce,
+                    security: city.security,
+                    trust: city.trust,
+                    defence: city.defence,
+                    wall: city.wall,
+                });
+            }
 
             if (seed.diplomacy.length > 0) {
                 const sample = seed.diplomacy[0];
@@ -158,8 +203,12 @@ describeDb('scenario database seed', () => {
             },
         });
 
-        const expectedGenerals = scenario.generals.length + scenario.generalsNeutral.length;
-        expect(seed.generals.length).toBe(expectedGenerals);
+        // Future-born entries are converted to delayed events, so the raw
+        // scenario array length is not the installed general count.
+        expect(seed.generals.length).toBeGreaterThan(0);
+        expect(seed.generals.length).toBeLessThan(
+            scenario.generals.length + scenario.generalsNeutral.length + scenario.generalsEx.length
+        );
 
         const connector = createGamePostgresConnector({ url: databaseUrl });
         await connector.connect();

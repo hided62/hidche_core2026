@@ -8,6 +8,7 @@ import type { ScenarioLoaderOptions } from './scenarioLoader.js';
 import { loadScenarioDefinitionById } from './scenarioLoader.js';
 import type { UnitSetLoaderOptions } from './unitSetLoader.js';
 import { loadUnitSetDefinitionByName } from './unitSetLoader.js';
+import { applyInitialChangeCityEvents } from '../turn/monthlyChangeCityAction.js';
 
 const DEFAULT_TICK_SECONDS = 120 * 60;
 const DEFAULT_GENERAL_GOLD = 1000;
@@ -75,7 +76,7 @@ const resolveSchemaName = (databaseUrl: string): string => {
 const hasEventTable = async (prisma: RawQueryClient, schema: string): Promise<boolean> => {
     try {
         const result = await prisma.$queryRawUnsafe<Array<{ regclass: string | null }>>(
-            `SELECT to_regclass('${schema}.event') as regclass`
+            `SELECT to_regclass('${schema}.event')::text as regclass`
         );
         return Array.isArray(result) && result.length > 0 && result[0]?.regclass !== null;
     } catch {
@@ -211,6 +212,7 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
             includeNeutralNationInSeed: options.includeNeutralNationInSeed ?? true,
         },
     });
+    seed.cities = applyInitialChangeCityEvents(seed.cities, seed.initialEvents);
 
     const connector = createGamePostgresConnector({ url: options.databaseUrl });
     const now = options.now ?? new Date();
@@ -513,7 +515,7 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
             });
         }
 
-        const eventRows = [...buildEventRows(seed.events), ...buildEventRows(seed.initialEvents, 'initial')];
+        const eventRows = buildEventRows(seed.events);
         if (eventRows.length > 0 && eventTableReady) {
             await prisma.event.createMany({
                 data: eventRows,
