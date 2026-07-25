@@ -141,29 +141,11 @@ const processIncomeForNation = (
 
     let income = 0;
     if (type === 'gold') {
-        income = getGoldIncome(
-            incomeContext,
-            nationCities,
-            officerCounts,
-            nation.capitalCityId ?? 0,
-            nation.level
-        );
+        income = getGoldIncome(incomeContext, nationCities, officerCounts, nation.capitalCityId ?? 0, nation.level);
     } else {
         income =
-            getRiceIncome(
-                incomeContext,
-                nationCities,
-                officerCounts,
-                nation.capitalCityId ?? 0,
-                nation.level
-            ) +
-            getWallIncome(
-                incomeContext,
-                nationCities,
-                officerCounts,
-                nation.capitalCityId ?? 0,
-                nation.level
-            );
+            getRiceIncome(incomeContext, nationCities, officerCounts, nation.capitalCityId ?? 0, nation.level) +
+            getWallIncome(incomeContext, nationCities, officerCounts, nation.capitalCityId ?? 0, nation.level);
     }
 
     const incomeValue = roundResource(income);
@@ -185,7 +167,8 @@ const processIncomeForNation = (
     }
 
     const incomeText = incomeValue.toLocaleString();
-    const incomeLog = type === 'gold' ? `이번 수입은 금 <C>${incomeText}</>입니다.` : `이번 수입은 쌀 <C>${incomeText}</>입니다.`;
+    const incomeLog =
+        type === 'gold' ? `이번 수입은 금 <C>${incomeText}</>입니다.` : `이번 수입은 쌀 <C>${incomeText}</>입니다.`;
     for (const general of nationGenerals) {
         const pay = Math.round(getBill(general.dedication) * ratio);
         if (type === 'gold') {
@@ -208,72 +191,67 @@ const processIncomeForNation = (
     }
 };
 
+export interface IncomeHandler extends TurnCalendarHandler {
+    runResource(resource: 'gold' | 'rice'): void;
+}
+
 export const createIncomeHandler = (options: {
     getWorld: () => InMemoryTurnWorld | null;
     scenarioConfig: ScenarioConfig;
     nationTraits: Map<string, NationTraitModule>;
-}): TurnCalendarHandler => {
+}): IncomeHandler => {
     const constValues = asRecord(options.scenarioConfig.const);
     const baseGold = resolveNumber(constValues, ['baseGold', 'basegold'], 0);
     const baseRice = resolveNumber(constValues, ['baseRice', 'baserice'], 0);
 
-    const handler: TurnCalendarHandler = {
+    const runResource = (type: 'gold' | 'rice'): void => {
+        const world = options.getWorld();
+        if (!world) {
+            return;
+        }
+        const nations = world.listNations();
+        const generals = world.listGenerals();
+        const cities = world.listCities();
+
+        const byNation: Map<number, TurnGeneral[]> = new Map();
+        for (const general of generals) {
+            const bucket = byNation.get(general.nationId) ?? [];
+            bucket.push(general);
+            byNation.set(general.nationId, bucket);
+        }
+
+        for (const nation of nations) {
+            const nationGenerals = byNation.get(nation.id) ?? [];
+            const officerCounts = buildOfficerCountMap(nationGenerals);
+            processIncomeForNation(
+                world,
+                nation,
+                nationGenerals,
+                cities,
+                officerCounts,
+                options.nationTraits,
+                type,
+                type === 'gold' ? baseGold : baseRice
+            );
+        }
+
+        const logger = new ActionLogger();
+        if (type === 'gold') {
+            logger.pushGlobalHistoryLog('<W><b>【지급】</b></>봄이 되어 봉록에 따라 자금이 지급됩니다.');
+        } else {
+            logger.pushGlobalHistoryLog('<W><b>【지급】</b></>가을이 되어 봉록에 따라 군량이 지급됩니다.');
+        }
+        pushLogs(world, logger.flush());
+    };
+
+    const handler: IncomeHandler = {
+        runResource,
         onMonthChanged: (context: TurnCalendarContext) => {
-            const world = options.getWorld();
-            if (!world) {
-                return;
+            if (context.currentMonth === 1) {
+                runResource('gold');
+            } else if (context.currentMonth === 7) {
+                runResource('rice');
             }
-            const month = context.currentMonth;
-            if (month !== 1 && month !== 7) {
-                return;
-            }
-
-            const nations = world.listNations();
-            const generals = world.listGenerals();
-            const cities = world.listCities();
-
-            const byNation: Map<number, TurnGeneral[]> = new Map();
-            for (const general of generals) {
-                const bucket = byNation.get(general.nationId) ?? [];
-                bucket.push(general);
-                byNation.set(general.nationId, bucket);
-            }
-
-            for (const nation of nations) {
-                const nationGenerals = byNation.get(nation.id) ?? [];
-                const officerCounts = buildOfficerCountMap(nationGenerals);
-                if (month === 1) {
-                    processIncomeForNation(
-                        world,
-                        nation,
-                        nationGenerals,
-                        cities,
-                        officerCounts,
-                        options.nationTraits,
-                        'gold',
-                        baseGold
-                    );
-                } else if (month === 7) {
-                    processIncomeForNation(
-                        world,
-                        nation,
-                        nationGenerals,
-                        cities,
-                        officerCounts,
-                        options.nationTraits,
-                        'rice',
-                        baseRice
-                    );
-                }
-            }
-
-            const logger = new ActionLogger();
-            if (month === 1) {
-                logger.pushGlobalHistoryLog('<W><b>【지급】</b></>봄이 되어 봉록에 따라 자금이 지급됩니다.');
-            } else if (month === 7) {
-                logger.pushGlobalHistoryLog('<W><b>【지급】</b></>가을이 되어 봉록에 따라 군량이 지급됩니다.');
-            }
-            pushLogs(world, logger.flush());
         },
     };
 
