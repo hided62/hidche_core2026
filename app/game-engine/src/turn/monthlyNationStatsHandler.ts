@@ -1,4 +1,5 @@
-import { asRecord, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
+import { asRecord, JosaUtil, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
+import { DIPLOMACY_STATE, LogCategory, LogFormat, LogScope } from '@sammo-ts/logic';
 import { simpleSerialize } from '@sammo-ts/logic/war/utils.js';
 
 import type { InMemoryTurnWorld, TurnCalendarHandler } from './inMemoryWorld.js';
@@ -163,7 +164,72 @@ export const createMonthlyDiplomacyHandler = (options: {
         const cachedGeneralCounts = new Map(
             world.listNations().map((nation) => [nation.id, Math.max(1, Math.floor(readNumber(nation.meta.gennum, 1)))])
         );
+        const before = world.listDiplomacy();
+        const declarationStarts = before
+            .filter(
+                (entry) =>
+                    entry.state === DIPLOMACY_STATE.DECLARATION &&
+                    entry.term <= 1 &&
+                    entry.fromNationId < entry.toNationId
+            )
+            .sort((left, right) => left.fromNationId - right.fromNationId || left.toNationId - right.toNationId);
         world.advanceDiplomacyMonth(cachedGeneralCounts);
+        const afterByKey = new Map(
+            world.listDiplomacy().map((entry) => [`${entry.fromNationId}:${entry.toNationId}`, entry] as const)
+        );
+
+        for (const entry of declarationStarts) {
+            const nation1 = world.getNationById(entry.fromNationId);
+            const nation2 = world.getNationById(entry.toNationId);
+            if (!nation1 || !nation2) {
+                throw new Error(
+                    `Monthly diplomacy declaration references a missing nation (${entry.fromNationId}, ${entry.toNationId}).`
+                );
+            }
+            world.pushLog({
+                scope: LogScope.SYSTEM,
+                category: LogCategory.HISTORY,
+                text: `<R><b>【개전】</b></><D><b>${nation1.name}</b></>${JosaUtil.pick(nation1.name, '와')} <D><b>${nation2.name}</b></>${JosaUtil.pick(nation2.name, '이')} <R>전쟁</>을 시작합니다.`,
+                format: LogFormat.YEAR_MONTH,
+            });
+        }
+
+        const stopWarSeen = new Set<string>();
+        const endingCandidates = before
+            .filter((entry) => entry.state === DIPLOMACY_STATE.WAR)
+            .sort((left, right) => right.fromNationId - left.fromNationId || right.toNationId - left.toNationId);
+        for (const entry of endingCandidates) {
+            const low = Math.min(entry.fromNationId, entry.toNationId);
+            const high = Math.max(entry.fromNationId, entry.toNationId);
+            const pairKey = `${low}:${high}`;
+            if (!stopWarSeen.has(pairKey)) {
+                stopWarSeen.add(pairKey);
+                continue;
+            }
+            const after = afterByKey.get(`${entry.fromNationId}:${entry.toNationId}`);
+            const opposite = afterByKey.get(`${entry.toNationId}:${entry.fromNationId}`);
+            if (
+                after?.state !== DIPLOMACY_STATE.TRADE ||
+                after.term !== 0 ||
+                opposite?.state !== DIPLOMACY_STATE.TRADE ||
+                opposite.term !== 0
+            ) {
+                continue;
+            }
+            const nation1 = world.getNationById(entry.fromNationId);
+            const nation2 = world.getNationById(entry.toNationId);
+            if (!nation1 || !nation2) {
+                throw new Error(
+                    `Monthly diplomacy truce references a missing nation (${entry.fromNationId}, ${entry.toNationId}).`
+                );
+            }
+            world.pushLog({
+                scope: LogScope.SYSTEM,
+                category: LogCategory.HISTORY,
+                text: `<R><b>【종전】</b></><D><b>${nation1.name}</b></>${JosaUtil.pick(nation1.name, '와')} <D><b>${nation2.name}</b></>${JosaUtil.pick(nation2.name, '이')} <S>종전</>합니다.`,
+                format: LogFormat.YEAR_MONTH,
+            });
+        }
     },
 });
 
