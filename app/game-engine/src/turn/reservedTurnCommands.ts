@@ -10,13 +10,7 @@ import type {
 import {
     loadGeneralTurnCommandSpecs,
     loadNationTurnCommandSpecs,
-    createItemActionModules,
-    createItemModuleRegistry,
-    ITEM_KEYS,
-    loadItemModules,
-    createInheritBuffModules,
-    compileCrewTypeCatalog,
-    createCrewTypeWarTriggerRegistry,
+    loadActionModuleBundle,
 } from '@sammo-ts/logic';
 import { asRecord } from '@sammo-ts/common';
 
@@ -134,7 +128,8 @@ export const buildReservedTurnDefinitions = async (options: {
     general: Map<string, GeneralActionDefinition>;
     nation: Map<string, GeneralActionDefinition>;
 }> => {
-    const itemModules = await loadItemModules([...ITEM_KEYS]);
+    const moduleBundle = await loadActionModuleBundle(options.env.unitSet);
+    const itemModules = moduleBundle.itemModules;
     options.env.itemCatalog = Object.fromEntries(
         itemModules.map((item) => [
             item.key,
@@ -150,23 +145,13 @@ export const buildReservedTurnDefinitions = async (options: {
             },
         ])
     );
-    const itemRegistry = createItemModuleRegistry(itemModules);
-    const itemActionModules = createItemActionModules(itemRegistry);
-    const inheritBuffModules = createInheritBuffModules();
-    const crewTypeCatalog = options.env.unitSet?.crewTypes?.length
-        ? compileCrewTypeCatalog(options.env.unitSet, createCrewTypeWarTriggerRegistry())
-        : null;
     options.env.generalActionModules = [
         ...(options.env.generalActionModules ?? []),
-        ...(crewTypeCatalog ? [crewTypeCatalog.generalActionModule] : []),
-        inheritBuffModules.general,
-        ...itemActionModules.general,
+        ...moduleBundle.general,
     ];
     options.env.warActionModules = [
         ...(options.env.warActionModules ?? []),
-        ...(crewTypeCatalog ? [crewTypeCatalog.warActionModule] : []),
-        inheritBuffModules.war,
-        ...itemActionModules.war,
+        ...moduleBundle.war,
     ];
 
     const generalSpecs = await loadGeneralTurnCommandSpecs(options.commandProfile.general);

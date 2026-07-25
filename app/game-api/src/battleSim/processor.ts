@@ -15,6 +15,7 @@ import {
     loadItemModules,
     createInheritBuffModules,
     createTraitModuleRegistry,
+    createOfficerLevelActionModules,
     DOMESTIC_TRAIT_KEYS,
     loadDomesticTraitModules,
     loadNationTraitModules,
@@ -32,7 +33,6 @@ import {
     type UnitSetDefinition,
     type WarBattleOutcome,
     type WarActionModule,
-    type WarActionContext,
     type WarUnitReport,
     type WarBattleTraceEvent,
     type CrewTypeDefinition,
@@ -56,34 +56,7 @@ const traitRegistry = createTraitModuleRegistry({
 });
 const traitWarModules: WarActionModule[] = [
     new TraitWarActionRouter('nation', traitRegistry),
-    {
-        onCalcStat: (context: WarActionContext, statName, value) => {
-            if (statName !== 'leadership' || typeof value !== 'number') {
-                return value;
-            }
-            let officerLevel = context.general.officerLevel;
-            // Legacy simulator payload omits general.city, so low city offices are
-            // always downgraded by TriggerOfficerLevel's officer_city comparison.
-            if (officerLevel >= 2 && officerLevel <= 4) {
-                officerLevel = 1;
-            }
-            const nationLevel = context.nation?.level ?? 0;
-            const leadershipBonus = officerLevel === 12 ? nationLevel * 2 : officerLevel >= 5 ? nationLevel : 0;
-            return value + leadershipBonus;
-        },
-        getWarPowerMultiplier: (context: WarActionContext) => {
-            let officerLevel = context.general.officerLevel;
-            if (officerLevel >= 2 && officerLevel <= 4) {
-                officerLevel = 1;
-            }
-            if (officerLevel === 12) return [1.07, 0.93];
-            if (officerLevel === 11) return [1.05, 0.95];
-            if ([10, 8, 6].includes(officerLevel)) return [1.1, 1];
-            if ([9, 7, 5].includes(officerLevel)) return [1, 0.9];
-            if ([4, 3, 2].includes(officerLevel)) return [1.05, 0.95];
-            return [1, 1];
-        },
-    },
+    createOfficerLevelActionModules().war,
     new TraitWarActionRouter('domestic', traitRegistry),
     new TraitWarActionRouter('war', traitRegistry),
     new TraitWarActionRouter('personality', traitRegistry),

@@ -1,4 +1,16 @@
-import { WarActionPipeline, type General, type ScenarioConfig, type UnitSetDefinition } from '@sammo-ts/logic';
+import {
+    ActionLogger,
+    GeneralActionPipeline,
+    WarActionPipeline,
+    WarCrewType,
+    WarUnitCity,
+    WarUnitGeneral,
+    type General,
+    type Nation,
+    type ScenarioConfig,
+    type UnitSetDefinition,
+} from '@sammo-ts/logic';
+import { ConstantRNG, RandUtil } from '@sammo-ts/common';
 import { describe, expect, it } from 'vitest';
 
 import { buildCommandEnv, buildReservedTurnDefinitions } from '../src/turn/reservedTurnCommands.js';
@@ -110,6 +122,109 @@ describe('reserved turn crew type wiring', () => {
 
         const pipeline = new WarActionPipeline(env.warActionModules ?? []);
         expect(pipeline.onCalcOpposeStat({ general }, 'cityBattleOrder', -1)).toBe(10000);
+    });
+
+    it('installs nation, officer, domestic, war, and personality effects in live commands', async () => {
+        const env = buildCommandEnv(scenarioConfig, unitSet);
+        await buildReservedTurnDefinitions({
+            env,
+            commandProfile: { general: ['휴식'], nation: ['휴식'] },
+            defaultActionKey: '휴식',
+        });
+        const nation: Nation = {
+            id: 1,
+            name: '효과국',
+            color: '#000000',
+            capitalCityId: 1,
+            chiefGeneralId: 1,
+            gold: 0,
+            rice: 0,
+            power: 0,
+            level: 5,
+            typeCode: 'che_유가',
+            meta: {},
+        };
+        const traitGeneral: General = {
+            ...general,
+            officerLevel: 12,
+            role: {
+                ...general.role,
+                personality: 'che_패권',
+                specialDomestic: 'che_상재',
+                specialWar: 'che_기병',
+            },
+        };
+        const pipeline = new GeneralActionPipeline(env.generalActionModules ?? []);
+        const context = { general: traitGeneral, nation };
+
+        expect(pipeline.onCalcDomestic(context, '상업', 'score', 100)).toBeCloseTo(127.05);
+        expect(pipeline.onCalcDomestic(context, '상업', 'cost', 100)).toBeCloseTo(64);
+        expect(pipeline.onCalcDomestic(context, '징병', 'cost', 100, { armType: 3 })).toBeCloseTo(108);
+        expect(pipeline.onCalcStat(context, 'leadership', 80)).toBe(90);
+
+        const rng = new RandUtil(new ConstantRNG(0));
+        const warConfig = {
+            armPerPhase: 500,
+            maxTrainByCommand: 100,
+            maxAtmosByCommand: 100,
+            maxTrainByWar: 110,
+            maxAtmosByWar: 150,
+            castleCrewTypeId: 1000,
+            armTypes: { footman: 1, cavalry: 3, castle: 0 },
+        };
+        const warPipeline = new WarActionPipeline(env.warActionModules ?? []);
+        const battleCity = {
+            id: 1,
+            name: '출병지',
+            nationId: 1,
+            level: 5,
+            state: 0,
+            population: 10000,
+            populationMax: 10000,
+            agriculture: 0,
+            agricultureMax: 0,
+            commerce: 0,
+            commerceMax: 0,
+            security: 0,
+            securityMax: 0,
+            supplyState: 1,
+            frontState: 0,
+            defence: 100,
+            defenceMax: 100,
+            wall: 100,
+            wallMax: 100,
+            meta: {},
+        };
+        const attacker = new WarUnitGeneral(
+            rng,
+            warConfig,
+            traitGeneral,
+            battleCity,
+            nation,
+            true,
+            new WarCrewType(unitSet.crewTypes![0]!),
+            new ActionLogger({ generalId: 1, nationId: 1 }),
+            warPipeline
+        );
+        const defender = new WarUnitCity(
+            rng,
+            warConfig,
+            battleCity,
+            nation,
+            new WarCrewType({
+                ...unitSet.crewTypes![0]!,
+                id: 1000,
+                armType: 0,
+                name: '성벽',
+            }),
+            new ActionLogger({}),
+            100,
+            100
+        );
+        expect(
+            warPipeline.getWarPowerMultiplier(attacker.getActionContext(), attacker, defender)
+        ).toEqual([1.284, 0.93]);
+        expect(warPipeline.onCalcStat(attacker.getActionContext(), 'bonusTrain', 100)).toBe(105);
     });
 });
 

@@ -498,18 +498,21 @@ export const mapGeneralList = async (
                 ? {
                       key: personalityKey,
                       name: personalityMap.get(personalityKey)?.name ?? personalityKey,
+                      info: personalityMap.get(personalityKey)?.info ?? '',
                   }
                 : null,
             specialDomestic: domesticKey
                 ? {
                       key: domesticKey,
                       name: domesticMap.get(domesticKey)?.name ?? domesticKey,
+                      info: domesticMap.get(domesticKey)?.info ?? '',
                   }
                 : null,
             specialWar: warKey
                 ? {
                       key: warKey,
                       name: warMap.get(warKey)?.name ?? warKey,
+                      info: warMap.get(warKey)?.info ?? '',
                   }
                 : null,
             belong,

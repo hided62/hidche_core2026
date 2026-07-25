@@ -5,7 +5,15 @@ import path from 'node:path';
 import { LiteHashDRBG, RandUtil, type RNG } from '@sammo-ts/common';
 import {
     ITEM_KEYS,
+    DOMESTIC_TRAIT_KEYS,
+    NATION_TRAIT_KEYS,
+    PERSONALITY_TRAIT_KEYS,
+    WAR_TRAIT_KEYS,
+    loadDomesticTraitModules,
     loadItemModules,
+    loadNationTraitModules,
+    loadPersonalityTraitModules,
+    loadWarTraitModules,
     type UnitSetDefinition,
     type WarBattleTraceEvent,
     type WarEngineConfig,
@@ -38,6 +46,11 @@ interface ReferenceItemMetadata {
     consumable: boolean;
     reqSecu: number;
 }
+
+type ReferenceTraitCatalog = Record<
+    'nation' | 'domestic' | 'war' | 'personality',
+    Record<string, { name: string; info: string }>
+>;
 
 class TracingRng implements RNG {
     public readonly calls: RandomCall[] = [];
@@ -124,6 +137,19 @@ const runReferenceItemCatalog = (workspaceRoot: string, itemKeys: string[]): Rec
     return JSON.parse(stdout) as Record<string, ReferenceItemMetadata>;
 };
 
+const runReferenceTraitCatalog = (workspaceRoot: string): ReferenceTraitCatalog => {
+    const stdout = execFileSync(
+        'docker',
+        ['compose', 'exec', '-T', 'php', 'php', '/var/www/html/hwe/compare/trait_catalog.php'],
+        {
+            cwd: path.join(workspaceRoot, 'docker_compose_files/reference'),
+            encoding: 'utf8',
+            stdio: ['pipe', 'pipe', 'pipe'],
+        }
+    );
+    return JSON.parse(stdout) as ReferenceTraitCatalog;
+};
+
 const expectNearlyEqual = (actual: unknown, expected: unknown, label: string): void => {
     expect(typeof actual, `${label}: actual type`).toBe('number');
     expect(typeof expected, `${label}: reference type`).toBe('number');
@@ -178,6 +204,93 @@ const workspaceRoot = findWorkspaceRoot(process.cwd());
 const describeWithReference = workspaceRoot ? describe : describe.skip;
 
 describeWithReference('ref ↔ core2026 battle differential', () => {
+    it('matches every legacy trait name and description', async () => {
+        const reference = runReferenceTraitCatalog(workspaceRoot!);
+        const [nation, domestic, war, personality] = await Promise.all([
+            loadNationTraitModules([...NATION_TRAIT_KEYS]),
+            loadDomesticTraitModules([...DOMESTIC_TRAIT_KEYS]),
+            loadWarTraitModules([...WAR_TRAIT_KEYS]),
+            loadPersonalityTraitModules([...PERSONALITY_TRAIT_KEYS]),
+        ]);
+        const groups = { nation, domestic, war, personality };
+        const failures: string[] = [];
+        for (const [kind, modules] of Object.entries(groups) as Array<
+            [keyof ReferenceTraitCatalog, Array<{ key: string; name: string; info: string }>]
+        >) {
+            expect(modules.map((module) => module.key).sort()).toEqual(Object.keys(reference[kind]).sort());
+            for (const module of modules) {
+                const actual = { name: module.name, info: module.info };
+                if (JSON.stringify(actual) !== JSON.stringify(reference[kind][module.key])) {
+                    failures.push(
+                        `${kind}/${module.key}: core=${JSON.stringify(actual)} ref=${JSON.stringify(reference[kind][module.key])}`
+                    );
+                }
+            }
+        }
+        expect(failures, failures.join('\n')).toEqual([]);
+    });
+
+    it('matches every war, personality, and nation trait in battle', { timeout: 180_000 }, () => {
+        const unitSet = readJson<UnitSetDefinition>(
+            path.resolve(process.cwd(), '../../resources/unitset/unitset_che.json')
+        );
+        const config: WarEngineConfig = {
+            armPerPhase: 500,
+            maxTrainByCommand: 100,
+            maxAtmosByCommand: 100,
+            maxTrainByWar: 110,
+            maxAtmosByWar: 150,
+            castleCrewTypeId: 1000,
+            armTypes: { footman: 1, archer: 2, cavalry: 3, wizard: 4, siege: 5, misc: 6, castle: 0 },
+        };
+        const cases = [
+            ...WAR_TRAIT_KEYS.map((key) => ({ kind: 'war' as const, key })),
+            ...PERSONALITY_TRAIT_KEYS.map((key) => ({ kind: 'personality' as const, key })),
+            ...NATION_TRAIT_KEYS.map((key) => ({ kind: 'nation' as const, key })),
+        ];
+
+        for (const entry of cases) {
+            const base = readJson<BattleSimRequestPayload & { startYear: number }>(
+                path.resolve(process.cwd(), 'fixtures/battle/basic-infantry.json')
+            );
+            base.seed = `battle-differential-trait-${entry.kind}-${entry.key}`;
+            base.attackerGeneral.crew = 5000;
+            base.attackerGeneral.leadership = 90;
+            base.attackerGeneral.strength = 85;
+            base.attackerGeneral.intel = 80;
+            base.attackerGeneral.special2 = entry.kind === 'war' ? entry.key : 'None';
+            base.attackerGeneral.personal = entry.kind === 'personality' ? entry.key : 'None';
+            if (entry.kind === 'nation') {
+                base.attackerNation.type = entry.key;
+            }
+
+            const coreEvents: WarBattleTraceEvent[] = [];
+            let coreRng: TracingRng | null = null;
+            processBattleSimJob(
+                {
+                    ...base,
+                    unitSet,
+                    config,
+                    time: { year: base.year, month: base.month, startYear: base.startYear },
+                },
+                {
+                    trace: (event) => coreEvents.push(event),
+                    rngFactory: (seed) => {
+                        coreRng = new TracingRng(LiteHashDRBG.build(seed));
+                        return new RandUtil(coreRng);
+                    },
+                }
+            );
+            try {
+                assertTraceParity(coreEvents, runReferenceTrace(workspaceRoot!, JSON.stringify(base)), coreRng);
+            } catch (error) {
+                throw new Error(`${entry.kind}/${entry.key}: ${error instanceof Error ? error.message : String(error)}`, {
+                    cause: error,
+                });
+            }
+        }
+    });
+
     it('loads every scenario item with the scenario slot', async () => {
         const scenarioDir = path.resolve(process.cwd(), '../../resources/scenario');
         const itemSlots = new Map<string, 'horse' | 'weapon' | 'book' | 'item'>();

@@ -4,10 +4,10 @@ import type { TraitModule } from '@sammo-ts/logic/triggers/special/types.js';
 export const traitModule: TraitModule = {
     key: 'che_법가',
     name: '법가',
-    info: '장점: 금수입↑ 치안↑ / 단점: 인구↓ 민심↓',
+    info: '금수입↑ 치안↑ 인구↓ 민심↓',
     kind: 'nation',
     getName: () => '법가',
-    getInfo: () => '장점: 금수입↑ 치안↑ / 단점: 인구↓ 민심↓',
+    getInfo: () => '금수입↑ 치안↑ 인구↓ 민심↓',
     onCalcDomestic: (_context, turnType, varType, value) => {
         if (turnType === '치안') {
             if (varType === 'score') return value * 1.1;

@@ -2,7 +2,7 @@ import { TRPCError } from '@trpc/server';
 
 import { authedProcedure } from '../../../trpc.js';
 import { getMyGeneral } from '../../shared/general.js';
-import { assertNationAccess, mapGeneralList, resolveChiefStatMin } from '../shared.js';
+import { assertNationAccess, loadTraitNames, mapGeneralList, resolveChiefStatMin } from '../shared.js';
 
 export const getGeneralList = authedProcedure.query(async ({ ctx }) => {
     const general = await getMyGeneral(ctx);
@@ -62,6 +62,7 @@ export const getGeneralList = authedProcedure.query(async ({ ctx }) => {
     const cityNameMap = new Map(cityRows.map((city) => [city.id, city.name]));
     const troopNameMap = new Map(troopRows.map((troop) => [troop.troopLeaderId, troop.name]));
     const list = await mapGeneralList(generalRows, cityNameMap, troopNameMap);
+    const nationTrait = (await loadTraitNames([nation.typeCode], 'nation')).get(nation.typeCode);
 
     return {
         nation: {
@@ -70,6 +71,11 @@ export const getGeneralList = authedProcedure.query(async ({ ctx }) => {
             color: nation.color,
             level: nation.level,
             typeCode: nation.typeCode,
+            type: {
+                key: nation.typeCode,
+                name: nationTrait?.name ?? nation.typeCode,
+                info: nationTrait?.info ?? '',
+            },
             capitalCityId: nation.capitalCityId ?? 0,
         },
         chiefStatMin: resolveChiefStatMin(worldState),
