@@ -35,6 +35,7 @@ import { createTournamentRewardFinalizer } from '../tournament/finalizer.js';
 import { createTournamentAutoStartHandler } from './tournamentAutoStart.js';
 import { createYearbookHandler } from './yearbookHandler.js';
 import { createMonthlyEventHandler, type MonthlyEventActionHandler } from './monthlyEventHandler.js';
+import { DatabaseTurnDaemonLease, TurnDaemonLeaseUnavailableError } from '../lifecycle/databaseTurnDaemonLease.js';
 
 export interface TurnDaemonRuntimeOptions {
     profile: string;
@@ -56,6 +57,9 @@ export interface TurnDaemonRuntimeOptions {
     adminActionIntervalMs?: number;
     redisUrl?: string;
     commandStreamStartId?: string;
+    leaseDurationMs?: number;
+    leaseOwnerId?: string;
+    enableLeaseHeartbeat?: boolean;
 }
 
 export interface TurnDaemonRuntime {
@@ -89,7 +93,11 @@ const resolveRedisConfig = (redisUrl?: string, env: NodeJS.ProcessEnv = process.
     return resolveRedisConfigFromEnv(env);
 };
 
-export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions): Promise<TurnDaemonRuntime> => {
+const createTurnDaemonRuntimeWithLease = async (
+    options: TurnDaemonRuntimeOptions,
+    databaseFlushEnabled: boolean,
+    turnDaemonLease: DatabaseTurnDaemonLease | null
+): Promise<TurnDaemonRuntime> => {
     // DB에서 월드를 읽고 턴 데몬을 구동할 런타임을 만든다.
     const { state, snapshot } = await loadTurnWorldFromDatabase({
         databaseUrl: options.databaseUrl,
@@ -135,7 +143,7 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
         );
     const eventActions = new Map<string, MonthlyEventActionHandler>();
     eventActions.set('ProcessIncome', (_args, environment) => {
-        incomeHandler.onMonthChanged?.({
+        void incomeHandler.onMonthChanged?.({
             previousYear: environment.month === 1 ? environment.year - 1 : environment.year,
             previousMonth: environment.month === 1 ? 12 : environment.month - 1,
             currentYear: environment.year,
@@ -295,9 +303,10 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
     if (gatewayGate) {
         pauseGate = gatewayGate.shouldPause;
     }
-    if (options.enableDatabaseFlush ?? true) {
+    if (databaseFlushEnabled) {
         const dbHooks = await createDatabaseTurnHooks(options.databaseUrl, world, {
             reservedTurns: reservedTurnStoreHandle?.store,
+            turnDaemonLease: turnDaemonLease ?? undefined,
         });
         auctionBidder = await createAuctionBidder({
             databaseUrl: options.databaseUrl,
@@ -334,6 +343,7 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
             }
             await gatewayGate?.close();
             await adminActionConsumer?.stop();
+            await turnDaemonLease?.close();
         };
     } else if (reservedTurnStoreHandle) {
         hooks = {
@@ -436,7 +446,7 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
             stateStore,
             processor,
             hooks,
-            pauseGate,
+            pauseGate: async () => turnDaemonLease?.isLost() || ((await pauseGate?.()) ?? false),
             commandHandler,
             commandResponder: options.controlQueue ? undefined : (databaseCommandQueue ?? undefined),
         },
@@ -483,4 +493,26 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
         hooks,
         close,
     };
+};
+
+export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions): Promise<TurnDaemonRuntime> => {
+    const databaseFlushEnabled = options.enableDatabaseFlush ?? true;
+    const turnDaemonLease = databaseFlushEnabled
+        ? await DatabaseTurnDaemonLease.connect(options.databaseUrl, {
+              profile: options.profileName ?? options.profile,
+              ownerId: options.leaseOwnerId,
+              leaseDurationMs: options.leaseDurationMs,
+              heartbeat: options.enableLeaseHeartbeat,
+          })
+        : null;
+    if (turnDaemonLease && !(await turnDaemonLease.acquire())) {
+        await turnDaemonLease.close();
+        throw new TurnDaemonLeaseUnavailableError(options.profileName ?? options.profile);
+    }
+    try {
+        return await createTurnDaemonRuntimeWithLease(options, databaseFlushEnabled, turnDaemonLease);
+    } catch (error) {
+        await turnDaemonLease?.close();
+        throw error;
+    }
 };

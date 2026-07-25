@@ -77,6 +77,16 @@ model InputEvent {
   @@map("input_event")
 }
 
+model TurnDaemonLease {
+  profile       String   @id
+  ownerId       String   @map("owner_id")
+  leaseUntil    DateTime @map("lease_until")
+  fencingEpoch  BigInt   @default(1) @map("fencing_epoch")
+  heartbeatAt   DateTime @default(now()) @map("heartbeat_at")
+
+  @@map("turn_daemon_lease")
+}
+
 model WorldState {
   id           Int      @id @default(autoincrement())
   scenarioCode String   @map("scenario_code")

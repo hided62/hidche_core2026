@@ -105,16 +105,22 @@ const applyNationTechGain = <TriggerState extends GeneralTriggerState>(
     nation.meta.tech = round(tech);
 };
 
-const resolveConquerNation = (city: City, attackerNationId: number): number => {
+const resolveConquerNation = (city: City, attackerNationId: number, nations: Nation[]): number => {
     const rawConflict = city.meta[META_CONFLICT];
     if (!rawConflict) {
         return attackerNationId;
     }
     try {
         const parsed = JSON.parse(String(rawConflict)) as Record<string, number>;
+        const activeNationIds = new Set(nations.map((nation) => nation.id));
         const entries = Object.entries(parsed)
             .map(([key, value]) => [Number(key), value] as const)
-            .filter(([key, value]) => Number.isFinite(key) && typeof value === 'number')
+            .filter(
+                ([key, value]) =>
+                    Number.isFinite(key) &&
+                    typeof value === 'number' &&
+                    (key === attackerNationId || activeNationIds.has(key))
+            )
             .sort(([, lhs], [, rhs]) => rhs - lhs);
         if (!entries.length) {
             return attackerNationId;
@@ -183,7 +189,7 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
     const affectedGenerals = new Set<General<TriggerState>>();
     const affectedNations = new Set<Nation>();
 
-    const conquerNationId = resolveConquerNation(defenderCity, attackerNation.id);
+    const conquerNationId = resolveConquerNation(defenderCity, attackerNation.id, input.nations);
     const attackerLogger = new ActionLogger({
         generalId: attacker.id,
         nationId: attackerNation.id,
