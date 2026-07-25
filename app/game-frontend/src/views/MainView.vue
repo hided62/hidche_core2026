@@ -102,6 +102,7 @@ watch(
                 <RouterLink class="ghost" to="/best-general">명장일람</RouterLink>
                 <RouterLink class="ghost" to="/hall-of-fame">명예의 전당</RouterLink>
                 <RouterLink class="ghost" to="/dynasty">왕조일람</RouterLink>
+                <RouterLink class="ghost" to="/yearbook">연감</RouterLink>
                 <a class="ghost" href="/xe/community" target="_blank" rel="noopener">게시판</a>
                 <RouterLink class="ghost" to="/battle-simulator">전투 시뮬레이터</RouterLink>
                 <RouterLink class="ghost" to="/my-page">내 정보</RouterLink>

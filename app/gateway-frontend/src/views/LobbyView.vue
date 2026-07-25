@@ -352,11 +352,12 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                     계 정 관 리
                 </div>
                 <div class="p-6 flex justify-center space-x-4">
-                    <button
+                    <RouterLink
+                        to="/account"
                         class="bg-zinc-800 hover:bg-zinc-700 text-white px-6 py-2 rounded border border-zinc-700 transition-colors"
                     >
                         비밀번호 & 전콘 & 탈퇴
-                    </button>
+                    </RouterLink>
                     <button
                         class="bg-zinc-800 hover:bg-zinc-700 text-white px-6 py-2 rounded border border-zinc-700 transition-colors"
                         @click="handleLogout"

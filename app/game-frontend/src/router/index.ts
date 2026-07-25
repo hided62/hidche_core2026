@@ -27,6 +27,7 @@ import DynastyListView from '../views/DynastyListView.vue';
 import DynastyDetailView from '../views/DynastyDetailView.vue';
 import SurveyView from '../views/SurveyView.vue';
 import TroopView from '../views/TroopView.vue';
+import YearbookView from '../views/YearbookView.vue';
 import { useSessionStore } from '../stores/session';
 
 const routes = [
@@ -210,6 +211,14 @@ const routes = [
         path: '/dynasty/:id',
         name: 'dynasty-detail',
         component: DynastyDetailView,
+    },
+    {
+        path: '/yearbook',
+        name: 'yearbook',
+        component: YearbookView,
+        meta: {
+            requiresAuth: true,
+        },
     },
     {
         path: '/my-page',

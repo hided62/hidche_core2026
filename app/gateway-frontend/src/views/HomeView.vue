@@ -105,6 +105,16 @@ const handleKakao = async (): Promise<void> => {
         loginError.value = error instanceof Error ? error.message : '카카오 로그인을 시작하지 못했습니다.';
     }
 };
+
+const handlePasswordReset = async (): Promise<void> => {
+    loginError.value = '';
+    try {
+        const result = await trpc.auth.kakaoStart.query({ mode: 'change_pw' });
+        window.location.assign(result.authUrl);
+    } catch (error) {
+        loginError.value = error instanceof Error ? error.message : '비밀번호 초기화를 시작하지 못했습니다.';
+    }
+};
 </script>
 
 <template>
@@ -139,6 +149,9 @@ const handleKakao = async (): Promise<void> => {
                     </button>
                     <button class="login-button" type="submit" :disabled="loginLoading">
                         {{ loginLoading ? '로그인 중…' : '로그인' }}
+                    </button>
+                    <button class="reset-button" type="button" @click="handlePasswordReset">
+                        비밀번호 초기화
                     </button>
                 </form>
                 <p v-if="loginError" class="login-error" role="alert">{{ loginError }}</p>
@@ -233,12 +246,26 @@ const handleKakao = async (): Promise<void> => {
 }
 
 .kakao-button,
-.login-button {
+.login-button,
+.reset-button {
     min-height: 40px;
     border: 1px solid transparent;
     border-radius: 4px;
     font-weight: 700;
     cursor: pointer;
+}
+
+.reset-button {
+    grid-column: 1 / -1;
+    min-height: 30px;
+    border-color: #555;
+    background: #191919;
+    color: #ddd;
+}
+
+.reset-button:hover,
+.reset-button:focus {
+    background: #303030;
 }
 
 .kakao-button {
