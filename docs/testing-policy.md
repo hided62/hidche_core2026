@@ -47,6 +47,9 @@ information only, not evidence of correctness.
 - Validate domain constraints in the logic layer where possible; DB constraints
   act as a secondary safety net.
 - Use deterministic seeds for all gameplay-impacting RNG.
+- Run TypeScript validation with the workspace-standard TypeScript `6.0.2`.
+  TypeScript 5 or 7 results do not replace the required repository typecheck.
+  See `docs/architecture/typescript-version.md`.
 
 ## Test Layers
 

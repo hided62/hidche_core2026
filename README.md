@@ -25,6 +25,11 @@
 ## 개발 도구 및 스크립트
 
 - 패키지 매니저: pnpm 워크스페이스
+- TypeScript: 워크스페이스 전체에서 정확히 `6.0.2`를 사용합니다.
+  TypeScript 7은 저장소와 도구가 요구하는 API 및 생태계 지원이 준비될 때까지
+  사용하지 않습니다. 적용 범위와 7로 올리는 조건은
+  [`docs/architecture/typescript-version.md`](docs/architecture/typescript-version.md)를
+  참고하십시오.
 - 현재 개발 호스트는 `fnm`으로 Node.js와 pnpm을 관리한다. 대화형 zsh가
   아닌 환경에서 `pnpm`을 찾지 못하면 아래 형태로 실행한다.
 
@@ -63,6 +68,7 @@
 - `docs/architecture/legacy-engine.md`
 - `docs/architecture/rewrite-plan.md`
 - `docs/architecture/runtime.md`
+- `docs/architecture/typescript-version.md`
 
 ## 참고
 

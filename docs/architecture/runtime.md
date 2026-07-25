@@ -4,6 +4,18 @@ Build outputs should be emitted to `/dist/{profileName}` per profile to keep
 deployments predictable. Profiles are server+scenario pairs, and scenario
 selection is required because it drives unit sets and DB settings.
 
+## TypeScript Toolchain
+
+The rewrite workspace uses exactly TypeScript `6.0.2`. TypeScript 7 is not a
+supported build or validation environment until the compiler/tooling APIs used
+by this repository and the dependent toolchain are available and compatible.
+Package-local TypeScript 5 or 7 overrides are not allowed in `app/*`,
+`packages/*`, or `tools/*`. The legacy runtime under `legacy/` is maintained
+separately and is outside this rule.
+
+The rationale, scope, and TypeScript 7 upgrade gate are defined in
+[`typescript-version.md`](typescript-version.md).
+
 ## Database Schemas (Gateway vs Game)
 
 Gateway uses a shared schema (default `public`) for login/profile state, while

@@ -3,6 +3,9 @@ packages:
   - app/*
   - tools/*
 
+overrides:
+  typescript: 6.0.2
+
 allowBuilds:
   '@prisma/engines': true
   esbuild: true

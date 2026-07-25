@@ -48,6 +48,14 @@
 
 ## Planned Runtime & Tooling
 
+- TypeScript: `6.0.2` (workspace-wide fixed version)
+  - TypeScript 7 is temporarily excluded because compiler/tooling APIs required
+    by this repository and its toolchain are not yet available or compatible.
+  - Keep `app/*`, `packages/*`, and `tools/*` on the same exact TypeScript
+    version. Do not add a package-local TypeScript 5 or 7 override.
+  - Upgrade to TypeScript 7 only after the required APIs and dependent tooling
+    are available and the repository-wide typecheck, lint, build, tests, and
+    comparison tools pass. See `docs/architecture/typescript-version.md`.
 - Backend: Node.js + Fastify, with Prisma ORM.
 - Turn daemon: turn scheduler/resolver service for game ticks.
 - Turn daemon and API server communicate via Redis Stream or Redis pub/sub.

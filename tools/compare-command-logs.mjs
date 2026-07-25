@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import ts from 'typescript-legacy';
+import ts from 'typescript';
 
 const ROOT_DIR = process.cwd();
 const PHP_ROOT = path.join(ROOT_DIR, 'legacy', 'hwe', 'sammo', 'Command');
