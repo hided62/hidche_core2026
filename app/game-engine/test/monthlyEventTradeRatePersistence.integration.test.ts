@@ -4,11 +4,13 @@ import { createGamePostgresConnector, type GamePrismaClient } from '@sammo-ts/in
 
 import { createDatabaseTurnHooks } from '../src/turn/databaseHooks.js';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
-import type { TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
+import { createMonthlyEventHandler, createRandomizeCityTradeRateHandler } from '../src/turn/monthlyEventHandler.js';
+import type { TurnEvent, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 
 const databaseUrl = process.env.INPUT_EVENT_DATABASE_URL;
 const integration = describe.skipIf(!databaseUrl);
 const cityId = 990_041;
+const cityIds = Array.from({ length: 6 }, (_, index) => cityId + index);
 
 const map: MapDefinition = {
     id: 'monthly-trade-persistence',
@@ -40,6 +42,21 @@ const city: City = {
     conflict: {},
     meta: { trust: 50, trade: 100, region: 1 },
 };
+const cities = [1, 4, 5, 6, 7, 8].map((level, index): City => ({
+    ...city,
+    id: cityIds[index]!,
+    name: `시세검증도시${level}`,
+    level,
+    meta: { ...city.meta },
+}));
+const event: TurnEvent = {
+    id: 1,
+    targetCode: 'month',
+    priority: 1_000,
+    condition: true,
+    action: [['RandomizeCityTradeRate']],
+    meta: {},
+};
 
 integration('monthly city trade persistence', () => {
     let db: GamePrismaClient;
@@ -50,59 +67,59 @@ integration('monthly city trade persistence', () => {
         await connector.connect();
         db = connector.prisma;
         closeDb = () => connector.disconnect();
-        await db.city.deleteMany({ where: { id: cityId } });
+        await db.city.deleteMany({ where: { id: { in: cityIds } } });
     });
 
     afterAll(async () => {
-        await db.city.deleteMany({ where: { id: cityId } });
+        await db.city.deleteMany({ where: { id: { in: cityIds } } });
         await closeDb?.();
     });
 
     it('writes both the legacy null state and a randomized numeric rate', async () => {
-        await db.city.create({
-            data: {
-                id: city.id,
-                name: city.name,
-                level: city.level,
-                nationId: city.nationId,
-                supplyState: city.supplyState,
-                frontState: city.frontState,
-                population: city.population,
-                populationMax: city.populationMax,
-                agriculture: city.agriculture,
-                agricultureMax: city.agricultureMax,
-                commerce: city.commerce,
-                commerceMax: city.commerceMax,
-                security: city.security,
-                securityMax: city.securityMax,
+        await db.city.createMany({
+            data: cities.map((entry) => ({
+                id: entry.id,
+                name: entry.name,
+                level: entry.level,
+                nationId: entry.nationId,
+                supplyState: entry.supplyState,
+                frontState: entry.frontState,
+                population: entry.population,
+                populationMax: entry.populationMax,
+                agriculture: entry.agriculture,
+                agricultureMax: entry.agricultureMax,
+                commerce: entry.commerce,
+                commerceMax: entry.commerceMax,
+                security: entry.security,
+                securityMax: entry.securityMax,
                 trust: 50,
                 trade: 100,
-                defence: city.defence,
-                defenceMax: city.defenceMax,
-                wall: city.wall,
-                wallMax: city.wallMax,
+                defence: entry.defence,
+                defenceMax: entry.defenceMax,
+                wall: entry.wall,
+                wallMax: entry.wallMax,
                 region: 1,
                 conflict: {},
                 meta: {},
-            },
+            })),
         });
         const row = await db.worldState.create({
             data: {
                 scenarioCode: 'monthly-trade-persistence',
-                currentYear: 190,
-                currentMonth: 1,
+                currentYear: 189,
+                currentMonth: 12,
                 tickSeconds: 600,
                 config: {},
-                meta: {},
+                meta: { hiddenSeed: 'monthly-event-test-seed' },
             },
         });
         const state: TurnWorldState = {
             id: row.id,
-            currentYear: 190,
-            currentMonth: 1,
+            currentYear: 189,
+            currentMonth: 12,
             tickSeconds: 600,
             lastTurnTime: new Date('2026-07-25T00:10:00.000Z'),
-            meta: {},
+            meta: { hiddenSeed: 'monthly-event-test-seed' },
         };
         const snapshot: TurnWorldSnapshot = {
             scenarioConfig: {
@@ -114,15 +131,22 @@ integration('monthly city trade persistence', () => {
             },
             map,
             generals: [],
-            cities: [city],
+            cities,
             nations: [],
             troops: [],
             diplomacy: [],
-            events: [],
+            events: [event],
             initialEvents: [],
         };
-        const world = new InMemoryTurnWorld(state, snapshot, {
+        let world: InMemoryTurnWorld | null = null;
+        const randomize = createRandomizeCityTradeRateHandler({ getWorld: () => world });
+        world = new InMemoryTurnWorld(state, snapshot, {
             schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+            calendarHandler: createMonthlyEventHandler({
+                getWorld: () => world,
+                startYear: 189,
+                actions: new Map([['RandomizeCityTradeRate', randomize]]),
+            }),
         });
         const dbHooks = await createDatabaseTurnHooks(databaseUrl!, world);
         const checkpoint = {
@@ -134,14 +158,17 @@ integration('monthly city trade persistence', () => {
         };
 
         try {
-            const { trade: _trade, ...metaWithoutTrade } = city.meta;
-            world.updateCity(city.id, { meta: metaWithoutTrade });
+            await world.advanceMonth(new Date('0190-01-01T00:00:00.000Z'));
             await dbHooks.hooks.flushChanges?.(checkpoint);
-            expect((await db.city.findUniqueOrThrow({ where: { id: cityId } })).trade).toBeNull();
-
-            world.updateCity(city.id, { meta: { ...metaWithoutTrade, trade: 103 } });
-            await dbHooks.hooks.flushChanges?.(checkpoint);
-            expect((await db.city.findUniqueOrThrow({ where: { id: cityId } })).trade).toBe(103);
+            expect(
+                (
+                    await db.city.findMany({
+                        where: { id: { in: cityIds } },
+                        orderBy: { id: 'asc' },
+                        select: { trade: true },
+                    })
+                ).map((entry) => entry.trade)
+            ).toEqual([null, null, 101, 100, 105, 102]);
         } finally {
             await dbHooks.close();
             await db.worldState.delete({ where: { id: row.id } });

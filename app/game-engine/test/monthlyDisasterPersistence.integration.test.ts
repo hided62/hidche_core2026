@@ -5,7 +5,8 @@ import { createGamePostgresConnector, type GamePrismaClient } from '@sammo-ts/in
 import { createDatabaseTurnHooks } from '../src/turn/databaseHooks.js';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import { createRaiseDisasterHandler } from '../src/turn/monthlyDisasterAction.js';
-import type { TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
+import { createMonthlyEventHandler } from '../src/turn/monthlyEventHandler.js';
+import type { TurnEvent, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 
 const databaseUrl = process.env.INPUT_EVENT_DATABASE_URL;
 const integration = describe.skipIf(!databaseUrl);
@@ -40,6 +41,14 @@ const city: City = {
     wallMax: 1_000,
     conflict: {},
     meta: { trust: 99.5, trade: 100, region: 1 },
+};
+const event: TurnEvent = {
+    id: 1,
+    targetCode: 'month',
+    priority: 1_000,
+    condition: true,
+    action: [['RaiseDisaster']],
+    meta: {},
 };
 
 integration('monthly disaster database persistence', () => {
@@ -90,17 +99,17 @@ integration('monthly disaster database persistence', () => {
         const row = await db.worldState.create({
             data: {
                 scenarioCode: 'monthly-disaster-persistence',
-                currentYear: 193,
-                currentMonth: 1,
+                currentYear: 192,
+                currentMonth: 12,
                 tickSeconds: 600,
                 config: {},
-                meta: {},
+                meta: { hiddenSeed: 'disaster-test-6' },
             },
         });
         const state: TurnWorldState = {
             id: row.id,
-            currentYear: 193,
-            currentMonth: 1,
+            currentYear: 192,
+            currentMonth: 12,
             tickSeconds: 600,
             lastTurnTime: new Date('2026-07-25T00:10:00.000Z'),
             meta: { hiddenSeed: 'disaster-test-6' },
@@ -119,11 +128,18 @@ integration('monthly disaster database persistence', () => {
             nations: [],
             troops: [],
             diplomacy: [],
-            events: [],
+            events: [event],
             initialEvents: [],
         };
-        const world = new InMemoryTurnWorld(state, snapshot, {
+        let world: InMemoryTurnWorld | null = null;
+        const raiseDisaster = createRaiseDisasterHandler({ getWorld: () => world });
+        world = new InMemoryTurnWorld(state, snapshot, {
             schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+            calendarHandler: createMonthlyEventHandler({
+                getWorld: () => world,
+                startYear: 190,
+                actions: new Map([['RaiseDisaster', raiseDisaster]]),
+            }),
         });
         const dbHooks = await createDatabaseTurnHooks(databaseUrl!, world);
         const checkpoint = {
@@ -135,18 +151,7 @@ integration('monthly disaster database persistence', () => {
         };
 
         try {
-            const raiseDisaster = createRaiseDisasterHandler({ getWorld: () => world });
-            raiseDisaster(
-                [],
-                {
-                    year: 193,
-                    month: 1,
-                    startyear: 190,
-                    currentEventID: 1,
-                    turnTime: state.lastTurnTime,
-                },
-                { id: 1, targetCode: 'month', priority: 0, condition: true, action: [], meta: {} }
-            );
+            await world.advanceMonth(new Date('0193-01-01T00:00:00.000Z'));
             await dbHooks.hooks.flushChanges?.(checkpoint);
 
             const persisted = await db.city.findUniqueOrThrow({ where: { id: cityId } });
