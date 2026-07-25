@@ -19,15 +19,17 @@ export const finalizeLogEntry = (entry: LogEntryDraft, context: LogContext): Log
         return null;
     }
 
+    const year = entry.year ?? context.year;
+    const month = entry.month ?? context.month;
     const format = entry.format ?? LogFormat.RAWTEXT;
-    const text = formatLogText(entry.text, format, context.year, context.month);
+    const text = formatLogText(entry.text, format, year, month);
 
     const record: LogEntryRecord = {
         scope: entry.scope,
         category: entry.category,
         text,
-        year: context.year,
-        month: context.month,
+        year,
+        month,
     };
 
     if (entry.generalId !== undefined) {

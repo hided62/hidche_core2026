@@ -46,6 +46,7 @@ import {
     type MonthlyEventActionHandler,
 } from './monthlyEventHandler.js';
 import { createRaiseDisasterHandler } from './monthlyDisasterAction.js';
+import { createUpdateCitySupplyHandler } from './monthlyCitySupplyAction.js';
 import { DatabaseTurnDaemonLease, TurnDaemonLeaseUnavailableError } from '../lifecycle/databaseTurnDaemonLease.js';
 
 export interface TurnDaemonRuntimeOptions {
@@ -165,6 +166,13 @@ const createTurnDaemonRuntimeWithLease = async (
         createRaiseDisasterHandler({
             getWorld: () => worldRef,
             generalActionModules: monthlyActionModules.general,
+        })
+    );
+    eventActions.set(
+        'UpdateCitySupply',
+        createUpdateCitySupplyHandler({
+            getWorld: () => worldRef,
+            map: snapshot.map,
         })
     );
     eventActions.set('ProcessIncome', (_args, environment) => {
