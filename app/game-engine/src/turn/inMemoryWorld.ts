@@ -467,6 +467,17 @@ export class InMemoryTurnWorld {
         return true;
     }
 
+    addNation(nation: Nation): boolean {
+        if (this.nations.has(nation.id)) {
+            return false;
+        }
+        this.nations.set(nation.id, { ...nation, meta: { ...nation.meta } });
+        this.dirtyNationIds.add(nation.id);
+        this.createdNationIds.add(nation.id);
+        this.ensureDiplomacyMatrix();
+        return true;
+    }
+
     removeGeneral(id: number): boolean {
         if (!this.generals.has(id)) {
             return false;

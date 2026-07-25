@@ -572,6 +572,10 @@ export const createDatabaseTurnHooks = async (
                         chiefGeneralId: nation.chiefGeneralId,
                         gold: nation.gold,
                         rice: nation.rice,
+                        tech:
+                            typeof nation.meta.tech === 'number' && Number.isFinite(nation.meta.tech)
+                                ? Math.trunc(nation.meta.tech)
+                                : 0,
                         level: nation.level,
                         typeCode: nation.typeCode,
                         meta: asJson(nation.meta),
