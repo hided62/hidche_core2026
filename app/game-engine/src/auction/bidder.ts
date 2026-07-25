@@ -23,6 +23,7 @@ const MIN_EXTENSION_MINUTES_PER_BID = 1;
 interface AuctionRow {
     id: number;
     type: AuctionType;
+    hostGeneralId: number;
     detail: unknown;
     status: AuctionStatus;
     closeAt: Date;
@@ -37,6 +38,7 @@ interface AuctionBidRow {
 interface AuctionDetail {
     isReverse?: boolean;
     startBidAmount?: number;
+    finishBidAmount?: number | null;
     availableLatestBidCloseDate?: string | null;
 }
 
@@ -85,11 +87,13 @@ const loadAuction = async (prisma: QueryClient, auctionId: number): Promise<Auct
         GamePrisma.sql`
             SELECT id,
                 type,
+                host_general_id as "hostGeneralId",
                 detail,
                 status,
                 close_at as "closeAt"
             FROM auction
             WHERE id = ${auctionId}
+            FOR UPDATE
         `
     );
     return rows[0] ?? null;
@@ -218,6 +222,22 @@ export const createAuctionBidder = async (options: {
                     reason: '시작가보다 낮습니다.',
                 };
             }
+            if (!isReverse && detail.finishBidAmount != null && command.amount > detail.finishBidAmount) {
+                return {
+                    type: 'auctionBid',
+                    ok: false,
+                    auctionId: command.auctionId,
+                    reason: '즉시판매가보다 높을 수 없습니다.',
+                };
+            }
+            if (isReverse && detail.finishBidAmount != null && command.amount < detail.finishBidAmount) {
+                return {
+                    type: 'auctionBid',
+                    ok: false,
+                    auctionId: command.auctionId,
+                    reason: '즉시판매가보다 낮을 수 없습니다.',
+                };
+            }
 
             if (auction.type === 'UNIQUE_ITEM' && highestBid) {
                 if (command.amount < highestBid.amount * 1.01) {
@@ -255,6 +275,14 @@ export const createAuctionBidder = async (options: {
                     ok: false,
                     auctionId: command.auctionId,
                     reason: '장수 정보를 찾을 수 없습니다.',
+                };
+            }
+            if (auction.type !== 'UNIQUE_ITEM' && auction.hostGeneralId === general.id) {
+                return {
+                    type: 'auctionBid',
+                    ok: false,
+                    auctionId: command.auctionId,
+                    reason: '자신이 연 경매에 입찰할 수 없습니다.',
                 };
             }
 
@@ -296,12 +324,19 @@ export const createAuctionBidder = async (options: {
             const availableLatestBidCloseDate = detail.availableLatestBidCloseDate
                 ? new Date(detail.availableLatestBidCloseDate)
                 : null;
-            const nextCloseAt = extendCloseDate({
+            let nextCloseAt = extendCloseDate({
                 now,
                 closeAt: auction.closeAt,
                 turnMinutes,
                 availableLatestBidCloseDate,
             });
+            if (
+                auction.type !== 'UNIQUE_ITEM' &&
+                detail.finishBidAmount != null &&
+                command.amount === detail.finishBidAmount
+            ) {
+                nextCloseAt = new Date(now.getTime() + turnMinutes * 60_000);
+            }
 
             const eventId = randomUUID();
             const eventAt = now;
@@ -347,51 +382,34 @@ export const createAuctionBidder = async (options: {
                         if (!userId) {
                             throw new Error('USER_NOT_FOUND');
                         }
-                        const current = await tx.inheritancePoint.findUnique({
-                            where: {
-                                userId_key: {
-                                    userId,
-                                    key: 'previous',
-                                },
-                            },
-                        });
-                        const prevValue = current?.value ?? 0;
-                        if (prevValue < morePoint) {
+                        const deductedRows = await tx.$queryRaw<Array<{ value: number }>>(
+                            GamePrisma.sql`
+                                UPDATE inheritance_point
+                                SET value = value - ${morePoint},
+                                    updated_at = ${eventAt}
+                                WHERE user_id = ${userId}
+                                  AND key = 'previous'
+                                  AND value >= ${morePoint}
+                                RETURNING value
+                            `
+                        );
+                        if (deductedRows.length === 0) {
                             throw new Error('INSUFFICIENT_POINT');
                         }
-                        await tx.inheritancePoint.upsert({
-                            where: {
-                                userId_key: {
-                                    userId,
-                                    key: 'previous',
-                                },
-                            },
-                            update: { value: prevValue - morePoint },
-                            create: { userId, key: 'previous', value: prevValue - morePoint },
-                        });
 
                         if (highestBid && highestBid.generalId !== command.generalId && !myPrevBid) {
                             const prevUserId = await resolveUserId(tx, highestBid.generalId);
                             if (prevUserId) {
-                                const prevPoint = await tx.inheritancePoint.findUnique({
-                                    where: {
-                                        userId_key: {
-                                            userId: prevUserId,
-                                            key: 'previous',
-                                        },
-                                    },
-                                });
-                                const nextValue = (prevPoint?.value ?? 0) + highestBid.amount;
-                                await tx.inheritancePoint.upsert({
-                                    where: {
-                                        userId_key: {
-                                            userId: prevUserId,
-                                            key: 'previous',
-                                        },
-                                    },
-                                    update: { value: nextValue },
-                                    create: { userId: prevUserId, key: 'previous', value: nextValue },
-                                });
+                                await tx.$executeRaw(
+                                    GamePrisma.sql`
+                                        INSERT INTO inheritance_point (user_id, key, value, updated_at)
+                                        VALUES (${prevUserId}, 'previous', ${highestBid.amount}, ${eventAt})
+                                        ON CONFLICT (user_id, key)
+                                        DO UPDATE SET
+                                            value = inheritance_point.value + EXCLUDED.value,
+                                            updated_at = EXCLUDED.updated_at
+                                    `
+                                );
                             }
                         }
                     }

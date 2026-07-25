@@ -30,6 +30,7 @@ import { shouldUseAi } from './ai/generalAi.js';
 import { createUnificationHandler } from './unificationHandler.js';
 import { createAuctionFinalizer } from '../auction/finalizer.js';
 import { createAuctionBidder } from '../auction/bidder.js';
+import { createNeutralAuctionRegistrar } from '../auction/neutralRegistrar.js';
 import { createTournamentRewardFinalizer } from '../tournament/finalizer.js';
 import { createTournamentAutoStartHandler } from './tournamentAutoStart.js';
 import { createYearbookHandler } from './yearbookHandler.js';
@@ -142,7 +143,7 @@ const createTurnDaemonRuntimeWithLease = async (
         );
     const eventActions = new Map<string, MonthlyEventActionHandler>();
     eventActions.set('ProcessIncome', (_args, environment) => {
-        incomeHandler.onMonthChanged?.({
+        void incomeHandler.onMonthChanged?.({
             previousYear: environment.month === 1 ? environment.year - 1 : environment.year,
             previousMonth: environment.month === 1 ? 12 : environment.month - 1,
             currentYear: environment.year,
@@ -206,6 +207,13 @@ const createTurnDaemonRuntimeWithLease = async (
         getWorld: () => worldRef,
         map: snapshot.map ?? null,
     });
+    const neutralAuctionRegistrar = await createNeutralAuctionRegistrar({
+        databaseUrl: options.databaseUrl,
+        profileName: options.profileName ?? options.profile,
+        getWorld: () => worldRef,
+        getRedisClient: () => redisConnector?.client,
+        getWorldConfig: () => snapshot.worldConfig ?? null,
+    });
     const tournamentAutoStartHandler = createTournamentAutoStartHandler({
         profileName: options.profileName ?? options.profile,
         getRedisClient: () => redisConnector?.client,
@@ -223,6 +231,7 @@ const createTurnDaemonRuntimeWithLease = async (
         nationTurnMonthlyHandler,
         hasEventAction('ProcessIncome') ? null : incomeHandler,
         frontStateHandler,
+        neutralAuctionRegistrar.handler,
         tournamentAutoStartHandler,
         yearbookHandler.handler
     );
@@ -404,6 +413,7 @@ const createTurnDaemonRuntimeWithLease = async (
     const baseClose = close;
     close = async () => {
         await baseClose();
+        await neutralAuctionRegistrar.close();
         if (unification) {
             await unification.close();
         }

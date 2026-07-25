@@ -348,6 +348,7 @@ export const createDatabaseTurnHooks = async (
             createdDiplomacy,
             deletedEvents,
             lifecycleEvents,
+            pendingNeutralAuctions,
         } = changes;
         const reservedTurnChanges = options?.reservedTurns?.peekDirtyState();
 
@@ -362,6 +363,28 @@ export const createDatabaseTurnHooks = async (
             // world mutation. A stale daemon can finish calculating, but it can
             // never commit after another owner has advanced the epoch.
             await options?.turnDaemonLease?.assertActive(prisma);
+            let neutralAuctionsToCreate = pendingNeutralAuctions;
+            if (pendingNeutralAuctions.length > 0) {
+                const latestRegistrationKey =
+                    pendingNeutralAuctions[pendingNeutralAuctions.length - 1]!.registrationKey;
+                await prisma.$executeRaw`
+                    SELECT pg_advisory_xact_lock(
+                        hashtext(${'neutral-auction-registration'}),
+                        ${state.id}
+                    )
+                `;
+                const persistedRows = await prisma.$queryRaw<Array<{ meta: unknown }>>`
+                    SELECT meta
+                    FROM world_state
+                    WHERE id = ${state.id}
+                    FOR UPDATE
+                `;
+                const persistedMeta = asRecord(persistedRows[0]?.meta);
+                if (persistedMeta.neutralAuctionRegistrationKey === latestRegistrationKey) {
+                    neutralAuctionsToCreate = [];
+                }
+            }
+
             await prisma.worldState.update({
                 where: { id: state.id },
                 data: worldStateUpdate,
@@ -442,6 +465,20 @@ export const createDatabaseTurnHooks = async (
                         })
                     )
                 );
+            }
+
+            if (neutralAuctionsToCreate.length > 0) {
+                await prisma.auction.createMany({
+                    data: neutralAuctionsToCreate.map((auction) => ({
+                        type: auction.type,
+                        targetCode: auction.targetCode,
+                        hostGeneralId: auction.hostGeneralId,
+                        hostName: auction.hostName,
+                        detail: asJson(auction.detail),
+                        status: 'OPEN',
+                        closeAt: auction.closeAt,
+                    })),
+                });
             }
 
             const createdIds = new Set(createdGenerals.map((general) => general.id));

@@ -63,7 +63,7 @@ const buildWorld = (
 };
 
 describe('monthly event pipeline', () => {
-    it('runs PRE_MONTH before the date change and MONTH after it in priority/id order', () => {
+    it('runs PRE_MONTH before the date change and MONTH after it in priority/id order', async () => {
         const trace: string[] = [];
         const actions = new Map<string, MonthlyEventActionHandler>([
             [
@@ -103,12 +103,12 @@ describe('monthly event pipeline', () => {
             actions
         );
 
-        world.advanceMonth(new Date('0190-01-01T00:00:00.000Z'));
+        await world.advanceMonth(new Date('0190-01-01T00:00:00.000Z'));
 
         expect(trace).toEqual(['pre:189-12', 'month-high:190-1', 'month-low:190-1']);
     });
 
-    it('supports logic conditions and persists DeleteEvent through dirty state', () => {
+    it('supports logic conditions and persists DeleteEvent through dirty state', async () => {
         const world = buildWorld(
             [
                 {
@@ -123,7 +123,7 @@ describe('monthly event pipeline', () => {
             new Map()
         );
 
-        world.advanceMonth(new Date('0190-01-01T00:00:00.000Z'));
+        await world.advanceMonth(new Date('0190-01-01T00:00:00.000Z'));
 
         expect(world.listEvents('month')).toEqual([]);
         expect(world.peekDirtyState().deletedEvents).toEqual([7]);
@@ -131,7 +131,7 @@ describe('monthly event pipeline', () => {
         expect(world.peekDirtyState().deletedEvents).toEqual([]);
     });
 
-    it('fails explicitly when a scenario action has not been migrated', () => {
+    it('fails explicitly when a scenario action has not been migrated', async () => {
         const world = buildWorld(
             [
                 {
@@ -146,7 +146,7 @@ describe('monthly event pipeline', () => {
             new Map()
         );
 
-        expect(() => world.advanceMonth(new Date('0190-01-01T00:00:00.000Z'))).toThrow(
+        await expect(world.advanceMonth(new Date('0190-01-01T00:00:00.000Z'))).rejects.toThrow(
             'Unsupported monthly event action: RaiseInvader (eventId=9)'
         );
     });

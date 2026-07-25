@@ -13,8 +13,7 @@ import {
     createGameApiServer,
     buildAuctionTimerKeys,
     seedAuctionTimers,
-    buildTurnDaemonStreamKeys,
-    RedisTurnDaemonTransport,
+    DatabaseTurnDaemonTransport,
 } from '@sammo-ts/game-api';
 import { createTurnDaemonRuntime } from '@sammo-ts/game-engine';
 import {
@@ -25,7 +24,7 @@ import {
     resolveRedisConfigFromEnv,
     GamePrisma,
 } from '@sammo-ts/infra';
-import { ItemLoader, ITEM_KEYS } from '@sammo-ts/logic';
+import { buildNeutralResourceAuctionPlan, ItemLoader, ITEM_KEYS } from '@sammo-ts/logic';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -221,6 +220,7 @@ describe('auction integration flow', () => {
 
     beforeAll(async () => {
         await loadEnv();
+        process.env.SCENARIO = '908';
         process.chdir(workspaceRoot);
         await resetDatabase();
         await resetRedis();
@@ -271,15 +271,15 @@ describe('auction integration flow', () => {
 
         await gatewayClient.admin.profiles.upsert.mutate({
             profile: 'che',
-            scenario: '2',
+            scenario: '908',
             apiPort: Number(process.env.GAME_API_PORT ?? 14000),
             status: 'RUNNING',
         });
 
         await gatewayClient.admin.profiles.installNow.mutate({
-            profileName: 'che:2',
+            profileName: 'che:908',
             install: {
-                scenarioId: 2,
+                scenarioId: 908,
                 turnTermMinutes: 1,
                 sync: false,
                 fiction: 0,
@@ -309,7 +309,7 @@ describe('auction integration flow', () => {
             });
             const gatewayToken = await gatewayClient.auth.issueGameSession.mutate({
                 sessionToken: login.sessionToken,
-                profile: 'che:2',
+                profile: 'che:908',
             });
             const access = await gameClient.auth.exchangeGatewayToken.mutate({
                 gatewayToken: gatewayToken.gameToken,
@@ -335,7 +335,7 @@ describe('auction integration flow', () => {
         const gatewayDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'public' }).url;
         turnDaemon = await createTurnDaemonRuntime({
             profile: 'che',
-            profileName: 'che:2',
+            profileName: 'che:908',
             databaseUrl: gameDatabaseUrl,
             gatewayDatabaseUrl,
         });
@@ -414,6 +414,9 @@ describe('auction integration flow', () => {
             where: { id: poorBidder.generalId },
             data: { gold: 50, rice: 1000 },
         });
+        await prisma.worldState.updateMany({
+            data: { currentMonth: 4 },
+        });
 
         if (turnDaemon) {
             await turnDaemon.lifecycle.stop('integration-test');
@@ -424,31 +427,24 @@ describe('auction integration flow', () => {
         const gatewayDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'public' }).url;
         turnDaemon = await createTurnDaemonRuntime({
             profile: 'che',
-            profileName: 'che:2',
+            profileName: 'che:908',
             databaseUrl: gameDatabaseUrl,
             gatewayDatabaseUrl,
         });
         turnDaemonLoop = turnDaemon.lifecycle.start();
         await sleep(500);
 
-        const now = new Date();
-        const initialCloseAt = new Date(now.getTime() + 10_000);
-        const auction = await prisma.auction.create({
-            data: {
-                type: 'BUY_RICE',
-                targetCode: null,
-                hostGeneralId: 0,
-                hostName: '시스템',
-                detail: {
-                    amount: 500,
-                    startBidAmount: 100,
-                    isReverse: false,
-                    availableLatestBidCloseDate: new Date(now.getTime() + 5 * 60_000).toISOString(),
-                },
-                status: 'OPEN',
-                closeAt: initialCloseAt,
-            },
+        const hostClient = createGameClient(gameUrl, gameServer.config.trpcPath, {
+            value: bidder3.accessToken,
         });
+        const opened = await hostClient.auction.openBuyRice.mutate({
+            amount: 500,
+            closeTurnCnt: 1,
+            startBidAmount: 250,
+            finishBidAmount: 1000,
+        });
+        const auction = await prisma.auction.findUniqueOrThrow({ where: { id: opened.auctionId } });
+        const initialCloseAt = auction.closeAt;
 
         const keys = buildAuctionTimerKeys(gameServer.config.profileName);
         await seedAuctionTimers(prisma, redis, keys);
@@ -458,7 +454,7 @@ describe('auction integration flow', () => {
         const bidder1Client = createGameClient(gameUrl, gameServer.config.trpcPath, {
             value: bidder1.accessToken,
         });
-        await bidder1Client.auction.bidBuyRice.mutate({ auctionId: auction.id, amount: 200 });
+        await bidder1Client.auction.bidBuyRice.mutate({ auctionId: auction.id, amount: 300 });
 
         const bidRows = await prisma.auctionBid.findMany({ where: { auctionId: auction.id } });
         expect(bidRows).toHaveLength(1);
@@ -466,9 +462,9 @@ describe('auction integration flow', () => {
         const poorClient = createGameClient(gameUrl, gameServer.config.trpcPath, {
             value: poorBidder.accessToken,
         });
-        await expect(
-            poorClient.auction.bidBuyRice.mutate({ auctionId: auction.id, amount: 500 })
-        ).rejects.toThrow('금이 부족합니다.');
+        await expect(poorClient.auction.bidBuyRice.mutate({ auctionId: auction.id, amount: 500 })).rejects.toThrow(
+            '금이 부족합니다.'
+        );
 
         const updatedAuction = await prisma.auction.findUnique({
             where: { id: auction.id },
@@ -487,10 +483,7 @@ describe('auction integration flow', () => {
         });
         await redis.zAdd(keys.timerKey, [{ score: finalizeAt.getTime(), value: String(auction.id) }]);
 
-        const transport = new RedisTurnDaemonTransport(redis, {
-            keys: buildTurnDaemonStreamKeys(gameServer.config.profileName),
-            requestTimeoutMs: 10_000,
-        });
+        const transport = new DatabaseTurnDaemonTransport(prisma, 30_000);
         await prisma.$executeRaw(
             GamePrisma.sql`
                 UPDATE auction
@@ -500,7 +493,7 @@ describe('auction integration flow', () => {
                 WHERE id = ${auction.id}
             `
         );
-        const result = await transport.requestCommand({ type: 'auctionFinalize', auctionId: auction.id }, 10_000);
+        const result = await transport.requestCommand({ type: 'auctionFinalize', auctionId: auction.id }, 30_000);
         expect(result?.ok).toBe(true);
 
         const finished = await prisma.auction.findUnique({
@@ -592,9 +585,9 @@ describe('auction integration flow', () => {
         const ownerClient = createGameClient(gameUrl, gameServer.config.trpcPath, {
             value: ownerBidder.accessToken,
         });
-        await expect(
-            ownerClient.auction.bidUnique.mutate({ auctionId: auction.id, amount: 300 })
-        ).rejects.toThrow('이미 다른 유니크를 가지고 있습니다.');
+        await expect(ownerClient.auction.bidUnique.mutate({ auctionId: auction.id, amount: 300 })).rejects.toThrow(
+            '이미 다른 유니크를 가지고 있습니다.'
+        );
 
         const validClient = createGameClient(gameUrl, gameServer.config.trpcPath, {
             value: validBidder.accessToken,
@@ -622,7 +615,7 @@ describe('auction integration flow', () => {
         const gatewayDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'public' }).url;
         turnDaemon = await createTurnDaemonRuntime({
             profile: 'che',
-            profileName: 'che:2',
+            profileName: 'che:908',
             databaseUrl: gameDatabaseUrl,
             gatewayDatabaseUrl,
         });
@@ -636,10 +629,7 @@ describe('auction integration flow', () => {
         });
         await redis.zAdd(keys.timerKey, [{ score: finalizeAt.getTime(), value: String(auction.id) }]);
 
-        const transport = new RedisTurnDaemonTransport(redis, {
-            keys: buildTurnDaemonStreamKeys(gameServer.config.profileName),
-            requestTimeoutMs: 10_000,
-        });
+        const transport = new DatabaseTurnDaemonTransport(prisma, 30_000);
         await prisma.$executeRaw(
             GamePrisma.sql`
                 UPDATE auction
@@ -649,7 +639,7 @@ describe('auction integration flow', () => {
                 WHERE id = ${auction.id}
             `
         );
-        const result = await transport.requestCommand({ type: 'auctionFinalize', auctionId: auction.id }, 10_000);
+        const result = await transport.requestCommand({ type: 'auctionFinalize', auctionId: auction.id }, 30_000);
         expect(result?.ok).toBe(false);
 
         const reopened = await prisma.auction.findUnique({
@@ -686,16 +676,20 @@ describe('auction integration flow', () => {
             where: { id: bidderB.generalId },
             data: { weaponCode: 'None', bookCode: 'None', horseCode: 'None', itemCode: 'None' },
         });
+        await prisma.general.updateMany({
+            where: { [slotField]: uniquePair.keyA } as GamePrisma.GeneralWhereInput,
+            data: { [slotField]: 'None' } as GamePrisma.GeneralUpdateManyMutationInput,
+        });
 
         await prisma.inheritancePoint.upsert({
             where: { userId_key: { userId: bidderA.userId, key: 'previous' } },
-            update: { value: 5000 },
-            create: { userId: bidderA.userId, key: 'previous', value: 5000 },
+            update: { value: 100_000 },
+            create: { userId: bidderA.userId, key: 'previous', value: 100_000 },
         });
         await prisma.inheritancePoint.upsert({
             where: { userId_key: { userId: bidderB.userId, key: 'previous' } },
-            update: { value: 5000 },
-            create: { userId: bidderB.userId, key: 'previous', value: 5000 },
+            update: { value: 100_000 },
+            create: { userId: bidderB.userId, key: 'previous', value: 100_000 },
         });
 
         if (turnDaemon) {
@@ -707,7 +701,7 @@ describe('auction integration flow', () => {
         const gatewayDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'public' }).url;
         turnDaemon = await createTurnDaemonRuntime({
             profile: 'che',
-            profileName: 'che:2',
+            profileName: 'che:908',
             databaseUrl: gameDatabaseUrl,
             gatewayDatabaseUrl,
         });
@@ -729,32 +723,39 @@ describe('auction integration flow', () => {
         const keys = buildAuctionTimerKeys(gameServer.config.profileName);
         await redis.del(keys.timerKey);
 
-        const limitCloseAt = new Date(now.getTime() + 60_000);
-        const auction = await prisma.auction.create({
-            data: {
-                type: 'UNIQUE_ITEM',
-                targetCode: uniquePair.keyA,
-                hostGeneralId: 0,
-                hostName: '시스템',
-                detail: {
-                    startBidAmount: 200,
-                    isReverse: false,
-                    availableLatestBidCloseDate: limitCloseAt.toISOString(),
-                },
-                status: 'OPEN',
-                closeAt: new Date(now.getTime() + 2000),
-            },
+        const bidderAClient = createGameClient(gameUrl, gameServer.config.trpcPath, { value: bidderA.accessToken });
+        const bidderBClient = createGameClient(gameUrl, gameServer.config.trpcPath, { value: bidderB.accessToken });
+        const opened = await bidderAClient.auction.openUnique.mutate({
+            itemKey: uniquePair.keyA,
+            amount: 5000,
         });
+        const limitCloseAt = new Date(now.getTime() + 60_000);
+        await prisma.$executeRaw(
+            GamePrisma.sql`
+                UPDATE auction
+                SET close_at = ${new Date(now.getTime() + 2000)},
+                    detail = jsonb_set(
+                        jsonb_set(
+                            detail,
+                            '{availableLatestBidCloseDate}',
+                            to_jsonb(${limitCloseAt.toISOString()}::text)
+                        ),
+                        '{remainCloseDateExtensionCnt}',
+                        '0'::jsonb
+                    ),
+                    updated_at = ${now}
+                WHERE id = ${opened.auctionId}
+            `
+        );
+        const auction = await prisma.auction.findUniqueOrThrow({ where: { id: opened.auctionId } });
 
         await seedAuctionTimers(prisma, redis, keys);
 
-        const bidderAClient = createGameClient(gameUrl, gameServer.config.trpcPath, { value: bidderA.accessToken });
-        const bidderBClient = createGameClient(gameUrl, gameServer.config.trpcPath, { value: bidderB.accessToken });
-
-        await bidderAClient.auction.bidUnique.mutate({ auctionId: auction.id, amount: 300, tryExtendCloseDate: true });
-        await bidderBClient.auction.bidUnique.mutate({ auctionId: auction.id, amount: 350, tryExtendCloseDate: true });
-        await bidderAClient.auction.bidUnique.mutate({ auctionId: auction.id, amount: 420, tryExtendCloseDate: true });
-        await bidderBClient.auction.bidUnique.mutate({ auctionId: auction.id, amount: 500, tryExtendCloseDate: true });
+        await bidderBClient.auction.bidUnique.mutate({ auctionId: auction.id, amount: 5100, tryExtendCloseDate: true });
+        await bidderAClient.auction.bidUnique.mutate({ auctionId: auction.id, amount: 5200, tryExtendCloseDate: true });
+        await bidderBClient.auction.bidUnique.mutate({ auctionId: auction.id, amount: 5300, tryExtendCloseDate: true });
+        await bidderAClient.auction.bidUnique.mutate({ auctionId: auction.id, amount: 5400, tryExtendCloseDate: true });
+        await bidderBClient.auction.bidUnique.mutate({ auctionId: auction.id, amount: 5500, tryExtendCloseDate: true });
 
         const afterBids = await prisma.auction.findUnique({
             where: { id: auction.id },
@@ -770,10 +771,7 @@ describe('auction integration flow', () => {
         });
         await redis.zAdd(keys.timerKey, [{ score: finalizeAt.getTime(), value: String(auction.id) }]);
 
-        const transport = new RedisTurnDaemonTransport(redis, {
-            keys: buildTurnDaemonStreamKeys(gameServer.config.profileName),
-            requestTimeoutMs: 10_000,
-        });
+        const transport = new DatabaseTurnDaemonTransport(prisma, 30_000);
         await prisma.$executeRaw(
             GamePrisma.sql`
                 UPDATE auction
@@ -783,7 +781,7 @@ describe('auction integration flow', () => {
                 WHERE id = ${auction.id}
             `
         );
-        const result = await transport.requestCommand({ type: 'auctionFinalize', auctionId: auction.id }, 10_000);
+        const result = await transport.requestCommand({ type: 'auctionFinalize', auctionId: auction.id }, 30_000);
         expect(result?.ok).toBe(true);
 
         const winner = await prisma.general.findUnique({
@@ -792,5 +790,139 @@ describe('auction integration flow', () => {
         });
         expect(winner).not.toBeNull();
         expect(Object.values(winner!)).toContain(uniquePair.keyA);
+    }, 60_000);
+
+    it('opens the same neutral merchant auctions on the legacy monthly boundary', async () => {
+        if (!gameConnector) {
+            throw new Error('runtime not ready');
+        }
+        const prisma = gameConnector.prisma;
+        if (turnDaemon) {
+            await turnDaemon.lifecycle.stop('integration-test');
+            await turnDaemon.close();
+            await turnDaemonLoop;
+        }
+
+        await prisma.auction.deleteMany({
+            where: {
+                hostGeneralId: 0,
+                type: { in: ['BUY_RICE', 'SELL_RICE'] },
+            },
+        });
+        const futureTurn = new Date(Date.now() + 60 * 60_000);
+        await prisma.general.updateMany({
+            where: { npcState: { lt: 2 } },
+            data: {
+                gold: 5_432,
+                rice: 7_654,
+                turnTime: futureTurn,
+            },
+        });
+        const nationCount = await prisma.nation.count();
+        let hiddenSeed = '';
+        let expected = [] as ReturnType<typeof buildNeutralResourceAuctionPlan>;
+        for (let index = 0; index < 1_000; index += 1) {
+            hiddenSeed = `integration-neutral-${index}`;
+            expected = buildNeutralResourceAuctionPlan({
+                hiddenSeed,
+                seedYear: 180,
+                seedMonth: 1,
+                nationCount,
+                consumeTournamentRoll: false,
+                averageGold: 5_432,
+                averageRice: 7_654,
+                buyRiceAuctionCount: 0,
+                sellRiceAuctionCount: 0,
+            });
+            if (expected.length > 0) {
+                break;
+            }
+        }
+        expect(expected.length).toBeGreaterThan(0);
+
+        const worldState = await prisma.worldState.findFirstOrThrow();
+        const worldMeta =
+            worldState.meta && typeof worldState.meta === 'object' && !Array.isArray(worldState.meta)
+                ? worldState.meta
+                : {};
+        await prisma.worldState.update({
+            where: { id: worldState.id },
+            data: {
+                currentYear: 180,
+                currentMonth: 1,
+                tickSeconds: 60,
+                meta: {
+                    ...worldMeta,
+                    hiddenSeed,
+                    lastTurnTime: new Date(Date.now() - 61_000).toISOString(),
+                    neutralAuctionRegistrationKey: null,
+                },
+            },
+        });
+
+        const gameDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'che' }).url;
+        const gatewayDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'public' }).url;
+        turnDaemon = await createTurnDaemonRuntime({
+            profile: 'che',
+            profileName: 'che:908',
+            databaseUrl: gameDatabaseUrl,
+            gatewayDatabaseUrl,
+        });
+        turnDaemonLoop = turnDaemon.lifecycle.start();
+
+        const deadline = Date.now() + 10_000;
+        let rows = await prisma.auction.findMany({
+            where: {
+                hostGeneralId: 0,
+                type: { in: ['BUY_RICE', 'SELL_RICE'] },
+            },
+            orderBy: { id: 'asc' },
+        });
+        while (rows.length < expected.length && Date.now() < deadline) {
+            await sleep(100);
+            rows = await prisma.auction.findMany({
+                where: {
+                    hostGeneralId: 0,
+                    type: { in: ['BUY_RICE', 'SELL_RICE'] },
+                },
+                orderBy: { id: 'asc' },
+            });
+        }
+
+        expect(rows).toHaveLength(expected.length);
+        for (const [index, plan] of expected.entries()) {
+            const row = rows[index]!;
+            const detail = row.detail as Record<string, unknown>;
+            expect(row).toMatchObject({
+                type: plan.auctionType,
+                targetCode: String(plan.amount),
+                hostGeneralId: 0,
+                hostName: '상인',
+                status: 'OPEN',
+            });
+            expect(detail).toMatchObject({
+                amount: plan.amount,
+                startBidAmount: plan.startBidAmount,
+                finishBidAmount: plan.finishBidAmount,
+                closeTurnCnt: plan.closeTurnCnt,
+                seedYear: 180,
+                seedMonth: 1,
+                neutralRegistrationKey: '180-02',
+            });
+            expect(row.closeAt.getTime() - row.createdAt.getTime()).toBeGreaterThanOrEqual(
+                plan.closeTurnCnt * 60_000 - 2_000
+            );
+            expect(row.closeAt.getTime() - row.createdAt.getTime()).toBeLessThanOrEqual(
+                plan.closeTurnCnt * 60_000 + 2_000
+            );
+        }
+        const persistedState = await prisma.worldState.findUniqueOrThrow({
+            where: { id: worldState.id },
+        });
+        expect(persistedState).toMatchObject({
+            currentYear: 180,
+            currentMonth: 2,
+            meta: expect.objectContaining({ neutralAuctionRegistrationKey: '180-02' }),
+        });
     }, 60_000);
 });

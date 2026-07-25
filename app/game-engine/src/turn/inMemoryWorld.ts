@@ -2,7 +2,14 @@ import type { City, LogEntryDraft, MessageDraft, Nation, ScenarioConfig, Troop, 
 import { getNextTurnAt } from '@sammo-ts/logic';
 
 import type { TurnCheckpoint } from '../lifecycle/types.js';
-import type { TurnDiplomacy, TurnEvent, TurnGeneral, TurnWorldSnapshot, TurnWorldState } from './types.js';
+import type {
+    PendingNeutralAuction,
+    TurnDiplomacy,
+    TurnEvent,
+    TurnGeneral,
+    TurnWorldSnapshot,
+    TurnWorldState,
+} from './types.js';
 import {
     applyDiplomacyPatch as applyDiplomacyPatchToEntry,
     buildDefaultDiplomacy,
@@ -73,9 +80,9 @@ export interface TurnCalendarContext {
 
 export interface TurnCalendarHandler {
     // 레거시 PRE_MONTH는 날짜 변경 전, MONTH는 날짜 변경 후에 실행된다.
-    beforeMonthChanged?(context: TurnCalendarContext): void;
-    onMonthChanged?(context: TurnCalendarContext): void;
-    onYearChanged?(context: TurnCalendarContext): void;
+    beforeMonthChanged?(context: TurnCalendarContext): void | Promise<void>;
+    onMonthChanged?(context: TurnCalendarContext): void | Promise<void>;
+    onYearChanged?(context: TurnCalendarContext): void | Promise<void>;
 }
 
 export interface InMemoryTurnWorldOptions {
@@ -102,6 +109,7 @@ export interface TurnWorldChanges {
     createdDiplomacy: TurnDiplomacy[];
     deletedEvents: number[];
     lifecycleEvents: GeneralLifecycleEvent[];
+    pendingNeutralAuctions: PendingNeutralAuction[];
 }
 
 const compareTurnOrder = (left: TurnGeneral, right: TurnGeneral): number => {
@@ -270,6 +278,7 @@ export class InMemoryTurnWorld {
     private readonly logs: LogEntryDraft[] = [];
     private readonly messages: MessageDraft[] = [];
     private readonly lifecycleEvents: GeneralLifecycleEvent[] = [];
+    private readonly pendingNeutralAuctions: PendingNeutralAuction[] = [];
     private readonly scenarioConfig: ScenarioConfig;
     private checkpoint?: TurnCheckpoint;
     private state: TurnWorldState;
@@ -329,6 +338,14 @@ export class InMemoryTurnWorld {
 
     pushLog(entry: LogEntryDraft): void {
         this.logs.push(entry);
+    }
+
+    queueNeutralAuction(auction: PendingNeutralAuction): void {
+        this.pendingNeutralAuctions.push({
+            ...auction,
+            detail: { ...auction.detail },
+            closeAt: new Date(auction.closeAt.getTime()),
+        });
     }
 
     getScenarioConfig(): ScenarioConfig {
@@ -744,7 +761,7 @@ export class InMemoryTurnWorld {
         return nextTurnAt;
     }
 
-    advanceMonth(turnTime: Date): void {
+    async advanceMonth(turnTime: Date): Promise<void> {
         const previousYear = this.state.currentYear;
         const previousMonth = this.state.currentMonth;
         let nextYear = previousYear;
@@ -761,7 +778,7 @@ export class InMemoryTurnWorld {
             currentMonth: nextMonth,
             turnTime,
         };
-        this.calendarHandler?.beforeMonthChanged?.(context);
+        await this.calendarHandler?.beforeMonthChanged?.(context);
 
         const meta = {
             ...this.state.meta,
@@ -776,9 +793,9 @@ export class InMemoryTurnWorld {
         };
 
         this.advanceDiplomacyMonth();
-        this.calendarHandler?.onMonthChanged?.(context);
+        await this.calendarHandler?.onMonthChanged?.(context);
         if (nextYear !== previousYear) {
-            this.calendarHandler?.onYearChanged?.(context);
+            await this.calendarHandler?.onYearChanged?.(context);
         }
     }
 
@@ -818,6 +835,11 @@ export class InMemoryTurnWorld {
         const logs = this.logs.slice();
         const messages = this.messages.slice();
         const lifecycleEvents = this.lifecycleEvents.slice();
+        const pendingNeutralAuctions = this.pendingNeutralAuctions.map((auction) => ({
+            ...auction,
+            detail: { ...auction.detail },
+            closeAt: new Date(auction.closeAt.getTime()),
+        }));
 
         return {
             generals,
@@ -837,6 +859,7 @@ export class InMemoryTurnWorld {
             createdDiplomacy,
             deletedEvents,
             lifecycleEvents,
+            pendingNeutralAuctions,
         };
     }
 
@@ -862,6 +885,7 @@ export class InMemoryTurnWorld {
         this.logs.splice(0, changes.logs.length);
         this.messages.splice(0, changes.messages.length);
         this.lifecycleEvents.splice(0, changes.lifecycleEvents.length);
+        this.pendingNeutralAuctions.splice(0, changes.pendingNeutralAuctions.length);
     }
 
     consumeDirtyState(): TurnWorldChanges {

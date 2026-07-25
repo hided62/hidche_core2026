@@ -116,7 +116,9 @@ Nation-level choices run only for NPCs (`npc >= 2`) or for autorun users:
 - **Resource distribution**
     - `do유저장포상`, `doNPC포상`, `doNPC몰수`
     - uses resource floors (`reqNation*`, `reqNPC*`, `reqHuman*`)
-    - weighted by target general's deficit and recent activity.
+    - sorts by each general's gold/rice, excludes inactive (`killturn <= 5`)
+      targets, and preserves the legacy geometric-mean amounts and candidate
+      weights.
 - **Diplomacy**
     - `do불가침제의`: respond to assistance requests with NAP offer.
     - `do선전포고`: probabilistic declaration when strong enough.
@@ -131,8 +133,10 @@ General-level decisions are layered:
 2. Reserved command is honored if valid (unless `휴식`).
 3. Immediate recovery if `injury > cureThreshold`.
 4. Special cases:
-    - NPC troop leaders (type 5) always `집합`.
-    - wanderers decide on founding / moving / disbanding.
+    - A nationless NPC troop leader shortens `killturn` and keeps its reserved
+      command; an affiliated type-5 leader refreshes `killturn` and uses `집합`.
+    - wandering lords decide on founding, one-edge movement toward a cached
+      target, or disbanding.
 5. Iterate policy `priority`, invoking `do{Action}`.
 6. Fallback to `do중립`.
 
@@ -189,3 +193,17 @@ To port the AI to an in-memory state model without behavior drift:
 
 These guidelines mirror the current "derive once, then select via priority"
 pattern and minimize resimulation deltas in the rewrite.
+
+## Migrated decision-parity regression
+
+`app/game-engine/test/generalAiLegacyDecisionParity.test.ts` records focused
+final-command expectations extracted from `ref/sam` `ng_compare@fe9ae978`.
+Its matrix varies diplomacy/war state, city development and population,
+technology/year ceilings, general gold/rice and casualty ranks, stats and
+affinity, reserved/special NPC state, nation treasury reserves, and command
+availability. It also asserts RNG-sensitive candidate weights where consuming
+the same random branch is part of the final decision.
+
+This is compatibility evidence for the represented decision branches. The
+long-running NPC scenario suites remain smoke tests and are not a substitute
+for this branch-level matrix.

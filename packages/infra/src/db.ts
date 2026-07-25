@@ -22,6 +22,8 @@ export interface DatabaseClient {
     nationTurn: GamePrisma.NationTurnDelegate;
     troop: GamePrisma.TroopDelegate;
     logEntry: GamePrisma.LogEntryDelegate;
+    auction: GamePrisma.AuctionDelegate;
+    auctionBid: GamePrisma.AuctionBidDelegate;
     inheritancePoint: GamePrisma.InheritancePointDelegate;
     inheritanceLog: GamePrisma.InheritanceLogDelegate;
     inheritanceResult: GamePrisma.InheritanceResultDelegate;

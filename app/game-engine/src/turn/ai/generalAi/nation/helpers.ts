@@ -3,7 +3,10 @@ import type { City } from '@sammo-ts/logic';
 import type { GeneralAI } from '../core.js';
 import { asRecord, readMetaNumber } from '../../aiUtils.js';
 
-export const pickWeightedCandidate = (ai: GeneralAI, list: Array<[ReturnType<GeneralAI['buildNationCandidate']>, number]>) => {
+export const pickWeightedCandidate = (
+    ai: GeneralAI,
+    list: Array<[ReturnType<GeneralAI['buildNationCandidate']>, number]>
+) => {
     const items = list.filter(([item]) => Boolean(item)) as Array<
         [ReturnType<GeneralAI['buildNationCandidate']>, number]
     >;
@@ -59,23 +62,21 @@ export const selectRecruitableCity = (ai: GeneralAI, minPop: number): Record<num
 export const buildAssignmentCandidate = (ai: GeneralAI, destGeneralId: number, destCityId: number, reason: string) =>
     ai.buildNationCandidate('che_발령', { destGeneralId, destCityId }, reason);
 
-export const buildSeizureCandidate = (ai: GeneralAI, destGeneralId: number, amount: number, isGold: boolean, reason: string) =>
-    ai.buildNationCandidate('che_몰수', { destGeneralID: destGeneralId, amount, isGold }, reason);
+export const buildSeizureCandidate = (
+    ai: GeneralAI,
+    destGeneralId: number,
+    amount: number,
+    isGold: boolean,
+    reason: string
+) => ai.buildNationCandidate('che_몰수', { destGeneralID: destGeneralId, amount, isGold }, reason);
 
-export const buildAwardCandidate = (ai: GeneralAI, destGeneralId: number, amount: number, isGold: boolean, reason: string) =>
-    ai.buildNationCandidate('che_포상', { destGeneralId, amount, isGold }, reason);
-
-export const resolveAwardAmount = (ai: GeneralAI, current: number, target: number): number | null => {
-    const diff = target - current;
-    if (diff <= 0) {
-        return null;
-    }
-    const amount = Math.min(diff, ai.maxResourceActionAmount);
-    if (amount < ai.nationPolicy.minimumResourceActionAmount) {
-        return null;
-    }
-    return amount;
-};
+export const buildAwardCandidate = (
+    ai: GeneralAI,
+    destGeneralId: number,
+    amount: number,
+    isGold: boolean,
+    reason: string
+) => ai.buildNationCandidate('che_포상', { destGeneralId, amount, isGold }, reason);
 
 export const resolveNationIncome = (ai: GeneralAI): number => {
     const cities = Object.values(ai.supplyCities);

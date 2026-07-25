@@ -1,6 +1,8 @@
 export * from './domain/entities.js';
 export type { RandomGenerator } from '@sammo-ts/common';
 export * from './actions/index.js';
+export * from './auction/alias.js';
+export * from './auction/neutral.js';
 export * from './constraints/index.js';
 export * from './crewType/index.js';
 export * from './diplomacy/index.js';

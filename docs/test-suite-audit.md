@@ -4,7 +4,7 @@
 
 - Audit date: 2026-07-25
 - Code baseline: `main@46ae79dbe7a0fb64aff9bdcc76eadafd75e10c9e`
-- Executed test sources: 66 TypeScript `*.test.ts` files
+- Executed test sources: 67 TypeScript `*.test.ts` files
 - Excluded from the source count: ignored `dist/` outputs and non-executable
   fixtures/helpers
 - Historical generated copies removed by this audit:
@@ -61,26 +61,27 @@ environment-dependent check.
 
 ### `app/game-engine`
 
-| Test source                                     | Disposition | Layer         | What it establishes                                                                                                                                                                                               |
-| ----------------------------------------------- | ----------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `test/crewTypeExecution.test.ts`                | kept        | compatibility | Crew action router ordering and legacy NPC arm-type weighting.                                                                                                                                                    |
-| `test/databaseCommandQueue.integration.test.ts` | kept        | integration   | PostgreSQL single claim across consumers, persisted result, and expired-versus-active lease recovery. Explicitly skipped without a DB URL.                                                                        |
-| `test/turnDaemonLease.integration.test.ts`      | kept        | integration   | PostgreSQL profile lease exclusivity, expiry takeover with epoch increment, stale-owner fencing rollback, and clean release handoff. Explicitly skipped without a DB URL.                                         |
-| `test/inputEventAtomicity.test.ts`              | kept        | contract      | Dirty-state retention, mutation/commit/respond ordering, and pause/no-ack behavior on handler or commit failure.                                                                                                  |
-| `test/nationCollapseOnConquest.test.ts`         | kept        | smoke         | Last-city conquest removes the nation and neutralizes its general. It is a focused engine scenario, not full battle parity.                                                                                       |
-| `test/nationTurnCompatibility.test.ts`          | kept        | compatibility | Legacy-backed 12-turn research accumulation and completion, diplomacy-message emission, and exact monthly strategy/diplomacy limit decay through the engine harness.                                              |
-| `test/npcGeneralDomesticTurn.test.ts`           | corrected   | contract      | Fixed seed chooses the security command, applies exactly `+50`, leaves other city values unchanged, and advances exactly one tick.                                                                                |
-| `test/npcNationGrowthScenario.test.ts`          | corrected   | smoke         | Long-running NPC growth invariants and collapse guards. Broad thresholds remain intentional smoke bounds; unconditional diagnostic output was removed.                                                            |
-| `test/npcNationTechResearch.test.ts`            | kept        | smoke         | Long-running monotonic tech growth and higher later recruitment cost.                                                                                                                                             |
-| `test/npcNationUprisingUnification.test.ts`     | kept        | smoke         | Long-running founding, conquest, nation-count monotonicity, and unification terminal state.                                                                                                                       |
-| `test/npcNationWarDeclaration.test.ts`          | kept        | smoke         | Declaration, war transition, preparation, conquest, unification, and dispatch occurrence in one end-to-end NPC scenario.                                                                                          |
-| `test/npcWarPrepTurns.test.ts`                  | kept        | smoke         | Training/morale actions occur in the named months and leave battle-ready generals.                                                                                                                                |
-| `test/reservedTurnExecution.test.ts`            | kept        | smoke         | Multi-command engine application, invalid-argument and constraint fallbacks, uprising/founding transitions, and named failure constraints. Its large workflow scope is recorded as smoke rather than a unit test. |
-| `test/scenarioSeeder.test.ts`                   | kept        | integration   | Real schema row counts, diplomacy symmetry, and persisted install options. Reported as skipped when required tables are unavailable.                                                                              |
-| `test/turnDaemonLifecycle.test.ts`              | kept        | contract      | Queue-front versus scheduled-boundary selection and exact processor checkpoint arguments.                                                                                                                         |
-| `test/turnOrder.test.ts`                        | kept        | contract      | Stable `turnTime`, then ID, ordering independent of insertion order.                                                                                                                                              |
-| `test/uniqueLotteryCommand.test.ts`             | kept        | contract      | Fixed-seed eligible command awards the expected unique item and item log.                                                                                                                                         |
-| `test/voteReward.test.ts`                       | corrected   | contract      | Gold, exact unique item, persisted reward metadata, log, and idempotent second application.                                                                                                                       |
+| Test source                                     | Disposition | Layer         | What it establishes                                                                                                                                                                                                                  |
+| ----------------------------------------------- | ----------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `test/crewTypeExecution.test.ts`                | kept        | compatibility | Crew action router ordering and legacy NPC arm-type weighting.                                                                                                                                                                       |
+| `test/databaseCommandQueue.integration.test.ts` | kept        | integration   | PostgreSQL single claim across consumers, persisted result, and expired-versus-active lease recovery. Explicitly skipped without a DB URL.                                                                                           |
+| `test/generalAiLegacyDecisionParity.test.ts`    | added       | compatibility | Ref-backed final NPC command matrix across diplomacy, war readiness, city development/population, technology ceilings, gold/rice and casualty ranks, stats/affinity, special NPC state, treasury reserves, and command availability. |
+| `test/inputEventAtomicity.test.ts`              | kept        | contract      | Dirty-state retention, mutation/commit/respond ordering, and pause/no-ack behavior on handler or commit failure.                                                                                                                     |
+| `test/nationCollapseOnConquest.test.ts`         | kept        | smoke         | Last-city conquest removes the nation and neutralizes its general. It is a focused engine scenario, not full battle parity.                                                                                                          |
+| `test/nationTurnCompatibility.test.ts`          | kept        | compatibility | Legacy-backed 12-turn research accumulation and completion, diplomacy-message emission, and exact monthly strategy/diplomacy limit decay through the engine harness.                                                                 |
+| `test/npcGeneralDomesticTurn.test.ts`           | corrected   | contract      | Fixed seed chooses the security command, applies exactly `+50`, leaves other city values unchanged, and advances exactly one tick.                                                                                                   |
+| `test/npcNationGrowthScenario.test.ts`          | corrected   | smoke         | Long-running NPC growth invariants and collapse guards. The implementation-specific early recruitment bound was removed because legacy AI forbids peace/declaration recruitment; remaining thresholds are smoke bounds.              |
+| `test/npcNationTechResearch.test.ts`            | corrected   | smoke         | Long-running monotonic tech growth. Net per-tick general gold is not treated as recruitment price because nation awards can occur in the same tick.                                                                                  |
+| `test/npcNationUprisingUnification.test.ts`     | kept        | smoke         | Long-running founding, conquest, nation-count monotonicity, and unification terminal state.                                                                                                                                          |
+| `test/npcNationWarDeclaration.test.ts`          | corrected   | smoke         | Declaration, war transition, a battle-ready cohort, front deployment, conquest, unification, and dispatch occurrence without assuming every recruit is already fully trained.                                                        |
+| `test/npcWarPrepTurns.test.ts`                  | kept        | smoke         | Training/morale actions occur in the named months and leave battle-ready generals.                                                                                                                                                   |
+| `test/reservedTurnExecution.test.ts`            | kept        | smoke         | Multi-command engine application, invalid-argument and constraint fallbacks, uprising/founding transitions, and named failure constraints. Its large workflow scope is recorded as smoke rather than a unit test.                    |
+| `test/scenarioSeeder.test.ts`                   | kept        | integration   | Real schema row counts, diplomacy symmetry, and persisted install options. Reported as skipped when required tables are unavailable.                                                                                                 |
+| `test/turnDaemonLease.integration.test.ts`      | kept        | integration   | PostgreSQL profile lease exclusivity, expiry takeover with epoch increment, stale-owner fencing rollback, and clean release handoff. Explicitly skipped without a DB URL.                                                            |
+| `test/turnDaemonLifecycle.test.ts`              | kept        | contract      | Queue-front versus scheduled-boundary selection and exact processor checkpoint arguments.                                                                                                                                            |
+| `test/turnOrder.test.ts`                        | kept        | contract      | Stable `turnTime`, then ID, ordering independent of insertion order.                                                                                                                                                                 |
+| `test/uniqueLotteryCommand.test.ts`             | kept        | contract      | Fixed-seed eligible command awards the expected unique item and item log.                                                                                                                                                            |
+| `test/voteReward.test.ts`                       | corrected   | contract      | Gold, exact unique item, persisted reward metadata, log, and idempotent second application.                                                                                                                                          |
 
 ### `packages/logic`
 
@@ -151,8 +152,9 @@ to legacy-compatible:
 
 - battle compatibility is supported only by the differential fixtures and the
   suites explicitly marked `compatibility`;
-- broad NPC and multi-command scenarios guard liveness/invariants, not exact
-  monthly balance or complete side effects;
+- broad NPC and multi-command scenarios guard liveness/invariants, while
+  `generalAiLegacyDecisionParity.test.ts` establishes exact final choices only
+  for its explicitly represented input branches;
 - DB/Redis/PM2 claims require their integration suites to run rather than skip;
 - changing an implementation and observing a green unit suite is still not a
   substitute for a new PHP trace when compatibility-sensitive behavior changes.
