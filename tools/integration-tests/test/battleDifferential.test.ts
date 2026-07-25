@@ -691,12 +691,12 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
                     process.env['ITEM_PARITY_DEBUG'] === '1'
                         ? `\ncore=${JSON.stringify(
                               coreEvents
-                                  .map((event, index) => ({ index, event }))
-                                  .filter(({ event }) => event.event === 'phase_damage')
+                                      .map((event, index) => ({ index, event }))
+                                      .filter(({ event }) => event.event === 'phase_power' || event.event === 'phase_damage')
                           )}\nref=${JSON.stringify(
                               reference.events
-                                  .map((event, index) => ({ index, event }))
-                                  .filter(({ event }) => event.event === 'phase_damage')
+                                      .map((event, index) => ({ index, event }))
+                                      .filter(({ event }) => event.event === 'phase_power' || event.event === 'phase_damage')
                           )}`
                         : '';
                 failures.push(`${itemKey}: ${error instanceof Error ? error.message : String(error)}${debug}`);
@@ -791,7 +791,19 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
             try {
                 assertTraceParity(coreEvents, reference, coreRng);
             } catch (error) {
-                failures.push(`${itemKey}: ${error instanceof Error ? error.message : String(error)}`);
+                const debug =
+                    process.env['ITEM_PARITY_DEBUG'] === '1'
+                        ? `\ncore=${JSON.stringify(
+                              coreEvents
+                                  .map((event, index) => ({ index, event }))
+                                  .filter(({ event }) => event.event === 'phase_power' || event.event === 'phase_damage')
+                          )}\nref=${JSON.stringify(
+                              reference.events
+                                  .map((event, index) => ({ index, event }))
+                                  .filter(({ event }) => event.event === 'phase_power' || event.event === 'phase_damage')
+                          )}`
+                        : '';
+                failures.push(`${itemKey}: ${error instanceof Error ? error.message : String(error)}${debug}`);
             }
         }
         expect(failures, failures.join('\n')).toEqual([]);

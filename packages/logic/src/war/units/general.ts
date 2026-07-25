@@ -30,6 +30,7 @@ const META_RANK_PREFIX = 'rank_';
 const META_INTEL_EXP = 'intelExp';
 const META_STRENGTH_EXP = 'strengthExp';
 const META_LEADERSHIP_EXP = 'leadershipExp';
+const MAX_EXP_LEVEL = 255;
 
 const RANK_WARNUM = `${META_RANK_PREFIX}warnum`;
 const RANK_KILLNUM = `${META_RANK_PREFIX}killnum`;
@@ -295,7 +296,10 @@ export class WarUnitGeneral<
         let avoidRatio = this.getCrewType().avoid / 100;
         avoidRatio *= this.getComputedTrain() / 100;
 
-        const aux = { isAttacker: this.isAttacker() };
+        const aux = {
+            isAttacker: this.isAttacker(),
+            leadership: this.getComputedStat('leadership', this.general.stats.leadership),
+        };
         avoidRatio = this.actionPipeline.onCalcStat(this.getActionContext(), 'warAvoidRatio', avoidRatio, aux);
         avoidRatio = this.resolveOpposeStatValue('warAvoidRatio', avoidRatio, aux);
 
@@ -346,8 +350,14 @@ export class WarUnitGeneral<
     }
 
     public addLevelExp(value: number): void {
-        const adjust = this.isAttacker() ? value : value * 0.8;
-        this.general.experience += adjust;
+        const sideAdjusted = this.isAttacker() ? value : value * 0.8;
+        const adjusted = this.actionPipeline.onCalcStat(this.getActionContext(), 'experience', sideAdjusted);
+        this.general.experience += adjusted;
+        const nextExpLevel =
+            this.general.experience < 1000
+                ? Math.trunc(this.general.experience / 100)
+                : Math.trunc(Math.sqrt(this.general.experience / 10));
+        this.general.meta[META_EXP_LEVEL] = clamp(nextExpLevel, 0, MAX_EXP_LEVEL);
     }
 
     public addDedication(value: number): void {
@@ -361,7 +371,11 @@ export class WarUnitGeneral<
                 : crewType.armType;
         const key = `${META_DEX_PREFIX}${armType}`;
         const base = getMetaNumber(this.general.meta, key);
-        const adjustedExp = this.actionPipeline.onCalcStat(this.getActionContext(), 'addDex', exp, { armType });
+        let nextExp = exp;
+        if (armType === this.config.armTypes.wizard || armType === this.config.armTypes.siege) {
+            nextExp *= 0.9;
+        }
+        const adjustedExp = this.actionPipeline.onCalcStat(this.getActionContext(), 'addDex', nextExp, { armType });
         this.general.meta[key] = base + adjustedExp;
     }
 

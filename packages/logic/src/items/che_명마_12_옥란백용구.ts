@@ -25,14 +25,20 @@ export const itemModule: ItemModule = {
         context: GeneralActionContext | WarActionContext,
         statName: GeneralStatName | WarStatName,
         value: number | [number, number],
-        _aux?: unknown
+        aux?: unknown
     ): number | [number, number] {
         let newValue: number | [number, number] = value;
         if (statName === 'leadership' && typeof value === 'number') {
             newValue = value + STAT_VALUE;
         }
         if (statName === 'warAvoidRatio' && typeof newValue === 'number') {
-            const { leadership } = context.general.stats;
+            const leadership =
+                typeof aux === 'object' &&
+                aux !== null &&
+                'leadership' in aux &&
+                typeof aux.leadership === 'number'
+                    ? aux.leadership
+                    : context.general.stats.leadership + STAT_VALUE;
             const crewL = context.general.crew / 100;
             const boost = (1 - crewL / leadership) * 0.5;
             return newValue + Math.min(Math.max(boost, 0), 0.5);

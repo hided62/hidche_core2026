@@ -166,6 +166,58 @@ const buildGeneral = (strength: number): General => ({
 });
 
 describe('war triggers', () => {
+    it('updates the legacy experience level and applies item experience modifiers immediately', () => {
+        const general = buildGeneral(80);
+        general.experience = 90;
+        general.meta.explevel = 0;
+        const crewType = new WarCrewType(buildUnitSet().crewTypes![0]!);
+        const unit = new WarUnitGeneral(
+            new RandUtil(new ConstantRNG(0)),
+            buildConfig(),
+            general,
+            buildCity(),
+            buildNation(),
+            true,
+            crewType,
+            new ActionLogger({ generalId: 1, nationId: 1 }),
+            new WarActionPipeline([
+                {
+                    onCalcStat: (_context, statName, value) =>
+                        statName === 'experience' ? (value as number) * 1.2 : value,
+                },
+            ])
+        );
+
+        unit.addLevelExp(10);
+        expect(general.experience).toBe(102);
+        expect(general.meta.explevel).toBe(1);
+    });
+
+    it('applies the legacy 90% dexterity gain for wizard and siege arms', () => {
+        const general = buildGeneral(80);
+        general.meta.dex5 = 5000;
+        const siegeCrew = new WarCrewType({
+            ...buildUnitSet().crewTypes![0]!,
+            id: 101,
+            armType: 5,
+            name: '공성병',
+        });
+        const unit = new WarUnitGeneral(
+            new RandUtil(new ConstantRNG(0)),
+            buildConfig(),
+            general,
+            buildCity(),
+            buildNation(),
+            true,
+            siegeCrew,
+            new ActionLogger({ generalId: 1, nationId: 1 }),
+            new WarActionPipeline([])
+        );
+
+        unit.addDex(siegeCrew, 100);
+        expect(general.meta.dex5).toBe(5090);
+    });
+
     it('activates and applies critical damage', async () => {
         const rng = new RandUtil(new ConstantRNG(0));
         const config = buildConfig();

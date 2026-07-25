@@ -1,8 +1,21 @@
-import { che_저지, che_저지_시도 } from '@sammo-ts/logic/war/triggers/che_저지.js';
-import { WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
+import { TriggerPriority } from '@sammo-ts/logic/triggers/core.js';
+import { che_저지 } from '@sammo-ts/logic/war/triggers/che_저지.js';
+import { BaseWarUnitTrigger, WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
+import type { WarUnit } from '@sammo-ts/logic/war/units.js';
 import type { ItemModule } from './types.js';
 
 const ITEM_KEY = 'che_저지_삼황내문';
+
+class ActivateItemHalt extends BaseWarUnitTrigger {
+    constructor(unit: WarUnit) {
+        super(unit, TriggerPriority.Pre);
+    }
+
+    protected actionWar(self: WarUnit): boolean {
+        self.activateSkill('특수', '저지');
+        return true;
+    }
+}
 
 export const itemModule: ItemModule = {
     key: ITEM_KEY,
@@ -28,10 +41,10 @@ export const itemModule: ItemModule = {
         if (haltCount >= 2) {
             return null;
         }
-        if (haltCount === 1 && unit.getPhase() === 0 && !unit.rng.nextBool(0.5)) {
+        if (haltCount === 1 && unit.getPhase() === 0 && unit.rng.nextBool(0.5)) {
             return null;
         }
 
-        return new WarTriggerCaller(new che_저지_시도(unit), new che_저지(unit));
+        return new WarTriggerCaller(new ActivateItemHalt(unit), new che_저지(unit));
     },
 };
