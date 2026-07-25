@@ -1,13 +1,6 @@
 import type { City, General, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { CrewTypeDefinition, CrewTypeRequirement, MapDefinition, UnitSetDefinition } from './types.js';
-import {
-    asNullableStringArray,
-    asNumber,
-    asRecord,
-    asString,
-    asStringArray,
-    isRecord,
-} from '@sammo-ts/common';
+import { asNullableStringArray, asNumber, asRecord, asString, asStringArray, isRecord } from '@sammo-ts/common';
 import { UnitSetDefinitionInputSchema } from '../resources/unitSetSchema.js';
 
 const DEFAULT_REGION_MAP: Record<string, number> = {
@@ -180,6 +173,14 @@ export const getTechLevel = (tech: number, maxLevel = DEFAULT_MAX_TECH_LEVEL): n
 export const getTechAbility = (tech: number): number => getTechLevel(tech) * 25;
 
 export const getTechCost = (tech: number): number => 1 + getTechLevel(tech) * 0.15;
+
+export const getCrewTypePickScore = (crewType: CrewTypeDefinition, tech: number, armPerPhase: number): number => {
+    let score = armPerPhase + crewType.attack + crewType.defence + getTechAbility(tech) * 2;
+    score *= 1 + crewType.speed / 2;
+    score /= Math.max(1 - crewType.avoid / 100, 0.1);
+    score *= 1 + crewType.magicCoef / 2;
+    return score;
+};
 
 export interface CrewTypeAvailabilityContext {
     general: General;

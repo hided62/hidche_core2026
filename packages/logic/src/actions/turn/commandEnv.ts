@@ -1,5 +1,6 @@
 import type { GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
 import type { WarActionModule } from '@sammo-ts/logic/war/actions.js';
+import type { UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
 
 export interface TurnCommandItemCatalogEntry {
     slot: 'horse' | 'weapon' | 'book' | 'item';
@@ -12,6 +13,7 @@ export interface TurnCommandItemCatalogEntry {
 }
 
 export interface TurnCommandEnv {
+    unitSet?: UnitSetDefinition;
     develCost: number;
     minAvailableRecruitPop?: number;
     trainDelta: number;

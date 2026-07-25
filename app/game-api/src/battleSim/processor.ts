@@ -13,6 +13,8 @@ import {
     ITEM_KEYS,
     loadItemModules,
     createInheritBuffModules,
+    compileCrewTypeCatalog,
+    createCrewTypeWarTriggerRegistry,
     type City,
     type General,
     type Nation,
@@ -29,10 +31,15 @@ import { convertLog } from './logFormatter.js';
 const DEFAULT_GENERAL_AGE = 20;
 
 const inheritBuffModules = createInheritBuffModules();
-const itemWarModules: WarActionModule[] = [
-    ...createItemActionModules(createItemModuleRegistry(await loadItemModules([...ITEM_KEYS]))).war,
-    inheritBuffModules.war,
-];
+const itemWarModules: WarActionModule[] = createItemActionModules(
+    createItemModuleRegistry(await loadItemModules([...ITEM_KEYS]))
+).war;
+const crewTypeWarTriggerRegistry = createCrewTypeWarTriggerRegistry();
+
+const buildWarActionModules = (unitSet: UnitSetDefinition): WarActionModule[] => {
+    const crewTypeCatalog = compileCrewTypeCatalog(unitSet, crewTypeWarTriggerRegistry);
+    return [crewTypeCatalog.warActionModule, inheritBuffModules.war, ...itemWarModules];
+};
 
 const normalizeItemCode = (value: string | null): string | null => (value === 'None' ? null : value);
 
@@ -253,6 +260,7 @@ const resolveDefenderOrderPayload = (payload: BattleSimJobPayload): number[] => 
     const defenderCity = mapCityPayload(payload.defenderCity);
     const attacker = mapGeneralPayload(payload.attackerGeneral);
     const defenders = payload.defenderGenerals.map(mapGeneralPayload);
+    const warActionModules = buildWarActionModules(payload.unitSet);
 
     return resolveDefenderOrder({
         unitSet: payload.unitSet,
@@ -263,11 +271,13 @@ const resolveDefenderOrderPayload = (payload: BattleSimJobPayload): number[] => 
             general: attacker,
             city: attackerCity,
             nation: attackerNation,
+            modules: warActionModules,
         },
         defenders: defenders.map((general) => ({
             general,
             city: defenderCity,
             nation: defenderNation,
+            modules: warActionModules,
         })),
         defenderCity,
         defenderNation,
@@ -284,6 +294,7 @@ export const processBattleSimJob = (payload: BattleSimJobPayload): BattleSimResu
     }
 
     let repeatCnt = payload.repeatCnt;
+    const warActionModules = buildWarActionModules(payload.unitSet);
     const baseSeed = payload.seed ?? '';
     if (baseSeed) {
         repeatCnt = 1;
@@ -329,13 +340,13 @@ export const processBattleSimJob = (payload: BattleSimJobPayload): BattleSimResu
                 general: attackerGeneral,
                 city: attackerCity,
                 nation: attackerNation,
-                modules: itemWarModules,
+                modules: warActionModules,
             },
             defenders: defenderGenerals.map((general) => ({
                 general,
                 city: defenderCity,
                 nation: defenderNation,
-                modules: itemWarModules,
+                modules: warActionModules,
             })),
             defenderCity,
             defenderNation,

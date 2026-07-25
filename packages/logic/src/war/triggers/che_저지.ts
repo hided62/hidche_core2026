@@ -7,8 +7,18 @@ export class che_저지_시도 extends BaseWarUnitTrigger {
     constructor(unit: WarUnit, raiseType: number = 0) {
         super(unit, TriggerPriority.Pre, raiseType);
     }
-    protected actionWar(u: WarUnit): boolean {
-        u.activateSkill('특수', '저지');
+    protected actionWar(self: WarUnit): boolean {
+        if (!(self instanceof WarUnitGeneral) || self.isAttacker()) {
+            return true;
+        }
+        if (self.hasActivatedSkill('특수') || self.hasActivatedSkill('저지불가')) {
+            return true;
+        }
+
+        const ratio = self.getComputedAtmos() + self.getComputedTrain();
+        if (self.rng.nextBool(ratio / 400)) {
+            self.activateSkill('특수', '저지');
+        }
         return true;
     }
 }
@@ -40,7 +50,7 @@ export class che_저지 extends BaseWarUnitTrigger {
         }
 
         self.getLogger().pushGeneralBattleDetailLog('상대를 <C>저지</>했다!', LogFormat.PLAIN);
-        oppose.getLogger().pushGeneralBattleDetailLog('<R>저지</>당했다!', LogFormat.PLAIN);
+        oppose.getLogger().pushGeneralBattleDetailLog('저지</>당했다!', LogFormat.PLAIN);
 
         const calcDamage = oppose.getWarPower() * 0.9;
         if (self instanceof WarUnitGeneral) {

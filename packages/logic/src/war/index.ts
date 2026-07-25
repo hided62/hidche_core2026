@@ -6,4 +6,5 @@ export * from './units.js';
 export * from './triggers.js';
 export * from './triggers/index.js';
 export * from './crewType.js';
+export * from './crewTypeTriggers.js';
 export * from './utils.js';

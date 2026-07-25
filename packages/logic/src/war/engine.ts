@@ -1,10 +1,12 @@
 import { JosaUtil, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 
 import type { City, General, GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
+import { compileCrewTypeCatalog, isCrewTypeWarActionRouter } from '@sammo-ts/logic/crewType/catalog.js';
 import { ActionLogger } from '@sammo-ts/logic/logging/actionLogger.js';
 import { LogFormat } from '@sammo-ts/logic/logging/types.js';
 import { buildCrewTypeIndex as buildCrewTypeDefinitionIndex } from '@sammo-ts/logic/world/unitSet.js';
-import { WarActionPipeline } from './actions.js';
+import { WarActionPipeline, type WarActionModule } from './actions.js';
+import { createCrewTypeWarTriggerRegistry } from './crewTypeTriggers.js';
 import { WarCrewType } from './crewType.js';
 import { WarTriggerCaller, createWarTriggerEnv, type WarTriggerRegistry } from './triggers.js';
 import type { WarBattleInput, WarBattleOutcome, WarGeneralInput, WarUnitReport } from './types.js';
@@ -37,22 +39,26 @@ const buildWarCrewTypeIndex = (unitSet: WarBattleInput['unitSet']): Map<number, 
 };
 
 const createPipeline = <TriggerState extends GeneralTriggerState>(
-    input: WarGeneralInput<TriggerState>
-): WarActionPipeline<TriggerState> => new WarActionPipeline(input.modules ?? []);
+    input: WarGeneralInput<TriggerState>,
+    crewTypeModule: WarActionModule<TriggerState>
+): WarActionPipeline<TriggerState> => {
+    const modules = input.modules ?? [];
+    if (modules.some((module) => module && isCrewTypeWarActionRouter(module))) {
+        return new WarActionPipeline(modules);
+    }
+    return new WarActionPipeline([crewTypeModule, ...modules]);
+};
 
 const appendCrewTypeTriggers = (
     caller: WarTriggerCaller,
     unit: WarUnit,
     names: string[],
-    registry: WarTriggerRegistry | undefined
+    registry: WarTriggerRegistry
 ): void => {
-    if (!registry) {
-        return;
-    }
     for (const name of names) {
         const factory = registry[name];
         if (!factory) {
-            continue;
+            throw new Error(`Unknown crew type war trigger: ${name}`);
         }
         const trigger = factory(unit);
         if (!trigger) {
@@ -66,24 +72,28 @@ const appendCrewTypeTriggers = (
     }
 };
 
-const buildBattleInitTriggers = (unit: WarUnit, registry: WarTriggerRegistry | undefined): WarTriggerCaller => {
+const buildBattleInitTriggers = (unit: WarUnit, registry: WarTriggerRegistry): WarTriggerCaller => {
     const caller = new WarTriggerCaller();
     if (unit instanceof WarUnitGeneral) {
         const context = unit.getActionContext();
         caller.merge(unit.getActionPipeline().getBattleInitTriggerList(context));
+    } else {
+        appendCrewTypeTriggers(caller, unit, unit.getCrewType().initSkillTrigger, registry);
     }
-    appendCrewTypeTriggers(caller, unit, unit.getCrewType().initSkillTrigger, registry);
     return caller;
 };
 
-const buildBattlePhaseTriggers = (unit: WarUnit, registry: WarTriggerRegistry | undefined): WarTriggerCaller => {
+const buildBattlePhaseTriggers = (unit: WarUnit, registry: WarTriggerRegistry): WarTriggerCaller => {
     const caller = new WarTriggerCaller();
     if (unit instanceof WarUnitGeneral) {
-        appendCrewTypeTriggers(caller, unit, ['che_필살'], registry);
+        if (registry['che_필살']) {
+            appendCrewTypeTriggers(caller, unit, ['che_필살'], registry);
+        }
         const context = unit.getActionContext();
         caller.merge(unit.getActionPipeline().getBattlePhaseTriggerList(context));
+    } else {
+        appendCrewTypeTriggers(caller, unit, unit.getCrewType().phaseSkillTrigger, registry);
     }
-    appendCrewTypeTriggers(caller, unit, unit.getCrewType().phaseSkillTrigger, registry);
     return caller;
 };
 
@@ -196,10 +206,14 @@ export const resolveWarBattle = <TriggerState extends GeneralTriggerState = Gene
     // process_war.php 전투 루프를 순수 로직으로 이식한다.
     const rng = input.rng ?? new RandUtil(LiteHashDRBG.build(input.seed ?? ''));
     const loggerFactory = input.loggerFactory ?? defaultLoggerFactory;
-    const triggerRegistry = input.triggerRegistry;
+    const triggerRegistry: WarTriggerRegistry = {
+        ...createCrewTypeWarTriggerRegistry(),
+        ...(input.triggerRegistry ?? {}),
+    };
+    const crewTypeCatalog = compileCrewTypeCatalog(input.unitSet, triggerRegistry);
 
     const crewTypeIndex = buildWarCrewTypeIndex(input.unitSet);
-    const attackerPipeline = createPipeline(input.attacker);
+    const attackerPipeline = createPipeline(input.attacker, crewTypeCatalog.warActionModule);
     const attackerLogger =
         input.attacker.logger ??
         loggerFactory({
@@ -251,7 +265,7 @@ export const resolveWarBattle = <TriggerState extends GeneralTriggerState = Gene
             false,
             resolveCrewType(crewTypeIndex, defender.general.crewTypeId),
             defenderLogger,
-            createPipeline(defender)
+            createPipeline(defender, crewTypeCatalog.warActionModule)
         );
         if (computeBattleOrder(unit, attackerUnit) <= 0) {
             continue;
@@ -601,9 +615,14 @@ export const resolveDefenderOrder = <TriggerState extends GeneralTriggerState = 
 ): number[] => {
     const rng = input.rng ?? new RandUtil(LiteHashDRBG.build(input.seed ?? ''));
     const loggerFactory = input.loggerFactory ?? defaultLoggerFactory;
+    const triggerRegistry: WarTriggerRegistry = {
+        ...createCrewTypeWarTriggerRegistry(),
+        ...(input.triggerRegistry ?? {}),
+    };
+    const crewTypeCatalog = compileCrewTypeCatalog(input.unitSet, triggerRegistry);
 
     const crewTypeIndex = buildWarCrewTypeIndex(input.unitSet);
-    const attackerPipeline = createPipeline(input.attacker);
+    const attackerPipeline = createPipeline(input.attacker, crewTypeCatalog.warActionModule);
     const attackerLogger =
         input.attacker.logger ??
         loggerFactory({
@@ -640,7 +659,7 @@ export const resolveDefenderOrder = <TriggerState extends GeneralTriggerState = 
             false,
             resolveCrewType(crewTypeIndex, defender.general.crewTypeId),
             defenderLogger,
-            createPipeline(defender)
+            createPipeline(defender, crewTypeCatalog.warActionModule)
         );
         if (computeBattleOrder(unit, attackerUnit) <= 0) {
             continue;

@@ -244,4 +244,28 @@ describe('battle sim processor', () => {
         expect(result.result).toBe(true);
         expect(result.order?.length).toBe(1);
     });
+
+    it('executes crew trigger handlers in simulator battles', () => {
+        const payload = buildPayload('battle');
+        payload.unitSet.crewTypes![0]!.phaseSkillTrigger = ['che_선제사격시도', 'che_선제사격발동'];
+        payload.unitSet.crewTypes!.splice(1, 0, {
+            ...payload.unitSet.crewTypes![0]!,
+            id: 200,
+            name: '수비 보병',
+            phaseSkillTrigger: null,
+        });
+        payload.defenderGenerals[0]!.crewtype = 200;
+
+        const result = processBattleSimJob(payload);
+
+        expect(result.result).toBe(true);
+        expect(result.attackerSkills?.['선제']).toBe(1);
+    });
+
+    it('fails fast when a simulator unit set references an unknown crew handler', () => {
+        const payload = buildPayload('battle');
+        payload.unitSet.crewTypes![0]!.iActionList = ['missing_action'];
+
+        expect(() => processBattleSimJob(payload)).toThrow('Unknown crew type action');
+    });
 });

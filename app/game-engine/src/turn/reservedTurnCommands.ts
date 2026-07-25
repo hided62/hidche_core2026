@@ -15,6 +15,8 @@ import {
     ITEM_KEYS,
     loadItemModules,
     createInheritBuffModules,
+    compileCrewTypeCatalog,
+    createCrewTypeWarTriggerRegistry,
 } from '@sammo-ts/logic';
 import { asRecord } from '@sammo-ts/common';
 
@@ -70,6 +72,7 @@ export const buildCommandEnv = (config: ScenarioConfig, unitSet?: UnitSetDefinit
     const constValues = asRecord(config.const);
 
     return {
+        ...(unitSet ? { unitSet } : {}),
         develCost: resolveNumber(constValues, ['develCost', 'develcost', 'develrate'], 0),
         minAvailableRecruitPop: resolveNumber(constValues, ['minAvailableRecruitPop'], 30000),
         trainDelta: resolveNumber(constValues, ['trainDelta'], DEFAULT_TRAIN_DELTA),
@@ -96,11 +99,7 @@ export const buildCommandEnv = (config: ScenarioConfig, unitSet?: UnitSetDefinit
         ),
         defaultSpecialDomestic: resolveOptionalString(constValues, ['defaultSpecialDomestic']),
         defaultSpecialWar: resolveOptionalString(constValues, ['defaultSpecialWar']),
-        initialNationGenLimit: resolveNumber(
-            constValues,
-            ['initialNationGenLimit'],
-            DEFAULT_INITIAL_NATION_GEN_LIMIT
-        ),
+        initialNationGenLimit: resolveNumber(constValues, ['initialNationGenLimit'], DEFAULT_INITIAL_NATION_GEN_LIMIT),
         maxTechLevel: resolveNumber(constValues, ['maxTechLevel'], DEFAULT_MAX_TECH_LEVEL),
         baseGold: resolveNumber(constValues, ['baseGold', 'basegold'], DEFAULT_BASE_GOLD),
         baseRice: resolveNumber(constValues, ['baseRice', 'baserice'], DEFAULT_BASE_RICE),
@@ -153,10 +152,21 @@ export const buildReservedTurnDefinitions = async (options: {
     const itemRegistry = createItemModuleRegistry(itemModules);
     const itemActionModules = createItemActionModules(itemRegistry);
     const inheritBuffModules = createInheritBuffModules();
-    options.env.generalActionModules = [...(options.env.generalActionModules ?? []), ...itemActionModules.general];
-    options.env.warActionModules = [...(options.env.warActionModules ?? []), ...itemActionModules.war];
-    options.env.generalActionModules.push(inheritBuffModules.general);
-    options.env.warActionModules.push(inheritBuffModules.war);
+    const crewTypeCatalog = options.env.unitSet?.crewTypes?.length
+        ? compileCrewTypeCatalog(options.env.unitSet, createCrewTypeWarTriggerRegistry())
+        : null;
+    options.env.generalActionModules = [
+        ...(options.env.generalActionModules ?? []),
+        ...(crewTypeCatalog ? [crewTypeCatalog.generalActionModule] : []),
+        inheritBuffModules.general,
+        ...itemActionModules.general,
+    ];
+    options.env.warActionModules = [
+        ...(options.env.warActionModules ?? []),
+        ...(crewTypeCatalog ? [crewTypeCatalog.warActionModule] : []),
+        inheritBuffModules.war,
+        ...itemActionModules.war,
+    ];
 
     const generalSpecs = await loadGeneralTurnCommandSpecs(options.commandProfile.general);
     const nationSpecs = await loadNationTurnCommandSpecs(options.commandProfile.nation);

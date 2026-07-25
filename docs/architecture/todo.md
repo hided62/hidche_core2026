@@ -89,6 +89,10 @@ Move items into the main docs once they are finalized.
   startup when a unit/item/trait references an unregistered trigger. Compose
   personality, domestic/war specialty, item, inheritance, nation, and unit
   triggers in the live turn-daemon battle path.
+- [AI suggestion] Extend unit-set init/phase trigger specs from `string[]` to
+  a typed string-or-`{ key, args }` union before importing a legacy ruleset
+  that uses parameterized `buildWarUnitTriggerClass` arguments. Preserve
+  argument order and include it in differential trigger traces.
 - Input snapshot format (seed, scenario, trigger inputs, game time)
 - Deterministic RNG test harness guidelines
 - Output comparison rules (sorting, tolerances, diff granularity)
@@ -107,6 +111,9 @@ Move items into the main docs once they are finalized.
 
 ## Data and Profiles (Lower Priority)
 
+- [AI suggestion] Resolve the shipped `ludo_rathowm` unit set's
+  `defaultCrewTypeId=1100` mismatch with its `217xxx` crew IDs, then enable
+  catalog validation for default and castle crew IDs across every profile.
 - [AI suggestion] Split gateway orchestration into immutable `Release`,
   versioned `Ruleset`, `ProfileInstance`, `Deployment`, and first-class
   `AdminJob` records. Store artifact/API/resource digests and an auditable job

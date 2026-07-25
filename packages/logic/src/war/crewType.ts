@@ -36,6 +36,14 @@ export class WarCrewType {
         return this.definition.rice;
     }
 
+    get magicCoef(): number {
+        return this.definition.magicCoef;
+    }
+
+    get cost(): number {
+        return this.definition.cost;
+    }
+
     public reqCities(): boolean {
         return this.definition.requirements.some((req) => req.type === 'ReqCities');
     }
