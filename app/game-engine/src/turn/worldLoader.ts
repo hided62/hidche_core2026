@@ -27,7 +27,7 @@ import type { MapLoaderOptions } from '../scenario/mapLoader.js';
 import { loadMapDefinitionByName } from '../scenario/mapLoader.js';
 import type { UnitSetLoaderOptions } from '../scenario/unitSetLoader.js';
 import { loadUnitSetDefinitionByName } from '../scenario/unitSetLoader.js';
-import type { TurnDiplomacy, TurnGeneral, TurnWorldLoadResult } from './types.js';
+import type { TurnDiplomacy, TurnEvent, TurnGeneral, TurnWorldLoadResult } from './types.js';
 import { readDiplomacyMeta } from '@sammo-ts/logic';
 
 interface TurnWorldLoaderOptions {
@@ -276,6 +276,22 @@ const mapDiplomacyRow = (row: TurnEngineDiplomacyRow): TurnDiplomacy => {
     };
 };
 
+const mapEventRow = (row: {
+    id: number;
+    targetCode: string;
+    priority: number;
+    condition: JsonValue;
+    action: JsonValue;
+    meta: JsonValue;
+}): TurnEvent => ({
+    id: row.id,
+    targetCode: row.targetCode,
+    priority: row.priority,
+    condition: row.condition,
+    action: row.action,
+    meta: asRecord(row.meta),
+});
+
 const mapTroopRow = (row: TurnEngineTroopRow): Troop => ({
     id: row.troopLeaderId,
     nationId: row.nationId,
@@ -323,26 +339,8 @@ export const loadTurnWorldFromDatabase = async (options: TurnWorldLoaderOptions)
         const fallbackBase = resolveFallbackTurnTimeBase(generals, worldState.updatedAt ?? null);
         const lastTurnTime = parseLastTurnTime(meta) ?? alignToPreviousTick(fallbackBase, tickMinutes);
 
-        const events = eventRows
-            .filter((row) => row.targetCode !== 'initial')
-            .map((row) => ({
-                id: row.id,
-                targetCode: row.targetCode,
-                priority: row.priority,
-                condition: row.condition,
-                action: row.action,
-                meta: row.meta,
-            }));
-        const initialEvents = eventRows
-            .filter((row) => row.targetCode === 'initial')
-            .map((row) => ({
-                id: row.id,
-                targetCode: row.targetCode,
-                priority: row.priority,
-                condition: row.condition,
-                action: row.action,
-                meta: row.meta,
-            }));
+        const events = eventRows.filter((row) => row.targetCode !== 'initial').map(mapEventRow);
+        const initialEvents = eventRows.filter((row) => row.targetCode === 'initial').map(mapEventRow);
 
         return {
             state: {

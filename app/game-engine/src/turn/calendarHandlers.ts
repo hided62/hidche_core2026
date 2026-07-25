@@ -8,6 +8,11 @@ export const composeCalendarHandlers = (
         return undefined;
     }
     return {
+        beforeMonthChanged: (context) => {
+            for (const handler of resolved) {
+                handler.beforeMonthChanged?.(context);
+            }
+        },
         onMonthChanged: (context) => {
             for (const handler of resolved) {
                 handler.onMonthChanged?.(context);

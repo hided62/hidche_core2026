@@ -2,7 +2,7 @@ import type { City, LogEntryDraft, MessageDraft, Nation, ScenarioConfig, Troop, 
 import { getNextTurnAt } from '@sammo-ts/logic';
 
 import type { TurnCheckpoint } from '../lifecycle/types.js';
-import type { TurnDiplomacy, TurnGeneral, TurnWorldSnapshot, TurnWorldState } from './types.js';
+import type { TurnDiplomacy, TurnEvent, TurnGeneral, TurnWorldSnapshot, TurnWorldState } from './types.js';
 import {
     applyDiplomacyPatch as applyDiplomacyPatchToEntry,
     buildDefaultDiplomacy,
@@ -58,7 +58,8 @@ export interface TurnCalendarContext {
 }
 
 export interface TurnCalendarHandler {
-    // 월/연 변경에 따른 후처리를 끼워 넣기 위한 확장 포인트.
+    // 레거시 PRE_MONTH는 날짜 변경 전, MONTH는 날짜 변경 후에 실행된다.
+    beforeMonthChanged?(context: TurnCalendarContext): void;
     onMonthChanged?(context: TurnCalendarContext): void;
     onYearChanged?(context: TurnCalendarContext): void;
 }
@@ -85,6 +86,7 @@ export interface TurnWorldChanges {
     createdNations: Nation[];
     createdTroops: Troop[];
     createdDiplomacy: TurnDiplomacy[];
+    deletedEvents: number[];
 }
 
 const compareTurnOrder = (left: TurnGeneral, right: TurnGeneral): number => {
@@ -231,6 +233,7 @@ export class InMemoryTurnWorld {
     private readonly nations = new Map<number, Nation>();
     private readonly troops = new Map<number, Troop>();
     private readonly diplomacy = new Map<string, TurnDiplomacy>();
+    private readonly events = new Map<number, TurnEvent>();
     private readonly dirtyGeneralIds = new Set<number>();
     private readonly dirtyCityIds = new Set<number>();
     private readonly dirtyNationIds = new Set<number>();
@@ -243,6 +246,7 @@ export class InMemoryTurnWorld {
     private readonly deletedTroopIds = new Set<number>();
     private readonly deletedGeneralIds = new Set<number>();
     private readonly deletedNationIds = new Set<number>();
+    private readonly deletedEventIds = new Set<number>();
     private readonly deletedNationSnapshots: Array<{
         nation: Nation;
         generalIds: number[];
@@ -286,6 +290,9 @@ export class InMemoryTurnWorld {
                 ...entry,
                 meta: { ...entry.meta },
             });
+        }
+        for (const event of snapshot.events) {
+            this.events.set(event.id, { ...event, meta: { ...event.meta } });
         }
         this.ensureDiplomacyMatrix();
     }
@@ -348,6 +355,21 @@ export class InMemoryTurnWorld {
         return Array.from(this.troops.values()).map((troop) => ({
             ...troop,
         }));
+    }
+
+    listEvents(targetCode?: string): TurnEvent[] {
+        return Array.from(this.events.values())
+            .filter((event) => targetCode === undefined || event.targetCode.toLowerCase() === targetCode.toLowerCase())
+            .sort((left, right) => right.priority - left.priority || left.id - right.id)
+            .map((event) => ({ ...event, meta: { ...event.meta } }));
+    }
+
+    removeEvent(id: number): boolean {
+        if (!this.events.delete(id)) {
+            return false;
+        }
+        this.deletedEventIds.add(id);
+        return true;
     }
 
     getDiplomacyEntry(srcNationId: number, destNationId: number): TurnDiplomacy | null {
@@ -691,6 +713,15 @@ export class InMemoryTurnWorld {
             nextYear = previousYear + 1;
         }
 
+        const context: TurnCalendarContext = {
+            previousYear,
+            previousMonth,
+            currentYear: nextYear,
+            currentMonth: nextMonth,
+            turnTime,
+        };
+        this.calendarHandler?.beforeMonthChanged?.(context);
+
         const meta = {
             ...this.state.meta,
             lastTurnTime: turnTime.toISOString(),
@@ -703,13 +734,6 @@ export class InMemoryTurnWorld {
             meta,
         };
 
-        const context: TurnCalendarContext = {
-            previousYear,
-            previousMonth,
-            currentYear: nextYear,
-            currentMonth: nextMonth,
-            turnTime,
-        };
         this.advanceDiplomacyMonth();
         this.calendarHandler?.onMonthChanged?.(context);
         if (nextYear !== previousYear) {
@@ -748,6 +772,7 @@ export class InMemoryTurnWorld {
         const deletedTroops = Array.from(this.deletedTroopIds);
         const deletedGenerals = Array.from(this.deletedGeneralIds);
         const deletedNations = Array.from(this.deletedNationIds);
+        const deletedEvents = Array.from(this.deletedEventIds);
         const deletedNationSnapshots = this.deletedNationSnapshots.slice();
         const logs = this.logs.slice();
         const messages = this.messages.slice();
@@ -768,6 +793,7 @@ export class InMemoryTurnWorld {
             createdNations,
             createdTroops,
             createdDiplomacy,
+            deletedEvents,
         };
     }
 
@@ -788,6 +814,7 @@ export class InMemoryTurnWorld {
         for (const id of changes.deletedTroops) this.deletedTroopIds.delete(id);
         for (const id of changes.deletedGenerals) this.deletedGeneralIds.delete(id);
         for (const id of changes.deletedNations) this.deletedNationIds.delete(id);
+        for (const id of changes.deletedEvents) this.deletedEventIds.delete(id);
         this.deletedNationSnapshots.splice(0, changes.deletedNationSnapshots.length);
         this.logs.splice(0, changes.logs.length);
         this.messages.splice(0, changes.messages.length);

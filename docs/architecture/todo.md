@@ -23,7 +23,11 @@ Move items into the main docs once they are finalized.
 - [AI suggestion] Implement command continuation/alternate flow (LastTurn/term stack/pre/post requirements/next_execute) and integrate into reserved turn processing.
 - [AI suggestion] Integrate trigger preprocessing + attempt/execute phases into turn resolution (parity with legacy trigger composition).
 - [AI suggestion] Add AI/autorun and inactivity (killturn/block) handling with NPC takeover/deletion policies.
-- [AI suggestion] Add an event execution pipeline (initial + monthly + conditional) tied to tick/month transitions with deterministic RNG seeding.
+- [AI suggestion] Complete the event action registry beyond the implemented
+  `pre_month`/`month` dispatcher (`ProcessIncome`, `NoticeToHistoryLog`,
+  `NewYear`, `ResetOfficerLock`). Add initial and non-month targets plus the
+  remaining NPC, invader, disaster, supply, nation-level, betting, and
+  inheritance actions with legacy-compatible deterministic RNG.
 - [AI suggestion] Add monthly economy/city/nation updates and hook them into the turn calendar handler.
 - [AI suggestion] Implement diplomacy/state transitions and monthly/command-based updates beyond read-only maps.
 - [AI suggestion] Integrate war/battle pipeline into turn processing (troop movement/war resolution hooks, not just isolated sim jobs).
