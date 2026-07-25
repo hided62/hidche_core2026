@@ -24,6 +24,17 @@ const DecRice = 0x800;
 const Wounded = 0x1000;
 const HeavyWounded = 0x2000;
 
+type InclusiveRandomGenerator = GeneralActionResolveContext['rng'] & {
+    nextIntInclusive?: (maxInclusive: number) => number;
+};
+
+const legacyChoiceIndex = (rng: GeneralActionResolveContext['rng'], length: number): number => {
+    const inclusive = rng as InclusiveRandomGenerator;
+    return inclusive.nextIntInclusive
+        ? inclusive.nextIntInclusive(length - 1)
+        : rng.nextInt(0, length);
+};
+
 const SIGHTSEEING_MESSAGES: Array<{
     flags: number;
     texts: string[];
@@ -138,7 +149,7 @@ const pickByWeight = (rng: GeneralActionResolveContext['rng']): { flags: number;
         const weight = Math.max(entry.weight, 0);
         cursor -= weight;
         if (cursor <= 0) {
-            const index = rng.nextInt(0, entry.texts.length);
+            const index = legacyChoiceIndex(rng, entry.texts.length);
             const text = entry.texts[index] ?? entry.texts[0] ?? '';
             return { flags: entry.flags, text };
         }
@@ -147,7 +158,7 @@ const pickByWeight = (rng: GeneralActionResolveContext['rng']): { flags: number;
     if (!fallback) {
         return { flags: 0, text: '' };
     }
-    const index = rng.nextInt(0, fallback.texts.length);
+    const index = legacyChoiceIndex(rng, fallback.texts.length);
     const text = fallback.texts[index] ?? fallback.texts[0] ?? '';
     return { flags: fallback.flags, text };
 };

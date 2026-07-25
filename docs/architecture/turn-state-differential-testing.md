@@ -21,8 +21,8 @@ canonical case
   │    ├─ execute legacy GeneralCommand or NationCommand
   │    └─ before/after snapshot + command RNG trace
   └─ core2026 execution boundary
-       ├─ snapshot selected PostgreSQL rows
-       ├─ execute reserved turn or daemon command
+       ├─ construct the in-memory turn world from the prepared ref snapshot
+       ├─ execute the real reserved-turn handler
        └─ before/after snapshot + command RNG trace
 
 ref delta ─┐
@@ -52,9 +52,16 @@ normalized to the core `*Id` spelling before command identity comparison.
 - Core integration tools
     - `canonical.ts`: shared snapshot and trace contracts.
     - `databaseSnapshot.ts`: PostgreSQL projection.
+    - `coreCommandTrace.ts`: real in-memory reserved-turn execution and
+      canonical projection.
     - `trace.ts`: before/execute/after capture boundary.
     - `compare.ts`: exact snapshot and delta comparison.
-    - `turnTraceFiles.integration.test.ts`: compares saved ref/core traces.
+    - `turnCommandGeneralMatrix.integration.test.ts`: 21 successful general
+      command paths, including the four-call `전투태세` completion path.
+    - `turnCommandNationMatrix.integration.test.ts`: 8 successful nation
+      command paths.
+    - `turnCommandCoreReference.integration.test.ts`: declaration and live
+      sortie fixtures.
 
 The ref runner refuses mutation unless `TURN_DIFFERENTIAL_ENABLED=1` is present.
 The wrapper injects it only into the disposable tool container. Direct
@@ -154,3 +161,14 @@ Compatibility is established per case only when:
 3. the semantic delta comparison is empty;
 4. live sortie also passes the battle trace comparison;
 5. any ignored path is documented in the case evidence.
+
+As of 2026-07-25, 21 general cases, 8 nation cases, declaration and live sortie
+pass this boundary. Live sortie covers battle entry, conquest, defeated-general
+neutralization and last-city nation collapse. This is 31 executable comparison
+cases, not a claim that all 55 general and 38 nation command classes have been
+dynamically compared.
+
+The fixture runner also reports whether the requested legacy command reached
+its completed execution path. For multi-turn commands this is derived from the
+pre-execution `LastTurn`, because commands such as `전투태세` reset their result
+term to `1` on the completion call.

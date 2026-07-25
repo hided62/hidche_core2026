@@ -31,6 +31,7 @@ import type { WarAftermathConfig, WarEngineConfig, WarTimeContext } from '@sammo
 import { resolveWarAftermath } from '@sammo-ts/logic/war/aftermath.js';
 import { resolveWarBattle } from '@sammo-ts/logic/war/engine.js';
 import type { WarActionModule } from '@sammo-ts/logic/war/actions.js';
+import type { NationTraitModule } from '@sammo-ts/logic/triggers/special/nation/index.js';
 import { increaseMetaNumber, simpleSerialize } from '@sammo-ts/logic/war/utils.js';
 import type { MapDefinition, UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
@@ -157,6 +158,15 @@ const pickCandidateCity = (
     distanceList: Map<number, Array<[number, number]>>,
     attackerNationId: number
 ): { cityId: number; isEnemy: boolean; minDist: number } | null => {
+    const pickLegacyChoice = <T>(items: T[]): T => {
+        const legacyCompatibleRng = rng as typeof rng & {
+            nextIntInclusive?: (maxInclusive: number) => number;
+        };
+        const index =
+            legacyCompatibleRng.nextIntInclusive?.(items.length - 1) ??
+            rng.nextInt(0, items.length);
+        return items[index]!;
+    };
     const distances = Array.from(distanceList.keys()).sort((a, b) => a - b);
     const minDist = distances[0];
     if (minDist === undefined) {
@@ -174,8 +184,9 @@ const pickCandidateCity = (
         }
     }
     if (candidates.length > 0) {
-        const index = rng.nextInt(0, candidates.length);
-        const [cityId] = candidates[index] ?? candidates[0]!;
+        // Legacy RandUtil::choice() consumes nextInt(0) even when there is a
+        // single candidate. Keep that observable RNG step for seed parity.
+        const [cityId] = pickLegacyChoice(candidates);
         return { cityId, isEnemy: true, minDist };
     }
     const fallback = distanceList.get(minDist) ?? [];
@@ -183,8 +194,7 @@ const pickCandidateCity = (
     if (friendly.length === 0) {
         return null;
     }
-    const index = rng.nextInt(0, friendly.length);
-    const [cityId] = friendly[index] ?? friendly[0]!;
+    const [cityId] = pickLegacyChoice(friendly);
     return { cityId, isEnemy: false, minDist };
 };
 
@@ -245,9 +255,14 @@ export class ActionDefinition<
         return 1;
     }
     private readonly warModules: Array<WarActionModule<TriggerState>>;
+    private readonly nationTraitModules: Map<string, NationTraitModule>;
 
-    constructor(modules: Array<WarActionModule<TriggerState> | null | undefined> = []) {
+    constructor(
+        modules: Array<WarActionModule<TriggerState> | null | undefined> = [],
+        nationTraitModules: NationTraitModule[] = []
+    ) {
         this.warModules = modules.filter(Boolean) as Array<WarActionModule<TriggerState>>;
+        this.nationTraitModules = new Map(nationTraitModules.map((module) => [module.key, module]));
     }
 
     parseArgs(raw: unknown): DispatchArgs | null {
@@ -400,6 +415,11 @@ export class ActionDefinition<
         const nationMap = new Map(nations.map((nation) => [nation.id, nation]));
 
         const defenderCity = cityMap.get(destCity.id) ?? cloneCity(destCity);
+        // Legacy marks the destination as an active battle for three turns
+        // before processWar(), including when the attack immediately conquers
+        // the city. ConquerCity resets term but intentionally leaves state 43.
+        defenderCity.state = 43;
+        defenderCity.meta.term = 3;
         const defenderNation = defenderCity.nationId > 0 ? (nationMap.get(defenderCity.nationId) ?? null) : null;
 
         const defenderGenerals = generals.filter(
@@ -444,6 +464,17 @@ export class ActionDefinition<
             config: context.aftermathConfig,
             time,
             hiddenSeed: context.seedBase,
+            calcNationTechGain: ({ nation, baseGain }) => {
+                const module = this.nationTraitModules.get(nation.typeCode);
+                return (
+                    module?.onCalcDomestic?.(
+                        { general: context.general, nation },
+                        '기술',
+                        'score',
+                        baseGain
+                    ) ?? baseGain
+                );
+            },
         });
 
         const effects: Array<GeneralActionEffect<TriggerState>> = [];
@@ -559,5 +590,6 @@ export const commandSpec: GeneralTurnCommandSpec = {
     reqArg: true,
     availabilityArgs: { destCityId: 0 },
     argsSchema: ARGS_SCHEMA,
-    createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env.warActionModules ?? []),
+    createDefinition: (env: TurnCommandEnv) =>
+        new ActionDefinition(env.warActionModules ?? [], env.nationTraitModules ?? []),
 };

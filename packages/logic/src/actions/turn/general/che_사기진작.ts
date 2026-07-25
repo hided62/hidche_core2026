@@ -29,7 +29,7 @@ export interface BoostMoraleEnvironment {
     generalActionModules?: TurnCommandEnv['generalActionModules'];
 }
 
-const ACTION_NAME = '사기 진작';
+const ACTION_NAME = '사기진작';
 const DEFAULT_ATMOS_DELTA = 5;
 const DEFAULT_MAX_ATMOS = 100;
 

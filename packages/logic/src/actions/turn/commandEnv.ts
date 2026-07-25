@@ -1,6 +1,7 @@
 import type { GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
 import type { WarActionModule } from '@sammo-ts/logic/war/actions.js';
 import type { UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
+import type { NationTraitModule } from '@sammo-ts/logic/triggers/special/nation/index.js';
 
 export interface TurnCommandItemCatalogEntry {
     slot: 'horse' | 'weapon' | 'book' | 'item';
@@ -34,9 +35,18 @@ export interface TurnCommandEnv {
     defaultCrewTypeId: number;
     defaultSpecialDomestic: string | null;
     defaultSpecialWar: string | null;
+    npcStatTotal?: number;
+    npcStatMin?: number;
+    npcStatMax?: number;
+    randomGeneralFirstNames?: string[];
+    randomGeneralMiddleNames?: string[];
+    randomGeneralLastNames?: string[];
+    availablePersonalities?: string[];
     initialNationGenLimit: number;
     maxTechLevel: number;
     maxStatLevel?: number;
+    maxDedicationLevel?: number;
+    statUpgradeLimit?: number;
     techLevelIncYear?: number;
     initialAllowedTechLevel?: number;
     baseGold: number;
@@ -45,4 +55,5 @@ export interface TurnCommandEnv {
     itemCatalog?: Record<string, TurnCommandItemCatalogEntry>;
     generalActionModules?: Array<GeneralActionModule>;
     warActionModules?: Array<WarActionModule>;
+    nationTraitModules?: Array<NationTraitModule>;
 }

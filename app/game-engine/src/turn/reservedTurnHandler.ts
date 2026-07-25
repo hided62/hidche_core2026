@@ -34,6 +34,7 @@ import {
     type ItemModule,
     type UniqueLotteryRunner,
 } from '@sammo-ts/logic';
+import { buildLegacyDefaultUniqueItemPool } from '@sammo-ts/logic/rewards/legacyUniqueItemPool.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic';
 import { asRecord, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 
@@ -57,6 +58,98 @@ import { GeneralAI, shouldUseAi } from './ai/generalAi.js';
 import type { AiReservedTurnProvider } from './ai/types.js';
 
 const DEFAULT_ACTION = '휴식';
+
+const LEGACY_STAT_CHANGE_GENERAL_ACTIONS = new Set([
+    'che_소집해제',
+    'che_랜덤임관',
+    'che_헌납',
+    'che_강행',
+    'che_정착장려',
+    'che_숙련전환',
+    'che_주민선정',
+    'che_모반시도',
+    'che_요양',
+    'che_거병',
+    'che_건국',
+    'che_증여',
+    'che_훈련',
+    'che_견문',
+    'che_무작위건국',
+    'che_화계',
+    'che_집합',
+    'cr_건국',
+    'che_이동',
+    'cr_맹훈련',
+    'che_인재탐색',
+    'che_귀환',
+    'che_사기진작',
+    'che_군량매매',
+    'che_기술연구',
+    'che_첩보',
+    'che_임관',
+    'che_상업투자',
+    'che_장비매매',
+    'che_장수대상임관',
+    'che_징병',
+    'che_단련',
+    'che_등용',
+    'che_하야',
+    'che_물자조달',
+    'che_선양',
+    'che_전투태세',
+]);
+
+const applyLegacyGeneralProgression = (
+    general: TurnGeneral,
+    previousGeneral: TurnGeneral,
+    actionKey: string,
+    env: TurnCommandEnv
+): TurnGeneral => {
+    const maxStatLevel = env.maxStatLevel ?? 255;
+    const maxDedicationLevel = env.maxDedicationLevel ?? 30;
+    const expLevel = Math.max(
+        0,
+        Math.min(
+            maxStatLevel,
+            general.experience < 1_000
+                ? Math.trunc(general.experience / 100)
+                : Math.trunc(Math.sqrt(general.experience / 10))
+        )
+    );
+    const dedicationLevel = Math.max(0, Math.min(maxDedicationLevel, Math.ceil(Math.sqrt(general.dedication) / 10)));
+    const meta = { ...general.meta };
+    if (general.experience !== previousGeneral.experience) {
+        meta.explevel = expLevel;
+    }
+    if (general.dedication !== previousGeneral.dedication) {
+        meta.dedlevel = dedicationLevel;
+    }
+
+    if (!LEGACY_STAT_CHANGE_GENERAL_ACTIONS.has(actionKey)) {
+        return { ...general, meta };
+    }
+
+    const stats = { ...general.stats };
+    const limit = env.statUpgradeLimit ?? 30;
+    const entries = [
+        ['leadership', 'leadership_exp'],
+        ['strength', 'strength_exp'],
+        ['intelligence', 'intel_exp'],
+    ] as const;
+    for (const [statKey, expKey] of entries) {
+        const rawExp = typeof meta[expKey] === 'number' ? meta[expKey] : 0;
+        if (rawExp < 0) {
+            meta[expKey] = rawExp + limit;
+            stats[statKey] -= 1;
+        } else if (rawExp >= limit) {
+            if (stats[statKey] < maxStatLevel) {
+                stats[statKey] += 1;
+            }
+            meta[expKey] = rawExp - limit;
+        }
+    }
+    return { ...general, stats, meta };
+};
 
 const resolveConstraintEnv = (
     world: TurnWorldState,
@@ -571,6 +664,21 @@ class WorldStateView implements StateView {
 
 const extractArgsRecord = (value: unknown): Record<string, unknown> => asRecord(value);
 
+const withCanonicalArgumentAliases = (args: Record<string, unknown>): Record<string, unknown> => {
+    const normalized = { ...args };
+    for (const [legacyKey, canonicalKey] of [
+        ['destCityID', 'destCityId'],
+        ['destNationID', 'destNationId'],
+        ['destGeneralID', 'destGeneralId'],
+        ['destTroopID', 'destTroopId'],
+    ] as const) {
+        if (normalized[canonicalKey] === undefined && normalized[legacyKey] !== undefined) {
+            normalized[canonicalKey] = normalized[legacyKey];
+        }
+    }
+    return normalized;
+};
+
 const buildConstraintContext = (
     general: TurnGeneral,
     city: City | undefined,
@@ -608,6 +716,7 @@ export const createReservedTurnHandler = async (options: {
     unitSet?: UnitSetDefinition;
     getWorld: () => InMemoryTurnWorld | null;
     commandProfile?: TurnCommandProfile;
+    commandRngFactory?: (input: { kind: 'nation' | 'general'; actionKey: string; seed: string }) => RandUtil;
     onActionResolved?: (payload: {
         kind: 'nation' | 'general';
         generalId: number;
@@ -622,6 +731,9 @@ export const createReservedTurnHandler = async (options: {
     const env = buildCommandEnv(options.scenarioConfig, options.unitSet);
     const itemRegistry = createItemModuleRegistry(await loadItemModules([...ITEM_KEYS]));
     const uniqueConfig = resolveUniqueConfig(asRecord(options.scenarioConfig.const));
+    if (Object.keys(uniqueConfig.allItems).length === 0) {
+        uniqueConfig.allItems = buildLegacyDefaultUniqueItemPool(itemRegistry);
+    }
     const commandProfile = options.commandProfile ?? DEFAULT_TURN_COMMAND_PROFILE;
     const { general: generalDefinitions, nation: nationDefinitions } = await buildReservedTurnDefinitions({
         env,
@@ -756,14 +868,15 @@ export const createReservedTurnHandler = async (options: {
                     cities: worldView?.listCities() ?? [],
                     nations: worldView?.listNations() ?? [],
                 };
+                const constraintArgs = withCanonicalArgumentAliases(actionArgs as Record<string, unknown>);
                 const constraintCtx = buildConstraintContext(
                     currentGeneral,
                     currentCity,
                     currentNation,
-                    actionArgs as Record<string, unknown>,
+                    constraintArgs,
                     actionConstraintEnv
                 );
-                const view = new WorldStateView(worldView, actionConstraintEnv, actionArgs as Record<string, unknown>, {
+                const view = new WorldStateView(worldView, actionConstraintEnv, constraintArgs, {
                     general: currentGeneral,
                     city: currentCity,
                     nation: currentNation,
@@ -807,6 +920,13 @@ export const createReservedTurnHandler = async (options: {
                         currentGeneral.id,
                         key
                     );
+                    if (options.commandRngFactory) {
+                        return options.commandRngFactory({
+                            kind,
+                            actionKey: key,
+                            seed: rngSeed,
+                        });
+                    }
                     return new RandUtil(new LiteHashDRBG(rngSeed));
                 };
 
@@ -927,6 +1047,7 @@ export const createReservedTurnHandler = async (options: {
                 }
 
                 const lastTurnBeforeExecution = JSON.stringify(currentGeneral.lastTurn ?? {});
+                const generalBeforeExecution = currentGeneral;
                 const resolution = resolveGeneralAction(
                     definition,
                     actionContext,
@@ -940,6 +1061,14 @@ export const createReservedTurnHandler = async (options: {
                 currentGeneral = resolution.general as TurnGeneral;
                 currentCity = resolution.city ?? currentCity;
                 currentNation = resolution.nation ?? currentNation;
+                if (!resolution.alternative && !usedFallback) {
+                    currentGeneral = applyLegacyGeneralProgression(
+                        currentGeneral,
+                        generalBeforeExecution,
+                        actionKey,
+                        env
+                    );
+                }
                 if (
                     !resolution.alternative &&
                     kind === 'nation' &&
@@ -1091,11 +1220,10 @@ export const createReservedTurnHandler = async (options: {
                     }
                 }
 
-                const hasDiplomacyChange = diplomacyPatches.length > 0;
                 const hasNationChange = (resolution.patches?.cities ?? []).some((patch) =>
                     Object.prototype.hasOwnProperty.call(patch.patch ?? {}, 'nationId')
                 );
-                if (hasDiplomacyChange || hasNationChange) {
+                if (hasNationChange) {
                     const worldView = worldOverlay?.view ?? worldRef;
                     if (worldView && options.map) {
                         const frontPatches = buildFrontStatePatches({
@@ -1533,9 +1661,7 @@ export const createReservedTurnHandler = async (options: {
             if (!deleteGeneral && currentGeneral.age >= retirementYear && currentGeneral.npcState === 0) {
                 currentGeneral = resetRetiredGeneral(currentGeneral);
                 lifecycleOutcome = 'retired';
-                logs.push(
-                    createActionLog('나이가 들어 <R>은퇴</>하고 자손에게 자리를 물려줍니다.')
-                );
+                logs.push(createActionLog('나이가 들어 <R>은퇴</>하고 자손에게 자리를 물려줍니다.'));
             }
 
             currentGeneral = {

@@ -62,3 +62,22 @@ export const runReferenceTurnCommandTrace = (workspaceRoot: string, fixturePath:
     });
     return JSON.parse(stdout) as CanonicalTurnCommandTrace;
 };
+
+export const runReferenceTurnCommandTraceRequest = (
+    workspaceRoot: string,
+    request: Record<string, unknown>
+): CanonicalTurnCommandTrace => {
+    const stackDirectory = path.join(workspaceRoot, 'docker_compose_files/reference');
+    const runner = process.env.TURN_DIFFERENTIAL_RUNNER_SCRIPT ?? './scripts/run-turn-differential-case.sh';
+    const stdout = execFileSync(runner, ['-'], {
+        cwd: stackDirectory,
+        input: JSON.stringify(request),
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: {
+            ...process.env,
+            TURN_DIFFERENTIAL_STACK_DIR: stackDirectory,
+        },
+    });
+    return JSON.parse(stdout) as CanonicalTurnCommandTrace;
+};

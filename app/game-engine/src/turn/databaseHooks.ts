@@ -45,18 +45,53 @@ const readMetaNumber = (meta: Record<string, unknown>, key: string): number | nu
     return typeof value === 'number' && Number.isFinite(value) ? value : null;
 };
 
+const toLegacyDatabaseInt = (value: number): number => {
+    if (!Number.isFinite(value)) {
+        return 0;
+    }
+    return value >= 0 ? Math.floor(value + 0.5) : Math.ceil(value - 0.5);
+};
+
 const readRankMetaNumber = (meta: Record<string, unknown>, key: string): number => {
     const value = meta[key];
     if (typeof value === 'number' && Number.isFinite(value)) {
-        return Math.floor(value);
+        return toLegacyDatabaseInt(value);
     }
     if (typeof value === 'string') {
         const parsed = Number(value);
         if (Number.isFinite(parsed)) {
-            return Math.floor(parsed);
+            return toLegacyDatabaseInt(parsed);
         }
     }
     return 0;
+};
+
+const LEGACY_INTEGER_GENERAL_META_KEYS = [
+    'leadership_exp',
+    'strength_exp',
+    'intel_exp',
+    'dex1',
+    'dex2',
+    'dex3',
+    'dex4',
+    'dex5',
+    'explevel',
+    'dedlevel',
+    'killturn',
+    'myset',
+] as const;
+
+const buildPersistedGeneralMeta = (
+    general: ReturnType<InMemoryTurnWorld['consumeDirtyState']>['generals'][number]
+): InputJsonValue => {
+    const meta = withSerializedItemInventory(general.meta, ensureItemInventory(general));
+    for (const key of LEGACY_INTEGER_GENERAL_META_KEYS) {
+        const value = meta[key];
+        if (typeof value === 'number') {
+            meta[key] = toLegacyDatabaseInt(value);
+        }
+    }
+    return asJson(meta);
 };
 
 const buildRankRows = (
@@ -67,8 +102,8 @@ const buildRankRows = (
     const readRank = (key: string) => readRankMetaNumber(meta, `rank_${key}`);
 
     const entries: Array<[RankDataType, number]> = [
-        ['experience', Math.floor(general.experience)],
-        ['dedication', Math.floor(general.dedication)],
+        ['experience', toLegacyDatabaseInt(general.experience)],
+        ['dedication', toLegacyDatabaseInt(general.dedication)],
         ['firenum', readMeta('firenum')],
         ['warnum', readRank('warnum')],
         ['killnum', readRank('killnum')],
@@ -126,19 +161,19 @@ const buildGeneralUpdate = (
     nationId: general.nationId,
     cityId: general.cityId,
     troopId: general.troopId,
-    leadership: general.stats.leadership,
-    strength: general.stats.strength,
-    intel: general.stats.intelligence,
-    experience: general.experience,
-    dedication: general.dedication,
+    leadership: toLegacyDatabaseInt(general.stats.leadership),
+    strength: toLegacyDatabaseInt(general.stats.strength),
+    intel: toLegacyDatabaseInt(general.stats.intelligence),
+    experience: toLegacyDatabaseInt(general.experience),
+    dedication: toLegacyDatabaseInt(general.dedication),
     officerLevel: general.officerLevel,
-    injury: general.injury,
-    gold: general.gold,
-    rice: general.rice,
-    crew: general.crew,
+    injury: toLegacyDatabaseInt(general.injury),
+    gold: toLegacyDatabaseInt(general.gold),
+    rice: toLegacyDatabaseInt(general.rice),
+    crew: toLegacyDatabaseInt(general.crew),
     crewTypeId: general.crewTypeId,
-    train: general.train,
-    atmos: general.atmos,
+    train: toLegacyDatabaseInt(general.train),
+    atmos: toLegacyDatabaseInt(general.atmos),
     age: general.age,
     npcState: general.npcState,
     horseCode: toCode(general.role.items.horse),
@@ -149,7 +184,7 @@ const buildGeneralUpdate = (
     specialCode: toCode(general.role.specialDomestic),
     special2Code: toCode(general.role.specialWar),
     lastTurn: asJson(general.lastTurn ?? { command: '휴식' }),
-    meta: asJson(withSerializedItemInventory(general.meta, ensureItemInventory(general))),
+    meta: buildPersistedGeneralMeta(general),
     turnTime: general.turnTime,
     recentWarTime: general.recentWarTime ?? null,
 });
@@ -163,19 +198,19 @@ const buildGeneralCreate = (
     cityId: general.cityId,
     troopId: general.troopId,
     npcState: general.npcState,
-    leadership: general.stats.leadership,
-    strength: general.stats.strength,
-    intel: general.stats.intelligence,
-    experience: general.experience,
-    dedication: general.dedication,
+    leadership: toLegacyDatabaseInt(general.stats.leadership),
+    strength: toLegacyDatabaseInt(general.stats.strength),
+    intel: toLegacyDatabaseInt(general.stats.intelligence),
+    experience: toLegacyDatabaseInt(general.experience),
+    dedication: toLegacyDatabaseInt(general.dedication),
     officerLevel: general.officerLevel,
-    injury: general.injury,
-    gold: general.gold,
-    rice: general.rice,
-    crew: general.crew,
+    injury: toLegacyDatabaseInt(general.injury),
+    gold: toLegacyDatabaseInt(general.gold),
+    rice: toLegacyDatabaseInt(general.rice),
+    crew: toLegacyDatabaseInt(general.crew),
     crewTypeId: general.crewTypeId,
-    train: general.train,
-    atmos: general.atmos,
+    train: toLegacyDatabaseInt(general.train),
+    atmos: toLegacyDatabaseInt(general.atmos),
     age: general.age,
     horseCode: toCode(general.role.items.horse),
     weaponCode: toCode(general.role.items.weapon),
@@ -185,7 +220,7 @@ const buildGeneralCreate = (
     specialCode: toCode(general.role.specialDomestic),
     special2Code: toCode(general.role.specialWar),
     lastTurn: asJson(general.lastTurn ?? { command: '휴식' }),
-    meta: asJson(withSerializedItemInventory(general.meta, ensureItemInventory(general))),
+    meta: buildPersistedGeneralMeta(general),
     turnTime: general.turnTime,
     recentWarTime: general.recentWarTime ?? null,
 });

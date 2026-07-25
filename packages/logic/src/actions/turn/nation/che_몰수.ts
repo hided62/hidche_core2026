@@ -93,7 +93,7 @@ export class ActionDefinition<
     }
 
     resolve(context: SeizureResolveContext<TriggerState>, args: SeizureArgs): GeneralActionOutcome<TriggerState> {
-        const { general, nation, destGeneral } = context;
+        const { nation, destGeneral } = context;
         if (!nation) {
             return { effects: [createLogEffect('국가 정보가 없습니다.', { scope: LogScope.GENERAL })] };
         }
@@ -146,9 +146,6 @@ export class ActionDefinition<
                 format: LogFormat.PLAIN,
             }),
         ];
-
-        general.experience += 5;
-        general.dedication += 5;
 
         return { effects };
     }

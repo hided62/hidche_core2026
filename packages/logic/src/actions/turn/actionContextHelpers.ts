@@ -26,9 +26,11 @@ export const buildWorldSummary = (world: ActionContextWorldRef | null): WorldSum
     if (generals.length === 0) {
         return { totalGeneralCount: 0, totalNpcCount: 0 };
     }
-    const total = generals.length;
-    const npcCount = generals.filter((general) => general.npcState > 0).length;
-    const statSum = generals.reduce(
+    const countedGenerals = generals.filter((general) => general.npcState < 4);
+    const total = countedGenerals.length;
+    const totalGeneralCount = generals.filter((general) => general.npcState <= 2).length;
+    const totalNpcCount = generals.filter((general) => general.npcState >= 3 && general.npcState <= 4).length;
+    const statSum = countedGenerals.reduce(
         (acc, general) => ({
             leadership: acc.leadership + general.stats.leadership,
             strength: acc.strength + general.stats.strength,
@@ -37,8 +39,8 @@ export const buildWorldSummary = (world: ActionContextWorldRef | null): WorldSum
         { leadership: 0, strength: 0, intelligence: 0 }
     );
     return {
-        totalGeneralCount: total,
-        totalNpcCount: npcCount,
+        totalGeneralCount,
+        totalNpcCount,
         averageStats: {
             leadership: statSum.leadership / total,
             strength: statSum.strength / total,

@@ -143,7 +143,7 @@ export interface WarAftermathTechContext {
     side: 'attacker' | 'defender';
     nation: Nation;
     attackerReport: WarUnitReport;
-    baseGain?: number;
+    baseGain: number;
 }
 
 export interface WarDiplomacyDelta {

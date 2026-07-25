@@ -8,6 +8,8 @@ import type {
     UnitSetDefinition,
 } from '@sammo-ts/logic';
 import {
+    LEGACY_RANDOM_GENERAL_FIRST_NAMES,
+    LEGACY_RANDOM_GENERAL_LAST_NAMES,
     loadGeneralTurnCommandSpecs,
     loadNationTurnCommandSpecs,
     loadActionModuleBundle,
@@ -62,6 +64,15 @@ const resolveOptionalString = (source: Record<string, unknown>, keys: string[]):
     return null;
 };
 
+const resolveStringList = (source: Record<string, unknown>, key: string, fallback: readonly string[]): string[] => {
+    const value = source[key];
+    if (!Array.isArray(value)) {
+        return [...fallback];
+    }
+    const result = value.filter((entry): entry is string => typeof entry === 'string');
+    return result.length > 0 ? result : [...fallback];
+};
+
 export const buildCommandEnv = (config: ScenarioConfig, unitSet?: UnitSetDefinition): TurnCommandEnv => {
     const constValues = asRecord(config.const);
 
@@ -94,9 +105,29 @@ export const buildCommandEnv = (config: ScenarioConfig, unitSet?: UnitSetDefinit
         ),
         defaultSpecialDomestic: resolveOptionalString(constValues, ['defaultSpecialDomestic']),
         defaultSpecialWar: resolveOptionalString(constValues, ['defaultSpecialWar']),
+        npcStatTotal: resolveNumber(constValues, ['defaultStatNPCTotal', 'npcStatTotal'], config.stat.npcTotal),
+        npcStatMin: resolveNumber(constValues, ['defaultStatNPCMin', 'npcStatMin'], config.stat.npcMin),
+        npcStatMax: resolveNumber(constValues, ['defaultStatNPCMax', 'npcStatMax'], config.stat.npcMax),
+        randomGeneralFirstNames: resolveStringList(constValues, 'randGenFirstName', LEGACY_RANDOM_GENERAL_FIRST_NAMES),
+        randomGeneralMiddleNames: resolveStringList(constValues, 'randGenMiddleName', ['']),
+        randomGeneralLastNames: resolveStringList(constValues, 'randGenLastName', LEGACY_RANDOM_GENERAL_LAST_NAMES),
+        availablePersonalities: resolveStringList(constValues, 'availablePersonality', [
+            'che_안전',
+            'che_유지',
+            'che_재간',
+            'che_출세',
+            'che_할거',
+            'che_정복',
+            'che_패권',
+            'che_의협',
+            'che_대의',
+            'che_왕좌',
+        ]),
         initialNationGenLimit: resolveNumber(constValues, ['initialNationGenLimit'], DEFAULT_INITIAL_NATION_GEN_LIMIT),
         maxTechLevel: resolveNumber(constValues, ['maxTechLevel'], DEFAULT_MAX_TECH_LEVEL),
         maxStatLevel: resolveNumber(constValues, ['maxLevel'], 255),
+        maxDedicationLevel: resolveNumber(constValues, ['maxDedLevel'], 30),
+        statUpgradeLimit: resolveNumber(constValues, ['upgradeLimit'], 30),
         techLevelIncYear: resolveNumber(constValues, ['techLevelIncYear'], 5),
         initialAllowedTechLevel: resolveNumber(constValues, ['initialAllowedTechLevel'], 1),
         baseGold: resolveNumber(constValues, ['baseGold', 'basegold'], DEFAULT_BASE_GOLD),
@@ -149,14 +180,9 @@ export const buildReservedTurnDefinitions = async (options: {
             },
         ])
     );
-    options.env.generalActionModules = [
-        ...(options.env.generalActionModules ?? []),
-        ...moduleBundle.general,
-    ];
-    options.env.warActionModules = [
-        ...(options.env.warActionModules ?? []),
-        ...moduleBundle.war,
-    ];
+    options.env.generalActionModules = [...(options.env.generalActionModules ?? []), ...moduleBundle.general];
+    options.env.warActionModules = [...(options.env.warActionModules ?? []), ...moduleBundle.war];
+    options.env.nationTraitModules = moduleBundle.nationTraitModules;
 
     const generalSpecs = await loadGeneralTurnCommandSpecs(options.commandProfile.general);
     const nationSpecs = await loadNationTurnCommandSpecs(options.commandProfile.nation);

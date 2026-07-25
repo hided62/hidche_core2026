@@ -17,6 +17,17 @@ import { clamp, clampMin, getMetaNumber, round, simpleSerialize } from './utils.
 
 const META_DEAD = 'dead';
 const META_CONFLICT = 'conflict';
+const MAX_EXP_LEVEL = 255;
+const MAX_DEDICATION_LEVEL = 30;
+
+const updateLegacyProgressionLevels = (general: General): void => {
+    const expLevel =
+        general.experience < 1_000
+            ? Math.trunc(general.experience / 100)
+            : Math.trunc(Math.sqrt(general.experience / 10));
+    general.meta.explevel = clamp(expLevel, 0, MAX_EXP_LEVEL);
+    general.meta.dedlevel = clamp(Math.ceil(Math.sqrt(general.dedication) / 10), 0, MAX_DEDICATION_LEVEL);
+};
 
 const findReport = (reports: WarUnitReport[], predicate: (report: WarUnitReport) => boolean): WarUnitReport | null => {
     for (const report of reports) {
@@ -78,7 +89,7 @@ const applyNationTechGain = <TriggerState extends GeneralTriggerState>(
     nation: Nation,
     baseGain: number,
     input: WarAftermathInput<TriggerState>,
-    context: WarAftermathTechContext
+    context: Omit<WarAftermathTechContext, 'baseGain'>
 ): void => {
     const config = input.config;
     let gain = baseGain;
@@ -102,7 +113,10 @@ const applyNationTechGain = <TriggerState extends GeneralTriggerState>(
 
     const divisor = Math.max(config.initialNationGenLimit, total);
     const tech = getMetaNumber(nation.meta, 'tech', 0) + gain / divisor;
-    nation.meta.tech = round(tech);
+    // Legacy MySQL FLOAT values are read back at the command boundary with
+    // two-decimal precision. Preserve fractional accumulation without
+    // converting the gain to an integer.
+    nation.meta.tech = Math.round(tech * 100) / 100;
 };
 
 const resolveConquerNation = (city: City, attackerNationId: number, nations: Nation[]): number => {
@@ -241,12 +255,14 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
         let totalRiceLoss = 0;
 
         for (const general of defenderGenerals) {
-            const loseGold = round(general.gold * rng.nextRange(0.2, 0.5));
-            const loseRice = round(general.rice * rng.nextRange(0.2, 0.5));
+            // Legacy Util::toInt truncates these losses rather than rounding.
+            const loseGold = Math.trunc(general.gold * rng.nextRange(0.2, 0.5));
+            const loseRice = Math.trunc(general.rice * rng.nextRange(0.2, 0.5));
             general.gold = clampMin(general.gold - loseGold, 0);
             general.rice = clampMin(general.rice - loseRice, 0);
             general.experience = round(general.experience * 0.9);
             general.dedication = round(general.dedication * 0.5);
+            updateLegacyProgressionLevels(general);
 
             totalGoldLoss += loseGold;
             totalRiceLoss += loseRice;
@@ -263,8 +279,8 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
             affectedGenerals.add(general);
         }
 
-        collapseRewardGold = Math.max(0, defenderNation.gold - config.baseGold) * 0.5 + totalGoldLoss * 0.5;
-        collapseRewardRice = Math.max(0, defenderNation.rice - config.baseRice) * 0.5 + totalRiceLoss * 0.5;
+        collapseRewardGold = Math.floor((Math.max(0, defenderNation.gold - config.baseGold) + totalGoldLoss) / 2);
+        collapseRewardRice = Math.floor((Math.max(0, defenderNation.rice - config.baseRice) + totalRiceLoss) / 2);
 
         attackerNation.gold = round(attackerNation.gold + collapseRewardGold);
         attackerNation.rice = round(attackerNation.rice + collapseRewardRice);
@@ -329,6 +345,7 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
     // 점령 후 도시 상태를 방어 기본 상태로 되돌린다.
     defenderCity.supplyState = 1;
     defenderCity.frontState = 0;
+    defenderCity.meta.term = 0;
     defenderCity.agriculture = round(defenderCity.agriculture * 0.7);
     defenderCity.commerce = round(defenderCity.commerce * 0.7);
     defenderCity.security = round(defenderCity.security * 0.7);
