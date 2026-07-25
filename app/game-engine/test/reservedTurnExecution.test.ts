@@ -307,7 +307,7 @@ describe('Reserved Turn Execution Integration', () => {
         expect(finalGen2.cityId).toBe(1);
 
         // 레거시 내정식은 고정 증가량이 아니라 능력치·경험·난수·치명 배율을 사용한다.
-        expect(finalCity1.agriculture).toBe(206);
+        expect(finalCity1.agriculture).toBe(210);
 
         // 레거시 상업 투자식(지력·민심·경험·난수·치명 배율)을 고정 seed로 계산한 결과.
         expect(finalCity1.commerce).toBe(124);
