@@ -273,6 +273,9 @@ const parseInstallOptions = (
 const buildProcessName = (profileName: string, role: 'api' | 'daemon'): string =>
     `sammo:${profileName}:${role === 'api' ? 'game-api' : 'turn-daemon'}`;
 
+const isMissingProcessError = (error: unknown): boolean =>
+    error instanceof Error && /process or namespace not found/i.test(error.message);
+
 export const buildProcessDefinitions = (
     profile: GatewayProfileRecord,
     config: GatewayProcessConfig
@@ -293,6 +296,9 @@ export const buildProcessDefinitions = (
         PROFILE: profile.profile,
         SCENARIO: profile.scenario,
         GAME_API_PORT: String(profile.apiPort),
+        GAME_TRPC_PATH: `/${profile.profile}/api/trpc`,
+        GAME_API_EVENTS_PATH: `/${profile.profile}/api/events`,
+        GAME_UPLOAD_PATH: `/${profile.profile}/api/uploads`,
         GATEWAY_REDIS_PREFIX: config.redisKeyPrefix,
         GAME_TOKEN_SECRET: config.gameTokenSecret,
     };
@@ -963,14 +969,21 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     private async stopProfile(profile: GatewayProfileRecord): Promise<void> {
         const apiName = buildProcessName(profile.profileName, 'api');
         const daemonName = buildProcessName(profile.profileName, 'daemon');
+        const existingNames = new Set((await this.processManager.list()).map((process) => process.name));
         const failures: string[] = [];
         for (const name of [apiName, daemonName]) {
+            if (!existingNames.has(name)) {
+                continue;
+            }
             try {
                 await this.processManager.stop(name);
             } catch {
-                try {
-                    await this.processManager.delete(name);
-                } catch (error) {
+                // Deleting the definition below also terminates a process that raced with stop.
+            }
+            try {
+                await this.processManager.delete(name);
+            } catch (error) {
+                if (!isMissingProcessError(error)) {
                     failures.push(`${name}: ${error instanceof Error ? error.message : String(error)}`);
                 }
             }

@@ -36,7 +36,13 @@ const buildOperation = (type: 'START' | 'STOP'): GatewayOperationRecord => ({
     updatedAt: '2026-07-25T01:00:00.000Z',
 });
 
-const createHarness = (operation: GatewayOperationRecord, failStart = false, failStop = false) => {
+const createHarness = (
+    operation: GatewayOperationRecord,
+    failStart = false,
+    failStop = false,
+    processesPresent = true,
+    missingOnDelete = false
+) => {
     let nextOperation: GatewayOperationRecord | null = operation;
     const statuses: string[] = [];
     const completions: GatewayOperationStatus[] = [];
@@ -77,7 +83,13 @@ const createHarness = (operation: GatewayOperationRecord, failStart = false, fai
         retryOperation: async () => null,
     };
     const processManager: ProcessManager = {
-        list: async () => [],
+        list: async () =>
+            processesPresent
+                ? [
+                      { name: 'sammo:che:2:game-api', status: 'online' },
+                      { name: 'sammo:che:2:turn-daemon', status: 'online' },
+                  ]
+                : [],
         start: async (definition) => {
             if (failStart) {
                 throw new Error('pm2 unavailable');
@@ -92,6 +104,9 @@ const createHarness = (operation: GatewayOperationRecord, failStart = false, fai
         },
         delete: async (name) => {
             deleted.push(name);
+            if (missingOnDelete) {
+                throw new Error('process or namespace not found');
+            }
             if (failStop) {
                 throw new Error('pm2 delete failed');
             }
@@ -142,6 +157,27 @@ describe('GatewayOrchestrator first-class operations', () => {
 
         expect(harness.statuses).toEqual(['STOPPED']);
         expect(harness.stopped).toEqual(['sammo:che:2:game-api', 'sammo:che:2:turn-daemon']);
+        expect(harness.deleted).toEqual(['sammo:che:2:game-api', 'sammo:che:2:turn-daemon']);
+        expect(harness.completions).toEqual(['SUCCEEDED']);
+    });
+
+    it('treats an already stopped profile as a successful idempotent stop', async () => {
+        const harness = createHarness(buildOperation('STOP'), false, false, false);
+
+        await harness.orchestrator.runOperationsNow();
+
+        expect(harness.statuses).toEqual(['STOPPED']);
+        expect(harness.stopped).toEqual([]);
+        expect(harness.deleted).toEqual([]);
+        expect(harness.completions).toEqual(['SUCCEEDED']);
+    });
+
+    it('treats a process removed concurrently as a successful stop', async () => {
+        const harness = createHarness(buildOperation('STOP'), false, false, true, true);
+
+        await harness.orchestrator.runOperationsNow();
+
+        expect(harness.deleted).toEqual(['sammo:che:2:game-api', 'sammo:che:2:turn-daemon']);
         expect(harness.completions).toEqual(['SUCCEEDED']);
     });
 

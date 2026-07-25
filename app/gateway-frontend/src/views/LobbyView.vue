@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { computed, ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import type { inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from '@sammo-ts/gateway-api';
@@ -28,6 +28,16 @@ const profiles = ref<LobbyProfile[]>([]);
 const profileDetails = ref<Record<string, LobbyInfo | undefined>>({});
 const profileMapPreviews = ref<Record<string, MapPreviewBundle | undefined>>({});
 const entryLoading = ref<Record<string, boolean>>({});
+const canAccessAdmin = computed(
+    () =>
+        me.value?.roles.some(
+            (role) =>
+                role === 'superuser' ||
+                role === 'admin' ||
+                role === 'admin.superuser' ||
+                role.startsWith('admin.')
+        ) ?? false
+);
 
 onMounted(async () => {
     try {
@@ -353,12 +363,13 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                     >
                         로 그 아 웃
                     </button>
-                    <button
-                        v-if="me?.roles?.includes('admin')"
+                    <RouterLink
+                        v-if="canAccessAdmin"
+                        to="/admin"
                         class="bg-zinc-800 hover:bg-zinc-700 text-white px-6 py-2 rounded border border-zinc-700 transition-colors"
                     >
                         관리자 페이지
-                    </button>
+                    </RouterLink>
                 </div>
             </div>
         </div>

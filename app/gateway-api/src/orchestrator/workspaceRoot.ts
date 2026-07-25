@@ -1,16 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const WORKSPACE_MARKERS = ['pnpm-workspace.yaml', 'package.json'];
-
-const hasWorkspaceMarker = (dir: string): boolean =>
-    WORKSPACE_MARKERS.some((marker) => fs.existsSync(path.join(dir, marker)));
-
 export const resolveWorkspaceRoot = (startDir: string, maxDepth = 5): string => {
     let current = path.resolve(startDir);
+    let packageRoot: string | null = null;
     for (let depth = 0; depth <= maxDepth; depth += 1) {
-        if (hasWorkspaceMarker(current)) {
+        if (fs.existsSync(path.join(current, 'pnpm-workspace.yaml'))) {
             return current;
+        }
+        if (!packageRoot && fs.existsSync(path.join(current, 'package.json'))) {
+            packageRoot = current;
         }
         const parent = path.dirname(current);
         if (parent === current) {
@@ -18,5 +17,5 @@ export const resolveWorkspaceRoot = (startDir: string, maxDepth = 5): string => 
         }
         current = parent;
     }
-    return path.resolve(startDir);
+    return packageRoot ?? path.resolve(startDir);
 };
