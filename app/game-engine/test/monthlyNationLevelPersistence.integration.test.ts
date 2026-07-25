@@ -5,6 +5,7 @@ import type { City, ItemModule, Nation } from '@sammo-ts/logic';
 import { createDatabaseTurnHooks } from '../src/turn/databaseHooks.js';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import { createUpdateNationLevelHandler } from '../src/turn/monthlyNationLevelAction.js';
+import { createMonthlyEventHandler } from '../src/turn/monthlyEventHandler.js';
 import { InMemoryReservedTurnStore } from '../src/turn/reservedTurnStore.js';
 import type { TurnEvent, TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 
@@ -216,7 +217,7 @@ integration('monthly nation level database persistence', () => {
             data: {
                 scenarioCode: 'monthly-nation-level-persistence',
                 currentYear: 193,
-                currentMonth: 2,
+                currentMonth: 1,
                 tickSeconds: 600,
                 config: {},
                 meta: { hiddenSeed: 'nation-level-persistence', killturn: 1_000 },
@@ -225,7 +226,7 @@ integration('monthly nation level database persistence', () => {
         const state: TurnWorldState = {
             id: stateRow.id,
             currentYear: 193,
-            currentMonth: 2,
+            currentMonth: 1,
             tickSeconds: 600,
             lastTurnTime: new Date('2026-07-25T00:20:00.000Z'),
             meta: { hiddenSeed: 'nation-level-persistence', killturn: 1_000 },
@@ -252,24 +253,26 @@ integration('monthly nation level database persistence', () => {
             events: [event],
             initialEvents: [],
         };
-        const world = new InMemoryTurnWorld(state, snapshot, {
-            schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
-        });
         const reservedTurns = new InMemoryReservedTurnStore(db, { maxGeneralTurns: 30, maxNationTurns: 12 });
         await reservedTurns.loadAll();
+        let world: InMemoryTurnWorld | null = null;
         const handler = createUpdateNationLevelHandler({
             getWorld: () => world,
             reservedTurns,
             itemModules: [uniqueHorse],
         });
+        world = new InMemoryTurnWorld(state, snapshot, {
+            schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+            calendarHandler: createMonthlyEventHandler({
+                getWorld: () => world,
+                startYear: 190,
+                actions: new Map([['UpdateNationLevel', handler]]),
+            }),
+        });
         const dbHooks = await createDatabaseTurnHooks(databaseUrl!, world, { reservedTurns });
 
         try {
-            await handler(
-                [],
-                { year: 193, month: 2, startyear: 190, currentEventID: 1, turnTime: state.lastTurnTime },
-                event
-            );
+            await world.advanceMonth(new Date('0193-02-01T00:00:00.000Z'));
             await dbHooks.hooks.flushChanges?.({
                 lastTurnTime: state.lastTurnTime.toISOString(),
                 processedGenerals: 0,
