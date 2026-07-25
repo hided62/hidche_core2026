@@ -1,0 +1,57 @@
+{
+	auto_https off
+	admin off
+}
+
+:18080 {
+	redir /gateway /gateway/ 308
+	@gatewayApi path /gateway/api /gateway/api/*
+	handle @gatewayApi {
+		reverse_proxy 127.0.0.1:19001
+	}
+	handle /gateway/* {
+		reverse_proxy 127.0.0.1:19000
+	}
+
+	redir /che /che/ 308
+	@cheApi path /che/api /che/api/*
+	handle @cheApi {
+		reverse_proxy 127.0.0.1:19003
+	}
+	handle /che/* {
+		reverse_proxy 127.0.0.1:19002
+	}
+
+	redir /hwe /hwe/ 308
+	@hweApi path /hwe/api /hwe/api/*
+	handle @hweApi {
+		reverse_proxy 127.0.0.1:19015
+	}
+	handle /hwe/* {
+		reverse_proxy 127.0.0.1:19014
+	}
+}
+
+:19000 {
+	respond "gateway-frontend {uri}"
+}
+
+:19001 {
+	respond "gateway-api {uri}"
+}
+
+:19002 {
+	respond "che-frontend {uri}"
+}
+
+:19003 {
+	respond "che-api {uri}"
+}
+
+:19014 {
+	respond "hwe-frontend {uri}"
+}
+
+:19015 {
+	respond "hwe-api {uri}"
+}

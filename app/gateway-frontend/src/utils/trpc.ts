@@ -11,7 +11,7 @@ const getSessionToken = (): string | null => {
 export const trpc = createTRPCProxyClient<AppRouter>({
     links: [
         httpBatchLink({
-            url: '/api/trpc', // 실제 환경에 맞게 조정 필요
+            url: import.meta.env.VITE_GATEWAY_API_URL ?? '/api/trpc',
             headers() {
                 const token = getSessionToken();
                 return token ? { 'x-session-token': token } : {};

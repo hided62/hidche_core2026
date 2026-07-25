@@ -44,7 +44,7 @@ onMounted(async () => {
             if (profile.status !== 'RUNNING' && profile.status !== 'PREOPEN') {
                 return;
             }
-            const gameTrpc = createGameTrpc(profile.apiPort);
+            const gameTrpc = createGameTrpc(profile.profile, profile.apiPort);
             const [infoResult, layoutResult, mapResult] = await Promise.allSettled([
                 gameTrpc.lobby.info.query(),
                 gameTrpc.public.getMapLayout.query(),
@@ -78,7 +78,11 @@ const handleLogout = async () => {
 };
 
 const resolveGameUrl = (path: string, profileName: string, gameToken: string): string | null => {
-    const baseUrl = import.meta.env.VITE_GAME_WEB_URL ?? '';
+    const profile = profileName.split(':', 1)[0] ?? profileName;
+    const baseUrl =
+        import.meta.env.VITE_GAME_WEB_URL ??
+        import.meta.env.VITE_GAME_WEB_URL_TEMPLATE?.replaceAll('{profile}', encodeURIComponent(profile)) ??
+        '';
     if (!baseUrl) {
         return null;
     }

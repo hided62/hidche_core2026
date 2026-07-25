@@ -3,11 +3,18 @@ import type { appRouter } from '@sammo-ts/game-api';
 
 export type GameRouter = typeof appRouter;
 
-export const createGameTrpc = (port: number) => {
+const resolveProfileUrl = (template: string, profile: string): string =>
+    template.replaceAll('{profile}', encodeURIComponent(profile));
+
+export const createGameTrpc = (profile: string, port: number) => {
+    const urlTemplate = import.meta.env.VITE_GAME_API_URL_TEMPLATE;
+    const url = urlTemplate
+        ? resolveProfileUrl(urlTemplate, profile)
+        : `http://localhost:${port}/api/trpc`;
     return createTRPCProxyClient<GameRouter>({
         links: [
             httpBatchLink({
-                url: `http://localhost:${port}/api/trpc`, // 실제 환경에서는 도메인/경로 조정 필요
+                url,
             }),
         ],
     });
