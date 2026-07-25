@@ -100,7 +100,7 @@ const createMockPrisma = (initialGeneralRows: any[] = []) => {
 const addMinutes = (time: Date, minutes: number): Date => new Date(time.getTime() + minutes * 60_000);
 
 describe('NPC 일반 내정 턴', () => {
-    it('예약 턴이 없어도 내정 수치가 증가한다', async () => {
+    it('고정 seed에서 예약 턴 없이 치안 명령을 실행하고 다음 턴으로 이동한다', async () => {
         const generals: TurnGeneral[] = [
             {
                 id: 1,
@@ -285,15 +285,10 @@ describe('NPC 일반 내정 턴', () => {
         });
 
         const afterCity = world.getCityById(1)!;
-        const increased =
-            afterCity.population > beforeStats.population ||
-            afterCity.agriculture > beforeStats.agriculture ||
-            afterCity.commerce > beforeStats.commerce ||
-            afterCity.security > beforeStats.security ||
-            afterCity.defence > beforeStats.defence ||
-            afterCity.wall > beforeStats.wall;
-
-        expect(increased).toBe(true);
-        expect(world.getGeneralById(1)!.turnTime.getTime()).toBeGreaterThan(mockDate.getTime());
+        expect(afterCity).toMatchObject({
+            ...beforeStats,
+            security: 1050,
+        });
+        expect(world.getGeneralById(1)!.turnTime.getTime()).toBe(addMinutes(mockDate, 10).getTime());
     });
 });

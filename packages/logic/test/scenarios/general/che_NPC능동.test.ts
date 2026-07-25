@@ -224,10 +224,18 @@ describe('che_NPC능동', () => {
         ).rejects.toThrow('NPC가 아닙니다.');
     });
 
-    it('should fail if args are invalid', async () => {
-        // Arg validation happens in parseArgs or resolver check.
-        // Simulating invalid args via direct usage of resolver might bypass parseArgs if using `resolver` object directly with raw args?
-        // No, verify it returns null or throws.
-        // Here we just skip for brevity or setup minimal test.
+    it('rejects structurally invalid command arguments', async () => {
+        const definition = (
+            await import('../../../src/actions/turn/general/che_NPC능동.js')
+        ).commandSpec.createDefinition({} as TurnCommandEnv);
+
+        expect(definition.parseArgs(null)).toBeNull();
+        expect(definition.parseArgs({ optionText: '순간이동' })).toBeNull();
+        expect(definition.parseArgs({ optionText: '순간이동', destCityId: '101' })).toBeNull();
+        expect(definition.parseArgs({ optionText: '알수없음', destCityId: 101 })).toBeNull();
+        expect(definition.parseArgs({ optionText: '순간이동', destCityId: 101 })).toEqual({
+            optionText: '순간이동',
+            destCityId: 101,
+        });
     });
 });

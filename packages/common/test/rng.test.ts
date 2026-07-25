@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
     bufferByteSize,
+    ConstantRNG,
     convertBytesLikeToArrayBuffer,
     convertBytesLikeToUint8Array as toBytes,
     LiteHashDRBG,
@@ -238,46 +239,51 @@ describe('RNGexpectedError', () => {
     });
 });
 
-describe('RNGAcceptable', () => {
-    const rng = new LiteHashDRBG(fixedKey);
-    it('RNG', () => {
-        rng.nextInt(0);
-        rng.nextInt(2 ** 53 - 1);
-        rng.nextBytes(65);
-        rng.nextBits(512);
+describe('RNG boundary behavior', () => {
+    it('returns values at supported zero/max/large-buffer boundaries', () => {
+        const rng = new LiteHashDRBG(fixedKey);
+
+        expect(rng.nextInt(0)).toBe(0);
+        expect(rng.nextInt(2 ** 53 - 1)).toBe(656_721_283_176_740);
+        expect(rng.nextBytes(65)).toHaveLength(65);
+        expect(rng.nextBits(512)).toHaveLength(64);
     });
 
-    const randUtil = new RandUtil(rng);
-    it('RandUtil', () => {
-        randUtil.choice([0, 0, 0]);
-        randUtil.choiceUsingWeight({
-            0: 0,
-            1: -1,
-        });
-        randUtil.choiceUsingWeightPair([
-            [0, 0],
-            [1, 0],
-            [2, -2],
-        ]);
-        randUtil.nextBool(1.1);
-        randUtil.nextBool(-0.1);
-        randUtil.shuffle([]);
-        randUtil.shuffle([1]);
-        randUtil.nextRange(0, 0);
-        randUtil.nextRangeInt(0, 0);
-        randUtil.nextRange(1, -1);
-        randUtil.nextRangeInt(1, -1);
+    it('defines deterministic behavior for degenerate utility inputs', () => {
+        const minRand = new RandUtil(new ConstantRNG(0));
+        const maxRand = new RandUtil(new ConstantRNG(1));
+
+        expect(minRand.choice([0, 0, 0])).toBe(0);
+        expect(minRand.choiceUsingWeight({ 0: 0, 1: -1 })).toBe('0');
+        expect(
+            minRand.choiceUsingWeightPair([
+                [0, 0],
+                [1, 0],
+                [2, -2],
+            ])
+        ).toBe(0);
+        expect(minRand.nextBool(1.1)).toBe(true);
+        expect(minRand.nextBool(-0.1)).toBe(false);
+        expect(minRand.shuffle([])).toEqual([]);
+        expect(minRand.shuffle([1])).toEqual([1]);
+        expect(minRand.nextRange(0, 0)).toBe(0);
+        expect(minRand.nextRangeInt(0, 0)).toBe(0);
+        expect(minRand.nextRange(1, -1)).toBe(1);
+        expect(minRand.nextRangeInt(1, -1)).toBe(1);
+        expect(maxRand.nextRange(1, -1)).toBe(-1);
+        expect(maxRand.nextRangeInt(1, -1)).toBe(-1);
     });
 
-    it('RNGLong', () => {
-        const longKey = fixedKey;
+    it('hashes the complete expanded long seed', () => {
+        let longKey = fixedKey;
         for (let idx = 0; idx < 8; idx += 1) {
-            longKey.concat(longKey);
+            longKey += longKey;
         }
+
         const rngLong = new LiteHashDRBG(longKey);
-        for (let idx = 0; idx < 10; idx += 1) {
-            rngLong.nextBytes(16);
-        }
+        expect(Buffer.from(rngLong.nextBytes(32)).toString('hex')).toBe(
+            '7e44b8180c0d254759a70aee891a5f6ba45c8016e02cb8ee51f0b22e600a4dd1'
+        );
     });
 });
 

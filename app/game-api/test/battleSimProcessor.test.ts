@@ -226,23 +226,36 @@ const buildPayload = (action: BattleSimJobPayload['action']): BattleSimJobPayloa
 });
 
 describe('battle sim processor', () => {
-    it('simulates battles and returns summary', () => {
+    it('returns the fixed-seed battle summary instead of only a successful shape', () => {
         const payload = buildPayload('battle');
         const result = processBattleSimJob(payload);
 
-        expect(result.result).toBe(true);
-        expect(result.reason).toBe('success');
-        expect(result.lastWarLog).toBeTruthy();
-        expect(result.phase).toBeTypeOf('number');
-        expect(result.attackerRice).toBeTypeOf('number');
+        expect(result).toMatchObject({
+            result: true,
+            reason: 'success',
+            datetime: '2026-01-01 00:00:00',
+            avgWar: 1,
+            phase: 2,
+            killed: 625,
+            maxKilled: 625,
+            minKilled: 625,
+            dead: 1000,
+            maxDead: 1000,
+            minDead: 1000,
+            attackerRice: 65,
+            defenderRice: 83,
+            attackerSkills: { 부상: 1 },
+            defendersSkills: [{ 회피시도: 1, 회피: 1 }],
+        });
+        expect(result.lastWarLog?.generalActionLog).toContain('퇴각했습니다.');
     });
 
-    it('returns defender order for reorder action', () => {
+    it('returns the fixed defender ID order for reorder action', () => {
         const payload = buildPayload('reorder');
         const result = processBattleSimJob(payload);
 
         expect(result.result).toBe(true);
-        expect(result.order?.length).toBe(1);
+        expect(result.order).toEqual([2]);
     });
 
     it('executes crew trigger handlers in simulator battles', () => {

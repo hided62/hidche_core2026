@@ -156,7 +156,10 @@ describe('voteReward command', () => {
 
         const itemRegistry = createItemModuleRegistry(await loadItemModules([...ITEM_KEYS]));
         const config = resolveUniqueConfig(snapshot.scenarioConfig.const as Record<string, unknown>);
-        const occupied = countOccupiedUniqueItems(generals.map((general) => general.role.items), itemRegistry);
+        const occupied = countOccupiedUniqueItems(
+            generals.map((general) => general.role.items),
+            itemRegistry
+        );
         const rng = new RandUtil(LiteHashDRBG.build(buildVoteUniqueSeed('seed', 1, 1)));
         const itemKey = rollUniqueLottery({
             rng,
@@ -199,7 +202,12 @@ describe('voteReward command', () => {
         expect(updated?.gold).toBe(1500);
         expect(updated?.role.items.weapon).toBe('che_무기_12_칠성검');
         const meta = updated?.meta as Record<string, unknown>;
-        expect(meta?.voteRewards).toBeTruthy();
+        expect(meta.voteRewards).toMatchObject({
+            1: {
+                awarded: true,
+                itemKey: 'che_무기_12_칠성검',
+            },
+        });
 
         const diff = world.consumeDirtyState();
         const logTexts = diff.logs.map((entry) => entry.text);
@@ -211,6 +219,7 @@ describe('voteReward command', () => {
             throw new Error('voteReward second result missing');
         }
         expect(second.alreadyApplied).toBe(true);
+        expect(second.itemKey).toBe('che_무기_12_칠성검');
         const afterSecond = world.getGeneralById(1);
         expect(afterSecond?.gold).toBe(1500);
     });

@@ -1,4 +1,5 @@
 import { enablePatches } from 'immer';
+import { LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 import type { City, General, Nation, GeneralId, NationId, CityId } from '../src/domain/entities.js';
 import type { WorldSnapshot } from '../src/world/types.js';
 import {
@@ -176,10 +177,12 @@ export interface TestCommand {
 export class TestGameRunner {
     world: InMemoryWorld;
     currentDate: Date;
+    private readonly seedBase: string;
 
-    constructor(world: InMemoryWorld, startYear: number, startMonth: number) {
+    constructor(world: InMemoryWorld, startYear: number, startMonth: number, seedBase = 'test-game-runner') {
         this.world = world;
         this.currentDate = new Date(startYear, startMonth - 1);
+        this.seedBase = seedBase;
     }
 
     nextGeneralId = 1;
@@ -190,29 +193,33 @@ export class TestGameRunner {
             entries: [{ startMinute: 0, tickMinutes: 60 }],
         };
 
-        for (const cmd of commands) {
+        for (const [commandIndex, cmd] of commands.entries()) {
             const general = this.world.getGeneral(cmd.generalId);
-            if (!general) continue;
+            if (!general) {
+                throw new Error(`General ${cmd.generalId} does not exist`);
+            }
 
             const city = this.world.getCity(general.cityId);
             if (!city) throw new Error(`General ${general.id} is in non-existent city ${general.cityId}`);
 
             const nation = general.nationId ? this.world.getNation(general.nationId) : null;
+            const rng = new RandUtil(
+                LiteHashDRBG.build(
+                    [
+                        this.seedBase,
+                        this.currentDate.toISOString(),
+                        String(commandIndex),
+                        String(general.id),
+                        cmd.commandKey,
+                    ].join('|')
+                )
+            );
 
             const inputContext = {
                 general,
                 city,
                 nation: nation || null,
-                rng: {
-                    real: () => Math.random(),
-                    int: (min: number, max: number) => Math.floor(Math.random() * (max - min)) + min,
-                    nextInt: (min: number, max: number) => Math.floor(Math.random() * (max - min)) + min,
-                    next: () => Math.random(),
-                    nextBool: () => Math.random() < 0.5,
-                    nextRange: (min: number, max: number) => Math.random() * (max - min) + min,
-                    nextRangeInt: (min: number, max: number) => Math.floor(Math.random() * (max - min)) + min,
-                    nextFloat1: () => Math.random(),
-                } as any,
+                rng,
 
                 year: this.currentDate.getFullYear(),
                 month: this.currentDate.getMonth() + 1,

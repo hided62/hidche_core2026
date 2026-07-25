@@ -144,7 +144,6 @@ describe('Troop Management Scenario', () => {
         ]);
 
         const generalAfterDraft = world.getGeneral(1)!;
-        console.log(`Drafted: ${generalAfterDraft.crew}`);
         expect(generalAfterDraft.crew).toBe(1000);
 
         // 3. Train
@@ -159,8 +158,7 @@ describe('Troop Management Scenario', () => {
         ]);
 
         const generalAfterTrain = world.getGeneral(1)!;
-        console.log(`Train: 10 -> ${generalAfterTrain.train}`);
-        expect(generalAfterTrain.train).toBeGreaterThan(10);
+        expect(generalAfterTrain.train).toBe(75);
 
         // 4. Boost Morale
         const atmosDef = atmosSpec.createDefinition(systemEnv);
@@ -174,7 +172,6 @@ describe('Troop Management Scenario', () => {
         ]);
 
         const generalAfterAtmos = world.getGeneral(1)!;
-        console.log(`Atmos: 10 -> ${generalAfterAtmos.atmos}`);
-        expect(generalAfterAtmos.atmos).toBeGreaterThan(10);
+        expect(generalAfterAtmos.atmos).toBe(75);
     });
 });

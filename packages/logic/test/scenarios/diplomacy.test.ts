@@ -7,10 +7,11 @@ import { commandSpec as declareWarSpec } from '../../src/actions/turn/nation/che
 import { commandSpec as deploySpec } from '../../src/actions/turn/general/che_출병.js';
 import type { TurnCommandEnv } from '../../src/actions/turn/commandEnv.js';
 import { processDiplomacyMonth, DIPLOMACY_STATE, type DiplomacyEntry } from '../../src/diplomacy/index.js';
-import { buildWarConfig, buildWarAftermathConfig } from '../../src/actions/turn/actionContextHelpers.js';
+import { evaluateConstraints } from '../../src/constraints/evaluate.js';
+import type { ConstraintContext, RequirementKey, StateView } from '../../src/constraints/types.js';
 
 describe('Diplomacy Scenario', () => {
-    it('should handle War Declaration and prevent/allow deployment accordingly', async () => {
+    it('changes deployment from denied to allowed when a declaration becomes war', async () => {
         // 1. Setup World
         const NATION_A_ID = 1;
         const NATION_B_ID = 2; // Target nation
@@ -134,8 +135,49 @@ describe('Diplomacy Scenario', () => {
             unitSet: {
                 id: 'default',
                 name: 'default',
-                crewTypes: [{ id: 1, name: 'Infantry', armType: 1, cost: 10, requirements: [] }],
-            } as any,
+                defaultCrewTypeId: 1,
+                armTypes: { 0: '성벽', 1: '보병' },
+                crewTypes: [
+                    {
+                        id: 0,
+                        name: '성벽',
+                        armType: 0,
+                        attack: 0,
+                        defence: 100,
+                        speed: 1,
+                        avoid: 0,
+                        magicCoef: 0,
+                        cost: 0,
+                        rice: 0,
+                        requirements: [],
+                        attackCoef: {},
+                        defenceCoef: {},
+                        info: [],
+                        initSkillTrigger: null,
+                        phaseSkillTrigger: null,
+                        iActionList: null,
+                    },
+                    {
+                        id: 1,
+                        name: '보병',
+                        armType: 1,
+                        attack: 100,
+                        defence: 100,
+                        speed: 5,
+                        avoid: 0,
+                        magicCoef: 0,
+                        cost: 10,
+                        rice: 1,
+                        requirements: [],
+                        attackCoef: {},
+                        defenceCoef: {},
+                        info: [],
+                        initSkillTrigger: null,
+                        phaseSkillTrigger: null,
+                        iActionList: null,
+                    },
+                ],
+            },
             nations: [mockNationA, mockNationB],
             cities: [mockCityA, mockCityB],
             generals: [mockGeneralA],
@@ -191,55 +233,71 @@ describe('Diplomacy Scenario', () => {
         expect(diplomacyAB).toBeDefined();
         expect(diplomacyAB?.state).toBe(DIPLOMACY_STATE.DECLARATION);
 
-        // Pre-calculate context data needed for Dispatch
-        const warConfig = buildWarConfig(snapshot.scenarioConfig, snapshot.unitSet!);
-        const aftermathConfig = buildWarAftermathConfig(snapshot.scenarioConfig, warConfig.castleCrewTypeId);
+        const dispatchArgs = { destCityId: 2 };
 
-        const warTime = {
-            year: 200,
-            month: 1,
-            season: 0,
-            turn: 1,
-        };
-        const seedBase = 'test_seed';
-
-        const buildDispatchContext = (destCityId: number) => {
-            const destCity = world.getCity(destCityId)!;
-            const destNation = world.getNation(destCity.nationId);
-
-            warTime.year = runner.currentDate.getFullYear();
-            warTime.month = runner.currentDate.getMonth() + 1;
-            warTime.season = Math.floor(runner.currentDate.getMonth() / 3);
-
+        const buildConstraintView = (): StateView => {
+            const get = (requirement: RequirementKey): unknown | null => {
+                switch (requirement.kind) {
+                    case 'general':
+                    case 'destGeneral':
+                        return world.getGeneral(requirement.id) ?? null;
+                    case 'generalList':
+                        return world.getAllGenerals();
+                    case 'city':
+                    case 'destCity':
+                        return world.getCity(requirement.id) ?? null;
+                    case 'nation':
+                    case 'destNation':
+                        return world.getNation(requirement.id) ?? null;
+                    case 'nationList':
+                        return world.getAllNations();
+                    case 'diplomacy':
+                        return world.getDiplomacy(requirement.srcNationId, requirement.destNationId) ?? null;
+                    case 'diplomacyList':
+                        return world.snapshot.diplomacy;
+                    case 'arg':
+                        return dispatchArgs[requirement.key as keyof typeof dispatchArgs] ?? null;
+                    case 'env':
+                        if (requirement.key === 'map') return world.snapshot.map;
+                        if (requirement.key === 'cities') return world.getAllCities();
+                        if (requirement.key === 'nations') return world.getAllNations();
+                        if (requirement.key === 'relYear') return 200;
+                        if (requirement.key === 'openingPartYear') return 200;
+                        return null;
+                }
+            };
             return {
-                destCity,
-                destNation,
-                warConfig,
-                aftermathConfig,
-                time: { ...warTime },
-                seedBase,
-                map: world.snapshot.map,
-                unitSet: world.snapshot.unitSet,
-                cities: world.getAllCities(),
-                nations: world.getAllNations(),
-                generals: world.getAllGenerals(),
-                diplomacy: world.snapshot.diplomacy,
+                has: (requirement) => get(requirement) !== null,
+                get,
             };
         };
-
-        // 3. Try to Deploy
-        const deployDef = deploySpec.createDefinition(systemEnv);
-        await runner.runTurn([
-            {
-                generalId: 1,
-                commandKey: 'che_출병',
-                resolver: deployDef,
-                args: { destCityId: 2 },
-                context: buildDispatchContext(2),
+        const buildDispatchConstraintContext = (): ConstraintContext => ({
+            actorId: mockGeneralA.id,
+            cityId: mockGeneralA.cityId,
+            nationId: mockGeneralA.nationId,
+            destCityId: dispatchArgs.destCityId,
+            destNationId: NATION_B_ID,
+            args: dispatchArgs,
+            env: {
+                relYear: 200,
+                openingPartYear: 200,
             },
-        ]);
+            mode: 'full',
+        });
 
-        expect(world.snapshot.troops.length).toBe(0);
+        // 3. A declaration is not yet a war, so deployment must be rejected.
+        const deployDef = deploySpec.createDefinition(systemEnv);
+        const declarationResult = evaluateConstraints(
+            deployDef.buildConstraints(buildDispatchConstraintContext(), dispatchArgs),
+            buildDispatchConstraintContext(),
+            buildConstraintView()
+        );
+        expect(declarationResult).toMatchObject({
+            kind: 'deny',
+            constraintName: 'hasRouteWithEnemy',
+            reason: '교전중인 국가가 아닙니다.',
+        });
+        expect(world.getGeneral(1)?.experience).toBe(100);
 
         // 4. Simulate State Transition
         for (let i = 0; i < 24; i++) {
@@ -267,18 +325,12 @@ describe('Diplomacy Scenario', () => {
         const diplomacyAB_After = world.getDiplomacy(NATION_A_ID, NATION_B_ID);
         expect(diplomacyAB_After?.state).toBe(DIPLOMACY_STATE.WAR);
 
-        // 5. Try to Deploy (Should Succeed)
-        await runner.runTurn([
-            {
-                generalId: 1,
-                commandKey: 'che_출병',
-                resolver: deployDef,
-                args: { destCityId: 2 },
-                context: buildDispatchContext(2),
-            },
-        ]);
-
-        const generalAfter = world.getGeneral(1)!;
-        console.log(`General Exp: ${mockGeneralA.experience} -> ${generalAfter.experience}`);
+        // 5. The same command becomes valid after the declaration reaches WAR.
+        const warResult = evaluateConstraints(
+            deployDef.buildConstraints(buildDispatchConstraintContext(), dispatchArgs),
+            buildDispatchConstraintContext(),
+            buildConstraintView()
+        );
+        expect(warResult).toEqual({ kind: 'allow' });
     });
 });

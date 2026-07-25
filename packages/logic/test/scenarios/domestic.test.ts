@@ -141,8 +141,7 @@ describe('Domestic Affairs Scenario', () => {
 
         // 4. Verify
         const updatedCity = world.getCity(1)!;
-        console.log(`Agriculture: 500 -> ${updatedCity.agriculture}`);
-        expect(updatedCity.agriculture).toBeGreaterThan(500);
+        expect(updatedCity.agriculture).toBe(600);
     });
 
     it('should not increase agriculture when city is already maxed', async () => {

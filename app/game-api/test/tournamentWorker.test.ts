@@ -5,12 +5,13 @@ import { createTournamentAutoStartHandler } from '@sammo-ts/common';
 
 import { TournamentStore } from '../src/tournament/store.js';
 import { buildTournamentKeys } from '../src/tournament/keys.js';
-import type { TournamentBetEntry, TournamentMatchEntry, TournamentParticipantEntry, TournamentState } from '../src/tournament/types.js';
-import {
-    applyBattle,
-    applyPreBattleStage,
-    settleTournamentOutcome,
-} from '../src/tournament/worker.js';
+import type {
+    TournamentBetEntry,
+    TournamentMatchEntry,
+    TournamentParticipantEntry,
+    TournamentState,
+} from '../src/tournament/types.js';
+import { applyBattle, applyPreBattleStage, settleTournamentOutcome } from '../src/tournament/worker.js';
 import type { TurnDaemonTransport } from '../src/daemon/transport.js';
 
 class MemoryRedis {
@@ -208,7 +209,7 @@ const runTournamentToCompletion = async (options: {
 const delayTick = async (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe('tournament worker (in-memory)', () => {
-    it('64명(상/중/하 스탯)으로 결승까지 진행된다', async () => {
+    it('64명 고정 seed 대진에서 15번 참가자가 결승을 이긴다', async () => {
         const redis = new MemoryRedis();
         const store = new TournamentStore(redis, buildTournamentKeys('test'));
         const participants = createParticipants(16, 16, 32);
@@ -219,10 +220,17 @@ describe('tournament worker (in-memory)', () => {
         const prisma = createPrismaMock({ baseSeed: 'seed' });
         const finalState = await runTournamentToCompletion({ store, prisma, baseSeed: 'seed' });
         const matches = await store.getMatches();
+        const finalMatches = matches.filter((match) => match.stage === 10);
 
         expect(finalState.stage).toBe(0);
-        expect(finalState.winnerId).toBeDefined();
-        expect(matches.some((match) => match.stage === 10 && match.winnerId)).toBe(true);
+        expect(finalState.winnerId).toBe(15);
+        expect(finalMatches).toHaveLength(1);
+        expect(finalMatches[0]).toMatchObject({
+            attackerId: 15,
+            defenderId: 1,
+            winnerId: 15,
+            lastEnergy: { attacker: -90, defender: -92 },
+        });
     });
 
     it('우승 결과에 따라 베팅 정산 명령이 생성된다', async () => {

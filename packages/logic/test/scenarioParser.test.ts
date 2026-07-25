@@ -9,7 +9,7 @@ import { parseScenarioDefaults, parseScenarioDefinition } from '../src/scenario/
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..', '..', '..');
-const scenarioRoot = path.join(repoRoot, 'legacy', 'hwe', 'scenario');
+const scenarioRoot = path.join(repoRoot, 'resources', 'scenario');
 
 const readJson = async (filePath: string): Promise<unknown> => {
     const raw = await fs.readFile(filePath, 'utf8');
@@ -17,7 +17,7 @@ const readJson = async (filePath: string): Promise<unknown> => {
 };
 
 describe('scenario parser', () => {
-    it('reads defaults from legacy default.json', async () => {
+    it('reads defaults from the tracked legacy-format default.json', async () => {
         const defaultsRaw = await readJson(path.join(scenarioRoot, 'default.json'));
         const defaults = parseScenarioDefaults(defaultsRaw);
 

@@ -67,24 +67,14 @@ describe('NPC 대형 시뮬레이션', () => {
         for (let i = 0; i < npcPerType; i += 1) {
             const cityId = smallMediumCityIds[i % smallMediumCityIds.length];
             generals.push(
-                createNpcGeneral(
-                    generals.length + 1,
-                    cityId,
-                    { leadership: 75, strength: 75, intelligence: 10 },
-                    2
-                )
+                createNpcGeneral(generals.length + 1, cityId, { leadership: 75, strength: 75, intelligence: 10 }, 2)
             );
         }
 
         for (let i = 0; i < npcPerType; i += 1) {
             const cityId = smallMediumCityIds[i % smallMediumCityIds.length];
             generals.push(
-                createNpcGeneral(
-                    generals.length + 1,
-                    cityId,
-                    { leadership: 75, strength: 10, intelligence: 75 },
-                    2
-                )
+                createNpcGeneral(generals.length + 1, cityId, { leadership: 75, strength: 10, intelligence: 75 }, 2)
             );
         }
 
@@ -275,7 +265,7 @@ describe('NPC 대형 시뮬레이션', () => {
                     : ` ${trace.requestedAction} -> ${trace.actionKey}`;
                 console.log(
                     `- ${trace.year}-${String(trace.month).padStart(2, '0')} N${trace.nationId} G${trace.generalId} g${round(trace.gold)}/r${round(trace.rice)} c${trace.crew}/t${trace.train}/a${trace.atmos} ` +
-                    `${trace.ok ? 'OK' : 'FAIL'} ${action}${extra}`
+                        `${trace.ok ? 'OK' : 'FAIL'} ${action}${extra}`
                 );
             }
         };
@@ -302,9 +292,7 @@ describe('NPC 대형 시뮬레이션', () => {
         };
 
         const assertSmallMediumCitiesFounded = () => {
-            const targetCities = world
-                .listCities()
-                .filter((city) => [4, 5].includes(city.level));
+            const targetCities = world.listCities().filter((city) => [4, 5].includes(city.level));
             for (const city of targetCities) {
                 expect(city.nationId).toBeGreaterThan(0);
             }
@@ -384,53 +372,12 @@ describe('NPC 대형 시뮬레이션', () => {
             expect(afterTotal).toBeGreaterThan(beforeTotal);
         };
 
-        const assertDomesticGrowthBy = (year: number, month: number) => {
+        const assertDomesticGrowth = () => {
             const citiesNow = world.listCities().filter((city) => city.nationId > 0);
             for (const city of citiesNow) {
                 const baseline = initialCityStats.get(city.id);
                 if (!baseline) {
                     continue;
-                }
-                const delta = {
-                    population: city.population - baseline.population,
-                    agriculture: city.agriculture - baseline.agriculture,
-                    commerce: city.commerce - baseline.commerce,
-                    security: city.security - baseline.security,
-                    defence: city.defence - baseline.defence,
-                    wall: city.wall - baseline.wall,
-                };
-                console.log('[DEBUG] domestic delta', {
-                    year,
-                    month,
-                    cityId: city.id,
-                    nationId: city.nationId,
-                    delta,
-                });
-
-                const failures: string[] = [];
-                if (city.population <= baseline.population) failures.push('population');
-                if (city.agriculture <= baseline.agriculture) failures.push('agriculture');
-                if (city.commerce <= baseline.commerce) failures.push('commerce');
-                if (city.security <= baseline.security) failures.push('security');
-                if (city.defence <= baseline.defence) failures.push('defence');
-                if (city.wall <= baseline.wall) failures.push('wall');
-                if (failures.length > 0) {
-                    console.log('[DEBUG] domestic not grown', {
-                        year,
-                        month,
-                        cityId: city.id,
-                        nationId: city.nationId,
-                        failures,
-                        baseline,
-                        current: {
-                            population: city.population,
-                            agriculture: city.agriculture,
-                            commerce: city.commerce,
-                            security: city.security,
-                            defence: city.defence,
-                            wall: city.wall,
-                        },
-                    });
                 }
                 // 182년 시점에는 징병이 병행되어 인구가 순감할 수 있으므로, 대규모 붕괴만 방지한다.
                 expect(city.population).toBeGreaterThan(baseline.population - 15000);
@@ -446,15 +393,18 @@ describe('NPC 대형 시뮬레이션', () => {
             ['179-09', () => assertUprisingCount(1)],
             ['179-10', () => assertUprisingCount(2)],
             ['179-11', () => assertFoundedCount(1)],
-            ['179-12', () => {
-                assertTaxRateUnder(15);
-                maybeSnapshotGold();
-            }],
+            [
+                '179-12',
+                () => {
+                    assertTaxRateUnder(15);
+                    maybeSnapshotGold();
+                },
+            ],
             ['180-01', () => assertGoldIncome()],
             ['180-07', () => assertSmallMediumCitiesFounded()],
             ['180-11', () => assertCityTrust(90)],
             ['181-01', () => assertNationGeneralCount(10)],
-            ['182-01', () => assertDomesticGrowthBy(182, 1)],
+            ['182-01', () => assertDomesticGrowth()],
             ['182-10', () => assertNationRecruitCount(5)],
             ['183-01', () => assertWarReadiness(10, 70, 70)],
             ['183-02', () => assertDispatchRecorded(183, 1, 1)],

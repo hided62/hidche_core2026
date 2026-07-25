@@ -225,7 +225,7 @@ describe('Nation Actions', () => {
     });
 
     describe('che_필사즉생 (Last Stand)', () => {
-        it('increases experience and sets strategic limit', () => {
+        it('applies the legacy three-turn gains and global delay', () => {
             const nation = buildNation(1);
             const general = buildGeneral(1, 1, 1);
             const definition = new LastStandAction([]);
@@ -240,8 +240,11 @@ describe('Nation Actions', () => {
 
             definition.resolve(context as any, {});
 
-            expect(general.experience).toBeGreaterThan(100);
-            expect(nation.meta.strategic_cmd_limit).toBeGreaterThan(0);
+            expect(general.experience).toBe(115);
+            expect(general.dedication).toBe(115);
+            expect(general.train).toBe(100);
+            expect(general.atmos).toBe(100);
+            expect(nation.meta.strategic_cmd_limit).toBe(9);
         });
     });
 

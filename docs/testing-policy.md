@@ -39,6 +39,13 @@ An audit must confirm that a test:
 Until this audit is recorded, test counts and green status are inventory
 information only, not evidence of correctness.
 
+The executable TypeScript suite was reviewed on 2026-07-25. Its per-suite
+disposition, intended scope, and evidence limits are recorded in
+[`test-suite-audit.md`](./test-suite-audit.md). A `kept` or `corrected`
+disposition means the test has useful regression value at the recorded layer;
+it does not promote smoke or contract coverage into legacy-compatibility
+evidence. New suites and material scope changes must update that registry.
+
 ## Core Principles
 
 - Prefer Repository/DB Port interfaces over ORM mocks; split implementations:
