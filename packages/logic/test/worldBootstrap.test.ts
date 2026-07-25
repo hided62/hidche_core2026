@@ -122,4 +122,123 @@ describe('scenario bootstrap', () => {
         expect(result.seed.generals[0]?.npcType).toBe(2);
         expect(result.snapshot.scenarioMeta?.title).toBe('Test Scenario');
     });
+
+    it('defers future generals into birth-year registration events and omits expired rows', () => {
+        const general = (
+            name: string,
+            birthYear: number,
+            deathYear: number,
+            nation: number | string | null = 1
+        ): ScenarioDefinition['generals'][number] => ({
+            affinity: 0,
+            name,
+            picture: null,
+            nation,
+            city: null,
+            leadership: 50,
+            strength: 60,
+            intelligence: 40,
+            officerLevel: 3,
+            birthYear,
+            deathYear,
+            personality: null,
+            special: '',
+            text: '',
+        });
+        const scenario: ScenarioDefinition = {
+            title: 'Delayed generals',
+            startYear: 200,
+            life: null,
+            fiction: null,
+            history: [],
+            config: {
+                stat: { total: 100, min: 10, max: 70, npcTotal: 80, npcMax: 60, npcMin: 5, chiefMin: 50 },
+                iconPath: '.',
+                map: {},
+                const: {},
+                environment: { mapName: 'test-map', unitSet: 'test-unit' },
+            },
+            nations: [
+                {
+                    id: 1,
+                    name: 'TestNation',
+                    color: '#123456',
+                    gold: 5_000,
+                    rice: 3_000,
+                    infoText: '',
+                    tech: 100,
+                    type: 'Test',
+                    level: 3,
+                    cities: ['Alpha'],
+                },
+            ],
+            diplomacy: [],
+            generals: [
+                general('현재', 180, 240),
+                general('미래1', 190, 250, 'TestNation'),
+                general('만료', 170, 200),
+            ],
+            generalsEx: [general('미래확장', 190, 260)],
+            generalsNeutral: [general('미래재야', 191, 260, 0)],
+            cities: [],
+            events: [['Month', 500, ['Date', '>=', 200, 1], ['Existing']]],
+            initialEvents: [],
+            ignoreDefaultEvents: false,
+        };
+        const map: MapDefinition = {
+            id: 'test-map',
+            name: 'test-map',
+            cities: [
+                {
+                    id: 1,
+                    name: 'Alpha',
+                    level: 3,
+                    region: 1,
+                    position: { x: 0, y: 0 },
+                    connections: [],
+                    max: {
+                        population: 100_000,
+                        agriculture: 20_000,
+                        commerce: 20_000,
+                        security: 15_000,
+                        defence: 5_000,
+                        wall: 3_000,
+                    },
+                    initial: {
+                        population: 50_000,
+                        agriculture: 10_000,
+                        commerce: 10_000,
+                        security: 8_000,
+                        defence: 2_500,
+                        wall: 1_500,
+                    },
+                },
+            ],
+        };
+
+        const result = buildScenarioBootstrap({ scenario, map });
+
+        expect(result.seed.generals.map((row) => row.name)).toEqual(['현재']);
+        expect(result.snapshot.generals.map((row) => row.name)).toEqual(['현재']);
+        expect(result.seed.events).toEqual([
+            ['Month', 500, ['Date', '>=', 200, 1], ['Existing']],
+            [
+                'Month',
+                1_000,
+                ['Date', '>=', 204, 1],
+                ['RegNPC', 0, '미래1', null, 1, null, 50, 60, 40, 3, 190, 250, null, '', ''],
+                ['RegNPC', 0, '미래확장', null, 1, null, 50, 60, 40, 3, 190, 260, null, '', ''],
+                ['DeleteEvent'],
+            ],
+            [
+                'Month',
+                1_000,
+                ['Date', '>=', 205, 1],
+                ['RegNeutralNPC', 0, '미래재야', null, 0, null, 50, 60, 40, 191, 260, null, '', ''],
+                ['DeleteEvent'],
+            ],
+        ]);
+        expect(result.snapshot.events).toEqual(result.seed.events);
+        expect(result.seed.events.flat(3)).not.toContain('만료');
+    });
 });
