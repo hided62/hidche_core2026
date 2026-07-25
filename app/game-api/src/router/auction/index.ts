@@ -6,6 +6,9 @@ import type { DatabaseClient, GameApiContext, GeneralRow } from '../../context.j
 import { buildAuctionTimerKeys } from '../../auction/keys.js';
 import { GamePrisma } from '@sammo-ts/infra';
 import { ItemLoader, isItemKey } from '@sammo-ts/logic';
+import { asRecord } from '@sammo-ts/common';
+import { buildAuctionAlias } from '@sammo-ts/logic';
+import { openAuctionWithDaemon } from '../../auction/open.js';
 
 
 const zBidInput = z.object({
@@ -15,6 +18,18 @@ const zBidInput = z.object({
 
 const zUniqueBidInput = zBidInput.extend({
     tryExtendCloseDate: z.boolean().optional(),
+});
+
+const zOpenResourceInput = z.object({
+    amount: z.number().int().min(100).max(10_000),
+    closeTurnCnt: z.number().int().min(1).max(24),
+    startBidAmount: z.number().int().positive(),
+    finishBidAmount: z.number().int().positive(),
+});
+
+const zOpenUniqueInput = z.object({
+    itemKey: z.string(),
+    amount: z.number().int().positive(),
 });
 
 type AuctionType = 'BUY_RICE' | 'SELL_RICE' | 'UNIQUE_ITEM';
@@ -29,7 +44,7 @@ interface AuctionRow {
     closeAt: Date;
 }
 
-interface AuctionDetail {
+export interface AuctionDetail {
     title?: string;
     amount?: number;
     isReverse?: boolean;
@@ -161,6 +176,169 @@ const shouldUsePrevBid = (highestBid: AuctionBidRow | null, myPrevBid: AuctionBi
 };
 
 export const auctionRouter = router({
+    getOverview: authedProcedure.query(async ({ ctx }) => {
+        const auth = requireAuth(ctx);
+        const general = await ensureGeneral(ctx.db, auth.user.id);
+        const [auctions, worldState, point, recentLogs] = await Promise.all([
+            ctx.db.auction.findMany({
+                where: {
+                    OR: [
+                        { type: { in: ['BUY_RICE', 'SELL_RICE'] }, status: 'OPEN' },
+                        { type: 'UNIQUE_ITEM' },
+                    ],
+                },
+                orderBy: [{ status: 'asc' }, { id: 'desc' }],
+                take: 120,
+                include: {
+                    bids: {
+                        orderBy: [{ amount: 'desc' }, { id: 'asc' }],
+                    },
+                },
+            }),
+            ctx.db.worldState.findFirst(),
+            ctx.db.inheritancePoint.findUnique({
+                where: { userId_key: { userId: auth.user.id, key: 'previous' } },
+            }),
+            ctx.db.logEntry.findMany({
+                where: { text: { contains: '경매' } },
+                orderBy: { id: 'desc' },
+                take: 20,
+                select: { id: true, text: true, createdAt: true },
+            }),
+        ]);
+        const generalIds = new Set<number>();
+        for (const auction of auctions) {
+            if (auction.type !== 'UNIQUE_ITEM' && auction.hostGeneralId > 0) {
+                generalIds.add(auction.hostGeneralId);
+            }
+            for (const bid of auction.bids) {
+                if (auction.type !== 'UNIQUE_ITEM') {
+                    generalIds.add(bid.generalId);
+                }
+            }
+        }
+        const names = new Map(
+            (
+                await ctx.db.general.findMany({
+                    where: { id: { in: [...generalIds] } },
+                    select: { id: true, name: true },
+                })
+            ).map((row) => [row.id, row.name])
+        );
+        const worldMeta = asRecord(worldState?.meta);
+        const configConst = asRecord(asRecord(worldState?.config).const);
+        const hiddenSeed =
+            typeof worldMeta.hiddenSeed === 'string' || typeof worldMeta.hiddenSeed === 'number'
+                ? worldMeta.hiddenSeed
+                : worldState?.id ?? 0;
+        const callerAlias = buildAuctionAlias(general.id, hiddenSeed, configConst);
+
+        const mapped = auctions.map((auction) => {
+            const detail = parseDetail(auction.detail);
+            const highestBid = auction.bids[0] ?? null;
+            const isUnique = auction.type === 'UNIQUE_ITEM';
+            return {
+                id: auction.id,
+                type: auction.type,
+                targetCode: auction.targetCode,
+                status: auction.status,
+                hostGeneralId: isUnique ? null : auction.hostGeneralId,
+                hostName: isUnique
+                    ? auction.hostName ?? buildAuctionAlias(auction.hostGeneralId, hiddenSeed, configConst)
+                    : auction.hostName ?? names.get(auction.hostGeneralId) ?? '상인',
+                isCallerHost: auction.hostGeneralId === general.id,
+                closeAt: auction.closeAt.toISOString(),
+                detail,
+                highestBid: highestBid
+                    ? {
+                          amount: highestBid.amount,
+                          bidderName: isUnique
+                              ? buildAuctionAlias(highestBid.generalId, hiddenSeed, configConst)
+                              : names.get(highestBid.generalId) ?? '상인',
+                          isCaller: highestBid.generalId === general.id,
+                          eventAt: highestBid.eventAt.toISOString(),
+                      }
+                    : null,
+            };
+        });
+
+        return {
+            resourceAuctions: mapped.filter((auction) => auction.type !== 'UNIQUE_ITEM'),
+            uniqueAuctions: mapped.filter((auction) => auction.type === 'UNIQUE_ITEM'),
+            callerAlias,
+            remainPoint: point?.value ?? 0,
+            recentLogs: recentLogs.map((log) => ({
+                id: log.id,
+                text: log.text,
+                createdAt: log.createdAt.toISOString(),
+            })),
+        };
+    }),
+    getUniqueDetail: authedProcedure
+        .input(z.object({ auctionId: z.number().int().positive() }))
+        .query(async ({ ctx, input }) => {
+            const auth = requireAuth(ctx);
+            const general = await ensureGeneral(ctx.db, auth.user.id);
+            const [auction, worldState, point] = await Promise.all([
+                ctx.db.auction.findFirst({
+                    where: { id: input.auctionId, type: 'UNIQUE_ITEM' },
+                    include: { bids: { orderBy: [{ amount: 'desc' }, { id: 'asc' }] } },
+                }),
+                ctx.db.worldState.findFirst(),
+                ctx.db.inheritancePoint.findUnique({
+                    where: { userId_key: { userId: auth.user.id, key: 'previous' } },
+                }),
+            ]);
+            if (!auction) {
+                throw new TRPCError({ code: 'NOT_FOUND', message: 'Auction not found.' });
+            }
+            const worldMeta = asRecord(worldState?.meta);
+            const configConst = asRecord(asRecord(worldState?.config).const);
+            const hiddenSeed =
+                typeof worldMeta.hiddenSeed === 'string' || typeof worldMeta.hiddenSeed === 'number'
+                    ? worldMeta.hiddenSeed
+                    : worldState?.id ?? 0;
+            return {
+                auction: {
+                    id: auction.id,
+                    targetCode: auction.targetCode,
+                    status: auction.status,
+                    hostName:
+                        auction.hostName ?? buildAuctionAlias(auction.hostGeneralId, hiddenSeed, configConst),
+                    isCallerHost: auction.hostGeneralId === general.id,
+                    closeAt: auction.closeAt.toISOString(),
+                    detail: parseDetail(auction.detail),
+                },
+                bids: auction.bids.map((bid) => ({
+                    id: bid.id,
+                    amount: bid.amount,
+                    bidderName: buildAuctionAlias(bid.generalId, hiddenSeed, configConst),
+                    isCaller: bid.generalId === general.id,
+                    eventAt: bid.eventAt.toISOString(),
+                })),
+                callerAlias: buildAuctionAlias(general.id, hiddenSeed, configConst),
+                remainPoint: point?.value ?? 0,
+            };
+        }),
+    openBuyRice: authedProcedure.input(zOpenResourceInput).mutation(async ({ ctx, input }) => {
+        const auth = requireAuth(ctx);
+        const general = await ensureGeneral(ctx.db, auth.user.id);
+        return openAuctionWithDaemon(ctx, general.id, { auctionType: 'BUY_RICE', ...input });
+    }),
+    openSellRice: authedProcedure.input(zOpenResourceInput).mutation(async ({ ctx, input }) => {
+        const auth = requireAuth(ctx);
+        const general = await ensureGeneral(ctx.db, auth.user.id);
+        return openAuctionWithDaemon(ctx, general.id, { auctionType: 'SELL_RICE', ...input });
+    }),
+    openUnique: authedProcedure.input(zOpenUniqueInput).mutation(async ({ ctx, input }) => {
+        const auth = requireAuth(ctx);
+        const general = await ensureGeneral(ctx.db, auth.user.id);
+        return openAuctionWithDaemon(ctx, general.id, {
+            auctionType: 'UNIQUE_ITEM',
+            itemKey: input.itemKey,
+            amount: input.amount,
+        });
+    }),
     bidBuyRice: authedProcedure.input(zBidInput).mutation(async ({ ctx, input }) => {
         const auth = requireAuth(ctx);
         const general = await ensureGeneral(ctx.db, auth.user.id);
@@ -176,6 +354,9 @@ export const auctionRouter = router({
         if (auction.closeAt <= now) {
             throw new TRPCError({ code: 'BAD_REQUEST', message: '경매가 종료되었습니다.' });
         }
+        if (auction.hostGeneralId === general.id) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: '자신이 연 경매에 입찰할 수 없습니다.' });
+        }
 
         const detail = parseDetail(auction.detail);
         const amount = detail.amount ?? 0;
@@ -183,6 +364,9 @@ export const auctionRouter = router({
             throw new TRPCError({ code: 'BAD_REQUEST', message: '거래량 정보가 없습니다.' });
         }
         const isReverse = detail.isReverse === true;
+        if (!isReverse && detail.finishBidAmount != null && input.amount > detail.finishBidAmount) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: '즉시판매가보다 높을 수 없습니다.' });
+        }
         const highestBid = await loadHighestBid(ctx.db, auction.id, isReverse);
         const myPrevBidRaw = await loadMyPrevBid(ctx.db, auction.id, general.id, isReverse);
         const myPrevBid = shouldUsePrevBid(highestBid, myPrevBidRaw);
@@ -241,6 +425,9 @@ export const auctionRouter = router({
         if (auction.closeAt <= now) {
             throw new TRPCError({ code: 'BAD_REQUEST', message: '경매가 종료되었습니다.' });
         }
+        if (auction.hostGeneralId === general.id) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: '자신이 연 경매에 입찰할 수 없습니다.' });
+        }
 
         const detail = parseDetail(auction.detail);
         const amount = detail.amount ?? 0;
@@ -248,6 +435,9 @@ export const auctionRouter = router({
             throw new TRPCError({ code: 'BAD_REQUEST', message: '거래량 정보가 없습니다.' });
         }
         const isReverse = detail.isReverse === true;
+        if (!isReverse && detail.finishBidAmount != null && input.amount > detail.finishBidAmount) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: '즉시판매가보다 높을 수 없습니다.' });
+        }
         const highestBid = await loadHighestBid(ctx.db, auction.id, isReverse);
         const myPrevBidRaw = await loadMyPrevBid(ctx.db, auction.id, general.id, isReverse);
         const myPrevBid = shouldUsePrevBid(highestBid, myPrevBidRaw);

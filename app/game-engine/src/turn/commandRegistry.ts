@@ -36,6 +36,17 @@ const zAuctionFinalize = z.object({
     auctionId: zFiniteNumber,
 });
 
+const zAuctionOpen = z.object({
+    type: z.literal('auctionOpen'),
+    generalId: zFiniteNumber,
+    auctionType: z.enum(['BUY_RICE', 'SELL_RICE', 'UNIQUE_ITEM']),
+    amount: zFiniteNumber,
+    closeTurnCnt: zFiniteNumber.optional(),
+    startBidAmount: zFiniteNumber.optional(),
+    finishBidAmount: zFiniteNumber.optional(),
+    itemKey: z.string().optional(),
+});
+
 const zAuctionBid = z.object({
     type: z.literal('auctionBid'),
     auctionId: zFiniteNumber,
@@ -246,6 +257,14 @@ const normalizeAuctionFinalize: CommandNormalizer<'auctionFinalize'> = (envelope
     return { ...command, requestId: envelope.requestId };
 };
 
+const normalizeAuctionOpen: CommandNormalizer<'auctionOpen'> = (envelope) => {
+    const command = parseWith(zAuctionOpen, envelope.command);
+    if (!command) {
+        return null;
+    }
+    return { ...command, requestId: envelope.requestId };
+};
+
 const normalizeAuctionBid: CommandNormalizer<'auctionBid'> = (envelope) => {
     const command = parseWith(zAuctionBid, envelope.command);
     if (!command) {
@@ -444,6 +463,7 @@ const normalizeShutdown: CommandNormalizer<'shutdown'> = (envelope) => {
 
 const normalizers: CommandNormalizerMap = {
     auctionFinalize: normalizeAuctionFinalize,
+    auctionOpen: normalizeAuctionOpen,
     auctionBid: normalizeAuctionBid,
     troopJoin: normalizeTroopJoin,
     troopExit: normalizeTroopExit,

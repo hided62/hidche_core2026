@@ -1,4 +1,5 @@
 import { asNumber, asRecord } from '@sammo-ts/common';
+import { GamePrisma } from '@sammo-ts/infra';
 import type { DatabaseClient, WorldStateRow, InputJsonValue } from '../context.js';
 
 export type InheritPointKey =
@@ -116,18 +117,15 @@ export const readInheritancePoint = async (
     userId: string,
     key: InheritPointKey
 ): Promise<number> => {
-    const row = await db.inheritancePoint.findUnique({
-        where: {
-            userId_key: {
-                userId,
-                key,
-            },
-        },
-        select: {
-            value: true,
-        },
-    });
-    return row?.value ?? 0;
+    const rows = await db.$queryRaw<Array<{ value: number }>>(
+        GamePrisma.sql`
+            SELECT value
+            FROM inheritance_point
+            WHERE user_id = ${userId} AND key = ${key}
+            FOR UPDATE
+        `
+    );
+    return rows[0]?.value ?? 0;
 };
 
 export const setInheritancePoint = async (

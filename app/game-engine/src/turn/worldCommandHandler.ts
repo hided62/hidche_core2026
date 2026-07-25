@@ -28,6 +28,7 @@ import {
 } from '@sammo-ts/logic/items/index.js';
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
 import type { TurnGeneral } from './types.js';
+import { openAuction } from '../auction/opener.js';
 
 let itemRegistryPromise: Promise<Map<string, ItemModule>> | null = null;
 
@@ -663,6 +664,13 @@ async function handleAuctionFinalize(
     return ctx.auctionFinalizer.finalize(command.auctionId, ctx.commandDb);
 }
 
+async function handleAuctionOpen(
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'auctionOpen' }>
+): Promise<TurnDaemonCommandResult> {
+    return openAuction(command, ctx.world, ctx.commandDb);
+}
+
 async function handleAuctionBid(
     ctx: CommandHandlerContext,
     command: Extract<TurnDaemonCommand, { type: 'auctionBid' }>
@@ -1168,6 +1176,8 @@ export const createTurnDaemonCommandHandler = (options: {
         dropItem: (command) => handleDropItem(ctx, command as Extract<TurnDaemonCommand, { type: 'dropItem' }>),
         auctionFinalize: (command) =>
             handleAuctionFinalize(ctx, command as Extract<TurnDaemonCommand, { type: 'auctionFinalize' }>),
+        auctionOpen: (command) =>
+            handleAuctionOpen(ctx, command as Extract<TurnDaemonCommand, { type: 'auctionOpen' }>),
         auctionBid: (command) => handleAuctionBid(ctx, command as Extract<TurnDaemonCommand, { type: 'auctionBid' }>),
         changePermission: (command) =>
             handleChangePermission(ctx, command as Extract<TurnDaemonCommand, { type: 'changePermission' }>),

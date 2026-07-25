@@ -71,8 +71,27 @@ Event actions controlling lifecycle:
 
 ## Open Questions / Follow-ups
 
-- The exact schedule for `registerAuction()` is outside this file; it is
-  likely called from monthly or timed maintenance.
-- Unique-item auction close-date extension limits depend on
-  `AuctionUniqueItem` constants and `turnterm`; verify scenarios that override
-  auction timing.
+- `registerAuction()` is called from legacy `func_gamerule.php` during the
+  monthly game-rule pass. Player-hosted auctions are implemented in core2026;
+  neutral merchant auction generation remains a separate compatibility item.
+- Scenario-specific overrides of unique auction timing have not been found.
+  Core2026 currently applies the legacy constants against `tickSeconds`.
+
+## core2026 compatibility implementation (2026-07-25)
+
+| Contract | core2026 path | Status |
+| --- | --- | --- |
+| Resource auction list/open/bid | `game-frontend/AuctionView.vue` → `game-api/router/auction` → `auctionOpen`/`auctionBid` engine commands | Confirmed by integration test |
+| Resource reservation/refund/settlement | opener reserves host gold/rice; bidder reserves and refunds the previous top bid; finalizer transfers or returns resources | Confirmed by integration test |
+| Unique list/detail privacy | API replaces host and bidder identity with deterministic aliases and never returns unique-auction general IDs | Confirmed by API implementation and typecheck |
+| Unique open | engine validates configured quantity, slot ownership, one active host/item auction, and atomically inserts the host's first bid while deducting `inheritance_point.previous` | Confirmed by integration test |
+| Unique bid | row-locked auction, minimum `max(1%, 10)`, conditional point deduction, previous-top-bid refund, slot/top-bid conflict checks | Confirmed by integration test |
+| Unique finalization | requested extension, per-slot and total ownership-limit extension, host neutralization, item inventory update | Confirmed by integration test |
+| Timer/worker | API updates the Redis timer after open/bid; existing scheduler claims due rows and sends durable `auctionFinalize` commands | Confirmed by integration test for timer seed and durable command finalization |
+| Neutral merchant registration | legacy monthly probabilistic `registerAuction()` | Not implemented |
+
+Unique auction mutations deliberately run in the turn-engine database
+transaction. Point reads use row locks and deductions use conditional updates,
+so simultaneous requests cannot spend the same previous-season inheritance
+points twice. A failed open command creates neither an auction nor an orphaned
+inheritance request marker.

@@ -17,6 +17,7 @@ import {
     writeUserStateMeta,
 } from '../../services/inheritance.js';
 import type { GameApiContext, WorldStateRow } from '../../context.js';
+import { openAuctionWithDaemon } from '../../auction/open.js';
 
 const BUFF_KEYS: InheritBuffType[] = [
     'warAvoidRatio',
@@ -749,43 +750,19 @@ export const inheritRouter = router({
             if (input.amount < inheritConst.inheritItemUniqueMinPoint) {
                 throw new TRPCError({ code: 'BAD_REQUEST', message: '입찰 포인트가 부족합니다.' });
             }
-            const currentPoint = await readInheritancePoint(ctx.db, userId, 'previous');
-            if (currentPoint < input.amount) {
-                throw new TRPCError({ code: 'BAD_REQUEST', message: '유산 포인트가 부족합니다.' });
-            }
-
             const general = await ctx.db.general.findFirst({
                 where: { userId },
-                select: { id: true, meta: true },
+                select: { id: true },
             });
             if (!general) {
                 throw new TRPCError({ code: 'PRECONDITION_FAILED', message: '장수가 존재하지 않습니다.' });
             }
-            const meta = asRecord(general.meta);
-            if (meta.inheritSpecificUnique) {
-                throw new TRPCError({ code: 'BAD_REQUEST', message: '이미 유니크 경매 신청이 있습니다.' });
-            }
-
-            await patchGeneral(ctx, general.id, {
-                meta: {
-                    ...meta,
-                    inheritSpecificUnique: JSON.stringify({
-                        itemId: input.itemId,
-                        amount: input.amount,
-                        requestedAt: new Date().toISOString(),
-                    }),
-                },
+            const result = await openAuctionWithDaemon(ctx, general.id, {
+                auctionType: 'UNIQUE_ITEM',
+                itemKey: input.itemId,
+                amount: input.amount,
             });
-
-            await setInheritancePoint(ctx.db, userId, 'previous', currentPoint - input.amount);
-            await appendInheritanceLog(
-                ctx.db,
-                userId,
-                worldState.currentYear,
-                worldState.currentMonth,
-                `${input.amount} 포인트로 유니크 경매 신청`
-            );
-            return { ok: true };
+            return { ok: true, ...result };
         }),
     checkOwner: authedProcedure
         .input(

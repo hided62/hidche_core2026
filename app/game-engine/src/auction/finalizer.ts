@@ -1,7 +1,14 @@
 import { createGamePostgresConnector, GamePrisma } from '@sammo-ts/infra';
-import { ActionLogger, ItemLoader, LogFormat, UserLogger, isItemKey } from '@sammo-ts/logic';
+import {
+    ActionLogger,
+    ItemLoader,
+    LogFormat,
+    UserLogger,
+    isItemKey,
+    resolveUniqueConfig,
+} from '@sammo-ts/logic';
 import { cloneItemInventory, ensureItemInventory, equipNewItem } from '@sammo-ts/logic/items/index.js';
-import { JosaUtil } from '@sammo-ts/common';
+import { asRecord, JosaUtil } from '@sammo-ts/common';
 
 import type { TurnDaemonCommandResult } from '../lifecycle/types.js';
 import type { InMemoryTurnWorld } from '../turn/inMemoryWorld.js';
@@ -17,6 +24,7 @@ type AuctionStatus = 'OPEN' | 'FINALIZING' | 'FINISHED' | 'CANCELED';
 
 const COEFF_EXTENSION_MINUTES_PER_BID = 1 / 6;
 const MIN_EXTENSION_MINUTES_PER_BID = 1;
+const MIN_EXTENSION_MINUTES_LIMIT_BY_BID = 5;
 
 interface AuctionRow {
     id: number;
@@ -33,12 +41,15 @@ interface AuctionBidRow {
     id: number;
     generalId: number;
     amount: number;
+    meta: unknown;
 }
 
 interface AuctionDetailBase {
     title?: string;
     isReverse?: boolean;
+    tryExtendCloseDate?: boolean;
     availableLatestBidCloseDate?: string | null;
+    remainCloseDateExtensionCnt?: number | null;
 }
 
 interface AuctionDetailResource extends AuctionDetailBase {
@@ -63,24 +74,6 @@ const resolveTurnMinutes = async (prisma: AuctionDb): Promise<number> => {
     return toTurnMinutes(rows[0]?.tickSeconds ?? 60);
 };
 
-const extendCloseDate = (options: {
-    now: Date;
-    closeAt: Date;
-    turnMinutes: number;
-    availableLatestBidCloseDate?: Date | null;
-}): Date => {
-    const { now, closeAt, turnMinutes, availableLatestBidCloseDate } = options;
-    const extendMinutes = Math.max(MIN_EXTENSION_MINUTES_PER_BID, turnMinutes * COEFF_EXTENSION_MINUTES_PER_BID);
-    const extended = new Date(now.getTime() + extendMinutes * 60 * 1000);
-    if (extended.getTime() <= closeAt.getTime()) {
-        return closeAt;
-    }
-    if (availableLatestBidCloseDate && extended.getTime() > availableLatestBidCloseDate.getTime()) {
-        return availableLatestBidCloseDate;
-    }
-    return extended;
-};
-
 const pushLogs = (world: InMemoryTurnWorld, logs: LogEntryDraft[]): void => {
     for (const log of logs) {
         world.pushLog(log);
@@ -96,31 +89,16 @@ const refundInheritancePoint = async (options: {
     if (!userId || amount <= 0) {
         return;
     }
-    const current = await prisma.inheritancePoint.findUnique({
-        where: {
-            userId_key: {
-                userId,
-                key: 'previous',
-            },
-        },
-    });
-    const nextValue = (current?.value ?? 0) + amount;
-    await prisma.inheritancePoint.upsert({
-        where: {
-            userId_key: {
-                userId,
-                key: 'previous',
-            },
-        },
-        update: {
-            value: nextValue,
-        },
-        create: {
-            userId,
-            key: 'previous',
-            value: nextValue,
-        },
-    });
+    await prisma.$executeRaw(
+        GamePrisma.sql`
+            INSERT INTO inheritance_point (user_id, key, value, updated_at)
+            VALUES (${userId}, 'previous', ${amount}, ${new Date()})
+            ON CONFLICT (user_id, key)
+            DO UPDATE SET
+                value = inheritance_point.value + EXCLUDED.value,
+                updated_at = EXCLUDED.updated_at
+        `
+    );
 };
 
 export const createAuctionFinalizer = async (options: {
@@ -186,14 +164,14 @@ export const createAuctionFinalizer = async (options: {
             const bidRows = await db.$queryRaw<AuctionBidRow[]>(
                 isReverse
                     ? GamePrisma.sql`
-                        SELECT id, general_id as "generalId", amount
+                        SELECT id, general_id as "generalId", amount, meta
                         FROM auction_bid
                         WHERE auction_id = ${auctionId}
                         ORDER BY amount ASC, id ASC
                         LIMIT 1
                       `
                     : GamePrisma.sql`
-                        SELECT id, general_id as "generalId", amount
+                        SELECT id, general_id as "generalId", amount, meta
                         FROM auction_bid
                         WHERE auction_id = ${auctionId}
                         ORDER BY amount DESC, id ASC
@@ -259,6 +237,43 @@ export const createAuctionFinalizer = async (options: {
                 pushLogs(world, logs);
                 await finalizeStatus('FINISHED');
                 return { type: 'auctionFinalize', ok: true, auctionId };
+            }
+
+            if (auction.type === 'UNIQUE_ITEM') {
+                const bidMeta = parseDetail(highestBid.meta);
+                const remainExtension = detail.remainCloseDateExtensionCnt ?? 0;
+                if (bidMeta.tryExtendCloseDate === true && remainExtension > 0) {
+                    const turnMinutes = await resolveTurnMinutes(db);
+                    const nextCloseAt = new Date(
+                        auction.closeAt.getTime() + Math.max(5, turnMinutes) * 60_000
+                    );
+                    const nextLatestBidCloseAt = new Date(
+                        nextCloseAt.getTime() +
+                            Math.max(MIN_EXTENSION_MINUTES_PER_BID, turnMinutes * COEFF_EXTENSION_MINUTES_PER_BID) *
+                                60_000
+                    );
+                    const nextDetail = {
+                        ...detail,
+                        remainCloseDateExtensionCnt: remainExtension - 1,
+                        availableLatestBidCloseDate: nextLatestBidCloseAt.toISOString(),
+                    };
+                    await db.$executeRaw(
+                        GamePrisma.sql`
+                            UPDATE auction
+                            SET status = 'OPEN',
+                                detail = ${JSON.stringify(nextDetail)}::jsonb,
+                                close_at = ${nextCloseAt},
+                                updated_at = ${now}
+                            WHERE id = ${auctionId}
+                        `
+                    );
+                    return {
+                        type: 'auctionFinalize',
+                        ok: false,
+                        auctionId,
+                        reason: '입찰자의 요청으로 경매 종료가 연장되었습니다.',
+                    };
+                }
             }
 
             const bidder = world.getGeneralById(highestBid.generalId);
@@ -355,25 +370,102 @@ export const createAuctionFinalizer = async (options: {
                     };
                 }
 
+                const state = world.getState();
+                const config = resolveUniqueConfig(asRecord(world.getScenarioConfig().const));
+                const scenarioMeta = asRecord(state.meta.scenarioMeta);
+                const startYear =
+                    typeof scenarioMeta.startYear === 'number' && Number.isFinite(scenarioMeta.startYear)
+                        ? scenarioMeta.startYear
+                        : state.currentYear;
+                const relativeYear = state.currentYear - startYear;
+                let uniqueLimit = 1;
+                for (const [targetYear, targetLimit] of config.maxUniqueItemLimit) {
+                    if (relativeYear < targetYear) {
+                        break;
+                    }
+                    uniqueLimit = targetLimit;
+                }
+                uniqueLimit = Math.min(uniqueLimit, Object.keys(config.allItems).length);
+                let equippedUniqueCount = 0;
+                for (const equippedKey of Object.values(bidder.role.items)) {
+                    if (!equippedKey || equippedKey === 'None' || !isItemKey(equippedKey)) {
+                        continue;
+                    }
+                    const equippedModule = await itemLoader.load(equippedKey).catch(() => null);
+                    if (equippedModule && !equippedModule.buyable) {
+                        equippedUniqueCount += 1;
+                    }
+                }
+                if (equippedUniqueCount >= uniqueLimit) {
+                    const turnMinutes = await resolveTurnMinutes(db);
+                    const nextCloseAt = new Date(
+                        auction.closeAt.getTime() +
+                            Math.max(MIN_EXTENSION_MINUTES_LIMIT_BY_BID, turnMinutes * 0.5) * 60_000
+                    );
+                    const nextLatestBidCloseAt = new Date(
+                        nextCloseAt.getTime() +
+                            Math.max(MIN_EXTENSION_MINUTES_PER_BID, turnMinutes * COEFF_EXTENSION_MINUTES_PER_BID) *
+                                60_000
+                    );
+                    const nextDetail = {
+                        ...detail,
+                        availableLatestBidCloseDate: nextLatestBidCloseAt.toISOString(),
+                    };
+                    await db.$executeRaw(
+                        GamePrisma.sql`
+                            UPDATE auction
+                            SET status = 'OPEN',
+                                host_general_id = ${bidder.id === auction.hostGeneralId ? auction.hostGeneralId : 0},
+                                host_name = ${bidder.id === auction.hostGeneralId ? auction.hostName : '(상인)'},
+                                detail = ${JSON.stringify(nextDetail)}::jsonb,
+                                close_at = ${nextCloseAt},
+                                updated_at = ${now}
+                            WHERE id = ${auctionId}
+                        `
+                    );
+                    globalLogger.pushGlobalActionLog(
+                        `유니크 경매 ${auctionId}번이 전체 보유 제한으로 연장되었습니다.`,
+                        LogFormat.PLAIN
+                    );
+                    logs.push(...globalLogger.flush());
+                    pushLogs(world, logs);
+                    return {
+                        type: 'auctionFinalize',
+                        ok: false,
+                        auctionId,
+                        reason: '유니크 아이템 소유 제한 상태입니다. 종료 시간이 연장됩니다.',
+                    };
+                }
+
                 const slot = itemModule.slot;
                 const currentItem = bidder.role.items?.[slot] ?? null;
                 if (currentItem && currentItem !== 'None' && isItemKey(currentItem)) {
                     const currentModule = await itemLoader.load(currentItem).catch(() => null);
                     if (currentModule && !currentModule.buyable) {
                         const turnMinutes = await resolveTurnMinutes(db);
-                        const availableLatestBidCloseDate = detail.availableLatestBidCloseDate
-                            ? new Date(detail.availableLatestBidCloseDate)
-                            : null;
-                        const nextCloseAt = extendCloseDate({
-                            now,
-                            closeAt: auction.closeAt,
-                            turnMinutes,
-                            availableLatestBidCloseDate,
-                        });
+                        const nextCloseAt = new Date(
+                            auction.closeAt.getTime() +
+                                Math.max(MIN_EXTENSION_MINUTES_LIMIT_BY_BID, turnMinutes * 0.5) * 60_000
+                        );
+                        const nextLatestBidCloseAt = new Date(
+                            nextCloseAt.getTime() +
+                                Math.max(
+                                    MIN_EXTENSION_MINUTES_PER_BID,
+                                    turnMinutes * COEFF_EXTENSION_MINUTES_PER_BID
+                                ) *
+                                    60_000
+                        );
+                        const nextDetail = {
+                            ...detail,
+                            availableLatestBidCloseDate: nextLatestBidCloseAt.toISOString(),
+                        };
                         await db.$executeRaw(
                             GamePrisma.sql`
                                 UPDATE auction
                                 SET status = 'OPEN',
+                                    host_general_id = ${bidder.id === auction.hostGeneralId ? auction.hostGeneralId : 0},
+                                    host_name = ${bidder.id === auction.hostGeneralId ? auction.hostName : '(상인)'},
+                                    detail = ${JSON.stringify(nextDetail)}::jsonb,
                                     close_at = ${nextCloseAt},
                                     updated_at = ${now}
                                 WHERE id = ${auctionId}
