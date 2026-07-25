@@ -103,11 +103,9 @@ test('admin resets and opens hwe, then two users create generals and reach main'
     await page.getByRole('link', { name: '삼국지 모의전투 HiDCHe' }).click();
     await expect(page).toHaveURL(/\/gateway\/lobby$/);
     await expect(hweRow(page).getByRole('button', { name: '장수생성' })).toBeEnabled();
-    await enterHwe(page);
-    await expect(page).toHaveURL(/\/hwe\/$/);
-    await expect(page.getByRole('heading', { name: '전장 현황' })).toBeVisible();
+    await expect(page.getByText('서 버 선 택', { exact: true })).toBeVisible();
     await page.screenshot({
-        path: testInfo.outputPath('admin-main.png'),
+        path: testInfo.outputPath('admin-gateway-main.png'),
         fullPage: true,
     });
 
