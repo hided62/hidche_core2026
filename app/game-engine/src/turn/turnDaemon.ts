@@ -54,6 +54,11 @@ import { createCreateAdminNpcHandler } from './monthlyCreateAdminNpcAction.js';
 import { createCreateManyNpcHandler } from './monthlyCreateManyNpcAction.js';
 import { createRegisterNpcHandler } from './monthlyRegisterNpcAction.js';
 import { createRaiseNpcNationHandler } from './monthlyRaiseNpcNationAction.js';
+import {
+    createAutoDeleteInvaderHandler,
+    createInvaderEndingHandler,
+    createRaiseInvaderHandler,
+} from './monthlyInvaderAction.js';
 import { buildCommandEnv } from './reservedTurnCommands.js';
 import { DatabaseTurnDaemonLease, TurnDaemonLeaseUnavailableError } from '../lifecycle/databaseTurnDaemonLease.js';
 
@@ -176,7 +181,9 @@ const createTurnDaemonRuntimeWithLease = async (
         hasEventAction('CreateManyNPC') ||
         hasEventAction('RegNPC') ||
         hasEventAction('RegNeutralNPC') ||
-        hasEventAction('RaiseNPCNation');
+        hasEventAction('RaiseNPCNation') ||
+        hasEventAction('RaiseInvader') ||
+        hasEventAction('AutoDeleteInvader');
     const reservedTurnStoreHandle =
         options.generalTurnHandler && !eventRequiresReservedTurns
             ? null
@@ -273,8 +280,23 @@ const createTurnDaemonRuntimeWithLease = async (
                 reservedTurns: reservedTurnStoreHandle.store,
                 env: monthlyCommandEnv,
                 map: snapshot.map,
-                loadArchivedNationMaxId: (serverId) =>
-                    loadArchivedNationMaxId(options.databaseUrl, serverId),
+                loadArchivedNationMaxId: (serverId) => loadArchivedNationMaxId(options.databaseUrl, serverId),
+            })
+        );
+        eventActions.set(
+            'RaiseInvader',
+            createRaiseInvaderHandler({
+                getWorld: () => worldRef,
+                reservedTurns: reservedTurnStoreHandle.store,
+                env: monthlyCommandEnv,
+                loadArchivedNationMaxId: (serverId) => loadArchivedNationMaxId(options.databaseUrl, serverId),
+            })
+        );
+        eventActions.set(
+            'AutoDeleteInvader',
+            createAutoDeleteInvaderHandler({
+                getWorld: () => worldRef,
+                reservedTurns: reservedTurnStoreHandle.store,
             })
         );
         eventActions.set(
@@ -287,6 +309,12 @@ const createTurnDaemonRuntimeWithLease = async (
             })
         );
     }
+    eventActions.set(
+        'InvaderEnding',
+        createInvaderEndingHandler({
+            getWorld: () => worldRef,
+        })
+    );
     eventActions.set('ProcessIncome', async (_args, environment) => {
         await incomeHandler.onMonthChanged?.({
             previousYear: environment.month === 1 ? environment.year - 1 : environment.year,
