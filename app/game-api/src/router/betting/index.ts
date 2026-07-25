@@ -31,7 +31,7 @@ const loadWorldDate = async (db: Parameters<typeof getMyGeneral>[0]['db']) => {
 
 export const bettingRouter = router({
     getList: authedProcedure
-        .input(z.object({ req: z.enum(['bettingNation', 'tournament']).optional() }).optional())
+        .input(z.object({ req: z.literal('bettingNation').optional() }).optional())
         .query(async ({ ctx, input }) => {
             requireUserId(ctx.auth);
             await getMyGeneral(ctx);
