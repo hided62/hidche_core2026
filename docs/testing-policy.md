@@ -78,6 +78,10 @@ Goal: verify state input -> state output and that flush behaves as expected.
 - Integration tests: execute the same command and confirm DB persistence.
 - Mock target: InMemory Repository (Fake).
 - "Send to DB" behavior is validated via real DB tests.
+- Cross-engine compatibility compares a canonical semantic snapshot rather than
+  raw MariaDB/PostgreSQL dumps. General-turn commands use the three-way
+  ref DB ↔ core InMemory ↔ core PostgreSQL design in
+  [`architecture/general-command-differential-testing.md`](./architecture/general-command-differential-testing.md).
 
 ### 3) Turn Flow Tests
 

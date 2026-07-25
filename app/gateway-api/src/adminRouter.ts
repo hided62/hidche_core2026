@@ -4,10 +4,18 @@ import path from 'node:path';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { createGamePostgresConnector, resolvePostgresConfigFromEnv } from '@sammo-ts/infra';
+import {
+    createGamePostgresConnector,
+    resolvePostgresConfigFromEnv,
+    type GatewayPrisma,
+} from '@sammo-ts/infra';
 
 import { procedure, router } from './trpc.js';
-import { listScenarioPreviews, resolveGitCommitSha } from './scenario/scenarioCatalog.js';
+import {
+    listScenarioPreviews,
+    resolveGitBranchCommitSha,
+    resolveGitCommitSha,
+} from './scenario/scenarioCatalog.js';
 import type { UserSanctions, UserServerRestriction } from './auth/userRepository.js';
 import { toPublicUser } from './auth/userRepository.js';
 import type { AdminAuthContext } from './adminAuth.js';
@@ -241,6 +249,8 @@ const zInstallAutorun = z.object({
 });
 
 const isAllowedTurnTerm = (value: number): boolean => TURN_TERM_MINUTES.some((term) => term === value);
+const isUniqueConstraintError = (error: unknown): boolean =>
+    Boolean(error && typeof error === 'object' && 'code' in error && error.code === 'P2002');
 
 const zInstallOptions = z.object({
     scenarioId: z.number().int().min(0),
@@ -260,6 +270,8 @@ const zInstallOptions = z.object({
     preopenAt: z.string().datetime().optional(),
     gitRef: z.string().min(1).max(128).optional(),
 });
+const zOperationInstallOptions = zInstallOptions.omit({ gitRef: true });
+const zSourceMode = z.enum(['BRANCH', 'COMMIT']);
 
 type SanctionsPatch = z.infer<typeof zSanctionsPatch>;
 
@@ -578,6 +590,237 @@ export const adminRouter = router({
                 return { ok: true };
             }),
     }),
+    operations: router({
+        list: adminProcedure
+            .input(
+                z
+                    .object({
+                        profileName: z.string().min(1).optional(),
+                        limit: z.number().int().min(1).max(200).optional(),
+                    })
+                    .optional()
+            )
+            .query(async ({ ctx, input }) => {
+                const adminAuth = requireAdminAuth(ctx);
+                if (input?.profileName) {
+                    assertPermission(adminAuth, ROLE_ADMIN_PROFILES, input.profileName);
+                    return ctx.profiles.listOperations({
+                        profileName: input.profileName,
+                        limit: input.limit,
+                    });
+                }
+                if (hasScopedPermission(adminAuth, ROLE_ADMIN_PROFILES)) {
+                    return ctx.profiles.listOperations({ limit: input?.limit });
+                }
+                const profiles = await ctx.profiles.listProfiles();
+                const allowed = profiles.filter((profile) =>
+                    hasScopedPermission(adminAuth, ROLE_ADMIN_PROFILES, profile.profileName)
+                );
+                const operations = (
+                    await Promise.all(
+                        allowed.map((profile) =>
+                            ctx.profiles.listOperations({
+                                profileName: profile.profileName,
+                                limit: input?.limit,
+                            })
+                        )
+                    )
+                )
+                    .flat()
+                    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+                return operations.slice(0, input?.limit ?? 50);
+            }),
+        requestReset: adminProcedure
+            .input(
+                z.object({
+                    profileName: z.string().min(1),
+                    sourceMode: zSourceMode,
+                    sourceRef: z.string().min(1).max(128),
+                    install: zOperationInstallOptions,
+                    scheduledAt: z.string().datetime().optional(),
+                    reason: z.string().max(200).optional(),
+                })
+            )
+            .mutation(async ({ ctx, input }) => {
+                const adminAuth = requireAdminAuth(ctx);
+                assertPermission(adminAuth, ROLE_ADMIN_PROFILES, input.profileName);
+                const profile = await ctx.profiles.getProfile(input.profileName);
+                if (!profile) {
+                    throw new TRPCError({ code: 'NOT_FOUND', message: 'Profile not found.' });
+                }
+                if (input.scheduledAt && new Date(input.scheduledAt).getTime() <= Date.now()) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: 'scheduledAt must be in the future.',
+                    });
+                }
+                const scheduledAt = input.scheduledAt ? new Date(input.scheduledAt) : null;
+                const openAt = input.install.openAt ? new Date(input.install.openAt) : null;
+                const preopenAt = input.install.preopenAt ? new Date(input.install.preopenAt) : null;
+                if (preopenAt && !openAt) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: 'openAt is required when preopenAt is set.',
+                    });
+                }
+                if (preopenAt && openAt && preopenAt.getTime() >= openAt.getTime()) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: 'preopenAt must be earlier than openAt.',
+                    });
+                }
+                if (openAt && openAt.getTime() <= (scheduledAt?.getTime() ?? Date.now())) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: 'openAt must be later than the reset start.',
+                    });
+                }
+                if (preopenAt && scheduledAt && preopenAt.getTime() < scheduledAt.getTime()) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: 'preopenAt cannot be earlier than scheduledAt.',
+                    });
+                }
+                const autorunUser = input.install.autorunUser;
+                if (
+                    autorunUser &&
+                    ((autorunUser.limitMinutes <= 0 && autorunUser.options.length > 0) ||
+                        (autorunUser.limitMinutes > 0 && autorunUser.options.length === 0))
+                ) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: 'autorunUser minutes and options must be configured together.',
+                    });
+                }
+
+                let sourceRef = input.sourceRef.trim();
+                try {
+                    const resolved =
+                        input.sourceMode === 'BRANCH'
+                            ? await resolveGitBranchCommitSha(sourceRef)
+                            : await resolveGitCommitSha(sourceRef);
+                    if (input.sourceMode === 'COMMIT') {
+                        sourceRef = resolved;
+                    }
+                    const scenarios = await listScenarioPreviews({ gitRef: resolved });
+                    if (!scenarios.some((scenario) => scenario.id === input.install.scenarioId)) {
+                        throw new Error('Scenario not found at source.');
+                    }
+                } catch (error) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message:
+                            input.sourceMode === 'BRANCH'
+                                ? 'Branch is invalid or does not contain the scenario.'
+                                : 'Commit is invalid or does not contain the scenario.',
+                    });
+                }
+
+                try {
+                    const operation = await ctx.profiles.createOperation({
+                        profileName: input.profileName,
+                        type: 'RESET',
+                        sourceMode: input.sourceMode,
+                        sourceRef,
+                        payload: { install: input.install } as GatewayPrisma.JsonObject,
+                        reason: input.reason,
+                        requestedBy: adminAuth.user.id,
+                        scheduledAt: input.scheduledAt,
+                    });
+                    return operation;
+                } catch (error) {
+                    if (!isUniqueConstraintError(error)) {
+                        throw error;
+                    }
+                    throw new TRPCError({
+                        code: 'CONFLICT',
+                        message: 'This profile already has a queued or running operation.',
+                    });
+                }
+            }),
+        requestRuntime: adminProcedure
+            .input(
+                z.object({
+                    profileName: z.string().min(1),
+                    action: z.enum(['START', 'STOP']),
+                    reason: z.string().max(200).optional(),
+                })
+            )
+            .mutation(async ({ ctx, input }) => {
+                const adminAuth = requireAdminAuth(ctx);
+                assertPermission(adminAuth, ROLE_ADMIN_PROFILES, input.profileName);
+                const profile = await ctx.profiles.getProfile(input.profileName);
+                if (!profile) {
+                    throw new TRPCError({ code: 'NOT_FOUND', message: 'Profile not found.' });
+                }
+                try {
+                    const operation = await ctx.profiles.createOperation({
+                        profileName: input.profileName,
+                        type: input.action,
+                        reason: input.reason,
+                        requestedBy: adminAuth.user.id,
+                    });
+                    return operation;
+                } catch (error) {
+                    if (!isUniqueConstraintError(error)) {
+                        throw error;
+                    }
+                    throw new TRPCError({
+                        code: 'CONFLICT',
+                        message: 'This profile already has a queued or running operation.',
+                    });
+                }
+            }),
+        cancel: adminProcedure
+            .input(z.object({ id: z.string().uuid() }))
+            .mutation(async ({ ctx, input }) => {
+                const adminAuth = requireAdminAuth(ctx);
+                const previous = await ctx.profiles.getOperation(input.id);
+                if (!previous) {
+                    throw new TRPCError({ code: 'NOT_FOUND', message: 'Operation not found.' });
+                }
+                assertPermission(adminAuth, ROLE_ADMIN_PROFILES, previous.profileName);
+                const cancelled = await ctx.profiles.cancelOperation(input.id);
+                if (!cancelled) {
+                    throw new TRPCError({
+                        code: 'CONFLICT',
+                        message: 'Only queued operations can be cancelled.',
+                    });
+                }
+                return { ok: true };
+            }),
+        retry: adminProcedure
+            .input(z.object({ id: z.string().uuid() }))
+            .mutation(async ({ ctx, input }) => {
+                const adminAuth = requireAdminAuth(ctx);
+                const previous = await ctx.profiles.getOperation(input.id);
+                if (!previous) {
+                    throw new TRPCError({ code: 'NOT_FOUND', message: 'Operation not found.' });
+                }
+                assertPermission(adminAuth, ROLE_ADMIN_PROFILES, previous.profileName);
+                try {
+                    const operation = await ctx.profiles.retryOperation(input.id, adminAuth.user.id);
+                    if (!operation) {
+                        throw new TRPCError({
+                            code: 'CONFLICT',
+                            message: 'Only failed or cancelled operations can be retried.',
+                        });
+                    }
+                    return operation;
+                } catch (error) {
+                    if (error instanceof TRPCError) {
+                        throw error;
+                    }
+                    if (!isUniqueConstraintError(error)) {
+                        throw error;
+                    }
+                    throw new TRPCError({
+                        code: 'CONFLICT',
+                        message: 'This profile already has a queued or running operation.',
+                    });
+                }
+            }),
+    }),
     profiles: router({
         list: adminProcedure.query(async ({ ctx }) => {
             const profiles = await ctx.profiles.listProfiles();
@@ -599,12 +842,20 @@ export const adminRouter = router({
                 z
                     .object({
                         gitRef: z.string().min(1).max(128).optional(),
+                        sourceMode: zSourceMode.optional(),
                     })
                     .optional()
             )
             .query(async ({ input }) => {
                 const gitRef = input?.gitRef?.trim();
-                return listScenarioPreviews({ gitRef: gitRef || null });
+                if (!gitRef) {
+                    return listScenarioPreviews();
+                }
+                const resolved =
+                    input?.sourceMode === 'BRANCH'
+                        ? await resolveGitBranchCommitSha(gitRef)
+                        : await resolveGitCommitSha(gitRef);
+                return listScenarioPreviews({ gitRef: resolved });
             }),
         upsert: profileAdminProcedure
             .input(

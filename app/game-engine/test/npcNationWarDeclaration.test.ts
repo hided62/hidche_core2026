@@ -113,24 +113,30 @@ describe('NPC 선전포고·개전·통일 흐름 테스트', () => {
         const generals: TurnGeneral[] = [];
         let nextId = 1;
         const pushNationGenerals = (nationId: number, cityId: number) => {
-            generals.push(createNpcGeneral(nextId++, cityId, nationId, 12, {
-                leadership: 90,
-                strength: 80,
-                intelligence: 40,
-            }));
-            for (let i = 0; i < 9; i += 1) {
-                generals.push(createNpcGeneral(nextId++, cityId, nationId, 2, {
-                    leadership: 70,
+            generals.push(
+                createNpcGeneral(nextId++, cityId, nationId, 12, {
+                    leadership: 90,
                     strength: 80,
-                    intelligence: 30,
-                }));
+                    intelligence: 40,
+                })
+            );
+            for (let i = 0; i < 9; i += 1) {
+                generals.push(
+                    createNpcGeneral(nextId++, cityId, nationId, 2, {
+                        leadership: 70,
+                        strength: 80,
+                        intelligence: 30,
+                    })
+                );
             }
             for (let i = 0; i < 10; i += 1) {
-                generals.push(createNpcGeneral(nextId++, cityId, nationId, 2, {
-                    leadership: 70,
-                    strength: 30,
-                    intelligence: 80,
-                }));
+                generals.push(
+                    createNpcGeneral(nextId++, cityId, nationId, 2, {
+                        leadership: 70,
+                        strength: 30,
+                        intelligence: 80,
+                    })
+                );
             }
         };
         pushNationGenerals(1, cityA1.id);
@@ -280,9 +286,10 @@ describe('NPC 선전포고·개전·통일 흐름 테스트', () => {
 
         const findDiplomacyEntry = (world: InMemoryTurnWorld | null) => {
             const diplomacyEntries = world?.listDiplomacy() ?? [];
-            return diplomacyEntries.find((entry) =>
-                (entry.fromNationId === 1 && entry.toNationId === 2) ||
-                (entry.fromNationId === 2 && entry.toNationId === 1)
+            return diplomacyEntries.find(
+                (entry) =>
+                    (entry.fromNationId === 1 && entry.toNationId === 2) ||
+                    (entry.fromNationId === 2 && entry.toNationId === 1)
             );
         };
 
@@ -321,15 +328,12 @@ describe('NPC 선전포고·개전·통일 흐름 테스트', () => {
         expect(declareEntry?.state).toBe(DIPLOMACY_STATE.DECLARATION);
 
         const remainTurns = Math.max(0, (declareEntry?.term ?? 0) - 1);
-        const preWarTarget = addMonths(
-            world!.getState().currentYear,
-            world!.getState().currentMonth,
-            remainTurns
-        );
+        const preWarTarget = addMonths(world!.getState().currentYear, world!.getState().currentMonth, remainTurns);
 
-        await runUntil((current) =>
-            current.currentYear > preWarTarget.year ||
-            (current.currentYear === preWarTarget.year && current.currentMonth >= preWarTarget.month)
+        await runUntil(
+            (current) =>
+                current.currentYear > preWarTarget.year ||
+                (current.currentYear === preWarTarget.year && current.currentMonth >= preWarTarget.month)
         );
 
         const preWarEntry = findDiplomacyEntry(world);
@@ -348,10 +352,10 @@ describe('NPC 선전포고·개전·통일 흐름 테스트', () => {
             debug.dumpWatched('개전 직전 병력 부족');
         }
         expect(recruited.length).toBeGreaterThanOrEqual(5);
+        const battleReady = recruited.filter((general) => general.train >= 90 && general.atmos >= 90);
+        expect(battleReady.length).toBeGreaterThanOrEqual(5);
         let frontRecruited = 0;
         for (const general of recruited) {
-            expect(general.train).toBeGreaterThanOrEqual(90);
-            expect(general.atmos).toBeGreaterThanOrEqual(90);
             const city = world.getCityById(general.cityId);
             if (city && city.frontState > 0) {
                 frontRecruited += 1;
@@ -363,9 +367,10 @@ describe('NPC 선전포고·개전·통일 흐름 테스트', () => {
         expect(frontRecruited).toBeGreaterThan(0);
 
         const warTarget = addMonths(preWarTarget.year, preWarTarget.month, 1);
-        await runUntil((current) =>
-            current.currentYear > warTarget.year ||
-            (current.currentYear === warTarget.year && current.currentMonth >= warTarget.month)
+        await runUntil(
+            (current) =>
+                current.currentYear > warTarget.year ||
+                (current.currentYear === warTarget.year && current.currentMonth >= warTarget.month)
         );
 
         const warEntry = findDiplomacyEntry(world);
@@ -381,9 +386,10 @@ describe('NPC 선전포고·개전·통일 흐름 테스트', () => {
 
         while (prevNation1Cities > 0 && guard < 120) {
             const next = addMonths(world.getState().currentYear, world.getState().currentMonth, 1);
-            await runUntil((current) =>
-                current.currentYear > next.year ||
-                (current.currentYear === next.year && current.currentMonth >= next.month)
+            await runUntil(
+                (current) =>
+                    current.currentYear > next.year ||
+                    (current.currentYear === next.year && current.currentMonth >= next.month)
             );
 
             const nowNation1Cities = countCities(1, world);
@@ -415,9 +421,10 @@ describe('NPC 선전포고·개전·통일 흐름 테스트', () => {
         expect(allOwnedByNation2).toBe(true);
 
         const unifyCheckTarget = addMonths(world.getState().currentYear, world.getState().currentMonth, 1);
-        await runUntil((current) =>
-            current.currentYear > unifyCheckTarget.year ||
-            (current.currentYear === unifyCheckTarget.year && current.currentMonth >= unifyCheckTarget.month)
+        await runUntil(
+            (current) =>
+                current.currentYear > unifyCheckTarget.year ||
+                (current.currentYear === unifyCheckTarget.year && current.currentMonth >= unifyCheckTarget.month)
         );
 
         const worldMeta = world.getState().meta as Record<string, unknown>;
@@ -434,9 +441,10 @@ describe('NPC 선전포고·개전·통일 흐름 테스트', () => {
         expect(hasUnificationLog).toBe(true);
 
         const dispatchWindowEnd = addMonths(warTarget.year, warTarget.month, 2);
-        await runUntil((current) =>
-            current.currentYear > dispatchWindowEnd.year ||
-            (current.currentYear === dispatchWindowEnd.year && current.currentMonth >= dispatchWindowEnd.month)
+        await runUntil(
+            (current) =>
+                current.currentYear > dispatchWindowEnd.year ||
+                (current.currentYear === dispatchWindowEnd.year && current.currentMonth >= dispatchWindowEnd.month)
         );
 
         const dispatchKeys: string[] = [];

@@ -9,7 +9,7 @@ import type { CrewTypeDefinition, General, WarArmTypes } from '@sammo-ts/logic';
 
 import type { GeneralAI } from '../core.js';
 import { asRecord, readMetaNumber, roundTo } from '../../aiUtils.js';
-import { t통솔장 } from './helpers.js';
+import { t무장, t지장, t통솔장 } from './helpers.js';
 
 export const buildRecruitArmTypeWeights = (general: General, armTypes: WarArmTypes): Array<[number, number]> => {
     const meta = asRecord(general.meta);
@@ -45,7 +45,7 @@ export const do징병 = (ai: GeneralAI) => {
     if (!city || !nation || !ai.unitSet || !ai.map) {
         return null;
     }
-    if ([0, 1].includes(ai.dipState) && ai.general.npcState < 2) {
+    if ([0, 1].includes(ai.dipState)) {
         return null;
     }
     if (!(ai.genType & t통솔장)) {
@@ -55,9 +55,10 @@ export const do징병 = (ai: GeneralAI) => {
         return null;
     }
 
+    const generalMeta = asRecord(ai.general.meta);
+    const fullLeadership = readMetaNumber(generalMeta, 'fullLeadership', ai.general.stats.leadership);
     if (!ai.generalPolicy.can('한계징병')) {
-        const remainPop =
-            city.population - ai.nationPolicy.minNpcRecruitCityPopulation - ai.general.stats.leadership * 100;
+        const remainPop = city.population - ai.nationPolicy.minNpcRecruitCityPopulation - fullLeadership * 100;
         if (remainPop <= 0) {
             return null;
         }
@@ -71,9 +72,16 @@ export const do징병 = (ai: GeneralAI) => {
     }
 
     const tech = readMetaNumber(asRecord(nation.meta), 'tech', 0);
-    const crewAmountBase = ai.general.stats.leadership * 100;
+    const crewAmountBase = fullLeadership * 100;
     const warConfig = buildWarConfig(ai.scenarioConfig, ai.unitSet);
-    const forcedArmType = readMetaNumber(asRecord(ai.general.meta), 'armType', 0);
+    let forcedArmType = readMetaNumber(asRecord(ai.general.meta), 'armType', 0);
+    if (
+        (forcedArmType === warConfig.armTypes.wizard && !(ai.genType & t지장)) ||
+        ([warConfig.armTypes.footman, warConfig.armTypes.archer, warConfig.armTypes.cavalry].includes(forcedArmType) &&
+            !(ai.genType & t무장))
+    ) {
+        forcedArmType = 0;
+    }
     const armType =
         forcedArmType > 0
             ? forcedArmType
@@ -123,25 +131,31 @@ export const do징병 = (ai: GeneralAI) => {
 
     let crewAmount = crewAmountBase;
     const goldCost = (picked.cost * getTechCost(tech) * crewAmount) / 100;
-    const riceCost = crewAmount / 100;
+    const killCrew = readMetaNumber(generalMeta, 'rank_killcrew', readMetaNumber(generalMeta, 'killcrew', 0));
+    const deathCrew = readMetaNumber(generalMeta, 'rank_deathcrew', readMetaNumber(generalMeta, 'deathcrew', 0));
+    const expectedCrewLoss = Math.floor((crewAmount * killCrew * 1.2) / Math.max(deathCrew, 1));
+    let riceCost = (picked.rice * getTechCost(tech) * expectedCrewLoss) / 100;
 
-    if (ai.general.gold <= 0 || ai.general.rice <= 0) {
+    const remainingGold = ai.general.gold - fullLeadership * 3;
+    const remainingRice = ai.general.rice - fullLeadership * 4;
+    if (remainingGold <= 0 || remainingRice <= 0) {
         return null;
     }
 
-    if (ai.generalPolicy.can('모병') && ai.general.gold >= goldCost * 6) {
+    if (ai.generalPolicy.can('모병') && remainingGold >= goldCost * 6) {
         const hire = ai.buildGeneralCandidate('che_모병', { crewType: crewTypeId, amount: crewAmount }, '징병');
         if (hire) {
             return hire;
         }
     }
 
-    if (ai.general.gold < goldCost && ai.general.gold * 2 >= goldCost) {
+    if (remainingGold < goldCost && remainingGold * 2 >= goldCost) {
         crewAmount *= 0.5;
+        riceCost *= 0.5;
         crewAmount = roundTo(crewAmount - 49, -2);
     }
 
-    if (!ai.generalPolicy.can('한계징병') && ai.general.rice * 1.1 <= riceCost) {
+    if (!ai.generalPolicy.can('한계징병') && remainingRice * 1.1 <= riceCost) {
         return null;
     }
 

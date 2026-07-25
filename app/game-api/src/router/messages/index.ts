@@ -14,11 +14,14 @@ import { buildNationTarget, buildTargetFromGeneral, resolveNationInfo } from '..
 import {
     fetchMessagesFromMailbox,
     fetchOldMessagesFromMailbox,
+    fetchMessageById,
+    invalidateMessages,
     insertMessage,
     type MessageView,
 } from '../../messages/store.js';
 import { publishRealtimeEvent } from '../../realtime/publisher.js';
 import { getOwnedGeneral } from '../shared/general.js';
+import { resolveNationPermission } from '../nation/shared.js';
 
 const zMessageType = z.enum(['private', 'public', 'national', 'diplomacy']);
 
@@ -42,36 +45,39 @@ export const messagesRouter = router({
                 diplomacy: MESSAGE_MAILBOX_NATIONAL_BASE + nationId,
             } satisfies Record<MessageType, number>;
 
-            const [privateMessages, publicMessages, nationalMessages, diplomacyMessages] = await Promise.all([
-                fetchMessagesFromMailbox({
-                    db: ctx.db,
-                    mailbox: mailboxes.private,
-                    msgType: 'private',
-                    limit: 15,
-                    fromSeq: sequence,
-                }),
-                fetchMessagesFromMailbox({
-                    db: ctx.db,
-                    mailbox: mailboxes.public,
-                    msgType: 'public',
-                    limit: 15,
-                    fromSeq: sequence,
-                }),
-                fetchMessagesFromMailbox({
-                    db: ctx.db,
-                    mailbox: mailboxes.national,
-                    msgType: 'national',
-                    limit: 15,
-                    fromSeq: sequence,
-                }),
-                fetchMessagesFromMailbox({
-                    db: ctx.db,
-                    mailbox: mailboxes.diplomacy,
-                    msgType: 'diplomacy',
-                    limit: 15,
-                    fromSeq: sequence,
-                }),
-            ]);
+            const [privateMessages, publicMessages, nationalMessages, diplomacyMessages, readState] = await Promise.all(
+                [
+                    fetchMessagesFromMailbox({
+                        db: ctx.db,
+                        mailbox: mailboxes.private,
+                        msgType: 'private',
+                        limit: 15,
+                        fromSeq: sequence,
+                    }),
+                    fetchMessagesFromMailbox({
+                        db: ctx.db,
+                        mailbox: mailboxes.public,
+                        msgType: 'public',
+                        limit: 15,
+                        fromSeq: sequence,
+                    }),
+                    fetchMessagesFromMailbox({
+                        db: ctx.db,
+                        mailbox: mailboxes.national,
+                        msgType: 'national',
+                        limit: 15,
+                        fromSeq: sequence,
+                    }),
+                    fetchMessagesFromMailbox({
+                        db: ctx.db,
+                        mailbox: mailboxes.diplomacy,
+                        msgType: 'diplomacy',
+                        limit: 15,
+                        fromSeq: sequence,
+                    }),
+                    ctx.db.messageReadState.findUnique({ where: { generalId: general.id } }),
+                ]
+            );
 
             const messageBuckets: Record<MessageType, MessageView[]> = {
                 private: privateMessages,
@@ -117,10 +123,117 @@ export const messagesRouter = router({
                 nationId: nationId,
                 generalName: general.name,
                 latestRead: {
-                    diplomacy: 0,
-                    private: 0,
+                    diplomacy: readState?.latestDiplomacyMessage ?? 0,
+                    private: readState?.latestPrivateMessage ?? 0,
                 },
             };
+        }),
+    getContacts: authedProcedure
+        .input(z.object({ generalId: z.number().int().positive() }))
+        .query(async ({ ctx, input }) => {
+            await getOwnedGeneral(ctx, input.generalId);
+            const [nations, generals] = await Promise.all([
+                ctx.db.nation.findMany({
+                    select: { id: true, name: true, color: true, meta: true },
+                    orderBy: { id: 'asc' },
+                }),
+                ctx.db.general.findMany({
+                    where: { npcState: { lt: 2 } },
+                    select: {
+                        id: true,
+                        name: true,
+                        nationId: true,
+                        officerLevel: true,
+                        npcState: true,
+                        meta: true,
+                        penalty: true,
+                    },
+                    orderBy: { id: 'asc' },
+                }),
+            ]);
+            const nationMeta = new Map(nations.map((nation) => [nation.id, nation.meta]));
+            const grouped = new Map<number, Array<[number, string, number]>>();
+            for (const general of generals) {
+                let flags = 0;
+                if (general.officerLevel === 12) flags |= 1;
+                if (general.npcState === 1) flags |= 2;
+                if (resolveNationPermission(general, nationMeta.get(general.nationId) ?? {}, false) === 4) flags |= 4;
+                const list = grouped.get(general.nationId) ?? [];
+                list.push([general.id, general.name, flags]);
+                grouped.set(general.nationId, list);
+            }
+            const nationList = [
+                { id: 0, name: '재야', color: '#000000', meta: {} },
+                ...nations.filter((nation) => nation.id !== 0),
+            ];
+            return {
+                nation: nationList.map((nation) => ({
+                    mailbox: MESSAGE_MAILBOX_NATIONAL_BASE + nation.id,
+                    name: nation.name,
+                    color: nation.color,
+                    general: grouped.get(nation.id) ?? [],
+                })),
+            };
+        }),
+    readLatest: authedProcedure
+        .input(
+            z.object({
+                generalId: z.number().int().positive(),
+                type: z.enum(['private', 'diplomacy']),
+                messageId: z.number().int().positive(),
+            })
+        )
+        .mutation(async ({ ctx, input }) => {
+            const general = await getOwnedGeneral(ctx, input.generalId);
+            const privateValue = input.type === 'private' ? input.messageId : 0;
+            const diplomacyValue = input.type === 'diplomacy' ? input.messageId : 0;
+            await ctx.db.$executeRaw`
+                INSERT INTO message_read_state (
+                    general_id,
+                    latest_private_message,
+                    latest_diplomacy_message,
+                    updated_at
+                )
+                VALUES (${general.id}, ${privateValue}, ${diplomacyValue}, NOW())
+                ON CONFLICT (general_id) DO UPDATE SET
+                    latest_private_message = GREATEST(
+                        message_read_state.latest_private_message,
+                        EXCLUDED.latest_private_message
+                    ),
+                    latest_diplomacy_message = GREATEST(
+                        message_read_state.latest_diplomacy_message,
+                        EXCLUDED.latest_diplomacy_message
+                    ),
+                    updated_at = NOW()
+            `;
+            return { ok: true };
+        }),
+    delete: authedProcedure
+        .input(
+            z.object({
+                generalId: z.number().int().positive(),
+                messageId: z.number().int().positive(),
+            })
+        )
+        .mutation(async ({ ctx, input }) => {
+            const general = await getOwnedGeneral(ctx, input.generalId);
+            const message = await fetchMessageById(ctx.db, input.messageId);
+            if (!message) {
+                throw new TRPCError({ code: 'NOT_FOUND', message: '메시지가 없습니다.' });
+            }
+            if (message.payload.src.generalId !== general.id) {
+                throw new TRPCError({ code: 'FORBIDDEN', message: '본인의 메시지만 삭제할 수 있습니다.' });
+            }
+            if (message.msgType === 'diplomacy' || message.payload.option?.deletable === false) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '삭제할 수 없는 메시지입니다.' });
+            }
+            if (Date.now() - message.time.getTime() > 5 * 60 * 1000) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '5분 이내의 메시지만 삭제할 수 있습니다.' });
+            }
+            const receiverMessageId = message.payload.option?.receiverMessageID;
+            const ids = [message.id, ...(typeof receiverMessageId === 'number' ? [receiverMessageId] : [])];
+            await invalidateMessages(ctx.db, ids);
+            return { ok: true, deletedIds: ids };
         }),
     getOld: authedProcedure
         .input(

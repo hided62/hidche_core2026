@@ -5,6 +5,7 @@
     "type": "module",
     "scripts": {
         "dev": "vite",
+        "test:e2e:operations": "VITE_APP_BASE_PATH=/gateway VITE_GATEWAY_API_URL=/gateway/api/trpc pnpm build && playwright test --config e2e/playwright.config.mjs",
         "build": "vue-tsc && vite build",
         "preview": "vite preview",
         "lint": "eslint .",

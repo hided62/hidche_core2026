@@ -5,7 +5,7 @@ import { do징병 } from './recruitActions.js';
 import { do전투준비, do소집해제, do출병 } from './warActions.js';
 import { do후방워프, do전방워프, do내정워프, do귀환, do집합 } from './warpActions.js';
 import { doNPC헌납, doNPC사망대비 } from './npcActions.js';
-import { do국가선택, do중립, do거병, do건국, do방랑군이동 } from './politicsActions.js';
+import { do국가선택, do중립, do거병, do건국, do해산, do선양, do방랑군이동 } from './politicsActions.js';
 
 export {
     do일반내정,
@@ -27,6 +27,8 @@ export {
     do중립,
     do거병,
     do건국,
+    do해산,
+    do선양,
     do방랑군이동,
 };
 
@@ -53,5 +55,7 @@ export const generalActionHandlers: Record<
     집합: do집합,
     거병: do거병,
     건국: do건국,
+    해산: do해산,
+    선양: do선양,
     방랑군이동: do방랑군이동,
 };

@@ -8,6 +8,11 @@ export interface UserRecord {
     oauthId?: string;
     email?: string;
     oauthInfo?: UserOAuthInfo;
+    picture: string;
+    imageServer: number;
+    iconUpdatedAt?: string;
+    thirdPartyUse: boolean;
+    deleteAfter?: string;
     passwordHash: string;
     passwordSalt: string;
     createdAt: string;
@@ -18,6 +23,7 @@ export interface PublicUser {
     username: string;
     displayName: string;
     roles: string[];
+    picture: string;
     createdAt: string;
 }
 
@@ -44,6 +50,7 @@ export const toPublicUser = (user: UserRecord): PublicUser => ({
     username: user.username,
     displayName: user.displayName,
     roles: user.roles,
+    picture: user.picture,
     createdAt: user.createdAt,
 });
 
@@ -70,6 +77,9 @@ export interface UserRepository {
     updateOAuthInfo(userId: string, oauthInfo: UserOAuthInfo): Promise<void>;
     updateRoles(userId: string, roles: string[]): Promise<void>;
     updateSanctions(userId: string, sanctions: UserSanctions): Promise<void>;
+    updateIcon(userId: string, picture: string, imageServer: number, updatedAt: Date): Promise<void>;
+    setThirdPartyUse(userId: string, allowed: boolean): Promise<void>;
+    scheduleDeletion(userId: string, deleteAfter: Date): Promise<void>;
     deleteUser(userId: string): Promise<void>;
 }
 

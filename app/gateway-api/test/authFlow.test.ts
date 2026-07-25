@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import sharp from 'sharp';
 
 import { InMemoryGatewaySessionService } from '../src/auth/inMemorySessionService.js';
 import { createInMemoryUserRepository } from '../src/auth/inMemoryUserRepository.js';
@@ -10,7 +14,7 @@ import { appRouter } from '../src/router.js';
 import type { GatewayPrismaClient } from '@sammo-ts/infra';
 import { decryptGameSessionToken } from '@sammo-ts/common/auth/gameToken';
 
-const buildCaller = () => {
+const buildCaller = (options: { userIconDir?: string } = {}) => {
     const users = createInMemoryUserRepository();
     const sessions = new InMemoryGatewaySessionService({
         sessionTtlSeconds: 3600,
@@ -59,6 +63,20 @@ const buildCaller = () => {
         updateLastError: async () => {},
         updateWorkspaceUsage: async () => {},
         clearWorkspaceUsage: async () => {},
+        listOperations: async () => [],
+        getOperation: async () => null,
+        createOperation: async () => {
+            throw new Error('not implemented');
+        },
+        claimNextOperation: async () => null,
+        completeOperation: async () => {
+            throw new Error('not implemented');
+        },
+        requeueOperation: async () => {
+            throw new Error('not implemented');
+        },
+        cancelOperation: async () => false,
+        retryOperation: async () => null,
     };
     const orchestrator = {
         start: () => {},
@@ -66,6 +84,7 @@ const buildCaller = () => {
         reconcileNow: async () => {},
         runScheduleNow: async () => {},
         runBuildQueueNow: async () => {},
+        runOperationsNow: async () => {},
         cleanupStaleWorkspaces: async () => ({
             removed: [],
             skipped: [],
@@ -83,6 +102,8 @@ const buildCaller = () => {
             kakaoClient: kakaoClient as unknown as KakaoOAuthClient,
             oauthSessions,
             publicBaseUrl: 'http://localhost',
+            userIconDir: options.userIconDir,
+            userIconPublicUrl: 'http://localhost/user-icons',
             adminLocalAccountEnabled: false,
             profiles,
             orchestrator,
@@ -95,7 +116,7 @@ const buildCaller = () => {
             } as unknown as GatewayPrismaClient,
         })
     );
-    return { caller, oauthSessions };
+    return { caller, oauthSessions, users, sessions };
 };
 
 describe('gateway auth flow', () => {
@@ -165,5 +186,101 @@ describe('gateway auth flow', () => {
         });
 
         expect(validated?.user.username).toBe('tester');
+    });
+});
+
+describe('account self service', () => {
+    it('changes only the authenticated user password after verifying the current password', async () => {
+        const { caller, users, sessions } = buildCaller();
+        const user = await users.createUser({
+            username: 'self-service',
+            password: 'current-password',
+        });
+        const session = await sessions.createSession(user);
+
+        await expect(
+            caller.account.changePassword({
+                sessionToken: session.sessionToken,
+                currentPassword: 'wrong-password',
+                newPassword: 'next-password',
+            })
+        ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+
+        await caller.account.changePassword({
+            sessionToken: session.sessionToken,
+            currentPassword: 'current-password',
+            newPassword: 'next-password',
+        });
+
+        const refreshed = await users.findById(user.id);
+        expect(refreshed && (await users.verifyPassword(refreshed, 'next-password'))).toBe(true);
+    });
+
+    it('revokes the session and schedules deletion after 30 days', async () => {
+        const { caller, users, sessions } = buildCaller();
+        const user = await users.createUser({
+            username: 'delete-self',
+            password: 'current-password',
+        });
+        const session = await sessions.createSession(user);
+
+        const result = await caller.account.scheduleDeletion({
+            sessionToken: session.sessionToken,
+            currentPassword: 'current-password',
+        });
+
+        expect(new Date(result.deleteAfter).getTime()).toBeGreaterThan(Date.now() + 29 * 24 * 60 * 60 * 1000);
+        expect((await users.findById(user.id))?.deleteAfter).toBe(result.deleteAfter);
+        expect(await sessions.getSession(session.sessionToken)).toBeNull();
+    });
+
+    it('revokes third-party use consent without allowing it to be re-enabled', async () => {
+        const { caller, users, sessions } = buildCaller();
+        const user = await users.createUser({
+            username: 'privacy-self',
+            password: 'current-password',
+        });
+        const session = await sessions.createSession(user);
+
+        await caller.account.disallowThirdPartyUse({ sessionToken: session.sessionToken });
+
+        expect((await users.findById(user.id))?.thirdPartyUse).toBe(false);
+    });
+
+    it('validates and stores a legacy-sized account icon with a daily change limit', async () => {
+        const iconDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sammo-account-icon-'));
+        try {
+            const { caller, users, sessions } = buildCaller({ userIconDir: iconDir });
+            const user = await users.createUser({
+                username: 'icon-self',
+                password: 'current-password',
+            });
+            const session = await sessions.createSession(user);
+            const png = await sharp({
+                create: {
+                    width: 64,
+                    height: 64,
+                    channels: 4,
+                    background: '#334455',
+                },
+            })
+                .png()
+                .toBuffer();
+
+            const result = await caller.account.changeIcon({
+                sessionToken: session.sessionToken,
+                imageData: `data:image/png;base64,${png.toString('base64')}`,
+            });
+            const updated = await users.findById(user.id);
+
+            expect(result.iconUrl).toMatch(/^http:\/\/localhost\/user-icons\/[a-f0-9]{16}\.png$/);
+            expect(updated?.imageServer).toBe(1);
+            expect(await fs.stat(path.join(iconDir, updated?.picture ?? 'missing'))).toBeTruthy();
+            await expect(caller.account.deleteIcon({ sessionToken: session.sessionToken })).rejects.toMatchObject({
+                code: 'TOO_MANY_REQUESTS',
+            });
+        } finally {
+            await fs.rm(iconDir, { recursive: true, force: true });
+        }
     });
 });

@@ -1,53 +1,77 @@
 generator client {
-    provider = "prisma-client-js"
-    output   = "./generated/gateway"
-    engineType = "binary"
+  provider   = "prisma-client-js"
+  output     = "./generated/gateway"
+  engineType = "binary"
 }
 
 datasource db {
-    provider = "postgresql"
+  provider = "postgresql"
 }
 
 enum OAuthType {
-    NONE
-    KAKAO
+  NONE
+  KAKAO
 }
 
 enum GatewayProfileStatus {
-    RESERVED
-    PREOPEN
-    RUNNING
-    PAUSED
-    COMPLETED
-    STOPPED
-    DISABLED
+  RESERVED
+  PREOPEN
+  RUNNING
+  PAUSED
+  COMPLETED
+  STOPPED
+  DISABLED
 }
 
 enum GatewayBuildStatus {
-    IDLE
+  IDLE
+  QUEUED
+  RUNNING
+  FAILED
+  SUCCEEDED
+}
+
+enum GatewayOperationType {
+    RESET
+    START
+    STOP
+}
+
+enum GatewayOperationStatus {
     QUEUED
     RUNNING
-    FAILED
     SUCCEEDED
+    FAILED
+    CANCELLED
+}
+
+enum GatewaySourceMode {
+    BRANCH
+    COMMIT
 }
 
 model AppUser {
-    id           String    @id @default(uuid())
-    loginId      String    @unique @map("login_id")
-    displayName  String    @map("display_name")
-    passwordHash String    @map("password_hash")
-    passwordSalt String    @map("password_salt")
-    roles        Json      @default(dbgenerated("'[]'::jsonb"))
-    sanctions    Json      @default(dbgenerated("'{}'::jsonb"))
-    oauthType    OAuthType @default(NONE) @map("oauth_type")
-    oauthId      String?   @unique @map("oauth_id")
-    email        String?   @unique
-    oauthInfo    Json      @default(dbgenerated("'{}'::jsonb")) @map("oauth_info")
-    createdAt    DateTime  @default(now()) @map("created_at")
-    updatedAt    DateTime  @updatedAt @map("updated_at")
-    lastLoginAt  DateTime? @map("last_login_at")
+  id            String    @id @default(uuid())
+  loginId       String    @unique @map("login_id")
+  displayName   String    @map("display_name")
+  passwordHash  String    @map("password_hash")
+  passwordSalt  String    @map("password_salt")
+  roles         Json      @default(dbgenerated("'[]'::jsonb"))
+  sanctions     Json      @default(dbgenerated("'{}'::jsonb"))
+  oauthType     OAuthType @default(NONE) @map("oauth_type")
+  oauthId       String?   @unique @map("oauth_id")
+  email         String?   @unique
+  oauthInfo     Json      @default(dbgenerated("'{}'::jsonb")) @map("oauth_info")
+  picture       String    @default("default.jpg")
+  imageServer   Int       @default(0) @map("image_server")
+  iconUpdatedAt DateTime? @map("icon_updated_at")
+  thirdPartyUse Boolean   @default(true) @map("third_party_use")
+  deleteAfter   DateTime? @map("delete_after")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  lastLoginAt   DateTime? @map("last_login_at")
 
-    @@map("app_user")
+  @@map("app_user")
 }
 
 model GatewayProfile {
@@ -71,14 +95,39 @@ model GatewayProfile {
     meta             Json               @default(dbgenerated("'{}'::jsonb"))
     createdAt        DateTime           @default(now()) @map("created_at")
     updatedAt        DateTime           @updatedAt @map("updated_at")
+    operations       GatewayOperation[]
 
-    @@unique([profile, scenario])
-    @@map("gateway_profile")
+  @@unique([profile, scenario])
+  @@map("gateway_profile")
+}
+
+model GatewayOperation {
+    id                String                 @id @default(uuid())
+    profileName       String                 @map("profile_name")
+    profile           GatewayProfile         @relation(fields: [profileName], references: [profileName], onDelete: Cascade)
+    type              GatewayOperationType
+    status            GatewayOperationStatus @default(QUEUED)
+    sourceMode        GatewaySourceMode?      @map("source_mode")
+    sourceRef         String?                @map("source_ref")
+    resolvedCommitSha String?                @map("resolved_commit_sha")
+    payload           Json                   @default(dbgenerated("'{}'::jsonb"))
+    reason            String?
+    requestedBy       String                 @map("requested_by")
+    scheduledAt       DateTime?              @map("scheduled_at")
+    startedAt         DateTime?              @map("started_at")
+    completedAt       DateTime?              @map("completed_at")
+    error             String?
+    createdAt         DateTime               @default(now()) @map("created_at")
+    updatedAt         DateTime               @updatedAt @map("updated_at")
+
+    @@index([status, scheduledAt, createdAt])
+    @@index([profileName, createdAt])
+    @@map("gateway_operation")
 }
 
 model SystemSetting {
-    id     Int    @id @default(1) @map("no")
-    notice String @default("") @map("notice")
+  id     Int    @id @default(1) @map("no")
+  notice String @default("") @map("notice")
 
-    @@map("system")
+  @@map("system")
 }

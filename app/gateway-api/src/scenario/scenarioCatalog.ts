@@ -98,6 +98,22 @@ export const resolveGitCommitSha = async (gitRef: string): Promise<string> => {
     return commit;
 };
 
+export const resolveGitBranchCommitSha = async (branch: string): Promise<string> => {
+    const normalized = normalizeGitRef(branch);
+    if (!normalized) {
+        throw new Error('git branch is invalid.');
+    }
+    await runGit(['fetch', '--all', '--prune']);
+    for (const candidate of [`refs/remotes/origin/${normalized}`, `refs/heads/${normalized}`]) {
+        const result = await runGit(['rev-parse', '--verify', `${candidate}^{commit}`]);
+        const commit = result.output.trim().split('\n')[0];
+        if (result.ok && /^[0-9a-f]{40}$/i.test(commit)) {
+            return commit;
+        }
+    }
+    throw new Error('git branch not found.');
+};
+
 const readGitFile = async (commitSha: string, relativePath: string): Promise<string> => {
     const result = await runGit(['show', `${commitSha}:${relativePath}`]);
     if (!result.ok) {

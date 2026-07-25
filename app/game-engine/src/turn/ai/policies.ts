@@ -280,7 +280,7 @@ export class AutorunNationPolicy {
         if (this.reqNpcWarGold === 0 || this.reqNpcWarRice === 0) {
             const crewType = findCrewTypeById(unitSet, env.defaultCrewTypeId);
             const baseGold = crewType ? crewType.cost * getTechCost(tech) * stat.npcMax : 0;
-            const baseRice = stat.npcMax;
+            const baseRice = crewType ? crewType.rice * getTechCost(tech) * stat.npcMax : 0;
             if (this.reqNpcWarGold === 0) {
                 this.reqNpcWarGold = roundTo(baseGold * 4, -2);
             }
@@ -292,7 +292,7 @@ export class AutorunNationPolicy {
         if (this.reqHumanWarUrgentGold === 0 || this.reqHumanWarUrgentRice === 0) {
             const crewType = findCrewTypeById(unitSet, env.defaultCrewTypeId);
             const baseGold = crewType ? crewType.cost * getTechCost(tech) * stat.max : 0;
-            const baseRice = stat.max;
+            const baseRice = crewType ? crewType.rice * getTechCost(tech) * stat.max : 0;
             if (this.reqHumanWarUrgentGold === 0) {
                 this.reqHumanWarUrgentGold = roundTo(baseGold * 6, -2);
             }

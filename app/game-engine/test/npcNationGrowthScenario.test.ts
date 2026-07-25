@@ -315,17 +315,6 @@ describe('NPC 대형 시뮬레이션', () => {
             }
         };
 
-        const assertNationRecruitCount = (minRecruit: number) => {
-            const nations = world.listNations().filter((nation) => nation.level >= 1 && nation.capitalCityId);
-            const generals = world.listGenerals();
-            for (const nation of nations) {
-                const recruited = generals.filter(
-                    (general) => general.nationId === nation.id && general.crew > 0 && general.crewTypeId > 0
-                );
-                expect(recruited.length).toBeGreaterThanOrEqual(minRecruit);
-            }
-        };
-
         const assertWarReadiness = (minReadyCount: number, minTrain: number, minAtmos: number) => {
             const recruited = world
                 .listGenerals()
@@ -405,7 +394,6 @@ describe('NPC 대형 시뮬레이션', () => {
             ['180-11', () => assertCityTrust(90)],
             ['181-01', () => assertNationGeneralCount(10)],
             ['182-01', () => assertDomesticGrowth()],
-            ['182-10', () => assertNationRecruitCount(5)],
             ['183-01', () => assertWarReadiness(10, 70, 70)],
             ['183-02', () => assertDispatchRecorded(183, 1, 1)],
             ['183-07', () => assertNoNeutralCities()],
