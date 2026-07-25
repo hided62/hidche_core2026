@@ -6,6 +6,7 @@ export interface DatabaseClient {
     $executeRaw: GamePrismaClient['$executeRaw'];
     worldState: GamePrisma.WorldStateDelegate;
     general: GamePrisma.GeneralDelegate;
+    generalAccessLog: GamePrisma.GeneralAccessLogDelegate;
     city: GamePrisma.CityDelegate;
     nation: GamePrisma.NationDelegate;
     diplomacy: GamePrisma.DiplomacyDelegate;

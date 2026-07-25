@@ -42,6 +42,20 @@ export interface GeneralTurnResult {
         nations?: Nation[];
         troops?: Troop[];
     };
+    deleted?: {
+        general: boolean;
+        troopIds?: number[];
+    };
+    lifecycleEvent?: GeneralLifecycleEvent;
+}
+
+export interface GeneralLifecycleEvent {
+    generalId: number;
+    outcome: 'active' | 'detached' | 'deleted' | 'retired';
+    before: TurnGeneral;
+    after?: TurnGeneral;
+    year: number;
+    month: number;
 }
 
 export interface GeneralTurnHandler {
@@ -87,6 +101,7 @@ export interface TurnWorldChanges {
     createdTroops: Troop[];
     createdDiplomacy: TurnDiplomacy[];
     deletedEvents: number[];
+    lifecycleEvents: GeneralLifecycleEvent[];
 }
 
 const compareTurnOrder = (left: TurnGeneral, right: TurnGeneral): number => {
@@ -254,6 +269,7 @@ export class InMemoryTurnWorld {
     }> = [];
     private readonly logs: LogEntryDraft[] = [];
     private readonly messages: MessageDraft[] = [];
+    private readonly lifecycleEvents: GeneralLifecycleEvent[] = [];
     private readonly scenarioConfig: ScenarioConfig;
     private checkpoint?: TurnCheckpoint;
     private state: TurnWorldState;
@@ -594,12 +610,14 @@ export class InMemoryTurnWorld {
         });
 
         const nextTurnAt = result.nextTurnAt ?? getNextTurnAt(currentGeneral.turnTime, this.schedule);
-        const nextGeneral = {
-            ...(result.general ?? currentGeneral),
-            turnTime: nextTurnAt,
-        };
-        this.generals.set(nextGeneral.id, nextGeneral);
-        this.dirtyGeneralIds.add(nextGeneral.id);
+        if (!result.deleted?.general) {
+            const nextGeneral = {
+                ...(result.general ?? currentGeneral),
+                turnTime: nextTurnAt,
+            };
+            this.generals.set(nextGeneral.id, nextGeneral);
+            this.dirtyGeneralIds.add(nextGeneral.id);
+        }
 
         if (result.city) {
             this.cities.set(result.city.id, result.city);
@@ -697,6 +715,17 @@ export class InMemoryTurnWorld {
                 }
             }
         }
+        if (result.deleted?.troopIds) {
+            for (const troopId of result.deleted.troopIds) {
+                this.removeTroop(troopId);
+            }
+        }
+        if (result.deleted?.general) {
+            this.removeGeneral(currentGeneral.id);
+        }
+        if (result.lifecycleEvent) {
+            this.lifecycleEvents.push(result.lifecycleEvent);
+        }
 
         this.removeCollapsedNations();
 
@@ -776,6 +805,7 @@ export class InMemoryTurnWorld {
         const deletedNationSnapshots = this.deletedNationSnapshots.slice();
         const logs = this.logs.slice();
         const messages = this.messages.slice();
+        const lifecycleEvents = this.lifecycleEvents.slice();
 
         return {
             generals,
@@ -794,6 +824,7 @@ export class InMemoryTurnWorld {
             createdTroops,
             createdDiplomacy,
             deletedEvents,
+            lifecycleEvents,
         };
     }
 
@@ -818,6 +849,7 @@ export class InMemoryTurnWorld {
         this.deletedNationSnapshots.splice(0, changes.deletedNationSnapshots.length);
         this.logs.splice(0, changes.logs.length);
         this.messages.splice(0, changes.messages.length);
+        this.lifecycleEvents.splice(0, changes.lifecycleEvents.length);
     }
 
     consumeDirtyState(): TurnWorldChanges {

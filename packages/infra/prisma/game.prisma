@@ -179,6 +179,20 @@ model General {
     @@map("general")
 }
 
+model GeneralAccessLog {
+    id                Int       @id @default(autoincrement())
+    generalId         Int       @unique @map("general_id")
+    userId            String?   @map("user_id")
+    lastRefresh       DateTime? @map("last_refresh")
+    refresh           Int       @default(0)
+    refreshTotal      Int       @default(0) @map("refresh_total")
+    refreshScore      Int       @default(0) @map("refresh_score")
+    refreshScoreTotal Int       @default(0) @map("refresh_score_total")
+
+    @@index([userId])
+    @@map("general_access_log")
+}
+
 model RankData {
     id        Int    @id @default(autoincrement())
     nationId  Int    @default(0) @map("nation_id")

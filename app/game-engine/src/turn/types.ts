@@ -21,6 +21,10 @@ export interface TurnWorldState {
 }
 
 export interface TurnGeneral extends General {
+    userId?: string | null;
+    bornYear?: number;
+    deadYear?: number;
+    affinity?: number | null;
     turnTime: Date;
     recentWarTime?: Date | null;
     lastTurn?: GeneralLastTurn;

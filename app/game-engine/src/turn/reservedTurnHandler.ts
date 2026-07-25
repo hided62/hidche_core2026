@@ -30,6 +30,7 @@ import {
     loadItemModules,
     resolveUniqueConfig,
     rollUniqueLottery,
+    getNextTurnAt,
     type ItemModule,
     type UniqueLotteryRunner,
 } from '@sammo-ts/logic';
@@ -102,6 +103,90 @@ const serializeSeed = (...values: Array<string | number>): string =>
         .join('|');
 
 const joinYearMonth = (year: number, month: number): number => year * 12 + month - 1;
+
+const readConfigNumber = (config: ScenarioConfig, key: string, fallback: number): number => {
+    const value = asRecord(config.const)[key];
+    return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+};
+
+const cloneTurnGeneral = (general: TurnGeneral): TurnGeneral => ({
+    ...general,
+    stats: { ...general.stats },
+    role: {
+        ...general.role,
+        items: { ...general.role.items },
+    },
+    meta: { ...general.meta },
+    triggerState: {
+        ...general.triggerState,
+        flags: { ...general.triggerState.flags },
+        counters: { ...general.triggerState.counters },
+        modifiers: { ...general.triggerState.modifiers },
+        meta: { ...general.triggerState.meta },
+    },
+});
+
+const resetRetiredGeneral = (general: TurnGeneral): TurnGeneral => {
+    const meta = { ...general.meta };
+    for (const key of [
+        'firenum',
+        'rank_warnum',
+        'rank_killnum',
+        'rank_deathnum',
+        'rank_occupied',
+        'rank_killcrew',
+        'rank_deathcrew',
+        'rank_killcrew_person',
+        'rank_deathcrew_person',
+        'rank_ttw',
+        'rank_ttd',
+        'rank_ttl',
+        'rank_ttg',
+        'rank_ttp',
+        'rank_tlw',
+        'rank_tld',
+        'rank_tll',
+        'rank_tlg',
+        'rank_tlp',
+        'rank_tsw',
+        'rank_tsd',
+        'rank_tsl',
+        'rank_tsg',
+        'rank_tsp',
+        'rank_tiw',
+        'rank_tid',
+        'rank_til',
+        'rank_tig',
+        'rank_tip',
+        'rank_betgold',
+        'rank_betwin',
+        'rank_betwingold',
+        'specage',
+        'specage2',
+    ]) {
+        meta[key] = 0;
+    }
+    for (let dex = 1; dex <= 5; dex += 1) {
+        const key = `dex${dex}`;
+        meta[key] = Math.round(readMetaNumber(meta, key, 0) * 0.5);
+    }
+    meta.inherit_lived_month = 0;
+    meta.inherit_active_action = 0;
+
+    return {
+        ...general,
+        stats: {
+            leadership: Math.max(10, Math.round(general.stats.leadership * 0.85)),
+            strength: Math.max(10, Math.round(general.stats.strength * 0.85)),
+            intelligence: Math.max(10, Math.round(general.stats.intelligence * 0.85)),
+        },
+        injury: 0,
+        experience: Math.round(general.experience * 0.5),
+        dedication: Math.round(general.dedication * 0.5),
+        age: 20,
+        meta,
+    };
+};
 
 type LegacyLastTurn = {
     command: string;
@@ -1056,6 +1141,12 @@ export const createReservedTurnHandler = async (options: {
                 };
             };
 
+            const lifecycleBefore = cloneTurnGeneral(currentGeneral);
+            currentGeneral = cloneTurnGeneral(currentGeneral);
+            if (currentGeneral.npcState < 2) {
+                currentGeneral.meta.inherit_lived_month =
+                    readMetaNumber(currentGeneral.meta, 'inherit_lived_month', 0) + 1;
+            }
             const preprocessRng = new RandUtil(
                 new LiteHashDRBG(
                     serializeSeed(
@@ -1067,37 +1158,27 @@ export const createReservedTurnHandler = async (options: {
                     )
                 )
             );
-            currentGeneral = {
-                ...currentGeneral,
-                role: {
-                    ...currentGeneral.role,
-                    items: { ...currentGeneral.role.items },
-                },
-                meta: { ...currentGeneral.meta },
-                triggerState: {
-                    ...currentGeneral.triggerState,
-                    flags: { ...currentGeneral.triggerState.flags },
-                    counters: { ...currentGeneral.triggerState.counters },
-                    modifiers: { ...currentGeneral.triggerState.modifiers },
-                    meta: { ...currentGeneral.triggerState.meta },
-                },
-            };
-            if (currentGeneral.npcState < 2) {
-                const lived =
-                    typeof currentGeneral.meta.inherit_lived_month === 'number'
-                        ? currentGeneral.meta.inherit_lived_month
-                        : 0;
-                currentGeneral.meta.inherit_lived_month = lived + 1;
-            }
             currentCity = currentCity ? { ...currentCity, meta: { ...currentCity.meta } } : currentCity;
+            const cityGeneralCopies = new Map<number, TurnGeneral>();
+            for (const general of worldView?.listGenerals() ?? []) {
+                cityGeneralCopies.set(
+                    general.id,
+                    general.id === currentGeneral.id ? currentGeneral : cloneTurnGeneral(general)
+                );
+            }
+            cityGeneralCopies.set(currentGeneral.id, currentGeneral);
             const preTurnPipeline = new GeneralActionPipeline(env.generalActionModules ?? []);
             const preTurnContext = createGeneralTriggerContext({
                 general: currentGeneral,
                 nation: currentNation,
-                worldView: worldView ?? undefined,
+                worldView: {
+                    listGenerals: () => Array.from(cityGeneralCopies.values()),
+                    listGeneralsByCity: (cityId) =>
+                        Array.from(cityGeneralCopies.values()).filter((general) => general.cityId === cityId),
+                },
                 rng: preprocessRng,
                 log: {
-                    push: (message: string) => logs.push(createActionLog(message)),
+                    push: (message) => logs.push(createActionLog(message)),
                 },
             });
             preTurnPipeline.getPreTurnExecuteTriggerList(preTurnContext).fire(preTurnContext, baseConstraintEnv);
@@ -1110,14 +1191,16 @@ export const createReservedTurnHandler = async (options: {
                 if (consumeRice <= currentGeneral.rice) {
                     currentGeneral.rice -= consumeRice;
                 } else {
-                    const releasedCrew = preTurnPipeline.onCalcDomestic(
-                        preTurnContext,
-                        '징집인구',
-                        'score',
-                        currentGeneral.crew
+                    const releasedCrew = Math.trunc(
+                        preTurnPipeline.onCalcDomestic(preTurnContext, '징집인구', 'score', currentGeneral.crew)
                     );
                     if (currentCity) {
-                        currentCity.population += releasedCrew;
+                        currentCity = {
+                            ...currentCity,
+                            population: currentCity.population + releasedCrew,
+                            meta: { ...currentCity.meta },
+                        };
+                        worldOverlay?.syncCity(currentCity);
                     }
                     currentGeneral.crew = 0;
                     currentGeneral.rice = 0;
@@ -1126,18 +1209,23 @@ export const createReservedTurnHandler = async (options: {
                 }
                 preTurnContext.skill.activate('pre.병력군량소모');
             }
-            worldOverlay?.syncGeneral(currentGeneral);
-            if (currentCity) {
-                worldOverlay?.syncCity(currentCity);
+            for (const [generalId, next] of cityGeneralCopies) {
+                if (generalId === currentGeneral.id) {
+                    continue;
+                }
+                const previous = worldView?.getGeneralById(generalId);
+                if (!previous || previous.injury === next.injury) {
+                    continue;
+                }
+                patches.generals.push({ id: generalId, patch: { injury: next.injury } });
+                worldOverlay?.applyGeneralPatch(generalId, { injury: next.injury });
             }
+            worldOverlay?.syncGeneral(currentGeneral);
 
-            const blockCode = typeof currentGeneral.meta.block === 'number' ? Math.trunc(currentGeneral.meta.block) : 0;
+            const blockCode = readMetaNumber(currentGeneral.meta, 'block', 0);
             const isBlocked = blockCode === 2 || blockCode === 3;
             if (isBlocked) {
-                currentGeneral.meta.killturn = Math.max(
-                    0,
-                    typeof currentGeneral.meta.killturn === 'number' ? currentGeneral.meta.killturn - 1 : 0
-                );
+                currentGeneral.meta.killturn = Math.max(0, currentGeneral.meta.killturn - 1);
                 logs.push(
                     createActionLog(
                         blockCode === 2
@@ -1147,12 +1235,16 @@ export const createReservedTurnHandler = async (options: {
                 );
             }
 
+            let hasReservedTurn = false;
             if (!isBlocked && currentNation && currentGeneral.officerLevel >= 5) {
                 let nationCommand = options.reservedTurns.getNationTurn(
                     currentNation.id,
                     currentGeneral.officerLevel,
                     0
                 );
+                if (nationCommand.action !== DEFAULT_ACTION) {
+                    hasReservedTurn = true;
+                }
                 let nationAiState: ReturnType<GeneralAI['getDebugState']> | undefined;
                 if (worldView && shouldUseAi(currentGeneral, context.world)) {
                     const ai = new GeneralAI({
@@ -1196,9 +1288,12 @@ export const createReservedTurnHandler = async (options: {
             }
 
             let generalCommand = options.reservedTurns.getGeneralTurn(currentGeneral.id, 0);
+            if (!isBlocked && generalCommand.action !== DEFAULT_ACTION) {
+                hasReservedTurn = true;
+            }
             let generalAiState: ReturnType<GeneralAI['getDebugState']> | undefined;
             let generalAutorunMode = false;
-            if (worldView && shouldUseAi(currentGeneral, context.world)) {
+            if (!isBlocked && worldView && shouldUseAi(currentGeneral, context.world)) {
                 const ai = new GeneralAI({
                     general: currentGeneral,
                     city: currentCity,
@@ -1242,14 +1337,14 @@ export const createReservedTurnHandler = async (options: {
                 ...(generalResult.blockedReason ? { blockedReason: generalResult.blockedReason } : {}),
                 ...(generalAiState ? { aiState: generalAiState } : {}),
             });
-            const nextTurnAt = generalResult.nextTurnAt;
+            let nextTurnAt = 'nextTurnAt' in generalResult ? generalResult.nextTurnAt : undefined;
             options.reservedTurns.shiftGeneralTurns(currentGeneral.id, -1);
 
+            const worldMeta = asRecord(context.world.meta);
             if (!isBlocked) {
                 const meta = { ...currentGeneral.meta };
-                const currentKillturn =
-                    typeof meta.killturn === 'number' && Number.isFinite(meta.killturn) ? meta.killturn : 0;
-                const worldKillturn = readMetaNumber(asRecord(context.world.meta), 'killturn', currentKillturn);
+                const currentKillturn = readMetaNumber(meta, 'killturn', 0);
+                const worldKillturn = readMetaNumber(worldMeta, 'killturn', currentKillturn);
                 const requestedRest = generalCommand.action === DEFAULT_ACTION;
                 if (
                     currentGeneral.npcState >= 2 ||
@@ -1261,19 +1356,178 @@ export const createReservedTurnHandler = async (options: {
                 } else {
                     meta.killturn = worldKillturn;
                 }
+                const active = typeof meta.inherit_active_action === 'number' ? meta.inherit_active_action : 0;
+                if (generalResult.actionKey !== DEFAULT_ACTION) {
+                    meta.inherit_active_action = active + 1;
+                } else {
+                    meta.inherit_active_action = active;
+                }
                 currentGeneral = { ...currentGeneral, meta };
                 worldOverlay?.syncGeneral(currentGeneral);
             }
+
+            const incDefSettingChange = readConfigNumber(options.scenarioConfig, 'incDefSettingChange', 3);
+            const maxDefSettingChange = readConfigNumber(options.scenarioConfig, 'maxDefSettingChange', 9);
             currentGeneral = {
                 ...currentGeneral,
                 meta: {
                     ...currentGeneral.meta,
                     myset: Math.min(
-                        9,
-                        (typeof currentGeneral.meta.myset === 'number' ? currentGeneral.meta.myset : 0) + 3
+                        maxDefSettingChange,
+                        readMetaNumber(currentGeneral.meta, 'myset', 0) + incDefSettingChange
                     ),
                 },
             };
+
+            const autorunUser = asRecord(worldMeta.autorun_user);
+            const autorunLimitMinutes = readMetaNumber(autorunUser, 'limit_minutes', 0);
+            if (hasReservedTurn && currentGeneral.npcState < 2 && autorunLimitMinutes > 0) {
+                const turnMinutes = Math.max(1, Math.round(context.world.tickSeconds / 60));
+                currentGeneral.meta.autorun_limit =
+                    joinYearMonth(context.world.currentYear, context.world.currentMonth) +
+                    Math.trunc(autorunLimitMinutes / turnMinutes);
+            }
+
+            const nextTurnTimeBase = readMetaNumber(currentGeneral.meta, 'nextTurnTimeBase', -1);
+            if (nextTurnTimeBase >= 0) {
+                const alignedNextTurn = nextTurnAt ?? getNextTurnAt(currentGeneral.turnTime, context.schedule);
+                nextTurnAt = new Date(alignedNextTurn.getTime() + nextTurnTimeBase * 1000);
+                delete currentGeneral.meta.nextTurnTimeBase;
+            }
+
+            let lifecycleOutcome: 'active' | 'detached' | 'deleted' | 'retired' = 'active';
+            let deleteGeneral = false;
+            const deletedTroopIds: number[] = [];
+            const lifecycleSnapshot = cloneTurnGeneral(currentGeneral);
+            if (currentGeneral.meta.killturn <= 0) {
+                if (
+                    currentGeneral.npcState === 1 &&
+                    typeof currentGeneral.deadYear === 'number' &&
+                    currentGeneral.deadYear > context.world.currentYear
+                ) {
+                    const npcOrg = readMetaNumber(currentGeneral.meta, 'npc_org', 2);
+                    const ownerName =
+                        typeof currentGeneral.meta.owner_name === 'string'
+                            ? currentGeneral.meta.owner_name
+                            : currentGeneral.userId;
+                    logs.push(
+                        createActionLog(
+                            `${ownerName ?? '사용자'}이 <Y>${currentGeneral.name}</>의 육체에서 <S>유체이탈</>합니다!`
+                        )
+                    );
+                    currentGeneral = {
+                        ...currentGeneral,
+                        userId: null,
+                        npcState: npcOrg,
+                        meta: {
+                            ...currentGeneral.meta,
+                            killturn: (currentGeneral.deadYear - context.world.currentYear) * 12,
+                            defence_train: 80,
+                            owner_name: '',
+                        },
+                    };
+                    lifecycleOutcome = 'detached';
+                } else {
+                    if (currentGeneral.officerLevel === 12 && currentNation && worldView) {
+                        const candidates = worldView
+                            .listGenerals()
+                            .filter(
+                                (candidate) =>
+                                    candidate.id !== currentGeneral.id &&
+                                    candidate.nationId === currentGeneral.nationId &&
+                                    candidate.officerLevel !== 12 &&
+                                    candidate.npcState !== 5
+                            );
+                        let successor: TurnGeneral | undefined;
+                        const fiction = readMetaNumber(worldMeta, 'fiction', 0);
+                        if (
+                            fiction === 0 &&
+                            currentGeneral.npcState > 0 &&
+                            typeof currentGeneral.affinity === 'number'
+                        ) {
+                            const npcCandidates = candidates.filter(
+                                (candidate) =>
+                                    candidate.npcState >= 1 &&
+                                    candidate.npcState <= 3 &&
+                                    typeof candidate.affinity === 'number'
+                            );
+                            const affinityDistance = (candidate: TurnGeneral): number => {
+                                const distance = Math.abs((candidate.affinity ?? 0) - (currentGeneral.affinity ?? 0));
+                                return distance > 75 ? 150 - distance : distance;
+                            };
+                            const minDistance = Math.min(...npcCandidates.map(affinityDistance));
+                            const nearest = npcCandidates.filter(
+                                (candidate) => affinityDistance(candidate) === minDistance
+                            );
+                            if (nearest.length > 0) {
+                                const rng = new RandUtil(
+                                    new LiteHashDRBG(
+                                        serializeSeed(
+                                            buildSeedBase(context.world),
+                                            'NextNPCRuler',
+                                            context.world.currentYear,
+                                            context.world.currentMonth,
+                                            currentGeneral.id
+                                        )
+                                    )
+                                );
+                                successor = rng.choice(nearest);
+                            }
+                        }
+                        successor ??= candidates
+                            .filter((candidate) => candidate.officerLevel >= 9)
+                            .sort((left, right) => right.officerLevel - left.officerLevel || left.id - right.id)[0];
+                        successor ??= candidates.sort(
+                            (left, right) => right.dedication - left.dedication || left.id - right.id
+                        )[0];
+                        if (successor) {
+                            patches.generals.push({
+                                id: successor.id,
+                                patch: { officerLevel: 12 },
+                            });
+                            currentNation = {
+                                ...currentNation,
+                                chiefGeneralId: successor.id,
+                            };
+                            logs.push(
+                                createActionLog(
+                                    `<Y>${successor.name}</>이 <D><b>${currentNation.name}</b></>의 유지를 이어 받았습니다`
+                                )
+                            );
+                        }
+                    }
+                    if (currentGeneral.troopId === currentGeneral.id) {
+                        deletedTroopIds.push(currentGeneral.id);
+                        for (const member of worldView?.listGenerals() ?? []) {
+                            if (member.id !== currentGeneral.id && member.troopId === currentGeneral.id) {
+                                patches.generals.push({ id: member.id, patch: { troopId: 0 } });
+                            }
+                        }
+                    }
+                    if (currentNation) {
+                        const gennum = readMetaNumber(asRecord(currentNation.meta), 'gennum', 0);
+                        currentNation = {
+                            ...currentNation,
+                            meta: {
+                                ...currentNation.meta,
+                                gennum: Math.max(0, gennum - 1),
+                            },
+                        };
+                    }
+                    deleteGeneral = true;
+                    lifecycleOutcome = 'deleted';
+                }
+            }
+
+            const retirementYear = readConfigNumber(options.scenarioConfig, 'retirementYear', 80);
+            if (!deleteGeneral && currentGeneral.age >= retirementYear && currentGeneral.npcState === 0) {
+                currentGeneral = resetRetiredGeneral(currentGeneral);
+                lifecycleOutcome = 'retired';
+                logs.push(
+                    createActionLog('나이가 들어 <R>은퇴</>하고 자손에게 자리를 물려줍니다.')
+                );
+            }
+
             currentGeneral = {
                 ...currentGeneral,
                 triggerState: {
@@ -1298,6 +1552,22 @@ export const createReservedTurnHandler = async (options: {
                               ...(createdNations.length > 0 ? { nations: createdNations } : {}),
                           }
                         : undefined,
+                ...(deleteGeneral
+                    ? {
+                          deleted: {
+                              general: true,
+                              ...(deletedTroopIds.length > 0 ? { troopIds: deletedTroopIds } : {}),
+                          },
+                      }
+                    : undefined),
+                lifecycleEvent: {
+                    generalId: currentGeneral.id,
+                    outcome: lifecycleOutcome,
+                    before: lifecycleOutcome === 'active' ? lifecycleBefore : lifecycleSnapshot,
+                    ...(deleteGeneral ? {} : { after: currentGeneral }),
+                    year: context.world.currentYear,
+                    month: context.world.currentMonth,
+                },
             };
 
             return result;
