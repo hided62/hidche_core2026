@@ -288,28 +288,37 @@ describe('invader monthly actions', () => {
             generals: [buildGeneral(), buildGeneral({ id: 2, name: 'ⓞ도시2대왕', nationId: 2, cityId: 2 })],
             events: [autoDeleteEvent],
         });
-        harness.world.applyDiplomacyPatch({
+        const state = { ...harness.state, currentYear: 199, currentMonth: 12 };
+        let world: InMemoryTurnWorld | null = null;
+        const handler = createAutoDeleteInvaderHandler({
+            getWorld: () => world,
+            reservedTurns: harness.reservedTurns,
+        });
+        world = new InMemoryTurnWorld(state, harness.snapshot, {
+            schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+            calendarHandler: createMonthlyEventHandler({
+                getWorld: () => world,
+                startYear: 190,
+                actions: new Map([['AutoDeleteInvader', handler]]),
+            }),
+        });
+        world.applyDiplomacyPatch({
             srcNationId: 2,
             destNationId: 1,
             patch: { state: 1, term: 24 },
         });
-        const handler = createAutoDeleteInvaderHandler({
-            getWorld: () => harness.world,
-            reservedTurns: harness.reservedTurns,
-        });
-        const environment = { ...harness.environment, currentEventID: 8 };
 
-        await handler([2], environment, autoDeleteEvent);
-        expect(harness.world.listEvents().map((entry) => entry.id)).toContain(8);
+        await world.advanceMonth(new Date('0200-01-01T00:00:00.000Z'));
+        expect(world.listEvents().map((entry) => entry.id)).toContain(8);
 
-        harness.world.applyDiplomacyPatch({
+        world.applyDiplomacyPatch({
             srcNationId: 2,
             destNationId: 1,
             patch: { state: 2, term: 0 },
         });
-        await handler([2], environment, autoDeleteEvent);
+        await world.advanceMonth(new Date('0200-02-01T00:00:00.000Z'));
 
-        expect(harness.world.listEvents().map((entry) => entry.id)).not.toContain(8);
+        expect(world.listEvents().map((entry) => entry.id)).not.toContain(8);
         expect(harness.reservedTurns.getGeneralTurns(2)).toEqual(
             Array.from({ length: 30 }, () => ({ action: 'che_방랑', args: {} }))
         );
@@ -330,14 +339,23 @@ describe('invader monthly actions', () => {
             events: [endingEvent],
             meta: { isunited: 1, refreshLimit: 3 },
         });
-        const handler = createInvaderEndingHandler({ getWorld: () => harness.world });
-        const environment = { ...harness.environment, currentEventID: 9 };
+        const state = { ...harness.state, currentYear: 199, currentMonth: 12 };
+        let world: InMemoryTurnWorld | null = null;
+        const handler = createInvaderEndingHandler({ getWorld: () => world });
+        world = new InMemoryTurnWorld(state, harness.snapshot, {
+            schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+            calendarHandler: createMonthlyEventHandler({
+                getWorld: () => world,
+                startYear: 190,
+                actions: new Map([['InvaderEnding', handler]]),
+            }),
+        });
 
-        await handler([], environment, endingEvent);
+        await world.advanceMonth(new Date('0200-01-01T00:00:00.000Z'));
 
-        expect(harness.world.getState().meta).toMatchObject({ isunited: 3, refreshLimit: 300 });
-        expect(harness.world.listEvents()).toHaveLength(0);
-        expect(harness.world.peekDirtyState().logs.map((log) => log.text)).toEqual([
+        expect(world.getState().meta).toMatchObject({ isunited: 3, refreshLimit: 300 });
+        expect(world.listEvents()).toHaveLength(0);
+        expect(world.peekDirtyState().logs.map((log) => log.text)).toEqual([
             '<L><b>【이벤트】</b></>이민족을 모두 소탕했습니다!',
             '<L><b>【이벤트】</b></>중원은 당분간 태평성대를 누릴 것입니다.',
         ]);
