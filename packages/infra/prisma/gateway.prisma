@@ -31,6 +31,25 @@ enum GatewayBuildStatus {
     SUCCEEDED
 }
 
+enum GatewayOperationType {
+    RESET
+    START
+    STOP
+}
+
+enum GatewayOperationStatus {
+    QUEUED
+    RUNNING
+    SUCCEEDED
+    FAILED
+    CANCELLED
+}
+
+enum GatewaySourceMode {
+    BRANCH
+    COMMIT
+}
+
 model AppUser {
     id           String    @id @default(uuid())
     loginId      String    @unique @map("login_id")
@@ -71,9 +90,34 @@ model GatewayProfile {
     meta             Json               @default(dbgenerated("'{}'::jsonb"))
     createdAt        DateTime           @default(now()) @map("created_at")
     updatedAt        DateTime           @updatedAt @map("updated_at")
+    operations       GatewayOperation[]
 
     @@unique([profile, scenario])
     @@map("gateway_profile")
+}
+
+model GatewayOperation {
+    id                String                 @id @default(uuid())
+    profileName       String                 @map("profile_name")
+    profile           GatewayProfile         @relation(fields: [profileName], references: [profileName], onDelete: Cascade)
+    type              GatewayOperationType
+    status            GatewayOperationStatus @default(QUEUED)
+    sourceMode        GatewaySourceMode?      @map("source_mode")
+    sourceRef         String?                @map("source_ref")
+    resolvedCommitSha String?                @map("resolved_commit_sha")
+    payload           Json                   @default(dbgenerated("'{}'::jsonb"))
+    reason            String?
+    requestedBy       String                 @map("requested_by")
+    scheduledAt       DateTime?              @map("scheduled_at")
+    startedAt         DateTime?              @map("started_at")
+    completedAt       DateTime?              @map("completed_at")
+    error             String?
+    createdAt         DateTime               @default(now()) @map("created_at")
+    updatedAt         DateTime               @updatedAt @map("updated_at")
+
+    @@index([status, scheduledAt, createdAt])
+    @@index([profileName, createdAt])
+    @@map("gateway_operation")
 }
 
 model SystemSetting {

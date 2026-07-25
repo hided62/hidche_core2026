@@ -7,7 +7,12 @@ import { isRecord } from '@sammo-ts/common';
 
 import type { BuildCommand, BuildRunner } from './buildRunner.js';
 import type { ProcessManager } from './processManager.js';
-import type { GatewayProfileRecord, GatewayProfileRepository, GatewayProfileStatus } from './profileRepository.js';
+import type {
+    GatewayOperationRecord,
+    GatewayProfileRecord,
+    GatewayProfileRepository,
+    GatewayProfileStatus,
+} from './profileRepository.js';
 import type { GitWorkspaceManager } from './workspaceManager.js';
 import { seedProfileDatabase, type AdminSeedUser } from './seedProfileDatabase.js';
 
@@ -46,6 +51,7 @@ export interface GatewayOrchestratorHandle {
     reconcileNow(): Promise<void>;
     runScheduleNow(): Promise<void>;
     runBuildQueueNow(): Promise<void>;
+    runOperationsNow(): Promise<void>;
     cleanupStaleWorkspaces(): Promise<{
         removed: string[];
         skipped: string[];
@@ -376,6 +382,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     private scheduleInFlight = false;
     private buildInFlight = false;
     private adminActionInFlight = false;
+    private operationInFlight = false;
     private readonly resetInFlight = new Set<string>();
 
     constructor(options: GatewayOrchestratorOptions) {
@@ -393,11 +400,15 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
 
     start(): void {
         void this.reconcileNow();
+        void this.runOperationsNow();
         void this.runAdminActionsNow();
         this.reconcileTimer = setInterval(() => void this.reconcileNow(), this.reconcileIntervalMs);
         this.scheduleTimer = setInterval(() => void this.runScheduleNow(), this.scheduleIntervalMs);
         this.buildTimer = setInterval(() => void this.runBuildQueueNow(), this.buildIntervalMs);
-        this.adminActionTimer = setInterval(() => void this.runAdminActionsNow(), this.adminActionIntervalMs);
+        this.adminActionTimer = setInterval(() => {
+            void this.runOperationsNow();
+            void this.runAdminActionsNow();
+        }, this.adminActionIntervalMs);
     }
 
     async stop(): Promise<void> {
@@ -548,6 +559,83 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         }
     }
 
+    async runOperationsNow(): Promise<void> {
+        if (this.operationInFlight || this.buildInFlight) {
+            return;
+        }
+        this.operationInFlight = true;
+        try {
+            const operation = await this.repository.claimNextOperation(this.now());
+            if (!operation) {
+                return;
+            }
+            await this.handleOperation(operation);
+        } finally {
+            this.operationInFlight = false;
+        }
+    }
+
+    private async handleOperation(operation: GatewayOperationRecord): Promise<void> {
+        const profile = await this.repository.getProfile(operation.profileName);
+        if (!profile) {
+            await this.repository.completeOperation(operation.id, 'FAILED', {
+                error: 'Profile not found.',
+            });
+            return;
+        }
+        try {
+            if (operation.type === 'START') {
+                const updated = await this.repository.updateStatus(profile.profileName, 'RUNNING', {
+                    preopenAt: null,
+                    openAt: null,
+                    scheduledStartAt: null,
+                });
+                const started = await this.startProfile(updated ?? profile);
+                if (!started) {
+                    throw new Error('Failed to start profile processes.');
+                }
+                await this.repository.completeOperation(operation.id, 'SUCCEEDED', { error: null });
+                return;
+            }
+            if (operation.type === 'STOP') {
+                await this.repository.updateStatus(profile.profileName, 'STOPPED');
+                await this.stopProfile(profile);
+                await this.repository.completeOperation(operation.id, 'SUCCEEDED', { error: null });
+                return;
+            }
+
+            if (!operation.sourceMode || !operation.sourceRef) {
+                throw new Error('Reset source mode and ref are required.');
+            }
+            const commitSha = await this.workspaceManager.resolveCommit(operation.sourceMode, operation.sourceRef);
+            const payload = normalizeMeta(operation.payload);
+            const install = isRecord(payload.install) ? payload.install : {};
+            const resetAction: GatewayAdminActionRecord = {
+                action: operation.scheduledAt ? 'RESET_SCHEDULED' : 'RESET_NOW',
+                requestedAt: operation.createdAt,
+                scheduledAt: operation.scheduledAt ?? null,
+                reason: operation.reason ?? null,
+                install,
+            };
+            const result = await this.handleResetAction(profile, resetAction, commitSha);
+            if (result.status === 'REQUESTED') {
+                const retryAt = new Date(this.now().getTime() + this.adminActionIntervalMs).toISOString();
+                await this.repository.requeueOperation(operation.id, result.detail, retryAt);
+                return;
+            }
+            if (result.status !== 'APPLIED') {
+                throw new Error(result.detail ?? 'Reset failed.');
+            }
+            await this.repository.completeOperation(operation.id, 'SUCCEEDED', {
+                resolvedCommitSha: commitSha,
+                error: null,
+            });
+        } catch (error) {
+            const detail = error instanceof Error ? error.message : String(error);
+            await this.repository.completeOperation(operation.id, 'FAILED', { error: detail });
+        }
+    }
+
     private async runAdminActionsNow(): Promise<void> {
         if (this.adminActionInFlight) {
             return;
@@ -632,7 +720,8 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
 
     private async handleResetAction(
         profile: GatewayProfileRecord,
-        action: GatewayAdminActionRecord
+        action: GatewayAdminActionRecord,
+        commitShaOverride?: string
     ): Promise<GatewayAdminActionResult> {
         // 리셋 요청을 빌드+재기동 흐름으로 처리한다.
         if (this.resetInFlight.has(profile.profileName)) {
@@ -651,7 +740,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             }
         }
 
-        const commitSha = profile.buildCommitSha;
+        const commitSha = commitShaOverride ?? profile.buildCommitSha;
         if (!commitSha) {
             return { status: 'FAILED', detail: 'buildCommitSha is missing' };
         }
@@ -734,7 +823,10 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 scheduledStartAt: action.scheduledAt ?? null,
             });
             const builtProfile = (await this.repository.getProfile(profile.profileName)) ?? activeProfile;
-            await this.startProfile(builtProfile);
+            const started = await this.startProfile(builtProfile);
+            if (!started) {
+                return { status: 'FAILED', detail: 'reset completed but profile processes failed to start' };
+            }
             return { status: 'APPLIED', detail: 'reset completed via rebuild' };
         } catch (error) {
             const detail = error instanceof Error ? error.message : String(error);
@@ -852,32 +944,39 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         return cutoff;
     }
 
-    private async startProfile(profile: GatewayProfileRecord): Promise<void> {
+    private async startProfile(profile: GatewayProfileRecord): Promise<boolean> {
         const definitions = buildProcessDefinitions(profile, this.processConfig);
         try {
             await this.processManager.start(definitions.api);
             await this.processManager.start(definitions.daemon);
             await this.repository.updateLastError(profile.profileName, null);
+            return true;
         } catch (error) {
             await this.repository.updateLastError(
                 profile.profileName,
                 error instanceof Error ? error.message : 'Failed to start processes.'
             );
+            return false;
         }
     }
 
     private async stopProfile(profile: GatewayProfileRecord): Promise<void> {
         const apiName = buildProcessName(profile.profileName, 'api');
         const daemonName = buildProcessName(profile.profileName, 'daemon');
-        try {
-            await this.processManager.stop(apiName);
-        } catch {
-            await this.processManager.delete(apiName);
+        const failures: string[] = [];
+        for (const name of [apiName, daemonName]) {
+            try {
+                await this.processManager.stop(name);
+            } catch {
+                try {
+                    await this.processManager.delete(name);
+                } catch (error) {
+                    failures.push(`${name}: ${error instanceof Error ? error.message : String(error)}`);
+                }
+            }
         }
-        try {
-            await this.processManager.stop(daemonName);
-        } catch {
-            await this.processManager.delete(daemonName);
+        if (failures.length > 0) {
+            throw new Error(`Failed to stop profile processes: ${failures.join('; ')}`);
         }
     }
 

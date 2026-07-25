@@ -1012,9 +1012,17 @@ onMounted(() => {
 <template>
     <DefaultLayout>
         <div class="max-w-6xl mx-auto px-4 py-10 space-y-10">
-            <div class="space-y-2">
-                <h2 class="text-3xl font-bold text-white">관리자 콘솔</h2>
-                <p class="text-sm text-zinc-400">유저 관리와 서버 운영 제어를 위한 관리자 전용 대시보드입니다.</p>
+            <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+                <div class="space-y-2">
+                    <h2 class="text-3xl font-bold text-white">관리자 콘솔</h2>
+                    <p class="text-sm text-zinc-400">유저 관리와 서버 운영 제어를 위한 관리자 전용 대시보드입니다.</p>
+                </div>
+                <RouterLink
+                    to="/admin/server-operations"
+                    class="rounded bg-amber-500 px-4 py-2 text-center text-sm font-bold text-black hover:bg-amber-400"
+                >
+                    서버 배포 · 시나리오 초기화
+                </RouterLink>
             </div>
 
             <section class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-3">
