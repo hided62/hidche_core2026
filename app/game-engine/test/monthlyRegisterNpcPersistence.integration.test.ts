@@ -5,6 +5,7 @@ import type { City } from '@sammo-ts/logic';
 import { createDatabaseTurnHooks } from '../src/turn/databaseHooks.js';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import { createRegisterNpcHandler } from '../src/turn/monthlyRegisterNpcAction.js';
+import { createMonthlyEventHandler } from '../src/turn/monthlyEventHandler.js';
 import { InMemoryReservedTurnStore } from '../src/turn/reservedTurnStore.js';
 import { buildCommandEnv } from '../src/turn/reservedTurnCommands.js';
 import type { TurnEvent, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
@@ -13,6 +14,7 @@ const databaseUrl = process.env.INPUT_EVENT_DATABASE_URL;
 const integration = describe.skipIf(!databaseUrl);
 const cityId = 990_082;
 const createdGeneralId = 990_082;
+const createdNeutralGeneralId = 990_083;
 
 const city: City = {
     id: cityId,
@@ -42,7 +44,10 @@ const event: TurnEvent = {
     targetCode: 'month',
     priority: 1_000,
     condition: true,
-    action: [['RegNPC']],
+    action: [
+        ['RegNPC', 77, '저장장수', 1001, 0, cityId, 60, 50, 40, 7, 186, 240, '유지', '인덕', '대사'],
+        ['RegNeutralNPC', 88, '저장재야', 1002, 0, cityId, 45, 55, 65, 186, 241, '안전', '무쌍', '재야대사'],
+    ],
     meta: {},
 };
 
@@ -53,12 +58,16 @@ integration('RegNPC database persistence', () => {
     const clean = async () => {
         await db.logEntry.deleteMany({
             where: {
-                OR: [{ generalId: createdGeneralId }, { year: 200, month: 1, text: { contains: 'ⓝ저장장수' } }],
+                OR: [
+                    { generalId: { in: [createdGeneralId, createdNeutralGeneralId] } },
+                    { year: 200, month: 1, text: { contains: '저장장수' } },
+                    { year: 200, month: 1, text: { contains: '저장재야' } },
+                ],
             },
         });
-        await db.generalTurn.deleteMany({ where: { generalId: createdGeneralId } });
-        await db.rankData.deleteMany({ where: { generalId: createdGeneralId } });
-        await db.general.deleteMany({ where: { id: createdGeneralId } });
+        await db.generalTurn.deleteMany({ where: { generalId: { in: [createdGeneralId, createdNeutralGeneralId] } } });
+        await db.rankData.deleteMany({ where: { generalId: { in: [createdGeneralId, createdNeutralGeneralId] } } });
+        await db.general.deleteMany({ where: { id: { in: [createdGeneralId, createdNeutralGeneralId] } } });
         await db.city.deleteMany({ where: { id: cityId } });
     };
 
@@ -106,8 +115,8 @@ integration('RegNPC database persistence', () => {
         const stateRow = await db.worldState.create({
             data: {
                 scenarioCode: 'monthly-register-npc-persistence',
-                currentYear: 200,
-                currentMonth: 1,
+                currentYear: 199,
+                currentMonth: 12,
                 tickSeconds: 600,
                 config: {},
                 meta: { hiddenSeed: 'register-npc-persistence', lastGeneralId: createdGeneralId - 1 },
@@ -115,10 +124,10 @@ integration('RegNPC database persistence', () => {
         });
         const state: TurnWorldState = {
             id: stateRow.id,
-            currentYear: 200,
-            currentMonth: 1,
+            currentYear: 199,
+            currentMonth: 12,
             tickSeconds: 600,
-            lastTurnTime: new Date('0200-01-01T00:00:00.000Z'),
+            lastTurnTime: new Date('0199-12-01T00:00:00.000Z'),
             meta: { hiddenSeed: 'register-npc-persistence', lastGeneralId: createdGeneralId - 1 },
         };
         const snapshot: TurnWorldSnapshot = {
@@ -152,10 +161,8 @@ integration('RegNPC database persistence', () => {
             events: [event],
             initialEvents: [],
         };
-        const world = new InMemoryTurnWorld(state, snapshot, {
-            schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
-        });
         const reservedTurns = new InMemoryReservedTurnStore(db, { maxGeneralTurns: 30, maxNationTurns: 12 });
+        let world: InMemoryTurnWorld | null = null;
         const handler = createRegisterNpcHandler({
             actionName: 'RegNPC',
             getWorld: () => world,
@@ -163,20 +170,28 @@ integration('RegNPC database persistence', () => {
             env: buildCommandEnv(snapshot.scenarioConfig),
             worldConfig: snapshot.worldConfig,
         });
+        const neutralHandler = createRegisterNpcHandler({
+            actionName: 'RegNeutralNPC',
+            getWorld: () => world,
+            reservedTurns,
+            env: buildCommandEnv(snapshot.scenarioConfig),
+            worldConfig: snapshot.worldConfig,
+        });
+        world = new InMemoryTurnWorld(state, snapshot, {
+            schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+            calendarHandler: createMonthlyEventHandler({
+                getWorld: () => world,
+                startYear: 190,
+                actions: new Map([
+                    ['RegNPC', handler],
+                    ['RegNeutralNPC', neutralHandler],
+                ]),
+            }),
+        });
         const dbHooks = await createDatabaseTurnHooks(databaseUrl!, world, { reservedTurns });
 
         try {
-            await handler(
-                [77, '저장장수', 1001, 0, cityId, 60, 50, 40, 7, 186, 240, '유지', '인덕', '대사'],
-                {
-                    year: 200,
-                    month: 1,
-                    startyear: 190,
-                    currentEventID: 1,
-                    turnTime: state.lastTurnTime,
-                },
-                event
-            );
+            await world.advanceMonth(new Date('0200-01-01T00:00:00.000Z'));
             await dbHooks.hooks.flushChanges?.({
                 lastTurnTime: state.lastTurnTime.toISOString(),
                 processedGenerals: 0,
@@ -209,6 +224,30 @@ integration('RegNPC database persistence', () => {
             expect(
                 await db.logEntry.findFirst({
                     where: { year: 200, month: 1, text: { contains: 'ⓝ저장장수' } },
+                })
+            ).toMatchObject({
+                category: 'ACTION',
+                text: expect.stringContaining('성인이 되어'),
+            });
+            expect(await db.general.findUniqueOrThrow({ where: { id: createdNeutralGeneralId } })).toMatchObject({
+                name: 'ⓤ저장재야',
+                nationId: 0,
+                cityId,
+                officerLevel: 0,
+                npcState: 6,
+                affinity: 88,
+                bornYear: 186,
+                deadYear: 241,
+                picture: '1002.jpg',
+                personalCode: 'che_안전',
+                specialCode: 'None',
+                special2Code: 'che_무쌍',
+            });
+            expect(await db.generalTurn.count({ where: { generalId: createdNeutralGeneralId } })).toBe(30);
+            expect(await db.rankData.count({ where: { generalId: createdNeutralGeneralId } })).toBe(44);
+            expect(
+                await db.logEntry.findFirst({
+                    where: { year: 200, month: 1, text: { contains: 'ⓤ저장재야' } },
                 })
             ).toMatchObject({
                 category: 'ACTION',

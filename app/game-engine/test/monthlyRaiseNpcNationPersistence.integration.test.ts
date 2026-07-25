@@ -5,6 +5,7 @@ import type { City, MapDefinition, Nation } from '@sammo-ts/logic';
 import { createDatabaseTurnHooks } from '../src/turn/databaseHooks.js';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import { createRaiseNpcNationHandler } from '../src/turn/monthlyRaiseNpcNationAction.js';
+import { createMonthlyEventHandler } from '../src/turn/monthlyEventHandler.js';
 import { InMemoryReservedTurnStore } from '../src/turn/reservedTurnStore.js';
 import { buildCommandEnv } from '../src/turn/reservedTurnCommands.js';
 import type { TurnEvent, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
@@ -182,8 +183,8 @@ integration('RaiseNPCNation database persistence', () => {
         const stateRow = await db.worldState.create({
             data: {
                 scenarioCode: 'monthly-raise-npc-nation-persistence',
-                currentYear: 200,
-                currentMonth: 1,
+                currentYear: 199,
+                currentMonth: 12,
                 tickSeconds: 600,
                 config: {},
                 meta: {
@@ -196,10 +197,10 @@ integration('RaiseNPCNation database persistence', () => {
         });
         const state: TurnWorldState = {
             id: stateRow.id,
-            currentYear: 200,
-            currentMonth: 1,
+            currentYear: 199,
+            currentMonth: 12,
             tickSeconds: 600,
-            lastTurnTime: new Date('0200-01-01T00:00:00.000Z'),
+            lastTurnTime: new Date('0199-12-01T00:00:00.000Z'),
             meta: {
                 hiddenSeed: 'raise-npc-nation-persistence',
                 lastGeneralId: createdGeneralId - 1,
@@ -230,10 +231,8 @@ integration('RaiseNPCNation database persistence', () => {
             events: [event],
             initialEvents: [],
         };
-        const world = new InMemoryTurnWorld(state, snapshot, {
-            schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
-        });
         const reservedTurns = new InMemoryReservedTurnStore(db, { maxGeneralTurns: 30, maxNationTurns: 12 });
+        let world: InMemoryTurnWorld | null = null;
         const handler = createRaiseNpcNationHandler({
             getWorld: () => world,
             reservedTurns,
@@ -241,20 +240,18 @@ integration('RaiseNPCNation database persistence', () => {
             map,
             loadArchivedNationMaxId: async () => 0,
         });
+        world = new InMemoryTurnWorld(state, snapshot, {
+            schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+            calendarHandler: createMonthlyEventHandler({
+                getWorld: () => world,
+                startYear: 190,
+                actions: new Map([['RaiseNPCNation', handler]]),
+            }),
+        });
         const dbHooks = await createDatabaseTurnHooks(databaseUrl!, world, { reservedTurns });
 
         try {
-            await handler(
-                [],
-                {
-                    year: 200,
-                    month: 1,
-                    startyear: 190,
-                    currentEventID: 1,
-                    turnTime: state.lastTurnTime,
-                },
-                event
-            );
+            await world.advanceMonth(new Date('0200-01-01T00:00:00.000Z'));
             await dbHooks.hooks.flushChanges?.({
                 lastTurnTime: state.lastTurnTime.toISOString(),
                 processedGenerals: 0,

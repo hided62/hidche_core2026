@@ -5,6 +5,7 @@ import type { City } from '@sammo-ts/logic';
 import { createDatabaseTurnHooks } from '../src/turn/databaseHooks.js';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import { createCreateManyNpcHandler } from '../src/turn/monthlyCreateManyNpcAction.js';
+import { createMonthlyEventHandler } from '../src/turn/monthlyEventHandler.js';
 import { InMemoryReservedTurnStore } from '../src/turn/reservedTurnStore.js';
 import { buildCommandEnv } from '../src/turn/reservedTurnCommands.js';
 import type { TurnEvent, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
@@ -119,7 +120,7 @@ integration('CreateManyNPC database persistence', () => {
             data: {
                 scenarioCode: 'monthly-create-many-npc-persistence',
                 currentYear: 193,
-                currentMonth: 5,
+                currentMonth: 4,
                 tickSeconds: 600,
                 config: {},
                 meta: { hiddenSeed: 'create-many-npc-persistence', lastGeneralId: createdGeneralId - 1 },
@@ -128,9 +129,9 @@ integration('CreateManyNPC database persistence', () => {
         const state: TurnWorldState = {
             id: stateRow.id,
             currentYear: 193,
-            currentMonth: 5,
+            currentMonth: 4,
             tickSeconds: 600,
-            lastTurnTime: new Date('0193-05-01T00:00:00.000Z'),
+            lastTurnTime: new Date('0193-04-01T00:00:00.000Z'),
             meta: { hiddenSeed: 'create-many-npc-persistence', lastGeneralId: createdGeneralId - 1 },
         };
         const snapshot: TurnWorldSnapshot = {
@@ -160,29 +161,25 @@ integration('CreateManyNPC database persistence', () => {
             events: [event],
             initialEvents: [],
         };
-        const world = new InMemoryTurnWorld(state, snapshot, {
-            schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
-        });
         const reservedTurns = new InMemoryReservedTurnStore(db, { maxGeneralTurns: 30, maxNationTurns: 12 });
+        let world: InMemoryTurnWorld | null = null;
         const handler = createCreateManyNpcHandler({
             getWorld: () => world,
             reservedTurns,
             env: buildCommandEnv(snapshot.scenarioConfig),
         });
+        world = new InMemoryTurnWorld(state, snapshot, {
+            schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+            calendarHandler: createMonthlyEventHandler({
+                getWorld: () => world,
+                startYear: 190,
+                actions: new Map([['CreateManyNPC', handler]]),
+            }),
+        });
         const dbHooks = await createDatabaseTurnHooks(databaseUrl!, world, { reservedTurns });
 
         try {
-            await handler(
-                [1, 0],
-                {
-                    year: 193,
-                    month: 5,
-                    startyear: 190,
-                    currentEventID: 1,
-                    turnTime: state.lastTurnTime,
-                },
-                event
-            );
+            await world.advanceMonth(new Date('0193-05-01T00:00:00.000Z'));
             await dbHooks.hooks.flushChanges?.({
                 lastTurnTime: state.lastTurnTime.toISOString(),
                 processedGenerals: 0,

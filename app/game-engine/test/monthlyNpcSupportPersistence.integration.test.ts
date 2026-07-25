@@ -6,6 +6,7 @@ import { createDatabaseTurnHooks } from '../src/turn/databaseHooks.js';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import { createChangeCityHandler } from '../src/turn/monthlyChangeCityAction.js';
 import { createProvideNpcTroopLeaderHandler } from '../src/turn/monthlyProvideNpcTroopLeaderAction.js';
+import { createMonthlyEventHandler } from '../src/turn/monthlyEventHandler.js';
 import { InMemoryReservedTurnStore } from '../src/turn/reservedTurnStore.js';
 import { buildCommandEnv } from '../src/turn/reservedTurnCommands.js';
 import type { TurnEvent, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
@@ -58,7 +59,7 @@ const event: TurnEvent = {
     targetCode: 'month',
     priority: 1_000,
     condition: true,
-    action: [['ProvideNPCTroopLeader']],
+    action: [['ProvideNPCTroopLeader'], ['ChangeCity', 'all', { pop_max: '+100', pop: '50%', trust: 80, trade: 105 }]],
     meta: {},
 };
 
@@ -135,8 +136,8 @@ integration('monthly NPC support database persistence', () => {
         const stateRow = await db.worldState.create({
             data: {
                 scenarioCode: 'monthly-npc-support-persistence',
-                currentYear: 200,
-                currentMonth: 1,
+                currentYear: 199,
+                currentMonth: 12,
                 tickSeconds: 600,
                 config: {},
                 meta: {
@@ -148,10 +149,10 @@ integration('monthly NPC support database persistence', () => {
         });
         const state: TurnWorldState = {
             id: stateRow.id,
-            currentYear: 200,
-            currentMonth: 1,
+            currentYear: 199,
+            currentMonth: 12,
             tickSeconds: 600,
-            lastTurnTime: new Date('0200-01-01T00:00:00.000Z'),
+            lastTurnTime: new Date('0199-12-01T00:00:00.000Z'),
             meta: {
                 hiddenSeed: 'monthly-npc-support-persistence',
                 lastGeneralId: generalId - 1,
@@ -175,31 +176,32 @@ integration('monthly NPC support database persistence', () => {
             events: [event],
             initialEvents: [],
         };
-        const world = new InMemoryTurnWorld(state, snapshot, {
-            schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
-        });
         const reservedTurns = new InMemoryReservedTurnStore(db, {
             maxGeneralTurns: 30,
             maxNationTurns: 12,
         });
+        let world: InMemoryTurnWorld | null = null;
         const provide = createProvideNpcTroopLeaderHandler({
             getWorld: () => world,
             reservedTurns,
             env: buildCommandEnv(snapshot.scenarioConfig),
         });
         const changeCity = createChangeCityHandler({ getWorld: () => world });
+        world = new InMemoryTurnWorld(state, snapshot, {
+            schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+            calendarHandler: createMonthlyEventHandler({
+                getWorld: () => world,
+                startYear: 190,
+                actions: new Map([
+                    ['ProvideNPCTroopLeader', provide],
+                    ['ChangeCity', changeCity],
+                ]),
+            }),
+        });
         const dbHooks = await createDatabaseTurnHooks(databaseUrl!, world, { reservedTurns });
 
         try {
-            const environment = {
-                year: 200,
-                month: 1,
-                startyear: 190,
-                currentEventID: 1,
-                turnTime: state.lastTurnTime,
-            };
-            await provide([], environment, event);
-            await changeCity(['all', { pop_max: '+100', pop: '50%', trust: 80, trade: 105 }], environment, event);
+            await world.advanceMonth(new Date('0200-01-01T00:00:00.000Z'));
             await dbHooks.hooks.flushChanges?.({
                 lastTurnTime: state.lastTurnTime.toISOString(),
                 processedGenerals: 0,
