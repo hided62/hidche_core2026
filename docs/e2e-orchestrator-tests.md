@@ -115,3 +115,47 @@ Optional checks:
 - PM2 is global; use unique `profileName` per test run to avoid collisions.
 - Orchestrator starts binaries from `dist/` under `GATEWAY_WORKSPACE_ROOT`.
   If build artifacts are missing, PM2 will start and immediately exit.
+
+## HWE GUI lifecycle
+
+`app/gateway-frontend/e2e/hwe-lifecycle.spec.ts` verifies the operational
+browser flow with one administrator and two independent user contexts:
+
+1. The administrator logs in, selects `hwe:2`, loads scenario 2 from a fixed
+   commit, requests a reset, and waits for that exact operation to succeed.
+2. The administrator returns to the gateway main page and sees the open HWE
+   action.
+3. Each user logs in with a separate Chromium context, sees the same open HWE
+   row, creates a general, and reaches the HWE main dashboard without an error.
+
+The test uses an ignored secret directory. It reads `admin_password`,
+`user_a_password`, and `user_b_password` from
+`SAMMO_LIFECYCLE_SECRET_ROOT`; passwords must not be passed on the command
+line. `SAMMO_LIFECYCLE_SOURCE_COMMIT` must be a full commit SHA.
+
+Build the gateway frontend with the public prefix contract before starting its
+preview server:
+
+```bash
+VITE_APP_BASE_PATH=/gateway \
+VITE_GATEWAY_API_URL=/gateway/api/trpc \
+VITE_GAME_API_URL_TEMPLATE='/{profile}/api/trpc' \
+VITE_GAME_WEB_URL_TEMPLATE='/{profile}/' \
+pnpm --filter @sammo-ts/gateway-frontend build
+```
+
+Build the HWE frontend with `VITE_APP_BASE_PATH=/hwe`,
+`VITE_GAME_API_URL=/hwe/api/trpc`, and
+`VITE_GAME_SSE_URL=/hwe/api/events`. Start the isolated gateway API,
+orchestrator, both previews, Postgres, and Redis, then run:
+
+```bash
+SAMMO_LIFECYCLE_SECRET_ROOT=/path/to/ignored/secrets \
+SAMMO_LIFECYCLE_SOURCE_COMMIT="$(git rev-parse HEAD)" \
+pnpm --filter @sammo-ts/gateway-frontend test:e2e:hwe-lifecycle
+```
+
+The Playwright web server is a local prefix-preserving proxy on port `15140`.
+It mirrors the Caddy route contract while keeping all navigation on one
+origin. Passing the test means the actual reset/build/seed/PM2 process path and
+both user creation flows completed; it is not a mocked API test.
