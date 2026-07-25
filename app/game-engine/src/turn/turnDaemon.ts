@@ -48,6 +48,7 @@ import {
 import { createRaiseDisasterHandler } from './monthlyDisasterAction.js';
 import { createUpdateCitySupplyHandler } from './monthlyCitySupplyAction.js';
 import { createUpdateNationLevelHandler } from './monthlyNationLevelAction.js';
+import { createProcessSemiAnnualHandler } from './monthlySemiAnnualAction.js';
 import { DatabaseTurnDaemonLease, TurnDaemonLeaseUnavailableError } from '../lifecycle/databaseTurnDaemonLease.js';
 
 export interface TurnDaemonRuntimeOptions {
@@ -199,6 +200,13 @@ const createTurnDaemonRuntimeWithLease = async (
         createUpdateCitySupplyHandler({
             getWorld: () => worldRef,
             map: snapshot.map,
+        })
+    );
+    eventActions.set(
+        'ProcessSemiAnnual',
+        createProcessSemiAnnualHandler({
+            getWorld: () => worldRef,
+            nationTraits: nationTraitMap,
         })
     );
     if (reservedTurnStoreHandle) {
