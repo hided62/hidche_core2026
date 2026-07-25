@@ -162,3 +162,5 @@ docker-compose.override.yml
 .turbo/
 *_errors.txt
 docs/image-storage.md
+playwright-report/
+test-results/

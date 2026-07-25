@@ -16,6 +16,7 @@ export interface TurnEngineWorldStateRow {
 
 export interface TurnEngineGeneralRow {
     id: number;
+    userId: string | null;
     name: string;
     nationId: number;
     cityId: number;
@@ -43,7 +44,11 @@ export interface TurnEngineGeneralRow {
     age: number;
     npcState: number;
     lastTurn: JsonValue;
+    bornYear: number;
+    deadYear: number;
+    affinity: number | null;
     meta: JsonValue;
+    penalty: JsonValue;
     turnTime: Date;
     recentWarTime: Date | null;
 }
@@ -142,6 +147,7 @@ export interface TurnEngineWorldStateCreateInput {
 }
 
 export interface TurnEngineGeneralUpdateInput {
+    userId: string | null;
     name: string;
     nationId: number;
     cityId: number;
@@ -268,6 +274,7 @@ export interface TurnEngineNationUpdateInput {
     name: string;
     color: string;
     capitalCityId: number | null;
+    chiefGeneralId: number | null;
     gold: number;
     rice: number;
     level: number;

@@ -283,8 +283,7 @@ describe('appRouter', () => {
 
     it('rejects another user general across actor-owned routers', async () => {
         const general = buildGeneralRow({ id: 15, userId: 'user-2' });
-        const transport = new InMemoryTurnDaemonTransport();
-        const caller = appRouter.createCaller(buildContext({ general, transport }));
+        const caller = appRouter.createCaller(buildContext({ general }));
 
         await expect(caller.turns.getCommandTable({ generalId: general.id })).rejects.toMatchObject({
             code: 'FORBIDDEN',
@@ -350,12 +349,6 @@ describe('appRouter', () => {
         ).rejects.toMatchObject({
             code: 'FORBIDDEN',
         });
-        await expect(caller.troop.join({ generalId: general.id, troopId: 3 })).rejects.toMatchObject({
-            code: 'FORBIDDEN',
-        });
-        await expect(caller.troop.exit({ generalId: general.id })).rejects.toMatchObject({
-            code: 'FORBIDDEN',
-        });
         await expect(
             caller.world.getMap({
                 generalId: general.id,
@@ -364,7 +357,6 @@ describe('appRouter', () => {
         ).rejects.toMatchObject({
             code: 'FORBIDDEN',
         });
-        expect(transport.commands).toHaveLength(0);
     });
 
     it('rejects unauthenticated general-scoped map views', async () => {

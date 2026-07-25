@@ -28,6 +28,7 @@ import type { InMemoryTurnWorld } from './inMemoryWorld.js';
 import type { InMemoryReservedTurnStore } from './reservedTurnStore.js';
 import { buildDiplomacyMeta } from '@sammo-ts/logic';
 import { ensureItemInventory, withSerializedItemInventory } from '@sammo-ts/logic/items/index.js';
+import { persistGeneralLifecycleEvents } from './generalTurnLifecyclePersistence.js';
 
 export interface DatabaseTurnHooks {
     hooks: TurnDaemonHooks;
@@ -119,6 +120,7 @@ const buildRankRows = (
 const buildGeneralUpdate = (
     general: ReturnType<InMemoryTurnWorld['consumeDirtyState']>['generals'][number]
 ): TurnEngineGeneralUpdateInput => ({
+    userId: general.userId ?? null,
     name: general.name,
     nationId: general.nationId,
     cityId: general.cityId,
@@ -239,6 +241,7 @@ const buildNationUpdate = (
     name: nation.name,
     color: nation.color,
     capitalCityId: nation.capitalCityId,
+    chiefGeneralId: nation.chiefGeneralId,
     gold: nation.gold,
     rice: nation.rice,
     level: nation.level,
@@ -340,6 +343,7 @@ export const createDatabaseTurnHooks = async (
             createdTroops,
             createdDiplomacy,
             deletedEvents,
+            lifecycleEvents,
         } = changes;
         const reservedTurnChanges = options?.reservedTurns?.peekDirtyState();
 
@@ -358,6 +362,12 @@ export const createDatabaseTurnHooks = async (
             const meta = asRecord(state.meta);
             const serverId =
                 typeof meta.serverId === 'string' && meta.serverId.trim() ? meta.serverId.trim() : 'default';
+            await persistGeneralLifecycleEvents(
+                prisma,
+                lifecycleEvents,
+                meta,
+                asRecord(world.getScenarioConfig().const)
+            );
 
             if (deletedNationSnapshots.length > 0) {
                 const nationIds = deletedNationSnapshots.map((snapshot) => snapshot.nation.id);
@@ -470,6 +480,9 @@ export const createDatabaseTurnHooks = async (
             }
 
             if (deletedGenerals.length > 0) {
+                await prisma.generalTurn.deleteMany({
+                    where: { generalId: { in: deletedGenerals } },
+                });
                 await prisma.general.deleteMany({
                     where: { id: { in: deletedGenerals } },
                 });
