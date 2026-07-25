@@ -46,8 +46,8 @@ const createGeneral = async (
     await login(page, account.username, await readPassword(account.password));
 
     const row = hweRow(page);
-    await expect(row).toContainText('RUNNING');
     await expect(row.getByRole('button', { name: '장수생성' })).toBeVisible();
+    await expect(row.getByRole('button', { name: '장수생성' })).toBeEnabled();
     await enterHwe(page);
 
     await expect(page).toHaveURL(/\/hwe\/join$/);
@@ -102,7 +102,7 @@ test('admin resets and opens hwe, then two users create generals and reach main'
 
     await page.getByRole('link', { name: '삼국지 모의전투 HiDCHe' }).click();
     await expect(page).toHaveURL(/\/gateway\/lobby$/);
-    await expect(hweRow(page)).toContainText('RUNNING');
+    await expect(hweRow(page).getByRole('button', { name: '장수생성' })).toBeEnabled();
     await enterHwe(page);
     await expect(page).toHaveURL(/\/hwe\/$/);
     await expect(page.getByRole('heading', { name: '전장 현황' })).toBeVisible();
