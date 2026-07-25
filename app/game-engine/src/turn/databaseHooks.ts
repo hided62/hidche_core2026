@@ -384,6 +384,7 @@ export const createDatabaseTurnHooks = async (
             deletedEvents,
             lifecycleEvents,
             pendingNeutralAuctions,
+            inheritancePointAdjustments,
         } = changes;
         const reservedTurnChanges = options?.reservedTurns?.peekDirtyState();
 
@@ -434,6 +435,26 @@ export const createDatabaseTurnHooks = async (
                 meta,
                 asRecord(world.getScenarioConfig().const)
             );
+
+            if (inheritancePointAdjustments.length > 0) {
+                const grouped = new Map<string, { userId: string; key: string; amount: number }>();
+                for (const entry of inheritancePointAdjustments) {
+                    const groupKey = `${entry.userId}\u0000${entry.key}`;
+                    const current = grouped.get(groupKey);
+                    if (current) {
+                        current.amount += entry.amount;
+                    } else {
+                        grouped.set(groupKey, { ...entry });
+                    }
+                }
+                for (const entry of grouped.values()) {
+                    await prisma.inheritancePoint.upsert({
+                        where: { userId_key: { userId: entry.userId, key: entry.key } },
+                        update: { value: { increment: entry.amount } },
+                        create: { userId: entry.userId, key: entry.key, value: entry.amount },
+                    });
+                }
+            }
 
             if (deletedNationSnapshots.length > 0) {
                 const nationIds = deletedNationSnapshots.map((snapshot) => snapshot.nation.id);

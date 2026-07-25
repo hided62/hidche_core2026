@@ -110,6 +110,7 @@ export interface TurnWorldChanges {
     deletedEvents: number[];
     lifecycleEvents: GeneralLifecycleEvent[];
     pendingNeutralAuctions: PendingNeutralAuction[];
+    inheritancePointAdjustments: Array<{ userId: string; key: string; amount: number }>;
 }
 
 const compareTurnOrder = (left: TurnGeneral, right: TurnGeneral): number => {
@@ -279,6 +280,7 @@ export class InMemoryTurnWorld {
     private readonly messages: MessageDraft[] = [];
     private readonly lifecycleEvents: GeneralLifecycleEvent[] = [];
     private readonly pendingNeutralAuctions: PendingNeutralAuction[] = [];
+    private readonly inheritancePointAdjustments: Array<{ userId: string; key: string; amount: number }> = [];
     private readonly scenarioConfig: ScenarioConfig;
     private checkpoint?: TurnCheckpoint;
     private state: TurnWorldState;
@@ -346,6 +348,13 @@ export class InMemoryTurnWorld {
             detail: { ...auction.detail },
             closeAt: new Date(auction.closeAt.getTime()),
         });
+    }
+
+    queueInheritancePointAdjustment(userId: string, key: string, amount: number): void {
+        if (!userId || !Number.isFinite(amount) || amount === 0) {
+            return;
+        }
+        this.inheritancePointAdjustments.push({ userId, key, amount });
     }
 
     getScenarioConfig(): ScenarioConfig {
@@ -840,6 +849,7 @@ export class InMemoryTurnWorld {
             detail: { ...auction.detail },
             closeAt: new Date(auction.closeAt.getTime()),
         }));
+        const inheritancePointAdjustments = this.inheritancePointAdjustments.map((entry) => ({ ...entry }));
 
         return {
             generals,
@@ -860,6 +870,7 @@ export class InMemoryTurnWorld {
             deletedEvents,
             lifecycleEvents,
             pendingNeutralAuctions,
+            inheritancePointAdjustments,
         };
     }
 
@@ -886,6 +897,7 @@ export class InMemoryTurnWorld {
         this.messages.splice(0, changes.messages.length);
         this.lifecycleEvents.splice(0, changes.lifecycleEvents.length);
         this.pendingNeutralAuctions.splice(0, changes.pendingNeutralAuctions.length);
+        this.inheritancePointAdjustments.splice(0, changes.inheritancePointAdjustments.length);
     }
 
     consumeDirtyState(): TurnWorldChanges {

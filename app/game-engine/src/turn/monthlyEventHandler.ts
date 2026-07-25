@@ -16,7 +16,7 @@ export type MonthlyEventActionHandler = (
     args: readonly unknown[],
     environment: MonthlyEventEnvironment,
     event: TurnEvent
-) => void;
+) => void | Promise<void>;
 
 export type MonthlyEventActionRegistry = ReadonlyMap<string, MonthlyEventActionHandler>;
 
@@ -180,7 +180,7 @@ export const createMonthlyEventHandler = (options: {
     startYear: number;
     actions?: MonthlyEventActionRegistry;
 }): TurnCalendarHandler => {
-    const dispatch = (targetCode: 'pre_month' | 'month', context: TurnCalendarContext): void => {
+    const dispatch = async (targetCode: 'pre_month' | 'month', context: TurnCalendarContext): Promise<void> => {
         const world = options.getWorld();
         if (!world) {
             return;
@@ -209,7 +209,7 @@ export const createMonthlyEventHandler = (options: {
                 if (!handler) {
                     throw new Error(`Unsupported monthly event action: ${action.name} (eventId=${event.id})`);
                 }
-                handler(action.args, environment, event);
+                await handler(action.args, environment, event);
             }
         }
     };
