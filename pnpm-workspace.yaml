@@ -1,11 +1,20 @@
 packages:
-    - packages/*
-    - app/*
-    - tools/*
+  - packages/*
+  - app/*
+  - tools/*
+
+allowBuilds:
+  '@prisma/engines': true
+  esbuild: true
+  prisma: true
+  sharp: true
+
+minimumReleaseAgeExclude:
+  - eslint@10.8.0
 
 onlyBuiltDependencies:
-    - '@prisma/client'
-    - '@prisma/engines'
-    - esbuild
-    - prisma
-    - vue-demi
+  - '@prisma/client'
+  - '@prisma/engines'
+  - esbuild
+  - prisma
+  - vue-demi
