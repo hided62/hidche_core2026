@@ -135,4 +135,60 @@ describe('neutral auction monthly registrar', () => {
         ]);
         await registrar.close();
     });
+
+    it('continues after the legacy tournament roll and matches the tail-order fixture', async () => {
+        const worldRef: { current: InMemoryTurnWorld | null } = { current: null };
+        const now = new Date('2026-07-25T12:00:00.000Z');
+        const registrar = await createNeutralAuctionRegistrar({
+            databaseUrl: 'unused://test',
+            profileName: 'test',
+            getWorld: () => worldRef.current,
+            getRedisClient: () => null,
+            getWorldConfig: () => ({ tournamentTrig: true }),
+            getNationPowerRollCount: () => 2,
+            getTournamentRollConsumed: () => true,
+            now: () => now,
+            loadNeutralAuctionCounts: async () => [],
+        });
+        const snapshot = buildSnapshot();
+        snapshot.nations = snapshot.nations.slice(0, 2);
+        snapshot.generals = [buildGeneral(1, 0, 5_000, 7_000), buildGeneral(2, 0, 6_000, 8_000)];
+        const state: TurnWorldState = {
+            id: 1,
+            currentYear: 193,
+            currentMonth: 1,
+            tickSeconds: 600,
+            lastTurnTime: new Date('2026-07-25T00:00:00.000Z'),
+            meta: { hiddenSeed: 'monthly-post-tail-2' },
+        };
+        const world = new InMemoryTurnWorld(state, snapshot, {
+            schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+            calendarHandler: registrar.handler,
+        });
+        worldRef.current = world;
+
+        await world.advanceMonth(new Date('2026-07-25T00:10:00.000Z'));
+
+        expect(world.peekDirtyState().pendingNeutralAuctions).toEqual([
+            expect.objectContaining({
+                type: 'BUY_RICE',
+                targetCode: '380',
+                detail: expect.objectContaining({
+                    amount: 380,
+                    startBidAmount: 300,
+                    finishBidAmount: 750,
+                }),
+            }),
+            expect.objectContaining({
+                type: 'SELL_RICE',
+                targetCode: '830',
+                detail: expect.objectContaining({
+                    amount: 830,
+                    startBidAmount: 990,
+                    finishBidAmount: 1_650,
+                }),
+            }),
+        ]);
+        await registrar.close();
+    });
 });

@@ -456,8 +456,13 @@ const createTurnDaemonRuntimeWithLease = async (
         startYear: snapshot.scenarioMeta?.startYear ?? state.currentYear,
         commandEnv: monthlyCommandEnv,
     });
+    let monthlyNationPowerRollCount = snapshot.nations.length;
+    let monthlyTournamentRollConsumed = false;
     const monthlyNationStatsHandler = createMonthlyNationStatsHandler({
         getWorld: () => worldRef,
+        onNationPowerRollCount: (count) => {
+            monthlyNationPowerRollCount = count;
+        },
     });
     const monthlyDiplomacyHandler = createMonthlyDiplomacyHandler({
         getWorld: () => worldRef,
@@ -483,12 +488,18 @@ const createTurnDaemonRuntimeWithLease = async (
         getWorld: () => worldRef,
         getRedisClient: () => redisConnector?.client,
         getWorldConfig: () => snapshot.worldConfig ?? null,
+        getNationPowerRollCount: () => monthlyNationPowerRollCount,
+        getTournamentRollConsumed: () => monthlyTournamentRollConsumed,
     });
     const tournamentAutoStartHandler = createTournamentAutoStartHandler({
         profileName: options.profileName ?? options.profile,
+        getWorld: () => worldRef,
         getRedisClient: () => redisConnector?.client,
         getWorldConfig: () => snapshot.worldConfig ?? null,
-        getTickSeconds: () => worldRef?.getState().tickSeconds ?? null,
+        getNationPowerRollCount: () => monthlyNationPowerRollCount,
+        onTournamentRollConsumed: (consumed) => {
+            monthlyTournamentRollConsumed = consumed;
+        },
     });
     const yearbookHandler = createYearbookHandler({
         databaseUrl: options.databaseUrl,
@@ -497,6 +508,7 @@ const createTurnDaemonRuntimeWithLease = async (
     });
     const calendarHandler = composeCalendarHandlers(
         monthlyEventHandler,
+        hasEventAction('ProcessIncome') ? null : incomeHandler,
         yearbookHandler.handler,
         monthlyBoundaryPreHandler,
         nationTurnMonthlyHandler,
@@ -506,10 +518,9 @@ const createTurnDaemonRuntimeWithLease = async (
         monthlyWanderHandler,
         monthlyNationCountHandler,
         options.calendarHandler ?? unification?.handler,
-        hasEventAction('ProcessIncome') ? null : incomeHandler,
-        frontStateHandler,
+        tournamentAutoStartHandler,
         neutralAuctionRegistrar.handler,
-        tournamentAutoStartHandler
+        frontStateHandler
     );
     const worldOptions: InMemoryTurnWorldOptions = {
         schedule,

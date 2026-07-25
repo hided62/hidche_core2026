@@ -71,6 +71,8 @@ export const createNeutralAuctionRegistrar = async (options: {
     now?: () => Date;
     loadNeutralAuctionCounts?: () => Promise<NeutralAuctionCountRow[]>;
     loadTournamentActive?: () => Promise<boolean>;
+    getNationPowerRollCount?: () => number;
+    getTournamentRollConsumed?: () => boolean;
 }): Promise<NeutralAuctionRegistrar> => {
     const connector = options.loadNeutralAuctionCounts
         ? null
@@ -108,15 +110,16 @@ export const createNeutralAuctionRegistrar = async (options: {
             }
             const worldConfig = asRecord(options.getWorldConfig() ?? {});
             const consumeTournamentRoll =
-                worldConfig.tournamentTrig === true &&
-                !(await (options.loadTournamentActive
-                    ? options.loadTournamentActive()
-                    : isTournamentActive(options.profileName, options.getRedisClient())));
+                options.getTournamentRollConsumed?.() ??
+                (worldConfig.tournamentTrig === true &&
+                    !(await (options.loadTournamentActive
+                        ? options.loadTournamentActive()
+                        : isTournamentActive(options.profileName, options.getRedisClient()))));
             const plans = buildNeutralResourceAuctionPlan({
                 hiddenSeed,
                 seedYear: context.previousYear,
                 seedMonth: context.previousMonth,
-                nationCount: world.listNations().length,
+                nationCount: options.getNationPowerRollCount?.() ?? world.listNations().length,
                 consumeTournamentRoll,
                 averageGold: average(eligibleGenerals.map((general) => general.gold)),
                 averageRice: average(eligibleGenerals.map((general) => general.rice)),
