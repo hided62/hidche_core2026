@@ -32,7 +32,7 @@ export const createProcessIncomeActionHandler = (incomeHandler: IncomeHandler): 
 export const createNoticeToHistoryLogHandler = (options: {
     getWorld: () => InMemoryTurnWorld | null;
 }): MonthlyEventActionHandler => {
-    return (args) => {
+    return (args, environment) => {
         const text = args[0];
         if (typeof text !== 'string') {
             throw new Error('NoticeToHistoryLog message must be a string.');
@@ -46,6 +46,8 @@ export const createNoticeToHistoryLogHandler = (options: {
             category: LogCategory.HISTORY,
             text,
             format: parseLogFormat(args[1]),
+            year: environment.year,
+            month: environment.month,
         });
     };
 };

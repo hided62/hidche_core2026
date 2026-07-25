@@ -186,6 +186,8 @@ describe('core monthly event actions at the real month boundary', () => {
                 category: LogCategory.HISTORY,
                 text: '<S>새해 알림</>',
                 format: LogFormat.EVENT_YEAR_MONTH,
+                year: 191,
+                month: 1,
             },
             {
                 scope: LogScope.SYSTEM,
