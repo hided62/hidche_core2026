@@ -5,6 +5,7 @@ import type { City, Nation } from '@sammo-ts/logic';
 import { createDatabaseTurnHooks } from '../src/turn/databaseHooks.js';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import { createRaiseInvaderHandler } from '../src/turn/monthlyInvaderAction.js';
+import { createMonthlyEventHandler } from '../src/turn/monthlyEventHandler.js';
 import { InMemoryReservedTurnStore } from '../src/turn/reservedTurnStore.js';
 import { buildCommandEnv } from '../src/turn/reservedTurnCommands.js';
 import type { TurnEvent, TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
@@ -234,8 +235,8 @@ integration('RaiseInvader database persistence', () => {
         const stateRow = await db.worldState.create({
             data: {
                 scenarioCode: 'monthly-invader-persistence',
-                currentYear: 200,
-                currentMonth: 1,
+                currentYear: 199,
+                currentMonth: 12,
                 tickSeconds: 600,
                 config: {},
                 meta: {
@@ -248,8 +249,8 @@ integration('RaiseInvader database persistence', () => {
         });
         const state: TurnWorldState = {
             id: stateRow.id,
-            currentYear: 200,
-            currentMonth: 1,
+            currentYear: 199,
+            currentMonth: 12,
             tickSeconds: 600,
             lastTurnTime: new Date('0200-01-01T00:00:00.000Z'),
             meta: {
@@ -276,30 +277,26 @@ integration('RaiseInvader database persistence', () => {
             events: [sourceEvent],
             initialEvents: [],
         };
-        const world = new InMemoryTurnWorld(state, snapshot, {
-            schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
-        });
         const reservedTurns = new InMemoryReservedTurnStore(db, { maxGeneralTurns: 30, maxNationTurns: 12 });
+        let world: InMemoryTurnWorld | null = null;
         const handler = createRaiseInvaderHandler({
             getWorld: () => world,
             reservedTurns,
             env: buildCommandEnv(snapshot.scenarioConfig),
             loadArchivedNationMaxId: async () => 0,
         });
+        world = new InMemoryTurnWorld(state, snapshot, {
+            schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+            calendarHandler: createMonthlyEventHandler({
+                getWorld: () => world,
+                startYear: 190,
+                actions: new Map([['RaiseInvader', handler]]),
+            }),
+        });
         const dbHooks = await createDatabaseTurnHooks(databaseUrl!, world, { reservedTurns });
 
         try {
-            await handler(
-                [10, 150, 100, 20],
-                {
-                    year: 200,
-                    month: 1,
-                    startyear: 190,
-                    currentEventID: sourceEventId,
-                    turnTime: state.lastTurnTime,
-                },
-                sourceEvent
-            );
+            await world.advanceMonth(new Date('0200-01-01T00:00:00.000Z'));
             await dbHooks.hooks.flushChanges?.({
                 lastTurnTime: state.lastTurnTime.toISOString(),
                 processedGenerals: 0,
