@@ -175,7 +175,7 @@ const sortedCities = computed(() => {
             case 9:
                 return rhs.wall - lhs.wall;
             case 10:
-                return rhs.trade - lhs.trade;
+                return (rhs.trade ?? -1) - (lhs.trade ?? -1);
             case 11: {
                 const regionCmp = lhs.region - rhs.region;
                 if (regionCmp !== 0) {
@@ -307,7 +307,7 @@ onMounted(() => {
                                 {{ regionMap[city.region] ?? '미지' }} · {{ cityLevelMap[city.level] ?? '-' }} 규모
                             </div>
                         </div>
-                        <div class="city-meta">시세 {{ city.trade }}%</div>
+                        <div class="city-meta">시세 {{ city.trade === null ? '- ' : city.trade }}%</div>
                     </div>
 
                     <div class="city-stats">
