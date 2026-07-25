@@ -61,15 +61,10 @@ import {
 } from './monthlyInvaderAction.js';
 import { createChangeCityHandler } from './monthlyChangeCityAction.js';
 import { createProvideNpcTroopLeaderHandler } from './monthlyProvideNpcTroopLeaderAction.js';
-import {
-    createFinishNationBettingHandler,
-    createOpenNationBettingHandler,
-} from './monthlyNationBettingAction.js';
+import { createFinishNationBettingHandler, createOpenNationBettingHandler } from './monthlyNationBettingAction.js';
 import { createScoutBlockHandler } from './monthlyScoutBlockAction.js';
-import {
-    createAddGlobalBetrayHandler,
-    createAssignGeneralSpecialityHandler,
-} from './monthlySpecialityBetrayAction.js';
+import { createAddGlobalBetrayHandler, createAssignGeneralSpecialityHandler } from './monthlySpecialityBetrayAction.js';
+import { createLostUniqueItemHandler, createMergeInheritPointRankHandler } from './monthlyUniqueInheritAction.js';
 import { buildCommandEnv } from './reservedTurnCommands.js';
 import { DatabaseTurnDaemonLease, TurnDaemonLeaseUnavailableError } from '../lifecycle/databaseTurnDaemonLease.js';
 
@@ -371,6 +366,19 @@ const createTurnDaemonRuntimeWithLease = async (
     eventActions.set(
         'AddGlobalBetray',
         createAddGlobalBetrayHandler({
+            getWorld: () => worldRef,
+        })
+    );
+    eventActions.set(
+        'LostUniqueItem',
+        createLostUniqueItemHandler({
+            getWorld: () => worldRef,
+            itemModules: monthlyActionModules.itemModules,
+        })
+    );
+    eventActions.set(
+        'MergeInheritPointRank',
+        createMergeInheritPointRankHandler({
             getWorld: () => worldRef,
         })
     );
