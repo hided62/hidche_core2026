@@ -154,6 +154,10 @@ export const ensureItemInventory = <TriggerState extends GeneralTriggerState>(
     return general.itemInventory;
 };
 
+export const readItemInventory = <TriggerState extends GeneralTriggerState>(
+    general: General<TriggerState>
+): GeneralItemInventory => general.itemInventory ?? createItemInventoryFromSlots(general.role.items);
+
 export const projectItemSlots = (inventory: GeneralItemInventory): GeneralItemSlots => {
     const slots: GeneralItemSlots = { horse: null, weapon: null, book: null, item: null };
     for (const slot of ITEM_SLOTS) {
@@ -167,7 +171,7 @@ export const getEquippedItemInstance = <TriggerState extends GeneralTriggerState
     general: General<TriggerState>,
     slot: GeneralItemSlot
 ): GeneralItemInstance | null => {
-    const inventory = ensureItemInventory(general);
+    const inventory = readItemInventory(general);
     const instanceId = inventory.equipped[slot];
     return instanceId ? (inventory.instances[instanceId] ?? null) : null;
 };
@@ -220,7 +224,9 @@ export const consumeEquippedItemCharge = <TriggerState extends GeneralTriggerSta
     itemKey: string,
     fallbackCharges = 1
 ): boolean => {
-    const instance = getEquippedItemInstance(general, slot);
+    const inventory = ensureItemInventory(general);
+    const instanceId = inventory.equipped[slot];
+    const instance = instanceId ? inventory.instances[instanceId] : undefined;
     if (!instance || instance.itemKey !== itemKey) {
         return false;
     }

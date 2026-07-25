@@ -11,6 +11,13 @@ import type { WarEngineConfig } from '../src/war/types.js';
 import { WarCrewType } from '../src/war/crewType.js';
 import { loadWarTriggerModules } from '../src/war/triggers/index.js';
 import { WarUnitCity, WarUnitGeneral } from '../src/war/units.js';
+import {
+    createItemActionModules,
+    createItemModuleRegistry,
+    equipNewItem,
+    getEquippedItemInstance,
+    loadItemModules,
+} from '../src/items/index.js';
 
 const buildConfig = (): WarEngineConfig => ({
     armPerPhase: 500,
@@ -209,6 +216,71 @@ describe('war triggers', () => {
 });
 
 describe('resolveWarBattle', () => {
+    it('persists multi-use battle item charges and removes the last charge', async () => {
+        const general = buildGeneral(100);
+        equipNewItem(general, 'item', 'event_충차', { charges: 2 });
+        const itemModules = createItemActionModules(
+            createItemModuleRegistry(await loadItemModules(['event_충차']))
+        ).war;
+
+        for (const expectedCharges of [1, null] as const) {
+            general.crew = 5000;
+            general.rice = 10000;
+            const defenderCity = { ...buildCity(), wall: 3000, wallMax: 3000 };
+            resolveWarBattle({
+                rng: new RandUtil(new ConstantRNG(0)),
+                unitSet: buildUnitSet(),
+                config: buildConfig(),
+                time: { year: 200, month: 1, startYear: 180 },
+                attacker: {
+                    general,
+                    city: buildCity(),
+                    nation: buildNation(),
+                    modules: itemModules,
+                },
+                defenders: [],
+                defenderCity,
+                defenderNation: buildNation(),
+            });
+
+            const equipped = getEquippedItemInstance(general, 'item');
+            if (expectedCharges === null) {
+                expect(equipped).toBeNull();
+                expect(general.role.items.item).toBeNull();
+            } else {
+                expect(equipped?.state.charges).toBe(expectedCharges);
+                expect(general.role.items.item).toBe('event_충차');
+            }
+        }
+    });
+
+    it('removes a one-use battle item through the canonical inventory', async () => {
+        const general = buildGeneral(100);
+        equipNewItem(general, 'item', 'che_저격_수극');
+        const itemModules = createItemActionModules(
+            createItemModuleRegistry(await loadItemModules(['che_저격_수극']))
+        ).war;
+
+        resolveWarBattle({
+            rng: new RandUtil(new ConstantRNG(0)),
+            unitSet: buildUnitSet(),
+            config: buildConfig(),
+            time: { year: 200, month: 1, startYear: 180 },
+            attacker: {
+                general,
+                city: buildCity(),
+                nation: buildNation(),
+                modules: itemModules,
+            },
+            defenders: [],
+            defenderCity: buildCity(),
+            defenderNation: buildNation(),
+        });
+
+        expect(getEquippedItemInstance(general, 'item')).toBeNull();
+        expect(general.role.items.item).toBeNull();
+    });
+
     it('handles supply rout when defender nation has no rice', () => {
         const rng = new RandUtil(new ConstantRNG(0));
         const config = buildConfig();

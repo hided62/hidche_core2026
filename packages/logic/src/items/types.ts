@@ -17,6 +17,13 @@ import type { WarUnit } from '@sammo-ts/logic/war/units.js';
 
 export type ItemSlot = 'horse' | 'weapon' | 'book' | 'item';
 
+export interface ItemActionConsumptionRule {
+    actionType: TriggerActionType;
+    phase?: TriggerActionPhase | null;
+    command?: string;
+    successOnly?: boolean;
+}
+
 export interface ItemModule<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     key: string;
     name: string;
@@ -27,6 +34,7 @@ export interface ItemModule<TriggerState extends GeneralTriggerState = GeneralTr
     buyable: boolean;
     consumable: boolean;
     initialCharges?: number;
+    consumeOn?: ItemActionConsumptionRule[];
     reqSecu: number;
     unique: boolean;
 

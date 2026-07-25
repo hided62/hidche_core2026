@@ -36,6 +36,7 @@ import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/action
 import type { GeneralTurnCommandSpec } from './index.js';
 import { clamp } from 'es-toolkit';
 import { parseArgsWithSchema } from '../parseArgs.js';
+import { consumeSuccessfulStrategyItem } from './strategyItemConsumption.js';
 
 export interface FireAttackEnvironment {
     develCost: number;
@@ -251,9 +252,11 @@ export class ActionResolver<
 > implements GeneralActionResolver<TriggerState, FireAttackArgs> {
     readonly key = 'che_화계';
     private readonly command: CommandResolver<TriggerState>;
+    private readonly pipeline: GeneralActionPipeline<TriggerState>;
 
     constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>, env: FireAttackEnvironment) {
         this.command = new CommandResolver(modules, env);
+        this.pipeline = new GeneralActionPipeline(modules);
     }
 
     resolve(
@@ -334,7 +337,7 @@ export class ActionResolver<
         context.addLog(
             `<G><b>${context.destCity.name}</b></>에 ${commandName}${JosaUtil.pick(commandName, '이')} 성공했습니다.`,
             {
-            format: LogFormat.MONTH,
+                format: LogFormat.MONTH,
             }
         );
         context.addLog(
@@ -345,7 +348,9 @@ export class ActionResolver<
         );
 
         const itemCode = general.role.items.item;
-        if (typeof itemCode === 'string' && itemCode.length > 0) {
+        const actionResult = consumeSuccessfulStrategyItem(this.pipeline, context);
+        const consumedItems = Array.isArray(actionResult?.['consumedItems']) ? actionResult['consumedItems'] : [];
+        if (typeof itemCode === 'string' && consumedItems.includes(itemCode)) {
             context.addLog(`<C>${itemCode}</>${JosaUtil.pick(itemCode, '을')} 사용!`, {
                 format: LogFormat.PLAIN,
             });
@@ -383,13 +388,7 @@ export class ActionDefinition<
 
     buildMinConstraints(_ctx: ConstraintContext, _args: FireAttackArgs): Constraint[] {
         const { gold, rice } = this.command.getCost();
-        return [
-            notBeNeutral(),
-            occupiedCity(),
-            suppliedCity(),
-            reqGeneralGold(() => gold),
-            reqGeneralRice(() => rice),
-        ];
+        return [notBeNeutral(), occupiedCity(), suppliedCity(), reqGeneralGold(() => gold), reqGeneralRice(() => rice)];
     }
 
     buildConstraints(_ctx: ConstraintContext, _args: FireAttackArgs): Constraint[] {

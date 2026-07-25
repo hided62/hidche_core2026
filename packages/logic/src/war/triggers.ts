@@ -1,7 +1,9 @@
 import type { RandUtil } from '@sammo-ts/common';
 
+import type { General } from '@sammo-ts/logic/domain/entities.js';
 import { TriggerCaller, type Trigger } from '@sammo-ts/logic/triggers/core.js';
 import type { WarUnit } from './units.js';
+import { removeEquippedItem } from '@sammo-ts/logic/items/inventory.js';
 
 export interface WarTriggerContext {
     rng: RandUtil;
@@ -87,11 +89,28 @@ export abstract class BaseWarUnitTrigger implements WarTrigger {
         opposeEnv: Record<string, unknown>
     ): boolean;
 
-    // 아이템 소모 트리거는 아직 미구현. 필요 시 raiseType을 활용해 확장 가능하다.
     public processConsumableItem(): boolean {
         if (!(this.raiseType & BaseWarUnitTrigger.TYPE_ITEM)) {
             return false;
         }
-        return false;
+        if (this.unit.hasActivatedSkill('아이템사용')) {
+            return false;
+        }
+        this.unit.activateSkill('아이템사용');
+        if (this.raiseType !== BaseWarUnitTrigger.TYPE_CONSUMABLE_ITEM) {
+            return false;
+        }
+        if (this.unit.hasActivatedSkill('아이템소모')) {
+            return false;
+        }
+        const unit = this.unit as WarUnit & {
+            getGeneral?: () => General;
+        };
+        const general = unit.getGeneral?.();
+        if (!general) {
+            return false;
+        }
+        this.unit.activateSkill('아이템소모');
+        return removeEquippedItem(general, 'item') !== null;
     }
 }

@@ -12,9 +12,9 @@ const baseModule = createStatItemModule({
     slot: 'book',
     statName: 'intelligence',
     statValue: STAT_VALUE,
-    cost: 9000,
+    cost: 21000,
     buyable: true,
-    reqSecu: 4000,
+    reqSecu: 6000,
     extraInfo: '[전투] 계략 시도 확률 +3%p',
 });
 

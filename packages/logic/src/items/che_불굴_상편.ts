@@ -1,5 +1,7 @@
 import { clamp } from '@sammo-ts/logic/war/utils.js';
 import { WarUnitGeneral } from '@sammo-ts/logic/war/units.js';
+import { WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
+import { 전투력보정 } from '@sammo-ts/logic/war/triggers/전투력보정.js';
 import type { ItemModule } from './types.js';
 
 const ITEM_KEY = 'che_불굴_상편';
@@ -15,14 +17,15 @@ export const itemModule: ItemModule = {
     consumable: false,
     reqSecu: 0,
     unique: false,
-    getWarPowerMultiplier: (_context, unit, _oppose) => {
+    getBattlePhaseTriggerList: (context) => {
+        const unit = context.unit;
         if (!(unit instanceof WarUnitGeneral)) {
-            return [1, 1];
+            return null;
         }
         const general = unit.getGeneral();
         const leadership = general.stats.leadership;
         const crew = general.crew;
         const crewRatio = clamp(crew / (leadership * 100), 0, 1);
-        return [1 + 0.6 * (1 - crewRatio), 1];
+        return new WarTriggerCaller(new 전투력보정(unit, 1 + 0.6 * (1 - crewRatio)));
     },
 };

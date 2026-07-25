@@ -15,12 +15,7 @@ export const itemModule: ItemModule = {
     unique: false,
     getWarPowerMultiplier: (_context, _unit, oppose) => {
         const opposeCrewType = oppose.getCrewType();
-        // In Sammo, region/city units usually have reqCities or reqRegions in crewType.
-        // We'll check if those properties exist and have at least one element.
-        if (
-            (opposeCrewType.reqCities && opposeCrewType.reqCities.length > 0) ||
-            (opposeCrewType.reqRegions && opposeCrewType.reqRegions.length > 0)
-        ) {
+        if (opposeCrewType.reqCities() || opposeCrewType.reqRegions()) {
             return [1.15, 0.85];
         }
         return [1, 1];

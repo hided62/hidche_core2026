@@ -1,4 +1,4 @@
-export type TriggerActionType = '장비매매';
+export type TriggerActionType = '장비매매' | 'GeneralCommand';
 
 export type TriggerActionPhase = '판매' | '구매';
 

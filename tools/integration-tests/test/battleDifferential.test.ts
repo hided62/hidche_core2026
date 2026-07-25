@@ -3,7 +3,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { LiteHashDRBG, RandUtil, type RNG } from '@sammo-ts/common';
-import type { UnitSetDefinition, WarBattleTraceEvent, WarEngineConfig } from '@sammo-ts/logic';
+import {
+    ITEM_KEYS,
+    loadItemModules,
+    type UnitSetDefinition,
+    type WarBattleTraceEvent,
+    type WarEngineConfig,
+} from '@sammo-ts/logic';
 import { describe, expect, it } from 'vitest';
 
 import { processBattleSimJob } from '../../../app/game-api/src/battleSim/processor.js';
@@ -21,6 +27,16 @@ interface RandomCall {
     operation: string;
     arguments: Record<string, unknown>;
     result: unknown;
+}
+
+interface ReferenceItemMetadata {
+    rawName: string;
+    name: string;
+    info: string;
+    cost: number | null;
+    buyable: boolean;
+    consumable: boolean;
+    reqSecu: number;
 }
 
 class TracingRng implements RNG {
@@ -83,15 +99,7 @@ const readJson = <T>(filePath: string): T => JSON.parse(fs.readFileSync(filePath
 const runReferenceTrace = (workspaceRoot: string, fixtureJson: string): ReferenceTrace => {
     const stdout = execFileSync(
         'docker',
-        [
-            'compose',
-            'exec',
-            '-T',
-            'php',
-            'php',
-            '/var/www/html/hwe/compare/battle_trace.php',
-            '-',
-        ],
+        ['compose', 'exec', '-T', 'php', 'php', '/var/www/html/hwe/compare/battle_trace.php', '-'],
         {
             cwd: path.join(workspaceRoot, 'docker_compose_files/reference'),
             input: fixtureJson,
@@ -100,6 +108,20 @@ const runReferenceTrace = (workspaceRoot: string, fixtureJson: string): Referenc
         }
     );
     return JSON.parse(stdout) as ReferenceTrace;
+};
+
+const runReferenceItemCatalog = (workspaceRoot: string, itemKeys: string[]): Record<string, ReferenceItemMetadata> => {
+    const stdout = execFileSync(
+        'docker',
+        ['compose', 'exec', '-T', 'php', 'php', '/var/www/html/hwe/compare/item_catalog.php'],
+        {
+            cwd: path.join(workspaceRoot, 'docker_compose_files/reference'),
+            input: JSON.stringify(itemKeys),
+            encoding: 'utf8',
+            stdio: ['pipe', 'pipe', 'pipe'],
+        }
+    );
+    return JSON.parse(stdout) as Record<string, ReferenceItemMetadata>;
 };
 
 const expectNearlyEqual = (actual: unknown, expected: unknown, label: string): void => {
@@ -118,7 +140,12 @@ const assertTraceParity = (
     reference: ReferenceTrace,
     coreRng: TracingRng | null
 ): void => {
-    expect(coreEvents.map((event) => event.event)).toEqual(reference.events.map((event) => event.event));
+    const coreEventNames = coreEvents.map((event) => event.event);
+    const referenceEventNames = reference.events.map((event) => event.event);
+    expect(
+        coreEventNames,
+        `event sequence\ncore=${JSON.stringify(coreEventNames)}\nref=${JSON.stringify(referenceEventNames)}`
+    ).toEqual(referenceEventNames);
     expect(coreRng?.calls.map(({ operation, result }) => ({ operation, result }))).toEqual(
         reference.rng.map(({ operation, result }) => ({ operation, result }))
     );
@@ -147,6 +174,139 @@ const workspaceRoot = findWorkspaceRoot(process.cwd());
 const describeWithReference = workspaceRoot ? describe : describe.skip;
 
 describeWithReference('ref ↔ core2026 battle differential', () => {
+    it('loads every scenario item with the scenario slot', async () => {
+        const scenarioDir = path.resolve(process.cwd(), '../../resources/scenario');
+        const itemSlots = new Map<string, 'horse' | 'weapon' | 'book' | 'item'>();
+        for (const filename of fs.readdirSync(scenarioDir).filter((entry) => entry.endsWith('.json'))) {
+            const scenario = readJson<{
+                const?: {
+                    allItems?: Partial<Record<'horse' | 'weapon' | 'book' | 'item', Record<string, number>>>;
+                };
+            }>(path.join(scenarioDir, filename));
+            for (const slot of ['horse', 'weapon', 'book', 'item'] as const) {
+                for (const itemKey of Object.keys(scenario.const?.allItems?.[slot] ?? {})) {
+                    itemSlots.set(itemKey, slot);
+                }
+            }
+        }
+
+        const modules = await loadItemModules([...ITEM_KEYS]);
+        const reference = runReferenceItemCatalog(workspaceRoot!, [...ITEM_KEYS]);
+        expect(modules).toHaveLength(145);
+        const failures: string[] = [];
+        for (const module of modules) {
+            const actual = {
+                rawName: module.rawName,
+                name: module.name,
+                info: module.info,
+                cost: module.cost,
+                buyable: module.buyable,
+                consumable: module.consumable,
+                reqSecu: module.reqSecu,
+            };
+            if (
+                module.slot !== itemSlots.get(module.key) ||
+                module.unique !== !reference[module.key]?.buyable ||
+                JSON.stringify(actual) !== JSON.stringify(reference[module.key])
+            ) {
+                failures.push(
+                    `${module.key}: slot=${module.slot}/${String(itemSlots.get(module.key))} unique=${String(module.unique)}/${String(!reference[module.key]?.buyable)} core=${JSON.stringify(actual)} ref=${JSON.stringify(reference[module.key])}`
+                );
+            }
+        }
+        expect(failures, failures.join('\n')).toEqual([]);
+    });
+
+    it('matches the legacy non-stacking rule for the 무쌍 trait item', () => {
+        const base = readJson<BattleSimRequestPayload & { startYear: number }>(
+            path.resolve(process.cwd(), 'fixtures/battle/basic-infantry.json')
+        );
+        base.seed = 'battle-differential-duplicate-musang';
+        base.attackerGeneral.personal = 'None';
+        base.attackerGeneral.special2 = 'che_무쌍';
+        base.attackerGeneral.item = 'event_전투특기_무쌍';
+        base.attackerGeneral.crew = 5000;
+        base.attackerGeneral.leadership = 90;
+        base.attackerGeneral.strength = 90;
+        base.attackerGeneral.intel = 90;
+        base.attackerGeneral.dex1 = 12000;
+        const unitSet = readJson<UnitSetDefinition>(
+            path.resolve(process.cwd(), '../../resources/unitset/unitset_che.json')
+        );
+        const config: WarEngineConfig = {
+            armPerPhase: 500,
+            maxTrainByCommand: 100,
+            maxAtmosByCommand: 100,
+            maxTrainByWar: 110,
+            maxAtmosByWar: 150,
+            castleCrewTypeId: 1000,
+            armTypes: { footman: 1, archer: 2, cavalry: 3, wizard: 4, siege: 5, misc: 6, castle: 0 },
+        };
+        const coreEvents: WarBattleTraceEvent[] = [];
+        let coreRng: TracingRng | null = null;
+        processBattleSimJob(
+            {
+                ...base,
+                unitSet,
+                config,
+                time: { year: base.year, month: base.month, startYear: base.startYear },
+            },
+            {
+                trace: (event) => coreEvents.push(event),
+                rngFactory: (seed) => {
+                    coreRng = new TracingRng(LiteHashDRBG.build(seed));
+                    return new RandUtil(coreRng);
+                },
+            }
+        );
+        assertTraceParity(coreEvents, runReferenceTrace(workspaceRoot!, JSON.stringify(base)), coreRng);
+    });
+
+    it('matches 척사 items against region-restricted troops', () => {
+        const unitSet = readJson<UnitSetDefinition>(
+            path.resolve(process.cwd(), '../../resources/unitset/unitset_che.json')
+        );
+        const config: WarEngineConfig = {
+            armPerPhase: 500,
+            maxTrainByCommand: 100,
+            maxAtmosByCommand: 100,
+            maxTrainByWar: 110,
+            maxAtmosByWar: 150,
+            castleCrewTypeId: 1000,
+            armTypes: { footman: 1, archer: 2, cavalry: 3, wizard: 4, siege: 5, misc: 6, castle: 0 },
+        };
+
+        for (const itemKey of ['che_척사_오악진형도', 'event_전투특기_척사']) {
+            const base = readJson<BattleSimRequestPayload & { startYear: number }>(
+                path.resolve(process.cwd(), 'fixtures/battle/basic-infantry.json')
+            );
+            base.seed = `battle-differential-region-item-${itemKey}`;
+            base.attackerGeneral.personal = 'None';
+            base.attackerGeneral.special2 = 'None';
+            base.attackerGeneral.item = itemKey;
+            base.attackerGeneral.crew = 5000;
+            base.defenderGenerals[0]!.crewtype = 1101;
+            const coreEvents: WarBattleTraceEvent[] = [];
+            let coreRng: TracingRng | null = null;
+            processBattleSimJob(
+                {
+                    ...base,
+                    unitSet,
+                    config,
+                    time: { year: base.year, month: base.month, startYear: base.startYear },
+                },
+                {
+                    trace: (event) => coreEvents.push(event),
+                    rngFactory: (seed) => {
+                        coreRng = new TracingRng(LiteHashDRBG.build(seed));
+                        return new RandUtil(coreRng);
+                    },
+                }
+            );
+            assertTraceParity(coreEvents, runReferenceTrace(workspaceRoot!, JSON.stringify(base)), coreRng);
+        }
+    });
+
     it('keeps the detailed event sequence and phase values within 1%', () => {
         const fixturePath = path.resolve(process.cwd(), 'fixtures/battle/basic-infantry.json');
         const fixtureJson = fs.readFileSync(fixturePath, 'utf8');
@@ -429,11 +589,207 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
         const reference = runReferenceTrace(workspaceRoot!, fixtureJson);
 
         expect(result.result).toBe(true);
-        expect(reference.events.map((event) => event.event)).toEqual([
-            'battle_start',
-            'supply_retreat',
-            'battle_end',
-        ]);
+        expect(reference.events.map((event) => event.event)).toEqual(['battle_start', 'supply_retreat', 'battle_end']);
         assertTraceParity(coreEvents, reference, coreRng);
+    });
+
+    it('matches every scenario item in an attacker battle simulation', { timeout: 180_000 }, () => {
+        const scenarioDir = path.resolve(process.cwd(), '../../resources/scenario');
+        const itemSlots = new Map<string, 'horse' | 'weapon' | 'book' | 'item'>();
+        for (const filename of fs.readdirSync(scenarioDir).filter((entry) => entry.endsWith('.json'))) {
+            const scenario = readJson<{
+                const?: {
+                    allItems?: Partial<Record<'horse' | 'weapon' | 'book' | 'item', Record<string, number>>>;
+                };
+            }>(path.join(scenarioDir, filename));
+            for (const slot of ['horse', 'weapon', 'book', 'item'] as const) {
+                for (const itemKey of Object.keys(scenario.const?.allItems?.[slot] ?? {})) {
+                    itemSlots.set(itemKey, slot);
+                }
+            }
+        }
+        expect(itemSlots.size).toBe(145);
+        expect([...ITEM_KEYS].sort()).toEqual([...itemSlots.keys()].sort());
+
+        const unitSet = readJson<UnitSetDefinition>(
+            path.resolve(process.cwd(), '../../resources/unitset/unitset_che.json')
+        );
+        const config: WarEngineConfig = {
+            armPerPhase: 500,
+            maxTrainByCommand: 100,
+            maxAtmosByCommand: 100,
+            maxTrainByWar: 110,
+            maxAtmosByWar: 150,
+            castleCrewTypeId: 1000,
+            armTypes: {
+                footman: 1,
+                archer: 2,
+                cavalry: 3,
+                wizard: 4,
+                siege: 5,
+                misc: 6,
+                castle: 0,
+            },
+        };
+        const failures: string[] = [];
+
+        const itemFilter = process.env['ITEM_PARITY_FILTER'];
+        for (const [itemKey, slot] of [...itemSlots].sort(([lhs], [rhs]) => lhs.localeCompare(rhs))) {
+            if (itemFilter && itemKey !== itemFilter) {
+                continue;
+            }
+            const base = readJson<BattleSimRequestPayload & { startYear: number }>(
+                path.resolve(process.cwd(), 'fixtures/battle/basic-infantry.json')
+            );
+            base.seed = `battle-differential-item-${itemKey}`;
+            base.attackerGeneral.personal = 'None';
+            base.attackerGeneral.special2 = 'None';
+            base.attackerGeneral.crew = 5000;
+            base.attackerGeneral.leadership = 90;
+            base.attackerGeneral.strength = 90;
+            base.attackerGeneral.intel = 90;
+            base.attackerGeneral.dex1 = 12000;
+            base.attackerGeneral.dex2 = 12000;
+            base.attackerGeneral.dex3 = 12000;
+            base.attackerGeneral.dex4 = 12000;
+            base.attackerGeneral.dex5 = 12000;
+            base.attackerGeneral[slot] = itemKey;
+            const defender = base.defenderGenerals[0]!;
+            defender.personal = 'None';
+            defender.special2 = 'None';
+            defender.crew = 1500;
+            defender.leadership = 75;
+            defender.strength = 75;
+            defender.intel = 75;
+            base.defenderCity.wall = 3000;
+            base.defenderCity.wall_max = 3000;
+
+            const payload: BattleSimJobPayload = {
+                ...base,
+                unitSet,
+                config,
+                time: { year: base.year, month: base.month, startYear: base.startYear },
+            };
+            const coreEvents: WarBattleTraceEvent[] = [];
+            let coreRng: TracingRng | null = null;
+            processBattleSimJob(payload, {
+                trace: (event) => coreEvents.push(event),
+                rngFactory: (seed) => {
+                    coreRng = new TracingRng(LiteHashDRBG.build(seed));
+                    return new RandUtil(coreRng);
+                },
+            });
+            const reference = runReferenceTrace(workspaceRoot!, JSON.stringify(base));
+            try {
+                assertTraceParity(coreEvents, reference, coreRng);
+            } catch (error) {
+                const debug =
+                    process.env['ITEM_PARITY_DEBUG'] === '1'
+                        ? `\ncore=${JSON.stringify(
+                              coreEvents
+                                  .map((event, index) => ({ index, event }))
+                                  .filter(({ event }) => event.event === 'phase_damage')
+                          )}\nref=${JSON.stringify(
+                              reference.events
+                                  .map((event, index) => ({ index, event }))
+                                  .filter(({ event }) => event.event === 'phase_damage')
+                          )}`
+                        : '';
+                failures.push(`${itemKey}: ${error instanceof Error ? error.message : String(error)}${debug}`);
+            }
+        }
+        expect(failures, failures.join('\n')).toEqual([]);
+    });
+
+    it('matches every scenario item in a defender battle simulation', { timeout: 180_000 }, () => {
+        const scenarioDir = path.resolve(process.cwd(), '../../resources/scenario');
+        const itemSlots = new Map<string, 'horse' | 'weapon' | 'book' | 'item'>();
+        for (const filename of fs.readdirSync(scenarioDir).filter((entry) => entry.endsWith('.json'))) {
+            const scenario = readJson<{
+                const?: {
+                    allItems?: Partial<Record<'horse' | 'weapon' | 'book' | 'item', Record<string, number>>>;
+                };
+            }>(path.join(scenarioDir, filename));
+            for (const slot of ['horse', 'weapon', 'book', 'item'] as const) {
+                for (const itemKey of Object.keys(scenario.const?.allItems?.[slot] ?? {})) {
+                    itemSlots.set(itemKey, slot);
+                }
+            }
+        }
+
+        const unitSet = readJson<UnitSetDefinition>(
+            path.resolve(process.cwd(), '../../resources/unitset/unitset_che.json')
+        );
+        const config: WarEngineConfig = {
+            armPerPhase: 500,
+            maxTrainByCommand: 100,
+            maxAtmosByCommand: 100,
+            maxTrainByWar: 110,
+            maxAtmosByWar: 150,
+            castleCrewTypeId: 1000,
+            armTypes: {
+                footman: 1,
+                archer: 2,
+                cavalry: 3,
+                wizard: 4,
+                siege: 5,
+                misc: 6,
+                castle: 0,
+            },
+        };
+        const failures: string[] = [];
+
+        const itemFilter = process.env['ITEM_PARITY_FILTER'];
+        for (const [itemKey, slot] of [...itemSlots].sort(([lhs], [rhs]) => lhs.localeCompare(rhs))) {
+            if (itemFilter && itemKey !== itemFilter) {
+                continue;
+            }
+            const base = readJson<BattleSimRequestPayload & { startYear: number }>(
+                path.resolve(process.cwd(), 'fixtures/battle/basic-infantry.json')
+            );
+            base.seed = `battle-differential-defender-item-${itemKey}`;
+            base.attackerGeneral.personal = 'None';
+            base.attackerGeneral.special2 = 'None';
+            base.attackerGeneral.crew = 1500;
+            base.attackerGeneral.leadership = 75;
+            base.attackerGeneral.strength = 75;
+            base.attackerGeneral.intel = 75;
+            const defender = base.defenderGenerals[0]!;
+            defender.personal = 'None';
+            defender.special2 = 'None';
+            defender.crew = 5000;
+            defender.leadership = 90;
+            defender.strength = 90;
+            defender.intel = 90;
+            defender.dex1 = 12000;
+            defender.dex2 = 12000;
+            defender.dex3 = 12000;
+            defender.dex4 = 12000;
+            defender.dex5 = 12000;
+            defender[slot] = itemKey;
+
+            const payload: BattleSimJobPayload = {
+                ...base,
+                unitSet,
+                config,
+                time: { year: base.year, month: base.month, startYear: base.startYear },
+            };
+            const coreEvents: WarBattleTraceEvent[] = [];
+            let coreRng: TracingRng | null = null;
+            processBattleSimJob(payload, {
+                trace: (event) => coreEvents.push(event),
+                rngFactory: (seed) => {
+                    coreRng = new TracingRng(LiteHashDRBG.build(seed));
+                    return new RandUtil(coreRng);
+                },
+            });
+            const reference = runReferenceTrace(workspaceRoot!, JSON.stringify(base));
+            try {
+                assertTraceParity(coreEvents, reference, coreRng);
+            } catch (error) {
+                failures.push(`${itemKey}: ${error instanceof Error ? error.message : String(error)}`);
+            }
+        }
+        expect(failures, failures.join('\n')).toEqual([]);
     });
 });

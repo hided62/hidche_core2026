@@ -7,7 +7,7 @@ export const itemModule: ItemModule = createStatItemModule({
     slot: 'horse',
     statName: 'leadership',
     statValue: 3,
-    cost: 4500,
+    cost: 6000,
     buyable: true,
-    reqSecu: 2500,
+    reqSecu: 3000,
 });

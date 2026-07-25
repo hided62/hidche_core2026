@@ -13,6 +13,7 @@ export const itemModule: ItemModule = {
     consumable: true,
     reqSecu: 2000,
     unique: false,
+    consumeOn: [{ actionType: 'GeneralCommand', command: '계략', successOnly: true }],
     onCalcDomestic: (_context, turnType, varType, value) => {
         if (turnType === '계략' && varType === 'success') {
             return value + 0.5;

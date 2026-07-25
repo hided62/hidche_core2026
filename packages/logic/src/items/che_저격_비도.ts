@@ -9,7 +9,7 @@ export const itemModule: ItemModule = {
     key: 'che_저격_비도',
     rawName: '비도',
     name: '비도(저격)',
-    info: '[전투] 계략 시도 단계에서 저격 확률 50%',
+    info: '[전투] 새로운 상대와 전투 시 50% 확률로 저격 발동, 성공 시 사기+20',
     slot: 'item',
     cost: 200,
     buyable: false,

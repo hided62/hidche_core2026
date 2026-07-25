@@ -29,6 +29,8 @@ import type { ActionContextBase, ActionContextOptions } from '@sammo-ts/logic/ac
 import type { GeneralTurnCommandSpec } from './index.js';
 import { JosaUtil } from '@sammo-ts/common';
 import { parseArgsWithSchema } from '../parseArgs.js';
+import { GeneralActionPipeline, type GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
+import { consumeSuccessfulStrategyItem } from './strategyItemConsumption.js';
 
 export interface SeizeResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -50,6 +52,11 @@ export class ActionResolver<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionResolver<TriggerState, SeizeArgs> {
     readonly key = ACTION_KEY;
+    private readonly pipeline: GeneralActionPipeline<TriggerState>;
+
+    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined> = []) {
+        this.pipeline = new GeneralActionPipeline(modules);
+    }
 
     resolve(context: GeneralActionResolveContext<TriggerState>, args: SeizeArgs): GeneralActionOutcome<TriggerState> {
         const ctx = context as SeizeResolveContext<TriggerState>;
@@ -166,6 +173,8 @@ export class ActionResolver<
             format: LogFormat.PLAIN,
         });
 
+        consumeSuccessfulStrategyItem(this.pipeline, context);
+
         effects.push(
             createGeneralPatchEffect(
                 {
@@ -195,8 +204,10 @@ export class ActionDefinition<
     public readonly name = ACTION_NAME;
     private readonly resolver: ActionResolver<TriggerState>;
 
-    constructor(_env: TurnCommandEnv) {
-        this.resolver = new ActionResolver();
+    constructor(env: TurnCommandEnv) {
+        this.resolver = new ActionResolver<TriggerState>(
+            (env.generalActionModules ?? []) as GeneralActionModule<TriggerState>[]
+        );
     }
 
     parseArgs(raw: unknown): SeizeArgs | null {

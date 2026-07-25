@@ -10,6 +10,7 @@ import {
     projectItemSlots,
     serializeItemInventory,
 } from '../src/items/inventory.js';
+import { listEquippedItemKeys } from '../src/items/utils.js';
 
 const makeGeneral = (): General => ({
     id: 7,
@@ -56,6 +57,16 @@ describe('GeneralItemInventory', () => {
             item: 'che_치료_환약',
         });
         expect(Object.keys(inventory.instances)).toHaveLength(3);
+    });
+
+    it('reads legacy slots without mutating a frozen world snapshot', () => {
+        const general = makeGeneral();
+        general.role.items.item = 'che_치료_환약';
+        const frozen = Object.freeze(general);
+
+        expect(listEquippedItemKeys(frozen)).toEqual(['che_치료_환약']);
+        expect(getEquippedItemInstance(frozen, 'item')?.itemKey).toBe('che_치료_환약');
+        expect(frozen.itemInventory).toBeUndefined();
     });
 
     it('keeps consumable charges in the equipped item instance', () => {

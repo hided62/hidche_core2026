@@ -25,6 +25,8 @@ import type { ActionContextBase, ActionContextOptions } from '@sammo-ts/logic/ac
 import type { GeneralTurnCommandSpec } from './index.js';
 import { JosaUtil } from '@sammo-ts/common';
 import { parseArgsWithSchema } from '../parseArgs.js';
+import { GeneralActionPipeline, type GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
+import { consumeSuccessfulStrategyItem } from './strategyItemConsumption.js';
 
 export interface AgitateResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -44,6 +46,11 @@ export class ActionResolver<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionResolver<TriggerState, AgitateArgs> {
     readonly key = ACTION_KEY;
+    private readonly pipeline: GeneralActionPipeline<TriggerState>;
+
+    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined> = []) {
+        this.pipeline = new GeneralActionPipeline(modules);
+    }
 
     resolve(context: GeneralActionResolveContext<TriggerState>, args: AgitateArgs): GeneralActionOutcome<TriggerState> {
         const ctx = context as AgitateResolveContext<TriggerState>;
@@ -86,8 +93,8 @@ export class ActionResolver<
                 1
             )}</>만큼 감소하고, 장수 <C>${injuryCount}</>명이 부상 당했습니다.`,
             {
-            category: LogCategory.ACTION,
-            format: LogFormat.PLAIN,
+                category: LogCategory.ACTION,
+                format: LogFormat.PLAIN,
             }
         );
 
@@ -106,6 +113,8 @@ export class ActionResolver<
                 destCityId
             )
         );
+
+        consumeSuccessfulStrategyItem(this.pipeline, context);
 
         // General Update (Cost + Exp + LeaderExp)
         effects.push(
@@ -137,8 +146,10 @@ export class ActionDefinition<
     public readonly name = ACTION_NAME;
     private readonly resolver: ActionResolver<TriggerState>;
 
-    constructor(_env: TurnCommandEnv) {
-        this.resolver = new ActionResolver();
+    constructor(env: TurnCommandEnv) {
+        this.resolver = new ActionResolver<TriggerState>(
+            (env.generalActionModules ?? []) as GeneralActionModule<TriggerState>[]
+        );
     }
 
     parseArgs(raw: unknown): AgitateArgs | null {

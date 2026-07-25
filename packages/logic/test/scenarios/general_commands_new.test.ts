@@ -14,7 +14,15 @@ import { commandSpec as spySpec } from '../../src/actions/turn/general/che_첩�
 import { commandSpec as destroySpec } from '../../src/actions/turn/general/che_파괴.js';
 import { commandSpec as agitateSpec } from '../../src/actions/turn/general/che_선동.js';
 import { commandSpec as seizeSpec } from '../../src/actions/turn/general/che_탈취.js';
+import { commandSpec as fireSpec } from '../../src/actions/turn/general/che_화계.js';
 import type { TurnCommandEnv } from '../../src/actions/turn/commandEnv.js';
+import {
+    createItemActionModules,
+    createItemModuleRegistry,
+    equipNewItem,
+    getEquippedItemInstance,
+    loadItemModules,
+} from '../../src/items/index.js';
 
 describe('General Commands New Scenario', () => {
     // 1. Setup Environment
@@ -357,6 +365,7 @@ describe('General Commands New Scenario', () => {
             triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
             meta: {},
         });
+        equipNewItem(gen1, 'item', 'che_계략_이추');
 
         const gen2: General = { id: 2, name: 'G2', nationId: 2, cityId: 2, troopId: 0, npcState: 0, ticket: 0 } as any;
         Object.assign(gen2, {
@@ -392,6 +401,16 @@ describe('General Commands New Scenario', () => {
 
         const world = new InMemoryWorld(snapshot);
         const runner = new TestGameRunner(world, 200, 1);
+        const itemGeneralModules = createItemActionModules(
+            createItemModuleRegistry(await loadItemModules(['che_계략_이추', 'che_계략_향낭']))
+        ).general;
+        const reEquipStrategyItem = (itemKey: 'che_계략_이추' | 'che_계략_향낭'): void => {
+            const nextGeneral = structuredClone(world.getGeneral(1)!);
+            equipNewItem(nextGeneral, 'item', itemKey);
+            world.snapshot.generals = world.snapshot.generals.map((general) =>
+                general.id === nextGeneral.id ? nextGeneral : general
+            );
+        };
 
         // 1. Employ (G1 -> G2)
         const employDef = employSpec.createDefinition(systemEnv);
@@ -424,7 +443,8 @@ describe('General Commands New Scenario', () => {
         expect(spyInfo['2']).toBe(3); // City 2 spied level 3
 
         // 3. Destroy (G1 -> C2)
-        const destroyDef = destroySpec.createDefinition(systemEnv);
+        const strategyEnv = { ...systemEnv, generalActionModules: itemGeneralModules };
+        const destroyDef = destroySpec.createDefinition(strategyEnv);
         await runner.runTurn([
             {
                 generalId: 1,
@@ -438,9 +458,42 @@ describe('General Commands New Scenario', () => {
         const c2_after_destroy = world.getCity(2)!;
         expect(c2_after_destroy.defence).toBeLessThan(1000);
         expect(c2_after_destroy.state).toBe(32);
+        expect(getEquippedItemInstance(world.getGeneral(1)!, 'item')).toBeNull();
 
-        // 4. Agitate (G1 -> C2)
-        const agitateDef = agitateSpec.createDefinition(systemEnv);
+        // 4. Fire attack consumes the successful one-use strategy item.
+        reEquipStrategyItem('che_계략_향낭');
+        const fireDef = fireSpec.createDefinition(strategyEnv);
+        await runner.runTurn([
+            {
+                generalId: 1,
+                commandKey: 'che_화계',
+                resolver: fireDef,
+                args: { destCityId: 2 },
+                context: {
+                    destCity: city2,
+                    destNation: nation2,
+                    destGenerals: [gen2],
+                    env: systemEnv,
+                    map: MINIMAL_MAP,
+                    rng: {
+                        real: () => 0,
+                        int: (min: number, _max: number) => min,
+                        nextInt: (min: number, _max: number) => min,
+                        next: () => 0,
+                        nextBool: () => true,
+                        nextRange: (min: number, _max: number) => min,
+                        nextRangeInt: (min: number, _max: number) => min,
+                        nextFloat1: () => 0,
+                    },
+                },
+            },
+        ]);
+        expect(getEquippedItemInstance(world.getGeneral(1)!, 'item')).toBeNull();
+        expect(world.getGeneral(1)!.role.items.item).toBeNull();
+
+        // 5. Agitate (G1 -> C2)
+        reEquipStrategyItem('che_계략_이추');
+        const agitateDef = agitateSpec.createDefinition(strategyEnv);
         await runner.runTurn([
             {
                 generalId: 1,
@@ -455,9 +508,12 @@ describe('General Commands New Scenario', () => {
         const trust = c2_after_agitate.meta.trust as number;
         expect(trust).toBeLessThan(100);
         expect(c2_after_agitate.security).toBeLessThan(1000);
+        expect(getEquippedItemInstance(world.getGeneral(1)!, 'item')).toBeNull();
 
-        // 5. Seize (G1 -> C2)
-        const seizeDef = seizeSpec.createDefinition(systemEnv);
+        // 6. Seize (G1 -> C2)
+        reEquipStrategyItem('che_계략_향낭');
+        const seizeDef = seizeSpec.createDefinition(strategyEnv);
+        const goldBeforeSeize = world.getGeneral(1)!.gold;
         // Ensure C2 is supplied (nation has gold/rice)
         await runner.runTurn([
             {
@@ -474,6 +530,7 @@ describe('General Commands New Scenario', () => {
 
         const g1_after_seize = world.getGeneral(1)!;
 
-        expect(g1_after_seize.gold).toBeGreaterThan(4000); // Cost deducted multiple times
+        expect(g1_after_seize.gold).toBeGreaterThan(goldBeforeSeize - systemEnv.develCost);
+        expect(getEquippedItemInstance(g1_after_seize, 'item')).toBeNull();
     });
 });

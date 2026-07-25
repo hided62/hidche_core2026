@@ -15,14 +15,7 @@ import { getTechAbility, getTechCost } from '@sammo-ts/logic/world/unitSet.js';
 import type { WarActionPipeline, WarActionContext } from '../actions.js';
 import type { WarEngineConfig } from '../types.js';
 import type { WarCrewType } from '../crewType.js';
-import {
-    clamp,
-    clampMin,
-    getMetaNumber,
-    getMetaString,
-    increaseMetaNumber,
-    round,
-} from '../utils.js';
+import { clamp, clampMin, getMetaNumber, getMetaString, increaseMetaNumber, round } from '../utils.js';
 import { WAR_CRITICAL_RANGE, WarUnit, resolveNationTech } from './base.js';
 type CityUnit = WarUnit & { getCityId: () => number };
 
@@ -150,24 +143,47 @@ export class WarUnitGeneral<
     public getComputedStat(
         statName: keyof StatBlock,
         base: number,
-        options: { withInjury?: boolean; withStatAdjust?: boolean; withActions?: boolean } = {}
+        options: {
+            withInjury?: boolean;
+            withStatAdjust?: boolean;
+            withActions?: boolean;
+            truncate?: boolean;
+        } = {}
     ): number {
         const withInjury = options.withInjury ?? true;
         const withStatAdjust = options.withStatAdjust ?? true;
         const withActions = options.withActions ?? true;
+        const truncate = options.truncate ?? true;
         const injuryRatio = withInjury ? (100 - this.general.injury) / 100 : 1;
         let value = base * injuryRatio;
         if (withStatAdjust && statName === 'strength') {
-            value += round((this.general.stats.intelligence * injuryRatio) / 4);
+            value += round(
+                this.getComputedStat('intelligence', this.general.stats.intelligence, {
+                    withInjury,
+                    withStatAdjust: false,
+                    withActions,
+                    truncate: false,
+                }) / 4
+            );
         } else if (withStatAdjust && statName === 'intelligence') {
-            value += round((this.general.stats.strength * injuryRatio) / 4);
+            value += round(
+                this.getComputedStat('strength', this.general.stats.strength, {
+                    withInjury,
+                    withStatAdjust: false,
+                    withActions,
+                    truncate: false,
+                }) / 4
+            );
         }
         const maxGeneralStat = this.config.maxGeneralStat ?? 255;
         value = clamp(value, 0, maxGeneralStat);
         if (withActions) {
             value = this.actionPipeline.onCalcStat(this.getActionContext(), statName, value);
         }
-        return clamp(value, 0, maxGeneralStat);
+        // Legacy General::getStatValue() applies every action and then returns
+        // Util::toInt(), which truncates toward zero on every stat read.
+        const clamped = clamp(value, 0, maxGeneralStat);
+        return truncate ? Math.trunc(clamped) : clamped;
     }
 
     private resolveMainStat(armType: number, withInjury = true): number {
@@ -345,7 +361,8 @@ export class WarUnitGeneral<
                 : crewType.armType;
         const key = `${META_DEX_PREFIX}${armType}`;
         const base = getMetaNumber(this.general.meta, key);
-        this.general.meta[key] = round(base + exp);
+        const adjustedExp = this.actionPipeline.onCalcStat(this.getActionContext(), 'addDex', exp, { armType });
+        this.general.meta[key] = base + adjustedExp;
     }
 
     public calcRiceConsumption(damage: number): number {

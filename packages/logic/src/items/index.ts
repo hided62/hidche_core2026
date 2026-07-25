@@ -17,6 +17,7 @@ import { WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
 import type { WarUnit } from '@sammo-ts/logic/war/units.js';
 import type { ItemModule, ItemModuleExport } from './types.js';
 import { listEquippedItemKeys } from './utils.js';
+import { removeEquippedItem } from './inventory.js';
 
 export const ITEM_KEYS = [
     'che_간파_노군입산부',
@@ -120,6 +121,7 @@ export const ITEM_KEYS = [
     'che_서적_15_손자병법',
     'che_숙련_동작',
     'che_약탈_옥벽',
+    'che_위압_조목삭',
     'che_의술_상한잡병론',
     'che_의술_정력견혈산',
     'che_의술_청낭서',
@@ -142,6 +144,27 @@ export const ITEM_KEYS = [
     'che_훈련_단결도',
     'che_훈련_철벽서',
     'che_훈련_청주',
+    'event_전투특기_격노',
+    'event_전투특기_견고',
+    'event_전투특기_공성',
+    'event_전투특기_궁병',
+    'event_전투특기_귀병',
+    'event_전투특기_기병',
+    'event_전투특기_돌격',
+    'event_전투특기_무쌍',
+    'event_전투특기_반계',
+    'event_전투특기_보병',
+    'event_전투특기_신산',
+    'event_전투특기_신중',
+    'event_전투특기_위압',
+    'event_전투특기_의술',
+    'event_전투특기_저격',
+    'event_전투특기_집중',
+    'event_전투특기_징병',
+    'event_전투특기_척사',
+    'event_전투특기_필살',
+    'event_전투특기_환술',
+    'event_충차',
 ] as const;
 
 export type ItemKey = (typeof ITEM_KEYS)[number];
@@ -250,6 +273,21 @@ const defaultImporters: Record<ItemKey, ItemImporter> = {
     che_서적_15_손자병법: async () => import('./che_서적_15_손자병법.js'),
     che_숙련_동작: async () => import('./che_숙련_동작.js'),
     che_약탈_옥벽: async () => import('./che_약탈_옥벽.js'),
+    che_위압_조목삭: async () => {
+        const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
+            import('../triggers/special/war/che_위압.js'),
+            import('./eventBattleTrait.js'),
+        ]);
+        return {
+            itemModule: createEventBattleTraitItemModule('che_위압_조목삭', traitModule, {
+                rawName: '조목삭',
+                name: '조목삭(위압)',
+                cost: 200,
+                buyable: false,
+                reqSecu: 0,
+            }),
+        };
+    },
     che_의술_상한잡병론: async () => import('./che_의술_상한잡병론.js'),
     che_의술_정력견혈산: async () => import('./che_의술_정력견혈산.js'),
     che_의술_청낭서: async () => import('./che_의술_청낭서.js'),
@@ -272,6 +310,147 @@ const defaultImporters: Record<ItemKey, ItemImporter> = {
     che_훈련_단결도: async () => import('./che_훈련_단결도.js'),
     che_훈련_철벽서: async () => import('./che_훈련_철벽서.js'),
     che_훈련_청주: async () => import('./che_훈련_청주.js'),
+    event_전투특기_격노: async () => {
+        const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
+            import('../triggers/special/war/che_격노.js'),
+            import('./eventBattleTrait.js'),
+        ]);
+        return { itemModule: createEventBattleTraitItemModule('event_전투특기_격노', traitModule) };
+    },
+    event_전투특기_견고: async () => {
+        const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
+            import('../triggers/special/war/che_견고.js'),
+            import('./eventBattleTrait.js'),
+        ]);
+        return { itemModule: createEventBattleTraitItemModule('event_전투특기_견고', traitModule) };
+    },
+    event_전투특기_공성: async () => {
+        const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
+            import('../triggers/special/war/che_공성.js'),
+            import('./eventBattleTrait.js'),
+        ]);
+        return { itemModule: createEventBattleTraitItemModule('event_전투특기_공성', traitModule) };
+    },
+    event_전투특기_궁병: async () => {
+        const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
+            import('../triggers/special/war/che_궁병.js'),
+            import('./eventBattleTrait.js'),
+        ]);
+        return { itemModule: createEventBattleTraitItemModule('event_전투특기_궁병', traitModule) };
+    },
+    event_전투특기_귀병: async () => {
+        const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
+            import('../triggers/special/war/che_귀병.js'),
+            import('./eventBattleTrait.js'),
+        ]);
+        return { itemModule: createEventBattleTraitItemModule('event_전투특기_귀병', traitModule) };
+    },
+    event_전투특기_기병: async () => {
+        const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
+            import('../triggers/special/war/che_기병.js'),
+            import('./eventBattleTrait.js'),
+        ]);
+        return { itemModule: createEventBattleTraitItemModule('event_전투특기_기병', traitModule) };
+    },
+    event_전투특기_돌격: async () => {
+        const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
+            import('../triggers/special/war/che_돌격.js'),
+            import('./eventBattleTrait.js'),
+        ]);
+        return { itemModule: createEventBattleTraitItemModule('event_전투특기_돌격', traitModule) };
+    },
+    event_전투특기_무쌍: async () => {
+        const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
+            import('../triggers/special/war/che_무쌍.js'),
+            import('./eventBattleTrait.js'),
+        ]);
+        return { itemModule: createEventBattleTraitItemModule('event_전투특기_무쌍', traitModule) };
+    },
+    event_전투특기_반계: async () => {
+        const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
+            import('../triggers/special/war/che_반계.js'),
+            import('./eventBattleTrait.js'),
+        ]);
+        return { itemModule: createEventBattleTraitItemModule('event_전투특기_반계', traitModule) };
+    },
+    event_전투특기_보병: async () => {
+        const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
+            import('../triggers/special/war/che_보병.js'),
+            import('./eventBattleTrait.js'),
+        ]);
+        return { itemModule: createEventBattleTraitItemModule('event_전투특기_보병', traitModule) };
+    },
+    event_전투특기_신산: async () => {
+        const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
+            import('../triggers/special/war/che_신산.js'),
+            import('./eventBattleTrait.js'),
+        ]);
+        return { itemModule: createEventBattleTraitItemModule('event_전투특기_신산', traitModule) };
+    },
+    event_전투특기_신중: async () => {
+        const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
+            import('../triggers/special/war/che_신중.js'),
+            import('./eventBattleTrait.js'),
+        ]);
+        return { itemModule: createEventBattleTraitItemModule('event_전투특기_신중', traitModule) };
+    },
+    event_전투특기_위압: async () => {
+        const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
+            import('../triggers/special/war/che_위압.js'),
+            import('./eventBattleTrait.js'),
+        ]);
+        return { itemModule: createEventBattleTraitItemModule('event_전투특기_위압', traitModule) };
+    },
+    event_전투특기_의술: async () => {
+        const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
+            import('../triggers/special/war/che_의술.js'),
+            import('./eventBattleTrait.js'),
+        ]);
+        return { itemModule: createEventBattleTraitItemModule('event_전투특기_의술', traitModule) };
+    },
+    event_전투특기_저격: async () => {
+        const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
+            import('../triggers/special/war/che_저격.js'),
+            import('./eventBattleTrait.js'),
+        ]);
+        return { itemModule: createEventBattleTraitItemModule('event_전투특기_저격', traitModule) };
+    },
+    event_전투특기_집중: async () => {
+        const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
+            import('../triggers/special/war/che_집중.js'),
+            import('./eventBattleTrait.js'),
+        ]);
+        return { itemModule: createEventBattleTraitItemModule('event_전투특기_집중', traitModule) };
+    },
+    event_전투특기_징병: async () => {
+        const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
+            import('../triggers/special/war/che_징병.js'),
+            import('./eventBattleTrait.js'),
+        ]);
+        return { itemModule: createEventBattleTraitItemModule('event_전투특기_징병', traitModule) };
+    },
+    event_전투특기_척사: async () => {
+        const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
+            import('../triggers/special/war/che_척사.js'),
+            import('./eventBattleTrait.js'),
+        ]);
+        return { itemModule: createEventBattleTraitItemModule('event_전투특기_척사', traitModule) };
+    },
+    event_전투특기_필살: async () => {
+        const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
+            import('../triggers/special/war/che_필살.js'),
+            import('./eventBattleTrait.js'),
+        ]);
+        return { itemModule: createEventBattleTraitItemModule('event_전투특기_필살', traitModule) };
+    },
+    event_전투특기_환술: async () => {
+        const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
+            import('../triggers/special/war/che_환술.js'),
+            import('./eventBattleTrait.js'),
+        ]);
+        return { itemModule: createEventBattleTraitItemModule('event_전투특기_환술', traitModule) };
+    },
+    event_충차: async () => import('./event_충차.js'),
 };
 
 export const isItemKey = (value: string): value is ItemKey => ITEM_KEYS.includes(value as ItemKey);
@@ -294,7 +473,13 @@ export class ItemLoader {
             if (!('itemModule' in module)) {
                 throw new Error(`Missing itemModule for item: ${key}`);
             }
-            const resolved = module.itemModule;
+            const resolved: ItemModule = {
+                ...module.itemModule,
+                // Legacy defines the finite unique pool as every non-buyable
+                // scenario item; keep that invariant authoritative instead of
+                // relying on duplicated per-module flags.
+                unique: !module.itemModule.buyable,
+            };
             if (resolved.key !== key) {
                 throw new Error(`Item key mismatch: expected ${key}, got ${resolved.key}`);
             }
@@ -455,11 +640,30 @@ class ItemGeneralActionRouter<
         let current = aux ?? null;
         for (const module of this.resolveModules(context)) {
             if (!module.onArbitraryAction) {
-                continue;
+                // Declarative consumption rules are evaluated below even when
+                // the item has no custom arbitrary-action hook.
+            } else {
+                const result = module.onArbitraryAction(context, actionType, phase, current);
+                if (result !== undefined) {
+                    current = result;
+                }
             }
-            const result = module.onArbitraryAction(context, actionType, phase, current);
-            if (result !== undefined) {
-                current = result;
+
+            const shouldConsume = module.consumeOn?.some(
+                (rule) =>
+                    rule.actionType === actionType &&
+                    (rule.phase === undefined || rule.phase === phase) &&
+                    (rule.command === undefined || current?.['command'] === rule.command) &&
+                    (!rule.successOnly || current?.['success'] === true)
+            );
+            if (shouldConsume) {
+                const removed = removeEquippedItem(context.general, module.slot);
+                if (removed?.itemKey === module.key) {
+                    const consumedItems = Array.isArray(current?.['consumedItems'])
+                        ? (current['consumedItems'] as unknown[])
+                        : [];
+                    current = { ...(current ?? {}), consumedItems: [...consumedItems, module.key] };
+                }
             }
         }
         return current;
@@ -581,6 +785,7 @@ export {
     getEquippedItemInstance,
     parseItemInventory,
     projectItemSlots,
+    readItemInventory,
     readItemInventoryFromMeta,
     removeEquippedItem,
     serializeItemInventory,

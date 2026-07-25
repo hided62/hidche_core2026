@@ -1,7 +1,12 @@
 import type { ScenarioConfig } from '@sammo-ts/logic/scenario/types.js';
 import type { General, GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { ItemModule } from './types.js';
-import { consumeEquippedItemCharge, ensureItemInventory, getEquippedItemInstance } from './inventory.js';
+import {
+    consumeEquippedItemCharge,
+    ensureItemInventory,
+    getEquippedItemInstance,
+    readItemInventory,
+} from './inventory.js';
 
 const toBoolean = (value: unknown): boolean => {
     if (typeof value === 'boolean') {
@@ -27,7 +32,7 @@ export const isInventoryEnabled = (config: ScenarioConfig): boolean => {
 export const listEquippedItemKeys = <TriggerState extends GeneralTriggerState>(
     general: General<TriggerState>
 ): string[] => {
-    const inventory = ensureItemInventory(general);
+    const inventory = readItemInventory(general);
     const items = (['horse', 'weapon', 'book', 'item'] as const).map((slot) => {
         const instanceId = inventory.equipped[slot];
         return instanceId ? (inventory.instances[instanceId]?.itemKey ?? null) : null;
@@ -58,6 +63,7 @@ export const setItemRemain = <TriggerState extends GeneralTriggerState>(
     itemKey: string,
     remain: number | null
 ): void => {
+    ensureItemInventory(general);
     const instance = getEquippedItemInstance(general, 'item');
     if (!instance || instance.itemKey !== itemKey) {
         return;
