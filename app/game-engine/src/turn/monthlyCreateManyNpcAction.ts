@@ -40,7 +40,7 @@ const countLegacyNameDuplicates = (generals: readonly TurnGeneral[], baseName: s
     return count;
 };
 
-const pickNames = (
+export const pickNpcNames = (
     rng: RandUtil,
     count: number,
     existingGenerals: readonly TurnGeneral[],
@@ -71,11 +71,15 @@ const pickNames = (
     return names;
 };
 
-const buildStats = (rng: RandUtil, env: TurnCommandEnv): TurnGeneral['stats'] => {
+export const buildNpcStats = (
+    rng: RandUtil,
+    env: TurnCommandEnv,
+    weights: Readonly<Record<string, number>> = STAT_TYPE_WEIGHTS
+): TurnGeneral['stats'] => {
     const totalStat = env.npcStatTotal ?? 150;
     const minStat = env.npcStatMin ?? 10;
     const maxStat = env.npcStatMax ?? 50;
-    const pickType = rng.choiceUsingWeight(STAT_TYPE_WEIGHTS);
+    const pickType = rng.choiceUsingWeight(weights);
     let mainStat = maxStat - rng.nextRangeInt(0, minStat);
     let otherStat = minStat + rng.nextRangeInt(0, Math.trunc(minStat / 2));
     let subStat = totalStat - mainStat - otherStat;
@@ -114,7 +118,7 @@ const buildNpc = (options: {
     const age = rng.nextRangeInt(20, 25);
     const bornYear = environment.year - age;
     const deadYear = environment.year + rng.nextRangeInt(10, 50);
-    const stats = buildStats(rng, env);
+    const stats = buildNpcStats(rng, env);
     const affinity = rng.nextRangeInt(1, 150);
     const relativeYear = Math.max(environment.year - environment.startyear, 0);
     const configValues = asRecord(world.getScenarioConfig().const);
@@ -234,7 +238,7 @@ export const createCreateManyNpcHandler = (options: {
                 simpleSerialize(resolveHiddenSeed(world), 'CreateManyNPC', environment.year, environment.month)
             )
         );
-        const baseNames = pickNames(rng, requestedCount, world.listGenerals(), options.env);
+        const baseNames = pickNpcNames(rng, requestedCount, world.listGenerals(), options.env);
         const created = baseNames.map((baseName) =>
             buildNpc({
                 world,

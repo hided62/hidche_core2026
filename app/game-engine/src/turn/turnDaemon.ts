@@ -53,6 +53,7 @@ import { createProcessWarIncomeHandler } from './monthlyWarIncomeAction.js';
 import { createCreateAdminNpcHandler } from './monthlyCreateAdminNpcAction.js';
 import { createCreateManyNpcHandler } from './monthlyCreateManyNpcAction.js';
 import { createRegisterNpcHandler } from './monthlyRegisterNpcAction.js';
+import { createRaiseNpcNationHandler } from './monthlyRaiseNpcNationAction.js';
 import { buildCommandEnv } from './reservedTurnCommands.js';
 import { DatabaseTurnDaemonLease, TurnDaemonLeaseUnavailableError } from '../lifecycle/databaseTurnDaemonLease.js';
 
@@ -126,6 +127,20 @@ const loadOccupiedAuctionUniqueCounts = async (databaseUrl: string): Promise<Map
     }
 };
 
+const loadArchivedNationMaxId = async (databaseUrl: string, serverId: string): Promise<number> => {
+    const connector = createGamePostgresConnector({ url: databaseUrl });
+    await connector.connect();
+    try {
+        const row = await connector.prisma.oldNation.aggregate({
+            where: { serverId },
+            _max: { nation: true },
+        });
+        return row._max.nation ?? 0;
+    } finally {
+        await connector.disconnect();
+    }
+};
+
 const resolveRedisConfig = (redisUrl?: string, env: NodeJS.ProcessEnv = process.env) => {
     if (redisUrl) {
         return { url: redisUrl };
@@ -160,7 +175,8 @@ const createTurnDaemonRuntimeWithLease = async (
         hasEventAction('UpdateNationLevel') ||
         hasEventAction('CreateManyNPC') ||
         hasEventAction('RegNPC') ||
-        hasEventAction('RegNeutralNPC');
+        hasEventAction('RegNeutralNPC') ||
+        hasEventAction('RaiseNPCNation');
     const reservedTurnStoreHandle =
         options.generalTurnHandler && !eventRequiresReservedTurns
             ? null
@@ -250,6 +266,17 @@ const createTurnDaemonRuntimeWithLease = async (
                 })
             );
         }
+        eventActions.set(
+            'RaiseNPCNation',
+            createRaiseNpcNationHandler({
+                getWorld: () => worldRef,
+                reservedTurns: reservedTurnStoreHandle.store,
+                env: monthlyCommandEnv,
+                map: snapshot.map,
+                loadArchivedNationMaxId: (serverId) =>
+                    loadArchivedNationMaxId(options.databaseUrl, serverId),
+            })
+        );
         eventActions.set(
             'UpdateNationLevel',
             createUpdateNationLevelHandler({
