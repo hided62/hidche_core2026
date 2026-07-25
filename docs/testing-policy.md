@@ -4,6 +4,41 @@ This document summarizes the testing strategy for the Sammo/HiDCHe repository.
 The key is to separate "DB behavior emulation" from "state/logic/flow validation"
 so each layer is tested with the right scope.
 
+## Historical Test Trust Boundary (2026-07-25)
+
+Tests already present at the 2026-07-25 review baseline
+(`main@a05f46130e621ff30fcac330af33c9e7e169f440`) or inherited from an older
+commit are **untrusted legacy tests until individually audited**. A large part
+of this suite was AI-authored, and some tests appear optimized to make the
+current implementation pass rather than to detect incorrect behavior.
+
+Consequently:
+
+- A passing baseline test proves only that its current assertions passed. It
+  does not by itself prove legacy compatibility, domain correctness, complete
+  side effects, authorization, transaction safety, or production readiness.
+- Do not raise a mapping or implementation status to "verified" using only an
+  unaudited baseline test.
+- Do not preserve behavior merely because an unaudited test expects it. Resolve
+  conflicts against the legacy implementation, an approved compatibility
+  contract, or an independently captured trace.
+- Keep existing tests for possible regression value, but mark each audited test
+  or suite with its evidence source and review date.
+
+An audit must confirm that a test:
+
+1. names the behavior and failure mode it is intended to protect;
+2. derives expected values independently from the implementation under test;
+3. asserts game-impacting numeric state and all relevant persistence side
+   effects, rather than only truthiness, types, or absence of exceptions;
+4. covers important rejection, boundary, ordering, and concurrency paths;
+5. fails when the protected behavior is deliberately perturbed;
+6. uses a real DB/Redis or a differential legacy fixture where infrastructure
+   semantics or compatibility are part of the contract.
+
+Until this audit is recorded, test counts and green status are inventory
+information only, not evidence of correctness.
+
 ## Core Principles
 
 - Prefer Repository/DB Port interfaces over ORM mocks; split implementations:

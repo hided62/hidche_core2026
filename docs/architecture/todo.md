@@ -5,6 +5,20 @@ Move items into the main docs once they are finalized.
 
 ## Runtime and Operations
 
+- [AI suggestion] Make profile turn execution a durable single-writer contract:
+  add a DB-backed lease with fencing epoch/world version, and reject stale
+  daemon commits after a restart or split-brain.
+- [AI suggestion] Replace the current destructive dirty-state drain and
+  multi-query flush with bounded atomic batches. Persist entity deltas, logs,
+  reserved turns, checkpoint, and outbox events in one transaction, then clear
+  dirty state only after commit.
+- [AI suggestion] Introduce durable command inbox/outbox records with unique
+  request IDs, idempotent results, and per-profile ordering. Keep Redis as a
+  wake-up/fan-out layer, or add consumer groups, ACK/pending recovery, DLQ, and
+  stream trimming if Redis Streams remain the command source.
+- [AI suggestion] Add ownership authorization to all turn reservation
+  procedures (`auth user -> owned general -> current officer role -> nation`)
+  and add revision/optimistic concurrency to reservation queue updates.
 - [AI suggestion] Implement full turn engine pipeline parity with legacy: time gate, distributed lock, catch-up monthly loop, partial progress persistence, and post-turn maintenance (traffic/statistics/auction/tournament).
 - [AI suggestion] Implement command continuation/alternate flow (LastTurn/term stack/pre/post requirements/next_execute) and integrate into reserved turn processing.
 - [AI suggestion] Integrate trigger preprocessing + attempt/execute phases into turn resolution (parity with legacy trigger composition).
@@ -20,6 +34,13 @@ Move items into the main docs once they are finalized.
 
 ## Frontend
 
+- [AI suggestion] Build a legacy-compatible `classic` theme from semantic
+  design tokens and shared UI primitives, verify it with Chromium
+  screenshot/geometry/computed-style tests, then add a separately selectable
+  `modern` theme without changing page behavior.
+- [AI suggestion] Provide one profile-aware public runtime configuration for
+  web/API/event/asset base URLs so `/gateway`, `/che`, and `/hwe` work for SPA
+  navigation, direct refresh, tRPC, SSE, and externally owned `/image/*`.
 - [AI suggestion] Maintain a game frontend SPA implementation plan and keep it aligned with legacy screen inventory (`docs/architecture/game-frontend-spa-plan.md`).
 - [AI suggestion] Define gateway login handoff + profile selection flow for the game frontend (token delivery, auto-login, cookie vs localStorage policy).
 - [AI suggestion] Implement Public 화면: 캐싱된 지도/중원정세/세력일람 + 제한된 장수일람 API/뷰.
@@ -51,6 +72,23 @@ Move items into the main docs once they are finalized.
 
 ## Game Logic and Testing
 
+- [AI suggestion] Audit every test inherited at the 2026-07-25 baseline before
+  using it as correctness evidence. Record the protected contract and
+  independent oracle, replace truthiness/smoke-only assertions, add
+  negative/boundary/side-effect coverage, and verify that an intentional
+  behavior mutation makes the test fail.
+- [AI suggestion] Add a PHP↔TypeScript battle differential harness that
+  compares the serialized seed, ordered RNG calls, trigger
+  attempt/execute trace, phase-by-phase numeric outcomes, and final
+  general/city/nation/troop numeric snapshot. Treat log wording as a permitted
+  difference when event meaning, displayed values, and visibility are kept.
+- [AI suggestion] Restore the legacy command RNG seed domains
+  (`generalCommand`/`nationCommand` plus raw command class) before treating
+  fixed-seed command or battle results as compatible.
+- [AI suggestion] Define an explicit ruleset trigger manifest and fail profile
+  startup when a unit/item/trait references an unregistered trigger. Compose
+  personality, domestic/war specialty, item, inheritance, nation, and unit
+  triggers in the live turn-daemon battle path.
 - Input snapshot format (seed, scenario, trigger inputs, game time)
 - Deterministic RNG test harness guidelines
 - Output comparison rules (sorting, tolerances, diff granularity)
@@ -69,6 +107,20 @@ Move items into the main docs once they are finalized.
 
 ## Data and Profiles (Lower Priority)
 
+- [AI suggestion] Split gateway orchestration into immutable `Release`,
+  versioned `Ruleset`, `ProfileInstance`, `Deployment`, and first-class
+  `AdminJob` records. Store artifact/API/resource digests and an auditable job
+  state machine instead of profile `meta.adminActions` arrays.
+- [AI suggestion] Run the artifact built in each profile's selected worktree
+  (or preferably an immutable image digest), include required workers and
+  frontend/resources in the release manifest, and verify readiness before
+  switching traffic.
+- [AI suggestion] Give each profile instance an immutable ID, dedicated DB
+  schema/URL, and public route. Do not derive DB isolation from the broad
+  server profile (`che`, `hwe`) when multiple scenarios/releases can coexist.
+- [AI suggestion] Publish and negotiate gateway/game API contract and
+  capability versions so profiles running different releases can be accepted,
+  degraded, or blocked explicitly by the gateway.
 - Profile selection workflow and deployment mapping
 - "Next-turn intent" (예턴) data schema and lifecycle
 
