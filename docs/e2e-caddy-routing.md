@@ -109,7 +109,8 @@ strip하지 않으므로 backend의 tRPC/SSE path도 public path 전체를 사�
 `VITE_*` 값은 frontend build-time 값이다. frontend 프로세스를 시작할 때만
 설정해서는 이미 생성된 bundle이 바뀌지 않는다. Caddy가 prefix를 보존하므로
 `handle_path`로 바꾸거나 upstream에서 다시 strip하면 위 backend path와
-불일치한다.
+불일치한다. E2E에서 Vite preview를 사용할 때는 외부 Host 헤더
+`dev-sam-e2e.hided.net`도 preview allowlist에 포함되어야 한다.
 
 ## 앱을 구동하지 않는 검증
 
