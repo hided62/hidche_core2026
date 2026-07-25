@@ -151,6 +151,7 @@ integration('RaiseInvader database persistence', () => {
     });
 
     it('commits invader entities, dynamic events, diplomacy, turns, ranks, city state, and logs atomically', async () => {
+        const createdGeneralIds = Array.from({ length: 10 }, (_, index) => firstCreatedGeneralId + index);
         const createCity = (city: City) =>
             db.city.create({
                 data: {
@@ -316,8 +317,8 @@ integration('RaiseInvader database persistence', () => {
                 typeCode: 'che_병가',
             });
             expect(await db.general.count({ where: { nationId: createdNationId } })).toBe(10);
-            expect(await db.generalTurn.count({ where: { generalId: { gte: firstCreatedGeneralId } } })).toBe(300);
-            expect(await db.rankData.count({ where: { generalId: { gte: firstCreatedGeneralId } } })).toBe(440);
+            expect(await db.generalTurn.count({ where: { generalId: { in: createdGeneralIds } } })).toBe(300);
+            expect(await db.rankData.count({ where: { generalId: { in: createdGeneralIds } } })).toBe(440);
             expect(await db.nationTurn.count({ where: { nationId: createdNationId } })).toBe(48);
             expect(
                 await db.diplomacy.count({
