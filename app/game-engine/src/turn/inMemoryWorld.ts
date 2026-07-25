@@ -91,6 +91,7 @@ export interface InMemoryTurnWorldOptions {
     schedule: TurnSchedule;
     generalTurnHandler?: GeneralTurnHandler;
     calendarHandler?: TurnCalendarHandler;
+    autoAdvanceDiplomacyMonth?: boolean;
 }
 
 export interface TurnWorldChanges {
@@ -257,6 +258,7 @@ export class InMemoryTurnWorld {
     private schedule: TurnSchedule;
     private readonly generalTurnHandler: GeneralTurnHandler;
     private readonly calendarHandler?: TurnCalendarHandler;
+    private readonly autoAdvanceDiplomacyMonth: boolean;
     private readonly generals = new Map<number, TurnGeneral>();
     private readonly cities = new Map<number, City>();
     private readonly nations = new Map<number, Nation>();
@@ -303,6 +305,7 @@ export class InMemoryTurnWorld {
                 execute: () => ({}),
             } satisfies GeneralTurnHandler);
         this.calendarHandler = options.calendarHandler;
+        this.autoAdvanceDiplomacyMonth = options.autoAdvanceDiplomacyMonth ?? true;
 
         const worldKillturn = resolveWorldKillturn(this.state.meta);
         for (const general of snapshot.generals) {
@@ -894,7 +897,9 @@ export class InMemoryTurnWorld {
             meta,
         };
 
-        this.advanceDiplomacyMonth();
+        if (this.autoAdvanceDiplomacyMonth) {
+            this.advanceDiplomacyMonth();
+        }
         await this.calendarHandler?.onMonthChanged?.(context);
         if (nextYear !== previousYear) {
             await this.calendarHandler?.onYearChanged?.(context);
@@ -1122,20 +1127,22 @@ export class InMemoryTurnWorld {
         }
     }
 
-    private advanceDiplomacyMonth(): void {
+    advanceDiplomacyMonth(generalCounts?: Map<number, number>): void {
         if (this.diplomacy.size === 0) {
             return;
         }
-        const generalCounts = new Map<number, number>();
-        for (const general of this.generals.values()) {
-            const nationId = general.nationId;
-            if (nationId <= 0) {
-                continue;
+        const resolvedGeneralCounts = generalCounts ?? new Map<number, number>();
+        if (!generalCounts) {
+            for (const general of this.generals.values()) {
+                const nationId = general.nationId;
+                if (nationId <= 0) {
+                    continue;
+                }
+                resolvedGeneralCounts.set(nationId, (resolvedGeneralCounts.get(nationId) ?? 0) + 1);
             }
-            generalCounts.set(nationId, (generalCounts.get(nationId) ?? 0) + 1);
         }
 
-        const updated = processDiplomacyMonth(this.listDiplomacy(), generalCounts);
+        const updated = processDiplomacyMonth(this.listDiplomacy(), resolvedGeneralCounts);
         for (const entry of updated) {
             const key = buildDiplomacyKey(entry.fromNationId, entry.toNationId);
             const prev = this.diplomacy.get(key);

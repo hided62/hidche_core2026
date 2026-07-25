@@ -27,6 +27,12 @@ import { composeCalendarHandlers } from './calendarHandlers.js';
 import { createIncomeHandler } from './incomeHandler.js';
 import { createNationTurnMonthlyHandler } from './nationTurnMonthlyHandler.js';
 import { createMonthlyBoundaryPreHandler } from './monthlyBoundaryPreHandler.js';
+import {
+    createMonthlyDiplomacyHandler,
+    createMonthlyNationCountHandler,
+    createMonthlyNationStatsHandler,
+    createMonthlyWarSettingHandler,
+} from './monthlyNationStatsHandler.js';
 import { createFrontStateHandler } from './frontStateHandler.js';
 import { createReservedTurnHandler } from './reservedTurnHandler.js';
 import { createReservedTurnStore } from './reservedTurnStore.js';
@@ -449,6 +455,18 @@ const createTurnDaemonRuntimeWithLease = async (
         startYear: snapshot.scenarioMeta?.startYear ?? state.currentYear,
         commandEnv: monthlyCommandEnv,
     });
+    const monthlyNationStatsHandler = createMonthlyNationStatsHandler({
+        getWorld: () => worldRef,
+    });
+    const monthlyDiplomacyHandler = createMonthlyDiplomacyHandler({
+        getWorld: () => worldRef,
+    });
+    const monthlyNationCountHandler = createMonthlyNationCountHandler({
+        getWorld: () => worldRef,
+    });
+    const monthlyWarSettingHandler = createMonthlyWarSettingHandler({
+        getWorld: () => worldRef,
+    });
     const frontStateHandler = createFrontStateHandler({
         getWorld: () => worldRef,
         map: snapshot.map ?? null,
@@ -474,9 +492,13 @@ const createTurnDaemonRuntimeWithLease = async (
     const calendarHandler = composeCalendarHandlers(
         monthlyEventHandler,
         yearbookHandler.handler,
-        options.calendarHandler ?? unification?.handler,
         monthlyBoundaryPreHandler,
         nationTurnMonthlyHandler,
+        monthlyNationStatsHandler,
+        monthlyDiplomacyHandler,
+        monthlyWarSettingHandler,
+        monthlyNationCountHandler,
+        options.calendarHandler ?? unification?.handler,
         hasEventAction('ProcessIncome') ? null : incomeHandler,
         frontStateHandler,
         neutralAuctionRegistrar.handler,
@@ -497,6 +519,7 @@ const createTurnDaemonRuntimeWithLease = async (
                 commandEnv: monthlyCommandEnv,
             })),
         calendarHandler: calendarHandler ?? undefined,
+        autoAdvanceDiplomacyMonth: false,
     };
     const world = new InMemoryTurnWorld(resolvedState, snapshot, worldOptions);
     worldRef = world;

@@ -282,22 +282,25 @@ const mapCityRow = (row: TurnEngineCityRow): City => {
     };
 };
 
-const mapNationRow = (row: TurnEngineNationRow): Nation => ({
-    id: row.id,
-    name: row.name,
-    color: row.color,
-    capitalCityId: row.capitalCityId,
-    chiefGeneralId: row.chiefGeneralId,
-    gold: row.gold,
-    rice: row.rice,
-    power: 0,
-    level: row.level,
-    typeCode: row.typeCode,
-    meta: {
-        ...asTriggerRecord(row.meta),
-        tech: row.tech,
-    },
-});
+const mapNationRow = (row: TurnEngineNationRow): Nation => {
+    const meta = asTriggerRecord(row.meta);
+    return {
+        id: row.id,
+        name: row.name,
+        color: row.color,
+        capitalCityId: row.capitalCityId,
+        chiefGeneralId: row.chiefGeneralId,
+        gold: row.gold,
+        rice: row.rice,
+        power: readMetaNumber(meta, 'power') ?? 0,
+        level: row.level,
+        typeCode: row.typeCode,
+        meta: {
+            ...meta,
+            tech: row.tech,
+        },
+    };
+};
 
 const mapDiplomacyRow = (row: TurnEngineDiplomacyRow): TurnDiplomacy => {
     const { meta, dead } = readDiplomacyMeta(asRecord(row.meta));

@@ -516,7 +516,10 @@ const buildNationUpdate = (
     rice: nation.rice,
     level: nation.level,
     typeCode: nation.typeCode,
-    meta: asJson(nation.meta),
+    meta: asJson({
+        ...nation.meta,
+        power: nation.power,
+    }),
 });
 
 const buildTroopUpdate = (
