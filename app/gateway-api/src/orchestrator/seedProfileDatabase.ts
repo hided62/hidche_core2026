@@ -134,6 +134,7 @@ const ensureAdminGeneral = async (databaseUrl: string, adminUser: AdminSeedUser)
                 turnTime,
                 meta: {
                     createdBy: 'admin-seed',
+                    killturn: 24,
                 },
             },
         });

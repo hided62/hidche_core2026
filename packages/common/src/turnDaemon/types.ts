@@ -81,6 +81,17 @@ export type TurnDaemonCommand =
     | { type: 'dropItem'; requestId?: string; generalId: number; itemType: string }
     | { type: 'auctionFinalize'; requestId?: string; auctionId: number }
     | {
+          type: 'auctionOpen';
+          requestId?: string;
+          generalId: number;
+          auctionType: 'BUY_RICE' | 'SELL_RICE' | 'UNIQUE_ITEM';
+          amount: number;
+          closeTurnCnt?: number;
+          startBidAmount?: number;
+          finishBidAmount?: number;
+          itemKey?: string;
+      }
+    | {
           type: 'changePermission';
           requestId?: string;
           generalId: number;
@@ -224,6 +235,17 @@ export type TurnDaemonCommandResult =
           type: 'troopCreate';
           ok: false;
           generalId: number;
+          reason: string;
+      }
+    | {
+          type: 'auctionOpen';
+          ok: true;
+          auctionId: number;
+          closeAt: string;
+      }
+    | {
+          type: 'auctionOpen';
+          ok: false;
           reason: string;
       }
     | {

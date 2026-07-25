@@ -2,7 +2,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { randomBytes } from 'node:crypto';
 
-import type { WorldStateRow } from '../../context.js';
+import type { DatabaseClient, WorldStateRow } from '../../context.js';
 import { authedProcedure, router } from '../../trpc.js';
 import { asNumber, asRecord, asStringArray, LiteHashDRBG } from '@sammo-ts/common';
 import {
@@ -361,7 +361,7 @@ export const joinRouter = router({
                       ? input.character
                       : 'None';
 
-            return ctx.db.$transaction!(async (db) => {
+            const createGeneral = async (db: DatabaseClient) => {
                 const existing = await db.general.findFirst({ where: { userId } });
                 if (existing) {
                     throw new TRPCError({
@@ -514,6 +514,7 @@ export const joinRouter = router({
                         meta: {
                             createdBy: 'join',
                             ownerName: ctx.auth?.user.displayName ?? '',
+                            killturn: 24,
                         },
                     },
                 });
@@ -538,7 +539,9 @@ export const joinRouter = router({
                 }
 
                 return { ok: true, generalId: general.id };
-            });
+            };
+
+            return ctx.db.$transaction ? ctx.db.$transaction(createGeneral) : createGeneral(ctx.db);
         }),
     listPossessCandidates: authedProcedure
         .input(

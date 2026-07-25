@@ -106,6 +106,7 @@ watch(
                 <RouterLink class="ghost" to="/battle-simulator">전투 시뮬레이터</RouterLink>
                 <RouterLink class="ghost" to="/my-page">내 정보</RouterLink>
                 <RouterLink class="ghost" to="/tournament">토너먼트</RouterLink>
+                <RouterLink class="ghost" to="/auction">거래장</RouterLink>
                 <RouterLink class="ghost" to="/survey">설문조사</RouterLink>
                 <RouterLink class="ghost" to="/npc-control">NPC 정책</RouterLink>
                 <RouterLink class="ghost" to="/inherit">유산 강화</RouterLink>

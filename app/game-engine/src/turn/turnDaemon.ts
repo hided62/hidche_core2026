@@ -30,6 +30,7 @@ import { shouldUseAi } from './ai/generalAi.js';
 import { createUnificationHandler } from './unificationHandler.js';
 import { createAuctionFinalizer } from '../auction/finalizer.js';
 import { createAuctionBidder } from '../auction/bidder.js';
+import { createNeutralAuctionRegistrar } from '../auction/neutralRegistrar.js';
 import { createTournamentRewardFinalizer } from '../tournament/finalizer.js';
 import { createTournamentAutoStartHandler } from './tournamentAutoStart.js';
 import { createYearbookHandler } from './yearbookHandler.js';
@@ -198,6 +199,13 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
         getWorld: () => worldRef,
         map: snapshot.map ?? null,
     });
+    const neutralAuctionRegistrar = await createNeutralAuctionRegistrar({
+        databaseUrl: options.databaseUrl,
+        profileName: options.profileName ?? options.profile,
+        getWorld: () => worldRef,
+        getRedisClient: () => redisConnector?.client,
+        getWorldConfig: () => snapshot.worldConfig ?? null,
+    });
     const tournamentAutoStartHandler = createTournamentAutoStartHandler({
         profileName: options.profileName ?? options.profile,
         getRedisClient: () => redisConnector?.client,
@@ -215,6 +223,7 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
         nationTurnMonthlyHandler,
         hasEventAction('ProcessIncome') ? null : incomeHandler,
         frontStateHandler,
+        neutralAuctionRegistrar.handler,
         tournamentAutoStartHandler,
         yearbookHandler.handler
     );
@@ -394,6 +403,7 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
     const baseClose = close;
     close = async () => {
         await baseClose();
+        await neutralAuctionRegistrar.close();
         if (unification) {
             await unification.close();
         }
