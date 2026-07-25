@@ -47,6 +47,7 @@ import {
 } from './monthlyEventHandler.js';
 import { createRaiseDisasterHandler } from './monthlyDisasterAction.js';
 import { createUpdateCitySupplyHandler } from './monthlyCitySupplyAction.js';
+import { createUpdateNationLevelHandler } from './monthlyNationLevelAction.js';
 import { DatabaseTurnDaemonLease, TurnDaemonLeaseUnavailableError } from '../lifecycle/databaseTurnDaemonLease.js';
 
 export interface TurnDaemonRuntimeOptions {
@@ -95,6 +96,30 @@ const buildFixedSchedule = (tickMinutes: number): TurnSchedule => ({
     entries: [{ startMinute: 0, tickMinutes }],
 });
 
+const loadOccupiedAuctionUniqueCounts = async (databaseUrl: string): Promise<Map<string, number>> => {
+    const connector = createGamePostgresConnector({ url: databaseUrl });
+    await connector.connect();
+    try {
+        const rows = await connector.prisma.auction.findMany({
+            where: {
+                type: 'UNIQUE_ITEM',
+                status: { in: ['OPEN', 'FINALIZING'] },
+                targetCode: { not: null },
+            },
+            select: { targetCode: true },
+        });
+        const counts = new Map<string, number>();
+        for (const row of rows) {
+            if (row.targetCode) {
+                counts.set(row.targetCode, (counts.get(row.targetCode) ?? 0) + 1);
+            }
+        }
+        return counts;
+    } finally {
+        await connector.disconnect();
+    }
+};
+
 const resolveRedisConfig = (redisUrl?: string, env: NodeJS.ProcessEnv = process.env) => {
     if (redisUrl) {
         return { url: redisUrl };
@@ -119,11 +144,18 @@ const createTurnDaemonRuntimeWithLease = async (
     const tickMinutes = resolveTickMinutes(state.tickSeconds, options.tickMinutes);
     const resolvedState = options.tickMinutes ? { ...state, tickSeconds: tickMinutes * 60 } : state;
     const schedule = options.schedule ?? buildFixedSchedule(tickMinutes);
-    const reservedTurnStoreHandle = options.generalTurnHandler
-        ? null
-        : await createReservedTurnStore({
-              databaseUrl: options.databaseUrl,
-          });
+    const hasEventAction = (name: string): boolean =>
+        snapshot.events.some(
+            (event) =>
+                Array.isArray(event.action) &&
+                event.action.some((action) => Array.isArray(action) && action[0] === name)
+        );
+    const reservedTurnStoreHandle =
+        options.generalTurnHandler && !hasEventAction('UpdateNationLevel')
+            ? null
+            : await createReservedTurnStore({
+                  databaseUrl: options.databaseUrl,
+              });
     const commandProfile =
         options.commandProfile ??
         (options.commandProfilePath
@@ -148,12 +180,6 @@ const createTurnDaemonRuntimeWithLease = async (
         scenarioConfig: snapshot.scenarioConfig,
         nationTraits: nationTraitMap,
     });
-    const hasEventAction = (name: string): boolean =>
-        snapshot.events.some(
-            (event) =>
-                Array.isArray(event.action) &&
-                event.action.some((action) => Array.isArray(action) && action[0] === name)
-        );
     const eventActions = new Map<string, MonthlyEventActionHandler>();
     eventActions.set(
         'RandomizeCityTradeRate',
@@ -175,8 +201,19 @@ const createTurnDaemonRuntimeWithLease = async (
             map: snapshot.map,
         })
     );
-    eventActions.set('ProcessIncome', (_args, environment) => {
-        void incomeHandler.onMonthChanged?.({
+    if (reservedTurnStoreHandle) {
+        eventActions.set(
+            'UpdateNationLevel',
+            createUpdateNationLevelHandler({
+                getWorld: () => worldRef,
+                reservedTurns: reservedTurnStoreHandle.store,
+                itemModules: monthlyActionModules.itemModules,
+                loadAdditionalOccupiedUniqueCounts: () => loadOccupiedAuctionUniqueCounts(options.databaseUrl),
+            })
+        );
+    }
+    eventActions.set('ProcessIncome', async (_args, environment) => {
+        await incomeHandler.onMonthChanged?.({
             previousYear: environment.month === 1 ? environment.year - 1 : environment.year,
             previousMonth: environment.month === 1 ? 12 : environment.month - 1,
             currentYear: environment.year,

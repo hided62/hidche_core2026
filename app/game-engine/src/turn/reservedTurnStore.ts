@@ -75,6 +75,7 @@ type ReservedTurnDatabaseClient = Pick<TurnEngineDatabaseClient, 'generalTurn' |
 export interface ReservedTurnChanges {
     generalIds: number[];
     nationKeys: string[];
+    nationInitializationKeys: string[];
 }
 
 export class InMemoryReservedTurnStore {
@@ -82,6 +83,7 @@ export class InMemoryReservedTurnStore {
     private readonly nationTurns = new Map<string, ReservedTurnEntry[]>();
     private readonly dirtyGeneralIds = new Set<number>();
     private readonly dirtyNationKeys = new Set<string>();
+    private readonly pendingNationInitializationKeys = new Set<string>();
     private readonly maxGeneralTurns: number;
     private readonly maxNationTurns: number;
 
@@ -164,7 +166,7 @@ export class InMemoryReservedTurnStore {
 
     async refreshNationTurns(nationId: number, officerLevel: number): Promise<void> {
         const key = buildNationKey(nationId, officerLevel);
-        if (this.dirtyNationKeys.has(key)) {
+        if (this.dirtyNationKeys.has(key) || this.pendingNationInitializationKeys.has(key)) {
             return;
         }
         const rows = await this.prisma.nationTurn.findMany({
@@ -205,6 +207,12 @@ export class InMemoryReservedTurnStore {
         return list[turnIdx] ?? createDefaultEntry();
     }
 
+    ensureNationTurns(nationId: number, officerLevel: number): void {
+        const key = buildNationKey(nationId, officerLevel);
+        this.getNationTurns(nationId, officerLevel);
+        this.pendingNationInitializationKeys.add(key);
+    }
+
     shiftGeneralTurns(generalId: number, amount: number): void {
         const list = this.getGeneralTurns(generalId);
         this.generalTurns.set(generalId, applyShift(list, amount));
@@ -222,6 +230,7 @@ export class InMemoryReservedTurnStore {
         return {
             generalIds: Array.from(this.dirtyGeneralIds),
             nationKeys: Array.from(this.dirtyNationKeys),
+            nationInitializationKeys: Array.from(this.pendingNationInitializationKeys),
         };
     }
 
@@ -231,6 +240,9 @@ export class InMemoryReservedTurnStore {
         }
         for (const key of changes.nationKeys) {
             this.dirtyNationKeys.delete(key);
+        }
+        for (const key of changes.nationInitializationKeys) {
+            this.pendingNationInitializationKeys.delete(key);
         }
     }
 
@@ -264,6 +276,26 @@ export class InMemoryReservedTurnStore {
                     actionCode: normalizeAction(entry.action),
                     arg: asJson(normalizeArgs(entry.args)),
                 })),
+            });
+        }
+
+        for (const key of changes.nationInitializationKeys) {
+            if (changes.nationKeys.includes(key)) {
+                continue;
+            }
+            const [nationIdRaw, officerLevelRaw] = key.split(':');
+            const nationId = Number(nationIdRaw);
+            const officerLevel = Number(officerLevelRaw);
+            const turns = this.getNationTurns(nationId, officerLevel);
+            await prisma.nationTurn.createMany({
+                data: turns.map((entry, turnIdx) => ({
+                    nationId,
+                    officerLevel,
+                    turnIdx,
+                    actionCode: normalizeAction(entry.action),
+                    arg: asJson(normalizeArgs(entry.args)),
+                })),
+                skipDuplicates: true,
             });
         }
     }
