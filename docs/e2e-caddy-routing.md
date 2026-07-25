@@ -42,6 +42,36 @@ handle /che/* {
         }
 }
 
+redir /kwe /kwe/ 308
+@kweApi path /kwe/api /kwe/api/*
+handle @kweApi {
+        reverse_proxy http://172.30.1.54:15005 {
+                header_up X-Real-IP {remote_host}
+                header_down -Strict-Transport-Security
+        }
+}
+handle /kwe/* {
+        reverse_proxy http://172.30.1.54:15004 {
+                header_up X-Real-IP {remote_host}
+                header_down -Strict-Transport-Security
+        }
+}
+
+redir /twe /twe/ 308
+@tweApi path /twe/api /twe/api/*
+handle @tweApi {
+        reverse_proxy http://172.30.1.54:15007 {
+                header_up X-Real-IP {remote_host}
+                header_down -Strict-Transport-Security
+        }
+}
+handle /twe/* {
+        reverse_proxy http://172.30.1.54:15006 {
+                header_up X-Real-IP {remote_host}
+                header_down -Strict-Transport-Security
+        }
+}
+
 redir /hwe /hwe/ 308
 @hweApi path /hwe/api /hwe/api/*
 handle @hweApi {
@@ -69,6 +99,10 @@ strip하지 않으므로 backend의 tRPC/SSE path도 public path 전체를 사�
 | gateway API | 15001 | `GATEWAY_API_HOST=0.0.0.0`, `GATEWAY_API_PORT=15001`, `GATEWAY_TRPC_PATH=/gateway/api/trpc` |
 | che frontend | 15002 | `VITE_APP_BASE_PATH=/che/`, `VITE_GATEWAY_API_URL=/gateway/api/trpc`, `VITE_GAME_API_URL=/che/api/trpc`, `VITE_GAME_SSE_URL=/che/api/events`, `VITE_GAME_ASSET_URL=/image`, `VITE_GAME_PROFILE=che` |
 | che API | 15003 | `GAME_API_HOST=0.0.0.0`, `GAME_API_PORT=15003`, `GAME_TRPC_PATH=/che/api/trpc`, `GAME_API_EVENTS_PATH=/che/api/events`, `GAME_UPLOAD_PATH=/che/api/uploads`, `PROFILE=che` |
+| kwe frontend | 15004 | `VITE_APP_BASE_PATH=/kwe/`, `VITE_GATEWAY_API_URL=/gateway/api/trpc`, `VITE_GAME_API_URL=/kwe/api/trpc`, `VITE_GAME_SSE_URL=/kwe/api/events`, `VITE_GAME_ASSET_URL=/image`, `VITE_GAME_PROFILE=kwe` |
+| kwe API | 15005 | `GAME_API_HOST=0.0.0.0`, `GAME_API_PORT=15005`, `GAME_TRPC_PATH=/kwe/api/trpc`, `GAME_API_EVENTS_PATH=/kwe/api/events`, `GAME_UPLOAD_PATH=/kwe/api/uploads`, `PROFILE=kwe` |
+| twe frontend | 15006 | `VITE_APP_BASE_PATH=/twe/`, `VITE_GATEWAY_API_URL=/gateway/api/trpc`, `VITE_GAME_API_URL=/twe/api/trpc`, `VITE_GAME_SSE_URL=/twe/api/events`, `VITE_GAME_ASSET_URL=/image`, `VITE_GAME_PROFILE=twe` |
+| twe API | 15007 | `GAME_API_HOST=0.0.0.0`, `GAME_API_PORT=15007`, `GAME_TRPC_PATH=/twe/api/trpc`, `GAME_API_EVENTS_PATH=/twe/api/events`, `GAME_UPLOAD_PATH=/twe/api/uploads`, `PROFILE=twe` |
 | hwe frontend | 15014 | `VITE_APP_BASE_PATH=/hwe/`, `VITE_GATEWAY_API_URL=/gateway/api/trpc`, `VITE_GAME_API_URL=/hwe/api/trpc`, `VITE_GAME_SSE_URL=/hwe/api/events`, `VITE_GAME_ASSET_URL=/image`, `VITE_GAME_PROFILE=hwe` |
 | hwe API | 15015 | `GAME_API_HOST=0.0.0.0`, `GAME_API_PORT=15015`, `GAME_TRPC_PATH=/hwe/api/trpc`, `GAME_API_EVENTS_PATH=/hwe/api/events`, `GAME_UPLOAD_PATH=/hwe/api/uploads`, `PROFILE=hwe` |
 
@@ -85,7 +119,7 @@ strip하지 않으므로 backend의 tRPC/SSE path도 public path 전체를 사�
 2. 각 upstream 대신 요청 URI와 listen port를 돌려주는 mock HTTP server를
    붙여 public path가 올바른 port로 전달되고 prefix가 보존되는지 확인한다.
 3. frontend를 임시 output directory에 build하고 `index.html`의 module/CSS
-   URL이 각각 `/gateway/`, `/che/`, `/hwe/`로 시작하는지 확인한다.
+   URL이 각각 `/gateway/`, `/che/`, `/kwe/`, `/twe/`, `/hwe/`로 시작하는지 확인한다.
 4. bundle에서 외부 API/SSE URL과 `/image` asset base를 확인한다.
 
 저장소의 `tools/e2e-routing-check/Caddyfile`은 18080에서 public Caddy

@@ -5,7 +5,7 @@ import { type ScenarioInstallOptions } from '@sammo-ts/game-engine';
 import { createGamePostgresConnector, resolvePostgresConfigFromEnv } from '@sammo-ts/infra';
 import { isRecord } from '@sammo-ts/common';
 
-import type { BuildRunner } from './buildRunner.js';
+import type { BuildCommand, BuildRunner } from './buildRunner.js';
 import type { ProcessManager } from './processManager.js';
 import type { GatewayProfileRecord, GatewayProfileRepository, GatewayProfileStatus } from './profileRepository.js';
 import type { GitWorkspaceManager } from './workspaceManager.js';
@@ -267,7 +267,7 @@ const parseInstallOptions = (
 const buildProcessName = (profileName: string, role: 'api' | 'daemon'): string =>
     `sammo:${profileName}:${role === 'api' ? 'game-api' : 'turn-daemon'}`;
 
-const buildProcessDefinitions = (
+export const buildProcessDefinitions = (
     profile: GatewayProfileRecord,
     config: GatewayProcessConfig
 ): {
@@ -277,8 +277,9 @@ const buildProcessDefinitions = (
     const baseEnv = { ...(config.baseEnv ?? {}) };
     const apiName = buildProcessName(profile.profileName, 'api');
     const daemonName = buildProcessName(profile.profileName, 'daemon');
-    const apiCwd = path.join(config.workspaceRoot, 'app', 'game-api');
-    const daemonCwd = path.join(config.workspaceRoot, 'app', 'game-engine');
+    const runtimeWorkspace = profile.buildWorkspace ?? config.workspaceRoot;
+    const apiCwd = path.join(runtimeWorkspace, 'app', 'game-api');
+    const daemonCwd = path.join(runtimeWorkspace, 'app', 'game-engine');
     const apiScript = path.join(apiCwd, 'dist', 'index.js');
     const daemonScript = path.join(daemonCwd, 'dist', 'index.js');
     const apiEnv = {
@@ -310,6 +311,37 @@ const buildProcessDefinitions = (
             env: daemonEnv,
         },
     };
+};
+
+export const buildWorkspaceCommands = (
+    workspaceRoot: string,
+    needsInstall: boolean,
+    env?: Record<string, string>
+): BuildCommand[] => {
+    const commands: BuildCommand[] = [];
+    if (needsInstall) {
+        commands.push({
+            command: 'pnpm',
+            args: ['install'],
+            cwd: workspaceRoot,
+            env,
+        });
+    }
+    for (const packageName of [
+        '@sammo-ts/common',
+        '@sammo-ts/infra',
+        '@sammo-ts/logic',
+        '@sammo-ts/game-api',
+        '@sammo-ts/game-engine',
+    ]) {
+        commands.push({
+            command: 'pnpm',
+            args: ['--filter', packageName, 'build'],
+            cwd: workspaceRoot,
+            env,
+        });
+    }
+    return commands;
 };
 
 const mapRuntimeStates = (profileNames: string[], processNames: Map<string, boolean>): ProfileRuntimeSnapshot[] =>
@@ -699,7 +731,8 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 openAt: openAt ? openAt.toISOString() : null,
                 scheduledStartAt: action.scheduledAt ?? null,
             });
-            await this.startProfile(activeProfile);
+            const builtProfile = (await this.repository.getProfile(profile.profileName)) ?? activeProfile;
+            await this.startProfile(builtProfile);
             return { status: 'APPLIED', detail: 'reset completed via rebuild' };
         } catch (error) {
             const detail = error instanceof Error ? error.message : String(error);
@@ -756,33 +789,10 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         const workspace = await this.workspaceManager.prepare(commitSha);
         const lastUsedAt = this.now().toISOString();
         await this.repository.updateWorkspaceUsage(profileName, workspace.root, lastUsedAt);
-        const commands: Array<{
-            command: string;
-            args: string[];
-            cwd: string;
-            env?: Record<string, string>;
-        }> = [];
-        if (workspace.needsInstall) {
-            commands.push({
-                command: 'pnpm',
-                args: ['install'],
-                cwd: workspace.root,
-                env: this.processConfig.baseEnv,
-            });
-        }
-        commands.push(
-            {
-                command: 'pnpm',
-                args: ['--filter', '@sammo-ts/game-api', 'build'],
-                cwd: workspace.root,
-                env: this.processConfig.baseEnv,
-            },
-            {
-                command: 'pnpm',
-                args: ['--filter', '@sammo-ts/game-engine', 'build'],
-                cwd: workspace.root,
-                env: this.processConfig.baseEnv,
-            }
+        const commands = buildWorkspaceCommands(
+            workspace.root,
+            workspace.needsInstall,
+            this.processConfig.baseEnv
         );
         return this.buildRunner.run(commands);
     }

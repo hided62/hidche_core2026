@@ -1,6 +1,27 @@
 import { describe, expect, it } from 'vitest';
 
-import { planProfileReconcile } from '../src/orchestrator/gatewayOrchestrator.js';
+import path from 'node:path';
+
+import {
+    buildProcessDefinitions,
+    buildWorkspaceCommands,
+    planProfileReconcile,
+} from '../src/orchestrator/gatewayOrchestrator.js';
+import type { GatewayProfileRecord } from '../src/orchestrator/profileRepository.js';
+
+const buildProfile = (buildWorkspace?: string): GatewayProfileRecord => ({
+    profileName: 'che:2',
+    profile: 'che',
+    scenario: '2',
+    apiPort: 15003,
+    status: 'RUNNING',
+    buildStatus: 'SUCCEEDED',
+    buildCommitSha: '0123456789abcdef0123456789abcdef01234567',
+    buildWorkspace,
+    meta: {},
+    createdAt: '2026-07-25T00:00:00.000Z',
+    updatedAt: '2026-07-25T00:00:00.000Z',
+});
 
 describe('planProfileReconcile', () => {
     it('starts missing processes for running profiles', () => {
@@ -46,5 +67,47 @@ describe('planProfileReconcile', () => {
                 daemonRunning: false,
             })
         ).toEqual({ shouldStart: false, shouldStop: false });
+    });
+});
+
+describe('buildProcessDefinitions', () => {
+    const processConfig = {
+        workspaceRoot: '/srv/sammo/main',
+        redisKeyPrefix: 'sammo:gateway',
+        gameTokenSecret: 'test-secret',
+    };
+
+    it('runs a built profile from its commit worktree', () => {
+        const buildWorkspace = '/srv/sammo/worktrees/0123456789abcdef';
+        const definitions = buildProcessDefinitions(buildProfile(buildWorkspace), processConfig);
+
+        expect(definitions.api.cwd).toBe(path.join(buildWorkspace, 'app', 'game-api'));
+        expect(definitions.api.script).toBe(path.join(buildWorkspace, 'app', 'game-api', 'dist', 'index.js'));
+        expect(definitions.daemon.cwd).toBe(path.join(buildWorkspace, 'app', 'game-engine'));
+        expect(definitions.daemon.script).toBe(path.join(buildWorkspace, 'app', 'game-engine', 'dist', 'index.js'));
+    });
+
+    it('keeps main as the runtime for profiles without a commit worktree', () => {
+        const definitions = buildProcessDefinitions(buildProfile(), processConfig);
+
+        expect(definitions.api.cwd).toBe(path.join(processConfig.workspaceRoot, 'app', 'game-api'));
+        expect(definitions.daemon.cwd).toBe(path.join(processConfig.workspaceRoot, 'app', 'game-engine'));
+    });
+});
+
+describe('buildWorkspaceCommands', () => {
+    it('installs and builds runtime dependencies before the profile processes', () => {
+        const workspaceRoot = '/srv/sammo/worktrees/0123456789abcdef';
+        const commands = buildWorkspaceCommands(workspaceRoot, true);
+
+        expect(commands.map(({ args }) => args)).toEqual([
+            ['install'],
+            ['--filter', '@sammo-ts/common', 'build'],
+            ['--filter', '@sammo-ts/infra', 'build'],
+            ['--filter', '@sammo-ts/logic', 'build'],
+            ['--filter', '@sammo-ts/game-api', 'build'],
+            ['--filter', '@sammo-ts/game-engine', 'build'],
+        ]);
+        expect(commands.every(({ cwd }) => cwd === workspaceRoot)).toBe(true);
     });
 });
