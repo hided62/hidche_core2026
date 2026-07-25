@@ -52,8 +52,17 @@ export type TurnDaemonCommand =
     | { type: 'resume'; requestId?: string; reason?: string }
     | { type: 'shutdown'; requestId?: string; reason?: string }
     | { type: 'getStatus'; requestId?: string }
+    | { type: 'troopCreate'; requestId?: string; generalId: number; troopName: string }
     | { type: 'troopJoin'; requestId?: string; generalId: number; troopId: number }
     | { type: 'troopExit'; requestId?: string; generalId: number }
+    | {
+          type: 'troopKick';
+          requestId?: string;
+          generalId: number;
+          troopId: number;
+          targetGeneralId: number;
+      }
+    | { type: 'troopRename'; requestId?: string; generalId: number; troopId: number; troopName: string }
     | { type: 'dieOnPrestart'; requestId?: string; generalId: number }
     | { type: 'buildNationCandidate'; requestId?: string; generalId: number }
     | { type: 'instantRetreat'; requestId?: string; generalId: number }
@@ -205,6 +214,19 @@ export type TurnDaemonCommandResult =
           reason: string;
       }
     | {
+          type: 'troopCreate';
+          ok: true;
+          generalId: number;
+          troopId: number;
+          troopName: string;
+      }
+    | {
+          type: 'troopCreate';
+          ok: false;
+          generalId: number;
+          reason: string;
+      }
+    | {
           type: 'troopJoin';
           ok: true;
           generalId: number;
@@ -227,6 +249,35 @@ export type TurnDaemonCommandResult =
           type: 'troopExit';
           ok: false;
           generalId: number;
+          reason: string;
+      }
+    | {
+          type: 'troopKick';
+          ok: true;
+          generalId: number;
+          troopId: number;
+          targetGeneralId: number;
+      }
+    | {
+          type: 'troopKick';
+          ok: false;
+          generalId: number;
+          troopId: number;
+          targetGeneralId: number;
+          reason: string;
+      }
+    | {
+          type: 'troopRename';
+          ok: true;
+          generalId: number;
+          troopId: number;
+          troopName: string;
+      }
+    | {
+          type: 'troopRename';
+          ok: false;
+          generalId: number;
+          troopId: number;
           reason: string;
       }
     | { type: 'dieOnPrestart'; ok: boolean; generalId: number; reason?: string }

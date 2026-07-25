@@ -472,6 +472,18 @@ export class InMemoryTurnWorld {
         return next;
     }
 
+    createTroop(troop: Troop): Troop | null {
+        if (this.troops.has(troop.id)) {
+            return null;
+        }
+        const next = { ...troop };
+        this.troops.set(troop.id, next);
+        this.dirtyTroopIds.add(troop.id);
+        this.createdTroopIds.add(troop.id);
+        this.deletedTroopIds.delete(troop.id);
+        return next;
+    }
+
     removeTroop(id: number): boolean {
         if (!this.troops.has(id)) {
             return false;

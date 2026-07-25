@@ -162,6 +162,11 @@ export const useSessionStore = defineStore('session', {
                 this.setSessionToken(storedToken);
             }
 
+            const storedGameToken = this.gameToken ?? readStorage(GAME_TOKEN_KEY);
+            if (storedGameToken && storedGameToken !== this.gameToken) {
+                this.setGameToken(storedGameToken);
+            }
+
             const storedProfile = this.profile ?? readStorage(PROFILE_KEY) ?? import.meta.env.VITE_GAME_PROFILE;
             if (storedProfile && storedProfile !== this.profile) {
                 this.setProfile(storedProfile);

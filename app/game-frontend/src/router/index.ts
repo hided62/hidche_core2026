@@ -25,6 +25,7 @@ import HallOfFameView from '../views/HallOfFameView.vue';
 import DynastyListView from '../views/DynastyListView.vue';
 import DynastyDetailView from '../views/DynastyDetailView.vue';
 import SurveyView from '../views/SurveyView.vue';
+import TroopView from '../views/TroopView.vue';
 import { useSessionStore } from '../stores/session';
 
 const routes = [
@@ -55,6 +56,15 @@ const routes = [
         path: '/inherit',
         name: 'inherit',
         component: InheritView,
+        meta: {
+            requiresAuth: true,
+            requiresGeneral: true,
+        },
+    },
+    {
+        path: '/troop',
+        name: 'troop',
+        component: TroopView,
         meta: {
             requiresAuth: true,
             requiresGeneral: true,

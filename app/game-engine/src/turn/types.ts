@@ -28,6 +28,7 @@ export interface TurnGeneral extends General {
     turnTime: Date;
     recentWarTime?: Date | null;
     lastTurn?: GeneralLastTurn;
+    penalty?: unknown;
 }
 
 export interface TurnDiplomacy {

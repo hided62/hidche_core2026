@@ -212,6 +212,7 @@ const mapGeneralRow = (row: TurnEngineGeneralRow): TurnGeneral => {
         },
         itemInventory,
         lastTurn: normalizeGeneralLastTurn(row.lastTurn),
+        penalty: row.penalty,
         // meta는 상단에서 보장 처리됨.
         turnTime: row.turnTime,
         recentWarTime: row.recentWarTime ?? null,

@@ -48,6 +48,7 @@ export interface TurnEngineGeneralRow {
     deadYear: number;
     affinity: number | null;
     meta: JsonValue;
+    penalty: JsonValue;
     turnTime: Date;
     recentWarTime: Date | null;
 }
