@@ -65,6 +65,7 @@ import {
     createFinishNationBettingHandler,
     createOpenNationBettingHandler,
 } from './monthlyNationBettingAction.js';
+import { createScoutBlockHandler } from './monthlyScoutBlockAction.js';
 import { buildCommandEnv } from './reservedTurnCommands.js';
 import { DatabaseTurnDaemonLease, TurnDaemonLeaseUnavailableError } from '../lifecycle/databaseTurnDaemonLease.js';
 
@@ -348,6 +349,15 @@ const createTurnDaemonRuntimeWithLease = async (
             getWorld: () => worldRef,
         })
     );
+    for (const actionName of ['BlockScoutAction', 'UnblockScoutAction'] as const) {
+        eventActions.set(
+            actionName,
+            createScoutBlockHandler({
+                actionName,
+                getWorld: () => worldRef,
+            })
+        );
+    }
     eventActions.set('ProcessIncome', async (_args, environment) => {
         await incomeHandler.onMonthChanged?.({
             previousYear: environment.month === 1 ? environment.year - 1 : environment.year,
