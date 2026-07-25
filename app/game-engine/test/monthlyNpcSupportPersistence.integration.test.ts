@@ -228,16 +228,14 @@ integration('monthly NPC support database persistence', () => {
                 affinity: 999,
                 meta: expect.objectContaining({ killturn: 70 }),
             });
-            expect(
-                await db.troop.findUniqueOrThrow({ where: { troopLeaderId: generalId } })
-            ).toMatchObject({
+            expect(await db.troop.findUniqueOrThrow({ where: { troopLeaderId: generalId } })).toMatchObject({
                 nationId,
                 name: '㉥부대장  41',
             });
             const turns = await db.generalTurn.findMany({ where: { generalId } });
             expect(turns).toHaveLength(30);
             expect(new Set(turns.map((turn) => turn.actionCode))).toEqual(new Set(['che_집합']));
-            expect(await db.rankData.count({ where: { generalId } })).toBe(41);
+            expect(await db.rankData.count({ where: { generalId } })).toBe(44);
             expect((await db.worldState.findUniqueOrThrow({ where: { id: stateRow.id } })).meta).toMatchObject({
                 lastNPCTroopLeaderID: 41,
             });

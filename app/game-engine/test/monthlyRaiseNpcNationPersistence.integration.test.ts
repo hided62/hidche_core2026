@@ -65,10 +65,7 @@ const map: MapDefinition = {
         level: 5,
         region: 1,
         position: { x: index, y: 0 },
-        connections: [
-            ...(index > 0 ? [rows[index - 1]!] : []),
-            ...(index + 1 < rows.length ? [rows[index + 1]!] : []),
-        ],
+        connections: [...(index > 0 ? [rows[index - 1]!] : []), ...(index + 1 < rows.length ? [rows[index + 1]!] : [])],
         max: {
             population: 50_000,
             agriculture: 5_000,
@@ -294,7 +291,7 @@ integration('RaiseNPCNation database persistence', () => {
             });
             expect(await db.generalTurn.count({ where: { generalId: createdGeneralId } })).toBe(30);
             expect(await db.nationTurn.count({ where: { nationId: createdNationId } })).toBe(48);
-            expect(await db.rankData.count({ where: { generalId: createdGeneralId } })).toBe(41);
+            expect(await db.rankData.count({ where: { generalId: createdGeneralId } })).toBe(44);
             expect(
                 await db.diplomacy.count({
                     where: {

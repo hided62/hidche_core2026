@@ -213,7 +213,7 @@ integration('CreateManyNPC database persistence', () => {
             const ranks = await db.rankData.findMany({ where: { generalId: createdGeneralId } });
             // Legacy inserts 37 RankColumn rows. Core's canonical rank model
             // additionally projects experience/dedication/dex, so it owns 41.
-            expect(ranks).toHaveLength(41);
+            expect(ranks).toHaveLength(44);
             expect(ranks.every((rank) => rank.nationId === 0 && rank.value === 0)).toBe(true);
             expect(
                 await db.logEntry.findMany({

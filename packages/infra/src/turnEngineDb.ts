@@ -55,6 +55,19 @@ export interface TurnEngineGeneralRow {
     recentWarTime: Date | null;
 }
 
+export interface TurnEngineRankDataRow {
+    generalId: number;
+    nationId: number;
+    type: string;
+    value: number;
+}
+
+export interface TurnEngineInheritancePointRow {
+    userId: string;
+    key: string;
+    value: number;
+}
+
 export interface TurnEngineCityRow {
     id: number;
     name: string;
@@ -362,6 +375,12 @@ export interface TurnEngineDatabaseClient {
         createMany(args: { data: TurnEngineGeneralCreateManyInput[] }): Promise<unknown>;
         update(args: { where: { id: number }; data: TurnEngineGeneralUpdateInput }): Promise<unknown>;
         deleteMany(args?: unknown): Promise<unknown>;
+    };
+    rankData: {
+        findMany(args?: unknown): Promise<TurnEngineRankDataRow[]>;
+    };
+    inheritancePoint: {
+        findMany(args?: unknown): Promise<TurnEngineInheritancePointRow[]>;
     };
     city: {
         findMany(args?: unknown): Promise<TurnEngineCityRow[]>;

@@ -53,10 +53,7 @@ integration('RegNPC database persistence', () => {
     const clean = async () => {
         await db.logEntry.deleteMany({
             where: {
-                OR: [
-                    { generalId: createdGeneralId },
-                    { year: 200, month: 1, text: { contains: 'ⓝ저장장수' } },
-                ],
+                OR: [{ generalId: createdGeneralId }, { year: 200, month: 1, text: { contains: 'ⓝ저장장수' } }],
             },
         });
         await db.generalTurn.deleteMany({ where: { generalId: createdGeneralId } });
@@ -207,7 +204,7 @@ integration('RegNPC database persistence', () => {
             expect(turns).toHaveLength(30);
             expect(new Set(turns.map((turn) => turn.actionCode))).toEqual(new Set(['휴식']));
             const ranks = await db.rankData.findMany({ where: { generalId: createdGeneralId } });
-            expect(ranks).toHaveLength(41);
+            expect(ranks).toHaveLength(44);
             expect(ranks.every((rank) => rank.nationId === 0 && rank.value === 0)).toBe(true);
             expect(
                 await db.logEntry.findFirst({

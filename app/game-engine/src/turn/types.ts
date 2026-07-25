@@ -31,6 +31,7 @@ export interface TurnGeneral extends General {
     recentWarTime?: Date | null;
     lastTurn?: GeneralLastTurn;
     penalty?: unknown;
+    inheritancePoints?: Record<string, number>;
 }
 
 export interface TurnDiplomacy {

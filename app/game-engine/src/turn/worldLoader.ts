@@ -5,6 +5,8 @@ import {
     type TurnEngineDatabaseClient,
     type TurnEngineDiplomacyRow,
     type TurnEngineGeneralRow,
+    type TurnEngineInheritancePointRow,
+    type TurnEngineRankDataRow,
     type TurnEngineNationRow,
     type TurnEngineTroopRow,
 } from '@sammo-ts/infra';
@@ -154,14 +156,36 @@ const mapScenarioConfig = (raw: JsonValue): ScenarioConfig => {
     return parsed.data;
 };
 
-const mapGeneralRow = (row: TurnEngineGeneralRow): TurnGeneral => {
+const GENERAL_RANK_META_PREFIX_TYPES = new Set([
+    'warnum',
+    'killnum',
+    'deathnum',
+    'occupied',
+    'killcrew',
+    'deathcrew',
+    'killcrew_person',
+    'deathcrew_person',
+]);
+
+const mapGeneralRow = (
+    row: TurnEngineGeneralRow,
+    rankRows: readonly TurnEngineRankDataRow[],
+    inheritanceRows: readonly TurnEngineInheritancePointRow[]
+): TurnGeneral => {
     const legacySlots: GeneralItemSlots = {
         horse: normalizeCode(row.horseCode),
         weapon: normalizeCode(row.weaponCode),
         book: normalizeCode(row.bookCode),
         item: normalizeCode(row.itemCode),
     };
-    const rawMeta = asTriggerRecord(row.meta) as Record<string, unknown>;
+    const rawMeta = { ...(asTriggerRecord(row.meta) as Record<string, unknown>) };
+    for (const rank of rankRows) {
+        if (rank.type === 'experience' || rank.type === 'dedication') {
+            continue;
+        }
+        rawMeta[GENERAL_RANK_META_PREFIX_TYPES.has(rank.type) ? `rank_${rank.type}` : rank.type] = rank.value;
+    }
+    const inheritancePoints = Object.fromEntries(inheritanceRows.map((entry) => [entry.key, entry.value]));
     const itemInventory = readItemInventoryFromMeta(rawMeta, legacySlots);
     return {
         ...((): { meta: TurnGeneral['meta'] } => {
@@ -218,6 +242,7 @@ const mapGeneralRow = (row: TurnEngineGeneralRow): TurnGeneral => {
         // meta는 상단에서 보장 처리됨.
         turnTime: row.turnTime,
         recentWarTime: row.recentWarTime ?? null,
+        inheritancePoints,
     };
 };
 
@@ -315,18 +340,39 @@ export const loadTurnWorldFromDatabase = async (options: TurnWorldLoaderOptions)
             throw new Error('world_state row is required to start turn daemon.');
         }
 
-        const [generalRows, cityRows, nationRows, diplomacyRows, troopRows, eventRows] = await Promise.all([
-            prisma.general.findMany(),
-            prisma.city.findMany(),
-            prisma.nation.findMany(),
-            prisma.diplomacy.findMany(),
-            prisma.troop.findMany(),
-            prisma.event.findMany({
-                orderBy: [{ priority: 'desc' }, { id: 'asc' }],
-            }),
-        ]);
+        const [generalRows, rankRows, inheritanceRows, cityRows, nationRows, diplomacyRows, troopRows, eventRows] =
+            await Promise.all([
+                prisma.general.findMany(),
+                prisma.rankData.findMany(),
+                prisma.inheritancePoint.findMany(),
+                prisma.city.findMany(),
+                prisma.nation.findMany(),
+                prisma.diplomacy.findMany(),
+                prisma.troop.findMany(),
+                prisma.event.findMany({
+                    orderBy: [{ priority: 'desc' }, { id: 'asc' }],
+                }),
+            ]);
 
-        const generals = generalRows.map(mapGeneralRow);
+        const ranksByGeneral = new Map<number, TurnEngineRankDataRow[]>();
+        for (const row of rankRows) {
+            const bucket = ranksByGeneral.get(row.generalId) ?? [];
+            bucket.push(row);
+            ranksByGeneral.set(row.generalId, bucket);
+        }
+        const inheritanceByUser = new Map<string, TurnEngineInheritancePointRow[]>();
+        for (const row of inheritanceRows) {
+            const bucket = inheritanceByUser.get(row.userId) ?? [];
+            bucket.push(row);
+            inheritanceByUser.set(row.userId, bucket);
+        }
+        const generals = generalRows.map((row) =>
+            mapGeneralRow(
+                row,
+                ranksByGeneral.get(row.id) ?? [],
+                row.userId ? (inheritanceByUser.get(row.userId) ?? []) : []
+            )
+        );
         const cities = cityRows.map(mapCityRow);
         const nations = nationRows.map(mapNationRow);
         const diplomacy = diplomacyRows.map(mapDiplomacyRow);
