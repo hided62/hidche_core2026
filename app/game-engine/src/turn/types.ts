@@ -32,6 +32,7 @@ export interface TurnGeneral extends General {
     lastTurn?: GeneralLastTurn;
     penalty?: unknown;
     inheritancePoints?: Record<string, number>;
+    refreshScoreTotal?: number;
 }
 
 export interface TurnDiplomacy {

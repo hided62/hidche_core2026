@@ -26,6 +26,7 @@ import { createGatewayProfileGate } from './gatewayProfileGate.js';
 import { composeCalendarHandlers } from './calendarHandlers.js';
 import { createIncomeHandler } from './incomeHandler.js';
 import { createNationTurnMonthlyHandler } from './nationTurnMonthlyHandler.js';
+import { createMonthlyBoundaryPreHandler } from './monthlyBoundaryPreHandler.js';
 import { createFrontStateHandler } from './frontStateHandler.js';
 import { createReservedTurnHandler } from './reservedTurnHandler.js';
 import { createReservedTurnStore } from './reservedTurnStore.js';
@@ -443,6 +444,11 @@ const createTurnDaemonRuntimeWithLease = async (
     const nationTurnMonthlyHandler = createNationTurnMonthlyHandler({
         getWorld: () => worldRef,
     });
+    const monthlyBoundaryPreHandler = createMonthlyBoundaryPreHandler({
+        getWorld: () => worldRef,
+        startYear: snapshot.scenarioMeta?.startYear ?? state.currentYear,
+        commandEnv: monthlyCommandEnv,
+    });
     const frontStateHandler = createFrontStateHandler({
         getWorld: () => worldRef,
         map: snapshot.map ?? null,
@@ -467,13 +473,14 @@ const createTurnDaemonRuntimeWithLease = async (
     });
     const calendarHandler = composeCalendarHandlers(
         monthlyEventHandler,
+        yearbookHandler.handler,
         options.calendarHandler ?? unification?.handler,
+        monthlyBoundaryPreHandler,
         nationTurnMonthlyHandler,
         hasEventAction('ProcessIncome') ? null : incomeHandler,
         frontStateHandler,
         neutralAuctionRegistrar.handler,
-        tournamentAutoStartHandler,
-        yearbookHandler.handler
+        tournamentAutoStartHandler
     );
     const worldOptions: InMemoryTurnWorldOptions = {
         schedule,
@@ -487,6 +494,7 @@ const createTurnDaemonRuntimeWithLease = async (
                 unitSet: snapshot.unitSet,
                 getWorld: () => worldRef,
                 commandProfile,
+                commandEnv: monthlyCommandEnv,
             })),
         calendarHandler: calendarHandler ?? undefined,
     };

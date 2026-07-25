@@ -68,6 +68,12 @@ export interface TurnEngineInheritancePointRow {
     value: number;
 }
 
+export interface TurnEngineGeneralAccessLogRow {
+    generalId: number;
+    userId: string | null;
+    refreshScoreTotal: number;
+}
+
 export interface TurnEngineCityRow {
     id: number;
     name: string;
@@ -381,6 +387,9 @@ export interface TurnEngineDatabaseClient {
     };
     inheritancePoint: {
         findMany(args?: unknown): Promise<TurnEngineInheritancePointRow[]>;
+    };
+    generalAccessLog: {
+        findMany(args?: unknown): Promise<TurnEngineGeneralAccessLogRow[]>;
     };
     city: {
         findMany(args?: unknown): Promise<TurnEngineCityRow[]>;
