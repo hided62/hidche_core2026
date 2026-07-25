@@ -55,7 +55,6 @@ export const GENERAL_TURN_COMMAND_KEYS = [
     'che_탈취',
     'che_NPC능동',
     'che_강행',
-    'che_귀환',
     '휴식',
 ] as const;
 

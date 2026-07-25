@@ -88,6 +88,9 @@ export class ActionDefinition<
 > implements GeneralActionDefinition<TriggerState, FoundingArgs, RandomFoundingResolveContext<TriggerState>> {
     public readonly key = ACTION_KEY;
     public readonly name = ACTION_NAME;
+    getInheritanceActiveActionAmount(): number {
+        return 1;
+    }
 
     parseArgs(raw: unknown): FoundingArgs | null {
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
@@ -131,7 +134,9 @@ export class ActionDefinition<
             throw new Error('Invalid color type');
         }
 
-        const candidates = (context.allCities ?? []).filter((city) => city.nationId === 0 && [5, 6].includes(city.level));
+        const candidates = (context.allCities ?? []).filter(
+            (city) => city.nationId === 0 && [5, 6].includes(city.level)
+        );
         if (candidates.length === 0) {
             context.addLog('건국할 수 있는 도시가 없습니다.', {
                 scope: LogScope.GENERAL,
@@ -157,10 +162,13 @@ export class ActionDefinition<
             scope: LogScope.SYSTEM,
             category: LogCategory.ACTION,
         });
-        context.addLog(`<Y><b>【건국】</b></>${args.nationType} <D><b>${args.nationName}</b></>${josaNationYi} 새로이 등장하였습니다.`, {
-            scope: LogScope.SYSTEM,
-            category: LogCategory.HISTORY,
-        });
+        context.addLog(
+            `<Y><b>【건국】</b></>${args.nationType} <D><b>${args.nationName}</b></>${josaNationYi} 새로이 등장하였습니다.`,
+            {
+                scope: LogScope.SYSTEM,
+                category: LogCategory.HISTORY,
+            }
+        );
         context.addLog(`<D><b>${args.nationName}</b></>${josaNationUl} 건국`, {
             scope: LogScope.GENERAL,
             category: LogCategory.HISTORY,

@@ -7,6 +7,7 @@ import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js'
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import { setMetaNumber } from '@sammo-ts/logic/war/utils.js';
+import { DOMESTIC_TRAIT_KEYS } from '@sammo-ts/logic/triggers/special/domestic/index.js';
 
 export interface ResetSpecialDomesticArgs {}
 
@@ -37,6 +38,23 @@ export class ActionDefinition<
     public readonly key = 'che_내정특기초기화';
     public readonly name = ACTION_NAME;
 
+    getPreReqTurn(): number {
+        return 1;
+    }
+
+    getPostReqTurn(): number {
+        return 60;
+    }
+
+    getProgressText(
+        _context: GeneralActionResolveContext<TriggerState>,
+        _args: ResetSpecialDomesticArgs,
+        term: number,
+        termMax: number
+    ): string {
+        return `새로운 적성을 찾는 중... (${term}/${termMax})`;
+    }
+
     parseArgs(_raw: unknown): ResetSpecialDomesticArgs | null {
         void _raw;
         return {};
@@ -55,6 +73,15 @@ export class ActionDefinition<
         _args: ResetSpecialDomesticArgs
     ): GeneralActionOutcome<TriggerState> {
         const general = context.general;
+        const previous = general.meta.prev_types_special;
+        const previousTypes = Array.isArray(previous)
+            ? previous.filter((value): value is string => typeof value === 'string')
+            : [];
+        const nextPreviousTypes = [...previousTypes, general.role.specialDomestic!];
+        general.meta.prev_types_special =
+            nextPreviousTypes.length === DOMESTIC_TRAIT_KEYS.length
+                ? [general.role.specialDomestic!]
+                : nextPreviousTypes;
         general.role.specialDomestic = null;
         setMetaNumber(general.meta, 'specAge', general.age + 1);
         context.addLog('새로운 내정 특기를 가질 준비가 되었습니다.');

@@ -9,7 +9,7 @@ import type {
     GeneralActionOutcome,
     GeneralActionResolveContext,
 } from '@sammo-ts/logic/actions/engine.js';
-import { createGeneralPatchEffect, createLogEffect } from '@sammo-ts/logic/actions/engine.js';
+import { createGeneralPatchEffect, createLogEffect, createNationPatchEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
@@ -23,6 +23,7 @@ interface CandidateNation<TriggerState extends GeneralTriggerState = GeneralTrig
     generals: General<TriggerState>[];
     generalCount: number;
     monarchCityId: number | null;
+    monarchAffinity: number;
 }
 
 export interface RandomAppointmentResolveContext<
@@ -31,6 +32,7 @@ export interface RandomAppointmentResolveContext<
     candidateNations: Array<CandidateNation<TriggerState>>;
     relYear: number;
     initialNationGenLimit: number;
+    historicalNpcAffinityMode: boolean;
 }
 
 const ACTION_NAME = '무작위 국가로 임관';
@@ -115,7 +117,11 @@ const calcNationPower = <TriggerState extends GeneralTriggerState>(generals: Gen
         const leadership = general.stats.leadership;
         if (leadership >= 40) {
             const coef = general.npcState < 2 ? 1.15 : 1;
-            warPower += coef * leadership;
+            const killCrew =
+                resolveNumber(asRecord(general.meta), ['rank_killcrew_person', 'killcrew_person'], 0) + 50_000;
+            const deathCrew =
+                resolveNumber(asRecord(general.meta), ['rank_deathcrew_person', 'deathcrew_person'], 0) + 50_000;
+            warPower += (killCrew / deathCrew) * coef * leadership;
         }
         const base = Math.sqrt(general.stats.intelligence * general.stats.strength) * 2 + leadership / 2;
         develPower += base / 5;
@@ -125,9 +131,16 @@ const calcNationPower = <TriggerState extends GeneralTriggerState>(generals: Gen
 
 export class ActionDefinition<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
-> implements GeneralActionDefinition<TriggerState, RandomAppointmentArgs, RandomAppointmentResolveContext<TriggerState>> {
+> implements GeneralActionDefinition<
+    TriggerState,
+    RandomAppointmentArgs,
+    RandomAppointmentResolveContext<TriggerState>
+> {
     public readonly key = 'che_랜덤임관';
     public readonly name = ACTION_NAME;
+    getInheritanceActiveActionAmount(): number {
+        return 1;
+    }
 
     parseArgs(_raw: unknown): RandomAppointmentArgs | null {
         return {};
@@ -159,17 +172,37 @@ export class ActionDefinition<
             return { effects, alternative: { commandKey: 'che_인재탐색', args: {} } };
         }
 
-        const weightedCandidates = candidateNations.map((candidate) => {
-            let power = calcNationPower(candidate.generals);
-            if (general.npcState < 2 && candidate.nation.name.startsWith('ⓤ')) {
-                power *= 100;
+        let picked: CandidateNation<TriggerState> | null;
+        if (context.historicalNpcAffinityMode) {
+            const totalGenerals = candidateNations.reduce((sum, candidate) => sum + candidate.generalCount, 0);
+            let actorAffinity = resolveNumber(asRecord(general.meta), ['affinity'], 0);
+            let bestScore = 1 << 30;
+            picked = null;
+            for (const candidate of candidateNations) {
+                // 레거시 구현은 actorAffinity를 매 후보마다 원래 값으로 되돌리지 않는다.
+                actorAffinity = Math.abs(actorAffinity - candidate.monarchAffinity);
+                actorAffinity = Math.min(actorAffinity, Math.abs(actorAffinity - 150));
+                const score =
+                    Math.log2(actorAffinity + 1) +
+                    rng.nextFloat1() +
+                    Math.sqrt(candidate.generalCount / Math.max(totalGenerals, 1));
+                if (score < bestScore) {
+                    bestScore = score;
+                    picked = candidate;
+                }
             }
-            const normalized = power > 0 ? power : 1;
-            const weight = Math.pow(1 / normalized, 3);
-            return [candidate, weight] as [CandidateNation<TriggerState>, number];
-        });
-
-        const picked = pickUsingWeightPair(rng, weightedCandidates);
+        } else {
+            const weightedCandidates = candidateNations.map((candidate) => {
+                let power = calcNationPower(candidate.generals);
+                if (general.npcState < 2 && candidate.nation.name.startsWith('ⓤ')) {
+                    power *= 100;
+                }
+                const normalized = power > 0 ? power : 1;
+                const weight = Math.pow(1 / normalized, 3);
+                return [candidate, weight] as [CandidateNation<TriggerState>, number];
+            });
+            picked = pickUsingWeightPair(rng, weightedCandidates);
+        }
         if (!picked) {
             effects.push(
                 createLogEffect('임관 가능한 국가가 없습니다.', {
@@ -207,6 +240,15 @@ export class ActionDefinition<
                 experience: general.experience + expGain,
                 meta,
             }),
+            createNationPatchEffect(
+                {
+                    meta: {
+                        ...destNation.meta,
+                        gennum: picked.generalCount + 1,
+                    },
+                },
+                destNation.id
+            ),
             createLogEffect(`<D>${destNationName}</>에 랜덤 임관했습니다.`, {
                 scope: LogScope.GENERAL,
                 category: LogCategory.ACTION,
@@ -238,10 +280,17 @@ export const actionContextBuilder: ActionContextBuilder = (base, options) => {
     const startYear = resolveStartYear(options.world, options.scenarioMeta);
     const relYear = Math.max(options.world.currentYear - startYear, 0);
     if (!worldRef) {
-        return { ...base, candidateNations: [], relYear, initialNationGenLimit: 0 };
+        return {
+            ...base,
+            candidateNations: [],
+            relYear,
+            initialNationGenLimit: 0,
+            historicalNpcAffinityMode: false,
+        };
     }
 
     const constValues = asRecord(options.scenarioConfig.const);
+    const worldMeta = asRecord(options.world.meta);
     const initialNationGenLimit = resolveNumber(constValues, ['initialNationGenLimit'], 0);
     const defaultMaxGeneral = resolveNumber(constValues, ['defaultMaxGeneral', 'maxGeneral'], 0);
     const genLimit = relYear < 3 && initialNationGenLimit > 0 ? initialNationGenLimit : defaultMaxGeneral;
@@ -251,7 +300,7 @@ export const actionContextBuilder: ActionContextBuilder = (base, options) => {
     const monarchCityByNation = new Map<number, number>();
 
     for (const general of generals) {
-        if (general.nationId <= 0) {
+        if (general.nationId <= 0 || ![0, 1, 2, 3, 6].includes(general.npcState)) {
             continue;
         }
         const list = generalsByNation.get(general.nationId) ?? [];
@@ -292,15 +341,28 @@ export const actionContextBuilder: ActionContextBuilder = (base, options) => {
         if (!monarchCityId) {
             continue;
         }
+        const chief =
+            nationGenerals.find((general) => general.officerLevel === 12) ??
+            (nation.chiefGeneralId ? worldRef.getGeneralById(nation.chiefGeneralId) : null);
         candidateNations.push({
             nation,
             generals: nationGenerals,
-            generalCount: nationGenerals.length,
+            generalCount: resolveNumber(meta, ['gennum'], nationGenerals.length),
             monarchCityId,
+            monarchAffinity: chief ? resolveNumber(asRecord(chief.meta), ['affinity'], 0) : 0,
         });
     }
 
-    return { ...base, candidateNations, relYear, initialNationGenLimit };
+    const scenarioId = resolveNumber(worldMeta, ['scenarioId', 'scenario'], 0);
+    const fiction = resolveNumber(asRecord(options.scenarioMeta), ['fiction'], 0);
+    return {
+        ...base,
+        candidateNations,
+        relYear,
+        initialNationGenLimit,
+        historicalNpcAffinityMode:
+            base.general.npcState >= 2 && fiction === 0 && scenarioId >= 1000 && scenarioId < 2000,
+    };
 };
 
 export const commandSpec: GeneralTurnCommandSpec = {

@@ -145,6 +145,8 @@ describe('Troop Management Scenario', () => {
 
         const generalAfterDraft = world.getGeneral(1)!;
         expect(generalAfterDraft.crew).toBe(1000);
+        // General::addDex(): 보병(armType 1)은 징병 인원 / 100만큼 숙련도가 오른다.
+        expect(generalAfterDraft.meta.dex1).toBe(10);
 
         // 3. Train
         const trainDef = trainSpec.createDefinition(systemEnv);
@@ -158,7 +160,8 @@ describe('Troop Management Scenario', () => {
         ]);
 
         const generalAfterTrain = world.getGeneral(1)!;
-        expect(generalAfterTrain.train).toBe(75);
+        // 레거시 훈련식: round(통솔 * 100 * trainDelta / 병력), 상한까지 적용.
+        expect(generalAfterTrain.train).toBe(100);
 
         // 4. Boost Morale
         const atmosDef = atmosSpec.createDefinition(systemEnv);
@@ -172,6 +175,7 @@ describe('Troop Management Scenario', () => {
         ]);
 
         const generalAfterAtmos = world.getGeneral(1)!;
-        expect(generalAfterAtmos.atmos).toBe(75);
+        // 레거시 사기진작식: round(통솔 * 100 / 병력 * atmosDelta), 명령 상한까지 적용.
+        expect(generalAfterAtmos.atmos).toBe(100);
     });
 });

@@ -76,6 +76,9 @@ export class ActionDefinition<
 > implements GeneralActionDefinition<TriggerState, FoundingArgs> {
     public readonly key = ACTION_KEY;
     public readonly name = ACTION_NAME;
+    getInheritanceActiveActionAmount(): number {
+        return 1;
+    }
 
     parseArgs(raw: unknown): FoundingArgs | null {
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
@@ -126,10 +129,13 @@ export class ActionDefinition<
             category: LogCategory.ACTION,
             scope: LogScope.SYSTEM,
         });
-        context.addLog(`<Y><b>【건국】</b></>${args.nationType} <D><b>${args.nationName}</b></>${josaNationYi} 새로이 등장하였습니다.`, {
-            category: LogCategory.HISTORY,
-            scope: LogScope.SYSTEM,
-        });
+        context.addLog(
+            `<Y><b>【건국】</b></>${args.nationType} <D><b>${args.nationName}</b></>${josaNationYi} 새로이 등장하였습니다.`,
+            {
+                category: LogCategory.HISTORY,
+                scope: LogScope.SYSTEM,
+            }
+        );
         context.addLog(`<D><b>${args.nationName}</b></>${josaNationUl} 건국`, {
             category: LogCategory.HISTORY,
             scope: LogScope.GENERAL,

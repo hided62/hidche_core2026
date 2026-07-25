@@ -37,6 +37,9 @@ export class ActionDefinition<
 > implements GeneralActionDefinition<TriggerState, RebellionArgs, RebellionResolveContext<TriggerState>> {
     public readonly key = ACTION_KEY;
     public readonly name = ACTION_NAME;
+    getInheritanceActiveActionAmount(): number {
+        return 1;
+    }
 
     parseArgs(_raw: unknown): RebellionArgs | null {
         return {};
@@ -54,8 +57,9 @@ export class ActionDefinition<
         }
 
         const lord =
-            context.nationGenerals?.find((candidate) => candidate.nationId === nation.id && candidate.officerLevel === 12) ??
-            null;
+            context.nationGenerals?.find(
+                (candidate) => candidate.nationId === nation.id && candidate.officerLevel === 12
+            ) ?? null;
         if (!lord || lord.id === general.id) {
             throw new Error('모반할 대상 군주가 없습니다.');
         }
@@ -63,10 +67,13 @@ export class ActionDefinition<
         const josaYi = JosaUtil.pick(general.name, '이');
         const effects: Array<GeneralActionEffect<TriggerState>> = [];
 
-        context.addLog(`<Y><b>【모반】</b></><Y>${general.name}</>${josaYi} <D><b>${nation.name}</b></>의 군주 자리를 찬탈했습니다.`, {
-            scope: LogScope.SYSTEM,
-            category: LogCategory.HISTORY,
-        });
+        context.addLog(
+            `<Y><b>【모반】</b></><Y>${general.name}</>${josaYi} <D><b>${nation.name}</b></>의 군주 자리를 찬탈했습니다.`,
+            {
+                scope: LogScope.SYSTEM,
+                category: LogCategory.HISTORY,
+            }
+        );
         context.addLog(`<Y>${general.name}</>${josaYi} <Y>${lord.name}</>에게서 군주자리를 찬탈`, {
             scope: LogScope.NATION,
             category: LogCategory.HISTORY,
@@ -88,12 +95,15 @@ export class ActionDefinition<
                 category: LogCategory.ACTION,
                 format: LogFormat.PLAIN,
             }),
-            createLogEffect(`<D><b>${general.name}</b></>의 모반으로 인해 <D><b>${nation.name}</b></>의 군주자리를 박탈당함`, {
-                scope: LogScope.GENERAL,
-                generalId: lord.id,
-                category: LogCategory.HISTORY,
-                format: LogFormat.PLAIN,
-            }),
+            createLogEffect(
+                `<D><b>${general.name}</b></>의 모반으로 인해 <D><b>${nation.name}</b></>의 군주자리를 박탈당함`,
+                {
+                    scope: LogScope.GENERAL,
+                    generalId: lord.id,
+                    category: LogCategory.HISTORY,
+                    format: LogFormat.PLAIN,
+                }
+            ),
             createGeneralPatchEffect(
                 {
                     officerLevel: 12,

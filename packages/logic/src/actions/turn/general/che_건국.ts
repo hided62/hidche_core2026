@@ -76,13 +76,20 @@ export class ActionDefinition<
 > implements GeneralActionDefinition<TriggerState, FoundingArgs> {
     public readonly key = 'che_건국';
     public readonly name = ACTION_NAME;
+    getInheritanceActiveActionAmount(): number {
+        return 1;
+    }
 
     parseArgs(raw: unknown): FoundingArgs | null {
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
     buildMinConstraints(_ctx: ConstraintContext, _args: FoundingArgs): Constraint[] {
-        return [beOpeningPart(), reqNationValue('level', '국가규모', '==', 0, '정식 국가가 아니어야합니다.'), noPenalty('noFoundNation')];
+        return [
+            beOpeningPart(),
+            reqNationValue('level', '국가규모', '==', 0, '정식 국가가 아니어야합니다.'),
+            noPenalty('noFoundNation'),
+        ];
     }
 
     buildConstraints(_ctx: ConstraintContext, args: FoundingArgs): Constraint[] {

@@ -16,6 +16,7 @@ import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/action
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import { clamp } from 'es-toolkit';
+import { GeneralActionPipeline } from '@sammo-ts/logic/triggers/general-action.js';
 
 export interface BoostMoraleArgs {}
 
@@ -23,6 +24,9 @@ export interface BoostMoraleEnvironment {
     atmosDelta?: number;
     maxAtmosByCommand?: number;
     costGold?: number;
+    trainSideEffectByAtmosTurn?: number;
+    unitSet?: TurnCommandEnv['unitSet'];
+    generalActionModules?: TurnCommandEnv['generalActionModules'];
 }
 
 const ACTION_NAME = '사기 진작';
@@ -35,9 +39,11 @@ export class ActionDefinition<
     public readonly key = 'che_사기진작';
     public readonly name = ACTION_NAME;
     private readonly env: BoostMoraleEnvironment;
+    private readonly pipeline: GeneralActionPipeline<TriggerState>;
 
     constructor(env: BoostMoraleEnvironment = {}) {
         this.env = env;
+        this.pipeline = new GeneralActionPipeline(env.generalActionModules ?? []);
     }
 
     parseArgs(_raw: unknown): BoostMoraleArgs | null {
@@ -50,7 +56,10 @@ export class ActionDefinition<
     }
 
     buildConstraints(_ctx: ConstraintContext, _args: BoostMoraleArgs): Constraint[] {
-        const getRequiredGold = (_context: ConstraintContext, _view: StateView): number => this.env.costGold ?? 0;
+        const getRequiredGold = (context: ConstraintContext, view: StateView): number => {
+            const general = view.get({ kind: 'general', id: context.actorId }) as { crew?: number } | null;
+            return this.env.costGold ?? Math.round((general?.crew ?? 0) / 100);
+        };
         const maxAtmos =
             this.env.maxAtmosByCommand && this.env.maxAtmosByCommand > 0
                 ? this.env.maxAtmosByCommand
@@ -76,13 +85,26 @@ export class ActionDefinition<
                 ? this.env.maxAtmosByCommand
                 : DEFAULT_MAX_ATMOS;
         const delta = this.env.atmosDelta && this.env.atmosDelta > 0 ? this.env.atmosDelta : DEFAULT_ATMOS_DELTA;
-        const nextAtmos = clamp(general.atmos + delta, 0, maxAtmos);
+        const leadership = this.pipeline.onCalcStat(context, 'leadership', general.stats.leadership);
+        const score = Math.round((leadership * 100 * delta) / general.crew);
+        const nextAtmos = clamp(general.atmos + score, 0, maxAtmos);
         const applied = nextAtmos - general.atmos;
-        const costGold = this.env.costGold ?? 0;
+        const costGold = this.env.costGold ?? Math.round(general.crew / 100);
+        const trainSideEffect = Math.max(0, Math.trunc(general.train * (this.env.trainSideEffectByAtmosTurn ?? 1)));
 
-        // 직접 수정 (Immer Draft)
         general.atmos = nextAtmos;
+        general.train = trainSideEffect;
         general.gold = Math.max(0, general.gold - costGold);
+        general.experience += 100;
+        general.dedication += 70;
+        const leadershipExp = typeof general.meta.leadership_exp === 'number' ? general.meta.leadership_exp : 0;
+        general.meta.leadership_exp = leadershipExp + 1;
+        const crewType = this.env.unitSet?.crewTypes?.find((entry) => entry.id === general.crewTypeId);
+        if (crewType) {
+            const dexKey = `dex${crewType.armType}`;
+            const dex = typeof general.meta[dexKey] === 'number' ? general.meta[dexKey] : 0;
+            general.meta[dexKey] = dex + applied;
+        }
 
         context.addLog(`사기치가 <C>${applied}</> 상승했습니다.`);
         tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
@@ -103,5 +125,10 @@ export const commandSpec: GeneralTurnCommandSpec = {
         new ActionDefinition({
             atmosDelta: env.atmosDelta,
             maxAtmosByCommand: env.maxAtmosByCommand,
+            ...(env.trainSideEffectByAtmosTurn !== undefined
+                ? { trainSideEffectByAtmosTurn: env.trainSideEffectByAtmosTurn }
+                : {}),
+            ...(env.unitSet ? { unitSet: env.unitSet } : {}),
+            ...(env.generalActionModules ? { generalActionModules: env.generalActionModules } : {}),
         }),
 };

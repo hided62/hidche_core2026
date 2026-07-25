@@ -14,7 +14,6 @@ export interface RecoveryEnvironment {
 }
 
 const ACTION_NAME = '요양';
-const DEFAULT_INJURY_DELTA = 10;
 
 export class ActionDefinition<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -41,13 +40,14 @@ export class ActionDefinition<
         _args: RecoveryArgs
     ): GeneralActionOutcome<TriggerState> {
         const general = context.general;
-        const delta = this.env.injuryDelta ?? DEFAULT_INJURY_DELTA;
-        const nextInjury = Math.max(0, general.injury - delta);
+        const nextInjury = 0;
         const costGold = this.env.costGold ?? 0;
 
         // 직접 수정 (Immer Draft)
         general.injury = nextInjury;
         general.gold = Math.max(0, general.gold - costGold);
+        general.experience += 10;
+        general.dedication += 7;
 
         context.addLog(`건강 회복을 위해 요양합니다.`);
 

@@ -42,6 +42,7 @@ export interface TurnEngineGeneralRow {
     atmos: number;
     age: number;
     npcState: number;
+    lastTurn: JsonValue;
     meta: JsonValue;
     turnTime: Date;
     recentWarTime: Date | null;
@@ -66,6 +67,7 @@ export interface TurnEngineCityRow {
     defenceMax: number;
     wall: number;
     wallMax: number;
+    conflict: JsonValue;
     meta: JsonValue;
     trust: number;
     trade: number;
@@ -166,6 +168,7 @@ export interface TurnEngineGeneralUpdateInput {
     personalCode: string;
     specialCode: string;
     special2Code: string;
+    lastTurn: InputJsonValue;
     meta: InputJsonValue;
     turnTime: Date;
     recentWarTime: Date | null;
@@ -228,6 +231,7 @@ export interface TurnEngineCityUpdateInput {
     defenceMax: number;
     wall: number;
     wallMax: number;
+    conflict?: InputJsonValue;
     meta: InputJsonValue;
     trust?: number;
     trade?: number;

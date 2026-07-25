@@ -8,6 +8,7 @@ import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/action
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import { setMetaNumber } from '@sammo-ts/logic/war/utils.js';
+import { WAR_TRAIT_KEYS } from '@sammo-ts/logic/triggers/special/war/index.js';
 
 export interface ResetSpecialWarArgs {}
 
@@ -38,6 +39,23 @@ export class ActionDefinition<
     public readonly key = 'che_전투특기초기화';
     public readonly name = ACTION_NAME;
 
+    getPreReqTurn(): number {
+        return 1;
+    }
+
+    getPostReqTurn(): number {
+        return 60;
+    }
+
+    getProgressText(
+        _context: GeneralActionResolveContext<TriggerState>,
+        _args: ResetSpecialWarArgs,
+        term: number,
+        termMax: number
+    ): string {
+        return `새로운 적성을 찾는 중... (${term}/${termMax})`;
+    }
+
     parseArgs(_raw: unknown): ResetSpecialWarArgs | null {
         void _raw;
         return {};
@@ -56,6 +74,13 @@ export class ActionDefinition<
         _args: ResetSpecialWarArgs
     ): GeneralActionOutcome<TriggerState> {
         const general = context.general;
+        const previous = general.meta.prev_types_special2;
+        const previousTypes = Array.isArray(previous)
+            ? previous.filter((value): value is string => typeof value === 'string')
+            : [];
+        const nextPreviousTypes = [...previousTypes, general.role.specialWar!];
+        general.meta.prev_types_special2 =
+            nextPreviousTypes.length === WAR_TRAIT_KEYS.length ? [general.role.specialWar!] : nextPreviousTypes;
         general.role.specialWar = null;
         setMetaNumber(general.meta, 'specAge2', general.age + 1);
         const specialName = ACTION_NAME.replace(' 초기화', '');

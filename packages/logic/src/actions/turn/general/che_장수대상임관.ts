@@ -1,11 +1,6 @@
 import type { General, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext, RequirementKey } from '@sammo-ts/logic/constraints/types.js';
-import {
-    allowJoinAction,
-    beNeutral,
-    reqEnvValue,
-    unknownOrDeny,
-} from '@sammo-ts/logic/constraints/presets.js';
+import { allowJoinAction, beNeutral, reqEnvValue, unknownOrDeny } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
 import { createGeneralPatchEffect, createNationPatchEffect } from '@sammo-ts/logic/actions/engine.js';
@@ -93,7 +88,10 @@ const allowJoinDestNation = (destGeneralID: number): Constraint => ({
             return { kind: 'deny', reason: '국가 정보가 없습니다.' };
         }
 
-        const relYear = typeof view.get({ kind: 'env', key: 'relYear' }) === 'number' ? (view.get({ kind: 'env', key: 'relYear' }) as number) : 0;
+        const relYear =
+            typeof view.get({ kind: 'env', key: 'relYear' }) === 'number'
+                ? (view.get({ kind: 'env', key: 'relYear' }) as number)
+                : 0;
         const openingPartYear =
             typeof view.get({ kind: 'env', key: 'openingPartYear' }) === 'number'
                 ? (view.get({ kind: 'env', key: 'openingPartYear' }) as number)
@@ -129,20 +127,23 @@ const allowJoinDestNation = (destGeneralID: number): Constraint => ({
 
 export class ActionDefinition<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
-> implements GeneralActionDefinition<TriggerState, FollowAppointmentArgs, FollowAppointmentResolveContext<TriggerState>> {
+> implements GeneralActionDefinition<
+    TriggerState,
+    FollowAppointmentArgs,
+    FollowAppointmentResolveContext<TriggerState>
+> {
     public readonly key = ACTION_KEY;
     public readonly name = ACTION_NAME;
+    getInheritanceActiveActionAmount(): number {
+        return 1;
+    }
 
     parseArgs(raw: unknown): FollowAppointmentArgs | null {
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
     buildMinConstraints(_ctx: ConstraintContext, _args: FollowAppointmentArgs): Constraint[] {
-        return [
-            reqEnvValue('join_mode', '!=', 'onlyRandom', '랜덤 임관만 가능합니다'),
-            beNeutral(),
-            allowJoinAction(),
-        ];
+        return [reqEnvValue('join_mode', '!=', 'onlyRandom', '랜덤 임관만 가능합니다'), beNeutral(), allowJoinAction()];
     }
 
     buildConstraints(ctx: ConstraintContext, args: FollowAppointmentArgs): Constraint[] {
@@ -233,7 +234,7 @@ export const actionContextBuilder: ActionContextBuilder<FollowAppointmentArgs> =
     }
 
     const destGeneral = worldRef.getGeneralById(destGeneralID) ?? undefined;
-    const destNation = destGeneral ? worldRef.getNationById(destGeneral.nationId) ?? undefined : undefined;
+    const destNation = destGeneral ? (worldRef.getNationById(destGeneral.nationId) ?? undefined) : undefined;
     if (!destGeneral || !destNation) {
         return null;
     }

@@ -11,11 +11,16 @@ import type {
 import { createGeneralPatchEffect, createNationPatchEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat } from '@sammo-ts/logic/logging/types.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
-import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
+import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 
 export interface ProcureArgs {}
+interface ProcureContext<
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
+> extends GeneralActionResolveContext<TriggerState> {
+    relYear?: number;
+}
 
 const ACTION_NAME = '물자조달';
 const ACTION_KEY = 'che_물자조달';
@@ -30,10 +35,7 @@ export class ActionResolver<
         this.pipeline = new GeneralActionPipeline(modules);
     }
 
-    resolve(
-        context: GeneralActionResolveContext<TriggerState>,
-        _args: ProcureArgs
-    ): GeneralActionOutcome<TriggerState> {
+    resolve(context: ProcureContext<TriggerState>, _args: ProcureArgs): GeneralActionOutcome<TriggerState> {
         const general = context.general;
         const nation = context.nation;
 
@@ -42,18 +44,14 @@ export class ActionResolver<
         }
 
         // 1. Choose Gold or Rice
-        const picked = context.rng.nextBool(0.5) ? 'gold' : 'rice';
+        const picked = context.rng.nextInt(0, 2) === 0 ? 'gold' : 'rice';
         const resName = picked === 'gold' ? '금' : '쌀';
         const resKey = picked === 'gold' ? 'gold' : 'rice';
 
         // 2. Base Score
         let score = general.stats.leadership + general.stats.strength + general.stats.intelligence;
-
-        // Domestic Bonus (Hardcoded simplified logic or need helper)
-        // In legacy: getDomesticExpLevelBonus($general->getVar('explevel'))
-        // For now, assume simplified or no bonus unless strictly required to port helper.
-        // Assuming 1.0 for now if helper not available, or implement simple bonus.
-        // Legacy: $score *= $rng->nextRange(0.8, 1.2);
+        const expLevel = typeof general.meta.explevel === 'number' ? general.meta.explevel : 0;
+        score *= 1 + expLevel / 500;
         score *= context.rng.nextFloat1() * 0.4 + 0.8;
 
         // 3. Success/Fail Ratio
@@ -64,12 +62,14 @@ export class ActionResolver<
         failRatio = this.pipeline.onCalcDomestic(context, '조달', 'fail', failRatio);
 
         // 4. Determine Outcome
-        const roll = context.rng.nextFloat1();
+        const normalRatio = 1 - failRatio - successRatio;
+        let roll = context.rng.nextFloat1() * (failRatio + successRatio + normalRatio);
         let outcome: 'fail' | 'success' | 'normal' = 'normal';
 
-        if (roll < failRatio) {
+        roll -= failRatio;
+        if (roll <= 0) {
             outcome = 'fail';
-        } else if (roll < failRatio + successRatio) {
+        } else if (roll - successRatio <= 0) {
             outcome = 'success';
         }
 
@@ -77,41 +77,48 @@ export class ActionResolver<
         // Legacy: CriticalScoreEx($rng, $pick);
         // fail -> 0.5, success -> 1.5, normal -> 1.0 roughly
         if (outcome === 'fail') {
-            score *= 0.5;
+            score *= 0.2 + context.rng.nextFloat1() * 0.2;
         } else if (outcome === 'success') {
-            score *= 1.5;
+            score *= 2.2 + context.rng.nextFloat1() * 0.8;
         }
 
         score = this.pipeline.onCalcDomestic(context, '조달', 'score', score);
-        score = Math.floor(score);
+        score = Math.round(score);
 
         // 6. Calculate Exp/Dedication
         const exp = (score * 0.7) / 3;
         const ded = (score * 1.0) / 3;
 
         // 7. Update General
-        const nextExp = general.experience + Math.floor(exp);
-        const nextDed = general.dedication + Math.floor(ded);
+        const nextExp = general.experience + Math.trunc(exp);
+        const nextDed = general.dedication + Math.trunc(ded);
+
+        let appliedScore = score;
+        if (context.city && [1, 3].includes(context.city.frontState)) {
+            let frontDebuff = 0.5;
+            if (nation.capitalCityId === context.city.id && (context.relYear ?? 0) < 25) {
+                const debuffScale = Math.max(0, Math.min(20, (context.relYear ?? 0) - 5)) * 0.05;
+                frontDebuff = debuffScale * frontDebuff + (1 - debuffScale);
+            }
+            appliedScore *= frontDebuff;
+        }
 
         // Stat Exp
         // Legacy: choose weighted among L/S/I
         const statChoice =
             context.rng.nextFloat1() * (general.stats.leadership + general.stats.strength + general.stats.intelligence);
-        let statKey: 'leadership_exp' | 'strength_exp' | 'intel_exp' = 'leadership_exp';
-
-        if (statChoice < general.stats.leadership) {
-            statKey = 'leadership_exp';
-        } else if (statChoice < general.stats.leadership + general.stats.strength) {
-            statKey = 'strength_exp';
-        } else {
-            statKey = 'intel_exp';
-        }
+        const statKey: 'leadership_exp' | 'strength_exp' | 'intel_exp' =
+            statChoice < general.stats.leadership
+                ? 'leadership_exp'
+                : statChoice < general.stats.leadership + general.stats.strength
+                  ? 'strength_exp'
+                  : 'intel_exp';
 
         // 8. Update Nation
-        const nextNationRes = (nation[resKey] ?? 0) + score;
+        const nextNationRes = (nation[resKey] ?? 0) + Math.trunc(appliedScore);
 
         // 9. Logging
-        const scoreText = score.toLocaleString();
+        const scoreText = Math.round(appliedScore).toLocaleString();
         if (outcome === 'fail') {
             context.addLog(
                 `조달을 <span class='ev_failed'>실패</span>하여 ${resName}을 <C>${scoreText}</> 조달했습니다.`,
@@ -185,7 +192,12 @@ export class ActionDefinition<
     }
 }
 
-export const actionContextBuilder = defaultActionContextBuilder;
+export const actionContextBuilder: ActionContextBuilder = (base, options) => ({
+    ...base,
+    ...(typeof options.scenarioMeta?.startYear === 'number'
+        ? { relYear: options.world.currentYear - options.scenarioMeta.startYear }
+        : {}),
+});
 
 export const commandSpec: GeneralTurnCommandSpec = {
     key: 'che_물자조달',

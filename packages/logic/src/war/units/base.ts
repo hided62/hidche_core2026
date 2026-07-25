@@ -1,10 +1,6 @@
 import type { RandUtil } from '@sammo-ts/common';
 
-import type {
-    GeneralTriggerState,
-    Nation,
-    TriggerValue,
-} from '@sammo-ts/logic/domain/entities.js';
+import type { GeneralTriggerState, Nation, TriggerValue } from '@sammo-ts/logic/domain/entities.js';
 import type { ActionLogger } from '@sammo-ts/logic/logging/actionLogger.js';
 import { LogFormat } from '@sammo-ts/logic/logging/types.js';
 import type { WarEngineConfig } from '../types.js';
@@ -14,7 +10,7 @@ import { clampMin, getDexLog, getMetaNumber, round } from '../utils.js';
 export const WAR_CRITICAL_RANGE: [number, number] = [1.3, 2.0];
 
 export const resolveNationTech = (nation: Nation | null): number =>
-    (nation ? getMetaNumber(nation.meta, 'tech', 0) : 0);
+    nation ? getMetaNumber(nation.meta, 'tech', 0) : 0;
 
 const resolveNationVar = (nation: Nation | null, key: string): TriggerValue | null => {
     if (!nation) {
@@ -246,7 +242,8 @@ export abstract class WarUnit<TriggerState extends GeneralTriggerState = General
         if (warPower < 100) {
             warPower = clampMin(warPower, 0);
             warPower = (warPower + 100) / 2;
-            warPower = this.rng.nextRangeInt(warPower, 100);
+            // PHP의 int parameter coercion은 소수 하한을 0 방향으로 절삭한다.
+            warPower = this.rng.nextRangeInt(Math.trunc(warPower), 100);
         }
 
         warPower *= this.getComputedAtmos();

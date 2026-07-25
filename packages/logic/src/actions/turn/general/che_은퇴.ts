@@ -9,11 +9,12 @@ import type {
     GeneralActionEffect,
 } from '@sammo-ts/logic/actions/engine.js';
 import { createGeneralPatchEffect } from '@sammo-ts/logic/actions/engine.js';
-import { LogCategory, LogFormat } from '@sammo-ts/logic/logging/types.js';
+import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
+import { JosaUtil } from '@sammo-ts/common';
 
 export interface RetireArgs {}
 
@@ -42,37 +43,74 @@ export class ActionResolver<
     resolve(context: GeneralActionResolveContext<TriggerState>, _args: RetireArgs): GeneralActionOutcome<TriggerState> {
         const general = context.general;
 
-        // Logs
-        context.addLog(`은퇴하였습니다.`, {
+        const effects: GeneralActionEffect<TriggerState>[] = [];
+        const nextMeta = { ...general.meta };
+        for (const key of ['dex1', 'dex2', 'dex3', 'dex4', 'dex5'] as const) {
+            const value = typeof nextMeta[key] === 'number' ? nextMeta[key] : 0;
+            nextMeta[key] = Math.round(value * 0.5);
+        }
+        nextMeta.specAge = 0;
+        nextMeta.specAge2 = 0;
+        nextMeta.firenum = 0;
+        for (const key of [
+            'warnum',
+            'killnum',
+            'deathnum',
+            'killcrew',
+            'deathcrew',
+            'ttw',
+            'ttd',
+            'ttl',
+            'ttg',
+            'ttp',
+            'tlw',
+            'tld',
+            'tll',
+            'tlg',
+            'tlp',
+            'tsw',
+            'tsd',
+            'tsl',
+            'tsg',
+            'tsp',
+            'tiw',
+            'tid',
+            'til',
+            'tig',
+            'tip',
+            'betwin',
+            'betgold',
+            'betwingold',
+            'killcrew_person',
+            'deathcrew_person',
+            'occupied',
+            'inherit_earned',
+            'inherit_spent',
+            'inherit_earned_dyn',
+            'inherit_earned_act',
+            'inherit_spent_dyn',
+        ]) {
+            nextMeta[`rank_${key}`] = 0;
+        }
+
+        const josaYi = JosaUtil.pick(general.name, '이');
+        context.addLog(`<Y>${general.name}</>${josaYi} <R>은퇴</>하고 그 자손이 유지를 이어받았습니다.`, {
+            scope: LogScope.SYSTEM,
+            category: LogCategory.ACTION,
+            format: LogFormat.RAWTEXT,
+        });
+        context.addLog('나이가 들어 <R>은퇴</>하고 자손에게 자리를 물려줍니다.', {
+            category: LogCategory.ACTION,
+            format: LogFormat.PLAIN,
+        });
+        context.addLog('나이가 들어 은퇴하고, 자손에게 관직을 물려줌', {
+            category: LogCategory.HISTORY,
+            format: LogFormat.YEAR_MONTH,
+        });
+        context.addLog('은퇴하였습니다.', {
             category: LogCategory.ACTION,
             format: LogFormat.MONTH,
         });
-
-        // Rebirth Logic (Simulated)
-        // 1. Reset Stats (Randomize slightly?)
-        // Let's keep total stat points but re-distribute or small variation?
-        // Legacy: complete re-roll usually.
-        // Simple implementation: Random re-roll around average 70?
-
-        const rng = context.rng;
-        const newLead = rng.nextInt(30, 90);
-        const newStr = rng.nextInt(30, 90);
-        const newIntel = rng.nextInt(30, 90);
-
-        // 2. Reset Age
-        const newAge = 20;
-
-        // 3. Reset Exp/Ded
-        const newExp = 0;
-        const newDed = 0;
-
-        // 4. Reset Meta (Inheritance points?)
-        // Legacy: increases inheritance point.
-        // We'll increment inheritance point in meta.
-        const inheritance =
-            (typeof general.meta.inheritance_point === 'number' ? general.meta.inheritance_point : 0) + 1;
-
-        const effects: GeneralActionEffect<TriggerState>[] = [];
 
         tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
 
@@ -80,19 +118,16 @@ export class ActionResolver<
             createGeneralPatchEffect(
                 {
                     ...general,
-                    age: newAge,
+                    age: 20,
                     stats: {
-                        leadership: newLead,
-                        strength: newStr,
-                        intelligence: newIntel,
+                        leadership: Math.max(10, Math.round(general.stats.leadership * 0.85)),
+                        strength: Math.max(10, Math.round(general.stats.strength * 0.85)),
+                        intelligence: Math.max(10, Math.round(general.stats.intelligence * 0.85)),
                     },
-                    experience: newExp,
-                    dedication: newDed,
-                    meta: {
-                        ...general.meta,
-                        inheritance_point: inheritance,
-                        // Clear other temp vars?
-                    },
+                    injury: 0,
+                    experience: Math.round(general.experience * 0.5),
+                    dedication: Math.round(general.dedication * 0.5),
+                    meta: nextMeta,
                 },
                 general.id
             )
@@ -111,6 +146,14 @@ export class ActionDefinition<
 
     constructor() {
         this.resolver = new ActionResolver();
+    }
+
+    getPreReqTurn(): number {
+        return 1;
+    }
+
+    getPostReqTurn(): number {
+        return 0;
     }
 
     parseArgs(_raw: unknown): RetireArgs | null {

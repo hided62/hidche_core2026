@@ -1,10 +1,16 @@
+import { asRecord, JosaUtil } from '@sammo-ts/common';
 import type { GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import { allowJoinAction, beNeutral, beOpeningPart, noPenalty } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
-import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
+import type {
+    GeneralActionEffect,
+    GeneralActionOutcome,
+    GeneralActionResolveContext,
+} from '@sammo-ts/logic/actions/engine.js';
 import {
     createGeneralPatchEffect,
+    createDiplomacyPatchEffect,
     createNationAddEffect,
 } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat } from '@sammo-ts/logic/logging/types.js';
@@ -13,11 +19,13 @@ import type { ActionContextBuilder, ActionContextBase } from '@sammo-ts/logic/ac
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 
-export interface UprisingArgs { }
+export interface UprisingArgs {}
 
 export interface UprisingContext extends ActionContextBase {
     createNationId: () => number;
     listNations?: () => Nation[];
+    scenarioId: number;
+    baseRice: number;
 }
 
 const ACTION_NAME = '거병';
@@ -27,6 +35,9 @@ export class ActionDefinition<
 > implements GeneralActionDefinition<TriggerState, UprisingArgs> {
     public readonly key = 'che_거병';
     public readonly name = ACTION_NAME;
+    getInheritanceActiveActionAmount(): number {
+        return 1;
+    }
 
     parseArgs(_raw: unknown): UprisingArgs | null {
         return {};
@@ -48,7 +59,7 @@ export class ActionDefinition<
         }
 
         const newNationId = uprisingCtx.createNationId();
-        const josaYi = '이'; // Mock JodaUtil.pick
+        const josaYi = JosaUtil.pick(general.name, '이');
 
         let nationName = general.name;
         const nations = uprisingCtx.listNations ? uprisingCtx.listNations() : [];
@@ -80,14 +91,14 @@ export class ActionDefinition<
             capitalCityId: null,
             chiefGeneralId: general.id,
             gold: 0,
-            rice: 2000,
+            rice: uprisingCtx.baseRice,
             power: 0,
             meta: {
                 rate: 20,
                 bill: 100,
                 strategic_cmd_limit: 12,
                 surlimit: 72,
-                secretlimit: 3,
+                secretlimit: uprisingCtx.scenarioId >= 1000 ? 1 : 3,
                 gennum: 1,
                 ...(npcNationPolicy ? { npc_nation_policy: npcNationPolicy } : {}),
             },
@@ -118,25 +129,45 @@ export class ActionDefinition<
 
         tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
 
-        const effects = [
+        const effects: GeneralActionEffect<TriggerState>[] = [
             createNationAddEffect(newNation),
             createGeneralPatchEffect<TriggerState>({
                 nationId: newNationId,
                 officerLevel: 12,
                 experience: (general.experience || 0) + 100,
                 dedication: (general.dedication || 0) + 100,
+                meta: {
+                    ...general.meta,
+                    belong: 1,
+                    officer_city: 0,
+                },
             }),
         ];
+        for (const nation of nations) {
+            if (nation.id === newNationId) {
+                continue;
+            }
+            effects.push(
+                createDiplomacyPatchEffect(nation.id, newNationId, { state: 2, term: 0 }),
+                createDiplomacyPatchEffect(newNationId, nation.id, { state: 2, term: 0 })
+            );
+        }
 
         return { effects };
     }
 }
 
 export const actionContextBuilder: ActionContextBuilder = (base, options) => {
+    const worldMeta = asRecord(options.world.meta);
+    const constValues = asRecord(options.scenarioConfig.const);
+    const scenarioRaw = worldMeta.scenarioId ?? worldMeta.scenario;
+    const baseRiceRaw = constValues.baseRice ?? constValues.baserice;
     return {
         ...base,
         createNationId: options.createNationId,
         listNations: () => options.worldRef?.listNations() ?? [],
+        scenarioId: typeof scenarioRaw === 'number' && Number.isFinite(scenarioRaw) ? scenarioRaw : 0,
+        baseRice: typeof baseRiceRaw === 'number' && Number.isFinite(baseRiceRaw) ? baseRiceRaw : 2_000,
     };
 };
 

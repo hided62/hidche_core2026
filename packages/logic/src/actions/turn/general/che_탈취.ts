@@ -1,4 +1,4 @@
-import type { City, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
+import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
     notBeNeutral,
@@ -17,11 +17,7 @@ import type {
     GeneralActionResolver,
     GeneralActionEffect,
 } from '@sammo-ts/logic/actions/engine.js';
-import {
-    createGeneralPatchEffect,
-    createCityPatchEffect,
-    createNationPatchEffect,
-} from '@sammo-ts/logic/actions/engine.js';
+import { createCityPatchEffect, createNationPatchEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat } from '@sammo-ts/logic/logging/types.js';
 import { z } from 'zod';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
@@ -29,16 +25,20 @@ import type { ActionContextBase, ActionContextOptions } from '@sammo-ts/logic/ac
 import type { GeneralTurnCommandSpec } from './index.js';
 import { JosaUtil } from '@sammo-ts/common';
 import { parseArgsWithSchema } from '../parseArgs.js';
-import { GeneralActionPipeline, type GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
+import { GeneralActionPipeline } from '@sammo-ts/logic/triggers/general-action.js';
 import { consumeSuccessfulStrategyItem } from './strategyItemConsumption.js';
+import {
+    buildStrategyActionContext,
+    CommandResolver as StrategyCommandResolver,
+    type FireAttackResolveContext,
+} from './che_화계.js';
 
 export interface SeizeResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
-> extends GeneralActionResolveContext<TriggerState> {
-    destCity?: City;
-    destNation?: Nation | null;
+> extends FireAttackResolveContext<TriggerState> {
     env?: TurnCommandEnv;
     year?: number;
+    startYear?: number;
 }
 
 const ACTION_NAME = '탈취';
@@ -53,41 +53,53 @@ export class ActionResolver<
 > implements GeneralActionResolver<TriggerState, SeizeArgs> {
     readonly key = ACTION_KEY;
     private readonly pipeline: GeneralActionPipeline<TriggerState>;
+    private readonly command: StrategyCommandResolver<TriggerState>;
 
-    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined> = []) {
+    constructor(env: TurnCommandEnv) {
+        const modules = env.generalActionModules ?? [];
         this.pipeline = new GeneralActionPipeline(modules);
+        this.command = new StrategyCommandResolver<TriggerState>(modules, {
+            ...env,
+            statKey: 'strength',
+            damageMode: 'seize',
+            injuryGeneral: false,
+        });
     }
 
     resolve(context: GeneralActionResolveContext<TriggerState>, args: SeizeArgs): GeneralActionOutcome<TriggerState> {
         const ctx = context as SeizeResolveContext<TriggerState>;
         const general = ctx.general;
         const nation = ctx.nation; // Own nation
-        const { destCityId } = args;
         const destCity = ctx.destCity;
         const destNation = ctx.destNation;
 
         if (!destCity) throw new Error('Target city missing');
-
-        const env = ctx.env;
-        const cost = env?.develCost ?? 100;
-
         const effects: GeneralActionEffect<TriggerState>[] = [];
-
-        // Calculation
-        const min = env?.sabotageDamageMin ?? 10;
-        const max = env?.sabotageDamageMax ?? 30;
-        const rng = ctx.rng;
-        if (!rng) throw new Error('RNG missing');
+        const city = ctx.city;
+        if (!city) throw new Error('Source city missing');
+        const result = this.command.resolve({ ...ctx, city, destCity }, ctx.rng);
+        general.gold = Math.max(0, general.gold - result.costGold);
+        general.rice = Math.max(0, general.rice - result.costRice);
+        general.experience += result.exp;
+        general.dedication += result.dedication;
+        general.meta.strength_exp = (typeof general.meta.strength_exp === 'number' ? general.meta.strength_exp : 0) + 1;
+        if (!result.success) {
+            ctx.addLog(
+                `<G><b>${destCity.name}</b></>에 ${ACTION_NAME}${JosaUtil.pick(ACTION_NAME, '이')} 실패했습니다.`
+            );
+            return { effects };
+        }
+        general.meta.firenum = (typeof general.meta.firenum === 'number' ? general.meta.firenum : 0) + 1;
 
         const currentYear = ctx.year ?? 200;
-        const startYear = env?.openingPartYear ?? currentYear;
+        const startYear = ctx.startYear ?? currentYear;
         const yearCoef = Math.sqrt(1 + Math.max(0, currentYear - startYear) / 4) / 2;
 
         const commRatio = destCity.commerce / destCity.commerceMax;
         const agriRatio = destCity.agriculture / destCity.agricultureMax;
 
-        const rawGold = rng.nextInt(min, max + 1) * destCity.level * yearCoef * (0.25 + commRatio / 4);
-        const rawRice = rng.nextInt(min, max + 1) * destCity.level * yearCoef * (0.25 + agriRatio / 4);
+        const rawGold = result.agriDamage * destCity.level * yearCoef * (0.25 + commRatio / 4);
+        const rawRice = result.commDamage * destCity.level * yearCoef * (0.25 + agriRatio / 4);
 
         let stolenGold = Math.floor(rawGold);
         let stolenRice = Math.floor(rawRice);
@@ -95,8 +107,8 @@ export class ActionResolver<
         const isSupplied = destCity.supplyState === 1;
 
         if (isSupplied && destNation) {
-            const minGold = 1000;
-            const minRice = 1000;
+            const minGold = 0;
+            const minRice = 0;
 
             const availableGold = Math.max(0, destNation.gold - minGold);
             const availableRice = Math.max(0, destNation.rice - minRice);
@@ -121,7 +133,7 @@ export class ActionResolver<
                         ...destCity,
                         state: 34,
                     },
-                    destCityId
+                    args.destCityId
                 )
             );
         } else {
@@ -136,7 +148,7 @@ export class ActionResolver<
                         agriculture: Math.max(0, destCity.agriculture - agriDmg),
                         state: 34,
                     },
-                    destCityId
+                    args.destCityId
                 )
             );
         }
@@ -145,8 +157,8 @@ export class ActionResolver<
         let myShareRice = stolenRice;
 
         if (nation && nation.id !== 0) {
-            const nationShareGold = Math.floor(stolenGold * 0.7);
-            const nationShareRice = Math.floor(stolenRice * 0.7);
+            const nationShareGold = Math.round(stolenGold * 0.7);
+            const nationShareRice = Math.round(stolenRice * 0.7);
             myShareGold -= nationShareGold;
             myShareRice -= nationShareRice;
 
@@ -174,24 +186,8 @@ export class ActionResolver<
         });
 
         consumeSuccessfulStrategyItem(this.pipeline, context);
-
-        effects.push(
-            createGeneralPatchEffect(
-                {
-                    ...general,
-                    gold: Math.max(0, general.gold - cost + myShareGold),
-                    rice: Math.max(0, general.rice - cost + myShareRice),
-                    experience: general.experience + 50,
-                    dedication: general.dedication + 30,
-                    meta: {
-                        ...general.meta,
-                        strength_exp:
-                            (typeof general.meta.strength_exp === 'number' ? general.meta.strength_exp : 0) + 1,
-                    },
-                },
-                general.id
-            )
-        );
+        general.gold += myShareGold;
+        general.rice += myShareRice;
 
         return { effects };
     }
@@ -205,9 +201,7 @@ export class ActionDefinition<
     private readonly resolver: ActionResolver<TriggerState>;
 
     constructor(env: TurnCommandEnv) {
-        this.resolver = new ActionResolver<TriggerState>(
-            (env.generalActionModules ?? []) as GeneralActionModule<TriggerState>[]
-        );
+        this.resolver = new ActionResolver<TriggerState>(env);
     }
 
     parseArgs(raw: unknown): SeizeArgs | null {
@@ -216,13 +210,13 @@ export class ActionDefinition<
 
     buildMinConstraints(ctx: ConstraintContext, _args: SeizeArgs): Constraint[] {
         const env = ctx.env;
-        const cost = (env.develCost as number) ?? 100;
+        const cost = ((env.develCost as number) ?? 100) * 5;
         return [notBeNeutral(), occupiedCity(), suppliedCity(), reqGeneralGold(() => cost), reqGeneralRice(() => cost)];
     }
 
     buildConstraints(ctx: ConstraintContext, _args: SeizeArgs): Constraint[] {
         const env = ctx.env;
-        const cost = (env.develCost as number) ?? 100;
+        const cost = ((env.develCost as number) ?? 100) * 5;
         return [
             notBeNeutral(),
             occupiedCity(),
@@ -243,21 +237,13 @@ export class ActionDefinition<
 }
 
 export const actionContextBuilder = (base: ActionContextBase, options: ActionContextOptions) => {
-    const destCityId = options.actionArgs?.destCityId;
-    let destCity = null;
-    let destNation = null;
-    if (typeof destCityId === 'number' && options.worldRef) {
-        destCity = options.worldRef.getCityById(destCityId);
-        if (destCity && destCity.nationId) {
-            destNation = options.worldRef.getNationById(destCity.nationId);
-        }
-    }
+    const strategyContext = buildStrategyActionContext(base, options);
+    if (!strategyContext) return null;
     return {
-        ...base,
-        destCity,
-        destNation,
+        ...strategyContext,
         env: options.scenarioConfig.const as unknown as TurnCommandEnv,
         year: options.world.currentYear,
+        startYear: options.scenarioMeta?.startYear ?? options.world.currentYear,
     };
 };
 

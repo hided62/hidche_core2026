@@ -98,8 +98,7 @@ export class ActionResolver<
 
         const env = ctx.env;
         const develCost = env?.develCost ?? 100;
-        const extraCost = Math.floor((destGeneral.experience + destGeneral.dedication) / 1000) * 10;
-        const reqGold = develCost + extraCost;
+        const reqGold = Math.round(develCost + (destGeneral.experience + destGeneral.dedication) / 1000) * 10;
 
         const effects: GeneralActionEffect<TriggerState>[] = [];
 
@@ -185,7 +184,7 @@ export class ActionDefinition<
                 (_c, view) => {
                     const dest = view.get({ kind: 'destGeneral', id: args.destGeneralId }) as General | null;
                     if (!dest) return develCost;
-                    return develCost + Math.floor((dest.experience + dest.dedication) / 1000) * 10;
+                    return Math.round(develCost + (dest.experience + dest.dedication) / 1000) * 10;
                 },
                 [{ kind: 'destGeneral', id: args.destGeneralId }]
             ),

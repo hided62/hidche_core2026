@@ -77,6 +77,7 @@ export const buildCommandEnv = (config: ScenarioConfig, unitSet?: UnitSetDefinit
         minAvailableRecruitPop: resolveNumber(constValues, ['minAvailableRecruitPop'], 30000),
         trainDelta: resolveNumber(constValues, ['trainDelta'], DEFAULT_TRAIN_DELTA),
         atmosDelta: resolveNumber(constValues, ['atmosDelta'], DEFAULT_ATMOS_DELTA),
+        trainSideEffectByAtmosTurn: resolveNumber(constValues, ['trainSideEffectByAtmosTurn'], 1),
         maxTrainByCommand: resolveNumber(constValues, ['maxTrainByCommand'], DEFAULT_MAX_TRAIN_BY_COMMAND),
         maxAtmosByCommand: resolveNumber(constValues, ['maxAtmosByCommand'], DEFAULT_MAX_ATMOS_BY_COMMAND),
         sabotageDefaultProb: resolveNumber(constValues, ['sabotageDefaultProb'], DEFAULT_SABOTAGE_PROB),
@@ -101,6 +102,9 @@ export const buildCommandEnv = (config: ScenarioConfig, unitSet?: UnitSetDefinit
         defaultSpecialWar: resolveOptionalString(constValues, ['defaultSpecialWar']),
         initialNationGenLimit: resolveNumber(constValues, ['initialNationGenLimit'], DEFAULT_INITIAL_NATION_GEN_LIMIT),
         maxTechLevel: resolveNumber(constValues, ['maxTechLevel'], DEFAULT_MAX_TECH_LEVEL),
+        maxStatLevel: resolveNumber(constValues, ['maxLevel'], 255),
+        techLevelIncYear: resolveNumber(constValues, ['techLevelIncYear'], 5),
+        initialAllowedTechLevel: resolveNumber(constValues, ['initialAllowedTechLevel'], 1),
         baseGold: resolveNumber(constValues, ['baseGold', 'basegold'], DEFAULT_BASE_GOLD),
         baseRice: resolveNumber(constValues, ['baseRice', 'baserice'], DEFAULT_BASE_RICE),
         maxResourceActionAmount: resolveNumber(

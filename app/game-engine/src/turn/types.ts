@@ -8,6 +8,7 @@ import type {
     Troop,
     UnitSetDefinition,
     WorldSnapshot,
+    GeneralLastTurn,
 } from '@sammo-ts/logic';
 
 export interface TurnWorldState {
@@ -22,6 +23,7 @@ export interface TurnWorldState {
 export interface TurnGeneral extends General {
     turnTime: Date;
     recentWarTime?: Date | null;
+    lastTurn?: GeneralLastTurn;
 }
 
 export interface TurnDiplomacy {

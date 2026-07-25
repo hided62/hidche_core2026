@@ -18,6 +18,8 @@ export interface GeneralActionDefinition<
     getPreReqTurn?(context: Context, args: Args): number;
     getPostReqTurn?(context: Context, args: Args): number;
     getStackSequence?(context: Context, args: Args): number | null;
+    getProgressText?(context: Context, args: Args, term: number, termMax: number): string;
     readonly countsAsInheritanceActiveAction?: boolean;
+    getInheritanceActiveActionAmount?(context: Context, args: Args): number;
     resolve(context: Context, args: Args): GeneralActionOutcome<TriggerState>;
 }

@@ -29,7 +29,14 @@ export type TriggerStrategicVarType = 'delay' | 'globalDelay';
 export type TriggerNationalIncomeType = 'gold' | 'rice' | 'pop';
 
 export type GeneralStatName =
-    'leadership' | 'strength' | 'intelligence' | 'experience' | 'dedication' | 'sabotageDefence' | 'sabotageAttack';
+    | 'leadership'
+    | 'strength'
+    | 'intelligence'
+    | 'experience'
+    | 'dedication'
+    | 'sabotageDefence'
+    | 'sabotageAttack'
+    | 'addDex';
 
 export type WarStatName =
     | GeneralStatName

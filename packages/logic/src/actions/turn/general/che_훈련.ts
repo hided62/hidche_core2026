@@ -13,7 +13,6 @@ import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js'
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
-import { clamp } from 'es-toolkit';
 
 export interface TrainingArgs {}
 
@@ -21,10 +20,10 @@ export interface TrainingEnvironment {
     trainDelta?: number;
     maxTrainByCommand?: number;
     costGold?: number;
+    unitSet?: TurnCommandEnv['unitSet'];
 }
 
 const ACTION_NAME = '훈련';
-const DEFAULT_TRAIN_DELTA = 5;
 const DEFAULT_MAX_TRAIN = 100;
 
 export class ActionDefinition<
@@ -52,7 +51,13 @@ export class ActionDefinition<
             this.env.maxTrainByCommand && this.env.maxTrainByCommand > 0
                 ? this.env.maxTrainByCommand
                 : DEFAULT_MAX_TRAIN;
-        return [notBeNeutral(), notWanderingNation(), occupiedCity(), reqGeneralCrew(), reqGeneralTrainMargin(maxTrain)];
+        return [
+            notBeNeutral(),
+            notWanderingNation(),
+            occupiedCity(),
+            reqGeneralCrew(),
+            reqGeneralTrainMargin(maxTrain),
+        ];
     }
 
     resolve(
@@ -64,16 +69,30 @@ export class ActionDefinition<
             this.env.maxTrainByCommand && this.env.maxTrainByCommand > 0
                 ? this.env.maxTrainByCommand
                 : DEFAULT_MAX_TRAIN;
-        const delta = this.env.trainDelta && this.env.trainDelta > 0 ? this.env.trainDelta : DEFAULT_TRAIN_DELTA;
-        const nextTrain = clamp(general.train + delta, 0, maxTrain);
-        const applied = nextTrain - general.train;
+        const trainDelta = this.env.trainDelta && this.env.trainDelta > 0 ? this.env.trainDelta : 0;
+        const score = Math.max(
+            0,
+            Math.min(
+                Math.round((general.stats.leadership * 100 * trainDelta) / Math.max(general.crew, 1)),
+                maxTrain - general.train
+            )
+        );
         const costGold = this.env.costGold ?? 0;
 
-        // 직접 수정 (Immer Draft)
-        general.train = nextTrain;
+        general.train += score;
         general.gold = Math.max(0, general.gold - costGold);
+        general.experience += 100;
+        general.dedication += 70;
+        const leadershipExp = typeof general.meta.leadership_exp === 'number' ? general.meta.leadership_exp : 0;
+        general.meta.leadership_exp = leadershipExp + 1;
+        const crewType = this.env.unitSet?.crewTypes?.find((entry) => entry.id === general.crewTypeId);
+        if (crewType) {
+            const dexKey = `dex${crewType.armType}`;
+            const dex = typeof general.meta[dexKey] === 'number' ? general.meta[dexKey] : 0;
+            general.meta[dexKey] = dex + score;
+        }
 
-        context.addLog(`훈련치가 <C>${applied}</> 상승했습니다.`);
+        context.addLog(`훈련치가 <C>${score.toLocaleString()}</> 상승했습니다.`);
         tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
 
         return { effects: [] };
@@ -92,5 +111,6 @@ export const commandSpec: GeneralTurnCommandSpec = {
         new ActionDefinition({
             trainDelta: env.trainDelta,
             maxTrainByCommand: env.maxTrainByCommand,
+            unitSet: env.unitSet,
         }),
 };
