@@ -40,6 +40,9 @@ export const RANK_DATA_TYPES = [
     'betwingold',
     'inherit_earned',
     'inherit_spent',
+    'inherit_earned_dyn',
+    'inherit_earned_act',
+    'inherit_spent_dyn',
 ] as const;
 
 export type RankDataType = (typeof RANK_DATA_TYPES)[number];

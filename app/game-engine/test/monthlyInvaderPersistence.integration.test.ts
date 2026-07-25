@@ -320,7 +320,7 @@ integration('RaiseInvader database persistence', () => {
             });
             expect(await db.general.count({ where: { nationId: createdNationId } })).toBe(10);
             expect(await db.generalTurn.count({ where: { generalId: { gte: firstCreatedGeneralId } } })).toBe(300);
-            expect(await db.rankData.count({ where: { generalId: { gte: firstCreatedGeneralId } } })).toBe(410);
+            expect(await db.rankData.count({ where: { generalId: { gte: firstCreatedGeneralId } } })).toBe(440);
             expect(await db.nationTurn.count({ where: { nationId: createdNationId } })).toBe(48);
             expect(
                 await db.diplomacy.count({

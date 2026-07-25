@@ -32,11 +32,7 @@ import { ensureItemInventory, withSerializedItemInventory } from '@sammo-ts/logi
 import { persistGeneralLifecycleEvents } from './generalTurnLifecyclePersistence.js';
 import type { DatabaseTurnDaemonLease } from '../lifecycle/databaseTurnDaemonLease.js';
 import { calculateNationBettingRewards } from '../betting/nationBettingSettlement.js';
-import type {
-    NationBettingCandidate,
-    PendingNationBettingFinish,
-    PendingNationBettingOpen,
-} from './types.js';
+import type { NationBettingCandidate, PendingNationBettingFinish, PendingNationBettingOpen } from './types.js';
 
 export interface DatabaseTurnHooks {
     hooks: TurnDaemonHooks;
@@ -53,11 +49,7 @@ const readBettingCandidates = (value: unknown): NationBettingCandidate[] => {
     return value.flatMap((candidate) => {
         const item = asRecord(candidate);
         const aux = asRecord(item.aux);
-        if (
-            typeof item.title !== 'string' ||
-            typeof aux.nation !== 'number' ||
-            !Number.isInteger(aux.nation)
-        ) {
+        if (typeof item.title !== 'string' || typeof aux.nation !== 'number' || !Number.isInteger(aux.nation)) {
             return [];
         }
         return [
@@ -369,6 +361,9 @@ const buildRankRows = (
         ['betwingold', readMeta('betwingold')],
         ['inherit_earned', readMeta('inherit_earned')],
         ['inherit_spent', readMeta('inherit_spent')],
+        ['inherit_earned_dyn', readMeta('inherit_earned_dyn')],
+        ['inherit_earned_act', readMeta('inherit_earned_act')],
+        ['inherit_spent_dyn', readMeta('inherit_spent_dyn')],
     ];
 
     return entries.map(([type, value]) => ({
