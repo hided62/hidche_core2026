@@ -427,6 +427,7 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
                     itemCode: general.item ?? 'None',
                     turnTime: now,
                     age: resolveGeneralAge(scenario.startYear ?? null, general.birthYear),
+                    startAge: resolveGeneralAge(scenario.startYear ?? null, general.birthYear),
                     personalCode: general.personality ?? 'None',
                     specialCode: general.special ?? 'None',
                     special2Code: general.specialWar ?? 'None',

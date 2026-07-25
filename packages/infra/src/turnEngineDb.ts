@@ -42,6 +42,7 @@ export interface TurnEngineGeneralRow {
     train: number;
     atmos: number;
     age: number;
+    startAge: number;
     npcState: number;
     lastTurn: JsonValue;
     bornYear: number;

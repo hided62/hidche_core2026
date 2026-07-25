@@ -30,6 +30,28 @@ const DEFAULT_JOIN_STAT = {
     bonusMax: 5,
 };
 
+const buildSpecialityAge = (
+    retirementYear: number,
+    age: number,
+    relativeYear: number,
+    divisor: number
+): number => Math.max(Math.round((retirementYear - age) / divisor - relativeYear / 2), 3) + age;
+
+export const resolveJoinSpecialityAges = (options: {
+    retirementYear: number;
+    age: number;
+    relativeYear: number;
+    scenarioId: number;
+}): { domestic: number; war: number } => {
+    if (Number.isFinite(options.scenarioId) && options.scenarioId >= 1000) {
+        return { domestic: options.age + 3, war: options.age + 3 };
+    }
+    return {
+        domestic: buildSpecialityAge(options.retirementYear, options.age, options.relativeYear, 12),
+        war: buildSpecialityAge(options.retirementYear, options.age, options.relativeYear, 6),
+    };
+};
+
 const resolveJoinStat = (worldState: WorldStateRow) => {
     const config = asRecord(worldState.config);
     const stat = asRecord(config.stat);
@@ -456,6 +478,27 @@ export const joinRouter = router({
                     typeof configConst.defaultSpecialDomestic === 'string' ? configConst.defaultSpecialDomestic : 'None';
                 const defaultSpecialWar =
                     typeof configConst.defaultSpecialWar === 'string' ? configConst.defaultSpecialWar : 'None';
+                const retirementYear =
+                    typeof configConst.retirementYear === 'number' && Number.isFinite(configConst.retirementYear)
+                        ? configConst.retirementYear
+                        : 80;
+                const worldMeta = asRecord(worldState.meta);
+                const scenarioMeta = asRecord(worldMeta.scenarioMeta);
+                const startYear =
+                    typeof scenarioMeta.startYear === 'number' && Number.isFinite(scenarioMeta.startYear)
+                        ? scenarioMeta.startYear
+                        : worldState.currentYear;
+                const relativeYear = Math.max(
+                    worldState.currentYear - startYear,
+                    0
+                );
+                const scenarioId = Number(worldMeta.scenarioId ?? worldState.scenarioCode);
+                const specialityAges = resolveJoinSpecialityAges({
+                    retirementYear,
+                    age,
+                    relativeYear,
+                    scenarioId,
+                });
 
                 const specialWar =
                     input.inheritSpecial && isWarTraitKey(input.inheritSpecial) ? input.inheritSpecial : defaultSpecialWar;
@@ -515,6 +558,8 @@ export const joinRouter = router({
                             createdBy: 'join',
                             ownerName: ctx.auth?.user.displayName ?? '',
                             killturn: 24,
+                            specage: specialityAges.domestic,
+                            specage2: specialityAges.war,
                         },
                     },
                 });

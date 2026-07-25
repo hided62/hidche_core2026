@@ -28,6 +28,7 @@ type ScenarioSeederPrismaClient = {
     };
     general: {
         count(): Promise<number>;
+        findFirst(): Promise<{ age: number; startAge: number; meta: unknown } | null>;
     };
     diplomacy: {
         count(): Promise<number>;
@@ -116,6 +117,14 @@ describeDb('scenario database seed', () => {
             expect(diplomacyCount).toBe(seed.nations.length * Math.max(0, seed.nations.length - 1));
             expect(eventCount).toBe(seed.events.length);
             expect(generalCount).toBeGreaterThan(0);
+            const seededGeneral = await prisma.general.findFirst();
+            expect(seededGeneral?.startAge).toBe(seededGeneral?.age);
+            expect(seededGeneral?.meta).toEqual(
+                expect.objectContaining({
+                    specage: expect.any(Number),
+                    specage2: expect.any(Number),
+                })
+            );
 
             const freeCity = seed.cities.find((city) => city.nationId === 0);
             const occupiedCity = seed.cities.find((city) => city.nationId !== 0);

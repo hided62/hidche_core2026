@@ -119,6 +119,8 @@ describe('scenario bootstrap', () => {
         expect(result.snapshot.generals[0]?.crewTypeId).toBe(1200);
         expect(result.snapshot.generals[0]?.role.specialDomestic).toBe('Special');
         expect(result.snapshot.generals[0]?.role.specialWar).toBeNull();
+        expect(result.snapshot.generals[0]?.meta).toMatchObject({ specage: 25, specage2: 30 });
+        expect(result.seed.generals[0]?.meta).toMatchObject({ specage: 25, specage2: 30 });
         expect(result.seed.generals[0]?.npcType).toBe(2);
         expect(result.snapshot.scenarioMeta?.title).toBe('Test Scenario');
     });

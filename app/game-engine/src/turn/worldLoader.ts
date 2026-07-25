@@ -200,6 +200,7 @@ const mapGeneralRow = (row: TurnEngineGeneralRow): TurnGeneral => {
         train: row.train,
         atmos: row.atmos,
         age: row.age,
+        startAge: row.startAge,
         npcState: row.npcState,
         bornYear: row.bornYear,
         deadYear: row.deadYear,
