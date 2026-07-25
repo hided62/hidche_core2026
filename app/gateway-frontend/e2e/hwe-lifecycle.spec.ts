@@ -86,10 +86,16 @@ test('admin resets and opens hwe, then two users create generals and reach main'
     await page.getByTestId('load-scenarios').click();
     await expect(page.getByText(/개 시나리오를 확인했습니다/)).toBeVisible();
     await page.getByTestId('scenario-select').selectOption('2');
+    const latestOperation = page.getByTestId('operations-table').locator('tbody tr').first();
+    const previousLatestOperation = await latestOperation.textContent();
     await page.getByTestId('request-reset').click();
     await expect(page.getByText('초기화 작업을 시작했습니다.')).toBeVisible();
 
-    const latestOperation = page.getByTestId('operations-table').locator('tbody tr').first();
+    await expect
+        .poll(() => latestOperation.textContent(), {
+            timeout: 15_000,
+        })
+        .not.toBe(previousLatestOperation);
     await expect(latestOperation).toContainText(sourceCommit, {
         timeout: 15_000,
     });
