@@ -52,6 +52,7 @@ import { createProcessSemiAnnualHandler } from './monthlySemiAnnualAction.js';
 import { createProcessWarIncomeHandler } from './monthlyWarIncomeAction.js';
 import { createCreateAdminNpcHandler } from './monthlyCreateAdminNpcAction.js';
 import { createCreateManyNpcHandler } from './monthlyCreateManyNpcAction.js';
+import { createRegisterNpcHandler } from './monthlyRegisterNpcAction.js';
 import { buildCommandEnv } from './reservedTurnCommands.js';
 import { DatabaseTurnDaemonLease, TurnDaemonLeaseUnavailableError } from '../lifecycle/databaseTurnDaemonLease.js';
 
@@ -155,7 +156,11 @@ const createTurnDaemonRuntimeWithLease = async (
                 Array.isArray(event.action) &&
                 event.action.some((action) => Array.isArray(action) && action[0] === name)
         );
-    const eventRequiresReservedTurns = hasEventAction('UpdateNationLevel') || hasEventAction('CreateManyNPC');
+    const eventRequiresReservedTurns =
+        hasEventAction('UpdateNationLevel') ||
+        hasEventAction('CreateManyNPC') ||
+        hasEventAction('RegNPC') ||
+        hasEventAction('RegNeutralNPC');
     const reservedTurnStoreHandle =
         options.generalTurnHandler && !eventRequiresReservedTurns
             ? null
@@ -232,6 +237,19 @@ const createTurnDaemonRuntimeWithLease = async (
                 env: monthlyCommandEnv,
             })
         );
+        for (const actionName of ['RegNPC', 'RegNeutralNPC'] as const) {
+            eventActions.set(
+                actionName,
+                createRegisterNpcHandler({
+                    actionName,
+                    getWorld: () => worldRef,
+                    reservedTurns: reservedTurnStoreHandle.store,
+                    env: monthlyCommandEnv,
+                    worldConfig: snapshot.worldConfig,
+                    scenarioFiction: snapshot.scenarioMeta?.fiction,
+                })
+            );
+        }
         eventActions.set(
             'UpdateNationLevel',
             createUpdateNationLevelHandler({

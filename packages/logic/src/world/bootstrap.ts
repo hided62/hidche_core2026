@@ -161,6 +161,64 @@ const resolveAge = (startYear: number | null, birthYear: number): number => {
     return Math.max(startYear - birthYear, 0);
 };
 
+const ADULT_GENERAL_AGE = 14;
+
+type GeneralBootstrapDisposition = 'active' | 'delayed' | 'expired';
+
+const resolveGeneralBootstrapDisposition = (
+    general: ScenarioGeneral,
+    startYear: number | null
+): GeneralBootstrapDisposition => {
+    if (startYear === null) {
+        return 'active';
+    }
+    if (general.deathYear <= startYear) {
+        return 'expired';
+    }
+    if (startYear - general.birthYear < ADULT_GENERAL_AGE) {
+        return 'delayed';
+    }
+    return 'active';
+};
+
+const buildDelayedGeneralAction = (
+    general: ScenarioGeneral,
+    nationId: number,
+    npcType: 2 | 6
+): unknown[] => {
+    const common = [
+        general.affinity ?? 0,
+        general.name,
+        general.picture,
+        nationId,
+        general.city,
+        general.leadership,
+        general.strength,
+        general.intelligence,
+    ];
+    if (npcType === 2) {
+        return [
+            'RegNPC',
+            ...common,
+            general.officerLevel,
+            general.birthYear,
+            general.deathYear,
+            general.personality,
+            general.special,
+            general.text ?? '',
+        ];
+    }
+    return [
+        'RegNeutralNPC',
+        ...common,
+        general.birthYear,
+        general.deathYear,
+        general.personality,
+        general.special,
+        general.text ?? '',
+    ];
+};
+
 const resolveOfficerLevel = (officerLevel: number, nationId: number): number => {
     if (officerLevel > 0) {
         return officerLevel;
@@ -590,9 +648,33 @@ export const buildScenarioBootstrap = (input: ScenarioBootstrapInput): ScenarioB
     let nextGeneralId = 1;
     const allGeneralSeeds: GeneralSeed[] = [];
     const allGenerals: General[] = [];
+    const delayedActionsByBirthYear = new Map<number, unknown[][]>();
+
+    const partitionGenerals = (rows: ScenarioGeneral[], npcType: 2 | 6): ScenarioGeneral[] => {
+        const active: ScenarioGeneral[] = [];
+        for (const general of rows) {
+            const disposition = resolveGeneralBootstrapDisposition(general, scenario.startYear);
+            if (disposition === 'active') {
+                active.push(general);
+                continue;
+            }
+            if (disposition === 'expired') {
+                continue;
+            }
+            const nationId = resolveNationId(general.nation, nationNameToId, warnings, general.name);
+            const actions = delayedActionsByBirthYear.get(general.birthYear) ?? [];
+            actions.push(buildDelayedGeneralAction(general, nationId, npcType));
+            delayedActionsByBirthYear.set(general.birthYear, actions);
+        }
+        return active;
+    };
+
+    const activeGenerals = partitionGenerals(scenario.generals, 2);
+    const activeGeneralsEx = partitionGenerals(scenario.generalsEx, 2);
+    const activeGeneralsNeutral = partitionGenerals(scenario.generalsNeutral, 6);
 
     const generalResult = buildGeneralSeeds(
-        scenario.generals,
+        activeGenerals,
         2,
         nextGeneralId,
         'general',
@@ -608,7 +690,7 @@ export const buildScenarioBootstrap = (input: ScenarioBootstrapInput): ScenarioB
     nextGeneralId = generalResult.nextId;
 
     const generalExResult = buildGeneralSeeds(
-        scenario.generalsEx,
+        activeGeneralsEx,
         2,
         nextGeneralId,
         'general_ex',
@@ -624,7 +706,7 @@ export const buildScenarioBootstrap = (input: ScenarioBootstrapInput): ScenarioB
     nextGeneralId = generalExResult.nextId;
 
     const generalNeutralResult = buildGeneralSeeds(
-        scenario.generalsNeutral,
+        activeGeneralsNeutral,
         6,
         nextGeneralId,
         'general_neutral',
@@ -638,6 +720,17 @@ export const buildScenarioBootstrap = (input: ScenarioBootstrapInput): ScenarioB
     allGeneralSeeds.push(...generalNeutralResult.seeds);
     allGenerals.push(...generalNeutralResult.generals);
 
+    const delayedGeneralEvents = Array.from(delayedActionsByBirthYear.entries()).map(
+        ([birthYear, actions]) => [
+            'Month',
+            1_000,
+            ['Date', '>=', birthYear + ADULT_GENERAL_AGE, 1],
+            ...actions,
+            ['DeleteEvent'],
+        ]
+    );
+    const events = [...scenario.events, ...delayedGeneralEvents];
+
     const seed: WorldSeedPayload = {
         scenarioConfig: scenario.config,
         scenarioMeta,
@@ -648,7 +741,7 @@ export const buildScenarioBootstrap = (input: ScenarioBootstrapInput): ScenarioB
         generals: allGeneralSeeds,
         troops: [],
         diplomacy: scenario.diplomacy,
-        events: scenario.events,
+        events,
         initialEvents: scenario.initialEvents,
     };
 
@@ -662,7 +755,7 @@ export const buildScenarioBootstrap = (input: ScenarioBootstrapInput): ScenarioB
         generals: allGenerals,
         troops: [],
         diplomacy: scenario.diplomacy,
-        events: scenario.events,
+        events,
         initialEvents: scenario.initialEvents,
     };
 
