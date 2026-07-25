@@ -50,9 +50,29 @@ const zTroopJoin = z.object({
     troopId: zFiniteNumber,
 });
 
+const zTroopCreate = z.object({
+    type: z.literal('troopCreate'),
+    generalId: zFiniteNumber,
+    troopName: z.string(),
+});
+
 const zTroopExit = z.object({
     type: z.literal('troopExit'),
     generalId: zFiniteNumber,
+});
+
+const zTroopKick = z.object({
+    type: z.literal('troopKick'),
+    generalId: zFiniteNumber,
+    troopId: zFiniteNumber,
+    targetGeneralId: zFiniteNumber,
+});
+
+const zTroopRename = z.object({
+    type: z.literal('troopRename'),
+    generalId: zFiniteNumber,
+    troopId: zFiniteNumber,
+    troopName: z.string(),
 });
 
 const zDieOnPrestart = z.object({
@@ -262,8 +282,32 @@ const normalizeTroopJoin: CommandNormalizer<'troopJoin'> = (envelope) => {
     return { ...command, requestId: envelope.requestId };
 };
 
+const normalizeTroopCreate: CommandNormalizer<'troopCreate'> = (envelope) => {
+    const command = parseWith(zTroopCreate, envelope.command);
+    if (!command) {
+        return null;
+    }
+    return { ...command, requestId: envelope.requestId };
+};
+
 const normalizeTroopExit: CommandNormalizer<'troopExit'> = (envelope) => {
     const command = parseWith(zTroopExit, envelope.command);
+    if (!command) {
+        return null;
+    }
+    return { ...command, requestId: envelope.requestId };
+};
+
+const normalizeTroopKick: CommandNormalizer<'troopKick'> = (envelope) => {
+    const command = parseWith(zTroopKick, envelope.command);
+    if (!command) {
+        return null;
+    }
+    return { ...command, requestId: envelope.requestId };
+};
+
+const normalizeTroopRename: CommandNormalizer<'troopRename'> = (envelope) => {
+    const command = parseWith(zTroopRename, envelope.command);
     if (!command) {
         return null;
     }
@@ -445,8 +489,11 @@ const normalizeShutdown: CommandNormalizer<'shutdown'> = (envelope) => {
 const normalizers: CommandNormalizerMap = {
     auctionFinalize: normalizeAuctionFinalize,
     auctionBid: normalizeAuctionBid,
+    troopCreate: normalizeTroopCreate,
     troopJoin: normalizeTroopJoin,
     troopExit: normalizeTroopExit,
+    troopKick: normalizeTroopKick,
+    troopRename: normalizeTroopRename,
     dieOnPrestart: normalizeDieOnPrestart,
     buildNationCandidate: normalizeBuildNationCandidate,
     instantRetreat: normalizeInstantRetreat,

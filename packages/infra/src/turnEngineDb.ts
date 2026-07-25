@@ -43,6 +43,7 @@ export interface TurnEngineGeneralRow {
     age: number;
     npcState: number;
     meta: JsonValue;
+    penalty: JsonValue;
     turnTime: Date;
     recentWarTime: Date | null;
 }
