@@ -351,7 +351,11 @@ onBeforeUnmount(() => {
                         </select>
                     </div>
 
-                    <div v-if="selectedProfile" class="grid grid-cols-2 gap-3 text-sm">
+                    <div
+                        v-if="selectedProfile"
+                        class="grid grid-cols-2 gap-3 text-sm"
+                        data-testid="selected-profile-status"
+                    >
                         <div class="rounded bg-zinc-950 p-3">
                             <div class="text-xs text-zinc-500">목표 상태</div>
                             <div class="mt-1 font-semibold">{{ selectedProfile.status }}</div>

@@ -89,10 +89,16 @@ test('admin resets and opens hwe, then two users create generals and reach main'
     await page.getByTestId('request-reset').click();
     await expect(page.getByText('초기화 작업을 시작했습니다.')).toBeVisible();
 
-    await expect(page.getByTestId('operations-table')).toContainText('SUCCEEDED', {
+    const latestOperation = page.getByTestId('operations-table').locator('tbody tr').first();
+    await expect(latestOperation).toContainText(sourceCommit, {
+        timeout: 15_000,
+    });
+    await expect(latestOperation.locator('td').nth(3)).toHaveText('SUCCEEDED', {
         timeout: 300_000,
     });
-    await expect(page.getByText('RUNNING', { exact: true })).toHaveCount(3, {
+    const profileStatus = page.getByTestId('selected-profile-status');
+    await expect(profileStatus).toContainText('SUCCEEDED');
+    await expect(profileStatus.locator('.text-emerald-400')).toHaveCount(2, {
         timeout: 30_000,
     });
     await page.screenshot({
