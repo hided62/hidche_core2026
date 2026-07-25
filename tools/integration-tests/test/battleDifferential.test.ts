@@ -127,6 +127,10 @@ const runReferenceItemCatalog = (workspaceRoot: string, itemKeys: string[]): Rec
 const expectNearlyEqual = (actual: unknown, expected: unknown, label: string): void => {
     expect(typeof actual, `${label}: actual type`).toBe('number');
     expect(typeof expected, `${label}: reference type`).toBe('number');
+    if (process.env['STRICT_BATTLE_PARITY'] === '1') {
+        expect(actual, `${label}: exact battle parity`).toBe(expected);
+        return;
+    }
     const reference = expected as number;
     const tolerance = Math.max(1, Math.abs(reference) * 0.01);
     expect(
