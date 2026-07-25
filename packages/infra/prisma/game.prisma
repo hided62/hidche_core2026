@@ -489,6 +489,46 @@ model InheritancePoint {
   @@map("inheritance_point")
 }
 
+model NationBetting {
+  id                       Int      @id
+  type                     String   @default("bettingNation")
+  name                     String
+  finished                 Boolean  @default(false)
+  selectCount              Int      @map("select_count")
+  isExclusive              Boolean? @map("is_exclusive")
+  requiresInheritancePoint Boolean  @default(true) @map("requires_inheritance_point")
+  openYearMonth            Int      @map("open_year_month")
+  closeYearMonth           Int      @map("close_year_month")
+  candidates               Json
+  winner                   Json?
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @updatedAt @map("updated_at")
+
+  bets NationBet[]
+
+  @@index([type, id])
+  @@map("nation_betting")
+}
+
+model NationBet {
+  id           Int      @id @default(autoincrement())
+  bettingId    Int      @map("betting_id")
+  generalId    Int      @map("general_id")
+  userId       String?  @map("user_id")
+  selection    Json
+  selectionKey String   @map("selection_key")
+  amount       Float
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  betting NationBetting @relation(fields: [bettingId], references: [id], onDelete: Cascade)
+
+  @@unique([bettingId, userId, selectionKey])
+  @@index([bettingId])
+  @@index([bettingId, userId])
+  @@map("nation_bet")
+}
+
 model InheritanceLog {
   id        Int      @id @default(autoincrement())
   userId    String   @map("user_id")

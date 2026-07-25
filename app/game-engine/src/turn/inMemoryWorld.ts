@@ -4,6 +4,8 @@ import { getNextTurnAt } from '@sammo-ts/logic';
 import type { TurnCheckpoint } from '../lifecycle/types.js';
 import type {
     PendingNeutralAuction,
+    PendingNationBettingFinish,
+    PendingNationBettingOpen,
     TurnDiplomacy,
     TurnEvent,
     TurnGeneral,
@@ -112,6 +114,8 @@ export interface TurnWorldChanges {
     lifecycleEvents: GeneralLifecycleEvent[];
     pendingNeutralAuctions: PendingNeutralAuction[];
     inheritancePointAdjustments: Array<{ userId: string; key: string; amount: number }>;
+    pendingNationBettingOpens: PendingNationBettingOpen[];
+    pendingNationBettingFinishes: PendingNationBettingFinish[];
 }
 
 const compareTurnOrder = (left: TurnGeneral, right: TurnGeneral): number => {
@@ -283,6 +287,8 @@ export class InMemoryTurnWorld {
     private readonly lifecycleEvents: GeneralLifecycleEvent[] = [];
     private readonly pendingNeutralAuctions: PendingNeutralAuction[] = [];
     private readonly inheritancePointAdjustments: Array<{ userId: string; key: string; amount: number }> = [];
+    private readonly pendingNationBettingOpens: PendingNationBettingOpen[] = [];
+    private readonly pendingNationBettingFinishes: PendingNationBettingFinish[] = [];
     private readonly scenarioConfig: ScenarioConfig;
     private checkpoint?: TurnCheckpoint;
     private state: TurnWorldState;
@@ -366,6 +372,10 @@ export class InMemoryTurnWorld {
         this.logs.push(entry);
     }
 
+    queueMessage(draft: MessageDraft): void {
+        this.messages.push(draft);
+    }
+
     queueNeutralAuction(auction: PendingNeutralAuction): void {
         this.pendingNeutralAuctions.push({
             ...auction,
@@ -379,6 +389,24 @@ export class InMemoryTurnWorld {
             return;
         }
         this.inheritancePointAdjustments.push({ userId, key, amount });
+    }
+
+    queueNationBettingOpen(betting: PendingNationBettingOpen): void {
+        this.pendingNationBettingOpens.push({
+            ...betting,
+            candidates: betting.candidates.map((candidate) => ({
+                ...candidate,
+                aux: { ...candidate.aux },
+            })),
+        });
+    }
+
+    queueNationBettingFinish(finish: PendingNationBettingFinish): void {
+        this.pendingNationBettingFinishes.push({
+            ...finish,
+            winnerNationIds: [...finish.winnerNationIds],
+            turnTime: new Date(finish.turnTime.getTime()),
+        });
     }
 
     getScenarioConfig(): ScenarioConfig {
@@ -918,6 +946,18 @@ export class InMemoryTurnWorld {
             closeAt: new Date(auction.closeAt.getTime()),
         }));
         const inheritancePointAdjustments = this.inheritancePointAdjustments.map((entry) => ({ ...entry }));
+        const pendingNationBettingOpens = this.pendingNationBettingOpens.map((entry) => ({
+            ...entry,
+            candidates: entry.candidates.map((candidate) => ({
+                ...candidate,
+                aux: { ...candidate.aux },
+            })),
+        }));
+        const pendingNationBettingFinishes = this.pendingNationBettingFinishes.map((entry) => ({
+            ...entry,
+            winnerNationIds: [...entry.winnerNationIds],
+            turnTime: new Date(entry.turnTime.getTime()),
+        }));
 
         return {
             generals,
@@ -940,6 +980,8 @@ export class InMemoryTurnWorld {
             lifecycleEvents,
             pendingNeutralAuctions,
             inheritancePointAdjustments,
+            pendingNationBettingOpens,
+            pendingNationBettingFinishes,
         };
     }
 
@@ -968,6 +1010,8 @@ export class InMemoryTurnWorld {
         this.lifecycleEvents.splice(0, changes.lifecycleEvents.length);
         this.pendingNeutralAuctions.splice(0, changes.pendingNeutralAuctions.length);
         this.inheritancePointAdjustments.splice(0, changes.inheritancePointAdjustments.length);
+        this.pendingNationBettingOpens.splice(0, changes.pendingNationBettingOpens.length);
+        this.pendingNationBettingFinishes.splice(0, changes.pendingNationBettingFinishes.length);
     }
 
     consumeDirtyState(): TurnWorldChanges {

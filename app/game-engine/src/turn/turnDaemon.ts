@@ -61,6 +61,10 @@ import {
 } from './monthlyInvaderAction.js';
 import { createChangeCityHandler } from './monthlyChangeCityAction.js';
 import { createProvideNpcTroopLeaderHandler } from './monthlyProvideNpcTroopLeaderAction.js';
+import {
+    createFinishNationBettingHandler,
+    createOpenNationBettingHandler,
+} from './monthlyNationBettingAction.js';
 import { buildCommandEnv } from './reservedTurnCommands.js';
 import { DatabaseTurnDaemonLease, TurnDaemonLeaseUnavailableError } from '../lifecycle/databaseTurnDaemonLease.js';
 
@@ -329,6 +333,18 @@ const createTurnDaemonRuntimeWithLease = async (
     eventActions.set(
         'ChangeCity',
         createChangeCityHandler({
+            getWorld: () => worldRef,
+        })
+    );
+    eventActions.set(
+        'OpenNationBetting',
+        createOpenNationBettingHandler({
+            getWorld: () => worldRef,
+        })
+    );
+    eventActions.set(
+        'FinishNationBetting',
+        createFinishNationBettingHandler({
             getWorld: () => worldRef,
         })
     );
