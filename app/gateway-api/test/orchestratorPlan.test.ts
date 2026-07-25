@@ -83,6 +83,11 @@ describe('buildProcessDefinitions', () => {
 
         expect(definitions.api.cwd).toBe(path.join(buildWorkspace, 'app', 'game-api'));
         expect(definitions.api.script).toBe(path.join(buildWorkspace, 'app', 'game-api', 'dist', 'index.js'));
+        expect(definitions.api.env).toMatchObject({
+            GAME_TRPC_PATH: '/che/api/trpc',
+            GAME_API_EVENTS_PATH: '/che/api/events',
+            GAME_UPLOAD_PATH: '/che/api/uploads',
+        });
         expect(definitions.daemon.cwd).toBe(path.join(buildWorkspace, 'app', 'game-engine'));
         expect(definitions.daemon.script).toBe(path.join(buildWorkspace, 'app', 'game-engine', 'dist', 'index.js'));
     });

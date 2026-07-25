@@ -293,6 +293,9 @@ export const buildProcessDefinitions = (
         PROFILE: profile.profile,
         SCENARIO: profile.scenario,
         GAME_API_PORT: String(profile.apiPort),
+        GAME_TRPC_PATH: `/${profile.profile}/api/trpc`,
+        GAME_API_EVENTS_PATH: `/${profile.profile}/api/events`,
+        GAME_UPLOAD_PATH: `/${profile.profile}/api/uploads`,
         GATEWAY_REDIS_PREFIX: config.redisKeyPrefix,
         GAME_TOKEN_SECRET: config.gameTokenSecret,
     };

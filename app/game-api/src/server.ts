@@ -84,6 +84,9 @@ export const createGameApiServer = async () => {
 
     const app = fastify({
         logger: true,
+        routerOptions: {
+            maxParamLength: 2048,
+        },
     });
 
     await app.register(cors, {
