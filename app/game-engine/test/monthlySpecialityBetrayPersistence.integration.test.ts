@@ -4,6 +4,7 @@ import { createGamePostgresConnector, type GamePrismaClient } from '@sammo-ts/in
 
 import { createDatabaseTurnHooks } from '../src/turn/databaseHooks.js';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
+import { createMonthlyEventHandler } from '../src/turn/monthlyEventHandler.js';
 import {
     createAddGlobalBetrayHandler,
     createAssignGeneralSpecialityHandler,
@@ -20,7 +21,7 @@ const event: TurnEvent = {
     targetCode: 'month',
     priority: 9_000,
     condition: true,
-    action: [],
+    action: [['AssignGeneralSpeciality'], ['AddGlobalBetray', 2, 1]],
     meta: {},
 };
 
@@ -144,8 +145,8 @@ integration('monthly speciality and betrayal persistence', () => {
         const row = await db.worldState.create({
             data: {
                 scenarioCode: 'monthly-speciality-betray-persistence',
-                currentYear: 200,
-                currentMonth: 1,
+                currentYear: 199,
+                currentMonth: 12,
                 tickSeconds: 600,
                 config: {},
                 meta: { hiddenSeed: 'monthly-speciality-persistence' },
@@ -153,8 +154,8 @@ integration('monthly speciality and betrayal persistence', () => {
         });
         const state: TurnWorldState = {
             id: row.id,
-            currentYear: 200,
-            currentMonth: 1,
+            currentYear: 199,
+            currentMonth: 12,
             tickSeconds: 600,
             lastTurnTime: new Date('2026-07-25T00:00:00.000Z'),
             meta: { hiddenSeed: 'monthly-speciality-persistence' },
@@ -180,21 +181,24 @@ integration('monthly speciality and betrayal persistence', () => {
             events: [event],
             initialEvents: [],
         };
-        const world = new InMemoryTurnWorld(state, snapshot, {
+        let world: InMemoryTurnWorld | null = null;
+        const assign = createAssignGeneralSpecialityHandler({ getWorld: () => world });
+        const betray = createAddGlobalBetrayHandler({ getWorld: () => world });
+        world = new InMemoryTurnWorld(state, snapshot, {
             schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+            calendarHandler: createMonthlyEventHandler({
+                getWorld: () => world,
+                startYear: 190,
+                actions: new Map([
+                    ['AssignGeneralSpeciality', assign],
+                    ['AddGlobalBetray', betray],
+                ]),
+            }),
         });
         const hooks = await createDatabaseTurnHooks(databaseUrl!, world);
-        const environment = {
-            year: 200,
-            month: 1,
-            startyear: 190,
-            currentEventID: 1,
-            turnTime: state.lastTurnTime,
-        };
 
         try {
-            await createAssignGeneralSpecialityHandler({ getWorld: () => world })([], environment, event);
-            await createAddGlobalBetrayHandler({ getWorld: () => world })([2, 1], environment, event);
+            await world.advanceMonth(new Date('0200-01-01T00:00:00.000Z'));
             await hooks.hooks.flushChanges?.({
                 lastTurnTime: state.lastTurnTime.toISOString(),
                 processedGenerals: 0,

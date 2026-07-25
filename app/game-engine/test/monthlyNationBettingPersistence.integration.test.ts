@@ -8,6 +8,7 @@ import {
     createFinishNationBettingHandler,
     createOpenNationBettingHandler,
 } from '../src/turn/monthlyNationBettingAction.js';
+import { createMonthlyEventHandler } from '../src/turn/monthlyEventHandler.js';
 import type { TurnEvent, TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 
 const databaseUrl = process.env.INPUT_EVENT_DATABASE_URL;
@@ -96,7 +97,7 @@ const event: TurnEvent = {
     targetCode: 'month',
     priority: 1_000,
     condition: true,
-    action: [],
+    action: [['OpenNationBetting', 1, 100]],
     meta: {},
 };
 
@@ -109,7 +110,13 @@ integration('monthly nation betting persistence', () => {
         await connector.connect();
         db = connector.prisma;
         closeDb = () => connector.disconnect();
+        await db.event.deleteMany({ where: { id: { in: [2, 3] } } });
         await db.nationBetting.deleteMany({ where: { id: bettingId } });
+        await db.diplomacy.deleteMany({
+            where: {
+                OR: [{ srcNationId: { in: [...nationIds] } }, { destNationId: { in: [...nationIds] } }],
+            },
+        });
         await db.rankData.deleteMany({ where: { generalId: { in: [...generalIds] } } });
         await db.inheritanceLog.deleteMany({ where: { userId: { in: [...userIds] } } });
         await db.inheritancePoint.deleteMany({ where: { userId: { in: [...userIds] } } });
@@ -120,7 +127,13 @@ integration('monthly nation betting persistence', () => {
     });
 
     afterAll(async () => {
+        await db.event.deleteMany({ where: { id: { in: [2, 3] } } });
         await db.nationBetting.deleteMany({ where: { id: bettingId } });
+        await db.diplomacy.deleteMany({
+            where: {
+                OR: [{ srcNationId: { in: [...nationIds] } }, { destNationId: { in: [...nationIds] } }],
+            },
+        });
         await db.rankData.deleteMany({ where: { generalId: { in: [...generalIds] } } });
         await db.inheritanceLog.deleteMany({ where: { userId: { in: [...userIds] } } });
         await db.inheritancePoint.deleteMany({ where: { userId: { in: [...userIds] } } });
@@ -197,8 +210,8 @@ integration('monthly nation betting persistence', () => {
         const row = await db.worldState.create({
             data: {
                 scenarioCode: 'monthly-nation-betting-persistence',
-                currentYear: 200,
-                currentMonth: 1,
+                currentYear: 199,
+                currentMonth: 12,
                 tickSeconds: 600,
                 config: {},
                 meta: { lastBettingId: bettingId - 1 },
@@ -206,8 +219,8 @@ integration('monthly nation betting persistence', () => {
         });
         const state: TurnWorldState = {
             id: row.id,
-            currentYear: 200,
-            currentMonth: 1,
+            currentYear: 199,
+            currentMonth: 12,
             tickSeconds: 600,
             lastTurnTime: new Date('2026-07-25T00:00:00.000Z'),
             meta: { lastBettingId: bettingId - 1 },
@@ -219,7 +232,10 @@ integration('monthly nation betting persistence', () => {
             const: {},
             environment: { mapName: 'test', unitSet: 'default' },
         };
-        const world = new InMemoryTurnWorld(
+        let world: InMemoryTurnWorld | null = null;
+        const open = createOpenNationBettingHandler({ getWorld: () => world });
+        const finish = createFinishNationBettingHandler({ getWorld: () => world });
+        world = new InMemoryTurnWorld(
             state,
             {
                 scenarioConfig,
@@ -232,19 +248,22 @@ integration('monthly nation betting persistence', () => {
                 events: [event],
                 initialEvents: [],
             },
-            { schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] } }
+            {
+                schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+                calendarHandler: createMonthlyEventHandler({
+                    getWorld: () => world,
+                    startYear: 190,
+                    actions: new Map([
+                        ['OpenNationBetting', open],
+                        ['FinishNationBetting', finish],
+                    ]),
+                }),
+            }
         );
         const hooks = await createDatabaseTurnHooks(databaseUrl!, world);
-        const environment = {
-            year: 200,
-            month: 1,
-            startyear: 190,
-            currentEventID: 1,
-            turnTime: state.lastTurnTime,
-        };
 
         try {
-            await createOpenNationBettingHandler({ getWorld: () => world })([1, 100], environment, event);
+            await world.advanceMonth(new Date('0200-01-01T00:00:00.000Z'));
             await hooks.hooks.flushChanges?.({
                 lastTurnTime: state.lastTurnTime.toISOString(),
                 processedGenerals: 0,
@@ -289,7 +308,18 @@ integration('monthly nation betting persistence', () => {
                 data: userIds.map((userId) => ({ userId, key: 'previous', value: 900 })),
             });
             world.updateNation(nationIds[0], { level: 0 });
-            await createFinishNationBettingHandler({ getWorld: () => world })([bettingId], environment, event);
+            expect(world.removeEvent(event.id)).toBe(true);
+            expect(
+                world.addEvent({
+                    id: 3,
+                    targetCode: 'month',
+                    priority: 1_000,
+                    condition: true,
+                    action: [['FinishNationBetting', bettingId]],
+                    meta: {},
+                })
+            ).toBe(true);
+            await world.advanceMonth(new Date('0200-02-01T00:00:00.000Z'));
             await hooks.hooks.flushChanges?.({
                 lastTurnTime: state.lastTurnTime.toISOString(),
                 processedGenerals: 0,
@@ -324,8 +354,8 @@ integration('monthly nation betting persistence', () => {
                 })
             ).toMatchObject({
                 year: 200,
-                month: 1,
-                text: '<C>●</>200년 1월:<B><b>【내기】</b></> 200년 1월에 열렸던 천통국 예상 내기의 결과가 나왔습니다!',
+                month: 2,
+                text: '<C>●</>200년 2월:<B><b>【내기】</b></> 200년 1월에 열렸던 천통국 예상 내기의 결과가 나왔습니다!',
             });
         } finally {
             await hooks.close();

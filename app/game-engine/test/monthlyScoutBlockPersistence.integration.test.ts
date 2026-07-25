@@ -4,6 +4,7 @@ import { createGamePostgresConnector, type GamePrismaClient } from '@sammo-ts/in
 
 import { createDatabaseTurnHooks } from '../src/turn/databaseHooks.js';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
+import { createMonthlyEventHandler } from '../src/turn/monthlyEventHandler.js';
 import { createScoutBlockHandler } from '../src/turn/monthlyScoutBlockAction.js';
 import type { TurnEvent, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 
@@ -30,7 +31,7 @@ const event: TurnEvent = {
     targetCode: 'month',
     priority: 1_000,
     condition: true,
-    action: [],
+    action: [['BlockScoutAction', true]],
     meta: {},
 };
 
@@ -43,10 +44,20 @@ integration('monthly scout block persistence', () => {
         await connector.connect();
         db = connector.prisma;
         closeDb = () => connector.disconnect();
+        await db.diplomacy.deleteMany({
+            where: {
+                OR: [{ srcNationId: { in: [...nationIds] } }, { destNationId: { in: [...nationIds] } }],
+            },
+        });
         await db.nation.deleteMany({ where: { id: { in: [...nationIds] } } });
     });
 
     afterAll(async () => {
+        await db.diplomacy.deleteMany({
+            where: {
+                OR: [{ srcNationId: { in: [...nationIds] } }, { destNationId: { in: [...nationIds] } }],
+            },
+        });
         await db.nation.deleteMany({ where: { id: { in: [...nationIds] } } });
         await closeDb?.();
     });
@@ -66,8 +77,8 @@ integration('monthly scout block persistence', () => {
         const row = await db.worldState.create({
             data: {
                 scenarioCode: 'monthly-scout-block-persistence',
-                currentYear: 200,
-                currentMonth: 1,
+                currentYear: 199,
+                currentMonth: 12,
                 tickSeconds: 600,
                 config: {},
                 meta: { block_change_scout: false },
@@ -75,8 +86,8 @@ integration('monthly scout block persistence', () => {
         });
         const state: TurnWorldState = {
             id: row.id,
-            currentYear: 200,
-            currentMonth: 1,
+            currentYear: 199,
+            currentMonth: 12,
             tickSeconds: 600,
             lastTurnTime: new Date('2026-07-25T00:00:00.000Z'),
             meta: { block_change_scout: false },
@@ -88,7 +99,12 @@ integration('monthly scout block persistence', () => {
             const: {},
             environment: { mapName: 'test', unitSet: 'default' },
         };
-        const world = new InMemoryTurnWorld(
+        let world: InMemoryTurnWorld | null = null;
+        const handler = createScoutBlockHandler({
+            actionName: 'BlockScoutAction',
+            getWorld: () => world,
+        });
+        world = new InMemoryTurnWorld(
             state,
             {
                 scenarioConfig,
@@ -101,22 +117,19 @@ integration('monthly scout block persistence', () => {
                 events: [event],
                 initialEvents: [],
             },
-            { schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] } }
+            {
+                schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+                calendarHandler: createMonthlyEventHandler({
+                    getWorld: () => world,
+                    startYear: 190,
+                    actions: new Map([['BlockScoutAction', handler]]),
+                }),
+            }
         );
         const hooks = await createDatabaseTurnHooks(databaseUrl!, world);
 
         try {
-            await createScoutBlockHandler({ actionName: 'BlockScoutAction', getWorld: () => world })(
-                [true],
-                {
-                    year: 200,
-                    month: 1,
-                    startyear: 190,
-                    currentEventID: 1,
-                    turnTime: state.lastTurnTime,
-                },
-                event
-            );
+            await world.advanceMonth(new Date('0200-01-01T00:00:00.000Z'));
             await hooks.hooks.flushChanges?.({
                 lastTurnTime: state.lastTurnTime.toISOString(),
                 processedGenerals: 0,
@@ -129,7 +142,10 @@ integration('monthly scout block persistence', () => {
                 (await db.nation.findMany({ where: { id: { in: [...nationIds] } }, orderBy: { id: 'asc' } })).map(
                     (nation) => nation.meta
                 )
-            ).toEqual([{ scout: 1 }, { scout: 1 }]);
+            ).toEqual([
+                { power: 0, scout: 1 },
+                { power: 0, scout: 1 },
+            ]);
             expect(await db.worldState.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({
                 meta: { block_change_scout: true },
             });
