@@ -49,13 +49,24 @@ describe('input event atomicity', () => {
             maxNationTurns: 1,
         });
         store.shiftGeneralTurns(7, -1);
+        store.ensureGeneralTurns(8);
 
         await expect(store.flushChanges()).rejects.toThrow('injected write failure');
-        expect(store.peekDirtyState()).toEqual({ generalIds: [7], nationKeys: [] });
+        expect(store.peekDirtyState()).toEqual({
+            generalIds: [7],
+            generalInitializationIds: [8],
+            nationKeys: [],
+            nationInitializationKeys: [],
+        });
 
         failCreate = false;
         await store.flushChanges();
-        expect(store.peekDirtyState()).toEqual({ generalIds: [], nationKeys: [] });
+        expect(store.peekDirtyState()).toEqual({
+            generalIds: [],
+            generalInitializationIds: [],
+            nationKeys: [],
+            nationInitializationKeys: [],
+        });
     });
 
     it('dispatches registry mutations that the old lifecycle switch dropped, then commits before responding', async () => {

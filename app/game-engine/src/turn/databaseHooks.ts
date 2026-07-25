@@ -153,6 +153,11 @@ const buildRankRows = (
     }));
 };
 
+const buildInitialRankRows = (
+    general: ReturnType<InMemoryTurnWorld['consumeDirtyState']>['generals'][number]
+): Array<{ generalId: number; nationId: number; type: string; value: number }> =>
+    buildRankRows(general).map((row) => ({ ...row, nationId: 0, value: 0 }));
+
 const buildGeneralUpdate = (
     general: ReturnType<InMemoryTurnWorld['consumeDirtyState']>['generals'][number]
 ): TurnEngineGeneralUpdateInput => ({
@@ -175,6 +180,10 @@ const buildGeneralUpdate = (
     train: toLegacyDatabaseInt(general.train),
     atmos: toLegacyDatabaseInt(general.atmos),
     age: general.age,
+    affinity: general.affinity ?? null,
+    bornYear: general.bornYear,
+    deadYear: general.deadYear,
+    picture: general.picture ?? null,
     npcState: general.npcState,
     horseCode: toCode(general.role.items.horse),
     weaponCode: toCode(general.role.items.weapon),
@@ -212,6 +221,10 @@ const buildGeneralCreate = (
     train: toLegacyDatabaseInt(general.train),
     atmos: toLegacyDatabaseInt(general.atmos),
     age: general.age,
+    affinity: general.affinity ?? null,
+    bornYear: general.bornYear,
+    deadYear: general.deadYear,
+    picture: general.picture ?? null,
     horseCode: toCode(general.role.items.horse),
     weaponCode: toCode(general.role.items.weapon),
     bookCode: toCode(general.role.items.book),
@@ -662,9 +675,12 @@ export const createDatabaseTurnHooks = async (
                     ),
             ]);
 
-            const rankTargets = [...createdGenerals, ...generals];
-            if (rankTargets.length > 0) {
-                const rankRows = rankTargets.flatMap(buildRankRows);
+            const rankTargets = generals.filter((general) => !createdIds.has(general.id));
+            if (createdGenerals.length > 0 || rankTargets.length > 0) {
+                const rankRows = [
+                    ...createdGenerals.flatMap(buildInitialRankRows),
+                    ...rankTargets.flatMap(buildRankRows),
+                ];
                 await Promise.all(
                     rankRows.map((row) =>
                         prisma.rankData.upsert({

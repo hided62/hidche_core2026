@@ -47,6 +47,7 @@ export interface TurnEngineGeneralRow {
     bornYear: number;
     deadYear: number;
     affinity: number | null;
+    picture: string | null;
     meta: JsonValue;
     penalty: JsonValue;
     turnTime: Date;
@@ -168,6 +169,10 @@ export interface TurnEngineGeneralUpdateInput {
     atmos: number;
     age: number;
     npcState: number;
+    affinity: number | null;
+    bornYear?: number;
+    deadYear?: number;
+    picture: string | null;
     horseCode: string;
     weaponCode: string;
     bookCode: string;

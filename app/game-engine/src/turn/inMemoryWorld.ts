@@ -454,6 +454,19 @@ export class InMemoryTurnWorld {
         return next;
     }
 
+    addGeneral(general: TurnGeneral): boolean {
+        if (this.generals.has(general.id)) {
+            return false;
+        }
+        const worldKillturn = resolveWorldKillturn(this.state.meta);
+        const normalized = normalizeGeneralTurnTime({ ...general }, this.state.lastTurnTime);
+        const ensured = ensureGeneralKillturn(normalized, worldKillturn);
+        this.generals.set(general.id, ensured);
+        this.dirtyGeneralIds.add(general.id);
+        this.createdGeneralIds.add(general.id);
+        return true;
+    }
+
     removeGeneral(id: number): boolean {
         if (!this.generals.has(id)) {
             return false;
