@@ -214,6 +214,18 @@ export class InMemoryReservedTurnStore {
         this.pendingGeneralInitializationIds.add(generalId);
     }
 
+    replaceGeneralTurns(generalId: number, entry: ReservedTurnEntry): void {
+        this.generalTurns.set(
+            generalId,
+            Array.from({ length: this.maxGeneralTurns }, () => ({
+                action: normalizeAction(entry.action),
+                args: normalizeArgs(entry.args),
+            }))
+        );
+        this.pendingGeneralInitializationIds.delete(generalId);
+        this.dirtyGeneralIds.add(generalId);
+    }
+
     ensureNationTurns(nationId: number, officerLevel: number): void {
         const key = buildNationKey(nationId, officerLevel);
         this.getNationTurns(nationId, officerLevel);

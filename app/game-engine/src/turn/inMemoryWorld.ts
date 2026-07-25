@@ -107,6 +107,7 @@ export interface TurnWorldChanges {
     createdNations: Nation[];
     createdTroops: Troop[];
     createdDiplomacy: TurnDiplomacy[];
+    createdEvents: TurnEvent[];
     deletedEvents: number[];
     lifecycleEvents: GeneralLifecycleEvent[];
     pendingNeutralAuctions: PendingNeutralAuction[];
@@ -249,7 +250,7 @@ const ensureGeneralKillturn = (general: TurnGeneral, worldKillturn: number | nul
 
 export class InMemoryTurnWorld {
     // DB에서 읽어온 월드 상태를 메모리에 고정해 턴 처리를 담당한다.
-    private readonly schedule: TurnSchedule;
+    private schedule: TurnSchedule;
     private readonly generalTurnHandler: GeneralTurnHandler;
     private readonly calendarHandler?: TurnCalendarHandler;
     private readonly generals = new Map<number, TurnGeneral>();
@@ -267,6 +268,7 @@ export class InMemoryTurnWorld {
     private readonly createdNationIds = new Set<number>();
     private readonly createdTroopIds = new Set<number>();
     private readonly createdDiplomacyKeys = new Set<string>();
+    private readonly createdEventIds = new Set<number>();
     private readonly deletedTroopIds = new Set<number>();
     private readonly deletedGeneralIds = new Set<number>();
     private readonly deletedNationIds = new Set<number>();
@@ -335,6 +337,28 @@ export class InMemoryTurnWorld {
                 ...this.state.meta,
                 ...patch,
             },
+        };
+    }
+
+    changeTurnTerm(tickMinutes: number): void {
+        if (!Number.isInteger(tickMinutes) || tickMinutes <= 0) {
+            throw new Error('Turn term must be a positive integer.');
+        }
+        const previousTickSeconds = this.state.tickSeconds;
+        const nextTickSeconds = tickMinutes * 60;
+        if (previousTickSeconds === nextTickSeconds) {
+            return;
+        }
+        const ratio = nextTickSeconds / previousTickSeconds;
+        const baseTime = this.state.lastTurnTime.getTime();
+        for (const general of this.generals.values()) {
+            const nextTurnTime = new Date(baseTime + (general.turnTime.getTime() - baseTime) * ratio);
+            this.updateGeneral(general.id, { turnTime: nextTurnTime });
+        }
+        this.schedule = { entries: [{ startMinute: 0, tickMinutes }] };
+        this.state = {
+            ...this.state,
+            tickSeconds: nextTickSeconds,
         };
     }
 
@@ -410,7 +434,19 @@ export class InMemoryTurnWorld {
         if (!this.events.delete(id)) {
             return false;
         }
+        if (this.createdEventIds.delete(id)) {
+            return true;
+        }
         this.deletedEventIds.add(id);
+        return true;
+    }
+
+    addEvent(event: TurnEvent): boolean {
+        if (this.events.has(event.id)) {
+            return false;
+        }
+        this.events.set(event.id, { ...event, meta: { ...event.meta } });
+        this.createdEventIds.add(event.id);
         return true;
     }
 
@@ -604,6 +640,11 @@ export class InMemoryTurnWorld {
             },
         };
         return nextId;
+    }
+
+    getNextEventId(): number {
+        const currentIds = Array.from(this.events.keys());
+        return (currentIds.length > 0 ? Math.max(...currentIds) : 0) + 1;
     }
 
     getNextGeneralId(): number {
@@ -860,6 +901,9 @@ export class InMemoryTurnWorld {
         const createdDiplomacy = Array.from(this.createdDiplomacyKeys)
             .map((key) => this.diplomacy.get(key))
             .filter((entry): entry is TurnDiplomacy => Boolean(entry));
+        const createdEvents = Array.from(this.createdEventIds)
+            .map((id) => this.events.get(id))
+            .filter((event): event is TurnEvent => Boolean(event));
         const deletedTroops = Array.from(this.deletedTroopIds);
         const deletedGenerals = Array.from(this.deletedGeneralIds);
         const deletedNations = Array.from(this.deletedNationIds);
@@ -891,6 +935,7 @@ export class InMemoryTurnWorld {
             createdNations,
             createdTroops,
             createdDiplomacy,
+            createdEvents,
             deletedEvents,
             lifecycleEvents,
             pendingNeutralAuctions,
@@ -912,6 +957,7 @@ export class InMemoryTurnWorld {
         for (const entry of changes.createdDiplomacy) {
             this.createdDiplomacyKeys.delete(buildDiplomacyKey(entry.fromNationId, entry.toNationId));
         }
+        for (const event of changes.createdEvents) this.createdEventIds.delete(event.id);
         for (const id of changes.deletedTroops) this.deletedTroopIds.delete(id);
         for (const id of changes.deletedGenerals) this.deletedGeneralIds.delete(id);
         for (const id of changes.deletedNations) this.deletedNationIds.delete(id);

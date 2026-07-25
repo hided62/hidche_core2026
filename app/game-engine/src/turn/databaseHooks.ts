@@ -394,6 +394,7 @@ export const createDatabaseTurnHooks = async (
             createdNations,
             createdTroops,
             createdDiplomacy,
+            createdEvents,
             deletedEvents,
             lifecycleEvents,
             pendingNeutralAuctions,
@@ -591,6 +592,24 @@ export const createDatabaseTurnHooks = async (
                 await prisma.diplomacy.createMany({
                     data: createdDiplomacy.map(buildDiplomacyCreate),
                 });
+            }
+            if (createdEvents.length > 0) {
+                await prisma.event.createMany({
+                    data: createdEvents.map((event) => ({
+                        id: event.id,
+                        targetCode: event.targetCode,
+                        priority: event.priority,
+                        condition: asJson(event.condition),
+                        action: asJson(event.action),
+                        meta: asJson(event.meta),
+                    })),
+                });
+                await prisma.$queryRaw`
+                    SELECT setval(
+                        pg_get_serial_sequence('event', 'id'),
+                        GREATEST((SELECT COALESCE(MAX(id), 1) FROM event), 1)
+                    )
+                `;
             }
             if (deletedTroops.length > 0) {
                 await prisma.troop.deleteMany({
