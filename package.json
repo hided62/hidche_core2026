@@ -15,7 +15,8 @@
         "dev": "turbo dev",
         "build:server": "pnpm --filter ./tools/build-scripts build:server --",
         "generate:resource-schemas": "pnpm --filter @sammo-ts/tools-scripts generate:resource-schemas",
-        "validate:resources": "pnpm --filter @sammo-ts/tools-scripts validate:resources"
+        "validate:resources": "pnpm --filter @sammo-ts/tools-scripts validate:resources",
+        "check:legacy:nation": "node tools/compare-command-constraints.mjs --include '^Nation/' --check && node tools/compare-command-logs.mjs --include '^Nation/' --mode action --check"
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",
@@ -31,6 +32,7 @@
         "tsdown": "^0.22.14",
         "turbo": "^2.10.6",
         "typescript": "^7.0.2",
+        "typescript-legacy": "npm:typescript@5.9.3",
         "typescript-eslint": "^8.65.0",
         "vue-eslint-parser": "^10.4.1"
     }

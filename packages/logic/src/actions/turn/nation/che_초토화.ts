@@ -72,6 +72,7 @@ export class ActionDefinition<
 > implements GeneralActionDefinition<TriggerState, ScorchedEarthArgs, ScorchedEarthResolveContext<TriggerState>> {
     public readonly key = 'che_초토화';
     public readonly name = ACTION_NAME;
+    public readonly countsAsInheritanceActiveAction = true;
 
     parseArgs(raw: unknown): ScorchedEarthArgs | null {
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
@@ -100,6 +101,10 @@ export class ActionDefinition<
                 0: '평시에만 가능합니다.',
             }),
         ];
+    }
+
+    getPreReqTurn(): number {
+        return PRE_REQ_TURN;
     }
 
     resolve(

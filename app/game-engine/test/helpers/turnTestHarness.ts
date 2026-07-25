@@ -12,6 +12,7 @@ import { composeCalendarHandlers } from '../../src/turn/calendarHandlers.js';
 import { createIncomeHandler } from '../../src/turn/incomeHandler.js';
 import { createNpcTaxHandler } from '../../src/turn/npcTaxHandler.js';
 import { createFrontStateHandler } from '../../src/turn/frontStateHandler.js';
+import { createNationTurnMonthlyHandler } from '../../src/turn/nationTurnMonthlyHandler.js';
 
 export const createMockPrisma = (initialGeneralRows: any[] = []) => {
     let generalRows = [...initialGeneralRows];
@@ -126,8 +127,12 @@ export const createTurnTestHarness = async (options: TurnTestHarnessOptions) => 
         getWorld: () => worldRef.current,
         map: options.map,
     });
+    const nationTurnMonthlyHandler = createNationTurnMonthlyHandler({
+        getWorld: () => worldRef.current,
+    });
 
     const calendarHandler = composeCalendarHandlers(
+        nationTurnMonthlyHandler,
         incomeHandler,
         npcTaxHandler,
         frontStateHandler,
@@ -194,8 +199,7 @@ export const createTurnTestHarness = async (options: TurnTestHarnessOptions) => 
         runUntil,
         getCollectedLogs: () => [...collectedLogs],
         getCollectedLogsCount: () => collectedLogs.length,
-        getCollectedLogsRange: (start: number, end?: number) =>
-            collectedLogs.slice(start, end ?? collectedLogs.length),
+        getCollectedLogsRange: (start: number, end?: number) => collectedLogs.slice(start, end ?? collectedLogs.length),
         getAndClearCollectedLogs: () => collectedLogs.splice(0, collectedLogs.length),
     };
 };
@@ -238,10 +242,7 @@ const formatCity = (city: ReturnType<InMemoryTurnWorld['getCityById']>) => {
     };
 };
 
-export const createWorldDebugger = (
-    getWorld: () => InMemoryTurnWorld | null,
-    watchTargets: DebugWatchTargets = {}
-) => {
+export const createWorldDebugger = (getWorld: () => InMemoryTurnWorld | null, watchTargets: DebugWatchTargets = {}) => {
     const dumpWorldSummary = (label = 'WORLD') => {
         const world = getWorld();
         if (!world) {

@@ -12,6 +12,7 @@ import type {
 import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
 import { getNextTurnAt, type TurnSchedule } from '@sammo-ts/logic/turn/calendar.js';
 import { LogCategory, type LogEntryDraft, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
+import type { MessageDraft } from '@sammo-ts/logic/messages/message.js';
 
 enablePatches();
 
@@ -86,6 +87,11 @@ export interface NextTurnOverrideEffect {
     nextTurnAt: Date;
 }
 
+export interface MessageAddEffect {
+    type: 'message:add';
+    draft: MessageDraft;
+}
+
 export type GeneralActionEffect<TriggerState extends GeneralTriggerState = GeneralTriggerState> =
     | GeneralPatchEffect<TriggerState>
     | GeneralAddEffect<TriggerState>
@@ -94,6 +100,7 @@ export type GeneralActionEffect<TriggerState extends GeneralTriggerState = Gener
     | NationAddEffect
     | DiplomacyPatchEffect
     | LogEffect
+    | MessageAddEffect
     | NextTurnOverrideEffect;
 
 export interface GeneralActionOutcome<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
@@ -203,6 +210,11 @@ export const createLogEffect = (message: string, options: Partial<Omit<LogEntryD
     },
 });
 
+export const createMessageEffect = (draft: MessageDraft): MessageAddEffect => ({
+    type: 'message:add',
+    draft,
+});
+
 export const createNextTurnOverrideEffect = (nextTurnAt: Date): NextTurnOverrideEffect => ({
     type: 'schedule:override',
     nextTurnAt,
@@ -301,6 +313,7 @@ export const resolveGeneralAction = <TriggerState extends GeneralTriggerState = 
                         createdNations.push(effect.nation as Nation);
                         break;
                     case 'diplomacy:patch':
+                    case 'message:add':
                         pendingEffects.push(effect);
                         break;
                     case 'general:patch':

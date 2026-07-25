@@ -9,6 +9,7 @@ import type { TurnCommandEnv } from '../../../src/actions/turn/commandEnv.js';
 import { ActionDefinition as StopWarProposalAction } from '../../../src/actions/turn/nation/che_종전제의.js';
 import { ActionDefinition as ScorchedEarthAction } from '../../../src/actions/turn/nation/che_초토화.js';
 import { ActionDefinition as CounterStrategyAction } from '../../../src/actions/turn/nation/che_피장파장.js';
+import { ActionDefinition as MaterialAidAction } from '../../../src/actions/turn/nation/che_물자원조.js';
 import { ActionDefinition as PopulationMoveAction } from '../../../src/actions/turn/nation/cr_인구이동.js';
 import { ActionDefinition as EventWonyungAction } from '../../../src/actions/turn/nation/event_원융노병연구.js';
 import { ActionDefinition as EventHwasibyeongAction } from '../../../src/actions/turn/nation/event_화시병연구.js';
@@ -205,13 +206,7 @@ const buildEnv = (): TurnCommandEnv => ({
     maxResourceActionAmount: 100000,
 });
 
-const setupDiplomacy = (
-    view: TestStateView,
-    srcNationId: number,
-    destNationId: number,
-    state: number,
-    term = 0
-) => {
+const setupDiplomacy = (view: TestStateView, srcNationId: number, destNationId: number, state: number, term = 0) => {
     view.set(
         {
             kind: 'diplomacy',
@@ -267,6 +262,9 @@ describe('Nation Missing Actions', () => {
                 general,
                 city,
                 nation,
+                destNation,
+                messageTime: new Date('2026-01-01T00:00:00Z'),
+                messageValidMinutes: 30,
                 rng: {} as any,
                 addLog: () => {},
             } as any,
@@ -275,6 +273,15 @@ describe('Nation Missing Actions', () => {
         );
 
         expect(resolution.logs.some((log) => log.text.includes('종전 제의'))).toBe(true);
+        expect(resolution.effects).toContainEqual(
+            expect.objectContaining({
+                type: 'message:add',
+                draft: expect.objectContaining({
+                    msgType: 'diplomacy',
+                    option: { action: 'stopWar', deletable: false },
+                }),
+            })
+        );
     });
 
     it('che_피장파장: blocks when not at war/declare', () => {
@@ -323,6 +330,7 @@ describe('Nation Missing Actions', () => {
                 destNation,
                 friendlyGenerals: [general, otherGeneral],
                 destNationGenerals: [enemyGeneral],
+                currentYearMonth: 155,
                 rng: {} as any,
                 addLog: () => {},
             } as any,
@@ -332,6 +340,54 @@ describe('Nation Missing Actions', () => {
 
         expect(resolution.general.experience).toBeGreaterThan(100);
         expect(resolution.nation?.meta?.strategic_cmd_limit).toBe(8);
+        expect(resolution.nation?.meta?.next_execute_허보).toBe(227);
+        expect(resolution.patches?.nations).toContainEqual({
+            id: destNation.id,
+            patch: expect.objectContaining({
+                meta: expect.objectContaining({ next_execute_허보: 215 }),
+            }),
+        });
+    });
+
+    it('che_물자원조: validates amounts and records the legacy receive-assist accumulator', () => {
+        const definition = new MaterialAidAction(buildEnv());
+        expect(definition.parseArgs({ destNationId: 2, amountList: [0, 0] })).toBeNull();
+        expect(definition.parseArgs({ destNationId: 2, amountList: [-1, 10] })).toBeNull();
+
+        const general = buildGeneral(1, 1, 1);
+        const nation = { ...buildNation(1), gold: 1000, rice: 1000 };
+        const destNation = { ...buildNation(2), gold: 100, rice: 100 };
+        const resolution = resolveGeneralAction(
+            definition,
+            {
+                general,
+                city: buildCity(1, 1),
+                nation,
+                destNation,
+                friendlyChiefs: [general],
+                destNationChiefs: [],
+                rng: {} as any,
+                addLog: () => {},
+            } as any,
+            { now: new Date(), schedule },
+            { destNationId: 2, amountList: [100, 50] }
+        );
+
+        expect(resolution.nation).toMatchObject({
+            gold: 900,
+            rice: 950,
+            meta: { surlimit: 12 },
+        });
+        expect(resolution.patches?.nations).toContainEqual({
+            id: 2,
+            patch: expect.objectContaining({
+                gold: 200,
+                rice: 150,
+                meta: expect.objectContaining({
+                    recv_assist: { n1: { 0: 1, 1: 150 } },
+                }),
+            }),
+        });
     });
 
     it('che_초토화: blocks when diplomacy limit exists', () => {

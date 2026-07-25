@@ -3,10 +3,7 @@ import type { Constraint, ConstraintContext, StateView } from '@sammo-ts/logic/c
 import { allow, unknownOrDeny } from '@sammo-ts/logic/constraints/helpers.js';
 import { beChief, occupiedCity, reqNationGold, reqNationRice } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
-import type {
-    GeneralActionOutcome,
-    GeneralActionResolveContext,
-} from '@sammo-ts/logic/actions/engine.js';
+import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
 import { createLogEffect, createNationPatchEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
@@ -43,7 +40,9 @@ const reqNationAuxValue = (auxKey: string, actionName: string): Constraint => ({
     },
 });
 
-export const createEventResearchCommand = (config: EventResearchConfig): {
+export const createEventResearchCommand = (
+    config: EventResearchConfig
+): {
     ActionDefinition: new <TriggerState extends GeneralTriggerState = GeneralTriggerState>(
         env: TurnCommandEnv
     ) => GeneralActionDefinition<TriggerState, Record<string, never>>;
@@ -61,6 +60,7 @@ export const createEventResearchCommand = (config: EventResearchConfig): {
     > implements GeneralActionDefinition<TriggerState, Record<string, never>> {
         public readonly key = config.key;
         public readonly name = ACTION_NAME;
+        public readonly countsAsInheritanceActiveAction = true;
 
         constructor(private readonly env: TurnCommandEnv) {}
 
@@ -91,6 +91,10 @@ export const createEventResearchCommand = (config: EventResearchConfig): {
                 reqNationGold(() => this.env.baseGold + COST),
                 reqNationRice(() => this.env.baseRice + COST),
             ];
+        }
+
+        getPreReqTurn(): number {
+            return PRE_REQ_TURN;
         }
 
         resolve(

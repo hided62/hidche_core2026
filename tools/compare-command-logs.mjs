@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import ts from 'typescript';
+import ts from 'typescript-legacy';
 
 const ROOT_DIR = process.cwd();
 const PHP_ROOT = path.join(ROOT_DIR, 'legacy', 'hwe', 'sammo', 'Command');
@@ -24,6 +24,7 @@ Options:
     --keep-date                 Keep <1>...</> date markers in normalized output.
     --ignore-file <path>        JSON ignore list file (default: tools/compare-command-logs.ignore.json).
     --checklist                 Output a markdown checklist for mismatches.
+    --check                     Exit non-zero when a command is missing or mismatched.
     --json                      Output JSON report.
     --help                      Show this help.
 `;
@@ -40,6 +41,7 @@ const includeGuards = args.includes('--include-guards');
 const includeTarget = args.includes('--include-target');
 const countSensitive = args.includes('--count-sensitive');
 const checklist = args.includes('--checklist');
+const check = args.includes('--check');
 const ignoreFileIndex = args.indexOf('--ignore-file');
 const ignoreFile = ignoreFileIndex >= 0 ? args[ignoreFileIndex + 1] : DEFAULT_IGNORE_FILE;
 
@@ -62,6 +64,7 @@ const guardPatterns = [
     /병종 정보를 확인할 수 없어/,
     /현재 선택할 수 없는 병종입니다/,
     /도시 정보가 없어/,
+    /도달할 방법이 없습니다/,
 ];
 
 const excludeGuards = DEFAULT_EXCLUDE_GUARDS && !includeGuards;
@@ -127,7 +130,7 @@ const scanToDelimiter = (text, startIndex, delimiter) => {
             continue;
         }
 
-        if (ch === '\'' || ch === '"') {
+        if (ch === "'" || ch === '"') {
             quote = ch;
             i += 1;
             continue;
@@ -166,7 +169,7 @@ const scanToFirstArgumentEnd = (text, startIndex) => {
             continue;
         }
 
-        if (ch === '\'' || ch === '"') {
+        if (ch === "'" || ch === '"') {
             quote = ch;
             i += 1;
             continue;
@@ -208,7 +211,7 @@ const scanToParenEnd = (text, startIndex) => {
             continue;
         }
 
-        if (ch === '\'' || ch === '"') {
+        if (ch === "'" || ch === '"') {
             quote = ch;
             i += 1;
             continue;
@@ -249,7 +252,7 @@ const splitTopLevel = (text, delimiter) => {
             continue;
         }
 
-        if (ch === '\'' || ch === '"') {
+        if (ch === "'" || ch === '"') {
             quote = ch;
             current += ch;
             continue;
@@ -280,7 +283,7 @@ const splitTopLevel = (text, delimiter) => {
 const parsePhpStringLiteral = (segment) => {
     const trimmed = segment.trim();
     const quote = trimmed[0];
-    if (quote !== '\'' && quote !== '"') {
+    if (quote !== "'" && quote !== '"') {
         return null;
     }
 
@@ -505,7 +508,8 @@ const extractPhpLogCalls = (text, assignments) => {
         }
 
         const parsed = parsePhpExprToTemplate(value, assignments, match.index);
-        const hasGeneralId = methodMeta.generalMethod && !isPhpActorLoggerExpr(calleeExpr, actorGeneralVars, actorLoggerVars);
+        const hasGeneralId =
+            methodMeta.generalMethod && !isPhpActorLoggerExpr(calleeExpr, actorGeneralVars, actorLoggerVars);
 
         results.push({
             pos: match.index,
@@ -615,10 +619,7 @@ const extractTsLogs = (filePath, text) => {
                     if (!ts.isIdentifier(decl.name) || !decl.initializer) {
                         continue;
                     }
-                    if (
-                        ts.isStringLiteral(decl.initializer) ||
-                        ts.isNoSubstitutionTemplateLiteral(decl.initializer)
-                    ) {
+                    if (ts.isStringLiteral(decl.initializer) || ts.isNoSubstitutionTemplateLiteral(decl.initializer)) {
                         constants.set(decl.name.text, decl.initializer.text);
                     }
                 }
@@ -684,8 +685,7 @@ const extractTsLogs = (filePath, text) => {
             return;
         }
         const nameProp = arg.properties.find(
-            (prop) =>
-                ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) && prop.name.text === 'name'
+            (prop) => ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) && prop.name.text === 'name'
         );
         if (!nameProp || !ts.isPropertyAssignment(nameProp)) {
             ts.forEachChild(node, visitFactory);
@@ -780,8 +780,7 @@ const loadIgnoreConfig = async () => {
 const compileIgnoreRules = (config) => {
     const global = config.Global ?? {};
     const normalizeList = (list) => (Array.isArray(list) ? list.map((item) => normalizeTemplate(String(item))) : []);
-    const compileRegex = (list) =>
-        Array.isArray(list) ? list.map((item) => new RegExp(String(item))) : [];
+    const compileRegex = (list) => (Array.isArray(list) ? list.map((item) => new RegExp(String(item))) : []);
 
     return {
         globalTemplates: new Set(normalizeList(global.templates)),
@@ -1127,69 +1126,71 @@ const main = async () => {
 
     if (asJson) {
         console.log(JSON.stringify(report, null, 2));
-        return;
-    }
+    } else {
+        console.log(
+            `Compare command logs (mode: ${mode}, strict: ${strict ? 'on' : 'off'}, keepDate: ${keepDate ? 'on' : 'off'}, excludeGuards: ${excludeGuards ? 'on' : 'off'}, excludeTarget: ${excludeTarget ? 'on' : 'off'}, countSensitive: ${countSensitive ? 'on' : 'off'})`
+        );
+        console.log(`PHP commands: ${report.totals.phpCommands}`);
+        console.log(`TS commands: ${report.totals.tsCommands}`);
+        console.log(`Matched commands: ${report.totals.matches}`);
+        console.log(`Mismatched commands: ${report.totals.mismatches}`);
+        console.log(`Missing in TS: ${report.missingInTs.length}`);
+        console.log(`Missing in PHP: ${report.missingInPhp.length}`);
+        console.log(`Ignored mismatches: ${report.totals.ignored}`);
 
-    console.log(
-        `Compare command logs (mode: ${mode}, strict: ${strict ? 'on' : 'off'}, keepDate: ${keepDate ? 'on' : 'off'}, excludeGuards: ${excludeGuards ? 'on' : 'off'}, excludeTarget: ${excludeTarget ? 'on' : 'off'}, countSensitive: ${countSensitive ? 'on' : 'off'})`
-    );
-    console.log(`PHP commands: ${report.totals.phpCommands}`);
-    console.log(`TS commands: ${report.totals.tsCommands}`);
-    console.log(`Matched commands: ${report.totals.matches}`);
-    console.log(`Mismatched commands: ${report.totals.mismatches}`);
-    console.log(`Missing in TS: ${report.missingInTs.length}`);
-    console.log(`Missing in PHP: ${report.missingInPhp.length}`);
-    console.log(`Ignored mismatches: ${report.totals.ignored}`);
-
-    if (report.missingInTs.length > 0) {
-        console.log('\nMissing in TS:');
-        for (const key of report.missingInTs) {
-            console.log(`- ${key}`);
-        }
-    }
-
-    if (report.missingInPhp.length > 0) {
-        console.log('\nMissing in PHP:');
-        for (const key of report.missingInPhp) {
-            console.log(`- ${key}`);
-        }
-    }
-
-    if (report.mismatches.length > 0) {
-        console.log('\nMismatch Details:');
-        for (const mismatch of report.mismatches) {
-            console.log(`\n== ${mismatch.key} ==`);
-            if (mismatch.missingDetails.length > 0) {
-                console.log(
-                    `PHP only: ${mismatch.missingDetails
-                        .map((item) => (item.count > 1 ? `${item.template} x${item.count}` : item.template))
-                        .join(' | ')}`
-                );
-            }
-            if (mismatch.extraDetails.length > 0) {
-                console.log(
-                    `TS only: ${mismatch.extraDetails
-                        .map((item) => (item.count > 1 ? `${item.template} x${item.count}` : item.template))
-                        .join(' | ')}`
-                );
-            }
-            const phpLines = formatEntries(mismatch.phpEntries);
-            const tsLines = formatEntries(mismatch.tsEntries);
-
-            console.log('PHP:');
-            for (const line of phpLines) {
-                console.log(line);
-            }
-            console.log('TS:');
-            for (const line of tsLines) {
-                console.log(line);
+        if (report.missingInTs.length > 0) {
+            console.log('\nMissing in TS:');
+            for (const key of report.missingInTs) {
+                console.log(`- ${key}`);
             }
         }
-    }
 
-    if (checklist) {
-        console.log('\nChecklist:');
-        console.log(renderChecklist(report));
+        if (report.missingInPhp.length > 0) {
+            console.log('\nMissing in PHP:');
+            for (const key of report.missingInPhp) {
+                console.log(`- ${key}`);
+            }
+        }
+
+        if (report.mismatches.length > 0) {
+            console.log('\nMismatch Details:');
+            for (const mismatch of report.mismatches) {
+                console.log(`\n== ${mismatch.key} ==`);
+                if (mismatch.missingDetails.length > 0) {
+                    console.log(
+                        `PHP only: ${mismatch.missingDetails
+                            .map((item) => (item.count > 1 ? `${item.template} x${item.count}` : item.template))
+                            .join(' | ')}`
+                    );
+                }
+                if (mismatch.extraDetails.length > 0) {
+                    console.log(
+                        `TS only: ${mismatch.extraDetails
+                            .map((item) => (item.count > 1 ? `${item.template} x${item.count}` : item.template))
+                            .join(' | ')}`
+                    );
+                }
+                const phpLines = formatEntries(mismatch.phpEntries);
+                const tsLines = formatEntries(mismatch.tsEntries);
+
+                console.log('PHP:');
+                for (const line of phpLines) {
+                    console.log(line);
+                }
+                console.log('TS:');
+                for (const line of tsLines) {
+                    console.log(line);
+                }
+            }
+        }
+
+        if (checklist) {
+            console.log('\nChecklist:');
+            console.log(renderChecklist(report));
+        }
+    }
+    if (check && (report.totals.mismatches > 0 || report.missingInTs.length > 0 || report.missingInPhp.length > 0)) {
+        process.exitCode = 1;
     }
 };
 

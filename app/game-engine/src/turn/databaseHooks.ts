@@ -13,7 +13,14 @@ import {
     type TurnEngineTroopUpdateInput,
     type TurnEngineWorldStateUpdateInput,
 } from '@sammo-ts/infra';
-import { finalizeLogEntry, LogCategory, LogScope, type LogEntryDraft } from '@sammo-ts/logic';
+import {
+    finalizeLogEntry,
+    LogCategory,
+    LogScope,
+    sendMessage,
+    type LogEntryDraft,
+    type MessageRecordDraft,
+} from '@sammo-ts/logic';
 import { asRecord, type RankDataType } from '@sammo-ts/common';
 
 import type { TurnDaemonCommandResult, TurnDaemonHooks } from '../lifecycle/types.js';
@@ -323,6 +330,7 @@ export const createDatabaseTurnHooks = async (
             deletedNationSnapshots,
             diplomacy,
             logs,
+            messages,
             createdGenerals,
             createdNations,
             createdTroops,
@@ -565,6 +573,33 @@ export const createDatabaseTurnHooks = async (
                         data: payload,
                     });
                 }
+            }
+            for (const message of messages) {
+                await sendMessage(
+                    {
+                        insertMessage: async (draft: MessageRecordDraft) => {
+                            const rows = await prisma.$queryRaw<Array<{ id: number }>>`
+                                INSERT INTO message (mailbox, type, src, dest, time, valid_until, message)
+                                VALUES (
+                                    ${draft.mailbox},
+                                    ${draft.msgType},
+                                    ${draft.srcId},
+                                    ${draft.destId},
+                                    ${draft.time},
+                                    ${draft.validUntil},
+                                    CAST(${JSON.stringify(draft.payload)} AS jsonb)
+                                )
+                                RETURNING id
+                            `;
+                            const id = rows[0]?.id;
+                            if (!id) {
+                                throw new Error('Failed to persist turn message.');
+                            }
+                            return id;
+                        },
+                    },
+                    message
+                );
             }
             if (options?.reservedTurns && reservedTurnChanges) {
                 await options.reservedTurns.persistChanges(prisma, reservedTurnChanges);

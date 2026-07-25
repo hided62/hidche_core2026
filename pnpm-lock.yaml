@@ -40,7 +40,7 @@ importers:
         version: 3.9.6
       tsdown:
         specifier: ^0.22.14
-        version: 0.22.14(@volar/typescript@2.4.27)(tsx@4.21.0)(typescript@7.0.2)(unrun@0.2.22(synckit@0.11.13))(vue-tsc@3.2.2(typescript@7.0.2))
+        version: 0.22.14(@volar/typescript@2.4.27)(tsx@4.21.0)(typescript@7.0.2)(unrun@0.2.22(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)(synckit@0.11.13))(vue-tsc@3.2.2(typescript@7.0.2))
       turbo:
         specifier: ^2.10.6
         version: 2.10.6
@@ -50,6 +50,9 @@ importers:
       typescript-eslint:
         specifier: ^8.65.0
         version: 8.65.0(eslint@10.8.0(jiti@2.6.1)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@7.0.2)
+      typescript-legacy:
+        specifier: npm:typescript@5.9.3
+        version: typescript@5.9.3
       vue-eslint-parser:
         specifier: ^10.4.1
         version: 10.4.1(eslint@10.8.0(jiti@2.6.1)(supports-color@7.2.0))(supports-color@7.2.0)
@@ -95,7 +98,7 @@ importers:
     devDependencies:
       tsdown:
         specifier: ^0.18.4
-        version: 0.18.4(synckit@0.11.13)(typescript@5.9.3)(vue-tsc@3.2.2(typescript@7.0.2))
+        version: 0.18.4(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)(synckit@0.11.13)(typescript@5.9.3)(vue-tsc@3.2.2(typescript@7.0.2))
       vite-tsconfig-paths:
         specifier: ^6.0.3
         version: 6.0.3(supports-color@7.2.0)(typescript@5.9.3)(vite@7.3.1(@types/node@26.1.1)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0))
@@ -126,7 +129,7 @@ importers:
     devDependencies:
       tsdown:
         specifier: ^0.18.4
-        version: 0.18.4(synckit@0.11.13)(typescript@5.9.3)(vue-tsc@3.2.2(typescript@5.9.3))
+        version: 0.18.4(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)(synckit@0.11.13)(typescript@5.9.3)(vue-tsc@3.2.2(typescript@5.9.3))
       vite-tsconfig-paths:
         specifier: ^6.0.3
         version: 6.0.3(supports-color@7.2.0)(typescript@5.9.3)(vite@7.3.1(@types/node@26.1.1)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0))
@@ -266,7 +269,7 @@ importers:
     devDependencies:
       tsdown:
         specifier: ^0.18.4
-        version: 0.18.4(synckit@0.11.13)(typescript@5.9.3)(vue-tsc@3.2.2(typescript@7.0.2))
+        version: 0.18.4(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)(synckit@0.11.13)(typescript@5.9.3)(vue-tsc@3.2.2(typescript@7.0.2))
       vite-tsconfig-paths:
         specifier: ^6.0.3
         version: 6.0.3(supports-color@7.2.0)(typescript@7.0.2)(vite@7.3.1(@types/node@26.1.1)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0))
@@ -355,7 +358,7 @@ importers:
     devDependencies:
       tsdown:
         specifier: ^0.18.4
-        version: 0.18.4(synckit@0.11.13)(typescript@5.9.3)(vue-tsc@3.2.2(typescript@5.9.3))
+        version: 0.18.4(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)(synckit@0.11.13)(typescript@5.9.3)(vue-tsc@3.2.2(typescript@5.9.3))
       vitest:
         specifier: ^4.0.16
         version: 4.0.16(@types/node@26.1.1)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)
@@ -392,7 +395,7 @@ importers:
         version: 7.2.0(@types/react@19.2.7)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(typescript@5.9.3)
       tsdown:
         specifier: ^0.18.4
-        version: 0.18.4(synckit@0.11.13)(typescript@5.9.3)(vue-tsc@3.2.2(typescript@5.9.3))
+        version: 0.18.4(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)(synckit@0.11.13)(typescript@5.9.3)(vue-tsc@3.2.2(typescript@5.9.3))
 
   packages/logic:
     dependencies:
@@ -411,7 +414,7 @@ importers:
     devDependencies:
       tsdown:
         specifier: ^0.18.4
-        version: 0.18.4(synckit@0.11.13)(typescript@5.9.3)(vue-tsc@3.2.2(typescript@5.9.3))
+        version: 0.18.4(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)(synckit@0.11.13)(typescript@5.9.3)(vue-tsc@3.2.2(typescript@5.9.3))
       vite-tsconfig-paths:
         specifier: ^6.0.3
         version: 6.0.3(supports-color@7.2.0)(typescript@5.9.3)(vite@7.3.1(@types/node@26.1.1)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0))
@@ -5230,9 +5233,12 @@ snapshots:
       '@napi-rs/wasm-runtime': 1.1.1
     optional: true
 
-  '@rolldown/binding-wasm32-wasi@1.0.0-beta.58':
+  '@rolldown/binding-wasm32-wasi@1.0.0-beta.58(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)':
     dependencies:
-      '@napi-rs/wasm-runtime': 1.1.1
+      '@napi-rs/wasm-runtime': 1.1.6(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)
+    transitivePeerDependencies:
+      - '@emnapi/core'
+      - '@emnapi/runtime'
     optional: true
 
   '@rolldown/binding-wasm32-wasi@1.2.0':
@@ -6036,7 +6042,7 @@ snapshots:
       alien-signals: 3.1.2
       muggle-string: 0.4.1
       path-browserify: 1.0.1
-      picomatch: 4.0.3
+      picomatch: 4.0.5
 
   '@vue/reactivity@3.5.26':
     dependencies:
@@ -6290,7 +6296,7 @@ snapshots:
     dependencies:
       chokidar: 4.0.3
       confbox: 0.2.2
-      defu: 6.1.4
+      defu: 6.1.7
       dotenv: 16.6.1
       exsolve: 1.0.8
       giget: 2.0.0
@@ -6778,7 +6784,7 @@ snapshots:
     dependencies:
       citty: 0.1.6
       consola: 3.4.2
-      defu: 6.1.4
+      defu: 6.1.7
       node-fetch-native: 1.6.7
       nypm: 0.6.2
       pathe: 2.0.3
@@ -7111,7 +7117,7 @@ snapshots:
       consola: 3.4.2
       pathe: 2.0.3
       pkg-types: 2.3.0
-      tinyexec: 1.0.2
+      tinyexec: 1.2.4
 
   obug@2.1.1: {}
 
@@ -7547,7 +7553,7 @@ snapshots:
 
   rc9@2.1.2:
     dependencies:
-      defu: 6.1.4
+      defu: 6.1.7
       destr: 2.0.5
 
   react-dom@19.2.3(react@19.2.3):
@@ -7678,7 +7684,7 @@ snapshots:
       '@rolldown/binding-win32-arm64-msvc': 1.0.0-beta.57
       '@rolldown/binding-win32-x64-msvc': 1.0.0-beta.57
 
-  rolldown@1.0.0-beta.58:
+  rolldown@1.0.0-beta.58(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2):
     dependencies:
       '@oxc-project/types': 0.106.0
       '@rolldown/pluginutils': 1.0.0-beta.58
@@ -7693,9 +7699,12 @@ snapshots:
       '@rolldown/binding-linux-x64-gnu': 1.0.0-beta.58
       '@rolldown/binding-linux-x64-musl': 1.0.0-beta.58
       '@rolldown/binding-openharmony-arm64': 1.0.0-beta.58
-      '@rolldown/binding-wasm32-wasi': 1.0.0-beta.58
+      '@rolldown/binding-wasm32-wasi': 1.0.0-beta.58(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)
       '@rolldown/binding-win32-arm64-msvc': 1.0.0-beta.58
       '@rolldown/binding-win32-x64-msvc': 1.0.0-beta.58
+    transitivePeerDependencies:
+      - '@emnapi/core'
+      - '@emnapi/runtime'
 
   rolldown@1.2.0:
     dependencies:
@@ -7965,7 +7974,7 @@ snapshots:
     optionalDependencies:
       typescript: 7.0.2
 
-  tsdown@0.18.4(synckit@0.11.13)(typescript@5.9.3)(vue-tsc@3.2.2(typescript@5.9.3)):
+  tsdown@0.18.4(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)(synckit@0.11.13)(typescript@5.9.3)(vue-tsc@3.2.2(typescript@5.9.3)):
     dependencies:
       ansis: 4.2.0
       cac: 6.7.14
@@ -7982,17 +7991,19 @@ snapshots:
       tinyglobby: 0.2.15
       tree-kill: 1.2.2
       unconfig-core: 7.4.2
-      unrun: 0.2.22(synckit@0.11.13)
+      unrun: 0.2.22(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)(synckit@0.11.13)
     optionalDependencies:
       typescript: 5.9.3
     transitivePeerDependencies:
+      - '@emnapi/core'
+      - '@emnapi/runtime'
       - '@ts-macro/tsc'
       - '@typescript/native-preview'
       - oxc-resolver
       - synckit
       - vue-tsc
 
-  tsdown@0.18.4(synckit@0.11.13)(typescript@5.9.3)(vue-tsc@3.2.2(typescript@7.0.2)):
+  tsdown@0.18.4(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)(synckit@0.11.13)(typescript@5.9.3)(vue-tsc@3.2.2(typescript@7.0.2)):
     dependencies:
       ansis: 4.2.0
       cac: 6.7.14
@@ -8009,17 +8020,19 @@ snapshots:
       tinyglobby: 0.2.15
       tree-kill: 1.2.2
       unconfig-core: 7.4.2
-      unrun: 0.2.22(synckit@0.11.13)
+      unrun: 0.2.22(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)(synckit@0.11.13)
     optionalDependencies:
       typescript: 5.9.3
     transitivePeerDependencies:
+      - '@emnapi/core'
+      - '@emnapi/runtime'
       - '@ts-macro/tsc'
       - '@typescript/native-preview'
       - oxc-resolver
       - synckit
       - vue-tsc
 
-  tsdown@0.22.14(@volar/typescript@2.4.27)(tsx@4.21.0)(typescript@7.0.2)(unrun@0.2.22(synckit@0.11.13))(vue-tsc@3.2.2(typescript@7.0.2)):
+  tsdown@0.22.14(@volar/typescript@2.4.27)(tsx@4.21.0)(typescript@7.0.2)(unrun@0.2.22(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)(synckit@0.11.13))(vue-tsc@3.2.2(typescript@7.0.2)):
     dependencies:
       ansis: 4.3.1
       cac: 7.0.0
@@ -8039,7 +8052,7 @@ snapshots:
     optionalDependencies:
       tsx: 4.21.0
       typescript: 7.0.2
-      unrun: 0.2.22(synckit@0.11.13)
+      unrun: 0.2.22(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)(synckit@0.11.13)
     transitivePeerDependencies:
       - '@typescript/native-preview'
       - '@volar/typescript'
@@ -8131,11 +8144,14 @@ snapshots:
 
   undici-types@8.3.0: {}
 
-  unrun@0.2.22(synckit@0.11.13):
+  unrun@0.2.22(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)(synckit@0.11.13):
     dependencies:
-      rolldown: 1.0.0-beta.58
+      rolldown: 1.0.0-beta.58(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)
     optionalDependencies:
       synckit: 0.11.13
+    transitivePeerDependencies:
+      - '@emnapi/core'
+      - '@emnapi/runtime'
 
   update-browserslist-db@1.2.3(browserslist@4.28.1):
     dependencies:
@@ -8200,11 +8216,11 @@ snapshots:
   vite@7.3.1(@types/node@26.1.1)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0):
     dependencies:
       esbuild: 0.27.2
-      fdir: 6.5.0(picomatch@4.0.3)
-      picomatch: 4.0.3
+      fdir: 6.5.0(picomatch@4.0.5)
+      picomatch: 4.0.5
       postcss: 8.5.6
       rollup: 4.55.1
-      tinyglobby: 0.2.15
+      tinyglobby: 0.2.17
     optionalDependencies:
       '@types/node': 26.1.1
       fsevents: 2.3.3

@@ -88,6 +88,7 @@ export class ActionDefinition<
 > implements GeneralActionDefinition<TriggerState, ExpandCityArgs, ExpandCityResolveContext<TriggerState>> {
     public readonly key = 'che_증축';
     public readonly name = ACTION_NAME;
+    public readonly countsAsInheritanceActiveAction = true;
 
     constructor(private readonly env: TurnCommandEnv) {}
 
@@ -116,6 +117,15 @@ export class ActionDefinition<
             reqNationGold(() => this.env.baseGold + cost),
             reqNationRice(() => this.env.baseRice + cost),
         ];
+    }
+
+    getPreReqTurn(): number {
+        return 5;
+    }
+
+    getStackSequence(context: ExpandCityResolveContext<TriggerState>): number {
+        const value = context.nation?.meta.capset;
+        return typeof value === 'number' && Number.isFinite(value) ? Math.floor(value) : 0;
     }
 
     resolve(
@@ -153,6 +163,10 @@ export class ActionDefinition<
                 {
                     gold: nation.gold - cost,
                     rice: nation.rice - cost,
+                    meta: {
+                        ...nation.meta,
+                        capset: (typeof nation.meta.capset === 'number' ? nation.meta.capset : 0) + 1,
+                    },
                 },
                 nation.id
             ),
@@ -184,6 +198,11 @@ export class ActionDefinition<
                     format: LogFormat.YEAR_MONTH,
                 }
             ),
+            createLogEffect(`<G><b>${destCityName}</b></>${josaUl} <M>${ACTION_NAME}</>`, {
+                scope: LogScope.GENERAL,
+                category: LogCategory.HISTORY,
+                format: LogFormat.YEAR_MONTH,
+            }),
             // General Action Log
             createLogEffect(`<G><b>${destCityName}</b></>${josaUl} ${ACTION_NAME}했습니다.`, {
                 scope: LogScope.GENERAL,

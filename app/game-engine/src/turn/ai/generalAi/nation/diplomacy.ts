@@ -11,18 +11,16 @@ export const do불가침제의 = (ai: GeneralAI) => {
         return null;
     }
     const meta = asRecord(ai.nation.meta);
-    const recvAssist = Array.isArray(meta.recv_assist) ? meta.recv_assist : [];
+    const recvAssist = Array.isArray(meta.recv_assist) ? meta.recv_assist : Object.values(asRecord(meta.recv_assist));
     const respAssist = asRecord(meta.resp_assist);
     const respAssistTry = asRecord(meta.resp_assist_try);
     const yearMonth = joinYearMonth(ai.world.currentYear, ai.world.currentMonth);
 
     const candidateList: Record<number, number> = {};
     for (const entry of recvAssist) {
-        if (!Array.isArray(entry) || entry.length < 2) {
-            continue;
-        }
-        const destNationId = Number(entry[0]);
-        const amount = Number(entry[1]);
+        const entryRecord = asRecord(entry);
+        const destNationId = Number(Array.isArray(entry) ? entry[0] : entryRecord['0']);
+        const amount = Number(Array.isArray(entry) ? entry[1] : entryRecord['1']);
         if (!Number.isFinite(destNationId) || !Number.isFinite(amount)) {
             continue;
         }

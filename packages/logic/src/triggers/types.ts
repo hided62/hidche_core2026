@@ -21,20 +21,15 @@ export type TriggerDomesticActionType =
 
 export type TriggerDomesticVarType = 'cost' | 'score' | 'success' | 'fail' | 'train' | 'atmos' | 'rice' | 'probability';
 
-export type TriggerStrategicActionType = '의병모집' | '허보' | '필사즉생' | '백성동원' | '이호경식' | '수몰' | '급습';
+export type TriggerStrategicActionType =
+    '의병모집' | '허보' | '필사즉생' | '백성동원' | '이호경식' | '수몰' | '급습' | '피장파장';
 
 export type TriggerStrategicVarType = 'delay' | 'globalDelay';
 
 export type TriggerNationalIncomeType = 'gold' | 'rice' | 'pop';
 
 export type GeneralStatName =
-    | 'leadership'
-    | 'strength'
-    | 'intelligence'
-    | 'experience'
-    | 'dedication'
-    | 'sabotageDefence'
-    | 'sabotageAttack';
+    'leadership' | 'strength' | 'intelligence' | 'experience' | 'dedication' | 'sabotageDefence' | 'sabotageAttack';
 
 export type WarStatName =
     | GeneralStatName

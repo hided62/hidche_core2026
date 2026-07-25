@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import ts from 'typescript';
+import ts from 'typescript-legacy';
 
 const ROOT_DIR = process.cwd();
 const PHP_ROOT = path.join(ROOT_DIR, 'legacy', 'hwe', 'sammo', 'Command');
@@ -25,6 +25,7 @@ Options:
   --json                   Print JSON report.
   --show-matches           Print matched command keys.
   --show-compat            Print compatibility-matched pairs.
+  --check                  Exit non-zero when a command is missing or mismatched.
   --no-compat              Disable compatibility alias rules (default: enabled).
   --compat-file <path>     Compatibility rules JSON file (default: tools/compare-command-constraints.compat.json).
   --similarity <0..1>      Near-match threshold for non-strict mode (default: 0.6).
@@ -32,6 +33,7 @@ Options:
 `;
 
 const args = process.argv.slice(2);
+const check = args.includes('--check');
 if (args.includes('--help')) {
     console.log(HELP_TEXT.trim());
     process.exit(0);
@@ -114,7 +116,7 @@ const maskPhpComments = (text) => {
             continue;
         }
 
-        if (ch === '\'' || ch === '"') {
+        if (ch === "'" || ch === '"') {
             quote = ch;
             i += 1;
             continue;
@@ -205,7 +207,7 @@ const scanToDelimiter = (text, startIndex, delimiter) => {
             i += 1;
             continue;
         }
-        if (ch === '\'' || ch === '"') {
+        if (ch === "'" || ch === '"') {
             quote = ch;
             i += 1;
             continue;
@@ -242,7 +244,7 @@ const scanToParenEnd = (text, startIndex) => {
             i += 1;
             continue;
         }
-        if (ch === '\'' || ch === '"') {
+        if (ch === "'" || ch === '"') {
             quote = ch;
             i += 1;
             continue;
@@ -280,7 +282,7 @@ const splitTopLevel = (text, delimiter) => {
             }
             continue;
         }
-        if (ch === '\'' || ch === '"') {
+        if (ch === "'" || ch === '"') {
             quote = ch;
             current += ch;
             continue;
@@ -389,7 +391,7 @@ const stripWrappingQuotes = (value) => {
         return '';
     }
     if (
-        (text.startsWith('\'') && text.endsWith('\'')) ||
+        (text.startsWith("'") && text.endsWith("'")) ||
         (text.startsWith('"') && text.endsWith('"')) ||
         (text.startsWith('`') && text.endsWith('`'))
     ) {
@@ -830,8 +832,7 @@ const extractPhpFileConstraints = (file, text) => {
         regex.lastIndex = endIndex;
     }
 
-    const classMatch =
-        /class\s+([\\\p{L}_][\\\p{L}\p{N}_]*)\s+extends\s+([\\\p{L}_][\\\p{L}\p{N}_]*)/mu.exec(text);
+    const classMatch = /class\s+([\\\p{L}_][\\\p{L}\p{N}_]*)\s+extends\s+([\\\p{L}_][\\\p{L}\p{N}_]*)/mu.exec(text);
     const parentClass = classMatch?.[2]?.split('\\').pop() ?? null;
 
     return {
@@ -902,11 +903,7 @@ const readStringLikeProperty = (objLiteral, keyName) => {
         if (!ts.isPropertyAssignment(prop)) {
             continue;
         }
-        const key = ts.isIdentifier(prop.name)
-            ? prop.name.text
-            : ts.isStringLiteral(prop.name)
-              ? prop.name.text
-              : null;
+        const key = ts.isIdentifier(prop.name) ? prop.name.text : ts.isStringLiteral(prop.name) ? prop.name.text : null;
         if (key !== keyName) {
             continue;
         }
@@ -1337,7 +1334,12 @@ const extractTsFileConstraints = (file, text) => {
     let parentFile = null;
 
     const visit = (node) => {
-        if (!parentFile && ts.isVariableDeclaration(node) && node.initializer && ts.isCallExpression(node.initializer)) {
+        if (
+            !parentFile &&
+            ts.isVariableDeclaration(node) &&
+            node.initializer &&
+            ts.isCallExpression(node.initializer)
+        ) {
             const callee = node.initializer.expression;
             if (ts.isIdentifier(callee)) {
                 const moduleText = imports.get(callee.text);
@@ -1373,15 +1375,11 @@ const extractTsFileConstraints = (file, text) => {
             const name = node.name.text;
             if (name === 'buildConstraints') {
                 assigned.full = true;
-                byKind.full.push(
-                    ...extractTsMethodConstraints(node, sourceFile, 'ts', 'full', relFile, factorySet)
-                );
+                byKind.full.push(...extractTsMethodConstraints(node, sourceFile, 'ts', 'full', relFile, factorySet));
             }
             if (name === 'buildMinConstraints') {
                 assigned.min = true;
-                byKind.min.push(
-                    ...extractTsMethodConstraints(node, sourceFile, 'ts', 'min', relFile, factorySet)
-                );
+                byKind.min.push(...extractTsMethodConstraints(node, sourceFile, 'ts', 'min', relFile, factorySet));
             }
         }
         ts.forEachChild(node, visit);
@@ -1834,7 +1832,9 @@ const printReport = (report) => {
                 if (result.near.length > 0) {
                     console.log(`  Near match (${result.near.length}):`);
                     for (const pair of result.near) {
-                        console.log(`    - PHP "${pair.phpName}" ~ TS "${pair.tsName}" (score ${pair.score.toFixed(2)})`);
+                        console.log(
+                            `    - PHP "${pair.phpName}" ~ TS "${pair.tsName}" (score ${pair.score.toFixed(2)})`
+                        );
                     }
                 }
                 if (result.argDiffs.length > 0) {
@@ -1904,9 +1904,18 @@ const main = async () => {
             })),
         };
         console.log(JSON.stringify(jsonFriendly, null, 2));
-        return;
+    } else {
+        printReport(report);
     }
-    printReport(report);
+    if (
+        check &&
+        (report.totals.mismatch > 0 ||
+            report.totals.nearMatch > 0 ||
+            report.totals.missingCommandInTs > 0 ||
+            report.totals.missingCommandInPhp > 0)
+    ) {
+        process.exitCode = 1;
+    }
 };
 
 main().catch((error) => {
