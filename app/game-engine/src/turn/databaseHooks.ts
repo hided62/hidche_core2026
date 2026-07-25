@@ -29,6 +29,7 @@ import type { InMemoryReservedTurnStore } from './reservedTurnStore.js';
 import { buildDiplomacyMeta } from '@sammo-ts/logic';
 import { ensureItemInventory, withSerializedItemInventory } from '@sammo-ts/logic/items/index.js';
 import { persistGeneralLifecycleEvents } from './generalTurnLifecyclePersistence.js';
+import type { DatabaseTurnDaemonLease } from '../lifecycle/databaseTurnDaemonLease.js';
 
 export interface DatabaseTurnHooks {
     hooks: TurnDaemonHooks;
@@ -313,7 +314,10 @@ const buildLogCreateData = (
 export const createDatabaseTurnHooks = async (
     databaseUrl: string,
     world: InMemoryTurnWorld,
-    options?: { reservedTurns?: InMemoryReservedTurnStore }
+    options?: {
+        reservedTurns?: InMemoryReservedTurnStore;
+        turnDaemonLease?: DatabaseTurnDaemonLease;
+    }
 ): Promise<DatabaseTurnHooks> => {
     // 턴 처리 결과를 DB에 반영하는 훅을 만든다.
     const connector = createGamePostgresConnector({ url: databaseUrl });
@@ -354,6 +358,10 @@ export const createDatabaseTurnHooks = async (
             meta: asJson(state.meta),
         };
         const persist = async (prisma: GamePrisma.TransactionClient): Promise<void> => {
+            // Lock and validate the fencing row in the same transaction as every
+            // world mutation. A stale daemon can finish calculating, but it can
+            // never commit after another owner has advanced the epoch.
+            await options?.turnDaemonLease?.assertActive(prisma);
             await prisma.worldState.update({
                 where: { id: state.id },
                 data: worldStateUpdate,
