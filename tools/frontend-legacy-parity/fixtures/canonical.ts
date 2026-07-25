@@ -7,6 +7,17 @@ export const canonicalFrontendFixture = {
             roles: [],
         },
         sessionToken: 'session_visual_fixture',
+        account: {
+            id: 'visual-user-1',
+            username: 'visual-user',
+            displayName: '시각검증',
+            roles: [],
+            oauthType: 'NONE',
+            createdAt: '2026-07-25T12:27:07.000Z',
+            iconUrl: null,
+            thirdPartyUse: true,
+            deleteAfter: null,
+        },
         profile: {
             profileName: 'che',
             profile: 'che',
@@ -118,6 +129,39 @@ export const canonicalFrontendFixture = {
                     entries: [],
                 },
             ],
+        },
+        yearbookRange: {
+            firstYearMonth: 197 * 12 + 5,
+            lastYearMonth: 197 * 12 + 6,
+            currentYearMonth: 197 * 12 + 6,
+        },
+        yearbook: {
+            notModified: false,
+            hash: 'yearbook-visual-hash',
+            data: {
+                year: 197,
+                month: 7,
+                map: {
+                    year: 197,
+                    month: 7,
+                    startYear: 190,
+                    cityList: [
+                        [1, 7, 0, 1, 1, 1],
+                        [2, 7, 0, 2, 1, 1],
+                        [3, 6, 0, 1, 2, 1],
+                    ],
+                    nationList: [
+                        [1, '한', '#d32f2f', 1],
+                        [2, '진', '#1976d2', 2],
+                    ],
+                },
+                nations: [
+                    { id: 1, name: '한', color: '#d32f2f', level: 5, power: 1250, cities: ['낙양', '업'] },
+                    { id: 2, name: '진', color: '#1976d2', level: 4, power: 980, cities: ['장안'] },
+                ],
+                globalHistory: ['<C>●</> 한이 낙양을 지키고 있습니다.'],
+                globalAction: ['<L>●</> 유비가 내정을 수행했습니다.'],
+            },
         },
     },
 } as const;

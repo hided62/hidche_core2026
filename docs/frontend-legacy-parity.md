@@ -34,12 +34,15 @@ storage, route guards, and image loading.
 
 ## Enforced contracts
 
-| Screen               | Ref entry point                          | Current automated contract                                                                                                  |
-| -------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| gateway login/status | `index.php`                              | 450/700px desktop widths, mobile collapse, Pretendard title, real login mutation/session storage, actual seasonal map asset |
-| game login hand-off  | unauthenticated `hwe/index.php` redirect | `/che/login` delegates to `/gateway/`                                                                                       |
-| troop                | `hwe/v_troop.php`                        | existing `app/game-frontend/e2e/troop.spec.ts` desktop/mobile geometry and interaction suite                                |
-| hall of fame         | `hwe/a_hallOfFame.php`                   | 500/1000px container, 100px ranking cells, 64px natural image, walnut/green textures, Pretendard, close-button focus        |
+| Screen                    | Ref entry point                          | Current automated contract                                                                                                  |
+| ------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| gateway login/status      | `index.php`                              | 450/700px desktop widths, mobile collapse, Pretendard title, real login mutation/session storage, actual seasonal map asset |
+| gateway account           | `i_entrance/user_info.php`               | 550px × minimum 575px panel, 14px Pretendard, three legacy textures, success and API-error password flows                   |
+| gateway OAuth join        | `oauth_kakao/join.php`                   | 700px centered registration card, Kakao exchange/register success, retained-input API error, hover/focus                   |
+| game login hand-off       | unauthenticated `hwe/index.php` redirect | `/che/login` delegates to `/gateway/`                                                                                       |
+| troop                     | `hwe/v_troop.php`                        | existing `app/game-frontend/e2e/troop.spec.ts` desktop/mobile geometry and interaction suite                                |
+| hall of fame              | `hwe/a_hallOfFame.php`                   | 500/1000px container, 100px ranking cells, 64px natural image, walnut/green textures, Pretendard, close-button focus        |
+| yearbook                  | `hwe/v_history.php`                      | 1000px 700+300 desktop grid, 500px stacked grid, month navigation, legacy textures, success and API-error flows             |
 
 The global game baseline is black, white, Pretendard 14px. Legacy texture
 helpers intentionally follow `common.orig.css`: `bg0` is walnut, `bg1` is
@@ -59,3 +62,7 @@ Adding or changing a frontend route requires:
 
 Pixel snapshots may be added after these structural assertions pass. Dynamic
 regions must not be hidden merely to make a pixel threshold pass.
+
+For a review run that also writes full-page screenshots, create an ignored
+artifact directory and set `FRONTEND_PARITY_ARTIFACT_DIR` before invoking the
+suite. The ordinary CI run does not write screenshots after successful tests.

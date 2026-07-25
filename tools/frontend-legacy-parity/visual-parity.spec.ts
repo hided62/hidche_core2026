@@ -7,6 +7,7 @@ import { canonicalFrontendFixture as fixture } from './fixtures/canonical';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const imageRoot = resolve(repositoryRoot, '../../image');
+const artifactRoot = process.env.FRONTEND_PARITY_ARTIFACT_DIR;
 
 const response = (data: unknown) => ({ result: { data } });
 
@@ -66,6 +67,25 @@ const installGatewayFixture = async (page: Page): Promise<void> => {
             if (operation === 'auth.kakaoStart') {
                 return { mode: 'login', state: 'visual-state', authUrl: '/gateway/oauth-started' };
             }
+            if (operation === 'auth.kakaoExchange') {
+                return {
+                    status: 'join',
+                    oauthSessionId: 'oauth-visual-session',
+                    email: 'visual@example.test',
+                };
+            }
+            if (operation === 'auth.register') {
+                loggedIn = true;
+                return {
+                    user: fixture.gateway.user,
+                    sessionToken: fixture.gateway.sessionToken,
+                    issuedAt: '2026-07-25T00:00:00.000Z',
+                };
+            }
+            if (operation === 'account.get') return fixture.gateway.account;
+            if (operation === 'account.changePassword') return { ok: true };
+            if (operation === 'account.disallowThirdPartyUse') return { ok: true };
+            if (operation === 'account.deleteIcon') return { ok: true, iconUrl: null };
             throw new Error(`Unhandled gateway fixture operation: ${operation}`);
         });
     });
@@ -116,6 +136,9 @@ const installAuthenticatedGameFixture = async (page: Page): Promise<void> => {
                     troops: [],
                 };
             }
+            if (operation === 'public.getMapLayout') return fixture.game.mapLayout;
+            if (operation === 'yearbook.getRange') return fixture.game.yearbookRange;
+            if (operation === 'yearbook.getHistory') return fixture.game.yearbook;
             throw new Error(`Unhandled authenticated game fixture operation: ${operation}`);
         });
     });
@@ -197,6 +220,129 @@ test.describe('gateway legacy parity', () => {
             .poll(() => page.evaluate(() => window.localStorage.getItem('sammo-session-token')))
             .toBe(fixture.gateway.sessionToken);
     });
+
+    test('renders account management at the ref geometry and changes a password', async ({ page }) => {
+        await page.addInitScript((token) => {
+            window.localStorage.setItem('sammo-session-token', token);
+        }, fixture.gateway.sessionToken);
+        await page.goto('http://127.0.0.1:15100/gateway/account');
+        await expect(page.getByText('시각검증')).toBeVisible();
+        if (artifactRoot) {
+            await page.screenshot({
+                path: resolve(artifactRoot, 'account-core-desktop.png'),
+                fullPage: true,
+                animations: 'disabled',
+            });
+        }
+
+        const geometry = await page.locator('#account-container').evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            return {
+                width: rect.width,
+                minHeight: style.minHeight,
+                fontFamily: style.fontFamily,
+                fontSize: style.fontSize,
+                tableBackground: getComputedStyle(document.querySelector<HTMLElement>('#account-table')!)
+                    .backgroundImage,
+            };
+        });
+        expect(geometry).toMatchObject({ width: 550, minHeight: '575px', fontSize: '14px' });
+        expect(geometry.fontFamily).toContain('Pretendard');
+        expect(geometry.tableBackground).toContain('back_walnut.jpg');
+
+        await page.locator('#current-password').fill('current-password');
+        await page.locator('#new-password').fill('next-password');
+        await page.locator('#confirm-password').fill('next-password');
+        const changeButton = page.getByRole('button', { name: '비밀번호 변경' });
+        await changeButton.hover();
+        await changeButton.focus();
+        await expect(changeButton).toBeFocused();
+        await changeButton.click();
+        await expect(page.getByRole('status')).toHaveText('비밀번호를 변경했습니다.');
+    });
+
+    test('shows the account API error without losing the form', async ({ page }) => {
+        await page.addInitScript((token) => {
+            window.localStorage.setItem('sammo-session-token', token);
+        }, fixture.gateway.sessionToken);
+        await page.route('**/gateway/api/trpc/**', async (route) => {
+            if (operationNames(route).includes('account.changePassword')) {
+                await route.fulfill({
+                    status: 500,
+                    contentType: 'application/json',
+                    body: JSON.stringify({ error: { message: '현재 비밀번호가 일치하지 않습니다.' } }),
+                });
+                return;
+            }
+            await route.fallback();
+        });
+        await page.goto('http://127.0.0.1:15100/gateway/account');
+        await page.locator('#current-password').fill('wrong-password');
+        await page.locator('#new-password').fill('next-password');
+        await page.locator('#confirm-password').fill('next-password');
+        await page.getByRole('button', { name: '비밀번호 변경' }).click();
+        await expect(page.getByRole('alert')).toBeVisible();
+        await expect(page.locator('#current-password')).toHaveValue('wrong-password');
+    });
+
+    test('completes the OAuth registration page and stores the session', async ({ page }) => {
+        await page.goto('http://127.0.0.1:15100/gateway/oauth/callback?code=visual-code&state=visual-state');
+        await expect(page.getByLabel('카카오 이메일')).toHaveValue('visual@example.test');
+        const geometry = await page.locator('#oauth-container').evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            return { width: rect.width, fontFamily: style.fontFamily };
+        });
+        expect(geometry.width).toBe(700);
+        expect(geometry.fontFamily).toContain('Pretendard');
+        if (artifactRoot) {
+            await page.screenshot({
+                path: resolve(artifactRoot, 'oauth-join-core-desktop.png'),
+                fullPage: true,
+                animations: 'disabled',
+            });
+        }
+
+        await page.locator('#oauth-username').fill('visual-user');
+        await page.locator('#oauth-password').fill('visual-password');
+        await page.locator('#oauth-confirm').fill('visual-password');
+        await page.locator('#oauth-display-name').fill('시각검증');
+        await page.getByLabel('내용 확인 후 동의합니다.').first().check();
+        await page.getByLabel('내용 확인 후 동의합니다.').last().check();
+        const register = page.getByRole('button', { name: '가입' });
+        await register.hover();
+        await register.focus();
+        await register.click();
+        await expect(page).toHaveURL(/\/gateway\/lobby$/);
+        await expect
+            .poll(() => page.evaluate(() => window.localStorage.getItem('sammo-session-token')))
+            .toBe(fixture.gateway.sessionToken);
+    });
+
+    test('keeps OAuth registration input after an API error', async ({ page }) => {
+        await page.route('**/gateway/api/trpc/**', async (route) => {
+            if (operationNames(route).includes('auth.register')) {
+                await route.fulfill({
+                    status: 500,
+                    contentType: 'application/json',
+                    body: JSON.stringify({ error: { message: '이미 사용 중인 계정명입니다.' } }),
+                });
+                return;
+            }
+            await route.fallback();
+        });
+        await page.goto('http://127.0.0.1:15100/gateway/oauth/callback?code=visual-code&state=visual-state');
+        await page.locator('#oauth-username').fill('duplicate-user');
+        await page.locator('#oauth-password').fill('visual-password');
+        await page.locator('#oauth-confirm').fill('visual-password');
+        await page.locator('#oauth-display-name').fill('시각검증');
+        await page.getByLabel('내용 확인 후 동의합니다.').first().check();
+        await page.getByLabel('내용 확인 후 동의합니다.').last().check();
+        await page.getByRole('button', { name: '가입' }).click();
+        await expect(page.getByRole('alert')).toBeVisible();
+        await expect(page.locator('#oauth-username')).toHaveValue('duplicate-user');
+    });
 });
 
 test.describe('hall of fame legacy parity', () => {
@@ -268,4 +414,75 @@ test('canonical logged-in fixture passes the game route guard', async ({ page })
     await page.goto('http://127.0.0.1:15102/che/troop');
     await expect(page).toHaveURL(/\/che\/troop$/);
     await expect(page.getByText('부대 편성')).toBeVisible();
+});
+
+test.describe('yearbook legacy parity', () => {
+    test.beforeEach(async ({ page }) => {
+        await installAuthenticatedGameFixture(page);
+    });
+
+    for (const viewport of [
+        { name: 'desktop', width: 1365, height: 768, containerWidth: 1000, mapWidth: 700 },
+        { name: 'mobile', width: 390, height: 844, containerWidth: 500, mapWidth: 498 },
+    ]) {
+        test(`renders the ref yearbook grid on ${viewport.name}`, async ({ page }) => {
+            await page.setViewportSize(viewport);
+            await page.goto('http://127.0.0.1:15102/che/yearbook');
+            await expect(page.getByText('한이 낙양을 지키고 있습니다.')).toBeVisible();
+            if (artifactRoot) {
+                await page.screenshot({
+                    path: resolve(artifactRoot, `yearbook-core-${viewport.name}.png`),
+                    fullPage: true,
+                    animations: 'disabled',
+                });
+            }
+
+            const geometry = await page.evaluate(() => {
+                const rect = (selector: string) =>
+                    document.querySelector<HTMLElement>(selector)!.getBoundingClientRect();
+                const container = document.querySelector<HTMLElement>('#yearbook-container')!;
+                return {
+                    containerWidth: rect('#yearbook-container').width,
+                    mapWidth: rect('.map-position').width,
+                    nationWidth: rect('.nation-position').width,
+                    fontFamily: getComputedStyle(container).fontFamily,
+                    fontSize: getComputedStyle(container).fontSize,
+                    backgroundImage: getComputedStyle(container).backgroundImage,
+                };
+            });
+            expect(geometry.containerWidth).toBe(viewport.containerWidth);
+            expect(geometry.mapWidth).toBe(viewport.mapWidth);
+            expect(geometry.fontFamily).toContain('Pretendard');
+            expect(geometry.fontSize).toBe('14px');
+            expect(geometry.backgroundImage).toContain('back_walnut.jpg');
+            if (viewport.name === 'desktop') {
+                expect(geometry.nationWidth).toBe(300);
+            } else {
+                expect(geometry.nationWidth).toBe(498);
+            }
+
+            const previous = page.getByRole('button', { name: '◀ 이전달' });
+            await previous.hover();
+            await previous.focus();
+            await expect(previous).toBeFocused();
+            await expect(page.getByRole('button', { name: '다음달 ▶' })).toBeDisabled();
+        });
+    }
+
+    test('shows the history API error while keeping month navigation available', async ({ page }) => {
+        await page.route('**/che/api/trpc/**', async (route) => {
+            if (operationNames(route).includes('yearbook.getHistory')) {
+                await route.fulfill({
+                    status: 500,
+                    contentType: 'application/json',
+                    body: JSON.stringify({ error: { message: '연감 데이터를 찾을 수 없습니다.' } }),
+                });
+                return;
+            }
+            await route.fallback();
+        });
+        await page.goto('http://127.0.0.1:15102/che/yearbook');
+        await expect(page.getByRole('alert')).toBeVisible();
+        await expect(page.getByLabel('연월 선택')).toBeVisible();
+    });
 });
