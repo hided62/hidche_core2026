@@ -336,6 +336,7 @@ export const createDatabaseTurnHooks = async (
             createdNations,
             createdTroops,
             createdDiplomacy,
+            deletedEvents,
         } = changes;
         const reservedTurnChanges = options?.reservedTurns?.peekDirtyState();
 
@@ -485,6 +486,11 @@ export const createDatabaseTurnHooks = async (
                 });
                 await prisma.nation.deleteMany({
                     where: { id: { in: deletedNations } },
+                });
+            }
+            if (deletedEvents.length > 0) {
+                await prisma.event.deleteMany({
+                    where: { id: { in: deletedEvents } },
                 });
             }
 

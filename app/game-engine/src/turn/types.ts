@@ -33,6 +33,15 @@ export interface TurnDiplomacy {
     meta: Record<string, unknown>;
 }
 
+export interface TurnEvent {
+    id: number;
+    targetCode: string;
+    priority: number;
+    condition: unknown;
+    action: unknown;
+    meta: Record<string, unknown>;
+}
+
 export interface TurnWorldSnapshot extends Omit<
     WorldSnapshot,
     'generals' | 'cities' | 'nations' | 'troops' | 'diplomacy'
@@ -43,8 +52,8 @@ export interface TurnWorldSnapshot extends Omit<
     map: MapDefinition;
     unitSet?: UnitSetDefinition;
     diplomacy: TurnDiplomacy[];
-    events: unknown[];
-    initialEvents: unknown[];
+    events: TurnEvent[];
+    initialEvents: TurnEvent[];
     generals: TurnGeneral[];
     cities: City[];
     nations: Nation[];

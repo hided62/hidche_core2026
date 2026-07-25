@@ -40,6 +40,22 @@ Indexes: `(target, priority, id)` for dispatch ordering. Both `condition` and
 Events are used inside the monthly pipeline and in special moments like
 city occupation (`EventTarget::OCCUPY_CITY`, called by some commands).
 
+### Rewrite runtime status
+
+`app/game-engine/src/turn/monthlyEventHandler.ts` now dispatches persisted
+`event` rows for `pre_month` and `month`. It preserves the legacy
+`priority DESC, id ASC` order, evaluates `Date`, `DateRelative`, `RemainNation`,
+and the boolean logic operators, and records `DeleteEvent` through the normal
+turn dirty-state transaction.
+
+The calendar calls `pre_month` before changing the world date and `month`
+after changing it. Action names are resolved through an explicit registry.
+An unported action stops the turn with its action name and event id instead of
+being silently ignored. The runtime registry currently covers
+`ProcessIncome`, `NoticeToHistoryLog`, `NewYear`, and `ResetOfficerLock`;
+the remaining legacy action catalog must be migrated before full event-action
+parity can be claimed.
+
 ## Condition and Action DSL
 
 `Event\Condition::build()` and `Event\Action::build()` decode JSON arrays into

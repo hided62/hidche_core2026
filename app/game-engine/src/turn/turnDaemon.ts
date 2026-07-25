@@ -1,4 +1,4 @@
-import type { TurnCommandProfile, TurnSchedule } from '@sammo-ts/logic';
+import { LogCategory, LogScope, type TurnCommandProfile, type TurnSchedule } from '@sammo-ts/logic';
 import { buildGameEventChannel, type RealtimeEvent } from '@sammo-ts/common';
 import { createGamePostgresConnector, createRedisConnector, resolveRedisConfigFromEnv } from '@sammo-ts/infra';
 import { NATION_TRAIT_KEYS, NationTraitLoader, loadNationTraitModules } from '@sammo-ts/logic';
@@ -33,6 +33,7 @@ import { createAuctionBidder } from '../auction/bidder.js';
 import { createTournamentRewardFinalizer } from '../tournament/finalizer.js';
 import { createTournamentAutoStartHandler } from './tournamentAutoStart.js';
 import { createYearbookHandler } from './yearbookHandler.js';
+import { createMonthlyEventHandler, type MonthlyEventActionHandler } from './monthlyEventHandler.js';
 
 export interface TurnDaemonRuntimeOptions {
     profile: string;
@@ -125,6 +126,71 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
         scenarioConfig: snapshot.scenarioConfig,
         nationTraits: nationTraitMap,
     });
+    const hasEventAction = (name: string): boolean =>
+        snapshot.events.some(
+            (event) =>
+                Array.isArray(event.action) &&
+                event.action.some((action) => Array.isArray(action) && action[0] === name)
+        );
+    const eventActions = new Map<string, MonthlyEventActionHandler>();
+    eventActions.set('ProcessIncome', (_args, environment) => {
+        incomeHandler.onMonthChanged?.({
+            previousYear: environment.month === 1 ? environment.year - 1 : environment.year,
+            previousMonth: environment.month === 1 ? 12 : environment.month - 1,
+            currentYear: environment.year,
+            currentMonth: environment.month,
+            turnTime: environment.turnTime,
+        });
+    });
+    eventActions.set('NoticeToHistoryLog', (args) => {
+        const text = args[0];
+        if (typeof text !== 'string' || !worldRef) {
+            return;
+        }
+        worldRef.pushLog({
+            scope: LogScope.SYSTEM,
+            category: LogCategory.HISTORY,
+            text,
+        });
+    });
+    eventActions.set('NewYear', (_args, environment) => {
+        if (!worldRef) {
+            return;
+        }
+        for (const general of worldRef.listGenerals()) {
+            const belong = general.meta.belong;
+            worldRef.updateGeneral(general.id, {
+                age: general.age + 1,
+                meta: {
+                    ...general.meta,
+                    ...(general.nationId !== 0
+                        ? { belong: typeof belong === 'number' && Number.isFinite(belong) ? belong + 1 : 1 }
+                        : {}),
+                },
+            });
+        }
+        worldRef.pushLog({
+            scope: LogScope.SYSTEM,
+            category: LogCategory.ACTION,
+            text: `<C>${environment.year}</>년이 되었습니다.`,
+        });
+    });
+    eventActions.set('ResetOfficerLock', () => {
+        if (!worldRef) {
+            return;
+        }
+        for (const nation of worldRef.listNations()) {
+            worldRef.updateNation(nation.id, { meta: { ...nation.meta, chief_set: 0 } });
+        }
+        for (const city of worldRef.listCities()) {
+            worldRef.updateCity(city.id, { meta: { ...city.meta, officer_set: 0 } });
+        }
+    });
+    const monthlyEventHandler = createMonthlyEventHandler({
+        getWorld: () => worldRef,
+        startYear: snapshot.scenarioMeta?.startYear ?? state.currentYear,
+        actions: eventActions,
+    });
     const nationTurnMonthlyHandler = createNationTurnMonthlyHandler({
         getWorld: () => worldRef,
     });
@@ -144,9 +210,10 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
         getWorld: () => worldRef,
     });
     const calendarHandler = composeCalendarHandlers(
+        monthlyEventHandler,
         options.calendarHandler ?? unification?.handler,
         nationTurnMonthlyHandler,
-        incomeHandler,
+        hasEventAction('ProcessIncome') ? null : incomeHandler,
         frontStateHandler,
         tournamentAutoStartHandler,
         yearbookHandler.handler
