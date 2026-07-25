@@ -1,10 +1,4 @@
-import {
-    LogCategory,
-    LogScope,
-    loadActionModuleBundle,
-    type TurnCommandProfile,
-    type TurnSchedule,
-} from '@sammo-ts/logic';
+import { loadActionModuleBundle, type TurnCommandProfile, type TurnSchedule } from '@sammo-ts/logic';
 import { buildGameEventChannel, type RealtimeEvent } from '@sammo-ts/common';
 import { createGamePostgresConnector, createRedisConnector, resolveRedisConfigFromEnv } from '@sammo-ts/infra';
 import { NATION_TRAIT_KEYS, NationTraitLoader, loadNationTraitModules } from '@sammo-ts/logic';
@@ -73,6 +67,12 @@ import { createFinishNationBettingHandler, createOpenNationBettingHandler } from
 import { createScoutBlockHandler } from './monthlyScoutBlockAction.js';
 import { createAddGlobalBetrayHandler, createAssignGeneralSpecialityHandler } from './monthlySpecialityBetrayAction.js';
 import { createLostUniqueItemHandler, createMergeInheritPointRankHandler } from './monthlyUniqueInheritAction.js';
+import {
+    createNewYearHandler,
+    createNoticeToHistoryLogHandler,
+    createProcessIncomeActionHandler,
+    createResetOfficerLockHandler,
+} from './monthlyCoreEventAction.js';
 import { buildCommandEnv } from './reservedTurnCommands.js';
 import { DatabaseTurnDaemonLease, TurnDaemonLeaseUnavailableError } from '../lifecycle/databaseTurnDaemonLease.js';
 
@@ -390,59 +390,10 @@ const createTurnDaemonRuntimeWithLease = async (
             getWorld: () => worldRef,
         })
     );
-    eventActions.set('ProcessIncome', async (_args, environment) => {
-        await incomeHandler.onMonthChanged?.({
-            previousYear: environment.month === 1 ? environment.year - 1 : environment.year,
-            previousMonth: environment.month === 1 ? 12 : environment.month - 1,
-            currentYear: environment.year,
-            currentMonth: environment.month,
-            turnTime: environment.turnTime,
-        });
-    });
-    eventActions.set('NoticeToHistoryLog', (args) => {
-        const text = args[0];
-        if (typeof text !== 'string' || !worldRef) {
-            return;
-        }
-        worldRef.pushLog({
-            scope: LogScope.SYSTEM,
-            category: LogCategory.HISTORY,
-            text,
-        });
-    });
-    eventActions.set('NewYear', (_args, environment) => {
-        if (!worldRef) {
-            return;
-        }
-        for (const general of worldRef.listGenerals()) {
-            const belong = general.meta.belong;
-            worldRef.updateGeneral(general.id, {
-                age: general.age + 1,
-                meta: {
-                    ...general.meta,
-                    ...(general.nationId !== 0
-                        ? { belong: typeof belong === 'number' && Number.isFinite(belong) ? belong + 1 : 1 }
-                        : {}),
-                },
-            });
-        }
-        worldRef.pushLog({
-            scope: LogScope.SYSTEM,
-            category: LogCategory.ACTION,
-            text: `<C>${environment.year}</>년이 되었습니다.`,
-        });
-    });
-    eventActions.set('ResetOfficerLock', () => {
-        if (!worldRef) {
-            return;
-        }
-        for (const nation of worldRef.listNations()) {
-            worldRef.updateNation(nation.id, { meta: { ...nation.meta, chief_set: 0 } });
-        }
-        for (const city of worldRef.listCities()) {
-            worldRef.updateCity(city.id, { meta: { ...city.meta, officer_set: 0 } });
-        }
-    });
+    eventActions.set('ProcessIncome', createProcessIncomeActionHandler(incomeHandler));
+    eventActions.set('NoticeToHistoryLog', createNoticeToHistoryLogHandler({ getWorld: () => worldRef }));
+    eventActions.set('NewYear', createNewYearHandler({ getWorld: () => worldRef }));
+    eventActions.set('ResetOfficerLock', createResetOfficerLockHandler({ getWorld: () => worldRef }));
     const monthlyEventHandler = createMonthlyEventHandler({
         getWorld: () => worldRef,
         startYear: snapshot.scenarioMeta?.startYear ?? state.currentYear,
