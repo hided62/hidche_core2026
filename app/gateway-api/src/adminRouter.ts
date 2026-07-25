@@ -768,9 +768,9 @@ export const adminRouter = router({
                     }
                 }
 
-                let resolvedCommitSha: string | null = null;
                 const gitRef = input.install.gitRef?.trim();
                 if (gitRef) {
+                    let resolvedCommitSha: string;
                     try {
                         resolvedCommitSha = await resolveGitCommitSha(gitRef);
                     } catch (error) {

@@ -284,7 +284,7 @@ export const appRouter = router({
                     accessTokenValidUntil: oauthSession.accessTokenValidUntil,
                     refreshTokenValidUntil: oauthSession.refreshTokenValidUntil,
                 };
-                let created = null;
+                let created: Awaited<ReturnType<typeof ctx.users.createUser>>;
                 try {
                     created = await ctx.users.createUser({
                         username: input.username,
