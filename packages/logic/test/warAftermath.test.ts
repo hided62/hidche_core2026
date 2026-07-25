@@ -183,7 +183,7 @@ describe('war aftermath', () => {
         defenderNation.rice = 6000;
         const attackerCity = buildCity(1, 1);
         const defenderCity = buildCity(2, 2);
-        defenderCity.meta.conflict = JSON.stringify({ 1: 100 });
+        defenderCity.meta.conflict = JSON.stringify({ 99: 200, 1: 100 });
         const attacker = buildGeneral(1, 1, 1);
         const defender = buildGeneral(2, 2, 2);
 
@@ -235,6 +235,8 @@ describe('war aftermath', () => {
         expect(attackerNation.rice).toBe(4600);
         expect(defender.experience).toBe(90);
         expect(defender.dedication).toBe(50);
+        // Removed nations can remain in old persisted conflict metadata. They
+        // must never receive ownership during a later conquest.
         expect(defenderCity.nationId).toBe(attackerNation.id);
         expect(defenderCity.meta.conflict).toBe('{}');
     });

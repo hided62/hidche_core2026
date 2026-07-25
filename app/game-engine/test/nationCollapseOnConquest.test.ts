@@ -86,6 +86,10 @@ describe('도시 점령 시 국가 멸망 처리', () => {
         const strongFrontCity = cities.find((city) => city.id === strongFrontCityId)!;
         strongFrontCity.frontState = 1;
         strongFrontCity.supplyState = 1;
+        const conflictCity = cities.find((city) => city.id === 3)!;
+        Object.assign(conflictCity.meta, {
+            conflict: JSON.stringify({ 2: 100, 1: 50 }),
+        });
 
         const unitSet: UnitSetDefinition = {
             id: 'test_unit_set',
@@ -134,15 +138,22 @@ describe('도시 점령 시 국가 멸망 처리', () => {
         const generals: TurnGeneral[] = [strongLeader];
         for (let i = 2; i <= 6; i += 1) {
             generals.push(
-                createNpcGeneral(i, strongFrontCityId, 1, 2, { leadership: 80, strength: 80, intelligence: 50 }, {
-                    crew: 8000,
-                    crewTypeId: 1100,
-                    train: 100,
-                    atmos: 100,
-                    gold: 100000,
-                    rice: 100000,
-                    turnTime: delayedTurnTime,
-                })
+                createNpcGeneral(
+                    i,
+                    strongFrontCityId,
+                    1,
+                    2,
+                    { leadership: 80, strength: 80, intelligence: 50 },
+                    {
+                        crew: 8000,
+                        crewTypeId: 1100,
+                        train: 100,
+                        atmos: 100,
+                        gold: 100000,
+                        rice: 100000,
+                        turnTime: delayedTurnTime,
+                    }
+                )
             );
         }
         const weakGeneral = createNpcGeneral(
@@ -253,6 +264,7 @@ describe('도시 점령 시 국가 멸망 처리', () => {
         expect(world.getCityById(weakCityId)?.nationId).toBe(1);
         expect(world.getNationById(2)).toBeNull();
         expect(world.listNations().some((nation) => nation.id === 2)).toBe(false);
+        expect(JSON.parse(String(world.getCityById(conflictCity.id)?.meta.conflict))).toEqual({ 1: 50 });
 
         const updatedWeakGeneral = world.getGeneralById(weakGeneral.id);
         expect(updatedWeakGeneral?.nationId).toBe(0);

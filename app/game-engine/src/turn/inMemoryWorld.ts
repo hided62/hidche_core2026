@@ -912,6 +912,39 @@ export class InMemoryTurnWorld {
         }
 
         for (const nationId of collapsedNationIds) {
+            // Legacy deleteNation() calls DeleteConflict() before removing the
+            // nation. Without this, a later conquest can award a city to a
+            // nation ID that no longer exists.
+            for (const city of this.cities.values()) {
+                const rawConflict = city.meta.conflict;
+                if (rawConflict === null || rawConflict === undefined) {
+                    continue;
+                }
+                let conflict: Record<string, unknown>;
+                try {
+                    const parsed = typeof rawConflict === 'string' ? (JSON.parse(rawConflict) as unknown) : rawConflict;
+                    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+                        continue;
+                    }
+                    conflict = { ...(parsed as Record<string, unknown>) };
+                } catch {
+                    continue;
+                }
+                const key = String(nationId);
+                if (!Object.prototype.hasOwnProperty.call(conflict, key)) {
+                    continue;
+                }
+                delete conflict[key];
+                this.cities.set(city.id, {
+                    ...city,
+                    meta: {
+                        ...city.meta,
+                        conflict: JSON.stringify(conflict),
+                    },
+                });
+                this.dirtyCityIds.add(city.id);
+            }
+
             const nation = this.nations.get(nationId);
             if (nation) {
                 const generalIds = Array.from(this.generals.values())
