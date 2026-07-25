@@ -19,6 +19,7 @@ const confirmPassword = ref('');
 const displayName = ref('');
 const termsAgreed = ref(false);
 const privacyAgreed = ref(false);
+const appBase = import.meta.env.BASE_URL;
 
 const completeExchange = async (): Promise<void> => {
     const code = typeof route.query.code === 'string' ? route.query.code : '';
@@ -116,14 +117,14 @@ onMounted(() => {
                         <span>이용 약관</span>
                         <label>
                             <input v-model="termsAgreed" type="checkbox" />
-                            <a href="./terms.1.html" target="_blank">내용 확인</a> 후 동의합니다.
+                            <a :href="`${appBase}terms.1.html`" target="_blank">내용 확인</a> 후 동의합니다.
                         </label>
                     </div>
                     <div class="agreement-row">
                         <span>개인정보 제공 및 이용</span>
                         <label>
                             <input v-model="privacyAgreed" type="checkbox" />
-                            <a href="./terms.2.html" target="_blank">내용 확인</a> 후 동의합니다.
+                            <a :href="`${appBase}terms.2.html`" target="_blank">내용 확인</a> 후 동의합니다.
                         </label>
                     </div>
                     <button class="register-button" type="submit" :disabled="submitting">

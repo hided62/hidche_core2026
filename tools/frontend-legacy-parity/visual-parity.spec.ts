@@ -289,6 +289,14 @@ test.describe('gateway legacy parity', () => {
     test('completes the OAuth registration page and stores the session', async ({ page }) => {
         await page.goto('http://127.0.0.1:15100/gateway/oauth/callback?code=visual-code&state=visual-state');
         await expect(page.getByLabel('카카오 이메일')).toHaveValue('visual@example.test');
+        await expect(page.getByRole('link', { name: '내용 확인' }).first()).toHaveAttribute(
+            'href',
+            '/gateway/terms.1.html'
+        );
+        await expect(page.getByRole('link', { name: '내용 확인' }).last()).toHaveAttribute(
+            'href',
+            '/gateway/terms.2.html'
+        );
         const geometry = await page.locator('#oauth-container').evaluate((element) => {
             const rect = element.getBoundingClientRect();
             const style = getComputedStyle(element);

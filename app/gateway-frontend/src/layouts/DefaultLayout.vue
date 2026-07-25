@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 
 const menuOpen = ref(false);
+const appBase = import.meta.env.BASE_URL;
 </script>
 
 <template>
@@ -36,9 +37,9 @@ const menuOpen = ref(false);
 
         <footer>
             <p>
-                <a href="./terms.2.html">개인정보처리방침</a>
+                <a :href="`${appBase}terms.2.html`">개인정보처리방침</a>
                 &amp;
-                <a href="./terms.1.html">이용약관</a>
+                <a :href="`${appBase}terms.1.html`">이용약관</a>
             </p>
             <p>© 2023 • HideD</p>
             <p>크롬, 엣지, 파이어폭스에 최적화되어있습니다.</p>
