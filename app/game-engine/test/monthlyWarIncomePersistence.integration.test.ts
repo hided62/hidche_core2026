@@ -5,6 +5,7 @@ import { createGamePostgresConnector, type GamePrismaClient } from '@sammo-ts/in
 import { createDatabaseTurnHooks } from '../src/turn/databaseHooks.js';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import { createProcessWarIncomeHandler } from '../src/turn/monthlyWarIncomeAction.js';
+import { createMonthlyEventHandler } from '../src/turn/monthlyEventHandler.js';
 import type { TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 
 const databaseUrl = process.env.INPUT_EVENT_DATABASE_URL;
@@ -150,27 +151,32 @@ integration('monthly war income database persistence', () => {
             nations: [nation],
             troops: [],
             diplomacy: [],
-            events: [],
+            events: [
+                {
+                    id: 1,
+                    targetCode: 'pre_month',
+                    priority: 0,
+                    condition: true,
+                    action: [['ProcessWarIncome']],
+                    meta: {},
+                },
+            ],
             initialEvents: [],
         };
-        const world = new InMemoryTurnWorld(state, snapshot, {
+        let world: InMemoryTurnWorld | null = null;
+        const actions = new Map([['ProcessWarIncome', createProcessWarIncomeHandler({ getWorld: () => world })]]);
+        world = new InMemoryTurnWorld(state, snapshot, {
             schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+            calendarHandler: createMonthlyEventHandler({
+                getWorld: () => world,
+                startYear: 190,
+                actions,
+            }),
         });
         const dbHooks = await createDatabaseTurnHooks(databaseUrl!, world);
 
         try {
-            const handler = createProcessWarIncomeHandler({ getWorld: () => world });
-            await handler(
-                [],
-                {
-                    year: 193,
-                    month: 1,
-                    startyear: 190,
-                    currentEventID: 1,
-                    turnTime: state.lastTurnTime,
-                },
-                { id: 1, targetCode: 'pre_month', priority: 0, condition: true, action: [], meta: {} }
-            );
+            await world.advanceMonth(new Date('0193-02-01T00:00:00.000Z'));
             await dbHooks.hooks.flushChanges?.({
                 lastTurnTime: state.lastTurnTime.toISOString(),
                 processedGenerals: 0,
