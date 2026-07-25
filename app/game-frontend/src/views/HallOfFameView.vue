@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
+
 import { trpc } from '../utils/trpc';
 
 type HallOption = {
@@ -10,16 +12,19 @@ type HallOption = {
 type HallEntry = {
     generalId: number;
     name: string;
+    ownerName?: string | null;
     nationName: string;
     bgColor: string;
     fgColor: string;
+    picture?: string | null;
+    imageServer?: number;
     value: number;
     printValue: string;
-    serverName: string;
-    serverIdx: number;
-    scenarioName: string;
-    startTime: string | null;
-    unitedTime: string | null;
+    serverName?: string;
+    serverIdx?: number;
+    scenarioName?: string;
+    startTime?: string | null;
+    unitedTime?: string | null;
 };
 
 type HallSection = {
@@ -32,6 +37,7 @@ type HallPayload = {
     sections: HallSection[];
 };
 
+const router = useRouter();
 const loading = ref(false);
 const errorMessage = ref('');
 const options = ref<HallOption[]>([]);
@@ -39,14 +45,34 @@ const selectedSeason = ref<number | null>(null);
 const selectedScenario = ref<number | null>(null);
 const data = ref<HallPayload | null>(null);
 
-const selectedSeasonOptions = computed(() => {
-    if (selectedSeason.value === null) {
-        return [];
-    }
-    return options.value.find((season) => season.season === selectedSeason.value)?.scenarios ?? [];
+const selection = computed({
+    get: () =>
+        selectedSeason.value === null
+            ? ''
+            : selectedScenario.value === null
+              ? `season:${selectedSeason.value}`
+              : `scenario:${selectedSeason.value}:${selectedScenario.value}`,
+    set: (value: string) => {
+        const [kind, season, scenario] = value.split(':');
+        selectedSeason.value = Number(season);
+        selectedScenario.value = kind === 'scenario' ? Number(scenario) : null;
+    },
 });
 
-const loadOptions = async () => {
+const imageUrl = (entry: HallEntry): string => {
+    const picture = entry.picture?.trim() || 'default.jpg';
+    return entry.imageServer ? `${import.meta.env.BASE_URL}d_pic/${picture}` : `/image/icons/${picture}`;
+};
+
+const closePage = async (): Promise<void> => {
+    if (window.opener) {
+        window.close();
+        return;
+    }
+    await router.push('/');
+};
+
+const loadOptions = async (): Promise<void> => {
     try {
         options.value = await trpc.ranking.getHallOfFameOptions.query();
         if (options.value.length > 0 && selectedSeason.value === null) {
@@ -57,7 +83,7 @@ const loadOptions = async () => {
     }
 };
 
-const loadHall = async () => {
+const loadHall = async (): Promise<void> => {
     if (selectedSeason.value === null) {
         data.value = null;
         return;
@@ -65,11 +91,10 @@ const loadHall = async () => {
     loading.value = true;
     errorMessage.value = '';
     try {
-        const result = await trpc.ranking.getHallOfFame.query({
+        data.value = (await trpc.ranking.getHallOfFame.query({
             season: selectedSeason.value,
             scenario: selectedScenario.value ?? undefined,
-        });
-        data.value = result as HallPayload;
+        })) as HallPayload;
     } catch (error) {
         errorMessage.value = error instanceof Error ? error.message : '명예의 전당 데이터를 불러오지 못했습니다.';
     } finally {
@@ -77,12 +102,7 @@ const loadHall = async () => {
     }
 };
 
-watch(selectedSeason, () => {
-    selectedScenario.value = null;
-    void loadHall();
-});
-
-watch(selectedScenario, () => {
+watch([selectedSeason, selectedScenario], () => {
     void loadHall();
 });
 
@@ -93,63 +113,201 @@ onMounted(async () => {
 </script>
 
 <template>
-    <main class="main-page">
-        <header class="page-header">
-            <div>
-                <h1 class="page-title">명예의 전당</h1>
-                <p class="page-subtitle">시즌별 최고 기록을 확인합니다.</p>
-            </div>
-            <div class="header-actions">
-                <button class="ghost" @click="loadOptions">목록 새로고침</button>
-                <button class="ghost" @click="loadHall">데이터 새로고침</button>
-            </div>
-        </header>
-
-        <div class="bg-zinc-900 border border-zinc-800 rounded p-4 mb-4">
-            <div class="grid md:grid-cols-2 gap-4">
-                <label class="flex flex-col gap-2 text-sm">
-                    <span class="text-xs text-zinc-400">시즌 선택</span>
-                    <select v-model.number="selectedSeason" class="bg-zinc-950 border border-zinc-700 rounded px-3 py-2">
-                        <option v-for="season in options" :key="season.season" :value="season.season">
-                            시즌 {{ season.season }}
-                        </option>
-                    </select>
-                </label>
-                <label class="flex flex-col gap-2 text-sm">
-                    <span class="text-xs text-zinc-400">시나리오 선택</span>
-                    <select v-model.number="selectedScenario" class="bg-zinc-950 border border-zinc-700 rounded px-3 py-2">
-                        <option :value="null">전체</option>
-                        <option v-for="scenario in selectedSeasonOptions" :key="scenario.id" :value="scenario.id">
-                            {{ scenario.name }} ({{ scenario.count }}회)
-                        </option>
-                    </select>
-                </label>
-            </div>
+    <main id="container" class="legacy-hall-page legacy-bg0">
+        <div class="legacy-hall-title">
+            명 예 의 전 당<br />
+            <button class="legacy-button" type="button" @click="closePage">창 닫기</button>
         </div>
 
-        <div v-if="errorMessage" class="error">{{ errorMessage }}</div>
-        <div v-else-if="loading" class="placeholder">불러오는 중...</div>
-        <div v-else-if="!data" class="placeholder">표시할 데이터가 없습니다.</div>
-
-        <section v-if="data" class="grid gap-4">
-            <div v-for="section in data.sections" :key="section.title" class="bg-zinc-900 border border-zinc-800 rounded p-4">
-                <h2 class="text-base font-semibold mb-3">{{ section.title }}</h2>
-                <div v-if="section.entries.length === 0" class="text-xs text-zinc-500">표시할 데이터가 없습니다.</div>
-                <ul v-else class="space-y-2">
-                    <li
-                        v-for="entry in section.entries"
-                        :key="entry.generalId"
-                        class="flex items-center justify-between bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm"
+        <label class="scenario-search">
+            시나리오 검색 :
+            <select v-model="selection" aria-label="시나리오 검색">
+                <template v-for="season in options" :key="season.season">
+                    <option :value="`season:${season.season}`">* 시즌 : {{ season.season }} 종합 *</option>
+                    <option
+                        v-for="scenario in season.scenarios"
+                        :key="`${season.season}:${scenario.id}`"
+                        :value="`scenario:${season.season}:${scenario.id}`"
                     >
-                        <div class="flex items-center gap-2">
-                            <span class="w-2 h-2 rounded-full" :style="{ backgroundColor: entry.bgColor }" />
-                            <span class="font-semibold">{{ entry.name }}</span>
-                            <span class="text-xs text-zinc-400">{{ entry.nationName }}</span>
+                        {{ scenario.name }}({{ scenario.count }}회)
+                    </option>
+                </template>
+            </select>
+        </label>
+
+        <div v-if="errorMessage" class="legacy-message error">{{ errorMessage }}</div>
+        <div v-else-if="loading" class="legacy-message">불러오는 중...</div>
+        <div v-else-if="!data" class="legacy-message">표시할 데이터가 없습니다.</div>
+
+        <section v-if="data" class="hall-sections">
+            <article v-for="section in data.sections" :key="section.title" class="rankView legacy-bg0">
+                <h2 class="rankType legacy-bg1">{{ section.title }}</h2>
+                <ul>
+                    <li v-for="(entry, rank) in section.entries" :key="`${section.title}:${entry.generalId}:${rank}`">
+                        <div class="hall-rank legacy-bg2">{{ rank + 1 }}위</div>
+                        <div class="hall-img">
+                            <img class="generalIcon" :src="imageUrl(entry)" width="64" height="64" :alt="entry.name" />
                         </div>
-                        <div class="text-xs text-zinc-200">{{ entry.printValue }}</div>
+                        <div
+                            v-if="entry.serverName"
+                            class="hall-server"
+                            :title="`${entry.scenarioName ?? ''} ${entry.startTime ?? ''} ~ ${entry.unitedTime ?? ''}`"
+                        >
+                            {{ entry.serverName }}{{ entry.serverIdx }}기
+                        </div>
+                        <div class="hall-nation" :style="{ backgroundColor: entry.bgColor, color: entry.fgColor }">
+                            {{ entry.nationName || '-' }}
+                        </div>
+                        <div class="hall-name" :style="{ backgroundColor: entry.bgColor, color: entry.fgColor }">
+                            <span>{{ entry.name || '-' }}</span>
+                            <small v-if="entry.ownerName">({{ entry.ownerName }})</small>
+                        </div>
+                        <div class="hall-value">{{ entry.printValue }}</div>
                     </li>
                 </ul>
-            </div>
+            </article>
         </section>
+
+        <div class="legacy-hall-bottom">
+            <button class="legacy-button" type="button" @click="closePage">창 닫기</button>
+        </div>
     </main>
 </template>
+
+<style scoped>
+:global(body) {
+    min-width: 500px;
+    overflow-x: hidden;
+}
+
+.legacy-hall-page {
+    width: 500px;
+    min-height: 100vh;
+    margin: 0 auto 100px;
+    color: #fff;
+    font-family: Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+    font-size: 14px;
+}
+
+.legacy-hall-title,
+.legacy-hall-bottom {
+    text-align: center;
+}
+
+.legacy-hall-title {
+    padding-top: 2px;
+}
+
+.scenario-search {
+    display: block;
+    padding: 2px 0;
+    text-align: center;
+}
+
+.scenario-search select {
+    min-width: 220px;
+    border: 1px solid #555;
+    background: #ddd;
+    color: #303030;
+}
+
+.legacy-message {
+    border: 1px solid gray;
+    padding: 12px;
+    text-align: center;
+}
+
+.legacy-message.error {
+    color: #ff6b6b;
+}
+
+.hall-sections {
+    display: block;
+}
+
+.rankView {
+    position: relative;
+    margin: auto;
+    outline: 1px solid gray;
+}
+
+.rankType {
+    margin: 0;
+    border-bottom: 1px solid gray;
+    padding: 2px;
+    font-size: 1.17em;
+    text-align: center;
+}
+
+.rankView ul {
+    display: flex;
+    flex-wrap: wrap;
+    box-sizing: border-box;
+    margin: -1px 0;
+    padding: 0;
+    list-style: none;
+}
+
+.rankView li {
+    box-sizing: border-box;
+    flex: 0 0 100px;
+    width: 100px;
+    min-height: 149px;
+    margin: 0;
+    border-top: 1px solid gray;
+    border-right: 1px solid gray;
+    text-align: center;
+    vertical-align: top;
+}
+
+.hall-rank,
+.hall-server,
+.hall-nation,
+.hall-value {
+    border-bottom: 1px solid gray;
+}
+
+.hall-img {
+    height: 64px;
+}
+
+.generalIcon {
+    display: inline-block;
+    width: 64px;
+    height: 64px;
+    object-fit: cover;
+}
+
+.hall-server,
+.hall-nation,
+.hall-name {
+    font-size: 11px;
+}
+
+.hall-name {
+    display: flex;
+    height: 28px;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.hall-name small {
+    font-size: 95%;
+}
+
+.hall-value {
+    box-sizing: border-box;
+    padding: 3px 0;
+    line-height: 13px;
+}
+
+@media (min-width: 1000px) {
+    :global(body) {
+        min-width: 1000px;
+    }
+
+    .legacy-hall-page {
+        width: 1000px;
+    }
+}
+</style>

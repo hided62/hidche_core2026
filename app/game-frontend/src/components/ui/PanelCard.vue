@@ -26,32 +26,33 @@ defineProps<Props>();
 
 <style scoped>
 .panel-card {
-    border: 1px solid rgba(201, 164, 90, 0.4);
-    background: rgba(12, 12, 12, 0.8);
-    padding: 12px;
+    border: 1px solid gray;
+    background-color: #302016;
+    background-image: url('/image/game/back_walnut.jpg');
 }
 
 .panel-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    border-bottom: 1px solid rgba(201, 164, 90, 0.3);
-    padding-bottom: 8px;
-    margin-bottom: 10px;
+    gap: 8px;
+    border-bottom: 1px solid gray;
+    background-color: #14241b;
+    background-image: url('/image/game/back_green.jpg');
+    padding: 3px 6px;
 }
 
 .panel-title {
-    font-size: 1rem;
-    font-weight: 600;
-    color: #e8ddc4;
-    letter-spacing: 0.02em;
+    margin: 0;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
 }
 
 .panel-subtitle {
-    margin-top: 4px;
-    font-size: 0.75rem;
-    color: rgba(232, 221, 196, 0.7);
+    margin: 1px 0 0;
+    color: #ccc;
+    font-size: 11px;
 }
 
 .panel-actions {
@@ -61,7 +62,8 @@ defineProps<Props>();
 }
 
 .panel-body {
-    font-size: 0.9rem;
-    color: rgba(232, 221, 196, 0.9);
+    padding: 6px;
+    color: #fff;
+    font-size: 14px;
 }
 </style>

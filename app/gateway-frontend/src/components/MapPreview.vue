@@ -39,10 +39,22 @@ const props = defineProps<{
 
 const BASE_MAP_WIDTH = 700;
 const BASE_MAP_HEIGHT = 500;
-const MAP_SCALE = 0.45;
 
-const mapWidth = computed(() => `${BASE_MAP_WIDTH * MAP_SCALE}px`);
-const mapHeight = computed(() => `${BASE_MAP_HEIGHT * MAP_SCALE}px`);
+const assetBase = computed(() => (import.meta.env.VITE_GAME_ASSET_URL ?? '/image').replace(/\/+$/, ''));
+const season = computed(() => {
+    if (props.mapData.month <= 3) return 'spring';
+    if (props.mapData.month <= 6) return 'summer';
+    if (props.mapData.month <= 9) return 'fall';
+    return 'winter';
+});
+const mapBackground = computed(() => {
+    const theme = props.mapLayout.mapName;
+    if (theme === 'ludo_rathowm') return `${assetBase.value}/game/map/ludo_rathowm/back.jpg`;
+    if (theme === 'chess') return `${assetBase.value}/game/map/chess/chessboard.png`;
+    if (theme === 'pokemon_v1') return `${assetBase.value}/game/map/pokemon_v1/back_pal8.png`;
+    if (theme === 'cr') return `${assetBase.value}/game/map/cr/bg-fs8.png`;
+    return `${assetBase.value}/game/map/che/bg_${season.value}.jpg`;
+});
 
 const nationById = computed(() => {
     const map = new Map<number, { name: string; color: string; capitalCityId: number }>();
@@ -74,8 +86,8 @@ const cityDots = computed<CityDot[]>(() => {
         return {
             id: layoutCity.id,
             name: layoutCity.name,
-            x: layoutCity.x * MAP_SCALE,
-            y: layoutCity.y * MAP_SCALE,
+            x: (layoutCity.x / BASE_MAP_WIDTH) * 100,
+            y: (layoutCity.y / BASE_MAP_HEIGHT) * 100,
             color: nation?.color ?? '#666666',
             isCapital: nation?.capitalCityId === layoutCity.id,
         };
@@ -89,14 +101,14 @@ const cityDots = computed<CityDot[]>(() => {
             <span class="map-preview-title">{{ props.mapLayout.mapName }}</span>
             <span class="map-preview-date">{{ props.mapData.year }}년 {{ props.mapData.month }}월</span>
         </div>
-        <div class="map-preview-body" :style="{ width: mapWidth, height: mapHeight }">
+        <div class="map-preview-body" :style="{ backgroundImage: `url('${mapBackground}')` }">
             <div
                 v-for="city in cityDots"
                 :key="city.id"
                 class="city-dot"
                 :class="{ capital: city.isCapital }"
                 :title="city.name"
-                :style="{ left: `${city.x}px`, top: `${city.y}px`, backgroundColor: city.color }"
+                :style="{ left: `${city.x}%`, top: `${city.y}%`, backgroundColor: city.color }"
             />
         </div>
     </div>
@@ -105,6 +117,7 @@ const cityDots = computed<CityDot[]>(() => {
 <style scoped>
 .map-preview {
     display: flex;
+    width: 100%;
     flex-direction: column;
     gap: 6px;
 }
@@ -122,8 +135,13 @@ const cityDots = computed<CityDot[]>(() => {
 
 .map-preview-body {
     position: relative;
-    border: 1px dashed rgba(201, 164, 90, 0.4);
-    background: rgba(8, 8, 8, 0.7);
+    width: 100%;
+    aspect-ratio: 7 / 5;
+    overflow: hidden;
+    border: 1px solid #444;
+    background-color: #080808;
+    background-position: center;
+    background-size: 100% 100%;
 }
 
 .city-dot {
