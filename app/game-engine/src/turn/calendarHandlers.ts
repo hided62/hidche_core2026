@@ -8,14 +8,14 @@ export const composeCalendarHandlers = (
         return undefined;
     }
     return {
-        onMonthChanged: (context) => {
+        onMonthChanged: async (context) => {
             for (const handler of resolved) {
-                handler.onMonthChanged?.(context);
+                await handler.onMonthChanged?.(context);
             }
         },
-        onYearChanged: (context) => {
+        onYearChanged: async (context) => {
             for (const handler of resolved) {
-                handler.onYearChanged?.(context);
+                await handler.onYearChanged?.(context);
             }
         },
     };

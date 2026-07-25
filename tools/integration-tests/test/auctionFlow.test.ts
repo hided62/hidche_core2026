@@ -24,7 +24,7 @@ import {
     resolveRedisConfigFromEnv,
     GamePrisma,
 } from '@sammo-ts/infra';
-import { ItemLoader, ITEM_KEYS } from '@sammo-ts/logic';
+import { buildNeutralResourceAuctionPlan, ItemLoader, ITEM_KEYS } from '@sammo-ts/logic';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -453,9 +453,9 @@ describe('auction integration flow', () => {
         const poorClient = createGameClient(gameUrl, gameServer.config.trpcPath, {
             value: poorBidder.accessToken,
         });
-        await expect(
-            poorClient.auction.bidBuyRice.mutate({ auctionId: auction.id, amount: 500 })
-        ).rejects.toThrow('금이 부족합니다.');
+        await expect(poorClient.auction.bidBuyRice.mutate({ auctionId: auction.id, amount: 500 })).rejects.toThrow(
+            '금이 부족합니다.'
+        );
 
         const updatedAuction = await prisma.auction.findUnique({
             where: { id: auction.id },
@@ -576,9 +576,9 @@ describe('auction integration flow', () => {
         const ownerClient = createGameClient(gameUrl, gameServer.config.trpcPath, {
             value: ownerBidder.accessToken,
         });
-        await expect(
-            ownerClient.auction.bidUnique.mutate({ auctionId: auction.id, amount: 300 })
-        ).rejects.toThrow('이미 다른 유니크를 가지고 있습니다.');
+        await expect(ownerClient.auction.bidUnique.mutate({ auctionId: auction.id, amount: 300 })).rejects.toThrow(
+            '이미 다른 유니크를 가지고 있습니다.'
+        );
 
         const validClient = createGameClient(gameUrl, gameServer.config.trpcPath, {
             value: validBidder.accessToken,
@@ -781,5 +781,139 @@ describe('auction integration flow', () => {
         });
         expect(winner).not.toBeNull();
         expect(Object.values(winner!)).toContain(uniquePair.keyA);
+    }, 60_000);
+
+    it('opens the same neutral merchant auctions on the legacy monthly boundary', async () => {
+        if (!gameConnector) {
+            throw new Error('runtime not ready');
+        }
+        const prisma = gameConnector.prisma;
+        if (turnDaemon) {
+            await turnDaemon.lifecycle.stop('integration-test');
+            await turnDaemon.close();
+            await turnDaemonLoop;
+        }
+
+        await prisma.auction.deleteMany({
+            where: {
+                hostGeneralId: 0,
+                type: { in: ['BUY_RICE', 'SELL_RICE'] },
+            },
+        });
+        const futureTurn = new Date(Date.now() + 60 * 60_000);
+        await prisma.general.updateMany({
+            where: { npcState: { lt: 2 } },
+            data: {
+                gold: 5_432,
+                rice: 7_654,
+                turnTime: futureTurn,
+            },
+        });
+        const nationCount = await prisma.nation.count();
+        let hiddenSeed = '';
+        let expected = [] as ReturnType<typeof buildNeutralResourceAuctionPlan>;
+        for (let index = 0; index < 1_000; index += 1) {
+            hiddenSeed = `integration-neutral-${index}`;
+            expected = buildNeutralResourceAuctionPlan({
+                hiddenSeed,
+                seedYear: 180,
+                seedMonth: 1,
+                nationCount,
+                consumeTournamentRoll: false,
+                averageGold: 5_432,
+                averageRice: 7_654,
+                buyRiceAuctionCount: 0,
+                sellRiceAuctionCount: 0,
+            });
+            if (expected.length > 0) {
+                break;
+            }
+        }
+        expect(expected.length).toBeGreaterThan(0);
+
+        const worldState = await prisma.worldState.findFirstOrThrow();
+        const worldMeta =
+            worldState.meta && typeof worldState.meta === 'object' && !Array.isArray(worldState.meta)
+                ? worldState.meta
+                : {};
+        await prisma.worldState.update({
+            where: { id: worldState.id },
+            data: {
+                currentYear: 180,
+                currentMonth: 1,
+                tickSeconds: 60,
+                meta: {
+                    ...worldMeta,
+                    hiddenSeed,
+                    lastTurnTime: new Date(Date.now() - 61_000).toISOString(),
+                    neutralAuctionRegistrationKey: null,
+                },
+            },
+        });
+
+        const gameDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'che' }).url;
+        const gatewayDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'public' }).url;
+        turnDaemon = await createTurnDaemonRuntime({
+            profile: 'che',
+            profileName: 'che:908',
+            databaseUrl: gameDatabaseUrl,
+            gatewayDatabaseUrl,
+        });
+        turnDaemonLoop = turnDaemon.lifecycle.start();
+
+        const deadline = Date.now() + 10_000;
+        let rows = await prisma.auction.findMany({
+            where: {
+                hostGeneralId: 0,
+                type: { in: ['BUY_RICE', 'SELL_RICE'] },
+            },
+            orderBy: { id: 'asc' },
+        });
+        while (rows.length < expected.length && Date.now() < deadline) {
+            await sleep(100);
+            rows = await prisma.auction.findMany({
+                where: {
+                    hostGeneralId: 0,
+                    type: { in: ['BUY_RICE', 'SELL_RICE'] },
+                },
+                orderBy: { id: 'asc' },
+            });
+        }
+
+        expect(rows).toHaveLength(expected.length);
+        for (const [index, plan] of expected.entries()) {
+            const row = rows[index]!;
+            const detail = row.detail as Record<string, unknown>;
+            expect(row).toMatchObject({
+                type: plan.auctionType,
+                targetCode: String(plan.amount),
+                hostGeneralId: 0,
+                hostName: '상인',
+                status: 'OPEN',
+            });
+            expect(detail).toMatchObject({
+                amount: plan.amount,
+                startBidAmount: plan.startBidAmount,
+                finishBidAmount: plan.finishBidAmount,
+                closeTurnCnt: plan.closeTurnCnt,
+                seedYear: 180,
+                seedMonth: 1,
+                neutralRegistrationKey: '180-02',
+            });
+            expect(row.closeAt.getTime() - row.createdAt.getTime()).toBeGreaterThanOrEqual(
+                plan.closeTurnCnt * 60_000 - 2_000
+            );
+            expect(row.closeAt.getTime() - row.createdAt.getTime()).toBeLessThanOrEqual(
+                plan.closeTurnCnt * 60_000 + 2_000
+            );
+        }
+        const persistedState = await prisma.worldState.findUniqueOrThrow({
+            where: { id: worldState.id },
+        });
+        expect(persistedState).toMatchObject({
+            currentYear: 180,
+            currentMonth: 2,
+            meta: expect.objectContaining({ neutralAuctionRegistrationKey: '180-02' }),
+        });
     }, 60_000);
 });

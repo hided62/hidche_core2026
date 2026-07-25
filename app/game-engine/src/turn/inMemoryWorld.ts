@@ -2,7 +2,7 @@ import type { City, LogEntryDraft, MessageDraft, Nation, ScenarioConfig, Troop, 
 import { getNextTurnAt } from '@sammo-ts/logic';
 
 import type { TurnCheckpoint } from '../lifecycle/types.js';
-import type { TurnDiplomacy, TurnGeneral, TurnWorldSnapshot, TurnWorldState } from './types.js';
+import type { PendingNeutralAuction, TurnDiplomacy, TurnGeneral, TurnWorldSnapshot, TurnWorldState } from './types.js';
 import {
     applyDiplomacyPatch as applyDiplomacyPatchToEntry,
     buildDefaultDiplomacy,
@@ -59,8 +59,8 @@ export interface TurnCalendarContext {
 
 export interface TurnCalendarHandler {
     // 월/연 변경에 따른 후처리를 끼워 넣기 위한 확장 포인트.
-    onMonthChanged?(context: TurnCalendarContext): void;
-    onYearChanged?(context: TurnCalendarContext): void;
+    onMonthChanged?(context: TurnCalendarContext): void | Promise<void>;
+    onYearChanged?(context: TurnCalendarContext): void | Promise<void>;
 }
 
 export interface InMemoryTurnWorldOptions {
@@ -85,6 +85,7 @@ export interface TurnWorldChanges {
     createdNations: Nation[];
     createdTroops: Troop[];
     createdDiplomacy: TurnDiplomacy[];
+    pendingNeutralAuctions: PendingNeutralAuction[];
 }
 
 const compareTurnOrder = (left: TurnGeneral, right: TurnGeneral): number => {
@@ -250,6 +251,7 @@ export class InMemoryTurnWorld {
     }> = [];
     private readonly logs: LogEntryDraft[] = [];
     private readonly messages: MessageDraft[] = [];
+    private readonly pendingNeutralAuctions: PendingNeutralAuction[] = [];
     private readonly scenarioConfig: ScenarioConfig;
     private checkpoint?: TurnCheckpoint;
     private state: TurnWorldState;
@@ -306,6 +308,14 @@ export class InMemoryTurnWorld {
 
     pushLog(entry: LogEntryDraft): void {
         this.logs.push(entry);
+    }
+
+    queueNeutralAuction(auction: PendingNeutralAuction): void {
+        this.pendingNeutralAuctions.push({
+            ...auction,
+            detail: { ...auction.detail },
+            closeAt: new Date(auction.closeAt.getTime()),
+        });
     }
 
     getScenarioConfig(): ScenarioConfig {
@@ -681,7 +691,7 @@ export class InMemoryTurnWorld {
         return nextTurnAt;
     }
 
-    advanceMonth(turnTime: Date): void {
+    async advanceMonth(turnTime: Date): Promise<void> {
         const previousYear = this.state.currentYear;
         const previousMonth = this.state.currentMonth;
         let nextYear = previousYear;
@@ -711,9 +721,9 @@ export class InMemoryTurnWorld {
             turnTime,
         };
         this.advanceDiplomacyMonth();
-        this.calendarHandler?.onMonthChanged?.(context);
+        await this.calendarHandler?.onMonthChanged?.(context);
         if (nextYear !== previousYear) {
-            this.calendarHandler?.onYearChanged?.(context);
+            await this.calendarHandler?.onYearChanged?.(context);
         }
     }
 
@@ -751,6 +761,11 @@ export class InMemoryTurnWorld {
         const deletedNationSnapshots = this.deletedNationSnapshots.slice();
         const logs = this.logs.slice();
         const messages = this.messages.slice();
+        const pendingNeutralAuctions = this.pendingNeutralAuctions.map((auction) => ({
+            ...auction,
+            detail: { ...auction.detail },
+            closeAt: new Date(auction.closeAt.getTime()),
+        }));
 
         return {
             generals,
@@ -768,6 +783,7 @@ export class InMemoryTurnWorld {
             createdNations,
             createdTroops,
             createdDiplomacy,
+            pendingNeutralAuctions,
         };
     }
 
@@ -791,6 +807,7 @@ export class InMemoryTurnWorld {
         this.deletedNationSnapshots.splice(0, changes.deletedNationSnapshots.length);
         this.logs.splice(0, changes.logs.length);
         this.messages.splice(0, changes.messages.length);
+        this.pendingNeutralAuctions.splice(0, changes.pendingNeutralAuctions.length);
     }
 
     consumeDirtyState(): TurnWorldChanges {

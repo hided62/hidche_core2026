@@ -96,7 +96,7 @@ export class InMemoryTurnProcessor implements TurnProcessor {
                     partial = true;
                     break;
                 }
-                this.world.advanceMonth(nextTickTime);
+                await this.world.advanceMonth(nextTickTime);
                 processedTurns += 1;
                 nextTickTime = getNextTickTime(this.world.getState().lastTurnTime, this.tickMinutes);
             }

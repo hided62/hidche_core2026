@@ -35,6 +35,16 @@ export interface TurnDiplomacy {
     meta: Record<string, unknown>;
 }
 
+export interface PendingNeutralAuction {
+    registrationKey: string;
+    type: 'BUY_RICE' | 'SELL_RICE';
+    targetCode: string;
+    hostGeneralId: 0;
+    hostName: '상인';
+    detail: Record<string, unknown>;
+    closeAt: Date;
+}
+
 export interface TurnWorldSnapshot extends Omit<
     WorldSnapshot,
     'generals' | 'cities' | 'nations' | 'troops' | 'diplomacy'
