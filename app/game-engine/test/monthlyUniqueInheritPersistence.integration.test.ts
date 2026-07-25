@@ -5,6 +5,7 @@ import { createGamePostgresConnector, type GamePrismaClient } from '@sammo-ts/in
 import { createDatabaseTurnHooks } from '../src/turn/databaseHooks.js';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import { loadTurnWorldFromDatabase } from '../src/turn/worldLoader.js';
+import { createMonthlyEventHandler } from '../src/turn/monthlyEventHandler.js';
 import {
     createLostUniqueItemHandler,
     createMergeInheritPointRankHandler,
@@ -21,7 +22,7 @@ const event: TurnEvent = {
     targetCode: 'month',
     priority: 9_000,
     condition: true,
-    action: [],
+    action: [['LostUniqueItem', 1], ['MergeInheritPointRank']],
     meta: {},
 };
 
@@ -180,8 +181,8 @@ integration('monthly unique-item and inheritance-rank persistence', () => {
         const worldRow = await db.worldState.create({
             data: {
                 scenarioCode: 'monthly-unique-inherit-persistence',
-                currentYear: 210,
-                currentMonth: 1,
+                currentYear: 209,
+                currentMonth: 12,
                 tickSeconds: 600,
                 config: {
                     stat: { total: 300, min: 10, max: 100, npcTotal: 150, npcMax: 75, npcMin: 10, chiefMin: 70 },
@@ -195,8 +196,8 @@ integration('monthly unique-item and inheritance-rank persistence', () => {
         });
         const state: TurnWorldState = {
             id: worldRow.id,
-            currentYear: 210,
-            currentMonth: 1,
+            currentYear: 209,
+            currentMonth: 12,
             tickSeconds: 600,
             lastTurnTime: general.turnTime,
             meta: { hiddenSeed: 'monthly-unique-inherit-persistence' },
@@ -232,22 +233,25 @@ integration('monthly unique-item and inheritance-rank persistence', () => {
             events: [event],
             initialEvents: [],
         };
-        const world = new InMemoryTurnWorld(state, snapshot, {
+        const modules = (await loadActionModuleBundle()).itemModules;
+        let world: InMemoryTurnWorld | null = null;
+        const lost = createLostUniqueItemHandler({ getWorld: () => world, itemModules: modules });
+        const merge = createMergeInheritPointRankHandler({ getWorld: () => world });
+        world = new InMemoryTurnWorld(state, snapshot, {
             schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+            calendarHandler: createMonthlyEventHandler({
+                getWorld: () => world,
+                startYear: 180,
+                actions: new Map([
+                    ['LostUniqueItem', lost],
+                    ['MergeInheritPointRank', merge],
+                ]),
+            }),
         });
         const hooks = await createDatabaseTurnHooks(databaseUrl!, world);
-        const modules = (await loadActionModuleBundle()).itemModules;
-        const environment = {
-            year: 210,
-            month: 1,
-            startyear: 180,
-            currentEventID: 1,
-            turnTime: state.lastTurnTime,
-        };
 
         try {
-            await createLostUniqueItemHandler({ getWorld: () => world, itemModules: modules })([1], environment, event);
-            await createMergeInheritPointRankHandler({ getWorld: () => world })([], environment, event);
+            await world.advanceMonth(new Date('0210-01-01T00:00:00.000Z'));
             await hooks.hooks.flushChanges?.({
                 lastTurnTime: state.lastTurnTime.toISOString(),
                 processedGenerals: 0,

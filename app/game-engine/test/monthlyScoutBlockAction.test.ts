@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Nation } from '@sammo-ts/logic';
 
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
+import { createMonthlyEventHandler } from '../src/turn/monthlyEventHandler.js';
 import { createScoutBlockHandler } from '../src/turn/monthlyScoutBlockAction.js';
 import type { TurnEvent, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 
@@ -28,11 +29,15 @@ const event: TurnEvent = {
     meta: {},
 };
 
-const buildWorld = (scout: number, blockChangeScout?: boolean) => {
+const buildWorld = (
+    scout: number,
+    blockChangeScout?: boolean,
+    actionName?: 'BlockScoutAction' | 'UnblockScoutAction'
+) => {
     const state: TurnWorldState = {
         id: 1,
-        currentYear: 200,
-        currentMonth: 1,
+        currentYear: 199,
+        currentMonth: 12,
         tickSeconds: 600,
         lastTurnTime: new Date('0200-01-01T00:00:00.000Z'),
         meta: blockChangeScout === undefined ? {} : { block_change_scout: blockChangeScout },
@@ -44,7 +49,16 @@ const buildWorld = (scout: number, blockChangeScout?: boolean) => {
         const: {},
         environment: { mapName: 'test', unitSet: 'default' },
     };
-    return new InMemoryTurnWorld(
+    const activeEvent: TurnEvent = {
+        ...event,
+        action: actionName ? [[actionName, false]] : [],
+    };
+    let world: InMemoryTurnWorld | null = null;
+    const handler = createScoutBlockHandler({
+        actionName: actionName ?? 'BlockScoutAction',
+        getWorld: () => world,
+    });
+    world = new InMemoryTurnWorld(
         state,
         {
             scenarioConfig,
@@ -54,11 +68,19 @@ const buildWorld = (scout: number, blockChangeScout?: boolean) => {
             nations: [buildNation(1, scout), buildNation(2, scout)],
             troops: [],
             diplomacy: [],
-            events: [event],
+            events: [activeEvent],
             initialEvents: [],
         },
-        { schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] } }
+        {
+            schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+            calendarHandler: createMonthlyEventHandler({
+                getWorld: () => world,
+                startYear: 190,
+                actions: new Map([[actionName ?? 'BlockScoutAction', handler]]),
+            }),
+        }
     );
+    return world;
 };
 
 describe('monthly scout block actions', () => {
@@ -78,14 +100,10 @@ describe('monthly scout block actions', () => {
     });
 
     it('preserves the legacy UnblockScoutAction missing-WHERE failure without mutations', async () => {
-        const world = buildWorld(1, true);
-        expect(() =>
-            createScoutBlockHandler({ actionName: 'UnblockScoutAction', getWorld: () => world })(
-                [false],
-                { year: 200, month: 1, startyear: 190, currentEventID: 1, turnTime: new Date() },
-                event
-            )
-        ).toThrow('update(): at least 3 arguments expected');
+        const world = buildWorld(1, true, 'UnblockScoutAction');
+        await expect(world.advanceMonth(new Date('0200-01-01T00:00:00.000Z'))).rejects.toThrow(
+            'update(): at least 3 arguments expected'
+        );
 
         expect(world.listNations().map((nation) => nation.meta.scout)).toEqual([1, 1]);
         expect(world.getState().meta.block_change_scout).toBe(true);
