@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { MapDefinition } from '@sammo-ts/logic';
+import type { City, MapDefinition } from '@sammo-ts/logic';
 
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
-import { createMonthlyEventHandler, type MonthlyEventActionHandler } from '../src/turn/monthlyEventHandler.js';
+import {
+    createMonthlyEventHandler,
+    createRandomizeCityTradeRateHandler,
+    type MonthlyEventActionHandler,
+} from '../src/turn/monthlyEventHandler.js';
 import type { TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 
 const map: MapDefinition = {
@@ -14,7 +18,8 @@ const map: MapDefinition = {
 
 const buildWorld = (
     events: TurnWorldSnapshot['events'],
-    actions: Map<string, MonthlyEventActionHandler>
+    actions: Map<string, MonthlyEventActionHandler>,
+    cities: City[] = []
 ): InMemoryTurnWorld => {
     const state: TurnWorldState = {
         id: 1,
@@ -22,7 +27,7 @@ const buildWorld = (
         currentMonth: 12,
         tickSeconds: 600,
         lastTurnTime: new Date('0189-12-01T00:00:00.000Z'),
-        meta: {},
+        meta: { hiddenSeed: 'monthly-event-test-seed' },
     };
     const snapshot: TurnWorldSnapshot = {
         scenarioConfig: {
@@ -45,7 +50,7 @@ const buildWorld = (
         events,
         initialEvents: [],
         generals: [],
-        cities: [],
+        cities,
         nations: [],
         troops: [],
     };
@@ -61,6 +66,30 @@ const buildWorld = (
     });
     return world;
 };
+
+const buildCity = (id: number, level: number): City => ({
+    id,
+    name: `도시${id}`,
+    nationId: 0,
+    level,
+    state: 0,
+    population: 1_000,
+    populationMax: 2_000,
+    agriculture: 100,
+    agricultureMax: 200,
+    commerce: 100,
+    commerceMax: 200,
+    security: 100,
+    securityMax: 200,
+    supplyState: 1,
+    frontState: 0,
+    defence: 100,
+    defenceMax: 200,
+    wall: 100,
+    wallMax: 200,
+    conflict: {},
+    meta: { trust: 50, trade: 100, marker: id },
+});
 
 describe('monthly event pipeline', () => {
     it('runs PRE_MONTH before the date change and MONTH after it in priority/id order', async () => {
@@ -148,6 +177,71 @@ describe('monthly event pipeline', () => {
 
         await expect(world.advanceMonth(new Date('0190-01-01T00:00:00.000Z'))).rejects.toThrow(
             'Unsupported monthly event action: RaiseInvader (eventId=9)'
+        );
+    });
+
+    it('randomizes city trade rates with the legacy seed domain and nullable no-trader state', async () => {
+        const actions = new Map<string, MonthlyEventActionHandler>();
+        const world = buildWorld(
+            [
+                {
+                    id: 10,
+                    targetCode: 'month',
+                    priority: 0,
+                    condition: true,
+                    action: [['RandomizeCityTradeRate']],
+                    meta: {},
+                },
+            ],
+            actions,
+            [buildCity(1, 1), buildCity(2, 4), buildCity(3, 5), buildCity(4, 6), buildCity(5, 7), buildCity(6, 8)]
+        );
+        actions.set(
+            'RandomizeCityTradeRate',
+            createRandomizeCityTradeRateHandler({
+                getWorld: () => world,
+            })
+        );
+
+        await world.advanceMonth(new Date('0190-01-01T00:00:00.000Z'));
+
+        expect(
+            world.listCities().map((city) => ({
+                id: city.id,
+                trade: city.meta.trade ?? null,
+                marker: city.meta.marker,
+            }))
+        ).toEqual([
+            { id: 1, trade: null, marker: 1 },
+            { id: 2, trade: null, marker: 2 },
+            { id: 3, trade: 101, marker: 3 },
+            { id: 4, trade: 100, marker: 4 },
+            { id: 5, trade: 105, marker: 5 },
+            { id: 6, trade: 102, marker: 6 },
+        ]);
+        expect(world.peekDirtyState().cities.map((city) => city.id)).toEqual([1, 2, 3, 4, 5, 6]);
+    });
+
+    it('rejects an unsupported city level instead of changing RNG consumption silently', async () => {
+        const actions = new Map<string, MonthlyEventActionHandler>();
+        const world = buildWorld(
+            [
+                {
+                    id: 11,
+                    targetCode: 'month',
+                    priority: 0,
+                    condition: true,
+                    action: [['RandomizeCityTradeRate']],
+                    meta: {},
+                },
+            ],
+            actions,
+            [buildCity(99, 9)]
+        );
+        actions.set('RandomizeCityTradeRate', createRandomizeCityTradeRateHandler({ getWorld: () => world }));
+
+        await expect(world.advanceMonth(new Date('0190-01-01T00:00:00.000Z'))).rejects.toThrow(
+            'Unsupported city level for RandomizeCityTradeRate: 9 (cityId=99)'
         );
     });
 });

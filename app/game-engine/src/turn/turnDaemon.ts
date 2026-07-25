@@ -34,7 +34,11 @@ import { createNeutralAuctionRegistrar } from '../auction/neutralRegistrar.js';
 import { createTournamentRewardFinalizer } from '../tournament/finalizer.js';
 import { createTournamentAutoStartHandler } from './tournamentAutoStart.js';
 import { createYearbookHandler } from './yearbookHandler.js';
-import { createMonthlyEventHandler, type MonthlyEventActionHandler } from './monthlyEventHandler.js';
+import {
+    createMonthlyEventHandler,
+    createRandomizeCityTradeRateHandler,
+    type MonthlyEventActionHandler,
+} from './monthlyEventHandler.js';
 import { DatabaseTurnDaemonLease, TurnDaemonLeaseUnavailableError } from '../lifecycle/databaseTurnDaemonLease.js';
 
 export interface TurnDaemonRuntimeOptions {
@@ -142,6 +146,12 @@ const createTurnDaemonRuntimeWithLease = async (
                 event.action.some((action) => Array.isArray(action) && action[0] === name)
         );
     const eventActions = new Map<string, MonthlyEventActionHandler>();
+    eventActions.set(
+        'RandomizeCityTradeRate',
+        createRandomizeCityTradeRateHandler({
+            getWorld: () => worldRef,
+        })
+    );
     eventActions.set('ProcessIncome', (_args, environment) => {
         void incomeHandler.onMonthChanged?.({
             previousYear: environment.month === 1 ? environment.year - 1 : environment.year,

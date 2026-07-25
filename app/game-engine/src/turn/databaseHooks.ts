@@ -261,9 +261,9 @@ const buildCityUpdate = (
     if (trust !== null) {
         data.trust = trust;
     }
-    if (trade !== null) {
-        data.trade = trade;
-    }
+    // trade가 없는 도시는 레거시 DB에서 NULL이다. City meta에 trade가
+    // 없다는 사실도 dirty city의 전체 snapshot 일부로 영속화한다.
+    data.trade = trade;
     if (region !== null) {
         data.region = region;
     }

@@ -1,3 +1,6 @@
+import { LiteHashDRBG, RandUtil } from '@sammo-ts/common';
+import { simpleSerialize } from '@sammo-ts/logic/war/utils.js';
+
 import type { InMemoryTurnWorld, TurnCalendarContext, TurnCalendarHandler } from './inMemoryWorld.js';
 import type { TurnEvent } from './types.js';
 
@@ -18,6 +21,50 @@ export type MonthlyEventActionHandler = (
 export type MonthlyEventActionRegistry = ReadonlyMap<string, MonthlyEventActionHandler>;
 
 const COMPARATORS = new Set(['==', '!=', '<', '>', '<=', '>=']);
+const CITY_TRADE_PROBABILITY_BY_LEVEL: Readonly<Record<number, number>> = {
+    1: 0,
+    2: 0,
+    3: 0,
+    4: 0.2,
+    5: 0.4,
+    6: 0.6,
+    7: 0.8,
+    8: 1,
+};
+
+const resolveHiddenSeed = (world: InMemoryTurnWorld): string | number => {
+    const state = world.getState();
+    const rawSeed = state.meta.hiddenSeed ?? state.meta.seed ?? state.id;
+    return typeof rawSeed === 'string' || typeof rawSeed === 'number' ? rawSeed : String(rawSeed);
+};
+
+export const createRandomizeCityTradeRateHandler = (options: {
+    getWorld: () => InMemoryTurnWorld | null;
+}): MonthlyEventActionHandler => {
+    return (_args, environment) => {
+        const world = options.getWorld();
+        if (!world) {
+            return;
+        }
+        const rng = new RandUtil(
+            new LiteHashDRBG(
+                simpleSerialize(resolveHiddenSeed(world), 'randomizeCityTradeRate', environment.year, environment.month)
+            )
+        );
+
+        for (const city of world.listCities()) {
+            const probability = CITY_TRADE_PROBABILITY_BY_LEVEL[city.level];
+            if (probability === undefined) {
+                throw new Error(`Unsupported city level for RandomizeCityTradeRate: ${city.level} (cityId=${city.id})`);
+            }
+            const trade = probability > 0 && rng.nextBool(probability) ? rng.nextRangeInt(95, 105) : null;
+            const { trade: _previousTrade, ...metaWithoutTrade } = city.meta;
+            world.updateCity(city.id, {
+                meta: trade === null ? metaWithoutTrade : { ...metaWithoutTrade, trade },
+            });
+        }
+    };
+};
 
 const compare = (left: readonly (number | null)[], operator: string, right: readonly (number | null)[]): boolean => {
     const normalize = (values: readonly (number | null)[]): string =>

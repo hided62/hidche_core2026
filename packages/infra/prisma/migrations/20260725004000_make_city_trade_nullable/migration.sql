@@ -1,0 +1,2 @@
+ALTER TABLE "city"
+    ALTER COLUMN "trade" DROP NOT NULL;

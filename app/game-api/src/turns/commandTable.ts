@@ -301,7 +301,7 @@ const mapCityRow = (row: CityRow): City => {
         meta: {
             ...meta,
             trust: row.trust,
-            trade: row.trade,
+            ...(row.trade === null ? {} : { trade: row.trade }),
             region: row.region,
         },
     };

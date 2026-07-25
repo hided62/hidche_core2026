@@ -132,7 +132,7 @@ model City {
   security       Int    @map("secu")
   securityMax    Int    @map("secu_max")
   trust          Int    @default(0)
-  trade          Int    @default(100)
+  trade          Int?   @default(100)
   defence        Int    @map("def")
   defenceMax     Int    @map("def_max")
   wall           Int    @map("wall")
