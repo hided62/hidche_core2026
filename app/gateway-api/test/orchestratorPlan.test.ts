@@ -103,6 +103,7 @@ describe('buildWorkspaceCommands', () => {
         expect(commands.map(({ args }) => args)).toEqual([
             ['install'],
             ['--filter', '@sammo-ts/common', 'build'],
+            ['--filter', '@sammo-ts/infra', 'prisma:generate'],
             ['--filter', '@sammo-ts/infra', 'build'],
             ['--filter', '@sammo-ts/logic', 'build'],
             ['--filter', '@sammo-ts/game-api', 'build'],

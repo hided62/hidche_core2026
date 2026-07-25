@@ -87,7 +87,7 @@ Gateway runs a lightweight cron loop (setInterval) that:
 - Each workspace stores `lastUsedAt` in DB so cleanup can remove stale worktrees.
 - Cleanup is invoked manually by admin API and removes worktrees unused for 6+ months.
 - Build runs `pnpm install` when workspace is created, then executes
-  the common, infra, and logic dependency builds before
+  the common build, Prisma client generation, and infra/logic dependency builds before
   `pnpm --filter @sammo-ts/game-api build` and
   `pnpm --filter @sammo-ts/game-engine build`, then marks build success/failure.
 - On success, status moves to `PREOPEN` for reserved builds or stays unchanged for manual builds.

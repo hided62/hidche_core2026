@@ -327,16 +327,18 @@ export const buildWorkspaceCommands = (
             env,
         });
     }
-    for (const packageName of [
-        '@sammo-ts/common',
-        '@sammo-ts/infra',
-        '@sammo-ts/logic',
-        '@sammo-ts/game-api',
-        '@sammo-ts/game-engine',
-    ]) {
+    const buildSteps: Array<[filter: string, script: string]> = [
+        ['@sammo-ts/common', 'build'],
+        ['@sammo-ts/infra', 'prisma:generate'],
+        ['@sammo-ts/infra', 'build'],
+        ['@sammo-ts/logic', 'build'],
+        ['@sammo-ts/game-api', 'build'],
+        ['@sammo-ts/game-engine', 'build'],
+    ];
+    for (const [filter, script] of buildSteps) {
         commands.push({
             command: 'pnpm',
-            args: ['--filter', packageName, 'build'],
+            args: ['--filter', filter, script],
             cwd: workspaceRoot,
             env,
         });
