@@ -113,6 +113,13 @@ export const projectCoreDatabaseSnapshot = (rows: {
             experience: row.experience,
             dedication: row.dedication,
             officerLevel: row.officerLevel,
+            personality: row.personality ?? null,
+            specialDomestic: row.specialDomestic ?? null,
+            specialWar: row.specialWar ?? null,
+            itemHorse: row.itemHorse ?? null,
+            itemWeapon: row.itemWeapon ?? null,
+            itemBook: row.itemBook ?? null,
+            itemExtra: row.itemExtra ?? null,
             injury: row.injury,
             gold: row.gold,
             rice: row.rice,
@@ -129,6 +136,11 @@ export const projectCoreDatabaseSnapshot = (rows: {
             leadershipExp: readNumber(meta, 'leadership_exp'),
             strengthExp: readNumber(meta, 'strength_exp'),
             intelExp: readNumber(meta, 'intel_exp'),
+            dex1: readNumber(meta, 'dex1'),
+            dex2: readNumber(meta, 'dex2'),
+            dex3: readNumber(meta, 'dex3'),
+            dex4: readNumber(meta, 'dex4'),
+            dex5: readNumber(meta, 'dex5'),
             killTurn: readNumber(meta, 'killturn'),
             mySet: readNumber(meta, 'myset'),
         };
@@ -175,6 +187,7 @@ export const projectCoreDatabaseSnapshot = (rows: {
             generalCount: readNumber(meta, 'gennum'),
             power: readNumber(meta, 'power'),
             war: readNumber(meta, 'war'),
+            diplomacyLimit: readNumber(meta, 'surlimit'),
             meta,
         };
     });

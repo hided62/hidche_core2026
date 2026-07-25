@@ -63,6 +63,18 @@ const valuesEqual = (left: unknown, right: unknown, numericTolerance: number): b
     if (typeof left === 'number' && typeof right === 'number') {
         return Math.abs(left - right) <= numericTolerance;
     }
+    if (Array.isArray(left) || Array.isArray(right)) {
+        if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
+            return false;
+        }
+        return left.every((value, index) => valuesEqual(value, right[index], numericTolerance));
+    }
+    if (typeof left === 'object' && left !== null && typeof right === 'object' && right !== null) {
+        const leftRecord = left as Record<string, unknown>;
+        const rightRecord = right as Record<string, unknown>;
+        const keys = [...new Set([...Object.keys(leftRecord), ...Object.keys(rightRecord)])].sort();
+        return keys.every((key) => valuesEqual(leftRecord[key], rightRecord[key], numericTolerance));
+    }
     return Object.is(left, right);
 };
 
