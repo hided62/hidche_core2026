@@ -16,6 +16,7 @@ import {
 import {
     finalizeLogEntry,
     LogCategory,
+    LogFormat,
     LogScope,
     sendMessage,
     type LogEntryDraft,
@@ -30,6 +31,12 @@ import { buildDiplomacyMeta } from '@sammo-ts/logic';
 import { ensureItemInventory, withSerializedItemInventory } from '@sammo-ts/logic/items/index.js';
 import { persistGeneralLifecycleEvents } from './generalTurnLifecyclePersistence.js';
 import type { DatabaseTurnDaemonLease } from '../lifecycle/databaseTurnDaemonLease.js';
+import { calculateNationBettingRewards } from '../betting/nationBettingSettlement.js';
+import type {
+    NationBettingCandidate,
+    PendingNationBettingFinish,
+    PendingNationBettingOpen,
+} from './types.js';
 
 export interface DatabaseTurnHooks {
     hooks: TurnDaemonHooks;
@@ -37,6 +44,225 @@ export interface DatabaseTurnHooks {
 }
 
 const asJson = (value: unknown): InputJsonValue => value as InputJsonValue;
+const formatLegacyNumber = (value: number): string => Math.round(value).toLocaleString('en-US');
+
+const readBettingCandidates = (value: unknown): NationBettingCandidate[] => {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+    return value.flatMap((candidate) => {
+        const item = asRecord(candidate);
+        const aux = asRecord(item.aux);
+        if (
+            typeof item.title !== 'string' ||
+            typeof aux.nation !== 'number' ||
+            !Number.isInteger(aux.nation)
+        ) {
+            return [];
+        }
+        return [
+            {
+                title: item.title,
+                info: typeof item.info === 'string' ? item.info : '',
+                isHtml: true as const,
+                aux: {
+                    nation: aux.nation,
+                    name: typeof aux.name === 'string' ? aux.name : item.title,
+                    color: typeof aux.color === 'string' ? aux.color : '#000000',
+                    type: typeof aux.type === 'string' ? aux.type : '',
+                    level: typeof aux.level === 'number' ? aux.level : 0,
+                    capital: typeof aux.capital === 'number' ? aux.capital : null,
+                    gennum: typeof aux.gennum === 'number' ? aux.gennum : 0,
+                    power: typeof aux.power === 'number' ? aux.power : 0,
+                    city_cnt: typeof aux.city_cnt === 'number' ? aux.city_cnt : 0,
+                },
+            },
+        ];
+    });
+};
+
+const persistNationBettingOpen = async (
+    prisma: GamePrisma.TransactionClient,
+    betting: PendingNationBettingOpen
+): Promise<void> => {
+    await prisma.nationBetting.create({
+        data: {
+            id: betting.id,
+            type: 'bettingNation',
+            name: betting.name,
+            finished: false,
+            selectCount: betting.selectCount,
+            isExclusive: betting.isExclusive,
+            requiresInheritancePoint: betting.requiresInheritancePoint,
+            openYearMonth: betting.openYearMonth,
+            closeYearMonth: betting.closeYearMonth,
+            candidates: asJson(betting.candidates),
+        },
+    });
+    if (betting.bonusPoint > 0) {
+        await prisma.nationBet.create({
+            data: {
+                bettingId: betting.id,
+                generalId: 0,
+                userId: null,
+                selection: [-1],
+                selectionKey: '[-1]',
+                amount: betting.bonusPoint,
+            },
+        });
+    }
+};
+
+const persistNationBettingFinish = async (
+    prisma: GamePrisma.TransactionClient,
+    finish: PendingNationBettingFinish
+): Promise<void> => {
+    await prisma.$queryRaw`
+        SELECT id
+        FROM nation_betting
+        WHERE id = ${finish.id}
+        FOR UPDATE
+    `;
+    const betting = await prisma.nationBetting.findUnique({
+        where: { id: finish.id },
+        include: { bets: { orderBy: { id: 'asc' } } },
+    });
+    if (!betting || betting.type !== 'bettingNation' || betting.finished) {
+        return;
+    }
+    if (finish.winnerNationIds.length !== betting.selectCount) {
+        return;
+    }
+
+    const candidates = readBettingCandidates(betting.candidates);
+    const candidateIndexByNation = new Map(candidates.map((candidate, index) => [candidate.aux.nation, index]));
+    let newNationOffset = 0;
+    const winner = finish.winnerNationIds.map((nationId) => {
+        const candidateIndex = candidateIndexByNation.get(nationId);
+        if (candidateIndex !== undefined) {
+            return candidateIndex;
+        }
+        const result = candidates.length + newNationOffset;
+        newNationOffset += 1;
+        return result;
+    });
+    const purifiedWinner = [...new Set(winner)].sort((left, right) => left - right);
+    if (purifiedWinner.length !== betting.selectCount) {
+        return;
+    }
+
+    const rewards = calculateNationBettingRewards({
+        selectCount: betting.selectCount,
+        isExclusive: betting.isExclusive,
+        winner: purifiedWinner,
+        stakes: betting.bets.map((bet) => ({
+            generalId: bet.generalId,
+            userId: bet.userId,
+            selection: Array.isArray(bet.selection)
+                ? bet.selection.filter((value): value is number => typeof value === 'number')
+                : [],
+            amount: bet.amount,
+        })),
+    });
+
+    for (const reward of rewards) {
+        if (!reward.userId) {
+            continue;
+        }
+        const existing = await prisma.inheritancePoint.findUnique({
+            where: { userId_key: { userId: reward.userId, key: 'previous' } },
+            select: { value: true },
+        });
+        const previousPoint = existing?.value ?? 0;
+        const nextPoint = previousPoint + reward.amount;
+        await prisma.inheritancePoint.upsert({
+            where: { userId_key: { userId: reward.userId, key: 'previous' } },
+            update: { value: nextPoint },
+            create: { userId: reward.userId, key: 'previous', value: nextPoint },
+        });
+        await prisma.rankData.upsert({
+            where: {
+                generalId_type: {
+                    generalId: reward.generalId,
+                    type: 'inherit_earned_act',
+                },
+            },
+            update: { value: { increment: Math.trunc(reward.amount) } },
+            create: {
+                generalId: reward.generalId,
+                nationId:
+                    (
+                        await prisma.general.findUnique({
+                            where: { id: reward.generalId },
+                            select: { nationId: true },
+                        })
+                    )?.nationId ?? 0,
+                type: 'inherit_earned_act',
+                value: Math.trunc(reward.amount),
+            },
+        });
+        const partialText =
+            reward.matchPoint === betting.selectCount
+                ? '베팅 당첨'
+                : `베팅 부분 당첨(${reward.matchPoint}/${betting.selectCount})`;
+        await prisma.inheritanceLog.createMany({
+            data: [
+                {
+                    userId: reward.userId,
+                    year: finish.year,
+                    month: finish.month,
+                    text: `${betting.name} ${partialText} 보상으로 ${formatLegacyNumber(reward.amount)} 포인트 획득.`,
+                },
+                {
+                    userId: reward.userId,
+                    year: finish.year,
+                    month: finish.month,
+                    text: `포인트 ${formatLegacyNumber(previousPoint)} => ${formatLegacyNumber(nextPoint)}`,
+                },
+            ],
+        });
+    }
+
+    await prisma.nationBetting.update({
+        where: { id: finish.id },
+        data: {
+            finished: true,
+            winner: purifiedWinner,
+        },
+    });
+    const openYear = Math.floor(betting.openYearMonth / 12);
+    const openMonth = (betting.openYearMonth % 12) + 1;
+    const finishLog = finalizeLogEntry(
+        {
+            scope: LogScope.SYSTEM,
+            category: LogCategory.HISTORY,
+            format: LogFormat.YEAR_MONTH,
+            text: `<B><b>【내기】</b></> ${openYear}년 ${openMonth}월에 열렸던 ${betting.name} 내기의 결과가 나왔습니다!`,
+        },
+        {
+            year: finish.year,
+            month: finish.month,
+            at: finish.turnTime,
+        }
+    );
+    if (finishLog) {
+        await prisma.logEntry.create({
+            data: {
+                scope: finishLog.scope,
+                category: finishLog.category,
+                subType: finishLog.subType ?? null,
+                year: finishLog.year,
+                month: finishLog.month,
+                text: finishLog.text,
+                generalId: finishLog.generalId ?? null,
+                nationId: finishLog.nationId ?? null,
+                userId: finishLog.userId ?? null,
+                meta: asJson(finishLog.meta ?? {}),
+                createdAt: finishLog.createdAt,
+            },
+        });
+    }
+};
 
 const toCode = (value: string | null | undefined): string => (value && value !== 'None' ? value : 'None');
 
@@ -399,6 +625,8 @@ export const createDatabaseTurnHooks = async (
             lifecycleEvents,
             pendingNeutralAuctions,
             inheritancePointAdjustments,
+            pendingNationBettingOpens,
+            pendingNationBettingFinishes,
         } = changes;
         const reservedTurnChanges = options?.reservedTurns?.peekDirtyState();
 
@@ -439,6 +667,13 @@ export const createDatabaseTurnHooks = async (
                 where: { id: state.id },
                 data: worldStateUpdate,
             });
+
+            for (const betting of pendingNationBettingOpens) {
+                await persistNationBettingOpen(prisma, betting);
+            }
+            for (const finish of pendingNationBettingFinishes) {
+                await persistNationBettingFinish(prisma, finish);
+            }
 
             const meta = asRecord(state.meta);
             const serverId =
