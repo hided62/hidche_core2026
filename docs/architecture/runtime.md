@@ -80,6 +80,23 @@ Gateway runs a lightweight cron loop (setInterval) that:
 
 ### Build Workflow (Admin)
 
+- 관리자는 gateway의 `/admin/server-operations` 전용 화면에서 profile별
+  runtime, build, worktree, 오류와 작업 이력을 확인하고 시작·정지·초기화를
+  요청한다.
+- 운영 요청은 `gateway_operation` 행으로 기록된다. 같은 profile에는
+  `QUEUED` 또는 `RUNNING` 작업이 하나만 존재할 수 있으며, 상태는
+  `QUEUED -> RUNNING -> SUCCEEDED|FAILED` 또는 실행 전 `CANCELLED`로
+  전이된다. 실패·취소 작업은 같은 입력으로 재시도할 수 있다.
+- `BRANCH` 소스는 요청 시 유효성을 검사하지만 branch 이름을 보존하고,
+  실행 직전에 원격을 다시 fetch하여 최신 commit을 확정한다. `COMMIT`
+  소스는 요청 시 full SHA로 정규화하여 이후 branch 이동과 무관하게
+  동일 commit을 사용한다. 실제 사용한 SHA는 작업의
+  `resolvedCommitSha`와 profile의 `buildCommitSha`에 기록한다.
+- 초기화 작업은 profile 프로세스를 정지한 뒤 선택 commit worktree에서
+  build하고, 같은 worktree의 scenario/map/unitset으로 profile DB를 seed한
+  후 `PREOPEN` 또는 `RUNNING`으로 전환하여 API와 daemon을 함께 시작한다.
+  대기 중 작업은 취소할 수 있으나 DB 변경이 시작된 `RUNNING` 작업은
+  중간 취소하지 않는다.
 - Admin triggers a build request for a profile.
 - Gateway queues a build job with `(profileName, commitSha)` and prepares a
   per-commit workspace (`/.worktrees/{commitSha}` by default).
@@ -95,6 +112,11 @@ Gateway runs a lightweight cron loop (setInterval) that:
   pinned to different commits execute the artifacts from their own detached
   worktrees. A profile without `buildWorkspace` intentionally falls back to the
   main workspace; this is the `hwe`/main compatibility path.
+
+`GatewayProfile.meta.adminActions` polling is retained only for requests
+created by the older admin page. New operations must use `gateway_operation`
+so concurrency, audit history, cancellation, retry, source intent, and the
+resolved commit remain first-class data.
 
 ## Current Implementation Status
 

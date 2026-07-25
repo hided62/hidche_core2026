@@ -40,6 +40,15 @@ const ensureDir = (dir: string): void => {
 };
 
 const hasInstallMarker = (dir: string): boolean => fs.existsSync(path.join(dir, 'node_modules', '.pnpm'));
+const GIT_REF_PATTERN = /^[0-9A-Za-z._/-]+$/;
+
+const assertGitRef = (value: string): string => {
+    const ref = value.trim();
+    if (!ref || ref.startsWith('-') || ref.includes('..') || !GIT_REF_PATTERN.test(ref)) {
+        throw new Error('Invalid git ref.');
+    }
+    return ref;
+};
 
 export class GitWorkspaceManager {
     private readonly repoRoot: string;
@@ -50,6 +59,28 @@ export class GitWorkspaceManager {
         this.repoRoot = options.repoRoot;
         this.worktreeRoot = options.worktreeRoot;
         this.baseEnv = options.baseEnv;
+    }
+
+    async resolveCommit(sourceMode: 'BRANCH' | 'COMMIT', sourceRef: string): Promise<string> {
+        const ref = assertGitRef(sourceRef);
+        if (sourceMode === 'BRANCH') {
+            const fetched = await runGit(['fetch', '--all', '--prune'], this.repoRoot, this.baseEnv);
+            if (!fetched.ok) {
+                throw new Error(fetched.output || 'Failed to fetch git branches.');
+            }
+        }
+        const candidates =
+            sourceMode === 'BRANCH'
+                ? [`refs/remotes/origin/${ref}^{commit}`, `refs/heads/${ref}^{commit}`]
+                : [`${ref}^{commit}`];
+        for (const candidate of candidates) {
+            const result = await runGit(['rev-parse', '--verify', candidate], this.repoRoot, this.baseEnv);
+            const commitSha = result.output.trim().split('\n')[0];
+            if (result.ok && /^[0-9a-f]{40}$/i.test(commitSha)) {
+                return commitSha;
+            }
+        }
+        throw new Error(`${sourceMode === 'BRANCH' ? 'Branch' : 'Commit'} not found.`);
     }
 
     async prepare(commitSha: string): Promise<WorkspaceInfo> {

@@ -59,6 +59,20 @@ const buildCaller = () => {
         updateLastError: async () => {},
         updateWorkspaceUsage: async () => {},
         clearWorkspaceUsage: async () => {},
+        listOperations: async () => [],
+        getOperation: async () => null,
+        createOperation: async () => {
+            throw new Error('not implemented');
+        },
+        claimNextOperation: async () => null,
+        completeOperation: async () => {
+            throw new Error('not implemented');
+        },
+        requeueOperation: async () => {
+            throw new Error('not implemented');
+        },
+        cancelOperation: async () => false,
+        retryOperation: async () => null,
     };
     const orchestrator = {
         start: () => {},
@@ -66,6 +80,7 @@ const buildCaller = () => {
         reconcileNow: async () => {},
         runScheduleNow: async () => {},
         runBuildQueueNow: async () => {},
+        runOperationsNow: async () => {},
         cleanupStaleWorkspaces: async () => ({
             removed: [],
             skipped: [],
