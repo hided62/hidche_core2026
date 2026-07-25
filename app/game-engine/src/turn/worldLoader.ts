@@ -257,7 +257,7 @@ const mapNationRow = (row: TurnEngineNationRow): Nation => ({
     name: row.name,
     color: row.color,
     capitalCityId: row.capitalCityId,
-    chiefGeneralId: null,
+    chiefGeneralId: row.chiefGeneralId,
     gold: row.gold,
     rice: row.rice,
     power: 0,

@@ -29,6 +29,11 @@ const mapUser = (row: {
     oauthId: string | null;
     email: string | null;
     oauthInfo: GatewayPrisma.JsonValue;
+    picture: string;
+    imageServer: number;
+    iconUpdatedAt: Date | null;
+    thirdPartyUse: boolean;
+    deleteAfter: Date | null;
     createdAt: Date;
 }): UserRecord => ({
     id: row.id,
@@ -40,6 +45,11 @@ const mapUser = (row: {
     oauthId: row.oauthId ?? undefined,
     email: row.email ?? undefined,
     oauthInfo: readObject<UserOAuthInfo>(row.oauthInfo, {}),
+    picture: row.picture,
+    imageServer: row.imageServer,
+    iconUpdatedAt: row.iconUpdatedAt?.toISOString(),
+    thirdPartyUse: row.thirdPartyUse,
+    deleteAfter: row.deleteAfter?.toISOString(),
     passwordHash: row.passwordHash,
     passwordSalt: row.passwordSalt,
     createdAt: row.createdAt.toISOString(),
@@ -137,6 +147,28 @@ export const createPostgresUserRepository = (
                 data: {
                     sanctions: sanctions as GatewayPrisma.JsonObject,
                 },
+            });
+        },
+        async updateIcon(userId: string, picture: string, imageServer: number, updatedAt: Date): Promise<void> {
+            await prisma.appUser.update({
+                where: { id: userId },
+                data: {
+                    picture,
+                    imageServer,
+                    iconUpdatedAt: updatedAt,
+                },
+            });
+        },
+        async setThirdPartyUse(userId: string, allowed: boolean): Promise<void> {
+            await prisma.appUser.update({
+                where: { id: userId },
+                data: { thirdPartyUse: allowed },
+            });
+        },
+        async scheduleDeletion(userId: string, deleteAfter: Date): Promise<void> {
+            await prisma.appUser.update({
+                where: { id: userId },
+                data: { deleteAfter },
             });
         },
         async deleteUser(userId: string): Promise<void> {

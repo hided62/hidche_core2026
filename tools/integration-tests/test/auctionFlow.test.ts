@@ -295,7 +295,7 @@ describe('auction integration flow', () => {
 
         const adminGatewayToken = await gatewayClient.auth.issueGameSession.mutate({
             sessionToken: adminSessionRef.value ?? '',
-            profile: 'che:2',
+            profile: 'che:908',
         });
         const adminAccess = await gameClient.auth.exchangeGatewayToken.mutate({
             gatewayToken: adminGatewayToken.gameToken,

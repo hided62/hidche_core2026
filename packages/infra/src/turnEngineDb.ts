@@ -84,6 +84,7 @@ export interface TurnEngineNationRow {
     name: string;
     color: string;
     capitalCityId: number | null;
+    chiefGeneralId: number | null;
     gold: number;
     rice: number;
     tech: number;
@@ -287,6 +288,7 @@ export interface TurnEngineNationCreateManyInput {
     name: string;
     color: string;
     capitalCityId: number | null;
+    chiefGeneralId: number | null;
     gold: number;
     rice: number;
     tech: number;

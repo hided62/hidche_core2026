@@ -23,6 +23,14 @@ interface MessageRow {
     message: unknown;
 }
 
+export interface StoredMessage {
+    id: number;
+    mailbox: number;
+    msgType: MessageType;
+    time: Date;
+    payload: MessagePayload;
+}
+
 const parsePayload = (value: unknown): MessagePayload => {
     if (typeof value === 'string') {
         return JSON.parse(value) as MessagePayload;
@@ -112,4 +120,31 @@ export const fetchOldMessagesFromMailbox = async (params: {
     `;
 
     return rows.map(toMessageView);
+};
+
+export const fetchMessageById = async (db: DatabaseClient, id: number): Promise<StoredMessage | null> => {
+    const rows = await db.$queryRaw<MessageRow[]>`
+        SELECT id, mailbox, type, src, dest, time, valid_until, message
+        FROM message
+        WHERE id = ${id} AND valid_until > NOW()
+        LIMIT 1
+    `;
+    const row = rows[0];
+    if (!row) return null;
+    return {
+        id: row.id,
+        mailbox: row.mailbox,
+        msgType: row.type,
+        time: new Date(row.time),
+        payload: parsePayload(row.message),
+    };
+};
+
+export const invalidateMessages = async (db: DatabaseClient, ids: number[]): Promise<void> => {
+    const uniqueIds = Array.from(new Set(ids.filter((id) => Number.isInteger(id) && id > 0)));
+    if (uniqueIds.length === 0) return;
+    await db.message.updateMany({
+        where: { id: { in: uniqueIds } },
+        data: { validUntil: new Date() },
+    });
 };
