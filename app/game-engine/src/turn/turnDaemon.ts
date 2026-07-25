@@ -66,6 +66,10 @@ import {
     createOpenNationBettingHandler,
 } from './monthlyNationBettingAction.js';
 import { createScoutBlockHandler } from './monthlyScoutBlockAction.js';
+import {
+    createAddGlobalBetrayHandler,
+    createAssignGeneralSpecialityHandler,
+} from './monthlySpecialityBetrayAction.js';
 import { buildCommandEnv } from './reservedTurnCommands.js';
 import { DatabaseTurnDaemonLease, TurnDaemonLeaseUnavailableError } from '../lifecycle/databaseTurnDaemonLease.js';
 
@@ -358,6 +362,18 @@ const createTurnDaemonRuntimeWithLease = async (
             })
         );
     }
+    eventActions.set(
+        'AssignGeneralSpeciality',
+        createAssignGeneralSpecialityHandler({
+            getWorld: () => worldRef,
+        })
+    );
+    eventActions.set(
+        'AddGlobalBetray',
+        createAddGlobalBetrayHandler({
+            getWorld: () => worldRef,
+        })
+    );
     eventActions.set('ProcessIncome', async (_args, environment) => {
         await incomeHandler.onMonthChanged?.({
             previousYear: environment.month === 1 ? environment.year - 1 : environment.year,
