@@ -272,6 +272,27 @@ describe('legacy general turn lifecycle', () => {
         expect(harness.world.peekDirtyState().deletedGenerals).toContain(1);
     });
 
+    it('keeps compatibility fixtures without legacy lifespan metadata alive', async () => {
+        const harness = await createTurnTestHarness({
+            snapshot: makeSnapshot([
+                makeGeneral({
+                    deadYear: undefined,
+                    npcState: 2,
+                    meta: { killturn: 1 },
+                }),
+            ]),
+            state: makeState(),
+            schedule,
+            map,
+        });
+
+        await harness.runOneTick();
+
+        expect(harness.world.getGeneralById(1)).not.toBeNull();
+        expect(harness.world.getGeneralById(1)!.meta.killturn).toBe(0);
+        expect(harness.world.peekDirtyState().lifecycleEvents[0]?.outcome).toBe('active');
+    });
+
     it('retires a player general and resets inherited stats and rank state', async () => {
         const harness = await createTurnTestHarness({
             snapshot: makeSnapshot([

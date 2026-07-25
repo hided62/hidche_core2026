@@ -1159,22 +1159,32 @@ export const createReservedTurnHandler = async (options: {
                 )
             );
             currentCity = currentCity ? { ...currentCity, meta: { ...currentCity.meta } } : currentCity;
-            const cityGeneralCopies = new Map<number, TurnGeneral>();
-            for (const general of worldView?.listGenerals() ?? []) {
-                cityGeneralCopies.set(
-                    general.id,
-                    general.id === currentGeneral.id ? currentGeneral : cloneTurnGeneral(general)
-                );
-            }
-            cityGeneralCopies.set(currentGeneral.id, currentGeneral);
+            let cityGeneralCopies: Map<number, TurnGeneral> | undefined;
+            const getCityGeneralCopies = (): Map<number, TurnGeneral> => {
+                if (cityGeneralCopies) {
+                    return cityGeneralCopies;
+                }
+                cityGeneralCopies = new Map<number, TurnGeneral>();
+                for (const general of worldView?.listGenerals() ?? []) {
+                    if (general.cityId !== currentGeneral.cityId) {
+                        continue;
+                    }
+                    cityGeneralCopies.set(
+                        general.id,
+                        general.id === currentGeneral.id ? currentGeneral : cloneTurnGeneral(general)
+                    );
+                }
+                cityGeneralCopies.set(currentGeneral.id, currentGeneral);
+                return cityGeneralCopies;
+            };
             const preTurnPipeline = new GeneralActionPipeline(env.generalActionModules ?? []);
             const preTurnContext = createGeneralTriggerContext({
                 general: currentGeneral,
                 nation: currentNation,
                 worldView: {
-                    listGenerals: () => Array.from(cityGeneralCopies.values()),
+                    listGenerals: () => Array.from(getCityGeneralCopies().values()),
                     listGeneralsByCity: (cityId) =>
-                        Array.from(cityGeneralCopies.values()).filter((general) => general.cityId === cityId),
+                        Array.from(getCityGeneralCopies().values()).filter((general) => general.cityId === cityId),
                 },
                 rng: preprocessRng,
                 log: {
@@ -1209,7 +1219,7 @@ export const createReservedTurnHandler = async (options: {
                 }
                 preTurnContext.skill.activate('pre.병력군량소모');
             }
-            for (const [generalId, next] of cityGeneralCopies) {
+            for (const [generalId, next] of cityGeneralCopies ?? []) {
                 if (generalId === currentGeneral.id) {
                     continue;
                 }
@@ -1399,7 +1409,7 @@ export const createReservedTurnHandler = async (options: {
             let deleteGeneral = false;
             const deletedTroopIds: number[] = [];
             const lifecycleSnapshot = cloneTurnGeneral(currentGeneral);
-            if (currentGeneral.meta.killturn <= 0) {
+            if (currentGeneral.meta.killturn <= 0 && typeof currentGeneral.deadYear === 'number') {
                 if (
                     currentGeneral.npcState === 1 &&
                     typeof currentGeneral.deadYear === 'number' &&
