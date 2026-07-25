@@ -102,7 +102,7 @@ const calculateNationPower = (
     return { power, totalCrew };
 };
 
-const updateNationPower = (world: InMemoryTurnWorld, rng: RandUtil): void => {
+const updateNationPower = (world: InMemoryTurnWorld, rng: RandUtil): number => {
     const citiesByNation = new Map<number, string[]>();
     for (const city of world.listCities().sort((left, right) => left.id - right.id)) {
         const names = citiesByNation.get(city.nationId) ?? [];
@@ -110,7 +110,8 @@ const updateNationPower = (world: InMemoryTurnWorld, rng: RandUtil): void => {
         citiesByNation.set(city.nationId, names);
     }
 
-    for (const nation of world.listNations().sort((left, right) => left.id - right.id)) {
+    const nations = world.listNations().sort((left, right) => left.id - right.id);
+    for (const nation of nations) {
         const calculated = calculateNationPower(world, nation.id);
         const power = Math.round(calculated.power * rng.nextRange(0.95, 1.05));
         const meta = asRecord(nation.meta);
@@ -134,10 +135,12 @@ const updateNationPower = (world: InMemoryTurnWorld, rng: RandUtil): void => {
             },
         });
     }
+    return nations.length;
 };
 
 export const createMonthlyNationStatsHandler = (options: {
     getWorld: () => InMemoryTurnWorld | null;
+    onNationPowerRollCount?: (count: number) => void;
 }): TurnCalendarHandler => ({
     onMonthChanged: (context) => {
         const world = options.getWorld();
@@ -149,7 +152,8 @@ export const createMonthlyNationStatsHandler = (options: {
                 simpleSerialize(resolveHiddenSeed(world), 'monthly', context.previousYear, context.previousMonth)
             )
         );
-        updateNationPower(world, rng);
+        const nationPowerRollCount = updateNationPower(world, rng);
+        options.onNationPowerRollCount?.(nationPowerRollCount);
     },
 });
 
