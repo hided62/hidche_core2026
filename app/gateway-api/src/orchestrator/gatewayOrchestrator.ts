@@ -963,8 +963,12 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     private async stopProfile(profile: GatewayProfileRecord): Promise<void> {
         const apiName = buildProcessName(profile.profileName, 'api');
         const daemonName = buildProcessName(profile.profileName, 'daemon');
+        const existingNames = new Set((await this.processManager.list()).map((process) => process.name));
         const failures: string[] = [];
         for (const name of [apiName, daemonName]) {
+            if (!existingNames.has(name)) {
+                continue;
+            }
             try {
                 await this.processManager.stop(name);
             } catch {

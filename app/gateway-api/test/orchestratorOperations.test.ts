@@ -36,7 +36,12 @@ const buildOperation = (type: 'START' | 'STOP'): GatewayOperationRecord => ({
     updatedAt: '2026-07-25T01:00:00.000Z',
 });
 
-const createHarness = (operation: GatewayOperationRecord, failStart = false, failStop = false) => {
+const createHarness = (
+    operation: GatewayOperationRecord,
+    failStart = false,
+    failStop = false,
+    processesPresent = true
+) => {
     let nextOperation: GatewayOperationRecord | null = operation;
     const statuses: string[] = [];
     const completions: GatewayOperationStatus[] = [];
@@ -77,7 +82,13 @@ const createHarness = (operation: GatewayOperationRecord, failStart = false, fai
         retryOperation: async () => null,
     };
     const processManager: ProcessManager = {
-        list: async () => [],
+        list: async () =>
+            processesPresent
+                ? [
+                      { name: 'sammo:che:2:game-api', status: 'online' },
+                      { name: 'sammo:che:2:turn-daemon', status: 'online' },
+                  ]
+                : [],
         start: async (definition) => {
             if (failStart) {
                 throw new Error('pm2 unavailable');
@@ -142,6 +153,17 @@ describe('GatewayOrchestrator first-class operations', () => {
 
         expect(harness.statuses).toEqual(['STOPPED']);
         expect(harness.stopped).toEqual(['sammo:che:2:game-api', 'sammo:che:2:turn-daemon']);
+        expect(harness.completions).toEqual(['SUCCEEDED']);
+    });
+
+    it('treats an already stopped profile as a successful idempotent stop', async () => {
+        const harness = createHarness(buildOperation('STOP'), false, false, false);
+
+        await harness.orchestrator.runOperationsNow();
+
+        expect(harness.statuses).toEqual(['STOPPED']);
+        expect(harness.stopped).toEqual([]);
+        expect(harness.deleted).toEqual([]);
         expect(harness.completions).toEqual(['SUCCEEDED']);
     });
 
