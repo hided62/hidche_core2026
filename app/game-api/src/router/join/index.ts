@@ -517,6 +517,18 @@ export const joinRouter = router({
                         },
                     },
                 });
+                await db.generalAccessLog.upsert({
+                    where: { generalId: general.id },
+                    update: {
+                        userId,
+                        lastRefresh: new Date(),
+                    },
+                    create: {
+                        generalId: general.id,
+                        userId,
+                        lastRefresh: new Date(),
+                    },
+                });
 
                 if (inheritRequiredPoint > 0) {
                     await setInheritancePoint(db, userId, 'previous', currentPoint - inheritRequiredPoint);
@@ -618,25 +630,67 @@ export const joinRouter = router({
                 });
             }
 
-            const updated = await ctx.db.general.updateMany({
-                where: {
-                    id: input.generalId,
-                    userId: null,
-                    npcState: { gte: 2 },
-                },
-                data: {
-                    userId,
-                    npcState: 1,
-                    updatedAt: new Date(),
-                },
-            });
+            await ctx.db.$transaction!(async (db) => {
+                const [candidate, worldState] = await Promise.all([
+                    db.general.findUnique({
+                        where: { id: input.generalId },
+                        select: { npcState: true, meta: true },
+                    }),
+                    db.worldState.findFirst({
+                        select: { currentYear: true, currentMonth: true },
+                    }),
+                ]);
+                if (!candidate || candidate.npcState < 2 || !worldState) {
+                    throw new TRPCError({
+                        code: 'NOT_FOUND',
+                        message: '빙의 가능한 장수를 찾지 못했습니다.',
+                    });
+                }
 
-            if (updated.count === 0) {
-                throw new TRPCError({
-                    code: 'NOT_FOUND',
-                    message: '빙의 가능한 장수를 찾지 못했습니다.',
+                const now = new Date();
+                const updated = await db.general.updateMany({
+                    where: {
+                        id: input.generalId,
+                        userId: null,
+                        npcState: candidate.npcState,
+                    },
+                    data: {
+                        userId,
+                        npcState: 1,
+                        meta: {
+                            ...asRecord(candidate.meta),
+                            npc_org: candidate.npcState,
+                            owner_name: ctx.auth?.user.displayName ?? '',
+                            pickYearMonth: worldState.currentYear * 12 + worldState.currentMonth - 1,
+                            killturn: 6,
+                            defence_train: 80,
+                        },
+                        updatedAt: now,
+                    },
                 });
-            }
+                if (updated.count === 0) {
+                    throw new TRPCError({
+                        code: 'NOT_FOUND',
+                        message: '빙의 가능한 장수를 찾지 못했습니다.',
+                    });
+                }
+                await db.generalAccessLog.upsert({
+                    where: { generalId: input.generalId },
+                    update: {
+                        userId,
+                        lastRefresh: now,
+                        refresh: 0,
+                        refreshTotal: 0,
+                        refreshScore: 0,
+                        refreshScoreTotal: 0,
+                    },
+                    create: {
+                        generalId: input.generalId,
+                        userId,
+                        lastRefresh: now,
+                    },
+                });
+            });
 
             return { ok: true };
         }),

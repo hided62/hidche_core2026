@@ -161,6 +161,7 @@ const mapGeneralRow = (row: TurnEngineGeneralRow): TurnGeneral => {
             return { meta: { ...meta, killturn } as TurnGeneral['meta'] };
         })(),
         id: row.id,
+        userId: row.userId,
         name: row.name,
         nationId: row.nationId,
         cityId: row.cityId,
@@ -188,6 +189,9 @@ const mapGeneralRow = (row: TurnEngineGeneralRow): TurnGeneral => {
         atmos: row.atmos,
         age: row.age,
         npcState: row.npcState,
+        bornYear: row.bornYear,
+        deadYear: row.deadYear,
+        affinity: row.affinity,
         triggerState: {
             flags: {},
             counters: {},
