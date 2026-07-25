@@ -168,8 +168,8 @@ describe('war aftermath', () => {
             },
         });
 
-        expect(attackerNation.meta.tech).toBe(1001);
-        expect(defenderNation.meta.tech).toBe(1001);
+        expect(attackerNation.meta.tech).toBe(1000.6);
+        expect(defenderNation.meta.tech).toBe(1000.9);
         expect(outcome.diplomacyDeltas).toHaveLength(2);
         expect(attackerCity.meta.dead).toBe(60);
         expect(defenderCity.meta.dead).toBe(90);

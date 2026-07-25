@@ -27,9 +27,9 @@ const META_TURN_TIME = 'turnTime';
 const META_RECENT_WAR = 'recentWar';
 const META_DEX_PREFIX = 'dex';
 const META_RANK_PREFIX = 'rank_';
-const META_INTEL_EXP = 'intelExp';
-const META_STRENGTH_EXP = 'strengthExp';
-const META_LEADERSHIP_EXP = 'leadershipExp';
+const META_INTEL_EXP = 'intel_exp';
+const META_STRENGTH_EXP = 'strength_exp';
+const META_LEADERSHIP_EXP = 'leadership_exp';
 const MAX_EXP_LEVEL = 255;
 
 const RANK_WARNUM = `${META_RANK_PREFIX}warnum`;

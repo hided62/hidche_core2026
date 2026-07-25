@@ -71,6 +71,7 @@ export type TurnTestHarnessOptions = {
     };
     worldRef?: { current: InMemoryTurnWorld | null };
     onActionResolved?: Parameters<typeof createReservedTurnHandler>[0]['onActionResolved'];
+    commandRngFactory?: Parameters<typeof createReservedTurnHandler>[0]['commandRngFactory'];
     wrapGeneralTurnHandler?: (handler: GeneralTurnHandler) => GeneralTurnHandler;
     extraCalendarHandlers?: TurnCalendarHandler[];
     collectLogs?: boolean;
@@ -109,6 +110,7 @@ export const createTurnTestHarness = async (options: TurnTestHarnessOptions) => 
         unitSet: options.snapshot.unitSet,
         getWorld: () => worldRef.current,
         onActionResolved: options.onActionResolved,
+        commandRngFactory: options.commandRngFactory,
     });
 
     const generalTurnHandler = options.wrapGeneralTurnHandler ? options.wrapGeneralTurnHandler(handler) : handler;

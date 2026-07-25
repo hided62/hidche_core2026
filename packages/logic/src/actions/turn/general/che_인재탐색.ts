@@ -43,6 +43,7 @@ export interface TalentScoutWorldSummary {
     totalGeneralCount: number;
     totalNpcCount: number;
     averageStats?: StatBlock;
+    averageDex?: [number, number, number, number, number];
 }
 
 export interface TalentScoutResolveContext<
@@ -54,6 +55,7 @@ export interface TalentScoutResolveContext<
     generalPool?: TalentScoutCandidate[];
     cityPool?: City[];
     createGeneralId: () => number;
+    turnTermMinutes: number;
 }
 
 export interface TalentScoutEnvironment {
@@ -76,6 +78,13 @@ export interface TalentScoutEnvironment {
         rng: RandomGenerator,
         candidate: TalentScoutCandidate
     ) => StatBlock;
+    npcStatTotal?: number;
+    npcStatMin?: number;
+    npcStatMax?: number;
+    randomGeneralFirstNames?: string[];
+    randomGeneralMiddleNames?: string[];
+    randomGeneralLastNames?: string[];
+    availablePersonalities?: string[];
 }
 
 type StatExpKey = 'leadership_exp' | 'strength_exp' | 'intel_exp';
@@ -87,20 +96,6 @@ const DEFAULT_MIN_AGE = 20;
 const DEFAULT_MAX_AGE = 25;
 const DEFAULT_DEATH_MIN = 10;
 const DEFAULT_DEATH_MAX = 50;
-
-const resolveKillturnFromDeathYear = (
-    currentYear: number,
-    currentMonth: number,
-    deathYear: number,
-    rng: RandomGenerator
-): number => {
-    if (!Number.isFinite(deathYear) || deathYear <= 0) {
-        return 0;
-    }
-    const deathMonth = randomRangeInt(rng, 1, 12);
-    const diff = (deathYear - currentYear) * 12 + (deathMonth - currentMonth);
-    return Math.max(diff, 0);
-};
 
 const addMetaValue = (
     meta: Record<string, TriggerValue>,
@@ -158,7 +153,7 @@ const calcFoundProp = (maxGeneral: number, totalGeneralCount: number, totalNpcCo
     if (maxGeneral <= 0) {
         return 0;
     }
-    const current = totalGeneralCount + totalNpcCount / 2;
+    const current = Math.trunc(totalGeneralCount + totalNpcCount / 2);
     const remainSlot = Math.max(maxGeneral - current, 0);
     const main = Math.pow(remainSlot / maxGeneral, 6);
     const small = 1 / (totalNpcCount / 3 + 1);
@@ -170,6 +165,22 @@ const calcFoundProp = (maxGeneral: number, totalGeneralCount: number, totalNpcCo
 };
 
 const randomRangeInt = (rng: RandomGenerator, min: number, max: number): number => rng.nextInt(min, max + 1);
+
+type InclusiveRandomGenerator = RandomGenerator & {
+    nextIntInclusive?: (maxInclusive: number) => number;
+};
+
+const legacyChoiceIndex = (rng: RandomGenerator, length: number): number => {
+    if (length <= 0) {
+        throw new Error('Empty items');
+    }
+    const inclusive = rng as InclusiveRandomGenerator;
+    return inclusive.nextIntInclusive
+        ? inclusive.nextIntInclusive(length - 1)
+        : rng.nextInt(0, length);
+};
+
+const legacyChoice = <T>(rng: RandomGenerator, values: readonly T[]): T => values[legacyChoiceIndex(rng, values.length)]!;
 
 const resolveCandidate = (
     context: TalentScoutResolveContext,
@@ -183,7 +194,7 @@ const resolveCandidate = (
     if (pool.length === 0) {
         return null;
     }
-    const idx = rng.nextInt(0, pool.length);
+    const idx = legacyChoiceIndex(rng, pool.length);
     return pool[idx] ?? null;
 };
 
@@ -200,7 +211,7 @@ const resolveSpawnCityId = (
     }
     const pool = context.cityPool ?? [];
     if (pool.length > 0) {
-        const idx = rng.nextInt(0, pool.length);
+        const idx = legacyChoiceIndex(rng, pool.length);
         return pool[idx]!.id;
     }
     return context.general.cityId;
@@ -273,13 +284,6 @@ export class ActionResolver<
         const prop = this.command.calcFoundProp(context);
         const found = context.rng.nextBool(prop);
 
-        const statKey = pickStatExpKey(context.rng, general);
-        const metaAfter = found ? addMetaNumber(general.meta, statKey, 3) : addMetaNumber(general.meta, statKey, 1);
-        if (found) {
-            const active = typeof metaAfter.inherit_active_action === 'number' ? metaAfter.inherit_active_action : 0;
-            metaAfter.inherit_active_action = active + Math.max(Math.sqrt(1 / prop), 1);
-        }
-
         const nextGold = Math.max(0, general.gold - reqGold);
         const nextRice = Math.max(0, general.rice - reqRice);
         const expGain = found ? 200 : 100;
@@ -290,9 +294,10 @@ export class ActionResolver<
         general.rice = nextRice;
         general.experience += expGain;
         general.dedication += dedGain;
-        general.meta = metaAfter;
 
         if (!found) {
+            const statKey = pickStatExpKey(context.rng, general);
+            general.meta = addMetaNumber(general.meta, statKey, 1);
             context.addLog('인재를 찾을 수 없었습니다.', {
                 category: LogCategory.ACTION,
                 format: LogFormat.MONTH,
@@ -300,10 +305,6 @@ export class ActionResolver<
             tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
             return { effects: [] };
         }
-
-        const candidate = resolveCandidate(context, context.rng, this.env);
-        const newGeneralId = context.createGeneralId();
-        const resolvedCandidate: TalentScoutCandidate = candidate ?? { name: `NPC_${newGeneralId}` };
 
         const age = randomRangeInt(
             context.rng,
@@ -318,45 +319,108 @@ export class ActionResolver<
                 this.env.minDeathYears ?? DEFAULT_DEATH_MIN,
                 this.env.maxDeathYears ?? DEFAULT_DEATH_MAX
             );
-        const stats = resolveStats(context, context.rng, this.env, resolvedCandidate);
+        const candidate = resolveCandidate(context, context.rng, this.env);
+        const firstNames = this.env.randomGeneralFirstNames ?? ['가'];
+        const middleNames = this.env.randomGeneralMiddleNames ?? [''];
+        const lastNames = this.env.randomGeneralLastNames ?? ['가'];
+        const generatedName = `${legacyChoice(context.rng, firstNames)}${legacyChoice(
+            context.rng,
+            middleNames
+        )}${legacyChoice(context.rng, lastNames)}`;
+        const newGeneralId = context.createGeneralId();
+        const resolvedCandidate: TalentScoutCandidate = candidate ?? { name: generatedName };
+        const affinity = randomRangeInt(context.rng, 1, 150);
+        const npcStatTotal = this.env.npcStatTotal ?? 150;
+        const npcStatMin = this.env.npcStatMin ?? 10;
+        const npcStatMax = this.env.npcStatMax ?? 50;
+        const pickType = pickByWeight(context.rng, { 무: 6, 지: 6, 무지: 3 });
+        const mainStat = npcStatMax - randomRangeInt(context.rng, 0, npcStatMin);
+        const otherStat = npcStatMin + randomRangeInt(context.rng, 0, Math.trunc(npcStatMin / 2));
+        const subStat = npcStatTotal - mainStat - otherStat;
+        let generatedStats: StatBlock;
+        if (pickType === '무') {
+            generatedStats = { leadership: subStat, strength: mainStat, intelligence: otherStat };
+        } else if (pickType === '지') {
+            generatedStats = { leadership: subStat, strength: otherStat, intelligence: mainStat };
+        } else {
+            generatedStats = { leadership: otherStat, strength: subStat, intelligence: mainStat };
+        }
+        const stats = candidate?.stats
+            ? resolveStats(context, context.rng, this.env, resolvedCandidate)
+            : generatedStats;
+        const averageDex = context.worldSummary.averageDex ?? [0, 0, 0, 0, 0];
+        const dexTotal = averageDex[0] + averageDex[1] + averageDex[2] + averageDex[3];
+        let dex: [number, number, number, number, number];
+        if (pickType === '무') {
+            const distributions = [
+                [dexTotal * 5 / 8, dexTotal / 8, dexTotal / 8, dexTotal / 8],
+                [dexTotal / 8, dexTotal * 5 / 8, dexTotal / 8, dexTotal / 8],
+                [dexTotal / 8, dexTotal / 8, dexTotal * 5 / 8, dexTotal / 8],
+            ] as const;
+            const picked = legacyChoice(context.rng, distributions);
+            dex = [picked[0], picked[1], picked[2], picked[3], averageDex[4]];
+        } else if (pickType === '지') {
+            dex = [dexTotal / 8, dexTotal / 8, dexTotal / 8, dexTotal * 5 / 8, averageDex[4]];
+        } else {
+            dex = [dexTotal / 4, dexTotal / 4, dexTotal / 4, dexTotal / 4, averageDex[4]];
+        }
+        const personality =
+            resolvedCandidate.personality ??
+            legacyChoice(context.rng, this.env.availablePersonalities ?? ['che_안전']);
         const name = this.env.decorateName
             ? this.env.decorateName(resolvedCandidate.name, NPC_TYPE)
-            : resolvedCandidate.name;
+            : `ⓜ${resolvedCandidate.name}`;
+        const cityId = resolveSpawnCityId(context, context.rng, this.env);
+        const turnSecond = randomRangeInt(context.rng, 0, context.turnTermMinutes * 60 - 1);
+        const turnFraction = randomRangeInt(context.rng, 0, 999_999);
+        const killturn =
+            (deathYear - context.currentYear) * 12 +
+            randomRangeInt(context.rng, 0, 11) +
+            context.currentMonth -
+            1;
         const meta: GeneralMeta = {
-            killturn: resolveKillturnFromDeathYear(context.currentYear, context.currentMonth, deathYear, context.rng),
+            killturn,
             npcType: NPC_TYPE,
             crewTypeId: this.env.defaultCrewTypeId,
+            affinity,
+            birthYear,
+            deathYear,
+            dex1: dex[0],
+            dex2: dex[1],
+            dex3: dex[2],
+            dex4: dex[3],
+            dex5: dex[4],
+            turnSecond,
+            turnFraction,
         };
-        addMetaValue(meta, 'affinity', resolvedCandidate.affinity ?? null);
         addMetaValue(meta, 'picture', resolvedCandidate.picture ?? null);
-        addMetaValue(meta, 'birthYear', birthYear);
         addMetaValue(meta, 'text', resolvedCandidate.text ?? null);
 
         const newGeneral = buildRecruitmentGeneral<TriggerState>({
             id: newGeneralId,
             name,
             nationId: 0,
-            cityId: resolveSpawnCityId(context, context.rng, this.env),
+            cityId,
             stats,
             officerLevel: 0,
             age,
             npcState: NPC_TYPE,
             gold: this.env.defaultNpcGold,
             rice: this.env.defaultNpcRice,
-            experience: 0,
-            dedication: 0,
+            experience: age * 100,
+            dedication: age * 100,
             crewTypeId: this.env.defaultCrewTypeId,
             role: {
-                personality: resolvedCandidate.personality ?? null,
-                specialDomestic: this.env.defaultSpecialDomestic,
-                specialWar: this.env.defaultSpecialWar,
+                personality,
+                specialDomestic: null,
+                specialWar: null,
             },
             meta,
         });
 
         const nameObjJosa = JosaUtil.pick(name, '을');
         const nameSubjJosa = JosaUtil.pick(name, '이');
-        const recruitVerb = randomRangeInt(context.rng, 0, 1) === 0 ? '발견' : '등용';
+        const recruitVerb = '발견';
         const nameRa = JosaUtil.pick(name, '라');
         context.addLog(`<Y>${name}</>${nameRa}는 <C>인재</>를 ${recruitVerb}하였습니다!`, {
             category: LogCategory.ACTION,
@@ -373,6 +437,12 @@ export class ActionResolver<
         });
 
         tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
+
+        const statKey = pickStatExpKey(context.rng, general);
+        const metaAfter = addMetaNumber(general.meta, statKey, 3);
+        const active = typeof metaAfter.inherit_active_action === 'number' ? metaAfter.inherit_active_action : 0;
+        metaAfter.inherit_active_action = active + Math.max(Math.sqrt(1 / prop), 1);
+        general.meta = metaAfter;
 
         return {
             effects: [createGeneralAddEffect(newGeneral)],
@@ -418,8 +488,25 @@ export const actionContextBuilder: ActionContextBuilder = (base, options) => ({
     ...base,
     currentYear: options.world.currentYear,
     currentMonth: options.world.currentMonth,
-    worldSummary: buildWorldSummary(options.worldRef),
+    worldSummary: {
+        ...buildWorldSummary(options.worldRef),
+        averageDex: (() => {
+            const generals = options.worldRef?.listGenerals().filter((general) => general.npcState < 4) ?? [];
+            if (generals.length === 0) {
+                return [0, 0, 0, 0, 0] as [number, number, number, number, number];
+            }
+            return [1, 2, 3, 4, 5].map(
+                (armType) =>
+                    generals.reduce((sum, general) => {
+                        const value = general.meta[`dex${armType}`];
+                        return sum + (typeof value === 'number' ? value : 0);
+                    }, 0) / generals.length
+            ) as [number, number, number, number, number];
+        })(),
+    },
+    cityPool: options.worldRef?.listCities() ?? [],
     createGeneralId: options.createGeneralId,
+    turnTermMinutes: Math.max(1, Math.round(options.world.tickSeconds / 60)),
 });
 
 export const commandSpec: GeneralTurnCommandSpec = {
@@ -427,5 +514,6 @@ export const commandSpec: GeneralTurnCommandSpec = {
     category: '인사',
     reqArg: false,
 
-    createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env.generalActionModules ?? [], env),
+    createDefinition: (env: TurnCommandEnv) =>
+        new ActionDefinition(env.generalActionModules ?? [], env),
 };

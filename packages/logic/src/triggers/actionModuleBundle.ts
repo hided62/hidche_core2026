@@ -26,17 +26,19 @@ import {
     TraitWarActionRouter,
     WAR_TRAIT_KEYS,
 } from './special/index.js';
+import type { NationTraitModule } from './special/nation/index.js';
 
 export interface ActionModuleBundle<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     general: GeneralActionModule<TriggerState>[];
     war: WarActionModule<TriggerState>[];
     itemModules: ItemModule<TriggerState>[];
+    nationTraitModules: NationTraitModule[];
 }
 
 // General::getActionList와 같은 소유권 순서로 실제 턴과 시뮬레이터의 모듈을 조립한다.
-export const loadActionModuleBundle = async <
-    TriggerState extends GeneralTriggerState = GeneralTriggerState,
->(unitSet?: UnitSetDefinition): Promise<ActionModuleBundle<TriggerState>> => {
+export const loadActionModuleBundle = async <TriggerState extends GeneralTriggerState = GeneralTriggerState>(
+    unitSet?: UnitSetDefinition
+): Promise<ActionModuleBundle<TriggerState>> => {
     const [domestic, war, personality, nation, itemModules] = await Promise.all([
         loadDomesticTraitModules([...DOMESTIC_TRAIT_KEYS]),
         loadWarTraitModules([...WAR_TRAIT_KEYS]),
@@ -74,5 +76,6 @@ export const loadActionModuleBundle = async <
             ...items.war,
         ],
         itemModules,
+        nationTraitModules: nation,
     };
 };

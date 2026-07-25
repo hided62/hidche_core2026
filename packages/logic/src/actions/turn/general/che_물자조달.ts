@@ -49,7 +49,17 @@ export class ActionResolver<
         const resKey = picked === 'gold' ? 'gold' : 'rice';
 
         // 2. Base Score
-        let score = general.stats.leadership + general.stats.strength + general.stats.intelligence;
+        const injuryMultiplier = (100 - general.injury) / 100;
+        const rawLeadership = general.stats.leadership * injuryMultiplier;
+        const rawStrength = general.stats.strength * injuryMultiplier;
+        const rawIntelligence = general.stats.intelligence * injuryMultiplier;
+        const maxStat = 255;
+        const legacyStat = (stat: 'leadership' | 'strength' | 'intelligence', value: number): number =>
+            Math.trunc(Math.max(0, Math.min(maxStat, this.pipeline.onCalcStat(context, stat, value))));
+        let score =
+            legacyStat('leadership', rawLeadership) +
+            legacyStat('strength', rawStrength + Math.round(rawIntelligence / 4)) +
+            legacyStat('intelligence', rawIntelligence + Math.round(rawStrength / 4));
         const expLevel = typeof general.meta.explevel === 'number' ? general.meta.explevel : 0;
         score *= 1 + expLevel / 500;
         score *= context.rng.nextFloat1() * 0.4 + 0.8;

@@ -140,7 +140,7 @@ export class ActionDefinition<
         setMetaNumber(general.meta, dexKey, nextDex);
 
         const expGain = general.crew / 400;
-        general.experience += expGain;
+        general.experience = Math.round(general.experience + expGain);
 
         const statKey = pickByWeight(context.rng, {
             leadership_exp: general.stats.leadership,

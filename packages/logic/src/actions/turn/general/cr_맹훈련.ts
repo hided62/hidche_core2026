@@ -15,6 +15,7 @@ import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js'
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
+import { GeneralActionPipeline } from '@sammo-ts/logic/triggers/general-action.js';
 
 const ACTION_NAME = '맹훈련';
 const ACTION_KEY = 'cr_맹훈련';
@@ -36,8 +37,11 @@ export class ActionDefinition<
 > implements GeneralActionDefinition<TriggerState, FierceTrainingArgs> {
     public readonly key = ACTION_KEY;
     public readonly name = ACTION_NAME;
+    private readonly pipeline: GeneralActionPipeline<TriggerState>;
 
-    constructor(private readonly env: TurnCommandEnv) {}
+    constructor(private readonly env: TurnCommandEnv) {
+        this.pipeline = new GeneralActionPipeline(env.generalActionModules ?? []);
+    }
 
     parseArgs(_raw: unknown): FierceTrainingArgs | null {
         return {};
@@ -67,7 +71,8 @@ export class ActionDefinition<
         const maxTrain = this.env.maxTrainByCommand > 0 ? this.env.maxTrainByCommand : 100;
         const maxAtmos = this.env.maxAtmosByCommand > 0 ? this.env.maxAtmosByCommand : 100;
 
-        const score = Math.round((general.stats.leadership * 100 * trainDelta * 2) / (Math.max(general.crew, 1) * 3));
+        const leadership = this.pipeline.onCalcStat(context, 'leadership', general.stats.leadership);
+        const score = Math.round((leadership * 100 * trainDelta * 2) / (Math.max(general.crew, 1) * 3));
         const scoreText = score.toLocaleString('en-US');
 
         context.addLog(`훈련, 사기치가 <C>${scoreText}</> 상승했습니다.`, {
@@ -81,11 +86,13 @@ export class ActionDefinition<
         const nextTrain = clamp(general.train + score, 0, maxTrain);
         const nextAtmos = clamp(general.atmos + score, 0, maxAtmos);
         const leadershipExp = typeof general.meta.leadership_exp === 'number' ? general.meta.leadership_exp : 0;
+        const crewType = this.env.unitSet?.crewTypes?.find((entry) => entry.id === general.crewTypeId);
+        const dexKey = crewType ? `dex${crewType.armType}` : null;
+        const currentDex = dexKey && typeof general.meta[dexKey] === 'number' ? general.meta[dexKey] : 0;
 
         return {
             effects: [
                 createGeneralPatchEffect<TriggerState>({
-                    rice: Math.max(0, general.rice - 500),
                     train: nextTrain,
                     atmos: nextAtmos,
                     experience: general.experience + 150,
@@ -93,6 +100,7 @@ export class ActionDefinition<
                     meta: {
                         ...general.meta,
                         leadership_exp: leadershipExp + 1,
+                        ...(dexKey ? { [dexKey]: currentDex + score * 2 } : {}),
                     },
                 }),
             ],

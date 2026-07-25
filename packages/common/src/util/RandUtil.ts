@@ -26,6 +26,17 @@ export class RandUtil {
         return minInclusive + this.rng.nextInt(span - 1);
     }
 
+    /**
+     * Draw from the wrapped RNG's inclusive integer domain directly.
+     *
+     * Unlike nextInt(min, max), this deliberately consumes an RNG call when
+     * maxInclusive is zero. Legacy RandUtil::choice() has that observable
+     * behavior for a one-element collection.
+     */
+    public nextIntInclusive(maxInclusive: number): number {
+        return this.rng.nextInt(maxInclusive);
+    }
+
     public nextBit(): boolean {
         const bits = this.rng.nextBits(1);
         return bits[0]! != 0;
