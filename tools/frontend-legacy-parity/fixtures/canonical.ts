@@ -1,0 +1,123 @@
+export const canonicalFrontendFixture = {
+    gateway: {
+        user: {
+            id: 'visual-user-1',
+            username: 'visual-user',
+            displayName: '시각검증',
+            roles: [],
+        },
+        sessionToken: 'session_visual_fixture',
+        profile: {
+            profileName: 'che',
+            profile: 'che',
+            apiPort: 15003,
+            status: 'RUNNING',
+            korName: '체',
+            color: '#00bc8c',
+            scenario: '가상모드22',
+        },
+    },
+    game: {
+        session: {
+            profile: 'che',
+            gameToken: 'ga_frontend_legacy_fixture',
+            general: {
+                id: 1,
+                name: '유비',
+                troopId: 0,
+            },
+        },
+        lobby: {
+            year: 197,
+            month: 7,
+            userCnt: 17,
+            npcCnt: 31,
+            nationCnt: 5,
+            maxUserCnt: 50,
+            turnTerm: 60,
+            fictionMode: '가상',
+            otherTextInfo: '표준',
+            starttime: '0190-01-01T00:00:00.000Z',
+            myGeneral: null,
+        },
+        mapLayout: {
+            mapName: 'che',
+            cityList: [
+                { id: 1, name: '낙양', level: 7, region: 1, x: 350, y: 245, path: [2] },
+                { id: 2, name: '장안', level: 7, region: 1, x: 260, y: 240, path: [1] },
+                { id: 3, name: '업', level: 6, region: 2, x: 390, y: 160, path: [1] },
+            ],
+            regionMap: { 1: '사예', 2: '기주' },
+            levelMap: { 6: '주', 7: '수도' },
+        },
+        map: {
+            year: 197,
+            month: 7,
+            startYear: 190,
+            cityList: [
+                [1, 7, 0, 1, 1, 1],
+                [2, 7, 0, 2, 1, 1],
+                [3, 6, 0, 1, 2, 1],
+            ],
+            nationList: [
+                [1, '한', '#d32f2f', 1],
+                [2, '진', '#1976d2', 2],
+            ],
+        },
+        hallOptions: [
+            {
+                season: 1,
+                scenarios: [{ id: 22, name: '【가상모드22】 찐유저무쌍!', count: 1 }],
+            },
+        ],
+        hall: {
+            sections: [
+                {
+                    title: '명 성',
+                    valueType: 'int',
+                    entries: [
+                        {
+                            generalId: 1,
+                            name: '유비',
+                            ownerName: '시각검증',
+                            nationName: '촉',
+                            bgColor: '#006400',
+                            fgColor: '#ffffff',
+                            picture: 'default.jpg',
+                            imageServer: 0,
+                            value: 12000,
+                            printValue: '12,000',
+                            serverName: '체',
+                            serverIdx: 1,
+                            scenarioName: '가상모드22',
+                            startTime: '2026-01-01',
+                            unitedTime: '2026-02-01',
+                        },
+                        {
+                            generalId: 2,
+                            name: '조조',
+                            ownerName: '검증계정',
+                            nationName: '위',
+                            bgColor: '#8b0000',
+                            fgColor: '#ffffff',
+                            picture: 'default.jpg',
+                            imageServer: 0,
+                            value: 11000,
+                            printValue: '11,000',
+                            serverName: '체',
+                            serverIdx: 1,
+                            scenarioName: '가상모드22',
+                            startTime: '2026-01-01',
+                            unitedTime: '2026-02-01',
+                        },
+                    ],
+                },
+                {
+                    title: '계 급',
+                    valueType: 'int',
+                    entries: [],
+                },
+            ],
+        },
+    },
+} as const;
