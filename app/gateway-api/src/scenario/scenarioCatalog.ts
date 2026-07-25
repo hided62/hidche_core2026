@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { loadScenarioDefinitionById, resolveScenarioDefaultsPath } from '@sammo-ts/game-engine';
 import { parseScenarioDefaults, parseScenarioDefinition, type ScenarioDefaults } from '@sammo-ts/logic';
+import { resolveWorkspaceRoot } from '../orchestrator/workspaceRoot.js';
 
 export interface ScenarioNationPreview {
     id: number;
@@ -34,7 +35,7 @@ const SCENARIO_ROOT = path.join('resources', 'scenario');
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
+const REPO_ROOT = resolveWorkspaceRoot(process.env.GATEWAY_WORKSPACE_ROOT ?? __dirname);
 
 const previewCache = new Map<string, { loadedAt: number; data: ScenarioPreview[] }>();
 const defaultsCache = new Map<string, ScenarioDefaults>();
