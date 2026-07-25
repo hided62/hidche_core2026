@@ -273,6 +273,9 @@ const parseInstallOptions = (
 const buildProcessName = (profileName: string, role: 'api' | 'daemon'): string =>
     `sammo:${profileName}:${role === 'api' ? 'game-api' : 'turn-daemon'}`;
 
+const isMissingProcessError = (error: unknown): boolean =>
+    error instanceof Error && /process or namespace not found/i.test(error.message);
+
 export const buildProcessDefinitions = (
     profile: GatewayProfileRecord,
     config: GatewayProcessConfig
@@ -980,7 +983,9 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             try {
                 await this.processManager.delete(name);
             } catch (error) {
-                failures.push(`${name}: ${error instanceof Error ? error.message : String(error)}`);
+                if (!isMissingProcessError(error)) {
+                    failures.push(`${name}: ${error instanceof Error ? error.message : String(error)}`);
+                }
             }
         }
         if (failures.length > 0) {

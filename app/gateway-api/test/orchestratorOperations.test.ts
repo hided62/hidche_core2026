@@ -40,7 +40,8 @@ const createHarness = (
     operation: GatewayOperationRecord,
     failStart = false,
     failStop = false,
-    processesPresent = true
+    processesPresent = true,
+    missingOnDelete = false
 ) => {
     let nextOperation: GatewayOperationRecord | null = operation;
     const statuses: string[] = [];
@@ -103,6 +104,9 @@ const createHarness = (
         },
         delete: async (name) => {
             deleted.push(name);
+            if (missingOnDelete) {
+                throw new Error('process or namespace not found');
+            }
             if (failStop) {
                 throw new Error('pm2 delete failed');
             }
@@ -165,6 +169,15 @@ describe('GatewayOrchestrator first-class operations', () => {
         expect(harness.statuses).toEqual(['STOPPED']);
         expect(harness.stopped).toEqual([]);
         expect(harness.deleted).toEqual([]);
+        expect(harness.completions).toEqual(['SUCCEEDED']);
+    });
+
+    it('treats a process removed concurrently as a successful stop', async () => {
+        const harness = createHarness(buildOperation('STOP'), false, false, true, true);
+
+        await harness.orchestrator.runOperationsNow();
+
+        expect(harness.deleted).toEqual(['sammo:che:2:game-api', 'sammo:che:2:turn-daemon']);
         expect(harness.completions).toEqual(['SUCCEEDED']);
     });
 
