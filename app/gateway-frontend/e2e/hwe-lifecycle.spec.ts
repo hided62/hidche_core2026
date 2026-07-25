@@ -23,7 +23,7 @@ const login = async (page: Page, username: string, password: string): Promise<vo
     await expect(page).toHaveURL(/\/gateway\/lobby$/);
 };
 
-const hweRow = (page: Page) => page.locator('tbody tr').filter({ hasText: '훼섭' });
+const hweRow = (page: Page) => page.locator('tbody tr').filter({ hasText: /^hwe섭/ });
 
 const enterHwe = async (page: Page): Promise<void> => {
     const row = hweRow(page);
