@@ -204,6 +204,7 @@ const mapGeneralRow = (row: TurnEngineGeneralRow): TurnGeneral => {
         bornYear: row.bornYear,
         deadYear: row.deadYear,
         affinity: row.affinity,
+        picture: row.picture,
         triggerState: {
             flags: {},
             counters: {},

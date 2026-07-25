@@ -51,6 +51,8 @@ import { createUpdateNationLevelHandler } from './monthlyNationLevelAction.js';
 import { createProcessSemiAnnualHandler } from './monthlySemiAnnualAction.js';
 import { createProcessWarIncomeHandler } from './monthlyWarIncomeAction.js';
 import { createCreateAdminNpcHandler } from './monthlyCreateAdminNpcAction.js';
+import { createCreateManyNpcHandler } from './monthlyCreateManyNpcAction.js';
+import { buildCommandEnv } from './reservedTurnCommands.js';
 import { DatabaseTurnDaemonLease, TurnDaemonLeaseUnavailableError } from '../lifecycle/databaseTurnDaemonLease.js';
 
 export interface TurnDaemonRuntimeOptions {
@@ -153,8 +155,9 @@ const createTurnDaemonRuntimeWithLease = async (
                 Array.isArray(event.action) &&
                 event.action.some((action) => Array.isArray(action) && action[0] === name)
         );
+    const eventRequiresReservedTurns = hasEventAction('UpdateNationLevel') || hasEventAction('CreateManyNPC');
     const reservedTurnStoreHandle =
-        options.generalTurnHandler && !hasEventAction('UpdateNationLevel')
+        options.generalTurnHandler && !eventRequiresReservedTurns
             ? null
             : await createReservedTurnStore({
                   databaseUrl: options.databaseUrl,
@@ -171,6 +174,7 @@ const createTurnDaemonRuntimeWithLease = async (
     const nationTraits = await loadNationTraitModules([...NATION_TRAIT_KEYS], new NationTraitLoader());
     const nationTraitMap = new Map(nationTraits.map((module) => [module.key, module]));
     const monthlyActionModules = await loadActionModuleBundle(snapshot.unitSet);
+    const monthlyCommandEnv = buildCommandEnv(snapshot.scenarioConfig, snapshot.unitSet);
     const unification = options.calendarHandler
         ? null
         : createUnificationHandler({
@@ -220,6 +224,14 @@ const createTurnDaemonRuntimeWithLease = async (
     );
     eventActions.set('CreateAdminNPC', createCreateAdminNpcHandler());
     if (reservedTurnStoreHandle) {
+        eventActions.set(
+            'CreateManyNPC',
+            createCreateManyNpcHandler({
+                getWorld: () => worldRef,
+                reservedTurns: reservedTurnStoreHandle.store,
+                env: monthlyCommandEnv,
+            })
+        );
         eventActions.set(
             'UpdateNationLevel',
             createUpdateNationLevelHandler({
