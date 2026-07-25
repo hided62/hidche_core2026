@@ -83,7 +83,8 @@ export class ActionDefinition<
                 ? [general.role.specialDomestic!]
                 : nextPreviousTypes;
         general.role.specialDomestic = null;
-        setMetaNumber(general.meta, 'specAge', general.age + 1);
+        delete general.meta.specAge;
+        setMetaNumber(general.meta, 'specage', general.age + 1);
         context.addLog('새로운 내정 특기를 가질 준비가 되었습니다.');
         return { effects: [] };
     }

@@ -161,6 +161,9 @@ const resolveAge = (startYear: number | null, birthYear: number): number => {
     return Math.max(startYear - birthYear, 0);
 };
 
+const buildSpecialityAge = (retirementYear: number, age: number, divisor: number): number =>
+    Math.max(Math.round((retirementYear - age) / divisor), 3) + age;
+
 const ADULT_GENERAL_AGE = 14;
 
 type GeneralBootstrapDisposition = 'active' | 'delayed' | 'expired';
@@ -294,6 +297,9 @@ const buildGeneralSeeds = (
 
     const defaultGold = options?.defaultGeneralGold ?? DEFAULT_GENERAL_GOLD;
     const defaultRice = options?.defaultGeneralRice ?? DEFAULT_GENERAL_RICE;
+    const rawRetirementYear = scenario.config.const.retirementYear;
+    const retirementYear =
+        typeof rawRetirementYear === 'number' && Number.isFinite(rawRetirementYear) ? rawRetirementYear : 80;
 
     for (const row of rows) {
         const id = nextId;
@@ -313,6 +319,8 @@ const buildGeneralSeeds = (
 
         const seedMeta: Record<string, unknown> = {
             source: contextLabel,
+            specage: buildSpecialityAge(retirementYear, age, 12),
+            specage2: buildSpecialityAge(retirementYear, age, 6),
         };
         if (row.affinity !== null) {
             seedMeta.affinity = row.affinity;
@@ -374,6 +382,8 @@ const buildGeneralSeeds = (
             killturn: resolveKillturnFromDeathYear(scenario.startYear, 1, deathYear, DEFAULT_GENERAL_KILLTURN),
             npcType,
             crewTypeId: defaultCrewTypeId,
+            specage: buildSpecialityAge(retirementYear, age, 12),
+            specage2: buildSpecialityAge(retirementYear, age, 6),
         };
         addTriggerMeta(generalMeta, 'affinity', row.affinity);
         addTriggerMeta(generalMeta, 'personality', row.personality ?? undefined);

@@ -82,7 +82,8 @@ export class ActionDefinition<
         general.meta.prev_types_special2 =
             nextPreviousTypes.length === WAR_TRAIT_KEYS.length ? [general.role.specialWar!] : nextPreviousTypes;
         general.role.specialWar = null;
-        setMetaNumber(general.meta, 'specAge2', general.age + 1);
+        delete general.meta.specAge2;
+        setMetaNumber(general.meta, 'specage2', general.age + 1);
         const specialName = ACTION_NAME.replace(' 초기화', '');
         context.addLog(`새로운 ${specialName}를 가질 준비가 되었습니다.`);
         tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });

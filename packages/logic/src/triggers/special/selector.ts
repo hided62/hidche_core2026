@@ -15,7 +15,17 @@ export class TraitSelector {
         const chiefMin = scenarioStat.chiefMin;
 
         let myCond = 0;
-        if (leadership < chiefMin || strength < chiefMin || intelligence < chiefMin) {
+        if (leadership > chiefMin) {
+            myCond |= TraitRequirement.STAT_LEADERSHIP;
+        }
+        if (strength >= intelligence * 0.95 && strength > chiefMin) {
+            myCond |= TraitRequirement.STAT_STRENGTH;
+        }
+        if (intelligence >= strength * 0.95 && intelligence > chiefMin) {
+            myCond |= TraitRequirement.STAT_INTEL;
+        }
+
+        if (myCond !== 0) {
             if (leadership < chiefMin) myCond |= TraitRequirement.STAT_NOT_LEADERSHIP;
             if (strength < chiefMin) myCond |= TraitRequirement.STAT_NOT_STRENGTH;
             if (intelligence < chiefMin) myCond |= TraitRequirement.STAT_NOT_INTEL;
@@ -48,7 +58,7 @@ export class TraitSelector {
 
         const dexSum = Object.values(dexMap).reduce((a, b) => a + b, 0);
         // 루트(합)/4 확률 기반 로직 (Legacy: sqrt(dexSum)/4)
-        const dexProb = Math.sqrt(dexSum) / 4;
+        const dexBase = Math.round(Math.sqrt(dexSum) / 4);
 
         // Legacy: 80% 확률로 0 반환 (이전 연도에 이미 얻었거나 기타 이유로 제한하는 인지)
         // 실제로는 pickSpecialWar에서 이 메서드 호출 전후에 별도 확률을 둘 수도 있으나,
@@ -57,12 +67,12 @@ export class TraitSelector {
             return 0;
         }
 
-        if (rng.nextRangeInt(0, 99) < dexProb) {
+        if (rng.nextRangeInt(0, 99) < dexBase) {
             return 0;
         }
 
         if (dexSum === 0) {
-            return Number(rng.choice(Object.keys(dexMap)));
+            return rng.choice(Object.values(dexMap));
         }
 
         const maxDex = Math.max(...Object.values(dexMap));
@@ -76,42 +86,59 @@ export class TraitSelector {
     /**
      * 사용 가능한 특기 목록에서 하나를 무작위로 선택 (pickTrait)
      */
-    static pickTrait(rng: RandUtil, myCond: number, traits: TraitModule[], prevTraitKeys: string[]): string | null {
-        const normPool: Record<string, number> = {};
-        const percentPool: { key: string; weight: number }[] = [];
+    private static pickTraitOnce(
+        rng: RandUtil,
+        myCond: number,
+        traits: TraitModule[],
+        prevTraitKeys: string[],
+        preferDexterity: boolean
+    ): string | null {
+        const dexterityPool: Array<[string, number]> = [];
+        const normPool: Array<[string, number]> = [];
+        const percentPool: Array<[string | null, number]> = [];
 
         for (const trait of traits) {
             if (!trait.selection) continue;
             if (prevTraitKeys.includes(trait.key)) continue;
 
-            let valid = false;
+            let matchedRequirement: number | null = null;
             for (const req of trait.selection.requirements) {
                 if (req === (req & myCond)) {
-                    valid = true;
+                    matchedRequirement = req;
                     break;
                 }
             }
 
-            if (!valid) continue;
+            if (matchedRequirement === null) continue;
 
-            if (trait.selection.weightType === TraitWeightType.PERCENT) {
-                percentPool.push({ key: trait.key, weight: trait.selection.weight });
+            if (preferDexterity && (matchedRequirement & TraitRequirement.REQ_DEXTERITY) !== 0) {
+                dexterityPool.push([trait.key, trait.selection.weight]);
+            } else if (trait.selection.weightType === TraitWeightType.PERCENT) {
+                percentPool.push([trait.key, trait.selection.weight]);
             } else {
-                normPool[trait.key] = trait.selection.weight;
+                normPool.push([trait.key, trait.selection.weight]);
             }
         }
 
-        // PERCENT 타입 특기 먼저 우선권 확인
-        for (const item of percentPool) {
-            if (rng.nextBool(item.weight / 100)) {
-                return item.key;
+        if (dexterityPool.length > 0) {
+            return rng.choiceUsingWeightPair(dexterityPool);
+        }
+
+        if (percentPool.length > 0) {
+            if (normPool.length > 0) {
+                const totalPercent = percentPool.reduce((sum, [, weight]) => sum + weight, 0);
+                percentPool.push([null, Math.max(0, 100 - totalPercent)]);
+            }
+            const selected = rng.choiceUsingWeightPair(percentPool);
+            if (selected !== null) {
+                return selected;
             }
         }
 
-        // NORM 타입 특기들 중 가중치 기반 선택
-        if (Object.keys(normPool).length === 0) return null;
-
-        return String(rng.choiceUsingWeight(normPool));
+        if (normPool.length > 0) {
+            return rng.choiceUsingWeightPair(normPool);
+        }
+        return null;
     }
 
     /**
@@ -125,13 +152,18 @@ export class TraitSelector {
         prevTraitKeys: string[],
         scenarioStat: ScenarioStatBlock
     ): string | null {
-        let myCond = this.calcCondGeneric(stats, scenarioStat);
-        const dexCond = this.calcCondDexterity(rng, dex);
-        if (dexCond) {
-            myCond |= dexCond | TraitRequirement.REQ_DEXTERITY;
+        const myCond =
+            this.calcCondGeneric(stats, scenarioStat) |
+            this.calcCondDexterity(rng, dex) |
+            TraitRequirement.REQ_DEXTERITY;
+        const selected = this.pickTraitOnce(rng, myCond, traits, prevTraitKeys, true);
+        if (selected !== null) {
+            return selected;
         }
-
-        return this.pickTrait(rng, myCond, traits, prevTraitKeys);
+        if (prevTraitKeys.length > 0) {
+            return this.pickWarTrait(rng, stats, dex, traits, [], scenarioStat);
+        }
+        return null;
     }
 
     /**
@@ -145,6 +177,13 @@ export class TraitSelector {
         scenarioStat: ScenarioStatBlock
     ): string | null {
         const myCond = this.calcCondGeneric(stats, scenarioStat);
-        return this.pickTrait(rng, myCond, traits, prevTraitKeys);
+        const selected = this.pickTraitOnce(rng, myCond, traits, prevTraitKeys, false);
+        if (selected !== null) {
+            return selected;
+        }
+        if (prevTraitKeys.length > 0) {
+            return this.pickDomesticTrait(rng, stats, traits, [], scenarioStat);
+        }
+        return null;
     }
 }
