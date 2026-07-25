@@ -25,6 +25,14 @@
 ## 개발 도구 및 스크립트
 
 - 패키지 매니저: pnpm 워크스페이스
+- 현재 개발 호스트는 `fnm`으로 Node.js와 pnpm을 관리한다. 대화형 zsh가
+  아닌 환경에서 `pnpm`을 찾지 못하면 아래 형태로 실행한다.
+
+    ```sh
+    /home/letrhee/.local/share/fnm/fnm exec --using=default -- pnpm <command>
+    ```
+
+  2026-07-25 확인 기준 default는 Node.js `v24.18.0`, pnpm은 `11.17.0`이다.
 - 초기 개발기간 동안 npm 패키지는 가능한 최신버전을 유지
 - 공통 스크립트
     - `pnpm install`

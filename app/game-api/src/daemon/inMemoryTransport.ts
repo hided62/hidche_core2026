@@ -27,7 +27,7 @@ export class InMemoryTurnDaemonTransport implements TurnDaemonTransport {
 
     // 테스트용: 메모리 큐에 명령을 저장하고 requestId를 반환한다.
     async sendCommand(command: TurnDaemonCommand): Promise<string> {
-        const requestId = command.type === 'getStatus' && command.requestId ? command.requestId : randomUUID();
+        const requestId = command.requestId ?? randomUUID();
         this.commands.push({
             requestId,
             sentAt: new Date().toISOString(),

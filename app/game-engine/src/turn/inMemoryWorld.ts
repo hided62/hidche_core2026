@@ -68,6 +68,23 @@ export interface InMemoryTurnWorldOptions {
     calendarHandler?: TurnCalendarHandler;
 }
 
+export interface TurnWorldChanges {
+    generals: TurnGeneral[];
+    cities: City[];
+    nations: Nation[];
+    troops: Troop[];
+    deletedTroops: number[];
+    deletedGenerals: number[];
+    deletedNations: number[];
+    deletedNationSnapshots: Array<{ nation: Nation; generalIds: number[]; removedAt: Date }>;
+    diplomacy: TurnDiplomacy[];
+    logs: LogEntryDraft[];
+    createdGenerals: TurnGeneral[];
+    createdNations: Nation[];
+    createdTroops: Troop[];
+    createdDiplomacy: TurnDiplomacy[];
+}
+
 const compareTurnOrder = (left: TurnGeneral, right: TurnGeneral): number => {
     const timeDiff = left.turnTime.getTime() - right.turnTime.getTime();
     if (timeDiff !== 0) {
@@ -694,22 +711,7 @@ export class InMemoryTurnWorld {
         }
     }
 
-    consumeDirtyState(): {
-        generals: TurnGeneral[];
-        cities: City[];
-        nations: Nation[];
-        troops: Troop[];
-        deletedTroops: number[];
-        deletedGenerals: number[];
-        deletedNations: number[];
-        deletedNationSnapshots: Array<{ nation: Nation; generalIds: number[]; removedAt: Date }>;
-        diplomacy: TurnDiplomacy[];
-        logs: LogEntryDraft[];
-        createdGenerals: TurnGeneral[];
-        createdNations: Nation[];
-        createdTroops: Troop[];
-        createdDiplomacy: TurnDiplomacy[];
-    } {
+    peekDirtyState(): TurnWorldChanges {
         const generals = Array.from(this.dirtyGeneralIds)
             .map((id) => this.generals.get(id))
             .filter((general): general is TurnGeneral => Boolean(general));
@@ -740,21 +742,8 @@ export class InMemoryTurnWorld {
         const deletedTroops = Array.from(this.deletedTroopIds);
         const deletedGenerals = Array.from(this.deletedGeneralIds);
         const deletedNations = Array.from(this.deletedNationIds);
-        const deletedNationSnapshots = this.deletedNationSnapshots.splice(0, this.deletedNationSnapshots.length);
-        const logs = this.logs.splice(0, this.logs.length);
-
-        this.dirtyGeneralIds.clear();
-        this.dirtyCityIds.clear();
-        this.dirtyNationIds.clear();
-        this.dirtyTroopIds.clear();
-        this.dirtyDiplomacyKeys.clear();
-        this.createdGeneralIds.clear();
-        this.createdNationIds.clear();
-        this.createdTroopIds.clear();
-        this.createdDiplomacyKeys.clear();
-        this.deletedTroopIds.clear();
-        this.deletedGeneralIds.clear();
-        this.deletedNationIds.clear();
+        const deletedNationSnapshots = this.deletedNationSnapshots.slice();
+        const logs = this.logs.slice();
 
         return {
             generals,
@@ -772,6 +761,33 @@ export class InMemoryTurnWorld {
             createdTroops,
             createdDiplomacy,
         };
+    }
+
+    acknowledgeDirtyState(changes: TurnWorldChanges): void {
+        for (const general of changes.generals) this.dirtyGeneralIds.delete(general.id);
+        for (const city of changes.cities) this.dirtyCityIds.delete(city.id);
+        for (const nation of changes.nations) this.dirtyNationIds.delete(nation.id);
+        for (const troop of changes.troops) this.dirtyTroopIds.delete(troop.id);
+        for (const entry of changes.diplomacy) {
+            this.dirtyDiplomacyKeys.delete(buildDiplomacyKey(entry.fromNationId, entry.toNationId));
+        }
+        for (const general of changes.createdGenerals) this.createdGeneralIds.delete(general.id);
+        for (const nation of changes.createdNations) this.createdNationIds.delete(nation.id);
+        for (const troop of changes.createdTroops) this.createdTroopIds.delete(troop.id);
+        for (const entry of changes.createdDiplomacy) {
+            this.createdDiplomacyKeys.delete(buildDiplomacyKey(entry.fromNationId, entry.toNationId));
+        }
+        for (const id of changes.deletedTroops) this.deletedTroopIds.delete(id);
+        for (const id of changes.deletedGenerals) this.deletedGeneralIds.delete(id);
+        for (const id of changes.deletedNations) this.deletedNationIds.delete(id);
+        this.deletedNationSnapshots.splice(0, changes.deletedNationSnapshots.length);
+        this.logs.splice(0, changes.logs.length);
+    }
+
+    consumeDirtyState(): TurnWorldChanges {
+        const changes = this.peekDirtyState();
+        this.acknowledgeDirtyState(changes);
+        return changes;
     }
 
     private removeCollapsedNations(): void {

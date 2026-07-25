@@ -1,10 +1,10 @@
 import type {
-    TurnDaemonHooks,
     TurnDaemonCommandHandler,
     TurnDaemonCommand,
+    TurnDaemonCommandExecutionContext,
     TurnDaemonCommandResult,
-    TurnRunResult,
 } from '../lifecycle/types.js';
+import type { GamePrisma } from '@sammo-ts/infra';
 import { asRecord, JosaUtil, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 import {
     LogCategory,
@@ -22,25 +22,6 @@ import {
 } from '@sammo-ts/logic';
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
 import type { TurnGeneral } from './types.js';
-
-const buildFlushResult = (world: InMemoryTurnWorld): TurnRunResult => {
-    const state = world.getState();
-    return {
-        lastTurnTime: state.lastTurnTime.toISOString(),
-        processedGenerals: 0,
-        processedTurns: 0,
-        durationMs: 0,
-        partial: false,
-        checkpoint: world.getCheckpoint(),
-    };
-};
-
-const flushWorld = async (world: InMemoryTurnWorld, hooks?: TurnDaemonHooks): Promise<void> => {
-    if (!hooks?.flushChanges) {
-        return;
-    }
-    await hooks.flushChanges(buildFlushResult(world));
-};
 
 let itemRegistryPromise: Promise<Map<string, ItemModule>> | null = null;
 
@@ -67,29 +48,35 @@ const readMetaNumber = (meta: Record<string, unknown>, key: string, fallback: nu
 
 interface CommandHandlerContext {
     world: InMemoryTurnWorld;
-    hooks?: TurnDaemonHooks;
+    commandDb?: GamePrisma.TransactionClient;
     auctionFinalizer?: AuctionFinalizer;
     auctionBidder?: AuctionBidder;
     tournamentRewardFinalizer?: TournamentRewardFinalizer;
 }
 
 interface AuctionFinalizer {
-    finalize(auctionId: number): Promise<TurnDaemonCommandResult>;
+    finalize(auctionId: number, db?: GamePrisma.TransactionClient): Promise<TurnDaemonCommandResult>;
 }
 
 interface AuctionBidder {
-    bid(command: Extract<TurnDaemonCommand, { type: 'auctionBid' }>): Promise<TurnDaemonCommandResult>;
+    bid(
+        command: Extract<TurnDaemonCommand, { type: 'auctionBid' }>,
+        db?: GamePrisma.TransactionClient
+    ): Promise<TurnDaemonCommandResult>;
 }
 
 interface TournamentRewardFinalizer {
-    finalize(command: Extract<TurnDaemonCommand, { type: 'tournamentReward' }>): Promise<TurnDaemonCommandResult>;
+    finalize(
+        command: Extract<TurnDaemonCommand, { type: 'tournamentReward' }>,
+        db?: GamePrisma.TransactionClient
+    ): Promise<TurnDaemonCommandResult>;
 }
 
 async function handleSetNationMeta(
     ctx: CommandHandlerContext,
     command: Extract<TurnDaemonCommand, { type: 'setNationMeta' }>
 ): Promise<TurnDaemonCommandResult> {
-    const { world, hooks } = ctx;
+    const { world } = ctx;
     const nation = world.getNationById(command.nationId);
     if (!nation) {
         return {
@@ -122,7 +109,6 @@ async function handleSetNationMeta(
     world.updateNation(command.nationId, {
         meta: nextMeta,
     });
-    await flushWorld(world, hooks);
     return {
         type: 'setNationMeta',
         ok: true,
@@ -135,7 +121,7 @@ async function handleAdjustGeneralResources(
     ctx: CommandHandlerContext,
     command: Extract<TurnDaemonCommand, { type: 'adjustGeneralResources' }>
 ): Promise<TurnDaemonCommandResult> {
-    const { world, hooks } = ctx;
+    const { world } = ctx;
     if (!command.adjustments || command.adjustments.length === 0) {
         return { type: 'adjustGeneralResources', ok: false, reason: '조정 대상이 없습니다.' };
     }
@@ -176,8 +162,6 @@ async function handleAdjustGeneralResources(
         totalGoldDelta += goldDelta;
         totalRiceDelta += riceDelta;
     }
-
-    await flushWorld(world, hooks);
     return {
         type: 'adjustGeneralResources',
         ok: true,
@@ -192,7 +176,7 @@ async function handleAdjustGeneralMeta(
     ctx: CommandHandlerContext,
     command: Extract<TurnDaemonCommand, { type: 'adjustGeneralMeta' }>
 ): Promise<TurnDaemonCommandResult> {
-    const { world, hooks } = ctx;
+    const { world } = ctx;
     if (!command.adjustments || command.adjustments.length === 0) {
         return {
             type: 'adjustGeneralMeta',
@@ -224,8 +208,6 @@ async function handleAdjustGeneralMeta(
         world.updateGeneral(adjustment.generalId, { meta: nextMeta });
         processed += 1;
     }
-
-    await flushWorld(world, hooks);
     return {
         type: 'adjustGeneralMeta',
         ok: true,
@@ -238,7 +220,7 @@ async function handleTournamentMatchResult(
     ctx: CommandHandlerContext,
     command: Extract<TurnDaemonCommand, { type: 'tournamentMatchResult' }>
 ): Promise<TurnDaemonCommandResult> {
-    const { world, hooks } = ctx;
+    const { world } = ctx;
     const resolvePrefix = (type: number): string => {
         switch (type) {
             case 1:
@@ -342,8 +324,6 @@ async function handleTournamentMatchResult(
         nextMeta[rankKey('g')] = defenderG + defenderGDelta;
         world.updateGeneral(defender.id, { meta: nextMeta });
     }
-
-    await flushWorld(world, hooks);
     return {
         type: 'tournamentMatchResult',
         ok: true,
@@ -358,7 +338,7 @@ async function handlePatchGeneral(
     ctx: CommandHandlerContext,
     command: Extract<TurnDaemonCommand, { type: 'patchGeneral' }>
 ): Promise<TurnDaemonCommandResult> {
-    const { world, hooks } = ctx;
+    const { world } = ctx;
     const general = world.getGeneralById(command.generalId);
     if (!general) {
         return {
@@ -396,7 +376,6 @@ async function handlePatchGeneral(
     }
 
     world.updateGeneral(command.generalId, patch);
-    await flushWorld(world, hooks);
     return { type: 'patchGeneral', ok: true, generalId: command.generalId };
 }
 
@@ -404,7 +383,7 @@ async function handleTroopJoin(
     ctx: CommandHandlerContext,
     command: Extract<TurnDaemonCommand, { type: 'troopJoin' }>
 ): Promise<TurnDaemonCommandResult> {
-    const { world, hooks } = ctx;
+    const { world } = ctx;
     const general = world.getGeneralById(command.generalId);
     if (!general) {
         return {
@@ -448,7 +427,6 @@ async function handleTroopJoin(
     world.updateGeneral(command.generalId, {
         troopId: command.troopId,
     });
-    await flushWorld(world, hooks);
     return {
         type: 'troopJoin',
         ok: true,
@@ -461,7 +439,7 @@ async function handleTroopExit(
     ctx: CommandHandlerContext,
     command: Extract<TurnDaemonCommand, { type: 'troopExit' }>
 ): Promise<TurnDaemonCommandResult> {
-    const { world, hooks } = ctx;
+    const { world } = ctx;
     const general = world.getGeneralById(command.generalId);
     if (!general) {
         return {
@@ -484,7 +462,6 @@ async function handleTroopExit(
         world.updateGeneral(command.generalId, {
             troopId: 0,
         });
-        await flushWorld(world, hooks);
         return {
             type: 'troopExit',
             ok: true,
@@ -499,7 +476,6 @@ async function handleTroopExit(
         world.updateGeneral(member.id, { troopId: 0 });
     }
     world.removeTroop(troopId);
-    await flushWorld(world, hooks);
     return {
         type: 'troopExit',
         ok: true,
@@ -512,7 +488,7 @@ async function handleDieOnPrestart(
     ctx: CommandHandlerContext,
     command: Extract<TurnDaemonCommand, { type: 'dieOnPrestart' }>
 ): Promise<TurnDaemonCommandResult> {
-    const { world, hooks } = ctx;
+    const { world } = ctx;
     const general = world.getGeneralById(command.generalId);
     if (!general) {
         return {
@@ -533,7 +509,6 @@ async function handleDieOnPrestart(
     }
 
     world.removeGeneral(command.generalId);
-    await flushWorld(world, hooks);
     return { type: 'dieOnPrestart', ok: true, generalId: command.generalId };
 }
 
@@ -619,7 +594,7 @@ async function handleSetMySetting(
     ctx: CommandHandlerContext,
     command: Extract<TurnDaemonCommand, { type: 'setMySetting' }>
 ): Promise<TurnDaemonCommandResult> {
-    const { world, hooks } = ctx;
+    const { world } = ctx;
     const general = world.getGeneralById(command.generalId);
     if (!general) {
         return {
@@ -635,7 +610,6 @@ async function handleSetMySetting(
             ...command.settings,
         },
     });
-    await flushWorld(world, hooks);
     return { type: 'setMySetting', ok: true, generalId: command.generalId };
 }
 
@@ -643,7 +617,7 @@ async function handleDropItem(
     ctx: CommandHandlerContext,
     command: Extract<TurnDaemonCommand, { type: 'dropItem' }>
 ): Promise<TurnDaemonCommandResult> {
-    const { world, hooks } = ctx;
+    const { world } = ctx;
     const general = world.getGeneralById(command.generalId);
     if (!general) {
         return { type: 'dropItem', ok: false, generalId: command.generalId, reason: '장수 정보를 찾을 수 없습니다.' };
@@ -664,7 +638,6 @@ async function handleDropItem(
             items,
         },
     });
-    await flushWorld(world, hooks);
     return { type: 'dropItem', ok: true, generalId: command.generalId };
 }
 
@@ -680,7 +653,7 @@ async function handleAuctionFinalize(
             reason: '경매 확정기가 준비되지 않았습니다.',
         };
     }
-    return ctx.auctionFinalizer.finalize(command.auctionId);
+    return ctx.auctionFinalizer.finalize(command.auctionId, ctx.commandDb);
 }
 
 async function handleAuctionBid(
@@ -695,14 +668,14 @@ async function handleAuctionBid(
             reason: '경매 입찰기가 준비되지 않았습니다.',
         };
     }
-    return ctx.auctionBidder.bid(command);
+    return ctx.auctionBidder.bid(command, ctx.commandDb);
 }
 
 async function handleChangePermission(
     ctx: CommandHandlerContext,
     command: Extract<TurnDaemonCommand, { type: 'changePermission' }>
 ): Promise<TurnDaemonCommandResult> {
-    const { world, hooks } = ctx;
+    const { world } = ctx;
     const general = world.getGeneralById(command.generalId);
     if (!general) {
         return {
@@ -728,8 +701,6 @@ async function handleChangePermission(
             });
         }
     }
-
-    await flushWorld(world, hooks);
     return { type: 'changePermission', ok: true, generalId: command.generalId };
 }
 
@@ -737,7 +708,7 @@ async function handleKick(
     ctx: CommandHandlerContext,
     command: Extract<TurnDaemonCommand, { type: 'kick' }>
 ): Promise<TurnDaemonCommandResult> {
-    const { world, hooks } = ctx;
+    const { world } = ctx;
     const general = world.getGeneralById(command.generalId);
     if (!general) {
         return { type: 'kick', ok: false, generalId: command.generalId, reason: '장수 정보를 찾을 수 없습니다.' };
@@ -761,8 +732,6 @@ async function handleKick(
         nationId: 0,
         officerLevel: 0,
     });
-
-    await flushWorld(world, hooks);
     return { type: 'kick', ok: true, generalId: command.generalId };
 }
 
@@ -770,7 +739,7 @@ async function handleAppoint(
     ctx: CommandHandlerContext,
     command: Extract<TurnDaemonCommand, { type: 'appoint' }>
 ): Promise<TurnDaemonCommandResult> {
-    const { world, hooks } = ctx;
+    const { world } = ctx;
     const general = world.getGeneralById(command.generalId);
     if (!general) {
         return { type: 'appoint', ok: false, generalId: command.generalId, reason: '장수 정보를 찾을 수 없습니다.' };
@@ -825,8 +794,6 @@ async function handleAppoint(
             });
         }
     }
-
-    await flushWorld(world, hooks);
     return { type: 'appoint', ok: true, generalId: command.generalId };
 }
 
@@ -834,7 +801,7 @@ async function handleTournamentRefund(
     ctx: CommandHandlerContext,
     command: Extract<TurnDaemonCommand, { type: 'tournamentRefund' }>
 ): Promise<TurnDaemonCommandResult> {
-    const { world, hooks } = ctx;
+    const { world } = ctx;
     if (!command.refunds || command.refunds.length === 0) {
         return {
             type: 'tournamentRefund',
@@ -866,8 +833,6 @@ async function handleTournamentRefund(
         processed += 1;
         totalRefund += refund.amount;
     }
-
-    await flushWorld(world, hooks);
     return {
         type: 'tournamentRefund',
         ok: true,
@@ -882,7 +847,7 @@ async function handleTournamentBettingPayout(
     ctx: CommandHandlerContext,
     command: Extract<TurnDaemonCommand, { type: 'tournamentBettingPayout' }>
 ): Promise<TurnDaemonCommandResult> {
-    const { world, hooks } = ctx;
+    const { world } = ctx;
     if (!command.payouts || command.payouts.length === 0) {
         return {
             type: 'tournamentBettingPayout',
@@ -935,8 +900,6 @@ async function handleTournamentBettingPayout(
         nextMeta[betwingoldKey] = currentBetwingold + delta.betwingold;
         world.updateGeneral(generalId, { meta: nextMeta });
     }
-
-    await flushWorld(world, hooks);
     return {
         type: 'tournamentBettingPayout',
         ok: true,
@@ -960,7 +923,7 @@ async function handleTournamentReward(
             reason: '보상 처리기가 준비되지 않았습니다.',
         };
     }
-    return ctx.tournamentRewardFinalizer.finalize(command);
+    return ctx.tournamentRewardFinalizer.finalize(command, ctx.commandDb);
 }
 
 // 설문 보상은 API에서 전달된 RNG 결과를 재검증한 뒤 월드에 반영한다.
@@ -968,7 +931,7 @@ async function handleVoteReward(
     ctx: CommandHandlerContext,
     command: Extract<TurnDaemonCommand, { type: 'voteReward' }>
 ): Promise<TurnDaemonCommandResult> {
-    const { world, hooks } = ctx;
+    const { world } = ctx;
     const general = world.getGeneralById(command.generalId);
     if (!general) {
         return {
@@ -1153,7 +1116,6 @@ async function handleVoteReward(
     }
 
     world.updateGeneral(command.generalId, patch);
-    await flushWorld(world, hooks);
     return {
         type: 'voteReward',
         ok: true,
@@ -1166,54 +1128,81 @@ async function handleVoteReward(
 
 export const createTurnDaemonCommandHandler = (options: {
     world: InMemoryTurnWorld;
-    hooks?: TurnDaemonHooks;
     auctionFinalizer?: AuctionFinalizer;
     auctionBidder?: AuctionBidder;
     tournamentRewardFinalizer?: TournamentRewardFinalizer;
 }): TurnDaemonCommandHandler => {
-    const ctx = {
+    const ctx: CommandHandlerContext = {
         world: options.world,
-        hooks: options.hooks,
         auctionFinalizer: options.auctionFinalizer,
         auctionBidder: options.auctionBidder,
         tournamentRewardFinalizer: options.tournamentRewardFinalizer,
     };
 
-    type HandlerMap = Partial<Record<TurnDaemonCommand['type'], (command: TurnDaemonCommand) => Promise<TurnDaemonCommandResult>>>;
+    type HandlerMap = Partial<
+        Record<TurnDaemonCommand['type'], (command: TurnDaemonCommand) => Promise<TurnDaemonCommandResult>>
+    >;
 
     const handlers: HandlerMap = {
         troopJoin: (command) => handleTroopJoin(ctx, command as Extract<TurnDaemonCommand, { type: 'troopJoin' }>),
         troopExit: (command) => handleTroopExit(ctx, command as Extract<TurnDaemonCommand, { type: 'troopExit' }>),
-        dieOnPrestart: (command) => handleDieOnPrestart(ctx, command as Extract<TurnDaemonCommand, { type: 'dieOnPrestart' }>),
-        buildNationCandidate: (command) => handleBuildNationCandidate(ctx, command as Extract<TurnDaemonCommand, { type: 'buildNationCandidate' }>),
-        instantRetreat: (command) => handleInstantRetreat(ctx, command as Extract<TurnDaemonCommand, { type: 'instantRetreat' }>),
+        dieOnPrestart: (command) =>
+            handleDieOnPrestart(ctx, command as Extract<TurnDaemonCommand, { type: 'dieOnPrestart' }>),
+        buildNationCandidate: (command) =>
+            handleBuildNationCandidate(ctx, command as Extract<TurnDaemonCommand, { type: 'buildNationCandidate' }>),
+        instantRetreat: (command) =>
+            handleInstantRetreat(ctx, command as Extract<TurnDaemonCommand, { type: 'instantRetreat' }>),
         vacation: (command) => handleVacation(ctx, command as Extract<TurnDaemonCommand, { type: 'vacation' }>),
-        setMySetting: (command) => handleSetMySetting(ctx, command as Extract<TurnDaemonCommand, { type: 'setMySetting' }>),
+        setMySetting: (command) =>
+            handleSetMySetting(ctx, command as Extract<TurnDaemonCommand, { type: 'setMySetting' }>),
         dropItem: (command) => handleDropItem(ctx, command as Extract<TurnDaemonCommand, { type: 'dropItem' }>),
-        auctionFinalize: (command) => handleAuctionFinalize(ctx, command as Extract<TurnDaemonCommand, { type: 'auctionFinalize' }>),
+        auctionFinalize: (command) =>
+            handleAuctionFinalize(ctx, command as Extract<TurnDaemonCommand, { type: 'auctionFinalize' }>),
         auctionBid: (command) => handleAuctionBid(ctx, command as Extract<TurnDaemonCommand, { type: 'auctionBid' }>),
-        changePermission: (command) => handleChangePermission(ctx, command as Extract<TurnDaemonCommand, { type: 'changePermission' }>),
+        changePermission: (command) =>
+            handleChangePermission(ctx, command as Extract<TurnDaemonCommand, { type: 'changePermission' }>),
         kick: (command) => handleKick(ctx, command as Extract<TurnDaemonCommand, { type: 'kick' }>),
         appoint: (command) => handleAppoint(ctx, command as Extract<TurnDaemonCommand, { type: 'appoint' }>),
-        tournamentRefund: (command) => handleTournamentRefund(ctx, command as Extract<TurnDaemonCommand, { type: 'tournamentRefund' }>),
-        tournamentBettingPayout: (command) => handleTournamentBettingPayout(ctx, command as Extract<TurnDaemonCommand, { type: 'tournamentBettingPayout' }>),
-        tournamentReward: (command) => handleTournamentReward(ctx, command as Extract<TurnDaemonCommand, { type: 'tournamentReward' }>),
+        tournamentRefund: (command) =>
+            handleTournamentRefund(ctx, command as Extract<TurnDaemonCommand, { type: 'tournamentRefund' }>),
+        tournamentBettingPayout: (command) =>
+            handleTournamentBettingPayout(
+                ctx,
+                command as Extract<TurnDaemonCommand, { type: 'tournamentBettingPayout' }>
+            ),
+        tournamentReward: (command) =>
+            handleTournamentReward(ctx, command as Extract<TurnDaemonCommand, { type: 'tournamentReward' }>),
         voteReward: (command) => handleVoteReward(ctx, command as Extract<TurnDaemonCommand, { type: 'voteReward' }>),
-        setNationMeta: (command) => handleSetNationMeta(ctx, command as Extract<TurnDaemonCommand, { type: 'setNationMeta' }>),
-        adjustGeneralResources: (command) => handleAdjustGeneralResources(ctx, command as Extract<TurnDaemonCommand, { type: 'adjustGeneralResources' }>),
-        adjustGeneralMeta: (command) => handleAdjustGeneralMeta(ctx, command as Extract<TurnDaemonCommand, { type: 'adjustGeneralMeta' }>),
+        setNationMeta: (command) =>
+            handleSetNationMeta(ctx, command as Extract<TurnDaemonCommand, { type: 'setNationMeta' }>),
+        adjustGeneralResources: (command) =>
+            handleAdjustGeneralResources(
+                ctx,
+                command as Extract<TurnDaemonCommand, { type: 'adjustGeneralResources' }>
+            ),
+        adjustGeneralMeta: (command) =>
+            handleAdjustGeneralMeta(ctx, command as Extract<TurnDaemonCommand, { type: 'adjustGeneralMeta' }>),
         tournamentMatchResult: (command) =>
             handleTournamentMatchResult(ctx, command as Extract<TurnDaemonCommand, { type: 'tournamentMatchResult' }>),
-        patchGeneral: (command) => handlePatchGeneral(ctx, command as Extract<TurnDaemonCommand, { type: 'patchGeneral' }>),
+        patchGeneral: (command) =>
+            handlePatchGeneral(ctx, command as Extract<TurnDaemonCommand, { type: 'patchGeneral' }>),
     };
 
     return {
-        handle: async (command): Promise<TurnDaemonCommandResult | null> => {
+        handle: async (
+            command,
+            executionContext?: TurnDaemonCommandExecutionContext
+        ): Promise<TurnDaemonCommandResult | null> => {
             const handler = handlers[command.type];
             if (!handler) {
                 return null;
             }
-            return handler(command);
+            ctx.commandDb = executionContext?.db;
+            try {
+                return await handler(command);
+            } finally {
+                ctx.commandDb = undefined;
+            }
         },
     };
 };

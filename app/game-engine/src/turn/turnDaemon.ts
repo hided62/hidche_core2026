@@ -1,6 +1,6 @@
 import type { TurnCommandProfile, TurnSchedule } from '@sammo-ts/logic';
 import { buildGameEventChannel, type RealtimeEvent } from '@sammo-ts/common';
-import { createRedisConnector, resolveRedisConfigFromEnv } from '@sammo-ts/infra';
+import { createGamePostgresConnector, createRedisConnector, resolveRedisConfigFromEnv } from '@sammo-ts/infra';
 import { NATION_TRAIT_KEYS, NationTraitLoader, loadNationTraitModules } from '@sammo-ts/logic';
 
 import { SystemClock } from '../lifecycle/clock.js';
@@ -8,7 +8,7 @@ import { getNextTickTime } from '../lifecycle/getNextTickTime.js';
 import { InMemoryControlQueue } from '../lifecycle/inMemoryControlQueue.js';
 import type { Clock, TurnDaemonControlQueue, TurnDaemonHooks, TurnRunBudget } from '../lifecycle/types.js';
 import { TurnDaemonLifecycle } from '../lifecycle/turnDaemonLifecycle.js';
-import { buildTurnDaemonStreamKeys, RedisTurnDaemonCommandStream } from '../lifecycle/redisCommandStream.js';
+import { DatabaseTurnDaemonCommandQueue } from '../lifecycle/databaseCommandQueue.js';
 import type { MapLoaderOptions } from '../scenario/mapLoader.js';
 import { createDatabaseTurnHooks } from './databaseHooks.js';
 import type { GeneralTurnHandler, InMemoryTurnWorldOptions, TurnCalendarHandler } from './inMemoryWorld.js';
@@ -201,7 +201,6 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
     let auctionFinalizer: Awaited<ReturnType<typeof createAuctionFinalizer>> | null = null;
     let auctionBidder: Awaited<ReturnType<typeof createAuctionBidder>> | null = null;
     let tournamentRewardFinalizer: Awaited<ReturnType<typeof createTournamentRewardFinalizer>> | null = null;
-    let redisCommandStream: RedisTurnDaemonCommandStream | null = null;
     let pauseGate: (() => Promise<boolean>) | undefined;
     let adminActionConsumer: Awaited<ReturnType<typeof createGatewayAdminActionConsumer>> | null = null;
     const gatewayGate = options.profileName
@@ -222,17 +221,14 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
         auctionBidder = await createAuctionBidder({
             databaseUrl: options.databaseUrl,
             world,
-            hooks: dbHooks.hooks,
         });
         auctionFinalizer = await createAuctionFinalizer({
             databaseUrl: options.databaseUrl,
             world,
-            hooks: dbHooks.hooks,
         });
         tournamentRewardFinalizer = await createTournamentRewardFinalizer({
             databaseUrl: options.databaseUrl,
             world,
-            hooks: dbHooks.hooks,
         });
         hooks = {
             ...dbHooks.hooks,
@@ -290,10 +286,6 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
         redisConnector = createRedisConnector(redisConfig);
         await redisConnector.connect();
         const redisClient = redisConnector.client;
-        redisCommandStream = new RedisTurnDaemonCommandStream(redisClient, {
-            keys: buildTurnDaemonStreamKeys(options.profileName ?? options.profile),
-            startId: options.commandStreamStartId,
-        });
         const realtimeChannel = buildGameEventChannel(options.profileName ?? options.profile);
         publishRealtimeEvent = async (event: RealtimeEvent) => {
             await redisClient.publish(realtimeChannel, JSON.stringify(event));
@@ -320,6 +312,13 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
         };
     }
 
+    const commandConnector = hooks ? createGamePostgresConnector({ url: options.databaseUrl }) : null;
+    const databaseCommandQueue = commandConnector ? new DatabaseTurnDaemonCommandQueue(commandConnector.prisma) : null;
+    if (commandConnector && databaseCommandQueue) {
+        await commandConnector.connect();
+        await databaseCommandQueue.initialize();
+    }
+
     const baseClose = close;
     close = async () => {
         await baseClose();
@@ -330,12 +329,12 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
         if (redisConnector) {
             await redisConnector.disconnect();
         }
+        await commandConnector?.disconnect();
     };
 
-    const resolvedControlQueue = options.controlQueue ?? redisCommandStream ?? controlQueue;
+    const resolvedControlQueue = options.controlQueue ?? databaseCommandQueue ?? controlQueue;
     const commandHandler = createTurnDaemonCommandHandler({
         world,
-        hooks,
         auctionFinalizer: auctionFinalizer ?? undefined,
         auctionBidder: auctionBidder ?? undefined,
         tournamentRewardFinalizer: tournamentRewardFinalizer ?? undefined,
@@ -357,7 +356,7 @@ export const createTurnDaemonRuntime = async (options: TurnDaemonRuntimeOptions)
             hooks,
             pauseGate,
             commandHandler,
-            commandResponder: redisCommandStream ?? undefined,
+            commandResponder: options.controlQueue ? undefined : (databaseCommandQueue ?? undefined),
         },
         { profile: options.profile, defaultBudget }
     );

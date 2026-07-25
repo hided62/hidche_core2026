@@ -8,14 +8,14 @@ Move items into the main docs once they are finalized.
 - [AI suggestion] Make profile turn execution a durable single-writer contract:
   add a DB-backed lease with fencing epoch/world version, and reject stale
   daemon commits after a restart or split-brain.
-- [AI suggestion] Replace the current destructive dirty-state drain and
-  multi-query flush with bounded atomic batches. Persist entity deltas, logs,
-  reserved turns, checkpoint, and outbox events in one transaction, then clear
-  dirty state only after commit.
-- [AI suggestion] Introduce durable command inbox/outbox records with unique
-  request IDs, idempotent results, and per-profile ordering. Keep Redis as a
-  wake-up/fan-out layer, or add consumer groups, ACK/pending recovery, DLQ, and
-  stream trimming if Redis Streams remain the command source.
+- [AI suggestion] Bound very large world flush batches and add a transactional
+  realtime outbox. Entity deltas, logs, reserved turns, checkpoint and input
+  results are atomic now, but realtime publication remains post-commit
+  best-effort.
+- [AI suggestion] Define `input_event` retention, failed-event inspection/DLQ,
+  manual replay authorization and per-user pending limits. Durable request IDs,
+  idempotent results, ordering, exclusive claim and expired-lease recovery are
+  implemented.
 - [AI suggestion] Add ownership authorization to all turn reservation
   procedures (`auth user -> owned general -> current officer role -> nation`)
   and add revision/optimistic concurrency to reservation queue updates.

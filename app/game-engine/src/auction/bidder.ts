@@ -2,11 +2,14 @@ import { randomUUID } from 'node:crypto';
 
 import { createGamePostgresConnector, GamePrisma, type GamePrismaClient } from '@sammo-ts/infra';
 
-import type { TurnDaemonCommand, TurnDaemonCommandResult, TurnDaemonHooks } from '../lifecycle/types.js';
+import type { TurnDaemonCommand, TurnDaemonCommandResult } from '../lifecycle/types.js';
 import type { InMemoryTurnWorld } from '../turn/inMemoryWorld.js';
 
 export interface AuctionBidder {
-    bid(command: Extract<TurnDaemonCommand, { type: 'auctionBid' }>): Promise<TurnDaemonCommandResult>;
+    bid(
+        command: Extract<TurnDaemonCommand, { type: 'auctionBid' }>,
+        db?: GamePrisma.TransactionClient
+    ): Promise<TurnDaemonCommandResult>;
     close(): Promise<void>;
 }
 
@@ -36,25 +39,6 @@ interface AuctionDetail {
     startBidAmount?: number;
     availableLatestBidCloseDate?: string | null;
 }
-
-const buildFlushResult = (world: InMemoryTurnWorld) => {
-    const state = world.getState();
-    return {
-        lastTurnTime: state.lastTurnTime.toISOString(),
-        processedGenerals: 0,
-        processedTurns: 0,
-        durationMs: 0,
-        partial: false,
-        checkpoint: world.getCheckpoint(),
-    };
-};
-
-const flushWorld = async (world: InMemoryTurnWorld, hooks?: TurnDaemonHooks): Promise<void> => {
-    if (!hooks?.flushChanges) {
-        return;
-    }
-    await hooks.flushChanges(buildFlushResult(world));
-};
 
 const parseDetail = (detail: unknown): AuctionDetail => {
     if (!detail || typeof detail !== 'object') {
@@ -94,7 +78,9 @@ const shouldUsePrevBid = (highestBid: AuctionBidRow | null, myPrevBid: AuctionBi
     return myPrevBid;
 };
 
-const loadAuction = async (prisma: GamePrismaClient, auctionId: number): Promise<AuctionRow | null> => {
+type QueryClient = Pick<GamePrismaClient, '$queryRaw'>;
+
+const loadAuction = async (prisma: QueryClient, auctionId: number): Promise<AuctionRow | null> => {
     const rows = await prisma.$queryRaw<AuctionRow[]>(
         GamePrisma.sql`
             SELECT id,
@@ -110,7 +96,7 @@ const loadAuction = async (prisma: GamePrismaClient, auctionId: number): Promise
 };
 
 const loadHighestBid = async (
-    prisma: GamePrismaClient,
+    prisma: QueryClient,
     auctionId: number,
     isReverse: boolean
 ): Promise<AuctionBidRow | null> => {
@@ -135,7 +121,7 @@ const loadHighestBid = async (
 };
 
 const loadMyPrevBid = async (
-    prisma: GamePrismaClient,
+    prisma: QueryClient,
     auctionId: number,
     generalId: number,
     isReverse: boolean
@@ -160,8 +146,6 @@ const loadMyPrevBid = async (
     return rows[0] ?? null;
 };
 
-type QueryClient = Pick<GamePrismaClient, '$queryRaw'>;
-
 const resolveUserId = async (prisma: QueryClient, generalId: number): Promise<string | null> => {
     const rows = await prisma.$queryRaw<{ userId: string | null }[]>(
         GamePrisma.sql`SELECT user_id as "userId" FROM general WHERE id = ${generalId}`
@@ -172,17 +156,16 @@ const resolveUserId = async (prisma: QueryClient, generalId: number): Promise<st
 export const createAuctionBidder = async (options: {
     databaseUrl: string;
     world: InMemoryTurnWorld;
-    hooks?: TurnDaemonHooks;
 }): Promise<AuctionBidder> => {
     const connector = createGamePostgresConnector({ url: options.databaseUrl });
     await connector.connect();
     const prisma = connector.prisma;
     const world = options.world;
-    const hooks = options.hooks;
 
     return {
-        bid: async (command): Promise<TurnDaemonCommandResult> => {
-            const auction = await loadAuction(prisma, command.auctionId);
+        bid: async (command, commandDb): Promise<TurnDaemonCommandResult> => {
+            const db = commandDb ?? prisma;
+            const auction = await loadAuction(db, command.auctionId);
             if (!auction) {
                 return { type: 'auctionBid', ok: false, auctionId: command.auctionId, reason: '경매가 없습니다.' };
             }
@@ -206,8 +189,8 @@ export const createAuctionBidder = async (options: {
 
             const detail = parseDetail(auction.detail);
             const isReverse = detail.isReverse === true;
-            const highestBid = await loadHighestBid(prisma, command.auctionId, isReverse);
-            const myPrevBidRaw = await loadMyPrevBid(prisma, command.auctionId, command.generalId, isReverse);
+            const highestBid = await loadHighestBid(db, command.auctionId, isReverse);
+            const myPrevBidRaw = await loadMyPrevBid(db, command.auctionId, command.generalId, isReverse);
             const myPrevBid = shouldUsePrevBid(highestBid, myPrevBidRaw);
 
             if (highestBid) {
@@ -292,7 +275,12 @@ export const createAuctionBidder = async (options: {
                 };
             }
 
-            if (auction.type !== 'UNIQUE_ITEM' && highestBid && highestBid.generalId !== command.generalId && !myPrevBid) {
+            if (
+                auction.type !== 'UNIQUE_ITEM' &&
+                highestBid &&
+                highestBid.generalId !== command.generalId &&
+                !myPrevBid
+            ) {
                 const prev = world.getGeneralById(highestBid.generalId);
                 if (!prev) {
                     return {
@@ -319,7 +307,7 @@ export const createAuctionBidder = async (options: {
             const eventAt = now;
 
             try {
-                await prisma.$transaction(async (tx) => {
+                const persistBid = async (tx: GamePrisma.TransactionClient): Promise<void> => {
                     await tx.$executeRaw(
                         GamePrisma.sql`
                             INSERT INTO auction_bid (auction_id, general_id, amount, event_id, event_at, meta)
@@ -407,7 +395,20 @@ export const createAuctionBidder = async (options: {
                             }
                         }
                     }
-                });
+                };
+                if (commandDb) {
+                    await commandDb.$executeRawUnsafe('SAVEPOINT auction_bid_attempt');
+                    try {
+                        await persistBid(commandDb);
+                        await commandDb.$executeRawUnsafe('RELEASE SAVEPOINT auction_bid_attempt');
+                    } catch (error) {
+                        await commandDb.$executeRawUnsafe('ROLLBACK TO SAVEPOINT auction_bid_attempt');
+                        await commandDb.$executeRawUnsafe('RELEASE SAVEPOINT auction_bid_attempt');
+                        throw error;
+                    }
+                } else {
+                    await prisma.$transaction(persistBid);
+                }
             } catch (error) {
                 const reason = error instanceof Error ? error.message : 'CONFLICT';
                 if (reason === 'INSUFFICIENT_POINT') {
@@ -445,15 +446,11 @@ export const createAuctionBidder = async (options: {
                     const prev = world.getGeneralById(highestBid.generalId);
                     if (prev) {
                         world.updateGeneral(highestBid.generalId, {
-                            gold:
-                                resourceType === 'gold' ? prev.gold + highestBid.amount : prev.gold,
-                            rice:
-                                resourceType === 'rice' ? prev.rice + highestBid.amount : prev.rice,
+                            gold: resourceType === 'gold' ? prev.gold + highestBid.amount : prev.gold,
+                            rice: resourceType === 'rice' ? prev.rice + highestBid.amount : prev.rice,
                         });
                     }
                 }
-
-                await flushWorld(world, hooks);
             }
 
             return {

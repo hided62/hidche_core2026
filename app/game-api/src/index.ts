@@ -8,11 +8,14 @@ import { runTournamentWorker } from './tournament/worker.js';
 
 export * from './config.js';
 export * from './context.js';
+export * from './inputEventBoundary.js';
 export * from './router.js';
 export * from './server.js';
 export * from './daemon/types.js';
 export * from './daemon/streamKeys.js';
 export * from './daemon/transport.js';
+export * from './daemon/databaseTransport.js';
+export * from './daemon/idempotentTransport.js';
 export * from './daemon/inMemoryTransport.js';
 export * from './daemon/redisTransport.js';
 export * from './auth/flushStore.js';
@@ -51,10 +54,10 @@ if (isMain()) {
         role === 'battle-sim-worker'
             ? runBattleSimWorker
             : role === 'auction-worker'
-                            ? runAuctionWorker
-                            : role === 'tournament-worker'
-                                ? runTournamentWorker
-                                : runGameApiServer;
+              ? runAuctionWorker
+              : role === 'tournament-worker'
+                ? runTournamentWorker
+                : runGameApiServer;
     run().catch((error) => {
         console.error('[game-api] failed to start', error);
         process.exitCode = 1;

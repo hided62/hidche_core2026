@@ -13,6 +13,7 @@ import type {
     TurnDaemonCommandHandler,
     TurnDaemonCommandResponder,
     TurnDaemonCommandResult,
+    TurnDaemonCommandExecutionContext,
 } from './types.js';
 
 type PendingRun = {
@@ -20,6 +21,12 @@ type PendingRun = {
     targetTime?: Date;
     budget?: TurnRunBudget;
 };
+
+type TurnDaemonControlCommand = Extract<
+    TurnDaemonCommand,
+    { type: 'pause' | 'resume' | 'shutdown' | 'getStatus' | 'run' }
+>;
+type TurnDaemonMutationCommand = Exclude<TurnDaemonCommand, TurnDaemonControlCommand>;
 
 export interface TurnDaemonLifecycleOptions {
     profile: string;
@@ -217,15 +224,24 @@ export class TurnDaemonLifecycle {
                 this.manualPaused = true;
                 this.status.paused = true;
                 this.status.state = 'paused';
+                if (command.requestId) {
+                    await this.commandResponder?.publishStatus(command.requestId, this.getStatus());
+                }
                 return;
             case 'resume':
                 this.manualPaused = false;
                 this.status.paused = this.errorPaused;
                 this.status.state = 'idle';
+                if (command.requestId) {
+                    await this.commandResponder?.publishStatus(command.requestId, this.getStatus());
+                }
                 return;
             case 'shutdown':
                 this.status.state = 'stopping';
                 this.stopping = true;
+                if (command.requestId) {
+                    await this.commandResponder?.publishStatus(command.requestId, this.getStatus());
+                }
                 return;
             case 'getStatus': {
                 if (command.requestId) {
@@ -240,79 +256,61 @@ export class TurnDaemonLifecycle {
                     budget: command.budget,
                 };
                 this.status.pendingReason = command.reason;
+                if (command.requestId) {
+                    await this.commandResponder?.publishStatus(command.requestId, this.getStatus());
+                }
                 return;
-            case 'troopJoin':
-            case 'troopExit':
-            case 'dieOnPrestart':
-            case 'buildNationCandidate':
-            case 'instantRetreat':
-            case 'vacation':
-            case 'setMySetting':
-            case 'dropItem':
-            case 'auctionFinalize':
-            case 'changePermission':
-            case 'kick':
-            case 'appoint':
+            default:
                 await this.handleMutationCommand(command);
                 return;
         }
     }
 
-    private async handleMutationCommand(
-        command: Extract<
-            TurnDaemonCommand,
-            | { type: 'troopJoin' }
-            | { type: 'troopExit' }
-            | { type: 'dieOnPrestart' }
-            | { type: 'buildNationCandidate' }
-            | { type: 'instantRetreat' }
-            | { type: 'vacation' }
-            | { type: 'setMySetting' }
-            | { type: 'dropItem' }
-            | { type: 'auctionFinalize' }
-            | { type: 'changePermission' }
-            | { type: 'kick' }
-            | { type: 'appoint' }
-        >
-    ): Promise<void> {
-        let result: TurnDaemonCommandResult | null = null;
-        try {
-            result = this.commandHandler ? await this.commandHandler.handle(command) : null;
-            if (!result) {
-                if (command.type === 'auctionFinalize') {
-                    result = {
-                        type: 'auctionFinalize',
-                        ok: false,
-                        auctionId: command.auctionId,
-                        reason: '턴 데몬이 경매 확정을 처리할 수 없습니다.',
-                    };
-                } else {
-                    result = {
-                        type: command.type,
-                        ok: false,
-                        generalId: command.generalId,
-                        reason: '턴 데몬이 명령을 처리할 수 없습니다.',
-                        ...(command.type === 'troopJoin' ? { troopId: command.troopId } : {}),
-                    } as TurnDaemonCommandResult;
+    private async handleMutationCommand(command: TurnDaemonMutationCommand): Promise<void> {
+        let result: TurnDaemonCommandResult;
+        let committedByExecutionBoundary = false;
+        const executeHandler = async (
+            context?: TurnDaemonCommandExecutionContext
+        ): Promise<TurnDaemonCommandResult> => {
+            const handled = this.commandHandler ? await this.commandHandler.handle(command, context) : null;
+            return (
+                handled ?? {
+                    type: 'commandRejected',
+                    ok: false,
+                    commandType: command.type,
+                    reason: '턴 데몬이 명령을 처리할 수 없습니다.',
                 }
+            );
+        };
+        try {
+            if (command.requestId && this.hooks?.executeCommand) {
+                result = await this.hooks.executeCommand(command.requestId, executeHandler);
+                committedByExecutionBoundary = true;
+            } else {
+                result = await executeHandler();
             }
         } catch (error) {
-            const reason = error instanceof Error ? error.message : 'Unknown command error.';
-            if (command.type === 'auctionFinalize') {
-                result = {
-                    type: 'auctionFinalize',
-                    ok: false,
-                    auctionId: command.auctionId,
-                    reason,
-                };
-            } else {
-                result = {
-                    type: command.type,
-                    ok: false,
-                    generalId: command.generalId,
-                    reason,
-                    ...(command.type === 'troopJoin' ? { troopId: command.troopId } : {}),
-                } as TurnDaemonCommandResult;
+            // A handler may already have changed the in-memory world. Do not commit
+            // either those changes or the inbox completion marker after an exception.
+            // Pausing forces a reload/retry instead of acknowledging a partial event.
+            this.status.state = 'paused';
+            this.status.paused = true;
+            this.errorPaused = true;
+            this.status.lastError = error instanceof Error ? error.message : 'Unknown command error.';
+            await this.hooks?.onRunError?.(error);
+            return;
+        }
+
+        if (!committedByExecutionBoundary && command.requestId && this.hooks?.commitCommand) {
+            try {
+                await this.hooks.commitCommand(command.requestId, result);
+            } catch (error) {
+                this.status.state = 'paused';
+                this.status.paused = true;
+                this.errorPaused = true;
+                this.status.lastError = error instanceof Error ? error.message : 'Unknown input event commit error.';
+                await this.hooks.onRunError?.(error);
+                return;
             }
         }
 
@@ -347,12 +345,26 @@ export class TurnDaemonLifecycle {
         }
 
         this.status.state = 'flushing';
-        await this.stateStore.saveLastTurnTime(new Date(result.lastTurnTime));
-        await this.stateStore.saveCheckpoint(result.checkpoint);
-        await this.hooks?.flushChanges?.(result);
-        await this.hooks?.publishEvents?.(result);
+        try {
+            await this.stateStore.saveLastTurnTime(new Date(result.lastTurnTime));
+            await this.stateStore.saveCheckpoint(result.checkpoint);
+            await this.hooks?.flushChanges?.(result);
+        } catch (error) {
+            this.status.state = 'paused';
+            this.status.paused = true;
+            this.errorPaused = true;
+            this.status.lastError = error instanceof Error ? error.message : 'Unknown turn flush error.';
+            await this.hooks?.onRunError?.(error);
+            return;
+        }
+
         await this.applyRunResult(result, startMs);
         this.status.state = 'idle';
+        try {
+            await this.hooks?.publishEvents?.(result);
+        } catch (error) {
+            this.status.lastError = error instanceof Error ? error.message : 'Unknown event publication error.';
+        }
     }
 
     private async applyRunResult(result: TurnRunResult, startMs: number): Promise<void> {

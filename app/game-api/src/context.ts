@@ -61,6 +61,7 @@ export type InputJsonValue = GamePrisma.InputJsonValue;
 export type DatabaseClient = InfraDatabaseClient;
 
 export interface GameApiContext {
+    requestId?: string;
     db: DatabaseClient;
     redis: RedisConnector['client'];
     turnDaemon: TurnDaemonTransport;
@@ -76,6 +77,7 @@ export interface GameApiContext {
 }
 
 export const createGameApiContext = (options: {
+    requestId?: string;
     db: DatabaseClient;
     redis: RedisConnector['client'];
     turnDaemon: TurnDaemonTransport;
@@ -90,6 +92,7 @@ export const createGameApiContext = (options: {
     gameTokenSecret: string;
 }): GameApiContext => {
     return {
+        requestId: options.requestId,
         db: options.db,
         redis: options.redis,
         turnDaemon: options.turnDaemon,

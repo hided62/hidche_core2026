@@ -1,10 +1,6 @@
 import { z } from 'zod';
 
-import type {
-    TurnDaemonCommand,
-    TurnDaemonCommandType,
-    TurnDaemonCommandByType,
-} from '@sammo-ts/common';
+import type { TurnDaemonCommand, TurnDaemonCommandType, TurnDaemonCommandByType } from '@sammo-ts/common';
 
 export type TurnDaemonCommandEnvelope = {
     requestId: string;
@@ -161,22 +157,21 @@ const zSetNationMeta = z.object({
     expectedUpdatedAt: z.string().optional(),
 });
 
-const zAdjustGeneralResources = z
-    .object({
-        type: z.literal('adjustGeneralResources'),
-        reason: z.string().optional(),
-        adjustments: z
-            .array(
-                z
-                    .object({
-                        generalId: zFiniteNumber,
-                        goldDelta: zFiniteNumber.optional(),
-                        riceDelta: zFiniteNumber.optional(),
-                    })
-                    .refine((value) => value.goldDelta !== undefined || value.riceDelta !== undefined)
-            )
-            .min(1),
-    });
+const zAdjustGeneralResources = z.object({
+    type: z.literal('adjustGeneralResources'),
+    reason: z.string().optional(),
+    adjustments: z
+        .array(
+            z
+                .object({
+                    generalId: zFiniteNumber,
+                    goldDelta: zFiniteNumber.optional(),
+                    riceDelta: zFiniteNumber.optional(),
+                })
+                .refine((value) => value.goldDelta !== undefined || value.riceDelta !== undefined)
+        )
+        .min(1),
+});
 
 const zAdjustGeneralMeta = z.object({
     type: z.literal('adjustGeneralMeta'),
@@ -430,10 +425,22 @@ const normalizeGetStatus: CommandNormalizer<'getStatus'> = (envelope) => {
     };
 };
 
-const normalizeRun: CommandNormalizer<'run'> = (envelope) => parseWith(zRun, envelope.command);
-const normalizePause: CommandNormalizer<'pause'> = (envelope) => parseWith(zPause, envelope.command);
-const normalizeResume: CommandNormalizer<'resume'> = (envelope) => parseWith(zResume, envelope.command);
-const normalizeShutdown: CommandNormalizer<'shutdown'> = (envelope) => parseWith(zShutdown, envelope.command);
+const normalizeRun: CommandNormalizer<'run'> = (envelope) => {
+    const command = parseWith(zRun, envelope.command);
+    return command ? { ...command, requestId: envelope.requestId } : null;
+};
+const normalizePause: CommandNormalizer<'pause'> = (envelope) => {
+    const command = parseWith(zPause, envelope.command);
+    return command ? { ...command, requestId: envelope.requestId } : null;
+};
+const normalizeResume: CommandNormalizer<'resume'> = (envelope) => {
+    const command = parseWith(zResume, envelope.command);
+    return command ? { ...command, requestId: envelope.requestId } : null;
+};
+const normalizeShutdown: CommandNormalizer<'shutdown'> = (envelope) => {
+    const command = parseWith(zShutdown, envelope.command);
+    return command ? { ...command, requestId: envelope.requestId } : null;
+};
 
 const normalizers: CommandNormalizerMap = {
     auctionFinalize: normalizeAuctionFinalize,

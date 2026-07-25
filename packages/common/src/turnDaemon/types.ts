@@ -43,13 +43,14 @@ export interface TurnDaemonStatus {
 export type TurnDaemonCommand =
     | {
           type: 'run';
+          requestId?: string;
           reason: RunReason;
           targetTime?: string;
           budget?: TurnRunBudget;
       }
-    | { type: 'pause'; reason?: string }
-    | { type: 'resume'; reason?: string }
-    | { type: 'shutdown'; reason?: string }
+    | { type: 'pause'; requestId?: string; reason?: string }
+    | { type: 'resume'; requestId?: string; reason?: string }
+    | { type: 'shutdown'; requestId?: string; reason?: string }
     | { type: 'getStatus'; requestId?: string }
     | { type: 'troopJoin'; requestId?: string; generalId: number; troopId: number }
     | { type: 'troopExit'; requestId?: string; generalId: number }
@@ -186,6 +187,12 @@ export type TurnDaemonCommand =
           };
 
 export type TurnDaemonCommandResult =
+    | {
+          type: 'commandRejected';
+          ok: false;
+          commandType: TurnDaemonCommand['type'];
+          reason: string;
+      }
     | {
           type: 'auctionFinalize';
           ok: true;

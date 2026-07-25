@@ -6,6 +6,7 @@ import type {
     TurnRunBudget,
     TurnRunResult,
 } from '@sammo-ts/common';
+import type { GamePrisma } from '@sammo-ts/infra';
 
 export type {
     RunReason,
@@ -19,7 +20,14 @@ export type {
 } from '@sammo-ts/common';
 
 export interface TurnDaemonCommandHandler {
-    handle(command: TurnDaemonCommand): Promise<TurnDaemonCommandResult | null>;
+    handle(
+        command: TurnDaemonCommand,
+        context?: TurnDaemonCommandExecutionContext
+    ): Promise<TurnDaemonCommandResult | null>;
+}
+
+export interface TurnDaemonCommandExecutionContext {
+    db?: GamePrisma.TransactionClient;
 }
 
 export interface TurnDaemonCommandResponder {
@@ -53,6 +61,11 @@ export interface TurnDaemonControlQueue {
 
 export interface TurnDaemonHooks {
     flushChanges?(result: TurnRunResult): Promise<void>;
+    commitCommand?(requestId: string, result: TurnDaemonCommandResult): Promise<void>;
+    executeCommand?(
+        requestId: string,
+        execute: (context: TurnDaemonCommandExecutionContext) => Promise<TurnDaemonCommandResult>
+    ): Promise<TurnDaemonCommandResult>;
     publishEvents?(result: TurnRunResult): Promise<void>;
     onRunError?(error: unknown): Promise<void>;
 }

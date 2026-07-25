@@ -1,5 +1,6 @@
 import {
     createGamePostgresConnector,
+    type GamePrisma,
     type InputJsonValue,
     type TurnEngineCityUpdateInput,
     type TurnEngineDiplomacyCreateManyInput,
@@ -15,7 +16,7 @@ import {
 import { finalizeLogEntry, LogCategory, LogScope, type LogEntryDraft } from '@sammo-ts/logic';
 import { asRecord, type RankDataType } from '@sammo-ts/common';
 
-import type { TurnDaemonHooks } from '../lifecycle/types.js';
+import type { TurnDaemonCommandResult, TurnDaemonHooks } from '../lifecycle/types.js';
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
 import type { InMemoryReservedTurnStore } from './reservedTurnStore.js';
 import { buildDiplomacyMeta } from '@sammo-ts/logic';
@@ -305,32 +306,37 @@ export const createDatabaseTurnHooks = async (
     await connector.connect();
     const prisma = connector.prisma;
 
-    const hooks: TurnDaemonHooks = {
-        flushChanges: async () => {
-            const state = world.getState();
-            const {
-                generals,
-                cities,
-                nations,
-                troops,
-                deletedTroops,
-                deletedGenerals,
-                deletedNations,
-                deletedNationSnapshots,
-                diplomacy,
-                logs,
-                createdGenerals,
-                createdNations,
-                createdTroops,
-                createdDiplomacy,
-            } = world.consumeDirtyState();
+    const persistChanges = async (
+        transaction?: GamePrisma.TransactionClient,
+        commandCompletion?: { requestId: string; result: TurnDaemonCommandResult }
+    ): Promise<() => void> => {
+        const state = world.getState();
+        const changes = world.peekDirtyState();
+        const {
+            generals,
+            cities,
+            nations,
+            troops,
+            deletedTroops,
+            deletedGenerals,
+            deletedNations,
+            deletedNationSnapshots,
+            diplomacy,
+            logs,
+            createdGenerals,
+            createdNations,
+            createdTroops,
+            createdDiplomacy,
+        } = changes;
+        const reservedTurnChanges = options?.reservedTurns?.peekDirtyState();
 
-            const worldStateUpdate: TurnEngineWorldStateUpdateInput = {
-                currentYear: state.currentYear,
-                currentMonth: state.currentMonth,
-                tickSeconds: state.tickSeconds,
-                meta: asJson(state.meta),
-            };
+        const worldStateUpdate: TurnEngineWorldStateUpdateInput = {
+            currentYear: state.currentYear,
+            currentMonth: state.currentMonth,
+            tickSeconds: state.tickSeconds,
+            meta: asJson(state.meta),
+        };
+        const persist = async (prisma: GamePrisma.TransactionClient): Promise<void> => {
             await prisma.worldState.update({
                 where: { id: state.id },
                 data: worldStateUpdate,
@@ -462,10 +468,7 @@ export const createDatabaseTurnHooks = async (
             if (deletedNations.length > 0) {
                 await prisma.diplomacy.deleteMany({
                     where: {
-                        OR: [
-                            { srcNationId: { in: deletedNations } },
-                            { destNationId: { in: deletedNations } },
-                        ],
+                        OR: [{ srcNationId: { in: deletedNations } }, { destNationId: { in: deletedNations } }],
                     },
                 });
                 await prisma.nationTurn.deleteMany({
@@ -563,9 +566,52 @@ export const createDatabaseTurnHooks = async (
                     });
                 }
             }
-            if (options?.reservedTurns) {
-                await options.reservedTurns.flushChanges();
+            if (options?.reservedTurns && reservedTurnChanges) {
+                await options.reservedTurns.persistChanges(prisma, reservedTurnChanges);
             }
+            if (commandCompletion) {
+                await prisma.inputEvent.update({
+                    where: { requestId: commandCompletion.requestId },
+                    data: {
+                        status: 'SUCCEEDED',
+                        result: asJson(commandCompletion.result),
+                        completedAt: new Date(),
+                        error: null,
+                    },
+                });
+            }
+        };
+        if (transaction) {
+            await persist(transaction);
+        } else {
+            await prisma.$transaction(persist);
+        }
+
+        return () => {
+            world.acknowledgeDirtyState(changes);
+            if (options?.reservedTurns && reservedTurnChanges) {
+                options.reservedTurns.acknowledgeDirtyState(reservedTurnChanges);
+            }
+        };
+    };
+
+    const hooks: TurnDaemonHooks = {
+        flushChanges: async () => {
+            const acknowledge = await persistChanges();
+            acknowledge();
+        },
+        commitCommand: async (requestId, result) => {
+            const acknowledge = await persistChanges(undefined, { requestId, result });
+            acknowledge();
+        },
+        executeCommand: async (requestId, execute) => {
+            const committed = await prisma.$transaction(async (transaction) => {
+                const result = await execute({ db: transaction });
+                const acknowledge = await persistChanges(transaction, { requestId, result });
+                return { result, acknowledge };
+            });
+            committed.acknowledge();
+            return committed.result;
         },
     };
 

@@ -82,32 +82,37 @@ Gateway runs a lightweight cron loop (setInterval) that:
 ## Current Implementation Status
 
 - Turn daemon lifecycle + in-memory state live in `app/game-engine` with DB flush hooks.
-- Redis transport for daemon control is implemented and wired into the daemon.
-- API server already exposes turn-daemon commands (run/pause/resume/status) via tRPC, communicating via Redis Streams.
-- API server writes reserved turns and messages directly to the DB; daemon focuses on world state/logs.
+- 모든 tRPC mutation은 PostgreSQL `input_event` 경계에서 request ID와 처리
+  상태를 기록한다.
+- 월드 mutation과 daemon control은 PostgreSQL inbox로 전달된다. Redis는
+  더 이상 이 명령들의 영속 큐가 아니며 realtime/battle-sim 전송에만 남아
+  있다.
+- API가 직접 변경하는 예약 턴·메시지 등의 DB 쓰기는 API input event 완료와
+  같은 transaction에서 commit된다.
+- 엔진 명령은 도메인 DB 쓰기, in-memory world flush, 예약 턴, 로그, 결과
+  저장과 inbox 완료를 하나의 transaction으로 commit한다.
 
 ## Turn Daemon and API Server Behavior (Outline)
 
 - Turn daemon responsibilities: scheduling, turn resolution, state persistence
 - API server responsibilities: query/command intake, validation, response shaping
 - Concurrency model between daemon and API server
-- Communication channel: Redis Stream or Redis pub/sub
+- Durable command channel: PostgreSQL `input_event`
 - Client updates: SSE between API server and frontend where appropriate
 
-## Redis Communication Recommendation (Draft)
+## Durable Input Event Split
 
-Use Redis Streams for daemon control and mutation requests, and Redis pub/sub
-for transient fan-out events. Streams provide durability, backpressure, and
-replay while pub/sub keeps live updates simple and low-latency.
+PostgreSQL is the source of truth for accepted input. Redis pub/sub remains a
+best-effort notification/fan-out path and must not decide whether a gameplay
+mutation was committed.
 
 ### Recommended Split
 
-- Redis Streams:
-    - API server -> daemon: mutation requests, turn-run commands.
-    - Daemon -> API server: run status events, job results, error reports.
-    - Use consumer groups for daemon workers and API server listeners.
-    - Require `requestId` for correlation and idempotency.
-    - Ack on success; move failed items to a dead-letter stream after retry.
+- PostgreSQL `input_event`:
+    - API mutation acceptance, idempotency, attempts and audit state.
+    - API server -> daemon mutation/control payloads and durable results.
+    - `FOR UPDATE SKIP LOCKED` claim plus worker lease for concurrent consumers.
+    - engine result and gameplay state commit in the same transaction.
 - Redis pub/sub:
     - Daemon -> API server: low-stakes live update signals (run started/ended).
     - API server -> frontend: SSE fan-out triggered by pub/sub updates.
@@ -115,11 +120,11 @@ replay while pub/sub keeps live updates simple and low-latency.
 
 ### Operational Notes
 
-- Stream keys should be namespaced per server+scenario profile.
-- Use bounded stream length (`MAXLEN`) to cap storage.
-- API server should guard against duplicate processing by `requestId`.
-- When the daemon is busy, API queues new mutations to stream and responds
-  with an accepted status to clients.
+- 각 profile은 별도 game DB schema/connection을 사용한다.
+- HTTP `Idempotency-Key`(없으면 Fastify request ID)와 tRPC path를 합친 값이
+  API input event key다.
+- 처리 중 lease가 만료된 engine event만 `PENDING`으로 회수한다.
+- 완료 event 보존/정리 기간과 `FAILED` 재처리 운영 정책은 별도로 정해야 한다.
 
 Detailed lifecycle and control flow are defined in
 `docs/architecture/turn-daemon-lifecycle.md`.
@@ -167,13 +172,14 @@ also supports local ID/password login for users who cannot use Kakao.
       immediately even if requests remain queued.
 - While the daemon is resolving a turn, the API server queues incoming requests.
 
-Note: the current implementation does not yet process API mutation requests
-between turns; only control commands are handled by the in-process queue.
+현재 구현은 control 명령과 registry의 모든 world mutation을 같은 DB queue로
+읽어 턴 사이에 처리한다.
 
 ### Daemon Control Contract (Draft)
 
-API server commands are delivered to the daemon over the control channel
-(Redis Stream or in-process). The daemon replies with status and run events.
+API server commands are inserted into PostgreSQL `input_event`; the daemon
+stores status/results on the same row. An in-process queue remains available
+for tests and internal signals.
 
 ```ts
 export type RunReason = 'schedule' | 'manual' | 'poke';
@@ -193,19 +199,17 @@ export type DaemonEvent =
 
 ### API Server Flow
 
-- The API server validates queries/commands and writes them to Redis Streams
-  or Redis pub/sub.
+- The API server validates commands and records every tRPC mutation in
+  PostgreSQL.
 - After a request is processed, the API server returns the result to clients.
 - Read-only queries may access the DBMS directly.
 - The API server may use SSE to stream live updates to the frontend.
 
 ### Queue and Rate Limits
 
-- API server requests are delivered to the daemon via Redis Streams or
-  Redis pub/sub.
-- Redis Stream mutation requests are rate-limited per user.
-    - Each user can have up to 30 pending mutation requests.
-    - Additional requests are rejected once the limit is exceeded.
+- Engine-owned requests are delivered through the PostgreSQL inbox.
+- Per-user pending limits and event retention remain operational follow-up
+  work; idempotency and exclusive claim are implemented.
 
 ### In-Memory and DBMS Flush
 

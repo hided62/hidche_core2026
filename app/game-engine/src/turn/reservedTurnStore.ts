@@ -72,6 +72,11 @@ const buildNationKey = (nationId: number, officerLevel: number): string => `${na
 
 type ReservedTurnDatabaseClient = Pick<TurnEngineDatabaseClient, 'generalTurn' | 'nationTurn'>;
 
+export interface ReservedTurnChanges {
+    generalIds: number[];
+    nationKeys: string[];
+}
+
 export class InMemoryReservedTurnStore {
     private readonly generalTurns = new Map<number, ReservedTurnEntry[]>();
     private readonly nationTurns = new Map<string, ReservedTurnEntry[]>();
@@ -213,12 +218,27 @@ export class InMemoryReservedTurnStore {
         this.dirtyNationKeys.add(key);
     }
 
-    async flushChanges(): Promise<void> {
-        const generalIds = Array.from(this.dirtyGeneralIds);
-        for (const generalId of generalIds) {
+    peekDirtyState(): ReservedTurnChanges {
+        return {
+            generalIds: Array.from(this.dirtyGeneralIds),
+            nationKeys: Array.from(this.dirtyNationKeys),
+        };
+    }
+
+    acknowledgeDirtyState(changes: ReservedTurnChanges): void {
+        for (const generalId of changes.generalIds) {
+            this.dirtyGeneralIds.delete(generalId);
+        }
+        for (const key of changes.nationKeys) {
+            this.dirtyNationKeys.delete(key);
+        }
+    }
+
+    async persistChanges(prisma: ReservedTurnDatabaseClient, changes: ReservedTurnChanges): Promise<void> {
+        for (const generalId of changes.generalIds) {
             const turns = this.getGeneralTurns(generalId);
-            await this.prisma.generalTurn.deleteMany({ where: { generalId } });
-            await this.prisma.generalTurn.createMany({
+            await prisma.generalTurn.deleteMany({ where: { generalId } });
+            await prisma.generalTurn.createMany({
                 data: turns.map((entry, turnIdx) => ({
                     generalId,
                     turnIdx,
@@ -228,16 +248,15 @@ export class InMemoryReservedTurnStore {
             });
         }
 
-        const nationKeys = Array.from(this.dirtyNationKeys);
-        for (const key of nationKeys) {
+        for (const key of changes.nationKeys) {
             const [nationIdRaw, officerLevelRaw] = key.split(':');
             const nationId = Number(nationIdRaw);
             const officerLevel = Number(officerLevelRaw);
             const turns = this.getNationTurns(nationId, officerLevel);
-            await this.prisma.nationTurn.deleteMany({
+            await prisma.nationTurn.deleteMany({
                 where: { nationId, officerLevel },
             });
-            await this.prisma.nationTurn.createMany({
+            await prisma.nationTurn.createMany({
                 data: turns.map((entry, turnIdx) => ({
                     nationId,
                     officerLevel,
@@ -247,9 +266,12 @@ export class InMemoryReservedTurnStore {
                 })),
             });
         }
+    }
 
-        this.dirtyGeneralIds.clear();
-        this.dirtyNationKeys.clear();
+    async flushChanges(): Promise<void> {
+        const changes = this.peekDirtyState();
+        await this.persistChanges(this.prisma, changes);
+        this.acknowledgeDirtyState(changes);
     }
 }
 

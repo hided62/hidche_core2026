@@ -44,6 +44,39 @@ enum DiplomacyLetterState {
     REPLACED
 }
 
+enum InputEventStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+}
+
+enum InputEventTarget {
+  API
+  ENGINE
+}
+
+model InputEvent {
+  sequence     BigInt           @id @default(autoincrement())
+  requestId    String           @unique @map("request_id")
+  target       InputEventTarget
+  eventType    String           @map("event_type")
+  payload      Json             @default(dbgenerated("'{}'::jsonb"))
+  actorUserId  String?          @map("actor_user_id")
+  status       InputEventStatus @default(PENDING)
+  result       Json?
+  error        String?
+  attempts     Int              @default(0)
+  lockedBy     String?          @map("locked_by")
+  leaseUntil   DateTime?        @map("lease_until")
+  createdAt    DateTime         @default(now()) @map("created_at")
+  processingAt DateTime?        @map("processing_at")
+  completedAt  DateTime?        @map("completed_at")
+
+  @@index([target, status, sequence])
+  @@map("input_event")
+}
+
 model WorldState {
     id           Int      @id @default(autoincrement())
     scenarioCode String   @map("scenario_code")

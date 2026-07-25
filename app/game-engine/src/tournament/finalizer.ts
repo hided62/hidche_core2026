@@ -1,12 +1,15 @@
 import { JosaUtil, asRecord } from '@sammo-ts/common';
-import { createGamePostgresConnector } from '@sammo-ts/infra';
+import { createGamePostgresConnector, type GamePrisma } from '@sammo-ts/infra';
 import { ActionLogger, LogFormat, type TournamentType, type TriggerValue } from '@sammo-ts/logic';
 
-import type { TurnDaemonCommand, TurnDaemonCommandResult, TurnDaemonHooks } from '../lifecycle/types.js';
+import type { TurnDaemonCommand, TurnDaemonCommandResult } from '../lifecycle/types.js';
 import type { InMemoryTurnWorld } from '../turn/inMemoryWorld.js';
 
 export interface TournamentRewardFinalizer {
-    finalize(command: Extract<TurnDaemonCommand, { type: 'tournamentReward' }>): Promise<TurnDaemonCommandResult>;
+    finalize(
+        command: Extract<TurnDaemonCommand, { type: 'tournamentReward' }>,
+        db?: GamePrisma.TransactionClient
+    ): Promise<TurnDaemonCommandResult>;
     close(): Promise<void>;
 }
 
@@ -57,39 +60,22 @@ const pushLogs = (world: InMemoryTurnWorld, logs: ReturnType<ActionLogger['flush
     }
 };
 
-const flushWorld = async (world: InMemoryTurnWorld, hooks?: TurnDaemonHooks): Promise<void> => {
-    if (!hooks?.flushChanges) {
-        return;
-    }
-    const state = world.getState();
-    await hooks.flushChanges({
-        lastTurnTime: state.lastTurnTime.toISOString(),
-        processedGenerals: 0,
-        processedTurns: 0,
-        durationMs: 0,
-        partial: false,
-        checkpoint: world.getCheckpoint(),
-    });
-};
-
 export const createTournamentRewardFinalizer = async (options: {
     databaseUrl: string;
     world: InMemoryTurnWorld;
-    hooks?: TurnDaemonHooks;
 }): Promise<TournamentRewardFinalizer> => {
     const connector = createGamePostgresConnector({ url: options.databaseUrl });
     await connector.connect();
     const prisma = connector.prisma;
 
     const finalize = async (
-        command: Extract<TurnDaemonCommand, { type: 'tournamentReward' }>
+        command: Extract<TurnDaemonCommand, { type: 'tournamentReward' }>,
+        commandDb?: GamePrisma.TransactionClient
     ): Promise<TurnDaemonCommandResult> => {
-        const { world, hooks } = options;
+        const { world } = options;
+        const db = commandDb ?? prisma;
         const { winnerId, runnerUpId } = command;
-        const rewardMap = new Map<
-            number,
-            { gold: number; exp: number; label: string; inheritPoint: number }
-        >();
+        const rewardMap = new Map<number, { gold: number; exp: number; label: string; inheritPoint: number }>();
 
         const applyTier = (
             ids: number[],
@@ -126,7 +112,7 @@ export const createTournamentRewardFinalizer = async (options: {
         }
 
         const nameMap = new Map<number, string>();
-        const generals = await prisma.general.findMany({
+        const generals = await db.general.findMany({
             where: { id: { in: Array.from(rewardMap.keys()) } },
             select: { id: true, userId: true, name: true },
         });
@@ -240,7 +226,7 @@ export const createTournamentRewardFinalizer = async (options: {
             .filter((entry) => !!entry.userId);
 
         for (const entry of pointUpdates) {
-            await prisma.inheritancePoint.upsert({
+            await db.inheritancePoint.upsert({
                 where: {
                     userId_key: { userId: entry.userId!, key: 'tournament' },
                 },
@@ -248,8 +234,6 @@ export const createTournamentRewardFinalizer = async (options: {
                 create: { userId: entry.userId!, key: 'tournament', value: entry.value },
             });
         }
-
-        await flushWorld(world, hooks);
 
         return {
             type: 'tournamentReward',

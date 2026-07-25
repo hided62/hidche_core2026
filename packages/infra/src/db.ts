@@ -25,4 +25,5 @@ export interface DatabaseClient {
     inheritanceLog: GamePrisma.InheritanceLogDelegate;
     inheritanceResult: GamePrisma.InheritanceResultDelegate;
     inheritanceUserState: GamePrisma.InheritanceUserStateDelegate;
+    inputEvent: GamePrisma.InputEventDelegate;
 }

@@ -14,8 +14,7 @@ import {
 
 import { resolveGameApiConfigFromEnv } from './config.js';
 import { createGameApiContext, type DatabaseClient as _DatabaseClient } from './context.js';
-import { buildTurnDaemonStreamKeys } from './daemon/streamKeys.js';
-import { RedisTurnDaemonTransport } from './daemon/redisTransport.js';
+import { DatabaseTurnDaemonTransport } from './daemon/databaseTransport.js';
 import { InMemoryFlushStore, RedisGatewayFlushSubscriber, type FlushStore } from './auth/flushStore.js';
 import { RedisAccessTokenStore } from './auth/accessTokenStore.js';
 import { appRouter } from './router.js';
@@ -66,10 +65,7 @@ export const createGameApiServer = async () => {
     await postgres.connect();
     await redis.connect();
 
-    const turnDaemon = new RedisTurnDaemonTransport(redis.client, {
-        keys: buildTurnDaemonStreamKeys(config.profileName),
-        requestTimeoutMs: config.daemonRequestTimeoutMs,
-    });
+    const turnDaemon = new DatabaseTurnDaemonTransport(postgres.prisma, config.daemonRequestTimeoutMs);
     const battleSim = new RedisBattleSimTransport(redis.client, {
         keys: buildBattleSimQueueKeys(config.profileName),
         requestTimeoutMs: config.battleSimRequestTimeoutMs,
@@ -83,10 +79,7 @@ export const createGameApiServer = async () => {
     const accessTokenStore = new RedisAccessTokenStore(redis.client, config.profileName);
     const realtimeSubscriberClient = redis.client.duplicate();
     await realtimeSubscriberClient.connect();
-    const realtimeHub = new RedisRealtimeEventHub(
-        realtimeSubscriberClient,
-        buildGameEventChannel(config.profileName)
-    );
+    const realtimeHub = new RedisRealtimeEventHub(realtimeSubscriberClient, buildGameEventChannel(config.profileName));
     await realtimeHub.start();
 
     const app = fastify({
@@ -111,6 +104,10 @@ export const createGameApiServer = async () => {
                 const token = extractBearerToken(req.headers.authorization);
                 const auth = await resolveAuthFromToken(token, accessTokenStore, flushStore);
                 return createGameApiContext({
+                    requestId:
+                        (Array.isArray(req.headers['idempotency-key'])
+                            ? req.headers['idempotency-key'][0]
+                            : req.headers['idempotency-key']) || undefined,
                     db: postgres.prisma,
                     redis: redis.client,
                     turnDaemon,

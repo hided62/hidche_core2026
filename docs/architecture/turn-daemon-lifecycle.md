@@ -8,14 +8,15 @@ from the API server.
 
 - One daemon process per server+scenario profile.
 - API server is the only ingress for user/admin requests.
-- The daemon owns world-state mutations; the API server mutates reserved turns and messages.
+- The daemon owns world-state mutations; the API server mutates reserved turns
+  and messages inside the common API input-event transaction.
 
 ## Current Implementation Status
 
-- The daemon loop handles scheduled runs plus Redis-based control queue commands
+- The daemon loop handles scheduled runs plus PostgreSQL inbox control commands
   (run/pause/resume/shutdown/getStatus).
 - API mutation requests (troopJoin, vacation, etc.) are drained and handled by the daemon loop between turns.
-- `getStatus` is fully supported and responds via Redis.
+- `getStatus` and command results are stored durably on their input-event row.
 - API server currently writes reserved turns and messages directly to the DB.
 
 ## Responsibilities
@@ -47,8 +48,7 @@ Idle -> Running -> Flushing -> Idle
 The daemon interleaves API request handling between scheduled turn executions.
 API requests are drained until the next turn time is reached; once the turn
 starts, incoming requests are queued and processed after the run.
-Current implementation does not yet drain API requests between turns; this
-section is the intended target behavior.
+The current implementation follows this interleaving model.
 
 ```ts
 while (!stopping) {
@@ -101,7 +101,7 @@ Minimum checkpoint data:
 
 ## API Server Interaction
 
-- API server enqueues mutations and pokes the daemon.
+- API server inserts mutations and pokes into the PostgreSQL inbox.
 - Read-only queries can read from DBMS or a read model.
 - During `running`, incoming requests are queued and processed after the run.
 
@@ -171,7 +171,8 @@ Admin controls should toggle `paused`, trigger manual run, and request catch-up.
 
 ### Daemon Control Contract (Draft)
 
-API server to daemon control messages (Redis Stream or in-process channel):
+API server to daemon control payloads (PostgreSQL inbox or in-process test
+channel):
 
 ```ts
 export type RunReason = 'schedule' | 'manual' | 'poke';
@@ -192,8 +193,32 @@ export type DaemonEvent =
 ## Recovery and Shutdown
 
 - On startup, load `game_env.turntime` and catch up to `now`.
+- Claim pending input events with `FOR UPDATE SKIP LOCKED`. A worker ID and
+  expiry timestamp prevent another live consumer from claiming the same event;
+  only expired processing leases return to `PENDING`.
+- A handler exception or transaction failure pauses the daemon without
+  acknowledging the event. Restart/recovery reloads world state before retry.
 - On shutdown, stop accepting new triggers, finish the current run, flush, then
   exit cleanly.
+
+## Input Event Commit Boundary
+
+For engine-owned mutations the lifecycle opens one database-owned unit of work:
+
+```text
+claim input_event
+  -> execute command against in-memory world
+  -> specialized domain DB writes (auction/tournament)
+  -> persist world/reserved turns/logs
+  -> store command result and mark input_event SUCCEEDED
+  -> commit
+  -> acknowledge in-memory dirty sets
+  -> respond
+```
+
+If any step before commit fails, PostgreSQL rolls back and dirty sets are not
+cleared. Realtime publication happens after commit and cannot roll gameplay
+state back.
 
 ## Testing with a Controlled Clock
 

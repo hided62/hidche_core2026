@@ -1,13 +1,13 @@
-import { createGamePostgresConnector, GamePrisma, type GamePrismaClient } from '@sammo-ts/infra';
+import { createGamePostgresConnector, GamePrisma } from '@sammo-ts/infra';
 import { ActionLogger, ItemLoader, LogFormat, UserLogger, isItemKey } from '@sammo-ts/logic';
 import { JosaUtil } from '@sammo-ts/common';
 
-import type { TurnDaemonCommandResult, TurnDaemonHooks } from '../lifecycle/types.js';
+import type { TurnDaemonCommandResult } from '../lifecycle/types.js';
 import type { InMemoryTurnWorld } from '../turn/inMemoryWorld.js';
 import type { LogEntryDraft } from '@sammo-ts/logic';
 
 export interface AuctionFinalizer {
-    finalize(auctionId: number): Promise<TurnDaemonCommandResult>;
+    finalize(auctionId: number, db?: GamePrisma.TransactionClient): Promise<TurnDaemonCommandResult>;
     close(): Promise<void>;
 }
 
@@ -44,25 +44,6 @@ interface AuctionDetailResource extends AuctionDetailBase {
     amount?: number;
 }
 
-const buildFlushResult = (world: InMemoryTurnWorld) => {
-    const state = world.getState();
-    return {
-        lastTurnTime: state.lastTurnTime.toISOString(),
-        processedGenerals: 0,
-        processedTurns: 0,
-        durationMs: 0,
-        partial: false,
-        checkpoint: world.getCheckpoint(),
-    };
-};
-
-const flushWorld = async (world: InMemoryTurnWorld, hooks?: TurnDaemonHooks): Promise<void> => {
-    if (!hooks?.flushChanges) {
-        return;
-    }
-    await hooks.flushChanges(buildFlushResult(world));
-};
-
 const parseDetail = (detail: unknown): AuctionDetailResource => {
     if (!detail || typeof detail !== 'object') {
         return {};
@@ -72,7 +53,9 @@ const parseDetail = (detail: unknown): AuctionDetailResource => {
 
 const toTurnMinutes = (tickSeconds: number): number => Math.max(1, Math.round(tickSeconds / 60));
 
-const resolveTurnMinutes = async (prisma: GamePrismaClient): Promise<number> => {
+type AuctionDb = GamePrisma.TransactionClient;
+
+const resolveTurnMinutes = async (prisma: AuctionDb): Promise<number> => {
     const rows = (await prisma.$queryRaw(
         GamePrisma.sql`SELECT tick_seconds as "tickSeconds" FROM world_state ORDER BY id LIMIT 1`
     )) as Array<{ tickSeconds: number }>;
@@ -104,7 +87,7 @@ const pushLogs = (world: InMemoryTurnWorld, logs: LogEntryDraft[]): void => {
 };
 
 const refundInheritancePoint = async (options: {
-    prisma: GamePrismaClient;
+    prisma: AuctionDb;
     userId: string;
     amount: number;
 }): Promise<void> => {
@@ -142,25 +125,24 @@ const refundInheritancePoint = async (options: {
 export const createAuctionFinalizer = async (options: {
     databaseUrl: string;
     world: InMemoryTurnWorld;
-    hooks?: TurnDaemonHooks;
 }): Promise<AuctionFinalizer> => {
     const connector = createGamePostgresConnector({ url: options.databaseUrl });
     await connector.connect();
     const prisma = connector.prisma;
     const world = options.world;
-    const hooks = options.hooks;
     const itemLoader = new ItemLoader();
 
-    const getGeneralUserId = async (generalId: number): Promise<string | null> => {
-        const rows = await prisma.$queryRaw<{ userId: string | null }[]>(
+    const getGeneralUserId = async (db: AuctionDb, generalId: number): Promise<string | null> => {
+        const rows = await db.$queryRaw<{ userId: string | null }[]>(
             GamePrisma.sql`SELECT user_id as "userId" FROM general WHERE id = ${generalId}`
         );
         return rows[0]?.userId ?? null;
     };
 
     return {
-        finalize: async (auctionId: number): Promise<TurnDaemonCommandResult> => {
-            const rows = await prisma.$queryRaw<AuctionRow[]>(
+        finalize: async (auctionId: number, commandDb): Promise<TurnDaemonCommandResult> => {
+            const db = commandDb ?? prisma;
+            const rows = await db.$queryRaw<AuctionRow[]>(
                 GamePrisma.sql`
                     SELECT id,
                         type,
@@ -200,7 +182,7 @@ export const createAuctionFinalizer = async (options: {
             const detail = parseDetail(auction.detail);
             const isReverse = detail.isReverse === true;
 
-            const bidRows = await prisma.$queryRaw<AuctionBidRow[]>(
+            const bidRows = await db.$queryRaw<AuctionBidRow[]>(
                 isReverse
                     ? GamePrisma.sql`
                         SELECT id, general_id as "generalId", amount
@@ -224,7 +206,7 @@ export const createAuctionFinalizer = async (options: {
             const globalLogger = new ActionLogger();
 
             const finalizeStatus = async (status: AuctionStatus) => {
-                await prisma.$executeRaw(
+                await db.$executeRaw(
                     GamePrisma.sql`
                         UPDATE auction
                         SET status = ${status},
@@ -263,7 +245,10 @@ export const createAuctionFinalizer = async (options: {
                             [resourceKey]: host[resourceKey] + amount,
                         });
                         const hostLogger = new ActionLogger({ generalId: host.id, nationId: host.nationId });
-                        hostLogger.pushGeneralActionLog(`경매가 유찰되어 ${resourceKey === 'rice' ? '쌀' : '금'} ${amount}을 회수했습니다.`, LogFormat.PLAIN);
+                        hostLogger.pushGeneralActionLog(
+                            `경매가 유찰되어 ${resourceKey === 'rice' ? '쌀' : '금'} ${amount}을 회수했습니다.`,
+                            LogFormat.PLAIN
+                        );
                         logs.push(...hostLogger.flush());
                         globalLogger.pushGlobalActionLog(`경매 ${auctionId}번이 유찰되었습니다.`, LogFormat.PLAIN);
                     }
@@ -271,7 +256,6 @@ export const createAuctionFinalizer = async (options: {
 
                 logs.push(...globalLogger.flush());
                 pushLogs(world, logs);
-                await flushWorld(world, hooks);
                 await finalizeStatus('FINISHED');
                 return { type: 'auctionFinalize', ok: true, auctionId };
             }
@@ -358,8 +342,8 @@ export const createAuctionFinalizer = async (options: {
                 if (!itemModule) {
                     await finalizeStatus('CANCELED');
                     await refundInheritancePoint({
-                        prisma,
-                        userId: (await getGeneralUserId(bidder.id)) ?? '',
+                        prisma: db,
+                        userId: (await getGeneralUserId(db, bidder.id)) ?? '',
                         amount: highestBid.amount,
                     });
                     return {
@@ -375,7 +359,7 @@ export const createAuctionFinalizer = async (options: {
                 if (currentItem && currentItem !== 'None' && isItemKey(currentItem)) {
                     const currentModule = await itemLoader.load(currentItem).catch(() => null);
                     if (currentModule && !currentModule.buyable) {
-                        const turnMinutes = await resolveTurnMinutes(prisma);
+                        const turnMinutes = await resolveTurnMinutes(db);
                         const availableLatestBidCloseDate = detail.availableLatestBidCloseDate
                             ? new Date(detail.availableLatestBidCloseDate)
                             : null;
@@ -385,7 +369,7 @@ export const createAuctionFinalizer = async (options: {
                             turnMinutes,
                             availableLatestBidCloseDate,
                         });
-                        await prisma.$executeRaw(
+                        await db.$executeRaw(
                             GamePrisma.sql`
                                 UPDATE auction
                                 SET status = 'OPEN',
@@ -400,7 +384,6 @@ export const createAuctionFinalizer = async (options: {
                         );
                         logs.push(...globalLogger.flush());
                         pushLogs(world, logs);
-                        await flushWorld(world, hooks);
                         return {
                             type: 'auctionFinalize',
                             ok: false,
@@ -427,12 +410,15 @@ export const createAuctionFinalizer = async (options: {
                 );
                 logs.push(...bidderLogger.flush());
 
-                const bidderUserId = await getGeneralUserId(bidder.id);
+                const bidderUserId = await getGeneralUserId(db, bidder.id);
                 if (bidderUserId) {
                     const userIdNum = Number(bidderUserId);
                     if (Number.isFinite(userIdNum)) {
                         const userLogger = new UserLogger(userIdNum);
-                        userLogger.push(`유니크 ${itemModule.name} 경매로 ${highestBid.amount} 포인트 사용`, 'inheritPoint');
+                        userLogger.push(
+                            `유니크 ${itemModule.name} 경매로 ${highestBid.amount} 포인트 사용`,
+                            'inheritPoint'
+                        );
                         logs.push(...userLogger.flush());
                     }
                 }
@@ -442,7 +428,6 @@ export const createAuctionFinalizer = async (options: {
 
             logs.push(...globalLogger.flush());
             pushLogs(world, logs);
-            await flushWorld(world, hooks);
             await finalizeStatus('FINISHED');
 
             return { type: 'auctionFinalize', ok: true, auctionId };
