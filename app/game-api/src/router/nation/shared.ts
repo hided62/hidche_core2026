@@ -66,7 +66,7 @@ export type CityIncomeRow = {
     security: number;
     securityMax: number;
     trust: number;
-    trade: number;
+    trade: number | null;
     defence: number;
     defenceMax: number;
     wall: number;

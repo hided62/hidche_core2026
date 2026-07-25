@@ -246,7 +246,7 @@ const mapCityRow = (row: TurnEngineCityRow): City => {
         meta: {
             ...meta,
             trust: row.trust,
-            trade: row.trade,
+            ...(row.trade === null ? {} : { trade: row.trade }),
             region: row.region,
         },
     };

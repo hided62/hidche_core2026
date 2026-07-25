@@ -75,7 +75,7 @@ export interface TurnEngineCityRow {
     conflict: JsonValue;
     meta: JsonValue;
     trust: number;
-    trade: number;
+    trade: number | null;
     region: number;
 }
 
@@ -241,7 +241,7 @@ export interface TurnEngineCityUpdateInput {
     conflict?: InputJsonValue;
     meta: InputJsonValue;
     trust?: number;
-    trade?: number;
+    trade?: number | null;
     region?: number;
 }
 
