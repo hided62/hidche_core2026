@@ -4,7 +4,11 @@ import type { City, Nation } from '@sammo-ts/logic';
 
 import { createDatabaseTurnHooks } from '../src/turn/databaseHooks.js';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
-import { createRaiseInvaderHandler } from '../src/turn/monthlyInvaderAction.js';
+import {
+    createAutoDeleteInvaderHandler,
+    createInvaderEndingHandler,
+    createRaiseInvaderHandler,
+} from '../src/turn/monthlyInvaderAction.js';
 import { createMonthlyEventHandler } from '../src/turn/monthlyEventHandler.js';
 import { InMemoryReservedTurnStore } from '../src/turn/reservedTurnStore.js';
 import { buildCommandEnv } from '../src/turn/reservedTurnCommands.js';
@@ -111,7 +115,7 @@ integration('RaiseInvader database persistence', () => {
     const clean = async () => {
         const createdGeneralIds = Array.from({ length: 10 }, (_, index) => firstCreatedGeneralId + index);
         await db.logEntry.deleteMany({
-            where: { year: 200, month: 1, text: { contains: '【이벤트】' } },
+            where: { year: 200, text: { contains: '【이벤트】' } },
         });
         await db.generalTurn.deleteMany({
             where: { generalId: { in: [existingGeneralId, ...createdGeneralIds] } },
@@ -245,6 +249,7 @@ integration('RaiseInvader database persistence', () => {
                     lastGeneralId: firstCreatedGeneralId - 1,
                     lastNationId: createdNationId - 1,
                     serverId: 'raise-invader-persistence',
+                    refreshLimit: 3,
                 },
             },
         });
@@ -259,6 +264,7 @@ integration('RaiseInvader database persistence', () => {
                 lastGeneralId: firstCreatedGeneralId - 1,
                 lastNationId: createdNationId - 1,
                 serverId: 'raise-invader-persistence',
+                refreshLimit: 3,
             },
         };
         const snapshot: TurnWorldSnapshot = {
@@ -286,12 +292,21 @@ integration('RaiseInvader database persistence', () => {
             env: buildCommandEnv(snapshot.scenarioConfig),
             loadArchivedNationMaxId: async () => 0,
         });
+        const autoDelete = createAutoDeleteInvaderHandler({
+            getWorld: () => world,
+            reservedTurns,
+        });
+        const ending = createInvaderEndingHandler({ getWorld: () => world });
         world = new InMemoryTurnWorld(state, snapshot, {
             schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
             calendarHandler: createMonthlyEventHandler({
                 getWorld: () => world,
                 startYear: 190,
-                actions: new Map([['RaiseInvader', handler]]),
+                actions: new Map([
+                    ['RaiseInvader', handler],
+                    ['AutoDeleteInvader', autoDelete],
+                    ['InvaderEnding', ending],
+                ]),
             }),
         });
         const dbHooks = await createDatabaseTurnHooks(databaseUrl!, world, { reservedTurns });
@@ -382,6 +397,64 @@ integration('RaiseInvader database persistence', () => {
             });
             expect(sequenceProbe.id).toBeGreaterThan(createdEventIds[1]!);
             await db.event.delete({ where: { id: sequenceProbe.id } });
+
+            expect(world.removeEvent(sourceEventId)).toBe(true);
+            world.applyDiplomacyPatch({
+                srcNationId: createdNationId,
+                destNationId: existingNationId,
+                patch: { state: 2, term: 0 },
+            });
+            world.applyDiplomacyPatch({
+                srcNationId: existingNationId,
+                destNationId: createdNationId,
+                patch: { state: 2, term: 0 },
+            });
+            await world.advanceMonth(new Date('0200-02-01T00:00:00.000Z'));
+            await dbHooks.hooks.flushChanges?.({
+                lastTurnTime: world.getState().lastTurnTime.toISOString(),
+                processedGenerals: 0,
+                processedTurns: 1,
+                durationMs: 0,
+                partial: false,
+            });
+
+            expect(await db.event.findUnique({ where: { id: createdEventIds[0]! } })).toBeNull();
+            expect(
+                await db.generalTurn.findMany({
+                    where: { generalId: firstCreatedGeneralId },
+                    select: { actionCode: true },
+                })
+            ).toEqual(Array.from({ length: 30 }, () => ({ actionCode: 'che_방랑' })));
+            expect(await db.event.findUnique({ where: { id: createdEventIds[1]! } })).not.toBeNull();
+
+            for (const generalId of createdGeneralIds) {
+                expect(world.removeGeneral(generalId)).toBe(true);
+            }
+            expect(world.removeNation(createdNationId)).toBe(true);
+            world.updateCity(invaderCityId, { nationId: existingNationId });
+            await world.advanceMonth(new Date('0200-03-01T00:00:00.000Z'));
+            await dbHooks.hooks.flushChanges?.({
+                lastTurnTime: world.getState().lastTurnTime.toISOString(),
+                processedGenerals: 0,
+                processedTurns: 1,
+                durationMs: 0,
+                partial: false,
+            });
+
+            expect(await db.event.findUnique({ where: { id: createdEventIds[1]! } })).toBeNull();
+            expect(await db.worldState.findUniqueOrThrow({ where: { id: stateRow.id } })).toMatchObject({
+                meta: expect.objectContaining({ isunited: 3, refreshLimit: 300 }),
+            });
+            expect(
+                await db.logEntry.findMany({
+                    where: { year: 200, month: 3, text: { contains: '【이벤트】' } },
+                    orderBy: { id: 'asc' },
+                    select: { text: true },
+                })
+            ).toEqual([
+                { text: '<R>★</>200년 3월:<L><b>【이벤트】</b></>이민족을 모두 소탕했습니다!' },
+                { text: '<R>★</>200년 3월:<L><b>【이벤트】</b></>중원은 당분간 태평성대를 누릴 것입니다.' },
+            ]);
         } finally {
             await dbHooks.close();
         }
