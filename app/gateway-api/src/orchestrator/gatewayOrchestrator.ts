@@ -975,11 +975,12 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             try {
                 await this.processManager.stop(name);
             } catch {
-                try {
-                    await this.processManager.delete(name);
-                } catch (error) {
-                    failures.push(`${name}: ${error instanceof Error ? error.message : String(error)}`);
-                }
+                // Deleting the definition below also terminates a process that raced with stop.
+            }
+            try {
+                await this.processManager.delete(name);
+            } catch (error) {
+                failures.push(`${name}: ${error instanceof Error ? error.message : String(error)}`);
             }
         }
         if (failures.length > 0) {

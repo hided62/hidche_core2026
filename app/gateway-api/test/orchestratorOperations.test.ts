@@ -153,6 +153,7 @@ describe('GatewayOrchestrator first-class operations', () => {
 
         expect(harness.statuses).toEqual(['STOPPED']);
         expect(harness.stopped).toEqual(['sammo:che:2:game-api', 'sammo:che:2:turn-daemon']);
+        expect(harness.deleted).toEqual(['sammo:che:2:game-api', 'sammo:che:2:turn-daemon']);
         expect(harness.completions).toEqual(['SUCCEEDED']);
     });
 
