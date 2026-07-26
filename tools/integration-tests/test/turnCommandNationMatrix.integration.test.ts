@@ -14,6 +14,10 @@ const integration = describe.skipIf(!workspaceRoot || process.env.TURN_DIFFERENT
 const readGold = (row: { gold?: unknown } | undefined): number => (typeof row?.gold === 'number' ? row.gold : 0);
 const readNationResource = (row: { gold?: unknown; rice?: unknown } | undefined, resource: 'gold' | 'rice'): number =>
     typeof row?.[resource] === 'number' ? row[resource] : 0;
+const readCityPopulation = (row: { population?: unknown } | undefined): number =>
+    typeof row?.population === 'number' ? row.population : 0;
+const readNumericField = (row: Record<string, unknown> | undefined, field: string): number =>
+    typeof row?.[field] === 'number' ? row[field] : 0;
 const readNationMeta = (row: { meta?: unknown } | undefined): Record<string, unknown> =>
     typeof row?.meta === 'object' && row.meta !== null && !Array.isArray(row.meta)
         ? (row.meta as Record<string, unknown>)
@@ -1147,4 +1151,178 @@ integration('nation material aid accumulated assistance and officer logs', () =>
             })
         ).toEqual([]);
     }, 120_000);
+});
+
+const populationMoveCases: Array<{
+    name: string;
+    amount: unknown;
+    fixturePatches?: FixturePatches;
+    completed: boolean;
+    expectedMoved: number;
+    costBasis: number;
+}> = [
+    {
+        name: 'completes a zero population move',
+        amount: 0,
+        completed: true,
+        expectedMoved: 0,
+        costBasis: 0,
+    },
+    {
+        name: 'truncates a fractional amount',
+        amount: 100.9,
+        completed: true,
+        expectedMoved: 100,
+        costBasis: 100,
+    },
+    {
+        name: 'caps the request and moves only the available population',
+        amount: 100_001,
+        completed: true,
+        expectedMoved: 70_000,
+        costBasis: 100_000,
+    },
+    {
+        name: 'charges for the request before clamping to available population',
+        amount: 1_000,
+        fixturePatches: { cities: { 3: { population: 30_100 } } },
+        completed: true,
+        expectedMoved: 100,
+        costBasis: 1_000,
+    },
+    {
+        name: 'accepts a numeric string amount',
+        amount: '1000',
+        completed: true,
+        expectedMoved: 1_000,
+        costBasis: 1_000,
+    },
+    {
+        name: 'rejects a negative integer amount',
+        amount: -1,
+        completed: false,
+        expectedMoved: 0,
+        costBasis: 0,
+    },
+    {
+        name: 'allows the exact gold and rice cost',
+        amount: 1_000,
+        fixturePatches: { nations: { 1: { gold: 2, rice: 2_002 } } },
+        completed: true,
+        expectedMoved: 1_000,
+        costBasis: 1_000,
+    },
+    {
+        name: 'rejects one less than the required gold',
+        amount: 1_000,
+        fixturePatches: { nations: { 1: { gold: 1, rice: 2_002 } } },
+        completed: false,
+        expectedMoved: 0,
+        costBasis: 0,
+    },
+    {
+        name: 'rejects one less than the required rice reserve',
+        amount: 1_000,
+        fixturePatches: { nations: { 1: { gold: 2, rice: 2_001 } } },
+        completed: false,
+        expectedMoved: 0,
+        costBasis: 0,
+    },
+];
+
+integration('nation population move value and resource boundaries', () => {
+    it.each(populationMoveCases)(
+        '$name matches legacy completion, resources, RNG, and semantic delta',
+        async ({ amount, fixturePatches, completed, expectedMoved, costBasis }) => {
+            const request = buildRequest(
+                'cr_인구이동',
+                { destCityID: 70, amount },
+                {
+                    ...fixturePatches,
+                    cities: {
+                        ...fixturePatches?.cities,
+                        70: {
+                            nationId: 1,
+                            supplyState: 1,
+                            ...fixturePatches?.cities?.[70],
+                        },
+                    },
+                }
+            );
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+            const referenceSourceBefore = reference.before.cities.find((entry) => entry.id === 3);
+            const referenceSourceAfter = reference.after.cities.find((entry) => entry.id === 3);
+            const referenceDestBefore = reference.before.cities.find((entry) => entry.id === 70);
+            const referenceDestAfter = reference.after.cities.find((entry) => entry.id === 70);
+            const coreSourceBefore = core.before.cities.find((entry) => entry.id === 3);
+            const coreSourceAfter = core.after.cities.find((entry) => entry.id === 3);
+            const coreDestBefore = core.before.cities.find((entry) => entry.id === 70);
+            const coreDestAfter = core.after.cities.find((entry) => entry.id === 70);
+            const referenceNationBefore = reference.before.nations.find((entry) => entry.id === 1);
+            const referenceNationAfter = reference.after.nations.find((entry) => entry.id === 1);
+            const coreNationBefore = core.before.nations.find((entry) => entry.id === 1);
+            const coreNationAfter = core.after.nations.find((entry) => entry.id === 1);
+            const referenceGeneralBefore = reference.before.generals.find((entry) => entry.id === 1);
+            const referenceGeneralAfter = reference.after.generals.find((entry) => entry.id === 1);
+            const coreGeneralBefore = core.before.generals.find((entry) => entry.id === 1);
+            const coreGeneralAfter = core.after.generals.find((entry) => entry.id === 1);
+            const develCost =
+                typeof reference.before.world.develCost === 'number' ? reference.before.world.develCost : 0;
+            const expectedCost = Math.round((develCost * costBasis) / 10_000);
+            expect(develCost).toBe(18);
+
+            for (const [before, after, direction] of [
+                [referenceSourceBefore, referenceSourceAfter, -1],
+                [referenceDestBefore, referenceDestAfter, 1],
+                [coreSourceBefore, coreSourceAfter, -1],
+                [coreDestBefore, coreDestAfter, 1],
+            ] as const) {
+                const expectedDelta = expectedMoved === 0 ? 0 : direction * expectedMoved;
+                expect(readCityPopulation(after) - readCityPopulation(before)).toBe(expectedDelta);
+            }
+            for (const [before, after] of [
+                [referenceNationBefore, referenceNationAfter],
+                [coreNationBefore, coreNationAfter],
+            ] as const) {
+                expect(readNationResource(before, 'gold') - readNationResource(after, 'gold')).toBe(expectedCost);
+                expect(readNationResource(before, 'rice') - readNationResource(after, 'rice')).toBe(expectedCost);
+            }
+            for (const field of ['experience', 'dedication']) {
+                const expectedDelta = completed ? 5 : 0;
+                expect(
+                    readNumericField(referenceGeneralAfter, field) - readNumericField(referenceGeneralBefore, field)
+                ).toBe(expectedDelta);
+                expect(readNumericField(coreGeneralAfter, field) - readNumericField(coreGeneralBefore, field)).toBe(
+                    expectedDelta
+                );
+            }
+            if (amount === 0) {
+                const zeroMoveText = '인구 <C>0</>명을 옮겼습니다.';
+                expect(reference.after.logs.slice(reference.before.logs.length).map((entry) => entry.text)).toEqual(
+                    expect.arrayContaining([expect.stringContaining(zeroMoveText)])
+                );
+                expect(core.after.logs.map((entry) => entry.text)).toEqual(
+                    expect.arrayContaining([expect.stringContaining(zeroMoveText)])
+                );
+            }
+
+            expect(reference.execution.outcome).toMatchObject({ completed });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: 'cr_인구이동',
+                actionKey: completed ? 'cr_인구이동' : '휴식',
+                usedFallback: !completed,
+            });
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+        },
+        120_000
+    );
 });

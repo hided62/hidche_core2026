@@ -38,16 +38,29 @@ export interface PopulationMoveResolveContext<
 const ACTION_NAME = '인구이동';
 const AMOUNT_LIMIT = 100000;
 const MIN_AVAILABLE_RECRUIT_POP = 30000;
+const LEGACY_NUMERIC_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+
+const normalizeAmount = (value: unknown): unknown => {
+    let numericValue = value;
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (trimmed === '' || !LEGACY_NUMERIC_PATTERN.test(trimmed)) {
+            return value;
+        }
+        numericValue = Number(trimmed);
+    }
+    if (typeof numericValue !== 'number' || !Number.isFinite(numericValue)) {
+        return value;
+    }
+    return Math.min(Math.trunc(numericValue), AMOUNT_LIMIT);
+};
 
 const ARGS_SCHEMA = z.object({
     destCityId: z.preprocess(
         (value) => (typeof value === 'number' ? Math.floor(value) : value),
         z.number().int().positive()
     ),
-    amount: z.preprocess(
-        (value) => (typeof value === 'number' ? clamp(Math.floor(value), 0, AMOUNT_LIMIT) : value),
-        z.number().int().min(0).max(AMOUNT_LIMIT)
-    ),
+    amount: z.preprocess(normalizeAmount, z.number().int().min(0).max(AMOUNT_LIMIT)),
 });
 export type PopulationMoveArgs = z.infer<typeof ARGS_SCHEMA>;
 
@@ -101,19 +114,8 @@ export class ActionDefinition<
 
         const available = Math.max(0, city.population - MIN_AVAILABLE_RECRUIT_POP);
         const amount = clamp(args.amount, 0, available);
-        if (amount <= 0) {
-            return {
-                effects: [
-                    createLogEffect('이동할 인구가 부족합니다.', {
-                        scope: LogScope.GENERAL,
-                        category: LogCategory.ACTION,
-                        format: LogFormat.MONTH,
-                    }),
-                ],
-            };
-        }
 
-        const cost = calcCost(this.env.develCost, amount);
+        const cost = calcCost(this.env.develCost, args.amount);
         const amountText = amount.toLocaleString();
         const destCityName = destCity.name;
         const josaRo = JosaUtil.pick(destCityName, '로');
