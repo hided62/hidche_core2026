@@ -27,6 +27,7 @@ export type LobbyProfileStatus = {
         apiRunning: boolean;
         daemonRunning: boolean;
         auctionRunning: boolean;
+        battleSimRunning: boolean;
         tournamentRunning: boolean;
     };
     korName: string;
@@ -72,7 +73,13 @@ export class RepositoryProfileStatusService implements GatewayProfileStatusServi
         row: GatewayProfileRecord,
         runtimeMap: Map<
             string,
-            { apiRunning: boolean; daemonRunning: boolean; auctionRunning: boolean; tournamentRunning: boolean }
+            {
+                apiRunning: boolean;
+                daemonRunning: boolean;
+                auctionRunning: boolean;
+                battleSimRunning: boolean;
+                tournamentRunning: boolean;
+            }
         >
     ): LobbyProfileStatus {
         const meta = row.meta;
@@ -86,6 +93,7 @@ export class RepositoryProfileStatusService implements GatewayProfileStatusServi
                 apiRunning: false,
                 daemonRunning: false,
                 auctionRunning: false,
+                battleSimRunning: false,
                 tournamentRunning: false,
             },
             korName: (meta.korName as string | undefined) ?? row.profile,

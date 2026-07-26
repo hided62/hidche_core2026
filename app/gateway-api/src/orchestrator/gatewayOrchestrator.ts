@@ -40,6 +40,7 @@ export interface ProfileRuntimeState {
     apiRunning: boolean;
     daemonRunning: boolean;
     auctionRunning: boolean;
+    battleSimRunning: boolean;
     tournamentRunning: boolean;
 }
 
@@ -71,6 +72,7 @@ export const planProfileReconcile = (
                 runtime.apiRunning &&
                 runtime.daemonRunning &&
                 runtime.auctionRunning &&
+                runtime.battleSimRunning &&
                 runtime.tournamentRunning
             ),
             shouldStop: false,
@@ -78,7 +80,12 @@ export const planProfileReconcile = (
     }
     return {
         shouldStart: false,
-        shouldStop: runtime.apiRunning || runtime.daemonRunning || runtime.auctionRunning || runtime.tournamentRunning,
+        shouldStop:
+            runtime.apiRunning ||
+            runtime.daemonRunning ||
+            runtime.auctionRunning ||
+            runtime.battleSimRunning ||
+            runtime.tournamentRunning,
     };
 };
 
@@ -279,7 +286,10 @@ const parseInstallOptions = (
     };
 };
 
-const buildProcessName = (profileName: string, role: 'api' | 'daemon' | 'auction' | 'tournament'): string =>
+const buildProcessName = (
+    profileName: string,
+    role: 'api' | 'daemon' | 'auction' | 'battle-sim' | 'tournament'
+): string =>
     `sammo:${profileName}:${
         role === 'api'
             ? 'game-api'
@@ -287,7 +297,9 @@ const buildProcessName = (profileName: string, role: 'api' | 'daemon' | 'auction
               ? 'turn-daemon'
               : role === 'auction'
                 ? 'auction-worker'
-                : 'tournament-worker'
+                : role === 'battle-sim'
+                  ? 'battle-sim-worker'
+                  : 'tournament-worker'
     }`;
 
 const isMissingProcessError = (error: unknown): boolean =>
@@ -300,12 +312,14 @@ export const buildProcessDefinitions = (
     api: { name: string; script: string; cwd: string; env: Record<string, string> };
     daemon: { name: string; script: string; cwd: string; env: Record<string, string> };
     auction: { name: string; script: string; cwd: string; env: Record<string, string> };
+    battleSim: { name: string; script: string; cwd: string; env: Record<string, string> };
     tournament: { name: string; script: string; cwd: string; env: Record<string, string> };
 } => {
     const baseEnv = { ...(config.baseEnv ?? {}) };
     const apiName = buildProcessName(profile.profileName, 'api');
     const daemonName = buildProcessName(profile.profileName, 'daemon');
     const auctionName = buildProcessName(profile.profileName, 'auction');
+    const battleSimName = buildProcessName(profile.profileName, 'battle-sim');
     const tournamentName = buildProcessName(profile.profileName, 'tournament');
     const runtimeWorkspace = profile.buildWorkspace ?? config.workspaceRoot;
     const apiCwd = path.join(runtimeWorkspace, 'app', 'game-api');
@@ -350,6 +364,15 @@ export const buildProcessDefinitions = (
             env: {
                 ...apiEnv,
                 GAME_API_ROLE: 'auction-worker',
+            },
+        },
+        battleSim: {
+            name: battleSimName,
+            script: apiScript,
+            cwd: apiCwd,
+            env: {
+                ...apiEnv,
+                GAME_API_ROLE: 'battle-sim-worker',
             },
         },
         tournament: {
@@ -402,12 +425,14 @@ const mapRuntimeStates = (profileNames: string[], processNames: Map<string, bool
         const apiName = buildProcessName(profileName, 'api');
         const daemonName = buildProcessName(profileName, 'daemon');
         const auctionName = buildProcessName(profileName, 'auction');
+        const battleSimName = buildProcessName(profileName, 'battle-sim');
         const tournamentName = buildProcessName(profileName, 'tournament');
         return {
             profileName,
             apiRunning: processNames.get(apiName) ?? false,
             daemonRunning: processNames.get(daemonName) ?? false,
             auctionRunning: processNames.get(auctionName) ?? false,
+            battleSimRunning: processNames.get(battleSimName) ?? false,
             tournamentRunning: processNames.get(tournamentName) ?? false,
         };
     });
@@ -1009,6 +1034,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             await this.processManager.start(definitions.api);
             await this.processManager.start(definitions.daemon);
             await this.processManager.start(definitions.auction);
+            await this.processManager.start(definitions.battleSim);
             await this.processManager.start(definitions.tournament);
             await this.repository.updateLastError(profile.profileName, null);
             return true;
@@ -1025,10 +1051,11 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         const apiName = buildProcessName(profile.profileName, 'api');
         const daemonName = buildProcessName(profile.profileName, 'daemon');
         const auctionName = buildProcessName(profile.profileName, 'auction');
+        const battleSimName = buildProcessName(profile.profileName, 'battle-sim');
         const tournamentName = buildProcessName(profile.profileName, 'tournament');
         const existingNames = new Set((await this.processManager.list()).map((process) => process.name));
         const failures: string[] = [];
-        for (const name of [apiName, daemonName, auctionName, tournamentName]) {
+        for (const name of [apiName, daemonName, auctionName, battleSimName, tournamentName]) {
             if (!existingNames.has(name)) {
                 continue;
             }

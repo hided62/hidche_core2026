@@ -30,6 +30,7 @@ describe('planProfileReconcile', () => {
                 apiRunning: true,
                 daemonRunning: false,
                 auctionRunning: true,
+                battleSimRunning: true,
                 tournamentRunning: true,
             })
         ).toEqual({ shouldStart: true, shouldStop: false });
@@ -41,6 +42,7 @@ describe('planProfileReconcile', () => {
                 apiRunning: false,
                 daemonRunning: false,
                 auctionRunning: false,
+                battleSimRunning: false,
                 tournamentRunning: false,
             })
         ).toEqual({ shouldStart: true, shouldStop: false });
@@ -52,6 +54,7 @@ describe('planProfileReconcile', () => {
                 apiRunning: true,
                 daemonRunning: true,
                 auctionRunning: true,
+                battleSimRunning: true,
                 tournamentRunning: true,
             })
         ).toEqual({ shouldStart: false, shouldStop: false });
@@ -63,6 +66,7 @@ describe('planProfileReconcile', () => {
                 apiRunning: true,
                 daemonRunning: true,
                 auctionRunning: false,
+                battleSimRunning: true,
                 tournamentRunning: true,
             })
         ).toEqual({ shouldStart: true, shouldStop: false });
@@ -74,6 +78,7 @@ describe('planProfileReconcile', () => {
                 apiRunning: false,
                 daemonRunning: true,
                 auctionRunning: false,
+                battleSimRunning: false,
                 tournamentRunning: false,
             })
         ).toEqual({ shouldStart: false, shouldStop: true });
@@ -85,6 +90,7 @@ describe('planProfileReconcile', () => {
                 apiRunning: false,
                 daemonRunning: false,
                 auctionRunning: false,
+                battleSimRunning: false,
                 tournamentRunning: false,
             })
         ).toEqual({ shouldStart: false, shouldStop: false });
@@ -116,6 +122,11 @@ describe('buildProcessDefinitions', () => {
             script: path.join(buildWorkspace, 'app', 'game-api', 'dist', 'index.js'),
             env: { GAME_API_ROLE: 'auction-worker' },
         });
+        expect(definitions.battleSim).toMatchObject({
+            cwd: path.join(buildWorkspace, 'app', 'game-api'),
+            script: path.join(buildWorkspace, 'app', 'game-api', 'dist', 'index.js'),
+            env: { GAME_API_ROLE: 'battle-sim-worker' },
+        });
         expect(definitions.tournament).toMatchObject({
             cwd: path.join(buildWorkspace, 'app', 'game-api'),
             script: path.join(buildWorkspace, 'app', 'game-api', 'dist', 'index.js'),
@@ -129,6 +140,7 @@ describe('buildProcessDefinitions', () => {
         expect(definitions.api.cwd).toBe(path.join(processConfig.workspaceRoot, 'app', 'game-api'));
         expect(definitions.daemon.cwd).toBe(path.join(processConfig.workspaceRoot, 'app', 'game-engine'));
         expect(definitions.auction.cwd).toBe(path.join(processConfig.workspaceRoot, 'app', 'game-api'));
+        expect(definitions.battleSim.cwd).toBe(path.join(processConfig.workspaceRoot, 'app', 'game-api'));
         expect(definitions.tournament.cwd).toBe(path.join(processConfig.workspaceRoot, 'app', 'game-api'));
     });
 });

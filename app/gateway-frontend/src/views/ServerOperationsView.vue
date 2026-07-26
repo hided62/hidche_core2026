@@ -20,6 +20,7 @@ type Profile = {
         apiRunning: boolean;
         daemonRunning: boolean;
         auctionRunning: boolean;
+        battleSimRunning: boolean;
         tournamentRunning: boolean;
     };
 };
@@ -386,6 +387,14 @@ onBeforeUnmount(() => {
                             <div class="text-xs text-zinc-500">Auction worker</div>
                             <div :class="selectedProfile.runtime.auctionRunning ? 'text-emerald-400' : 'text-zinc-500'">
                                 {{ selectedProfile.runtime.auctionRunning ? 'RUNNING' : 'STOPPED' }}
+                            </div>
+                        </div>
+                        <div class="rounded bg-zinc-950 p-3">
+                            <div class="text-xs text-zinc-500">Battle sim worker</div>
+                            <div
+                                :class="selectedProfile.runtime.battleSimRunning ? 'text-emerald-400' : 'text-zinc-500'"
+                            >
+                                {{ selectedProfile.runtime.battleSimRunning ? 'RUNNING' : 'STOPPED' }}
                             </div>
                         </div>
                         <div class="rounded bg-zinc-950 p-3">

@@ -818,6 +818,7 @@ export const adminRouter = router({
                     apiRunning: false,
                     daemonRunning: false,
                     auctionRunning: false,
+                    battleSimRunning: false,
                     tournamentRunning: false,
                 },
             }));

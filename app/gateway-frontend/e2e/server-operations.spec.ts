@@ -39,6 +39,7 @@ const profile = (runtimeRunning: boolean) => ({
         apiRunning: runtimeRunning,
         daemonRunning: runtimeRunning,
         auctionRunning: runtimeRunning,
+        battleSimRunning: runtimeRunning,
         tournamentRunning: runtimeRunning,
     },
 });
