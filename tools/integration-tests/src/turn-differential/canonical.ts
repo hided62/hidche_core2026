@@ -7,6 +7,7 @@ export interface TurnSnapshotSelector {
     logAfterId?: number;
     messageAfterId?: number;
     includeNationHistoryLogs?: boolean;
+    includeGlobalHistoryLogs?: boolean;
 }
 
 export interface CanonicalTurnSnapshot {
@@ -24,6 +25,7 @@ export interface CanonicalTurnSnapshot {
     messages: Array<Record<string, unknown>>;
     watermarks: {
         logId: number;
+        historyLogId: number;
         messageId: number;
     };
 }
@@ -259,6 +261,7 @@ export const projectCoreDatabaseSnapshot = (rows: {
         messages: [],
         watermarks: {
             logId: logs.reduce((max, row) => Math.max(max, Number(row.id) || 0), 0),
+            historyLogId: logs.reduce((max, row) => Math.max(max, Number(row.id) || 0), 0),
             messageId: 0,
         },
     };

@@ -23,7 +23,7 @@ const snapshot = (
     nationTurns: [],
     logs: [],
     messages: [],
-    watermarks: { logId: 0, messageId: 0 },
+    watermarks: { logId: 0, historyLogId: 0, messageId: 0 },
     ...overrides,
 });
 

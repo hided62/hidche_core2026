@@ -20,10 +20,29 @@ const ignoredLifecyclePaths = [
     /^logs/,
     /^messages/,
     /^world\.turnTime$/,
-    /^generals\[[^\]]+\]\.(?:turnTime|recentWarTime|lastTurn|killTurn|mySet)(?:\.|$)/,
+    /^generals\[[^\]]+\]\.(?:turnTime|recentWarTime|lastTurn|mySet)(?:\.|$)/,
     /^generals\[[^\]]+\]\.meta(?:\.|$)/,
     /^nations\[[^\]]+\]\.meta(?:\.|$)/,
 ];
+
+const normalizeStoredLogText = (value: unknown): string =>
+    String(value)
+        .replace(/^(?:<C>●<\/>|<S>◆<\/>|<R>★<\/>)(?:(?:\d+년 )?\d+월:|\d+년:)?/, '')
+        .replace(/<span class='hidden_but_copyable'>(.*?)<\/span>/g, '$1')
+        .replace(/ <1>\d{2}:\d{2}<\/>$/, '');
+
+const semanticLogSignatures = (logs: Array<Record<string, unknown>>): string[] =>
+    logs
+        .map((entry) =>
+            JSON.stringify({
+                scope: String(entry.scope).toLowerCase(),
+                category: String(entry.category).toLowerCase(),
+                generalId: Number(entry.generalId) || null,
+                nationId: Number(entry.nationId) || null,
+                text: normalizeStoredLogText(entry.text),
+            })
+        )
+        .sort();
 
 const readFixture = (relativePath: string): TurnCommandFixtureRequest => {
     const stackRoot = path.join(workspaceRoot!, 'docker_compose_files/reference');
@@ -34,6 +53,7 @@ const readFixture = (relativePath: string): TurnCommandFixtureRequest => {
         ...fixture,
         setup: {
             ...fixture.setup,
+            isolateWorld: true,
             world: {
                 ...fixture.setup?.world,
                 hiddenSeed: 'turn-command-differential-seed',
@@ -60,6 +80,10 @@ integration('core ↔ legacy command-boundary differential', () => {
         '%s matches command RNG and canonical state delta',
         async (_label, fixturePath) => {
             const request = readFixture(fixturePath);
+            if (request.action === 'che_출병') {
+                request.observe!.includeNationHistoryLogs = true;
+                request.observe!.includeGlobalHistoryLogs = true;
+            }
             const reference = runReferenceTurnCommandTraceRequest(
                 workspaceRoot!,
                 request as unknown as Record<string, unknown>
@@ -73,9 +97,24 @@ integration('core ↔ legacy command-boundary differential', () => {
             });
             expect(reference.execution.outcome).toMatchObject({ completed: true });
             expect(core.rng).toEqual(reference.rng);
+            if (request.action === 'che_출병') {
+                const generalLogWatermark = reference.before.watermarks.logId;
+                const historyLogWatermark = reference.before.watermarks.historyLogId;
+                const referenceAddedLogs = reference.after.logs.filter((entry) =>
+                    String(entry.scope).toLowerCase() === 'nation' ||
+                    (String(entry.scope).toLowerCase() === 'system' &&
+                        String(entry.category).toLowerCase() === 'history')
+                        ? (Number(entry.id) || 0) > historyLogWatermark
+                        : (Number(entry.id) || 0) > generalLogWatermark
+                );
+                expect(semanticLogSignatures(core.after.logs)).toEqual(semanticLogSignatures(referenceAddedLogs));
+            }
             expect(
                 compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
-                    ignoredPathPatterns: ignoredLifecyclePaths,
+                    ignoredPathPatterns:
+                        request.action === 'che_출병'
+                            ? ignoredLifecyclePaths
+                            : [...ignoredLifecyclePaths, /^generals\[[^\]]+\]\.killTurn(?:\.|$)/],
                 })
             ).toEqual([]);
         },

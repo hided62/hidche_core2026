@@ -68,6 +68,7 @@ export interface TurnCommandFixtureRequest {
         logAfterId?: number;
         messageAfterId?: number;
         includeNationHistoryLogs?: boolean;
+        includeGlobalHistoryLogs?: boolean;
         generalCooldowns?: GeneralCooldownSelector[];
         nationCooldowns?: NationCooldownSelector[];
         diplomacyPairs?: Array<{ fromNationId: number; toNationId: number }>;
@@ -469,7 +470,7 @@ const buildWorldInput = (
             lastTurnTime: turnTime,
             meta: {
                 hiddenSeed: request.setup?.world?.hiddenSeed ?? 'turn-command-differential-seed',
-                killturn: 24,
+                killturn: readNumber(referenceBefore.world, 'killTurn', 24),
                 isUnited: readNumber(referenceBefore.world, 'isUnited'),
                 scenarioId: readNumber(referenceBefore.world, 'scenarioId'),
                 initYear: readNumber(
@@ -661,7 +662,7 @@ const projectWorld = (
         ),
         logs,
         messages,
-        watermarks: { logId: logs.length, messageId: messages.length },
+        watermarks: { logId: logs.length, historyLogId: logs.length, messageId: messages.length },
     };
 };
 
@@ -785,8 +786,8 @@ export const runCoreTurnCommandTrace = async (
             id: index + 1,
             scope: log.scope,
             category: log.category,
-            generalId: log.generalId ?? actor.id,
-            nationId: log.nationId ?? actor.nationId,
+            generalId: log.generalId ?? (log.scope === 'GENERAL' ? actor.id : undefined),
+            nationId: log.nationId ?? (log.scope === 'NATION' ? actor.nationId : undefined),
             year: state.currentYear,
             month: state.currentMonth,
             text: log.text,
