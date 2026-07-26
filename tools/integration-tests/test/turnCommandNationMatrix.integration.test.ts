@@ -19,7 +19,7 @@ const ignoredLifecyclePaths = [
     /^world\.turnTime$/,
     /^generals\[[^\]]+\]\.(?:turnTime|recentWarTime|lastTurn|killTurn|mySet)(?:\.|$)/,
     /^generals\[[^\]]+\]\.meta(?:\.|$)/,
-    /^nations\[[^\]]+\]\.meta(?:\.|$)/,
+    /^nations\[[^\]]+\]\.meta\.(?:turn_last_\d+|next_execute_.+|capset|tech|gennum|war|surlimit)(?:\.|$)/,
 ];
 
 const general = (id: number, nationId: number, cityId: number, officerLevel: number): Record<string, unknown> => ({
