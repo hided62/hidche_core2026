@@ -270,6 +270,7 @@ const buildNation = (row: Record<string, unknown>, generals: TurnGeneral[]): Nat
             war: readNumber(row, 'war', readNumber(meta, 'war')),
             surlimit: readNumber(row, 'diplomacyLimit', readNumber(meta, 'surlimit')),
             capset: readNumber(row, 'capitalRevision', readNumber(meta, 'capset')),
+            strategic_cmd_limit: readNumber(row, 'strategicCommandLimit', readNumber(meta, 'strategic_cmd_limit')),
         },
     };
 };
@@ -529,6 +530,7 @@ const projectWorld = (
                 war: readNumber(nation.meta, 'war'),
                 diplomacyLimit: readNumber(nation.meta, 'surlimit'),
                 capitalRevision: readNumber(nation.meta, 'capset'),
+                strategicCommandLimit: readNumber(nation.meta, 'strategic_cmd_limit'),
                 meta: nation.meta,
             })),
         diplomacy: world

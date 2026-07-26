@@ -189,6 +189,7 @@ export const projectCoreDatabaseSnapshot = (rows: {
             war: readNumber(meta, 'war'),
             diplomacyLimit: readNumber(meta, 'surlimit'),
             capitalRevision: readNumber(meta, 'capset'),
+            strategicCommandLimit: readNumber(meta, 'strategic_cmd_limit'),
             meta,
         };
     });

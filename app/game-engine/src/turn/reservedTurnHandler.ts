@@ -1229,6 +1229,13 @@ export const createReservedTurnHandler = async (options: {
                 const hasNationChange = (resolution.patches?.cities ?? []).some((patch) =>
                     Object.prototype.hasOwnProperty.call(patch.patch ?? {}, 'nationId')
                 );
+                const refreshesFrontForDiplomacyState =
+                    actionKey === 'che_이호경식' &&
+                    resolution.effects.some(
+                        (effect) =>
+                            effect.type === 'diplomacy:patch' &&
+                            Object.prototype.hasOwnProperty.call(effect.patch, 'state')
+                    );
                 // 레거시 건국 계열과 무작위 수도 이전은 명령이 직접 지정한
                 // front 값만 바꾸고 전체 전선을 즉시 재계산하지 않는다.
                 const preservesImmediateFrontState = [
@@ -1237,7 +1244,7 @@ export const createReservedTurnHandler = async (options: {
                     'che_무작위건국',
                     'che_무작위수도이전',
                 ].includes(actionKey);
-                if (hasNationChange && !preservesImmediateFrontState) {
+                if ((hasNationChange || refreshesFrontForDiplomacyState) && !preservesImmediateFrontState) {
                     const worldView = worldOverlay?.view ?? worldRef;
                     if (worldView && options.map) {
                         const frontPatches = buildFrontStatePatches({
