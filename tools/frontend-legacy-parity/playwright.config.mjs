@@ -6,7 +6,7 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 
 export default defineConfig({
     testDir: '.',
-    testMatch: 'visual-parity.spec.ts',
+    testMatch: ['visual-parity.spec.ts', 'public-gaps.spec.ts'],
     fullyParallel: false,
     workers: 1,
     timeout: 30_000,

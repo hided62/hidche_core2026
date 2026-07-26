@@ -15,6 +15,8 @@ authenticated path as a real session without contacting a live database.
 The test suite intercepts only the tRPC operations required by each screen and
 fails on unknown operations. It also serves the checked-out reference image
 tree instead of replacing images with layout-neutral placeholders.
+`public-gaps.spec.ts` adds bounded fixtures for nation betting and the public
+NPC list, including mutations and recoverable API failures.
 
 Run the suite from the core2026 repository root:
 
@@ -43,6 +45,8 @@ storage, route guards, and image loading.
 | troop                     | `hwe/v_troop.php`                        | existing `app/game-frontend/e2e/troop.spec.ts` desktop/mobile geometry and interaction suite                                |
 | hall of fame              | `hwe/a_hallOfFame.php`                   | 500/1000px container, 100px ranking cells, 64px natural image, walnut/green textures, Pretendard, close-button focus        |
 | yearbook                  | `hwe/v_history.php`                      | 1000px 700+300 desktop grid, 500px stacked grid, month navigation, legacy textures, success and API-error flows             |
+| nation betting            | `hwe/v_nationBetting.php`                | 1000px/6-column desktop and 500px/3-column mobile grids, picked card style, payout table, success and retained-form error   |
+| public NPC list           | `hwe/a_npcList.php`                      | 1000px 12-column table with Chromium-expanded legacy widths, NPC color, eight sorts, retained table/sort after API error    |
 
 The global game baseline is black, white, Pretendard 14px. Legacy texture
 helpers intentionally follow `common.orig.css`: `bg0` is walnut, `bg1` is
