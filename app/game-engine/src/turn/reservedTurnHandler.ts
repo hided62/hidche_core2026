@@ -1283,14 +1283,21 @@ export const createReservedTurnHandler = async (options: {
                     }
                 }
 
-                const hasNationChange = (resolution.patches?.cities ?? []).some((patch) => {
+                const cityNationChanges = (resolution.patches?.cities ?? []).flatMap((patch) => {
                     if (!Object.prototype.hasOwnProperty.call(patch.patch ?? {}, 'nationId')) {
-                        return false;
+                        return [];
                     }
                     const nextNationId = patch.patch.nationId;
                     const previousNationId = cityNationIdsBeforeExecution.get(patch.id);
-                    return previousNationId === undefined || nextNationId !== previousNationId;
+                    if (
+                        typeof nextNationId !== 'number' ||
+                        (previousNationId !== undefined && nextNationId === previousNationId)
+                    ) {
+                        return [];
+                    }
+                    return [{ cityId: patch.id, nextNationId }];
                 });
+                const hasNationChange = cityNationChanges.length > 0;
                 const refreshesFrontForDiplomacyState =
                     actionKey === 'che_이호경식' &&
                     resolution.effects.some(
@@ -1309,9 +1316,32 @@ export const createReservedTurnHandler = async (options: {
                 if ((hasNationChange || refreshesFrontForDiplomacyState) && !preservesImmediateFrontState) {
                     const worldView = worldOverlay?.view ?? worldRef;
                     if (worldView && options.map) {
+                        const frontNationIds = new Set<number>();
+                        const cityById = new Map(worldView.listCities().map((city) => [city.id, city] as const));
+                        const mapCityById = new Map(options.map.cities.map((city) => [city.id, city] as const));
+                        for (const change of cityNationChanges) {
+                            frontNationIds.add(change.nextNationId);
+                            const mapCity = mapCityById.get(change.cityId);
+                            for (const cityId of [change.cityId, ...(mapCity?.connections ?? [])]) {
+                                const nationId = cityById.get(cityId)?.nationId;
+                                if (nationId && nationId > 0) {
+                                    frontNationIds.add(nationId);
+                                }
+                            }
+                        }
+                        if (refreshesFrontForDiplomacyState) {
+                            for (const effect of resolution.effects) {
+                                if (effect.type !== 'diplomacy:patch') {
+                                    continue;
+                                }
+                                frontNationIds.add(effect.srcNationId);
+                                frontNationIds.add(effect.destNationId);
+                            }
+                        }
                         const frontPatches = buildFrontStatePatches({
                             worldView,
                             map: options.map,
+                            nationIds: [...frontNationIds],
                         });
                         if (frontPatches.length > 0) {
                             for (const patch of frontPatches) {

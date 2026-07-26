@@ -82,6 +82,7 @@ integration('core ↔ legacy command-boundary differential', () => {
             'fixtures/turn-differential/live-sortie-multiple-defenders.json',
         ],
         ['live sortie supply retreat', 'fixtures/turn-differential/live-sortie-supply-retreat.json'],
+        ['live sortie noncapital conquest', 'fixtures/turn-differential/live-sortie-noncapital-conquest.json'],
     ])(
         '%s matches command RNG and canonical state delta',
         async (_label, fixturePath) => {
@@ -112,6 +113,12 @@ integration('core ↔ legacy command-boundary differential', () => {
                 );
                 expect(retreatLogs.some((log) => String(log.text).includes('병량 부족'))).toBe(true);
                 expect(reference.after.cities.find((city) => city.id === 70)?.nationId).toBe(1);
+            }
+            if (fixturePath.endsWith('live-sortie-noncapital-conquest.json')) {
+                expect(reference.after.cities.find((city) => city.id === 70)?.nationId).toBe(1);
+                expect(reference.after.cities.find((city) => city.id === 71)?.nationId).toBe(2);
+                expect(reference.after.nations.some((nation) => nation.id === 2)).toBe(true);
+                expect(reference.after.generals.find((general) => general.id === 2)?.nationId).toBe(2);
             }
 
             expect(core.execution.outcome).toMatchObject({
