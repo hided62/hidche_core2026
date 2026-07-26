@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { onUnmounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useMediaQuery } from '@vueuse/core';
 import PanelCard from '../components/ui/PanelCard.vue';
@@ -12,6 +12,7 @@ import NationBasicCard from '../components/main/NationBasicCard.vue';
 import MessagePanel from '../components/main/MessagePanel.vue';
 import SelectedCityPanel from '../components/main/SelectedCityPanel.vue';
 import RecordPanel from '../components/main/RecordPanel.vue';
+import MainFrontStatus from '../components/main/MainFrontStatus.vue';
 import { formatLog } from '../utils/formatLog';
 import { useSessionStore } from '../stores/session';
 import { useMainDashboardStore } from '../stores/mainDashboard';
@@ -38,6 +39,7 @@ const {
     loading,
     error,
     recordsError,
+    frontStatusError,
     realtimeEnabled,
     general,
     city,
@@ -53,12 +55,30 @@ const {
     globalRecords,
     generalRecords,
     worldHistory,
+    frontStatus,
+    surveyNotice,
     messageDraftText,
     targetMailbox,
     mailboxGroups,
     statusLine,
     realtimeLabel,
 } = storeToRefs(dashboard);
+
+let surveyNoticeTimer: ReturnType<typeof setTimeout> | null = null;
+watch(surveyNotice, (notice) => {
+    if (surveyNoticeTimer) {
+        clearTimeout(surveyNoticeTimer);
+        surveyNoticeTimer = null;
+    }
+    if (notice) {
+        surveyNoticeTimer = setTimeout(() => dashboard.dismissSurveyNotice(), 60_000);
+    }
+});
+onUnmounted(() => {
+    if (surveyNoticeTimer) {
+        clearTimeout(surveyNoticeTimer);
+    }
+});
 
 const reserveGeneralTurn = (payload: { index: number; action: string; args: Record<string, unknown> }) => {
     void dashboard.setGeneralTurn(payload.index, payload.action, payload.args);
@@ -153,10 +173,21 @@ watch(
         </header>
 
         <div v-if="error" class="error">{{ error }}</div>
+        <div v-if="frontStatusError" class="front-status-error" role="alert">{{ frontStatusError }}</div>
 
         <div v-if="session.needsGeneral" class="warning">
             장수가 아직 생성되지 않았습니다. <RouterLink to="/join">장수 생성/빙의</RouterLink>
         </div>
+
+        <MainFrontStatus :status="frontStatus" />
+
+        <aside v-if="surveyNotice" class="survey-notice" role="status" aria-live="polite">
+            <div class="survey-notice-title">
+                <strong>설문조사 안내</strong>
+                <button type="button" aria-label="설문조사 알림 닫기" @click="dashboard.dismissSurveyNotice">×</button>
+            </div>
+            <RouterLink to="/survey">새로운 설문조사가 있습니다.</RouterLink>
+        </aside>
 
         <section v-if="isMobile" class="layout-mobile">
             <div class="mobile-tabs">
@@ -453,9 +484,60 @@ button {
     font-size: 0.85rem;
 }
 
+.front-status-error {
+    color: #ff8a80;
+    font-size: 0.85rem;
+}
+
 .warning {
     color: #f5d08a;
     font-size: 0.85rem;
+}
+
+.survey-notice {
+    position: fixed;
+    z-index: 1080;
+    right: 16px;
+    bottom: 16px;
+    box-sizing: border-box;
+    width: min(350px, calc(100vw - 32px));
+    border: 1px solid rgba(255, 193, 7, 0.75);
+    border-radius: 4px;
+    background: rgba(32, 28, 16, 0.96);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+    color: #fff;
+    font-size: 14px;
+    line-height: 1.3;
+}
+
+.survey-notice-title {
+    display: flex;
+    min-height: 35px;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid rgba(255, 193, 7, 0.45);
+    padding: 8px 12px;
+    color: #ffc107;
+}
+
+.survey-notice-title button {
+    padding: 0 4px;
+    cursor: pointer;
+    font-size: 20px;
+    line-height: 1;
+}
+
+.survey-notice > a {
+    display: block;
+    padding: 12px;
+    color: #fff;
+    text-decoration: none;
+}
+
+.survey-notice > a:hover,
+.survey-notice > a:focus-visible {
+    background: rgba(255, 193, 7, 0.12);
+    text-decoration: underline;
 }
 
 .layout-desktop {

@@ -28,14 +28,13 @@ const profiles = ref<LobbyProfile[]>([]);
 const profileDetails = ref<Record<string, LobbyInfo | undefined>>({});
 const profileMapPreviews = ref<Record<string, MapPreviewBundle | undefined>>({});
 const entryLoading = ref<Record<string, boolean>>({});
+const logoutLoading = ref(false);
+const logoutError = ref('');
 const canAccessAdmin = computed(
     () =>
         me.value?.roles.some(
             (role) =>
-                role === 'superuser' ||
-                role === 'admin' ||
-                role === 'admin.superuser' ||
-                role.startsWith('admin.')
+                role === 'superuser' || role === 'admin' || role === 'admin.superuser' || role.startsWith('admin.')
         ) ?? false
 );
 
@@ -82,9 +81,28 @@ onMounted(async () => {
 });
 
 const handleLogout = async () => {
-    // TODO: Implement logout mutation in gateway-api
-    // await trpc.auth.logout.mutation();
-    await router.push('/');
+    if (logoutLoading.value) {
+        return;
+    }
+    logoutError.value = '';
+    const sessionToken = window.localStorage.getItem('sammo-session-token');
+    if (!sessionToken) {
+        await router.replace('/');
+        return;
+    }
+    logoutLoading.value = true;
+    try {
+        await trpc.auth.logout.mutate({ sessionToken });
+        window.localStorage.removeItem('sammo-session-token');
+        window.localStorage.removeItem('sammo-game-token');
+        window.localStorage.removeItem('sammo-game-profile');
+        me.value = null;
+        await router.replace('/');
+    } catch (error) {
+        logoutError.value = error instanceof Error ? error.message : '로그아웃에 실패했습니다.';
+    } finally {
+        logoutLoading.value = false;
+    }
 };
 
 const resolveGameUrl = (path: string, profileName: string, gameToken: string): string | null => {
@@ -335,9 +353,7 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                     {{ profileDetails[profile.profileName]?.turnTerm ?? '-' }}분 턴
                                 </div>
                             </div>
-                            <div v-else class="text-xs text-zinc-500 py-8 text-center">
-                                지도를 불러오는 중...
-                            </div>
+                            <div v-else class="text-xs text-zinc-500 py-8 text-center">지도를 불러오는 중...</div>
                         </div>
                         <div v-else class="text-xs text-zinc-600 py-8 text-center">- 폐 쇄 중 -</div>
                     </div>
@@ -359,10 +375,12 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                         비밀번호 & 전콘 & 탈퇴
                     </RouterLink>
                     <button
-                        class="bg-zinc-800 hover:bg-zinc-700 text-white px-6 py-2 rounded border border-zinc-700 transition-colors"
+                        id="btn_logout"
+                        class="legacy-logout-button"
+                        :disabled="logoutLoading"
                         @click="handleLogout"
                     >
-                        로 그 아 웃
+                        {{ logoutLoading ? '로그아웃 중…' : '로 그 아 웃' }}
                     </button>
                     <RouterLink
                         v-if="canAccessAdmin"
@@ -372,7 +390,45 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                         관리자 페이지
                     </RouterLink>
                 </div>
+                <p v-if="logoutError" class="px-6 pb-4 text-center text-sm text-red-400" role="alert">
+                    {{ logoutError }}
+                </p>
             </div>
         </div>
     </DefaultLayout>
 </template>
+
+<style scoped>
+.legacy-logout-button {
+    box-sizing: border-box;
+    width: 200px;
+    height: 48px;
+    border: 0;
+    border-radius: 6px;
+    background: #303030;
+    color: #fff;
+    cursor: pointer;
+    font-family: Pretendard, sans-serif;
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 24px;
+    padding: 10px;
+}
+
+.legacy-logout-button:hover,
+.legacy-logout-button:focus,
+.legacy-logout-button:active {
+    background: #303030;
+    color: #fff;
+}
+
+.legacy-logout-button:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 2px;
+}
+
+.legacy-logout-button:disabled {
+    cursor: default;
+    opacity: 0.65;
+}
+</style>

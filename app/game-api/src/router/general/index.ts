@@ -5,7 +5,9 @@ import { LogCategory, LogScope } from '@sammo-ts/infra';
 import { asRecord } from '@sammo-ts/common';
 
 import { authedProcedure, router } from '../../trpc.js';
+import { resolveAccessWindows } from '../../services/generalAccess.js';
 import { getMyGeneral } from '../shared/general.js';
+import { resolveNationNotice } from '../nation/shared.js';
 
 const zGeneralSettings = z.object({
     tnmt: z.number().int().optional(),
@@ -381,4 +383,119 @@ export const generalRouter = router({
                 history: trimRecentRecords(history, input.lastWorldHistoryId),
             };
         }),
+    getFrontStatus: authedProcedure.query(async ({ ctx }) => {
+        const me = await getMyGeneral(ctx);
+        const worldState = await ctx.db.worldState.findFirst({
+            orderBy: { id: 'asc' },
+            select: {
+                tickSeconds: true,
+                meta: true,
+            },
+        });
+        if (!worldState) {
+            throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'World state is not initialized.' });
+        }
+
+        const now = new Date();
+        const { scoreStartedAt } = resolveAccessWindows(now, worldState.tickSeconds, worldState.meta);
+        const [onlineAccess, ownNation, latestVote] = await Promise.all([
+            ctx.db.generalAccessLog.findMany({
+                where: {
+                    lastRefresh: {
+                        gte: scoreStartedAt,
+                    },
+                },
+                select: { generalId: true },
+            }),
+            me.nationId > 0
+                ? ctx.db.nation.findUnique({
+                      where: { id: me.nationId },
+                      select: { meta: true },
+                  })
+                : Promise.resolve(null),
+            ctx.db.votePoll.findFirst({
+                where: {
+                    startAt: { lte: now },
+                    closedAt: null,
+                    OR: [{ endAt: null }, { endAt: { gte: now } }],
+                },
+                orderBy: { id: 'desc' },
+                select: {
+                    id: true,
+                    title: true,
+                },
+            }),
+        ]);
+
+        const onlineGeneralIds = onlineAccess.map((entry) => entry.generalId);
+        const onlineGenerals =
+            onlineGeneralIds.length > 0
+                ? await ctx.db.general.findMany({
+                      where: { id: { in: onlineGeneralIds } },
+                      orderBy: { id: 'asc' },
+                      select: {
+                          id: true,
+                          name: true,
+                          nationId: true,
+                      },
+                  })
+                : [];
+        const nationIds = [...new Set(onlineGenerals.map((general) => general.nationId).filter((id) => id > 0))];
+        const nations =
+            nationIds.length > 0
+                ? await ctx.db.nation.findMany({
+                      where: { id: { in: nationIds } },
+                      select: {
+                          id: true,
+                          name: true,
+                      },
+                  })
+                : [];
+        const nationNames = new Map(nations.map((nation) => [nation.id, nation.name]));
+        const onlineByNation = new Map<number, typeof onlineGenerals>();
+        for (const general of onlineGenerals) {
+            const bucket = onlineByNation.get(general.nationId) ?? [];
+            bucket.push(general);
+            onlineByNation.set(general.nationId, bucket);
+        }
+        const onlineNations = [...onlineByNation.entries()]
+            .sort((left, right) => right[1].length - left[1].length || left[0] - right[0])
+            .map(([nationId]) => `【${nationId === 0 ? '재야' : (nationNames.get(nationId) ?? `세력 ${nationId}`)}】`)
+            .join(', ');
+        const myOnlineGenerals = onlineGenerals
+            .filter((general) => general.nationId === me.nationId)
+            .map((general) => general.name)
+            .join(', ');
+        const myVote = latestVote
+            ? await ctx.db.vote.findFirst({
+                  where: {
+                      voteId: latestVote.id,
+                      generalId: me.id,
+                  },
+                  select: { id: true },
+              })
+            : null;
+        const worldMeta = asRecord(worldState.meta);
+        const rawLastExecuted = worldMeta.lastTurnTime ?? worldMeta.turntime;
+        const parsedLastExecuted =
+            typeof rawLastExecuted === 'string' || rawLastExecuted instanceof Date ? new Date(rawLastExecuted) : null;
+
+        return {
+            onlineUserCount: onlineGenerals.length,
+            onlineNations,
+            onlineGenerals: myOnlineGenerals,
+            nationNotice: ownNation ? resolveNationNotice(asRecord(ownNation.meta)) : '',
+            lastExecuted:
+                parsedLastExecuted && Number.isFinite(parsedLastExecuted.getTime())
+                    ? parsedLastExecuted.toISOString()
+                    : null,
+            latestVote: latestVote
+                ? {
+                      id: latestVote.id,
+                      title: latestVote.title,
+                      hasVoted: Boolean(myVote),
+                  }
+                : null,
+        };
+    }),
 });
