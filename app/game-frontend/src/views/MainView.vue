@@ -11,13 +11,15 @@ import CityBasicCard from '../components/main/CityBasicCard.vue';
 import NationBasicCard from '../components/main/NationBasicCard.vue';
 import MessagePanel from '../components/main/MessagePanel.vue';
 import SelectedCityPanel from '../components/main/SelectedCityPanel.vue';
+import RecordPanel from '../components/main/RecordPanel.vue';
+import { formatLog } from '../utils/formatLog';
 import { useSessionStore } from '../stores/session';
 import { useMainDashboardStore } from '../stores/mainDashboard';
 import { trpc } from '../utils/trpc';
 
 const session = useSessionStore();
 const dashboard = useMainDashboardStore();
-const isMobile = useMediaQuery('(max-width: 1024px)');
+const isMobile = useMediaQuery('(max-width: 991px)');
 
 const mobileTabs = [
     { key: 'map', label: '지도' },
@@ -35,11 +37,11 @@ const tournamentStage = ref(0);
 const {
     loading,
     error,
+    recordsError,
     realtimeEnabled,
     general,
     city,
     nation,
-    lobbyInfo,
     worldMap,
     mapLayout,
     selectedCity,
@@ -48,6 +50,9 @@ const {
     boardAccess,
     reservedGeneralTurns,
     reservedNationTurns,
+    globalRecords,
+    generalRecords,
+    worldHistory,
     messageDraftText,
     targetMailbox,
     mailboxGroups,
@@ -203,23 +208,49 @@ watch(
                 </PanelCard>
             </div>
 
-            <div v-if="mobileTab === 'world'" class="mobile-panel">
-                <PanelCard title="장수 동향">
+            <div v-if="mobileTab === 'world'" class="mobile-panel record-zone-mobile">
+                <RecordPanel title="장수 동향">
                     <SkeletonLines v-if="loading" :lines="4" />
-                    <div v-else class="placeholder">장수 동향은 실시간 스트림으로 연결 예정</div>
-                </PanelCard>
-                <PanelCard title="개인 기록">
-                    <SkeletonLines v-if="loading" :lines="4" />
-                    <div v-else class="placeholder">개인 기록 영역</div>
-                </PanelCard>
-                <PanelCard title="중원 정세">
-                    <SkeletonLines v-if="loading" :lines="4" />
-                    <div v-else class="placeholder">
-                        <div>유저 {{ lobbyInfo?.userCnt ?? '-' }} / {{ lobbyInfo?.maxUserCnt ?? '-' }}</div>
-                        <div>NPC {{ lobbyInfo?.npcCnt ?? '-' }}</div>
-                        <div>세력 {{ lobbyInfo?.nationCnt ?? '-' }}</div>
+                    <div v-else-if="recordsError" class="record-error" role="alert">{{ recordsError }}</div>
+                    <div v-else class="record-list" data-record-bucket="global">
+                        <!-- eslint-disable-next-line vue/no-v-html -->
+                        <div
+                            v-for="entry in globalRecords"
+                            :key="entry.id"
+                            class="record-line"
+                            v-html="formatLog(entry.text)"
+                        />
+                        <div v-if="globalRecords.length === 0" class="record-empty">기록이 없습니다.</div>
                     </div>
-                </PanelCard>
+                </RecordPanel>
+                <RecordPanel title="개인 기록">
+                    <SkeletonLines v-if="loading" :lines="4" />
+                    <div v-else-if="recordsError" class="record-error" role="alert">{{ recordsError }}</div>
+                    <div v-else class="record-list" data-record-bucket="general">
+                        <!-- eslint-disable-next-line vue/no-v-html -->
+                        <div
+                            v-for="entry in generalRecords"
+                            :key="entry.id"
+                            class="record-line"
+                            v-html="formatLog(entry.text)"
+                        />
+                        <div v-if="generalRecords.length === 0" class="record-empty">기록이 없습니다.</div>
+                    </div>
+                </RecordPanel>
+                <RecordPanel title="중원 정세">
+                    <SkeletonLines v-if="loading" :lines="4" />
+                    <div v-else-if="recordsError" class="record-error" role="alert">{{ recordsError }}</div>
+                    <div v-else class="record-list" data-record-bucket="history">
+                        <!-- eslint-disable-next-line vue/no-v-html -->
+                        <div
+                            v-for="entry in worldHistory"
+                            :key="entry.id"
+                            class="record-line"
+                            v-html="formatLog(entry.text)"
+                        />
+                        <div v-if="worldHistory.length === 0" class="record-empty">기록이 없습니다.</div>
+                    </div>
+                </RecordPanel>
             </div>
 
             <div v-if="mobileTab === 'messages'" class="mobile-panel">
@@ -254,14 +285,6 @@ watch(
                 <PanelCard title="선택 도시">
                     <SelectedCityPanel :city="selectedCity" :loading="loading" />
                 </PanelCard>
-                <PanelCard title="중원 정세">
-                    <SkeletonLines v-if="loading" :lines="3" />
-                    <div v-else class="placeholder">
-                        <div>유저 {{ lobbyInfo?.userCnt ?? '-' }} / {{ lobbyInfo?.maxUserCnt ?? '-' }}</div>
-                        <div>NPC {{ lobbyInfo?.npcCnt ?? '-' }}</div>
-                        <div>세력 {{ lobbyInfo?.nationCnt ?? '-' }}</div>
-                    </div>
-                </PanelCard>
             </div>
 
             <div class="stack">
@@ -282,21 +305,57 @@ watch(
                 <PanelCard title="장수 스탯">
                     <GeneralBasicCard :general="general" :loading="loading" />
                 </PanelCard>
-                <PanelCard title="장수 동향">
-                    <SkeletonLines v-if="loading" :lines="4" />
-                    <div v-else class="placeholder">장수 동향은 실시간 스트림으로 연결 예정</div>
-                </PanelCard>
                 <PanelCard title="도시 정보">
                     <CityBasicCard :city="city" :loading="loading" />
                 </PanelCard>
                 <PanelCard title="국가 정보">
                     <NationBasicCard :nation="nation" :loading="loading" />
                 </PanelCard>
-                <PanelCard title="개인 기록">
-                    <SkeletonLines v-if="loading" :lines="4" />
-                    <div v-else class="placeholder">개인 기록 영역</div>
-                </PanelCard>
             </div>
+            <section class="record-zone">
+                <RecordPanel title="장수 동향">
+                    <SkeletonLines v-if="loading" :lines="4" />
+                    <div v-else-if="recordsError" class="record-error" role="alert">{{ recordsError }}</div>
+                    <div v-else class="record-list" data-record-bucket="global">
+                        <!-- eslint-disable-next-line vue/no-v-html -->
+                        <div
+                            v-for="entry in globalRecords"
+                            :key="entry.id"
+                            class="record-line"
+                            v-html="formatLog(entry.text)"
+                        />
+                        <div v-if="globalRecords.length === 0" class="record-empty">기록이 없습니다.</div>
+                    </div>
+                </RecordPanel>
+                <RecordPanel title="개인 기록">
+                    <SkeletonLines v-if="loading" :lines="4" />
+                    <div v-else-if="recordsError" class="record-error" role="alert">{{ recordsError }}</div>
+                    <div v-else class="record-list" data-record-bucket="general">
+                        <!-- eslint-disable-next-line vue/no-v-html -->
+                        <div
+                            v-for="entry in generalRecords"
+                            :key="entry.id"
+                            class="record-line"
+                            v-html="formatLog(entry.text)"
+                        />
+                        <div v-if="generalRecords.length === 0" class="record-empty">기록이 없습니다.</div>
+                    </div>
+                </RecordPanel>
+                <RecordPanel class="world-history-panel" title="중원 정세">
+                    <SkeletonLines v-if="loading" :lines="4" />
+                    <div v-else-if="recordsError" class="record-error" role="alert">{{ recordsError }}</div>
+                    <div v-else class="record-list" data-record-bucket="history">
+                        <!-- eslint-disable-next-line vue/no-v-html -->
+                        <div
+                            v-for="entry in worldHistory"
+                            :key="entry.id"
+                            class="record-line"
+                            v-html="formatLog(entry.text)"
+                        />
+                        <div v-if="worldHistory.length === 0" class="record-empty">기록이 없습니다.</div>
+                    </div>
+                </RecordPanel>
+            </section>
             <MessagePanel
                 class="desktop-message-panel"
                 :messages="messages"
@@ -413,6 +472,42 @@ button {
 
 .desktop-message-panel {
     grid-column: 1 / -1;
+}
+
+.record-zone {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0;
+    width: calc(100% + 48px);
+    margin-left: -24px;
+}
+
+.world-history-panel {
+    grid-column: 1 / -1;
+}
+
+.record-list {
+    min-height: 21px;
+    line-height: 21px;
+}
+
+.record-line {
+    overflow-wrap: anywhere;
+}
+
+.record-empty {
+    color: #aaa;
+}
+
+.record-error {
+    color: #ff8a80;
+}
+
+.record-zone-mobile {
+    width: 100vw;
+    margin-left: -24px;
+    gap: 0;
 }
 
 .mobile-message-panel {
