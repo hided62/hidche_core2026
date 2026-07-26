@@ -817,6 +817,7 @@ export const adminRouter = router({
                     profileName: profile.profileName,
                     apiRunning: false,
                     daemonRunning: false,
+                    auctionRunning: false,
                     tournamentRunning: false,
                 },
             }));

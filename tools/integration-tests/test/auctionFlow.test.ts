@@ -451,6 +451,10 @@ describe('auction integration flow', () => {
         const initialScore = await redis.zScore(keys.timerKey, String(auction.id));
         expect(Number(initialScore)).toBe(initialCloseAt.getTime());
 
+        await expect(hostClient.auction.bidBuyRice.mutate({ auctionId: auction.id, amount: 300 })).rejects.toThrow(
+            '자신이 연 경매에 입찰할 수 없습니다.'
+        );
+
         const bidder1Client = createGameClient(gameUrl, gameServer.config.trpcPath, {
             value: bidder1.accessToken,
         });

@@ -70,6 +70,7 @@ type AdminProfile = {
     runtime: {
         apiRunning: boolean;
         daemonRunning: boolean;
+        auctionRunning: boolean;
         tournamentRunning: boolean;
     };
     buildCommitSha?: string;
@@ -1352,7 +1353,8 @@ onMounted(() => {
                                 </div>
                                 <div class="text-xs text-zinc-400">
                                     상태: {{ profile.status }} / API: {{ profile.runtime.apiRunning ? 'ON' : 'OFF' }} /
-                                    DAEMON: {{ profile.runtime.daemonRunning ? 'ON' : 'OFF' }} / TOURNAMENT:
+                                    DAEMON: {{ profile.runtime.daemonRunning ? 'ON' : 'OFF' }} / AUCTION:
+                                    {{ profile.runtime.auctionRunning ? 'ON' : 'OFF' }} / TOURNAMENT:
                                     {{ profile.runtime.tournamentRunning ? 'ON' : 'OFF' }}
                                 </div>
                             </div>
