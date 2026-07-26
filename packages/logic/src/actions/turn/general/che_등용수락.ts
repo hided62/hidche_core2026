@@ -98,6 +98,8 @@ export class ActionResolver<
         // 2. Recruiter Rewards
         const recruiterExperience = destGeneral.experience + 100;
         const recruiterDedication = destGeneral.dedication + 100;
+        const belong = readMetaNumberFromUnknown(general.meta, 'belong') ?? 0;
+        const maxBelong = readMetaNumberFromUnknown(general.meta, 'max_belong') ?? 0;
         const recruiterExpLevel = Math.max(
             0,
             Math.min(
@@ -242,6 +244,7 @@ export class ActionResolver<
                         ...(general.npcState < 2
                             ? {
                                   killturn: context.worldKillturn ?? general.meta.killturn,
+                                  max_belong: Math.max(belong, maxBelong),
                               }
                             : {}),
                     },

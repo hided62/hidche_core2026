@@ -253,8 +253,26 @@ describe('migrated general commands', () => {
     });
 
     it('che_해산: 방랑군 해산 시 세력과 소속을 정리한다', async () => {
-        const lord = makeGeneral({ id: 1, nationId: 1, cityId: 1, name: '군주', officerLevel: 12, gold: 1500, rice: 1800 });
-        const member = makeGeneral({ id: 2, nationId: 1, cityId: 2, name: '부하', officerLevel: 1, gold: 2500, rice: 500 });
+        const lord = makeGeneral({
+            id: 1,
+            nationId: 1,
+            cityId: 1,
+            name: '군주',
+            officerLevel: 12,
+            gold: 1500,
+            rice: 1800,
+            meta: { belong: 5, max_belong: 2, permission: 'ambassador' },
+        });
+        const member = makeGeneral({
+            id: 2,
+            nationId: 1,
+            cityId: 2,
+            name: '부하',
+            officerLevel: 1,
+            gold: 2500,
+            rice: 500,
+            meta: { belong: 7, max_belong: 3, permission: 'auditor' },
+        });
         const nation = makeNation({
             id: 1,
             name: '방랑군',
@@ -294,6 +312,8 @@ describe('migrated general commands', () => {
         expect(updatedLord.meta.makelimit).toBe(12);
         expect(updatedLord.gold).toBe(1000);
         expect(updatedMember.gold).toBe(1000);
+        expect(updatedLord.meta).toMatchObject({ belong: 0, max_belong: 5, permission: 'normal' });
+        expect(updatedMember.meta).toMatchObject({ belong: 0, max_belong: 7, permission: 'normal' });
         expect(world.getCity(1)!.nationId).toBe(0);
         expect(world.getCity(2)!.nationId).toBe(0);
         expect(world.getNation(1)!.meta.collapsed).toBe(true);

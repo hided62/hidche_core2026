@@ -172,7 +172,7 @@ describe('che_등용수락', () => {
             age: 20,
             npcState: 0,
             triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
-            meta: { killturn: 24 },
+            meta: { killturn: 24, belong: 10, max_belong: 2 },
         };
 
         const recruiterGen: General = {
@@ -244,6 +244,11 @@ describe('che_등용수락', () => {
         expect(updatedSelf?.cityId).toBe(102); // Capital of Nation2
         expect(updatedSelf?.experience).toBe(100);
         expect(updatedSelf?.dedication).toBe(100);
+        expect(updatedSelf?.meta).toMatchObject({
+            belong: 1,
+            max_belong: 10,
+            permission: 'normal',
+        });
 
         expect(updatedRecruiter?.experience).toBe(100);
         expect(updatedRecruiter?.dedication).toBe(100);

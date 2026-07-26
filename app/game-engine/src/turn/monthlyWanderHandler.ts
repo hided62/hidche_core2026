@@ -70,6 +70,7 @@ export const createMonthlyWanderHandler = (options: {
                         belong: 0,
                         officer_city: 0,
                         officerCity: 0,
+                        permission: 'normal',
                         ...(general.npcState < 2 ? { max_belong: Math.max(belong, maxBelong) } : {}),
                     },
                 });
@@ -150,7 +151,7 @@ export const createMonthlyWanderHandler = (options: {
             });
             world.pushLog({
                 scope: LogScope.SYSTEM,
-                category: LogCategory.ACTION,
+                category: LogCategory.SUMMARY,
                 text: `<Y>${wanderer.name}</>${wandererNameJosaYi} 세력을 해산했습니다.`,
                 format: LogFormat.MONTH,
             });

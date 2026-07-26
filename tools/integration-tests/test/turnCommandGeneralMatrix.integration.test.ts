@@ -88,6 +88,8 @@ const general = (id: number, nationId: number, cityId: number, officerLevel: num
     killTurn: 24,
     npcState: 0,
     blockState: 0,
+    belong: 10,
+    permission: 'normal',
     personality: 'None',
     specialDomestic: 'None',
     specialWar: 'None',
@@ -482,6 +484,112 @@ integration('NPC active command boundary parity', () => {
                     ignoredPathPatterns: ignoredLifecyclePaths,
                 })
             ).toEqual([]);
+        },
+        120_000
+    );
+});
+
+interface DisbandFactionBoundaryCase {
+    name: string;
+    actorPatch?: Record<string, unknown>;
+    fixturePatches: FixturePatches;
+    completed: boolean;
+    compareLogs?: boolean;
+}
+
+const disbandFactionBoundaryCases: DisbandFactionBoundaryCase[] = [
+    {
+        name: 'a non-lord cannot disband the wandering nation',
+        actorPatch: { officerLevel: 11 },
+        fixturePatches: {
+            nations: { 1: { level: 0, capitalCityId: 0, typeCode: 'None' } },
+            cities: { 3: { nationId: 0, supplyState: 0, frontState: 0 } },
+        },
+        completed: false,
+    },
+    {
+        name: 'a settled nation cannot be disbanded',
+        fixturePatches: {
+            nations: { 1: { level: 1 } },
+        },
+        completed: false,
+    },
+    {
+        name: 'disbanding preserves the legacy member state, resources, and destruction logs',
+        actorPatch: {
+            troopId: 3,
+            belong: 5,
+            permission: 'ambassador',
+            gold: 2_000,
+            rice: 3_000,
+            meta: { max_belong: 2 },
+        },
+        fixturePatches: {
+            nations: { 1: { name: '방랑군', level: 0, capitalCityId: 0, typeCode: 'None' } },
+            cities: { 3: { nationId: 0, supplyState: 0, frontState: 0 } },
+            generals: {
+                3: {
+                    troopId: 3,
+                    belong: 7,
+                    permission: 'auditor',
+                    gold: 2_500,
+                    rice: 4_000,
+                    meta: { max_belong: 3 },
+                },
+            },
+            troops: [{ id: 3, nationId: 1, name: '방랑군 부대' }],
+        },
+        completed: true,
+        compareLogs: true,
+    },
+];
+
+integration('general faction disband boundary, state, and log parity', () => {
+    it.each(disbandFactionBoundaryCases)(
+        '$name',
+        async ({ name, actorPatch, fixturePatches, completed, compareLogs }) => {
+            const request = buildRequest('che_해산', undefined, actorPatch, fixturePatches);
+            request.setup!.world!.hiddenSeed = `general-disband-${name}`;
+            request.observe!.includeGlobalHistoryLogs = true;
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+            if (process.env.TURN_DIFFERENTIAL_DEBUG === '1') {
+                process.stderr.write(
+                    `${JSON.stringify(
+                        {
+                            name,
+                            referenceGenerals: reference.after.generals,
+                            coreGenerals: core.after.generals,
+                            referenceLogs: addedReferenceLogs(reference.before, reference.after.logs),
+                            coreLogs: core.after.logs,
+                        },
+                        null,
+                        2
+                    )}\n`
+                );
+            }
+
+            expect(reference.execution.outcome).toMatchObject({ completed });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: 'che_해산',
+                actionKey: completed ? 'che_해산' : '휴식',
+                usedFallback: !completed,
+            });
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+
+            if (compareLogs) {
+                expect(semanticLogSignatures(core.after.logs)).toEqual(
+                    semanticLogSignatures(addedReferenceLogs(reference.before, reference.after.logs))
+                );
+            }
         },
         120_000
     );

@@ -26,6 +26,7 @@ const buildGeneral = (options: {
     gold: number;
     rice: number;
     belong: number;
+    permission?: string;
     turnTime: Date;
 }): TurnGeneral => ({
     id: options.id,
@@ -53,7 +54,7 @@ const buildGeneral = (options: {
     age: 20,
     npcState: options.npcState,
     triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
-    meta: { killturn: 0, makelimit: 0, belong: options.belong },
+    meta: { killturn: 0, makelimit: 0, belong: options.belong, permission: options.permission ?? 'normal' },
     turnTime: options.turnTime,
 });
 
@@ -155,6 +156,7 @@ integration('monthly wandering nation persistence', () => {
                 gold: 2_000,
                 rice: 3_000,
                 belong: 7,
+                permission: 'ambassador',
                 turnTime: new Date('0195-02-01T12:28:00.000Z'),
             }),
             buildGeneral({
@@ -167,6 +169,7 @@ integration('monthly wandering nation persistence', () => {
                 gold: 1_500,
                 rice: 4_000,
                 belong: 5,
+                permission: 'auditor',
                 turnTime: new Date('0195-02-01T12:53:00.000Z'),
             }),
             buildGeneral({
@@ -336,14 +339,14 @@ integration('monthly wandering nation persistence', () => {
                     gold: 1_000,
                     rice: 1_000,
                     lastTurn: { command: '해산', arg: {} },
-                    meta: expect.objectContaining({ belong: 0, makelimit: 12 }),
+                    meta: expect.objectContaining({ belong: 0, makelimit: 12, permission: 'normal' }),
                 }),
                 expect.objectContaining({
                     nationId: 0,
                     officerLevel: 0,
                     gold: 1_000,
                     rice: 4_000,
-                    meta: expect.objectContaining({ belong: 0, max_belong: 5 }),
+                    meta: expect.objectContaining({ belong: 0, max_belong: 5, permission: 'normal' }),
                 }),
             ]);
             expect(await db.city.findUniqueOrThrow({ where: { id: cityIds[0]! } })).toMatchObject({
@@ -443,7 +446,7 @@ integration('monthly wandering nation persistence', () => {
                 },
                 {
                     scope: 'SYSTEM',
-                    category: 'ACTION',
+                    category: 'SUMMARY',
                     generalId: null,
                     year: 195,
                     month: 2,

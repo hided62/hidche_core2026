@@ -16,6 +16,7 @@ const buildGeneral = (options: {
     gold: number;
     rice: number;
     belong: number;
+    permission?: string;
     turnTime: Date;
 }): TurnGeneral => ({
     id: options.id,
@@ -43,7 +44,7 @@ const buildGeneral = (options: {
     age: 20,
     npcState: options.npcState,
     triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
-    meta: { killturn: 0, makelimit: 0, belong: options.belong },
+    meta: { killturn: 0, makelimit: 0, belong: options.belong, permission: options.permission ?? 'normal' },
     turnTime: options.turnTime,
 });
 
@@ -130,6 +131,7 @@ describe('monthly wandering nation cleanup', () => {
                     gold: 2_000,
                     rice: 3_000,
                     belong: 7,
+                    permission: 'ambassador',
                     turnTime: new Date('0195-02-01T12:28:00.000Z'),
                 }),
                 buildGeneral({
@@ -142,6 +144,7 @@ describe('monthly wandering nation cleanup', () => {
                     gold: 1_500,
                     rice: 4_000,
                     belong: 5,
+                    permission: 'auditor',
                     turnTime: new Date('0195-02-01T12:53:00.000Z'),
                 }),
                 buildGeneral({
@@ -180,14 +183,14 @@ describe('monthly wandering nation cleanup', () => {
             gold: 1_000,
             rice: 1_000,
             lastTurn: { command: '해산', arg: {} },
-            meta: { belong: 0, makelimit: 12 },
+            meta: { belong: 0, makelimit: 12, permission: 'normal' },
         });
         expect(world.getGeneralById(2)).toMatchObject({
             nationId: 0,
             officerLevel: 0,
             gold: 1_000,
             rice: 4_000,
-            meta: { belong: 0, max_belong: 5 },
+            meta: { belong: 0, max_belong: 5, permission: 'normal' },
         });
         expect(world.getGeneralById(3)).toMatchObject({
             nationId: 1,
@@ -264,7 +267,7 @@ describe('monthly wandering nation cleanup', () => {
             },
             {
                 scope: LogScope.SYSTEM,
-                category: LogCategory.ACTION,
+                category: LogCategory.SUMMARY,
                 text: '<Y>방랑주</>가 세력을 해산했습니다.',
                 format: LogFormat.MONTH,
             },

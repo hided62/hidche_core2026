@@ -281,6 +281,8 @@ const buildGeneral = (row: Record<string, unknown>, fallbackTurnTime: Date): Tur
                 'officerCityId',
                 readNumber(meta, 'officer_city', readNumber(meta, 'officerCity'))
             ),
+            belong: readNumber(row, 'belong', readNumber(meta, 'belong')),
+            permission: readString(row, 'permission', readString(meta, 'permission', 'normal')),
             block: readNumber(row, 'blockState', readNumber(meta, 'block')),
         },
         ...(lastTurn ? { lastTurn } : {}),
@@ -543,6 +545,9 @@ const projectWorld = (
                 'officer_city',
                 readNumber(general.meta, 'officerCity', readNumber(general.meta, 'officerCityId'))
             ),
+            belong: readNumber(general.meta, 'belong'),
+            permission: readString(general.meta, 'permission', 'normal'),
+            maxBelong: readNumber(general.meta, 'max_belong'),
             betray: readNumber(general.meta, 'betray'),
             personality: general.role.personality,
             specialDomestic: general.role.specialDomestic,

@@ -10,6 +10,7 @@ import type {
 import {
     createCityPatchEffect,
     createGeneralPatchEffect,
+    createLogEffect,
     createNationPatchEffect,
 } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
@@ -21,6 +22,9 @@ import type { GeneralTurnCommandSpec } from './index.js';
 
 const ACTION_NAME = '해산';
 const ACTION_KEY = 'che_해산';
+
+const readMetaNumber = (value: unknown): number =>
+    typeof value === 'number' && Number.isFinite(value) ? value : 0;
 
 export interface DisbandFactionArgs {}
 
@@ -76,6 +80,8 @@ export class ActionDefinition<
         const nationGenerals = context.nationGenerals ?? [];
         for (const targetGeneral of nationGenerals) {
             const isActor = targetGeneral.id === general.id;
+            const belong = readMetaNumber(targetGeneral.meta.belong);
+            const maxBelong = readMetaNumber(targetGeneral.meta.max_belong);
             effects.push(
                 createGeneralPatchEffect(
                     {
@@ -92,6 +98,8 @@ export class ActionDefinition<
                             belong: 0,
                             officer_city: 0,
                             officerCity: 0,
+                            permission: 'normal',
+                            ...(targetGeneral.npcState < 2 ? { max_belong: Math.max(belong, maxBelong) } : {}),
                             ...(isActor ? { makelimit: 12 } : {}),
                         },
                     },
@@ -135,12 +143,38 @@ export class ActionDefinition<
         });
         context.addLog(`<Y>${general.name}</>${josaYi} 세력을 해산했습니다.`, {
             scope: LogScope.SYSTEM,
-            category: LogCategory.ACTION,
+            category: LogCategory.SUMMARY,
         });
         context.addLog(`<D><b>${nation.name}</b></>${josaUl} 해산`, {
             scope: LogScope.GENERAL,
             category: LogCategory.HISTORY,
         });
+
+        const josaUn = JosaUtil.pick(nation.name, '은');
+        const josaNationYi = JosaUtil.pick(nation.name, '이');
+        effects.push(
+            createLogEffect(`<R><b>【멸망】</b></><D><b>${nation.name}</b></>${josaUn} <R>멸망</>했습니다.`, {
+                scope: LogScope.SYSTEM,
+                category: LogCategory.HISTORY,
+                format: LogFormat.YEAR_MONTH,
+            })
+        );
+        for (const targetGeneral of nationGenerals) {
+            effects.push(
+                createLogEffect(`<D><b>${nation.name}</b></>${josaNationYi} <R>멸망</>했습니다.`, {
+                    scope: LogScope.GENERAL,
+                    category: LogCategory.ACTION,
+                    format: LogFormat.PLAIN,
+                    generalId: targetGeneral.id,
+                }),
+                createLogEffect(`<D><b>${nation.name}</b></>${josaNationYi} <R>멸망</>`, {
+                    scope: LogScope.GENERAL,
+                    category: LogCategory.HISTORY,
+                    format: LogFormat.YEAR_MONTH,
+                    generalId: targetGeneral.id,
+                })
+            );
+        }
 
         return { effects };
     }
