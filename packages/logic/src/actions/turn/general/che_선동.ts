@@ -46,6 +46,10 @@ const ARGS_SCHEMA = z.object({
 });
 export type AgitateArgs = z.infer<typeof ARGS_SCHEMA>;
 
+// 레거시 city.trust는 MariaDB FLOAT이며 다음 명령에서 6자리 유효숫자로
+// 재조회된다. 메모리 상태도 같은 persistence 경계로 정규화한다.
+const toLegacyStoredTrust = (value: number): number => Number(value.toPrecision(6));
+
 export class ActionResolver<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionResolver<TriggerState, AgitateArgs> {
@@ -95,7 +99,7 @@ export class ActionResolver<
         general.meta.firenum = (typeof general.meta.firenum === 'number' ? general.meta.firenum : 0) + 1;
         const newSecu = Math.max(0, destCity.security - result.agriDamage);
         const currentTrust = typeof destCity.meta.trust === 'number' ? destCity.meta.trust : 50;
-        const newTrust = Math.max(0, currentTrust - result.commDamage);
+        const newTrust = toLegacyStoredTrust(Math.max(0, currentTrust - result.commDamage));
 
         // Log
         const commandName = ACTION_NAME;
@@ -118,7 +122,6 @@ export class ActionResolver<
         effects.push(
             createCityPatchEffect(
                 {
-                    ...destCity,
                     security: newSecu,
                     state: 32,
                     meta: {
@@ -133,6 +136,10 @@ export class ActionResolver<
         consumeSuccessfulStrategyItem(this.pipeline, context);
         for (const injured of result.injuredGenerals) {
             effects.push(createGeneralPatchEffect(injured.patch, injured.id));
+            ctx.addLog('<M>계략</>으로 인해 <R>부상</>을 당했습니다.', {
+                generalId: injured.id,
+                format: LogFormat.MONTH,
+            });
         }
 
         return { effects };

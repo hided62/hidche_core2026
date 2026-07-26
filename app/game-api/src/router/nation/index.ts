@@ -6,6 +6,7 @@ import { getChiefCenter } from './endpoints/getChiefCenter.js';
 import { getCityOverview } from './endpoints/getCityOverview.js';
 import { getGeneralList } from './endpoints/getGeneralList.js';
 import { getGeneralLog } from './endpoints/getGeneralLog.js';
+import { getNationInfo } from './endpoints/getNationInfo.js';
 import { getPersonnelInfo } from './endpoints/getPersonnelInfo.js';
 import { getStratFinan } from './endpoints/getStratFinan.js';
 import { kick } from './endpoints/kick.js';
@@ -18,6 +19,7 @@ import { setScoutMsg } from './endpoints/setScoutMsg.js';
 import { setSecretLimit } from './endpoints/setSecretLimit.js';
 
 export const nationRouter = router({
+    getNationInfo,
     getGeneralList,
     getCityOverview,
     getPersonnelInfo,
@@ -36,4 +38,3 @@ export const nationRouter = router({
     kick,
     appoint,
 });
-

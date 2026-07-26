@@ -1,12 +1,5 @@
 import type { RandomGenerator } from '@sammo-ts/common';
-import type {
-    City,
-    General,
-    GeneralMeta,
-    GeneralTriggerState,
-    Nation,
-    TriggerValue,
-} from '@sammo-ts/logic/domain/entities.js';
+import type { City, General, GeneralMeta, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
     disallowDiplomacyBetweenStatus,
@@ -219,9 +212,9 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
                 id: defender.id,
                 patch: {
                     injury: clamp(defender.injury + injuryAmount, 0, INJURY_MAX),
-                    crew: Math.floor(defender.crew * 0.98),
-                    atmos: Math.floor(defender.atmos * 0.98),
-                    train: Math.floor(defender.train * 0.98),
+                    crew: Math.round(defender.crew * 0.98),
+                    atmos: Math.round(defender.atmos * 0.98),
+                    train: Math.round(defender.train * 0.98),
                 },
             });
         }
@@ -350,18 +343,13 @@ export class ActionResolver<
             return { effects: [] };
         }
 
-        const updatedCityMeta: Record<string, TriggerValue> = {
-            ...context.destCity.meta,
-            state: CITY_STATE_BURNING,
-        };
-
         // 타겟 도시는 Draft가 아니므로 Effect 반환
         effects.push(
             createCityPatchEffect(
                 {
                     agriculture: context.destCity.agriculture - result.agriDamage,
                     commerce: context.destCity.commerce - result.commDamage,
-                    meta: updatedCityMeta,
+                    state: CITY_STATE_BURNING,
                 },
                 context.destCity.id
             )
@@ -398,7 +386,7 @@ export class ActionResolver<
         for (const injured of result.injuredGenerals) {
             // 타겟 장수는 Draft가 아니므로 Effect 반환
             effects.push(createGeneralPatchEffect(injured.patch, injured.id));
-            context.addLog(`<M>${ACTION_KEY}</>로 인해 <R>부상</>을 당했습니다.`, {
+            context.addLog('<M>계략</>으로 인해 <R>부상</>을 당했습니다.', {
                 generalId: injured.id,
                 format: LogFormat.MONTH,
             });

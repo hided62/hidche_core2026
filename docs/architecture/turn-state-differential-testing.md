@@ -179,10 +179,27 @@ responses pass a separate reference trace and core resolver/API boundary.
 Nine general in-action failure cases now also pass the common differential:
 five domestic critical failures and four sabotage failures. They compare the
 full command RNG trace, semantic state delta and the exact action-log body.
-Seven full-constraint cases cover neutral status, wandering nation, city
-ownership, supply, gold, rice and trust-cap rejection. Both engines replace
-the denied command with rest, consume the same RNG and produce the same
-semantic delta. This is not yet a claim that every command-specific
+Seven common full-constraint cases cover neutral status, wandering nation,
+city ownership, supply, gold, rice and trust-cap rejection. Five sabotage
+constraint cases add the occupied-city target, neutral target, non-aggression
+status and insufficient sabotage gold or rice. Both engines replace the denied
+command with rest, consume the same RNG and produce the same semantic delta.
+Eight sabotage clamp cases cover probability zero and 0.5 for
+fire attack, agitation, destruction and seizure. The zero boundary skips the
+success RNG primitive, while exactly 0.5 consumes `nextBits(1)`; the complete
+RNG trace and semantic delta match. These cases also fixed fire-attack city
+state persistence and agitation front/trust persistence differences.
+Five sabotage value-boundary cases cover zero floors for fire-attack,
+agitation and destruction city values, the supplied-nation resource cap for
+seizure, and the legacy final state of unsupplied seizure. They also remove
+destruction's unintended front recalculation and preserve the legacy
+unsupplied-seizure overwrite that leaves city resources unchanged.
+Three sabotage injury-boundary cases cover per-defender rolls, the injury cap
+of 80, integer persistence after multiplying crew/train/atmosphere by 0.98,
+and the target-general injury log for fire attack, agitation and destruction.
+They restore the legacy Korean particle in the log, add the two missing logs,
+and round rather than floor the integer fields.
+This is not yet a claim that every command-specific
 constraint, clamp, alternative and persistence boundary has been dynamically
 compared.
 
