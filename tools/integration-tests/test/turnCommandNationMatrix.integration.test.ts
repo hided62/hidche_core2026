@@ -311,7 +311,17 @@ const buildRequest = (
         ],
     },
     observe: {
-        generalIds: [1, 2, 3, 4, 5, 6],
+        generalIds: [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            ...Object.keys(fixturePatches.generals ?? {})
+                .map(Number)
+                .filter((id) => ![1, 2, 3, 4, 5, 6].includes(id)),
+        ],
         cityIds: [
             3,
             70,
@@ -321,6 +331,7 @@ const buildRequest = (
             ...(fixturePatches.randomFoundingCandidateCityIds ?? []).filter((id) => id !== 3 && id !== 70),
         ],
         nationIds: [1, 2],
+        ...(action === 'che_백성동원' ? { nationCooldowns: [{ nationId: 1, actionName: '백성동원' }] } : {}),
         logAfterId: 0,
         messageAfterId: 0,
     },
@@ -2689,6 +2700,258 @@ integration('nation event research turn, reserve, and duplicate-state boundaries
                     command: config.command,
                     term: config.preReqTurn,
                 });
+            }
+            expect(reference.rng).toEqual([]);
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+        },
+        120_000
+    );
+});
+
+const mobilizePeopleBoundaryCases: Array<{
+    name: string;
+    destCityId: unknown;
+    fixturePatches?: FixturePatches;
+    completed?: boolean;
+    coreResolution?: boolean;
+    expectedDefence?: number;
+    expectedWall?: number;
+    expectedStrategicCommandLimit?: number;
+    expectedPostReqTurn?: number;
+}> = [
+    {
+        name: 'rejects a missing destination city',
+        destCityId: 9999,
+    },
+    {
+        name: 'accepts a numeric string destination city ID',
+        destCityId: '70',
+        completed: true,
+        expectedPostReqTurn: 63,
+    },
+    {
+        name: 'rejects a source city occupied by another nation',
+        destCityId: 70,
+        fixturePatches: { cities: { 3: { nationId: 2 } } },
+    },
+    {
+        name: 'rejects a destination city occupied by another nation',
+        destCityId: 70,
+        fixturePatches: { cities: { 70: { nationId: 2 } } },
+    },
+    {
+        name: 'rejects an actor below chief rank',
+        destCityId: 70,
+        fixturePatches: { generals: { 1: { officerLevel: 4, officerCityId: 0 } } },
+        coreResolution: false,
+    },
+    {
+        name: 'rejects a remaining strategic-command delay',
+        destCityId: 70,
+        fixturePatches: { nations: { 1: { strategicCommandLimit: 1 } } },
+    },
+    {
+        name: 'allows an unsupplied source city',
+        destCityId: 70,
+        fixturePatches: { cities: { 3: { supplyState: 0 } } },
+        completed: true,
+        expectedPostReqTurn: 63,
+    },
+    {
+        name: 'allows an unsupplied destination city',
+        destCityId: 70,
+        fixturePatches: { cities: { 70: { supplyState: 0 } } },
+        completed: true,
+        expectedPostReqTurn: 63,
+    },
+    {
+        name: 'allows the actor city as destination',
+        destCityId: 3,
+        completed: true,
+        expectedPostReqTurn: 63,
+    },
+    {
+        name: 'rounds the 80-percent defence and wall floors like MariaDB',
+        destCityId: 70,
+        fixturePatches: {
+            cities: {
+                70: {
+                    defence: 1_000,
+                    defenceMax: 5_001,
+                    wall: 1_000,
+                    wallMax: 5_001,
+                },
+            },
+        },
+        completed: true,
+        expectedDefence: 4_001,
+        expectedWall: 4_001,
+        expectedPostReqTurn: 63,
+    },
+    {
+        name: 'preserves defence and wall already above their 80-percent floors',
+        destCityId: 70,
+        fixturePatches: {
+            cities: {
+                70: {
+                    defence: 4_500,
+                    defenceMax: 5_000,
+                    wall: 4_600,
+                    wallMax: 5_000,
+                },
+            },
+        },
+        completed: true,
+        expectedDefence: 4_500,
+        expectedWall: 4_600,
+        expectedPostReqTurn: 63,
+    },
+    {
+        name: 'applies the strategist global-delay modifier',
+        destCityId: 70,
+        fixturePatches: { nations: { 1: { typeCode: 'che_종횡가' } } },
+        completed: true,
+        expectedStrategicCommandLimit: 5,
+        expectedPostReqTurn: 47,
+    },
+    {
+        name: 'uses the actual eleven-general count for the nation cooldown',
+        destCityId: 70,
+        fixturePatches: {
+            nations: { 1: { generalCount: 11 } },
+            generals: {
+                4: { nationId: 1 },
+                5: { nationId: 1 },
+                6: { nationId: 1 },
+                7: { nationId: 1 },
+                8: { nationId: 1 },
+                9: { nationId: 1 },
+                10: { nationId: 1 },
+                11: { nationId: 1 },
+                12: { nationId: 1 },
+            },
+        },
+        completed: true,
+        expectedPostReqTurn: 66,
+    },
+];
+
+integration('nation mobilize-people target, delay, and city-effect boundaries', () => {
+    it.each(mobilizePeopleBoundaryCases)(
+        '$name matches legacy fallback, cooldown, effects, logs, RNG, and semantic delta',
+        async ({
+            destCityId,
+            fixturePatches,
+            completed = false,
+            coreResolution = true,
+            expectedDefence,
+            expectedWall,
+            expectedStrategicCommandLimit = 9,
+            expectedPostReqTurn,
+        }) => {
+            const request = buildRequest(
+                'che_백성동원',
+                { destCityID: destCityId },
+                {
+                    ...fixturePatches,
+                    cities: {
+                        ...fixturePatches?.cities,
+                        70: {
+                            nationId: 1,
+                            ...fixturePatches?.cities?.[70],
+                        },
+                    },
+                }
+            );
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+            const targetCityId = destCityId === 3 ? 3 : 70;
+
+            expect(reference.execution.outcome).toMatchObject({ completed });
+            if (coreResolution) {
+                expect(core.execution.outcome).toMatchObject({
+                    requestedAction: 'che_백성동원',
+                    actionKey: completed ? 'che_백성동원' : '휴식',
+                    usedFallback: !completed,
+                });
+            } else {
+                expect(core.execution.outcome).toBeUndefined();
+            }
+
+            for (const snapshot of [reference, core]) {
+                const nationBefore = snapshot.before.nations.find((entry) => entry.id === 1);
+                const nationAfter = snapshot.after.nations.find((entry) => entry.id === 1);
+                const generalBefore = snapshot.before.generals.find((entry) => entry.id === 1);
+                const generalAfter = snapshot.after.generals.find((entry) => entry.id === 1);
+                const cityBefore = snapshot.before.cities.find((entry) => entry.id === targetCityId);
+                const cityAfter = snapshot.after.cities.find((entry) => entry.id === targetCityId);
+
+                expect(readNationResource(nationBefore, 'gold') - readNationResource(nationAfter, 'gold')).toBe(0);
+                expect(readNationResource(nationBefore, 'rice') - readNationResource(nationAfter, 'rice')).toBe(0);
+                expect(
+                    readNumericField(generalAfter, 'experience') - readNumericField(generalBefore, 'experience')
+                ).toBe(completed ? 5 : 0);
+                expect(
+                    readNumericField(generalAfter, 'dedication') - readNumericField(generalBefore, 'dedication')
+                ).toBe(completed ? 5 : 0);
+
+                if (completed) {
+                    expect(readNumericField(nationAfter, 'strategicCommandLimit')).toBe(expectedStrategicCommandLimit);
+                    if (expectedDefence !== undefined) {
+                        expect(readNumericField(cityAfter, 'defence')).toBe(expectedDefence);
+                    }
+                    if (expectedWall !== undefined) {
+                        expect(readNumericField(cityAfter, 'wall')).toBe(expectedWall);
+                    }
+                    const addedLogs = snapshot.after.logs.slice(snapshot.before.logs.length);
+                    expect(addedLogs.map((entry) => entry.text)).toEqual(
+                        expect.arrayContaining([expect.stringContaining('백성동원 발동')])
+                    );
+                    const broadcastFragment = '<M>백성동원</>을 하였습니다.';
+                    expect(
+                        addedLogs.some(
+                            (entry) => entry.generalId === 3 && String(entry.text).includes(broadcastFragment)
+                        )
+                    ).toBe(true);
+                    expect(
+                        addedLogs.some(
+                            (entry) => entry.generalId === 2 && String(entry.text).includes(broadcastFragment)
+                        )
+                    ).toBe(false);
+                    expect(addedLogs.some((entry) => String(entry.text).includes('에 <M>백성동원</>을 발동'))).toBe(
+                        true
+                    );
+                } else {
+                    expect(readNumericField(nationAfter, 'strategicCommandLimit')).toBe(
+                        readNumericField(nationBefore, 'strategicCommandLimit')
+                    );
+                    expect(readNumericField(cityAfter, 'defence')).toBe(readNumericField(cityBefore, 'defence'));
+                    expect(readNumericField(cityAfter, 'wall')).toBe(readNumericField(cityBefore, 'wall'));
+                }
+            }
+
+            if (completed) {
+                const expectedNextAvailableTurn = 190 * 12 + expectedPostReqTurn!;
+                if (expectedPostReqTurn === 66) {
+                    expect(reference.before.generals.filter((entry) => entry.nationId === 1)).toHaveLength(11);
+                    expect(core.before.generals.filter((entry) => entry.nationId === 1)).toHaveLength(11);
+                }
+                expect(reference.after.world.nationCooldowns).toEqual([
+                    {
+                        nationId: 1,
+                        actionName: '백성동원',
+                        nextAvailableTurn: expectedNextAvailableTurn,
+                    },
+                ]);
+                expect(core.after.world.nationCooldowns).toEqual(reference.after.world.nationCooldowns);
             }
             expect(reference.rng).toEqual([]);
             expect(core.rng).toEqual(reference.rng);
