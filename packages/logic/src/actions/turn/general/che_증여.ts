@@ -20,7 +20,7 @@ import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js'
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import { parseArgsWithSchema } from '../parseArgs.js';
-import { normalizeResourceActionAmount } from './resourceAmount.js';
+import { normalizeResourceActionAmount } from '../resourceAmount.js';
 
 const ACTION_NAME = '증여';
 const ACTION_KEY = 'che_증여';
