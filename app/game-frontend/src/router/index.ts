@@ -32,7 +32,6 @@ import TroopView from '../views/TroopView.vue';
 import YearbookView from '../views/YearbookView.vue';
 import NationBettingView from '../views/NationBettingView.vue';
 import NpcListView from '../views/NpcListView.vue';
-import TrafficView from '../views/TrafficView.vue';
 import { useSessionStore } from '../stores/session';
 
 const routes = [
@@ -257,11 +256,6 @@ const routes = [
             requiresAuth: true,
             requiresGeneral: true,
         },
-    },
-    {
-        path: '/traffic',
-        name: 'traffic',
-        component: TrafficView,
     },
     {
         path: '/npc-list',
