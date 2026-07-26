@@ -26,10 +26,7 @@ import { z } from 'zod';
 import { parseArgsWithSchema } from '../parseArgs.js';
 
 const ARGS_SCHEMA = z.object({
-    destNationId: z.preprocess(
-        (value) => (typeof value === 'number' ? Math.floor(value) : value),
-        z.number().int().positive()
-    ),
+    destNationId: z.number().int().positive(),
 });
 export type DegradeRelationsArgs = z.infer<typeof ARGS_SCHEMA>;
 
