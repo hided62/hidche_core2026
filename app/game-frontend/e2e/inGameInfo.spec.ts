@@ -209,9 +209,7 @@ const install = async (page: Page, mode: 'member' | 'wanderer' | 'admin' = 'memb
     });
 };
 const go = async (page: Page, path: string) => {
-    const ready = page.waitForResponse((r) => r.url().includes('/trpc/lobby.info'));
     await page.goto(path);
-    await ready;
 };
 
 test('four legacy menu pages keep the 1000px desktop table contract', async ({ page }) => {
