@@ -206,6 +206,10 @@ instance and current consumption position. Six pre-required-turn cases cover
 battle-preparation terms 1 through 3 plus the first intermediate turn of both
 trait resets and retirement. They compare the exact intermediate `lastTurn`,
 progress log, zero command-RNG consumption and semantic state delta.
+Three post-required cooldown cases project the legacy `next_execute` KV and
+core general meta into the same world-level cooldown record. They cover the
+stored `current + 60 - preReq` value, rejection one turn before availability,
+and successful execution exactly at the boundary.
 This is not yet a claim that every command-specific
 constraint, clamp and persistence boundary has been dynamically
 compared.

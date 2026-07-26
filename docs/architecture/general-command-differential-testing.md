@@ -10,7 +10,7 @@
 현재 ref MariaDB와 core memory를 잇는 공통 runner, 성공 경로 55개,
 실행 중 확률 실패 9개, full constraint fallback 12개와 모략 확률 clamp
 8개, 모략 결과값 경계 5개, 부상 경계 3개, alternative 5개와 pre-required
-turn 중간 경계 6개가 구현됐다.
+turn 중간 경계 6개, post-required cooldown 경계 3개가 구현됐다.
 실패 9개는 내정 critical
 `주민선정/정착장려/상업투자/기술연구/물자조달`과 모략
 `화계/선동/파괴/탈취`이며 RNG 전체 trace, semantic state delta와 실패
@@ -27,9 +27,12 @@ state delta를 비교한다. 결과값 5개는 화계 농업·상업, 선동 치
 비교한다. alternative 5개는 해산·랜덤임관·무작위건국·출병의 모든 대체
 분기에서 최초 명령 RNG의 연속 소비와 최종 상태를 비교한다. pre-required
 turn 6개는 전투태세 1/2/3턴, 내정·전투 특기 초기화 1턴, 은퇴 1턴의
-`last_turn`과 진행 로그, RNG 무소비를 비교한다. 나머지 명령별 제약
-실패·값 경계와 전체 core PostgreSQL 재조회가 완료 기준을 통과하기 전까지
-55개 명령 전체의 동적 호환 상태를 `확인`으로 올리지 않는다.
+`last_turn`과 진행 로그, RNG 무소비를 비교한다. cooldown 3개는 특기
+초기화 완료 직후 `current + 60 - preReq`, 1턴 전 차단, 경계 월 허용을
+ref `next_execute` KV와 core general meta의 공통 projection으로 비교한다.
+나머지 명령별 제약 실패·값 경계와 전체 core PostgreSQL 재조회가 완료
+기준을 통과하기 전까지 55개 명령 전체의 동적 호환 상태를 `확인`으로
+올리지 않는다.
 
 ## 결정 요약
 

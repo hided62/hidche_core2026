@@ -25,6 +25,11 @@ import {
     type CanonicalTurnSnapshot,
 } from './canonical.js';
 
+interface GeneralCooldownSelector {
+    generalId: number;
+    actionName: string;
+}
+
 export interface TurnCommandFixtureRequest {
     kind: 'general' | 'nation';
     actorGeneralId: number;
@@ -47,6 +52,7 @@ export interface TurnCommandFixtureRequest {
         troops?: Array<Record<string, unknown>>;
         diplomacy?: Array<Record<string, unknown>>;
         randomFoundingCandidateCityIds?: number[];
+        generalCooldowns?: Array<GeneralCooldownSelector & { nextAvailableTurn: number }>;
     };
     observe?: {
         generalIds?: number[];
@@ -54,6 +60,7 @@ export interface TurnCommandFixtureRequest {
         nationIds?: number[];
         logAfterId?: number;
         messageAfterId?: number;
+        generalCooldowns?: GeneralCooldownSelector[];
     };
 }
 
@@ -288,6 +295,19 @@ const buildWorldInput = (
     const month = readNumber(referenceBefore.world, 'month', request.setup?.world?.month ?? 1);
     const turnTime = new Date(`${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-01T00:00:00.000Z`);
     const generals = referenceBefore.generals.map((row) => buildGeneral(row, turnTime));
+    const referenceGeneralCooldowns = Array.isArray(referenceBefore.world.generalCooldowns)
+        ? referenceBefore.world.generalCooldowns
+        : [];
+    for (const rawCooldown of referenceGeneralCooldowns) {
+        const cooldown = asRecord(rawCooldown);
+        const generalId = readNumber(cooldown, 'generalId');
+        const actionName = readString(cooldown, 'actionName', '');
+        const nextAvailableTurn = cooldown.nextAvailableTurn;
+        const general = generals.find((entry) => entry.id === generalId);
+        if (general && actionName && typeof nextAvailableTurn === 'number' && Number.isFinite(nextAvailableTurn)) {
+            general.meta[`next_execute_${actionName}`] = nextAvailableTurn;
+        }
+    }
     const fixtureNations = new Map((request.setup?.nations ?? []).map((row) => [readNumber(row, 'id'), row] as const));
     const nations = referenceBefore.nations.map((row) =>
         buildNation(
@@ -429,6 +449,7 @@ const projectWorld = (
         generalIds: Set<number>;
         cityIds: Set<number>;
         nationIds: Set<number>;
+        generalCooldowns: GeneralCooldownSelector[];
     }
 ): CanonicalTurnSnapshot => {
     const state = world.getState();
@@ -489,6 +510,15 @@ const projectWorld = (
             tickMinutes: Math.max(1, Math.round(state.tickSeconds / 60)),
             turnTime: state.lastTurnTime.toISOString(),
             isUnited: readNumber(state.meta, 'isUnited'),
+            generalCooldowns: selector.generalCooldowns.map(({ generalId, actionName }) => {
+                const general = world.getGeneralById(generalId);
+                const raw = general?.meta[`next_execute_${actionName}`];
+                return {
+                    generalId,
+                    actionName,
+                    nextAvailableTurn: typeof raw === 'number' && Number.isFinite(raw) ? raw : null,
+                };
+            }),
         },
         generals,
         cities: world
@@ -595,6 +625,7 @@ export const runCoreTurnCommandTrace = async (
         ]),
         cityIds: new Set(referenceBefore.cities.map((row) => readNumber(row, 'id'))),
         nationIds: new Set(referenceBefore.nations.map((row) => readNumber(row, 'id'))),
+        generalCooldowns: request.observe?.generalCooldowns ?? [],
     };
     const reservedTurns = new InMemoryReservedTurnStore(emptyDatabaseClient as never, {
         maxGeneralTurns: 10,
