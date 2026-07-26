@@ -331,9 +331,15 @@ const buildRequest = (
             4,
             5,
             6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
             ...Object.keys(fixturePatches.generals ?? {})
                 .map(Number)
-                .filter((id) => ![1, 2, 3, 4, 5, 6].includes(id)),
+                .filter((id) => ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].includes(id)),
         ],
         cityIds: [
             3,
@@ -358,7 +364,8 @@ const buildRequest = (
         action === 'che_이호경식' ||
         action === 'che_급습' ||
         action === 'che_필사즉생' ||
-        action === 'che_허보'
+        action === 'che_허보' ||
+        action === 'che_의병모집'
             ? {
                   nationCooldowns: [
                       {
@@ -372,7 +379,9 @@ const buildRequest = (
                                       ? '급습'
                                       : action === 'che_필사즉생'
                                         ? '필사즉생'
-                                        : '허보',
+                                        : action === 'che_허보'
+                                          ? '허보'
+                                          : '의병모집',
                       },
                   ],
               }
@@ -662,6 +671,296 @@ integration('nation command success matrix', () => {
                     expect(snapshot.rng).toEqual([]);
                 }
             }
+        },
+        120_000
+    );
+});
+
+type VolunteerRecruitOutcome = 'fallback' | 'intermediate' | 'completed';
+
+const volunteerRecruitBoundaryCases: Array<{
+    name: string;
+    fixturePatches?: FixturePatches;
+    outcome: VolunteerRecruitOutcome;
+    coreResolution?: boolean;
+    expectedCreateCount?: number;
+    expectedPostReqTurn?: number;
+    expectedStrategicCommandLimit?: number;
+    expectedAverageExperience?: number;
+}> = [
+    {
+        name: 'rejects a neutral actor',
+        fixturePatches: {
+            generals: { 1: { nationId: 0 } },
+            cities: { 3: { nationId: 0 } },
+        },
+        outcome: 'fallback',
+        coreResolution: false,
+    },
+    {
+        name: 'rejects an actor city occupied by another nation',
+        fixturePatches: { cities: { 3: { nationId: 2 } } },
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects an actor below chief rank',
+        fixturePatches: { generals: { 1: { officerLevel: 4, officerCityId: 0 } } },
+        outcome: 'fallback',
+        coreResolution: false,
+    },
+    {
+        name: 'rejects a remaining strategic-command delay',
+        fixturePatches: { nations: { 1: { strategicCommandLimit: 1 } } },
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects the turn before the three-year opening boundary',
+        fixturePatches: { world: { year: 182 } },
+        outcome: 'fallback',
+    },
+    {
+        name: 'accepts the exact three-year opening boundary',
+        fixturePatches: { world: { year: 183 } },
+        outcome: 'intermediate',
+    },
+    {
+        name: 'allows an unsupplied actor city',
+        fixturePatches: { cities: { 3: { supplyState: 0 } } },
+        outcome: 'intermediate',
+    },
+    {
+        name: 'starts at term one',
+        outcome: 'intermediate',
+    },
+    {
+        name: 'advances the prior first term to term two',
+        fixturePatches: {
+            nations: {
+                1: {
+                    turnLastByOfficerLevel: {
+                        12: { command: '의병모집', term: 1 },
+                    },
+                },
+            },
+        },
+        outcome: 'intermediate',
+    },
+    {
+        name: 'restarts at term one after another command interrupted the stack',
+        fixturePatches: {
+            nations: {
+                1: {
+                    turnLastByOfficerLevel: {
+                        12: { command: '필사즉생', arg: {}, term: 2 },
+                    },
+                },
+            },
+        },
+        outcome: 'intermediate',
+    },
+    {
+        name: 'creates three default volunteer generals',
+        outcome: 'completed',
+        expectedCreateCount: 3,
+        expectedPostReqTurn: 98,
+    },
+    {
+        name: 'applies the strategist command and global-delay modifiers',
+        fixturePatches: { nations: { 1: { typeCode: 'che_종횡가' } } },
+        outcome: 'completed',
+        expectedCreateCount: 3,
+        expectedPostReqTurn: 73,
+        expectedStrategicCommandLimit: 5,
+    },
+    {
+        name: 'uses stored eleven-general count for the nation cooldown',
+        fixturePatches: { nations: { 1: { generalCount: 11 } } },
+        outcome: 'completed',
+        expectedCreateCount: 4,
+        expectedPostReqTurn: 103,
+    },
+    {
+        name: 'rounds the active nations stored average at the four-general creation boundary',
+        fixturePatches: {
+            nations: {
+                1: { generalCount: 4 },
+                2: { generalCount: 4 },
+            },
+        },
+        outcome: 'completed',
+        expectedCreateCount: 4,
+        expectedPostReqTurn: 98,
+    },
+    {
+        name: 'excludes a level-zero nation from the stored average',
+        fixturePatches: {
+            nations: {
+                1: { generalCount: 4 },
+                2: { generalCount: 100, level: 0 },
+            },
+        },
+        outcome: 'completed',
+        expectedCreateCount: 4,
+        expectedPostReqTurn: 98,
+    },
+    {
+        name: 'preserves legacy integer persistence for fractional nation averages',
+        fixturePatches: {
+            generals: {
+                3: {
+                    experience: 1001,
+                    dedication: 1001,
+                    meta: { dex1: 1, dex2: 1, dex3: 1, dex4: 1, dex5: 1 },
+                },
+            },
+        },
+        outcome: 'completed',
+        expectedCreateCount: 3,
+        expectedPostReqTurn: 98,
+        expectedAverageExperience: 1000,
+    },
+];
+
+integration('nation volunteer-recruitment constraints, creation values, RNG, and cooldown boundaries', () => {
+    it.each(volunteerRecruitBoundaryCases)(
+        '$name matches legacy progress, created generals, cooldown, logs, RNG, and semantic delta',
+        async ({
+            fixturePatches,
+            outcome,
+            coreResolution = true,
+            expectedCreateCount = 0,
+            expectedPostReqTurn,
+            expectedStrategicCommandLimit = 9,
+            expectedAverageExperience = 1000,
+        }) => {
+            const completed = outcome === 'completed';
+            const fallback = outcome === 'fallback';
+            const completionNationPatch = completed
+                ? {
+                      turnLastByOfficerLevel: {
+                          12: { command: '의병모집', term: 2 },
+                      },
+                  }
+                : {};
+            const request = buildRequest('che_의병모집', undefined, {
+                ...fixturePatches,
+                nations: {
+                    ...fixturePatches?.nations,
+                    1: {
+                        ...fixturePatches?.nations?.[1],
+                        ...completionNationPatch,
+                    },
+                },
+            });
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+
+            expect(reference.execution.outcome).toMatchObject({ completed });
+            if (coreResolution) {
+                expect(core.execution.outcome).toMatchObject({
+                    requestedAction: 'che_의병모집',
+                    actionKey: fallback ? '휴식' : 'che_의병모집',
+                    usedFallback: fallback,
+                    ...(fallback ? {} : { completed }),
+                });
+            } else {
+                expect(core.execution.outcome).toBeUndefined();
+            }
+
+            for (const snapshot of [reference, core]) {
+                const nationBefore = snapshot.before.nations.find((entry) => entry.id === 1);
+                const nationAfter = snapshot.after.nations.find((entry) => entry.id === 1);
+                const actorBefore = snapshot.before.generals.find((entry) => entry.id === 1);
+                const actorAfter = snapshot.after.generals.find((entry) => entry.id === 1);
+                const beforeGeneralIds = new Set(snapshot.before.generals.map((entry) => entry.id));
+                const createdGenerals = snapshot.after.generals.filter((entry) => !beforeGeneralIds.has(entry.id));
+
+                expect(readNationResource(nationBefore, 'gold') - readNationResource(nationAfter, 'gold')).toBe(0);
+                expect(readNationResource(nationBefore, 'rice') - readNationResource(nationAfter, 'rice')).toBe(0);
+                expect(readNumericField(actorAfter, 'experience') - readNumericField(actorBefore, 'experience')).toBe(
+                    completed ? 15 : 0
+                );
+                expect(readNumericField(actorAfter, 'dedication') - readNumericField(actorBefore, 'dedication')).toBe(
+                    completed ? 15 : 0
+                );
+                expect(createdGenerals).toHaveLength(completed ? expectedCreateCount : 0);
+                expect(readNumericField(nationAfter, 'strategicCommandLimit')).toBe(
+                    completed ? expectedStrategicCommandLimit : readNumericField(nationBefore, 'strategicCommandLimit')
+                );
+
+                if (completed) {
+                    for (const created of createdGenerals) {
+                        expect(created).toMatchObject({
+                            nationId: 1,
+                            cityId: 3,
+                            officerLevel: 1,
+                            npcState: 4,
+                            gold: 1000,
+                            rice: 1000,
+                            age: 20,
+                            experience: expectedAverageExperience,
+                            dedication: expectedAverageExperience,
+                            specialDomestic: null,
+                            specialWar: null,
+                        });
+                        expect(String(created.name)).toMatch(/^ⓖ/);
+                        expect(
+                            readNumericField(created, 'leadership') +
+                                readNumericField(created, 'strength') +
+                                readNumericField(created, 'intelligence')
+                        ).toBe(150);
+                        expect(readNumericField(created, 'killTurn')).toBeGreaterThanOrEqual(64);
+                        expect(readNumericField(created, 'killTurn')).toBeLessThanOrEqual(70);
+                    }
+                    const addedLogs = snapshot.after.logs.slice(snapshot.before.logs.length);
+                    expect(addedLogs.map((entry) => entry.text)).toEqual(
+                        expect.arrayContaining([expect.stringContaining('의병모집 발동')])
+                    );
+                    expect(
+                        addedLogs.some((entry) => entry.generalId === 3 && String(entry.text).includes('의병모집'))
+                    ).toBe(true);
+                }
+            }
+
+            if (outcome === 'intermediate') {
+                const priorTurnByOfficerLevel = fixturePatches?.nations?.[1]?.turnLastByOfficerLevel;
+                const priorTerm =
+                    priorTurnByOfficerLevel && typeof priorTurnByOfficerLevel === 'object'
+                        ? (priorTurnByOfficerLevel as Record<number, { command?: string; term?: number }>)[12]
+                        : undefined;
+                const expectedTerm = priorTerm?.command === '의병모집' && priorTerm.term === 1 ? 2 : 1;
+                expect(reference.execution.outcome).toMatchObject({
+                    lastTurn: {
+                        command: '의병모집',
+                        term: expectedTerm,
+                    },
+                });
+                expect(readNationMeta(core.after.nations.find((entry) => entry.id === 1)).turn_last_12).toMatchObject({
+                    command: '의병모집',
+                    term: expectedTerm,
+                });
+            }
+            if (completed) {
+                const currentYear = fixturePatches?.world?.year ?? 190;
+                const expectedNextAvailableTurn = currentYear * 12 + expectedPostReqTurn!;
+                expect(reference.after.world.nationCooldowns).toEqual([
+                    {
+                        nationId: 1,
+                        actionName: '의병모집',
+                        nextAvailableTurn: expectedNextAvailableTurn,
+                    },
+                ]);
+                expect(core.after.world.nationCooldowns).toEqual(reference.after.world.nationCooldowns);
+            }
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
         },
         120_000
     );

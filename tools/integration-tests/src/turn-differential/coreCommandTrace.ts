@@ -480,6 +480,7 @@ const projectWorld = (
         generalIds: Set<number>;
         cityIds: Set<number>;
         nationIds: Set<number>;
+        initialGeneralIds: Set<number>;
         generalCooldowns: GeneralCooldownSelector[];
         nationCooldowns: NationCooldownSelector[];
     }
@@ -566,7 +567,11 @@ const projectWorld = (
         rankData: world
             .listGenerals()
             .filter((general) => selector.generalIds.has(general.id))
-            .flatMap(buildLegacyComparableRankRows)
+            .flatMap((general) =>
+                buildLegacyComparableRankRows(general).map((row) =>
+                    selector.initialGeneralIds.has(general.id) ? row : { ...row, nationId: 0, value: 0 }
+                )
+            )
             .map((row) => ({ ...row })),
         cities: world
             .listCities()
@@ -674,6 +679,7 @@ export const runCoreTurnCommandTrace = async (
         ]),
         cityIds: new Set(referenceBefore.cities.map((row) => readNumber(row, 'id'))),
         nationIds: new Set(referenceBefore.nations.map((row) => readNumber(row, 'id'))),
+        initialGeneralIds: new Set(referenceBefore.generals.map((row) => readNumber(row, 'id'))),
         generalCooldowns: request.observe?.generalCooldowns ?? [],
         nationCooldowns: request.observe?.nationCooldowns ?? [],
     };

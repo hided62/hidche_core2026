@@ -1,5 +1,11 @@
 import type { RandomGenerator } from '@sammo-ts/common';
-import type { GeneralMeta, GeneralTriggerState, StatBlock, TriggerValue } from '@sammo-ts/logic/domain/entities.js';
+import type {
+    General,
+    GeneralMeta,
+    GeneralTriggerState,
+    StatBlock,
+    TriggerValue,
+} from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
     availableStrategicCommand,
@@ -16,7 +22,7 @@ import type {
     GeneralActionResolveContext,
     GeneralActionResolver,
 } from '@sammo-ts/logic/actions/engine.js';
-import { createGeneralAddEffect } from '@sammo-ts/logic/actions/engine.js';
+import { createGeneralAddEffect, createLogEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import { buildRecruitmentGeneral } from '@sammo-ts/logic/actions/turn/general/recruitment.js';
 import { JosaUtil } from '@sammo-ts/common';
@@ -53,6 +59,7 @@ export interface VolunteerRecruitResolveContext<
     nationAverageExperience?: number;
     nationAverageDedication?: number;
     nationAverageDex?: [number, number, number, number, number];
+    friendlyGenerals: Array<General<TriggerState>>;
     generalPool?: VolunteerRecruitCandidate[];
     createGeneralId: () => number;
     turnTermSeconds: number;
@@ -284,6 +291,10 @@ export class ActionResolver<
         void _args;
         const general = context.general;
         const nation = context.nation;
+        const generalName = general.name;
+        const generalJosa = JosaUtil.pick(generalName, '이');
+        const actionJosa = JosaUtil.pick(ACTION_NAME, '을');
+        const broadcastMessage = `<Y>${generalName}</>${generalJosa} <M>${ACTION_NAME}</>${actionJosa} 발동하였습니다.`;
 
         const expGain = 5 * (DEFAULT_PRE_TURN + 1);
         const dedGain = 5 * (DEFAULT_PRE_TURN + 1);
@@ -300,10 +311,7 @@ export class ActionResolver<
         });
 
         if (nation) {
-            const generalName = general.name;
-            const generalJosa = JosaUtil.pick(generalName, '이');
-            const actionJosa = JosaUtil.pick(actionName, '을');
-            context.addLog(`<Y>${generalName}</>${generalJosa} <M>${actionName}</>${actionJosa} 발동했습니다.`, {
+            context.addLog(`<Y>${generalName}</>${generalJosa} <M>${actionName}</>${actionJosa} 발동`, {
                 scope: LogScope.NATION,
                 category: LogCategory.HISTORY,
                 nationId: nation.id,
@@ -327,6 +335,19 @@ export class ActionResolver<
         }
 
         const effects: Array<GeneralActionEffect<TriggerState>> = [];
+        for (const target of context.friendlyGenerals) {
+            if (target.id === general.id) {
+                continue;
+            }
+            effects.push(
+                createLogEffect(broadcastMessage, {
+                    scope: LogScope.GENERAL,
+                    category: LogCategory.ACTION,
+                    generalId: target.id,
+                    format: LogFormat.PLAIN,
+                })
+            );
+        }
 
         const baseAge = this.env.npcAge ?? DEFAULT_NPC_AGE;
         const deathYears = this.env.npcDeathYears ?? DEFAULT_NPC_DEATH_YEARS;
@@ -359,7 +380,7 @@ export class ActionResolver<
             const stats = candidate.stats ? resolveStats(context, context.rng, this.env, candidate) : generated.stats;
             const averageDex = context.nationAverageDex ?? [0, 0, 0, 0, 0];
             const dexTotal = averageDex[0] + averageDex[1] + averageDex[2] + averageDex[3];
-            const dex: [number, number, number, number] =
+            const rawDex: [number, number, number, number] =
                 generated.pickType === '무'
                     ? legacyChoice(context.rng, [
                           [(dexTotal * 5) / 8, dexTotal / 8, dexTotal / 8, dexTotal / 8],
@@ -367,6 +388,12 @@ export class ActionResolver<
                           [dexTotal / 8, dexTotal / 8, (dexTotal * 5) / 8, dexTotal / 8],
                       ])
                     : [dexTotal / 8, dexTotal / 8, dexTotal / 8, (dexTotal * 5) / 8];
+            const dex: [number, number, number, number] = [
+                Math.trunc(rawDex[0]),
+                Math.trunc(rawDex[1]),
+                Math.trunc(rawDex[2]),
+                Math.trunc(rawDex[3]),
+            ];
             const personality =
                 candidate.personality ?? legacyChoice(context.rng, this.env.availablePersonalities ?? ['che_안전']);
             const turnSecond = randomRangeInt(context.rng, 0, context.turnTermSeconds - 1);
@@ -382,7 +409,7 @@ export class ActionResolver<
                 dex2: dex[1],
                 dex3: dex[2],
                 dex4: dex[3],
-                dex5: averageDex[4],
+                dex5: Math.trunc(averageDex[4]),
                 turnSecond,
                 turnFraction,
             };
@@ -406,8 +433,8 @@ export class ActionResolver<
                     npcState: NPC_TYPE,
                     gold: this.env.defaultNpcGold,
                     rice: this.env.defaultNpcRice,
-                    experience: context.nationAverageExperience ?? 0,
-                    dedication: context.nationAverageDedication ?? 0,
+                    experience: Math.trunc(context.nationAverageExperience ?? 0),
+                    dedication: Math.trunc(context.nationAverageDedication ?? 0),
                     crewTypeId: this.env.defaultCrewTypeId,
                     role: {
                         personality,
@@ -477,6 +504,8 @@ export class ActionDefinition<
 // 예약 턴 실행에 필요한 국가 평균 정보를 구성한다.
 export const actionContextBuilder: ActionContextBuilder = (base, options) => {
     const nationSummary = buildNationSummary(options.worldRef, base.general.nationId);
+    const friendlyGenerals =
+        options.worldRef?.listGenerals().filter((general) => general.nationId === base.general.nationId) ?? [];
     return {
         ...base,
         currentYear: options.world.currentYear,
@@ -487,6 +516,7 @@ export const actionContextBuilder: ActionContextBuilder = (base, options) => {
         nationAverageExperience: nationSummary.averageExperience,
         nationAverageDedication: nationSummary.averageDedication,
         nationAverageDex: nationSummary.averageDex,
+        friendlyGenerals,
         createGeneralId: options.createGeneralId,
         turnTermSeconds: Math.max(1, Math.round(options.world.tickSeconds)),
         turnTimeBase: options.world.lastTurnTime ?? base.general.turnTime,

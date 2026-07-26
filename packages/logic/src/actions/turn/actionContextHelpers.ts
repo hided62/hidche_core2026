@@ -96,11 +96,19 @@ export const buildAverageNationGeneralCount = (world: ActionContextWorldRef | nu
         return 0;
     }
     const generals = world.listGenerals();
-    const nations = world.listNations();
+    const nations = world.listNations().filter((nation) => nation.level > 0);
     if (nations.length === 0) {
         return generals.length;
     }
-    return generals.length / nations.length;
+    return (
+        nations.reduce((sum, nation) => {
+            const storedCount = nation.meta.gennum;
+            if (typeof storedCount === 'number' && Number.isFinite(storedCount)) {
+                return sum + storedCount;
+            }
+            return sum + generals.filter((general) => general.nationId === nation.id).length;
+        }, 0) / nations.length
+    );
 };
 
 export const resolveStartYear = (world: ActionContextWorldState, scenarioMeta?: ScenarioMeta): number => {
