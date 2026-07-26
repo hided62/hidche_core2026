@@ -384,7 +384,7 @@ describe('Nation Missing Actions', () => {
                 gold: 200,
                 rice: 150,
                 meta: expect.objectContaining({
-                    recv_assist: { n1: { 0: 1, 1: 150 } },
+                    recv_assist: { n1: [1, 150] },
                 }),
             }),
         });

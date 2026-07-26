@@ -137,16 +137,9 @@ export class ActionDefinition<
                 : {};
         const recvKey = `n${nation.id}`;
         const priorEntry =
-            typeof recvAssist[recvKey] === 'object' &&
-            recvAssist[recvKey] !== null &&
-            !Array.isArray(recvAssist[recvKey])
-                ? recvAssist[recvKey]
-                : {};
-        const priorAmount = Number(priorEntry['1'] ?? 0);
-        recvAssist[recvKey] = {
-            0: nation.id,
-            1: (Number.isFinite(priorAmount) ? priorAmount : 0) + actualGold + actualRice,
-        };
+            typeof recvAssist[recvKey] === 'object' && recvAssist[recvKey] !== null ? recvAssist[recvKey] : {};
+        const priorAmount = Number(Array.isArray(priorEntry) ? priorEntry[1] : (priorEntry['1'] ?? 0));
+        recvAssist[recvKey] = [nation.id, (Number.isFinite(priorAmount) ? priorAmount : 0) + actualGold + actualRice];
 
         const effects: Array<GeneralActionEffect<TriggerState>> = [
             createNationPatchEffect(
