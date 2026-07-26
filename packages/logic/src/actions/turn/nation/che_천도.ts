@@ -24,10 +24,10 @@ import { JosaUtil } from '@sammo-ts/common';
 import type { NationTurnCommandSpec } from './index.js';
 import type { MapDefinition } from '@sammo-ts/logic/world/types.js';
 import { z } from 'zod';
-import { parseArgsWithSchema } from '../parseArgs.js';
+import { normalizeLegacyIntegerArg, parseArgsWithSchema } from '../parseArgs.js';
 
 const ARGS_SCHEMA = z.object({
-    destCityID: z.number(),
+    destCityID: z.preprocess(normalizeLegacyIntegerArg, z.number()),
 });
 export type MoveCapitalArgs = z.infer<typeof ARGS_SCHEMA>;
 
