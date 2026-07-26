@@ -354,13 +354,19 @@ const buildRequest = (
                       }),
               }
             : {}),
-        ...(action === 'che_백성동원' || action === 'che_이호경식' || action === 'che_급습'
+        ...(action === 'che_백성동원' || action === 'che_이호경식' || action === 'che_급습' || action === 'che_필사즉생'
             ? {
                   nationCooldowns: [
                       {
                           nationId: 1,
                           actionName:
-                              action === 'che_백성동원' ? '백성동원' : action === 'che_이호경식' ? '이호경식' : '급습',
+                              action === 'che_백성동원'
+                                  ? '백성동원'
+                                  : action === 'che_이호경식'
+                                    ? '이호경식'
+                                    : action === 'che_급습'
+                                      ? '급습'
+                                      : '필사즉생',
                       },
                   ],
               }
@@ -3580,6 +3586,307 @@ integration('nation surprise-attack target, diplomacy-term, front, and cooldown 
                     {
                         nationId: 1,
                         actionName: '급습',
+                        nextAvailableTurn: expectedNextAvailableTurn,
+                    },
+                ]);
+                expect(core.after.world.nationCooldowns).toEqual(reference.after.world.nationCooldowns);
+            }
+            expect(reference.rng).toEqual([]);
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+        },
+        120_000
+    );
+});
+
+const desperateSurvivalBoundaryCases: Array<{
+    name: string;
+    fixturePatches?: FixturePatches;
+    outcome: 'fallback' | 'intermediate' | 'completed';
+    coreResolution?: boolean;
+    expectedLastTerm?: number;
+    expectedStrategicCommandLimit?: number;
+    expectedPostReqTurn?: number;
+}> = [
+    {
+        name: 'rejects a nation without an outgoing war',
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects a reverse-only war',
+        fixturePatches: {
+            diplomacy: {
+                '1:2': { state: 3 },
+                '2:1': { state: 0 },
+            },
+        },
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects a source city occupied by another nation',
+        fixturePatches: {
+            cities: { 3: { nationId: 2 } },
+            diplomacy: { '1:2': { state: 0 } },
+        },
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects an actor below chief rank',
+        fixturePatches: {
+            generals: { 1: { officerLevel: 4, officerCityId: 0 } },
+            diplomacy: { '1:2': { state: 0 } },
+        },
+        outcome: 'fallback',
+        coreResolution: false,
+    },
+    {
+        name: 'rejects a remaining strategic-command delay',
+        fixturePatches: {
+            nations: { 1: { strategicCommandLimit: 1 } },
+            diplomacy: { '1:2': { state: 0 } },
+        },
+        outcome: 'fallback',
+    },
+    {
+        name: 'allows an unsupplied city at the first intermediate turn',
+        fixturePatches: {
+            cities: { 3: { supplyState: 0 } },
+            diplomacy: { '1:2': { state: 0 } },
+        },
+        outcome: 'intermediate',
+        expectedLastTerm: 1,
+    },
+    {
+        name: 'advances the second intermediate turn without side effects',
+        fixturePatches: {
+            nations: {
+                1: {
+                    turnLastByOfficerLevel: {
+                        12: { command: '필사즉생', arg: {}, term: 1 },
+                    },
+                },
+            },
+            diplomacy: { '1:2': { state: 0 } },
+        },
+        outcome: 'intermediate',
+        expectedLastTerm: 2,
+    },
+    {
+        name: 'completes with an outgoing war even when the reverse relation is trade',
+        fixturePatches: {
+            nations: {
+                1: {
+                    turnLastByOfficerLevel: {
+                        12: { command: '필사즉생', arg: {}, term: 2 },
+                    },
+                },
+            },
+            diplomacy: {
+                '1:2': { state: 0, term: 0 },
+                '2:1': { state: 3, term: 0 },
+            },
+        },
+        outcome: 'completed',
+        expectedPostReqTurn: 87,
+    },
+    {
+        name: 'preserves training and morale values already above one hundred',
+        fixturePatches: {
+            generals: {
+                1: { train: 120, atmos: 110 },
+                3: { train: 105, atmos: 130 },
+            },
+            nations: {
+                1: {
+                    turnLastByOfficerLevel: {
+                        12: { command: '필사즉생', arg: {}, term: 2 },
+                    },
+                },
+            },
+            diplomacy: { '1:2': { state: 0 } },
+        },
+        outcome: 'completed',
+        expectedPostReqTurn: 87,
+    },
+    {
+        name: 'accepts an explicit self-war as the outgoing war relation',
+        fixturePatches: {
+            nations: {
+                1: {
+                    turnLastByOfficerLevel: {
+                        12: { command: '필사즉생', arg: {}, term: 2 },
+                    },
+                },
+            },
+            diplomacy: {
+                '1:1': { state: 0 },
+            },
+        },
+        outcome: 'completed',
+        expectedPostReqTurn: 87,
+    },
+    {
+        name: 'restarts at term one after a different command interrupted the stack',
+        fixturePatches: {
+            nations: {
+                1: {
+                    turnLastByOfficerLevel: {
+                        12: { command: '급습', arg: { destNationID: 2 }, term: 2 },
+                    },
+                },
+            },
+            diplomacy: { '1:2': { state: 0 } },
+        },
+        outcome: 'intermediate',
+        expectedLastTerm: 1,
+    },
+    {
+        name: 'applies the strategist command and global-delay modifiers',
+        fixturePatches: {
+            nations: {
+                1: {
+                    typeCode: 'che_종횡가',
+                    turnLastByOfficerLevel: {
+                        12: { command: '필사즉생', arg: {}, term: 2 },
+                    },
+                },
+            },
+            diplomacy: { '1:2': { state: 0 } },
+        },
+        outcome: 'completed',
+        expectedStrategicCommandLimit: 5,
+        expectedPostReqTurn: 65,
+    },
+    {
+        name: 'uses the actual eleven-general count for the nation cooldown',
+        fixturePatches: {
+            nations: {
+                1: {
+                    generalCount: 11,
+                    turnLastByOfficerLevel: {
+                        12: { command: '필사즉생', arg: {}, term: 2 },
+                    },
+                },
+            },
+            generals: {
+                4: { nationId: 1 },
+                5: { nationId: 1 },
+                6: { nationId: 1 },
+                7: { nationId: 1 },
+                8: { nationId: 1 },
+                9: { nationId: 1 },
+                10: { nationId: 1 },
+                11: { nationId: 1 },
+                12: { nationId: 1 },
+            },
+            diplomacy: { '1:2': { state: 0 } },
+        },
+        outcome: 'completed',
+        expectedPostReqTurn: 92,
+    },
+];
+
+integration('nation desperate-survival multistep, diplomacy, effects, and cooldown boundaries', () => {
+    it.each(desperateSurvivalBoundaryCases)(
+        '$name matches legacy progress, effects, cooldown, logs, RNG, and semantic delta',
+        async ({
+            fixturePatches,
+            outcome,
+            coreResolution = true,
+            expectedLastTerm,
+            expectedStrategicCommandLimit = 9,
+            expectedPostReqTurn,
+        }) => {
+            const request = buildRequest('che_필사즉생', undefined, fixturePatches);
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+            const completed = outcome === 'completed';
+            const fallback = outcome === 'fallback';
+
+            expect(reference.execution.outcome).toMatchObject({ completed });
+            if (coreResolution) {
+                expect(core.execution.outcome).toMatchObject({
+                    requestedAction: 'che_필사즉생',
+                    actionKey: fallback ? '휴식' : 'che_필사즉생',
+                    usedFallback: fallback,
+                    ...(fallback ? {} : { completed }),
+                });
+            } else {
+                expect(core.execution.outcome).toBeUndefined();
+            }
+
+            for (const snapshot of [reference, core]) {
+                const nationBefore = snapshot.before.nations.find((entry) => entry.id === 1);
+                const nationAfter = snapshot.after.nations.find((entry) => entry.id === 1);
+                const actorBefore = snapshot.before.generals.find((entry) => entry.id === 1);
+                const actorAfter = snapshot.after.generals.find((entry) => entry.id === 1);
+                const teammateBefore = snapshot.before.generals.find((entry) => entry.id === 3);
+                const teammateAfter = snapshot.after.generals.find((entry) => entry.id === 3);
+                const foreignBefore = snapshot.before.generals.find((entry) => entry.id === 2);
+                const foreignAfter = snapshot.after.generals.find((entry) => entry.id === 2);
+
+                expect(readNationResource(nationBefore, 'gold') - readNationResource(nationAfter, 'gold')).toBe(0);
+                expect(readNationResource(nationBefore, 'rice') - readNationResource(nationAfter, 'rice')).toBe(0);
+                expect(readNumericField(actorAfter, 'experience') - readNumericField(actorBefore, 'experience')).toBe(
+                    completed ? 15 : 0
+                );
+                expect(readNumericField(actorAfter, 'dedication') - readNumericField(actorBefore, 'dedication')).toBe(
+                    completed ? 15 : 0
+                );
+                expect(readNumericField(nationAfter, 'strategicCommandLimit')).toBe(
+                    completed ? expectedStrategicCommandLimit : readNumericField(nationBefore, 'strategicCommandLimit')
+                );
+
+                for (const [before, after] of [
+                    [actorBefore, actorAfter],
+                    [teammateBefore, teammateAfter],
+                ] as const) {
+                    expect(readNumericField(after, 'train')).toBe(
+                        completed ? Math.max(100, readNumericField(before, 'train')) : readNumericField(before, 'train')
+                    );
+                    expect(readNumericField(after, 'atmos')).toBe(
+                        completed ? Math.max(100, readNumericField(before, 'atmos')) : readNumericField(before, 'atmos')
+                    );
+                }
+                expect(readNumericField(foreignAfter, 'train')).toBe(readNumericField(foreignBefore, 'train'));
+                expect(readNumericField(foreignAfter, 'atmos')).toBe(readNumericField(foreignBefore, 'atmos'));
+
+                if (completed) {
+                    const addedLogs = snapshot.after.logs.slice(snapshot.before.logs.length);
+                    expect(addedLogs.map((entry) => entry.text)).toEqual(
+                        expect.arrayContaining([expect.stringContaining('필사즉생 발동')])
+                    );
+                    expect(
+                        addedLogs.some((entry) => entry.generalId === 3 && String(entry.text).includes('필사즉생'))
+                    ).toBe(true);
+                }
+            }
+
+            if (outcome === 'intermediate') {
+                expect(reference.execution.outcome).toMatchObject({
+                    lastTurn: {
+                        command: '필사즉생',
+                        term: expectedLastTerm,
+                    },
+                });
+                expect(readNationMeta(core.after.nations.find((entry) => entry.id === 1)).turn_last_12).toMatchObject({
+                    command: '필사즉생',
+                    term: expectedLastTerm,
+                });
+            }
+            if (completed) {
+                const expectedNextAvailableTurn = 190 * 12 + expectedPostReqTurn!;
+                expect(reference.after.world.nationCooldowns).toEqual([
+                    {
+                        nationId: 1,
+                        actionName: '필사즉생',
                         nextAvailableTurn: expectedNextAvailableTurn,
                     },
                 ]);
