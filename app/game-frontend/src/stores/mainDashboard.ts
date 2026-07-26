@@ -27,10 +27,12 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     type BoardAccess = Awaited<ReturnType<typeof trpc.board.getAccess.query>>;
     type ReservedTurnView = Awaited<ReturnType<typeof trpc.turns.reserved.getGeneral.query>>[number];
     type RecentRecord = Awaited<ReturnType<typeof trpc.general.getRecentRecords.query>>['global'][number];
+    type FrontStatus = Awaited<ReturnType<typeof trpc.general.getFrontStatus.query>>;
 
     const loading = ref(false);
     const error = ref<string | null>(null);
     const recordsError = ref<string | null>(null);
+    const frontStatusError = ref<string | null>(null);
     const realtimeEnabled = ref(true);
     const realtimeStatus = ref<'idle' | 'connected' | 'paused'>('idle');
 
@@ -47,6 +49,8 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     const globalRecords = ref<RecentRecord[]>([]);
     const generalRecords = ref<RecentRecord[]>([]);
     const worldHistory = ref<RecentRecord[]>([]);
+    const frontStatus = ref<FrontStatus | null>(null);
+    const surveyNotice = ref<NonNullable<FrontStatus['latestVote']> | null>(null);
     let lastGeneralRecordId = 0;
     let lastWorldHistoryId = 0;
     let recordGeneralId: number | null = null;
@@ -199,6 +203,28 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         }
     };
 
+    const updateFrontStatus = (nextStatus: FrontStatus) => {
+        frontStatus.value = nextStatus;
+        const latestVote = nextStatus.latestVote;
+        if (!latestVote || latestVote.hasVoted || typeof window === 'undefined') {
+            surveyNotice.value = null;
+            return;
+        }
+        const serverId = session.profile?.split(':', 1)[0] ?? 'game';
+        const storageKey = `state.${serverId}.lastVote`;
+        const lastSeenVoteId = Number.parseInt(window.localStorage.getItem(storageKey) ?? '0', 10);
+        if (latestVote.id <= (Number.isFinite(lastSeenVoteId) ? lastSeenVoteId : 0)) {
+            surveyNotice.value = null;
+            return;
+        }
+        window.localStorage.setItem(storageKey, latestVote.id.toString());
+        surveyNotice.value = latestVote;
+    };
+
+    const dismissSurveyNotice = () => {
+        surveyNotice.value = null;
+    };
+
     const mergeRecentRecords = (current: RecentRecord[], incoming: RecentRecord[]): RecentRecord[] => {
         const merged = new Map(current.map((entry) => [entry.id, entry]));
         for (const entry of incoming) {
@@ -214,6 +240,8 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         lastGeneralRecordId = 0;
         lastWorldHistoryId = 0;
         recordGeneralId = id;
+        frontStatus.value = null;
+        surveyNotice.value = null;
     };
 
     const loadMainData = async () => {
@@ -223,6 +251,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         loading.value = true;
         error.value = null;
         recordsError.value = null;
+        frontStatusError.value = null;
 
         try {
             const context = await trpc.general.me.query();
@@ -256,19 +285,35 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
                     recordsError.value = resolveErrorMessage(err);
                     return null;
                 });
-            const [layout, lobby, map, commands, messageData, contacts, access, generalTurns, nationTurns, records] =
-                await Promise.all([
-                    layoutPromise,
-                    trpc.lobby.info.query(),
-                    trpc.world.getMap.query({ generalId: id, showMe: true, useCache: true }),
-                    trpc.turns.getCommandTable.query({ generalId: id }),
-                    trpc.messages.getRecent.query({ generalId: id }),
-                    trpc.messages.getContacts.query({ generalId: id }),
-                    trpc.board.getAccess.query(),
-                    generalTurnsPromise,
-                    nationTurnsPromise,
-                    recordsPromise,
-                ]);
+            const frontStatusPromise = trpc.general.getFrontStatus.query().catch((err: unknown) => {
+                frontStatusError.value = resolveErrorMessage(err);
+                return null;
+            });
+            const [
+                layout,
+                lobby,
+                map,
+                commands,
+                messageData,
+                contacts,
+                access,
+                generalTurns,
+                nationTurns,
+                records,
+                nextFrontStatus,
+            ] = await Promise.all([
+                layoutPromise,
+                trpc.lobby.info.query(),
+                trpc.world.getMap.query({ generalId: id, showMe: true, useCache: true }),
+                trpc.turns.getCommandTable.query({ generalId: id }),
+                trpc.messages.getRecent.query({ generalId: id }),
+                trpc.messages.getContacts.query({ generalId: id }),
+                trpc.board.getAccess.query(),
+                generalTurnsPromise,
+                nationTurnsPromise,
+                recordsPromise,
+                frontStatusPromise,
+            ]);
 
             mapLayout.value = layout;
             lobbyInfo.value = lobby;
@@ -289,6 +334,9 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
                     records.general[0]?.id ?? 0
                 );
                 lastWorldHistoryId = Math.max(lastWorldHistoryId, records.history[0]?.id ?? 0);
+            }
+            if (nextFrontStatus) {
+                updateFrontStatus(nextFrontStatus);
             }
             if (initializedMailboxGeneralId !== id) {
                 targetMailbox.value = MESSAGE_MAILBOX_NATIONAL_BASE + context.general.nationId;
@@ -639,6 +687,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         loading,
         error,
         recordsError,
+        frontStatusError,
         realtimeEnabled,
         realtimeStatus,
         generalContext,
@@ -658,12 +707,15 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         globalRecords,
         generalRecords,
         worldHistory,
+        frontStatus,
+        surveyNotice,
         messageDraftText,
         targetMailbox,
         mailboxGroups,
         statusLine,
         realtimeLabel,
         setRealtimeEnabled,
+        dismissSurveyNotice,
         loadMainData,
         refreshMessages,
         sendMessage,

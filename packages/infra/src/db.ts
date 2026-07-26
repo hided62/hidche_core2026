@@ -34,6 +34,8 @@ export interface DatabaseClient {
     inheritanceUserState: GamePrisma.InheritanceUserStateDelegate;
     boardPost: GamePrisma.BoardPostDelegate;
     boardComment: GamePrisma.BoardCommentDelegate;
+    votePoll: GamePrisma.VotePollDelegate;
+    vote: GamePrisma.VoteDelegate;
     inputEvent: GamePrisma.InputEventDelegate;
     turnDaemonLease: GamePrisma.TurnDaemonLeaseDelegate;
 }

@@ -23,13 +23,10 @@ import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js'
 import { JosaUtil } from '@sammo-ts/common';
 import type { NationTurnCommandSpec } from './index.js';
 import { z } from 'zod';
-import { parseArgsWithSchema } from '../parseArgs.js';
+import { normalizeLegacyIntegerArg, parseArgsWithSchema } from '../parseArgs.js';
 
 const ARGS_SCHEMA = z.object({
-    destCityId: z.preprocess(
-        (value) => (typeof value === 'number' ? Math.floor(value) : value),
-        z.number().int().positive()
-    ),
+    destCityId: z.preprocess(normalizeLegacyIntegerArg, z.number().int().positive()),
 });
 export type DeceptionArgs = z.infer<typeof ARGS_SCHEMA>;
 
@@ -59,7 +56,7 @@ const legacyChoiceIndex = (rng: GeneralActionResolveContext['rng'], length: numb
 
 const pickMoveCityId = (rng: GeneralActionResolveContext['rng'], destCityId: number, candidates: City[]): number => {
     if (candidates.length === 0) {
-        return destCityId;
+        throw new RangeError('Cannot choose a deception destination from an empty city collection.');
     }
     let idx = legacyChoiceIndex(rng, candidates.length);
     let cityId = candidates[idx]?.id ?? destCityId;
@@ -258,7 +255,7 @@ export const actionContextBuilder: ActionContextBuilder<DeceptionArgs> = (base, 
     const friendlyGenerals = generals.filter((general) => general.nationId === base.general.nationId);
     const destNationSupplyCities = worldRef
         .listCities()
-        .filter((city) => city.nationId === destCity.nationId && city.supplyState > 0);
+        .filter((city) => city.nationId === destCity.nationId && city.supplyState === 1);
     return {
         ...base,
         destCity,
