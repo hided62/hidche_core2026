@@ -100,8 +100,9 @@ export class ActionResolver<
         const ded = (score * 1.0) / 3;
 
         // 7. Update General
-        const nextExp = general.experience + Math.trunc(exp);
-        const nextDed = general.dedication + Math.trunc(ded);
+        // 레거시는 부동소수점 증가분을 INT column에 저장할 때 반올림한다.
+        const nextExp = general.experience + Math.round(exp);
+        const nextDed = general.dedication + Math.round(ded);
 
         let appliedScore = score;
         if (context.city && [1, 3].includes(context.city.frontState)) {

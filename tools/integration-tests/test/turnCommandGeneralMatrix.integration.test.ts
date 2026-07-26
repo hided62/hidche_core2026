@@ -381,3 +381,106 @@ integration('general command success matrix', () => {
         120_000
     );
 });
+
+type GeneralFailureCase = {
+    action: string;
+    args?: Record<string, unknown>;
+    hiddenSeed: string;
+    failureText: string;
+};
+
+const failureCases: GeneralFailureCase[] = [
+    {
+        action: 'che_주민선정',
+        hiddenSeed: 'general-failure-che_주민선정-0',
+        failureText: "주민 선정을 <span class='ev_failed'>실패</span>",
+    },
+    {
+        action: 'che_정착장려',
+        hiddenSeed: 'general-failure-che_정착장려-0',
+        failureText: "정착 장려를 <span class='ev_failed'>실패</span>",
+    },
+    {
+        action: 'che_상업투자',
+        hiddenSeed: 'general-failure-che_상업투자-2',
+        failureText: "상업 투자를 <span class='ev_failed'>실패</span>",
+    },
+    {
+        action: 'che_기술연구',
+        hiddenSeed: 'general-failure-che_기술연구-0',
+        failureText: "기술 연구를 <span class='ev_failed'>실패</span>",
+    },
+    {
+        action: 'che_물자조달',
+        hiddenSeed: 'general-failure-che_물자조달-1',
+        failureText: "조달을 <span class='ev_failed'>실패</span>",
+    },
+    {
+        action: 'che_화계',
+        args: { destCityID: 70 },
+        hiddenSeed: 'general-failure-che_화계-0',
+        failureText: '화계가 실패했습니다.',
+    },
+    {
+        action: 'che_선동',
+        args: { destCityID: 70 },
+        hiddenSeed: 'general-failure-che_선동-0',
+        failureText: '선동이 실패했습니다.',
+    },
+    {
+        action: 'che_파괴',
+        args: { destCityID: 70 },
+        hiddenSeed: 'general-failure-che_파괴-0',
+        failureText: '파괴가 실패했습니다.',
+    },
+    {
+        action: 'che_탈취',
+        args: { destCityID: 70 },
+        hiddenSeed: 'general-failure-che_탈취-0',
+        failureText: '탈취가 실패했습니다.',
+    },
+];
+
+const failureLogTexts = (logs: Array<Record<string, unknown>>, failureText: string): string[] =>
+    logs
+        .map((entry) => entry.text)
+        .filter((text): text is string => typeof text === 'string' && text.includes(failureText));
+
+const legacyActionLogBody = (text: string): string => {
+    const match = /^<C>●<\/>\d+월:(.*) <1>\d{2}:\d{2}<\/>$/.exec(text);
+    return match?.[1] ?? text;
+};
+
+integration('general command in-action failure matrix', () => {
+    it.each(failureCases)(
+        '$action matches legacy failure RNG, side effects, and failure log',
+        async ({ action, args, hiddenSeed, failureText }) => {
+            const request = buildRequest(action, args);
+            request.setup!.world!.hiddenSeed = hiddenSeed;
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+
+            expect(reference.execution.outcome).toMatchObject({ completed: true });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: action,
+                actionKey: action,
+                usedFallback: false,
+            });
+            expect(core.execution.outcome).not.toHaveProperty('blockedReason');
+            expect(failureLogTexts(reference.after.logs, failureText)).toHaveLength(1);
+            expect(failureLogTexts(core.after.logs, failureText)).toEqual(
+                failureLogTexts(reference.after.logs, failureText).map(legacyActionLogBody)
+            );
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+        },
+        120_000
+    );
+});
