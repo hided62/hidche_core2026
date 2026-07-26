@@ -482,12 +482,9 @@ export class InMemoryTurnWorld {
     }
 
     getDiplomacyEntry(srcNationId: number, destNationId: number): TurnDiplomacy | null {
-        if (srcNationId === destNationId) {
-            return null;
-        }
         const key = buildDiplomacyKey(srcNationId, destNationId);
         let entry = this.diplomacy.get(key);
-        if (!entry && this.nations.has(srcNationId) && this.nations.has(destNationId)) {
+        if (!entry && srcNationId !== destNationId && this.nations.has(srcNationId) && this.nations.has(destNationId)) {
             entry = buildDefaultDiplomacy(srcNationId, destNationId);
             this.diplomacy.set(key, entry);
             this.dirtyDiplomacyKeys.add(key);
