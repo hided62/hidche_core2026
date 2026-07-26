@@ -6,15 +6,18 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../.
 
 export default defineConfig({
     testDir: '.',
-    testMatch: 'troop.spec.ts',
+    testMatch: ['troop.spec.ts', 'board.spec.ts'],
     fullyParallel: false,
     workers: 1,
     timeout: 30_000,
     expect: {
         timeout: 5_000,
     },
-    reporter: [['list'], ['html', { open: 'never', outputFolder: resolve(repositoryRoot, 'playwright-report') }]],
-    outputDir: resolve(repositoryRoot, 'test-results/troop'),
+    reporter: [
+        ['list'],
+        ['html', { open: 'never', outputFolder: resolve(repositoryRoot, 'playwright-report/game-legacy') }],
+    ],
+    outputDir: resolve(repositoryRoot, 'test-results/game-legacy'),
     use: {
         baseURL: 'http://127.0.0.1:15120/che/',
         ...devices['Desktop Chrome'],

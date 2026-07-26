@@ -23,6 +23,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     type MapLayout = Awaited<ReturnType<typeof trpc.world.getMapLayout.query>>;
     type CommandTable = Awaited<ReturnType<typeof trpc.turns.getCommandTable.query>>;
     type MessageBundle = Awaited<ReturnType<typeof trpc.messages.getRecent.query>>;
+    type BoardAccess = Awaited<ReturnType<typeof trpc.board.getAccess.query>>;
     type ReservedTurnView = Awaited<ReturnType<typeof trpc.turns.reserved.getGeneral.query>>[number];
 
     const loading = ref(false);
@@ -36,6 +37,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     const mapLayout = ref<MapLayout | null>(null);
     const commandTable = ref<CommandTable | null>(null);
     const messages = ref<MessageBundle | null>(null);
+    const boardAccess = ref<BoardAccess | null>(null);
     const reservedGeneralTurns = ref<ReservedTurnView[] | null>(null);
     const reservedNationTurns = ref<ReservedTurnView[] | null>(null);
 
@@ -133,6 +135,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             if (!context) {
                 reservedGeneralTurns.value = null;
                 reservedNationTurns.value = null;
+                boardAccess.value = null;
                 loading.value = false;
                 return;
             }
@@ -144,12 +147,13 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
                 context.general.nationId > 0 && context.general.officerLevel >= 5
                     ? trpc.turns.reserved.getNation.query({ generalId: id })
                     : Promise.resolve(null);
-            const [layout, lobby, map, commands, messageData, generalTurns, nationTurns] = await Promise.all([
+            const [layout, lobby, map, commands, messageData, access, generalTurns, nationTurns] = await Promise.all([
                 layoutPromise,
                 trpc.lobby.info.query(),
                 trpc.world.getMap.query({ generalId: id, showMe: true, useCache: true }),
                 trpc.turns.getCommandTable.query({ generalId: id }),
                 trpc.messages.getRecent.query({ generalId: id }),
+                trpc.board.getAccess.query(),
                 generalTurnsPromise,
                 nationTurnsPromise,
             ]);
@@ -159,6 +163,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             worldMap.value = map;
             commandTable.value = commands;
             messages.value = messageData;
+            boardAccess.value = access;
             reservedGeneralTurns.value = generalTurns;
             reservedNationTurns.value = nationTurns;
         } catch (err) {
@@ -479,6 +484,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         selectedCity,
         commandTable,
         messages,
+        boardAccess,
         reservedGeneralTurns,
         reservedNationTurns,
         messageDraftText,
