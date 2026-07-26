@@ -274,6 +274,7 @@ const routes = [
         component: YearbookView,
         meta: {
             requiresAuth: true,
+            requiresGeneral: true,
         },
     },
     {
