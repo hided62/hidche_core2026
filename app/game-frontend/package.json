@@ -11,6 +11,7 @@
         "test:e2e:nation-offices": "playwright test nationOffices.spec.ts --config e2e/playwright.config.mjs",
         "test:e2e:npc-policy": "playwright test npcPolicy.spec.ts --config e2e/playwright.config.mjs",
         "test:e2e:board": "playwright test board.spec.ts --config e2e/playwright.config.mjs",
+        "test:e2e:battle-simulator": "playwright test battleSimulator.spec.ts --config e2e/playwright.config.mjs",
         "lint": "eslint .",
         "lint:fix": "eslint . --fix",
         "test": "node -e \"console.log('test not configured')\"",

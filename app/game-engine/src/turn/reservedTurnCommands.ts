@@ -35,6 +35,8 @@ const DEFAULT_INITIAL_NATION_GEN_LIMIT = 10;
 const DEFAULT_MAX_TECH_LEVEL = 12;
 const DEFAULT_BASE_GOLD = 0;
 const DEFAULT_BASE_RICE = 2000;
+const DEFAULT_GENERAL_MINIMUM_GOLD = 0;
+const DEFAULT_GENERAL_MINIMUM_RICE = 500;
 const DEFAULT_MAX_RESOURCE_ACTION_AMOUNT = 10000;
 
 const normalizeCode = (value: string | null | undefined): string | null => {
@@ -132,6 +134,8 @@ export const buildCommandEnv = (config: ScenarioConfig, unitSet?: UnitSetDefinit
         initialAllowedTechLevel: resolveNumber(constValues, ['initialAllowedTechLevel'], 1),
         baseGold: resolveNumber(constValues, ['baseGold', 'basegold'], DEFAULT_BASE_GOLD),
         baseRice: resolveNumber(constValues, ['baseRice', 'baserice'], DEFAULT_BASE_RICE),
+        generalMinimumGold: resolveNumber(constValues, ['generalMinimumGold'], DEFAULT_GENERAL_MINIMUM_GOLD),
+        generalMinimumRice: resolveNumber(constValues, ['generalMinimumRice'], DEFAULT_GENERAL_MINIMUM_RICE),
         maxResourceActionAmount: resolveNumber(
             constValues,
             ['maxResourceActionAmount'],

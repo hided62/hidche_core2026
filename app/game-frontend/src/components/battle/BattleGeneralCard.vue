@@ -7,6 +7,7 @@ interface Props {
     options: BattleSimOptions;
     mode: 'attacker' | 'defender';
     title: string;
+    canImportServer: boolean;
 }
 
 const props = defineProps<Props>();
@@ -59,7 +60,19 @@ const officerLevelOptions = [
                 <div class="general-subtitle">No {{ general.no }}</div>
             </div>
             <div class="general-actions">
-                <button class="action" type="button" @click="emit('import')">서버에서 가져오기</button>
+                <button
+                    class="action"
+                    type="button"
+                    :disabled="!canImportServer"
+                    :title="
+                        canImportServer
+                            ? '게임 서버의 장수 정보를 불러옵니다.'
+                            : '게임 장수를 보유해야 사용할 수 있습니다.'
+                    "
+                    @click="emit('import')"
+                >
+                    서버에서 가져오기
+                </button>
                 <button class="action" type="button" @click="emit('save')">저장</button>
                 <input ref="fileInput" type="file" accept=".json" hidden @change="handleFileChange" />
                 <button class="action" type="button" @click="triggerLoad">불러오기</button>
@@ -187,21 +200,11 @@ const officerLevelOptions = [
             <div class="form-row">
                 <label class="field">
                     <span>훈련</span>
-                    <input
-                        v-model.number="general.train"
-                        type="number"
-                        min="40"
-                        :max="options.config.maxTrainByWar"
-                    />
+                    <input v-model.number="general.train" type="number" min="40" :max="options.config.maxTrainByWar" />
                 </label>
                 <label class="field">
                     <span>사기</span>
-                    <input
-                        v-model.number="general.atmos"
-                        type="number"
-                        min="40"
-                        :max="options.config.maxAtmosByWar"
-                    />
+                    <input v-model.number="general.atmos" type="number" min="40" :max="options.config.maxAtmosByWar" />
                 </label>
                 <label class="field">
                     <span>전특</span>
@@ -308,30 +311,15 @@ const officerLevelOptions = [
             <div class="form-row buff-row">
                 <label class="field">
                     <span>상대 회피</span>
-                    <input
-                        v-model.number="general.inheritBuff.warAvoidRatioOppose"
-                        type="number"
-                        min="0"
-                        max="5"
-                    />
+                    <input v-model.number="general.inheritBuff.warAvoidRatioOppose" type="number" min="0" max="5" />
                 </label>
                 <label class="field">
                     <span>상대 필살</span>
-                    <input
-                        v-model.number="general.inheritBuff.warCriticalRatioOppose"
-                        type="number"
-                        min="0"
-                        max="5"
-                    />
+                    <input v-model.number="general.inheritBuff.warCriticalRatioOppose" type="number" min="0" max="5" />
                 </label>
                 <label class="field">
                     <span>상대 계략</span>
-                    <input
-                        v-model.number="general.inheritBuff.warMagicTrialProbOppose"
-                        type="number"
-                        min="0"
-                        max="5"
-                    />
+                    <input v-model.number="general.inheritBuff.warMagicTrialProbOppose" type="number" min="0" max="5" />
                 </label>
             </div>
         </div>
@@ -389,6 +377,11 @@ const officerLevelOptions = [
 .action.danger {
     border-color: rgba(233, 94, 94, 0.6);
     color: #f0b6b6;
+}
+
+.action:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
 }
 
 .form-block {

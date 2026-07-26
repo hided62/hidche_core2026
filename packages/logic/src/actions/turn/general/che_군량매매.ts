@@ -16,6 +16,7 @@ import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/action
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import { parseArgsWithSchema } from '../parseArgs.js';
+import { normalizeResourceActionAmount } from './resourceAmount.js';
 
 export interface TradeEnvironment {
     exchangeFee?: number;
@@ -46,8 +47,10 @@ export class ActionDefinition<
         if (!parsed || !Number.isFinite(parsed.amount)) {
             return null;
         }
-        const maxAmount = this.env.maxResourceActionAmount ?? 10_000;
-        const amount = Math.max(100, Math.min(Math.round(parsed.amount / 100) * 100, maxAmount));
+        const amount = normalizeResourceActionAmount(parsed.amount, this.env.maxResourceActionAmount ?? 10_000);
+        if (amount === null) {
+            return null;
+        }
         return { buyRice: parsed.buyRice, amount };
     }
 
