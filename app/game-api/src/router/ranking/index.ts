@@ -8,8 +8,29 @@ import { resolveUniqueConfig } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 
 import { authedProcedure, procedure, router } from '../../trpc.js';
 
-const DEFAULT_BG_COLOR = '#2b2b2b';
+const DEFAULT_BG_COLOR = '#330000';
 const DEFAULT_FG_COLOR = '#ffffff';
+const NEUTRAL_BG_COLOR = '#000000';
+const LEGACY_WHITE_TEXT_COLORS = new Set([
+    '',
+    '#330000',
+    '#FF0000',
+    '#800000',
+    '#A0522D',
+    '#FF6347',
+    '#808000',
+    '#008000',
+    '#2E8B57',
+    '#008080',
+    '#6495ED',
+    '#0000FF',
+    '#000080',
+    '#483D8B',
+    '#7B68EE',
+    '#800080',
+    '#A9A9A9',
+    '#000000',
+]);
 
 const readMetaNumber = (value: unknown): number => {
     if (typeof value === 'number' && Number.isFinite(value)) {
@@ -24,7 +45,17 @@ const readMetaNumber = (value: unknown): number => {
     return 0;
 };
 
-const percentText = (value: number): string => `${(value * 100).toFixed(2)}%`;
+export const formatLegacyRankingNumber = (value: number, fractionDigits = 0): string =>
+    new Intl.NumberFormat('en-US', {
+        minimumFractionDigits: fractionDigits,
+        maximumFractionDigits: fractionDigits,
+        useGrouping: true,
+    }).format(value);
+
+export const resolveLegacyTextColor = (backgroundColor: string): string =>
+    LEGACY_WHITE_TEXT_COLORS.has(backgroundColor.toUpperCase()) ? '#ffffff' : '#000000';
+
+const percentText = (value: number): string => `${formatLegacyRankingNumber(value * 100, 2)}%`;
 
 const readOwnerDisplayName = (value: unknown): string | null => {
     const meta = asRecord(value);
@@ -72,6 +103,7 @@ export const rankingRouter = router({
                 ctx.db.nation.findMany({ select: { id: true, name: true, color: true } }),
                 ctx.db.general.findMany({
                     where: { npcState: npcFilter },
+                    orderBy: { id: 'asc' },
                     select: {
                         id: true,
                         name: true,
@@ -133,11 +165,11 @@ export const rankingRouter = router({
                     }
                     return (r.killcrew_person ?? 0) / Math.max(1, r.deathcrew_person ?? 0);
                 }],
-                ['보 병 숙 련 도', 'int', (_g, r) => r.dex1 ?? 0],
-                ['궁 병 숙 련 도', 'int', (_g, r) => r.dex2 ?? 0],
-                ['기 병 숙 련 도', 'int', (_g, r) => r.dex3 ?? 0],
-                ['귀 병 숙 련 도', 'int', (_g, r) => r.dex4 ?? 0],
-                ['차 병 숙 련 도', 'int', (_g, r) => r.dex5 ?? 0],
+                ['보 병 숙 련 도', 'int', (g) => readMetaNumber(asRecord(g.meta).dex1)],
+                ['궁 병 숙 련 도', 'int', (g) => readMetaNumber(asRecord(g.meta).dex2)],
+                ['기 병 숙 련 도', 'int', (g) => readMetaNumber(asRecord(g.meta).dex3)],
+                ['귀 병 숙 련 도', 'int', (g) => readMetaNumber(asRecord(g.meta).dex4)],
+                ['차 병 숙 련 도', 'int', (g) => readMetaNumber(asRecord(g.meta).dex5)],
                 ['전 력 전 승 률', 'percent', (_g, r) => {
                     const total = (r.ttw ?? 0) + (r.ttd ?? 0) + (r.ttl ?? 0);
                     if (total < 50) {
@@ -186,17 +218,20 @@ export const rankingRouter = router({
                         const ranks = rankMap.get(general.id) ?? {};
                         const value = valueFn(general, ranks);
                         const nation = nationMap.get(general.nationId) ?? null;
+                        const bgColor =
+                            nation?.color ?? (general.nationId === 0 ? NEUTRAL_BG_COLOR : DEFAULT_BG_COLOR);
                         let display = {
                             id: general.id,
                             name: general.name,
                             ownerName: isUnited ? readOwnerDisplayName(general.meta) : null,
                             nationName: nation?.name ?? '재야',
-                            bgColor: nation?.color ?? DEFAULT_BG_COLOR,
-                            fgColor: DEFAULT_FG_COLOR,
+                            bgColor,
+                            fgColor: resolveLegacyTextColor(bgColor),
                             picture: general.picture ?? null,
                             imageServer: general.imageServer ?? 0,
                             value,
-                            printValue: valueType === 'percent' ? percentText(value) : Math.floor(value).toLocaleString('ko-KR'),
+                            printValue:
+                                valueType === 'percent' ? percentText(value) : formatLegacyRankingNumber(value),
                         };
 
                         if (!isUnited && (title === '계 략 성 공' || title === '유 산 소 모 량' || title === '유 산 획 득 량')) {
@@ -206,7 +241,7 @@ export const rankingRouter = router({
                                 ownerName: null,
                                 nationName: '???',
                                 bgColor: DEFAULT_BG_COLOR,
-                                fgColor: DEFAULT_FG_COLOR,
+                                fgColor: resolveLegacyTextColor(DEFAULT_BG_COLOR),
                                 picture: null,
                                 imageServer: 0,
                             };
@@ -268,12 +303,14 @@ export const rankingRouter = router({
                         })
                         .map((general) => {
                             const nation = nationMap.get(general.nationId) ?? null;
+                            const bgColor =
+                                nation?.color ?? (general.nationId === 0 ? NEUTRAL_BG_COLOR : DEFAULT_BG_COLOR);
                             return {
                                 id: general.id,
                                 name: general.name,
                                 nationName: nation?.name ?? '재야',
-                                bgColor: nation?.color ?? DEFAULT_BG_COLOR,
-                                fgColor: DEFAULT_FG_COLOR,
+                                bgColor,
+                                fgColor: resolveLegacyTextColor(bgColor),
                                 picture: general.picture ?? null,
                                 imageServer: general.imageServer ?? 0,
                             };
@@ -299,7 +336,7 @@ export const rankingRouter = router({
                             name: '미발견',
                             nationName: '-',
                             bgColor: DEFAULT_BG_COLOR,
-                            fgColor: DEFAULT_FG_COLOR,
+                            fgColor: resolveLegacyTextColor(DEFAULT_BG_COLOR),
                             picture: null,
                             imageServer: 0,
                         },
@@ -398,7 +435,10 @@ export const rankingRouter = router({
                             picture: typeof aux.picture === 'string' ? aux.picture : null,
                             imageServer: readMetaNumber(aux.imgsvr),
                             value: row.value,
-                            printValue: type.type === 'percent' ? percentText(row.value) : Math.floor(row.value).toLocaleString('ko-KR'),
+                            printValue:
+                                type.type === 'percent'
+                                    ? percentText(row.value)
+                                    : formatLegacyRankingNumber(row.value),
                             serverName: String(aux.serverName ?? ''),
                             serverIdx: readMetaNumber(aux.serverIdx),
                             scenarioName: String(aux.scenarioName ?? ''),

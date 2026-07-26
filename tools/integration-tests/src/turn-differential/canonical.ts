@@ -13,6 +13,7 @@ export interface CanonicalTurnSnapshot {
     engine: CanonicalEngine;
     world: Record<string, unknown>;
     generals: Array<Record<string, unknown>>;
+    rankData: Array<Record<string, unknown>>;
     cities: Array<Record<string, unknown>>;
     nations: Array<Record<string, unknown>>;
     diplomacy: Array<Record<string, unknown>>;
@@ -91,6 +92,7 @@ export const projectCoreDatabaseSnapshot = (rows: {
         meta: unknown;
     };
     generals: Array<Record<string, unknown>>;
+    rankData: Array<Record<string, unknown>>;
     cities: Array<Record<string, unknown>>;
     nations: Array<Record<string, unknown>>;
     diplomacy: Array<Record<string, unknown>>;
@@ -99,6 +101,7 @@ export const projectCoreDatabaseSnapshot = (rows: {
     logs: Array<Record<string, unknown>>;
 }): CanonicalTurnSnapshot => {
     const worldMeta = asRecord(rows.world.meta);
+    const legacyRankTypes = new Set<string>(LEGACY_RANK_DATA_TYPES);
     const generals = rows.generals.map((row) => {
         const meta = asRecord(row.meta);
         return {
@@ -235,6 +238,14 @@ export const projectCoreDatabaseSnapshot = (rows: {
             isUnited: readNumber(worldMeta, 'isUnited', readNumber(worldMeta, 'isunited')),
         },
         generals,
+        rankData: rows.rankData
+            .filter((row) => typeof row.type === 'string' && legacyRankTypes.has(row.type))
+            .map((row) => ({
+                generalId: row.generalId,
+                nationId: row.nationId,
+                type: row.type,
+                value: row.value,
+            })),
         cities,
         nations,
         diplomacy,
@@ -248,3 +259,4 @@ export const projectCoreDatabaseSnapshot = (rows: {
         },
     };
 };
+import { LEGACY_RANK_DATA_TYPES } from '@sammo-ts/common';

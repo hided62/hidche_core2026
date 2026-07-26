@@ -14,6 +14,12 @@ export interface SnapshotComparisonOptions {
 type FlatSnapshot = Map<string, unknown>;
 
 const entityKey = (value: Record<string, unknown>, index: number): string => {
+    if (
+        (typeof value.generalId === 'number' || typeof value.generalId === 'string') &&
+        typeof value.type === 'string'
+    ) {
+        return `${String(value.generalId)}:${value.type}`;
+    }
     for (const key of ['id', 'generalId', 'nationId', 'fromNationId']) {
         const candidate = value[key];
         if (typeof candidate === 'number' || typeof candidate === 'string') {

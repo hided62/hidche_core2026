@@ -14,7 +14,7 @@ import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js'
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
-import { JosaUtil } from '@sammo-ts/common';
+import { JosaUtil, LEGACY_RANK_DATA_TYPES, rankDataMetaKey } from '@sammo-ts/common';
 
 export interface RetireArgs {}
 
@@ -22,7 +22,6 @@ const ACTION_NAME = '은퇴';
 const ACTION_KEY = 'che_은퇴';
 
 const REQ_AGE = 60;
-
 const reqGeneralValue = (): Constraint => ({
     name: 'reqGeneralValue',
     requires: (ctx) => [{ kind: 'general', id: ctx.actorId }],
@@ -51,46 +50,8 @@ export class ActionResolver<
         }
         nextMeta.specAge = 0;
         nextMeta.specAge2 = 0;
-        nextMeta.firenum = 0;
-        for (const key of [
-            'warnum',
-            'killnum',
-            'deathnum',
-            'killcrew',
-            'deathcrew',
-            'ttw',
-            'ttd',
-            'ttl',
-            'ttg',
-            'ttp',
-            'tlw',
-            'tld',
-            'tll',
-            'tlg',
-            'tlp',
-            'tsw',
-            'tsd',
-            'tsl',
-            'tsg',
-            'tsp',
-            'tiw',
-            'tid',
-            'til',
-            'tig',
-            'tip',
-            'betwin',
-            'betgold',
-            'betwingold',
-            'killcrew_person',
-            'deathcrew_person',
-            'occupied',
-            'inherit_earned',
-            'inherit_spent',
-            'inherit_earned_dyn',
-            'inherit_earned_act',
-            'inherit_spent_dyn',
-        ]) {
-            nextMeta[`rank_${key}`] = 0;
+        for (const type of LEGACY_RANK_DATA_TYPES) {
+            nextMeta[rankDataMetaKey(type)] = 0;
         }
 
         const josaYi = JosaUtil.pick(general.name, '이');
