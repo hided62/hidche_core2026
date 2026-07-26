@@ -149,8 +149,9 @@ const cityStateStyle = computed(() => ({
 </script>
 
 <template>
-    <div
+    <RouterLink
         class="city-base"
+        :to="{ name: 'current-city', query: { cityId: props.city.id } }"
         :class="[{ mine: props.city.isMyCity, selected: props.city.selected, 'supply-off': !props.city.supply }]"
         :style="cityBaseStyle"
         @mouseenter="emit('hover', props.city.id)"
@@ -172,7 +173,7 @@ const cityStateStyle = computed(() => ({
         <div v-if="stateIcon" class="city-state" :style="cityStateStyle">
             <img :src="stateIcon" />
         </div>
-    </div>
+    </RouterLink>
 </template>
 
 <style scoped>
@@ -181,6 +182,8 @@ const cityStateStyle = computed(() => ({
     transform: translate(-50%, -50%);
     font-size: 0.65rem;
     color: rgba(232, 221, 196, 0.9);
+    cursor: pointer;
+    text-decoration: none;
 }
 
 .city-bg {

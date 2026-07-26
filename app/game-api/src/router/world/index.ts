@@ -7,6 +7,7 @@ import { authedProcedure } from '../../trpc.js';
 import { asRecord, isRecord } from '@sammo-ts/common';
 import { loadWorldMap } from '../../maps/worldMap.js';
 import { loadMapLayout } from '../../maps/mapLayout.js';
+import { loadUnitSetDefinitionByName } from '../../battleSim/unitSetLoader.js';
 import { getMyGeneral, getOwnedGeneral } from '../shared/general.js';
 
 const isWorldAdmin = (roles: readonly string[]): boolean =>
@@ -31,6 +32,29 @@ const defenceTrain = (meta: unknown): number => {
     const value = asRecord(meta);
     const raw = value.defenceTrain ?? value.defence_train;
     return typeof raw === 'number' && Number.isFinite(raw) ? raw : 0;
+};
+
+const unitSetName = (world: WorldStateRow | null, fallback: string): string => {
+    const config = asRecord(world?.config);
+    const environment = asRecord(config.environment ?? config.map);
+    return typeof environment.unitSet === 'string' && environment.unitSet.trim() ? environment.unitSet : fallback;
+};
+
+const crewTypeNameCache = new Map<string, Promise<Map<number, string>>>();
+const loadCrewTypeNames = (name: string): Promise<Map<number, string>> => {
+    const cached = crewTypeNameCache.get(name);
+    if (cached) return cached;
+    const pending = loadUnitSetDefinitionByName(name)
+        .then((definition) => new Map((definition.crewTypes ?? []).map((crewType) => [crewType.id, crewType.name])))
+        .catch(() => new Map<number, string>());
+    crewTypeNameCache.set(name, pending);
+    return pending;
+};
+
+const leadershipBonus = (officerLevel: number, nationLevel: number): number => {
+    if (officerLevel === 12) return nationLevel * 2;
+    if (officerLevel >= 5) return nationLevel;
+    return 0;
 };
 
 const toWorldStateSnapshot = (row: WorldStateRow) => ({
@@ -122,6 +146,8 @@ export const worldRouter = router({
             if (me.officerLevel > 0 && me.nationId > 0) {
                 cities.filter((city) => city.nationId === me.nationId).forEach((city) => selectable.add(city.id));
                 nationGenerals.forEach((general) => selectable.add(general.cityId));
+            }
+            if ((nation?.level ?? 0) > 0) {
                 Object.keys(spy).forEach((id) => selectable.add(Number(id)));
             }
             if (admin) cities.forEach((city) => selectable.add(city.id));
@@ -150,6 +176,8 @@ export const worldRouter = router({
                 turnMap.set(turn.generalId, list);
             }
             const nationMap = new Map(nations.map((item) => [item.id, item]));
+            const selectedNation = nationMap.get(selected.nationId);
+            const crewTypeNames = await loadCrewTypeNames(unitSetName(world, ctx.profile.id));
             const officers = await ctx.db.general.findMany({
                 where: { officerLevel: { in: [2, 3, 4] } },
                 select: { name: true, officerLevel: true, meta: true },
@@ -175,14 +203,59 @@ export const worldRouter = router({
                     intelligence: general.intel,
                     injury: general.injury,
                     officerLevel: general.officerLevel,
+                    leadershipBonus: leadershipBonus(general.officerLevel, nationMap.get(general.nationId)?.level ?? 0),
                     defenceTrain: ours ? defenceTrain(general.meta) : null,
                     crewTypeId: ours ? general.crewTypeId : null,
+                    crewTypeName: ours ? (crewTypeNames.get(general.crewTypeId) ?? null) : null,
                     crew: ours || full ? general.crew : null,
                     train: ours ? general.train : null,
                     atmos: ours ? general.atmos : null,
                     turns: ours && general.npcState <= 1 ? (turnMap.get(general.id) ?? []) : [],
                 };
             });
+            const forceSummary = mappedGenerals.reduce(
+                (summary, general) => {
+                    if (general.nationId > 0 && me.nationId > 0 && general.nationId !== me.nationId) {
+                        summary.enemyGenerals += 1;
+                        if (general.crew !== null && general.crew >= 0) summary.enemyCrew += general.crew;
+                        if (general.crew !== null && general.crew > 0) summary.enemyArmedGenerals += 1;
+                        return summary;
+                    }
+                    if (me.nationId <= 0 || general.nationId !== me.nationId) return summary;
+                    summary.ownGenerals += 1;
+                    summary.ownCrew += general.crew ?? 0;
+                    if ((general.crew ?? 0) <= 0) return summary;
+                    summary.ownArmedGenerals += 1;
+                    const readiness = Math.min(general.train ?? -1, general.atmos ?? -1);
+                    if (readiness >= 90) {
+                        summary.ready90Crew += general.crew ?? 0;
+                        summary.ready90Generals += 1;
+                    }
+                    if (readiness >= 60) {
+                        summary.ready60Crew += general.crew ?? 0;
+                        summary.ready60Generals += 1;
+                    }
+                    if (general.defenceTrain !== null && readiness >= general.defenceTrain) {
+                        summary.defenceReadyCrew += general.crew ?? 0;
+                        summary.defenceReadyGenerals += 1;
+                    }
+                    return summary;
+                },
+                {
+                    enemyCrew: 0,
+                    enemyArmedGenerals: 0,
+                    enemyGenerals: 0,
+                    ownCrew: 0,
+                    ownArmedGenerals: 0,
+                    ownGenerals: 0,
+                    ready90Crew: 0,
+                    ready90Generals: 0,
+                    ready60Crew: 0,
+                    ready60Generals: 0,
+                    defenceReadyCrew: 0,
+                    defenceReadyGenerals: 0,
+                }
+            );
             return {
                 me: { id: me.id, nationId: me.nationId, officerLevel: me.officerLevel, admin },
                 options: [...selectable]
@@ -194,6 +267,7 @@ export const worldRouter = router({
                     id: selected.id,
                     name: selected.name,
                     nationId: selected.nationId,
+                    nationColor: selectedNation?.color ?? '#000000',
                     level: selected.level,
                     region: selected.region,
                     population: redact(selected.population),
@@ -217,8 +291,11 @@ export const worldRouter = router({
                     },
                 },
                 generals: mappedGenerals,
+                forceSummary,
                 lastExecute:
-                    typeof asRecord(world?.meta).turntime === 'string' ? String(asRecord(world?.meta).turntime) : '',
+                    typeof asRecord(world?.meta).turntime === 'string'
+                        ? String(asRecord(world?.meta).turntime).slice(5, 19)
+                        : '',
             };
         }),
     getState: procedure.query(async ({ ctx }) => {
