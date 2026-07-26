@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LEGACY_RANK_DATA_TYPES } from '@sammo-ts/common';
+import { asRecord, LEGACY_RANK_DATA_TYPES } from '@sammo-ts/common';
 
 import { compareTurnSnapshotDeltas } from '../src/turn-differential/compare.js';
 import { runCoreTurnCommandTrace, type TurnCommandFixtureRequest } from '../src/turn-differential/coreCommandTrace.js';
@@ -3256,6 +3256,154 @@ integration('general command post-required cooldown boundary matrix', () => {
             })
         ).toEqual([]);
     }, 120_000);
+});
+
+type GeneralSpecialResetBoundaryCase = {
+    name: string;
+    action: 'che_내정특기초기화' | 'che_전투특기초기화';
+    actorPatch: Record<string, unknown>;
+    completed: boolean;
+    previousTypeKey: 'prev_types_special' | 'prev_types_special2';
+    expectedPreviousTypes?: string[];
+    expectedSpecAgeKey: 'specAge' | 'specAge2';
+    expectUniqueItem?: boolean;
+};
+
+const generalSpecialResetBoundaryCases: GeneralSpecialResetBoundaryCase[] = [
+    {
+        name: 'domestic reset rejects an actor without a domestic trait',
+        action: 'che_내정특기초기화',
+        actorPatch: { specialDomestic: 'None' },
+        completed: false,
+        previousTypeKey: 'prev_types_special',
+        expectedSpecAgeKey: 'specAge',
+    },
+    {
+        name: 'war reset rejects an actor without a war trait',
+        action: 'che_전투특기초기화',
+        actorPatch: { specialWar: 'None' },
+        completed: false,
+        previousTypeKey: 'prev_types_special2',
+        expectedSpecAgeKey: 'specAge2',
+    },
+    {
+        name: 'domestic reset restarts the previous-type cycle after every trait was seen',
+        action: 'che_내정특기초기화',
+        actorPatch: {
+            specialDomestic: 'che_인덕',
+            lastTurn: { command: '내정 특기 초기화', term: 1 },
+            meta: { prev_types_special: Array.from({ length: 7 }, (_, index) => `domestic-${index}`) },
+        },
+        completed: true,
+        previousTypeKey: 'prev_types_special',
+        expectedPreviousTypes: ['che_인덕'],
+        expectedSpecAgeKey: 'specAge',
+    },
+    {
+        name: 'war reset restarts the previous-type cycle after every trait was seen',
+        action: 'che_전투특기초기화',
+        actorPatch: {
+            specialWar: 'che_귀병',
+            lastTurn: { command: '전투 특기 초기화', term: 1 },
+            meta: { prev_types_special2: Array.from({ length: 19 }, (_, index) => `war-${index}`) },
+        },
+        completed: true,
+        previousTypeKey: 'prev_types_special2',
+        expectedPreviousTypes: ['che_귀병'],
+        expectedSpecAgeKey: 'specAge2',
+    },
+    {
+        name: 'domestic reset stores the old trait and runs the forced unique lottery',
+        action: 'che_내정특기초기화',
+        actorPatch: {
+            specialDomestic: 'che_인덕',
+            lastTurn: { command: '내정 특기 초기화', term: 1 },
+            meta: { inheritRandomUnique: true, prev_types_special: ['che_농업'] },
+        },
+        completed: true,
+        previousTypeKey: 'prev_types_special',
+        expectedPreviousTypes: ['che_농업', 'che_인덕'],
+        expectedSpecAgeKey: 'specAge',
+        expectUniqueItem: true,
+    },
+    {
+        name: 'war reset stores the old trait and runs the forced unique lottery',
+        action: 'che_전투특기초기화',
+        actorPatch: {
+            specialWar: 'che_귀병',
+            lastTurn: { command: '전투 특기 초기화', term: 1 },
+            meta: { inheritRandomUnique: true, prev_types_special2: ['che_신산'] },
+        },
+        completed: true,
+        previousTypeKey: 'prev_types_special2',
+        expectedPreviousTypes: ['che_신산', 'che_귀병'],
+        expectedSpecAgeKey: 'specAge2',
+        expectUniqueItem: true,
+    },
+];
+
+integration('general special reset constraint, state, unique lottery, and log parity', () => {
+    it.each(generalSpecialResetBoundaryCases)(
+        '$name',
+        async ({
+            name,
+            action,
+            actorPatch,
+            completed,
+            previousTypeKey,
+            expectedPreviousTypes,
+            expectedSpecAgeKey,
+            expectUniqueItem,
+        }) => {
+            const request = buildRequest(action, undefined, actorPatch, {
+                world: { initYear: 180, initMonth: 1 },
+            });
+            request.setup!.world!.hiddenSeed = `general-special-reset-${name}`;
+            request.observe!.includeGlobalHistoryLogs = true;
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+            const referenceActor = reference.after.generals.find((entry) => entry.id === 1);
+            const coreActor = core.after.generals.find((entry) => entry.id === 1);
+
+            expect(reference.execution.outcome).toMatchObject({ completed });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: action,
+                actionKey: completed ? action : '휴식',
+                usedFallback: !completed,
+            });
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+            expect(semanticLogSignatures(core.after.logs)).toEqual(
+                semanticLogSignatures(addedReferenceLogs(reference.before, reference.after.logs))
+            );
+
+            if (completed) {
+                expect(asRecord(referenceActor?.meta)[previousTypeKey]).toEqual(expectedPreviousTypes);
+                expect(asRecord(coreActor?.meta)[previousTypeKey]).toEqual(expectedPreviousTypes);
+                expect(referenceActor?.[expectedSpecAgeKey]).toBe(31);
+                expect(coreActor?.[expectedSpecAgeKey]).toBe(31);
+            }
+            if (expectUniqueItem) {
+                const referenceItems = [
+                    referenceActor?.itemHorse,
+                    referenceActor?.itemWeapon,
+                    referenceActor?.itemBook,
+                    referenceActor?.itemExtra,
+                ];
+                const coreItems = [coreActor?.itemHorse, coreActor?.itemWeapon, coreActor?.itemBook, coreActor?.itemExtra];
+                expect(referenceItems.some((item) => item && item !== 'None')).toBe(true);
+                expect(coreItems).toEqual(referenceItems);
+            }
+        },
+        120_000
+    );
 });
 
 const missingTargetCases: Array<{ name: string; action: string; args: Record<string, unknown> }> = [
