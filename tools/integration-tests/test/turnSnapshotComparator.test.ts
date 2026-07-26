@@ -15,6 +15,7 @@ const snapshot = (
     engine,
     world: { year: 183, month: 1, tickMinutes: 10, turnTime: '0183-01-01T00:00:00.000Z', isUnited: 0 },
     generals: [{ id: 1, gold: 1000, rice: 1000, crew: 1000, nationId: 1, cityId: 1 }],
+    rankData: [],
     cities: [{ id: 1, nationId: 1, agriculture: 1000, defence: 500 }],
     nations: [{ id: 1, gold: 0, rice: 0 }],
     diplomacy: [],
@@ -38,6 +39,23 @@ describe('turn snapshot differential comparator', () => {
             cities: [
                 { id: 1, nationId: 1, agriculture: 1000 },
                 { id: 2, nationId: 2, agriculture: 900 },
+            ],
+        });
+
+        expect(compareTurnSnapshots(reference, core)).toEqual([]);
+    });
+
+    it('compares rank rows by general and type instead of array position', () => {
+        const reference = snapshot('ref', {
+            rankData: [
+                { generalId: 2, nationId: 1, type: 'firenum', value: 3 },
+                { generalId: 1, nationId: 1, type: 'warnum', value: 5 },
+            ],
+        });
+        const core = snapshot('core2026', {
+            rankData: [
+                { generalId: 1, nationId: 1, type: 'warnum', value: 5 },
+                { generalId: 2, nationId: 1, type: 'firenum', value: 3 },
             ],
         });
 
