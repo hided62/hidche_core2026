@@ -6,6 +6,7 @@ import { ActionDefinition as MoveCapitalAction } from '../../../src/actions/turn
 import { ActionDefinition as ChangeNationNameAction } from '../../../src/actions/turn/nation/che_국호변경.js';
 import { ActionDefinition as ExpandCityAction } from '../../../src/actions/turn/nation/che_증축.js';
 import { ActionDefinition as LastStandAction } from '../../../src/actions/turn/nation/che_필사즉생.js';
+import { ActionDefinition as DeceptionAction } from '../../../src/actions/turn/nation/che_허보.js';
 import { LogCategory, LogScope } from '../../../src/logging/types.js';
 import type { MapDefinition } from '../../../src/world/types.js';
 import type { TurnSchedule } from '../../../src/turn/calendar.js';
@@ -245,6 +246,33 @@ describe('Nation Actions', () => {
             expect(general.train).toBe(100);
             expect(general.atmos).toBe(100);
             expect(nation.meta.strategic_cmd_limit).toBe(9);
+        });
+    });
+
+    describe('che_허보 (Deception)', () => {
+        it('fails like legacy choice when the target nation has no supplied city', () => {
+            const nation = buildNation(1);
+            const destNation = buildNation(2);
+            const general = buildGeneral(1, 1, 1);
+            const target = buildGeneral(2, 2, 2, 'Target');
+            const definition = new DeceptionAction([]);
+
+            expect(() =>
+                definition.resolve(
+                    {
+                        general,
+                        nation,
+                        destNation,
+                        destCity: buildCity(2, 2),
+                        destCityGenerals: [target],
+                        friendlyGenerals: [general],
+                        destNationSupplyCities: [],
+                        addLog: () => {},
+                        rng: {} as any,
+                    } as any,
+                    { destCityId: 2 }
+                )
+            ).toThrow(RangeError);
         });
     });
 
