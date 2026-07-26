@@ -15,6 +15,7 @@ import BattleSimulatorView from '../views/BattleSimulatorView.vue';
 import NpcControlView from '../views/NpcControlView.vue';
 import NotFoundView from '../views/NotFoundView.vue';
 import TournamentView from '../views/TournamentView.vue';
+import BettingView from '../views/BettingView.vue';
 import MyPageView from '../views/MyPageView.vue';
 import MySettingsView from '../views/MySettingsView.vue';
 import BoardView from '../views/BoardView.vue';
@@ -276,6 +277,15 @@ const routes = [
         path: '/tournament',
         name: 'tournament',
         component: TournamentView,
+        meta: {
+            requiresAuth: true,
+            requiresGeneral: true,
+        },
+    },
+    {
+        path: '/betting',
+        name: 'betting',
+        component: BettingView,
         meta: {
             requiresAuth: true,
             requiresGeneral: true,
