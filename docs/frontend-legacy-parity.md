@@ -19,6 +19,8 @@ tree instead of replacing images with layout-neutral placeholders.
 NPC list, including mutations and recoverable API failures.
 `tournament-betting.spec.ts` covers the separate tournament and tournament
 betting routes, including a recoverable failed bet.
+`reference-rankings.mjs` records the authenticated PHP 명장일람 and public
+명예의 전당 computed DOM without embedding the reference password.
 
 Run the suite from the core2026 repository root:
 
@@ -50,7 +52,8 @@ storage, route guards, and image loading.
 | gateway OAuth join   | `oauth_kakao/join.php`                   | 700px centered registration card, Kakao exchange/register success, retained-input API error, hover/focus                                                  |
 | game login hand-off  | unauthenticated `hwe/index.php` redirect | `/che/login` delegates to `/gateway/`                                                                                                                     |
 | troop                | `hwe/v_troop.php`                        | existing `app/game-frontend/e2e/troop.spec.ts` desktop/mobile geometry and interaction suite                                                              |
-| hall of fame         | `hwe/a_hallOfFame.php`                   | 500/1000px container, 100px ranking cells, 64px natural image, walnut/green textures, Pretendard, close-button focus                                      |
+| best general         | `hwe/a_bestGeneral.php`                  | authenticated 500/1000px ranking and unique-item grids, user/NPC switch, 100/64px cell/image geometry, title/button computed styles, retained-data API error |
+| hall of fame         | `hwe/a_hallOfFame.php`                   | public 500/1000px container, 100px ranking cells, 64px natural image, title/button/select computed styles, scenario switch and retained-data API error       |
 | yearbook             | `hwe/v_history.php`                      | 1000px 700+300 desktop grid, 500px stacked grid, month navigation, legacy textures, success and API-error flows                                           |
 | nation betting       | `hwe/v_nationBetting.php`                | 1000px/6-column desktop and 500px/3-column mobile grids, picked card style, payout table, success and retained-form error                                 |
 | public NPC list      | `hwe/a_npcList.php`                      | 1000px 12-column table with Chromium-expanded legacy widths, NPC color, eight sorts, retained table/sort after API error                                  |
@@ -84,6 +87,16 @@ Adding or changing a frontend route requires:
 
 Pixel snapshots may be added after these structural assertions pass. Dynamic
 regions must not be hidden merely to make a pixel threshold pass.
+
+To refresh the PHP ranking evidence after building the ignored reference
+webpack assets, run:
+
+```sh
+REF_RANKING_URL=http://127.0.0.1:3400/sam/ \
+REF_RANKING_PASSWORD_FILE=/path/to/ignored/user1_password \
+REF_RANKING_ARTIFACT_DIR=/path/to/ignored/artifacts \
+node tools/frontend-legacy-parity/reference-rankings.mjs
+```
 
 The nation office suite can be run independently:
 
