@@ -223,4 +223,80 @@ describe('voteReward command', () => {
         const afterSecond = world.getGeneralById(1);
         expect(afterSecond?.gold).toBe(1500);
     });
+
+    it('treats an active unique auction as occupied when revalidating the lottery', async () => {
+        const general = buildGeneral(1);
+        const snapshot: TurnWorldSnapshot = {
+            generals: [general] as any,
+            cities: [] as any,
+            nations: [] as any,
+            troops: [],
+            diplomacy: [],
+            events: [],
+            initialEvents: [],
+            map: {
+                id: 'test_map',
+                name: 'TestMap',
+                cities: [],
+                defaults: { trust: 50, trade: 100, supplyState: 1, frontState: 0 },
+            } as any,
+            scenarioConfig: {
+                stat: { total: 300, min: 10, max: 100, npcTotal: 150, npcMax: 50, npcMin: 10, chiefMin: 70 },
+                iconPath: '',
+                map: {},
+                const: {
+                    allItems: { weapon: { che_무기_12_칠성검: 1 } },
+                    maxUniqueItemLimit: [[-1, 1]],
+                    uniqueTrialCoef: 10,
+                    maxUniqueTrialProb: 10,
+                    minMonthToAllowInheritItem: 0,
+                },
+                environment: { mapName: 'test_map', unitSet: 'default' },
+            },
+            scenarioMeta: { startYear: 180 } as any,
+            unitSet: {} as any,
+        };
+        const state: TurnWorldState = {
+            id: 1,
+            currentYear: 180,
+            currentMonth: 1,
+            tickSeconds: 3600,
+            lastTurnTime: new Date('0180-01-01T00:00:00Z'),
+            meta: {
+                hiddenSeed: 'seed',
+                scenarioId: 200,
+                initYear: 180,
+                initMonth: 1,
+                scenarioMeta: { startYear: 180 },
+            },
+        };
+        const world = new InMemoryTurnWorld(state, snapshot, {
+            schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+        });
+        const handler = createTurnDaemonCommandHandler({ world });
+        const commandDb = {
+            auction: {
+                findMany: async () => [{ targetCode: 'che_무기_12_칠성검' }],
+            },
+        };
+
+        const result = await handler.handle(
+            {
+                type: 'voteReward',
+                voteId: 1,
+                generalId: 1,
+                goldReward: 500,
+                unique: { expected: false, itemKey: null },
+            },
+            { db: commandDb as any }
+        );
+
+        expect(result).toMatchObject({
+            type: 'voteReward',
+            ok: true,
+            awardedUnique: false,
+        });
+        expect(world.getGeneralById(1)?.gold).toBe(1500);
+        expect(world.getGeneralById(1)?.role.items.weapon).toBeNull();
+    });
 });

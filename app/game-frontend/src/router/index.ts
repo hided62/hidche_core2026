@@ -6,6 +6,9 @@ import JoinView from '../views/JoinView.vue';
 import InheritView from '../views/InheritView.vue';
 import AuctionView from '../views/AuctionView.vue';
 import NationCitiesView from '../views/NationCitiesView.vue';
+import NationInfoView from '../views/NationInfoView.vue';
+import GlobalInfoView from '../views/GlobalInfoView.vue';
+import CurrentCityView from '../views/CurrentCityView.vue';
 import NationGeneralsView from '../views/NationGeneralsView.vue';
 import NationPersonnelView from '../views/NationPersonnelView.vue';
 import NationStratFinanView from '../views/NationStratFinanView.vue';
@@ -85,6 +88,12 @@ const routes = [
         },
     },
     {
+        path: '/nation/info',
+        name: 'nation-info',
+        component: NationInfoView,
+        meta: { requiresAuth: true, requiresGeneral: true },
+    },
+    {
         path: '/nation/cities',
         name: 'nation-cities',
         component: NationCitiesView,
@@ -92,6 +101,18 @@ const routes = [
             requiresAuth: true,
             requiresGeneral: true,
         },
+    },
+    {
+        path: '/global-info',
+        name: 'global-info',
+        component: GlobalInfoView,
+        meta: { requiresAuth: true, requiresGeneral: true },
+    },
+    {
+        path: '/current-city',
+        name: 'current-city',
+        component: CurrentCityView,
+        meta: { requiresAuth: true, requiresGeneral: true },
     },
     {
         path: '/nation/affairs',

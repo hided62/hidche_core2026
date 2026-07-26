@@ -1,473 +1,528 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import { EditorContent, useEditor } from '@tiptap/vue-3';
-import StarterKit from '@tiptap/starter-kit';
-import Image from '@tiptap/extension-image';
-import Link from '@tiptap/extension-link';
-import Placeholder from '@tiptap/extension-placeholder';
-import Underline from '@tiptap/extension-underline';
 
 import { trpc } from '../utils/trpc';
 
-type BoardComment = {
-    id: number;
-    authorName: string;
-    content: string;
-    createdAt: string;
-};
-
-type BoardArticle = {
-    id: number;
-    title: string;
-    contentHtml: string;
-    authorName: string;
-    createdAt: string;
-    comments: BoardComment[];
-};
+type BoardArticle = Awaited<ReturnType<typeof trpc.board.getArticles.query>>[number];
 
 const route = useRoute();
 const isSecretBoard = computed(() => route.name === 'board-secret');
 const title = computed(() => (isSecretBoard.value ? '기밀실' : '회의실'));
-const toggleBoardLabel = computed(() => (isSecretBoard.value ? '회의실로' : '기밀실로'));
-const toggleBoardPath = computed(() => (isSecretBoard.value ? '/board' : '/board/secret'));
 
 const loading = ref(false);
-const errorMessage = ref<string | null>(null);
+const accessChecked = ref(false);
+const canAccess = ref(false);
+const errorMessage = ref('');
 const articles = ref<BoardArticle[]>([]);
-
 const draftTitle = ref('');
+const draftText = ref('');
+const articleTextArea = ref<HTMLTextAreaElement | null>(null);
 const commentDrafts = reactive<Record<number, string>>({});
 
-const editor = useEditor({
-    extensions: [
-        StarterKit,
-        Underline,
-        Link.configure({ openOnClick: false }),
-        Image.configure({ inline: false }),
-        Placeholder.configure({ placeholder: '내용을 입력하세요.' }),
-    ],
-    content: '',
-    editorProps: {
-        attributes: {
-            class: 'board-editor',
-        },
-    },
-});
+const errorText = (error: unknown, fallback: string): string => {
+    if (error instanceof Error) {
+        return error.message;
+    }
+    return typeof error === 'string' ? error : fallback;
+};
+
+const resizeTextArea = (element: HTMLTextAreaElement | null) => {
+    if (!element) {
+        return;
+    }
+    element.style.height = 'auto';
+    element.style.height = `${Math.max(element.scrollHeight, 42)}px`;
+};
+
+const formatDate = (value: string): string => value.slice(5, 16).replace('T', ' ');
+
+const iconPath = (article: BoardArticle): string => {
+    const picture = article.authorPicture || 'default.jpg';
+    return article.authorImageServer ? `${import.meta.env.BASE_URL}d_pic/${picture}` : `/image/icons/${picture}`;
+};
 
 const refreshArticles = async () => {
-    if (loading.value) return;
+    if (loading.value) {
+        return;
+    }
     loading.value = true;
-    errorMessage.value = null;
+    errorMessage.value = '';
+    accessChecked.value = false;
     try {
-        const result = await trpc.board.getArticles.query({ isSecret: isSecretBoard.value });
-        articles.value = result;
-    } catch (err) {
-        errorMessage.value = err instanceof Error ? err.message : '게시판을 불러오지 못했습니다.';
+        const access = await trpc.board.getAccess.query();
+        canAccess.value = isSecretBoard.value ? access.canSecret : access.canMeeting;
+        accessChecked.value = true;
+        if (!canAccess.value) {
+            errorMessage.value = isSecretBoard.value
+                ? '권한이 부족합니다. 수뇌부가 아닙니다.'
+                : '국가에 소속되어있지 않습니다.';
+            articles.value = [];
+            return;
+        }
+        articles.value = await trpc.board.getArticles.query({ isSecret: isSecretBoard.value });
+    } catch (error) {
+        accessChecked.value = true;
+        canAccess.value = false;
+        errorMessage.value = errorText(error, '게시판을 불러오지 못했습니다.');
     } finally {
         loading.value = false;
     }
 };
 
 const submitArticle = async () => {
-    const contentHtml = editor.value?.getHTML().trim() ?? '';
     const titleValue = draftTitle.value.trim();
-    if (!titleValue && !contentHtml) return;
-    errorMessage.value = null;
+    const content = draftText.value.trim();
+    if (!titleValue && !content) {
+        return;
+    }
     try {
         await trpc.board.writeArticle.mutate({
             isSecret: isSecretBoard.value,
             title: titleValue,
-            contentHtml,
+            content,
         });
         draftTitle.value = '';
-        editor.value?.commands.setContent('');
+        draftText.value = '';
+        await nextTick();
+        resizeTextArea(articleTextArea.value);
         await refreshArticles();
-    } catch (err) {
-        errorMessage.value = err instanceof Error ? err.message : '게시물 등록에 실패했습니다.';
+    } catch (error) {
+        window.alert(`실패했습니다. :${errorText(error, '게시물 등록에 실패했습니다.')}`);
     }
 };
 
 const submitComment = async (postId: number) => {
     const content = (commentDrafts[postId] ?? '').trim();
-    if (!content) return;
-    errorMessage.value = null;
+    if (!content) {
+        return;
+    }
     try {
         await trpc.board.writeComment.mutate({ postId, content });
         commentDrafts[postId] = '';
         await refreshArticles();
-    } catch (err) {
-        errorMessage.value = err instanceof Error ? err.message : '댓글 등록에 실패했습니다.';
+    } catch (error) {
+        window.alert(`실패했습니다: ${errorText(error, '댓글 등록에 실패했습니다.')}`);
     }
 };
-
-const fileInputRef = ref<HTMLInputElement | null>(null);
-const uploadBusy = ref(false);
-
-const addLink = () => {
-    const url = window.prompt('링크 주소를 입력하세요');
-    if (!url) return;
-    editor.value?.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
-};
-
-const readFileAsDataUrl = (file: File) =>
-    new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-            if (typeof reader.result === 'string') {
-                resolve(reader.result);
-            } else {
-                reject(new Error('이미지를 읽을 수 없습니다.'));
-            }
-        };
-        reader.onerror = () => reject(new Error('이미지를 읽는 중 오류가 발생했습니다.'));
-        reader.readAsDataURL(file);
-    });
-
-const onSelectImage = async (event: Event) => {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file || uploadBusy.value) return;
-    uploadBusy.value = true;
-    errorMessage.value = null;
-    try {
-        const dataUrl = await readFileAsDataUrl(file);
-        const result = await trpc.board.uploadImage.mutate({ dataUrl });
-        editor.value?.chain().focus().setImage({ src: result.url, alt: file.name }).run();
-    } catch (err) {
-        errorMessage.value = err instanceof Error ? err.message : '이미지 업로드에 실패했습니다.';
-    } finally {
-        uploadBusy.value = false;
-        if (input) {
-            input.value = '';
-        }
-    }
-};
-
-const formatDate = (value: string) => new Date(value).toLocaleString('ko-KR');
 
 watch(isSecretBoard, () => {
-    refreshArticles();
+    void refreshArticles();
 });
 
 onMounted(() => {
-    refreshArticles();
-});
-
-onBeforeUnmount(() => {
-    editor.value?.destroy();
+    void refreshArticles();
 });
 </script>
 
 <template>
-    <div class="board-view">
-        <header class="board-header">
-            <div>
-                <h1>{{ title }}</h1>
-                <span class="board-subtitle">새 게시물 작성</span>
-            </div>
-            <div class="header-actions">
-                <RouterLink class="ghost" to="/">메인으로</RouterLink>
-                <RouterLink class="ghost" :to="toggleBoardPath">{{ toggleBoardLabel }}</RouterLink>
-            </div>
+    <main id="container" class="legacy-board-page">
+        <header class="top-back-bar bg0">
+            <RouterLink class="legacy-button back-button" to="/">돌아가기</RouterLink>
+            <div></div>
+            <h1>{{ title }}</h1>
+            <div></div>
+            <div></div>
         </header>
 
-        <section class="board-editor-card">
-            <div class="field-row">
-                <label class="field-label">제목</label>
-                <input v-model="draftTitle" class="field-input" type="text" maxlength="250" placeholder="제목" />
-            </div>
+        <div v-if="loading && !accessChecked" class="board-state bg0">불러오는 중...</div>
+        <div v-else-if="!canAccess" class="board-state access-error" role="alert">{{ errorMessage }}</div>
 
-            <div class="editor-toolbar">
-                <button type="button" @click="editor?.chain().focus().toggleBold().run()" :class="{ active: editor?.isActive('bold') }">
-                    굵게
-                </button>
-                <button
-                    type="button"
-                    @click="editor?.chain().focus().toggleItalic().run()"
-                    :class="{ active: editor?.isActive('italic') }"
-                >
-                    기울임
-                </button>
-                <button
-                    type="button"
-                    @click="editor?.chain().focus().toggleUnderline().run()"
-                    :class="{ active: editor?.isActive('underline') }"
-                >
-                    밑줄
-                </button>
-                <button type="button" @click="addLink">링크</button>
-                <button type="button" @click="editor?.chain().focus().toggleBulletList().run()">
-                    목록
-                </button>
-                <button type="button" @click="editor?.chain().focus().toggleOrderedList().run()">
-                    번호 목록
-                </button>
-                <button type="button" @click="fileInputRef?.click()" :disabled="uploadBusy">
-                    이미지 업로드
-                </button>
-                <input ref="fileInputRef" type="file" accept="image/*" class="hidden" @change="onSelectImage" />
-            </div>
-
-            <EditorContent v-if="editor" :editor="editor" />
-
-            <div class="submit-row">
-                <button type="button" class="primary" @click="submitArticle">등록</button>
-            </div>
-        </section>
-
-        <p v-if="errorMessage" class="error-text">{{ errorMessage }}</p>
-
-        <section class="board-list">
-            <div v-if="loading" class="empty-text">불러오는 중...</div>
-            <div v-else-if="!articles.length" class="empty-text">게시물이 없습니다.</div>
-            <article v-else v-for="article in articles" :key="article.id" class="board-article">
-                <header class="article-header">
-                    <h2>{{ article.title || '제목 없음' }}</h2>
-                    <div class="article-meta">
-                        <span>{{ article.authorName }}</span>
-                        <span>{{ formatDate(article.createdAt) }}</span>
-                    </div>
-                </header>
-                <div class="article-content" v-html="article.contentHtml" />
-
-                <section class="comment-list">
-                    <div v-if="!article.comments.length" class="comment-empty">댓글이 없습니다.</div>
-                    <div v-for="comment in article.comments" :key="comment.id" class="comment-item">
-                        <div class="comment-meta">
-                            <span>{{ comment.authorName }}</span>
-                            <span>{{ formatDate(comment.createdAt) }}</span>
-                        </div>
-                        <p class="comment-content">{{ comment.content }}</p>
-                    </div>
-                </section>
-
-                <div class="comment-form">
-                    <textarea
-                        v-model="commentDrafts[article.id]"
-                        rows="3"
-                        placeholder="댓글을 입력하세요."
+        <template v-else>
+            <section id="newArticle" class="bg0">
+                <div class="new-article-header bg2 center">새 게시물 작성</div>
+                <div class="form-row">
+                    <label class="form-label bg1 center" for="board-title">제목</label>
+                    <input
+                        id="board-title"
+                        v-model="draftTitle"
+                        class="title-input"
+                        type="text"
+                        maxlength="250"
+                        placeholder="제목"
                     />
-                    <button type="button" @click="submitComment(article.id)">댓글 등록</button>
                 </div>
-            </article>
-        </section>
-    </div>
+                <div class="form-row content-row">
+                    <label class="form-label bg1 center" for="board-content">내용</label>
+                    <textarea
+                        id="board-content"
+                        ref="articleTextArea"
+                        v-model="draftText"
+                        class="content-input"
+                        placeholder="내용"
+                        @input="resizeTextArea(articleTextArea)"
+                    />
+                </div>
+                <div class="article-submit-row">
+                    <div></div>
+                    <button id="submitArticle" class="legacy-button" type="button" @click="submitArticle">등록</button>
+                </div>
+            </section>
+
+            <section id="board">
+                <template v-if="articles.length">
+                    <article v-for="article in articles" :key="article.id" class="article-frame bg0">
+                        <header class="article-header bg1">
+                            <div class="author-name center">{{ article.authorName }}</div>
+                            <div class="article-title center">{{ article.title }}</div>
+                            <time class="date center" :datetime="article.createdAt">{{
+                                formatDate(article.createdAt)
+                            }}</time>
+                        </header>
+                        <div class="article-body border-bottom">
+                            <div class="author-icon center">
+                                <img
+                                    class="general-icon"
+                                    width="64"
+                                    height="64"
+                                    :src="iconPath(article)"
+                                    :alt="`${article.authorName} 아이콘`"
+                                />
+                            </div>
+                            <div class="article-text">{{ article.content }}</div>
+                        </div>
+                        <div class="comment-list">
+                            <div
+                                v-for="comment in article.comments"
+                                :key="comment.id"
+                                class="comment-row border-bottom"
+                            >
+                                <div class="author-name center">{{ comment.authorName }}</div>
+                                <div class="comment-text">{{ comment.content }}</div>
+                                <time class="date center" :datetime="comment.createdAt">{{
+                                    formatDate(comment.createdAt)
+                                }}</time>
+                            </div>
+                        </div>
+                        <div class="comment-form">
+                            <label class="input-comment-header bg2 center" :for="`comment-${article.id}`"
+                                >댓글 달기</label
+                            >
+                            <input
+                                :id="`comment-${article.id}`"
+                                v-model.trim="commentDrafts[article.id]"
+                                class="comment-input"
+                                type="text"
+                                maxlength="250"
+                                placeholder="새 댓글 내용"
+                                @keyup.enter="submitComment(article.id)"
+                            />
+                            <button
+                                class="legacy-button submit-comment"
+                                type="button"
+                                @click="submitComment(article.id)"
+                            >
+                                등록
+                            </button>
+                        </div>
+                    </article>
+                </template>
+                <div v-else-if="!loading" class="empty-board">게시물이 없습니다.</div>
+            </section>
+
+            <footer class="bottom-bar bg0">
+                <RouterLink class="legacy-button back-button" to="/">돌아가기</RouterLink>
+            </footer>
+        </template>
+    </main>
 </template>
 
 <style scoped>
-.board-view {
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-    padding: 24px;
-    color: #e6e8ef;
-    background: #0f1118;
-    min-height: 100vh;
-}
-
-.board-header h1 {
-    font-size: 28px;
-    margin: 0 0 6px;
-}
-
-.header-actions {
-    display: flex;
-    gap: 12px;
-}
-
-.header-actions .ghost {
-    padding: 6px 12px;
-    border-radius: 8px;
-    border: 1px solid #2b2f3f;
-    color: #c7d0e0;
-    text-decoration: none;
-    background: #141826;
-}
-
-.header-actions .ghost:hover {
-    background: #1b2233;
-}
-
-.board-subtitle {
-    font-size: 14px;
-    color: #a8afc5;
-}
-
-.board-editor-card {
-    background: #181b26;
-    padding: 20px;
-    border-radius: 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
-}
-
-.field-row {
-    display: flex;
-    gap: 12px;
-    align-items: center;
-}
-
-.field-label {
-    min-width: 52px;
-    font-weight: 600;
-    color: #c9d0e5;
-}
-
-.field-input {
-    flex: 1;
-    padding: 10px 12px;
-    border-radius: 8px;
-    border: 1px solid #2b2f3f;
-    background: #11131a;
-    color: #f2f4f8;
-}
-
-.editor-toolbar {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-
-.editor-toolbar button {
-    padding: 6px 10px;
-    border-radius: 6px;
-    border: 1px solid #2b2f3f;
-    background: #1e2232;
-    color: #d8dff0;
-    cursor: pointer;
-}
-
-.editor-toolbar button.active {
-    background: #3b425c;
-}
-
-.editor-toolbar button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-.hidden {
-    display: none;
-}
-
-.board-editor {
-    min-height: 220px;
-    padding: 12px;
-    border-radius: 10px;
-    border: 1px solid #2b2f3f;
-    background: #0f1118;
-    color: #f5f6fa;
-}
-
-.board-editor :deep(img) {
-    max-width: 100%;
-    height: auto;
-    border-radius: 6px;
-}
-
-.submit-row {
-    display: flex;
-    justify-content: flex-end;
-}
-
-.submit-row .primary {
-    padding: 10px 20px;
-    border-radius: 8px;
-    border: none;
-    background: #3b82f6;
+.legacy-board-page {
+    width: 500px;
+    margin: 0 auto;
     color: #fff;
+    background: #000;
+    font-family: Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+    font-size: 14px;
+    line-height: 1.3;
+}
+
+.bg0 {
+    background-image: url('/image/game/back_walnut.jpg');
+}
+
+.bg1 {
+    background-image: url('/image/game/back_green.jpg');
+}
+
+.bg2 {
+    background-image: url('/image/game/back_blue.jpg');
+}
+
+.center {
+    text-align: center;
+}
+
+.top-back-bar {
+    width: 100%;
+    height: 32px;
+    display: grid;
+    grid-template-columns: 90px 90px 1fr 90px 90px;
+}
+
+.top-back-bar h1 {
+    margin: 0;
+    font-size: 24px;
+    font-weight: 500;
+    line-height: 32px;
+    text-align: center;
+}
+
+.legacy-button {
+    min-height: 31px;
+    box-sizing: border-box;
+    border: 1px solid #3d3d3d;
+    border-radius: 4px;
+    padding: 4px 12px;
+    color: #fff;
+    background: #444;
+    font: inherit;
+    font-weight: 600;
+    line-height: 1.5;
+    text-align: center;
+    text-decoration: none;
     cursor: pointer;
 }
 
-.error-text {
-    color: #f87171;
+.legacy-button:hover {
+    border-color: #3d3d3d;
+    background: #444;
 }
 
-.board-list {
+.legacy-button:focus-visible {
+    outline: none;
+}
+
+.legacy-button:active {
+    border-color: #3d3d3d;
+    background: #444;
+}
+
+.back-button {
+    height: 32px;
+    margin-right: 2px;
+    border-color: #004f28;
+    background: #00582c;
+}
+
+.back-button:hover,
+.back-button:focus {
+    border-color: #004523;
+    background: #004a25;
+}
+
+.board-state {
+    margin-top: 14px;
+    padding: 10px;
+    text-align: center;
+}
+
+.access-error {
+    color: #fff;
+    text-align: left;
+}
+
+#newArticle {
+    margin-top: 14px;
+}
+
+.new-article-header {
+    min-height: 18px;
+}
+
+.form-row {
+    min-height: 22.1875px;
     display: flex;
-    flex-direction: column;
-    gap: 20px;
 }
 
-.board-article {
-    background: #161a24;
-    border-radius: 12px;
-    padding: 18px;
-    border: 1px solid #202638;
+.form-label {
+    width: 16.6667%;
+    flex: 0 0 auto;
+    display: grid;
+    align-content: center;
 }
 
-.article-header h2 {
-    margin: 0 0 6px;
-    font-size: 20px;
+.title-input,
+.content-input,
+.comment-input {
+    min-width: 0;
+    box-sizing: border-box;
+    border: 0;
+    color: #fff;
+    background: transparent;
+    font: inherit;
 }
 
-.article-meta {
-    font-size: 12px;
-    color: #9aa3b8;
+.title-input {
+    width: calc(83.3333% - 10px);
+    margin: 1px 5px;
+}
+
+.content-row {
+    align-items: stretch;
+    min-height: 46.1875px;
+}
+
+.content-input {
+    width: 83.3333%;
+    min-height: 42px;
+    padding: 1px 5px;
+    resize: none;
+    overflow: hidden;
+}
+
+.title-input:focus-visible,
+.content-input:focus-visible,
+.comment-input:focus-visible {
+    outline: 2px solid #8ab4f8;
+    outline-offset: -2px;
+}
+
+.article-submit-row {
+    display: grid;
+    grid-template-columns: 66.6667% 33.3333%;
+    margin-right: -10.5px;
+    margin-left: -10.5px;
+}
+
+.article-submit-row .legacy-button {
+    width: auto;
+    min-height: 35.5px;
+    margin-right: 10.5px;
+    margin-left: 10.5px;
+}
+
+.article-frame {
+    margin: 20px auto;
+}
+
+.article-header,
+.article-body,
+.comment-row,
+.comment-form {
     display: flex;
-    gap: 8px;
 }
 
-.article-content {
-    margin-top: 12px;
-    line-height: 1.6;
+.author-name,
+.author-icon,
+.input-comment-header {
+    width: 120px;
+    flex: 0 0 auto;
 }
 
-.comment-list {
-    margin-top: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+.article-header {
+    min-height: 18px;
+    align-items: stretch;
 }
 
-.comment-item {
-    background: #11131a;
-    border-radius: 8px;
-    padding: 10px 12px;
+.article-header > *,
+.comment-row > * {
+    display: grid;
+    align-content: center;
 }
 
-.comment-meta {
-    font-size: 11px;
-    color: #8e96aa;
-    display: flex;
-    gap: 8px;
-    margin-bottom: 6px;
+.article-title,
+.article-text,
+.comment-text {
+    min-width: 0;
+    flex: 1 1 auto;
 }
 
-.comment-content {
-    margin: 0;
-    white-space: pre-wrap;
+.date {
+    width: 83.333px;
+    flex: 0 0 auto;
+    font-size: 0.9em;
+}
+
+.article-body {
+    min-height: 64px;
+}
+
+.author-icon {
+    display: grid;
+    align-content: center;
+    justify-content: center;
+}
+
+.general-icon {
+    object-fit: contain;
+}
+
+.article-text,
+.comment-text {
+    padding: 1px 5px;
+    text-align: left;
+    white-space: pre;
+}
+
+.border-bottom {
+    border-bottom: 1px solid gray;
+}
+
+.comment-row {
+    min-height: 21.1875px;
 }
 
 .comment-form {
-    margin-top: 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+    min-height: 29.375px;
 }
 
-.comment-form textarea {
-    background: #0f1118;
-    border: 1px solid #2b2f3f;
-    border-radius: 8px;
-    padding: 8px 10px;
-    color: #e6e8ef;
+.input-comment-header {
+    display: grid;
+    align-content: center;
 }
 
-.comment-form button {
-    align-self: flex-end;
-    padding: 6px 14px;
-    border-radius: 6px;
-    border: none;
-    background: #334155;
-    color: #fff;
-    cursor: pointer;
+.comment-input {
+    flex: 1 1 auto;
+    padding: 1px 5px;
 }
 
-.empty-text {
-    color: #9aa3b8;
+.submit-comment {
+    width: 83.333px;
+    min-height: 29.375px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+    flex: 0 0 auto;
+}
+
+.empty-board {
+    min-height: 18px;
+}
+
+.bottom-bar {
+    padding-top: 20px;
+}
+
+.bottom-bar .back-button {
+    display: inline-block;
+    width: 71px;
+    height: 35.5px;
+    margin: 0;
+    padding-right: 6px;
+    padding-left: 6px;
+    white-space: nowrap;
+}
+
+@media (min-width: 940px) {
+    .legacy-board-page {
+        width: 1000px;
+    }
+
+    .form-label {
+        width: 8.3333%;
+    }
+
+    .title-input {
+        width: calc(91.6667% - 10px);
+    }
+
+    .content-input {
+        width: 91.6667%;
+    }
+
+    .article-submit-row {
+        grid-template-columns: 83.3333% 16.6667%;
+    }
 }
 </style>

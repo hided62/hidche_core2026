@@ -554,6 +554,169 @@ integration('general sabotage probability clamp matrix', () => {
     );
 });
 
+type SabotageValueBoundaryCase = {
+    name: string;
+    action: 'che_화계' | 'che_선동' | 'che_파괴' | 'che_탈취';
+    stat: 'leadership' | 'strength' | 'intelligence';
+    fixturePatches: FixturePatches;
+};
+
+const sabotageValueBoundaryCases: SabotageValueBoundaryCase[] = [
+    {
+        name: 'fire attack does not reduce agriculture or commerce below zero',
+        action: 'che_화계',
+        stat: 'intelligence',
+        fixturePatches: { cities: { 70: { agriculture: 1, commerce: 1 } } },
+    },
+    {
+        name: 'agitation does not reduce security or trust below zero',
+        action: 'che_선동',
+        stat: 'leadership',
+        fixturePatches: { cities: { 70: { security: 1, trust: 1 } } },
+    },
+    {
+        name: 'destruction does not reduce defence or wall below zero',
+        action: 'che_파괴',
+        stat: 'strength',
+        fixturePatches: { cities: { 70: { defence: 1, wall: 1 } } },
+    },
+    {
+        name: 'seizure does not take more than supplied nation resources',
+        action: 'che_탈취',
+        stat: 'strength',
+        fixturePatches: { nations: { 2: { gold: 1, rice: 1 } } },
+    },
+    {
+        name: 'seizure does not reduce unsupplied city resources below zero',
+        action: 'che_탈취',
+        stat: 'strength',
+        fixturePatches: {
+            cities: { 70: { agriculture: 1, commerce: 1, supplyState: 0 } },
+        },
+    },
+];
+
+const hasSuccessfulSabotageLog = (logs: Array<Record<string, unknown>>): boolean =>
+    logs.some((entry) => typeof entry.text === 'string' && entry.text.includes('성공했습니다.'));
+
+integration('general sabotage value boundary matrix', () => {
+    it.each(sabotageValueBoundaryCases)(
+        '$name matches the legacy clamped state delta',
+        async ({ action, stat, fixturePatches }) => {
+            const request = buildRequest(
+                action,
+                { destCityID: 70 },
+                { [stat]: 100 },
+                {
+                    ...fixturePatches,
+                    generals: {
+                        ...fixturePatches.generals,
+                        2: { ...fixturePatches.generals?.[2], [stat]: 10 },
+                    },
+                    cities: {
+                        ...fixturePatches.cities,
+                        70: {
+                            ...fixturePatches.cities?.[70],
+                            security: 0,
+                            securityMax: 2_000,
+                        },
+                    },
+                }
+            );
+            request.setup!.world!.hiddenSeed = 'general-value-0';
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+
+            expect(reference.execution.outcome).toMatchObject({ completed: true });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: action,
+                actionKey: action,
+                usedFallback: false,
+            });
+            expect(hasSuccessfulSabotageLog(reference.after.logs)).toBe(true);
+            expect(hasSuccessfulSabotageLog(core.after.logs)).toBe(true);
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+        },
+        120_000
+    );
+});
+
+type SabotageInjuryBoundaryCase = {
+    action: 'che_화계' | 'che_선동' | 'che_파괴';
+    stat: 'leadership' | 'strength' | 'intelligence';
+    hiddenSeed: string;
+};
+
+const sabotageInjuryBoundaryCases: SabotageInjuryBoundaryCase[] = [
+    { action: 'che_화계', stat: 'intelligence', hiddenSeed: 'general-injury-4' },
+    { action: 'che_선동', stat: 'leadership', hiddenSeed: 'general-injury-13' },
+    { action: 'che_파괴', stat: 'strength', hiddenSeed: 'general-injury-4' },
+];
+
+const injuryLogTexts = (logs: Array<Record<string, unknown>>): string[] =>
+    logs
+        .map((entry) => entry.text)
+        .filter((text): text is string => typeof text === 'string' && text.includes('부상</>을 당했습니다.'));
+
+const legacyInjuryLogBody = (text: string): string => text.replace(/^<C>●<\/>\d+월:/, '');
+
+integration('general sabotage injury boundary matrix', () => {
+    it.each(sabotageInjuryBoundaryCases)(
+        '$action matches legacy injury cap, integer persistence, and log',
+        async ({ action, stat, hiddenSeed }) => {
+            const request = buildRequest(
+                action,
+                { destCityID: 70 },
+                { [stat]: 100 },
+                {
+                    generals: {
+                        2: {
+                            [stat]: 10,
+                            injury: 79,
+                            crew: 101,
+                            atmos: 51,
+                            train: 51,
+                        },
+                    },
+                    cities: { 70: { security: 0, securityMax: 2_000 } },
+                }
+            );
+            request.setup!.world!.hiddenSeed = hiddenSeed;
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+
+            expect(reference.execution.outcome).toMatchObject({ completed: true });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: action,
+                actionKey: action,
+                usedFallback: false,
+            });
+            expect(injuryLogTexts(reference.after.logs)).toHaveLength(1);
+            expect(injuryLogTexts(core.after.logs)).toEqual(
+                injuryLogTexts(reference.after.logs).map(legacyInjuryLogBody)
+            );
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+        },
+        120_000
+    );
+});
+
 type GeneralConstraintCase = {
     name: string;
     action: string;
@@ -599,6 +762,40 @@ const constraintCases: GeneralConstraintCase[] = [
         name: 'maximum city trust',
         action: 'che_주민선정',
         fixturePatches: { cities: { 3: { trust: 100 } } },
+    },
+    {
+        name: 'sabotage targets the occupied city',
+        action: 'che_화계',
+        args: { destCityID: 3 },
+    },
+    {
+        name: 'sabotage targets a neutral city',
+        action: 'che_화계',
+        args: { destCityID: 70 },
+        fixturePatches: { cities: { 70: { nationId: 0 } } },
+    },
+    {
+        name: 'sabotage targets a non-aggression nation',
+        action: 'che_화계',
+        args: { destCityID: 70 },
+        fixturePatches: {
+            diplomacy: {
+                '1:2': { state: 7 },
+                '2:1': { state: 7 },
+            },
+        },
+    },
+    {
+        name: 'insufficient sabotage gold',
+        action: 'che_화계',
+        args: { destCityID: 70 },
+        actorPatch: { gold: 0 },
+    },
+    {
+        name: 'insufficient sabotage rice',
+        action: 'che_화계',
+        args: { destCityID: 70 },
+        actorPatch: { rice: 0 },
     },
 ];
 
