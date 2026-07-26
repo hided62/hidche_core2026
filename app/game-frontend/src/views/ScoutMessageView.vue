@@ -151,7 +151,7 @@ onBeforeUnmount(() => {
             </div>
             <div class="header-actions">
                 <button type="button" class="ghost" @click="loadData">수동 갱신</button>
-                <RouterLink class="ghost" to="/nation/affairs">내무부로</RouterLink>
+                <RouterLink class="ghost" to="/nation/finance">내무부로</RouterLink>
             </div>
         </header>
 

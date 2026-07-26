@@ -3,10 +3,12 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig, devices } from '@playwright/test';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
+const port = Number(process.env.PLAYWRIGHT_FRONTEND_PORT ?? 15120);
+const baseURL = `http://127.0.0.1:${port}/che/`;
 
 export default defineConfig({
     testDir: '.',
-    testMatch: 'troop.spec.ts',
+    testMatch: ['troop.spec.ts', 'nationOffices.spec.ts'],
     fullyParallel: false,
     workers: 1,
     timeout: 30_000,
@@ -14,9 +16,9 @@ export default defineConfig({
         timeout: 5_000,
     },
     reporter: [['list'], ['html', { open: 'never', outputFolder: resolve(repositoryRoot, 'playwright-report') }]],
-    outputDir: resolve(repositoryRoot, 'test-results/troop'),
+    outputDir: resolve(repositoryRoot, 'test-results/game-frontend'),
     use: {
-        baseURL: 'http://127.0.0.1:15120/che/',
+        baseURL,
         ...devices['Desktop Chrome'],
         deviceScaleFactor: 1,
         colorScheme: 'dark',
@@ -24,10 +26,9 @@ export default defineConfig({
         screenshot: 'only-on-failure',
     },
     webServer: {
-        command:
-            'VITE_APP_BASE_PATH=/che VITE_GAME_API_URL=/che/api/trpc pnpm --filter @sammo-ts/game-frontend dev --host 127.0.0.1 --port 15120',
+        command: `VITE_APP_BASE_PATH=/che VITE_GAME_API_URL=/che/api/trpc pnpm --filter @sammo-ts/game-frontend dev --host 127.0.0.1 --port ${port}`,
         cwd: repositoryRoot,
-        url: 'http://127.0.0.1:15120/che/',
+        url: baseURL,
         reuseExistingServer: false,
         timeout: 120_000,
     },

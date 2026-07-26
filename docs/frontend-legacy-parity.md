@@ -47,6 +47,8 @@ storage, route guards, and image loading.
 | yearbook                  | `hwe/v_history.php`                      | 1000px 700+300 desktop grid, 500px stacked grid, month navigation, legacy textures, success and API-error flows             |
 | nation betting            | `hwe/v_nationBetting.php`                | 1000px/6-column desktop and 500px/3-column mobile grids, picked card style, payout table, success and retained-form error   |
 | public NPC list           | `hwe/a_npcList.php`                      | 1000px 12-column table with Chromium-expanded legacy widths, NPC color, eight sorts, retained table/sort after API error    |
+| nation personnel          | `hwe/b_myBossInfo.php`                   | fixed 1000px document at both viewports, chief icon columns, officer/permission/city/kick controls, role redaction          |
+| nation finance            | `hwe/v_nationStratFinan.php`             | 1000/500px at the legacy 940px breakpoint, exact diplomacy grid, policy controls, role gating and failed-mutation rollback  |
 
 The global game baseline is black, white, Pretendard 14px. Legacy texture
 helpers intentionally follow `common.orig.css`: `bg0` is walnut, `bg1` is
@@ -66,6 +68,17 @@ Adding or changing a frontend route requires:
 
 Pixel snapshots may be added after these structural assertions pass. Dynamic
 regions must not be hidden merely to make a pixel threshold pass.
+
+The nation office suite can be run independently:
+
+```sh
+pnpm --filter @sammo-ts/game-frontend test:e2e:nation-offices
+```
+
+Set `PLAYWRIGHT_FRONTEND_PORT` when the default `15120` port is occupied. For
+reference collection, `tools/frontend-legacy-parity/reference-nation-offices.mjs`
+records desktop/500px computed DOM and screenshots from the PHP service without
+changing its product code.
 
 For a review run that also writes full-page screenshots, create an ignored
 artifact directory and set `FRONTEND_PARITY_ARTIFACT_DIR` before invoking the

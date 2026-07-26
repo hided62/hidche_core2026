@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
-import PanelCard from '../components/ui/PanelCard.vue';
-import SkeletonLines from '../components/ui/SkeletonLines.vue';
+
 import { trpc } from '../utils/trpc';
 import { resolveDiplomacyInfo } from '../utils/diplomacy';
 
@@ -10,46 +9,24 @@ type NationEntry = StratFinanResponse['nationsList'][number];
 
 const loading = ref(false);
 const error = ref<string | null>(null);
+const status = ref<string | null>(null);
 const data = ref<StratFinanResponse | null>(null);
-
 const nationMsg = ref('');
 const scoutMsg = ref('');
 const nationMsgDraft = ref('');
 const scoutMsgDraft = ref('');
 const editingNationMsg = ref(false);
 const editingScoutMsg = ref(false);
+const policy = reactive({ rate: 0, bill: 0, secretLimit: 0, blockScout: false, blockWar: false });
+const oldPolicy = reactive({ rate: 0, bill: 0, secretLimit: 0 });
 
-const policy = reactive({
-    rate: 0,
-    bill: 0,
-    secretLimit: 0,
-    blockScout: false,
-    blockWar: false,
-});
-
-const oldPolicy = reactive({
-    rate: 0,
-    bill: 0,
-    secretLimit: 0,
-});
-
-const resolveErrorMessage = (value: unknown): string => {
-    if (value instanceof Error) {
-        return value.message;
-    }
-    if (typeof value === 'string') {
-        return value;
-    }
-    return 'unknown_error';
-};
+const resolveErrorMessage = (value: unknown): string =>
+    value instanceof Error ? value.message : typeof value === 'string' ? value : 'unknown_error';
 
 const loadStratFinan = async () => {
-    if (loading.value) {
-        return;
-    }
+    if (loading.value) return;
     loading.value = true;
     error.value = null;
-
     try {
         const response = await trpc.nation.getStratFinan.query();
         data.value = response;
@@ -69,672 +46,634 @@ const loadStratFinan = async () => {
 const canEdit = computed(() => data.value?.editable ?? false);
 const nationsList = computed(() => data.value?.nationsList ?? []);
 const warSettingCnt = computed(() => data.value?.warSettingCnt ?? { remain: 0, inc: 0, max: 0 });
-
-const statusLine = computed(() => {
-    if (!data.value) {
-        return '내무부 정보를 불러오는 중';
-    }
-    return `${data.value.year}년 ${data.value.month}월`;
-});
-
 const formatNumber = (value: number): string => new Intl.NumberFormat('ko-KR').format(value);
-
-const incomeGoldCity = computed(() => {
-    if (!data.value) {
-        return 0;
-    }
-    return (data.value.income.gold.city * policy.rate) / 100;
-});
-
-const incomeGold = computed(() => {
-    if (!data.value) {
-        return 0;
-    }
-    return incomeGoldCity.value + data.value.income.gold.war;
-});
-
-const incomeRiceCity = computed(() => {
-    if (!data.value) {
-        return 0;
-    }
-    return (data.value.income.rice.city * policy.rate) / 100;
-});
-
-const incomeRiceWall = computed(() => {
-    if (!data.value) {
-        return 0;
-    }
-    return (data.value.income.rice.wall * policy.rate) / 100;
-});
-
+const incomeGoldCity = computed(() => ((data.value?.income.gold.city ?? 0) * policy.rate) / 100);
+const incomeGold = computed(() => incomeGoldCity.value + (data.value?.income.gold.war ?? 0));
+const incomeRiceCity = computed(() => ((data.value?.income.rice.city ?? 0) * policy.rate) / 100);
+const incomeRiceWall = computed(() => ((data.value?.income.rice.wall ?? 0) * policy.rate) / 100);
 const incomeRice = computed(() => incomeRiceCity.value + incomeRiceWall.value);
-
-const outcomeByBill = computed(() => {
-    if (!data.value) {
-        return 0;
-    }
-    return (data.value.outcome * policy.bill) / 100;
-});
-
+const outcomeByBill = computed(() => ((data.value?.outcome ?? 0) * policy.bill) / 100);
 const joinYearMonth = (year: number, month: number): number => year * 12 + month - 1;
-
-const parseYearMonth = (value: number): [number, number] => {
-    return [Math.floor(value / 12), (value % 12) + 1];
-};
-
+const parseYearMonth = (value: number): [number, number] => [Math.floor(value / 12), (value % 12) + 1];
 const resolveDiplomacyEnd = (term: number | null): string => {
-    if (!data.value || !term) {
-        return '-';
+    if (!data.value || !term) return '-';
+    const [year, month] = parseYearMonth(joinYearMonth(data.value.year, data.value.month) + term);
+    return `${year}년 ${month}월`;
+};
+const formatDiplomacyTerm = (term: number | null): string => (term ? `${term}개월` : '-');
+const diplomacyInfo = (nation: NationEntry) => resolveDiplomacyInfo(nation.diplomacy.state);
+
+const mutation = async (action: () => Promise<unknown>, message: string, rollback?: () => void) => {
+    error.value = null;
+    status.value = null;
+    try {
+        await action();
+        status.value = message;
+    } catch (err) {
+        rollback?.();
+        error.value = resolveErrorMessage(err);
     }
-    const [endYear, endMonth] = parseYearMonth(joinYearMonth(data.value.year, data.value.month) + term);
-    return `${endYear}년 ${endMonth}월`;
 };
 
 const enableEditNationMsg = () => {
-    if (!canEdit.value) {
-        return;
-    }
+    if (!canEdit.value) return;
+    nationMsgDraft.value = nationMsg.value;
     editingNationMsg.value = true;
-    nationMsgDraft.value = nationMsg.value;
 };
-
 const rollbackNationMsg = () => {
-    editingNationMsg.value = false;
     nationMsgDraft.value = nationMsg.value;
+    editingNationMsg.value = false;
 };
-
 const saveNationMsg = async () => {
-    if (!canEdit.value) {
-        return;
-    }
-    try {
-        await trpc.nation.setNotice.mutate({ msg: nationMsgDraft.value });
+    await mutation(() => trpc.nation.setNotice.mutate({ msg: nationMsgDraft.value }), '국가 방침을 변경했습니다.');
+    if (!error.value) {
         nationMsg.value = nationMsgDraft.value;
         editingNationMsg.value = false;
-    } catch (err) {
-        error.value = resolveErrorMessage(err);
     }
 };
-
 const enableEditScoutMsg = () => {
-    if (!canEdit.value) {
-        return;
-    }
+    if (!canEdit.value) return;
+    scoutMsgDraft.value = scoutMsg.value;
     editingScoutMsg.value = true;
-    scoutMsgDraft.value = scoutMsg.value;
 };
-
 const rollbackScoutMsg = () => {
-    editingScoutMsg.value = false;
     scoutMsgDraft.value = scoutMsg.value;
+    editingScoutMsg.value = false;
 };
-
 const saveScoutMsg = async () => {
-    if (!canEdit.value) {
-        return;
-    }
-    try {
-        await trpc.nation.setScoutMsg.mutate({ msg: scoutMsgDraft.value });
+    await mutation(() => trpc.nation.setScoutMsg.mutate({ msg: scoutMsgDraft.value }), '임관 권유문을 변경했습니다.');
+    if (!error.value) {
         scoutMsg.value = scoutMsgDraft.value;
         editingScoutMsg.value = false;
-    } catch (err) {
-        error.value = resolveErrorMessage(err);
     }
 };
-
-const setRate = async () => {
-    if (!canEdit.value) {
-        return;
-    }
-    try {
-        await trpc.nation.setRate.mutate({ amount: policy.rate });
-        oldPolicy.rate = policy.rate;
-    } catch (err) {
-        error.value = resolveErrorMessage(err);
-        policy.rate = oldPolicy.rate;
-    }
-};
-
-const rollbackRate = () => {
-    policy.rate = oldPolicy.rate;
-};
-
-const setBill = async () => {
-    if (!canEdit.value) {
-        return;
-    }
-    try {
-        await trpc.nation.setBill.mutate({ amount: policy.bill });
-        oldPolicy.bill = policy.bill;
-    } catch (err) {
-        error.value = resolveErrorMessage(err);
-        policy.bill = oldPolicy.bill;
-    }
-};
-
-const rollbackBill = () => {
-    policy.bill = oldPolicy.bill;
-};
-
-const setSecretLimit = async () => {
-    if (!canEdit.value) {
-        return;
-    }
-    try {
-        await trpc.nation.setSecretLimit.mutate({ amount: policy.secretLimit });
-        oldPolicy.secretLimit = policy.secretLimit;
-    } catch (err) {
-        error.value = resolveErrorMessage(err);
-        policy.secretLimit = oldPolicy.secretLimit;
-    }
-};
-
-const rollbackSecretLimit = () => {
-    policy.secretLimit = oldPolicy.secretLimit;
-};
-
+const setRate = () =>
+    mutation(
+        () => trpc.nation.setRate.mutate({ amount: policy.rate }),
+        '세율을 변경했습니다.',
+        () => (policy.rate = oldPolicy.rate)
+    ).then(() => {
+        if (!error.value) oldPolicy.rate = policy.rate;
+    });
+const setBill = () =>
+    mutation(
+        () => trpc.nation.setBill.mutate({ amount: policy.bill }),
+        '지급률을 변경했습니다.',
+        () => (policy.bill = oldPolicy.bill)
+    ).then(() => {
+        if (!error.value) oldPolicy.bill = policy.bill;
+    });
+const setSecretLimit = () =>
+    mutation(
+        () => trpc.nation.setSecretLimit.mutate({ amount: policy.secretLimit }),
+        '기밀 권한을 변경했습니다.',
+        () => (policy.secretLimit = oldPolicy.secretLimit)
+    ).then(() => {
+        if (!error.value) oldPolicy.secretLimit = policy.secretLimit;
+    });
 const setBlockWar = async () => {
-    if (!canEdit.value || !data.value) {
-        return;
-    }
-    const nextValue = policy.blockWar;
-    try {
-        const result = await trpc.nation.setBlockWar.mutate({ value: nextValue });
-        data.value.warSettingCnt.remain = result.availableCnt;
-    } catch (err) {
-        error.value = resolveErrorMessage(err);
-        policy.blockWar = !nextValue;
-    }
+    const next = policy.blockWar;
+    await mutation(
+        async () => {
+            const result = await trpc.nation.setBlockWar.mutate({ value: next });
+            if (data.value) data.value.warSettingCnt.remain = result.availableCnt;
+        },
+        '전쟁 금지 설정을 변경했습니다.',
+        () => (policy.blockWar = !next)
+    );
 };
-
 const setBlockScout = async () => {
-    if (!canEdit.value) {
-        return;
-    }
-    const nextValue = policy.blockScout;
-    try {
-        await trpc.nation.setBlockScout.mutate({ value: nextValue });
-    } catch (err) {
-        error.value = resolveErrorMessage(err);
-        policy.blockScout = !nextValue;
-    }
+    const next = policy.blockScout;
+    await mutation(
+        () => trpc.nation.setBlockScout.mutate({ value: next }),
+        '임관 금지 설정을 변경했습니다.',
+        () => (policy.blockScout = !next)
+    );
 };
 
-const formatDiplomacyTerm = (term: number | null): string => {
-    if (!term) {
-        return '-';
-    }
-    return `${term}개월`;
-};
-
-const diplomacyInfo = (nation: NationEntry) => resolveDiplomacyInfo(nation.diplomacy.state);
-
-onMounted(() => {
-    void loadStratFinan();
-});
+onMounted(() => void loadStratFinan());
 </script>
 
 <template>
-    <main class="finance-page">
-        <header class="page-header">
-            <div>
-                <h1 class="page-title">내무부</h1>
-                <p class="page-subtitle">{{ statusLine }}</p>
+    <main id="finance-container" class="page-finance">
+        <nav class="top-back-bar">
+            <RouterLink class="legacy-button" to="/">돌아가기</RouterLink>
+            <span />
+            <strong>내무부</strong>
+            <span />
+            <button class="refresh-button" type="button" @click="loadStratFinan">새로고침</button>
+        </nav>
+
+        <div v-if="error" class="feedback error" role="alert">{{ error }}</div>
+        <div v-if="status" class="feedback status" role="status">{{ status }}</div>
+        <div v-if="loading" class="loading">불러오는 중...</div>
+
+        <template v-if="data && !loading">
+            <div class="diplomacy-title">외교관계</div>
+            <div class="diplomacy-table">
+                <div class="diplomacy-row diplomacy-header">
+                    <div>국가명</div>
+                    <div>국력</div>
+                    <div>장수</div>
+                    <div>속령</div>
+                    <div>상태</div>
+                    <div>기간</div>
+                    <div>종료 시점</div>
+                </div>
+                <div v-for="nation in nationsList" :key="nation.id" class="diplomacy-row">
+                    <div :style="{ backgroundColor: nation.color }">{{ nation.name }}</div>
+                    <div>{{ formatNumber(nation.power) }}</div>
+                    <div>{{ formatNumber(nation.generalCount) }}</div>
+                    <div>{{ formatNumber(nation.cityCount) }}</div>
+                    <template v-if="nation.id === data.nationId">
+                        <div>-</div>
+                        <div>-</div>
+                        <div>-</div>
+                    </template>
+                    <template v-else>
+                        <div :style="{ color: diplomacyInfo(nation).color ?? undefined }">
+                            {{ diplomacyInfo(nation).name }}
+                        </div>
+                        <div>{{ formatDiplomacyTerm(nation.diplomacy.term) }}</div>
+                        <div>{{ resolveDiplomacyEnd(nation.diplomacy.term) }}</div>
+                    </template>
+                </div>
             </div>
-            <div class="header-actions">
-                <RouterLink class="ghost" to="/">메인</RouterLink>
-                <RouterLink class="ghost" to="/nation/cities">세력 도시</RouterLink>
-                <RouterLink class="ghost" to="/nation/generals">세력 장수</RouterLink>
-                <button class="ghost" @click="loadStratFinan">새로고침</button>
-            </div>
-        </header>
 
-        <div v-if="error" class="error">{{ error }}</div>
-
-        <section class="layout-grid">
-            <div class="stack">
-                <PanelCard title="외교 관계" subtitle="현 세력 외교 상황">
-                    <SkeletonLines v-if="loading" :lines="4" />
-                    <div v-else class="table-scroll">
-                        <table class="finance-table">
-                            <thead>
-                                <tr>
-                                    <th>국가명</th>
-                                    <th>국력</th>
-                                    <th>장수</th>
-                                    <th>속령</th>
-                                    <th>상태</th>
-                                    <th>기간</th>
-                                    <th>종료 시점</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr v-for="nation in nationsList" :key="nation.id">
-                                    <td>
-                                        <span class="nation-swatch" :style="{ backgroundColor: nation.color }" />
-                                        {{ nation.name }}
-                                    </td>
-                                    <td>{{ formatNumber(nation.power) }}</td>
-                                    <td>{{ formatNumber(nation.generalCount) }}</td>
-                                    <td>{{ formatNumber(nation.cityCount) }}</td>
-                                    <template v-if="nation.id === data?.nationId">
-                                        <td>-</td>
-                                        <td>-</td>
-                                        <td>-</td>
-                                    </template>
-                                    <template v-else>
-                                        <td :style="{ color: diplomacyInfo(nation).color ?? undefined }">
-                                            {{ diplomacyInfo(nation).name }}
-                                        </td>
-                                        <td>{{ formatDiplomacyTerm(nation.diplomacy.term) }}</td>
-                                        <td>{{ resolveDiplomacyEnd(nation.diplomacy.term) }}</td>
-                                    </template>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </PanelCard>
-
-                <PanelCard title="국가 방침">
-                    <template #actions>
-                        <button v-if="canEdit && !editingNationMsg" class="ghost" @click="enableEditNationMsg">
+            <div class="notice-title">국가 방침 &amp; 임관 권유 메시지</div>
+            <section id="notice-form" class="message-form">
+                <header class="green-header">
+                    <span>국가 방침</span>
+                    <span>
+                        <button
+                            v-if="canEdit && !editingNationMsg"
+                            class="message-button"
+                            type="button"
+                            @click="enableEditNationMsg"
+                        >
                             국가방침 수정
                         </button>
-                        <button v-if="canEdit && editingNationMsg" class="ghost" @click="saveNationMsg">저장</button>
-                        <button v-if="canEdit && editingNationMsg" class="ghost" @click="rollbackNationMsg">취소</button>
-                    </template>
-                    <SkeletonLines v-if="loading" :lines="4" />
-                    <div v-else class="message-block">
-                        <div v-if="!editingNationMsg" class="message-preview" v-html="nationMsg || '내용 없음'" />
-                        <textarea
-                            v-else
-                            v-model="nationMsgDraft"
-                            class="text-area"
-                            rows="6"
-                            maxlength="16384"
-                        />
-                    </div>
-                </PanelCard>
-
-                <PanelCard title="임관 권유">
-                    <template #actions>
-                        <button v-if="canEdit && !editingScoutMsg" class="ghost" @click="enableEditScoutMsg">
+                        <button
+                            v-if="canEdit && editingNationMsg"
+                            class="policy-submit"
+                            type="button"
+                            @click="saveNationMsg"
+                        >
+                            저장
+                        </button>
+                        <button
+                            v-if="canEdit && editingNationMsg"
+                            class="policy-cancel"
+                            type="button"
+                            @click="rollbackNationMsg"
+                        >
+                            취소
+                        </button>
+                    </span>
+                </header>
+                <div v-if="!editingNationMsg" class="message-preview" v-html="nationMsg || '내용 없음'" />
+                <textarea v-else v-model="nationMsgDraft" aria-label="국가 방침" maxlength="16384" />
+            </section>
+            <section id="scout-message-form" class="message-form">
+                <header class="green-header">
+                    <span>임관 권유</span>
+                    <span>
+                        <button
+                            v-if="canEdit && !editingScoutMsg"
+                            class="message-button"
+                            type="button"
+                            @click="enableEditScoutMsg"
+                        >
                             임관 권유문 수정
                         </button>
-                        <button v-if="canEdit && editingScoutMsg" class="ghost" @click="saveScoutMsg">저장</button>
-                        <button v-if="canEdit && editingScoutMsg" class="ghost" @click="rollbackScoutMsg">취소</button>
-                    </template>
-                    <SkeletonLines v-if="loading" :lines="3" />
-                    <div v-else class="message-block">
-                        <div class="hint">870px x 200px를 넘어서는 내용은 표시되지 않습니다.</div>
-                        <div v-if="!editingScoutMsg" class="message-preview" v-html="scoutMsg || '내용 없음'" />
-                        <textarea
-                            v-else
-                            v-model="scoutMsgDraft"
-                            class="text-area"
-                            rows="4"
-                            maxlength="1000"
-                        />
-                    </div>
-                </PanelCard>
-            </div>
+                        <button
+                            v-if="canEdit && editingScoutMsg"
+                            class="policy-submit"
+                            type="button"
+                            @click="saveScoutMsg"
+                        >
+                            저장
+                        </button>
+                        <button
+                            v-if="canEdit && editingScoutMsg"
+                            class="policy-cancel"
+                            type="button"
+                            @click="rollbackScoutMsg"
+                        >
+                            취소
+                        </button>
+                    </span>
+                </header>
+                <div class="scout-limit">870px x 200px를 넘어서는 내용은 표시되지 않습니다.</div>
+                <div v-if="!editingScoutMsg" class="message-preview scout-preview" v-html="scoutMsg || '내용 없음'" />
+                <textarea v-else v-model="scoutMsgDraft" class="scout-editor" aria-label="임관 권유" maxlength="1000" />
+            </section>
 
-            <div class="stack">
-                <PanelCard title="예산 요약" subtitle="세입/세출 추산">
-                    <SkeletonLines v-if="loading" :lines="5" />
-                    <div v-else class="budget-grid">
-                        <div class="budget-card">
-                            <div class="budget-title">자금 예산</div>
-                            <div class="budget-row">
-                                <span>현 재</span>
-                                <span>{{ formatNumber(Math.floor(data?.gold ?? 0)) }}</span>
-                            </div>
-                            <div class="budget-row">
-                                <span>단기수입</span>
-                                <span>{{ formatNumber(Math.floor(data?.income.gold.war ?? 0)) }}</span>
-                            </div>
-                            <div class="budget-row">
-                                <span>세 금</span>
-                                <span>{{ formatNumber(Math.floor(incomeGoldCity)) }}</span>
-                            </div>
-                            <div class="budget-row">
-                                <span>수입/지출</span>
-                                <span>
-                                    +{{ formatNumber(Math.floor(incomeGold)) }} /
-                                    {{ formatNumber(Math.floor(-outcomeByBill)) }}
-                                </span>
-                            </div>
-                            <div class="budget-row total">
-                                <span>국고 예산</span>
-                                <span>
-                                    {{ formatNumber(Math.floor((data?.gold ?? 0) + incomeGold - outcomeByBill)) }}
-                                    ({{ incomeGold >= outcomeByBill ? '+' : '' }}{{
-                                        formatNumber(Math.floor(incomeGold - outcomeByBill))
-                                    }})
-                                </span>
-                            </div>
-                        </div>
-
-                        <div class="budget-card">
-                            <div class="budget-title">군량 예산</div>
-                            <div class="budget-row">
-                                <span>현 재</span>
-                                <span>{{ formatNumber(Math.floor(data?.rice ?? 0)) }}</span>
-                            </div>
-                            <div class="budget-row">
-                                <span>둔전수입</span>
-                                <span>{{ formatNumber(Math.floor(incomeRiceWall)) }}</span>
-                            </div>
-                            <div class="budget-row">
-                                <span>세 금</span>
-                                <span>{{ formatNumber(Math.floor(incomeRiceCity)) }}</span>
-                            </div>
-                            <div class="budget-row">
-                                <span>수입/지출</span>
-                                <span>
-                                    +{{ formatNumber(Math.floor(incomeRice)) }} /
-                                    {{ formatNumber(Math.floor(-outcomeByBill)) }}
-                                </span>
-                            </div>
-                            <div class="budget-row total">
-                                <span>국고 예산</span>
-                                <span>
-                                    {{ formatNumber(Math.floor((data?.rice ?? 0) + incomeRice - outcomeByBill)) }}
-                                    ({{ incomeRice >= outcomeByBill ? '+' : '' }}{{
-                                        formatNumber(Math.floor(incomeRice - outcomeByBill))
-                                    }})
-                                </span>
-                            </div>
-                        </div>
+            <div class="finance-title">예산&amp;정책</div>
+            <section class="finance-grid">
+                <div class="budget-column">
+                    <div class="blue-heading">자금 예산</div>
+                    <div class="budget-row">
+                        <span>현 재</span><span>{{ formatNumber(data.gold) }}</span>
                     </div>
-                </PanelCard>
-
-                <PanelCard title="정책 설정" subtitle="세율/지급률/기밀 권한">
-                    <div class="policy-grid">
-                        <div class="policy-row">
-                            <div class="policy-label">세율 (5 ~ 30%)</div>
-                            <div class="policy-control">
-                                <input
-                                    v-model.number="policy.rate"
-                                    class="number-input"
-                                    type="number"
-                                    min="5"
-                                    max="30"
-                                    :disabled="!canEdit"
-                                />
-                                <button class="ghost" :disabled="!canEdit" @click="setRate">변경</button>
-                                <button class="ghost" :disabled="!canEdit" @click="rollbackRate">취소</button>
-                            </div>
-                        </div>
-                        <div class="policy-row">
-                            <div class="policy-label">지급률 (20 ~ 200%)</div>
-                            <div class="policy-control">
-                                <input
-                                    v-model.number="policy.bill"
-                                    class="number-input"
-                                    type="number"
-                                    min="20"
-                                    max="200"
-                                    :disabled="!canEdit"
-                                />
-                                <button class="ghost" :disabled="!canEdit" @click="setBill">변경</button>
-                                <button class="ghost" :disabled="!canEdit" @click="rollbackBill">취소</button>
-                            </div>
-                        </div>
-                        <div class="policy-row">
-                            <div class="policy-label">기밀 권한 (1 ~ 99년)</div>
-                            <div class="policy-control">
-                                <input
-                                    v-model.number="policy.secretLimit"
-                                    class="number-input"
-                                    type="number"
-                                    min="1"
-                                    max="99"
-                                    :disabled="!canEdit"
-                                />
-                                <button class="ghost" :disabled="!canEdit" @click="setSecretLimit">변경</button>
-                                <button class="ghost" :disabled="!canEdit" @click="rollbackSecretLimit">취소</button>
-                            </div>
-                        </div>
-                        <div class="policy-row">
-                            <div class="policy-label">전쟁 금지 설정</div>
-                            <div class="policy-summary">
-                                {{ warSettingCnt.remain }} 회 (월 +{{ warSettingCnt.inc }}회, 최대{{ warSettingCnt.max }}회)
-                            </div>
-                        </div>
-                        <div class="policy-toggles">
-                            <label class="toggle">
-                                <input
-                                    v-model="policy.blockWar"
-                                    type="checkbox"
-                                    :disabled="!canEdit"
-                                    @change="setBlockWar"
-                                />
-                                <span>전쟁 금지</span>
-                            </label>
-                            <label class="toggle">
-                                <input
-                                    v-model="policy.blockScout"
-                                    type="checkbox"
-                                    :disabled="!canEdit"
-                                    @change="setBlockScout"
-                                />
-                                <span>임관 금지</span>
-                            </label>
-                        </div>
+                    <div class="budget-row">
+                        <span>단기수입</span><span>{{ formatNumber(data.income.gold.war) }}</span>
                     </div>
-                </PanelCard>
-            </div>
-        </section>
+                    <div class="budget-row">
+                        <span>세 금</span><span>{{ formatNumber(Math.floor(incomeGoldCity)) }}</span>
+                    </div>
+                    <div class="budget-row">
+                        <span>수입/지출</span
+                        ><span
+                            >+{{ formatNumber(Math.floor(incomeGold)) }} /
+                            {{ formatNumber(Math.floor(-outcomeByBill)) }}</span
+                        >
+                    </div>
+                    <div class="budget-row">
+                        <span>국고 예산</span
+                        ><span
+                            >{{ formatNumber(Math.floor(data.gold + incomeGold - outcomeByBill)) }} ({{
+                                incomeGold >= outcomeByBill ? '+' : ''
+                            }}{{ formatNumber(Math.floor(incomeGold - outcomeByBill)) }})</span
+                        >
+                    </div>
+                </div>
+                <div class="budget-column">
+                    <div class="blue-heading">군량 예산</div>
+                    <div class="budget-row">
+                        <span>현 재</span><span>{{ formatNumber(data.rice) }}</span>
+                    </div>
+                    <div class="budget-row">
+                        <span>둔전수입</span><span>{{ formatNumber(Math.floor(incomeRiceWall)) }}</span>
+                    </div>
+                    <div class="budget-row">
+                        <span>세 금</span><span>{{ formatNumber(Math.floor(incomeRiceCity)) }}</span>
+                    </div>
+                    <div class="budget-row">
+                        <span>수입/지출</span
+                        ><span
+                            >+{{ formatNumber(Math.floor(incomeRice)) }} /
+                            {{ formatNumber(Math.floor(-outcomeByBill)) }}</span
+                        >
+                    </div>
+                    <div class="budget-row">
+                        <span>국고 예산</span
+                        ><span
+                            >{{ formatNumber(Math.floor(data.rice + incomeRice - outcomeByBill)) }} ({{
+                                incomeRice >= outcomeByBill ? '+' : ''
+                            }}{{ formatNumber(Math.floor(incomeRice - outcomeByBill)) }})</span
+                        >
+                    </div>
+                </div>
+                <div class="policy-cell">
+                    <div class="green-label">세율 <span>(5 ~ 30%)</span></div>
+                    <div class="policy-control">
+                        <input v-model.number="policy.rate" aria-label="세율" type="number" min="5" max="30" /><span
+                            >%</span
+                        >
+                        <button v-if="canEdit" class="policy-submit" type="button" @click="setRate">변경</button>
+                        <button
+                            v-if="canEdit"
+                            class="policy-cancel"
+                            type="button"
+                            @click="policy.rate = oldPolicy.rate"
+                        >
+                            취소
+                        </button>
+                    </div>
+                </div>
+                <div class="policy-cell">
+                    <div class="green-label">지급률 <span>(20 ~ 200%)</span></div>
+                    <div class="policy-control">
+                        <input v-model.number="policy.bill" aria-label="지급률" type="number" min="20" max="200" /><span
+                            >%</span
+                        >
+                        <button v-if="canEdit" class="policy-submit" type="button" @click="setBill">변경</button>
+                        <button
+                            v-if="canEdit"
+                            class="policy-cancel"
+                            type="button"
+                            @click="policy.bill = oldPolicy.bill"
+                        >
+                            취소
+                        </button>
+                    </div>
+                </div>
+                <div class="policy-cell">
+                    <div class="green-label">기밀 권한 <span>(1 ~ 99년)</span></div>
+                    <div class="policy-control">
+                        <input
+                            v-model.number="policy.secretLimit"
+                            aria-label="기밀 권한"
+                            type="number"
+                            min="1"
+                            max="99"
+                        /><span>년</span>
+                        <button v-if="canEdit" class="policy-submit" type="button" @click="setSecretLimit">변경</button>
+                        <button
+                            v-if="canEdit"
+                            class="policy-cancel"
+                            type="button"
+                            @click="policy.secretLimit = oldPolicy.secretLimit"
+                        >
+                            취소
+                        </button>
+                    </div>
+                </div>
+                <div class="policy-cell">
+                    <div class="green-label">전쟁 금지 설정</div>
+                    <div class="war-count">
+                        {{ warSettingCnt.remain }} 회(월 +{{ warSettingCnt.inc }}회, 최대{{ warSettingCnt.max }}회)
+                    </div>
+                </div>
+                <div class="policy-toggles">
+                    <label
+                        ><span>전쟁 금지</span
+                        ><input v-model="policy.blockWar" type="checkbox" :disabled="!canEdit" @change="setBlockWar"
+                    /></label>
+                    <label
+                        ><span>임관 금지</span
+                        ><input
+                            v-model="policy.blockScout"
+                            type="checkbox"
+                            :disabled="!canEdit"
+                            @change="setBlockScout"
+                    /></label>
+                </div>
+            </section>
+            <footer class="bottom-bar">
+                <RouterLink class="legacy-button" to="/">돌아가기</RouterLink><strong>내무부</strong>
+            </footer>
+        </template>
     </main>
 </template>
 
 <style scoped>
-.finance-page {
+.page-finance {
+    width: 1000px;
     min-height: 100vh;
-    padding: 24px;
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
+    margin: 0 auto;
+    color: #fff;
+    background: url('/image/game/back_walnut.jpg');
+    font:
+        14px/1.3 Pretendard,
+        'Apple SD Gothic Neo',
+        'Noto Sans KR',
+        'Malgun Gothic',
+        sans-serif;
 }
-
-.page-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    flex-wrap: wrap;
-}
-
-.page-title {
-    font-size: 1.6rem;
-    font-weight: 700;
-}
-
-.page-subtitle {
-    color: rgba(232, 221, 196, 0.7);
-    margin-top: 6px;
-}
-
-.header-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-}
-
-.layout-grid {
+.top-back-bar,
+.bottom-bar {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-    gap: 18px;
-}
-
-.stack {
-    display: flex;
-    flex-direction: column;
-    gap: 18px;
-}
-
-.table-scroll {
-    overflow-x: auto;
-}
-
-.finance-table {
+    grid-template-columns: 90px 90px 1fr 90px 90px;
+    align-items: center;
     width: 100%;
-    border-collapse: collapse;
-    font-size: 0.85rem;
+    height: 32px;
 }
-
-.finance-table th,
-.finance-table td {
-    padding: 6px 8px;
-    border-bottom: 1px solid rgba(201, 164, 90, 0.2);
+.top-back-bar strong,
+.bottom-bar strong {
+    grid-column: 3;
     text-align: center;
 }
-
-.finance-table th {
+.top-back-bar button {
+    grid-column: 5;
+}
+.legacy-button,
+button {
+    box-sizing: border-box;
+    border: 1px solid #00502a;
+    border-radius: 4px;
+    padding: 5.25px 10.5px;
+    color: #fff;
+    background: #00582c;
+    font: inherit;
+    line-height: 21px;
     text-align: center;
-    font-weight: 600;
-}
-
-.nation-swatch {
-    display: inline-block;
-    width: 10px;
-    height: 10px;
-    border-radius: 2px;
-    margin-right: 6px;
-}
-
-.message-block {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.message-preview {
-    min-height: 80px;
-    padding: 10px;
-    border: 1px solid rgba(201, 164, 90, 0.2);
-    background: rgba(12, 12, 12, 0.5);
-}
-
-.text-area {
-    width: 100%;
-    border: 1px solid rgba(201, 164, 90, 0.4);
-    background: rgba(12, 12, 12, 0.7);
-    color: inherit;
-    padding: 8px;
-    font-size: 0.9rem;
-}
-
-.hint {
-    font-size: 0.75rem;
-    color: rgba(232, 221, 196, 0.6);
-}
-
-.budget-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 14px;
-}
-
-.budget-card {
-    border: 1px solid rgba(201, 164, 90, 0.3);
-    padding: 10px;
-    background: rgba(12, 12, 12, 0.6);
-}
-
-.budget-title {
-    font-weight: 600;
-    margin-bottom: 8px;
-}
-
-.budget-row {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 4px;
-    font-size: 0.85rem;
-}
-
-.budget-row.total {
-    margin-top: 8px;
-    padding-top: 8px;
-    border-top: 1px dashed rgba(201, 164, 90, 0.3);
-    font-weight: 600;
-}
-
-.policy-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
-.policy-row {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-
-.policy-label {
-    font-size: 0.85rem;
-}
-
-.policy-control {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    align-items: center;
-}
-
-.policy-summary {
-    font-size: 0.85rem;
-    color: rgba(232, 221, 196, 0.8);
-}
-
-.policy-toggles {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
-    margin-top: 6px;
-}
-
-.toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 0.85rem;
-}
-
-.number-input {
-    width: 80px;
-    padding: 4px 6px;
-    border: 1px solid rgba(201, 164, 90, 0.4);
-    background: rgba(12, 12, 12, 0.7);
-    color: inherit;
-    text-align: right;
-}
-
-.ghost {
-    border: 1px solid rgba(201, 164, 90, 0.5);
-    background: transparent;
-    color: inherit;
-    padding: 6px 10px;
-    font-size: 0.8rem;
+    text-decoration: none;
     cursor: pointer;
 }
-
-.ghost:disabled {
-    opacity: 0.4;
+.message-button,
+.policy-cancel {
+    border-color: #6c757d;
+    background: #6c757d;
+}
+.policy-submit {
+    border-color: #325172;
+    background: #375a7f;
+}
+button:hover,
+.legacy-button:hover {
+    filter: brightness(1.2);
+}
+button:focus-visible,
+.legacy-button:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 1px;
+}
+.diplomacy-title,
+.notice-title,
+.finance-title {
+    height: 25.47px;
+    text-align: center;
+    font-size: 19.6px;
+    line-height: 25.47px;
+}
+.diplomacy-title {
+    background: #375a7f;
+}
+.notice-title {
+    color: #000;
+    background: #fff;
+}
+.finance-title {
+    background: #00bc8c;
+}
+.diplomacy-row {
+    display: grid;
+    grid-template-columns: minmax(130px, 3fr) 1.5fr 1fr 1fr 2fr 1fr 2fr;
+    min-height: 18.19px;
+    text-align: center;
+}
+.diplomacy-row > div {
+    border-bottom: 1px solid gray;
+    overflow: hidden;
+    white-space: nowrap;
+}
+.diplomacy-header {
+    background: url('/image/game/back_green.jpg');
+}
+.green-header {
+    display: flex;
+    min-height: 32px;
+    align-items: center;
+    justify-content: space-between;
+    background: url('/image/game/back_green.jpg');
+}
+.message-preview,
+textarea {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 45.5px;
+    border: 1px solid gray;
+    padding: 6px;
+    color: #fff;
+    background: transparent;
+    font: inherit;
+}
+.scout-limit {
+    border-bottom: 0.5px solid gray;
+}
+.scout-preview,
+.scout-editor {
+    width: 870px;
+    max-height: 200px;
+    margin-left: auto;
+    overflow: hidden;
+}
+.finance-grid {
+    display: flex;
+    flex-wrap: wrap;
+    width: 100%;
+}
+.budget-column,
+.policy-cell {
+    box-sizing: border-box;
+    width: 50%;
+}
+.blue-heading {
+    height: 18.19px;
+    text-align: center;
+    background: url('/image/game/back_blue.jpg');
+}
+.budget-row,
+.policy-cell {
+    display: grid;
+    grid-template-columns: 33.333% 66.667%;
+    min-height: 18.19px;
+    text-align: center;
+}
+.budget-row span:first-child,
+.green-label {
+    background: url('/image/game/back_green.jpg');
+}
+.budget-row > span,
+.green-label,
+.policy-control,
+.war-count {
+    box-sizing: border-box;
+    border: 1px solid rgba(128, 128, 128, 0.65);
+}
+.green-label,
+.war-count {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.policy-control {
+    display: flex;
+    min-height: 48px;
+    align-items: center;
+    justify-content: center;
+}
+.policy-control input {
+    box-sizing: border-box;
+    width: 58.66px;
+    height: 30px;
+    border: 1px solid #000;
+    padding: 3.5px 0;
+    color: #303030;
+    background: #ddd;
+    font: inherit;
+    text-align: right;
+}
+.policy-control button {
+    padding: 3px 7px;
+}
+.policy-toggles {
+    display: flex;
+    width: 100%;
+    min-height: 42px;
+    align-items: center;
+    justify-content: center;
+    gap: 45px;
+}
+.policy-toggles label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.policy-toggles input {
+    position: relative;
+    width: 32px;
+    height: 16px;
+    appearance: none;
+    border: 0;
+    border-radius: 16px;
+    background: #adb5bd;
+    cursor: pointer;
+}
+.policy-toggles input::before {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #fff;
+    content: '';
+    transition: transform 0.15s ease-in-out;
+}
+.policy-toggles input:checked {
+    background: #00bc8c;
+}
+.policy-toggles input:checked::before {
+    transform: translateX(16px);
+}
+.policy-toggles input:disabled {
     cursor: not-allowed;
+    opacity: 0.65;
 }
-
+.feedback,
+.loading {
+    box-sizing: border-box;
+    width: 100%;
+    border: 1px solid gray;
+    padding: 6px 8px;
+}
 .error {
-    color: #f08a5d;
-    font-size: 0.9rem;
+    color: #ff8080;
 }
-@media (max-width: 768px) {
-    .page-header {
-        flex-direction: column;
-        align-items: flex-start;
+.status {
+    color: #80ff80;
+}
+.bottom-bar {
+    margin-top: 8px;
+}
+@media (max-width: 939.98px) {
+    .page-finance {
+        width: 500px;
+        margin: 0;
+        overflow-x: hidden;
+    }
+    .top-back-bar,
+    .bottom-bar {
+        grid-template-columns: 90px 90px 140px 90px 90px;
+    }
+    .message-preview:not(.scout-preview),
+    #notice-form textarea {
+        width: 1000px;
+        transform: scale(0.5);
+        transform-origin: left top;
+        margin-bottom: -22.75px;
+    }
+    .scout-preview,
+    .scout-editor {
+        width: 870px;
+        transform: scale(calc(500 / 870));
+        transform-origin: left top;
+        margin-bottom: -19px;
     }
 }
 </style>

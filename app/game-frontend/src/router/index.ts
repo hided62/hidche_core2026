@@ -18,8 +18,6 @@ import TournamentView from '../views/TournamentView.vue';
 import MyPageView from '../views/MyPageView.vue';
 import MySettingsView from '../views/MySettingsView.vue';
 import BoardView from '../views/BoardView.vue';
-import NationAffairsView from '../views/NationAffairsView.vue';
-import ScoutMessageView from '../views/ScoutMessageView.vue';
 import DiplomacyView from '../views/DiplomacyView.vue';
 import BestGeneralView from '../views/BestGeneralView.vue';
 import HallOfFameView from '../views/HallOfFameView.vue';
@@ -95,7 +93,7 @@ const routes = [
     {
         path: '/nation/affairs',
         name: 'nation-affairs',
-        component: NationAffairsView,
+        redirect: '/nation/finance',
         meta: {
             requiresAuth: true,
             requiresGeneral: true,
@@ -104,7 +102,7 @@ const routes = [
     {
         path: '/nation/recruit-message',
         name: 'nation-recruit-message',
-        component: ScoutMessageView,
+        redirect: '/nation/finance',
         meta: {
             requiresAuth: true,
             requiresGeneral: true,

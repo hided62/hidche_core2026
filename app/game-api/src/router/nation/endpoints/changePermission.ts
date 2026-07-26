@@ -8,7 +8,10 @@ export const changePermission = authedProcedure
     .input(
         z.object({
             isAmbassador: z.boolean(),
-            targetGeneralIds: z.array(z.number().int().positive()),
+            targetGeneralIds: z
+                .array(z.number().int().positive())
+                .max(2)
+                .refine((ids) => new Set(ids).size === ids.length, '중복된 장수를 지정할 수 없습니다.'),
         })
     )
     .mutation(async ({ ctx, input }) => {

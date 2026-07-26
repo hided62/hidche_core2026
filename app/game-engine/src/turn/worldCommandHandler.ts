@@ -23,6 +23,7 @@ import {
     type ItemModule,
     type TriggerValue,
 } from '@sammo-ts/logic';
+import { simpleSerialize } from '@sammo-ts/logic/war/utils.js';
 import {
     cloneItemInventory,
     ensureItemInventory,
@@ -54,6 +55,51 @@ const readMetaNumber = (meta: Record<string, unknown>, key: string, fallback: nu
         }
     }
     return fallback;
+};
+
+const hasOfficerLock = (meta: Record<string, unknown>, key: string, officerLevel: number): boolean =>
+    (readMetaNumber(meta, key, 0) & (1 << officerLevel)) !== 0;
+
+const setOfficerLock = (
+    meta: Record<string, TriggerValue>,
+    key: string,
+    officerLevel: number
+): Record<string, TriggerValue> => ({
+    ...meta,
+    [key]: readMetaNumber(meta, key, 0) | (1 << officerLevel),
+});
+
+const resolveNationChiefLevel = (nationLevel: number): number => {
+    if (nationLevel >= 6) return 5;
+    if (nationLevel >= 4) return 7;
+    if (nationLevel >= 2) return 9;
+    return 11;
+};
+
+const resolvePermissionKind = (general: TurnGeneral): 'normal' | 'ambassador' | 'auditor' => {
+    const permission = general.meta.permission;
+    return permission === 'ambassador' || permission === 'auditor' ? permission : 'normal';
+};
+
+const resolveMaxSecretPermission = (general: TurnGeneral): number => {
+    const penalty = asRecord(general.penalty);
+    if (penalty.noTopSecret || penalty.noChief) return 1;
+    if (penalty.noAmbassador) return 2;
+    return 4;
+};
+
+const refreshActorKillturn = (world: InMemoryTurnWorld, actor: TurnGeneral): void => {
+    const worldKillturn = readMetaNumber(asRecord(world.getState().meta), 'killturn', 0);
+    const actorKillturn = readMetaNumber(asRecord(actor.meta), 'killturn', 0);
+    if (worldKillturn <= actorKillturn) {
+        return;
+    }
+    world.updateGeneral(actor.id, {
+        meta: {
+            ...actor.meta,
+            killturn: worldKillturn,
+        },
+    });
 };
 
 interface CommandHandlerContext {
@@ -868,20 +914,57 @@ async function handleChangePermission(
         };
     }
     const nation = world.getNationById(general.nationId);
-    if (!nation || nation.chiefGeneralId !== general.id) {
-        return { type: 'changePermission', ok: false, generalId: command.generalId, reason: '권한이 없습니다.' };
+    if (!nation || general.officerLevel !== 12 || nation.chiefGeneralId !== general.id) {
+        return { type: 'changePermission', ok: false, generalId: command.generalId, reason: '군주가 아닙니다.' };
     }
 
-    for (const targetId of command.targetGeneralIds) {
+    const uniqueTargetIds = [...new Set(command.targetGeneralIds)];
+    if (uniqueTargetIds.length > 2) {
+        return {
+            type: 'changePermission',
+            ok: false,
+            generalId: command.generalId,
+            reason: command.isAmbassador
+                ? '외교권자는 최대 둘까지만 설정 가능합니다.'
+                : '조언자는 최대 둘까지만 설정 가능합니다.',
+        };
+    }
+
+    const targetType = command.isAmbassador ? 'ambassador' : 'auditor';
+    const requiredPermission = command.isAmbassador ? 4 : 3;
+    const targets: TurnGeneral[] = [];
+    for (const targetId of uniqueTargetIds) {
         const target = world.getGeneralById(targetId);
-        if (target && target.nationId === general.nationId) {
-            world.updateGeneral(targetId, {
-                meta: {
-                    ...target.meta,
-                    permission: command.isAmbassador ? 'ambassador' : 'auditor',
-                },
-            });
+        if (
+            !target ||
+            target.nationId !== general.nationId ||
+            target.officerLevel === 12 ||
+            !['normal', targetType].includes(resolvePermissionKind(target)) ||
+            resolveMaxSecretPermission(target) < requiredPermission
+        ) {
+            continue;
         }
+        targets.push(target);
+    }
+
+    for (const candidate of world.listGenerals()) {
+        if (candidate.nationId !== general.nationId || resolvePermissionKind(candidate) !== targetType) {
+            continue;
+        }
+        world.updateGeneral(candidate.id, {
+            meta: {
+                ...candidate.meta,
+                permission: 'normal',
+            },
+        });
+    }
+    for (const target of targets) {
+        world.updateGeneral(target.id, {
+            meta: {
+                ...target.meta,
+                permission: targetType,
+            },
+        });
     }
     return { type: 'changePermission', ok: true, generalId: command.generalId };
 }
@@ -896,12 +979,24 @@ async function handleKick(
         return { type: 'kick', ok: false, generalId: command.generalId, reason: '장수 정보를 찾을 수 없습니다.' };
     }
     const nation = world.getNationById(general.nationId);
-    if (!nation || nation.chiefGeneralId !== general.id) {
-        return { type: 'kick', ok: false, generalId: command.generalId, reason: '권한이 없습니다.' };
+    if (!nation || general.officerLevel < 5) {
+        return { type: 'kick', ok: false, generalId: command.generalId, reason: '수뇌가 아닙니다.' };
+    }
+    const actorPenalty = asRecord(general.penalty);
+    if (actorPenalty.noBanGeneral) {
+        return { type: 'kick', ok: false, generalId: command.generalId, reason: '추방할 수 없는 상태입니다.' };
+    }
+    if (hasOfficerLock(asRecord(nation.meta), 'chief_set', general.officerLevel)) {
+        return {
+            type: 'kick',
+            ok: false,
+            generalId: command.generalId,
+            reason: '이미 추방 권한을 사용했습니다.',
+        };
     }
 
     const target = world.getGeneralById(command.destGeneralId);
-    if (!target || target.nationId !== general.nationId) {
+    if (!target || target.id === general.id || target.nationId !== general.nationId) {
         return {
             type: 'kick',
             ok: false,
@@ -909,11 +1004,138 @@ async function handleKick(
             reason: '대상을 찾을 수 없거나 같은 국가가 아닙니다.',
         };
     }
+    if (resolveMaxSecretPermission(target) === 4 && resolvePermissionKind(target) === 'ambassador') {
+        return {
+            type: 'kick',
+            ok: false,
+            generalId: command.generalId,
+            reason: '외교권자는 추방할 수 없습니다.',
+        };
+    }
+
+    const config = asRecord(world.getScenarioConfig().const);
+    const defaultGold = readMetaNumber(config, 'defaultGold', 1000);
+    const defaultRice = readMetaNumber(config, 'defaultRice', 1000);
+    const returnedGold = Math.max(0, target.gold - defaultGold);
+    const returnedRice = Math.max(0, target.rice - defaultRice);
+    const targetMeta = target.meta;
+    const nextMeta: TurnGeneral['meta'] = {
+        ...targetMeta,
+        officerCity: 0,
+        officer_city: 0,
+        belong: 0,
+        makelimit: 12,
+        permission: 'normal',
+    };
+
+    const worldState = world.getState();
+    const scenarioMeta = asRecord(asRecord(worldState.meta).scenarioMeta);
+    const startYear = readMetaNumber(scenarioMeta, 'startYear', worldState.currentYear);
+    if (worldState.currentYear > startYear || target.npcState >= 2) {
+        const betray = Math.max(0, readMetaNumber(targetMeta, 'betray', 0));
+        const maxBetrayCnt = readMetaNumber(config, 'maxBetrayCnt', 9);
+        nextMeta.betray = Math.min(maxBetrayCnt, betray + 1);
+        world.updateGeneral(target.id, {
+            experience: Math.max(0, Math.floor(target.experience - target.experience * 0.15 * betray)),
+            dedication: Math.max(0, Math.floor(target.dedication - target.dedication * 0.15 * betray)),
+        });
+    } else {
+        nextMeta.makelimit = targetMeta.makelimit ?? 12;
+    }
+    if (worldState.currentYear < startYear + 3) {
+        const ruler = world.getGeneralById(nation.chiefGeneralId ?? 0);
+        if (ruler) {
+            world.updateGeneral(ruler.id, { injury: Math.min(80, ruler.injury + 1) });
+        }
+    }
+
+    if (target.troopId === target.id) {
+        for (const member of world.listGenerals()) {
+            if (member.troopId === target.id) {
+                world.updateGeneral(member.id, { troopId: 0 });
+            }
+        }
+        world.removeTroop(target.id);
+    }
 
     world.updateGeneral(command.destGeneralId, {
         nationId: 0,
         officerLevel: 0,
+        troopId: 0,
+        gold: Math.min(target.gold, defaultGold),
+        rice: Math.min(target.rice, defaultRice),
+        meta: nextMeta,
     });
+    const nationMeta =
+        worldState.currentYear >= startYear + 3
+            ? setOfficerLock(nation.meta, 'chief_set', general.officerLevel)
+            : { ...nation.meta };
+    nationMeta.gennum = Math.max(0, readMetaNumber(nation.meta, 'gennum', 0) - (target.npcState !== 5 ? 1 : 0));
+    world.updateNation(nation.id, {
+        gold: nation.gold + returnedGold,
+        rice: nation.rice + returnedRice,
+        meta: nationMeta,
+    });
+    refreshActorKillturn(world, general);
+
+    const josaYi = JosaUtil.pick(target.name, '이');
+    world.pushLog({
+        scope: LogScope.SYSTEM,
+        category: LogCategory.SUMMARY,
+        format: LogFormat.MONTH,
+        text: `<Y>${target.name}</>${josaYi} <D><b>${nation.name}</b></>에서 <R>추방</>당했습니다.`,
+        meta: {},
+    });
+    world.pushLog({
+        scope: LogScope.GENERAL,
+        category: LogCategory.HISTORY,
+        format: LogFormat.YEAR_MONTH,
+        text: `<D>${nation.name}</>에서 추방됨`,
+        generalId: target.id,
+        meta: {},
+    });
+    if (target.npcState >= 2) {
+        const worldMeta = asRecord(worldState.meta);
+        const hiddenSeed = worldMeta.hiddenSeed ?? worldMeta.seed ?? worldState.id;
+        const rng = new RandUtil(
+            new LiteHashDRBG(
+                simpleSerialize(
+                    typeof hiddenSeed === 'string' || typeof hiddenSeed === 'number' ? hiddenSeed : String(hiddenSeed),
+                    'BanNPC',
+                    worldState.currentYear,
+                    worldState.currentMonth,
+                    target.id
+                )
+            )
+        );
+        const npcBanMessageProb = readMetaNumber(config, 'npcBanMessageProb', 0.01);
+        if (rng.nextBool(npcBanMessageProb)) {
+            const text = rng.choice([
+                '날 버리다니... 곧 전장에서 복수해주겠다...',
+                '추방이라... 내가 무얼 잘못했단 말인가...',
+                '어디 추방해가면서 잘되나 보자... 꼭 복수하겠다.',
+                '인덕이 제일이거늘... 추방이 웬말인가... 저주한다!',
+                '날 추방했으니 그 복수로 적국에 정보를 팔아 넘겨야겠군요. 그럼 이만.',
+            ]);
+            const messageTarget = {
+                generalId: target.id,
+                generalName: target.name,
+                nationId: nation.id,
+                nationName: nation.name,
+                color: nation.color,
+                icon: target.picture === null ? '' : String(target.picture),
+            };
+            world.queueMessage({
+                msgType: 'public',
+                src: messageTarget,
+                dest: messageTarget,
+                text,
+                time: new Date(),
+                validUntil: new Date('9999-12-31T00:00:00.000Z'),
+                option: {},
+            });
+        }
+    }
     return { type: 'kick', ok: true, generalId: command.generalId };
 }
 
@@ -927,8 +1149,17 @@ async function handleAppoint(
         return { type: 'appoint', ok: false, generalId: command.generalId, reason: '장수 정보를 찾을 수 없습니다.' };
     }
     const nation = world.getNationById(general.nationId);
-    if (!nation || nation.chiefGeneralId !== general.id) {
-        return { type: 'appoint', ok: false, generalId: command.generalId, reason: '권한이 없습니다.' };
+    if (!nation || general.officerLevel < 5) {
+        return { type: 'appoint', ok: false, generalId: command.generalId, reason: '수뇌가 아닙니다.' };
+    }
+    const actorPenalty = asRecord(general.penalty);
+    if (command.officerLevel === 12) {
+        return {
+            type: 'appoint',
+            ok: false,
+            generalId: command.generalId,
+            reason: '군주를 대상으로 할 수 없습니다.',
+        };
     }
 
     const target = world.getGeneralById(command.destGeneralId);
@@ -941,16 +1172,72 @@ async function handleAppoint(
         };
     }
 
-    if (command.officerLevel >= 5) {
+    if (command.officerLevel >= 5 && command.officerLevel < 12) {
+        if (actorPenalty.noChiefChange) {
+            return {
+                type: 'appoint',
+                ok: false,
+                generalId: command.generalId,
+                reason: '수뇌를 임명할 수 없는 상태입니다.',
+            };
+        }
+        const minLevel = resolveNationChiefLevel(nation.level);
+        if (command.officerLevel < minLevel) {
+            return {
+                type: 'appoint',
+                ok: false,
+                generalId: command.generalId,
+                reason: '임명불가능한 관직입니다.',
+            };
+        }
+        if (hasOfficerLock(asRecord(nation.meta), 'chief_set', command.officerLevel)) {
+            return {
+                type: 'appoint',
+                ok: false,
+                generalId: command.generalId,
+                reason: '지금은 임명할 수 없습니다.',
+            };
+        }
+        if (target) {
+            const targetPenalty = asRecord(target.penalty);
+            if (targetPenalty.noChief) {
+                return {
+                    type: 'appoint',
+                    ok: false,
+                    generalId: command.generalId,
+                    reason: '수뇌가 될 수 없는 상태입니다.',
+                };
+            }
+            const chiefStatMin = world.getScenarioConfig().stat.chiefMin;
+            if (command.officerLevel !== 11 && command.officerLevel % 2 === 0 && target.stats.strength < chiefStatMin) {
+                return { type: 'appoint', ok: false, generalId: command.generalId, reason: '무력이 부족합니다.' };
+            }
+            if (
+                command.officerLevel !== 11 &&
+                command.officerLevel % 2 === 1 &&
+                target.stats.intelligence < chiefStatMin
+            ) {
+                return { type: 'appoint', ok: false, generalId: command.generalId, reason: '지력이 부족합니다.' };
+            }
+        }
         for (const g of world.listGenerals()) {
             if (g.nationId === general.nationId && g.officerLevel === command.officerLevel) {
-                world.updateGeneral(g.id, { officerLevel: 0 });
+                world.updateGeneral(g.id, {
+                    officerLevel: 1,
+                    meta: { ...g.meta, officerCity: 0, officer_city: 0 },
+                });
             }
         }
         if (command.destGeneralId !== 0) {
-            world.updateGeneral(command.destGeneralId, { officerLevel: command.officerLevel });
+            world.updateGeneral(command.destGeneralId, {
+                officerLevel: command.officerLevel,
+                meta: { ...target!.meta, officerCity: 0, officer_city: 0 },
+            });
         }
-    } else {
+        world.updateNation(nation.id, {
+            meta: setOfficerLock(nation.meta, 'chief_set', command.officerLevel),
+        });
+    } else if (command.officerLevel >= 2 && command.officerLevel <= 4) {
         const city = world.getCityById(command.destCityId);
         if (!city || city.nationId !== general.nationId) {
             return {
@@ -960,22 +1247,54 @@ async function handleAppoint(
                 reason: '도시를 찾을 수 없거나 아군 도시가 아닙니다.',
             };
         }
+        if (hasOfficerLock(asRecord(city.meta), 'officer_set', command.officerLevel)) {
+            return {
+                type: 'appoint',
+                ok: false,
+                generalId: command.generalId,
+                reason: '이미 다른 장수가 임명되어있습니다.',
+            };
+        }
+        if (target && target.officerLevel >= 4 && actorPenalty.noChiefChange) {
+            return {
+                type: 'appoint',
+                ok: false,
+                generalId: command.generalId,
+                reason: '수뇌인 장수를 변경할 수 없는 상태입니다.',
+            };
+        }
+        const chiefStatMin = world.getScenarioConfig().stat.chiefMin;
+        if (target && command.officerLevel === 4 && target.stats.strength < chiefStatMin) {
+            return { type: 'appoint', ok: false, generalId: command.generalId, reason: '무력이 부족합니다.' };
+        }
+        if (target && command.officerLevel === 3 && target.stats.intelligence < chiefStatMin) {
+            return { type: 'appoint', ok: false, generalId: command.generalId, reason: '지력이 부족합니다.' };
+        }
         for (const g of world.listGenerals()) {
             if (
                 g.nationId === general.nationId &&
                 g.meta.officerCity === command.destCityId &&
                 g.officerLevel === command.officerLevel
             ) {
-                world.updateGeneral(g.id, { officerLevel: 0, meta: { ...g.meta, officerCity: 0 } });
+                world.updateGeneral(g.id, {
+                    officerLevel: 1,
+                    meta: { ...g.meta, officerCity: 0, officer_city: 0 },
+                });
             }
         }
         if (command.destGeneralId !== 0) {
             world.updateGeneral(command.destGeneralId, {
                 officerLevel: command.officerLevel,
-                meta: { ...target!.meta, officerCity: command.destCityId },
+                meta: { ...target!.meta, officerCity: command.destCityId, officer_city: command.destCityId },
             });
         }
+        world.updateCity(city.id, {
+            meta: setOfficerLock(city.meta, 'officer_set', command.officerLevel),
+        });
+    } else {
+        return { type: 'appoint', ok: false, generalId: command.generalId, reason: '올바르지 않은 지정입니다.' };
     }
+    refreshActorKillturn(world, general);
     return { type: 'appoint', ok: true, generalId: command.generalId };
 }
 

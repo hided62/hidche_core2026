@@ -83,6 +83,8 @@ export type GeneralListRow = {
     nationId: number;
     cityId: number;
     troopId: number;
+    picture?: string | null;
+    imageServer?: number;
     officerLevel: number;
     leadership: number;
     strength: number;
@@ -270,7 +272,8 @@ export const resolveNationScoutMessage = (meta: Record<string, unknown>): string
 
 export const resolveWarSettingRemain = (meta: Record<string, unknown>): number => {
     const legacy = readMetaNumber(meta, 'available_war_setting_cnt', -1);
-    const fallback = legacy >= 0 ? legacy : readMetaNumber(meta, 'availableWarSettingCnt', MAX_AVAILABLE_WAR_SETTING_CNT);
+    const fallback =
+        legacy >= 0 ? legacy : readMetaNumber(meta, 'availableWarSettingCnt', MAX_AVAILABLE_WAR_SETTING_CNT);
     return Math.max(0, Math.min(MAX_AVAILABLE_WAR_SETTING_CNT, fallback));
 };
 
@@ -287,10 +290,7 @@ export const checkSecretMaxPermission = (penalty: Record<string, unknown>): numb
     return 4;
 };
 
-export const loadTraitNames = async (
-    keys: Array<string | null>,
-    kind: keyof TraitCache
-): Promise<TraitNameMap> => {
+export const loadTraitNames = async (keys: Array<string | null>, kind: keyof TraitCache): Promise<TraitNameMap> => {
     const cache = traitCache[kind];
     const unique = Array.from(new Set(keys.filter((key): key is string => Boolean(key))));
     const missing = unique.filter((key) => !cache.has(key));
@@ -481,8 +481,10 @@ export const mapGeneralList = async (
             cityName: cityNameMap.get(general.cityId) ?? null,
             troopId: general.troopId,
             troopName: troopNameMap.get(general.troopId) ?? null,
+            picture: general.picture ?? null,
+            imageServer: general.imageServer ?? 0,
             officerCity,
-            officerCityName: officerCity > 0 ? cityNameMap.get(officerCity) ?? null : null,
+            officerCityName: officerCity > 0 ? (cityNameMap.get(officerCity) ?? null) : null,
             stats: {
                 leadership: general.leadership,
                 strength: general.strength,

@@ -95,7 +95,7 @@ watch(
                 <RouterLink class="ghost" to="/nation/generals">세력 장수</RouterLink>
                 <RouterLink class="ghost" to="/nation/personnel">인사부</RouterLink>
                 <RouterLink class="ghost" to="/troop">부대 편성</RouterLink>
-                <RouterLink class="ghost" to="/nation/affairs">내무부</RouterLink>
+                <RouterLink class="ghost" to="/nation/finance">내무부</RouterLink>
                 <RouterLink class="ghost" to="/diplomacy">외교부</RouterLink>
                 <RouterLink class="ghost" to="/chief-center">사령부</RouterLink>
                 <RouterLink class="ghost" to="/battle-center">감찰부</RouterLink>

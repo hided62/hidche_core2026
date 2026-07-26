@@ -1,58 +1,39 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
-import PanelCard from '../components/ui/PanelCard.vue';
-import SkeletonLines from '../components/ui/SkeletonLines.vue';
+
 import { trpc } from '../utils/trpc';
-import {
-    cityLevelMap,
-    formatOfficerLevelText,
-    getNationChiefLevel,
-    regionMap,
-} from '../utils/nationFormat';
+import { cityLevelMap, formatOfficerLevelText, getNationChiefLevel, regionMap } from '../utils/nationFormat';
 
 type PersonnelResponse = Awaited<ReturnType<typeof trpc.nation.getPersonnelInfo.query>>;
-
 type GeneralEntry = PersonnelResponse['generals'][number];
-
 type OfficerLevel = 2 | 3 | 4;
 
-const officerLabels: Record<OfficerLevel, string> = {
-    4: '태수',
-    3: '군사',
-    2: '종사',
-};
-
+const officerLabels: Record<OfficerLevel, string> = { 4: '태수', 3: '군사', 2: '종사' };
+const cityOfficerLevels: OfficerLevel[] = [4, 3, 2];
 const loading = ref(false);
 const error = ref<string | null>(null);
+const status = ref<string | null>(null);
 const data = ref<PersonnelResponse | null>(null);
-
 const chiefAppointmentDraft = reactive<Record<number, number>>({});
-const selectedCityId = ref<number>(0);
-const selectedOfficerLevel = ref<OfficerLevel>(4);
-const selectedGeneralId = ref<number>(0);
-const kickTargetId = ref<number>(0);
+const cityDraft = reactive<Record<OfficerLevel, { cityId: number; generalId: number }>>({
+    4: { cityId: 0, generalId: 0 },
+    3: { cityId: 0, generalId: 0 },
+    2: { cityId: 0, generalId: 0 },
+});
+const kickTargetId = ref(0);
 const ambassadorSelection = ref<number[]>([]);
 const auditorSelection = ref<number[]>([]);
 
-const resolveErrorMessage = (value: unknown): string => {
-    if (value instanceof Error) {
-        return value.message;
-    }
-    if (typeof value === 'string') {
-        return value;
-    }
-    return 'unknown_error';
-};
+const resolveErrorMessage = (value: unknown): string =>
+    value instanceof Error ? value.message : typeof value === 'string' ? value : 'unknown_error';
 
 const loadPersonnel = async () => {
-    if (loading.value) {
-        return;
-    }
+    if (loading.value) return;
     loading.value = true;
     error.value = null;
-
     try {
         data.value = await trpc.nation.getPersonnelInfo.query();
+        status.value = null;
     } catch (err) {
         error.value = resolveErrorMessage(err);
     } finally {
@@ -61,91 +42,64 @@ const loadPersonnel = async () => {
 };
 
 const nationLevel = computed(() => data.value?.nation.level ?? 0);
-const canAssign = computed(() => (data.value?.me.officerLevel ?? 0) >= 5);
-const isLeader = computed(() => (data.value?.me.officerLevel ?? 0) >= 12);
-
+const canManage = computed(() => data.value?.me.canManage ?? false);
+const canChangePermissions = computed(() => data.value?.me.canChangePermissions ?? false);
+const canKick = computed(() => data.value?.me.canKick ?? false);
 const chiefLevels = computed(() => {
-    if (!data.value) {
-        return [] as number[];
-    }
-    const minLevel = getNationChiefLevel(data.value.nation.level);
     const levels: number[] = [];
-    for (let level = 12; level >= minLevel; level -= 1) {
-        levels.push(level);
-    }
+    for (let level = 12; level >= getNationChiefLevel(nationLevel.value); level -= 1) levels.push(level);
     return levels;
 });
-
-const cityNameMap = computed(() => {
-    const map = new Map<number, string>();
-    for (const city of data.value?.cityAssignments ?? []) {
-        map.set(city.id, city.name);
+const chiefPairs = computed(() => {
+    const pairs: Array<[number, number]> = [];
+    for (let level = 12; level >= getNationChiefLevel(nationLevel.value); level -= 2) {
+        pairs.push([level, level - 1]);
     }
-    return map;
+    return pairs;
 });
-
-const generalMap = computed(() => {
-    const map = new Map<number, GeneralEntry>();
-    for (const general of data.value?.generals ?? []) {
-        map.set(general.id, general);
-    }
-    return map;
-});
-
 const chiefAssignments = computed(() => data.value?.chiefAssignments ?? {});
+const cityNameMap = computed(() => new Map((data.value?.cityAssignments ?? []).map((city) => [city.id, city.name])));
+const generalMap = computed(() => new Map((data.value?.generals ?? []).map((general) => [general.id, general])));
 
-const formatCandidateLabel = (general: GeneralEntry): string => {
-    const cityName = cityNameMap.value.get(general.cityId);
-    const role = general.officerLevel >= 5 ? '수뇌' : general.officerLevel >= 2 ? '관직' : '일반';
-    return `${general.name}${cityName ? ` (${cityName})` : ''} · ${role}`;
+const imageUrl = (general: GeneralEntry | undefined): string => {
+    const picture = general?.picture ?? 'default.jpg';
+    return general?.imageServer ? `${import.meta.env.BASE_URL}d_pic/${picture}` : `/image/icons/${picture}`;
 };
-
+const officerLocked = (value: number, level: number): boolean => (value & (1 << level)) !== 0;
+const chiefLocked = (level: number): boolean => officerLocked(data.value?.nation.chiefSet ?? 0, level);
+const cityOfficerLocked = (city: PersonnelResponse['cityAssignments'][number], level: number): boolean =>
+    officerLocked(city.officerSet, level);
+const candidateLabel = (general: GeneralEntry): string =>
+    `${general.name} 【${cityNameMap.value.get(general.cityId) ?? '-'}】`;
 const chiefCandidates = (level: number): GeneralEntry[] => {
-    const minStat = data.value?.chiefStatMin ?? 0;
-    const list = data.value?.generals ?? [];
-    if (level === 11) {
-        return list;
-    }
-    if (level % 2 === 0) {
-        return list.filter((general) => general.stats.strength >= minStat);
-    }
-    return list.filter((general) => general.stats.intelligence >= minStat);
+    const minimum = data.value?.chiefStatMin ?? 0;
+    const candidates = (data.value?.generals ?? []).filter((general) => general.officerLevel !== 12);
+    if (level === 11) return candidates;
+    if (level % 2 === 0) return candidates.filter((general) => general.stats.strength >= minimum);
+    return candidates.filter((general) => general.stats.intelligence >= minimum);
 };
-
-const cityCandidatesByLevel = computed(() => {
-    const minStat = data.value?.chiefStatMin ?? 0;
-    const base = (data.value?.generals ?? []).filter((general) => general.officerLevel !== 12);
-    return {
-        4: base.filter((general) => general.stats.strength >= minStat),
-        3: base.filter((general) => general.stats.intelligence >= minStat),
-        2: base,
-    } as Record<OfficerLevel, GeneralEntry[]>;
-});
-
-const currentCityOfficer = computed(() => {
-    const city = data.value?.cityAssignments.find((entry) => entry.id === selectedCityId.value);
-    if (!city) {
-        return null;
-    }
-    return city.officers[selectedOfficerLevel.value] ?? null;
-});
+const cityCandidates = (level: OfficerLevel): GeneralEntry[] => {
+    const minimum = data.value?.chiefStatMin ?? 0;
+    const candidates = (data.value?.generals ?? []).filter((general) => general.officerLevel !== 12);
+    if (level === 4) return candidates.filter((general) => general.stats.strength >= minimum);
+    if (level === 3) return candidates.filter((general) => general.stats.intelligence >= minimum);
+    return candidates;
+};
+const openCities = (level: OfficerLevel) =>
+    (data.value?.cityAssignments ?? []).filter((city) => !cityOfficerLocked(city, level));
+const kickCandidates = computed(() =>
+    (data.value?.generals ?? []).filter((general) => general.id !== data.value?.me.id)
+);
+const awardText = (entries: PersonnelResponse['awards']['tigers']): string =>
+    entries.map((entry) => `${entry.name}【${entry.value.toLocaleString('ko-KR')}】`).join(', ');
 
 const initializeDrafts = () => {
-    if (!data.value) {
-        return;
+    if (!data.value) return;
+    for (const level of chiefLevels.value) chiefAppointmentDraft[level] = chiefAssignments.value[level]?.id ?? 0;
+    for (const level of [4, 3, 2] as const) {
+        cityDraft[level].cityId = openCities(level)[0]?.id ?? 0;
+        cityDraft[level].generalId = 0;
     }
-    for (const key of Object.keys(chiefAppointmentDraft)) {
-        delete chiefAppointmentDraft[Number(key)];
-    }
-    for (const level of chiefLevels.value) {
-        chiefAppointmentDraft[level] = chiefAssignments.value[level]?.id ?? 0;
-    }
-
-    selectedCityId.value = data.value.cityAssignments[0]?.id ?? 0;
-    selectedOfficerLevel.value = 4;
-    selectedGeneralId.value = currentCityOfficer.value?.id ?? 0;
-    kickTargetId.value = 0;
-
     ambassadorSelection.value = data.value.permissionCandidates.ambassadors
         .filter((candidate) => candidate.permission === 'ambassador')
         .map((candidate) => candidate.id);
@@ -153,475 +107,610 @@ const initializeDrafts = () => {
         .filter((candidate) => candidate.permission === 'auditor')
         .map((candidate) => candidate.id);
 };
+watch(data, initializeDrafts);
 
-watch(
-    () => data.value,
-    (value) => {
-        if (value) {
-            initializeDrafts();
-        }
+const runMutation = async (action: () => Promise<unknown>, successMessage: string) => {
+    error.value = null;
+    status.value = null;
+    try {
+        await action();
+        status.value = successMessage;
+        await loadPersonnel();
+        status.value = successMessage;
+    } catch (err) {
+        error.value = resolveErrorMessage(err);
     }
-);
-
-watch([selectedCityId, selectedOfficerLevel], () => {
-    selectedGeneralId.value = currentCityOfficer.value?.id ?? 0;
-});
+};
 
 const appointChief = async (level: number) => {
-    if (!data.value) {
-        return;
-    }
-    const generalId = chiefAppointmentDraft[level] ?? 0;
-    const general = generalMap.value.get(generalId);
-    const title = formatOfficerLevelText(level, nationLevel.value);
-    const message =
-        generalId === 0
-            ? `${title} 자리를 비우시겠습니까?`
-            : `${general?.name ?? '선택 장수'}을(를) ${title}로 임명하시겠습니까?`;
-
-    if (!window.confirm(message)) {
-        return;
-    }
-
-    try {
-        await trpc.nation.appoint.mutate({
-            destGeneralId: generalId,
-            destCityId: 0,
-            officerLevel: level,
-        });
-        await loadPersonnel();
-    } catch (err) {
-        error.value = resolveErrorMessage(err);
-    }
+    const targetId = chiefAppointmentDraft[level] ?? 0;
+    const target = generalMap.value.get(targetId);
+    const office = formatOfficerLevelText(level, nationLevel.value);
+    const prompt = target ? `${target.name}을(를) ${office}직에 임명하시겠습니까?` : `${office}직을 비우시겠습니까?`;
+    if (!window.confirm(prompt)) return;
+    await runMutation(
+        () => trpc.nation.appoint.mutate({ destGeneralId: targetId, destCityId: 0, officerLevel: level }),
+        target ? `${target.name}을(를) 임명했습니다.` : '관직을 비웠습니다.'
+    );
 };
 
-const appointCityOfficer = async () => {
-    if (!data.value || !selectedCityId.value) {
-        return;
-    }
-    const city = data.value.cityAssignments.find((entry) => entry.id === selectedCityId.value);
-    const general = generalMap.value.get(selectedGeneralId.value);
-    const officerLabel = officerLabels[selectedOfficerLevel.value];
-    const message =
-        selectedGeneralId.value === 0
-            ? `${city?.name ?? ''} ${officerLabel} 자리를 비우시겠습니까?`
-            : `${general?.name ?? '선택 장수'}을(를) ${city?.name ?? ''} ${officerLabel}로 임명하시겠습니까?`;
-
-    if (!window.confirm(message)) {
-        return;
-    }
-
-    try {
-        await trpc.nation.appoint.mutate({
-            destGeneralId: selectedGeneralId.value,
-            destCityId: selectedCityId.value,
-            officerLevel: selectedOfficerLevel.value,
-        });
-        await loadPersonnel();
-    } catch (err) {
-        error.value = resolveErrorMessage(err);
-    }
+const appointCityOfficer = async (level: OfficerLevel) => {
+    const draft = cityDraft[level];
+    const city = data.value?.cityAssignments.find((entry) => entry.id === draft.cityId);
+    const target = generalMap.value.get(draft.generalId);
+    const prompt = target
+        ? `${target.name}을(를) ${city?.name ?? ''} ${officerLabels[level]}직에 임명하시겠습니까?`
+        : `${city?.name ?? ''} ${officerLabels[level]}직을 비우시겠습니까?`;
+    if (!window.confirm(prompt)) return;
+    await runMutation(
+        () =>
+            trpc.nation.appoint.mutate({
+                destGeneralId: draft.generalId,
+                destCityId: draft.cityId,
+                officerLevel: level,
+            }),
+        target ? `${target.name}을(를) 임명했습니다.` : '관직을 비웠습니다.'
+    );
 };
 
-const kickGeneral = async () => {
-    const general = generalMap.value.get(kickTargetId.value);
-    if (!general) {
-        return;
-    }
-    if (!window.confirm(`${general.name}을(를) 추방하시겠습니까?`)) {
-        return;
-    }
-
-    try {
-        await trpc.nation.kick.mutate({ destGeneralId: general.id });
-        await loadPersonnel();
-    } catch (err) {
-        error.value = resolveErrorMessage(err);
-    }
-};
-
-const enforceLimit = (list: number[], id: number) => {
-    if (list.length <= 2) {
-        return;
-    }
-    const idx = list.indexOf(id);
-    if (idx >= 0) {
-        list.splice(idx, 1);
-    }
-    alert('최대 2명까지 설정 가능합니다.');
-};
-
-const enforceAmbassadorLimit = (id: number) => {
-    enforceLimit(ambassadorSelection.value, id);
-};
-
-const enforceAuditorLimit = (id: number) => {
-    enforceLimit(auditorSelection.value, id);
+const enforcePermissionLimit = (selection: number[]) => {
+    if (selection.length <= 2) return;
+    selection.splice(0, selection.length - 2);
+    window.alert('최대 2명까지 설정 가능합니다.');
 };
 
 const changePermissions = async (isAmbassador: boolean) => {
     const selection = isAmbassador ? ambassadorSelection.value : auditorSelection.value;
-    if (!window.confirm('권한을 변경하시겠습니까?')) {
-        return;
-    }
-
-    try {
-        await trpc.nation.changePermission.mutate({
-            isAmbassador,
-            targetGeneralIds: selection,
-        });
-        await loadPersonnel();
-    } catch (err) {
-        error.value = resolveErrorMessage(err);
-    }
+    if (!window.confirm(`${isAmbassador ? '외교권자' : '조언자'}를 변경할까요?`)) return;
+    await runMutation(
+        () => trpc.nation.changePermission.mutate({ isAmbassador, targetGeneralIds: selection }),
+        '권한을 변경했습니다.'
+    );
 };
 
-const kickCandidates = computed(() => {
-    const list = data.value?.generals ?? [];
-    const myId = data.value?.me.id ?? 0;
-    return list.filter((general) => general.id !== myId);
-});
+const kickGeneral = async () => {
+    const target = generalMap.value.get(kickTargetId.value);
+    if (!target || !window.confirm(`${target.name}을(를) 추방하시겠습니까?`)) return;
+    await runMutation(
+        () => trpc.nation.kick.mutate({ destGeneralId: target.id }),
+        `${target.name}을(를) 추방했습니다.`
+    );
+};
 
-onMounted(() => {
-    void loadPersonnel();
-});
+onMounted(() => void loadPersonnel());
 </script>
 
 <template>
-    <main class="nation-page">
-        <header class="page-header">
-            <div>
-                <h1 class="page-title">인사부</h1>
-                <p class="page-subtitle">수뇌 임명과 도시 관직 관리</p>
-            </div>
-            <div class="header-actions">
-                <RouterLink class="ghost" to="/">메인</RouterLink>
-                <RouterLink class="ghost" to="/nation/cities">세력 도시</RouterLink>
-                <RouterLink class="ghost" to="/nation/generals">세력 장수</RouterLink>
-                <button class="ghost" @click="loadPersonnel">새로고침</button>
-            </div>
-        </header>
+    <main id="personnel-container" class="legacy-office">
+        <table class="legacy-table heading-table">
+            <tbody>
+                <tr>
+                    <td>인 사 부<br /><RouterLink class="legacy-button" to="/">돌아가기</RouterLink></td>
+                </tr>
+            </tbody>
+        </table>
 
-        <div v-if="error" class="error">{{ error }}</div>
+        <div v-if="error" class="feedback error" role="alert">{{ error }}</div>
+        <div v-if="status" class="feedback status" role="status">{{ status }}</div>
+        <div v-if="loading" class="loading">불러오는 중...</div>
 
-        <SkeletonLines v-if="loading" :lines="6" />
+        <template v-if="data && !loading">
+            <table class="legacy-table chief-status">
+                <colgroup>
+                    <col class="chief-role-column" />
+                    <col class="chief-icon-column" />
+                    <col class="chief-name-column" />
+                    <col class="chief-role-column" />
+                    <col class="chief-icon-column" />
+                    <col class="chief-name-column" />
+                </colgroup>
+                <tbody>
+                    <tr>
+                        <td
+                            class="nation-heading"
+                            colspan="6"
+                            :style="{ color: '#fff', backgroundColor: data.nation.color }"
+                        >
+                            【 {{ data.nation.name }} 】
+                        </td>
+                    </tr>
+                    <tr v-for="[leftLevel, rightLevel] in chiefPairs" :key="leftLevel">
+                        <template v-for="level in [leftLevel, rightLevel]" :key="level">
+                            <td class="green-cell role-cell">{{ formatOfficerLevelText(level, nationLevel) }}</td>
+                            <td
+                                class="general-icon"
+                                :style="{ backgroundImage: `url('${imageUrl(chiefAssignments[level])}')` }"
+                            />
+                            <td class="chief-name">
+                                {{ chiefAssignments[level]?.name ?? '-' }}({{
+                                    chiefAssignments[level]?.belong ?? '-'
+                                }}년)
+                            </td>
+                        </template>
+                    </tr>
+                    <tr>
+                        <td class="green-cell">오호장군【승전】</td>
+                        <td colspan="5">{{ awardText(data.awards.tigers) }}</td>
+                    </tr>
+                    <tr>
+                        <td class="green-cell">건안칠자【계략】</td>
+                        <td colspan="5">{{ awardText(data.awards.eagles) }}</td>
+                    </tr>
+                </tbody>
+            </table>
 
-        <section v-else class="panel-grid">
-            <PanelCard title="수뇌 현황" subtitle="현재 수뇌 배치">
-                <div class="chief-grid">
-                    <div v-for="level in chiefLevels" :key="level" class="chief-item">
-                        <div class="chief-title">{{ formatOfficerLevelText(level, nationLevel) }}</div>
-                        <div class="chief-name">
-                            {{ chiefAssignments[level]?.name ?? '-' }}
-                        </div>
-                        <div v-if="chiefAssignments[level]" class="chief-meta">
-                            {{ chiefAssignments[level]?.officerCityName ?? chiefAssignments[level]?.cityName ?? '-' }}
-                        </div>
-                    </div>
-                </div>
-            </PanelCard>
+            <table class="legacy-table appointment-table">
+                <colgroup>
+                    <col class="office-label-column" />
+                    <col class="office-control-column" />
+                    <col class="office-label-column" />
+                    <col class="office-control-column" />
+                </colgroup>
+                <tbody>
+                    <tr>
+                        <td colspan="4" class="spacer" />
+                    </tr>
+                    <tr>
+                        <td colspan="4" class="section-title blue">수 뇌 부 임 명</td>
+                    </tr>
+                    <tr v-for="(pair, pairIndex) in chiefPairs" :key="pairIndex">
+                        <template v-for="level in pair" :key="level">
+                            <td class="green-cell appoint-label">{{ formatOfficerLevelText(level, nationLevel) }}</td>
+                            <td class="appoint-control">
+                                <template v-if="canManage && level !== 12 && !chiefLocked(level)">
+                                    <select
+                                        v-model.number="chiefAppointmentDraft[level]"
+                                        :aria-label="`${formatOfficerLevelText(level, nationLevel)} 대상`"
+                                    >
+                                        <option :value="0">____공석____</option>
+                                        <option
+                                            v-for="candidate in chiefCandidates(level)"
+                                            :key="candidate.id"
+                                            :value="candidate.id"
+                                        >
+                                            {{ candidateLabel(candidate) }}
+                                        </option>
+                                    </select>
+                                    <button type="button" @click="appointChief(level)">임명</button>
+                                </template>
+                                <template v-else>
+                                    {{ chiefAssignments[level]?.name ?? '-' }}
+                                    <template v-if="chiefAssignments[level]">
+                                        【{{ chiefAssignments[level]?.cityName ?? '-' }}】</template
+                                    >
+                                </template>
+                            </td>
+                        </template>
+                    </tr>
+                    <tr>
+                        <td colspan="4" class="legend">
+                            ※ <span class="red">빨간색</span>은 현재 임명중인 장수, <span class="orange">노란색</span>은
+                            다른 관직에 임명된 장수, 하얀색은 일반 장수를 뜻합니다.
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
 
-            <PanelCard v-if="canAssign" title="수뇌부 임명" subtitle="수뇌 관직 임명 및 해임">
-                <div class="chief-appoint">
-                    <div v-for="level in chiefLevels" :key="level" class="appoint-row">
-                        <div class="appoint-label">{{ formatOfficerLevelText(level, nationLevel) }}</div>
-                        <select v-model.number="chiefAppointmentDraft[level]" class="select-input">
-                            <option :value="0">공석</option>
-                            <option v-for="candidate in chiefCandidates(level)" :key="candidate.id" :value="candidate.id">
-                                {{ formatCandidateLabel(candidate) }}
-                            </option>
-                        </select>
-                        <button class="ghost" @click="appointChief(level)">임명</button>
-                    </div>
-                </div>
-            </PanelCard>
-
-            <PanelCard v-if="canAssign" title="도시 관직 빠른 임명" subtitle="도시별 관직을 신속하게 배치합니다">
-                <div class="fast-appoint">
-                    <div class="appoint-row">
-                        <div class="appoint-label">도시</div>
-                        <select v-model.number="selectedCityId" class="select-input">
-                            <option v-for="city in data?.cityAssignments ?? []" :key="city.id" :value="city.id">
-                                {{ regionMap[city.region] ?? '-' }} · {{ cityLevelMap[city.level] ?? '-' }} {{ city.name }}
-                            </option>
-                        </select>
-                    </div>
-                    <div class="appoint-row">
-                        <div class="appoint-label">관직</div>
-                        <select v-model.number="selectedOfficerLevel" class="select-input">
-                            <option :value="4">태수</option>
-                            <option :value="3">군사</option>
-                            <option :value="2">종사</option>
-                        </select>
-                    </div>
-                    <div class="appoint-row">
-                        <div class="appoint-label">장수</div>
-                        <select v-model.number="selectedGeneralId" class="select-input">
-                            <option :value="0">공석</option>
-                            <option
-                                v-for="candidate in cityCandidatesByLevel[selectedOfficerLevel]"
-                                :key="candidate.id"
-                                :value="candidate.id"
+            <table v-if="canChangePermissions" class="legacy-table permission-table">
+                <colgroup>
+                    <col class="office-label-column" />
+                    <col class="office-control-column" />
+                    <col class="office-label-column" />
+                    <col class="office-control-column" />
+                </colgroup>
+                <tbody>
+                    <tr>
+                        <td colspan="4" class="spacer" />
+                    </tr>
+                    <tr>
+                        <td colspan="4" class="section-title purple">외 교 권 자 임 명</td>
+                    </tr>
+                    <tr>
+                        <td class="green-cell permission-label">외교권자</td>
+                        <td>
+                            <select
+                                v-model="ambassadorSelection"
+                                multiple
+                                aria-label="외교권자"
+                                @change="enforcePermissionLimit(ambassadorSelection)"
                             >
-                                {{ formatCandidateLabel(candidate) }}
-                            </option>
-                        </select>
-                    </div>
-                    <div class="current-officer">
-                        현재 임명: {{ currentCityOfficer?.name ?? '-' }}
-                    </div>
-                    <button class="ghost" @click="appointCityOfficer">임명</button>
-                </div>
-            </PanelCard>
-
-            <PanelCard title="도시 관직 현황" subtitle="도시별 관직 배치">
-                <div class="table-scroll">
-                    <table class="nation-table">
-                        <thead>
-                            <tr>
-                                <th>도시</th>
-                                <th>태수</th>
-                                <th>군사</th>
-                                <th>종사</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="city in data?.cityAssignments ?? []" :key="city.id">
-                                <td>{{ city.name }}</td>
-                                <td>{{ city.officers[4]?.name ?? '-' }}</td>
-                                <td>{{ city.officers[3]?.name ?? '-' }}</td>
-                                <td>{{ city.officers[2]?.name ?? '-' }}</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </PanelCard>
-
-            <PanelCard v-if="isLeader" title="외교 권한" subtitle="외교권자/조언자 임명">
-                <div class="permission-grid">
-                    <div>
-                        <div class="permission-title">외교권자 (최대 2명)</div>
-                        <div class="permission-list">
-                            <label
-                                v-for="candidate in data?.permissionCandidates.ambassadors ?? []"
-                                :key="candidate.id"
-                                class="permission-item"
-                            >
-                                <input
-                                    v-model="ambassadorSelection"
-                                    type="checkbox"
+                                <option
+                                    v-for="candidate in data.permissionCandidates.ambassadors"
+                                    :key="candidate.id"
                                     :value="candidate.id"
-                                    @change="enforceAmbassadorLimit(candidate.id)"
-                                />
-                                {{ candidate.name }}
-                            </label>
-                        </div>
-                        <button class="ghost" @click="changePermissions(true)">변경</button>
-                    </div>
-                    <div>
-                        <div class="permission-title">조언자 (최대 2명)</div>
-                        <div class="permission-list">
-                            <label
-                                v-for="candidate in data?.permissionCandidates.auditors ?? []"
-                                :key="candidate.id"
-                                class="permission-item"
+                                >
+                                    {{ candidate.name }}
+                                </option>
+                            </select>
+                            <button type="button" @click="changePermissions(true)">임명</button>
+                        </td>
+                        <td class="green-cell permission-label">조언자</td>
+                        <td>
+                            <select
+                                v-model="auditorSelection"
+                                multiple
+                                aria-label="조언자"
+                                @change="enforcePermissionLimit(auditorSelection)"
                             >
-                                <input
-                                    v-model="auditorSelection"
-                                    type="checkbox"
+                                <option
+                                    v-for="candidate in data.permissionCandidates.auditors"
+                                    :key="candidate.id"
                                     :value="candidate.id"
-                                    @change="enforceAuditorLimit(candidate.id)"
-                                />
-                                {{ candidate.name }}
-                            </label>
-                        </div>
-                        <button class="ghost" @click="changePermissions(false)">변경</button>
-                    </div>
-                </div>
-            </PanelCard>
+                                >
+                                    {{ candidate.name }}
+                                </option>
+                            </select>
+                            <button type="button" @click="changePermissions(false)">임명</button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
 
-            <PanelCard v-if="canAssign" title="추방" subtitle="국가에서 장수를 추방합니다">
-                <div class="kick-panel">
-                    <select v-model.number="kickTargetId" class="select-input">
-                        <option :value="0">장수 선택</option>
-                        <option v-for="general in kickCandidates" :key="general.id" :value="general.id">
-                            {{ general.name }}
-                        </option>
-                    </select>
-                    <button class="ghost" :disabled="kickTargetId === 0" @click="kickGeneral">추방</button>
-                </div>
-            </PanelCard>
-        </section>
+            <table id="officer-list" class="legacy-table city-table">
+                <colgroup>
+                    <col class="city-level-column" />
+                    <col class="city-name-column" />
+                    <col class="city-officer-column" />
+                    <col class="city-officer-column" />
+                    <col class="city-officer-column" />
+                </colgroup>
+                <tbody>
+                    <template v-if="canManage">
+                        <tr>
+                            <td colspan="5" class="spacer" />
+                        </tr>
+                        <tr>
+                            <td colspan="5" class="section-title orange-bg">도 시 관 직 임 명</td>
+                        </tr>
+                        <tr v-for="level in cityOfficerLevels" :key="level">
+                            <td colspan="3" class="blue-cell city-appoint-label">{{ officerLabels[level] }} 임명</td>
+                            <td colspan="2">
+                                <select
+                                    v-model.number="cityDraft[level].cityId"
+                                    :aria-label="`${officerLabels[level]} 도시`"
+                                >
+                                    <option v-for="city in openCities(level)" :key="city.id" :value="city.id">
+                                        【{{ regionMap[city.region] ?? '-' }}】 {{ city.name }}
+                                    </option>
+                                </select>
+                                <select
+                                    v-model.number="cityDraft[level].generalId"
+                                    :aria-label="`${officerLabels[level]} 장수`"
+                                >
+                                    <option :value="0">____공석____</option>
+                                    <option
+                                        v-for="candidate in cityCandidates(level)"
+                                        :key="candidate.id"
+                                        :value="candidate.id"
+                                    >
+                                        {{ candidateLabel(candidate) }}
+                                    </option>
+                                </select>
+                                <button type="button" @click="appointCityOfficer(level)">임명</button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td colspan="5" class="legend">
+                                ※ <span class="red">빨간색</span>은 현재 임명중인 장수,
+                                <span class="orange">노란색</span>은 다른 관직에 임명된 장수, 하얀색은 일반 장수를
+                                뜻합니다.
+                            </td>
+                        </tr>
+                    </template>
+                    <tr class="city-header">
+                        <td colspan="2">도 시</td>
+                        <td>태 수 (사관) 【현재도시】</td>
+                        <td>군 사 (사관) 【현재도시】</td>
+                        <td>종 사 (사관) 【현재도시】</td>
+                    </tr>
+                    <template v-for="(city, index) in data.cityAssignments" :key="city.id">
+                        <tr v-if="index === 0 || data.cityAssignments[index - 1]?.region !== city.region">
+                            <td colspan="5" class="region-heading">【 {{ regionMap[city.region] ?? '-' }} 】</td>
+                        </tr>
+                        <tr>
+                            <td class="nation-city" :style="{ backgroundColor: data.nation.color }">
+                                【{{ cityLevelMap[city.level] ?? '-' }}】
+                            </td>
+                            <td class="nation-city city-name" :style="{ backgroundColor: data.nation.color }">
+                                {{ city.name }}
+                            </td>
+                            <td
+                                v-for="level in cityOfficerLevels"
+                                :key="level"
+                                :class="{ locked: cityOfficerLocked(city, level) }"
+                            >
+                                <template v-if="city.officers[level]">
+                                    {{ city.officers[level]?.name }}({{ city.officers[level]?.belong }}년) 【{{
+                                        city.officers[level]?.cityName ?? '-'
+                                    }}】
+                                </template>
+                                <template v-else>-</template>
+                            </td>
+                        </tr>
+                    </template>
+                    <tr>
+                        <td colspan="5" class="legend">
+                            ※ <span class="orange">노란색</span>은 변경 불가능, 하얀색은 변경 가능 관직입니다.
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <table v-if="canManage" class="legacy-table kick-table">
+                <colgroup>
+                    <col class="kick-label-column" />
+                    <col class="kick-control-column" />
+                </colgroup>
+                <tbody>
+                    <tr>
+                        <td colspan="2" class="spacer" />
+                    </tr>
+                    <tr>
+                        <td colspan="2" class="section-title red-bg">추 방</td>
+                    </tr>
+                    <tr>
+                        <td class="green-cell kick-label">대상 장수</td>
+                        <td>
+                            <template v-if="canKick">
+                                <select v-model.number="kickTargetId" aria-label="추방 대상 장수">
+                                    <option :value="0">장수 선택</option>
+                                    <option
+                                        v-for="candidate in kickCandidates"
+                                        :key="candidate.id"
+                                        :value="candidate.id"
+                                    >
+                                        {{ candidate.name }} ({{ candidate.stats.leadership }}/{{
+                                            candidate.stats.strength
+                                        }}/{{ candidate.stats.intelligence }})
+                                    </option>
+                                </select>
+                                <button type="button" :disabled="kickTargetId === 0" @click="kickGeneral">추방</button>
+                            </template>
+                            <template v-else>이번 분기에는 추방할 수 없습니다.</template>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <table class="legacy-table footer-table">
+                <tbody>
+                    <tr>
+                        <td><RouterLink class="legacy-button" to="/">돌아가기</RouterLink></td>
+                    </tr>
+                </tbody>
+            </table>
+        </template>
     </main>
 </template>
 
 <style scoped>
-.nation-page {
+.legacy-office {
+    width: 1000px;
     min-height: 100vh;
-    padding: 24px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
+    margin: 0 auto;
+    color: #fff;
+    font:
+        14px/1.3 Pretendard,
+        'Apple SD Gothic Neo',
+        'Noto Sans KR',
+        'Malgun Gothic',
+        sans-serif;
 }
-
-.page-header {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    gap: 12px;
-    border-bottom: 1px solid rgba(201, 164, 90, 0.4);
-    padding-bottom: 12px;
-}
-
-.page-title {
-    font-size: 1.6rem;
-    font-weight: 600;
-}
-
-.page-subtitle {
-    font-size: 0.85rem;
-    color: rgba(232, 221, 196, 0.7);
-}
-
-.header-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-
-.ghost {
-    border: 1px solid rgba(201, 164, 90, 0.4);
-    padding: 6px 12px;
-    font-size: 0.8rem;
-    cursor: pointer;
-    text-decoration: none;
-    color: inherit;
-    background: rgba(16, 16, 16, 0.6);
-}
-
-.error {
-    color: #f5b7b1;
-    font-size: 0.85rem;
-}
-
-.panel-grid {
-    display: grid;
-    gap: 16px;
-}
-
-.chief-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 12px;
-}
-
-.chief-item {
-    border: 1px solid rgba(201, 164, 90, 0.2);
-    padding: 8px;
-}
-
-.chief-title {
-    font-size: 0.75rem;
-    color: rgba(232, 221, 196, 0.6);
-}
-
-.chief-name {
-    font-size: 0.9rem;
-    font-weight: 600;
-}
-
-.chief-meta {
-    font-size: 0.75rem;
-    color: rgba(232, 221, 196, 0.6);
-}
-
-.chief-appoint,
-.fast-appoint {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.appoint-row {
-    display: grid;
-    grid-template-columns: 120px minmax(0, 1fr) auto;
-    gap: 8px;
-    align-items: center;
-}
-
-.appoint-label {
-    font-size: 0.8rem;
-    color: rgba(232, 221, 196, 0.7);
-}
-
-.select-input {
-    border: 1px solid rgba(201, 164, 90, 0.4);
-    background: rgba(16, 16, 16, 0.8);
-    color: rgba(232, 221, 196, 0.9);
-    padding: 6px 8px;
-    font-size: 0.75rem;
-}
-
-.current-officer {
-    font-size: 0.75rem;
-    color: rgba(232, 221, 196, 0.6);
-}
-
-.table-scroll {
-    overflow-x: auto;
-    max-height: 320px;
-    overflow-y: auto;
-}
-
-.nation-table {
-    width: 100%;
+.legacy-table {
+    width: 1000px;
+    margin: 0 auto;
     border-collapse: collapse;
-    font-size: 0.8rem;
+    table-layout: fixed;
+    background: url('/image/game/back_walnut.jpg');
 }
-
-.nation-table th,
-.nation-table td {
-    padding: 6px 8px;
-    border-bottom: 1px solid rgba(201, 164, 90, 0.2);
+.legacy-table td {
+    border: 1px solid gray;
+    padding: 0;
+}
+.heading-table {
+    height: 56px;
+    margin-bottom: 18px;
+}
+.heading-table td {
     text-align: left;
-    white-space: nowrap;
 }
-
-.nation-table thead th {
-    font-size: 0.7rem;
-    color: rgba(232, 221, 196, 0.6);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+button {
+    display: inline-block;
+    border: 1px solid #6c757d;
+    border-radius: 4px;
+    padding: 5.25px 10.5px;
+    color: #fff;
+    background: #6c757d;
+    font: inherit;
+    line-height: 21px;
+    text-decoration: none;
+    cursor: pointer;
 }
-
-.permission-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    gap: 16px;
+.legacy-button {
+    display: inline-block;
+    border: 1px solid #325172;
+    border-radius: 4px;
+    padding: 5.25px 10.5px;
+    color: #fff;
+    background: #375a7f;
+    font: inherit;
+    line-height: 21px;
+    text-decoration: none;
+    cursor: pointer;
 }
-
-.permission-title {
-    font-size: 0.8rem;
-    color: rgba(232, 221, 196, 0.7);
-    margin-bottom: 6px;
+button:hover,
+.legacy-button:hover {
+    filter: brightness(1.16);
 }
-
-.permission-list {
-    display: grid;
-    gap: 6px;
-    margin-bottom: 8px;
+button:focus-visible,
+.legacy-button:focus-visible,
+select:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 1px;
 }
-
-.permission-item {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 0.8rem;
+button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
-
-.kick-panel {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+select {
+    height: 20px;
+    border: 1px solid #858585;
+    padding: 0;
+    color: #fff;
+    background: #000;
+    font: inherit;
+}
+select[multiple] {
+    width: 300px;
+    height: 34px;
+}
+.nation-heading {
+    height: 32px;
+    text-align: center;
+    font-size: 20px;
+}
+.chief-status {
+    margin-bottom: 0;
+    table-layout: fixed;
+}
+.chief-role-column {
+    width: 10%;
+}
+.chief-icon-column {
+    width: 6.5%;
+}
+.chief-name-column {
+    width: 33.5%;
+}
+.office-label-column {
+    width: 10%;
+}
+.office-control-column {
+    width: 40%;
+}
+.city-level-column,
+.city-name-column {
+    width: 8%;
+}
+.city-officer-column {
+    width: 28%;
+}
+.kick-label-column {
+    width: 10%;
+}
+.kick-control-column {
+    width: 90%;
+}
+.chief-status .role-cell {
+    text-align: center;
+    font-size: 18px;
+}
+.general-icon {
+    height: 64px;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 64px 64px;
+}
+.chief-name {
+    width: 332px;
+    font-size: 18px;
+}
+.green-cell,
+.city-header,
+.region-heading {
+    background: url('/image/game/back_green.jpg');
+}
+.blue-cell {
+    background: url('/image/game/back_blue.jpg');
+}
+.spacer {
+    height: 5px;
+}
+.section-title {
+    text-align: center;
+    line-height: 19px;
+}
+.blue {
+    background: blue;
+}
+.purple {
+    background: purple;
+}
+.orange-bg {
+    background: orange;
+}
+.red-bg {
+    background: red;
+}
+.appointment-table .appoint-label,
+.permission-label {
+    width: 98px;
+    text-align: right;
+}
+.appointment-table .appoint-control {
+    width: 398px;
+}
+.legend {
+    line-height: 18px;
+}
+.red {
+    color: red;
+}
+.orange,
+.locked {
+    color: orange;
+}
+.permission-table select {
+    vertical-align: middle;
+}
+.city-appoint-label {
+    text-align: right;
+}
+.city-header td {
+    height: 29px;
+    text-align: center;
+    font-size: 18px;
+}
+.city-header td:first-child {
+    width: 158px;
+}
+.region-heading {
+    height: 29px;
+    color: skyblue;
+    font-size: 18px;
+}
+.nation-city {
+    width: 78px;
+    text-align: center;
+    font-size: 16.8px;
+}
+.city-name {
+    text-align: right;
+}
+.kick-label {
+    width: 498px;
+    text-align: right;
+}
+.footer-table {
+    margin-top: 18px;
+}
+.feedback,
+.loading {
+    width: 1000px;
+    box-sizing: border-box;
+    border: 1px solid gray;
+    padding: 6px 8px;
+    background: url('/image/game/back_walnut.jpg');
+}
+.error {
+    color: #ff8080;
+}
+.status {
+    color: #80ff80;
+}
+@media (max-width: 1000px) {
+    .legacy-office {
+        margin: 0;
+    }
 }
 </style>
