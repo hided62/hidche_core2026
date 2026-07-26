@@ -39,7 +39,7 @@ export const beOpeningPart = (): Constraint => ({
             return { kind: 'deny', reason: '초반 제한 중에는 불가능합니다.' };
         }
 
-        if (relYear + 1 <= openingPartYear) {
+        if (relYear + 1 < openingPartYear) {
             return allow();
         }
 
@@ -47,12 +47,7 @@ export const beOpeningPart = (): Constraint => ({
     },
 });
 
-export const reqEnvValue = (
-    key: string,
-    comp: CompareOperator,
-    reqVal: unknown,
-    failMessage: string
-): Constraint => ({
+export const reqEnvValue = (key: string, comp: CompareOperator, reqVal: unknown, failMessage: string): Constraint => ({
     name: 'reqEnvValue',
     requires: () => [{ kind: 'env', key }],
     test: (_ctx, view) => {

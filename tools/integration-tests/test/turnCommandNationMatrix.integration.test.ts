@@ -22,6 +22,7 @@ const readNationMeta = (row: { meta?: unknown } | undefined): Record<string, unk
     typeof row?.meta === 'object' && row.meta !== null && !Array.isArray(row.meta)
         ? (row.meta as Record<string, unknown>)
         : {};
+const readGeneralMeta = readNationMeta;
 const NPC_SEIZURE_MESSAGE_TEXT = '몰수를 하다니... 이것이 윗사람이 할 짓이란 말입니까...';
 
 const ignoredLifecyclePaths = [
@@ -252,6 +253,7 @@ const buildRequest = (
             ...Object.keys(fixturePatches.cities ?? {})
                 .map(Number)
                 .filter((id) => id !== 3 && id !== 70),
+            ...(fixturePatches.randomFoundingCandidateCityIds ?? []).filter((id) => id !== 3 && id !== 70),
         ],
         nationIds: [1, 2],
         logAfterId: 0,
@@ -2129,4 +2131,273 @@ integration('nation reduce city level, value, recovery, and city constraints', (
             })
         ).toEqual([]);
     }, 120_000);
+});
+
+type RandomCapitalOutcome = 'fallback' | 'incomplete' | 'completed';
+
+const randomCapitalCases: Array<{
+    name: string;
+    fixturePatches?: FixturePatches;
+    candidateCityIds: number[];
+    flag?: number | null;
+    officerLevel?: number;
+    outcome: RandomCapitalOutcome;
+}> = [
+    {
+        name: 'rejects a source city occupied by another nation',
+        fixturePatches: { cities: { 3: { nationId: 2 } } },
+        candidateCityIds: [70],
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects an unsupplied source city',
+        fixturePatches: { cities: { 3: { supplyState: 0 } } },
+        candidateCityIds: [70],
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects a non-lord actor',
+        candidateCityIds: [70],
+        officerLevel: 11,
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects at the opening-part year boundary',
+        fixturePatches: { world: { year: 182 } },
+        candidateCityIds: [70],
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects a missing remaining-use flag',
+        candidateCityIds: [70],
+        flag: null,
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects a zero remaining-use flag',
+        candidateCityIds: [70],
+        flag: 0,
+        outcome: 'fallback',
+    },
+    {
+        name: 'stays incomplete when no eligible city exists',
+        candidateCityIds: [],
+        outcome: 'incomplete',
+    },
+    {
+        name: 'stays incomplete when the only neutral city is level four',
+        fixturePatches: { cities: { 70: { level: 4 } } },
+        candidateCityIds: [70],
+        outcome: 'incomplete',
+    },
+    {
+        name: 'stays incomplete when the only neutral city is level seven',
+        fixturePatches: { cities: { 70: { level: 7 } } },
+        candidateCityIds: [70],
+        outcome: 'incomplete',
+    },
+    {
+        name: 'allows a single level-five neutral city',
+        fixturePatches: { cities: { 70: { level: 5 } } },
+        candidateCityIds: [70],
+        outcome: 'completed',
+    },
+    {
+        name: 'allows a single level-six neutral city',
+        fixturePatches: { cities: { 70: { level: 6 } } },
+        candidateCityIds: [70],
+        outcome: 'completed',
+    },
+    {
+        name: 'matches legacy ordering and choice across two eligible cities',
+        fixturePatches: {
+            cities: {
+                70: { level: 5 },
+                71: {
+                    nationId: 0,
+                    level: 6,
+                    conflict: { 2: 30 },
+                    officerSet: 6,
+                },
+            },
+        },
+        candidateCityIds: [71, 70],
+        outcome: 'completed',
+    },
+];
+
+integration('nation random capital constraints, candidates, RNG, and city reset effects', () => {
+    it.each(randomCapitalCases)(
+        '$name matches legacy completion, destination, city resets, RNG, and semantic delta',
+        async ({ fixturePatches, candidateCityIds, flag = 1, officerLevel = 12, outcome }) => {
+            const request = buildRequest('che_무작위수도이전', undefined, {
+                ...fixturePatches,
+                world: {
+                    year: 181,
+                    ...fixturePatches?.world,
+                },
+                generals: {
+                    ...fixturePatches?.generals,
+                    1: {
+                        ...fixturePatches?.generals?.[1],
+                        officerLevel,
+                    },
+                },
+                nations: {
+                    ...fixturePatches?.nations,
+                    1: {
+                        ...fixturePatches?.nations?.[1],
+                        meta: {
+                            ...(flag === null ? {} : { can_무작위수도이전: flag }),
+                        },
+                        turnLastByOfficerLevel: {
+                            [officerLevel]: {
+                                command: '무작위 수도 이전',
+                                arg: {},
+                                term: 1,
+                            },
+                        },
+                    },
+                },
+                cities: {
+                    ...fixturePatches?.cities,
+                    3: {
+                        conflict: { 2: 10 },
+                        officerSet: 7,
+                        ...fixturePatches?.cities?.[3],
+                    },
+                    70: {
+                        nationId: 0,
+                        level: candidateCityIds.includes(70) ? 5 : 4,
+                        conflict: { 2: 20 },
+                        officerSet: 5,
+                        ...fixturePatches?.cities?.[70],
+                    },
+                },
+                randomFoundingCandidateCityIds: candidateCityIds,
+            });
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+            const referenceNationBefore = reference.before.nations.find((entry) => entry.id === 1);
+            const referenceNationAfter = reference.after.nations.find((entry) => entry.id === 1);
+            const coreNationBefore = core.before.nations.find((entry) => entry.id === 1);
+            const coreNationAfter = core.after.nations.find((entry) => entry.id === 1);
+            const referenceGeneralBefore = reference.before.generals.find((entry) => entry.id === 1);
+            const referenceGeneralAfter = reference.after.generals.find((entry) => entry.id === 1);
+            const coreGeneralBefore = core.before.generals.find((entry) => entry.id === 1);
+            const coreGeneralAfter = core.after.generals.find((entry) => entry.id === 1);
+            const completed = outcome === 'completed';
+            const incomplete = outcome === 'incomplete';
+
+            expect(reference.execution.outcome).toMatchObject({
+                // The ref runner infers completion from the previous term=1.
+                // A no-candidate run returns false without resetting that term,
+                // so its heuristic reports a false positive for incomplete cases.
+                completed: outcome !== 'fallback',
+            });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: 'che_무작위수도이전',
+                actionKey: outcome === 'fallback' ? '휴식' : 'che_무작위수도이전',
+                usedFallback: outcome === 'fallback',
+                ...(outcome === 'fallback' ? {} : { completed }),
+            });
+            expect(readNumericField(referenceNationAfter, 'capitalCityId')).toBe(
+                completed ? readNumericField(coreNationAfter, 'capitalCityId') : 3
+            );
+            expect(readNumericField(coreNationAfter, 'capitalCityId')).toBe(
+                completed ? readNumericField(referenceNationAfter, 'capitalCityId') : 3
+            );
+            for (const [before, after] of [
+                [referenceGeneralBefore, referenceGeneralAfter],
+                [coreGeneralBefore, coreGeneralAfter],
+            ] as const) {
+                expect(readNumericField(after, 'experience') - readNumericField(before, 'experience')).toBe(
+                    completed ? 10 : 0
+                );
+                expect(readNumericField(after, 'dedication') - readNumericField(before, 'dedication')).toBe(
+                    completed ? 10 : 0
+                );
+            }
+
+            if (completed) {
+                const destCityId = readNumericField(referenceNationAfter, 'capitalCityId');
+                expect(candidateCityIds).toContain(destCityId);
+                for (const [beforeSnapshot, afterSnapshot] of [
+                    [reference.before, reference.after],
+                    [core.before, core.after],
+                ] as const) {
+                    const oldCity = afterSnapshot.cities.find((entry) => entry.id === 3);
+                    const destCity = afterSnapshot.cities.find((entry) => entry.id === destCityId);
+                    const actor = afterSnapshot.generals.find((entry) => entry.id === 1);
+                    const compatriot = afterSnapshot.generals.find((entry) => entry.id === 3);
+                    const foreignGeneralBefore = beforeSnapshot.generals.find((entry) => entry.id === 2);
+                    const foreignGeneralAfter = afterSnapshot.generals.find((entry) => entry.id === 2);
+
+                    expect(oldCity).toMatchObject({
+                        nationId: 0,
+                        frontState: 0,
+                        conflict: {},
+                        officerSet: 0,
+                    });
+                    expect(destCity).toMatchObject({
+                        nationId: 1,
+                        conflict: {},
+                    });
+                    expect(readNumericField(actor, 'cityId')).toBe(destCityId);
+                    expect(readNumericField(compatriot, 'cityId')).toBe(destCityId);
+                    expect(readNumericField(foreignGeneralAfter, 'cityId')).toBe(
+                        readNumericField(foreignGeneralBefore, 'cityId')
+                    );
+                }
+                expect(readNumericField(readNationMeta(referenceNationAfter), 'can_무작위수도이전')).toBe(0);
+                expect(readNumericField(readNationMeta(coreNationAfter), 'can_무작위수도이전')).toBe(0);
+                expect(reference.rng).toHaveLength(1);
+                expect(reference.rng[0]).toMatchObject({
+                    operation: 'nextInt',
+                    arguments: { maxInclusive: candidateCityIds.length - 1 },
+                });
+            } else {
+                expect(reference.rng).toEqual([]);
+                expect(readNationMeta(referenceNationAfter).can_무작위수도이전).toBe(
+                    readNationMeta(referenceNationBefore).can_무작위수도이전
+                );
+                expect(readNationMeta(coreNationAfter).can_무작위수도이전).toBe(
+                    readNationMeta(coreNationBefore).can_무작위수도이전
+                );
+            }
+            if (incomplete) {
+                expect(reference.execution.outcome).toMatchObject({
+                    completed: true,
+                    lastTurn: {
+                        command: '무작위 수도 이전',
+                        term: 1,
+                    },
+                });
+                expect(readNationMeta(coreNationAfter).turn_last_12).toMatchObject({
+                    command: '무작위 수도 이전',
+                    term: 1,
+                });
+                expect(readNumericField(readGeneralMeta(coreGeneralAfter), 'inherit_active_action')).toBe(
+                    readNumericField(readGeneralMeta(coreGeneralBefore), 'inherit_active_action')
+                );
+                const noCandidateText = '이동할 수 있는 도시가 없습니다.';
+                expect(reference.after.logs.slice(reference.before.logs.length).map((entry) => entry.text)).toEqual(
+                    expect.arrayContaining([expect.stringContaining(noCandidateText)])
+                );
+                expect(core.after.logs.map((entry) => entry.text)).toEqual(
+                    expect.arrayContaining([expect.stringContaining(noCandidateText)])
+                );
+            }
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+        },
+        120_000
+    );
 });

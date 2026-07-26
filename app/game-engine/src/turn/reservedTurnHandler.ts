@@ -706,6 +706,7 @@ export const createReservedTurnHandler = async (options: {
         requestedAction: string;
         actionKey: string;
         usedFallback: boolean;
+        completed?: boolean;
         blockedReason?: string;
         aiState?: ReturnType<GeneralAI['getDebugState']>;
     }) => void;
@@ -827,7 +828,13 @@ export const createReservedTurnHandler = async (options: {
                 applyNextTurnAt: boolean,
                 alternativeDepth = 0,
                 sharedActionRng?: RandUtil
-            ): { nextTurnAt?: Date; actionKey: string; usedFallback: boolean; blockedReason?: string } => {
+            ): {
+                nextTurnAt?: Date;
+                actionKey: string;
+                usedFallback: boolean;
+                completed: boolean;
+                blockedReason?: string;
+            } => {
                 const resolvedDefinition = resolveDefinition(command.action, definitionMap, fallbackDefinition);
                 const rawArgs = extractArgsRecord(command.args);
                 const parsedArgs = resolvedDefinition.parseArgs(rawArgs);
@@ -1028,7 +1035,7 @@ export const createReservedTurnHandler = async (options: {
                             executionDefinition.getProgressText?.(actionContext, actionArgs, nextTerm, termMax) ??
                             `${definition.name} 수행중... (${nextTerm}/${termMax})`;
                         logs.push(createActionLog(progressText));
-                        return { actionKey, usedFallback, blockedReason };
+                        return { actionKey, usedFallback, completed: false, blockedReason };
                     }
                 }
 
@@ -1047,7 +1054,7 @@ export const createReservedTurnHandler = async (options: {
                 currentGeneral = resolution.general as TurnGeneral;
                 currentCity = resolution.city ?? currentCity;
                 currentNation = resolution.nation ?? currentNation;
-                if (!resolution.alternative && !usedFallback) {
+                if (!resolution.alternative && !usedFallback && resolution.completed) {
                     currentGeneral = applyLegacyGeneralProgression(
                         currentGeneral,
                         generalBeforeExecution,
@@ -1059,6 +1066,7 @@ export const createReservedTurnHandler = async (options: {
                     !resolution.alternative &&
                     kind === 'nation' &&
                     !usedFallback &&
+                    resolution.completed &&
                     definition.countsAsInheritanceActiveAction
                 ) {
                     const meta = { ...currentGeneral.meta };
@@ -1070,6 +1078,7 @@ export const createReservedTurnHandler = async (options: {
                     !resolution.alternative &&
                     kind === 'general' &&
                     !usedFallback &&
+                    resolution.completed &&
                     executionDefinition.getInheritanceActiveActionAmount
                 ) {
                     const amount = executionDefinition.getInheritanceActiveActionAmount(actionContext, actionArgs);
@@ -1086,7 +1095,7 @@ export const createReservedTurnHandler = async (options: {
                         (resolution.created.nations as Nation[]).find((n) => n.id === currentGeneral.nationId) ??
                         currentNation;
                 }
-                if (!resolution.alternative && kind === 'general' && !usedFallback) {
+                if (!resolution.alternative && kind === 'general' && !usedFallback && resolution.completed) {
                     const actionChangedLastTurn =
                         JSON.stringify(currentGeneral.lastTurn ?? {}) !== lastTurnBeforeExecution;
                     const nextMeta = { ...currentGeneral.meta };
@@ -1107,7 +1116,13 @@ export const createReservedTurnHandler = async (options: {
                               },
                     };
                 }
-                if (!resolution.alternative && kind === 'nation' && !usedFallback && currentNation) {
+                if (
+                    !resolution.alternative &&
+                    kind === 'nation' &&
+                    !usedFallback &&
+                    resolution.completed &&
+                    currentNation
+                ) {
                     const metaKey = nationLastTurnKey(currentGeneral.officerLevel);
                     const nextMeta: Record<string, unknown> = {
                         ...currentNation.meta,
@@ -1267,6 +1282,7 @@ export const createReservedTurnHandler = async (options: {
                     nextTurnAt: applyNextTurnAt ? resolution.nextTurnAt : undefined,
                     actionKey,
                     usedFallback,
+                    completed: resolution.completed,
                     blockedReason,
                 };
             };
@@ -1418,6 +1434,7 @@ export const createReservedTurnHandler = async (options: {
                     requestedAction: nationCommand.action,
                     actionKey: nationResult.actionKey,
                     usedFallback: nationResult.usedFallback,
+                    completed: nationResult.completed,
                     ...(nationResult.blockedReason ? { blockedReason: nationResult.blockedReason } : {}),
                     ...(nationAiState ? { aiState: nationAiState } : {}),
                 });
@@ -1464,6 +1481,7 @@ export const createReservedTurnHandler = async (options: {
                 ? {
                       actionKey: DEFAULT_ACTION,
                       usedFallback: true,
+                      completed: false,
                       blockedReason: '블럭 대상자입니다.',
                   }
                 : runAction('general', generalDefinitions, generalFallback, generalCommand, true);
@@ -1474,6 +1492,7 @@ export const createReservedTurnHandler = async (options: {
                 requestedAction: generalCommand.action,
                 actionKey: generalResult.actionKey,
                 usedFallback: generalResult.usedFallback,
+                completed: generalResult.completed,
                 ...(generalResult.blockedReason ? { blockedReason: generalResult.blockedReason } : {}),
                 ...(generalAiState ? { aiState: generalAiState } : {}),
             });
