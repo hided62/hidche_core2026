@@ -12,6 +12,7 @@ export default defineConfig({
         'troop.spec.ts',
         'board.spec.ts',
         'inGameInfo.spec.ts',
+        'inGameMenus.spec.ts',
         'nationOffices.spec.ts',
         'nationGeneralSecret.spec.ts',
         'npcPolicy.spec.ts',
