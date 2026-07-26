@@ -149,7 +149,11 @@ export class WarUnitCity extends WarUnit {
             dead *= 1.05;
         }
 
-        if (conflict[nationId] !== undefined) {
+        if (Object.keys(conflict).length === 0) {
+            // Legacy treats the first attacker as the conflict baseline and
+            // emits the "new participant" history only for later nations.
+            conflict[nationId] = dead;
+        } else if (conflict[nationId] !== undefined) {
             conflict[nationId] += dead;
         } else {
             conflict[nationId] = dead;

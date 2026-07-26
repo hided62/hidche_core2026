@@ -171,6 +171,7 @@ describe('war triggers', () => {
         general.experience = 90;
         general.meta.explevel = 0;
         const crewType = new WarCrewType(buildUnitSet().crewTypes![0]!);
+        const logger = new ActionLogger({ generalId: 1, nationId: 1 });
         const unit = new WarUnitGeneral(
             new RandUtil(new ConstantRNG(0)),
             buildConfig(),
@@ -179,7 +180,7 @@ describe('war triggers', () => {
             buildNation(),
             true,
             crewType,
-            new ActionLogger({ generalId: 1, nationId: 1 }),
+            logger,
             new WarActionPipeline([
                 {
                     onCalcStat: (_context, statName, value) =>
@@ -191,6 +192,11 @@ describe('war triggers', () => {
         unit.addLevelExp(10);
         expect(general.experience).toBe(102);
         expect(general.meta.explevel).toBe(1);
+        expect(logger.flush()).toContainEqual(
+            expect.objectContaining({
+                text: '<C>Lv 1</>로 <C>레벨업</>!',
+            })
+        );
     });
 
     it('applies the legacy 90% dexterity gain for wizard and siege arms', () => {
@@ -264,6 +270,52 @@ describe('war triggers', () => {
 
         expect(attacker.hasActivatedSkill('필살')).toBe(true);
         expect(attacker.getWarPowerMultiply()).toBeCloseTo(1.3);
+    });
+
+    it('treats the first conflict nation as the baseline', () => {
+        const rng = new RandUtil(new ConstantRNG(0));
+        const config = buildConfig();
+        const city = buildCity();
+        const cityUnit = new WarUnitCity(
+            rng,
+            config,
+            city,
+            buildNation(),
+            new WarCrewType(buildUnitSet().crewTypes![1]!),
+            new ActionLogger({}),
+            200,
+            180
+        );
+        const firstNation = buildNation();
+        const firstAttacker = new WarUnitGeneral(
+            rng,
+            config,
+            buildGeneral(80),
+            city,
+            firstNation,
+            true,
+            new WarCrewType(buildUnitSet().crewTypes![0]!),
+            new ActionLogger({ generalId: 1, nationId: 1 }),
+            new WarActionPipeline([])
+        );
+        cityUnit.setOppose(firstAttacker);
+        expect(cityUnit.addConflict()).toBe(false);
+
+        const secondNation = { ...buildNation(), id: 2 };
+        const secondGeneral = { ...buildGeneral(80), id: 2, nationId: 2 };
+        const secondAttacker = new WarUnitGeneral(
+            rng,
+            config,
+            secondGeneral,
+            city,
+            secondNation,
+            true,
+            new WarCrewType(buildUnitSet().crewTypes![0]!),
+            new ActionLogger({ generalId: 2, nationId: 2 }),
+            new WarActionPipeline([])
+        );
+        cityUnit.setOppose(secondAttacker);
+        expect(cityUnit.addConflict()).toBe(true);
     });
 });
 

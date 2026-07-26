@@ -185,6 +185,7 @@ describe('war aftermath', () => {
         const defenderCity = buildCity(2, 2);
         defenderCity.meta.conflict = JSON.stringify({ 99: 200, 1: 100 });
         const attacker = buildGeneral(1, 1, 1);
+        attacker.officerLevel = 12;
         const defender = buildGeneral(2, 2, 2);
 
         const outcome = resolveWarAftermath({
@@ -239,5 +240,13 @@ describe('war aftermath', () => {
         // must never receive ownership during a later conquest.
         expect(defenderCity.nationId).toBe(attackerNation.id);
         expect(defenderCity.meta.conflict).toBe('{}');
+        expect(outcome.logs.map((log) => log.text)).toEqual(
+            expect.arrayContaining([
+                '<D><b>Nation2</b></>를 정복',
+                '<R><b>【멸망】</b></><D><b>Nation2</b></>는 <R>멸망</>했습니다.',
+                '<D><b>Nation2</b></>가 <R>멸망</>했습니다.',
+                '<D><b>Nation2</b></> 정복으로 금<C>2,600</> 쌀<C>3,600</>을 획득했습니다.',
+            ])
+        );
     });
 });

@@ -36,6 +36,36 @@ const resolveNationVar = (nation: Nation | null, key: string): TriggerValue | nu
     }
 };
 
+const isCityWarUnit = (unit: WarUnit): boolean =>
+    typeof (unit as WarUnit & { getCityId?: unknown }).getCityId === 'function';
+
+const buildLegacySmallWarLog = (me: WarUnit, oppose: WarUnit): string => {
+    const warType = !me.isAttacker() ? 'defense' : isCityWarUnit(oppose) ? 'siege' : 'attack';
+    const warTypeStr = me.isAttacker() ? '→' : '←';
+    return [
+        '<div class="small_war_log">        ',
+        '<span class="me">        ',
+        '<span class="name_plate">            ',
+        `<span class="crew_type">${me.getCrewTypeShortName()}</span>            `,
+        '<span class="name_plate_cover"                >【',
+        `<span class="name">${me.getName()}</span>】            </span>        </span>        `,
+        '<span class="crew_plate"            >',
+        `<span class="remain_crew">${me.getHP()}</span            >`,
+        '<span class="killed_plate">(',
+        `<span class="killed_crew">${-me.getDeadCurrentBattle()}</span>)</span        ></span>    </span>    `,
+        `<span class="war_type war_type_${warType}">${warTypeStr}</span>    `,
+        '<span class="you">        ',
+        '<span class="crew_plate"            >',
+        `<span class="remain_crew">${oppose.getHP()}</span            >`,
+        '<span class="killed_plate">(',
+        `<span class="killed_crew">${-oppose.getDeadCurrentBattle()}</span>)</span        ></span>        `,
+        '<span class="name_plate">            ',
+        `<span class="crew_type">${oppose.getCrewTypeShortName()}</span>            `,
+        '<span class="name_plate_cover"                >【',
+        `<span class="name">${oppose.getName()}</span>】            </span>        </span>            </span></div>`,
+    ].join('');
+};
+
 // 전투 유닛 공통 상태와 수치 계산(legacy WarUnit 계열 포팅).
 export abstract class WarUnit<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     private static nextUnitId = 1;
@@ -317,8 +347,7 @@ export abstract class WarUnit<TriggerState extends GeneralTriggerState = General
             return;
         }
 
-        const warTypeStr = this.isAttacker() ? '→' : '←';
-        const message = `${this.getCrewTypeShortName()} ${this.getName()} ${warTypeStr} ${oppose.getCrewTypeShortName()} ${oppose.getName()} (${this.getHP()} / ${oppose.getHP()})`;
+        const message = buildLegacySmallWarLog(this, oppose);
         this.logger.pushGeneralBattleResultLog(message, LogFormat.EVENT_YEAR_MONTH);
         this.logger.pushGeneralBattleDetailLog(message, LogFormat.EVENT_YEAR_MONTH);
         this.logger.pushGeneralActionLog(message, LogFormat.EVENT_YEAR_MONTH);

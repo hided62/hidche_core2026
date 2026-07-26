@@ -254,6 +254,14 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
         let totalGoldLoss = 0;
         let totalRiceLoss = 0;
 
+        const defenderNationJosaUl = JosaUtil.pick(defenderNationName, '을');
+        const defenderNationJosaUn = JosaUtil.pick(defenderNationName, '은');
+        const defenderNationJosaYi = JosaUtil.pick(defenderNationName, '이');
+        attackerLogger.pushNationHistoryLog(`<D><b>${defenderNationName}</b></>${defenderNationJosaUl} 정복`);
+        attackerLogger.pushGlobalHistoryLog(
+            `<R><b>【멸망】</b></><D><b>${defenderNationName}</b></>${defenderNationJosaUn} <R>멸망</>했습니다.`
+        );
+
         for (const general of defenderGenerals) {
             // Legacy Util::toInt truncates these losses rather than rounding.
             const loseGold = Math.trunc(general.gold * rng.nextRange(0.2, 0.5));
@@ -272,6 +280,11 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
                 nationId: general.nationId,
             });
             generalLogger.pushGeneralActionLog(
+                `<D><b>${defenderNationName}</b></>${defenderNationJosaYi} <R>멸망</>했습니다.`,
+                LogFormat.PLAIN
+            );
+            generalLogger.pushGeneralHistoryLog(`<D><b>${defenderNationName}</b></>${defenderNationJosaYi} <R>멸망</>`);
+            generalLogger.pushGeneralActionLog(
                 `도주하며 금<C>${loseGold}</> 쌀<C>${loseRice}</>을 분실했습니다.`,
                 LogFormat.PLAIN
             );
@@ -284,6 +297,26 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
 
         attackerNation.gold = round(attackerNation.gold + collapseRewardGold);
         attackerNation.rice = round(attackerNation.rice + collapseRewardRice);
+
+        const resourceLog =
+            `<D><b>${defenderNationName}</b></> 정복으로 ` +
+            `금<C>${collapseRewardGold.toLocaleString('en-US')}</> ` +
+            `쌀<C>${collapseRewardRice.toLocaleString('en-US')}</>을 획득했습니다.`;
+        for (const general of generals) {
+            if (general.nationId !== attackerNation.id || general.officerLevel < 5) {
+                continue;
+            }
+            if (general.id === attacker.id) {
+                attackerLogger.pushGeneralActionLog(resourceLog, LogFormat.PLAIN);
+                continue;
+            }
+            const chiefLogger = new ActionLogger({
+                generalId: general.id,
+                nationId: attackerNation.id,
+            });
+            chiefLogger.pushGeneralActionLog(resourceLog, LogFormat.PLAIN);
+            pushLoggers([chiefLogger], logs);
+        }
 
         defenderNation.meta.collapsed = true;
         affectedNations.add(defenderNation);

@@ -1,4 +1,4 @@
-import type { RandUtil } from '@sammo-ts/common';
+import { JosaUtil, type RandUtil } from '@sammo-ts/common';
 
 import type {
     City,
@@ -350,6 +350,7 @@ export class WarUnitGeneral<
     }
 
     public addLevelExp(value: number): void {
+        const previousExpLevel = getMetaNumber(this.general.meta, META_EXP_LEVEL);
         const sideAdjusted = this.isAttacker() ? value : value * 0.8;
         const adjusted = this.actionPipeline.onCalcStat(this.getActionContext(), 'experience', sideAdjusted);
         this.general.experience += adjusted;
@@ -357,7 +358,18 @@ export class WarUnitGeneral<
             this.general.experience < 1000
                 ? Math.trunc(this.general.experience / 100)
                 : Math.trunc(Math.sqrt(this.general.experience / 10));
-        this.general.meta[META_EXP_LEVEL] = clamp(nextExpLevel, 0, MAX_EXP_LEVEL);
+        const resolvedExpLevel = clamp(nextExpLevel, 0, MAX_EXP_LEVEL);
+        this.general.meta[META_EXP_LEVEL] = resolvedExpLevel;
+        if (resolvedExpLevel === previousExpLevel) {
+            return;
+        }
+        const josaRo = JosaUtil.pick(String(resolvedExpLevel), '로');
+        this.logger.pushGeneralActionLog(
+            resolvedExpLevel > previousExpLevel
+                ? `<C>Lv ${resolvedExpLevel}</>${josaRo} <C>레벨업</>!`
+                : `<C>Lv ${resolvedExpLevel}</>${josaRo} <R>레벨다운</>!`,
+            LogFormat.PLAIN
+        );
     }
 
     public addDedication(value: number): void {
