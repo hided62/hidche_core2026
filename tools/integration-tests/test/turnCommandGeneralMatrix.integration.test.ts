@@ -907,6 +907,203 @@ integration('general movement command boundary and log parity', () => {
     );
 });
 
+interface DomesticBoundaryCase {
+    name: string;
+    action: 'che_성벽보수' | 'che_수비강화' | 'che_치안강화' | 'che_기술연구' | 'che_정착장려' | 'che_물자조달';
+    actorPatch?: Record<string, unknown>;
+    fixturePatches?: FixturePatches;
+    completed: boolean;
+}
+
+const domesticBoundaryCases: DomesticBoundaryCase[] = [
+    {
+        name: 'wall repair rejects a neutral actor',
+        action: 'che_성벽보수',
+        actorPatch: { nationId: 0 },
+        completed: false,
+    },
+    {
+        name: 'wall repair rejects a wandering nation',
+        action: 'che_성벽보수',
+        fixturePatches: { nations: { 1: { level: 0 } } },
+        completed: false,
+    },
+    {
+        name: 'wall repair rejects a foreign-occupied city',
+        action: 'che_성벽보수',
+        fixturePatches: { cities: { 3: { nationId: 2 } } },
+        completed: false,
+    },
+    {
+        name: 'wall repair rejects an unsupplied city',
+        action: 'che_성벽보수',
+        fixturePatches: { cities: { 3: { supplyState: 0 } } },
+        completed: false,
+    },
+    {
+        name: 'wall repair rejects insufficient gold',
+        action: 'che_성벽보수',
+        actorPatch: { gold: 0 },
+        completed: false,
+    },
+    {
+        name: 'wall repair rejects a wall already at capacity',
+        action: 'che_성벽보수',
+        fixturePatches: { cities: { 3: { wall: 1000, wallMax: 1000 } } },
+        completed: false,
+    },
+    {
+        name: 'wall repair preserves the early-capital front debuff',
+        action: 'che_성벽보수',
+        fixturePatches: { cities: { 3: { wall: 0, wallMax: 10_000, frontState: 1 } } },
+        completed: true,
+    },
+    {
+        name: 'defence reinforcement rejects a defence already at capacity',
+        action: 'che_수비강화',
+        fixturePatches: { cities: { 3: { defence: 1000, defenceMax: 1000 } } },
+        completed: false,
+    },
+    {
+        name: 'defence reinforcement preserves the early-capital front debuff',
+        action: 'che_수비강화',
+        fixturePatches: { cities: { 3: { defence: 0, defenceMax: 10_000, frontState: 1 } } },
+        completed: true,
+    },
+    {
+        name: 'security reinforcement rejects security already at capacity',
+        action: 'che_치안강화',
+        fixturePatches: { cities: { 3: { security: 1000, securityMax: 1000 } } },
+        completed: false,
+    },
+    {
+        name: 'security reinforcement preserves the early-capital front rule',
+        action: 'che_치안강화',
+        fixturePatches: { cities: { 3: { security: 0, securityMax: 10_000, frontState: 1 } } },
+        completed: true,
+    },
+    {
+        name: 'tech research rejects a neutral actor',
+        action: 'che_기술연구',
+        actorPatch: { nationId: 0 },
+        completed: false,
+    },
+    {
+        name: 'tech research rejects a wandering nation',
+        action: 'che_기술연구',
+        fixturePatches: { nations: { 1: { level: 0 } } },
+        completed: false,
+    },
+    {
+        name: 'tech research rejects a foreign-occupied city',
+        action: 'che_기술연구',
+        fixturePatches: { cities: { 3: { nationId: 2 } } },
+        completed: false,
+    },
+    {
+        name: 'tech research rejects an unsupplied city',
+        action: 'che_기술연구',
+        fixturePatches: { cities: { 3: { supplyState: 0 } } },
+        completed: false,
+    },
+    {
+        name: 'tech research rejects insufficient gold',
+        action: 'che_기술연구',
+        actorPatch: { gold: 0 },
+        completed: false,
+    },
+    {
+        name: 'tech research uses stored nation general count at the level cap',
+        action: 'che_기술연구',
+        fixturePatches: { nations: { 1: { tech: 3000, generalCount: 11 } } },
+        completed: true,
+    },
+    {
+        name: 'settlement encouragement rejects insufficient rice',
+        action: 'che_정착장려',
+        actorPatch: { rice: 0 },
+        completed: false,
+    },
+    {
+        name: 'settlement encouragement rejects a city at population capacity',
+        action: 'che_정착장려',
+        fixturePatches: { cities: { 3: { population: 200_000, populationMax: 200_000 } } },
+        completed: false,
+    },
+    {
+        name: 'settlement encouragement clamps at population capacity',
+        action: 'che_정착장려',
+        fixturePatches: { cities: { 3: { population: 199_999, populationMax: 200_000 } } },
+        completed: true,
+    },
+    {
+        name: 'procurement rejects a neutral actor',
+        action: 'che_물자조달',
+        actorPatch: { nationId: 0 },
+        completed: false,
+    },
+    {
+        name: 'procurement rejects a wandering nation',
+        action: 'che_물자조달',
+        fixturePatches: { nations: { 1: { level: 0 } } },
+        completed: false,
+    },
+    {
+        name: 'procurement rejects a foreign-occupied city',
+        action: 'che_물자조달',
+        fixturePatches: { cities: { 3: { nationId: 2 } } },
+        completed: false,
+    },
+    {
+        name: 'procurement rejects an unsupplied city',
+        action: 'che_물자조달',
+        fixturePatches: { cities: { 3: { supplyState: 0 } } },
+        completed: false,
+    },
+    {
+        name: 'procurement succeeds without owned gold or rice',
+        action: 'che_물자조달',
+        actorPatch: { gold: 0, rice: 0 },
+        completed: true,
+    },
+];
+
+integration('general domestic command boundary, value, and log parity', () => {
+    it.each(domesticBoundaryCases)(
+        '$name',
+        async ({ name, action, actorPatch, fixturePatches, completed }) => {
+            const request = buildRequest(action, undefined, actorPatch, fixturePatches);
+            request.setup!.world!.hiddenSeed = `general-domestic-${name}`;
+            request.observe!.includeGlobalHistoryLogs = true;
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+
+            expect(reference.execution.outcome).toMatchObject({ completed });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: action,
+                actionKey: completed ? action : '휴식',
+                usedFallback: !completed,
+            });
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+
+            if (completed) {
+                expect(semanticLogSignatures(core.after.logs)).toEqual(
+                    semanticLogSignatures(addedReferenceLogs(reference.before, reference.after.logs))
+                );
+            }
+        },
+        120_000
+    );
+});
+
 integration('명장일람 rank_data command parity', () => {
     it('화계 increments firenum from the same seeded value as legacy', async () => {
         const request = buildRequest(

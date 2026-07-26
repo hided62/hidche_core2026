@@ -53,6 +53,9 @@ const readTech = (nation: Nation): number => {
     return typeof tech === 'number' && Number.isFinite(tech) ? tech : 0;
 };
 
+// 레거시 nation.tech는 MariaDB FLOAT이며 다음 명령 재조회 시 6자리 유효숫자로 양자화된다.
+const toLegacyStoredTech = (value: number): number => Number(value.toPrecision(6));
+
 export class ActionDefinition<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionDefinition<TriggerState, TechResearchArgs, TechResearchContext<TriggerState>> {
@@ -105,7 +108,9 @@ export class ActionDefinition<
 
         context.nation.meta = {
             ...context.nation.meta,
-            tech: currentTech + techScore / Math.max(context.nationGeneralCount, this.env.initialNationGenLimit),
+            tech: toLegacyStoredTech(
+                currentTech + techScore / Math.max(context.nationGeneralCount, this.env.initialNationGenLimit)
+            ),
         };
         context.general.gold = Math.max(0, context.general.gold - result.costGold);
         context.general.experience += result.exp;
@@ -144,8 +149,10 @@ export const actionContextBuilder: ActionContextBuilder = (
         ...base,
         city: base.city,
         nation: base.nation,
-        nationGeneralCount: options.worldRef.listGenerals().filter((general) => general.nationId === base.nation!.id)
-            .length,
+        nationGeneralCount:
+            typeof base.nation.meta.gennum === 'number' && Number.isFinite(base.nation.meta.gennum)
+                ? base.nation.meta.gennum
+                : options.worldRef.listGenerals().filter((general) => general.nationId === base.nation!.id).length,
         relYear:
             typeof options.scenarioMeta?.startYear === 'number'
                 ? options.world.currentYear - options.scenarioMeta.startYear
