@@ -34,6 +34,34 @@ import NationBettingView from '../views/NationBettingView.vue';
 import NpcListView from '../views/NpcListView.vue';
 import TrafficView from '../views/TrafficView.vue';
 import { useSessionStore } from '../stores/session';
+import { trpc } from '../utils/trpc';
+
+const accessPageByRouteName = {
+    home: 'front-info',
+    'nation-info': 'nation-info',
+    'nation-cities': 'nation-cities',
+    'global-info': 'global-info',
+    'current-city': 'current-city',
+    diplomacy: 'diplomacy',
+    'nation-generals': 'nation-generals',
+    'nation-personnel': 'nation-personnel',
+    'nation-finance': 'nation-finance',
+    'battle-center': 'battle-center',
+    board: 'board',
+    'board-secret': 'board',
+    'best-general': 'best-general',
+    'hall-of-fame': 'hall-of-fame',
+    'dynasty-list': 'dynasty',
+    'dynasty-detail': 'dynasty',
+    yearbook: 'yearbook',
+    'nation-betting': 'nation-betting',
+    traffic: 'traffic',
+    'npc-list': 'npc-list',
+    'my-page': 'my-page',
+    'npc-control': 'npc-control',
+    tournament: 'tournament',
+    betting: 'betting',
+} as const;
 
 const routes = [
     {
@@ -368,6 +396,16 @@ router.beforeEach(async (to) => {
     }
 
     return true;
+});
+
+router.afterEach((to) => {
+    const session = useSessionStore();
+    const routeName = typeof to.name === 'string' ? to.name : '';
+    const page = accessPageByRouteName[routeName as keyof typeof accessPageByRouteName];
+    if (!page || !session.hasGeneral) {
+        return;
+    }
+    void trpc.public.recordAccess.mutate({ page }).catch(() => undefined);
 });
 
 export default router;

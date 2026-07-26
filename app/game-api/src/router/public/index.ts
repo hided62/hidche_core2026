@@ -1,13 +1,14 @@
 import { TRPCError } from '@trpc/server';
 import { asRecord } from '@sammo-ts/common';
+import { z } from 'zod';
 
 import type { GameApiContext } from '../../context.js';
 import { zWorldStateConfig, zWorldStateMeta } from '../../context.js';
 import { loadMapLayout } from '../../maps/mapLayout.js';
 import { loadPublicMap } from '../../maps/worldMap.js';
-import { procedure, router } from '../../trpc.js';
+import { accessPages, recordGeneralAccess } from '../../services/generalAccess.js';
+import { procedure, router, sessionActivityProcedure } from '../../trpc.js';
 import { loadTraitNames } from '../nation/shared.js';
-import { z } from 'zod';
 
 type WorldTrendSnapshot = {
     year: number;
@@ -231,6 +232,11 @@ const sortNpcList = <T extends {
     });
 
 export const publicRouter = router({
+    recordAccess: sessionActivityProcedure
+        .input(z.object({ page: z.enum(accessPages) }))
+        .mutation(async ({ ctx, input }) => ({
+            recorded: await recordGeneralAccess(ctx, input.page),
+        })),
     getMapLayout: procedure.query(async ({ ctx }) => {
         return loadMapLayout(ctx.profile.scenario);
     }),
