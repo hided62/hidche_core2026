@@ -242,7 +242,7 @@ watch(
 );
 
 onMounted(() => {
-    loadData();
+    void loadData();
 });
 
 onBeforeUnmount(() => {
@@ -278,19 +278,17 @@ onBeforeUnmount(() => {
             <div class="panel-header">
                 <h2>국가 방침</h2>
                 <div class="panel-actions">
-                    <button v-if="editable && !editingNationMsg" type="button" @click="startEditNationMsg">
-                        수정
-                    </button>
-                    <button v-if="editable && editingNationMsg" type="button" @click="saveNationMsg">
-                        저장
-                    </button>
-                    <button v-if="editable && editingNationMsg" type="button" @click="cancelEditNationMsg">
-                        취소
-                    </button>
+                    <button v-if="editable && !editingNationMsg" type="button" @click="startEditNationMsg">수정</button>
+                    <button v-if="editable && editingNationMsg" type="button" @click="saveNationMsg">저장</button>
+                    <button v-if="editable && editingNationMsg" type="button" @click="cancelEditNationMsg">취소</button>
                 </div>
             </div>
             <div v-if="editingNationMsg" class="editor-toolbar">
-                <button type="button" @click="editor?.chain().focus().toggleBold().run()" :class="{ active: editor?.isActive('bold') }">
+                <button
+                    type="button"
+                    @click="editor?.chain().focus().toggleBold().run()"
+                    :class="{ active: editor?.isActive('bold') }"
+                >
                     굵게
                 </button>
                 <button
@@ -323,21 +321,57 @@ onBeforeUnmount(() => {
             <div class="panel-card">
                 <h3>자금 예산</h3>
                 <dl>
-                    <div><dt>현재</dt><dd>{{ data.gold.toLocaleString() }}</dd></div>
-                    <div><dt>단기 수입</dt><dd>{{ data.income.gold.war.toLocaleString() }}</dd></div>
-                    <div><dt>세금</dt><dd>{{ Math.floor(incomeGoldCity).toLocaleString() }}</dd></div>
-                    <div><dt>수입/지출</dt><dd>+{{ Math.floor(incomeGold).toLocaleString() }} / {{ Math.floor(-outcomeByBill).toLocaleString() }}</dd></div>
-                    <div><dt>국고 예산</dt><dd>{{ Math.floor(data.gold + incomeGold - outcomeByBill).toLocaleString() }}</dd></div>
+                    <div>
+                        <dt>현재</dt>
+                        <dd>{{ data.gold.toLocaleString() }}</dd>
+                    </div>
+                    <div>
+                        <dt>단기 수입</dt>
+                        <dd>{{ data.income.gold.war.toLocaleString() }}</dd>
+                    </div>
+                    <div>
+                        <dt>세금</dt>
+                        <dd>{{ Math.floor(incomeGoldCity).toLocaleString() }}</dd>
+                    </div>
+                    <div>
+                        <dt>수입/지출</dt>
+                        <dd>
+                            +{{ Math.floor(incomeGold).toLocaleString() }} /
+                            {{ Math.floor(-outcomeByBill).toLocaleString() }}
+                        </dd>
+                    </div>
+                    <div>
+                        <dt>국고 예산</dt>
+                        <dd>{{ Math.floor(data.gold + incomeGold - outcomeByBill).toLocaleString() }}</dd>
+                    </div>
                 </dl>
             </div>
             <div class="panel-card">
                 <h3>군량 예산</h3>
                 <dl>
-                    <div><dt>현재</dt><dd>{{ data.rice.toLocaleString() }}</dd></div>
-                    <div><dt>둔전 수입</dt><dd>{{ Math.floor(incomeRiceWall).toLocaleString() }}</dd></div>
-                    <div><dt>세금</dt><dd>{{ Math.floor(incomeRiceCity).toLocaleString() }}</dd></div>
-                    <div><dt>수입/지출</dt><dd>+{{ Math.floor(incomeRice).toLocaleString() }} / {{ Math.floor(-outcomeByBill).toLocaleString() }}</dd></div>
-                    <div><dt>국고 예산</dt><dd>{{ Math.floor(data.rice + incomeRice - outcomeByBill).toLocaleString() }}</dd></div>
+                    <div>
+                        <dt>현재</dt>
+                        <dd>{{ data.rice.toLocaleString() }}</dd>
+                    </div>
+                    <div>
+                        <dt>둔전 수입</dt>
+                        <dd>{{ Math.floor(incomeRiceWall).toLocaleString() }}</dd>
+                    </div>
+                    <div>
+                        <dt>세금</dt>
+                        <dd>{{ Math.floor(incomeRiceCity).toLocaleString() }}</dd>
+                    </div>
+                    <div>
+                        <dt>수입/지출</dt>
+                        <dd>
+                            +{{ Math.floor(incomeRice).toLocaleString() }} /
+                            {{ Math.floor(-outcomeByBill).toLocaleString() }}
+                        </dd>
+                    </div>
+                    <div>
+                        <dt>국고 예산</dt>
+                        <dd>{{ Math.floor(data.rice + incomeRice - outcomeByBill).toLocaleString() }}</dd>
+                    </div>
                 </dl>
             </div>
             <div class="panel-card">
@@ -359,7 +393,13 @@ onBeforeUnmount(() => {
             <div class="panel-card">
                 <h3>기밀 권한</h3>
                 <div class="input-row">
-                    <input v-model.number="policyDraft.secretLimit" type="number" min="1" max="99" :disabled="!editable" />
+                    <input
+                        v-model.number="policyDraft.secretLimit"
+                        type="number"
+                        min="1"
+                        max="99"
+                        :disabled="!editable"
+                    />
                     <span>년</span>
                     <button type="button" @click="setSecretLimit" :disabled="!editable">변경</button>
                 </div>
@@ -376,7 +416,9 @@ onBeforeUnmount(() => {
                         />
                         전쟁 금지
                     </label>
-                    <span class="hint">잔여 {{ data.warSettingCnt.remain }}회 (월 +{{ data.warSettingCnt.inc }}회)</span>
+                    <span class="hint"
+                        >잔여 {{ data.warSettingCnt.remain }}회 (월 +{{ data.warSettingCnt.inc }}회)</span
+                    >
                 </div>
             </div>
             <div class="panel-card">

@@ -196,10 +196,7 @@ const resolveUnitReport = (unit: WarUnit): WarUnitReport => {
     };
 };
 
-const buildTraceUnitSnapshot = (
-    unit: WarUnit,
-    defenderCity: City
-): WarBattleTraceUnitSnapshot => {
+const buildTraceUnitSnapshot = (unit: WarUnit, defenderCity: City): WarBattleTraceUnitSnapshot => {
     const common = {
         kind: unit instanceof WarUnitGeneral ? ('general' as const) : ('city' as const),
         id: unit instanceof WarUnitGeneral ? unit.getGeneral().id : (unit as WarUnitCity).getCityId(),
@@ -339,7 +336,6 @@ export const resolveWarBattle = <TriggerState extends GeneralTriggerState = Gene
     );
 
     const iter = defenderUnits.values();
-    let defender: WarUnit<TriggerState> | null = null;
 
     const getNextDefender = (
         _prevDefender: WarUnit<TriggerState> | null,
@@ -359,7 +355,7 @@ export const resolveWarBattle = <TriggerState extends GeneralTriggerState = Gene
         return candidate;
     };
 
-    defender = getNextDefender(null, true);
+    let defender = getNextDefender(null, true);
     let conquerCity = false;
     let logWritten = false;
     let traceSeq = 0;

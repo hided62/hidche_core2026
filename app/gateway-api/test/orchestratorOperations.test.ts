@@ -88,6 +88,7 @@ const createHarness = (
                 ? [
                       { name: 'sammo:che:2:game-api', status: 'online' },
                       { name: 'sammo:che:2:turn-daemon', status: 'online' },
+                      { name: 'sammo:che:2:auction-worker', status: 'online' },
                       { name: 'sammo:che:2:battle-sim-worker', status: 'online' },
                       { name: 'sammo:che:2:tournament-worker', status: 'online' },
                   ]
@@ -148,6 +149,7 @@ describe('GatewayOrchestrator first-class operations', () => {
         expect(harness.started.map((definition) => definition.name)).toEqual([
             'sammo:che:2:game-api',
             'sammo:che:2:turn-daemon',
+            'sammo:che:2:auction-worker',
             'sammo:che:2:battle-sim-worker',
             'sammo:che:2:tournament-worker',
         ]);
@@ -163,12 +165,14 @@ describe('GatewayOrchestrator first-class operations', () => {
         expect(harness.stopped).toEqual([
             'sammo:che:2:game-api',
             'sammo:che:2:turn-daemon',
+            'sammo:che:2:auction-worker',
             'sammo:che:2:battle-sim-worker',
             'sammo:che:2:tournament-worker',
         ]);
         expect(harness.deleted).toEqual([
             'sammo:che:2:game-api',
             'sammo:che:2:turn-daemon',
+            'sammo:che:2:auction-worker',
             'sammo:che:2:battle-sim-worker',
             'sammo:che:2:tournament-worker',
         ]);
@@ -194,6 +198,7 @@ describe('GatewayOrchestrator first-class operations', () => {
         expect(harness.deleted).toEqual([
             'sammo:che:2:game-api',
             'sammo:che:2:turn-daemon',
+            'sammo:che:2:auction-worker',
             'sammo:che:2:battle-sim-worker',
             'sammo:che:2:tournament-worker',
         ]);
@@ -216,12 +221,14 @@ describe('GatewayOrchestrator first-class operations', () => {
         expect(harness.stopped).toEqual([
             'sammo:che:2:game-api',
             'sammo:che:2:turn-daemon',
+            'sammo:che:2:auction-worker',
             'sammo:che:2:battle-sim-worker',
             'sammo:che:2:tournament-worker',
         ]);
         expect(harness.deleted).toEqual([
             'sammo:che:2:game-api',
             'sammo:che:2:turn-daemon',
+            'sammo:che:2:auction-worker',
             'sammo:che:2:battle-sim-worker',
             'sammo:che:2:tournament-worker',
         ]);

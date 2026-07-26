@@ -24,11 +24,10 @@ export const formatLog = (text?: string): string => {
         return '';
     }
 
-    let match: RegExpExecArray | null = null;
     let lastIndex = 0;
     const result: string[] = [];
 
-    while ((match = logRegex.exec(text)) !== null) {
+    for (let match = logRegex.exec(text); match !== null; match = logRegex.exec(text)) {
         const partAll = match[0];
         const subPart = match[1];
         const index = match.index;
@@ -40,9 +39,7 @@ export const formatLog = (text?: string): string => {
         if (subPart === '/') {
             result.push('</span>');
         } else if (subPart.length === 2) {
-            result.push(
-                `<span style="${convertMap[subPart[0]] ?? ''}${convertMap2[subPart[1]] ?? ''}">`
-            );
+            result.push(`<span style="${convertMap[subPart[0]] ?? ''}${convertMap2[subPart[1]] ?? ''}">`);
         } else {
             result.push(`<span style="${convertMap[subPart] ?? ''}">`);
         }

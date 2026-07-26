@@ -16,7 +16,7 @@ import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/action
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import { parseArgsWithSchema } from '../parseArgs.js';
-import { normalizeResourceActionAmount } from './resourceAmount.js';
+import { normalizeResourceActionAmount } from '../resourceAmount.js';
 
 export interface TradeEnvironment {
     exchangeFee?: number;

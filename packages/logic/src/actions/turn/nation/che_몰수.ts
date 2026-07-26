@@ -15,7 +15,12 @@ import type {
     GeneralActionOutcome,
     GeneralActionResolveContext,
 } from '@sammo-ts/logic/actions/engine.js';
-import { createLogEffect, createNationPatchEffect, createGeneralPatchEffect } from '@sammo-ts/logic/actions/engine.js';
+import {
+    createGeneralPatchEffect,
+    createLogEffect,
+    createMessageEffect,
+    createNationPatchEffect,
+} from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import { JosaUtil } from '@sammo-ts/common';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
@@ -24,13 +29,11 @@ import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionCo
 import { clamp } from 'es-toolkit';
 import { z } from 'zod';
 import { parseArgsWithSchema } from '../parseArgs.js';
+import { normalizeResourceActionAmount } from '../resourceAmount.js';
 
 const ARGS_SCHEMA = z.object({
     isGold: z.boolean(),
-    amount: z.preprocess(
-        (value) => (typeof value === 'number' ? Math.floor(value / 100) * 100 : value),
-        z.number().int().positive()
-    ),
+    amount: z.number(),
     destGeneralID: z.number(),
 });
 export type SeizureArgs = z.infer<typeof ARGS_SCHEMA>;
@@ -39,9 +42,40 @@ export interface SeizureResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > extends GeneralActionResolveContext<TriggerState> {
     destGeneral: General<TriggerState>;
+    messageTime: Date;
 }
 
 const ACTION_NAME = '몰수';
+const NPC_SEIZURE_MESSAGE_PROB = 0.01;
+const NPC_SEIZURE_MESSAGES = [
+    '몰수를 하다니... 이것이 윗사람이 할 짓이란 말입니까...',
+    '사유재산까지 몰수해가면서 이 나라가 잘 될거라 믿습니까? 정말 이해할 수가 없군요...',
+    '내 돈 내놔라! 내 돈! 몰수가 웬 말이냐!',
+    '몰수해간 내 자금... 언젠가 몰래 다시 빼내올 것이다...',
+    '몰수로 인한 사기 저하는 몰수로 얻은 물자보다 더 손해란걸 모른단 말인가!',
+] as const;
+
+type InclusiveRandomGenerator = GeneralActionResolveContext['rng'] & {
+    nextIntInclusive?: (maxInclusive: number) => number;
+};
+
+const pickLegacyNpcMessage = (rng: GeneralActionResolveContext['rng']): string => {
+    const inclusive = rng as InclusiveRandomGenerator;
+    const index = inclusive.nextIntInclusive
+        ? inclusive.nextIntInclusive(NPC_SEIZURE_MESSAGES.length - 1)
+        : rng.nextInt(0, NPC_SEIZURE_MESSAGES.length);
+    return NPC_SEIZURE_MESSAGES[index]!;
+};
+
+const resolveGeneralIcon = (general: General): string => {
+    const runtimePicture = (general as General & { picture?: unknown }).picture;
+    const rawPicture = runtimePicture ?? general.meta.picture;
+    const picture =
+        (typeof rawPicture === 'string' && rawPicture !== '') || typeof rawPicture === 'number'
+            ? String(rawPicture)
+            : 'default.jpg';
+    return `/image/icons/${picture}`;
+};
 
 export class ActionDefinition<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -56,9 +90,13 @@ export class ActionDefinition<
         if (!data) {
             return null;
         }
+        const amount = normalizeResourceActionAmount(data.amount, this.env.maxResourceActionAmount);
+        if (amount === null) {
+            return null;
+        }
         return {
             ...data,
-            amount: clamp(data.amount, 100, this.env.maxResourceActionAmount ?? 10000),
+            amount,
         };
     }
 
@@ -147,6 +185,30 @@ export class ActionDefinition<
             }),
         ];
 
+        if (
+            destGeneral.npcState >= 2 &&
+            context.rng.nextBool(this.env.npcSeizureMessageProb ?? NPC_SEIZURE_MESSAGE_PROB)
+        ) {
+            const target = {
+                generalId: destGeneral.id,
+                generalName: destGeneral.name,
+                nationId: nation.id,
+                nationName: nation.name,
+                color: nation.color,
+                icon: resolveGeneralIcon(destGeneral),
+            };
+            effects.push(
+                createMessageEffect({
+                    msgType: 'public',
+                    src: target,
+                    dest: target,
+                    text: pickLegacyNpcMessage(context.rng),
+                    time: context.messageTime,
+                    validUntil: new Date('9999-12-31T00:00:00.000Z'),
+                })
+            );
+        }
+
         return { effects };
     }
 }
@@ -164,6 +226,7 @@ export const actionContextBuilder: ActionContextBuilder<SeizureArgs> = (base, op
     return {
         ...base,
         destGeneral,
+        messageTime: base.general.turnTime,
     };
 };
 
