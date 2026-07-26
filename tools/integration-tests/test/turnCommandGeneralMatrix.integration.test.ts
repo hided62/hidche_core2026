@@ -64,10 +64,21 @@ const general = (id: number, nationId: number, cityId: number, officerLevel: num
     meta: {},
 });
 
+interface FixturePatches {
+    world?: NonNullable<NonNullable<TurnCommandFixtureRequest['setup']>['world']>;
+    generals?: Record<number, Record<string, unknown>>;
+    nations?: Record<number, Record<string, unknown>>;
+    cities?: Record<number, Record<string, unknown>>;
+    troops?: Array<Record<string, unknown>>;
+    diplomacy?: Record<string, Record<string, unknown>>;
+    randomFoundingCandidateCityIds?: number[];
+}
+
 const buildRequest = (
     action: string,
     args?: Record<string, unknown>,
-    actorPatch: Record<string, unknown> = {}
+    actorPatch: Record<string, unknown> = {},
+    fixturePatches: FixturePatches = {}
 ): TurnCommandFixtureRequest => ({
     kind: 'general',
     actorGeneralId: 1,
@@ -80,6 +91,7 @@ const buildRequest = (
             year: 190,
             month: 1,
             hiddenSeed: 'turn-command-general-matrix-v1',
+            ...fixturePatches.world,
         },
         nations: [
             {
@@ -94,6 +106,7 @@ const buildRequest = (
                 war: 0,
                 generalCount: 2,
                 meta: {},
+                ...fixturePatches.nations?.[1],
             },
             {
                 id: 2,
@@ -107,6 +120,7 @@ const buildRequest = (
                 war: 0,
                 generalCount: 1,
                 meta: {},
+                ...fixturePatches.nations?.[2],
             },
         ],
         cities: [
@@ -126,6 +140,7 @@ const buildRequest = (
                 term: 0,
                 trust: 80,
                 trade: 100,
+                ...fixturePatches.cities?.[3],
             },
             {
                 id: 70,
@@ -143,12 +158,35 @@ const buildRequest = (
                 term: 0,
                 trust: 80,
                 trade: 100,
+                ...fixturePatches.cities?.[70],
             },
         ],
-        generals: [{ ...general(1, 1, 3, 12), ...actorPatch }, general(2, 2, 70, 12), general(3, 1, 3, 1)],
+        generals: [
+            { ...general(1, 1, 3, 12), ...actorPatch, ...fixturePatches.generals?.[1] },
+            { ...general(2, 2, 70, 12), ...fixturePatches.generals?.[2] },
+            { ...general(3, 1, 3, 1), ...fixturePatches.generals?.[3] },
+        ],
+        ...(fixturePatches.troops ? { troops: fixturePatches.troops } : {}),
+        ...(fixturePatches.randomFoundingCandidateCityIds
+            ? { randomFoundingCandidateCityIds: fixturePatches.randomFoundingCandidateCityIds }
+            : {}),
         diplomacy: [
-            { fromNationId: 1, toNationId: 2, state: 0, term: 12, dead: 0 },
-            { fromNationId: 2, toNationId: 1, state: 0, term: 12, dead: 0 },
+            {
+                fromNationId: 1,
+                toNationId: 2,
+                state: 0,
+                term: 12,
+                dead: 0,
+                ...fixturePatches.diplomacy?.['1:2'],
+            },
+            {
+                fromNationId: 2,
+                toNationId: 1,
+                state: 0,
+                term: 12,
+                dead: 0,
+                ...fixturePatches.diplomacy?.['2:1'],
+            },
         ],
     },
     observe: {
@@ -160,7 +198,9 @@ const buildRequest = (
     },
 });
 
-const cases: Array<[string, Record<string, unknown> | undefined, Record<string, unknown> | undefined]> = [
+const cases: Array<
+    [string, Record<string, unknown> | undefined, Record<string, unknown> | undefined, FixturePatches?]
+> = [
     ['휴식', undefined, undefined],
     ['che_훈련', undefined, undefined],
     ['cr_맹훈련', undefined, undefined],
@@ -200,19 +240,94 @@ const cases: Array<[string, Record<string, unknown> | undefined, Record<string, 
         undefined,
         { specialDomestic: 'che_인덕', lastTurn: { command: '내정 특기 초기화', term: 1 } },
     ],
-    [
-        'che_전투특기초기화',
-        undefined,
-        { specialWar: 'che_귀병', lastTurn: { command: '전투 특기 초기화', term: 1 } },
-    ],
+    ['che_전투특기초기화', undefined, { specialWar: 'che_귀병', lastTurn: { command: '전투 특기 초기화', term: 1 } }],
     ['che_장비매매', { itemType: 'weapon', itemCode: 'che_무기_01_단도' }, undefined],
+    ['che_하야', undefined, { officerLevel: 1 }],
+    ['che_은퇴', undefined, { age: 60, lastTurn: { command: '은퇴', term: 1 } }],
+    [
+        'che_임관',
+        { destNationID: 1 },
+        { nationId: 0, officerLevel: 0 },
+        { generals: { 3: { officerLevel: 12, officerCityId: 3 } } },
+    ],
+    [
+        'che_랜덤임관',
+        undefined,
+        { nationId: 0, officerLevel: 0 },
+        { generals: { 3: { officerLevel: 12, officerCityId: 3 } } },
+    ],
+    ['che_장수대상임관', { destGeneralID: 2 }, { nationId: 0, officerLevel: 0 }],
+    ['che_등용', { destGeneralID: 2 }, undefined, { generals: { 2: { officerLevel: 1 } } }],
+    ['che_등용수락', { destNationID: 2, destGeneralID: 2 }, { nationId: 0, officerLevel: 0 }],
+    ['che_선양', { destGeneralID: 3 }, undefined],
+    ['che_NPC능동', { optionText: '순간이동', destCityID: 70 }, { npcState: 2 }],
+    ['che_방랑', undefined, undefined, { diplomacy: { '1:2': { state: 2 }, '2:1': { state: 2 } } }],
+    [
+        'che_해산',
+        undefined,
+        undefined,
+        {
+            nations: { 1: { name: '조조', level: 0, capitalCityId: 0, typeCode: 'None' } },
+            cities: { 3: { nationId: 0, supplyState: 0, frontState: 0 } },
+        },
+    ],
+    [
+        'che_집합',
+        undefined,
+        { troopId: 1 },
+        {
+            generals: { 3: { cityId: 70, troopId: 1 } },
+            troops: [{ id: 1, nationId: 1, name: '조조군' }],
+        },
+    ],
+    ['che_거병', undefined, { nationId: 0, officerLevel: 0 }, { world: { startYear: 180, year: 181 } }],
+    [
+        'che_모반시도',
+        undefined,
+        { officerLevel: 11 },
+        { generals: { 3: { officerLevel: 12, officerCityId: 3, killTurn: 0 } } },
+    ],
+    [
+        'che_건국',
+        { nationName: '신국', nationType: 'che_도적', colorType: 1 },
+        undefined,
+        {
+            world: { startYear: 180, initYear: 180, initMonth: 1, year: 181 },
+            nations: { 1: { name: '조조', level: 0, capitalCityId: 0, typeCode: 'None' } },
+            cities: { 3: { nationId: 0, level: 5 } },
+        },
+    ],
+    [
+        'cr_건국',
+        { nationName: '신국', nationType: 'che_도적', colorType: 1 },
+        undefined,
+        {
+            world: { startYear: 180, initYear: 180, initMonth: 1, year: 181 },
+            nations: { 1: { name: '조조', level: 0, capitalCityId: 0, typeCode: 'None' } },
+            cities: { 3: { nationId: 0, level: 5 } },
+        },
+    ],
+    [
+        'che_무작위건국',
+        { nationName: '신국', nationType: 'che_도적', colorType: 1 },
+        undefined,
+        {
+            world: { startYear: 180, initYear: 180, initMonth: 1, year: 181 },
+            nations: { 1: { name: '조조', level: 0, capitalCityId: 0, typeCode: 'None' } },
+            cities: {
+                3: { nationId: 0, level: 5 },
+                70: { nationId: 0, level: 5 },
+            },
+            randomFoundingCandidateCityIds: [3, 70],
+        },
+    ],
 ];
 
 integration('general command success matrix', () => {
     it.each(cases)(
         '%s matches the legacy state delta and command RNG',
-        async (action, args, actorPatch) => {
-            const request = buildRequest(action, args, actorPatch);
+        async (action, args, actorPatch, fixturePatches) => {
+            const request = buildRequest(action, args, actorPatch, fixturePatches);
             const reference = runReferenceTurnCommandTraceRequest(
                 workspaceRoot!,
                 request as unknown as Record<string, unknown>

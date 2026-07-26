@@ -104,7 +104,7 @@ export class ActionResolver<
                     level: 0,
                     typeCode: 'None',
                     meta: { ...nation.meta, tech: 0 },
-                    capitalCityId: null,
+                    capitalCityId: 0,
                 },
                 nation.id
             )
