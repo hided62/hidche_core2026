@@ -1,5 +1,5 @@
 import type { General, GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
-import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
+import type { Constraint, ConstraintContext, StateView } from '@sammo-ts/logic/constraints/types.js';
 import { notSameDestCity, nearCity, reqGeneralGold, reqGeneralRice } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
@@ -18,6 +18,7 @@ import type { GeneralTurnCommandSpec } from './index.js';
 import type { MapDefinition } from '@sammo-ts/logic/world/types.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { normalizeLegacyIntegerArg, parseArgsWithSchema } from '../parseArgs.js';
+import { formatDestCityConstraintFailure } from '../constraintFailure.js';
 
 export interface ForcedMoveResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -171,6 +172,15 @@ export class ActionDefinition<
             }),
             reqGeneralRice(() => 0), // Legacy checks cost[1] which is 0, but included constraint.
         ];
+    }
+
+    formatConstraintFailure(
+        reason: string,
+        _ctx: ConstraintContext,
+        args: ForcedMoveArgs,
+        view: StateView
+    ): string | null {
+        return formatDestCityConstraintFailure(reason, this.name, args.destCityId, view, 'direction');
     }
 
     resolve(context: ForcedMoveResolveContext<TriggerState>, args: ForcedMoveArgs): GeneralActionOutcome<TriggerState> {

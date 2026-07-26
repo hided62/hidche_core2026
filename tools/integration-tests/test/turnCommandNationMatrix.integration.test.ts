@@ -1341,7 +1341,10 @@ integration('nation personnel command boundary parity', () => {
                 })
             ).toEqual([]);
             if (!completed) {
-                if (originalCommandFailure) {
+                if (
+                    originalCommandFailure ||
+                    (action === 'che_발령' && args.destGeneralID !== 9)
+                ) {
                     expect(semanticLogSignatures(nationCommandLogs(core.after.logs))).toEqual(
                         semanticLogSignatures(addedReferenceLogs(reference.before, reference.after.logs))
                     );

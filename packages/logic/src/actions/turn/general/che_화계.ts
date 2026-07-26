@@ -1,6 +1,6 @@
 import type { RandomGenerator } from '@sammo-ts/common';
 import type { City, General, GeneralMeta, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
-import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
+import type { Constraint, ConstraintContext, StateView } from '@sammo-ts/logic/constraints/types.js';
 import {
     disallowDiplomacyBetweenStatus,
     notBeNeutral,
@@ -35,6 +35,7 @@ import { clamp } from 'es-toolkit';
 import { parseArgsWithSchema } from '../parseArgs.js';
 import { consumeSuccessfulStrategyItem } from './strategyItemConsumption.js';
 import { searchDistance } from '@sammo-ts/logic/world/distance.js';
+import { formatDestCityConstraintFailure } from '../constraintFailure.js';
 
 export interface FireAttackEnvironment {
     develCost: number;
@@ -434,6 +435,15 @@ export class ActionDefinition<
                 7: '불가침국입니다.',
             }),
         ];
+    }
+
+    formatConstraintFailure(
+        reason: string,
+        _ctx: ConstraintContext,
+        args: FireAttackArgs,
+        view: StateView
+    ): string | null {
+        return formatDestCityConstraintFailure(reason, this.name, args.destCityId, view, 'location');
     }
 
     resolve(context: FireAttackResolveContext<TriggerState>, args: FireAttackArgs): GeneralActionOutcome<TriggerState> {

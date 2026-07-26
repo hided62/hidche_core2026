@@ -121,7 +121,7 @@ export const occupiedDestCity = (): Constraint => ({
         if (destCity.nationId === baseNationId) {
             return allow();
         }
-        return { kind: 'deny', reason: '아국이 아닙니다.' };
+        return { kind: 'deny', reason: '대상 도시가 아국이 아닙니다.' };
     },
 });
 

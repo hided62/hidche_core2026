@@ -1,5 +1,5 @@
 import type { City, General, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
-import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
+import type { Constraint, ConstraintContext, StateView } from '@sammo-ts/logic/constraints/types.js';
 import {
     notOccupiedDestCity,
     reqGeneralGold,
@@ -22,6 +22,7 @@ import type { ActionContextBase, ActionContextOptions } from '@sammo-ts/logic/ac
 import type { GeneralTurnCommandSpec } from './index.js';
 import type { MapDefinition, UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
 import { parseArgsWithSchema } from '../parseArgs.js';
+import { formatDestCityConstraintFailure } from '../constraintFailure.js';
 
 export interface SpyResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -314,6 +315,15 @@ export class ActionDefinition<
         const env = ctx.env;
         const cost = ((env.develCost as number) ?? 100) * 3;
         return [notOccupiedDestCity(), reqGeneralGold(() => cost), reqGeneralRice(() => cost)];
+    }
+
+    formatConstraintFailure(
+        reason: string,
+        _ctx: ConstraintContext,
+        args: SpyArgs,
+        view: StateView
+    ): string | null {
+        return formatDestCityConstraintFailure(reason, this.name, args.destCityId, view, 'location');
     }
 
     resolve(context: GeneralActionResolveContext<TriggerState>, args: SpyArgs): GeneralActionOutcome<TriggerState> {

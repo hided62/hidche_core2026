@@ -907,7 +907,7 @@ export const createReservedTurnHandler = async (options: {
                 const constraints = definition.buildConstraints(constraintCtx, actionArgs);
                 const result = evaluateConstraints(constraints, constraintCtx, view);
                 if (result.kind !== 'allow') {
-                    const failedCommandName = definition.name;
+                    const failedDefinition = definition;
                     definition = fallbackDefinition;
                     actionArgs = definition.parseArgs({}) ?? {};
                     actionKey = definition.key;
@@ -915,7 +915,10 @@ export const createReservedTurnHandler = async (options: {
                     const reason = result.kind === 'deny' ? result.reason : '조건을 확인할 수 없습니다.';
                     blockedReason = reason;
                     const meta = result.kind === 'deny' ? { constraintName: result.constraintName } : undefined;
-                    logs.push(createActionLog(`${reason} ${failedCommandName} 실패.`, meta));
+                    const failureText =
+                        failedDefinition.formatConstraintFailure?.(reason, constraintCtx, actionArgs, view) ??
+                        `${reason} ${failedDefinition.name} 실패.`;
+                    logs.push(createActionLog(failureText, meta));
                 }
                 if (!usedFallback && (kind === 'general' || currentNation)) {
                     const currentYearMonth = joinYearMonth(context.world.currentYear, context.world.currentMonth);

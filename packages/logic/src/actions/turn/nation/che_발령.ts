@@ -1,5 +1,5 @@
 import type { City, General, GeneralMeta, GeneralTriggerState, TriggerValue } from '@sammo-ts/logic/domain/entities.js';
-import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
+import type { Constraint, ConstraintContext, StateView } from '@sammo-ts/logic/constraints/types.js';
 import {
     beChief,
     existsDestGeneral,
@@ -26,6 +26,7 @@ import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js'
 import type { NationTurnCommandSpec } from './index.js';
 import { z } from 'zod';
 import { normalizeLegacyIntegerArg, parseArgsWithSchema } from '../parseArgs.js';
+import { formatDestGeneralConstraintFailure } from '../constraintFailure.js';
 
 const ARGS_SCHEMA = z.object({
     destGeneralId: z.preprocess(normalizeLegacyIntegerArg, z.number().int()),
@@ -174,6 +175,15 @@ export class ActionDefinition<
             occupiedDestCity(),
             suppliedDestCity(),
         ];
+    }
+
+    formatConstraintFailure(
+        reason: string,
+        _ctx: ConstraintContext,
+        args: AssignmentArgs,
+        view: StateView
+    ): string | null {
+        return formatDestGeneralConstraintFailure(reason, this.name, args.destGeneralId, view);
     }
 
     resolve(context: AssignmentResolveContext<TriggerState>, args: AssignmentArgs): GeneralActionOutcome<TriggerState> {

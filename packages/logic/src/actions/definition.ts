@@ -1,4 +1,4 @@
-import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
+import type { Constraint, ConstraintContext, StateView } from '@sammo-ts/logic/constraints/types.js';
 import type { GeneralActionOutcome, GeneralActionResolveContext } from './engine.js';
 import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 
@@ -16,6 +16,12 @@ export interface GeneralActionDefinition<
     // 커맨드 입력 단계에서 최소 조건만 평가할 때 사용한다.
     buildMinConstraints?(ctx: ConstraintContext, args: Args): Constraint[];
     buildConstraints(ctx: ConstraintContext, args: Args): Constraint[];
+    formatConstraintFailure?(
+        reason: string,
+        ctx: ConstraintContext,
+        args: Args,
+        view: StateView
+    ): string | null;
     // NationCommand::addTermStack()/setNextAvailable() 호환 실행 메타데이터.
     getPreReqTurn?(context: Context, args: Args): number;
     getPostReqTurn?(context: Context, args: Args): number;

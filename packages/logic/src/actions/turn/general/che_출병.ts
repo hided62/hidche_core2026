@@ -36,6 +36,7 @@ import { increaseMetaNumber, simpleSerialize } from '@sammo-ts/logic/war/utils.j
 import type { MapDefinition, UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
+import { formatDestCityConstraintFailure } from '../constraintFailure.js';
 import {
     buildWarAftermathConfig,
     buildWarConfig,
@@ -302,6 +303,15 @@ export class ActionDefinition<
             allowWar(),
             hasRouteWithEnemy(),
         ];
+    }
+
+    formatConstraintFailure(
+        reason: string,
+        _ctx: ConstraintContext,
+        args: DispatchArgs,
+        view: StateView
+    ): string | null {
+        return formatDestCityConstraintFailure(reason, this.name, args.destCityId, view, 'direction');
     }
 
     resolve(context: DispatchResolveContext<TriggerState>, args: DispatchArgs): GeneralActionOutcome<TriggerState> {

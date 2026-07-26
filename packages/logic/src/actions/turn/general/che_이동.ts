@@ -1,5 +1,5 @@
 import type { General, GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
-import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
+import type { Constraint, ConstraintContext, StateView } from '@sammo-ts/logic/constraints/types.js';
 import {
     notSameDestCity,
     nearCity,
@@ -23,6 +23,7 @@ import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js'
 import type { GeneralTurnCommandSpec } from './index.js';
 import type { MapDefinition } from '@sammo-ts/logic/world/types.js';
 import { parseArgsWithSchema } from '../parseArgs.js';
+import { formatDestCityConstraintFailure } from '../constraintFailure.js';
 
 export interface MoveResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -150,6 +151,15 @@ export class ActionDefinition<
             }),
             reqGeneralRice(() => 0),
         ];
+    }
+
+    formatConstraintFailure(
+        reason: string,
+        _ctx: ConstraintContext,
+        args: MoveArgs,
+        view: StateView
+    ): string | null {
+        return formatDestCityConstraintFailure(reason, this.name, args.destCityId, view, 'direction');
     }
 
     resolve(context: MoveResolveContext<TriggerState>, args: MoveArgs): GeneralActionOutcome<TriggerState> {

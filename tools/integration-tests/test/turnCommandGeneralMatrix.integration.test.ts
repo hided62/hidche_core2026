@@ -3681,6 +3681,54 @@ const constraintCases: GeneralConstraintCase[] = [
     },
 ];
 
+const targetFailureLogCases: Array<{
+    action: 'che_이동' | 'che_강행' | 'che_출병' | 'che_첩보' | 'che_화계';
+    args: Record<string, unknown>;
+    fixturePatches?: FixturePatches;
+}> = [
+    { action: 'che_이동', args: { destCityID: 3 } },
+    { action: 'che_강행', args: { destCityID: 3 } },
+    {
+        action: 'che_출병',
+        args: { destCityID: 3 },
+        fixturePatches: { world: { startYear: 180, year: 185 } },
+    },
+    { action: 'che_첩보', args: { destCityID: 3 } },
+    { action: 'che_화계', args: { destCityID: 3 } },
+];
+
+integration('general command target-specific constraint failure log parity', () => {
+    it.each(targetFailureLogCases)(
+        '$action preserves the legacy destination name and particle',
+        async ({ action, args, fixturePatches }) => {
+            const request = buildRequest(action, args, {}, fixturePatches);
+            request.setup!.world!.hiddenSeed = `general-target-failure-log-${action}`;
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+
+            expect(reference.execution.outcome).toMatchObject({ completed: false });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: action,
+                actionKey: '휴식',
+                usedFallback: true,
+            });
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+            expect(semanticLogSignatures(core.after.logs)).toEqual(
+                semanticLogSignatures(addedReferenceLogs(reference.before, reference.after.logs))
+            );
+        },
+        120_000
+    );
+});
+
 integration('general command full-constraint fallback matrix', () => {
     it.each(constraintCases)(
         '$name: $action falls back exactly like legacy',
