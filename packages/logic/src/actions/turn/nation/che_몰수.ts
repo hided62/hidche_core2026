@@ -141,20 +141,8 @@ export class ActionDefinition<
 
         const actualAmount = clamp(args.amount, 0, destGeneral[resKey] ?? 0);
 
-        if (actualAmount <= 0) {
-            return {
-                effects: [
-                    createLogEffect(`${destGeneral.name}에게서 몰수할 ${resName}이 없습니다.`, {
-                        scope: LogScope.GENERAL,
-                        category: LogCategory.ACTION,
-                        format: LogFormat.MONTH,
-                    }),
-                ],
-            };
-        }
-
         const amountText = actualAmount.toLocaleString();
-        const josaUl = JosaUtil.pick(amountText, '을');
+        const josaUl = actualAmount === 0 ? '를' : JosaUtil.pick(amountText, '을');
         const destGeneralName = destGeneral.name;
 
         const effects: Array<GeneralActionEffect<TriggerState>> = [
