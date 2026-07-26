@@ -1,5 +1,6 @@
 import { TRPCError } from '@trpc/server';
 import { asRecord } from '@sammo-ts/common';
+import { LogCategory, LogScope } from '@sammo-ts/infra';
 import { z } from 'zod';
 
 import type { GameApiContext } from '../../context.js';
@@ -241,14 +242,45 @@ export const publicRouter = router({
         return loadMapLayout(ctx.profile.scenario);
     }),
     getCachedMap: procedure.query(async ({ ctx }) => {
-        const map = await loadPublicMap(ctx, true);
+        const cacheKey = buildPublicCacheKey(ctx, 'cachedMapWithHistory');
+        const cached = await ctx.redis.get(cacheKey);
+        if (cached) {
+            try {
+                return JSON.parse(cached) as NonNullable<Awaited<ReturnType<typeof loadPublicMap>>> & {
+                    history: { id: number; text: string }[];
+                };
+            } catch {
+                // Ignore cache parse errors.
+            }
+        }
+
+        const [map, history] = await Promise.all([
+            loadPublicMap(ctx, true),
+            ctx.db.logEntry.findMany({
+                where: {
+                    scope: LogScope.SYSTEM,
+                    category: LogCategory.HISTORY,
+                },
+                select: {
+                    id: true,
+                    text: true,
+                },
+                orderBy: { id: 'desc' },
+                take: 10,
+            }),
+        ]);
         if (!map) {
             throw new TRPCError({
                 code: 'PRECONDITION_FAILED',
                 message: 'World state is not initialized.',
             });
         }
-        return map;
+        const snapshot = {
+            ...map,
+            history,
+        };
+        await ctx.redis.set(cacheKey, JSON.stringify(snapshot), { EX: PUBLIC_CACHE_TTL_SECONDS });
+        return snapshot;
     }),
     getWorldTrend: procedure.query(async ({ ctx }) => {
         return loadCachedWorldTrend(ctx);

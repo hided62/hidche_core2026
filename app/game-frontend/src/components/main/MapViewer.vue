@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { storeToRefs } from 'pinia';
-import { useMediaQuery, useMouseInElement } from '@vueuse/core';
+import { useElementSize, useMediaQuery, useMouseInElement } from '@vueuse/core';
 import SkeletonLines from '../ui/SkeletonLines.vue';
 import MapCityBasic from './MapCityBasic.vue';
 import MapCityDetail from './MapCityDetail.vue';
@@ -72,6 +72,8 @@ const mapStore = useMapViewerStore();
 const { showCityName, detailMode, hoveredCityId, selectedCityId } = storeToRefs(mapStore);
 
 const mapArea = ref<HTMLElement | null>(null);
+const mapBody = ref<HTMLElement | null>(null);
+const { width: mapBodyWidth } = useElementSize(mapBody);
 const { elementX, elementY } = useMouseInElement(mapArea);
 
 const resolveSeason = (month: number): string => {
@@ -131,7 +133,15 @@ const dynamicCityById = computed(() => {
     return map;
 });
 
-const mapScale = computed(() => (isWide.value ? 1 : SMALL_MAP_SCALE));
+const mapScale = computed(() => {
+    if (isWide.value) {
+        return 1;
+    }
+    if (mapBodyWidth.value <= 0) {
+        return SMALL_MAP_SCALE;
+    }
+    return Math.min(SMALL_MAP_SCALE, mapBodyWidth.value / BASE_MAP_WIDTH);
+});
 
 const mapWidth = computed(() => `${BASE_MAP_WIDTH * mapScale.value}px`);
 
@@ -285,7 +295,7 @@ const selectCity = (cityId: number) => {
         <div v-else-if="!props.mapData || !props.mapLayout" class="map-empty">
             지도 데이터를 불러오지 못했습니다.
         </div>
-        <div v-else class="map-body">
+        <div v-else ref="mapBody" class="map-body">
             <div
                 ref="mapArea"
                 class="map-area"

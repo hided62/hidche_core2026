@@ -186,6 +186,50 @@ describe('in-game my information ownership', () => {
             })
         );
     });
+
+    it('returns the three legacy front-page record streams for the session-owned general', async () => {
+        const fixture = createContext({});
+        const caller = appRouter.createCaller(fixture.context);
+
+        await expect(
+            caller.general.getRecentRecords({
+                lastGeneralRecordId: 0,
+                lastWorldHistoryId: 0,
+            })
+        ).resolves.toEqual({
+            global: [{ id: 1, text: '기록' }],
+            general: [{ id: 1, text: '기록' }],
+            history: [{ id: 1, text: '기록' }],
+        });
+
+        expect(fixture.db.logEntry.findMany).toHaveBeenNthCalledWith(
+            1,
+            expect.objectContaining({
+                where: { scope: 'SYSTEM', category: 'SUMMARY', id: { gte: 0 } },
+                orderBy: { id: 'desc' },
+                take: 16,
+                select: { id: true, text: true },
+            })
+        );
+        expect(fixture.db.logEntry.findMany).toHaveBeenNthCalledWith(
+            2,
+            expect.objectContaining({
+                where: { scope: 'GENERAL', category: 'ACTION', generalId: 7, id: { gte: 0 } },
+                orderBy: { id: 'desc' },
+                take: 16,
+                select: { id: true, text: true },
+            })
+        );
+        expect(fixture.db.logEntry.findMany).toHaveBeenNthCalledWith(
+            3,
+            expect.objectContaining({
+                where: { scope: 'SYSTEM', category: 'HISTORY', id: { gte: 0 } },
+                orderBy: { id: 'desc' },
+                take: 16,
+                select: { id: true, text: true },
+            })
+        );
+    });
 });
 
 describe('battle-center general and user permissions', () => {

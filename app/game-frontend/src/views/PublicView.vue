@@ -4,6 +4,7 @@ import { useMediaQuery } from '@vueuse/core';
 import PanelCard from '../components/ui/PanelCard.vue';
 import SkeletonLines from '../components/ui/SkeletonLines.vue';
 import MapViewer from '../components/main/MapViewer.vue';
+import RecentLogList from '../components/main/RecentLogList.vue';
 import { trpc } from '../utils/trpc';
 import { useSessionStore } from '../stores/session';
 
@@ -121,12 +122,7 @@ onMounted(() => {
             </PanelCard>
             <PanelCard title="중원 정세">
                 <SkeletonLines v-if="loading" :lines="3" />
-                <div v-else class="placeholder">
-                    <div>유저 {{ worldTrend?.userCnt ?? '-' }} / {{ worldTrend?.maxUserCnt ?? '-' }}</div>
-                    <div>NPC {{ worldTrend?.npcCnt ?? '-' }}</div>
-                    <div>세력 {{ worldTrend?.nationCnt ?? '-' }}</div>
-                    <div>상성 {{ worldTrend?.fictionMode ?? '-' }}</div>
-                </div>
+                <RecentLogList v-else :logs="mapData?.history" />
             </PanelCard>
             <PanelCard title="세력 일람">
                 <SkeletonLines v-if="loading" :lines="4" />
@@ -193,13 +189,7 @@ onMounted(() => {
                 </PanelCard>
                 <PanelCard title="중원 정세">
                     <SkeletonLines v-if="loading" :lines="3" />
-                    <div v-else class="placeholder">
-                        <div>유저 {{ worldTrend?.userCnt ?? '-' }} / {{ worldTrend?.maxUserCnt ?? '-' }}</div>
-                        <div>NPC {{ worldTrend?.npcCnt ?? '-' }}</div>
-                        <div>세력 {{ worldTrend?.nationCnt ?? '-' }}</div>
-                        <div>상성 {{ worldTrend?.fictionMode ?? '-' }}</div>
-                        <div>기타 {{ worldTrend?.otherTextInfo ?? '-' }}</div>
-                    </div>
+                    <RecentLogList v-else :logs="mapData?.history" />
                 </PanelCard>
             </div>
 

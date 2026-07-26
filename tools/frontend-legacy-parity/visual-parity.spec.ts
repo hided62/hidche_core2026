@@ -174,6 +174,7 @@ const installAuthenticatedGameFixture = async (page: Page): Promise<void> => {
                 return { ok: true };
             }
             if (operation === 'vote.getAdminStatus') return { ok: false };
+            if (operation === 'public.recordAccess') return { recorded: true };
             throw new Error(`Unhandled authenticated game fixture operation: ${operation}`);
         });
     });
