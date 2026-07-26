@@ -104,6 +104,10 @@ watch(
                 <RouterLink class="ghost" to="/global-info">중원 정보</RouterLink>
                 <RouterLink class="ghost" to="/current-city">현재 도시</RouterLink>
                 <RouterLink class="ghost" to="/nation/generals">세력 장수</RouterLink>
+                <RouterLink v-if="(boardAccess?.permission ?? -1) >= 1" class="ghost" to="/nation/secret"
+                    >암행부</RouterLink
+                >
+                <span v-else class="ghost disabled" aria-disabled="true">암행부</span>
                 <RouterLink class="ghost" to="/nation/personnel">인사부</RouterLink>
                 <RouterLink class="ghost" to="/troop">부대 편성</RouterLink>
                 <RouterLink class="ghost" to="/nation/finance">내무부</RouterLink>
