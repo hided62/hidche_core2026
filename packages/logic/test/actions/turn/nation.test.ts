@@ -3,7 +3,14 @@ import type { City, General, Nation } from '../../../src/domain/entities.js';
 import { resolveGeneralAction } from '../../../src/actions/engine.js';
 import { ActionDefinition as DeclareWarAction } from '../../../src/actions/turn/nation/che_선전포고.js';
 import { ActionDefinition as MoveCapitalAction } from '../../../src/actions/turn/nation/che_천도.js';
-import { ActionDefinition as ChangeNationNameAction } from '../../../src/actions/turn/nation/che_국호변경.js';
+import {
+    ActionDefinition as ChangeNationNameAction,
+    commandSpec as changeNationNameCommandSpec,
+} from '../../../src/actions/turn/nation/che_국호변경.js';
+import {
+    ActionDefinition as ChangeNationFlagAction,
+    commandSpec as changeNationFlagCommandSpec,
+} from '../../../src/actions/turn/nation/che_국기변경.js';
 import { ActionDefinition as ExpandCityAction } from '../../../src/actions/turn/nation/che_증축.js';
 import { ActionDefinition as LastStandAction } from '../../../src/actions/turn/nation/che_필사즉생.js';
 import { ActionDefinition as DeceptionAction } from '../../../src/actions/turn/nation/che_허보.js';
@@ -97,6 +104,8 @@ const buildNation = (id: number, name = 'Nation'): Nation => ({
 const schedule: TurnSchedule = {
     entries: [{ startMinute: 0, tickMinutes: 60 }],
 };
+const changeNationNameArgsSchema = changeNationNameCommandSpec.argsSchema!;
+const changeNationFlagArgsSchema = changeNationFlagCommandSpec.argsSchema!;
 
 describe('Nation Actions', () => {
     describe('che_선전포고 (Declare War)', () => {
@@ -312,6 +321,12 @@ describe('Nation Actions', () => {
     });
 
     describe('che_국호변경 (Change Nation Name)', () => {
+        it('uses the legacy display width without trimming the name', () => {
+            expect(changeNationNameArgsSchema.safeParse({ nationName: '가나다라마바사아자' }).success).toBe(true);
+            expect(changeNationNameArgsSchema.safeParse({ nationName: ' ' }).success).toBe(true);
+            expect(changeNationNameArgsSchema.safeParse({ nationName: '가나다라마바사아자차' }).success).toBe(false);
+        });
+
         it('changes nation name', () => {
             const nation = buildNation(1, 'OldName');
             const general = buildGeneral(1, 1, 1);
@@ -330,6 +345,75 @@ describe('Nation Actions', () => {
                 expect.objectContaining({
                     type: 'nation:patch',
                     patch: expect.objectContaining({ name: 'NewName' }),
+                })
+            );
+        });
+
+        it('returns a failed original action when any nation already has the name', () => {
+            const nation = buildNation(1, 'OldName');
+            const duplicateNation = buildNation(2, 'Duplicate');
+            const general = buildGeneral(1, 1, 1);
+            const definition = new ChangeNationNameAction();
+
+            const resolution = definition.resolve(
+                {
+                    general,
+                    nation,
+                    worldView: {
+                        listGenerals: () => [general],
+                        listNations: () => [nation, duplicateNation],
+                    },
+                    rng: {} as any,
+                    addLog: () => {},
+                },
+                { nationName: duplicateNation.name }
+            );
+
+            expect(resolution.completed).toBe(false);
+            expect(resolution.effects).toContainEqual(
+                expect.objectContaining({
+                    type: 'log',
+                    entry: expect.objectContaining({
+                        text: '이미 같은 국호를 가진 곳이 있습니다. 국호변경 실패',
+                    }),
+                })
+            );
+        });
+    });
+
+    describe('che_국기변경 (Change Nation Flag)', () => {
+        it('accepts the same scalar array keys as PHP and preserves the raw argument', () => {
+            for (const colorType of [0, '1', true, false, 1.9, -0.9, 32.9]) {
+                const parsed = changeNationFlagArgsSchema.safeParse({ colorType });
+                expect(parsed.success).toBe(true);
+                if (parsed.success) {
+                    expect(parsed.data.colorType).toBe(colorType);
+                }
+            }
+            for (const colorType of ['01', '1.5', 33, -1, null]) {
+                expect(changeNationFlagArgsSchema.safeParse({ colorType }).success).toBe(false);
+            }
+        });
+
+        it('resolves a numeric string to the matching legacy color', () => {
+            const nation = buildNation(1);
+            const general = buildGeneral(1, 1, 1);
+            const definition = new ChangeNationFlagAction();
+
+            const resolution = definition.resolve(
+                {
+                    general,
+                    nation,
+                    rng: {} as any,
+                    addLog: () => {},
+                },
+                { colorType: '1' }
+            );
+
+            expect(resolution.effects).toContainEqual(
+                expect.objectContaining({
+                    type: 'nation:patch',
+                    patch: expect.objectContaining({ color: '#800000' }),
                 })
             );
         });

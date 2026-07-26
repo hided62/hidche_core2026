@@ -25,6 +25,27 @@ const readNationMeta = (row: { meta?: unknown } | undefined): Record<string, unk
 const readGeneralMeta = readNationMeta;
 const NPC_SEIZURE_MESSAGE_TEXT = '몰수를 하다니... 이것이 윗사람이 할 짓이란 말입니까...';
 
+const normalizeStoredLogText = (value: unknown): string =>
+    String(value)
+        .replace(/^(?:<C>●<\/>|<S>◆<\/>|<R>★<\/>)(?:(?:\d+년 )?\d+월:|\d+년:)?/, '')
+        .replace(/ <1>\d{2}:\d{2}<\/>$/, '');
+
+const semanticLogSignatures = (logs: Array<Record<string, unknown>>): string[] =>
+    logs
+        .map((entry) =>
+            JSON.stringify({
+                scope: String(entry.scope).toLowerCase(),
+                category: String(entry.category).toLowerCase(),
+                generalId: Number(entry.generalId) || null,
+                nationId: Number(entry.nationId) || null,
+                text: normalizeStoredLogText(entry.text),
+            })
+        )
+        .sort();
+
+const nationCommandLogs = (logs: Array<Record<string, unknown>>): Array<Record<string, unknown>> =>
+    logs.filter((entry) => normalizeStoredLogText(entry.text) !== '아무것도 실행하지 않았습니다.');
+
 const ignoredLifecyclePaths = [
     /^generalTurns/,
     /^nationTurns/,
@@ -673,6 +694,173 @@ integration('nation command success matrix', () => {
                     expect(readNumericField(readNationMeta(nationAfter), researchConfig.auxKey)).toBe(1);
                     expect(snapshot.rng).toEqual([]);
                 }
+            }
+        },
+        120_000
+    );
+});
+
+const nationNameBoundaryCases: Array<{
+    name: string;
+    nationName: string;
+    completed: boolean;
+    duplicate?: boolean;
+}> = [
+    { name: 'accepts nine full-width characters at width eighteen', nationName: '가나다라마바사아자', completed: true },
+    { name: 'accepts eighteen half-width characters', nationName: '123456789012345678', completed: true },
+    { name: 'preserves surrounding spaces', nationName: ' 신국 ', completed: true },
+    { name: 'accepts a single space', nationName: ' ', completed: true },
+    { name: 'rejects ten full-width characters at width twenty', nationName: '가나다라마바사아자차', completed: false },
+    { name: 'rejects nineteen half-width characters', nationName: '1234567890123456789', completed: false },
+    { name: 'rejects another nation duplicate', nationName: '타국', completed: false, duplicate: true },
+    { name: 'rejects the current nation duplicate', nationName: '아국', completed: false, duplicate: true },
+];
+
+const nationColors = [
+    '#FF0000',
+    '#800000',
+    '#A0522D',
+    '#FF6347',
+    '#FFA500',
+    '#FFDAB9',
+    '#FFD700',
+    '#FFFF00',
+    '#7CFC00',
+    '#00FF00',
+    '#808000',
+    '#008000',
+    '#2E8B57',
+    '#008080',
+    '#20B2AA',
+    '#6495ED',
+    '#7FFFD4',
+    '#AFEEEE',
+    '#87CEEB',
+    '#00FFFF',
+    '#00BFFF',
+    '#0000FF',
+    '#000080',
+    '#483D8B',
+    '#7B68EE',
+    '#BA55D3',
+    '#800080',
+    '#FF00FF',
+    '#FFC0CB',
+    '#F5F5DC',
+    '#E0FFFF',
+    '#FFFFFF',
+    '#A9A9A9',
+] as const;
+
+const nationFlagBoundaryCases: Array<{
+    name: string;
+    colorType: unknown;
+    completed: boolean;
+    expectedIndex?: number;
+}> = [
+    { name: 'accepts integer zero', colorType: 0, completed: true, expectedIndex: 0 },
+    { name: 'accepts an integer numeric string', colorType: '1', completed: true, expectedIndex: 1 },
+    { name: 'accepts boolean true as key one', colorType: true, completed: true, expectedIndex: 1 },
+    { name: 'accepts boolean false as key zero', colorType: false, completed: true, expectedIndex: 0 },
+    { name: 'truncates a positive fractional key', colorType: 1.9, completed: true, expectedIndex: 1 },
+    { name: 'truncates a negative fraction to zero', colorType: -0.9, completed: true, expectedIndex: 0 },
+    { name: 'accepts the upper fractional key', colorType: 32.9, completed: true, expectedIndex: 32 },
+    { name: 'rejects a leading-zero numeric string', colorType: '01', completed: false },
+    { name: 'rejects a fractional numeric string', colorType: '1.5', completed: false },
+    { name: 'rejects the first out-of-range integer', colorType: 33, completed: false },
+    { name: 'rejects a negative integer', colorType: -1, completed: false },
+    { name: 'rejects null', colorType: null, completed: false },
+];
+
+const addedReferenceLogs = (
+    before: { watermarks: { logId: number; historyLogId: number } },
+    afterLogs: Array<Record<string, unknown>>
+): Array<Record<string, unknown>> =>
+    afterLogs.filter((entry) => {
+        const scope = String(entry.scope).toLowerCase();
+        const category = String(entry.category).toLowerCase();
+        const watermark =
+            scope === 'nation' || (scope === 'system' && category === 'history')
+                ? before.watermarks.historyLogId
+                : before.watermarks.logId;
+        return (Number(entry.id) || 0) > watermark;
+    });
+
+integration('nation name boundary parity', () => {
+    it.each(nationNameBoundaryCases)(
+        '$name',
+        async ({ nationName, completed, duplicate }) => {
+            const request = buildRequest('che_국호변경', { nationName });
+            request.observe!.includeNationHistoryLogs = true;
+            request.observe!.includeGlobalHistoryLogs = true;
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+
+            expect(reference.execution.outcome).toMatchObject({ completed });
+            if (duplicate) {
+                expect(core.execution.outcome).toMatchObject({
+                    requestedAction: 'che_국호변경',
+                    actionKey: 'che_국호변경',
+                    usedFallback: false,
+                    completed: false,
+                });
+            } else {
+                expect(core.execution.outcome).toMatchObject({
+                    requestedAction: 'che_국호변경',
+                    actionKey: completed ? 'che_국호변경' : '휴식',
+                    usedFallback: !completed,
+                });
+            }
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+            if (completed) {
+                expect(core.after.nations.find((entry) => entry.id === 1)?.name).toBe(nationName);
+                expect(semanticLogSignatures(nationCommandLogs(core.after.logs))).toEqual(
+                    semanticLogSignatures(addedReferenceLogs(reference.before, reference.after.logs))
+                );
+            }
+        },
+        120_000
+    );
+});
+
+integration('nation flag boundary parity', () => {
+    it.each(nationFlagBoundaryCases)(
+        '$name',
+        async ({ colorType, completed, expectedIndex }) => {
+            const request = buildRequest('che_국기변경', { colorType });
+            request.observe!.includeNationHistoryLogs = true;
+            request.observe!.includeGlobalHistoryLogs = true;
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+
+            expect(reference.execution.outcome).toMatchObject({ completed });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: 'che_국기변경',
+                actionKey: completed ? 'che_국기변경' : '휴식',
+                usedFallback: !completed,
+            });
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+            if (completed) {
+                expect(core.after.nations.find((entry) => entry.id === 1)?.color).toBe(nationColors[expectedIndex!]);
+                expect(semanticLogSignatures(nationCommandLogs(core.after.logs))).toEqual(
+                    semanticLogSignatures(addedReferenceLogs(reference.before, reference.after.logs))
+                );
             }
         },
         120_000

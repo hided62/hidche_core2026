@@ -53,12 +53,28 @@ const NATION_COLORS = [
     '#A9A9A9',
 ];
 
+const resolveNationColorIndex = (value: number | string | boolean): number | null => {
+    let index: number;
+    if (typeof value === 'boolean') {
+        index = value ? 1 : 0;
+    } else if (typeof value === 'number') {
+        if (!Number.isFinite(value)) {
+            return null;
+        }
+        index = Math.trunc(value);
+    } else {
+        if (!/^(?:0|[1-9]\d*|-[1-9]\d*)$/.test(value)) {
+            return null;
+        }
+        index = Number(value);
+    }
+    return Number.isSafeInteger(index) && index >= 0 && index < NATION_COLORS.length ? index : null;
+};
+
 const ARGS_SCHEMA = z.object({
     colorType: z
-        .number()
-        .int()
-        .min(0)
-        .max(NATION_COLORS.length - 1),
+        .union([z.number(), z.string(), z.boolean()])
+        .refine((value) => resolveNationColorIndex(value) !== null),
 });
 export type ChangeFlagArgs = z.infer<typeof ARGS_SCHEMA>;
 
@@ -100,7 +116,11 @@ export class ActionDefinition<
             return { effects: [createLogEffect('국가 정보가 없습니다.', { scope: LogScope.GENERAL })] };
         }
 
-        const color = NATION_COLORS[args.colorType];
+        const colorIndex = resolveNationColorIndex(args.colorType);
+        if (colorIndex === null) {
+            return { effects: [] };
+        }
+        const color = NATION_COLORS[colorIndex];
         const generalName = general.name;
         const nationName = nation.name;
 
@@ -120,11 +140,11 @@ export class ActionDefinition<
             ),
             // Global Action Log
             createLogEffect(
-                `<Y>${generalName}</>${josaYi} <span style='color:${color};'><b>국기</b></span>를 변경하였습니다.`,
+                `<Y>${generalName}</>${josaYi} <span style='color:${color};'><b>국기</b></span>를 변경하였습니다`,
                 {
                     scope: LogScope.SYSTEM,
-                    category: LogCategory.ACTION,
-                    format: LogFormat.PLAIN,
+                    category: LogCategory.SUMMARY,
+                    format: LogFormat.MONTH,
                 }
             ),
             // Global History Log
@@ -138,7 +158,7 @@ export class ActionDefinition<
             ),
             // Actor Nation History Log
             createLogEffect(
-                `<Y>${generalName}</>${josaYi} <span style='color:${color};'><b>국기</b></span>를 변경하였습니다.`,
+                `<Y>${generalName}</>${josaYi} <span style='color:${color};'><b>국기</b></span>를 변경하였습니다`,
                 {
                     scope: LogScope.NATION,
                     nationId: nation.id,

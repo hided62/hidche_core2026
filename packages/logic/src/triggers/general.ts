@@ -6,6 +6,7 @@ import { TriggerCaller, type Trigger } from './core.js';
 export interface GeneralWorldView<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     listGenerals(): General<TriggerState>[];
     listGeneralsByCity?(cityId: number): General<TriggerState>[];
+    listNations?(): Nation[];
 }
 
 export interface GeneralActionLogSink {

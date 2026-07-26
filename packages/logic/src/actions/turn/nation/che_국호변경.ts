@@ -14,9 +14,17 @@ import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js'
 import type { NationTurnCommandSpec } from './index.js';
 import { z } from 'zod';
 import { parseArgsWithSchema } from '../parseArgs.js';
+import { getLegacyStringWidth } from '@sammo-ts/logic/troop/management.js';
 
 const ARGS_SCHEMA = z.object({
-    nationName: z.string().trim().min(1).max(8),
+    nationName: z.string().superRefine((nationName, ctx) => {
+        if (nationName === '' || getLegacyStringWidth(nationName) > 18) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: '국호는 전각 9자 또는 반각 18자 이하여야 합니다.',
+            });
+        }
+    }),
 });
 export type ChangeNationNameArgs = z.infer<typeof ARGS_SCHEMA>;
 
@@ -65,8 +73,21 @@ export class ActionDefinition<
         const oldNationName = nation.name;
         const newNationName = args.nationName;
 
+        if (context.worldView?.listNations?.().some((candidate) => candidate.name === newNationName)) {
+            return {
+                completed: false,
+                effects: [
+                    createLogEffect(`이미 같은 국호를 가진 곳이 있습니다. ${ACTION_NAME} 실패`, {
+                        scope: LogScope.GENERAL,
+                        category: LogCategory.ACTION,
+                        format: LogFormat.MONTH,
+                    }),
+                ],
+            };
+        }
+
         const josaYi = JosaUtil.pick(generalName, '이');
-        const josaYiNation = JosaUtil.pick(newNationName, '이');
+        const josaYiNation = JosaUtil.pick(oldNationName, '이');
         const josaRo = JosaUtil.pick(newNationName, '로');
 
         const effects: Array<GeneralActionEffect<TriggerState>> = [
@@ -83,8 +104,8 @@ export class ActionDefinition<
             // Global Action Log
             createLogEffect(`<Y>${generalName}</>${josaYi} 국호를 <D><b>${newNationName}</b></>${josaRo} 변경합니다.`, {
                 scope: LogScope.SYSTEM,
-                category: LogCategory.ACTION,
-                format: LogFormat.PLAIN,
+                category: LogCategory.SUMMARY,
+                format: LogFormat.MONTH,
             }),
             // Global History Log
             createLogEffect(

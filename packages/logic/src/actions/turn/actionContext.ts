@@ -3,6 +3,7 @@ import type { UniqueLotteryRunner } from '@sammo-ts/logic/rewards/uniqueLottery.
 import type { ScenarioConfig } from '@sammo-ts/logic/scenario/types.js';
 import type { ScenarioMeta } from '@sammo-ts/logic/world/types.js';
 import type { MapDefinition, UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
+import type { GeneralWorldView } from '@sammo-ts/logic/triggers/general.js';
 
 export interface ActionRandomSource {
     nextFloat1(): number;
@@ -18,6 +19,7 @@ export type ActionContextBase = {
     general: ActionContextGeneral;
     city?: City;
     nation?: Nation | null;
+    worldView?: GeneralWorldView;
     rng: ActionRandomSource;
     uniqueLottery?: UniqueLotteryRunner;
 };

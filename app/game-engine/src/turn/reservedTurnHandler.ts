@@ -32,12 +32,13 @@ import {
     resolveUniqueConfig,
     rollUniqueLottery,
     getNextTurnAt,
+    getBillByLevel,
     type ItemModule,
     type UniqueLotteryRunner,
 } from '@sammo-ts/logic';
 import { buildLegacyDefaultUniqueItemPool } from '@sammo-ts/logic/rewards/legacyUniqueItemPool.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic';
-import { asRecord, LEGACY_RANK_DATA_TYPES, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
+import { asRecord, JosaUtil, LEGACY_RANK_DATA_TYPES, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 
 import type { ConstraintContext, StateView } from '@sammo-ts/logic';
 
@@ -105,7 +106,8 @@ const applyLegacyGeneralProgression = (
     general: TurnGeneral,
     previousGeneral: TurnGeneral,
     actionKey: string,
-    env: TurnCommandEnv
+    env: TurnCommandEnv,
+    logs: LogEntryDraft[]
 ): TurnGeneral => {
     const maxStatLevel = env.maxStatLevel ?? 255;
     const maxDedicationLevel = env.maxDedicationLevel ?? 30;
@@ -126,10 +128,40 @@ const applyLegacyGeneralProgression = (
     const forceRefreshLevel = actionKey === 'che_하야';
     const preserveLevel = actionKey === 'che_은퇴' || actionKey === 'che_선양';
     if (!preserveLevel && (forceRefreshLevel || general.experience !== previousGeneral.experience)) {
+        const previousExpLevel = readMetaNumber(previousGeneral.meta, 'explevel', 0);
         meta.explevel = expLevel;
+        if (expLevel !== previousExpLevel) {
+            const josaRo = JosaUtil.pick(String(expLevel), '로');
+            logs.push({
+                scope: LogScope.GENERAL,
+                category: LogCategory.ACTION,
+                format: LogFormat.PLAIN,
+                text:
+                    expLevel > previousExpLevel
+                        ? `<C>Lv ${expLevel}</>${josaRo} <C>레벨업</>!`
+                        : `<C>Lv ${expLevel}</>${josaRo} <R>레벨다운</>!`,
+            });
+        }
     }
     if (!preserveLevel && (forceRefreshLevel || general.dedication !== previousGeneral.dedication)) {
+        const previousDedicationLevel = readMetaNumber(previousGeneral.meta, 'dedlevel', 0);
         meta.dedlevel = dedicationLevel;
+        if (dedicationLevel !== previousDedicationLevel) {
+            const dedicationLevelText =
+                dedicationLevel === 0 ? '무품관' : `${maxDedicationLevel - dedicationLevel + 1}품관`;
+            const billText = getBillByLevel(dedicationLevel).toLocaleString('en-US');
+            const josaRoDedication = JosaUtil.pick(dedicationLevelText, '로');
+            const josaRoBill = JosaUtil.pick(billText, '로');
+            logs.push({
+                scope: LogScope.GENERAL,
+                category: LogCategory.ACTION,
+                format: LogFormat.PLAIN,
+                text:
+                    dedicationLevel > previousDedicationLevel
+                        ? `<Y>${dedicationLevelText}</>${josaRoDedication} <C>승급</>하여 봉록이 <C>${billText}</>${josaRoBill} <C>상승</>했습니다!`
+                        : `<Y>${dedicationLevelText}</>${josaRoDedication} <R>강등</>되어 봉록이 <C>${billText}</>${josaRoBill} <R>하락</>했습니다!`,
+            });
+        }
     }
 
     if (!LEGACY_STAT_CHANGE_GENERAL_ACTIONS.has(actionKey)) {
@@ -935,6 +967,16 @@ export const createReservedTurnHandler = async (options: {
                     general: currentGeneral,
                     city: currentCity,
                     nation: currentNation,
+                    ...(worldView
+                        ? {
+                              worldView: {
+                                  listGenerals: () => worldView.listGenerals(),
+                                  listGeneralsByCity: (cityId: number) =>
+                                      worldView.listGenerals().filter((general) => general.cityId === cityId),
+                                  listNations: () => worldView.listNations(),
+                              },
+                          }
+                        : {}),
                     rng: actionRng,
                     uniqueLottery,
                 };
@@ -1059,7 +1101,8 @@ export const createReservedTurnHandler = async (options: {
                         currentGeneral,
                         generalBeforeExecution,
                         actionKey,
-                        env
+                        env,
+                        logs
                     );
                 }
                 if (

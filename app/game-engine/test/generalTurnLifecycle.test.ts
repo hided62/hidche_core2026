@@ -159,6 +159,29 @@ const makeState = (meta: Record<string, unknown> = {}): TurnWorldState => ({
 });
 
 describe('legacy general turn lifecycle', () => {
+    it('emits legacy plain logs when command gains cross experience and dedication levels', async () => {
+        const harness = await createTurnTestHarness({
+            snapshot: makeSnapshot([
+                makeGeneral({
+                    injury: 10,
+                    experience: 995,
+                    dedication: 899,
+                    meta: { killturn: 24, explevel: 9, dedlevel: 3 },
+                }),
+            ]),
+            state: makeState(),
+            schedule,
+            map,
+        });
+        harness.reservedTurnStore.getGeneralTurns(1)[0] = { action: 'che_요양', args: {} };
+
+        await harness.runOneTick();
+
+        const logTexts = harness.world.peekDirtyState().logs.map((log) => log.text);
+        expect(logTexts).toContain('<C>Lv 10</>으로 <C>레벨업</>!');
+        expect(logTexts).toContain('<Y>27품관</>으로 <C>승급</>하여 봉록이 <C>1,200</>으로 <C>상승</>했습니다!');
+    });
+
     it('runs preprocess before commands and restores crew population when rice is insufficient', async () => {
         const harness = await createTurnTestHarness({
             snapshot: makeSnapshot([makeGeneral({ injury: 25, crew: 200, rice: 1 })]),
