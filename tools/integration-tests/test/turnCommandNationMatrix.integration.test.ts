@@ -316,6 +316,54 @@ const cases: NationMatrixCase[] = [
         { diplomacy: { '1:2': { state: 1, term: 12 }, '2:1': { state: 1, term: 12 } } },
     ],
     ['che_급습', { destNationID: 2 }, { diplomacy: { '1:2': { state: 1, term: 12 }, '2:1': { state: 1, term: 12 } } }],
+    [
+        'che_필사즉생',
+        undefined,
+        {
+            nations: {
+                1: {
+                    turnLastByOfficerLevel: {
+                        12: { command: '필사즉생', arg: {}, term: 2 },
+                    },
+                },
+            },
+            diplomacy: { '1:2': { state: 0 }, '2:1': { state: 0 } },
+        },
+    ],
+    [
+        'che_허보',
+        { destCityID: 70 },
+        {
+            nations: {
+                1: {
+                    turnLastByOfficerLevel: {
+                        12: { command: '허보', arg: { destCityID: 70 }, term: 1 },
+                    },
+                    coreTurnLastByOfficerLevel: {
+                        12: { command: '허보', arg: { destCityId: 70 }, term: 1 },
+                    },
+                },
+            },
+            diplomacy: { '1:2': { state: 0 }, '2:1': { state: 0 } },
+        },
+    ],
+    [
+        'che_초토화',
+        { destCityID: 70 },
+        {
+            nations: {
+                1: {
+                    turnLastByOfficerLevel: {
+                        12: { command: '초토화', arg: { destCityID: 70 }, term: 2 },
+                    },
+                    coreTurnLastByOfficerLevel: {
+                        12: { command: '초토화', arg: { destCityId: 70 }, term: 2 },
+                    },
+                },
+            },
+            cities: { 70: { nationId: 1, supplyState: 1 } },
+        },
+    ],
 ];
 
 integration('nation command success matrix', () => {
