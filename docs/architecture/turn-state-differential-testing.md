@@ -179,10 +179,12 @@ responses pass a separate reference trace and core resolver/API boundary.
 Nine general in-action failure cases now also pass the common differential:
 five domestic critical failures and four sabotage failures. They compare the
 full command RNG trace, semantic state delta and the exact action-log body.
-Seven full-constraint cases cover neutral status, wandering nation, city
-ownership, supply, gold, rice and trust-cap rejection. Both engines replace
-the denied command with rest, consume the same RNG and produce the same
-semantic delta. Eight sabotage clamp cases cover probability zero and 0.5 for
+Seven common full-constraint cases cover neutral status, wandering nation,
+city ownership, supply, gold, rice and trust-cap rejection. Five sabotage
+constraint cases add the occupied-city target, neutral target, non-aggression
+status and insufficient sabotage gold or rice. Both engines replace the denied
+command with rest, consume the same RNG and produce the same semantic delta.
+Eight sabotage clamp cases cover probability zero and 0.5 for
 fire attack, agitation, destruction and seizure. The zero boundary skips the
 success RNG primitive, while exactly 0.5 consumes `nextBits(1)`; the complete
 RNG trace and semantic delta match. These cases also fixed fire-attack city

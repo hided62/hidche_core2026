@@ -763,6 +763,40 @@ const constraintCases: GeneralConstraintCase[] = [
         action: 'che_주민선정',
         fixturePatches: { cities: { 3: { trust: 100 } } },
     },
+    {
+        name: 'sabotage targets the occupied city',
+        action: 'che_화계',
+        args: { destCityID: 3 },
+    },
+    {
+        name: 'sabotage targets a neutral city',
+        action: 'che_화계',
+        args: { destCityID: 70 },
+        fixturePatches: { cities: { 70: { nationId: 0 } } },
+    },
+    {
+        name: 'sabotage targets a non-aggression nation',
+        action: 'che_화계',
+        args: { destCityID: 70 },
+        fixturePatches: {
+            diplomacy: {
+                '1:2': { state: 7 },
+                '2:1': { state: 7 },
+            },
+        },
+    },
+    {
+        name: 'insufficient sabotage gold',
+        action: 'che_화계',
+        args: { destCityID: 70 },
+        actorPatch: { gold: 0 },
+    },
+    {
+        name: 'insufficient sabotage rice',
+        action: 'che_화계',
+        args: { destCityID: 70 },
+        actorPatch: { rice: 0 },
+    },
 ];
 
 integration('general command full-constraint fallback matrix', () => {
