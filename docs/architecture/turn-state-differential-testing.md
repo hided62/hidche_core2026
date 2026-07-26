@@ -179,8 +179,12 @@ responses pass a separate reference trace and core resolver/API boundary.
 Nine general in-action failure cases now also pass the common differential:
 five domestic critical failures and four sabotage failures. They compare the
 full command RNG trace, semantic state delta and the exact action-log body.
-This is not yet a claim that the remaining constraint, clamp, alternative and
-persistence boundaries have been dynamically compared.
+Seven full-constraint cases cover neutral status, wandering nation, city
+ownership, supply, gold, rice and trust-cap rejection. Both engines replace
+the denied command with rest, consume the same RNG and produce the same
+semantic delta. This is not yet a claim that every command-specific
+constraint, clamp, alternative and persistence boundary has been dynamically
+compared.
 
 The fixture runner also reports whether the requested legacy command reached
 its completed execution path. For multi-turn commands this is derived from the
