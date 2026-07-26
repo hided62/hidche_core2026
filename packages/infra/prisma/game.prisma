@@ -78,11 +78,11 @@ model InputEvent {
 }
 
 model TurnDaemonLease {
-  profile       String   @id
-  ownerId       String   @map("owner_id")
-  leaseUntil    DateTime @map("lease_until")
-  fencingEpoch  BigInt   @default(1) @map("fencing_epoch")
-  heartbeatAt   DateTime @default(now()) @map("heartbeat_at")
+  profile      String   @id
+  ownerId      String   @map("owner_id")
+  leaseUntil   DateTime @map("lease_until")
+  fencingEpoch BigInt   @default(1) @map("fencing_epoch")
+  heartbeatAt  DateTime @default(now()) @map("heartbeat_at")
 
   @@map("turn_daemon_lease")
 }
@@ -369,9 +369,11 @@ model GeneralTurn {
 }
 
 model GeneralTurnRevision {
-  generalId Int      @id @map("general_id")
-  revision  Int      @default(0)
-  updatedAt DateTime @updatedAt @map("updated_at")
+  generalId      Int       @id @map("general_id")
+  revision       Int       @default(0)
+  leaseOwner     String?   @map("lease_owner")
+  leaseExpiresAt DateTime? @map("lease_expires_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
 
   @@map("general_turn_revision")
 }
@@ -390,10 +392,12 @@ model NationTurn {
 }
 
 model NationTurnRevision {
-  nationId     Int      @map("nation_id")
-  officerLevel Int      @map("officer_level")
-  revision     Int      @default(0)
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  nationId       Int       @map("nation_id")
+  officerLevel   Int       @map("officer_level")
+  revision       Int       @default(0)
+  leaseOwner     String?   @map("lease_owner")
+  leaseExpiresAt DateTime? @map("lease_expires_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
 
   @@id([nationId, officerLevel])
   @@map("nation_turn_revision")

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { asRecord } from '@sammo-ts/common';
 
 import {
     InMemoryControlQueue,
@@ -27,7 +28,34 @@ const processor: TurnProcessor = {
 describe('input event atomicity', () => {
     it('keeps reserved-turn dirty state when persistence fails', async () => {
         let failCreate = true;
-        const revisionUpsert = vi.fn(async () => ({ revision: 1 }));
+        let revision: { revision: number; leaseOwner: string | null; leaseExpiresAt: Date | null } | null = null;
+        const revisionUpdate = vi.fn(async (rawArgs: unknown) => {
+            if (!revision) {
+                return { count: 0 };
+            }
+            const data = asRecord(asRecord(rawArgs).data);
+            const revisionChange = asRecord(data.revision);
+            if (typeof revisionChange.increment === 'number') {
+                revision.revision += revisionChange.increment;
+            }
+            if ('leaseOwner' in data) {
+                revision.leaseOwner = typeof data.leaseOwner === 'string' ? data.leaseOwner : null;
+            }
+            if ('leaseExpiresAt' in data) {
+                revision.leaseExpiresAt = data.leaseExpiresAt instanceof Date ? data.leaseExpiresAt : null;
+            }
+            return { count: 1 };
+        });
+        const revisionCreate = vi.fn(async (rawArgs: unknown) => {
+            const rawData = asRecord(rawArgs).data;
+            const row = Array.isArray(rawData) ? asRecord(rawData[0]) : asRecord(rawData);
+            revision = {
+                revision: typeof row.revision === 'number' ? row.revision : 0,
+                leaseOwner: typeof row.leaseOwner === 'string' ? row.leaseOwner : null,
+                leaseExpiresAt: row.leaseExpiresAt instanceof Date ? row.leaseExpiresAt : null,
+            };
+            return { count: 1 };
+        });
         const prisma = {
             generalTurn: {
                 findMany: vi.fn(async () => []),
@@ -40,7 +68,9 @@ describe('input event atomicity', () => {
                 }),
             },
             generalTurnRevision: {
-                upsert: revisionUpsert,
+                findUnique: vi.fn(async () => null),
+                createMany: revisionCreate,
+                updateMany: revisionUpdate,
             },
             nationTurn: {
                 findMany: vi.fn(async () => []),
@@ -51,6 +81,7 @@ describe('input event atomicity', () => {
         const store = new InMemoryReservedTurnStore(prisma, {
             maxGeneralTurns: 1,
             maxNationTurns: 1,
+            leaseOwner: 'test-daemon',
         });
         store.shiftGeneralTurns(7, -1);
         store.ensureGeneralTurns(8);
@@ -59,23 +90,38 @@ describe('input event atomicity', () => {
         expect(store.peekDirtyState()).toEqual({
             generalIds: [7],
             generalInitializationIds: [8],
+            generalLeaseIds: [],
             nationKeys: [],
             nationInitializationKeys: [],
+            nationLeaseKeys: [],
         });
 
         failCreate = false;
         await store.flushChanges();
-        expect(revisionUpsert).toHaveBeenCalledOnce();
-        expect(revisionUpsert).toHaveBeenCalledWith({
-            where: { generalId: 7 },
-            create: { generalId: 7, revision: 1 },
-            update: { revision: { increment: 1 } },
+        expect(revisionCreate).toHaveBeenCalledOnce();
+        expect(revisionCreate).toHaveBeenCalledWith({
+            data: [
+                {
+                    generalId: 7,
+                    revision: 0,
+                    leaseOwner: 'test-daemon',
+                    leaseExpiresAt: expect.any(Date),
+                },
+            ],
+            skipDuplicates: true,
+        });
+        expect(revision).toMatchObject({
+            revision: 1,
+            leaseOwner: null,
+            leaseExpiresAt: null,
         });
         expect(store.peekDirtyState()).toEqual({
             generalIds: [],
             generalInitializationIds: [],
+            generalLeaseIds: [],
             nationKeys: [],
             nationInitializationKeys: [],
+            nationLeaseKeys: [],
         });
     });
 

@@ -197,8 +197,10 @@ describe('CreateManyNPC monthly action', () => {
         expect(reservedTurns.peekDirtyState()).toEqual({
             generalIds: [],
             generalInitializationIds: [created.id],
+            generalLeaseIds: [],
             nationKeys: [],
             nationInitializationKeys: [],
+            nationLeaseKeys: [],
         });
         expect(world.peekDirtyState().logs).toMatchInlineSnapshot(`
           [

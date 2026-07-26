@@ -1,5 +1,6 @@
 import { createGamePostgresConnector, type InputJsonValue, type TurnEngineDatabaseClient } from '@sammo-ts/infra';
 import { isRecord } from '@sammo-ts/common';
+import { randomUUID } from 'node:crypto';
 
 export interface ReservedTurnEntry {
     action: string;
@@ -10,6 +11,8 @@ export interface ReservedTurnStoreOptions {
     databaseUrl: string;
     maxGeneralTurns?: number;
     maxNationTurns?: number;
+    leaseOwner?: string;
+    leaseDurationMs?: number;
 }
 
 export interface ReservedTurnStoreHandle {
@@ -20,6 +23,7 @@ export interface ReservedTurnStoreHandle {
 const DEFAULT_TURN_ACTION = '휴식';
 const DEFAULT_GENERAL_TURNS = 30;
 const DEFAULT_NATION_TURNS = 12;
+const DEFAULT_LEASE_DURATION_MS = 5 * 60_000;
 
 const asJson = (value: unknown): InputJsonValue => value as InputJsonValue;
 
@@ -71,15 +75,30 @@ const buildTurnListFromRows = (
 const buildNationKey = (nationId: number, officerLevel: number): string => `${nationId}:${officerLevel}`;
 
 type ReservedTurnDatabaseClient = Pick<TurnEngineDatabaseClient, 'generalTurn' | 'nationTurn'> & {
-    generalTurnRevision?: Pick<NonNullable<TurnEngineDatabaseClient['generalTurnRevision']>, 'upsert'>;
-    nationTurnRevision?: Pick<NonNullable<TurnEngineDatabaseClient['nationTurnRevision']>, 'upsert'>;
+    generalTurnRevision?: Pick<
+        NonNullable<TurnEngineDatabaseClient['generalTurnRevision']>,
+        'findUnique' | 'createMany' | 'updateMany'
+    >;
+    nationTurnRevision?: Pick<
+        NonNullable<TurnEngineDatabaseClient['nationTurnRevision']>,
+        'findUnique' | 'createMany' | 'updateMany'
+    >;
 };
 
 export interface ReservedTurnChanges {
     generalIds: number[];
     generalInitializationIds: number[];
+    generalLeaseIds: number[];
     nationKeys: string[];
     nationInitializationKeys: string[];
+    nationLeaseKeys: string[];
+}
+
+export class ReservedTurnLeaseConflictError extends Error {
+    constructor(readonly queueKey: string) {
+        super(`Reserved turn queue lease conflict: ${queueKey}.`);
+        this.name = 'ReservedTurnLeaseConflictError';
+    }
 }
 
 export class InMemoryReservedTurnStore {
@@ -89,15 +108,26 @@ export class InMemoryReservedTurnStore {
     private readonly dirtyNationKeys = new Set<string>();
     private readonly pendingGeneralInitializationIds = new Set<number>();
     private readonly pendingNationInitializationKeys = new Set<string>();
+    private readonly leasedGeneralIds = new Set<number>();
+    private readonly leasedNationKeys = new Set<string>();
     private readonly maxGeneralTurns: number;
     private readonly maxNationTurns: number;
+    private readonly leaseOwner: string;
+    private readonly leaseDurationMs: number;
 
     constructor(
         private readonly prisma: ReservedTurnDatabaseClient,
-        options: { maxGeneralTurns: number; maxNationTurns: number }
+        options: {
+            maxGeneralTurns: number;
+            maxNationTurns: number;
+            leaseOwner?: string;
+            leaseDurationMs?: number;
+        }
     ) {
         this.maxGeneralTurns = options.maxGeneralTurns;
         this.maxNationTurns = options.maxNationTurns;
+        this.leaseOwner = options.leaseOwner ?? randomUUID();
+        this.leaseDurationMs = options.leaseDurationMs ?? DEFAULT_LEASE_DURATION_MS;
     }
 
     async loadAll(): Promise<void> {
@@ -131,6 +161,153 @@ export class InMemoryReservedTurnStore {
         }
         for (const [key, rows] of nationGroups.entries()) {
             this.nationTurns.set(key, buildTurnListFromRows(rows, this.maxNationTurns));
+        }
+    }
+
+    private getLeaseExpiresAt(): Date {
+        return new Date(Date.now() + this.leaseDurationMs);
+    }
+
+    private async acquireGeneralLease(generalId: number): Promise<void> {
+        const revisionStore = this.prisma.generalTurnRevision;
+        if (!revisionStore) {
+            return;
+        }
+        const now = new Date();
+        const leaseExpiresAt = this.getLeaseExpiresAt();
+        let claimed = await revisionStore.updateMany({
+            where: {
+                generalId,
+                OR: [
+                    { leaseOwner: this.leaseOwner },
+                    { leaseOwner: null },
+                    { leaseExpiresAt: { lte: now } },
+                ],
+            },
+            data: {
+                leaseOwner: this.leaseOwner,
+                leaseExpiresAt,
+            },
+        });
+        if (claimed.count === 0) {
+            claimed = await revisionStore.createMany({
+                data: [{ generalId, revision: 0, leaseOwner: this.leaseOwner, leaseExpiresAt }],
+                skipDuplicates: true,
+            });
+            if (claimed.count === 0) {
+                claimed = await revisionStore.updateMany({
+                    where: {
+                        generalId,
+                        OR: [
+                            { leaseOwner: this.leaseOwner },
+                            { leaseOwner: null },
+                            { leaseExpiresAt: { lte: now } },
+                        ],
+                    },
+                    data: {
+                        leaseOwner: this.leaseOwner,
+                        leaseExpiresAt,
+                    },
+                });
+            }
+        }
+        if (claimed.count !== 1) {
+            throw new ReservedTurnLeaseConflictError(`general:${generalId}`);
+        }
+        this.leasedGeneralIds.add(generalId);
+    }
+
+    private async acquireNationLease(nationId: number, officerLevel: number): Promise<void> {
+        const revisionStore = this.prisma.nationTurnRevision;
+        if (!revisionStore) {
+            return;
+        }
+        const now = new Date();
+        const leaseExpiresAt = this.getLeaseExpiresAt();
+        let claimed = await revisionStore.updateMany({
+            where: {
+                nationId,
+                officerLevel,
+                OR: [
+                    { leaseOwner: this.leaseOwner },
+                    { leaseOwner: null },
+                    { leaseExpiresAt: { lte: now } },
+                ],
+            },
+            data: {
+                leaseOwner: this.leaseOwner,
+                leaseExpiresAt,
+            },
+        });
+        if (claimed.count === 0) {
+            claimed = await revisionStore.createMany({
+                data: [{ nationId, officerLevel, revision: 0, leaseOwner: this.leaseOwner, leaseExpiresAt }],
+                skipDuplicates: true,
+            });
+            if (claimed.count === 0) {
+                claimed = await revisionStore.updateMany({
+                    where: {
+                        nationId,
+                        officerLevel,
+                        OR: [
+                            { leaseOwner: this.leaseOwner },
+                            { leaseOwner: null },
+                            { leaseExpiresAt: { lte: now } },
+                        ],
+                    },
+                    data: {
+                        leaseOwner: this.leaseOwner,
+                        leaseExpiresAt,
+                    },
+                });
+            }
+        }
+        if (claimed.count !== 1) {
+            throw new ReservedTurnLeaseConflictError(`nation:${nationId}:${officerLevel}`);
+        }
+        this.leasedNationKeys.add(buildNationKey(nationId, officerLevel));
+    }
+
+    private async releaseGeneralLease(generalId: number): Promise<void> {
+        await this.prisma.generalTurnRevision?.updateMany({
+            where: { generalId, leaseOwner: this.leaseOwner },
+            data: { leaseOwner: null, leaseExpiresAt: null },
+        });
+        this.leasedGeneralIds.delete(generalId);
+    }
+
+    private async releaseNationLease(nationId: number, officerLevel: number): Promise<void> {
+        await this.prisma.nationTurnRevision?.updateMany({
+            where: { nationId, officerLevel, leaseOwner: this.leaseOwner },
+            data: { leaseOwner: null, leaseExpiresAt: null },
+        });
+        this.leasedNationKeys.delete(buildNationKey(nationId, officerLevel));
+    }
+
+    async prepareTurnsForExecution(
+        generalId: number,
+        nation?: { nationId: number; officerLevel: number }
+    ): Promise<void> {
+        const hadGeneralLease = this.leasedGeneralIds.has(generalId);
+        const nationKey = nation ? buildNationKey(nation.nationId, nation.officerLevel) : null;
+        const hadNationLease = nationKey ? this.leasedNationKeys.has(nationKey) : false;
+        try {
+            await this.acquireGeneralLease(generalId);
+            if (nation) {
+                await this.acquireNationLease(nation.nationId, nation.officerLevel);
+            }
+            await Promise.all([
+                this.refreshGeneralTurns(generalId),
+                nation ? this.refreshNationTurns(nation.nationId, nation.officerLevel) : Promise.resolve(),
+            ]);
+        } catch (error) {
+            if (nation && nationKey !== null && !hadNationLease && this.leasedNationKeys.has(nationKey)) {
+                await this.releaseNationLease(nation.nationId, nation.officerLevel);
+            }
+            if (!hadGeneralLease && this.leasedGeneralIds.has(generalId)) {
+                await this.releaseGeneralLease(generalId);
+            }
+            throw error;
         }
     }
 
@@ -252,8 +429,10 @@ export class InMemoryReservedTurnStore {
         return {
             generalIds: Array.from(this.dirtyGeneralIds),
             generalInitializationIds: Array.from(this.pendingGeneralInitializationIds),
+            generalLeaseIds: Array.from(this.leasedGeneralIds),
             nationKeys: Array.from(this.dirtyNationKeys),
             nationInitializationKeys: Array.from(this.pendingNationInitializationKeys),
+            nationLeaseKeys: Array.from(this.leasedNationKeys),
         };
     }
 
@@ -264,17 +443,172 @@ export class InMemoryReservedTurnStore {
         for (const generalId of changes.generalInitializationIds) {
             this.pendingGeneralInitializationIds.delete(generalId);
         }
+        for (const generalId of changes.generalLeaseIds) {
+            this.leasedGeneralIds.delete(generalId);
+        }
         for (const key of changes.nationKeys) {
             this.dirtyNationKeys.delete(key);
         }
         for (const key of changes.nationInitializationKeys) {
             this.pendingNationInitializationKeys.delete(key);
         }
+        for (const key of changes.nationLeaseKeys) {
+            this.leasedNationKeys.delete(key);
+        }
+    }
+
+    private async claimGeneralFlushLease(
+        prisma: ReservedTurnDatabaseClient,
+        generalId: number
+    ): Promise<boolean> {
+        const revisionStore = prisma.generalTurnRevision;
+        if (!revisionStore) {
+            return false;
+        }
+        const leaseExpiresAt = this.getLeaseExpiresAt();
+        const where = this.leasedGeneralIds.has(generalId)
+            ? { generalId, leaseOwner: this.leaseOwner }
+            : {
+                  generalId,
+                  OR: [
+                      { leaseOwner: this.leaseOwner },
+                      { leaseOwner: null },
+                      { leaseExpiresAt: { lte: new Date() } },
+                  ],
+              };
+        let claimed = await revisionStore.updateMany({
+            where,
+            data: {
+                leaseOwner: this.leaseOwner,
+                leaseExpiresAt,
+            },
+        });
+        if (claimed.count === 0 && !this.leasedGeneralIds.has(generalId)) {
+            claimed = await revisionStore.createMany({
+                data: [{ generalId, revision: 0, leaseOwner: this.leaseOwner, leaseExpiresAt }],
+                skipDuplicates: true,
+            });
+            if (claimed.count === 0) {
+                claimed = await revisionStore.updateMany({
+                    where,
+                    data: {
+                        leaseOwner: this.leaseOwner,
+                        leaseExpiresAt,
+                    },
+                });
+            }
+        }
+        if (claimed.count !== 1) {
+            throw new ReservedTurnLeaseConflictError(`general:${generalId}`);
+        }
+        return true;
+    }
+
+    private async finalizeGeneralFlush(
+        prisma: ReservedTurnDatabaseClient,
+        generalId: number,
+        claimedLease: boolean
+    ): Promise<void> {
+        const revisionStore = prisma.generalTurnRevision;
+        if (!revisionStore) {
+            return;
+        }
+        if (!claimedLease) {
+            throw new ReservedTurnLeaseConflictError(`general:${generalId}`);
+        }
+        const finalized = await revisionStore.updateMany({
+            where: { generalId, leaseOwner: this.leaseOwner },
+            data: {
+                revision: { increment: 1 },
+                leaseOwner: null,
+                leaseExpiresAt: null,
+            },
+        });
+        if (finalized.count !== 1) {
+            throw new ReservedTurnLeaseConflictError(`general:${generalId}`);
+        }
+    }
+
+    private async claimNationFlushLease(
+        prisma: ReservedTurnDatabaseClient,
+        nationId: number,
+        officerLevel: number
+    ): Promise<boolean> {
+        const revisionStore = prisma.nationTurnRevision;
+        const key = buildNationKey(nationId, officerLevel);
+        if (!revisionStore) {
+            return false;
+        }
+        const leaseExpiresAt = this.getLeaseExpiresAt();
+        const where = this.leasedNationKeys.has(key)
+            ? { nationId, officerLevel, leaseOwner: this.leaseOwner }
+            : {
+                  nationId,
+                  officerLevel,
+                  OR: [
+                      { leaseOwner: this.leaseOwner },
+                      { leaseOwner: null },
+                      { leaseExpiresAt: { lte: new Date() } },
+                  ],
+              };
+        let claimed = await revisionStore.updateMany({
+            where,
+            data: {
+                leaseOwner: this.leaseOwner,
+                leaseExpiresAt,
+            },
+        });
+        if (claimed.count === 0 && !this.leasedNationKeys.has(key)) {
+            claimed = await revisionStore.createMany({
+                data: [{ nationId, officerLevel, revision: 0, leaseOwner: this.leaseOwner, leaseExpiresAt }],
+                skipDuplicates: true,
+            });
+            if (claimed.count === 0) {
+                claimed = await revisionStore.updateMany({
+                    where,
+                    data: {
+                        leaseOwner: this.leaseOwner,
+                        leaseExpiresAt,
+                    },
+                });
+            }
+        }
+        if (claimed.count !== 1) {
+            throw new ReservedTurnLeaseConflictError(`nation:${nationId}:${officerLevel}`);
+        }
+        return true;
+    }
+
+    private async finalizeNationFlush(
+        prisma: ReservedTurnDatabaseClient,
+        nationId: number,
+        officerLevel: number,
+        claimedLease: boolean
+    ): Promise<void> {
+        const revisionStore = prisma.nationTurnRevision;
+        if (!revisionStore) {
+            return;
+        }
+        if (!claimedLease) {
+            throw new ReservedTurnLeaseConflictError(`nation:${nationId}:${officerLevel}`);
+        }
+        const finalized = await revisionStore.updateMany({
+            where: { nationId, officerLevel, leaseOwner: this.leaseOwner },
+            data: {
+                revision: { increment: 1 },
+                leaseOwner: null,
+                leaseExpiresAt: null,
+            },
+        });
+        if (finalized.count !== 1) {
+            throw new ReservedTurnLeaseConflictError(`nation:${nationId}:${officerLevel}`);
+        }
     }
 
     async persistChanges(prisma: ReservedTurnDatabaseClient, changes: ReservedTurnChanges): Promise<void> {
         for (const generalId of changes.generalIds) {
             const turns = this.getGeneralTurns(generalId);
+            const claimedLease = await this.claimGeneralFlushLease(prisma, generalId);
             await prisma.generalTurn.deleteMany({ where: { generalId } });
             await prisma.generalTurn.createMany({
                 data: turns.map((entry, turnIdx) => ({
@@ -284,13 +618,7 @@ export class InMemoryReservedTurnStore {
                     arg: asJson(normalizeArgs(entry.args)),
                 })),
             });
-            if (prisma.generalTurnRevision) {
-                await prisma.generalTurnRevision.upsert({
-                    where: { generalId },
-                    create: { generalId, revision: 1 },
-                    update: { revision: { increment: 1 } },
-                });
-            }
+            await this.finalizeGeneralFlush(prisma, generalId, claimedLease);
         }
 
         for (const generalId of changes.generalInitializationIds) {
@@ -314,6 +642,7 @@ export class InMemoryReservedTurnStore {
             const nationId = Number(nationIdRaw);
             const officerLevel = Number(officerLevelRaw);
             const turns = this.getNationTurns(nationId, officerLevel);
+            const claimedLease = await this.claimNationFlushLease(prisma, nationId, officerLevel);
             await prisma.nationTurn.deleteMany({
                 where: { nationId, officerLevel },
             });
@@ -326,18 +655,7 @@ export class InMemoryReservedTurnStore {
                     arg: asJson(normalizeArgs(entry.args)),
                 })),
             });
-            if (prisma.nationTurnRevision) {
-                await prisma.nationTurnRevision.upsert({
-                    where: {
-                        nationId_officerLevel: {
-                            nationId,
-                            officerLevel,
-                        },
-                    },
-                    create: { nationId, officerLevel, revision: 1 },
-                    update: { revision: { increment: 1 } },
-                });
-            }
+            await this.finalizeNationFlush(prisma, nationId, officerLevel, claimedLease);
         }
 
         for (const key of changes.nationInitializationKeys) {
@@ -359,6 +677,31 @@ export class InMemoryReservedTurnStore {
                 skipDuplicates: true,
             });
         }
+
+        for (const generalId of changes.generalLeaseIds) {
+            if (changes.generalIds.includes(generalId)) {
+                continue;
+            }
+            await prisma.generalTurnRevision?.updateMany({
+                where: { generalId, leaseOwner: this.leaseOwner },
+                data: { leaseOwner: null, leaseExpiresAt: null },
+            });
+        }
+
+        for (const key of changes.nationLeaseKeys) {
+            if (changes.nationKeys.includes(key)) {
+                continue;
+            }
+            const [nationIdRaw, officerLevelRaw] = key.split(':');
+            await prisma.nationTurnRevision?.updateMany({
+                where: {
+                    nationId: Number(nationIdRaw),
+                    officerLevel: Number(officerLevelRaw),
+                    leaseOwner: this.leaseOwner,
+                },
+                data: { leaseOwner: null, leaseExpiresAt: null },
+            });
+        }
     }
 
     async flushChanges(): Promise<void> {
@@ -374,6 +717,8 @@ export const createReservedTurnStore = async (options: ReservedTurnStoreOptions)
     const store = new InMemoryReservedTurnStore(connector.prisma, {
         maxGeneralTurns: options.maxGeneralTurns ?? DEFAULT_GENERAL_TURNS,
         maxNationTurns: options.maxNationTurns ?? DEFAULT_NATION_TURNS,
+        leaseOwner: options.leaseOwner,
+        leaseDurationMs: options.leaseDurationMs,
     });
     await store.loadAll();
     return {

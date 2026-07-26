@@ -437,7 +437,9 @@ export interface TurnEngineDatabaseClient {
         createMany(args?: unknown): Promise<unknown>;
     };
     generalTurnRevision?: {
-        upsert(args: unknown): Promise<unknown>;
+        findUnique(args: unknown): Promise<unknown>;
+        createMany(args: unknown): Promise<{ count: number }>;
+        updateMany(args: unknown): Promise<{ count: number }>;
         deleteMany(args?: unknown): Promise<unknown>;
     };
     nationTurn: {
@@ -446,7 +448,9 @@ export interface TurnEngineDatabaseClient {
         createMany(args?: unknown): Promise<unknown>;
     };
     nationTurnRevision?: {
-        upsert(args: unknown): Promise<unknown>;
+        findUnique(args: unknown): Promise<unknown>;
+        createMany(args: unknown): Promise<{ count: number }>;
+        updateMany(args: unknown): Promise<{ count: number }>;
         deleteMany(args?: unknown): Promise<unknown>;
     };
 }

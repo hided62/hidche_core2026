@@ -229,16 +229,25 @@ const claimGeneralRevision = async (
     expectedRevision: number
 ): Promise<number> => {
     const nextRevision = expectedRevision + 1;
-    const claimed =
-        expectedRevision === 0
-            ? await db.generalTurnRevision.createMany({
-                  data: [{ generalId, revision: nextRevision }],
-                  skipDuplicates: true,
-              })
-            : await db.generalTurnRevision.updateMany({
-                  where: { generalId, revision: expectedRevision },
-                  data: { revision: nextRevision },
-              });
+    const now = new Date();
+    let claimed = await db.generalTurnRevision.updateMany({
+        where: {
+            generalId,
+            revision: expectedRevision,
+            OR: [{ leaseOwner: null }, { leaseExpiresAt: { lte: now } }],
+        },
+        data: {
+            revision: nextRevision,
+            leaseOwner: null,
+            leaseExpiresAt: null,
+        },
+    });
+    if (claimed.count === 0 && expectedRevision === 0) {
+        claimed = await db.generalTurnRevision.createMany({
+            data: [{ generalId, revision: nextRevision }],
+            skipDuplicates: true,
+        });
+    }
     if (claimed.count === 1) {
         return nextRevision;
     }
@@ -253,16 +262,26 @@ const claimNationRevision = async (
     expectedRevision: number
 ): Promise<number> => {
     const nextRevision = expectedRevision + 1;
-    const claimed =
-        expectedRevision === 0
-            ? await db.nationTurnRevision.createMany({
-                  data: [{ nationId, officerLevel, revision: nextRevision }],
-                  skipDuplicates: true,
-              })
-            : await db.nationTurnRevision.updateMany({
-                  where: { nationId, officerLevel, revision: expectedRevision },
-                  data: { revision: nextRevision },
-              });
+    const now = new Date();
+    let claimed = await db.nationTurnRevision.updateMany({
+        where: {
+            nationId,
+            officerLevel,
+            revision: expectedRevision,
+            OR: [{ leaseOwner: null }, { leaseExpiresAt: { lte: now } }],
+        },
+        data: {
+            revision: nextRevision,
+            leaseOwner: null,
+            leaseExpiresAt: null,
+        },
+    });
+    if (claimed.count === 0 && expectedRevision === 0) {
+        claimed = await db.nationTurnRevision.createMany({
+            data: [{ nationId, officerLevel, revision: nextRevision }],
+            skipDuplicates: true,
+        });
+    }
     if (claimed.count === 1) {
         return nextRevision;
     }

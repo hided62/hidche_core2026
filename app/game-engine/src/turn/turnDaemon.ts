@@ -503,13 +503,18 @@ const createTurnDaemonRuntimeWithLease = async (
         beforeExecuteGeneral: reservedTurnStoreHandle
             ? async (general) => {
                   const promises: Promise<unknown>[] = [];
-                  promises.push(reservedTurnStoreHandle.store.refreshGeneralTurns(general.id));
+                  promises.push(
+                      reservedTurnStoreHandle.store.prepareTurnsForExecution(
+                          general.id,
+                          general.nationId > 0 && general.officerLevel >= 5
+                              ? {
+                                    nationId: general.nationId,
+                                    officerLevel: general.officerLevel,
+                                }
+                              : undefined
+                      )
+                  );
                   promises.push(refreshOccupiedAuctionUniqueItemKeys());
-                  if (general.nationId > 0 && general.officerLevel >= 5) {
-                      promises.push(
-                          reservedTurnStoreHandle.store.refreshNationTurns(general.nationId, general.officerLevel)
-                      );
-                  }
                   if (general.nationId > 0 && general.officerLevel >= 5 && shouldUseAi(general, world.getState())) {
                       const key = `${general.nationId}:${world.getState().currentYear}:${world.getState().currentMonth}`;
                       if (!prefetchedNationTurns.has(key)) {

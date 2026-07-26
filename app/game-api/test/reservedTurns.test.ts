@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { DatabaseClient, GeneralTurnRow, NationTurnRow } from '../src/context.js';
 import {
@@ -337,5 +337,34 @@ describe('reservedTurns', () => {
         expect(noOpRepeat).toEqual(repeated);
         const noOpPush = await shiftNationTurns(db, 5, 12, 12, repeated.revision);
         expect(noOpPush).toEqual(repeated);
+    });
+
+    it('rejects an API writer while the daemon holds the queue lease without touching turns', async () => {
+        const deleteMany = vi.fn(async () => ({}));
+        const createMany = vi.fn(async () => ({}));
+        const db = {
+            generalTurnRevision: {
+                updateMany: vi.fn(async () => ({ count: 0 })),
+                createMany: vi.fn(async () => ({ count: 0 })),
+                findUnique: vi.fn(async () => ({
+                    generalId: 9,
+                    revision: 0,
+                    leaseOwner: 'daemon-1',
+                    leaseExpiresAt: new Date(Date.now() + 60_000),
+                    updatedAt: new Date(),
+                })),
+            },
+            generalTurn: {
+                findMany: vi.fn(async () => []),
+                deleteMany,
+                createMany,
+            },
+        } as unknown as DatabaseClient;
+
+        await expect(setGeneralTurn(db, 9, 0, 'che_훈련', {}, 0)).rejects.toBeInstanceOf(
+            ReservedTurnRevisionConflictError
+        );
+        expect(deleteMany).not.toHaveBeenCalled();
+        expect(createMany).not.toHaveBeenCalled();
     });
 });
