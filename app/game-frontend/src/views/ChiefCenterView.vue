@@ -21,6 +21,7 @@ type ChiefEntry = {
     name: string | null;
     npcState: number | null;
     turnTime: string | null;
+    revision: number;
     turns: ChiefTurn[];
 };
 
@@ -59,7 +60,8 @@ type CommandAvailability = {
         step?: number;
         constValue?: string | number;
         options?: Array<{ value: string | number; label: string; color?: string }>;
-        optionSource?: 'cities' | 'nations' | 'generals' | 'crewTypes' | 'armTypes' | 'nationTypes' | 'colors' | 'items';
+        optionSource?:
+            'cities' | 'nations' | 'generals' | 'crewTypes' | 'armTypes' | 'nationTypes' | 'colors' | 'items';
         tupleLabels?: string[];
     }>;
 };
@@ -181,9 +183,7 @@ watch(
             return;
         }
         const preferred =
-            snapshot.me.officerLevel >= 5
-                ? snapshot.me.officerLevel
-                : snapshot.chiefs[0]?.officerLevel ?? null;
+            snapshot.me.officerLevel >= 5 ? snapshot.me.officerLevel : (snapshot.chiefs[0]?.officerLevel ?? null);
         selectedChiefLevel.value = preferred;
     }
 );
@@ -315,7 +315,7 @@ const selectedChiefRows = computed(() => {
     return buildTurnRows(selectedChief.value);
 });
 
-const updateMyTurns = (turns: ChiefEntry['turns']) => {
+const updateMyTurns = (turns: ChiefEntry['turns'], revision: number) => {
     if (!data.value) {
         return;
     }
@@ -325,6 +325,7 @@ const updateMyTurns = (turns: ChiefEntry['turns']) => {
         return;
     }
     entry.turns = turns;
+    entry.revision = revision;
 };
 
 const reserveTurn = async (turnIndex: number) => {
@@ -340,9 +341,11 @@ const reserveTurn = async (turnIndex: number) => {
             turnIndex,
             action: selectedCommand.value.key,
             args: commandArgs.value,
+            expectedRevision: selectedChief.value?.revision ?? 0,
         });
-        updateMyTurns(result.turns);
+        updateMyTurns(result.turns, result.revision);
     } catch (err) {
+        await loadChiefCenter();
         error.value = resolveErrorMessage(err);
     }
 };
@@ -357,9 +360,11 @@ const clearTurn = async (turnIndex: number) => {
             turnIndex,
             action: '휴식',
             args: {},
+            expectedRevision: selectedChief.value?.revision ?? 0,
         });
-        updateMyTurns(result.turns);
+        updateMyTurns(result.turns, result.revision);
     } catch (err) {
+        await loadChiefCenter();
         error.value = resolveErrorMessage(err);
     }
 };
@@ -372,9 +377,11 @@ const shiftTurns = async (amount: number) => {
         const result = await trpc.turns.reserved.shiftNation.mutate({
             generalId: data.value.me.id,
             amount,
+            expectedRevision: selectedChief.value?.revision ?? 0,
         });
-        updateMyTurns(result.turns);
+        updateMyTurns(result.turns, result.revision);
     } catch (err) {
+        await loadChiefCenter();
         error.value = resolveErrorMessage(err);
     }
 };
@@ -496,9 +503,7 @@ const shiftTurns = async (amount: number) => {
             </div>
             <div class="chief-side">
                 <PanelCard title="사령부 편집" subtitle="선택 명령을 배치하세요">
-                    <div v-if="!isEditingAllowed" class="muted">
-                        사령부 편집은 본인 관직에서만 가능합니다.
-                    </div>
+                    <div v-if="!isEditingAllowed" class="muted">사령부 편집은 본인 관직에서만 가능합니다.</div>
                     <div v-else>
                         <CommandSelectForm
                             :command-table="chiefCommandTable"

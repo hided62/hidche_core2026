@@ -14,8 +14,9 @@ import {
 import {
     MAX_GENERAL_TURNS,
     MAX_NATION_TURNS,
-    listGeneralTurns,
-    listNationTurns,
+    ReservedTurnRevisionConflictError,
+    getGeneralTurnSnapshot,
+    getNationTurnSnapshot,
     setGeneralTurn,
     setNationTurn,
     shiftGeneralTurns,
@@ -42,6 +43,21 @@ const parseCommandArgs = async (scope: 'general' | 'nation', action: string, arg
             message: error instanceof Error ? error.message : 'Invalid turn command arguments.',
             cause: error,
         });
+    }
+};
+
+const mutateReservedTurns = async <T>(mutation: () => Promise<T>): Promise<T> => {
+    try {
+        return await mutation();
+    } catch (error) {
+        if (error instanceof ReservedTurnRevisionConflictError) {
+            throw new TRPCError({
+                code: 'CONFLICT',
+                message: 'Reserved turn queue changed. Reload and retry.',
+                cause: error,
+            });
+        }
+        throw error;
     }
 };
 
@@ -164,7 +180,7 @@ export const turnsRouter = router({
             .query(async ({ ctx, input }) => {
                 await getOwnedGeneral(ctx, input.generalId);
 
-                return listGeneralTurns(ctx.db, input.generalId);
+                return getGeneralTurnSnapshot(ctx.db, input.generalId);
             }),
         getNation: authedProcedure
             .input(
@@ -187,7 +203,7 @@ export const turnsRouter = router({
                     });
                 }
 
-                return listNationTurns(ctx.db, general.nationId, general.officerLevel);
+                return getNationTurnSnapshot(ctx.db, general.nationId, general.officerLevel);
             }),
         setGeneral: authedProcedure
             .input(
@@ -200,33 +216,33 @@ export const turnsRouter = router({
                         .max(MAX_GENERAL_TURNS - 1),
                     action: z.string().min(1),
                     args: z.unknown().optional(),
+                    expectedRevision: z.number().int().nonnegative(),
                 })
             )
             .mutation(async ({ ctx, input }) => {
                 await getOwnedGeneral(ctx, input.generalId);
                 const args = await parseCommandArgs('general', input.action, input.args);
 
-                const turns = await setGeneralTurn(
-                    ctx.db,
-                    input.generalId,
-                    input.turnIndex,
-                    input.action,
-                    args
+                const snapshot = await mutateReservedTurns(() =>
+                    setGeneralTurn(ctx.db, input.generalId, input.turnIndex, input.action, args, input.expectedRevision)
                 );
-                return { ok: true, turns };
+                return { ok: true, ...snapshot };
             }),
         shiftGeneral: authedProcedure
             .input(
                 z.object({
                     generalId: z.number().int().positive(),
                     amount: buildShiftAmountSchema(MAX_GENERAL_TURNS),
+                    expectedRevision: z.number().int().nonnegative(),
                 })
             )
             .mutation(async ({ ctx, input }) => {
                 await getOwnedGeneral(ctx, input.generalId);
 
-                const turns = await shiftGeneralTurns(ctx.db, input.generalId, input.amount);
-                return { ok: true, turns };
+                const snapshot = await mutateReservedTurns(() =>
+                    shiftGeneralTurns(ctx.db, input.generalId, input.amount, input.expectedRevision)
+                );
+                return { ok: true, ...snapshot };
             }),
         setNation: authedProcedure
             .input(
@@ -239,6 +255,7 @@ export const turnsRouter = router({
                         .max(MAX_NATION_TURNS - 1),
                     action: z.string().min(1),
                     args: z.unknown().optional(),
+                    expectedRevision: z.number().int().nonnegative(),
                 })
             )
             .mutation(async ({ ctx, input }) => {
@@ -257,21 +274,25 @@ export const turnsRouter = router({
                 }
                 const args = await parseCommandArgs('nation', input.action, input.args);
 
-                const turns = await setNationTurn(
-                    ctx.db,
-                    general.nationId,
-                    general.officerLevel,
-                    input.turnIndex,
-                    input.action,
-                    args
+                const snapshot = await mutateReservedTurns(() =>
+                    setNationTurn(
+                        ctx.db,
+                        general.nationId,
+                        general.officerLevel,
+                        input.turnIndex,
+                        input.action,
+                        args,
+                        input.expectedRevision
+                    )
                 );
-                return { ok: true, turns };
+                return { ok: true, ...snapshot };
             }),
         shiftNation: authedProcedure
             .input(
                 z.object({
                     generalId: z.number().int().positive(),
                     amount: buildShiftAmountSchema(MAX_NATION_TURNS),
+                    expectedRevision: z.number().int().nonnegative(),
                 })
             )
             .mutation(async ({ ctx, input }) => {
@@ -289,8 +310,16 @@ export const turnsRouter = router({
                     });
                 }
 
-                const turns = await shiftNationTurns(ctx.db, general.nationId, general.officerLevel, input.amount);
-                return { ok: true, turns };
+                const snapshot = await mutateReservedTurns(() =>
+                    shiftNationTurns(
+                        ctx.db,
+                        general.nationId,
+                        general.officerLevel,
+                        input.amount,
+                        input.expectedRevision
+                    )
+                );
+                return { ok: true, ...snapshot };
             }),
     }),
 });

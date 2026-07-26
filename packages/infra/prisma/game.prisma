@@ -368,6 +368,14 @@ model GeneralTurn {
   @@map("general_turn")
 }
 
+model GeneralTurnRevision {
+  generalId Int      @id @map("general_id")
+  revision  Int      @default(0)
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("general_turn_revision")
+}
+
 model NationTurn {
   id           Int      @id @default(autoincrement())
   nationId     Int      @map("nation_id")
@@ -379,6 +387,16 @@ model NationTurn {
 
   @@unique([nationId, officerLevel, turnIdx])
   @@map("nation_turn")
+}
+
+model NationTurnRevision {
+  nationId     Int      @map("nation_id")
+  officerLevel Int      @map("officer_level")
+  revision     Int      @default(0)
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@id([nationId, officerLevel])
+  @@map("nation_turn_revision")
 }
 
 model Diplomacy {

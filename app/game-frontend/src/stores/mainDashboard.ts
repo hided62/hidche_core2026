@@ -25,7 +25,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     type MessageBundle = Awaited<ReturnType<typeof trpc.messages.getRecent.query>>;
     type MessageContacts = Awaited<ReturnType<typeof trpc.messages.getContacts.query>>;
     type BoardAccess = Awaited<ReturnType<typeof trpc.board.getAccess.query>>;
-    type ReservedTurnView = Awaited<ReturnType<typeof trpc.turns.reserved.getGeneral.query>>[number];
+    type ReservedTurnView = Awaited<ReturnType<typeof trpc.turns.reserved.getGeneral.query>>['turns'][number];
     type RecentRecord = Awaited<ReturnType<typeof trpc.general.getRecentRecords.query>>['global'][number];
     type FrontStatus = Awaited<ReturnType<typeof trpc.general.getFrontStatus.query>>;
 
@@ -46,6 +46,8 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     const boardAccess = ref<BoardAccess | null>(null);
     const reservedGeneralTurns = ref<ReservedTurnView[] | null>(null);
     const reservedNationTurns = ref<ReservedTurnView[] | null>(null);
+    const reservedGeneralRevision = ref(0);
+    const reservedNationRevision = ref(0);
     const globalRecords = ref<RecentRecord[]>([]);
     const generalRecords = ref<RecentRecord[]>([]);
     const worldHistory = ref<RecentRecord[]>([]);
@@ -260,6 +262,8 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             if (!context) {
                 reservedGeneralTurns.value = null;
                 reservedNationTurns.value = null;
+                reservedGeneralRevision.value = 0;
+                reservedNationRevision.value = 0;
                 boardAccess.value = null;
                 resetRecentRecords(null);
                 loading.value = false;
@@ -322,8 +326,10 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             messages.value = messageData;
             messageContacts.value = contacts;
             boardAccess.value = access;
-            reservedGeneralTurns.value = generalTurns;
-            reservedNationTurns.value = nationTurns;
+            reservedGeneralTurns.value = generalTurns.turns;
+            reservedGeneralRevision.value = generalTurns.revision;
+            reservedNationTurns.value = nationTurns?.turns ?? null;
+            reservedNationRevision.value = nationTurns?.revision ?? 0;
             if (records) {
                 globalRecords.value = mergeRecentRecords(globalRecords.value, records.global);
                 generalRecords.value = mergeRecentRecords(generalRecords.value, records.general);
@@ -485,10 +491,17 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
                 turnIndex,
                 action,
                 args,
+                expectedRevision: reservedGeneralRevision.value,
             });
             reservedGeneralTurns.value = result.turns;
+            reservedGeneralRevision.value = result.revision;
         } catch (err) {
             error.value = resolveErrorMessage(err);
+            const snapshot = await trpc.turns.reserved.getGeneral.query({ generalId: id }).catch(() => null);
+            if (snapshot) {
+                reservedGeneralTurns.value = snapshot.turns;
+                reservedGeneralRevision.value = snapshot.revision;
+            }
         }
     };
 
@@ -501,10 +514,17 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             const result = await trpc.turns.reserved.shiftGeneral.mutate({
                 generalId: id,
                 amount,
+                expectedRevision: reservedGeneralRevision.value,
             });
             reservedGeneralTurns.value = result.turns;
+            reservedGeneralRevision.value = result.revision;
         } catch (err) {
             error.value = resolveErrorMessage(err);
+            const snapshot = await trpc.turns.reserved.getGeneral.query({ generalId: id }).catch(() => null);
+            if (snapshot) {
+                reservedGeneralTurns.value = snapshot.turns;
+                reservedGeneralRevision.value = snapshot.revision;
+            }
         }
     };
 
@@ -523,10 +543,17 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
                 turnIndex,
                 action,
                 args,
+                expectedRevision: reservedNationRevision.value,
             });
             reservedNationTurns.value = result.turns;
+            reservedNationRevision.value = result.revision;
         } catch (err) {
             error.value = resolveErrorMessage(err);
+            const snapshot = await trpc.turns.reserved.getNation.query({ generalId: id }).catch(() => null);
+            if (snapshot) {
+                reservedNationTurns.value = snapshot.turns;
+                reservedNationRevision.value = snapshot.revision;
+            }
         }
     };
 
@@ -543,10 +570,17 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             const result = await trpc.turns.reserved.shiftNation.mutate({
                 generalId: id,
                 amount,
+                expectedRevision: reservedNationRevision.value,
             });
             reservedNationTurns.value = result.turns;
+            reservedNationRevision.value = result.revision;
         } catch (err) {
             error.value = resolveErrorMessage(err);
+            const snapshot = await trpc.turns.reserved.getNation.query({ generalId: id }).catch(() => null);
+            if (snapshot) {
+                reservedNationTurns.value = snapshot.turns;
+                reservedNationRevision.value = snapshot.revision;
+            }
         }
     };
 

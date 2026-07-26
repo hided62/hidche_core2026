@@ -99,10 +99,11 @@ export INPUT_EVENT_DATABASE_URL=$database_url
 export GENERAL_LIFECYCLE_DATABASE_URL=$database_url
 export TURN_DAEMON_LEASE_DATABASE_URL=$database_url
 export TURN_DIFFERENTIAL_DATABASE_URL=$database_url
+export RESERVED_TURN_DATABASE_URL=$database_url
 
 pnpm --filter @sammo-ts/infra prisma:db:push:game
 
-database_markers='INPUT_EVENT_DATABASE_URL|GENERAL_LIFECYCLE_DATABASE_URL|TURN_DAEMON_LEASE_DATABASE_URL'
+database_markers='INPUT_EVENT_DATABASE_URL|GENERAL_LIFECYCLE_DATABASE_URL|TURN_DAEMON_LEASE_DATABASE_URL|RESERVED_TURN_DATABASE_URL'
 run_marked_tests app/game-api "$database_markers" "PostgreSQL"
 run_marked_tests app/game-engine "$database_markers" "PostgreSQL"
 run_marked_tests tools/integration-tests \

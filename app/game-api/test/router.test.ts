@@ -101,6 +101,8 @@ const buildContext = (options?: {
     const battleSim = options?.battleSim ?? new InMemoryBattleSimTransport();
     const generalTurns = options?.generalTurns ?? [];
     const nationTurns = options?.nationTurns ?? [];
+    let generalTurnRevision: number | undefined;
+    let nationTurnRevision: number | undefined;
     const db = {
         worldState: {
             findFirst: async () => {
@@ -133,15 +135,58 @@ const buildContext = (options?: {
                 return {};
             },
         },
+        generalTurnRevision: {
+            findUnique: async () =>
+                generalTurnRevision === undefined
+                    ? null
+                    : { generalId: options?.general?.id ?? 0, revision: generalTurnRevision, updatedAt: new Date() },
+            createMany: async ({ data }: { data: Array<{ revision: number }> }) => {
+                if (generalTurnRevision !== undefined) {
+                    return { count: 0 };
+                }
+                generalTurnRevision = data[0]?.revision ?? 0;
+                return { count: 1 };
+            },
+            updateMany: async ({ where, data }: { where: { revision: number }; data: { revision: number } }) => {
+                if (generalTurnRevision !== where.revision) {
+                    return { count: 0 };
+                }
+                generalTurnRevision = data.revision;
+                return { count: 1 };
+            },
+        },
         nationTurn: {
             findMany: async ({ where }: { where: { nationId: number; officerLevel: number } }) =>
-                nationTurns.filter(
-                    (row) => row.nationId === where.nationId && row.officerLevel === where.officerLevel
-                ),
+                nationTurns.filter((row) => row.nationId === where.nationId && row.officerLevel === where.officerLevel),
             deleteMany: async () => ({}),
             createMany: async (args: unknown) => {
                 options?.nationTurnWrites?.push(args);
                 return {};
+            },
+        },
+        nationTurnRevision: {
+            findUnique: async () =>
+                nationTurnRevision === undefined
+                    ? null
+                    : {
+                          nationId: options?.general?.nationId ?? 0,
+                          officerLevel: options?.general?.officerLevel ?? 0,
+                          revision: nationTurnRevision,
+                          updatedAt: new Date(),
+                      },
+            createMany: async ({ data }: { data: Array<{ revision: number }> }) => {
+                if (nationTurnRevision !== undefined) {
+                    return { count: 0 };
+                }
+                nationTurnRevision = data[0]?.revision ?? 0;
+                return { count: 1 };
+            },
+            updateMany: async ({ where, data }: { where: { revision: number }; data: { revision: number } }) => {
+                if (nationTurnRevision !== where.revision) {
+                    return { count: 0 };
+                }
+                nationTurnRevision = data.revision;
+                return { count: 1 };
             },
         },
     };
@@ -370,8 +415,9 @@ describe('appRouter', () => {
         const caller = appRouter.createCaller(buildContext({ general, generalTurns }));
         const response = await caller.turns.reserved.getGeneral({ generalId: 11 });
 
-        expect(response[0]?.action).toBe('che_화계');
-        expect(response[0]?.index).toBe(0);
+        expect(response.revision).toBe(0);
+        expect(response.turns[0]?.action).toBe('che_화계');
+        expect(response.turns[0]?.index).toBe(0);
     });
 
     it('returns reserved nation turns', async () => {
@@ -390,8 +436,9 @@ describe('appRouter', () => {
         const caller = appRouter.createCaller(buildContext({ general, nationTurns }));
         const response = await caller.turns.reserved.getNation({ generalId: 12 });
 
-        expect(response[0]?.action).toBe('che_포상');
-        expect(response[0]?.index).toBe(0);
+        expect(response.revision).toBe(0);
+        expect(response.turns[0]?.action).toBe('che_포상');
+        expect(response.turns[0]?.index).toBe(0);
     });
 
     it('validates and persists general command arguments from the authenticated owner', async () => {
@@ -404,6 +451,7 @@ describe('appRouter', () => {
             turnIndex: 0,
             action: 'che_화계',
             args: { destCityId: 7 },
+            expectedRevision: 0,
         });
 
         expect(response.turns[0]).toMatchObject({ action: 'che_화계', args: { destCityId: 7 } });
@@ -416,6 +464,16 @@ describe('appRouter', () => {
             actionCode: 'che_화계',
             arg: { destCityId: 7 },
         });
+
+        await expect(
+            caller.turns.reserved.setGeneral({
+                generalId: 13,
+                turnIndex: 1,
+                action: '휴식',
+                expectedRevision: 0,
+            })
+        ).rejects.toMatchObject({ code: 'CONFLICT' });
+        expect(writes).toHaveLength(1);
     });
 
     it('rejects malformed and cross-scope arguments without writing turns', async () => {
@@ -432,6 +490,7 @@ describe('appRouter', () => {
                 turnIndex: 0,
                 action: 'che_화계',
                 args: { destCityId: '7' },
+                expectedRevision: 0,
             })
         ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
         await expect(
@@ -440,6 +499,7 @@ describe('appRouter', () => {
                 turnIndex: 0,
                 action: 'che_포상',
                 args: { isGold: true, amount: 1, destGeneralId: 7 },
+                expectedRevision: 0,
             })
         ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
 
@@ -465,6 +525,7 @@ describe('appRouter', () => {
                 generalId: general.id,
                 turnIndex: 0,
                 action: '휴식',
+                expectedRevision: 0,
             })
         ).rejects.toMatchObject({
             code: 'FORBIDDEN',
@@ -473,6 +534,7 @@ describe('appRouter', () => {
             caller.turns.reserved.shiftGeneral({
                 generalId: general.id,
                 amount: 1,
+                expectedRevision: 0,
             })
         ).rejects.toMatchObject({
             code: 'FORBIDDEN',
@@ -482,6 +544,7 @@ describe('appRouter', () => {
                 generalId: general.id,
                 turnIndex: 0,
                 action: '휴식',
+                expectedRevision: 0,
             })
         ).rejects.toMatchObject({
             code: 'FORBIDDEN',
@@ -490,6 +553,7 @@ describe('appRouter', () => {
             caller.turns.reserved.shiftNation({
                 generalId: general.id,
                 amount: 1,
+                expectedRevision: 0,
             })
         ).rejects.toMatchObject({
             code: 'FORBIDDEN',

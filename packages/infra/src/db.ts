@@ -21,7 +21,9 @@ export interface DatabaseClient {
     oldGeneral: GamePrisma.OldGeneralDelegate;
     emperor: GamePrisma.EmperorDelegate;
     generalTurn: GamePrisma.GeneralTurnDelegate;
+    generalTurnRevision: GamePrisma.GeneralTurnRevisionDelegate;
     nationTurn: GamePrisma.NationTurnDelegate;
+    nationTurnRevision: GamePrisma.NationTurnRevisionDelegate;
     troop: GamePrisma.TroopDelegate;
     logEntry: GamePrisma.LogEntryDelegate;
     auction: GamePrisma.AuctionDelegate;

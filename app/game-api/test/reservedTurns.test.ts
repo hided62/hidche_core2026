@@ -8,11 +8,14 @@ import {
     setNationTurn,
     shiftGeneralTurns,
     shiftNationTurns,
+    ReservedTurnRevisionConflictError,
 } from '../src/turns/reservedTurns.js';
 
 const buildDb = () => {
     const generalTurns = new Map<number, GeneralTurnRow[]>();
     const nationTurns = new Map<string, NationTurnRow[]>();
+    const generalRevisions = new Map<number, number>();
+    const nationRevisions = new Map<string, number>();
 
     type GeneralTurnFindManyArgs = Parameters<DatabaseClient['generalTurn']['findMany']>[0];
     type GeneralTurnDeleteManyArgs = NonNullable<Parameters<DatabaseClient['generalTurn']['deleteMany']>[0]>;
@@ -21,6 +24,16 @@ const buildDb = () => {
     type NationTurnFindManyArgs = Parameters<DatabaseClient['nationTurn']['findMany']>[0];
     type NationTurnDeleteManyArgs = NonNullable<Parameters<DatabaseClient['nationTurn']['deleteMany']>[0]>;
     type NationTurnCreateManyArgs = NonNullable<Parameters<DatabaseClient['nationTurn']['createMany']>[0]>;
+    type GeneralRevisionFindArgs = Parameters<DatabaseClient['generalTurnRevision']['findUnique']>[0];
+    type GeneralRevisionCreateManyArgs = NonNullable<
+        Parameters<DatabaseClient['generalTurnRevision']['createMany']>[0]
+    >;
+    type GeneralRevisionUpdateManyArgs = NonNullable<
+        Parameters<DatabaseClient['generalTurnRevision']['updateMany']>[0]
+    >;
+    type NationRevisionFindArgs = Parameters<DatabaseClient['nationTurnRevision']['findUnique']>[0];
+    type NationRevisionCreateManyArgs = NonNullable<Parameters<DatabaseClient['nationTurnRevision']['createMany']>[0]>;
+    type NationRevisionUpdateManyArgs = NonNullable<Parameters<DatabaseClient['nationTurnRevision']['updateMany']>[0]>;
 
     const db = {
         worldState: {
@@ -64,6 +77,39 @@ const buildDb = () => {
                 return {};
             },
         },
+        generalTurnRevision: {
+            findUnique: async ({ where }: GeneralRevisionFindArgs) => {
+                const generalId = where.generalId as number;
+                const revision = generalRevisions.get(generalId);
+                return revision === undefined
+                    ? null
+                    : {
+                          generalId,
+                          revision,
+                          updatedAt: new Date(),
+                      };
+            },
+            createMany: async ({ data }: GeneralRevisionCreateManyArgs) => {
+                const row = (Array.isArray(data) ? data[0] : data) as {
+                    generalId: number;
+                    revision?: number;
+                };
+                if (generalRevisions.has(row.generalId)) {
+                    return { count: 0 };
+                }
+                generalRevisions.set(row.generalId, row.revision ?? 0);
+                return { count: 1 };
+            },
+            updateMany: async ({ where, data }: GeneralRevisionUpdateManyArgs) => {
+                const generalId = typeof where?.generalId === 'number' ? where.generalId : -1;
+                const expected = typeof where?.revision === 'number' ? where.revision : -1;
+                if (generalRevisions.get(generalId) !== expected || typeof data.revision !== 'number') {
+                    return { count: 0 };
+                }
+                generalRevisions.set(generalId, data.revision);
+                return { count: 1 };
+            },
+        },
         nationTurn: {
             findMany: async (args?: NationTurnFindManyArgs) => {
                 const nationId = typeof args?.where?.nationId === 'number' ? args.where.nationId : undefined;
@@ -100,6 +146,48 @@ const buildDb = () => {
                 return {};
             },
         },
+        nationTurnRevision: {
+            findUnique: async ({ where }: NationRevisionFindArgs) => {
+                const compound = where.nationId_officerLevel;
+                if (!compound) {
+                    return null;
+                }
+                const key = `${compound.nationId}:${compound.officerLevel}`;
+                const revision = nationRevisions.get(key);
+                return revision === undefined
+                    ? null
+                    : {
+                          nationId: compound.nationId,
+                          officerLevel: compound.officerLevel,
+                          revision,
+                          updatedAt: new Date(),
+                      };
+            },
+            createMany: async ({ data }: NationRevisionCreateManyArgs) => {
+                const row = (Array.isArray(data) ? data[0] : data) as {
+                    nationId: number;
+                    officerLevel: number;
+                    revision?: number;
+                };
+                const key = `${row.nationId}:${row.officerLevel}`;
+                if (nationRevisions.has(key)) {
+                    return { count: 0 };
+                }
+                nationRevisions.set(key, row.revision ?? 0);
+                return { count: 1 };
+            },
+            updateMany: async ({ where, data }: NationRevisionUpdateManyArgs) => {
+                const nationId = typeof where?.nationId === 'number' ? where.nationId : -1;
+                const officerLevel = typeof where?.officerLevel === 'number' ? where.officerLevel : -1;
+                const expected = typeof where?.revision === 'number' ? where.revision : -1;
+                const key = `${nationId}:${officerLevel}`;
+                if (nationRevisions.get(key) !== expected || typeof data.revision !== 'number') {
+                    return { count: 0 };
+                }
+                nationRevisions.set(key, data.revision);
+                return { count: 1 };
+            },
+        },
     } as unknown as DatabaseClient;
 
     return { db };
@@ -109,30 +197,45 @@ describe('reservedTurns', () => {
     it('sets and shifts general turns', async () => {
         const { db } = buildDb();
 
-        const initial = await setGeneralTurn(db, 1, 0, 'che_화계', { destCityId: 10 });
+        const initial = await setGeneralTurn(db, 1, 0, 'che_화계', { destCityId: 10 }, 0);
 
-        expect(initial).toHaveLength(MAX_GENERAL_TURNS);
-        expect(initial[0]?.action).toBe('che_화계');
+        expect(initial.revision).toBe(1);
+        expect(initial.turns).toHaveLength(MAX_GENERAL_TURNS);
+        expect(initial.turns[0]?.action).toBe('che_화계');
 
-        const pushed = await shiftGeneralTurns(db, 1, 1);
-        expect(pushed[0]?.action).toBe('휴식');
-        expect(pushed[1]?.action).toBe('che_화계');
+        const pushed = await shiftGeneralTurns(db, 1, 1, initial.revision);
+        expect(pushed.revision).toBe(2);
+        expect(pushed.turns[0]?.action).toBe('휴식');
+        expect(pushed.turns[1]?.action).toBe('che_화계');
 
-        const pulled = await shiftGeneralTurns(db, 1, -1);
-        expect(pulled[0]?.action).toBe('che_화계');
-        expect(pulled[MAX_GENERAL_TURNS - 1]?.action).toBe('휴식');
+        const pulled = await shiftGeneralTurns(db, 1, -1, pushed.revision);
+        expect(pulled.turns[0]?.action).toBe('che_화계');
+        expect(pulled.turns[MAX_GENERAL_TURNS - 1]?.action).toBe('휴식');
+
+        await expect(setGeneralTurn(db, 1, 2, 'che_훈련', {}, 1)).rejects.toBeInstanceOf(
+            ReservedTurnRevisionConflictError
+        );
     });
 
     it('sets and shifts nation turns', async () => {
         const { db } = buildDb();
 
-        const initial = await setNationTurn(db, 2, 5, 0, 'che_포상', { isGold: true, amount: 200, destGeneralId: 7 });
+        const initial = await setNationTurn(
+            db,
+            2,
+            5,
+            0,
+            'che_포상',
+            { isGold: true, amount: 200, destGeneralId: 7 },
+            0
+        );
 
-        expect(initial).toHaveLength(MAX_NATION_TURNS);
-        expect(initial[0]?.action).toBe('che_포상');
+        expect(initial.revision).toBe(1);
+        expect(initial.turns).toHaveLength(MAX_NATION_TURNS);
+        expect(initial.turns[0]?.action).toBe('che_포상');
 
-        const pushed = await shiftNationTurns(db, 2, 5, 1);
-        expect(pushed[0]?.action).toBe('휴식');
-        expect(pushed[1]?.action).toBe('che_포상');
+        const pushed = await shiftNationTurns(db, 2, 5, 1, initial.revision);
+        expect(pushed.turns[0]?.action).toBe('휴식');
+        expect(pushed.turns[1]?.action).toBe('che_포상');
     });
 });

@@ -48,12 +48,10 @@ test('reserves an argument command in the real game API and reads it back from P
     const context = await game.general.me.query();
     if (!context) throw new Error('demo1 general is missing');
     const generalId = context.general.id;
-    const original = (
-        (await game.turns.reserved.getGeneral.query({ generalId })) as unknown as PlainTurn[]
-    )[29];
-    const originalNation = (
-        (await game.turns.reserved.getNation.query({ generalId })) as unknown as PlainTurn[]
-    )[11];
+    const originalGeneralSnapshot = await game.turns.reserved.getGeneral.query({ generalId });
+    const original = (originalGeneralSnapshot.turns as unknown as PlainTurn[])[29];
+    const originalNationSnapshot = await game.turns.reserved.getNation.query({ generalId });
+    const originalNation = (originalNationSnapshot.turns as unknown as PlainTurn[])[11];
 
     await page.addInitScript(
         ({ token }) => {
@@ -71,9 +69,9 @@ test('reserves an argument command in the real game API and reads it back from P
         const form = page.getByTestId('command-argument-form');
         await expect(form).toBeVisible();
         const citySelect = form.locator('select');
-        const optionValues = await citySelect.locator('option').evaluateAll((options) =>
-            options.map((option) => (option as HTMLOptionElement).value)
-        );
+        const optionValues = await citySelect
+            .locator('option')
+            .evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value));
         const targetCityId = Number(optionValues.find((value) => Number(value) !== context.general.cityId));
         expect(targetCityId).toBeGreaterThan(0);
         await citySelect.selectOption(String(targetCityId));
@@ -83,7 +81,7 @@ test('reserves an argument command in the real game API and reads it back from P
         await lastTurn.getByRole('button', { name: '배치' }).click();
         await expect(lastTurn.locator('.turn-action')).toHaveText('che_화계');
 
-        const persisted = (await game.turns.reserved.getGeneral.query({ generalId }))[29];
+        const persisted = (await game.turns.reserved.getGeneral.query({ generalId })).turns[29];
         expect(persisted).toEqual({
             index: 29,
             action: 'che_화계',
@@ -95,9 +93,9 @@ test('reserves an argument command in the real game API and reads it back from P
         await form.getByRole('button', { name: '쌀', exact: true }).click();
         await form.locator('input[type=number]').fill('1');
         const generalSelect = form.locator('select');
-        const generalValues = await generalSelect.locator('option').evaluateAll((options) =>
-            options.map((option) => (option as HTMLOptionElement).value)
-        );
+        const generalValues = await generalSelect
+            .locator('option')
+            .evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value));
         const targetGeneralId = Number(generalValues.find((value) => Number(value) !== generalId));
         expect(targetGeneralId).toBeGreaterThan(0);
         await generalSelect.selectOption(String(targetGeneralId));
@@ -105,7 +103,7 @@ test('reserves an argument command in the real game API and reads it back from P
         const lastNationTurn = nationSection.locator('.reserved-item').nth(11);
         await lastNationTurn.getByRole('button', { name: '배치' }).click();
         await expect(lastNationTurn.locator('.turn-action')).toHaveText('che_포상');
-        const persistedNation = (await game.turns.reserved.getNation.query({ generalId }))[11];
+        const persistedNation = (await game.turns.reserved.getNation.query({ generalId })).turns[11];
         expect(persistedNation).toEqual({
             index: 11,
             action: 'che_포상',
@@ -116,17 +114,21 @@ test('reserves an argument command in the real game API and reads it back from P
             fullPage: true,
         });
     } finally {
+        const currentGeneral = await game.turns.reserved.getGeneral.query({ generalId });
         await game.turns.reserved.setGeneral.mutate({
             generalId,
             turnIndex: 29,
             action: original?.action ?? '휴식',
             args: original?.args ?? {},
+            expectedRevision: currentGeneral.revision,
         });
+        const currentNation = await game.turns.reserved.getNation.query({ generalId });
         await game.turns.reserved.setNation.mutate({
             generalId,
             turnIndex: 11,
             action: originalNation?.action ?? '휴식',
             args: originalNation?.args ?? {},
+            expectedRevision: currentNation.revision,
         });
     }
 });

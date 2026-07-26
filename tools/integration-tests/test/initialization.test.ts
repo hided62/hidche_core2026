@@ -338,12 +338,20 @@ describe('integration initialization flow', () => {
         for (const [idx, user] of userSessions.entries()) {
             const accessRef = { value: user.accessToken };
             const userGameClient = createGameClient(gameUrl, gameServer.config.trpcPath, accessRef);
-            if (idx < 3) {
-                await userGameClient.turns.reserved.setGeneral.mutate({
+            let queueRevision = (
+                await userGameClient.turns.reserved.getGeneral.query({
                     generalId: user.generalId,
-                    turnIndex: 0,
-                    action: 'che_거병',
-                });
+                })
+            ).revision;
+            if (idx < 3) {
+                queueRevision = (
+                    await userGameClient.turns.reserved.setGeneral.mutate({
+                        generalId: user.generalId,
+                        turnIndex: 0,
+                        action: 'che_거병',
+                        expectedRevision: queueRevision,
+                    })
+                ).revision;
                 await userGameClient.turns.reserved.setGeneral.mutate({
                     generalId: user.generalId,
                     turnIndex: 1,
@@ -353,20 +361,25 @@ describe('integration initialization flow', () => {
                         nationType: 'che_def',
                         colorType: idx,
                     },
+                    expectedRevision: queueRevision,
                 });
             } else {
                 const destNationId = joinNationIds[(idx - 3) % joinNationIds.length]!;
-                await userGameClient.turns.reserved.setGeneral.mutate({
-                    generalId: user.generalId,
-                    turnIndex: 0,
-                    action: 'che_임관',
-                    args: { destNationId },
-                });
+                queueRevision = (
+                    await userGameClient.turns.reserved.setGeneral.mutate({
+                        generalId: user.generalId,
+                        turnIndex: 0,
+                        action: 'che_임관',
+                        args: { destNationId },
+                        expectedRevision: queueRevision,
+                    })
+                ).revision;
                 await userGameClient.turns.reserved.setGeneral.mutate({
                     generalId: user.generalId,
                     turnIndex: 1,
                     action: 'che_임관',
                     args: { destNationId },
+                    expectedRevision: queueRevision,
                 });
             }
         }

@@ -70,7 +70,10 @@ const buildTurnListFromRows = (
 
 const buildNationKey = (nationId: number, officerLevel: number): string => `${nationId}:${officerLevel}`;
 
-type ReservedTurnDatabaseClient = Pick<TurnEngineDatabaseClient, 'generalTurn' | 'nationTurn'>;
+type ReservedTurnDatabaseClient = Pick<TurnEngineDatabaseClient, 'generalTurn' | 'nationTurn'> & {
+    generalTurnRevision?: Pick<NonNullable<TurnEngineDatabaseClient['generalTurnRevision']>, 'upsert'>;
+    nationTurnRevision?: Pick<NonNullable<TurnEngineDatabaseClient['nationTurnRevision']>, 'upsert'>;
+};
 
 export interface ReservedTurnChanges {
     generalIds: number[];
@@ -281,6 +284,13 @@ export class InMemoryReservedTurnStore {
                     arg: asJson(normalizeArgs(entry.args)),
                 })),
             });
+            if (prisma.generalTurnRevision) {
+                await prisma.generalTurnRevision.upsert({
+                    where: { generalId },
+                    create: { generalId, revision: 1 },
+                    update: { revision: { increment: 1 } },
+                });
+            }
         }
 
         for (const generalId of changes.generalInitializationIds) {
@@ -316,6 +326,18 @@ export class InMemoryReservedTurnStore {
                     arg: asJson(normalizeArgs(entry.args)),
                 })),
             });
+            if (prisma.nationTurnRevision) {
+                await prisma.nationTurnRevision.upsert({
+                    where: {
+                        nationId_officerLevel: {
+                            nationId,
+                            officerLevel,
+                        },
+                    },
+                    create: { nationId, officerLevel, revision: 1 },
+                    update: { revision: { increment: 1 } },
+                });
+            }
         }
 
         for (const key of changes.nationInitializationKeys) {

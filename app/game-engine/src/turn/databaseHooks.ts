@@ -315,9 +315,7 @@ const upsertRankRows = async (
         await prisma.$executeRaw(GamePrisma.sql`
             INSERT INTO "rank_data" ("general_id", "nation_id", "type", "value")
             VALUES ${GamePrisma.join(
-                batch.map(
-                    (row) => GamePrisma.sql`(${row.generalId}, ${row.nationId}, ${row.type}, ${row.value})`
-                )
+                batch.map((row) => GamePrisma.sql`(${row.generalId}, ${row.nationId}, ${row.type}, ${row.value})`)
             )}
             ON CONFLICT ("general_id", "type") DO UPDATE
             SET
@@ -799,6 +797,11 @@ export const createDatabaseTurnHooks = async (
             }
 
             if (deletedGenerals.length > 0) {
+                if (prisma.generalTurnRevision) {
+                    await prisma.generalTurnRevision.deleteMany({
+                        where: { generalId: { in: deletedGenerals } },
+                    });
+                }
                 await prisma.generalTurn.deleteMany({
                     where: { generalId: { in: deletedGenerals } },
                 });
@@ -816,6 +819,11 @@ export const createDatabaseTurnHooks = async (
                         OR: [{ srcNationId: { in: deletedNations } }, { destNationId: { in: deletedNations } }],
                     },
                 });
+                if (prisma.nationTurnRevision) {
+                    await prisma.nationTurnRevision.deleteMany({
+                        where: { nationId: { in: deletedNations } },
+                    });
+                }
                 await prisma.nationTurn.deleteMany({
                     where: { nationId: { in: deletedNations } },
                 });

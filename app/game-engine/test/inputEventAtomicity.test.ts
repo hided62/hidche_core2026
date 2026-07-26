@@ -27,6 +27,7 @@ const processor: TurnProcessor = {
 describe('input event atomicity', () => {
     it('keeps reserved-turn dirty state when persistence fails', async () => {
         let failCreate = true;
+        const revisionUpsert = vi.fn(async () => ({ revision: 1 }));
         const prisma = {
             generalTurn: {
                 findMany: vi.fn(async () => []),
@@ -37,6 +38,9 @@ describe('input event atomicity', () => {
                     }
                     return { count: 1 };
                 }),
+            },
+            generalTurnRevision: {
+                upsert: revisionUpsert,
             },
             nationTurn: {
                 findMany: vi.fn(async () => []),
@@ -61,6 +65,12 @@ describe('input event atomicity', () => {
 
         failCreate = false;
         await store.flushChanges();
+        expect(revisionUpsert).toHaveBeenCalledOnce();
+        expect(revisionUpsert).toHaveBeenCalledWith({
+            where: { generalId: 7 },
+            create: { generalId: 7, revision: 1 },
+            update: { revision: { increment: 1 } },
+        });
         expect(store.peekDirtyState()).toEqual({
             generalIds: [],
             generalInitializationIds: [],

@@ -436,9 +436,17 @@ export interface TurnEngineDatabaseClient {
         deleteMany(args?: unknown): Promise<unknown>;
         createMany(args?: unknown): Promise<unknown>;
     };
+    generalTurnRevision?: {
+        upsert(args: unknown): Promise<unknown>;
+        deleteMany(args?: unknown): Promise<unknown>;
+    };
     nationTurn: {
         findMany(args?: unknown): Promise<TurnEngineNationTurnRow[]>;
         deleteMany(args?: unknown): Promise<unknown>;
         createMany(args?: unknown): Promise<unknown>;
+    };
+    nationTurnRevision?: {
+        upsert(args: unknown): Promise<unknown>;
+        deleteMany(args?: unknown): Promise<unknown>;
     };
 }
