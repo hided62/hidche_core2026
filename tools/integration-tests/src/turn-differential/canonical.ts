@@ -116,6 +116,7 @@ export const projectCoreDatabaseSnapshot = (rows: {
             experience: row.experience,
             dedication: row.dedication,
             officerLevel: row.officerLevel,
+            betray: row.betray,
             personality: row.personality ?? null,
             specialDomestic: row.specialDomestic ?? null,
             specialWar: row.specialWar ?? null,

@@ -469,6 +469,7 @@ describe('Nation Missing Actions', () => {
                 nation,
                 destCity,
                 destNation,
+                friendlyGenerals: [general],
                 rng: {} as any,
                 addLog: () => {},
             } as any,

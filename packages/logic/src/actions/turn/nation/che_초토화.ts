@@ -1,4 +1,4 @@
-import type { City, GeneralTriggerState, Nation, TriggerValue } from '@sammo-ts/logic/domain/entities.js';
+import type { City, General, GeneralTriggerState, Nation, TriggerValue } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
     beChief,
@@ -15,20 +15,22 @@ import type {
     GeneralActionOutcome,
     GeneralActionResolveContext,
 } from '@sammo-ts/logic/actions/engine.js';
-import { createCityPatchEffect, createLogEffect, createNationPatchEffect } from '@sammo-ts/logic/actions/engine.js';
+import {
+    createCityPatchEffect,
+    createGeneralPatchEffect,
+    createLogEffect,
+    createNationPatchEffect,
+} from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { JosaUtil } from '@sammo-ts/common';
 import type { NationTurnCommandSpec } from './index.js';
 import { z } from 'zod';
-import { parseArgsWithSchema } from '../parseArgs.js';
+import { normalizeLegacyIntegerArg, parseArgsWithSchema } from '../parseArgs.js';
 
 const ARGS_SCHEMA = z.object({
-    destCityId: z.preprocess(
-        (value) => (typeof value === 'number' ? Math.floor(value) : value),
-        z.number().int().positive()
-    ),
+    destCityId: z.preprocess(normalizeLegacyIntegerArg, z.number().int().positive()),
 });
 export type ScorchedEarthArgs = z.infer<typeof ARGS_SCHEMA>;
 
@@ -37,6 +39,7 @@ export interface ScorchedEarthResolveContext<
 > extends GeneralActionResolveContext<TriggerState> {
     destCity: City;
     destNation: Nation | null;
+    friendlyGenerals: Array<General<TriggerState>>;
 }
 
 const ACTION_NAME = '초토화';
@@ -61,9 +64,9 @@ const calcReturnAmount = (destCity: City): number => {
 
 const calcReducedValue = (current: number, max: number, ratio: number): number => {
     if (max <= 0) {
-        return Math.max(0, Math.floor(current * ratio));
+        return Math.max(0, Math.round(current * ratio));
     }
-    return Math.max(Math.floor(max * 0.1), Math.floor(current * ratio));
+    return Math.max(Math.round(max * 0.1), Math.round(current * ratio));
 };
 
 // 초토화 실행을 위한 정의/제약을 구성한다.
@@ -141,12 +144,16 @@ export class ActionDefinition<
         const reducedComm = calcReducedValue(destCity.commerce, destCity.commerceMax, 0.2);
         const reducedSecu = calcReducedValue(destCity.security, destCity.securityMax, 0.2);
         const reducedDef = calcReducedValue(destCity.defence, destCity.defenceMax, 0.2);
-        const reducedWall = Math.max(Math.floor(destCity.wallMax * 0.1), Math.floor(destCity.wall * 0.5));
+        const reducedWall = Math.max(Math.round(destCity.wallMax * 0.1), Math.round(destCity.wall * 0.5));
         const trust = typeof destCity.meta?.trust === 'number' ? Number(destCity.meta.trust) : 0;
 
         const expGain = 5 * (PRE_REQ_TURN + 1);
-        general.experience = Math.max(0, Math.floor(general.experience * 0.9)) + expGain;
+        general.experience = Math.max(0, Math.round(general.experience * 0.9 + expGain));
         general.dedication += expGain;
+        general.meta = {
+            ...general.meta,
+            betray: Number(general.meta.betray ?? 0) + 1,
+        };
 
         const effects: Array<GeneralActionEffect<TriggerState>> = [
             createCityPatchEffect(
@@ -159,6 +166,7 @@ export class ActionDefinition<
                     security: reducedSecu,
                     defence: reducedDef,
                     wall: reducedWall,
+                    conflict: {},
                     meta: {
                         ...destCity.meta,
                         trust: Math.max(50, trust),
@@ -210,6 +218,26 @@ export class ActionDefinition<
             ),
         ];
 
+        for (const friendlyGeneral of context.friendlyGenerals) {
+            if (friendlyGeneral.id === general.id) {
+                continue;
+            }
+            effects.push(
+                createGeneralPatchEffect(
+                    {
+                        ...(friendlyGeneral.officerLevel >= 5
+                            ? { experience: Math.round(friendlyGeneral.experience * 0.9) }
+                            : {}),
+                        meta: {
+                            ...friendlyGeneral.meta,
+                            betray: Number(friendlyGeneral.meta.betray ?? 0) + 1,
+                        },
+                    },
+                    friendlyGeneral.id
+                )
+            );
+        }
+
         return { effects };
     }
 }
@@ -229,10 +257,12 @@ export const actionContextBuilder: ActionContextBuilder<ScorchedEarthArgs> = (ba
         return null;
     }
     const destNation = worldRef.getNationById(destCity.nationId);
+    const friendlyGenerals = worldRef.listGenerals().filter((general) => general.nationId === base.general.nationId);
     return {
         ...base,
         destCity,
         destNation: destNation ?? null,
+        friendlyGenerals,
     };
 };
 
