@@ -4231,3 +4231,427 @@ integration('nation deception target, multistep, movement, RNG, and cooldown bou
         120_000
     );
 });
+
+type ScorchedEarthOutcome = 'fallback' | 'intermediate' | 'completed';
+
+const scorchedEarthBoundaryCases: Array<{
+    name: string;
+    destCityId: unknown;
+    fixturePatches?: FixturePatches;
+    outcome: ScorchedEarthOutcome;
+    coreResolution?: boolean;
+}> = [
+    {
+        name: 'rejects a missing destination city',
+        destCityId: 99,
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects a destination city occupied by another nation',
+        destCityId: 70,
+        fixturePatches: { cities: { 70: { nationId: 2 } } },
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects a neutral destination city',
+        destCityId: 70,
+        fixturePatches: { cities: { 70: { nationId: 0 } } },
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects a source city occupied by another nation',
+        destCityId: 70,
+        fixturePatches: { cities: { 3: { nationId: 2 } } },
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects an unsupplied source city',
+        destCityId: 70,
+        fixturePatches: { cities: { 3: { supplyState: 0 } } },
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects an unsupplied destination city',
+        destCityId: 70,
+        fixturePatches: { cities: { 70: { supplyState: 0 } } },
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects an actor below chief rank',
+        destCityId: 70,
+        fixturePatches: { generals: { 1: { officerLevel: 4, officerCityId: 0 } } },
+        outcome: 'fallback',
+        coreResolution: false,
+    },
+    {
+        name: 'rejects the national capital',
+        destCityId: 70,
+        fixturePatches: { nations: { 1: { capitalCityId: 70 } } },
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects a remaining diplomacy restriction',
+        destCityId: 70,
+        fixturePatches: { nations: { 1: { diplomacyLimit: 1 } } },
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects any outgoing war relation',
+        destCityId: 70,
+        fixturePatches: { diplomacy: { '1:2': { state: 0 } } },
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects an outgoing self-war relation',
+        destCityId: 70,
+        fixturePatches: { diplomacy: { '1:1': { state: 0 } } },
+        outcome: 'fallback',
+    },
+    {
+        name: 'starts at term one without side effects',
+        destCityId: 70,
+        outcome: 'intermediate',
+    },
+    {
+        name: 'continues to term two without side effects',
+        destCityId: 70,
+        fixturePatches: {
+            nations: {
+                1: {
+                    turnLastByOfficerLevel: {
+                        12: { command: '초토화', arg: { destCityID: 70 }, term: 1 },
+                    },
+                    coreTurnLastByOfficerLevel: {
+                        12: { command: '초토화', arg: { destCityId: 70 }, term: 1 },
+                    },
+                },
+            },
+        },
+        outcome: 'intermediate',
+    },
+    {
+        name: 'restarts at term one after another command interrupted the stack',
+        destCityId: 70,
+        fixturePatches: {
+            nations: {
+                1: {
+                    turnLastByOfficerLevel: {
+                        12: { command: '필사즉생', arg: {}, term: 2 },
+                    },
+                },
+            },
+        },
+        outcome: 'intermediate',
+    },
+    {
+        name: 'accepts a numeric string destination city ID',
+        destCityId: '70',
+        outcome: 'completed',
+    },
+    {
+        name: 'truncates a fractional destination city ID',
+        destCityId: 70.9,
+        outcome: 'completed',
+    },
+    {
+        name: 'accepts supply state two for both source and destination',
+        destCityId: 70,
+        fixturePatches: {
+            cities: {
+                3: { supplyState: 2 },
+                70: { supplyState: 2 },
+            },
+        },
+        outcome: 'completed',
+    },
+    {
+        name: 'ignores a reverse-only war relation',
+        destCityId: 70,
+        fixturePatches: { diplomacy: { '2:1': { state: 0 } } },
+        outcome: 'completed',
+    },
+    {
+        name: 'uses ten-percent floors and raises low trust on a level-eight city',
+        destCityId: 70,
+        fixturePatches: {
+            cities: {
+                70: {
+                    level: 8,
+                    population: 1_000,
+                    populationMax: 100_000,
+                    agriculture: 10,
+                    agricultureMax: 10_000,
+                    commerce: 20,
+                    commerceMax: 20_000,
+                    security: 30,
+                    securityMax: 30_000,
+                    defence: 40,
+                    defenceMax: 40_000,
+                    wall: 50,
+                    wallMax: 50_000,
+                    trust: 20,
+                    conflict: { 2: 30 },
+                },
+            },
+        },
+        outcome: 'completed',
+    },
+    {
+        name: 'applies high-value ratios, recovered resources, officer penalties, and city resets',
+        destCityId: 70,
+        fixturePatches: {
+            generals: {
+                1: { experience: 1_235 },
+            },
+            cities: {
+                23: { nationId: 1, frontState: 1, conflict: { 2: 10 } },
+                70: {
+                    level: 7,
+                    population: 80_003,
+                    populationMax: 100_000,
+                    agriculture: 8_003,
+                    agricultureMax: 10_000,
+                    commerce: 16_003,
+                    commerceMax: 20_000,
+                    security: 24_003,
+                    securityMax: 30_000,
+                    defence: 32_003,
+                    defenceMax: 40_000,
+                    wall: 40_001,
+                    wallMax: 50_000,
+                    trust: 80,
+                    conflict: { 2: 30 },
+                },
+            },
+        },
+        outcome: 'completed',
+    },
+];
+
+const calcScorchedEarthReturnAmount = (city: Record<string, unknown>): number => {
+    let amount = readNumericField(city, 'population') / 5;
+    for (const [currentKey, maxKey] of [
+        ['agriculture', 'agricultureMax'],
+        ['commerce', 'commerceMax'],
+        ['security', 'securityMax'],
+    ] as const) {
+        const current = readNumericField(city, currentKey);
+        const max = readNumericField(city, maxKey);
+        amount *= (current - max * 0.5) / max + 0.8;
+    }
+    return Math.trunc(amount);
+};
+
+integration('nation scorched-earth constraints, multistep, city values, officers, and diplomacy boundaries', () => {
+    it.each(scorchedEarthBoundaryCases)(
+        '$name matches legacy progress, destruction, resources, officers, logs, RNG, and semantic delta',
+        async ({ destCityId, fixturePatches, outcome, coreResolution = true }) => {
+            const normalizedDestCityId = Math.trunc(Number(destCityId));
+            const completed = outcome === 'completed';
+            const fallback = outcome === 'fallback';
+            const completionNationPatch = completed
+                ? {
+                      turnLastByOfficerLevel: {
+                          12: { command: '초토화', arg: { destCityID: destCityId }, term: 2 },
+                      },
+                      coreTurnLastByOfficerLevel: {
+                          12: { command: '초토화', arg: { destCityId: normalizedDestCityId }, term: 2 },
+                      },
+                  }
+                : {};
+            const request = buildRequest(
+                'che_초토화',
+                { destCityID: destCityId },
+                {
+                    ...fixturePatches,
+                    nations: {
+                        ...fixturePatches?.nations,
+                        1: {
+                            ...fixturePatches?.nations?.[1],
+                            ...completionNationPatch,
+                        },
+                    },
+                    cities: {
+                        ...fixturePatches?.cities,
+                        70: {
+                            nationId: 1,
+                            ...fixturePatches?.cities?.[70],
+                        },
+                    },
+                    generals: {
+                        3: { betray: 1, ...fixturePatches?.generals?.[3] },
+                        4: {
+                            nationId: 1,
+                            cityId: 3,
+                            officerLevel: 5,
+                            officerCityId: 3,
+                            experience: 1_235,
+                            betray: 2,
+                            ...fixturePatches?.generals?.[4],
+                        },
+                        5: {
+                            nationId: 1,
+                            cityId: 3,
+                            officerLevel: 4,
+                            officerCityId: 0,
+                            experience: 1_235,
+                            betray: 3,
+                            ...fixturePatches?.generals?.[5],
+                        },
+                        6: {
+                            nationId: 2,
+                            cityId: 70,
+                            officerLevel: 5,
+                            officerCityId: 70,
+                            experience: 1_235,
+                            betray: 4,
+                            ...fixturePatches?.generals?.[6],
+                        },
+                        ...fixturePatches?.generals,
+                    },
+                }
+            );
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+
+            expect(reference.execution.outcome).toMatchObject({ completed });
+            if (coreResolution) {
+                expect(core.execution.outcome).toMatchObject({
+                    requestedAction: 'che_초토화',
+                    actionKey: fallback ? '휴식' : 'che_초토화',
+                    usedFallback: fallback,
+                    ...(fallback ? {} : { completed }),
+                });
+            } else {
+                expect(core.execution.outcome).toBeUndefined();
+            }
+
+            if (outcome === 'intermediate') {
+                const expectedTerm =
+                    fixturePatches?.nations?.[1]?.turnLastByOfficerLevel &&
+                    (fixturePatches.nations[1].turnLastByOfficerLevel as Record<number, { command?: string }>)[12]
+                        ?.command === '초토화'
+                        ? 2
+                        : 1;
+                expect(reference.execution.outcome).toMatchObject({
+                    lastTurn: {
+                        command: '초토화',
+                        term: expectedTerm,
+                    },
+                });
+                expect(readNationMeta(core.after.nations.find((entry) => entry.id === 1)).turn_last_12).toMatchObject({
+                    command: '초토화',
+                    term: expectedTerm,
+                });
+            }
+
+            for (const snapshot of [reference, core]) {
+                const nationBefore = snapshot.before.nations.find((entry) => entry.id === 1);
+                const nationAfter = snapshot.after.nations.find((entry) => entry.id === 1);
+                const cityBefore = snapshot.before.cities.find((entry) => entry.id === normalizedDestCityId);
+                const cityAfter = snapshot.after.cities.find((entry) => entry.id === normalizedDestCityId);
+                const actorBefore = snapshot.before.generals.find((entry) => entry.id === 1);
+                const actorAfter = snapshot.after.generals.find((entry) => entry.id === 1);
+
+                if (!completed) {
+                    expect(readNationResource(nationAfter, 'gold')).toBe(readNationResource(nationBefore, 'gold'));
+                    expect(readNationResource(nationAfter, 'rice')).toBe(readNationResource(nationBefore, 'rice'));
+                    expect(readNumericField(actorAfter, 'experience')).toBe(
+                        readNumericField(actorBefore, 'experience')
+                    );
+                    expect(readNumericField(actorAfter, 'dedication')).toBe(
+                        readNumericField(actorBefore, 'dedication')
+                    );
+                    continue;
+                }
+
+                const rewardAmount = calcScorchedEarthReturnAmount(cityBefore!);
+                expect(readNationResource(nationAfter, 'gold') - readNationResource(nationBefore, 'gold')).toBe(
+                    rewardAmount
+                );
+                expect(readNationResource(nationAfter, 'rice') - readNationResource(nationBefore, 'rice')).toBe(
+                    rewardAmount
+                );
+                expect(
+                    readNumericField(nationAfter, 'diplomacyLimit') - readNumericField(nationBefore, 'diplomacyLimit')
+                ).toBe(24);
+                expect(readNumericField(actorAfter, 'experience')).toBe(
+                    Math.round(readNumericField(actorBefore, 'experience') * 0.9 + 15)
+                );
+                expect(readNumericField(actorAfter, 'dedication') - readNumericField(actorBefore, 'dedication')).toBe(
+                    15
+                );
+                expect(readNumericField(actorAfter, 'betray') - readNumericField(actorBefore, 'betray')).toBe(1);
+
+                for (const generalId of [3, 4, 5, 6]) {
+                    const before = snapshot.before.generals.find((entry) => entry.id === generalId);
+                    const after = snapshot.after.generals.find((entry) => entry.id === generalId);
+                    const friendly = [3, 4, 5].includes(generalId);
+                    const officer = readNumericField(before, 'officerLevel') >= 5;
+                    expect(readNumericField(after, 'experience')).toBe(
+                        friendly && officer
+                            ? Math.round(readNumericField(before, 'experience') * 0.9)
+                            : readNumericField(before, 'experience')
+                    );
+                    expect(readNumericField(after, 'betray') - readNumericField(before, 'betray')).toBe(
+                        friendly ? 1 : 0
+                    );
+                }
+
+                expect(cityAfter).toMatchObject({
+                    nationId: 0,
+                    frontState: 0,
+                    trust: Math.max(50, readNumericField(cityBefore, 'trust')),
+                    population: Math.max(
+                        Math.round(readNumericField(cityBefore, 'populationMax') * 0.1),
+                        Math.round(readNumericField(cityBefore, 'population') * 0.2)
+                    ),
+                    agriculture: Math.max(
+                        Math.round(readNumericField(cityBefore, 'agricultureMax') * 0.1),
+                        Math.round(readNumericField(cityBefore, 'agriculture') * 0.2)
+                    ),
+                    commerce: Math.max(
+                        Math.round(readNumericField(cityBefore, 'commerceMax') * 0.1),
+                        Math.round(readNumericField(cityBefore, 'commerce') * 0.2)
+                    ),
+                    security: Math.max(
+                        Math.round(readNumericField(cityBefore, 'securityMax') * 0.1),
+                        Math.round(readNumericField(cityBefore, 'security') * 0.2)
+                    ),
+                    defence: Math.max(
+                        Math.round(readNumericField(cityBefore, 'defenceMax') * 0.1),
+                        Math.round(readNumericField(cityBefore, 'defence') * 0.2)
+                    ),
+                    wall: Math.max(
+                        Math.round(readNumericField(cityBefore, 'wallMax') * 0.1),
+                        Math.round(readNumericField(cityBefore, 'wall') * 0.5)
+                    ),
+                });
+                expect(Object.keys((cityAfter?.conflict ?? {}) as object)).toHaveLength(0);
+                const auxBefore = readNationMeta(nationBefore);
+                const auxAfter = readNationMeta(nationAfter);
+                expect(
+                    readNumericField(auxAfter, 'did_특성초토화') - readNumericField(auxBefore, 'did_특성초토화')
+                ).toBe(readNumericField(cityBefore, 'level') >= 8 ? 1 : 0);
+                expect(snapshot.after.logs.slice(snapshot.before.logs.length).map((entry) => entry.text)).toEqual(
+                    expect.arrayContaining([
+                        expect.stringContaining('초토화했습니다'),
+                        expect.stringContaining('초토화</> 명령'),
+                    ])
+                );
+            }
+
+            expect(reference.rng).toEqual([]);
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+        },
+        120_000
+    );
+});
