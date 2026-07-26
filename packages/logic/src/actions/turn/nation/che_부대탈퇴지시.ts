@@ -1,12 +1,6 @@
 import type { General, GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
-import {
-    denyWithReason,
-    beChief,
-    existsDestGeneral,
-    friendlyDestGeneral,
-    notBeNeutral,
-} from '@sammo-ts/logic/constraints/presets.js';
+import { beChief, existsDestGeneral, friendlyDestGeneral, notBeNeutral } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionEffect,
@@ -23,10 +17,7 @@ import { z } from 'zod';
 import { parseArgsWithSchema } from '../parseArgs.js';
 
 const ARGS_SCHEMA = z.object({
-    destGeneralId: z.preprocess(
-        (value) => (typeof value === 'number' ? Math.floor(value) : value),
-        z.number().int().positive()
-    ),
+    destGeneralId: z.number().int().positive(),
 });
 export type TroopKickArgs = z.infer<typeof ARGS_SCHEMA>;
 
@@ -52,10 +43,7 @@ export class ActionDefinition<
         return [notBeNeutral(), beChief()];
     }
 
-    buildConstraints(ctx: ConstraintContext, _args: TroopKickArgs): Constraint[] {
-        if (ctx.destGeneralId !== undefined && ctx.destGeneralId === ctx.actorId) {
-            return [denyWithReason('본인입니다')];
-        }
+    buildConstraints(_ctx: ConstraintContext, _args: TroopKickArgs): Constraint[] {
         return [notBeNeutral(), beChief(), existsDestGeneral(), friendlyDestGeneral()];
     }
 
@@ -65,6 +53,19 @@ export class ActionDefinition<
         const destGeneralName = destGeneral.name;
         const josaUn = JosaUtil.pick(destGeneralName, '은');
         const effects: Array<GeneralActionEffect<TriggerState>> = [];
+
+        if (destGeneral.id === general.id) {
+            return {
+                completed: false,
+                effects: [
+                    createLogEffect(`본인입니다 ${ACTION_NAME} 실패.`, {
+                        scope: LogScope.GENERAL,
+                        category: LogCategory.ACTION,
+                        format: LogFormat.MONTH,
+                    }),
+                ],
+            };
+        }
 
         if (destGeneral.troopId === 0) {
             context.addLog(`<Y>${destGeneralName}</>${josaUn} 부대원이 아닙니다.`);

@@ -5,6 +5,8 @@ import { ActionDefinition as DeclareWarAction } from '../../../src/actions/turn/
 import { ActionDefinition as NonAggressionProposalAction } from '../../../src/actions/turn/nation/che_불가침제의.js';
 import { ActionDefinition as StopWarProposalAction } from '../../../src/actions/turn/nation/che_종전제의.js';
 import { ActionDefinition as NonAggressionCancelProposalAction } from '../../../src/actions/turn/nation/che_불가침파기제의.js';
+import { ActionDefinition as TroopKickAction } from '../../../src/actions/turn/nation/che_부대탈퇴지시.js';
+import { ActionDefinition as AssignmentAction } from '../../../src/actions/turn/nation/che_발령.js';
 import { ActionDefinition as MoveCapitalAction } from '../../../src/actions/turn/nation/che_천도.js';
 import {
     ActionDefinition as ChangeNationNameAction,
@@ -263,6 +265,29 @@ describe('Nation Actions', () => {
             ['che_불가침파기제의', new NonAggressionCancelProposalAction(), { destNationId: 2.9 }],
         ])('%s rejects fractional numeric arguments', (_name, definition, args) => {
             expect(definition.parseArgs(args)).toBeNull();
+        });
+    });
+
+    describe('personnel command argument boundaries', () => {
+        it('keeps troop-kick target IDs strict', () => {
+            const definition = new TroopKickAction();
+
+            expect(definition.parseArgs({ destGeneralId: 3 })).toEqual({ destGeneralId: 3 });
+            expect(definition.parseArgs({ destGeneralId: '3' })).toBeNull();
+            expect(definition.parseArgs({ destGeneralId: 3.9 })).toBeNull();
+        });
+
+        it('uses PHP weak integer coercion for assignment IDs', () => {
+            const definition = new AssignmentAction({});
+
+            expect(definition.parseArgs({ destGeneralId: '3', destCityId: '70' })).toEqual({
+                destGeneralId: 3,
+                destCityId: 70,
+            });
+            expect(definition.parseArgs({ destGeneralId: 3.9, destCityId: 70.9 })).toEqual({
+                destGeneralId: 3,
+                destCityId: 70,
+            });
         });
     });
 

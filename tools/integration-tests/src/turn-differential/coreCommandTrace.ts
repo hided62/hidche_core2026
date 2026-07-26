@@ -199,8 +199,11 @@ const createCommandProfile = (request: TurnCommandFixtureRequest): TurnCommandPr
     };
 };
 
-const buildGeneral = (row: Record<string, unknown>, turnTime: Date): TurnGeneral => {
+const buildGeneral = (row: Record<string, unknown>, fallbackTurnTime: Date): TurnGeneral => {
     const meta = asRecord(row.meta);
+    const rawTurnTime = row.turnTime;
+    const parsedTurnTime = typeof rawTurnTime === 'string' ? new Date(rawTurnTime) : fallbackTurnTime;
+    const turnTime = Number.isNaN(parsedTurnTime.getTime()) ? fallbackTurnTime : parsedTurnTime;
     const rawLastTurn = asRecord(row.lastTurn);
     const lastTurn =
         typeof rawLastTurn.command === 'string'

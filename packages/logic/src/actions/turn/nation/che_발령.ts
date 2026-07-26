@@ -1,13 +1,6 @@
-import type {
-    City,
-    General,
-    GeneralMeta,
-    GeneralTriggerState,
-    TriggerValue,
-} from '@sammo-ts/logic/domain/entities.js';
+import type { City, General, GeneralMeta, GeneralTriggerState, TriggerValue } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
-    denyWithReason,
     beChief,
     existsDestGeneral,
     friendlyDestGeneral,
@@ -32,11 +25,11 @@ import { resolveTurnTermMinutes } from '@sammo-ts/logic/actions/turn/actionConte
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { NationTurnCommandSpec } from './index.js';
 import { z } from 'zod';
-import { parseArgsWithSchema } from '../parseArgs.js';
+import { normalizeLegacyIntegerArg, parseArgsWithSchema } from '../parseArgs.js';
 
 const ARGS_SCHEMA = z.object({
-    destGeneralId: z.number(),
-    destCityId: z.number(),
+    destGeneralId: z.preprocess(normalizeLegacyIntegerArg, z.number().int()),
+    destCityId: z.preprocess(normalizeLegacyIntegerArg, z.number().int()),
 });
 export type AssignmentArgs = z.infer<typeof ARGS_SCHEMA>;
 
@@ -101,6 +94,18 @@ export class ActionResolver<
         void _args;
         const destGeneral = context.destGeneral;
         const destCity = context.destCity;
+        if (destGeneral.id === context.general.id) {
+            return {
+                completed: false,
+                effects: [
+                    createLogEffect(`본인입니다 <Y>${destGeneral.name}</> ${ACTION_NAME} 실패.`, {
+                        scope: LogScope.GENERAL,
+                        category: LogCategory.ACTION,
+                        format: LogFormat.MONTH,
+                    }),
+                ],
+            };
+        }
         const cityName = this.env.formatCityName ? this.env.formatCityName(destCity) : destCity.name;
         const cityJosa = JosaUtil.pick(cityName, '로');
         const generalJosa = JosaUtil.pick(destGeneral.name, '을');
@@ -158,11 +163,7 @@ export class ActionDefinition<
         return [beChief(), notBeNeutral(), occupiedCity(), suppliedCity()];
     }
 
-    buildConstraints(ctx: ConstraintContext, _args: AssignmentArgs): Constraint[] {
-        void _args;
-        if (ctx.destGeneralId === ctx.actorId) {
-            return [denyWithReason('본인입니다')];
-        }
+    buildConstraints(_ctx: ConstraintContext, _args: AssignmentArgs): Constraint[] {
         return [
             beChief(),
             notBeNeutral(),

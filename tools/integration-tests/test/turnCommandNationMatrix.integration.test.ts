@@ -1178,6 +1178,196 @@ integration('nation diplomacy proposal boundary and message parity', () => {
     );
 });
 
+interface PersonnelCommandBoundaryCase {
+    name: string;
+    action: 'che_부대탈퇴지시' | 'che_발령';
+    args: Record<string, unknown>;
+    fixturePatches?: FixturePatches;
+    completed: boolean;
+    expectedTroopId?: number;
+    expectedCityId?: number;
+}
+
+const personnelCommandBoundaryCases: PersonnelCommandBoundaryCase[] = [
+    {
+        name: 'troop-kick rejects a numeric-string target',
+        action: 'che_부대탈퇴지시',
+        args: { destGeneralID: '3' },
+        completed: false,
+    },
+    {
+        name: 'troop-kick rejects a fractional target instead of truncating it',
+        action: 'che_부대탈퇴지시',
+        args: { destGeneralID: 3.9 },
+        completed: false,
+    },
+    {
+        name: 'troop-kick rejects self',
+        action: 'che_부대탈퇴지시',
+        args: { destGeneralID: 1 },
+        completed: false,
+    },
+    {
+        name: 'troop-kick rejects a missing target',
+        action: 'che_부대탈퇴지시',
+        args: { destGeneralID: 9 },
+        completed: false,
+    },
+    {
+        name: 'troop-kick rejects a foreign target',
+        action: 'che_부대탈퇴지시',
+        args: { destGeneralID: 2 },
+        completed: false,
+    },
+    {
+        name: 'troop-kick completes without mutation for a non-member',
+        action: 'che_부대탈퇴지시',
+        args: { destGeneralID: 3 },
+        completed: true,
+        expectedTroopId: 0,
+    },
+    {
+        name: 'troop-kick completes without mutation for a troop leader',
+        action: 'che_부대탈퇴지시',
+        args: { destGeneralID: 3 },
+        fixturePatches: { generals: { 3: { troopId: 3 } } },
+        completed: true,
+        expectedTroopId: 3,
+    },
+    {
+        name: 'troop-kick removes a regular troop member',
+        action: 'che_부대탈퇴지시',
+        args: { destGeneralID: 3 },
+        fixturePatches: { generals: { 3: { troopId: 1 } } },
+        completed: true,
+        expectedTroopId: 0,
+    },
+    {
+        name: 'assignment accepts numeric-string IDs through PHP weak int coercion',
+        action: 'che_발령',
+        args: { destGeneralID: '3', destCityID: '70' },
+        fixturePatches: { cities: { 70: { nationId: 1 } } },
+        completed: true,
+        expectedCityId: 70,
+    },
+    {
+        name: 'assignment truncates fractional IDs through PHP weak int coercion',
+        action: 'che_발령',
+        args: { destGeneralID: 3.9, destCityID: 70.9 },
+        fixturePatches: { cities: { 70: { nationId: 1 } } },
+        completed: true,
+        expectedCityId: 70,
+    },
+    {
+        name: 'assignment rejects self',
+        action: 'che_발령',
+        args: { destGeneralID: 1, destCityID: 70 },
+        fixturePatches: { cities: { 70: { nationId: 1 } } },
+        completed: false,
+    },
+    {
+        name: 'assignment rejects a missing target general at execution time',
+        action: 'che_발령',
+        args: { destGeneralID: 9, destCityID: 70 },
+        fixturePatches: { cities: { 70: { nationId: 1 } } },
+        completed: false,
+    },
+    {
+        name: 'assignment rejects a foreign target general',
+        action: 'che_발령',
+        args: { destGeneralID: 2, destCityID: 70 },
+        fixturePatches: { cities: { 70: { nationId: 1 } } },
+        completed: false,
+    },
+    {
+        name: 'assignment rejects an actor city occupied by another nation',
+        action: 'che_발령',
+        args: { destGeneralID: 3, destCityID: 70 },
+        fixturePatches: { cities: { 3: { nationId: 2 }, 70: { nationId: 1 } } },
+        completed: false,
+    },
+    {
+        name: 'assignment rejects an unsupplied actor city',
+        action: 'che_발령',
+        args: { destGeneralID: 3, destCityID: 70 },
+        fixturePatches: { cities: { 3: { supplyState: 0 }, 70: { nationId: 1 } } },
+        completed: false,
+    },
+    {
+        name: 'assignment rejects a destination city occupied by another nation',
+        action: 'che_발령',
+        args: { destGeneralID: 3, destCityID: 70 },
+        completed: false,
+    },
+    {
+        name: 'assignment rejects an unsupplied destination city',
+        action: 'che_발령',
+        args: { destGeneralID: 3, destCityID: 70 },
+        fixturePatches: { cities: { 70: { nationId: 1, supplyState: 0 } } },
+        completed: false,
+    },
+    {
+        name: 'assignment moves a friendly target and records the assignment month',
+        action: 'che_발령',
+        args: { destGeneralID: 3, destCityID: 70 },
+        fixturePatches: { cities: { 70: { nationId: 1 } } },
+        completed: true,
+        expectedCityId: 70,
+    },
+];
+
+integration('nation personnel command boundary parity', () => {
+    it.each(personnelCommandBoundaryCases)(
+        '$name',
+        async ({ action, args, fixturePatches, completed, expectedTroopId, expectedCityId }) => {
+            const request = buildRequest(action, args, fixturePatches);
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+
+            expect(reference.execution.outcome).toMatchObject({ completed });
+            const originalCommandFailure = args.destGeneralID === 1;
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: action,
+                actionKey: completed || originalCommandFailure ? action : '휴식',
+                usedFallback: !completed && !originalCommandFailure,
+            });
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+            if (!completed) {
+                if (originalCommandFailure) {
+                    expect(semanticLogSignatures(nationCommandLogs(core.after.logs))).toEqual(
+                        semanticLogSignatures(addedReferenceLogs(reference.before, reference.after.logs))
+                    );
+                }
+                return;
+            }
+
+            const referenceTarget = reference.after.generals.find((entry) => entry.id === 3);
+            const coreTarget = core.after.generals.find((entry) => entry.id === 3);
+            if (expectedTroopId !== undefined) {
+                expect(referenceTarget?.troopId).toBe(expectedTroopId);
+                expect(coreTarget?.troopId).toBe(expectedTroopId);
+            }
+            if (expectedCityId !== undefined) {
+                expect(referenceTarget?.cityId).toBe(expectedCityId);
+                expect(coreTarget?.cityId).toBe(expectedCityId);
+                expect(readGeneralMeta(coreTarget).last발령).toBe(readGeneralMeta(referenceTarget).last발령);
+            }
+            expect(semanticLogSignatures(nationCommandLogs(core.after.logs))).toEqual(
+                semanticLogSignatures(addedReferenceLogs(reference.before, reference.after.logs))
+            );
+        },
+        120_000
+    );
+});
+
 type VolunteerRecruitOutcome = 'fallback' | 'intermediate' | 'completed';
 
 const volunteerRecruitBoundaryCases: Array<{
