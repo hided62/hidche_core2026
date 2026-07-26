@@ -69,6 +69,22 @@ interface FixturePatches {
     randomFoundingCandidateCityIds?: number[];
 }
 
+type NationMatrixCase = [string, Record<string, unknown> | undefined, FixturePatches?];
+
+const researchCase = (action: string, command: string, term: number): NationMatrixCase => [
+    action,
+    undefined,
+    {
+        nations: {
+            1: {
+                turnLastByOfficerLevel: {
+                    12: { command, term },
+                },
+            },
+        },
+    },
+];
+
 const buildRequest = (
     action: string,
     args?: Record<string, unknown>,
@@ -192,7 +208,7 @@ const buildRequest = (
     },
 });
 
-const cases: Array<[string, Record<string, unknown> | undefined, FixturePatches?]> = [
+const cases: NationMatrixCase[] = [
     ['휴식', undefined],
     ['che_포상', { isGold: true, amount: 100, destGeneralID: 3 }],
     ['che_선전포고', { destNationID: 2 }],
@@ -282,6 +298,15 @@ const cases: Array<[string, Record<string, unknown> | undefined, FixturePatches?
             randomFoundingCandidateCityIds: [70],
         },
     ],
+    researchCase('event_원융노병연구', '원융노병 연구', 23),
+    researchCase('event_화시병연구', '화시병 연구', 11),
+    researchCase('event_음귀병연구', '음귀병 연구', 11),
+    researchCase('event_대검병연구', '대검병 연구', 11),
+    researchCase('event_화륜차연구', '화륜차 연구', 23),
+    researchCase('event_산저병연구', '산저병 연구', 11),
+    researchCase('event_극병연구', '극병 연구', 23),
+    researchCase('event_상병연구', '상병 연구', 23),
+    researchCase('event_무희연구', '무희 연구', 23),
 ];
 
 integration('nation command success matrix', () => {
