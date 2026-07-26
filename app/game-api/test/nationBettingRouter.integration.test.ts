@@ -14,8 +14,12 @@ const integration = describe.skipIf(!databaseUrl);
 const bettingId = 990_071;
 const concurrentBettingId = 990_072;
 const generalId = 9_971;
+const otherGeneralId = 9_972;
 const nationId = 990_071;
+const otherNationId = 990_072;
 const userId = 'nation-betting-router-user';
+const otherUserId = 'nation-betting-router-other-user';
+const noGeneralUserId = 'nation-betting-router-no-general-user';
 
 const auth: GameSessionTokenPayload = {
     version: 1,
@@ -32,12 +36,34 @@ const auth: GameSessionTokenPayload = {
     sanctions: {},
 };
 
+const otherAuth: GameSessionTokenPayload = {
+    ...auth,
+    sessionId: 'nation-betting-router-other-session',
+    user: {
+        ...auth.user,
+        id: otherUserId,
+        username: 'other-bettor',
+        displayName: 'Other Bettor',
+    },
+};
+
+const noGeneralAuth: GameSessionTokenPayload = {
+    ...auth,
+    sessionId: 'nation-betting-router-no-general-session',
+    user: {
+        ...auth.user,
+        id: noGeneralUserId,
+        username: 'no-general',
+        displayName: 'No General',
+    },
+};
+
 integration('nation betting router', () => {
     let db: GamePrismaClient;
     let closeDb: (() => Promise<void>) | undefined;
     let worldStateId: number;
 
-    const buildContext = (requestId: string): GameApiContext => {
+    const buildContext = (requestId: string, actorAuth: GameSessionTokenPayload | null = auth): GameApiContext => {
         const redisClient = {
             get: async () => null,
             set: async () => null,
@@ -52,7 +78,7 @@ integration('nation betting router', () => {
             uploadDir: 'uploads',
             uploadPath: '/uploads',
             uploadPublicUrl: null,
-            auth,
+            auth: actorAuth,
             accessTokenStore: new RedisAccessTokenStore(redisClient, 'che:2'),
             flushStore: new InMemoryFlushStore(),
             gameTokenSecret: 'test-secret',
@@ -64,33 +90,55 @@ integration('nation betting router', () => {
         await connector.connect();
         db = connector.prisma;
         closeDb = () => connector.disconnect();
-        await db.inputEvent.deleteMany({ where: { actorUserId: userId } });
+        await db.inputEvent.deleteMany({ where: { actorUserId: { in: [userId, otherUserId, noGeneralUserId] } } });
         await db.nationBetting.deleteMany({ where: { id: { in: [bettingId, concurrentBettingId] } } });
-        await db.rankData.deleteMany({ where: { generalId } });
-        await db.inheritanceLog.deleteMany({ where: { userId } });
-        await db.inheritancePoint.deleteMany({ where: { userId } });
-        await db.general.deleteMany({ where: { id: generalId } });
-        await db.nation.deleteMany({ where: { id: nationId } });
+        await db.rankData.deleteMany({ where: { generalId: { in: [generalId, otherGeneralId] } } });
+        await db.inheritanceLog.deleteMany({ where: { userId: { in: [userId, otherUserId] } } });
+        await db.inheritancePoint.deleteMany({ where: { userId: { in: [userId, otherUserId] } } });
+        await db.general.deleteMany({ where: { id: { in: [generalId, otherGeneralId] } } });
+        await db.nation.deleteMany({ where: { id: { in: [nationId, otherNationId] } } });
 
-        await db.nation.create({
-            data: {
-                id: nationId,
-                name: '베팅국',
-                color: '#123456',
-                level: 2,
-            },
+        await db.nation.createMany({
+            data: [
+                {
+                    id: nationId,
+                    name: '베팅국',
+                    color: '#123456',
+                    level: 2,
+                },
+                {
+                    id: otherNationId,
+                    name: '다른베팅국',
+                    color: '#654321',
+                    level: 6,
+                },
+            ],
         });
-        await db.general.create({
-            data: {
-                id: generalId,
-                userId,
-                name: '베팅장수',
-                nationId,
-                cityId: 1,
-                npcState: 0,
-                turnTime: new Date('0200-01-01T00:00:00.000Z'),
-                meta: {},
-            },
+        await db.general.createMany({
+            data: [
+                {
+                    id: generalId,
+                    userId,
+                    name: '베팅장수',
+                    nationId,
+                    cityId: 1,
+                    npcState: 0,
+                    officerLevel: 0,
+                    turnTime: new Date('0200-01-01T00:00:00.000Z'),
+                    meta: {},
+                },
+                {
+                    id: otherGeneralId,
+                    userId: otherUserId,
+                    name: '다른국가수뇌',
+                    nationId: otherNationId,
+                    cityId: 1,
+                    npcState: 0,
+                    officerLevel: 12,
+                    turnTime: new Date('0200-01-01T00:00:00.000Z'),
+                    meta: {},
+                },
+            ],
         });
         const world = await db.worldState.create({
             data: {
@@ -132,19 +180,22 @@ integration('nation betting router', () => {
                 candidates: [{ title: '베팅국', info: '', isHtml: true, aux: { nation: nationId } }],
             },
         });
-        await db.inheritancePoint.create({
-            data: { userId, key: 'previous', value: 1_000 },
+        await db.inheritancePoint.createMany({
+            data: [
+                { userId, key: 'previous', value: 1_000 },
+                { userId: otherUserId, key: 'previous', value: 500 },
+            ],
         });
     });
 
     afterAll(async () => {
-        await db.inputEvent.deleteMany({ where: { actorUserId: userId } });
+        await db.inputEvent.deleteMany({ where: { actorUserId: { in: [userId, otherUserId, noGeneralUserId] } } });
         await db.nationBetting.deleteMany({ where: { id: { in: [bettingId, concurrentBettingId] } } });
-        await db.rankData.deleteMany({ where: { generalId } });
-        await db.inheritanceLog.deleteMany({ where: { userId } });
-        await db.inheritancePoint.deleteMany({ where: { userId } });
-        await db.general.deleteMany({ where: { id: generalId } });
-        await db.nation.deleteMany({ where: { id: nationId } });
+        await db.rankData.deleteMany({ where: { generalId: { in: [generalId, otherGeneralId] } } });
+        await db.inheritanceLog.deleteMany({ where: { userId: { in: [userId, otherUserId] } } });
+        await db.inheritancePoint.deleteMany({ where: { userId: { in: [userId, otherUserId] } } });
+        await db.general.deleteMany({ where: { id: { in: [generalId, otherGeneralId] } } });
+        await db.nation.deleteMany({ where: { id: { in: [nationId, otherNationId] } } });
         await db.worldState.delete({ where: { id: worldStateId } });
         await closeDb?.();
     });
@@ -229,12 +280,107 @@ integration('nation betting router', () => {
             }),
         ]);
         expect(results.map((result) => result.status).sort()).toEqual(['fulfilled', 'rejected']);
-        expect(await db.nationBet.aggregate({ where: { bettingId: concurrentBettingId }, _sum: { amount: true } }))
-            .toMatchObject({ _sum: { amount: 600 } });
+        expect(
+            await db.nationBet.aggregate({ where: { bettingId: concurrentBettingId }, _sum: { amount: true } })
+        ).toMatchObject({ _sum: { amount: 600 } });
         expect(
             await db.inheritancePoint.findUniqueOrThrow({
                 where: { userId_key: { userId, key: 'previous' } },
             })
         ).toMatchObject({ value: 250 });
+    });
+
+    it('requires authentication and an owned player general for every betting operation', async () => {
+        await expect(
+            appRouter.createCaller(buildContext('nation-betting-anonymous-list', null)).betting.getList({
+                req: 'bettingNation',
+            })
+        ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+        await expect(
+            appRouter
+                .createCaller(buildContext('nation-betting-anonymous-detail', null))
+                .betting.getDetail({ bettingId })
+        ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+        await expect(
+            appRouter.createCaller(buildContext('nation-betting-anonymous-bet', null)).betting.bet({
+                bettingId,
+                bettingType: [0],
+                amount: 10,
+            })
+        ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+        await expect(
+            appRouter.createCaller(buildContext('nation-betting-no-general-list', noGeneralAuth)).betting.getList({
+                req: 'bettingNation',
+            })
+        ).rejects.toMatchObject({ code: 'NOT_FOUND', message: 'General not found' });
+        await expect(
+            appRouter
+                .createCaller(buildContext('nation-betting-no-general-detail', noGeneralAuth))
+                .betting.getDetail({ bettingId })
+        ).rejects.toMatchObject({ code: 'NOT_FOUND', message: 'General not found' });
+        await expect(
+            appRouter.createCaller(buildContext('nation-betting-no-general-bet', noGeneralAuth)).betting.bet({
+                bettingId,
+                bettingType: [0],
+                amount: 10,
+            })
+        ).rejects.toMatchObject({ code: 'NOT_FOUND', message: 'General not found' });
+    });
+
+    it('allows generals across nation and office levels while isolating each session user bet', async () => {
+        await expect(
+            appRouter.createCaller(buildContext('nation-betting-other-list', otherAuth)).betting.getList({
+                req: 'bettingNation',
+            })
+        ).resolves.toMatchObject({
+            result: true,
+            bettingList: {
+                [bettingId]: { name: '천통국 예상' },
+            },
+        });
+        await expect(
+            appRouter.createCaller(buildContext('nation-betting-other-bet', otherAuth)).betting.bet({
+                bettingId,
+                bettingType: [0],
+                amount: 100,
+            })
+        ).resolves.toEqual({ result: true });
+
+        const [firstUserDetail, otherUserDetail] = await Promise.all([
+            appRouter.createCaller(buildContext('nation-betting-first-user-detail')).betting.getDetail({ bettingId }),
+            appRouter
+                .createCaller(buildContext('nation-betting-other-user-detail', otherAuth))
+                .betting.getDetail({ bettingId }),
+        ]);
+        expect(firstUserDetail.myBetting).toEqual([['[0]', 150]]);
+        expect(otherUserDetail.myBetting).toEqual([['[0]', 100]]);
+        expect(firstUserDetail.bettingDetail).toEqual([['[0]', 250]]);
+        expect(otherUserDetail.bettingDetail).toEqual([['[0]', 250]]);
+
+        expect(
+            await db.nationBet.findUniqueOrThrow({
+                where: {
+                    bettingId_userId_selectionKey: {
+                        bettingId,
+                        userId: otherUserId,
+                        selectionKey: '[0]',
+                    },
+                },
+            })
+        ).toMatchObject({
+            generalId: otherGeneralId,
+            userId: otherUserId,
+            amount: 100,
+        });
+        expect(
+            await db.inheritancePoint.findUniqueOrThrow({
+                where: { userId_key: { userId: otherUserId, key: 'previous' } },
+            })
+        ).toMatchObject({ value: 400 });
+        expect(
+            await db.rankData.findUniqueOrThrow({
+                where: { generalId_type: { generalId: otherGeneralId, type: 'inherit_spent_dyn' } },
+            })
+        ).toMatchObject({ nationId: otherNationId, value: 100 });
     });
 });

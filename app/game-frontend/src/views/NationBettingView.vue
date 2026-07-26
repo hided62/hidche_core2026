@@ -73,9 +73,7 @@ const listYearMonth = computed(() => {
 });
 
 const listItems = computed(() =>
-    list.value
-        ? Object.values(list.value.bettingList).sort((left, right) => right.id - left.id)
-        : []
+    list.value ? Object.values(list.value.bettingList).sort((left, right) => right.id - left.id) : []
 );
 
 const info = computed(() => detail.value?.bettingInfo ?? null);
@@ -112,9 +110,7 @@ const detailRows = computed(() =>
 
 const myBetMap = computed(() => new Map(detail.value?.myBetting ?? []));
 
-const totalAmount = computed(() =>
-    (detail.value?.bettingDetail ?? []).reduce((sum, [, value]) => sum + value, 0)
-);
+const totalAmount = computed(() => (detail.value?.bettingDetail ?? []).reduce((sum, [, value]) => sum + value, 0));
 
 const pureAmount = computed(() =>
     (detail.value?.bettingDetail ?? []).reduce(
@@ -137,9 +133,7 @@ const candidateAmounts = computed(() => {
     return result;
 });
 
-const usedAmount = computed(() =>
-    Array.from(myBetMap.value.values()).reduce((sum, value) => sum + value, 0)
-);
+const usedAmount = computed(() => Array.from(myBetMap.value.values()).reduce((sum, value) => sum + value, 0));
 
 const selectedKey = computed(() => JSON.stringify([...selectedCandidates.value].sort((a, b) => a - b)));
 
@@ -150,10 +144,7 @@ const getErrorMessage = (error: unknown): string => {
     return typeof error === 'string' ? error : '요청을 처리하지 못했습니다.';
 };
 
-const parseYearMonth = (yearMonth: number): [number, number] => [
-    Math.floor(yearMonth / 12),
-    (yearMonth % 12) + 1,
-];
+const parseYearMonth = (yearMonth: number): [number, number] => [Math.floor(yearMonth / 12), (yearMonth % 12) + 1];
 
 const readSelection = (value: string): number[] => {
     try {
@@ -171,8 +162,7 @@ const selectionLabel = (value: string): string =>
         .map((index) => candidates.value[index]?.title ?? '-')
         .join(', ');
 
-const isListOpen = (item: BettingListItem): boolean =>
-    !item.finished && listYearMonth.value <= item.closeYearMonth;
+const isListOpen = (item: BettingListItem): boolean => !item.finished && listYearMonth.value <= item.closeYearMonth;
 
 const isDetailOpen = computed(() =>
     Boolean(info.value && !info.value.finished && currentYearMonth.value <= info.value.closeYearMonth)
@@ -192,19 +182,72 @@ const rowColor = (key: string): string => {
     return matched === 0 ? 'red' : matched < info.value.selectCnt ? 'yellow' : 'green';
 };
 
-const expectedMultiplier = (key: string, betAmount: number): string => {
-    if (betAmount <= 0) {
-        return '0.0';
+const rewardByMatch = computed(() => {
+    const selectCount = info.value?.selectCnt ?? 0;
+    const rewards = new Array<number>(selectCount + 1).fill(0);
+    if (selectCount <= 0) {
+        return rewards;
     }
+    const amountByMatch = new Map<number, number>();
+    for (const [key, betAmount] of detailRows.value) {
+        const matched = matchCount(key);
+        amountByMatch.set(matched, (amountByMatch.get(matched) ?? 0) + betAmount);
+    }
+    if (selectCount === 1 || info.value?.isExclusive) {
+        rewards[selectCount] = totalAmount.value;
+        return rewards;
+    }
+
+    let remainingReward = totalAmount.value;
+    let accumulatedReward = 0;
+    let nextReward = totalAmount.value;
+    for (let matched = selectCount; matched > 0; matched -= 1) {
+        nextReward /= 2;
+        accumulatedReward += nextReward;
+        if (!amountByMatch.has(matched)) {
+            continue;
+        }
+        rewards[matched] = accumulatedReward;
+        remainingReward -= accumulatedReward;
+        accumulatedReward = 0;
+    }
+    for (let matched = selectCount; matched >= 0; matched -= 1) {
+        if (!amountByMatch.has(matched)) {
+            continue;
+        }
+        rewards[matched] += remainingReward;
+        break;
+    }
+    return rewards;
+});
+
+const expectedReward = (key: string): number => {
     if (!info.value?.finished) {
-        const reward = info.value?.isExclusive || info.value?.selectCnt === 1 ? totalAmount.value : totalAmount.value / 2;
-        return (reward / betAmount).toFixed(1);
+        return info.value?.isExclusive || info.value?.selectCnt === 1 ? totalAmount.value : totalAmount.value / 2;
     }
-    const matched = matchCount(key);
-    const matchedAmount = detailRows.value
-        .filter(([candidateKey]) => matchCount(candidateKey) === matched)
-        .reduce((sum, [, value]) => sum + value, 0);
-    return matchedAmount > 0 ? (totalAmount.value / matchedAmount).toFixed(1) : '0.0';
+    return rewardByMatch.value[matchCount(key)] ?? 0;
+};
+
+const rewardDivisor = (key: string, betAmount: number): number =>
+    info.value?.finished
+        ? detailRows.value
+              .filter(([candidateKey]) => matchCount(candidateKey) === matchCount(key))
+              .reduce((sum, [, value]) => sum + value, 0)
+        : betAmount;
+
+const expectedMultiplier = (key: string, betAmount: number): string => {
+    const divisor = rewardDivisor(key, betAmount);
+    return divisor > 0 ? (expectedReward(key) / divisor).toFixed(1) : '0.0';
+};
+
+const myExpectedReward = (key: string, betAmount: number): string => {
+    const myAmount = myBetMap.value.get(key);
+    if (myAmount === undefined) {
+        return '';
+    }
+    const divisor = rewardDivisor(key, betAmount);
+    const reward = divisor > 0 ? (myAmount * expectedReward(key)) / divisor : 0;
+    return `(${myAmount.toLocaleString('ko-KR')} -> ${reward.toFixed(1)})`;
 };
 
 const loadList = async () => {
@@ -295,7 +338,7 @@ onMounted(() => {
     <main id="nation-betting-container" class="nation-betting-page legacy-bg0">
         <header class="legacy-top-bar">
             <RouterLink class="legacy-nav-button" to="/">돌아가기</RouterLink>
-            <button class="legacy-nav-button" type="button" :disabled="loadingList" @click="loadList">갱신</button>
+            <div></div>
             <h1>국가 베팅장</h1>
             <div></div>
             <div></div>
@@ -309,32 +352,37 @@ onMounted(() => {
                 {{ info.name }}
                 <span v-if="info.finished">(종료)</span>
                 <span v-else-if="currentYearMonth <= info.closeYearMonth">
-                    ({{ parseYearMonth(info.closeYearMonth)[0] }}년
-                    {{ parseYearMonth(info.closeYearMonth)[1] }}월까지)
+                    ({{ parseYearMonth(info.closeYearMonth)[0] }}년 {{ parseYearMonth(info.closeYearMonth)[1] }}월까지)
                 </span>
                 <span v-else>(베팅 마감)</span>
                 (총액: {{ totalAmount.toLocaleString('ko-KR') }})
             </div>
 
             <div class="betting-candidates">
-                <button
+                <div
                     v-for="(candidate, index) in candidates"
                     :key="`${info.id}-${index}`"
-                    type="button"
-                    class="betting-candidate"
-                    :class="{ picked: selectedCandidates.includes(index) || (info.finished && winner.has(index)) }"
-                    :disabled="!isDetailOpen"
-                    @click="toggleCandidate(index)"
+                    class="betting-candidate-cell"
                 >
-                    <span class="candidate-title legacy-bg1">{{ candidate.title }}</span>
-                    <span class="candidate-info">
-                        <span v-for="line in candidate.info.split('<br>')" :key="line">{{ line }}</span>
-                    </span>
-                    <span class="candidate-rate">
-                        선택율:
-                        {{ (((candidateAmounts.get(index) ?? 0) / Math.max(1, pureAmount)) * 100).toFixed(1) }}%
-                    </span>
-                </button>
+                    <button
+                        type="button"
+                        class="betting-candidate"
+                        :class="{
+                            picked: selectedCandidates.includes(index) || (info.finished && winner.has(index)),
+                        }"
+                        :disabled="!isDetailOpen"
+                        @click="toggleCandidate(index)"
+                    >
+                        <span class="candidate-title legacy-bg1">{{ candidate.title }}</span>
+                        <span class="candidate-info">
+                            <span v-for="line in candidate.info.split('<br>')" :key="line">{{ line }}</span>
+                        </span>
+                        <span class="candidate-rate">
+                            선택율:
+                            {{ (((candidateAmounts.get(index) ?? 0) / Math.max(1, pureAmount)) * 100).toFixed(1) }}%
+                        </span>
+                    </button>
+                </div>
             </div>
 
             <form v-if="isDetailOpen" class="betting-form" @submit.prevent="submitBet">
@@ -361,7 +409,7 @@ onMounted(() => {
                         {{ selectionLabel(key) }}
                     </div>
                     <div>{{ betAmount.toLocaleString('ko-KR') }}</div>
-                    <div>{{ myBetMap.get(key)?.toLocaleString('ko-KR') ?? '' }}</div>
+                    <div>{{ myExpectedReward(key, betAmount) }}</div>
                     <div>{{ expectedMultiplier(key, betAmount) }}배</div>
                 </div>
             </div>
@@ -382,8 +430,7 @@ onMounted(() => {
                 {{ item.name }}
                 <span v-if="item.finished">(종료)</span>
                 <span v-else-if="isListOpen(item)">
-                    ({{ parseYearMonth(item.closeYearMonth)[0] }}년
-                    {{ parseYearMonth(item.closeYearMonth)[1] }}월까지)
+                    ({{ parseYearMonth(item.closeYearMonth)[0] }}년 {{ parseYearMonth(item.closeYearMonth)[1] }}월까지)
                 </span>
                 <span v-else>(베팅 마감)</span>
             </button>
@@ -400,12 +447,11 @@ onMounted(() => {
 .nation-betting-page {
     position: relative;
     width: 500px;
-    min-height: 100vh;
     margin: 0 auto;
     color: #fff;
     font-family: Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic';
     font-size: 14px;
-    line-height: 1.3;
+    line-height: 1.5;
     overflow-x: hidden;
 }
 
@@ -458,19 +504,32 @@ onMounted(() => {
 }
 
 .section-title {
-    min-height: 22px;
+    min-height: 21px;
     text-align: center;
-    line-height: 22px;
+    line-height: 21px;
 }
 
 .betting-candidates {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 4px;
-    padding: 4px;
+    display: flex;
+    flex-wrap: wrap;
+    margin-top: -3.5px;
+    margin-right: -1.75px;
+    margin-left: -1.75px;
+}
+
+.betting-candidate-cell {
+    flex: 0 0 auto;
+    width: 33.33333333%;
+    max-width: 100%;
+    padding-right: 1.75px;
+    padding-left: 1.75px;
+    margin-top: 3.5px;
 }
 
 .betting-candidate {
+    width: 100%;
+    height: 100%;
+    min-height: 143px;
     min-width: 0;
     padding: 0;
     border: 1px solid gray;
@@ -530,7 +589,7 @@ onMounted(() => {
 .betting-form input {
     grid-column: span 4;
     min-width: 0;
-    height: 30px;
+    height: 35.5px;
     border: 1px solid #777;
     background: #ddd;
     color: #303030;
@@ -538,10 +597,11 @@ onMounted(() => {
 
 .betting-form button {
     grid-column: span 2;
+    height: 35.5px;
 }
 
 .payout-table {
-    margin-top: 6px;
+    margin-top: 0;
 }
 
 .payout-row {
@@ -551,7 +611,7 @@ onMounted(() => {
 
 .payout-row > div {
     min-width: 0;
-    padding: 2px 4px;
+    padding: 0 4px;
 }
 
 .payout-row > div:not(:first-child) {
@@ -572,7 +632,7 @@ onMounted(() => {
 
 .betting-item {
     display: block;
-    width: 100%;
+    width: auto;
     margin: 0.25em;
     border: 0;
     background: transparent;
@@ -595,11 +655,21 @@ onMounted(() => {
 
 .betting-footer .legacy-nav-button {
     width: 90px;
+    height: 35.5px;
 }
 
 .betting-notice,
 .betting-loading {
     padding: 6px 10px;
+}
+
+.betting-notice {
+    position: fixed;
+    top: 8px;
+    right: 8px;
+    z-index: 20;
+    width: min(320px, calc(100vw - 16px));
+    background: #303030;
 }
 
 .betting-notice.error {
@@ -617,8 +687,9 @@ onMounted(() => {
         width: 1000px;
     }
 
-    .betting-candidates {
-        grid-template-columns: repeat(6, minmax(0, 1fr));
+    .betting-candidate-cell {
+        /* Legacy Bootstrap switches .col-4 to .col-lg-2 at 940px. */
+        width: 16.66666667%;
     }
 
     .betting-form {
