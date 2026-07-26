@@ -542,7 +542,9 @@ const runSimulation = async (action: BattleSimRequestPayload['action']) => {
         const payload = buildBattlePayload(action);
         const response = await trpc.battle.simulate.mutate(payload);
         const result =
-            'payload' in response && response.payload ? response.payload : await waitForSimulationResult(response.jobId);
+            'payload' in response && response.payload
+                ? response.payload
+                : await waitForSimulationResult(response.jobId);
 
         if (!result.result) {
             error.value = result.reason || 'battle_failed';
@@ -882,19 +884,21 @@ const summaryRows = computed(() => {
         { label: '전투 페이즈', value: formatNumber(battleResult.value.phase) },
         {
             label: '준 피해',
-            value: battleResult.value.minKilled !== battleResult.value.maxKilled
-                ? `${formatNumber(battleResult.value.killed)} (${formatNumber(battleResult.value.minKilled)} ~ ${formatNumber(
-                      battleResult.value.maxKilled
-                  )})`
-                : formatNumber(battleResult.value.killed),
+            value:
+                battleResult.value.minKilled !== battleResult.value.maxKilled
+                    ? `${formatNumber(battleResult.value.killed)} (${formatNumber(battleResult.value.minKilled)} ~ ${formatNumber(
+                          battleResult.value.maxKilled
+                      )})`
+                    : formatNumber(battleResult.value.killed),
         },
         {
             label: '받은 피해',
-            value: battleResult.value.minDead !== battleResult.value.maxDead
-                ? `${formatNumber(battleResult.value.dead)} (${formatNumber(battleResult.value.minDead)} ~ ${formatNumber(
-                      battleResult.value.maxDead
-                  )})`
-                : formatNumber(battleResult.value.dead),
+            value:
+                battleResult.value.minDead !== battleResult.value.maxDead
+                    ? `${formatNumber(battleResult.value.dead)} (${formatNumber(battleResult.value.minDead)} ~ ${formatNumber(
+                          battleResult.value.maxDead
+                      )})`
+                    : formatNumber(battleResult.value.dead),
         },
         { label: '출병자 군량 소모', value: formatNumber(battleResult.value.attackerRice) },
         { label: '수비자 군량 소모', value: formatNumber(battleResult.value.defenderRice) },
@@ -1028,7 +1032,7 @@ const shouldShowUI = computed(() => !loading.value && !!options.value);
 
                 <BattleGeneralCard
                     v-if="attackerGeneral"
-                    :general="attackerGeneral!"
+                    v-model:general="attackerGeneral"
                     :options="options!"
                     mode="attacker"
                     title="출병자 설정"
@@ -1095,7 +1099,7 @@ const shouldShowUI = computed(() => !loading.value && !!options.value);
                     <BattleGeneralCard
                         v-for="(defender, index) in defenders"
                         :key="defender.id"
-                        :general="defender"
+                        v-model:general="defenders[index]"
                         :options="options!"
                         mode="defender"
                         :title="`수비자 설정 ${index + 1}`"
@@ -1146,11 +1150,7 @@ const shouldShowUI = computed(() => !loading.value && !!options.value);
                     </div>
                     <div v-else class="select-wrap">
                         <select v-model.number="selectedGeneralId">
-                            <optgroup
-                                v-for="group in generalGroups"
-                                :key="group.nation.id"
-                                :label="group.nation.name"
-                            >
+                            <optgroup v-for="group in generalGroups" :key="group.nation.id" :label="group.nation.name">
                                 <option
                                     v-for="general in group.generals"
                                     :key="general.id"

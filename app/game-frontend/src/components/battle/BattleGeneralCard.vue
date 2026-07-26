@@ -3,13 +3,13 @@ import { computed, ref } from 'vue';
 import type { BattleSimOptions, GeneralDraft } from '../../utils/battleSimulatorTypes';
 
 interface Props {
-    general: GeneralDraft;
     options: BattleSimOptions;
     mode: 'attacker' | 'defender';
     title: string;
 }
 
 const props = defineProps<Props>();
+const general = defineModel<GeneralDraft>('general', { required: true });
 
 const emit = defineEmits<{
     (event: 'import'): void;
@@ -187,21 +187,11 @@ const officerLevelOptions = [
             <div class="form-row">
                 <label class="field">
                     <span>훈련</span>
-                    <input
-                        v-model.number="general.train"
-                        type="number"
-                        min="40"
-                        :max="options.config.maxTrainByWar"
-                    />
+                    <input v-model.number="general.train" type="number" min="40" :max="options.config.maxTrainByWar" />
                 </label>
                 <label class="field">
                     <span>사기</span>
-                    <input
-                        v-model.number="general.atmos"
-                        type="number"
-                        min="40"
-                        :max="options.config.maxAtmosByWar"
-                    />
+                    <input v-model.number="general.atmos" type="number" min="40" :max="options.config.maxAtmosByWar" />
                 </label>
                 <label class="field">
                     <span>전특</span>
@@ -308,30 +298,15 @@ const officerLevelOptions = [
             <div class="form-row buff-row">
                 <label class="field">
                     <span>상대 회피</span>
-                    <input
-                        v-model.number="general.inheritBuff.warAvoidRatioOppose"
-                        type="number"
-                        min="0"
-                        max="5"
-                    />
+                    <input v-model.number="general.inheritBuff.warAvoidRatioOppose" type="number" min="0" max="5" />
                 </label>
                 <label class="field">
                     <span>상대 필살</span>
-                    <input
-                        v-model.number="general.inheritBuff.warCriticalRatioOppose"
-                        type="number"
-                        min="0"
-                        max="5"
-                    />
+                    <input v-model.number="general.inheritBuff.warCriticalRatioOppose" type="number" min="0" max="5" />
                 </label>
                 <label class="field">
                     <span>상대 계략</span>
-                    <input
-                        v-model.number="general.inheritBuff.warMagicTrialProbOppose"
-                        type="number"
-                        min="0"
-                        max="5"
-                    />
+                    <input v-model.number="general.inheritBuff.warMagicTrialProbOppose" type="number" min="0" max="5" />
                 </label>
             </div>
         </div>

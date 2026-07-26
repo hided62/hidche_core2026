@@ -167,7 +167,8 @@ export const createUnificationHandler = (options: {
                         sabotage,
                         dex,
                         unifier,
-                        unifierAward: general.nationId === winnerNationId && general.officerLevel > 4 ? UNIFIER_POINT : 0,
+                        unifierAward:
+                            general.nationId === winnerNationId && general.officerLevel > 4 ? UNIFIER_POINT : 0,
                     },
                 },
             });
@@ -194,15 +195,11 @@ export const createUnificationHandler = (options: {
         const meta = asRecord(state.meta);
 
         const serverId =
-            typeof meta.serverId === 'string' && meta.serverId.trim()
-                ? meta.serverId.trim()
-                : options.profileName;
+            typeof meta.serverId === 'string' && meta.serverId.trim() ? meta.serverId.trim() : options.profileName;
         const season = readMetaNumberOrNull(meta, 'season') ?? 1;
         const scenario = readMetaNumberOrNull(meta, 'scenarioId') ?? 0;
         const scenarioName =
-            typeof asRecord(meta.scenarioMeta).title === 'string'
-                ? String(asRecord(meta.scenarioMeta).title)
-                : '';
+            typeof asRecord(meta.scenarioMeta).title === 'string' ? String(asRecord(meta.scenarioMeta).title) : '';
         const startTime = typeof meta.starttime === 'string' ? meta.starttime : null;
         const unitedTime = new Date().toISOString();
 
@@ -307,14 +304,16 @@ export const createUnificationHandler = (options: {
             };
 
             for (const [typeName, valueType] of hallTypes) {
-                let value = 0;
-                if (valueType === 'natural') {
-                    value = typeName === 'experience' ? general.experience : typeName === 'dedication' ? general.dedication : ranks[typeName] ?? 0;
-                } else if (valueType === 'rank') {
-                    value = ranks[typeName] ?? 0;
-                } else {
-                    value = calcValues[typeName] ?? 0;
-                }
+                const value =
+                    valueType === 'natural'
+                        ? typeName === 'experience'
+                            ? general.experience
+                            : typeName === 'dedication'
+                              ? general.dedication
+                              : (ranks[typeName] ?? 0)
+                        : valueType === 'rank'
+                          ? (ranks[typeName] ?? 0)
+                          : (calcValues[typeName] ?? 0);
 
                 if ((typeName === 'winrate' || typeName === 'killrate') && warnum < 10) {
                     continue;
@@ -391,9 +390,7 @@ export const createUnificationHandler = (options: {
         const meta = asRecord(state.meta);
 
         const serverId =
-            typeof meta.serverId === 'string' && meta.serverId.trim()
-                ? meta.serverId.trim()
-                : options.profileName;
+            typeof meta.serverId === 'string' && meta.serverId.trim() ? meta.serverId.trim() : options.profileName;
         const serverName =
             typeof meta.serverName === 'string' && meta.serverName.trim()
                 ? meta.serverName.trim()
@@ -653,30 +650,30 @@ export const createUnificationHandler = (options: {
         await Promise.all(
             oldGeneralTargets.map((general) =>
                 ((snapshot) =>
-                prisma.oldGeneral.upsert({
-                    where: {
-                        by_no: {
+                    prisma.oldGeneral.upsert({
+                        where: {
+                            by_no: {
+                                serverId,
+                                generalNo: general.id,
+                            },
+                        },
+                        update: {
+                            owner: general.userId ?? null,
+                            name: general.name,
+                            lastYearMonth: state.currentYear * 100 + state.currentMonth,
+                            turnTime: general.turnTime,
+                            data: snapshot,
+                        },
+                        create: {
                             serverId,
                             generalNo: general.id,
+                            owner: general.userId ?? null,
+                            name: general.name,
+                            lastYearMonth: state.currentYear * 100 + state.currentMonth,
+                            turnTime: general.turnTime,
+                            data: snapshot,
                         },
-                    },
-                    update: {
-                        owner: general.userId ?? null,
-                        name: general.name,
-                        lastYearMonth: state.currentYear * 100 + state.currentMonth,
-                        turnTime: general.turnTime,
-                        data: snapshot,
-                    },
-                    create: {
-                        serverId,
-                        generalNo: general.id,
-                        owner: general.userId ?? null,
-                        name: general.name,
-                        lastYearMonth: state.currentYear * 100 + state.currentMonth,
-                        turnTime: general.turnTime,
-                        data: snapshot,
-                    },
-                }))( {
+                    }))({
                     ...general,
                     turnTime: general.turnTime.toISOString(),
                 })

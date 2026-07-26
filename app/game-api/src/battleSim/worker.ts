@@ -43,7 +43,7 @@ export const runBattleSimWorker = async (): Promise<void> => {
             continue;
         }
 
-        let job: BattleSimJob | null = null;
+        let job: BattleSimJob;
         try {
             job = JSON.parse(raw) as BattleSimJob;
         } catch {

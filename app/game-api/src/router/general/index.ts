@@ -2,6 +2,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { LogCategory, LogScope } from '@sammo-ts/infra';
+import type { GamePrisma } from '@sammo-ts/infra';
 import { asRecord } from '@sammo-ts/common';
 
 import { authedProcedure, router } from '../../trpc.js';
@@ -264,9 +265,8 @@ export const generalRouter = router({
 
         const metaRecord = asRecord(general.meta);
         const prevSettings = asRecord(metaRecord.userSettings);
-        const prevMyset = typeof prevSettings.myset === 'number' && Number.isFinite(prevSettings.myset)
-            ? prevSettings.myset
-            : null;
+        const prevMyset =
+            typeof prevSettings.myset === 'number' && Number.isFinite(prevSettings.myset) ? prevSettings.myset : null;
         const nextSettings = {
             ...prevSettings,
             ...input,
@@ -281,8 +281,8 @@ export const generalRouter = router({
                 meta: {
                     ...metaRecord,
                     userSettings: nextSettings,
-                },
-            } as any,
+                } as GamePrisma.InputJsonValue,
+            },
         });
 
         return { ok: true };

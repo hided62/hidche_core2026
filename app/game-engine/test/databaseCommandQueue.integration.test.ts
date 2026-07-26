@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createGamePostgresConnector, GamePrisma, type GamePrismaClient } from '@sammo-ts/infra';
+import { createGamePostgresConnector } from '@sammo-ts/infra';
+import type { GamePrisma, GamePrismaClient } from '@sammo-ts/infra';
 
 import { DatabaseTurnDaemonCommandQueue } from '../src/lifecycle/databaseCommandQueue.js';
 

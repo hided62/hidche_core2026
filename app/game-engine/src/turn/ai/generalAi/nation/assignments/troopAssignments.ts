@@ -38,7 +38,7 @@ export const do부대전방발령 = (ai: GeneralAI) => {
         const force = ai.nationPolicy.combatForce[leader.id];
         let [fromCityId, toCityId] = force;
 
-        let targetCityId: number | null = null;
+        let targetCityId: number | null;
         if (!ai.warRoute || !ai.warRoute[fromCityId] || ai.warRoute[fromCityId][toCityId] === undefined) {
             targetCityId = pickRandomCityId(ai, ai.frontCities);
         } else {
