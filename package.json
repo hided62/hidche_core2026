@@ -10,6 +10,7 @@
         "format": "prettier --write .",
         "test": "turbo test",
         "test:integration": "pnpm --filter @sammo-ts/integration-tests test:integration",
+        "test:integration:conditional": "./tools/run-conditional-integration.sh",
         "build": "turbo build",
         "typecheck": "turbo typecheck",
         "dev": "turbo dev",
