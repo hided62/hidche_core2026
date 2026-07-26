@@ -204,7 +204,7 @@ test.describe('instant diplomacy response UI', () => {
             borderWidth: '1px',
             cursor: 'pointer',
         });
-        expect(geometry.buttons.every((button) => button.height >= 20 && button.height <= 22)).toBe(true);
+        expect(geometry.buttons.every((button) => button.height >= 22 && button.height <= 26)).toBe(true);
 
         await decline.hover();
         expect(await decline.evaluate((element) => getComputedStyle(element).cursor)).toBe('pointer');

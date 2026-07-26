@@ -414,7 +414,8 @@ button {
 }
 
 .mobile-message-panel {
-    width: calc(100% + 48px);
+    width: 100vw;
+    min-width: 0;
     margin-left: -24px;
 }
 
