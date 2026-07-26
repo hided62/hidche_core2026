@@ -20,6 +20,40 @@ export type MonthlyEventActionHandler = (
 
 export type MonthlyEventActionRegistry = ReadonlyMap<string, MonthlyEventActionHandler>;
 
+export const MONTHLY_EVENT_ACTION_CATALOG = [
+    'ProcessIncome',
+    'NoticeToHistoryLog',
+    'NewYear',
+    'ResetOfficerLock',
+    'RandomizeCityTradeRate',
+    'RaiseDisaster',
+    'UpdateCitySupply',
+    'UpdateNationLevel',
+    'ProcessSemiAnnual',
+    'ProcessWarIncome',
+    'CreateAdminNPC',
+    'CreateManyNPC',
+    'RegNPC',
+    'RegNeutralNPC',
+    'RaiseNPCNation',
+    'RaiseInvader',
+    'AutoDeleteInvader',
+    'InvaderEnding',
+    'ChangeCity',
+    'ProvideNPCTroopLeader',
+    'OpenNationBetting',
+    'FinishNationBetting',
+    'BlockScoutAction',
+    'UnblockScoutAction',
+    'AssignGeneralSpeciality',
+    'AddGlobalBetray',
+    'LostUniqueItem',
+    'MergeInheritPointRank',
+    'DeleteEvent',
+] as const;
+
+export type MonthlyEventActionName = (typeof MONTHLY_EVENT_ACTION_CATALOG)[number];
+
 const COMPARATORS = new Set(['==', '!=', '<', '>', '<=', '>=']);
 const CITY_TRADE_PROBABILITY_BY_LEVEL: Readonly<Record<number, number>> = {
     1: 0,
