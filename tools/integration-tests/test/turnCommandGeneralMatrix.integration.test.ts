@@ -107,6 +107,7 @@ interface FixturePatches {
     diplomacy?: Record<string, Record<string, unknown>>;
     randomFoundingCandidateCityIds?: number[];
     rankData?: Array<{ generalId: number; type: string; value: number }>;
+    additionalCities?: Array<Record<string, unknown>>;
 }
 
 const buildRequest = (
@@ -195,6 +196,7 @@ const buildRequest = (
                 trade: 100,
                 ...fixturePatches.cities?.[70],
             },
+            ...(fixturePatches.additionalCities ?? []),
         ],
         generals: [
             { ...general(1, 1, 3, 12), ...actorPatch, ...fixturePatches.generals?.[1] },
@@ -227,7 +229,11 @@ const buildRequest = (
     },
     observe: {
         generalIds: [1, 2, 3],
-        cityIds: [3, 70],
+        cityIds: [
+            3,
+            70,
+            ...(fixturePatches.additionalCities?.map((city) => Number(city.id)).filter(Number.isFinite) ?? []),
+        ],
         nationIds: [1, 2],
         logAfterId: 0,
         messageAfterId: 0,
@@ -1365,6 +1371,282 @@ integration('general military preparation boundary, value, RNG, and log parity',
                 requestedAction: action,
                 actionKey: completed ? action : '휴식',
                 usedFallback: !completed,
+            });
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+
+            if (completed) {
+                expect(semanticLogSignatures(core.after.logs)).toEqual(
+                    semanticLogSignatures(addedReferenceLogs(reference.before, reference.after.logs))
+                );
+            }
+        },
+        120_000
+    );
+});
+
+interface TrainingScoutBoundaryCase {
+    name: string;
+    action: 'che_훈련' | 'che_전투태세' | 'che_인재탐색' | 'che_첩보';
+    args?: Record<string, unknown>;
+    actorPatch?: Record<string, unknown>;
+    fixturePatches?: FixturePatches;
+    hiddenSeed?: string;
+    completed: boolean;
+    fallback?: boolean;
+}
+
+const trainingScoutBoundaryCases: TrainingScoutBoundaryCase[] = [
+    {
+        name: 'training rejects a neutral actor',
+        action: 'che_훈련',
+        actorPatch: { nationId: 0 },
+        completed: false,
+    },
+    {
+        name: 'training rejects a wandering nation',
+        action: 'che_훈련',
+        fixturePatches: { nations: { 1: { level: 0 } } },
+        completed: false,
+    },
+    {
+        name: 'training rejects a foreign-occupied city',
+        action: 'che_훈련',
+        fixturePatches: { cities: { 3: { nationId: 2 } } },
+        completed: false,
+    },
+    {
+        name: 'training rejects zero crew',
+        action: 'che_훈련',
+        actorPatch: { crew: 0 },
+        completed: false,
+    },
+    {
+        name: 'training rejects the command maximum',
+        action: 'che_훈련',
+        actorPatch: { train: 100 },
+        completed: false,
+    },
+    {
+        name: 'training clamps one below the maximum and applies morale side effect',
+        action: 'che_훈련',
+        actorPatch: { train: 99, atmos: 99, crew: 1001 },
+        completed: true,
+    },
+    {
+        name: 'training preserves zero rounded score and morale side effect',
+        action: 'che_훈련',
+        actorPatch: { train: 50, atmos: 99, crew: 9_999_999 },
+        completed: true,
+    },
+    {
+        name: 'battle preparation rejects a neutral actor at completion',
+        action: 'che_전투태세',
+        actorPatch: { nationId: 0, lastTurn: { command: '전투태세', term: 3 } },
+        completed: false,
+    },
+    {
+        name: 'battle preparation rejects a wandering nation at completion',
+        action: 'che_전투태세',
+        actorPatch: { lastTurn: { command: '전투태세', term: 3 } },
+        fixturePatches: { nations: { 1: { level: 0 } } },
+        completed: false,
+    },
+    {
+        name: 'battle preparation rejects a foreign-occupied city at completion',
+        action: 'che_전투태세',
+        actorPatch: { lastTurn: { command: '전투태세', term: 3 } },
+        fixturePatches: { cities: { 3: { nationId: 2 } } },
+        completed: false,
+    },
+    {
+        name: 'battle preparation rejects zero crew at completion',
+        action: 'che_전투태세',
+        actorPatch: { crew: 0, lastTurn: { command: '전투태세', term: 3 } },
+        completed: false,
+    },
+    {
+        name: 'battle preparation rejects insufficient gold at completion',
+        action: 'che_전투태세',
+        actorPatch: { gold: 0, lastTurn: { command: '전투태세', term: 3 } },
+        completed: false,
+    },
+    {
+        name: 'battle preparation rejects training at ninety',
+        action: 'che_전투태세',
+        actorPatch: { train: 90, lastTurn: { command: '전투태세', term: 3 } },
+        completed: false,
+    },
+    {
+        name: 'battle preparation rejects morale at ninety',
+        action: 'che_전투태세',
+        actorPatch: { atmos: 90, lastTurn: { command: '전투태세', term: 3 } },
+        completed: false,
+    },
+    {
+        name: 'battle preparation accepts exact training and morale margins',
+        action: 'che_전투태세',
+        actorPatch: {
+            train: 89,
+            atmos: 89,
+            gold: 1_000_000,
+            rice: 100_000,
+            lastTurn: { command: '전투태세', term: 3 },
+        },
+        completed: true,
+    },
+    {
+        name: 'talent scout rejects insufficient development gold',
+        action: 'che_인재탐색',
+        actorPatch: { gold: 17 },
+        completed: false,
+    },
+    {
+        name: 'talent scout accepts the exact development gold',
+        action: 'che_인재탐색',
+        actorPatch: { gold: 18 },
+        hiddenSeed: 'general-talent-scout-exact-cost',
+        completed: true,
+    },
+    {
+        name: 'talent scout preserves a second fixed probability branch',
+        action: 'che_인재탐색',
+        hiddenSeed: 'general-talent-scout-probability-1',
+        completed: true,
+    },
+    {
+        name: 'spy accepts a numeric-string destination city ID',
+        action: 'che_첩보',
+        args: { destCityID: '70' },
+        completed: true,
+    },
+    {
+        name: 'spy accepts a fractional destination city ID through PHP array-key coercion',
+        action: 'che_첩보',
+        args: { destCityID: 70.9 },
+        completed: true,
+    },
+    {
+        name: 'spy rejects an unknown destination city',
+        action: 'che_첩보',
+        args: { destCityID: 999 },
+        completed: false,
+    },
+    {
+        name: 'spy rejects the occupied city',
+        action: 'che_첩보',
+        args: { destCityID: 3 },
+        completed: false,
+    },
+    {
+        name: 'spy rejects a neutral actor',
+        action: 'che_첩보',
+        args: { destCityID: 70 },
+        actorPatch: { nationId: 0 },
+        completed: true,
+    },
+    {
+        name: 'spy rejects insufficient gold',
+        action: 'che_첩보',
+        args: { destCityID: 70 },
+        actorPatch: { gold: 53 },
+        completed: false,
+    },
+    {
+        name: 'spy rejects insufficient rice',
+        action: 'che_첩보',
+        args: { destCityID: 70 },
+        actorPatch: { rice: 53 },
+        completed: false,
+    },
+    {
+        name: 'spy reports full adjacent intelligence and tech advantage',
+        action: 'che_첩보',
+        args: { destCityID: 70 },
+        fixturePatches: { nations: { 1: { tech: 1000 }, 2: { tech: 2000 } } },
+        completed: true,
+    },
+    {
+        name: 'spy reports medium intelligence at distance two',
+        action: 'che_첩보',
+        args: { destCityID: 1 },
+        fixturePatches: {
+            generals: { 2: { cityId: 1 } },
+            additionalCities: [
+                {
+                    id: 1,
+                    nationId: 2,
+                    population: 123_456,
+                    populationMax: 620_500,
+                    agriculture: 1111,
+                    commerce: 2222,
+                    security: 3333,
+                    defence: 4444,
+                    wall: 5555,
+                    supplyState: 1,
+                    frontState: 1,
+                    state: 0,
+                    term: 0,
+                    trust: 66.6,
+                    trade: 100,
+                },
+            ],
+        },
+        completed: true,
+    },
+    {
+        name: 'spy reports only rumors beyond distance two',
+        action: 'che_첩보',
+        args: { destCityID: 4 },
+        fixturePatches: {
+            generals: { 2: { cityId: 4 } },
+            additionalCities: [
+                {
+                    id: 4,
+                    nationId: 2,
+                    population: 234_567,
+                    populationMax: 655_700,
+                    agriculture: 1111,
+                    commerce: 2222,
+                    security: 3333,
+                    defence: 4444,
+                    wall: 5555,
+                    supplyState: 1,
+                    frontState: 1,
+                    state: 0,
+                    term: 0,
+                    trust: 55.5,
+                    trade: 100,
+                },
+            ],
+        },
+        completed: true,
+    },
+];
+
+integration('general training, talent scout, and spy boundary, value, RNG, and log parity', () => {
+    it.each(trainingScoutBoundaryCases)(
+        '$name',
+        async ({ name, action, args, actorPatch, fixturePatches, hiddenSeed, completed, fallback }) => {
+            const request = buildRequest(action, args, actorPatch, fixturePatches);
+            request.setup!.world!.hiddenSeed = hiddenSeed ?? `general-training-scout-${name}`;
+            request.observe!.includeGlobalHistoryLogs = true;
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+            const usedFallback = fallback ?? !completed;
+
+            expect(reference.execution.outcome).toMatchObject({ completed });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: action,
+                actionKey: usedFallback ? '휴식' : action,
+                usedFallback,
             });
             expect(core.rng).toEqual(reference.rng);
             expect(

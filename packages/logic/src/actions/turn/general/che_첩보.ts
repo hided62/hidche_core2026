@@ -14,8 +14,9 @@ import type {
     GeneralActionEffect,
 } from '@sammo-ts/logic/actions/engine.js';
 import { createGeneralPatchEffect, createNationPatchEffect } from '@sammo-ts/logic/actions/engine.js';
-import { LogCategory, LogFormat } from '@sammo-ts/logic/logging/types.js';
+import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import { z } from 'zod';
+import { JosaUtil } from '@sammo-ts/common';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { ActionContextBase, ActionContextOptions } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
@@ -36,7 +37,15 @@ export interface SpyResolveContext<
 const ACTION_NAME = '첩보';
 const ACTION_KEY = 'che_첩보';
 const ARGS_SCHEMA = z.object({
-    destCityId: z.number(),
+    destCityId: z.preprocess((value) => {
+        if (typeof value === 'number' && Number.isFinite(value)) {
+            return Math.trunc(value);
+        }
+        if (typeof value === 'string' && /^(?:0|[1-9]\d*)$/.test(value)) {
+            return Number(value);
+        }
+        return value;
+    }, z.number().int()),
 });
 export type SpyArgs = z.infer<typeof ARGS_SCHEMA>;
 
@@ -142,6 +151,7 @@ export class ActionResolver<
         const effects: GeneralActionEffect<TriggerState>[] = [];
 
         const destCityName = destCity.name;
+        const josaUl = JosaUtil.pick(destCityName, '을');
         const currentCityId = general.cityId;
         const distance = getCityDistance(ctx.map, currentCityId, destCityId);
 
@@ -157,13 +167,18 @@ export class ActionResolver<
 
         const trust = destCity.meta.trust;
         const trustText = typeof trust === 'number' ? trust.toFixed(1) : '?';
+        ctx.addLog(`누군가가 <G><b>${destCityName}</b></>${josaUl} 살피는 것 같습니다.`, {
+            scope: LogScope.SYSTEM,
+            category: LogCategory.SUMMARY,
+            format: LogFormat.MONTH,
+        });
         if (distance <= 1) {
             ctx.addLog(`<G><b>${destCityName}</b></>의 정보를 많이 얻었습니다.`, {
                 category: LogCategory.ACTION,
                 format: LogFormat.MONTH,
             });
             ctx.addLog(
-                `【<G>${destCityName}</>】주민:${destCity.population.toLocaleString()}, 민심:${trustText}, 장수:${cityGenerals.length}, 병력:${totalCrew.toLocaleString()}`,
+                `【<G>${destCityName}</>】주민:${destCity.population.toLocaleString()}, 민심:${trustText}, 장수:${cityGenerals.length}, 병력:${totalCrew}`,
                 {
                     category: LogCategory.ACTION,
                     format: LogFormat.RAWTEXT,
@@ -208,7 +223,7 @@ export class ActionResolver<
                 format: LogFormat.MONTH,
             });
             ctx.addLog(
-                `【<G>${destCityName}</>】주민:${destCity.population.toLocaleString()}, 민심:${trustText}, 장수:${cityGenerals.length}, 병력:${totalCrew.toLocaleString()}`,
+                `【<G>${destCityName}</>】주민:${destCity.population.toLocaleString()}, 민심:${trustText}, 장수:${cityGenerals.length}, 병력:${totalCrew}`,
                 {
                     category: LogCategory.ACTION,
                     format: LogFormat.RAWTEXT,
@@ -227,7 +242,7 @@ export class ActionResolver<
                 format: LogFormat.MONTH,
             });
             ctx.addLog(
-                `【<G>${destCityName}</>】주민:${destCity.population.toLocaleString()}, 민심:${trustText}, 장수:${cityGenerals.length}, 병력:${totalCrew.toLocaleString()}`,
+                `【<G>${destCityName}</>】주민:${destCity.population.toLocaleString()}, 민심:${trustText}, 장수:${cityGenerals.length}, 병력:${totalCrew}`,
                 {
                     category: LogCategory.ACTION,
                     format: LogFormat.RAWTEXT,
