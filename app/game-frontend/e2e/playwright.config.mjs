@@ -8,15 +8,18 @@ const baseURL = `http://127.0.0.1:${port}/che/`;
 
 export default defineConfig({
     testDir: '.',
-    testMatch: ['troop.spec.ts', 'nationOffices.spec.ts'],
+    testMatch: ['troop.spec.ts', 'board.spec.ts', 'inGameInfo.spec.ts', 'nationOffices.spec.ts'],
     fullyParallel: false,
     workers: 1,
     timeout: 30_000,
     expect: {
         timeout: 5_000,
     },
-    reporter: [['list'], ['html', { open: 'never', outputFolder: resolve(repositoryRoot, 'playwright-report') }]],
-    outputDir: resolve(repositoryRoot, 'test-results/game-frontend'),
+    reporter: [
+        ['list'],
+        ['html', { open: 'never', outputFolder: resolve(repositoryRoot, 'playwright-report/game-legacy') }],
+    ],
+    outputDir: resolve(repositoryRoot, 'test-results/game-legacy'),
     use: {
         baseURL,
         ...devices['Desktop Chrome'],

@@ -5,29 +5,35 @@ import { promises as fs } from 'fs';
 import { randomUUID } from 'crypto';
 import sharp, { type WebpOptions } from 'sharp';
 
-import { GamePrisma } from '@sammo-ts/infra';
-
 import { authedProcedure, router } from '../../trpc.js';
 import { getMyGeneral } from '../shared/general.js';
+import { resolveSecretPermission } from '../shared/secretPermission.js';
 
 const MAX_UPLOAD_BYTES = 1024 * 1024;
 const MAX_LONG_EDGE = 2048;
 const WEBP_QUALITY = 80;
 const WEBP_MIN_SAVING_RATIO = 0.97;
 
-const resolveSecretPermission = (officerLevel: number): number => {
-    if (officerLevel >= 5) return 2;
-    if (officerLevel > 1) return 1;
-    return 0;
-};
-
-const assertBoardAccess = (nationId: number, officerLevel: number, isSecret: boolean) => {
-    if (nationId <= 0 || officerLevel <= 0) {
+const assertBoardAccess = (permission: number, isSecret: boolean) => {
+    if (permission < 0) {
         throw new TRPCError({ code: 'FORBIDDEN', message: '국가에 소속되어있지 않습니다.' });
     }
-    if (isSecret && resolveSecretPermission(officerLevel) < 2) {
+    if (isSecret && permission < 2) {
         throw new TRPCError({ code: 'FORBIDDEN', message: '권한이 부족합니다. 수뇌부가 아닙니다.' });
     }
+};
+
+const getBoardActor = async (ctx: Parameters<typeof getMyGeneral>[0]) => {
+    const general = await getMyGeneral(ctx);
+    const nation =
+        general.nationId > 0
+            ? await ctx.db.nation.findUnique({
+                  where: { id: general.nationId },
+                  select: { meta: true },
+              })
+            : null;
+    const permission = resolveSecretPermission(general, nation?.meta ?? {}, true);
+    return { general, permission };
 };
 
 const normalizeUploadPath = (value: string) => {
@@ -92,111 +98,96 @@ const buildAvifBuffer = async (buffer: Buffer, resize: boolean): Promise<Buffer>
     return pipeline.avif({ quality: 60, effort: 4 }).toBuffer();
 };
 
-type BoardPostRow = {
-    id: number;
-    nation_id: number;
-    is_secret: boolean;
-    author_general_id: number;
-    author_name: string;
-    title: string;
-    content_html: string;
-    created_at: Date;
-};
-
-type BoardCommentRow = {
-    id: number;
-    post_id: number;
-    author_general_id: number;
-    author_name: string;
-    content_text: string;
-    created_at: Date;
-};
-
 export const boardRouter = router({
-    getArticles: authedProcedure
-        .input(z.object({ isSecret: z.boolean() }))
-        .query(async ({ ctx, input }) => {
-            const me = await getMyGeneral(ctx);
-            assertBoardAccess(me.nationId, me.officerLevel, input.isSecret);
+    getAccess: authedProcedure.query(async ({ ctx }) => {
+        const { permission } = await getBoardActor(ctx);
+        return {
+            permission,
+            canMeeting: permission >= 0,
+            canSecret: permission >= 2,
+        };
+    }),
+    getArticles: authedProcedure.input(z.object({ isSecret: z.boolean() })).query(async ({ ctx, input }) => {
+        const { general, permission } = await getBoardActor(ctx);
+        assertBoardAccess(permission, input.isSecret);
 
-            const posts = await ctx.db.$queryRaw<BoardPostRow[]>(GamePrisma.sql`
-                SELECT
-                    id,
-                    nation_id,
-                    is_secret,
-                    author_general_id,
-                    author_name,
-                    title,
-                    content_html,
-                    created_at
-                FROM board_post
-                WHERE nation_id = ${me.nationId} AND is_secret = ${input.isSecret}
-                ORDER BY created_at DESC
-                LIMIT 100
-            `);
+        const posts = await ctx.db.boardPost.findMany({
+            where: {
+                nationId: general.nationId,
+                isSecret: input.isSecret,
+            },
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            take: 100,
+            include: {
+                comments: {
+                    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+                },
+            },
+        });
 
-            if (posts.length === 0) {
-                return [];
-            }
+        if (posts.length === 0) {
+            return [];
+        }
 
-            const postIds = posts.map((post) => post.id);
-            const comments = await ctx.db.$queryRaw<BoardCommentRow[]>(GamePrisma.sql`
-                SELECT
-                    id,
-                    post_id,
-                    author_general_id,
-                    author_name,
-                    content_text,
-                    created_at
-                FROM board_comment
-                WHERE post_id IN (${GamePrisma.join(postIds)})
-                ORDER BY created_at ASC
-            `);
+        const authors = await ctx.db.general.findMany({
+            where: {
+                id: {
+                    in: [...new Set(posts.map((post) => post.authorGeneralId))],
+                },
+            },
+            select: {
+                id: true,
+                picture: true,
+                imageServer: true,
+            },
+        });
+        const authorMap = new Map(authors.map((author) => [author.id, author]));
 
-            const commentMap = new Map<number, BoardCommentRow[]>();
-            for (const comment of comments) {
-                const list = commentMap.get(comment.post_id) ?? [];
-                list.push(comment);
-                commentMap.set(comment.post_id, list);
-            }
-
-            return posts.map((post) => ({
-                id: post.id,
-                title: post.title,
-                contentHtml: post.content_html,
-                authorName: post.author_name,
-                createdAt: post.created_at.toISOString(),
-                comments: (commentMap.get(post.id) ?? []).map((comment) => ({
-                    id: comment.id,
-                    authorName: comment.author_name,
-                    content: comment.content_text,
-                    createdAt: comment.created_at.toISOString(),
-                })),
-            }));
-        }),
+        return posts.map((post) => ({
+            id: post.id,
+            title: post.title,
+            content: post.contentHtml,
+            authorName: post.authorName,
+            authorPicture: authorMap.get(post.authorGeneralId)?.picture ?? null,
+            authorImageServer: authorMap.get(post.authorGeneralId)?.imageServer ?? 0,
+            createdAt: post.createdAt.toISOString(),
+            comments: post.comments.map((comment) => ({
+                id: comment.id,
+                authorName: comment.authorName,
+                content: comment.contentText,
+                createdAt: comment.createdAt.toISOString(),
+            })),
+        }));
+    }),
     writeArticle: authedProcedure
         .input(
             z.object({
                 isSecret: z.boolean(),
                 title: z.string().trim().max(250),
-                contentHtml: z.string().trim().max(20000),
+                content: z.string().trim().max(20000),
             })
         )
         .mutation(async ({ ctx, input }) => {
-            const me = await getMyGeneral(ctx);
-            assertBoardAccess(me.nationId, me.officerLevel, input.isSecret);
+            const { general, permission } = await getBoardActor(ctx);
+            assertBoardAccess(permission, input.isSecret);
 
-            if (!input.title && !input.contentHtml) {
-                throw new TRPCError({ code: 'BAD_REQUEST', message: '제목 혹은 내용이 필요합니다.' });
+            if (!input.title && !input.content) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '제목과 내용이 둘다 비어있습니다.' });
             }
 
-            const rows = await ctx.db.$queryRaw<{ id: number }[]>(GamePrisma.sql`
-                INSERT INTO board_post (nation_id, is_secret, author_general_id, author_name, title, content_html)
-                VALUES (${me.nationId}, ${input.isSecret}, ${me.id}, ${me.name}, ${input.title}, ${input.contentHtml})
-                RETURNING id
-            `);
+            const post = await ctx.db.boardPost.create({
+                data: {
+                    nationId: general.nationId,
+                    isSecret: input.isSecret,
+                    authorGeneralId: general.id,
+                    authorName: general.name,
+                    title: input.title,
+                    contentHtml: input.content,
+                },
+                select: { id: true },
+            });
 
-            return { id: rows[0]?.id ?? null };
+            return { id: post.id };
         }),
     writeComment: authedProcedure
         .input(
@@ -206,101 +197,99 @@ export const boardRouter = router({
             })
         )
         .mutation(async ({ ctx, input }) => {
-            const me = await getMyGeneral(ctx);
+            const { general, permission } = await getBoardActor(ctx);
             if (!input.content) {
-                throw new TRPCError({ code: 'BAD_REQUEST', message: '내용이 필요합니다.' });
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '내용이 비어있습니다.' });
             }
 
-            const posts = await ctx.db.$queryRaw<{ id: number; nation_id: number; is_secret: boolean }[]>(
-                GamePrisma.sql`
-                    SELECT id, nation_id, is_secret
-                    FROM board_post
-                    WHERE id = ${input.postId}
-                    LIMIT 1
-                `
-            );
-
-            const post = posts[0];
+            const post = await ctx.db.boardPost.findFirst({
+                where: {
+                    id: input.postId,
+                    nationId: general.nationId,
+                },
+                select: {
+                    id: true,
+                    isSecret: true,
+                },
+            });
             if (!post) {
-                throw new TRPCError({ code: 'NOT_FOUND', message: '게시물을 찾을 수 없습니다.' });
+                throw new TRPCError({ code: 'NOT_FOUND', message: '게시물이 없습니다.' });
             }
 
-            assertBoardAccess(me.nationId, me.officerLevel, post.is_secret);
+            assertBoardAccess(permission, post.isSecret);
 
-            if (post.nation_id !== me.nationId) {
-                throw new TRPCError({ code: 'FORBIDDEN', message: '권한이 부족합니다.' });
-            }
+            const comment = await ctx.db.boardComment.create({
+                data: {
+                    postId: post.id,
+                    nationId: general.nationId,
+                    isSecret: post.isSecret,
+                    authorGeneralId: general.id,
+                    authorName: general.name,
+                    contentText: input.content,
+                },
+                select: { id: true },
+            });
 
-            const rows = await ctx.db.$queryRaw<{ id: number }[]>(GamePrisma.sql`
-                INSERT INTO board_comment (post_id, nation_id, is_secret, author_general_id, author_name, content_text)
-                VALUES (${post.id}, ${me.nationId}, ${post.is_secret}, ${me.id}, ${me.name}, ${input.content})
-                RETURNING id
-            `);
-
-            return { id: rows[0]?.id ?? null };
+            return { id: comment.id };
         }),
-    uploadImage: authedProcedure
-        .input(z.object({ dataUrl: z.string().min(1) }))
-        .mutation(async ({ ctx, input }) => {
-            const me = await getMyGeneral(ctx);
-            if (me.nationId <= 0 || me.officerLevel <= 0) {
-                throw new TRPCError({ code: 'FORBIDDEN', message: '국가에 소속되어있지 않습니다.' });
+    uploadImage: authedProcedure.input(z.object({ dataUrl: z.string().min(1) })).mutation(async ({ ctx, input }) => {
+        const { permission } = await getBoardActor(ctx);
+        assertBoardAccess(permission, false);
+
+        const buffer = parseDataUrl(input.dataUrl);
+        if (buffer.length > MAX_UPLOAD_BYTES) {
+            throw new TRPCError({ code: 'PAYLOAD_TOO_LARGE', message: '이미지 용량 제한(1MB)을 초과했습니다.' });
+        }
+
+        const metadata = await sharp(buffer, { animated: true }).metadata();
+        if (!metadata.format || !metadata.width || !metadata.height) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: '이미지 정보를 확인할 수 없습니다.' });
+        }
+
+        const format = metadata.format;
+        const isAnimated = (metadata.pages ?? 1) > 1;
+        const needsResize = Math.max(metadata.width, metadata.height) > MAX_LONG_EDGE;
+
+        const allowed = new Set(['png', 'jpeg', 'jpg', 'gif', 'webp', 'avif', 'heif', 'tiff', 'bmp']);
+        if (!allowed.has(format)) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: '지원하지 않는 이미지 형식입니다.' });
+        }
+
+        let outputBuffer = buffer;
+        let outputFormat = format === 'avif' ? 'avif' : 'webp';
+
+        if (format === 'avif') {
+            if (needsResize) {
+                outputBuffer = await buildAvifBuffer(buffer, true);
             }
-
-            const buffer = parseDataUrl(input.dataUrl);
-            if (buffer.length > MAX_UPLOAD_BYTES) {
-                throw new TRPCError({ code: 'PAYLOAD_TOO_LARGE', message: '이미지 용량 제한(1MB)을 초과했습니다.' });
-            }
-
-            const metadata = await sharp(buffer, { animated: true }).metadata();
-            if (!metadata.format || !metadata.width || !metadata.height) {
-                throw new TRPCError({ code: 'BAD_REQUEST', message: '이미지 정보를 확인할 수 없습니다.' });
-            }
-
-            const format = metadata.format;
-            const isAnimated = (metadata.pages ?? 1) > 1;
-            const needsResize = Math.max(metadata.width, metadata.height) > MAX_LONG_EDGE;
-
-            const allowed = new Set(['png', 'jpeg', 'jpg', 'gif', 'webp', 'avif', 'heif', 'tiff', 'bmp']);
-            if (!allowed.has(format)) {
-                throw new TRPCError({ code: 'BAD_REQUEST', message: '지원하지 않는 이미지 형식입니다.' });
-            }
-
-            let outputBuffer = buffer;
-            let outputFormat = format === 'avif' ? 'avif' : 'webp';
-
-            if (format === 'avif') {
-                if (needsResize) {
-                    outputBuffer = await buildAvifBuffer(buffer, true);
-                }
+        } else {
+            const webpBuffer = await buildWebpBuffer(buffer, {
+                animated: isAnimated || format === 'gif',
+                resize: needsResize,
+            });
+            if (format === 'webp' && !needsResize && webpBuffer.length >= buffer.length * WEBP_MIN_SAVING_RATIO) {
+                outputBuffer = buffer;
+                outputFormat = 'webp';
             } else {
-                const webpBuffer = await buildWebpBuffer(buffer, {
-                    animated: isAnimated || format === 'gif',
-                    resize: needsResize,
-                });
-                if (format === 'webp' && !needsResize && webpBuffer.length >= buffer.length * WEBP_MIN_SAVING_RATIO) {
-                    outputBuffer = buffer;
-                    outputFormat = 'webp';
-                } else {
-                    outputBuffer = webpBuffer;
-                    outputFormat = 'webp';
-                }
+                outputBuffer = webpBuffer;
+                outputFormat = 'webp';
             }
+        }
 
-            await fs.mkdir(ctx.uploadDir, { recursive: true });
-            const filename = `${randomUUID()}.${outputFormat}`;
-            await fs.writeFile(path.join(ctx.uploadDir, filename), outputBuffer);
+        await fs.mkdir(ctx.uploadDir, { recursive: true });
+        const filename = `${randomUUID()}.${outputFormat}`;
+        await fs.writeFile(path.join(ctx.uploadDir, filename), outputBuffer);
 
-            const outputMeta = await sharp(outputBuffer, { animated: true }).metadata();
-            const url = buildPublicImageUrl(ctx.uploadPublicUrl, ctx.uploadPath, filename);
+        const outputMeta = await sharp(outputBuffer, { animated: true }).metadata();
+        const url = buildPublicImageUrl(ctx.uploadPublicUrl, ctx.uploadPath, filename);
 
-            return {
-                url,
-                width: outputMeta.width ?? metadata.width,
-                height: outputMeta.height ?? metadata.height,
-                format: outputFormat,
-                animated: isAnimated,
-                size: outputBuffer.length,
-            };
-        }),
+        return {
+            url,
+            width: outputMeta.width ?? metadata.width,
+            height: outputMeta.height ?? metadata.height,
+            format: outputFormat,
+            animated: isAnimated,
+            size: outputBuffer.length,
+        };
+    }),
 });

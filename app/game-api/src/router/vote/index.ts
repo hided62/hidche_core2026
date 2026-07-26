@@ -5,6 +5,7 @@ import { asRecord, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 import { GamePrisma } from '@sammo-ts/infra';
 import {
     ITEM_KEYS,
+    addOccupiedUniqueItemKeys,
     buildVoteUniqueSeed,
     countOccupiedUniqueItems,
     createItemModuleRegistry,
@@ -22,7 +23,12 @@ const hasAdminRole = (roles: string[], profileName: string): boolean => {
     if (roles.includes('superuser') || roles.includes('admin') || roles.includes('admin.superuser')) {
         return true;
     }
-    return roles.some((role) => role === 'admin.survey' || role === `admin.survey:${profileName}`);
+    return roles.some(
+        (role) =>
+            role === 'admin.survey.open' ||
+            role === 'admin.survey.open:*' ||
+            role === `admin.survey.open:${profileName}`
+    );
 };
 
 const adminProcedure = authedProcedure.use(({ ctx, next }) => {
@@ -66,9 +72,7 @@ const normalizeCode = (value: string | null | undefined): string | null => {
 };
 
 const normalizeOptions = (options: string[]): string[] =>
-    options
-        .map((option) => option.trim())
-        .filter((option) => option.length > 0);
+    options.map((option) => option.trim()).filter((option) => option.length > 0);
 
 const readMetaNumber = (meta: Record<string, unknown>, key: string, fallback: number): number => {
     const value = meta[key];
@@ -225,9 +229,7 @@ export const voteRouter = router({
             const pollEnded = Boolean(row.closed_at) || (row.end_at ? row.end_at <= new Date() : false);
 
             const userId = ctx.auth?.user.id;
-            const general = userId
-                ? await ctx.db.general.findFirst({ where: { userId }, select: { id: true } })
-                : null;
+            const general = userId ? await ctx.db.general.findFirst({ where: { userId }, select: { id: true } }) : null;
 
             const [comments, userCnt, myVoteRow] = await Promise.all([
                 ctx.db.$queryRaw<VoteCommentRow[]>(GamePrisma.sql`
@@ -257,9 +259,8 @@ export const voteRouter = router({
 
             const myVote = myVoteRow[0]?.selection ? parseSelection(myVoteRow[0].selection) : null;
 
-            const canReveal = row.reveal_mode === 'after_vote'
-                ? Boolean(myVote) || pollEnded
-                : pollEnded;
+            // 레거시는 투표 전에도 현재 집계를 보여준다. after_end만 명시적으로 숨긴다.
+            const canReveal = row.reveal_mode === 'after_end' ? pollEnded : true;
 
             const voteResults = canReveal
                 ? await ctx.db.$queryRaw<VoteResultRow[]>(GamePrisma.sql`
@@ -355,6 +356,9 @@ export const voteRouter = router({
             }
 
             const sortedSelection = [...selection].sort((a, b) => a - b);
+            if (new Set(sortedSelection).size !== sortedSelection.length) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '선택한 항목이 올바르지 않습니다.' });
+            }
             const general = await getMyGeneral(ctx);
 
             const rows = await ctx.db.$queryRaw<Array<{ id: number }>>(GamePrisma.sql`
@@ -394,14 +398,24 @@ export const voteRouter = router({
             const itemRegistry = await getItemRegistry();
             const uniqueConfig = resolveUniqueConfig(constValues);
 
-            const generalRows = await ctx.db.general.findMany({
-                select: {
-                    horseCode: true,
-                    weaponCode: true,
-                    bookCode: true,
-                    itemCode: true,
-                },
-            });
+            const [generalRows, reservedUniqueRows] = await Promise.all([
+                ctx.db.general.findMany({
+                    select: {
+                        horseCode: true,
+                        weaponCode: true,
+                        bookCode: true,
+                        itemCode: true,
+                    },
+                }),
+                ctx.db.auction.findMany({
+                    where: {
+                        type: 'UNIQUE_ITEM',
+                        status: { in: ['OPEN', 'FINALIZING'] },
+                        targetCode: { not: null },
+                    },
+                    select: { targetCode: true },
+                }),
+            ]);
             const generalItems: GeneralItemSlots[] = generalRows.map((row) => ({
                 horse: normalizeCode(row.horseCode),
                 weapon: normalizeCode(row.weaponCode),
@@ -410,6 +424,11 @@ export const voteRouter = router({
             }));
 
             const occupiedUniqueCounts = countOccupiedUniqueItems(generalItems, itemRegistry);
+            addOccupiedUniqueItemKeys(
+                occupiedUniqueCounts,
+                reservedUniqueRows.map((row) => row.targetCode),
+                itemRegistry
+            );
             const userCount = await ctx.db.general.count({ where: { npcState: { lt: 2 } } });
 
             const rngSeed = buildVoteUniqueSeed(
