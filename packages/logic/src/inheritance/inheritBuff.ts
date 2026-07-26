@@ -7,8 +7,8 @@ export type InheritBuffType =
     | 'warAvoidRatio'
     | 'warCriticalRatio'
     | 'warMagicTrialProb'
-    | 'success'
-    | 'fail'
+    | 'domesticSuccessProb'
+    | 'domesticFailProb'
     | 'warAvoidRatioOppose'
     | 'warCriticalRatioOppose'
     | 'warMagicTrialProbOppose';
@@ -25,7 +25,8 @@ const DOMESTIC_TARGETS = new Set<TriggerDomesticActionType>([
 ]);
 
 const readBuffLevel = (buff: Record<string, unknown>, key: InheritBuffType): number => {
-    const raw = buff[key];
+    const compatibilityKey = key === 'domesticSuccessProb' ? 'success' : key === 'domesticFailProb' ? 'fail' : null;
+    const raw = buff[key] ?? (compatibilityKey ? buff[compatibilityKey] : undefined);
     if (typeof raw !== 'number' || !Number.isFinite(raw)) {
         return 0;
     }
@@ -40,7 +41,9 @@ const parseInheritBuff = (value: unknown): Record<string, unknown> => {
     return asRecord(value);
 };
 
-const resolveBuffRecord = (context: { general: { meta: Record<string, unknown>; triggerState: { meta: Record<string, unknown> } } }): Record<string, unknown> => {
+const resolveBuffRecord = (context: {
+    general: { meta: Record<string, unknown>; triggerState: { meta: Record<string, unknown> } };
+}): Record<string, unknown> => {
     const fromTrigger = parseInheritBuff(context.general.triggerState.meta.inheritBuff);
     if (Object.keys(fromTrigger).length > 0) {
         return fromTrigger;
@@ -58,11 +61,11 @@ const applyDomesticBuff = (
         return value;
     }
     if (varType === 'success') {
-        const level = readBuffLevel(buff, 'success');
+        const level = readBuffLevel(buff, 'domesticSuccessProb');
         return value + level * 0.01;
     }
     if (varType === 'fail') {
-        const level = readBuffLevel(buff, 'fail');
+        const level = readBuffLevel(buff, 'domesticFailProb');
         return value - level * 0.01;
     }
     return value;
@@ -84,11 +87,7 @@ const applyWarBuff = (buff: Record<string, unknown>, statName: WarStatName, valu
     return value;
 };
 
-const applyOpposeWarBuff = (
-    buff: Record<string, unknown>,
-    statName: WarStatName,
-    value: number | [number, number]
-) => {
+const applyOpposeWarBuff = (buff: Record<string, unknown>, statName: WarStatName, value: number | [number, number]) => {
     if (typeof value !== 'number') {
         return value;
     }

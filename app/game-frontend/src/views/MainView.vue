@@ -104,6 +104,10 @@ watch(
                 <RouterLink class="ghost" to="/global-info">중원 정보</RouterLink>
                 <RouterLink class="ghost" to="/current-city">현재 도시</RouterLink>
                 <RouterLink class="ghost" to="/nation/generals">세력 장수</RouterLink>
+                <RouterLink v-if="(boardAccess?.permission ?? -1) >= 1" class="ghost" to="/nation/secret"
+                    >암행부</RouterLink
+                >
+                <span v-else class="ghost disabled" aria-disabled="true">암행부</span>
                 <RouterLink class="ghost" to="/nation/personnel">인사부</RouterLink>
                 <RouterLink class="ghost" to="/troop">부대 편성</RouterLink>
                 <RouterLink class="ghost" to="/nation/finance">내무부</RouterLink>
@@ -115,10 +119,11 @@ watch(
                 <RouterLink class="ghost" to="/dynasty">왕조일람</RouterLink>
                 <RouterLink class="ghost" to="/yearbook">연감</RouterLink>
                 <RouterLink class="ghost" to="/nation-betting">천통국 베팅</RouterLink>
+                <RouterLink class="ghost" to="/traffic">접속량정보</RouterLink>
                 <RouterLink class="ghost" to="/npc-list">빙의일람</RouterLink>
                 <a class="ghost" href="/xe/community" target="_blank" rel="noopener">게시판</a>
                 <RouterLink class="ghost" to="/battle-simulator">전투 시뮬레이터</RouterLink>
-                <RouterLink class="ghost" to="/my-page">내 정보</RouterLink>
+                <RouterLink class="ghost" to="/my-page">내 정보&amp;설정</RouterLink>
                 <RouterLink class="ghost" :class="{ highlight: tournamentStage === 1 }" to="/tournament"
                     >토너먼트</RouterLink
                 >

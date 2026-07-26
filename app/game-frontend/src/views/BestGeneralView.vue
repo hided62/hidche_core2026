@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { onMounted, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
+
 import { trpc } from '../utils/trpc';
 
 type RankEntry = {
@@ -11,7 +13,6 @@ type RankEntry = {
     fgColor: string;
     picture: string | null;
     imageServer: number;
-    value: number;
     printValue: string;
 };
 
@@ -21,18 +22,17 @@ type RankSection = {
     entries: RankEntry[];
 };
 
-type UniqueOwner = {
-    id: number;
-    name: string;
-    nationName: string;
-    bgColor: string;
-    fgColor: string;
+type UniqueItemEntry = {
+    itemKey: string;
+    itemName: string;
+    itemInfo: string;
+    owner: Omit<RankEntry, 'ownerName' | 'printValue'>;
 };
 
 type UniqueItemSection = {
     title: string;
     slot: string;
-    owners: UniqueOwner[];
+    entries: UniqueItemEntry[];
 };
 
 type BestGeneralPayload = {
@@ -41,12 +41,26 @@ type BestGeneralPayload = {
     uniqueItems: UniqueItemSection[];
 };
 
+const router = useRouter();
 const viewMode = ref<'user' | 'npc'>('user');
 const loading = ref(false);
 const errorMessage = ref('');
 const data = ref<BestGeneralPayload | null>(null);
 
-const refresh = async () => {
+const imageUrl = (entry: { picture: string | null; imageServer: number }): string => {
+    const picture = entry.picture?.trim() || 'default.jpg';
+    return entry.imageServer ? `${import.meta.env.BASE_URL}d_pic/${picture}` : `/image/icons/${picture}`;
+};
+
+const closePage = async (): Promise<void> => {
+    if (window.opener) {
+        window.close();
+        return;
+    }
+    await router.push('/');
+};
+
+const refresh = async (): Promise<void> => {
     loading.value = true;
     errorMessage.value = '';
     try {
@@ -58,8 +72,6 @@ const refresh = async () => {
     }
 };
 
-const emptyLabel = computed(() => (loading.value ? '불러오는 중...' : '표시할 데이터가 없습니다.'));
-
 onMounted(() => {
     void refresh();
 });
@@ -70,61 +82,280 @@ watch(viewMode, () => {
 </script>
 
 <template>
-    <main class="main-page">
-        <header class="page-header">
-            <div>
-                <h1 class="page-title">명장일람</h1>
-                <p class="page-subtitle">전장 기록을 기준으로 장수 순위를 확인합니다.</p>
-            </div>
-            <div class="header-actions">
-                <button class="ghost" :class="{ active: viewMode === 'user' }" @click="viewMode = 'user'">
-                    유저 보기
-                </button>
-                <button class="ghost" :class="{ active: viewMode === 'npc' }" @click="viewMode = 'npc'">
-                    NPC 보기
-                </button>
-                <button class="ghost" @click="refresh">새로고침</button>
-            </div>
-        </header>
+    <main id="best-general-container" class="legacy-ranking-page legacy-bg0">
+        <div class="legacy-ranking-title">
+            명 장 일 람<br />
+            <button class="legacy-button" type="button" @click="closePage">창 닫기</button>
+        </div>
 
-        <div v-if="errorMessage" class="error">{{ errorMessage }}</div>
-        <div v-else-if="!data" class="placeholder">{{ emptyLabel }}</div>
+        <div class="view-selector" role="group" aria-label="장수 유형">
+            <button
+                class="legacy-button"
+                type="button"
+                :aria-pressed="viewMode === 'user'"
+                @click="viewMode = 'user'"
+            >
+                유저 보기
+            </button>
+            <button
+                class="legacy-button"
+                type="button"
+                :aria-pressed="viewMode === 'npc'"
+                @click="viewMode = 'npc'"
+            >
+                NPC 보기
+            </button>
+        </div>
 
-        <section v-if="data" class="grid gap-4">
-            <div v-for="section in data.sections" :key="section.title" class="bg-zinc-900 border border-zinc-800 rounded p-4">
-                <h2 class="text-base font-semibold mb-3">{{ section.title }}</h2>
-                <div v-if="section.entries.length === 0" class="text-xs text-zinc-500">{{ emptyLabel }}</div>
-                <ul v-else class="space-y-2">
-                    <li
-                        v-for="entry in section.entries"
-                        :key="entry.id"
-                        class="flex items-center justify-between bg-zinc-950 border border-zinc-800 rounded px-3 py-2 text-sm"
-                    >
-                        <div class="flex items-center gap-2">
-                            <span class="w-2 h-2 rounded-full" :style="{ backgroundColor: entry.bgColor }" />
-                            <span class="font-semibold">{{ entry.name }}</span>
-                            <span class="text-xs text-zinc-400">{{ entry.nationName }}</span>
+        <div v-if="errorMessage" class="legacy-message error" role="alert">{{ errorMessage }}</div>
+        <div v-else-if="loading && !data" class="legacy-message">불러오는 중...</div>
+
+        <section v-if="data" class="ranking-sections" :aria-busy="loading">
+            <article v-for="section in data.sections" :key="section.title" class="rankView legacy-bg0">
+                <h2 class="rankType legacy-bg1">{{ section.title }}</h2>
+                <ul>
+                    <li v-for="(entry, rank) in section.entries" :key="`${section.title}:${entry.id}:${rank}`">
+                        <div class="hall-rank legacy-bg2">{{ rank + 1 }}위</div>
+                        <div class="hall-img">
+                            <img class="generalIcon" :src="imageUrl(entry)" width="64" height="64" :alt="entry.name" />
                         </div>
-                        <div class="text-xs text-zinc-200">{{ entry.printValue }}</div>
+                        <div class="hall-nation" :style="{ backgroundColor: entry.bgColor, color: entry.fgColor }">
+                            {{ entry.nationName || '-' }}
+                        </div>
+                        <div class="hall-name" :style="{ backgroundColor: entry.bgColor, color: entry.fgColor }">
+                            <span>{{ entry.name || '-' }}</span>
+                            <small v-if="entry.ownerName">({{ entry.ownerName }})</small>
+                        </div>
+                        <div class="hall-value">{{ entry.printValue }}</div>
                     </li>
                 </ul>
-            </div>
+            </article>
+
+            <article v-for="section in data.uniqueItems" :key="section.slot" class="rankView legacy-bg0">
+                <h2 class="rankType legacy-bg1">{{ section.title }}</h2>
+                <ul>
+                    <li
+                        v-for="(entry, index) in section.entries"
+                        :key="`${entry.itemKey}:${index}`"
+                        class="no-value"
+                    >
+                        <div class="hall-rank legacy-bg2 item-name" :title="entry.itemInfo">{{ entry.itemName }}</div>
+                        <div class="hall-img">
+                            <img
+                                class="generalIcon"
+                                :src="imageUrl(entry.owner)"
+                                width="64"
+                                height="64"
+                                :alt="entry.owner.name"
+                            />
+                        </div>
+                        <div
+                            class="hall-nation"
+                            :style="{ backgroundColor: entry.owner.bgColor, color: entry.owner.fgColor }"
+                        >
+                            {{ entry.owner.nationName || '-' }}
+                        </div>
+                        <div
+                            class="hall-name"
+                            :style="{ backgroundColor: entry.owner.bgColor, color: entry.owner.fgColor }"
+                        >
+                            <span>{{ entry.owner.name || '-' }}</span>
+                        </div>
+                    </li>
+                </ul>
+            </article>
         </section>
 
-        <section v-if="data" class="mt-6 bg-zinc-900 border border-zinc-800 rounded p-4">
-            <h2 class="text-base font-semibold mb-3">유니크 아이템 소유자</h2>
-            <div class="grid md:grid-cols-2 gap-4">
-                <div v-for="item in data.uniqueItems" :key="item.title" class="bg-zinc-950 border border-zinc-800 rounded p-3">
-                    <h3 class="text-sm font-semibold mb-2">{{ item.title }}</h3>
-                    <ul class="space-y-1 text-xs">
-                        <li v-for="owner in item.owners" :key="owner.id" class="flex items-center gap-2">
-                            <span class="w-2 h-2 rounded-full" :style="{ backgroundColor: owner.bgColor }" />
-                            <span>{{ owner.name }}</span>
-                            <span class="text-zinc-500">{{ owner.nationName }}</span>
-                        </li>
-                    </ul>
-                </div>
-            </div>
-        </section>
+        <div class="legacy-ranking-bottom">
+            <button class="legacy-button" type="button" @click="closePage">창 닫기</button>
+        </div>
+        <footer class="legacy-banner">
+            삼국지 모의전투 HiDCHe core2026 / KOEI의 이미지를 사용, 응용하였습니다 / 제작 : HideD /
+            <a href="https://sam.hided.net/wiki/hidche/credit" target="_blank" rel="noreferrer">Credit</a>
+        </footer>
     </main>
 </template>
+
+<style scoped>
+:global(body) {
+    min-width: 500px;
+    overflow-x: hidden;
+}
+
+.legacy-ranking-page {
+    width: 500px;
+    min-height: 100vh;
+    margin: 0 auto 100px;
+    color: #fff;
+    font-family: Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+    font-size: 14px;
+}
+
+.legacy-ranking-title,
+.legacy-ranking-bottom {
+    text-align: left;
+}
+
+.view-selector {
+    text-align: center;
+}
+
+.legacy-ranking-title {
+    padding-top: 2px;
+}
+
+.view-selector {
+    padding: 2px 0;
+}
+
+.view-selector .legacy-button + .legacy-button {
+    margin-left: 4px;
+}
+
+.view-selector .legacy-button[aria-pressed='true'] {
+    border-style: inset;
+}
+
+.legacy-button {
+    border: 0;
+    border-radius: 5.25px;
+    background: #375a7f;
+    padding: 5.25px 10.5px;
+    font-weight: 700;
+    line-height: 21px;
+}
+
+.legacy-button:hover,
+.legacy-button:focus,
+.legacy-button:active {
+    background: #6b6b6b;
+}
+
+.legacy-button:focus-visible {
+    outline: revert;
+    outline-offset: 0;
+}
+
+.legacy-message {
+    border: 1px solid gray;
+    padding: 12px;
+    text-align: center;
+}
+
+.legacy-message.error {
+    color: #ff6b6b;
+}
+
+.legacy-banner {
+    font-size: 13px;
+}
+
+.legacy-banner a {
+    color: #fff;
+    text-decoration: underline;
+}
+
+.ranking-sections {
+    display: block;
+}
+
+.rankView {
+    position: relative;
+    margin: auto;
+    outline: 1px solid gray;
+}
+
+.rankType {
+    margin: 0;
+    border-bottom: 1px solid gray;
+    padding: 2px;
+    font-size: calc(19px + 0.784615vw);
+    font-weight: 500;
+    line-height: 1.2;
+    text-align: center;
+}
+
+.rankView ul {
+    display: flex;
+    flex-wrap: wrap;
+    box-sizing: border-box;
+    margin: -1px 0;
+    padding: 0;
+    list-style: none;
+}
+
+.rankView li {
+    box-sizing: border-box;
+    flex: 0 0 100px;
+    width: 100px;
+    min-height: 149px;
+    margin: 0;
+    border-top: 1px solid gray;
+    border-right: 1px solid gray;
+    text-align: center;
+    vertical-align: top;
+}
+
+.rankView li.no-value {
+    min-height: 128px;
+}
+
+.hall-rank,
+.hall-nation,
+.hall-value {
+    border-bottom: 1px solid gray;
+}
+
+.hall-rank.item-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.hall-img {
+    height: 64px;
+}
+
+.generalIcon {
+    display: inline-block;
+    width: 64px;
+    height: 64px;
+    object-fit: fill;
+}
+
+.hall-nation,
+.hall-name {
+    font-size: 11px;
+}
+
+.hall-name {
+    display: flex;
+    height: 28px;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.hall-name small {
+    font-size: 95%;
+}
+
+.hall-value {
+    box-sizing: border-box;
+    padding: 3px 0;
+    line-height: 13px;
+}
+
+@media (min-width: 1000px) {
+    :global(body) {
+        min-width: 1000px;
+    }
+
+    .legacy-ranking-page {
+        width: 1000px;
+    }
+
+    .rankType {
+        font-size: 28px;
+    }
+}
+</style>

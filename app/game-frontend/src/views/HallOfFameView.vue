@@ -135,7 +135,7 @@ onMounted(async () => {
             </select>
         </label>
 
-        <div v-if="errorMessage" class="legacy-message error">{{ errorMessage }}</div>
+        <div v-if="errorMessage" class="legacy-message error" role="alert">{{ errorMessage }}</div>
         <div v-else-if="loading" class="legacy-message">불러오는 중...</div>
         <div v-else-if="!data" class="legacy-message">표시할 데이터가 없습니다.</div>
 
@@ -171,6 +171,10 @@ onMounted(async () => {
         <div class="legacy-hall-bottom">
             <button class="legacy-button" type="button" @click="closePage">창 닫기</button>
         </div>
+        <footer class="legacy-banner">
+            삼국지 모의전투 HiDCHe core2026 / KOEI의 이미지를 사용, 응용하였습니다 / 제작 : HideD /
+            <a href="https://sam.hided.net/wiki/hidche/credit" target="_blank" rel="noreferrer">Credit</a>
+        </footer>
     </main>
 </template>
 
@@ -191,7 +195,7 @@ onMounted(async () => {
 
 .legacy-hall-title,
 .legacy-hall-bottom {
-    text-align: center;
+    text-align: left;
 }
 
 .legacy-hall-title {
@@ -205,10 +209,31 @@ onMounted(async () => {
 }
 
 .scenario-search select {
-    min-width: 220px;
+    width: 189px;
+    height: 20px;
     border: 1px solid #555;
     background: #ddd;
     color: #303030;
+}
+
+.legacy-button {
+    border: 0;
+    border-radius: 5.25px;
+    background: #375a7f;
+    padding: 5.25px 10.5px;
+    font-weight: 700;
+    line-height: 21px;
+}
+
+.legacy-button:hover,
+.legacy-button:focus,
+.legacy-button:active {
+    background: #6b6b6b;
+}
+
+.legacy-button:focus-visible {
+    outline: revert;
+    outline-offset: 0;
 }
 
 .legacy-message {
@@ -219,6 +244,15 @@ onMounted(async () => {
 
 .legacy-message.error {
     color: #ff6b6b;
+}
+
+.legacy-banner {
+    font-size: 13px;
+}
+
+.legacy-banner a {
+    color: #fff;
+    text-decoration: underline;
 }
 
 .hall-sections {
@@ -235,7 +269,9 @@ onMounted(async () => {
     margin: 0;
     border-bottom: 1px solid gray;
     padding: 2px;
-    font-size: 1.17em;
+    font-size: calc(19px + 0.784615vw);
+    font-weight: 500;
+    line-height: 1.2;
     text-align: center;
 }
 
@@ -275,7 +311,7 @@ onMounted(async () => {
     display: inline-block;
     width: 64px;
     height: 64px;
-    object-fit: cover;
+    object-fit: fill;
 }
 
 .hall-server,
@@ -308,6 +344,10 @@ onMounted(async () => {
 
     .legacy-hall-page {
         width: 1000px;
+    }
+
+    .rankType {
+        font-size: 28px;
     }
 }
 </style>

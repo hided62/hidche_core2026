@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { canonicalFrontendFixture as fixture } from './fixtures/canonical';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const imageRoot = resolve(repositoryRoot, '../../image');
+const imageRoots = [resolve(repositoryRoot, '../image'), resolve(repositoryRoot, '../../image')];
 const artifactRoot = process.env.FRONTEND_PARITY_ARTIFACT_DIR;
 
 const response = (data: unknown) => ({ result: { data } });
@@ -28,11 +28,11 @@ const installImages = async (page: Page): Promise<void> => {
     await page.route('**/image/**', async (route) => {
         const pathname = decodeURIComponent(new URL(route.request().url()).pathname);
         const relative = pathname.replace(/^\/image\//, '');
-        const candidates = [
+        const candidates = imageRoots.flatMap((imageRoot) => [
             resolve(imageRoot, relative),
             resolve(imageRoot, 'game', relative),
             resolve(imageRoot, 'icons', '22.jpg'),
-        ];
+        ]);
         for (const candidate of candidates) {
             try {
                 const body = await readFile(candidate);
@@ -139,6 +139,7 @@ const installAuthenticatedGameFixture = async (page: Page): Promise<void> => {
                 };
             }
             if (operation === 'public.getMapLayout') return fixture.game.mapLayout;
+            if (operation === 'ranking.getBestGeneral') return fixture.game.bestGeneral;
             if (operation === 'yearbook.getRange') return fixture.game.yearbookRange;
             if (operation === 'yearbook.getHistory') return fixture.game.yearbook;
             if (operation === 'vote.getVoteList') return fixture.game.surveyList;
@@ -387,6 +388,117 @@ test.describe('gateway legacy parity', () => {
     });
 });
 
+test.describe('best general legacy parity', () => {
+    test.beforeEach(async ({ page }) => {
+        await installAuthenticatedGameFixture(page);
+    });
+
+    for (const viewport of [
+        { name: 'desktop', width: 1365, height: 768, expectedWidth: 1000 },
+        { name: 'mobile', width: 390, height: 844, expectedWidth: 500 },
+    ]) {
+        test(`matches the ref fixed ranking grid on ${viewport.name}`, async ({ page }) => {
+            await page.setViewportSize(viewport);
+            await page.goto('http://127.0.0.1:15102/che/best-general');
+            await expect(page.getByText('유비').first()).toBeVisible();
+            await expect(page.locator('.rankView')).toHaveCount(3);
+            if (artifactRoot) {
+                await page.screenshot({
+                    path: resolve(artifactRoot, `best-general-core-${viewport.name}.png`),
+                    fullPage: true,
+                    animations: 'disabled',
+                });
+            }
+
+            const geometry = await page.evaluate(() => {
+                const container = document.querySelector<HTMLElement>('#best-general-container')!;
+                const item = document.querySelector<HTMLElement>('.rankView li')!;
+                const uniqueItem = document.querySelector<HTMLElement>('.rankView li.no-value')!;
+                const title = document.querySelector<HTMLElement>('.rankType')!;
+                const image = document.querySelector<HTMLImageElement>('.generalIcon')!;
+                return {
+                    container: {
+                        x: container.getBoundingClientRect().x,
+                        width: container.getBoundingClientRect().width,
+                        fontFamily: getComputedStyle(container).fontFamily,
+                        fontSize: getComputedStyle(container).fontSize,
+                        backgroundImage: getComputedStyle(container).backgroundImage,
+                    },
+                    item: {
+                        width: item.getBoundingClientRect().width,
+                        minHeight: getComputedStyle(item).minHeight,
+                    },
+                    uniqueItem: {
+                        minHeight: getComputedStyle(uniqueItem).minHeight,
+                    },
+                    title: {
+                        fontSize: getComputedStyle(title).fontSize,
+                        lineHeight: getComputedStyle(title).lineHeight,
+                        backgroundImage: getComputedStyle(title).backgroundImage,
+                    },
+                    image: {
+                        width: image.getBoundingClientRect().width,
+                        height: image.getBoundingClientRect().height,
+                        naturalWidth: image.naturalWidth,
+                        objectFit: getComputedStyle(image).objectFit,
+                    },
+                    closeX: document
+                        .querySelector<HTMLElement>('.legacy-ranking-title .legacy-button')!
+                        .getBoundingClientRect().x,
+                };
+            });
+
+            expect(geometry.container.width).toBe(viewport.expectedWidth);
+            expect(geometry.container.fontFamily).toContain('Pretendard');
+            expect(geometry.container.fontSize).toBe('14px');
+            expect(geometry.container.backgroundImage).toContain('back_walnut.jpg');
+            expect(geometry.closeX).toBe(geometry.container.x);
+            expect(geometry.item).toEqual({ width: 100, minHeight: '149px' });
+            expect(geometry.uniqueItem.minHeight).toBe('128px');
+            expect(geometry.title).toMatchObject({
+                fontSize: viewport.name === 'desktop' ? '28px' : '22.06px',
+                lineHeight: viewport.name === 'desktop' ? '33.6px' : '26.472px',
+            });
+            expect(geometry.title.backgroundImage).toContain('back_green.jpg');
+            expect(geometry.image).toMatchObject({ width: 64, height: 64, objectFit: 'fill' });
+            expect(geometry.image.naturalWidth).toBeGreaterThan(0);
+
+            const npcButton = page.getByRole('button', { name: 'NPC 보기' });
+            await npcButton.hover();
+            await expect(npcButton).toHaveCSS('background-color', 'rgb(107, 107, 107)');
+            await npcButton.focus();
+            await expect(npcButton).toBeFocused();
+            await npcButton.click();
+            await expect(npcButton).toHaveAttribute('aria-pressed', 'true');
+
+            const itemName = page.locator('.item-name').first();
+            await itemName.hover();
+            await expect(itemName).toHaveAttribute('title', '최고의 명마');
+        });
+    }
+
+    test('keeps the current ranking and selected user type after an API error', async ({ page }) => {
+        await page.goto('http://127.0.0.1:15102/che/best-general');
+        await expect(page.getByText('유비').first()).toBeVisible();
+        await page.route('**/che/api/trpc/**', async (route) => {
+            if (operationNames(route).includes('ranking.getBestGeneral')) {
+                await route.fulfill({
+                    status: 500,
+                    contentType: 'application/json',
+                    body: JSON.stringify({ error: { message: '명장일람 조회에 실패했습니다.' } }),
+                });
+                return;
+            }
+            await route.fallback();
+        });
+        const npcButton = page.getByRole('button', { name: 'NPC 보기' });
+        await npcButton.click();
+        await expect(page.getByRole('alert')).toBeVisible();
+        await expect(page.getByText('유비').first()).toBeVisible();
+        await expect(npcButton).toHaveAttribute('aria-pressed', 'true');
+    });
+});
+
 test.describe('hall of fame legacy parity', () => {
     test.beforeEach(async ({ page }) => {
         await installHallFixture(page);
@@ -401,6 +513,13 @@ test.describe('hall of fame legacy parity', () => {
             await page.goto('http://127.0.0.1:15102/che/hall-of-fame');
             await expect(page.getByText('유비')).toBeVisible();
             await expect(page.locator('.rankView')).toHaveCount(2);
+            if (artifactRoot) {
+                await page.screenshot({
+                    path: resolve(artifactRoot, `hall-of-fame-core-${viewport.name}.png`),
+                    fullPage: true,
+                    animations: 'disabled',
+                });
+            }
 
             const geometry = await page.evaluate(() => {
                 const container = document.querySelector<HTMLElement>('#container')!;
@@ -409,7 +528,10 @@ test.describe('hall of fame legacy parity', () => {
                 const titleStyle = getComputedStyle(document.querySelector<HTMLElement>('.rankType')!);
                 const image = document.querySelector<HTMLImageElement>('.generalIcon')!;
                 return {
-                    container: container.getBoundingClientRect().width,
+                    container: {
+                        x: container.getBoundingClientRect().x,
+                        width: container.getBoundingClientRect().width,
+                    },
                     containerBackgroundImage: getComputedStyle(container).backgroundImage,
                     item: {
                         width: item.getBoundingClientRect().width,
@@ -427,23 +549,57 @@ test.describe('hall of fame legacy parity', () => {
                         naturalHeight: image.naturalHeight,
                         objectFit: getComputedStyle(image).objectFit,
                     },
+                    closeX: document
+                        .querySelector<HTMLElement>('.legacy-hall-title .legacy-button')!
+                        .getBoundingClientRect().x,
                 };
             });
 
-            expect(geometry.container).toBe(viewport.expectedWidth);
+            expect(geometry.container.width).toBe(viewport.expectedWidth);
+            expect(geometry.closeX).toBe(geometry.container.x);
             expect(geometry.containerBackgroundImage).toContain('back_walnut.jpg');
             expect(geometry.item.width).toBe(100);
             expect(geometry.title.fontFamily).toContain('Pretendard');
+            expect(geometry.title.fontSize).toBe(viewport.name === 'desktop' ? '28px' : '22.06px');
             expect(geometry.title.backgroundImage).toContain('back_green.jpg');
-            expect(geometry.image).toMatchObject({ width: 64, height: 64, objectFit: 'cover' });
+            expect(geometry.image).toMatchObject({ width: 64, height: 64, objectFit: 'fill' });
             expect(geometry.image.naturalWidth).toBeGreaterThan(0);
 
             const close = page.getByRole('button', { name: '창 닫기' }).first();
             await close.hover();
+            await expect(close).toHaveCSS('background-color', 'rgb(107, 107, 107)');
             await close.focus();
             await expect(close).toBeFocused();
+
+            const scenario = page.getByLabel('시나리오 검색');
+            await expect(scenario).toHaveCSS('width', '189px');
+            await scenario.focus();
+            await expect(scenario).toBeFocused();
+            await scenario.selectOption('scenario:1:22');
+            await expect(scenario).toHaveValue('scenario:1:22');
         });
     }
+
+    test('keeps the selected scenario after a hall API error', async ({ page }) => {
+        await page.goto('http://127.0.0.1:15102/che/hall-of-fame');
+        await expect(page.getByText('유비')).toBeVisible();
+        await page.route('**/che/api/trpc/**', async (route) => {
+            if (operationNames(route).includes('ranking.getHallOfFame')) {
+                await route.fulfill({
+                    status: 500,
+                    contentType: 'application/json',
+                    body: JSON.stringify({ error: { message: '명예의 전당 조회에 실패했습니다.' } }),
+                });
+                return;
+            }
+            await route.fallback();
+        });
+        const scenario = page.getByLabel('시나리오 검색');
+        await scenario.selectOption('scenario:1:22');
+        await expect(page.getByRole('alert')).toBeVisible();
+        await expect(scenario).toHaveValue('scenario:1:22');
+        await expect(page.getByText('유비')).toBeVisible();
+    });
 });
 
 test('game login delegates to the gateway like the ref entry point', async ({ page }) => {
