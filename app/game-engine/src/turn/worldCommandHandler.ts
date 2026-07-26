@@ -315,8 +315,8 @@ async function handleTournamentMatchResult(
     const attackerG = getRankNumber(attacker, rankKey('g'));
     const defenderG = getRankNumber(defender, rankKey('g'));
 
-    let attackerGDelta = 0;
-    let defenderGDelta = 0;
+    let attackerGDelta: number;
+    let defenderGDelta: number;
     let attackerW = 0;
     let attackerD = 0;
     let attackerL = 0;

@@ -108,7 +108,7 @@ const applyIncomeOutcome = (
     originOutcome: number
 ): { next: number; ratio: number; realOutcome: number } => {
     let next = current + income;
-    let realOutcome = 0;
+    let realOutcome: number;
     if (next < baseResource) {
         realOutcome = 0;
         next = baseResource;
@@ -139,14 +139,11 @@ const processIncomeForNation = (
     const trait = traitMap.get(nation.typeCode) ?? null;
     const incomeContext = buildNationIncomeContext(nation, trait);
 
-    let income = 0;
-    if (type === 'gold') {
-        income = getGoldIncome(incomeContext, nationCities, officerCounts, nation.capitalCityId ?? 0, nation.level);
-    } else {
-        income =
-            getRiceIncome(incomeContext, nationCities, officerCounts, nation.capitalCityId ?? 0, nation.level) +
-            getWallIncome(incomeContext, nationCities, officerCounts, nation.capitalCityId ?? 0, nation.level);
-    }
+    const income =
+        type === 'gold'
+            ? getGoldIncome(incomeContext, nationCities, officerCounts, nation.capitalCityId ?? 0, nation.level)
+            : getRiceIncome(incomeContext, nationCities, officerCounts, nation.capitalCityId ?? 0, nation.level) +
+              getWallIncome(incomeContext, nationCities, officerCounts, nation.capitalCityId ?? 0, nation.level);
 
     const incomeValue = roundResource(income);
     const originOutcome = getOutcome(100, nationGenerals);

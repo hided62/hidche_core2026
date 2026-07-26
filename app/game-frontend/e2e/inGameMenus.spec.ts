@@ -23,6 +23,12 @@ type FixtureState = {
     permission: 'head' | 'member';
     myset: number;
     settingMutations: Array<Record<string, unknown>>;
+    accessPages: string[];
+};
+
+type TrpcRequestPayload = {
+    json?: Record<string, unknown>;
+    input?: { json?: Record<string, unknown> };
 };
 
 const myGeneral = (state: FixtureState) => ({
@@ -113,7 +119,7 @@ const battleCenter = (state: FixtureState) => ({
 
 const install = async (page: Page, state: FixtureState) => {
     await page.addInitScript(() => {
-        localStorage.setItem('sammo-game-token', 'menu-token');
+        localStorage.setItem('sammo-game-token', 'ga_menu-token');
         localStorage.setItem('sammo-game-profile', 'che:default');
     });
     await page.route('**/image/game/**', async (route) => {
@@ -130,7 +136,16 @@ const install = async (page: Page, state: FixtureState) => {
     });
     await page.route('**/che/api/trpc/**', async (route) => {
         const operations = operationNames(route);
-        const results = operations.map((operation) => {
+        const rawRequestBody: unknown = route.request().postData() ? route.request().postDataJSON() : {};
+        const requestBody =
+            rawRequestBody && typeof rawRequestBody === 'object' ? (rawRequestBody as Record<string, unknown>) : {};
+        const results = operations.map((operation, operationIndex) => {
+            const rawPayload =
+                requestBody[String(operationIndex)] ?? (operations.length === 1 ? requestBody : undefined);
+            const payload =
+                rawPayload && typeof rawPayload === 'object' ? (rawPayload as TrpcRequestPayload) : undefined;
+            const jsonInput =
+                payload?.json ?? payload?.input?.json ?? (payload as Record<string, unknown> | undefined) ?? {};
             if (operation === 'lobby.info') return response({ myGeneral: { id: 7, name: '검증장수' } });
             if (operation === 'join.getConfig') return response({});
             if (operation === 'general.me') return response(myGeneral(state));
@@ -162,10 +177,14 @@ const install = async (page: Page, state: FixtureState) => {
             if (operation === 'general.getMyLog')
                 return response({ type: 'generalAction', logs: [{ id: 1, text: '<Y>기록</>' }] });
             if (operation === 'general.setMySetting') {
-                const raw = route.request().postDataJSON() as { input?: { json?: Record<string, unknown> } };
-                state.settingMutations.push(raw.input?.json ?? {});
+                state.settingMutations.push(jsonInput);
                 state.myset = Math.max(0, state.myset - 1);
                 return response({ ok: true });
+            }
+            if (operation === 'public.recordAccess') {
+                const pageName = typeof jsonInput.page === 'string' ? jsonInput.page : null;
+                if (pageName) state.accessPages.push(pageName);
+                return response({ recorded: true });
             }
             if (operation === 'nation.getBattleCenter') {
                 if (state.permission === 'member') {
@@ -196,11 +215,12 @@ const install = async (page: Page, state: FixtureState) => {
 };
 
 test('접속량정보 keeps the legacy public 1016px chart geometry', async ({ page }) => {
-    const state: FixtureState = { permission: 'member', myset: 0, settingMutations: [] };
+    const state: FixtureState = { permission: 'member', myset: 0, settingMutations: [], accessPages: [] };
     await install(page, state);
     await page.setViewportSize({ width: 1200, height: 900 });
     await page.goto('traffic');
     await expect(page.locator('.chart-title').first()).toHaveText('접 속 량');
+    await expect.poll(() => state.accessPages).toContain('traffic');
 
     const geometry = await page.locator('#traffic-container').evaluate((element) => {
         const rect = element.getBoundingClientRect();
@@ -244,12 +264,13 @@ test('접속량정보 keeps the legacy public 1016px chart geometry', async ({ p
 });
 
 test('내 정보&설정 keeps the legacy 1000px/500px geometry and saves in place', async ({ page }) => {
-    const state: FixtureState = { permission: 'head', myset: 3, settingMutations: [] };
+    const state: FixtureState = { permission: 'head', myset: 3, settingMutations: [], accessPages: [] };
     await install(page, state);
     await page.setViewportSize({ width: 1200, height: 900 });
     await page.goto('my-page');
     await expect(page.locator('.title-row')).toContainText('내 정 보');
     await expect(page.locator('#set_my_setting')).toBeVisible();
+    await expect.poll(() => state.accessPages).toContain('my-page');
 
     const desktop = await page.locator('#container').evaluate((element) => {
         const rect = element.getBoundingClientRect();
@@ -322,7 +343,7 @@ test('내 정보&설정 keeps the legacy 1000px/500px geometry and saves in plac
 });
 
 test('감찰부 keeps the selector interaction and shows the permission error path', async ({ page }) => {
-    const head: FixtureState = { permission: 'head', myset: 3, settingMutations: [] };
+    const head: FixtureState = { permission: 'head', myset: 3, settingMutations: [], accessPages: [] };
     await install(page, head);
     await page.setViewportSize({ width: 1000, height: 900 });
     await page.goto('battle-center');
@@ -368,7 +389,7 @@ test('감찰부 keeps the selector interaction and shows the permission error pa
     await persistParityArtifact(page, 'core-battle-center-mobile', mobileGeometry);
 
     await page.unrouteAll({ behavior: 'wait' });
-    const member: FixtureState = { permission: 'member', myset: 3, settingMutations: [] };
+    const member: FixtureState = { permission: 'member', myset: 3, settingMutations: [], accessPages: [] };
     await install(page, member);
     await page.reload();
     await expect(page.locator('.error')).toContainText('권한이 부족합니다.');

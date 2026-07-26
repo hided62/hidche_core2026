@@ -258,7 +258,6 @@ describe('General Commands New Scenario', () => {
 
         // 6. Retire (Needs age >= 60)
         // Manually set age
-        // Manually set age
         const gToRetire = { ...g1_after_resign, age: 65 };
         world.snapshot.generals = world.snapshot.generals.map((g) => (g.id === 1 ? gToRetire : g));
         const retireDef = retireSpec.createDefinition(systemEnv);
@@ -274,7 +273,7 @@ describe('General Commands New Scenario', () => {
         const g1_after_retire = world.getGeneral(1)!;
         expect(g1_after_retire.age).toBe(20);
         // General::rebirth()는 앞선 명령으로 누적된 경험을 초기화하지 않고 절반으로 줄인다.
-        expect(g1_after_retire.experience).toBe(142);
+        expect(g1_after_retire.experience).toBe(Math.round(gToRetire.experience * 0.5));
     });
 
     it('should execute employ and sabotage commands', async () => {

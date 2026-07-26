@@ -3,7 +3,6 @@ import { computed, ref } from 'vue';
 import type { BattleSimOptions, GeneralDraft } from '../../utils/battleSimulatorTypes';
 
 interface Props {
-    general: GeneralDraft;
     options: BattleSimOptions;
     mode: 'attacker' | 'defender';
     title: string;
@@ -11,6 +10,7 @@ interface Props {
 }
 
 const props = defineProps<Props>();
+const general = defineModel<GeneralDraft>('general', { required: true });
 
 const emit = defineEmits<{
     (event: 'import'): void;

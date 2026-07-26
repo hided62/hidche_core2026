@@ -2,13 +2,11 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { asRecord } from '@sammo-ts/common';
-import { GamePrisma } from '@sammo-ts/infra';
+import type { GamePrisma } from '@sammo-ts/infra';
 
 import { authedProcedure, router } from '../../trpc.js';
 import { getMyGeneral } from '../shared/general.js';
 import { assertNationAccess, resolveNationPermission } from '../nation/shared.js';
-
-const zLetterState = z.enum(['PROPOSED', 'ACTIVATED', 'CANCELLED', 'REPLACED']);
 
 const resolvePermissionLevel = async (ctx: Parameters<typeof getMyGeneral>[0], nationId: number) => {
     const nation = await ctx.db.nation.findUnique({
@@ -22,7 +20,7 @@ const resolvePermissionLevel = async (ctx: Parameters<typeof getMyGeneral>[0], n
     return resolveNationPermission(general, nation.meta, true);
 };
 
-const mapLetterState = (state: string): z.infer<typeof zLetterState> => {
+const mapLetterState = (state: string): 'PROPOSED' | 'ACTIVATED' | 'CANCELLED' | 'REPLACED' => {
     if (state === 'ACTIVATED') return 'ACTIVATED';
     if (state === 'CANCELLED') return 'CANCELLED';
     if (state === 'REPLACED') return 'REPLACED';
@@ -153,7 +151,10 @@ export const diplomacyRouter = router({
                     select: { id: true },
                 });
                 if (newer) {
-                    throw new TRPCError({ code: 'BAD_REQUEST', message: '해당 문서에 대한 새로운 문서가 이미 있습니다.' });
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: '해당 문서에 대한 새로운 문서가 이미 있습니다.',
+                    });
                 }
 
                 if (prevLetter.state === 'PROPOSED') {
@@ -169,7 +170,8 @@ export const diplomacyRouter = router({
                     });
                 }
 
-                destNationId = prevLetter.srcNationId === me.nationId ? prevLetter.destNationId : prevLetter.srcNationId;
+                destNationId =
+                    prevLetter.srcNationId === me.nationId ? prevLetter.destNationId : prevLetter.srcNationId;
             }
 
             const nations = await ctx.db.nation.findMany({

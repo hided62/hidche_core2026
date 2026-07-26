@@ -711,7 +711,7 @@ export class GeneralAI {
         const leadership = this.general.stats.leadership;
         const strength = Math.max(this.general.stats.strength, 1);
         const intel = Math.max(this.general.stats.intelligence, 1);
-        let genType = 0;
+        let genType: number;
 
         if (strength >= intel) {
             genType = t무장;
