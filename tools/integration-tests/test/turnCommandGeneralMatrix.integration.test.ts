@@ -424,6 +424,69 @@ integration('general command success matrix', () => {
     );
 });
 
+interface NpcActiveBoundaryCase {
+    name: string;
+    args: Record<string, unknown>;
+    actorPatch: Record<string, unknown>;
+    completed: boolean;
+}
+
+const npcActiveBoundaryCases: NpcActiveBoundaryCase[] = [
+    {
+        name: 'execution does not reapply the reservation-only NPC permission',
+        args: { optionText: '순간이동', destCityID: 70 },
+        actorPatch: { npcState: 0 },
+        completed: true,
+    },
+    {
+        name: 'a missing destination city is rejected before execution',
+        args: { optionText: '순간이동', destCityID: 999_999 },
+        actorPatch: { npcState: 2 },
+        completed: false,
+    },
+    {
+        name: 'a numeric-string destination follows the legacy weak integer argument',
+        args: { optionText: '순간이동', destCityID: '70' },
+        actorPatch: { npcState: 2 },
+        completed: true,
+    },
+    {
+        name: 'a fractional destination preserves the legacy split lookup and storage coercion',
+        args: { optionText: '순간이동', destCityID: 70.9 },
+        actorPatch: { npcState: 2 },
+        completed: true,
+    },
+];
+
+integration('NPC active command boundary parity', () => {
+    it.each(npcActiveBoundaryCases)(
+        '$name',
+        async ({ name, args, actorPatch, completed }) => {
+            const request = buildRequest('che_NPC능동', args, actorPatch);
+            request.setup!.world!.hiddenSeed = `general-npc-active-${name}`;
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+
+            expect(reference.execution.outcome).toMatchObject({ completed });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: 'che_NPC능동',
+                actionKey: completed ? 'che_NPC능동' : '휴식',
+                usedFallback: !completed,
+            });
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+        },
+        120_000
+    );
+});
+
 interface SelfStateBoundaryCase {
     name: string;
     action: 'che_단련' | 'che_숙련전환' | 'che_사기진작' | 'che_요양';

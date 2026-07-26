@@ -14,8 +14,9 @@ import { z } from 'zod';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import type { MapDefinition } from '@sammo-ts/logic/world/types.js';
-import { parseArgsWithSchema } from '../parseArgs.js';
+import { normalizeLegacyIntegerArg, parseArgsWithSchema } from '../parseArgs.js';
 import { mustBeNPC } from '@sammo-ts/logic/constraints/presets.js';
+import { existsDestCity } from '@sammo-ts/logic/constraints/city.js';
 
 export type NPCSelfResolveContext<TriggerState extends GeneralTriggerState = GeneralTriggerState> =
     GeneralActionResolveContext<TriggerState> & {
@@ -24,12 +25,31 @@ export type NPCSelfResolveContext<TriggerState extends GeneralTriggerState = Gen
 
 const ACTION_NAME = 'NPC능동';
 const ACTION_KEY = 'che_NPC능동';
-const ARGS_SCHEMA = z.discriminatedUnion('optionText', [
-    z.object({
-        optionText: z.literal('순간이동'),
-        destCityId: z.number(),
-    }),
-]);
+const ARGS_SCHEMA = z.preprocess(
+    (raw) => {
+        if (typeof raw !== 'object' || raw === null || !('destCityId' in raw)) {
+            return raw;
+        }
+        const rawDestCityId = raw.destCityId;
+        const destCityId = normalizeLegacyIntegerArg(rawDestCityId);
+        if (typeof destCityId !== 'number') {
+            return raw;
+        }
+        // PHP coerces the CityConst lookup to an integer, while the original value
+        // reaches the MariaDB integer column. Preserve that split for fractional input.
+        const storedDestCityId = Math.round(Number(rawDestCityId));
+        return storedDestCityId === destCityId
+            ? { ...raw, destCityId }
+            : { ...raw, destCityId, storedDestCityId };
+    },
+    z.discriminatedUnion('optionText', [
+        z.object({
+            optionText: z.literal('순간이동'),
+            destCityId: z.number().int(),
+            storedDestCityId: z.number().int().optional(),
+        }),
+    ])
+);
 export type NPCSelfArgs = z.infer<typeof ARGS_SCHEMA>;
 
 export class ActionResolver<
@@ -40,10 +60,6 @@ export class ActionResolver<
     resolve(context: NPCSelfResolveContext<TriggerState>, args: NPCSelfArgs): GeneralActionOutcome<TriggerState> {
         const general = context.general;
         const effects: GeneralActionEffect<TriggerState>[] = [];
-        if (general.npcState < 2) {
-            throw new Error('NPC가 아닙니다.');
-        }
-
         if (args.optionText === '순간이동') {
             if (args.destCityId === undefined) {
                 // Should be caught by constraints/validation, but safe guard
@@ -51,6 +67,7 @@ export class ActionResolver<
             }
 
             const destCityId = args.destCityId;
+            const storedDestCityId = args.storedDestCityId ?? destCityId;
             let destCityName = `도시(${destCityId})`;
             if (context.map) {
                 const c = context.map.cities.find((ct) => ct.id === destCityId);
@@ -72,7 +89,7 @@ export class ActionResolver<
                 createGeneralPatchEffect(
                     {
                         ...general,
-                        cityId: destCityId,
+                        cityId: storedDestCityId,
                         // Legacy doesn't show cost/dedication/exp change in 'che_NPC능동.php' run() method for '순간이동'
                         // It only does setVar('city', destCityID) and Logging and LastTurn.
                     },
@@ -107,7 +124,7 @@ export class ActionDefinition<
     buildConstraints(_ctx: ConstraintContext, args: NPCSelfArgs): Constraint[] {
         void _ctx;
         void args;
-        return [];
+        return [existsDestCity()];
     }
 
     resolve(context: NPCSelfResolveContext<TriggerState>, args: NPCSelfArgs): GeneralActionOutcome<TriggerState> {

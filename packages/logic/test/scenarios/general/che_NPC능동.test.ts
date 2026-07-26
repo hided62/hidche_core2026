@@ -77,6 +77,7 @@ function createViewState(world: InMemoryWorld, year: number = 200, env: TurnComm
             if (req.kind === 'general') return world.getGeneral(req.id) !== undefined;
             if (req.kind === 'nation') return world.getNation(req.id) !== undefined;
             if (req.kind === 'city') return world.snapshot.cities.some((c) => c.id === req.id);
+            if (req.kind === 'destCity') return world.snapshot.cities.some((c) => c.id === req.id);
             if (req.kind === 'generalList') return true;
             if (req.kind === 'nationList') return true;
             if (req.kind === 'env') return true;
@@ -86,6 +87,7 @@ function createViewState(world: InMemoryWorld, year: number = 200, env: TurnComm
             if (req.kind === 'general') return world.getGeneral(req.id) || null;
             if (req.kind === 'nation') return world.getNation(req.id) || null;
             if (req.kind === 'city') return world.snapshot.cities.find((c) => c.id === req.id) || null;
+            if (req.kind === 'destCity') return world.snapshot.cities.find((c) => c.id === req.id) || null;
             if (req.kind === 'generalList') return world.getAllGenerals();
             if (req.kind === 'nationList') return world.snapshot.nations;
             if (req.kind === 'env') {
@@ -159,7 +161,7 @@ describe('che_NPC능동', () => {
         expect(updated?.cityId).toBe(destCityId);
     });
 
-    it('should reject non-NPC general at resolve stage', async () => {
+    it('does not reapply the reservation-only NPC permission at execution', async () => {
         const bootstrapResult = buildScenarioBootstrap({
             scenario: MOCK_SCENARIO_BASE,
             map: MINIMAL_MAP,
@@ -212,16 +214,47 @@ describe('che_NPC능동', () => {
         expect(result.kind).toBe('allow');
 
         const runner = new TestGameRunner(world, 200, 1);
-        await expect(
-            runner.runTurn([
-                {
-                    generalId: general.id,
-                    commandKey: 'che_NPC능동',
-                    resolver: def,
-                    args,
-                },
-            ])
-        ).rejects.toThrow('NPC가 아닙니다.');
+        await runner.runTurn([
+            {
+                generalId: general.id,
+                commandKey: 'che_NPC능동',
+                resolver: def,
+                args,
+            },
+        ]);
+
+        expect(world.getGeneral(general.id)?.cityId).toBe(destCityId);
+    });
+
+    it('rejects a destination that does not exist', async () => {
+        const bootstrapResult = buildScenarioBootstrap({
+            scenario: MOCK_SCENARIO_BASE,
+            map: MINIMAL_MAP,
+        });
+        const world = new InMemoryWorld(bootstrapResult.snapshot);
+        const general = {
+            ...world.snapshot.generals[0]!,
+            id: 1,
+            npcState: 2,
+        };
+        world.snapshot.generals.push(general);
+        const definition = (
+            await import('../../../src/actions/turn/general/che_NPC능동.js')
+        ).commandSpec.createDefinition({} as TurnCommandEnv);
+        const args = { optionText: '순간이동' as const, destCityId: 999_999 };
+
+        const result = evaluateActionConstraints(
+            definition,
+            createConstraintContext(general, 200, args),
+            createViewState(world, 200),
+            args
+        );
+
+        expect(result).toMatchObject({
+            kind: 'deny',
+            constraintName: 'existsDestCity',
+            reason: '도시 정보가 없습니다.',
+        });
     });
 
     it('rejects structurally invalid command arguments', async () => {
@@ -231,7 +264,15 @@ describe('che_NPC능동', () => {
 
         expect(definition.parseArgs(null)).toBeNull();
         expect(definition.parseArgs({ optionText: '순간이동' })).toBeNull();
-        expect(definition.parseArgs({ optionText: '순간이동', destCityId: '101' })).toBeNull();
+        expect(definition.parseArgs({ optionText: '순간이동', destCityId: '101' })).toEqual({
+            optionText: '순간이동',
+            destCityId: 101,
+        });
+        expect(definition.parseArgs({ optionText: '순간이동', destCityId: 101.9 })).toEqual({
+            optionText: '순간이동',
+            destCityId: 101,
+            storedDestCityId: 102,
+        });
         expect(definition.parseArgs({ optionText: '알수없음', destCityId: 101 })).toBeNull();
         expect(definition.parseArgs({ optionText: '순간이동', destCityId: 101 })).toEqual({
             optionText: '순간이동',
