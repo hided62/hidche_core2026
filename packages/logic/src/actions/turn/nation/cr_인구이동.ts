@@ -40,7 +40,7 @@ const AMOUNT_LIMIT = 100000;
 const MIN_AVAILABLE_RECRUIT_POP = 30000;
 const LEGACY_NUMERIC_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
 
-const normalizeAmount = (value: unknown): unknown => {
+const normalizeInteger = (value: unknown): unknown => {
     let numericValue = value;
     if (typeof value === 'string') {
         const trimmed = value.trim();
@@ -52,14 +52,15 @@ const normalizeAmount = (value: unknown): unknown => {
     if (typeof numericValue !== 'number' || !Number.isFinite(numericValue)) {
         return value;
     }
-    return Math.min(Math.trunc(numericValue), AMOUNT_LIMIT);
+    return Math.trunc(numericValue);
+};
+const normalizeAmount = (value: unknown): unknown => {
+    const normalized = normalizeInteger(value);
+    return typeof normalized === 'number' ? Math.min(normalized, AMOUNT_LIMIT) : normalized;
 };
 
 const ARGS_SCHEMA = z.object({
-    destCityId: z.preprocess(
-        (value) => (typeof value === 'number' ? Math.floor(value) : value),
-        z.number().int().positive()
-    ),
+    destCityId: z.preprocess(normalizeInteger, z.number().int().positive()),
     amount: z.preprocess(normalizeAmount, z.number().int().min(0).max(AMOUNT_LIMIT)),
 });
 export type PopulationMoveArgs = z.infer<typeof ARGS_SCHEMA>;

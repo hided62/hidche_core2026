@@ -185,6 +185,25 @@ const buildRequest = (
                 trade: 100,
                 ...fixturePatches.cities?.[70],
             },
+            ...Object.entries(fixturePatches.cities ?? {})
+                .filter(([id]) => !['3', '70'].includes(id))
+                .map(([id, patch]) => ({
+                    id: Number(id),
+                    nationId: 0,
+                    population: 100_000,
+                    agriculture: 1_000,
+                    commerce: 1_000,
+                    security: 1_000,
+                    defence: 1_000,
+                    wall: 1_000,
+                    supplyState: 1,
+                    frontState: 0,
+                    state: 0,
+                    term: 0,
+                    trust: 80,
+                    trade: 100,
+                    ...patch,
+                })),
         ],
         generals: [
             { ...general(1, 1, 3, 12), ...fixturePatches.generals?.[1] },
@@ -227,7 +246,13 @@ const buildRequest = (
     },
     observe: {
         generalIds: [1, 2, 3, 4, 5, 6],
-        cityIds: [3, 70],
+        cityIds: [
+            3,
+            70,
+            ...Object.keys(fixturePatches.cities ?? {})
+                .map(Number)
+                .filter((id) => id !== 3 && id !== 70),
+        ],
         nationIds: [1, 2],
         logAfterId: 0,
         messageAfterId: 0,
@@ -1316,6 +1341,110 @@ integration('nation population move value and resource boundaries', () => {
                 actionKey: completed ? 'cr_인구이동' : '휴식',
                 usedFallback: !completed,
             });
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+        },
+        120_000
+    );
+});
+
+const populationMoveConstraintCases: Array<{
+    name: string;
+    destCityId: unknown;
+    fixturePatches?: FixturePatches;
+    completed?: boolean;
+    coreResolution?: boolean;
+}> = [
+    {
+        name: 'rejects a missing destination city',
+        destCityId: 9999,
+    },
+    {
+        name: 'rejects the source city as destination',
+        destCityId: 3,
+    },
+    {
+        name: 'accepts a numeric string destination city ID',
+        destCityId: '70',
+        completed: true,
+    },
+    {
+        name: 'rejects a source city below the minimum population',
+        destCityId: 70,
+        fixturePatches: { cities: { 3: { population: 30_099 } } },
+    },
+    {
+        name: 'rejects a source city occupied by another nation',
+        destCityId: 70,
+        fixturePatches: { cities: { 3: { nationId: 2 } } },
+    },
+    {
+        name: 'rejects a destination city occupied by another nation',
+        destCityId: 70,
+        fixturePatches: { cities: { 70: { nationId: 2 } } },
+    },
+    {
+        name: 'rejects a non-adjacent destination city',
+        destCityId: 73,
+        fixturePatches: { cities: { 73: { nationId: 1, supplyState: 1 } } },
+    },
+    {
+        name: 'rejects an actor below chief rank',
+        destCityId: 70,
+        fixturePatches: { generals: { 1: { officerLevel: 4, officerCityId: 0 } } },
+        coreResolution: false,
+    },
+    {
+        name: 'rejects an unsupplied source city',
+        destCityId: 70,
+        fixturePatches: { cities: { 3: { supplyState: 0 } } },
+    },
+    {
+        name: 'rejects an unsupplied destination city',
+        destCityId: 70,
+        fixturePatches: { cities: { 70: { supplyState: 0 } } },
+    },
+];
+
+integration('nation population move target and city constraints', () => {
+    it.each(populationMoveConstraintCases)(
+        '$name matches legacy fallback, RNG, and semantic delta',
+        async ({ destCityId, fixturePatches, completed = false, coreResolution = true }) => {
+            const request = buildRequest(
+                'cr_인구이동',
+                { destCityID: destCityId, amount: 1_000 },
+                {
+                    ...fixturePatches,
+                    cities: {
+                        ...fixturePatches?.cities,
+                        70: {
+                            nationId: 1,
+                            supplyState: 1,
+                            ...fixturePatches?.cities?.[70],
+                        },
+                    },
+                }
+            );
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+
+            expect(reference.execution.outcome).toMatchObject({ completed });
+            if (coreResolution) {
+                expect(core.execution.outcome).toMatchObject({
+                    requestedAction: 'cr_인구이동',
+                    actionKey: completed ? 'cr_인구이동' : '휴식',
+                    usedFallback: !completed,
+                });
+            } else {
+                expect(core.execution.outcome).toBeUndefined();
+            }
             expect(core.rng).toEqual(reference.rng);
             expect(
                 compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
