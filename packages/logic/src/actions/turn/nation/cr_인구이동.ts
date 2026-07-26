@@ -26,7 +26,7 @@ import type { NationTurnCommandSpec } from './index.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { clamp } from 'es-toolkit';
 import { z } from 'zod';
-import { parseArgsWithSchema } from '../parseArgs.js';
+import { normalizeLegacyIntegerArg, parseArgsWithSchema } from '../parseArgs.js';
 
 export interface PopulationMoveResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -38,29 +38,13 @@ export interface PopulationMoveResolveContext<
 const ACTION_NAME = '인구이동';
 const AMOUNT_LIMIT = 100000;
 const MIN_AVAILABLE_RECRUIT_POP = 30000;
-const LEGACY_NUMERIC_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
-
-const normalizeInteger = (value: unknown): unknown => {
-    let numericValue = value;
-    if (typeof value === 'string') {
-        const trimmed = value.trim();
-        if (trimmed === '' || !LEGACY_NUMERIC_PATTERN.test(trimmed)) {
-            return value;
-        }
-        numericValue = Number(trimmed);
-    }
-    if (typeof numericValue !== 'number' || !Number.isFinite(numericValue)) {
-        return value;
-    }
-    return Math.trunc(numericValue);
-};
 const normalizeAmount = (value: unknown): unknown => {
-    const normalized = normalizeInteger(value);
+    const normalized = normalizeLegacyIntegerArg(value);
     return typeof normalized === 'number' ? Math.min(normalized, AMOUNT_LIMIT) : normalized;
 };
 
 const ARGS_SCHEMA = z.object({
-    destCityId: z.preprocess(normalizeInteger, z.number().int().positive()),
+    destCityId: z.preprocess(normalizeLegacyIntegerArg, z.number().int().positive()),
     amount: z.preprocess(normalizeAmount, z.number().int().min(0).max(AMOUNT_LIMIT)),
 });
 export type PopulationMoveArgs = z.infer<typeof ARGS_SCHEMA>;

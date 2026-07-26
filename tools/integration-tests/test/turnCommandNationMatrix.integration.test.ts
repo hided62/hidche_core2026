@@ -1455,3 +1455,193 @@ integration('nation population move target and city constraints', () => {
         120_000
     );
 });
+
+const capitalMoveCases: Array<{
+    name: string;
+    destCityId: unknown;
+    fixturePatches?: FixturePatches;
+    completed: boolean;
+    referenceDistance: number;
+    coreDistance?: number;
+}> = [
+    {
+        name: 'rejects a missing destination city',
+        destCityId: 9999,
+        completed: false,
+        referenceDistance: 0,
+    },
+    {
+        name: 'rejects the current capital',
+        destCityId: 3,
+        completed: false,
+        referenceDistance: 0,
+    },
+    {
+        name: 'accepts a numeric string destination city ID',
+        destCityId: '70',
+        completed: true,
+        referenceDistance: 1,
+    },
+    {
+        name: 'rejects a destination city occupied by another nation',
+        destCityId: 70,
+        fixturePatches: { cities: { 70: { nationId: 2 } } },
+        completed: false,
+        referenceDistance: 50,
+        coreDistance: 0,
+    },
+    {
+        name: 'rejects an unsupplied destination city',
+        destCityId: 70,
+        fixturePatches: { cities: { 70: { supplyState: 0 } } },
+        completed: false,
+        referenceDistance: 1,
+    },
+    {
+        name: 'rejects a source city occupied by another nation',
+        destCityId: 70,
+        fixturePatches: { cities: { 3: { nationId: 2 } } },
+        completed: false,
+        referenceDistance: 1,
+    },
+    {
+        name: 'rejects an unsupplied source city',
+        destCityId: 70,
+        fixturePatches: { cities: { 3: { supplyState: 0 } } },
+        completed: false,
+        referenceDistance: 1,
+    },
+    {
+        name: 'allows the exact distance-one gold and rice requirement',
+        destCityId: 70,
+        fixturePatches: { nations: { 1: { gold: 180, rice: 2_180 } } },
+        completed: true,
+        referenceDistance: 1,
+    },
+    {
+        name: 'rejects one less than the distance-one gold requirement',
+        destCityId: 70,
+        fixturePatches: { nations: { 1: { gold: 179, rice: 2_180 } } },
+        completed: false,
+        referenceDistance: 1,
+    },
+    {
+        name: 'rejects one less than the distance-one rice requirement',
+        destCityId: 70,
+        fixturePatches: { nations: { 1: { gold: 180, rice: 2_179 } } },
+        completed: false,
+        referenceDistance: 1,
+    },
+    {
+        name: 'rejects an owned city without an owned-city route',
+        destCityId: 73,
+        fixturePatches: { cities: { 73: { nationId: 1, supplyState: 1 } } },
+        completed: false,
+        referenceDistance: 50,
+        coreDistance: 0,
+    },
+    {
+        name: 'completes a distance-two capital move through an owned city',
+        destCityId: 23,
+        fixturePatches: {
+            nations: { 1: { gold: 360, rice: 2_360 } },
+            cities: {
+                70: { nationId: 1, supplyState: 1 },
+                23: { nationId: 1, supplyState: 1 },
+            },
+        },
+        completed: true,
+        referenceDistance: 2,
+    },
+];
+
+integration('nation capital move target, route, and resource constraints', () => {
+    it.each(capitalMoveCases)(
+        '$name matches legacy completion, multistep effects, RNG, and semantic delta',
+        async ({ destCityId, fixturePatches, completed, referenceDistance, coreDistance = referenceDistance }) => {
+            const coreDestCityId = typeof destCityId === 'string' ? Number(destCityId) : destCityId;
+            const referenceLastTurn = {
+                command: '천도',
+                arg: { destCityID: destCityId },
+                term: referenceDistance * 2,
+                seq: 0,
+            };
+            const coreLastTurn = {
+                command: '천도',
+                arg: { destCityID: coreDestCityId },
+                term: coreDistance * 2,
+                seq: 0,
+            };
+            const request = buildRequest(
+                'che_천도',
+                { destCityID: destCityId },
+                {
+                    ...fixturePatches,
+                    nations: {
+                        ...fixturePatches?.nations,
+                        1: {
+                            ...fixturePatches?.nations?.[1],
+                            capitalRevision: 0,
+                            turnLastByOfficerLevel: { 12: referenceLastTurn },
+                            coreTurnLastByOfficerLevel: { 12: coreLastTurn },
+                        },
+                    },
+                    cities: {
+                        ...fixturePatches?.cities,
+                        70: {
+                            nationId: 1,
+                            supplyState: 1,
+                            ...fixturePatches?.cities?.[70],
+                        },
+                    },
+                }
+            );
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+            const referenceNationBefore = reference.before.nations.find((entry) => entry.id === 1);
+            const referenceNationAfter = reference.after.nations.find((entry) => entry.id === 1);
+            const coreNationBefore = core.before.nations.find((entry) => entry.id === 1);
+            const coreNationAfter = core.after.nations.find((entry) => entry.id === 1);
+            const referenceGeneralBefore = reference.before.generals.find((entry) => entry.id === 1);
+            const referenceGeneralAfter = reference.after.generals.find((entry) => entry.id === 1);
+            const coreGeneralBefore = core.before.generals.find((entry) => entry.id === 1);
+            const coreGeneralAfter = core.after.generals.find((entry) => entry.id === 1);
+            const expectedExperience = completed ? 5 * (referenceDistance * 2 + 1) : 0;
+
+            expect(reference.execution.outcome).toMatchObject({ completed });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: 'che_천도',
+                actionKey: completed ? 'che_천도' : '휴식',
+                usedFallback: !completed,
+            });
+            for (const field of ['gold', 'rice']) {
+                expect(
+                    readNumericField(referenceNationBefore, field) - readNumericField(referenceNationAfter, field)
+                ).toBe(0);
+                expect(readNumericField(coreNationBefore, field) - readNumericField(coreNationAfter, field)).toBe(0);
+            }
+            for (const field of ['experience', 'dedication']) {
+                expect(
+                    readNumericField(referenceGeneralAfter, field) - readNumericField(referenceGeneralBefore, field)
+                ).toBe(expectedExperience);
+                expect(readNumericField(coreGeneralAfter, field) - readNumericField(coreGeneralBefore, field)).toBe(
+                    expectedExperience
+                );
+            }
+            if (completed) {
+                expect(referenceNationAfter?.capitalCityId).toBe(coreDestCityId);
+                expect(coreNationAfter?.capitalCityId).toBe(coreDestCityId);
+            }
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+        },
+        120_000
+    );
+});
