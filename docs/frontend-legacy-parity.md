@@ -17,12 +17,19 @@ fails on unknown operations. It also serves the checked-out reference image
 tree instead of replacing images with layout-neutral placeholders.
 `public-gaps.spec.ts` adds bounded fixtures for nation betting and the public
 NPC list, including mutations and recoverable API failures.
+`tournament-betting.spec.ts` covers the separate tournament and tournament
+betting routes, including a recoverable failed bet.
 
 Run the suite from the core2026 repository root:
 
 ```sh
 pnpm test:e2e:frontend-legacy
 ```
+
+When another worktree occupies the default ports, set
+`FRONTEND_PARITY_GATEWAY_PORT`, `FRONTEND_PARITY_GAME_PORT`, and
+`FRONTEND_PARITY_GAME_URL`. `FRONTEND_PARITY_ARTIFACT_DIR` retains the
+tournament and betting screenshots.
 
 The suite starts both applications at their public prefixes:
 
@@ -48,6 +55,8 @@ storage, route guards, and image loading.
 | nation betting       | `hwe/v_nationBetting.php`                | 1000px/6-column desktop and 500px/3-column mobile grids, picked card style, payout table, success and retained-form error                                 |
 | public NPC list      | `hwe/a_npcList.php`                      | 1000px 12-column table with Chromium-expanded legacy widths, NPC color, eight sorts, retained table/sort after API error                                  |
 | survey               | `hwe/v_vote.php`, `hwe/ts/PageVote.vue`  | 1000/500px fixed container, blue title/green table textures, list/detail/results/comments, selection/focus/hover, submit and retained-selection API error |
+| tournament           | `hwe/b_tournament.php`                   | fixed 2000px canvas, 16×125px bracket, eight 250px group tables, walnut texture, 1024px overflow, hover/focus                                             |
+| tournament betting   | `hwe/b_betting.php`                      | fixed 1120px canvas, 16×70px candidates, four 280px rank tables, exact title/button geometry, retained selection on error                                |
 
 The global game baseline is black, white, Pretendard 14px. Legacy texture
 helpers intentionally follow `common.orig.css`: `bg0` is walnut, `bg1` is

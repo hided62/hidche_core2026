@@ -26,6 +26,7 @@ export type LobbyProfileStatus = {
     runtime: {
         apiRunning: boolean;
         daemonRunning: boolean;
+        tournamentRunning: boolean;
     };
     korName: string;
     color: string;
@@ -68,7 +69,7 @@ export class RepositoryProfileStatusService implements GatewayProfileStatusServi
 
     private mapProfile(
         row: GatewayProfileRecord,
-        runtimeMap: Map<string, { apiRunning: boolean; daemonRunning: boolean }>
+        runtimeMap: Map<string, { apiRunning: boolean; daemonRunning: boolean; tournamentRunning: boolean }>
     ): LobbyProfileStatus {
         const meta = row.meta;
         return {
@@ -80,6 +81,7 @@ export class RepositoryProfileStatusService implements GatewayProfileStatusServi
             runtime: runtimeMap.get(row.profileName) ?? {
                 apiRunning: false,
                 daemonRunning: false,
+                tournamentRunning: false,
             },
             korName: (meta.korName as string | undefined) ?? row.profile,
             color: (meta.color as string | undefined) ?? '#ffffff',

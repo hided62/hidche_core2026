@@ -518,7 +518,6 @@ export const settleTournamentOutcome = async (options: {
     return settledState;
 };
 
-
 export const runTournamentWorker = async (): Promise<void> => {
     const config = resolveGameApiConfigFromEnv();
     const postgres = createGamePostgresConnector(resolvePostgresConfigFromEnv({ schema: config.profile }));
@@ -555,25 +554,36 @@ export const runTournamentWorker = async (): Promise<void> => {
         }
 
         try {
-            const worldState = await postgres.prisma.worldState.findFirst();
-            const baseSeed = (worldState?.meta as Record<string, unknown> | null)?.hiddenSeed ?? 'tournament';
-            let nextState = state;
-            if (isBattleStage(state.stage)) {
-                nextState = await applyBattle(store, state, String(baseSeed), daemonTransport);
-            } else if (isPreBattleStage(state.stage)) {
-                nextState = await applyPreBattleStage(
-                    store,
-                    postgres.prisma,
-                    state,
-                    String(baseSeed),
-                    daemonTransport
-                );
-            }
+            await store.withMutationLock(async () => {
+                const lockedState = await store.getState();
+                if (!lockedState || !lockedState.auto) {
+                    return;
+                }
+                const lockedNextAt = new Date(lockedState.nextAt).getTime();
+                if (Number.isFinite(lockedNextAt) && lockedNextAt > Date.now()) {
+                    return;
+                }
 
-            await settleTournamentOutcome({
-                store,
-                daemonTransport,
-                state: nextState,
+                const worldState = await postgres.prisma.worldState.findFirst();
+                const baseSeed = (worldState?.meta as Record<string, unknown> | null)?.hiddenSeed ?? 'tournament';
+                let nextState = lockedState;
+                if (isBattleStage(lockedState.stage)) {
+                    nextState = await applyBattle(store, lockedState, String(baseSeed), daemonTransport);
+                } else if (isPreBattleStage(lockedState.stage)) {
+                    nextState = await applyPreBattleStage(
+                        store,
+                        postgres.prisma,
+                        lockedState,
+                        String(baseSeed),
+                        daemonTransport
+                    );
+                }
+
+                await settleTournamentOutcome({
+                    store,
+                    daemonTransport,
+                    state: nextState,
+                });
             });
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Unknown error';

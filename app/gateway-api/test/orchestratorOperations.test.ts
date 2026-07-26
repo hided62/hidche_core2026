@@ -88,6 +88,7 @@ const createHarness = (
                 ? [
                       { name: 'sammo:che:2:game-api', status: 'online' },
                       { name: 'sammo:che:2:turn-daemon', status: 'online' },
+                      { name: 'sammo:che:2:tournament-worker', status: 'online' },
                   ]
                 : [],
         start: async (definition) => {
@@ -146,6 +147,7 @@ describe('GatewayOrchestrator first-class operations', () => {
         expect(harness.started.map((definition) => definition.name)).toEqual([
             'sammo:che:2:game-api',
             'sammo:che:2:turn-daemon',
+            'sammo:che:2:tournament-worker',
         ]);
         expect(harness.completions).toEqual(['SUCCEEDED']);
     });
@@ -156,8 +158,16 @@ describe('GatewayOrchestrator first-class operations', () => {
         await harness.orchestrator.runOperationsNow();
 
         expect(harness.statuses).toEqual(['STOPPED']);
-        expect(harness.stopped).toEqual(['sammo:che:2:game-api', 'sammo:che:2:turn-daemon']);
-        expect(harness.deleted).toEqual(['sammo:che:2:game-api', 'sammo:che:2:turn-daemon']);
+        expect(harness.stopped).toEqual([
+            'sammo:che:2:game-api',
+            'sammo:che:2:turn-daemon',
+            'sammo:che:2:tournament-worker',
+        ]);
+        expect(harness.deleted).toEqual([
+            'sammo:che:2:game-api',
+            'sammo:che:2:turn-daemon',
+            'sammo:che:2:tournament-worker',
+        ]);
         expect(harness.completions).toEqual(['SUCCEEDED']);
     });
 
@@ -177,7 +187,11 @@ describe('GatewayOrchestrator first-class operations', () => {
 
         await harness.orchestrator.runOperationsNow();
 
-        expect(harness.deleted).toEqual(['sammo:che:2:game-api', 'sammo:che:2:turn-daemon']);
+        expect(harness.deleted).toEqual([
+            'sammo:che:2:game-api',
+            'sammo:che:2:turn-daemon',
+            'sammo:che:2:tournament-worker',
+        ]);
         expect(harness.completions).toEqual(['SUCCEEDED']);
     });
 
@@ -194,8 +208,16 @@ describe('GatewayOrchestrator first-class operations', () => {
 
         await harness.orchestrator.runOperationsNow();
 
-        expect(harness.stopped).toEqual(['sammo:che:2:game-api', 'sammo:che:2:turn-daemon']);
-        expect(harness.deleted).toEqual(['sammo:che:2:game-api', 'sammo:che:2:turn-daemon']);
+        expect(harness.stopped).toEqual([
+            'sammo:che:2:game-api',
+            'sammo:che:2:turn-daemon',
+            'sammo:che:2:tournament-worker',
+        ]);
+        expect(harness.deleted).toEqual([
+            'sammo:che:2:game-api',
+            'sammo:che:2:turn-daemon',
+            'sammo:che:2:tournament-worker',
+        ]);
         expect(harness.completions).toEqual(['FAILED']);
     });
 });

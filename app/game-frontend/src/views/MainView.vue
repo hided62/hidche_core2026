@@ -13,6 +13,7 @@ import MessagePanel from '../components/main/MessagePanel.vue';
 import SelectedCityPanel from '../components/main/SelectedCityPanel.vue';
 import { useSessionStore } from '../stores/session';
 import { useMainDashboardStore } from '../stores/mainDashboard';
+import { trpc } from '../utils/trpc';
 
 const session = useSessionStore();
 const dashboard = useMainDashboardStore();
@@ -29,6 +30,7 @@ const mobileTabs = [
 type MobileTabKey = (typeof mobileTabs)[number]['key'];
 
 const mobileTab = ref<MobileTabKey>('map');
+const tournamentStage = ref(0);
 
 const {
     loading,
@@ -70,7 +72,8 @@ const shiftNationTurns = (amount: number) => {
 };
 
 const loadMainData = async () => {
-    await dashboard.loadMainData();
+    const [, state] = await Promise.all([dashboard.loadMainData(), trpc.tournament.getState.query().catch(() => null)]);
+    tournamentStage.value = state?.stage ?? 0;
 };
 
 watch(
@@ -116,7 +119,12 @@ watch(
                 <a class="ghost" href="/xe/community" target="_blank" rel="noopener">게시판</a>
                 <RouterLink class="ghost" to="/battle-simulator">전투 시뮬레이터</RouterLink>
                 <RouterLink class="ghost" to="/my-page">내 정보</RouterLink>
-                <RouterLink class="ghost" to="/tournament">토너먼트</RouterLink>
+                <RouterLink class="ghost" :class="{ highlight: tournamentStage === 1 }" to="/tournament"
+                    >토너먼트</RouterLink
+                >
+                <RouterLink class="ghost" :class="{ highlight: tournamentStage === 6 }" to="/betting"
+                    >베팅장</RouterLink
+                >
                 <RouterLink class="ghost" to="/auction">거래장</RouterLink>
                 <RouterLink class="ghost" to="/survey">설문조사</RouterLink>
                 <RouterLink class="ghost" to="/npc-control">NPC 정책</RouterLink>
@@ -353,6 +361,12 @@ button {
 
 .ghost {
     background: rgba(16, 16, 16, 0.6);
+}
+
+.ghost.highlight {
+    border-color: #f39c12;
+    background: #8a5b13;
+    color: #fff;
 }
 
 .ghost.disabled {

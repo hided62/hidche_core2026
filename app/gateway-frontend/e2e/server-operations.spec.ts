@@ -38,6 +38,7 @@ const profile = (runtimeRunning: boolean) => ({
         profileName: 'che:2',
         apiRunning: runtimeRunning,
         daemonRunning: runtimeRunning,
+        tournamentRunning: runtimeRunning,
     },
 });
 
@@ -147,13 +148,17 @@ test('separates branch and commit semantics and submits a reset from the dedicat
     await expect(page.getByTestId('source-help')).toContainText('실제로 시작될 때');
     await expect(page.getByTestId('scenario-select')).toHaveValue('2');
 
-    const desktopGeometry = await page.getByTestId('server-operations-page').locator('section').first().evaluate((section) => {
-        const children = Array.from(section.children).map((child) => {
-            const rect = child.getBoundingClientRect();
-            return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+    const desktopGeometry = await page
+        .getByTestId('server-operations-page')
+        .locator('section')
+        .first()
+        .evaluate((section) => {
+            const children = Array.from(section.children).map((child) => {
+                const rect = child.getBoundingClientRect();
+                return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+            });
+            return children;
         });
-        return children;
-    });
     expect(desktopGeometry).toHaveLength(2);
     expect(desktopGeometry[1]!.x).toBeGreaterThan(desktopGeometry[0]!.x);
     const sourceInput = page.getByTestId('source-ref');
@@ -191,13 +196,17 @@ test('separates branch and commit semantics and submits a reset from the dedicat
     expect(JSON.stringify(resetRequest?.body)).toContain('"scenarioId":5');
 
     await page.setViewportSize({ width: 390, height: 844 });
-    const mobileGeometry = await page.getByTestId('server-operations-page').locator('section').first().evaluate((section) => {
-        const children = Array.from(section.children).map((child) => {
-            const rect = child.getBoundingClientRect();
-            return { x: rect.x, y: rect.y, width: rect.width };
+    const mobileGeometry = await page
+        .getByTestId('server-operations-page')
+        .locator('section')
+        .first()
+        .evaluate((section) => {
+            const children = Array.from(section.children).map((child) => {
+                const rect = child.getBoundingClientRect();
+                return { x: rect.x, y: rect.y, width: rect.width };
+            });
+            return children;
         });
-        return children;
-    });
     expect(mobileGeometry[1]!.y).toBeGreaterThan(mobileGeometry[0]!.y);
     expect(mobileGeometry[0]!.width).toBeLessThanOrEqual(390);
     await page.screenshot({ path: testInfo.outputPath('mobile-operations.png'), fullPage: true });

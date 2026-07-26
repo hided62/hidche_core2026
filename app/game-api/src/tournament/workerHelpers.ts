@@ -652,7 +652,7 @@ export const seedNpcBets = async (options: {
         reason: 'tournamentNpcBet',
         adjustments: npcBetList.map((npc) => ({
             generalId: npc.id as number,
-            metaDelta: { rank_betgold: betGold },
+            metaDelta: { betgold: betGold },
         })),
     });
     await store.setBettingEntries(entries);

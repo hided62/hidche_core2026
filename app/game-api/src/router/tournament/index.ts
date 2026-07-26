@@ -7,7 +7,8 @@ import type { TournamentState } from '../../tournament/types.js';
 
 import { TournamentStore } from '../../tournament/store.js';
 import { buildTournamentKeys } from '../../tournament/keys.js';
-import { authedProcedure, procedure, router } from '../../trpc.js';
+import { authedProcedure, router } from '../../trpc.js';
+import { getMyGeneral } from '../shared/general.js';
 
 const hasAdminRole = (roles: string[], profileName: string): boolean => {
     if (roles.includes('superuser') || roles.includes('admin') || roles.includes('admin.superuser')) {
@@ -110,13 +111,24 @@ const zSeedParticipants = z.object({
     includeNpc: z.boolean().optional(),
 });
 
+const tournamentRankTypes = ['tt', 'tl', 'ts', 'ti'] as const;
+
+const tournamentRankInfo = {
+    tt: { title: '전 력 전', statLabel: '종합' },
+    tl: { title: '통 솔 전', statLabel: '통솔' },
+    ts: { title: '일 기 토', statLabel: '무력' },
+    ti: { title: '설 전', statLabel: '지력' },
+} as const;
+
 export const tournamentRouter = router({
-    getState: procedure.query(async ({ ctx }) => {
+    getState: authedProcedure.query(async ({ ctx }) => {
+        await getMyGeneral(ctx);
         const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
         return store.getState();
     }),
     getAdminStatus: adminProcedure.query(async () => ({ ok: true })),
-    getSnapshot: procedure.query(async ({ ctx }) => {
+    getSnapshot: authedProcedure.query(async ({ ctx }) => {
+        await getMyGeneral(ctx);
         const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
         const [state, participants, matches, bets] = await Promise.all([
             store.getState(),
@@ -124,66 +136,156 @@ export const tournamentRouter = router({
             store.getMatches(),
             store.getBettingEntries(),
         ]);
-        return { state, participants, matches, bets };
+        return { state, participants, matches, betCount: bets.length };
+    }),
+    getRankings: authedProcedure.query(async ({ ctx }) => {
+        await getMyGeneral(ctx);
+        const rankTypeNames = tournamentRankTypes.flatMap((prefix) => [
+            `${prefix}p`,
+            `${prefix}g`,
+            `${prefix}w`,
+            `${prefix}d`,
+            `${prefix}l`,
+        ]);
+        const candidateRows = await Promise.all(
+            tournamentRankTypes.map((prefix) =>
+                ctx.db.rankData.findMany({
+                    where: { type: `${prefix}g` },
+                    orderBy: { value: 'desc' },
+                    take: 40,
+                    select: { generalId: true },
+                })
+            )
+        );
+        const candidateIdsByPrefix = new Map(
+            tournamentRankTypes.map((prefix, index) => [
+                prefix,
+                new Set((candidateRows[index] ?? []).map((row) => row.generalId)),
+            ])
+        );
+        const candidateIds = new Set(candidateRows.flatMap((rows) => rows.map((row) => row.generalId)));
+        const scoreRows = await ctx.db.rankData.findMany({
+            where: { generalId: { in: [...candidateIds] }, type: { in: rankTypeNames } },
+            select: { generalId: true, type: true, value: true },
+        });
+        const rankMap = new Map<number, Record<string, number>>();
+        for (const row of scoreRows) {
+            const ranks = rankMap.get(row.generalId) ?? {};
+            ranks[row.type] = row.value;
+            rankMap.set(row.generalId, ranks);
+        }
+        const generals = await ctx.db.general.findMany({
+            where: { id: { in: [...rankMap.keys()] } },
+            select: { id: true, name: true, npcState: true, leadership: true, strength: true, intel: true },
+        });
+
+        return tournamentRankTypes.map((prefix) => {
+            const entries = generals
+                .filter((general) => candidateIdsByPrefix.get(prefix)?.has(general.id))
+                .map((general) => {
+                    const ranks = rankMap.get(general.id) ?? {};
+                    const win = ranks[`${prefix}w`] ?? 0;
+                    const draw = ranks[`${prefix}d`] ?? 0;
+                    const lose = ranks[`${prefix}l`] ?? 0;
+                    const score = ranks[`${prefix}g`] ?? 0;
+                    const stat =
+                        prefix === 'tt'
+                            ? general.leadership + general.strength + general.intel
+                            : prefix === 'tl'
+                              ? general.leadership
+                              : prefix === 'ts'
+                                ? general.strength
+                                : general.intel;
+                    return {
+                        generalId: general.id,
+                        name: general.name,
+                        npcState: general.npcState,
+                        stat,
+                        games: win + draw + lose,
+                        win,
+                        draw,
+                        lose,
+                        score,
+                        prizes: ranks[`${prefix}p`] ?? 0,
+                    };
+                })
+                .sort(
+                    (lhs, rhs) =>
+                        rhs.score - lhs.score ||
+                        rhs.games - lhs.games ||
+                        rhs.win - lhs.win ||
+                        rhs.draw - lhs.draw ||
+                        lhs.lose - rhs.lose
+                )
+                .slice(0, 30)
+                .map((entry, index) => ({ rank: index + 1, ...entry }));
+            return { prefix, ...tournamentRankInfo[prefix], entries };
+        });
     }),
     setState: adminProcedure.input(zTournamentState).mutation(async ({ ctx, input }) => {
         const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
-        await store.setState({
-            ...input,
-            type: input.type as TournamentType,
+        return store.withMutationLock(async () => {
+            await store.setState({
+                ...input,
+                type: input.type as TournamentType,
+            });
+            return { ok: true };
         });
-        return { ok: true };
     }),
     patchState: adminProcedure.input(zTournamentState.partial()).mutation(async ({ ctx, input }) => {
         const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
-        const current = await store.getState();
-        if (!current) {
-            throw new TRPCError({ code: 'NOT_FOUND', message: 'Tournament state not found.' });
-        }
-        const next = {
-            ...current,
-            ...input,
-            type: (input.type !== undefined ? input.type : current.type) as TournamentType,
-        };
-        await store.setState(next);
-        return { ok: true };
+        return store.withMutationLock(async () => {
+            const current = await store.getState();
+            if (!current) {
+                throw new TRPCError({ code: 'NOT_FOUND', message: 'Tournament state not found.' });
+            }
+            const next = {
+                ...current,
+                ...input,
+                type: (input.type !== undefined ? input.type : current.type) as TournamentType,
+            };
+            await store.setState(next);
+            return { ok: true };
+        });
     }),
     setParticipants: adminProcedure.input(z.array(zParticipant)).mutation(async ({ ctx, input }) => {
         const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
-        await store.setParticipants(input);
-        return { ok: true, count: input.length };
+        return store.withMutationLock(async () => {
+            await store.setParticipants(input);
+            return { ok: true, count: input.length };
+        });
     }),
     setMatches: adminProcedure.input(z.array(zMatch)).mutation(async ({ ctx, input }) => {
         const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
-        await store.setMatches(input);
-        return { ok: true, count: input.length };
+        return store.withMutationLock(async () => {
+            await store.setMatches(input);
+            return { ok: true, count: input.length };
+        });
     }),
     setBettingEntries: adminProcedure.input(z.array(zBetEntry)).mutation(async ({ ctx, input }) => {
         const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
-        await store.setBettingEntries(input);
-        return { ok: true, count: input.length };
+        return store.withMutationLock(async () => {
+            await store.setBettingEntries(input);
+            return { ok: true, count: input.length };
+        });
     }),
     seedParticipants: adminProcedure.input(zSeedParticipants).mutation(async ({ ctx, input }) => {
         const limit = input.limit ?? 64;
         const includeNpc = input.includeNpc ?? true;
         const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
 
-        const generals = input.generalIds && input.generalIds.length > 0
-            ? await ctx.db.general.findMany({
-                  where: { id: { in: input.generalIds } },
-                  select: { id: true, name: true, leadership: true, strength: true, intel: true, meta: true },
-              })
-            : await ctx.db.general.findMany({
-                  where: includeNpc ? {} : { npcState: 0 },
-                  orderBy: [
-                      { leadership: 'desc' },
-                      { strength: 'desc' },
-                      { intel: 'desc' },
-                      { id: 'asc' },
-                  ],
-                  take: limit,
-                  select: { id: true, name: true, leadership: true, strength: true, intel: true, meta: true },
-              });
+        const generals =
+            input.generalIds && input.generalIds.length > 0
+                ? await ctx.db.general.findMany({
+                      where: { id: { in: input.generalIds } },
+                      select: { id: true, name: true, leadership: true, strength: true, intel: true, meta: true },
+                  })
+                : await ctx.db.general.findMany({
+                      where: includeNpc ? {} : { npcState: 0 },
+                      orderBy: [{ leadership: 'desc' }, { strength: 'desc' }, { intel: 'desc' }, { id: 'asc' }],
+                      take: limit,
+                      select: { id: true, name: true, leadership: true, strength: true, intel: true, meta: true },
+                  });
 
         const participants = generals.map((general) => {
             const meta = asRecord(general.meta);
@@ -198,10 +300,13 @@ export const tournamentRouter = router({
             };
         });
 
-        await store.setParticipants(participants);
-        return { ok: true, count: participants.length };
+        return store.withMutationLock(async () => {
+            await store.setParticipants(participants);
+            return { ok: true, count: participants.length };
+        });
     }),
     getBettingSummary: authedProcedure.query(async ({ ctx }) => {
+        const general = await getMyGeneral(ctx);
         const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
         const [state, entries, matches] = await Promise.all([
             store.getState(),
@@ -225,18 +330,13 @@ export const tournamentRouter = router({
         const myTotals: Record<number, number> = {};
         let totalAmount = 0;
         let myAmount = 0;
-        const userId = ctx.auth?.user.id;
-        const general = userId
-            ? await ctx.db.general.findFirst({ where: { userId }, select: { id: true } })
-            : null;
-
         for (const entry of entries) {
             if (!candidateIds.has(entry.targetId)) {
                 continue;
             }
             totals[entry.targetId] = (totals[entry.targetId] ?? 0) + entry.amount;
             totalAmount += entry.amount;
-            if (general && entry.generalId === general.id) {
+            if (entry.generalId === general.id) {
                 myTotals[entry.targetId] = (myTotals[entry.targetId] ?? 0) + entry.amount;
                 myAmount += entry.amount;
             }
@@ -245,199 +345,254 @@ export const tournamentRouter = router({
         return { state, totals, myTotals, totalAmount, myAmount };
     }),
     join: authedProcedure.mutation(async ({ ctx }) => {
-        const userId = ctx.auth?.user.id;
-        if (!userId) {
-            throw new TRPCError({ code: 'UNAUTHORIZED' });
-        }
+        const general = await getMyGeneral(ctx);
         const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
-        const state = await store.getState();
-        if (!state || state.stage !== 1 || state.participantsLockedAt) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: '참가 신청 기간이 아닙니다.' });
-        }
+        return store.withMutationLock(async () => {
+            const state = await store.getState();
+            if (!state || state.stage !== 1 || state.participantsLockedAt) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '참가 신청 기간이 아닙니다.' });
+            }
 
-        const participants = await store.getParticipants();
+            const [participants, worldState] = await Promise.all([
+                store.getParticipants(),
+                ctx.db.worldState.findFirst(),
+            ]);
+            if (participants.some((entry) => entry.id === general.id)) {
+                return { ok: true, count: participants.length };
+            }
+            if (participants.length >= 64) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: '참가 인원이 가득 찼습니다.' });
+            }
 
-        const general = await ctx.db.general.findFirst({
-            where: { userId },
-            select: { id: true, name: true, leadership: true, strength: true, intel: true, meta: true },
+            const config = asRecord(worldState?.config ?? {});
+            const constValues = asRecord(config.const ?? config);
+            const develCost = resolveNumber(constValues, ['develCost', 'develcost', 'develrate'], 0);
+            const feeResult = await ctx.turnDaemon.requestCommand({
+                type: 'adjustGeneralResources',
+                reason: 'tournamentJoin',
+                adjustments: [{ generalId: general.id, goldDelta: -develCost, minGoldAfter: 0 }],
+            });
+            if (!feeResult || feeResult.type !== 'adjustGeneralResources') {
+                throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
+            }
+            if (!feeResult.ok || feeResult.processed !== 1) {
+                throw new TRPCError({
+                    code: 'BAD_REQUEST',
+                    message: feeResult.ok ? '금이 부족합니다.' : feeResult.reason,
+                });
+            }
+
+            const settingResult = await ctx.turnDaemon.requestCommand({
+                type: 'setMySetting',
+                generalId: general.id,
+                settings: { tnmt: 1 },
+            });
+            if (!settingResult || settingResult.type !== 'setMySetting' || !settingResult.ok) {
+                await ctx.turnDaemon.requestCommand({
+                    type: 'adjustGeneralResources',
+                    reason: 'tournamentJoinRollback',
+                    adjustments: [{ generalId: general.id, goldDelta: develCost }],
+                });
+                throw new TRPCError({
+                    code: 'BAD_REQUEST',
+                    message:
+                        settingResult && settingResult.type === 'setMySetting'
+                            ? (settingResult.reason ?? '요청에 실패했습니다.')
+                            : 'Unexpected response',
+                });
+            }
+
+            const meta = asRecord(general.meta);
+            const level = typeof meta.explevel === 'number' ? meta.explevel : 0;
+            const next = participants.concat({
+                id: general.id,
+                name: general.name,
+                leadership: general.leadership,
+                strength: general.strength,
+                intel: general.intel,
+                level,
+            });
+
+            try {
+                await store.setParticipants(next);
+            } catch (error) {
+                await Promise.all([
+                    ctx.turnDaemon.requestCommand({
+                        type: 'adjustGeneralResources',
+                        reason: 'tournamentJoinRollback',
+                        adjustments: [{ generalId: general.id, goldDelta: develCost }],
+                    }),
+                    ctx.turnDaemon.requestCommand({
+                        type: 'setMySetting',
+                        generalId: general.id,
+                        settings: { tnmt: 0 },
+                    }),
+                ]);
+                throw error;
+            }
+            return { ok: true, count: next.length };
         });
-        if (!general) {
-            throw new TRPCError({ code: 'NOT_FOUND', message: '장수 정보를 찾을 수 없습니다.' });
-        }
-
-        const result = await ctx.turnDaemon.requestCommand({
-            type: 'setMySetting',
-            generalId: general.id,
-            settings: { tnmt: 1 },
-        });
-        if (!result || result.type !== 'setMySetting') {
-            throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
-        }
-        if (!result.ok) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason ?? '요청에 실패했습니다.' });
-        }
-
-        const already = participants.find((entry) => entry.id === general.id);
-        if (already) {
-            return { ok: true, count: participants.length };
-        }
-
-        if (participants.length >= 64) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: '참가 인원이 가득 찼습니다.' });
-        }
-
-        const meta = asRecord(general.meta);
-        const level = typeof meta.explevel === 'number' ? meta.explevel : 0;
-        const next = participants.concat({
-            id: general.id,
-            name: general.name,
-            leadership: general.leadership,
-            strength: general.strength,
-            intel: general.intel,
-            level,
-        });
-
-        await store.setParticipants(next);
-        return { ok: true, count: next.length };
     }),
     cancel: adminProcedure.mutation(async ({ ctx }) => {
         const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
-        const state = await store.getState();
-        if (!state) {
-            throw new TRPCError({ code: 'NOT_FOUND', message: 'Tournament state not found.' });
-        }
-
-        const [participants, bets] = await Promise.all([
-            store.getParticipants(),
-            store.getBettingEntries(),
-        ]);
-
-        const worldState = await ctx.db.worldState.findFirst();
-        const config = asRecord(worldState?.config ?? {});
-        const constValues = asRecord(config.const ?? config);
-        const develCost = resolveNumber(constValues, ['develCost', 'develcost', 'develrate'], 0);
-
-        const refundMap = new Map<number, number>();
-        for (const participant of participants) {
-            if (participant.id <= 0) {
-                continue;
+        return store.withMutationLock(async () => {
+            const state = await store.getState();
+            if (!state) {
+                throw new TRPCError({ code: 'NOT_FOUND', message: 'Tournament state not found.' });
             }
-            if (participant.groupId !== undefined && participant.groupId >= 0 && participant.groupId < 8) {
-                refundMap.set(participant.id, (refundMap.get(participant.id) ?? 0) + develCost);
+
+            const [participants, bets] = await Promise.all([store.getParticipants(), store.getBettingEntries()]);
+
+            const worldState = await ctx.db.worldState.findFirst();
+            const config = asRecord(worldState?.config ?? {});
+            const constValues = asRecord(config.const ?? config);
+            const develCost = resolveNumber(constValues, ['develCost', 'develcost', 'develrate'], 0);
+
+            const refundMap = new Map<number, number>();
+            for (const participant of participants) {
+                if (participant.id <= 0) {
+                    continue;
+                }
+                if (participant.groupId !== undefined && participant.groupId >= 0 && participant.groupId < 8) {
+                    refundMap.set(participant.id, (refundMap.get(participant.id) ?? 0) + develCost);
+                }
             }
-        }
-        for (const bet of bets) {
-            refundMap.set(bet.generalId, (refundMap.get(bet.generalId) ?? 0) + bet.amount);
-        }
+            for (const bet of bets) {
+                refundMap.set(bet.generalId, (refundMap.get(bet.generalId) ?? 0) + bet.amount);
+            }
 
-        if (refundMap.size > 0) {
-            await ctx.turnDaemon.sendCommand({
-                type: 'tournamentRefund',
-                refunds: Array.from(refundMap.entries()).map(([generalId, amount]) => ({
-                    generalId,
-                    amount,
-                })),
-                reason: 'cancel',
-            });
-        }
+            if (refundMap.size > 0) {
+                await ctx.turnDaemon.sendCommand({
+                    type: 'tournamentRefund',
+                    refunds: Array.from(refundMap.entries()).map(([generalId, amount]) => ({
+                        generalId,
+                        amount,
+                    })),
+                    reason: 'cancel',
+                });
+            }
 
-        await Promise.all([
-            store.setParticipants([]),
-            store.setMatches([]),
-            store.setBettingEntries([]),
-        ]);
+            await Promise.all([store.setParticipants([]), store.setMatches([]), store.setBettingEntries([])]);
 
-        const nextState: TournamentState = {
-            ...state,
-            stage: 0,
-            phase: 0,
-            auto: false,
-            winnerId: undefined,
-            bettingSettled: true,
-            rewardSettled: false,
-            bettingCloseAt: undefined,
-            participantsLockedAt: undefined,
-            nextAt: new Date().toISOString(),
-        };
-        await store.setState(nextState);
-        return { ok: true };
+            const nextState: TournamentState = {
+                ...state,
+                stage: 0,
+                phase: 0,
+                auto: false,
+                winnerId: undefined,
+                bettingSettled: true,
+                rewardSettled: false,
+                bettingCloseAt: undefined,
+                participantsLockedAt: undefined,
+                nextAt: new Date().toISOString(),
+            };
+            await store.setState(nextState);
+            return { ok: true };
+        });
     }),
     placeBet: authedProcedure
         .input(
             z.object({
                 targetId: z.number().int().positive(),
-                amount: z.number().int().positive(),
+                amount: z.number().int().min(10),
             })
         )
         .mutation(async ({ ctx, input }) => {
-            const userId = ctx.auth?.user.id;
-            if (!userId) {
-                throw new TRPCError({ code: 'UNAUTHORIZED' });
-            }
+            const general = await getMyGeneral(ctx);
             const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
-            const state = await store.getState();
-            if (!state || state.stage !== 6) {
-                throw new TRPCError({ code: 'BAD_REQUEST', message: '베팅 기간이 아닙니다.' });
-            }
-            const closeAt = state.bettingCloseAt ? new Date(state.bettingCloseAt).getTime() : 0;
-            if (closeAt && closeAt <= Date.now()) {
-                throw new TRPCError({ code: 'BAD_REQUEST', message: '베팅이 마감되었습니다.' });
-            }
-
-            const matches = await store.getMatches();
-            const candidateIds = new Set<number>();
-            for (const match of matches) {
-                if (match.stage === 7) {
-                    candidateIds.add(match.attackerId);
-                    candidateIds.add(match.defenderId);
+            return store.withMutationLock(async () => {
+                const state = await store.getState();
+                if (!state || state.stage !== 6) {
+                    throw new TRPCError({ code: 'BAD_REQUEST', message: '베팅 기간이 아닙니다.' });
                 }
-            }
-            if (!candidateIds.has(input.targetId)) {
-                throw new TRPCError({ code: 'BAD_REQUEST', message: '올바르지 않은 베팅 대상입니다.' });
-            }
+                const closeAt = state.bettingCloseAt ? new Date(state.bettingCloseAt).getTime() : 0;
+                if (closeAt && closeAt <= Date.now()) {
+                    throw new TRPCError({ code: 'BAD_REQUEST', message: '베팅이 마감되었습니다.' });
+                }
 
-            const general = await ctx.db.general.findFirst({
-                where: { userId },
-                select: { id: true, gold: true },
-            });
-            if (!general) {
-                throw new TRPCError({ code: 'PRECONDITION_FAILED', message: '장수가 존재하지 않습니다.' });
-            }
+                const [matches, entries] = await Promise.all([store.getMatches(), store.getBettingEntries()]);
+                const candidateIds = new Set<number>();
+                for (const match of matches) {
+                    if (match.stage === 7) {
+                        candidateIds.add(match.attackerId);
+                        candidateIds.add(match.defenderId);
+                    }
+                }
+                if (!candidateIds.has(input.targetId)) {
+                    throw new TRPCError({ code: 'BAD_REQUEST', message: '올바르지 않은 베팅 대상입니다.' });
+                }
 
-            const minRemainGold = 500;
-            if (general.gold - input.amount < minRemainGold) {
-                throw new TRPCError({ code: 'BAD_REQUEST', message: '소지금이 부족합니다.' });
-            }
+                const previousBetAmount = entries
+                    .filter((entry) => entry.generalId === general.id)
+                    .reduce((sum, entry) => sum + entry.amount, 0);
+                if (previousBetAmount + input.amount > 1_000) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: `${1_000 - previousBetAmount}금까지만 베팅 가능합니다.`,
+                    });
+                }
 
-            const adjustResult = await ctx.turnDaemon.requestCommand({
-                type: 'adjustGeneralResources',
-                reason: 'tournamentBet',
-                adjustments: [{ generalId: general.id, goldDelta: -input.amount }],
-            });
-            if (!adjustResult || adjustResult.type !== 'adjustGeneralResources') {
-                throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
-            }
-            if (!adjustResult.ok) {
-                throw new TRPCError({ code: 'BAD_REQUEST', message: adjustResult.reason });
-            }
+                const adjustResult = await ctx.turnDaemon.requestCommand({
+                    type: 'adjustGeneralResources',
+                    reason: 'tournamentBet',
+                    adjustments: [{ generalId: general.id, goldDelta: -input.amount, minGoldAfter: 500 }],
+                });
+                if (!adjustResult || adjustResult.type !== 'adjustGeneralResources') {
+                    throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
+                }
+                if (!adjustResult.ok || adjustResult.processed !== 1) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: adjustResult.ok ? '금이 부족합니다.' : adjustResult.reason,
+                    });
+                }
 
-            await ctx.turnDaemon.sendCommand({
-                type: 'adjustGeneralMeta',
-                reason: 'tournamentBet',
-                adjustments: [
-                    {
+                const rankResult = await ctx.turnDaemon.requestCommand({
+                    type: 'adjustGeneralMeta',
+                    reason: 'tournamentBet',
+                    adjustments: [
+                        {
+                            generalId: general.id,
+                            metaDelta: { betgold: input.amount },
+                        },
+                    ],
+                });
+                if (!rankResult || rankResult.type !== 'adjustGeneralMeta' || !rankResult.ok) {
+                    await ctx.turnDaemon.requestCommand({
+                        type: 'adjustGeneralResources',
+                        reason: 'tournamentBetRollback',
+                        adjustments: [{ generalId: general.id, goldDelta: input.amount }],
+                    });
+                    throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: '베팅 기록을 저장하지 못했습니다.' });
+                }
+
+                try {
+                    await store.appendBettingEntry({
                         generalId: general.id,
-                        metaDelta: { rank_betgold: input.amount },
-                    },
-                ],
+                        targetId: input.targetId,
+                        amount: input.amount,
+                    });
+                } catch (error) {
+                    await Promise.all([
+                        ctx.turnDaemon.requestCommand({
+                            type: 'adjustGeneralResources',
+                            reason: 'tournamentBetRollback',
+                            adjustments: [{ generalId: general.id, goldDelta: input.amount }],
+                        }),
+                        ctx.turnDaemon.requestCommand({
+                            type: 'adjustGeneralMeta',
+                            reason: 'tournamentBetRollback',
+                            adjustments: [
+                                {
+                                    generalId: general.id,
+                                    metaDelta: { betgold: -input.amount },
+                                },
+                            ],
+                        }),
+                    ]);
+                    throw error;
+                }
+                return { ok: true };
             });
-
-            await store.appendBettingEntry({
-                generalId: general.id,
-                targetId: input.targetId,
-                amount: input.amount,
-            });
-
-            return { ok: true };
         }),
 });
