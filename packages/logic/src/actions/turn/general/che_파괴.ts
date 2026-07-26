@@ -117,6 +117,10 @@ export class ActionResolver<
         consumeSuccessfulStrategyItem(this.pipeline, context);
         for (const injured of result.injuredGenerals) {
             effects.push(createGeneralPatchEffect(injured.patch, injured.id));
+            ctx.addLog('<M>계략</>으로 인해 <R>부상</>을 당했습니다.', {
+                generalId: injured.id,
+                format: LogFormat.MONTH,
+            });
         }
 
         return { effects };

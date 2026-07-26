@@ -192,6 +192,11 @@ agitation and destruction city values, the supplied-nation resource cap for
 seizure, and the legacy final state of unsupplied seizure. They also remove
 destruction's unintended front recalculation and preserve the legacy
 unsupplied-seizure overwrite that leaves city resources unchanged.
+Three sabotage injury-boundary cases cover per-defender rolls, the injury cap
+of 80, integer persistence after multiplying crew/train/atmosphere by 0.98,
+and the target-general injury log for fire attack, agitation and destruction.
+They restore the legacy Korean particle in the log, add the two missing logs,
+and round rather than floor the integer fields.
 This is not yet a claim that every command-specific
 constraint, clamp, alternative and persistence boundary has been dynamically
 compared.
