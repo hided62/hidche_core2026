@@ -17,7 +17,7 @@ import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js'
 import type { GeneralTurnCommandSpec } from './index.js';
 import type { MapDefinition } from '@sammo-ts/logic/world/types.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
-import { parseArgsWithSchema } from '../parseArgs.js';
+import { normalizeLegacyIntegerArg, parseArgsWithSchema } from '../parseArgs.js';
 
 export interface ForcedMoveResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -30,7 +30,7 @@ export interface ForcedMoveResolveContext<
 const ACTION_NAME = '강행';
 const ACTION_KEY = 'che_강행';
 const ARGS_SCHEMA = z.object({
-    destCityId: z.number(),
+    destCityId: z.preprocess(normalizeLegacyIntegerArg, z.number().int()),
 });
 export type ForcedMoveArgs = z.infer<typeof ARGS_SCHEMA>;
 

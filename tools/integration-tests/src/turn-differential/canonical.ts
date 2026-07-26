@@ -119,6 +119,11 @@ export const projectCoreDatabaseSnapshot = (rows: {
             experience: row.experience,
             dedication: row.dedication,
             officerLevel: row.officerLevel,
+            officerCityId: readNumber(
+                row,
+                'officerCityId',
+                readNumber(meta, 'officer_city', readNumber(meta, 'officerCity', readNumber(meta, 'officerCityId')))
+            ),
             betray: row.betray,
             personality: row.personality ?? null,
             specialDomestic: row.specialDomestic ?? null,

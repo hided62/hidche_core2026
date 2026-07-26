@@ -80,13 +80,13 @@ export class ActionResolver<
         const josaUl = JosaUtil.pick(nation.name, '을');
         context.addLog(`<Y>${general.name}</>${josaYi} 방랑의 길을 떠납니다.`, {
             scope: LogScope.SYSTEM,
-            category: LogCategory.ACTION,
-            format: LogFormat.RAWTEXT,
+            category: LogCategory.SUMMARY,
+            format: LogFormat.MONTH,
         });
         context.addLog(`<R><b>【방랑】</b></><D><b>${general.name}</b></>${josaUn} <R>방랑</>의 길을 떠납니다.`, {
             scope: LogScope.SYSTEM,
             category: LogCategory.HISTORY,
-            format: LogFormat.RAWTEXT,
+            format: LogFormat.YEAR_MONTH,
         });
         context.addLog(`<D><b>${nation.name}</b></>${josaUl} 버리고 방랑`, {
             scope: LogScope.GENERAL,

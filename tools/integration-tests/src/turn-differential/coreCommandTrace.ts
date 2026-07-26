@@ -262,7 +262,21 @@ const buildGeneral = (row: Record<string, unknown>, fallbackTurnTime: Date): Tur
             dex5: readNumber(row, 'dex5', readNumber(meta, 'dex5')),
             explevel: readNumber(row, 'expLevel', readNumber(meta, 'explevel')),
             betray: readNumber(row, 'betray', readNumber(meta, 'betray')),
-            officerCityId: readNumber(row, 'officerCityId', readNumber(meta, 'officerCityId')),
+            officerCityId: readNumber(
+                row,
+                'officerCityId',
+                readNumber(meta, 'officerCityId', readNumber(meta, 'officerCity', readNumber(meta, 'officer_city')))
+            ),
+            officerCity: readNumber(
+                row,
+                'officerCityId',
+                readNumber(meta, 'officerCity', readNumber(meta, 'officer_city'))
+            ),
+            officer_city: readNumber(
+                row,
+                'officerCityId',
+                readNumber(meta, 'officer_city', readNumber(meta, 'officerCity'))
+            ),
             block: readNumber(row, 'blockState', readNumber(meta, 'block')),
         },
         ...(lastTurn ? { lastTurn } : {}),
@@ -520,6 +534,11 @@ const projectWorld = (
             dedication: toDatabaseInt(general.dedication),
             expLevel: readNumber(general.meta, 'explevel'),
             officerLevel: general.officerLevel,
+            officerCityId: readNumber(
+                general.meta,
+                'officer_city',
+                readNumber(general.meta, 'officerCity', readNumber(general.meta, 'officerCityId'))
+            ),
             betray: readNumber(general.meta, 'betray'),
             personality: general.role.personality,
             specialDomestic: general.role.specialDomestic,

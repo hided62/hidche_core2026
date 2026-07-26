@@ -662,6 +662,10 @@ export const notCapital = (checkCurrentCity = false): Constraint => ({
         }
 
         if (targetCityId === nation.capitalCityId) {
+            const general = readGeneral(ctx, view);
+            if (checkCurrentCity && general && general.officerLevel >= 2 && general.officerLevel <= 4) {
+                return allow();
+            }
             return { kind: 'deny', reason: '수도입니다.' };
         }
         return allow();

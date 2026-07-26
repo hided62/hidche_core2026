@@ -57,7 +57,10 @@ export class ActionResolver<
         // Logic: specific officer levels return to their assigned city
         // 2 (Chief?), 3 (Staff?), 4 (Governor/Taishu)
         if (officerLevel >= 2 && officerLevel <= 4) {
-            const officerCity = readMetaNumberFromUnknown(general.meta, 'officer_city');
+            const officerCity =
+                readMetaNumberFromUnknown(general.meta, 'officer_city') ??
+                readMetaNumberFromUnknown(general.meta, 'officerCity') ??
+                readMetaNumberFromUnknown(general.meta, 'officerCityId');
             if (officerCity) {
                 destCityId = officerCity;
             }
@@ -180,9 +183,7 @@ export class ActionDefinition<
 export const actionContextBuilder: ActionContextBuilder = (base, options) => {
     return {
         ...base,
-        // We effectively need all cities to find the destination name if it's not the capital.
-        // Or at least nation cities.
-        nationCities: options.worldRef?.listCities().filter((c) => c.nationId === base.nation?.id) ?? [],
+        nationCities: options.worldRef?.listCities() ?? [],
     };
 };
 

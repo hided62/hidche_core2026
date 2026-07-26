@@ -637,6 +637,276 @@ integration('general sightseeing event, RNG, value, and log parity', () => {
     );
 });
 
+interface MovementBoundaryCase {
+    name: string;
+    action: 'che_강행' | 'che_귀환' | 'che_접경귀환' | 'che_집합' | 'che_방랑';
+    args?: Record<string, unknown>;
+    actorPatch?: Record<string, unknown>;
+    fixturePatches?: FixturePatches;
+    completed: boolean;
+    fallback?: boolean;
+}
+
+const movementBoundaryCases: MovementBoundaryCase[] = [
+    {
+        name: 'forced move accepts a numeric-string city ID',
+        action: 'che_강행',
+        args: { destCityID: '70' },
+        completed: true,
+    },
+    {
+        name: 'forced move truncates a fractional city ID',
+        action: 'che_강행',
+        args: { destCityID: 70.9 },
+        completed: true,
+    },
+    {
+        name: 'forced move rejects the current city',
+        action: 'che_강행',
+        args: { destCityID: 3 },
+        completed: false,
+    },
+    {
+        name: 'forced move rejects an unknown city',
+        action: 'che_강행',
+        args: { destCityID: 999 },
+        completed: false,
+    },
+    {
+        name: 'forced move rejects insufficient gold',
+        action: 'che_강행',
+        args: { destCityID: 70 },
+        actorPatch: { gold: 0 },
+        completed: false,
+    },
+    {
+        name: 'forced move preserves the training and morale floors',
+        action: 'che_강행',
+        args: { destCityID: 70 },
+        actorPatch: { train: 20, atmos: 20 },
+        completed: true,
+    },
+    {
+        name: 'forced move carries every wandering-nation general',
+        action: 'che_강행',
+        args: { destCityID: 70 },
+        fixturePatches: { nations: { 1: { level: 0 } } },
+        completed: true,
+    },
+    {
+        name: 'return rejects a neutral actor',
+        action: 'che_귀환',
+        actorPatch: { nationId: 0 },
+        completed: false,
+    },
+    {
+        name: 'return rejects a wandering nation',
+        action: 'che_귀환',
+        fixturePatches: { nations: { 1: { level: 0 } } },
+        completed: false,
+    },
+    {
+        name: 'return rejects a lord already in the capital',
+        action: 'che_귀환',
+        completed: false,
+    },
+    {
+        name: 'return lets a local officer leave the capital for the assigned city',
+        action: 'che_귀환',
+        actorPatch: { officerLevel: 2, officerCityId: 70 },
+        fixturePatches: { cities: { 70: { nationId: 1 } } },
+        completed: true,
+    },
+    {
+        name: 'return rewards an officer already in the assigned non-capital city',
+        action: 'che_귀환',
+        actorPatch: { officerLevel: 4, officerCityId: 70, cityId: 70 },
+        fixturePatches: { cities: { 70: { nationId: 1 } } },
+        completed: true,
+    },
+    {
+        name: 'return sends a normal officer to the capital',
+        action: 'che_귀환',
+        actorPatch: { officerLevel: 1, cityId: 70 },
+        completed: true,
+    },
+    {
+        name: 'border return rejects a neutral actor',
+        action: 'che_접경귀환',
+        actorPatch: { nationId: 0, cityId: 70 },
+        completed: false,
+    },
+    {
+        name: 'border return rejects a wandering nation',
+        action: 'che_접경귀환',
+        actorPatch: { cityId: 70 },
+        fixturePatches: { nations: { 1: { level: 0 } } },
+        completed: false,
+    },
+    {
+        name: 'border return rejects an actor already in an owned city',
+        action: 'che_접경귀환',
+        completed: false,
+    },
+    {
+        name: 'border return fails without a supplied owned city in range',
+        action: 'che_접경귀환',
+        actorPatch: { cityId: 70 },
+        fixturePatches: { cities: { 3: { supplyState: 0 } } },
+        completed: false,
+        fallback: false,
+    },
+    {
+        name: 'border return consumes the single-candidate choice and moves',
+        action: 'che_접경귀환',
+        actorPatch: { cityId: 70 },
+        completed: true,
+    },
+    {
+        name: 'assembly rejects a neutral actor',
+        action: 'che_집합',
+        actorPatch: { nationId: 0, troopId: 1 },
+        fixturePatches: { troops: [{ id: 1, nationId: 1, name: '조조군' }] },
+        completed: false,
+    },
+    {
+        name: 'assembly rejects a foreign-occupied city',
+        action: 'che_집합',
+        actorPatch: { troopId: 1 },
+        fixturePatches: {
+            cities: { 3: { nationId: 2 } },
+            troops: [{ id: 1, nationId: 1, name: '조조군' }],
+        },
+        completed: false,
+    },
+    {
+        name: 'assembly rejects an unsupplied city',
+        action: 'che_집합',
+        actorPatch: { troopId: 1 },
+        fixturePatches: {
+            cities: { 3: { supplyState: 0 } },
+            troops: [{ id: 1, nationId: 1, name: '조조군' }],
+        },
+        completed: false,
+    },
+    {
+        name: 'assembly rejects a non-leader',
+        action: 'che_집합',
+        actorPatch: { troopId: 3 },
+        fixturePatches: {
+            generals: { 3: { troopId: 3 } },
+            troops: [{ id: 3, nationId: 1, name: '조조군' }],
+        },
+        completed: false,
+    },
+    {
+        name: 'assembly rejects a troop without another member',
+        action: 'che_집합',
+        actorPatch: { troopId: 1 },
+        fixturePatches: { troops: [{ id: 1, nationId: 1, name: '조조군' }] },
+        completed: false,
+    },
+    {
+        name: 'assembly completes when every member is already present',
+        action: 'che_집합',
+        actorPatch: { troopId: 1 },
+        fixturePatches: {
+            generals: { 3: { troopId: 1 } },
+            troops: [{ id: 1, nationId: 1, name: '조조군' }],
+        },
+        completed: true,
+    },
+    {
+        name: 'assembly moves a remote member and records its plain log',
+        action: 'che_집합',
+        actorPatch: { troopId: 1 },
+        fixturePatches: {
+            generals: { 3: { cityId: 70, troopId: 1 } },
+            troops: [{ id: 1, nationId: 1, name: '조조군' }],
+        },
+        completed: true,
+    },
+    {
+        name: 'wander rejects a non-lord',
+        action: 'che_방랑',
+        actorPatch: { officerLevel: 11 },
+        fixturePatches: { diplomacy: { '1:2': { state: 2 }, '2:1': { state: 2 } } },
+        completed: false,
+    },
+    {
+        name: 'wander rejects an already wandering nation',
+        action: 'che_방랑',
+        fixturePatches: {
+            nations: { 1: { level: 0 } },
+            diplomacy: { '1:2': { state: 2 }, '2:1': { state: 2 } },
+        },
+        completed: false,
+    },
+    {
+        name: 'wander rejects the opening phase',
+        action: 'che_방랑',
+        fixturePatches: {
+            world: { year: 180 },
+            diplomacy: { '1:2': { state: 2 }, '2:1': { state: 2 } },
+        },
+        completed: false,
+    },
+    {
+        name: 'wander rejects a disallowed diplomacy state',
+        action: 'che_방랑',
+        completed: false,
+    },
+    {
+        name: 'wander accepts neutral diplomacy',
+        action: 'che_방랑',
+        fixturePatches: { diplomacy: { '1:2': { state: 2 }, '2:1': { state: 2 } } },
+        completed: true,
+    },
+    {
+        name: 'wander accepts non-aggression diplomacy',
+        action: 'che_방랑',
+        fixturePatches: { diplomacy: { '1:2': { state: 7 }, '2:1': { state: 7 } } },
+        completed: true,
+    },
+];
+
+integration('general movement command boundary and log parity', () => {
+    it.each(movementBoundaryCases)(
+        '$name',
+        async ({ name, action, args, actorPatch, fixturePatches, completed, fallback }) => {
+            const request = buildRequest(action, args, actorPatch, fixturePatches);
+            request.setup!.world!.hiddenSeed = `general-movement-${name}`;
+            request.observe!.includeGlobalHistoryLogs = true;
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+            const usedFallback = fallback ?? !completed;
+
+            expect(reference.execution.outcome).toMatchObject({ completed });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: action,
+                actionKey: usedFallback ? '휴식' : action,
+                usedFallback,
+            });
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+
+            if (completed) {
+                expect(semanticLogSignatures(core.after.logs)).toEqual(
+                    semanticLogSignatures(addedReferenceLogs(reference.before, reference.after.logs))
+                );
+            }
+        },
+        120_000
+    );
+});
+
 integration('명장일람 rank_data command parity', () => {
     it('화계 increments firenum from the same seeded value as legacy', async () => {
         const request = buildRequest(
