@@ -12,6 +12,7 @@ import type {
     TournamentState,
 } from '../src/tournament/types.js';
 import { applyBattle, applyPreBattleStage, settleTournamentOutcome } from '../src/tournament/worker.js';
+import { buildBettingPayouts } from '../src/tournament/workerHelpers.js';
 import type { TurnDaemonTransport } from '../src/daemon/transport.js';
 
 class MemoryRedis {
@@ -209,6 +210,15 @@ const runTournamentToCompletion = async (options: {
 const delayTick = async (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe('tournament worker (in-memory)', () => {
+    it('당첨자가 없으면 레거시와 같이 베팅금을 지급하거나 환불하지 않는다', () => {
+        expect(
+            buildBettingPayouts(10, [
+                { generalId: 1, targetId: 11, amount: 100 },
+                { generalId: 2, targetId: 12, amount: 200 },
+            ])
+        ).toEqual({ payouts: [], total: 300, refundAll: false });
+    });
+
     it('locks 64 applicants into eight groups of eight', async () => {
         const redis = new MemoryRedis();
         const store = new TournamentStore(redis, buildTournamentKeys('test-groups'));
@@ -284,11 +294,33 @@ describe('tournament worker (in-memory)', () => {
 
         const sent: TurnDaemonCommand[] = [];
         const transport: TurnDaemonTransport = {
-            sendCommand: async (command) => {
+            sendCommand: async () => 'unused',
+            requestCommand: async (command) => {
                 sent.push(command);
-                return 'ok';
+                if (command.type === 'tournamentReward') {
+                    return {
+                        type: 'tournamentReward',
+                        ok: true,
+                        winnerId: command.winnerId,
+                        runnerUpId: command.runnerUpId,
+                        rewarded: 2,
+                        missing: 0,
+                        totalGold: 100,
+                        totalExp: 10,
+                    };
+                }
+                if (command.type === 'tournamentBettingPayout') {
+                    return {
+                        type: 'tournamentBettingPayout',
+                        ok: true,
+                        bettingId: command.bettingId,
+                        processed: command.payouts.length,
+                        missing: 0,
+                        totalPayout: command.payouts.reduce((sum, payout) => sum + payout.amount, 0),
+                    };
+                }
+                return null;
             },
-            requestCommand: async () => null,
             requestStatus: async () => null,
         };
 
@@ -302,6 +334,82 @@ describe('tournament worker (in-memory)', () => {
         if (bettingCommand && bettingCommand.type === 'tournamentBettingPayout') {
             expect(bettingCommand.payouts).toEqual([{ generalId: 1, amount: 300 }]);
         }
+        expect(await store.getState()).toMatchObject({
+            rewardSettled: true,
+            bettingSettled: true,
+        });
+    });
+
+    it('정산 응답 실패 시 완료 표시를 남기지 않고 성공한 보상만 재시도에서 제외한다', async () => {
+        const redis = new MemoryRedis();
+        const store = new TournamentStore(redis, buildTournamentKeys('test-bet-retry'));
+        const state = createTournamentState({
+            stage: 0,
+            auto: false,
+            winnerId: 10,
+            bettingId: 124,
+            rewardSettled: false,
+            bettingSettled: false,
+        });
+        await store.setMatches([{ id: 1, stage: 10, roundIndex: 0, attackerId: 10, defenderId: 11, winnerId: 10 }]);
+        await store.setBettingEntries([{ generalId: 1, targetId: 10, amount: 100 }]);
+        await store.setState(state);
+
+        let payoutAttempts = 0;
+        const commands: TurnDaemonCommand[] = [];
+        const transport: TurnDaemonTransport = {
+            sendCommand: async () => 'unused',
+            requestCommand: async (command) => {
+                commands.push(command);
+                if (command.type === 'tournamentReward') {
+                    return {
+                        type: 'tournamentReward',
+                        ok: true,
+                        winnerId: command.winnerId,
+                        runnerUpId: command.runnerUpId,
+                        rewarded: 2,
+                        missing: 0,
+                        totalGold: 100,
+                        totalExp: 10,
+                    };
+                }
+                if (command.type === 'tournamentBettingPayout') {
+                    payoutAttempts += 1;
+                    if (payoutAttempts === 1) {
+                        return {
+                            type: 'tournamentBettingPayout',
+                            ok: false,
+                            bettingId: command.bettingId,
+                            reason: '일시적 실패',
+                        };
+                    }
+                    return {
+                        type: 'tournamentBettingPayout',
+                        ok: true,
+                        bettingId: command.bettingId,
+                        processed: 1,
+                        missing: 0,
+                        totalPayout: 100,
+                    };
+                }
+                return null;
+            },
+            requestStatus: async () => null,
+        };
+
+        await expect(settleTournamentOutcome({ store, daemonTransport: transport, state })).rejects.toThrow(
+            '일시적 실패'
+        );
+        const afterFailure = await store.getState();
+        expect(afterFailure).toMatchObject({ rewardSettled: true, bettingSettled: false });
+
+        await settleTournamentOutcome({ store, daemonTransport: transport, state: afterFailure! });
+        expect(await store.getState()).toMatchObject({ rewardSettled: true, bettingSettled: true });
+        expect(commands.filter((command) => command.type === 'tournamentReward')).toHaveLength(1);
+        expect(commands.filter((command) => command.type === 'tournamentBettingPayout')).toHaveLength(2);
+        expect(
+            commands.filter((command) => command.type === 'tournamentBettingPayout').map((command) => command.requestId)
+        ).toEqual(['tournament:124:betting-payout', 'tournament:124:betting-payout']);
     });
 
     it('자동 오픈 후 참가자 보충(NPC/더미 포함)하고 결승까지 진행된다', async () => {

@@ -1,15 +1,15 @@
-import { createTournamentRng } from '@sammo-ts/common';
+import { createTournamentRng, type TurnDaemonCommandResult } from '@sammo-ts/common';
 import { resolveTournamentBattle } from '@sammo-ts/logic';
 import {
     createGamePostgresConnector,
     createRedisConnector,
     resolvePostgresConfigFromEnv,
     resolveRedisConfigFromEnv,
+    type GamePrismaClient,
 } from '@sammo-ts/infra';
 
 import { resolveGameApiConfigFromEnv } from '../config.js';
-import { RedisTurnDaemonTransport } from '../daemon/redisTransport.js';
-import { buildTurnDaemonStreamKeys } from '../daemon/streamKeys.js';
+import { DatabaseTurnDaemonTransport } from '../daemon/databaseTransport.js';
 import type { TurnDaemonTransport } from '../daemon/transport.js';
 import { buildTournamentKeys } from './keys.js';
 import { TournamentStore } from './store.js';
@@ -462,13 +462,30 @@ export const settleTournamentOutcome = async (options: {
         return null;
     }
 
-    let settledState: TournamentState | null = null;
+    let settledState = state;
+    let changed = false;
 
-    if (!state.rewardSettled) {
+    const requireSuccessfulResult = (
+        result: TurnDaemonCommandResult | null,
+        expectedType: TurnDaemonCommandResult['type']
+    ): void => {
+        if (!result) {
+            throw new Error(`${expectedType} 명령 응답 시간이 초과되었습니다.`);
+        }
+        if (result.type !== expectedType) {
+            throw new Error(`${expectedType} 명령에 잘못된 응답(${result.type})을 받았습니다.`);
+        }
+        if (!result.ok) {
+            throw new Error(`${expectedType} 명령이 실패했습니다: ${result.reason}`);
+        }
+    };
+
+    if (!settledState.rewardSettled) {
         const matches = await store.getMatches();
         const rewardPayload = buildTournamentRewardPayload(matches);
-        await daemonTransport.sendCommand({
+        const result = await daemonTransport.requestCommand({
             type: 'tournamentReward',
+            requestId: `tournament:${state.bettingId ?? `${state.openYear}:${state.openMonth}:${state.type}`}:reward`,
             tournamentType: state.type,
             winnerId: rewardPayload.winnerId,
             runnerUpId: rewardPayload.runnerUpId,
@@ -476,46 +493,100 @@ export const settleTournamentOutcome = async (options: {
             top8: rewardPayload.top8,
             top4: rewardPayload.top4,
         });
+        requireSuccessfulResult(result, 'tournamentReward');
         settledState = {
-            ...(settledState ?? state),
+            ...settledState,
             rewardSettled: true,
         };
+        changed = true;
+        await store.setState(settledState);
     }
 
-    if (state.bettingId && !state.bettingSettled) {
+    if (settledState.bettingId && !settledState.bettingSettled) {
         const bettingEntries = await store.getBettingEntries();
         if (bettingEntries.length > 0) {
-            const payoutInfo = buildBettingPayouts(state.winnerId, bettingEntries);
+            const payoutInfo = buildBettingPayouts(settledState.winnerId!, bettingEntries);
             if (payoutInfo.payouts.length > 0) {
                 if (payoutInfo.refundAll) {
-                    await daemonTransport.sendCommand({
+                    const result = await daemonTransport.requestCommand({
                         type: 'tournamentRefund',
-                        bettingId: state.bettingId,
+                        requestId: `tournament:${settledState.bettingId}:betting-refund`,
+                        bettingId: settledState.bettingId,
                         refunds: payoutInfo.payouts,
                         reason: 'no_winner',
                     });
+                    requireSuccessfulResult(result, 'tournamentRefund');
                 } else {
-                    await daemonTransport.sendCommand({
+                    const result = await daemonTransport.requestCommand({
                         type: 'tournamentBettingPayout',
-                        bettingId: state.bettingId,
+                        requestId: `tournament:${settledState.bettingId}:betting-payout`,
+                        bettingId: settledState.bettingId,
                         payouts: payoutInfo.payouts,
                         reason: 'winner_payout',
                     });
+                    requireSuccessfulResult(result, 'tournamentBettingPayout');
                 }
             }
         }
 
         settledState = {
-            ...(settledState ?? state),
+            ...settledState,
             bettingSettled: true,
         };
-    }
-
-    if (settledState) {
+        changed = true;
         await store.setState(settledState);
     }
 
-    return settledState;
+    return changed ? settledState : null;
+};
+
+const needsSettlement = (state: TournamentState): boolean =>
+    state.stage === 0 &&
+    Boolean(state.winnerId) &&
+    (!state.rewardSettled || (Boolean(state.bettingId) && !state.bettingSettled));
+
+export const processTournamentTick = async (options: {
+    store: TournamentStore;
+    prisma: GamePrismaClient;
+    daemonTransport: TurnDaemonTransport;
+    now?: () => number;
+}): Promise<TournamentState | null> => {
+    const { store, prisma, daemonTransport } = options;
+    const now = options.now ?? Date.now;
+    let processedState: TournamentState | null = null;
+
+    await store.withMutationLock(async () => {
+        const state = await store.getState();
+        if (!state || (!state.auto && !needsSettlement(state))) {
+            return;
+        }
+        const nextAt = new Date(state.nextAt).getTime();
+        if (state.auto && Number.isFinite(nextAt) && nextAt > now()) {
+            return;
+        }
+
+        if (needsSettlement(state)) {
+            processedState = (await settleTournamentOutcome({ store, daemonTransport, state })) ?? state;
+            return;
+        }
+
+        const worldState = await prisma.worldState.findFirst();
+        const baseSeed = (worldState?.meta as Record<string, unknown> | null)?.hiddenSeed ?? 'tournament';
+        let nextState = state;
+        if (isBattleStage(state.stage)) {
+            nextState = await applyBattle(store, state, String(baseSeed), daemonTransport);
+        } else if (isPreBattleStage(state.stage)) {
+            nextState = await applyPreBattleStage(store, prisma, state, String(baseSeed), daemonTransport);
+        }
+        processedState =
+            (await settleTournamentOutcome({
+                store,
+                daemonTransport,
+                state: nextState,
+            })) ?? nextState;
+    });
+
+    return processedState;
 };
 
 export const runTournamentWorker = async (): Promise<void> => {
@@ -527,10 +598,7 @@ export const runTournamentWorker = async (): Promise<void> => {
     await redis.connect();
 
     const store = new TournamentStore(redis.client, buildTournamentKeys(config.profileName));
-    const daemonTransport = new RedisTurnDaemonTransport(redis.client, {
-        keys: buildTurnDaemonStreamKeys(config.profileName),
-        requestTimeoutMs: config.daemonRequestTimeoutMs,
-    });
+    const daemonTransport = new DatabaseTurnDaemonTransport(postgres.prisma, config.daemonRequestTimeoutMs);
 
     const handleExit = async () => {
         await redis.disconnect();
@@ -541,49 +609,23 @@ export const runTournamentWorker = async (): Promise<void> => {
 
     while (true) {
         const state = await store.getState();
-        if (!state || !state.auto) {
+        if (!state || (!state.auto && !needsSettlement(state))) {
             await sleepMs(config.tournamentPollMs);
             continue;
         }
 
         const nextAt = new Date(state.nextAt).getTime();
         const now = Date.now();
-        if (Number.isFinite(nextAt) && nextAt > now) {
+        if (state.auto && Number.isFinite(nextAt) && nextAt > now) {
             await sleepMs(Math.min(config.tournamentPollMs, nextAt - now));
             continue;
         }
 
         try {
-            await store.withMutationLock(async () => {
-                const lockedState = await store.getState();
-                if (!lockedState || !lockedState.auto) {
-                    return;
-                }
-                const lockedNextAt = new Date(lockedState.nextAt).getTime();
-                if (Number.isFinite(lockedNextAt) && lockedNextAt > Date.now()) {
-                    return;
-                }
-
-                const worldState = await postgres.prisma.worldState.findFirst();
-                const baseSeed = (worldState?.meta as Record<string, unknown> | null)?.hiddenSeed ?? 'tournament';
-                let nextState = lockedState;
-                if (isBattleStage(lockedState.stage)) {
-                    nextState = await applyBattle(store, lockedState, String(baseSeed), daemonTransport);
-                } else if (isPreBattleStage(lockedState.stage)) {
-                    nextState = await applyPreBattleStage(
-                        store,
-                        postgres.prisma,
-                        lockedState,
-                        String(baseSeed),
-                        daemonTransport
-                    );
-                }
-
-                await settleTournamentOutcome({
-                    store,
-                    daemonTransport,
-                    state: nextState,
-                });
+            await processTournamentTick({
+                store,
+                prisma: postgres.prisma,
+                daemonTransport,
             });
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Unknown error';
@@ -603,9 +645,9 @@ export const runTournamentWorker = async (): Promise<void> => {
                     },
                 },
             });
+            const currentState = (await store.getState()) ?? state;
             const nextState: TournamentState = {
-                ...state,
-                auto: false,
+                ...currentState,
                 lastError: message,
                 lastErrorAt: now,
             };
