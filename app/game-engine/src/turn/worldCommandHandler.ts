@@ -11,6 +11,7 @@ import {
     LogFormat,
     LogScope,
     ITEM_KEYS,
+    addOccupiedUniqueItemKeys,
     buildVoteUniqueSeed,
     countOccupiedUniqueItems,
     createItemModuleRegistry,
@@ -1162,6 +1163,21 @@ async function handleVoteReward(
         generals.map((entry) => entry.role.items),
         itemRegistry
     );
+    if (ctx.commandDb) {
+        const reservedUniqueRows = await ctx.commandDb.auction.findMany({
+            where: {
+                type: 'UNIQUE_ITEM',
+                status: { in: ['OPEN', 'FINALIZING'] },
+                targetCode: { not: null },
+            },
+            select: { targetCode: true },
+        });
+        addOccupiedUniqueItemKeys(
+            occupiedUniqueCounts,
+            reservedUniqueRows.map((row) => row.targetCode),
+            itemRegistry
+        );
+    }
     const userCount = generals.filter((entry) => entry.npcState < 2).length;
     const rngSeed = buildVoteUniqueSeed(
         typeof hiddenSeed === 'string' || typeof hiddenSeed === 'number' ? hiddenSeed : String(hiddenSeed),

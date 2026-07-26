@@ -36,23 +36,30 @@ storage, route guards, and image loading.
 
 ## Enforced contracts
 
-| Screen                    | Ref entry point                          | Current automated contract                                                                                                  |
-| ------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| gateway login/status      | `index.php`                              | 450/700px desktop widths, mobile collapse, Pretendard title, real login mutation/session storage, actual seasonal map asset |
-| gateway account           | `i_entrance/user_info.php`               | 550px × minimum 575px panel, 14px Pretendard, three legacy textures, success and API-error password flows                   |
-| gateway OAuth join        | `oauth_kakao/join.php`                   | 700px centered registration card, Kakao exchange/register success, retained-input API error, hover/focus                   |
-| game login hand-off       | unauthenticated `hwe/index.php` redirect | `/che/login` delegates to `/gateway/`                                                                                       |
-| troop                     | `hwe/v_troop.php`                        | existing `app/game-frontend/e2e/troop.spec.ts` desktop/mobile geometry and interaction suite                                |
-| hall of fame              | `hwe/a_hallOfFame.php`                   | 500/1000px container, 100px ranking cells, 64px natural image, walnut/green textures, Pretendard, close-button focus        |
-| yearbook                  | `hwe/v_history.php`                      | 1000px 700+300 desktop grid, 500px stacked grid, month navigation, legacy textures, success and API-error flows             |
-| nation betting            | `hwe/v_nationBetting.php`                | 1000px/6-column desktop and 500px/3-column mobile grids, picked card style, payout table, success and retained-form error   |
-| public NPC list           | `hwe/a_npcList.php`                      | 1000px 12-column table with Chromium-expanded legacy widths, NPC color, eight sorts, retained table/sort after API error    |
+| Screen               | Ref entry point                          | Current automated contract                                                                                                                                |
+| -------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| gateway login/status | `index.php`                              | 450/700px desktop widths, mobile collapse, Pretendard title, real login mutation/session storage, actual seasonal map asset                               |
+| gateway account      | `i_entrance/user_info.php`               | 550px × minimum 575px panel, 14px Pretendard, three legacy textures, success and API-error password flows                                                 |
+| gateway OAuth join   | `oauth_kakao/join.php`                   | 700px centered registration card, Kakao exchange/register success, retained-input API error, hover/focus                                                  |
+| game login hand-off  | unauthenticated `hwe/index.php` redirect | `/che/login` delegates to `/gateway/`                                                                                                                     |
+| troop                | `hwe/v_troop.php`                        | existing `app/game-frontend/e2e/troop.spec.ts` desktop/mobile geometry and interaction suite                                                              |
+| hall of fame         | `hwe/a_hallOfFame.php`                   | 500/1000px container, 100px ranking cells, 64px natural image, walnut/green textures, Pretendard, close-button focus                                      |
+| yearbook             | `hwe/v_history.php`                      | 1000px 700+300 desktop grid, 500px stacked grid, month navigation, legacy textures, success and API-error flows                                           |
+| nation betting       | `hwe/v_nationBetting.php`                | 1000px/6-column desktop and 500px/3-column mobile grids, picked card style, payout table, success and retained-form error                                 |
+| public NPC list      | `hwe/a_npcList.php`                      | 1000px 12-column table with Chromium-expanded legacy widths, NPC color, eight sorts, retained table/sort after API error                                  |
+| survey               | `hwe/v_vote.php`, `hwe/ts/PageVote.vue`  | 1000/500px fixed container, blue title/green table textures, list/detail/results/comments, selection/focus/hover, submit and retained-selection API error |
 
 The global game baseline is black, white, Pretendard 14px. Legacy texture
 helpers intentionally follow `common.orig.css`: `bg0` is walnut, `bg1` is
 green, and `bg2` is blue. Shared `PanelCard` uses the same walnut body and green
 header so screens that still use the common component no longer inherit the
 discarded Galmuri/parchment visual system.
+
+The survey fixture covers both the poll list and an open detail. Its result
+rows are visible before the current general votes when the poll uses the
+legacy-compatible `after_vote` mode. The mutation fixture covers voting and
+comment submission, while the error fixture confirms that a failed vote keeps
+the selected radio option so the user can retry.
 
 ## Route coverage rule
 

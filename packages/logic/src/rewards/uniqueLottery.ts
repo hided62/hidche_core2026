@@ -144,6 +144,24 @@ export const countOccupiedUniqueItems = (
     return counts;
 };
 
+export const addOccupiedUniqueItemKeys = (
+    counts: Map<string, number>,
+    itemKeys: Iterable<string | null | undefined>,
+    itemRegistry: Map<string, ItemModule>
+): Map<string, number> => {
+    for (const itemKey of itemKeys) {
+        if (!itemKey) {
+            continue;
+        }
+        const module = itemRegistry.get(itemKey);
+        if (!module || module.buyable) {
+            continue;
+        }
+        counts.set(itemKey, (counts.get(itemKey) ?? 0) + 1);
+    }
+    return counts;
+};
+
 const joinYearMonth = (year: number, month: number): number => year * 12 + month - 1;
 
 const serializeSeed = (...values: Array<string | number>): string =>
