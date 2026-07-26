@@ -101,8 +101,11 @@ export class ActionResolver<
         const rawGold = result.agriDamage * destCity.level * yearCoef * (0.25 + commRatio / 4);
         const rawRice = result.commDamage * destCity.level * yearCoef * (0.25 + agriRatio / 4);
 
-        let stolenGold = Math.floor(rawGold);
-        let stolenRice = Math.floor(rawRice);
+        // 레거시는 탈취량을 부동소수점으로 유지한 채 국가/장수 DB 정수 필드에
+        // 기록할 때 반올림한다. 여기서 미리 내림하면 국고와 본국 몫이 1씩
+        // 달라질 수 있다.
+        let stolenGold = rawGold;
+        let stolenRice = rawRice;
 
         const isSupplied = destCity.supplyState === 1;
 
@@ -119,9 +122,8 @@ export class ActionResolver<
             effects.push(
                 createNationPatchEffect(
                     {
-                        ...destNation,
-                        gold: destNation.gold - stolenGold,
-                        rice: destNation.rice - stolenRice,
+                        gold: Math.round(destNation.gold - stolenGold),
+                        rice: Math.round(destNation.rice - stolenRice),
                     },
                     destNation.id
                 )
@@ -130,23 +132,23 @@ export class ActionResolver<
             effects.push(
                 createCityPatchEffect(
                     {
-                        ...destCity,
-                        state: 34,
+                        // 레거시는 같은 명령 안에서 잠시 34로 쓴 뒤 최종 32로
+                        // 덮어쓴다. 관찰 가능한 최종 상태는 32다.
+                        state: 32,
                     },
                     args.destCityId
                 )
             );
         } else {
-            const commDmg = Math.floor(stolenGold / 12);
-            const agriDmg = Math.floor(stolenRice / 12);
+            const commDmg = stolenGold / 12;
+            const agriDmg = stolenRice / 12;
 
             effects.push(
                 createCityPatchEffect(
                     {
-                        ...destCity,
-                        commerce: Math.max(0, destCity.commerce - commDmg),
-                        agriculture: Math.max(0, destCity.agriculture - agriDmg),
-                        state: 34,
+                        commerce: Math.round(Math.max(0, destCity.commerce - commDmg)),
+                        agriculture: Math.round(Math.max(0, destCity.agriculture - agriDmg)),
+                        state: 32,
                     },
                     args.destCityId
                 )
@@ -165,7 +167,6 @@ export class ActionResolver<
             effects.push(
                 createNationPatchEffect(
                     {
-                        ...nation,
                         gold: nation.gold + nationShareGold,
                         rice: nation.rice + nationShareRice,
                     },
@@ -186,8 +187,8 @@ export class ActionResolver<
         });
 
         consumeSuccessfulStrategyItem(this.pipeline, context);
-        general.gold += myShareGold;
-        general.rice += myShareRice;
+        general.gold = Math.round(general.gold + myShareGold);
+        general.rice = Math.round(general.rice + myShareRice);
 
         return { effects };
     }
