@@ -13,6 +13,7 @@ export default defineConfig({
         'public-gaps.spec.ts',
         'instant-diplomacy-message.spec.ts',
         'tournament-betting.spec.ts',
+        'inheritance-management.spec.ts',
     ],
     fullyParallel: false,
     workers: 1,

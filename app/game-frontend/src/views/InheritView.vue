@@ -1,7 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
-import PanelCard from '../components/ui/PanelCard.vue';
-import SkeletonLines from '../components/ui/SkeletonLines.vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { trpc } from '../utils/trpc';
 
 type InheritStatus = Awaited<ReturnType<typeof trpc.inherit.getStatus.query>>;
@@ -12,8 +10,8 @@ type BuffKey =
     | 'warAvoidRatio'
     | 'warCriticalRatio'
     | 'warMagicTrialProb'
-    | 'success'
-    | 'fail'
+    | 'domesticSuccessProb'
+    | 'domesticFailProb'
     | 'warAvoidRatioOppose'
     | 'warCriticalRatioOppose'
     | 'warMagicTrialProbOppose';
@@ -22,8 +20,8 @@ const buffKeys: BuffKey[] = [
     'warAvoidRatio',
     'warCriticalRatio',
     'warMagicTrialProb',
-    'success',
-    'fail',
+    'domesticSuccessProb',
+    'domesticFailProb',
     'warAvoidRatioOppose',
     'warCriticalRatioOppose',
     'warMagicTrialProbOppose',
@@ -33,8 +31,8 @@ const buffLabels: Record<BuffKey, string> = {
     warAvoidRatio: '회피 확률 증가',
     warCriticalRatio: '필살 확률 증가',
     warMagicTrialProb: '전투계략 시도 확률 증가',
-    success: '내정 성공률 증가',
-    fail: '내정 실패율 감소',
+    domesticSuccessProb: '내정 성공 확률 증가',
+    domesticFailProb: '내정 실패 확률 감소',
     warAvoidRatioOppose: '상대 회피 확률 감소',
     warCriticalRatioOppose: '상대 필살 확률 감소',
     warMagicTrialProbOppose: '상대 전투계략 시도 확률 감소',
@@ -43,20 +41,21 @@ const buffLabels: Record<BuffKey, string> = {
 const pointLabels: Record<string, string> = {
     previous: '보유',
     lived_month: '생존 턴',
-    max_domestic_critical: '내정 최고치',
-    active_action: '활동',
-    combat: '전투',
-    sabotage: '계략',
-    dex: '숙련',
-    unifier: '통일 보상',
+    max_domestic_critical: '최대 연속 내정 성공',
+    active_action: '능동 행동 수',
+    combat: '전투 횟수',
+    sabotage: '계략 성공 횟수',
+    dex: '숙련도',
+    unifier: '천통 기여',
     tournament: '토너먼트',
-    betting: '베팅',
-    max_belong: '최대 충성',
+    betting: '베팅 당첨',
+    max_belong: '최대 임관년 수',
 };
 
 const pointOrder = [
     'previous',
     'lived_month',
+    'max_belong',
     'max_domestic_critical',
     'active_action',
     'combat',
@@ -65,8 +64,32 @@ const pointOrder = [
     'unifier',
     'tournament',
     'betting',
-    'max_belong',
 ] as const;
+
+const pointHelp: Record<string, string> = {
+    previous: '이전에 물려받은 포인트입니다.',
+    lived_month: '살아남은 기간입니다. (1개월 단위)',
+    max_belong: '가장 오래 임관했던 국가의 연도입니다.',
+    max_domestic_critical: '성공한 내정 중 최대 연속값입니다.',
+    active_action: '장수 동향에 본인의 이름이 직접 나타난 수입니다. 일부 사령턴은 제외됩니다.',
+    combat: '전투 횟수입니다.',
+    sabotage: '계략 성공 횟수입니다.',
+    unifier: '천통에 기여한 포인트입니다. 각 국의 군주, 천통 수뇌, 천통 군주가 받습니다.',
+    dex: '총 숙련도합입니다. 최대 숙련 이후에는 상승량이 1/3로 감소합니다.',
+    tournament: '토너먼트 입상 포인트입니다.',
+    betting: '성공적인 베팅을 했습니다. 수익율과 베팅 성공 횟수를 따릅니다.',
+};
+
+const buffHelp: Record<BuffKey, string> = {
+    warAvoidRatio: '전투 시 회피 확률이 1%p ~ 5%p 증가합니다.',
+    warCriticalRatio: '전투 시 필살 확률이 1%p ~ 5%p 증가합니다.',
+    warMagicTrialProb: '전투 시 계략을 시도할 확률이 1%p ~ 5%p 증가합니다. 무장도 계략을 시도합니다.',
+    domesticSuccessProb: '민심, 인구, 농업, 상업, 치안, 수비, 성벽, 기술 내정의 성공 확률이 증가합니다.',
+    domesticFailProb: '민심, 인구, 농업, 상업, 치안, 수비, 성벽, 기술 내정의 실패 확률이 감소합니다.',
+    warAvoidRatioOppose: '전투 시 상대의 회피 확률이 1%p ~ 5%p 감소합니다.',
+    warCriticalRatioOppose: '전투 시 상대의 필살 확률이 1%p ~ 5%p 감소합니다.',
+    warMagicTrialProbOppose: '전투 시 상대의 계략 시도 확률이 1%p ~ 5%p 감소합니다.',
+};
 
 const loading = ref(true);
 const error = ref<string | null>(null);
@@ -86,8 +109,8 @@ const buffTargets = reactive<Record<BuffKey, number>>({
     warAvoidRatio: 1,
     warCriticalRatio: 1,
     warMagicTrialProb: 1,
-    success: 1,
-    fail: 1,
+    domesticSuccessProb: 1,
+    domesticFailProb: 1,
     warAvoidRatioOppose: 1,
     warCriticalRatioOppose: 1,
     warMagicTrialProbOppose: 1,
@@ -115,7 +138,7 @@ const statRules = computed(() => joinConfig.value?.rules.stat ?? null);
 const resetStatTotal = computed(() => resetStatForm.leadership + resetStatForm.strength + resetStatForm.intel);
 const resetBonusSum = computed(() => resetStatForm.bonus.reduce((acc, value) => acc + value, 0));
 const resetStatCost = computed(() =>
-    resetBonusSum.value > 0 ? status.value?.inheritConst.inheritBornStatPoint ?? 0 : 0
+    resetBonusSum.value > 0 ? (status.value?.inheritConst.inheritBornStatPoint ?? 0) : 0
 );
 
 const resetStatErrors = computed(() => {
@@ -166,6 +189,9 @@ const pointEntries = computed(() => {
     }));
 });
 
+const previousPoint = computed(() => status.value?.items.previous ?? 0);
+const newPoint = computed(() => (status.value?.totalPoint ?? 0) - previousPoint.value);
+
 const specialNameMap = computed(() => {
     const map = new Map<string, string>();
     for (const entry of status.value?.availableSpecialWar ?? []) {
@@ -174,27 +200,10 @@ const specialNameMap = computed(() => {
     return map;
 });
 
-const currentSpecialName = computed(() => {
-    if (!status.value) {
-        return '-';
-    }
-    return specialNameMap.value.get(status.value.currentSpecialWar) ?? status.value.currentSpecialWar ?? '-';
-});
-
 const buffCost = (key: BuffKey, target: number): number => {
     const points = status.value?.inheritConst.inheritBuffPoints ?? [0, 0, 0, 0, 0, 0];
     const current = status.value?.buffLevels[key] ?? 0;
     return Math.max(0, (points[target] ?? 0) - (points[current] ?? 0));
-};
-
-const buffTargetOptions = (key: BuffKey): number[] => {
-    const current = status.value?.buffLevels[key] ?? 0;
-    const start = Math.min(5, Math.max(1, current + 1));
-    const result: number[] = [];
-    for (let level = start; level <= 5; level += 1) {
-        result.push(level);
-    }
-    return result.length > 0 ? result : [5];
 };
 
 const resolveErrorMessage = (value: unknown): string => {
@@ -205,17 +214,6 @@ const resolveErrorMessage = (value: unknown): string => {
         return value;
     }
     return 'unknown_error';
-};
-
-const applyResetBalanced = () => {
-    const rules = statRules.value;
-    if (!rules) {
-        return;
-    }
-    const base = Math.floor(rules.total / 3);
-    resetStatForm.leadership = rules.total - base * 2;
-    resetStatForm.strength = base;
-    resetStatForm.intel = base;
 };
 
 const syncSelections = () => {
@@ -234,6 +232,14 @@ const syncSelections = () => {
     }
     if (!uniqueForm.amount) {
         uniqueForm.amount = status.value.inheritConst.inheritItemUniqueMinPoint;
+    }
+    if (!uniqueForm.itemId) {
+        uniqueForm.itemId = status.value.availableUnique[0]?.key ?? '';
+    }
+    if (resetStatForm.leadership === 0 && resetStatForm.strength === 0 && resetStatForm.intel === 0) {
+        resetStatForm.leadership = status.value.currentStat.leadership;
+        resetStatForm.strength = status.value.currentStat.strength;
+        resetStatForm.intel = status.value.currentStat.intel;
     }
 };
 
@@ -377,7 +383,7 @@ const buyRandomUnique = async () => {
 
 const openUniqueAuction = async () => {
     if (!uniqueForm.itemId.trim()) {
-        actionError.value = '유니크 아이템 ID를 입력해주세요.';
+        actionError.value = '유니크를 선택해주세요.';
         return;
     }
     const amount = Math.max(0, Math.floor(uniqueForm.amount));
@@ -412,12 +418,6 @@ const checkOwner = async () => {
     });
 };
 
-watch(statRules, (rules) => {
-    if (rules) {
-        applyResetBalanced();
-    }
-});
-
 onMounted(() => {
     void loadStatus();
     void loadJoinConfig();
@@ -426,464 +426,561 @@ onMounted(() => {
 </script>
 
 <template>
-    <main class="inherit-page">
-        <header class="inherit-header">
-            <div>
-                <h1 class="inherit-title">유산 포인트</h1>
-                <p class="inherit-subtitle">숨김 강화와 유산 상점 기능을 관리합니다.</p>
-            </div>
-            <div class="inherit-actions">
-                <button class="ghost" @click="loadStatus">새로고침</button>
-                <button class="ghost" @click="loadLogs(true)">로그 갱신</button>
-            </div>
-        </header>
+    <header class="top-back-bar legacy-bg0">
+        <RouterLink class="top-button legacy-button" to="/">돌아가기</RouterLink>
+        <strong>유산 관리</strong>
+        <button class="top-button legacy-button" type="button" :disabled="loading" @click="loadStatus">갱신</button>
+    </header>
 
-        <div v-if="error" class="inherit-error">{{ error }}</div>
-        <div v-if="actionError" class="inherit-error">{{ actionError }}</div>
-        <div v-if="actionMessage" class="inherit-message">{{ actionMessage }}</div>
+    <main id="container" class="inherit-page legacy-bg0">
+        <div v-if="error || actionError" class="notice error" role="alert">{{ error ?? actionError }}</div>
+        <div v-if="actionMessage" class="notice success">{{ actionMessage }}</div>
+        <div v-if="loading" class="loading-state">불러오는 중...</div>
 
-        <div v-if="loading">
-            <SkeletonLines :lines="4" />
-        </div>
+        <template v-else-if="status">
+            <section id="inheritance_list" class="point-grid">
+                <article id="inherit_sum" class="inherit-item">
+                    <label for="inherit_sum_value">총 포인트</label>
+                    <input id="inherit_sum_value" :value="Math.floor(status.totalPoint).toLocaleString()" readonly />
+                    <small>다음 플레이에서 사용할 수 있는 총 포인트입니다.</small>
+                </article>
+                <article id="inherit_previous" class="inherit-item">
+                    <label for="inherit_previous_value">기존 포인트</label>
+                    <input id="inherit_previous_value" :value="Math.floor(previousPoint).toLocaleString()" readonly />
+                    <small>이전에 물려받은 포인트입니다.</small>
+                </article>
+                <article id="inherit_new" class="inherit-item">
+                    <label for="inherit_new_value">신규 포인트</label>
+                    <input id="inherit_new_value" :value="Math.floor(newPoint).toLocaleString()" readonly />
+                    <small>이번 플레이에서 얻은 총 포인트입니다.</small>
+                </article>
+                <div class="divider"></div>
+                <article
+                    v-for="entry in pointEntries.filter((item) => item.key !== 'previous')"
+                    :id="`inherit_${entry.key}`"
+                    :key="entry.key"
+                    class="inherit-item"
+                >
+                    <label :for="`inherit_${entry.key}_value`">{{ entry.label }}</label>
+                    <input
+                        :id="`inherit_${entry.key}_value`"
+                        :value="Math.floor(entry.value).toLocaleString()"
+                        readonly
+                    />
+                    <small>{{ pointHelp[entry.key] }}</small>
+                </article>
+            </section>
 
-        <section v-else class="inherit-grid">
-            <PanelCard title="포인트 요약" subtitle="유산 포인트 구성 현황">
-                <div v-if="!status" class="muted">포인트 정보를 불러오지 못했습니다.</div>
-                <div v-else class="summary-panel">
-                    <div class="summary-head">
-                        <div class="summary-total">총 {{ status.totalPoint }} 포인트</div>
-                        <div class="summary-state" :class="{ united: status.isUnited }">
-                            {{ status.isUnited ? '통일 완료' : '진행 중' }}
-                        </div>
-                    </div>
-                    <div class="summary-list">
-                        <div v-for="entry in pointEntries" :key="entry.key" class="summary-row">
-                            <span>{{ entry.label }}</span>
-                            <span>{{ entry.value }}</span>
-                        </div>
-                    </div>
-                    <div class="summary-footer">
-                        <div>현재 전투 특기: {{ currentSpecialName }}</div>
-                        <div>특기 초기화 단계: {{ status.resetLevels.resetSpecialWar }}회</div>
-                        <div>턴 시간 초기화 단계: {{ status.resetLevels.resetTurnTime }}회</div>
-                    </div>
-                </div>
-            </PanelCard>
+            <section id="inheritance_store">
+                <h2 class="section-title legacy-bg1">유산 포인트 상점</h2>
 
-            <PanelCard title="숨김 강화" subtitle="숨김 강화 효과를 구입합니다.">
-                <div v-if="!status" class="muted">숨김 강화 정보를 불러오지 못했습니다.</div>
-                <div v-else class="buff-list">
-                    <div v-for="key in buffKeys" :key="key" class="buff-row">
-                        <div class="buff-info">
-                            <div class="buff-name">{{ buffLabels[key] }}</div>
-                            <div class="buff-level">현재 {{ status.buffLevels[key] ?? 0 }} 단계</div>
-                        </div>
-                        <div class="buff-action">
-                            <select v-model.number="buffTargets[key]" class="form-input">
-                                <option
-                                    v-for="level in buffTargetOptions(key)"
-                                    :key="level"
-                                    :value="level"
-                                >
-                                    {{ level }} 단계
+                <div class="action-grid leading-actions">
+                    <article class="shop-item">
+                        <div class="control-row">
+                            <label for="next-special">다음 전투 특기 선택</label>
+                            <select id="next-special" v-model="nextSpecialKey">
+                                <option v-for="entry in status.availableSpecialWar" :key="entry.key" :value="entry.key">
+                                    {{ entry.name }}
                                 </option>
                             </select>
-                            <div class="buff-cost">비용 {{ buffCost(key, buffTargets[key]) }}</div>
+                        </div>
+                        <small
+                            >{{ specialNameMap.get(nextSpecialKey) }} 특기를 다음에 얻도록 지정합니다.<br /><b
+                                >필요 포인트: {{ status.inheritConst.inheritSpecificSpecialPoint }}</b
+                            ></small
+                        >
+                        <button
+                            class="legacy-button buy-button"
+                            :disabled="isUnited || actionBusy"
+                            @click="reserveSpecialWar"
+                        >
+                            구입
+                        </button>
+                    </article>
+
+                    <article class="shop-item">
+                        <div class="control-row">
+                            <label for="specific-unique">유니크 경매</label>
+                            <select id="specific-unique" v-model="uniqueForm.itemId">
+                                <option disabled value="">유니크 선택</option>
+                                <option v-for="item in status.availableUnique" :key="item.key" :value="item.key">
+                                    {{ item.name }}
+                                </option>
+                            </select>
+                        </div>
+                        <div class="control-row">
+                            <label for="specific-unique-amount">입찰 포인트</label>
+                            <input
+                                id="specific-unique-amount"
+                                v-model.number="uniqueForm.amount"
+                                type="number"
+                                :min="status.inheritConst.inheritItemUniqueMinPoint"
+                                :max="previousPoint"
+                            />
+                        </div>
+                        <small
+                            >얻고자 하는 유니크 아이템으로 경매를 시작합니다. 24턴 동안 진행됩니다.<br />{{
+                                status.availableUnique.find((item) => item.key === uniqueForm.itemId)?.info
+                            }}</small
+                        >
+                        <button
+                            class="legacy-button buy-button"
+                            :disabled="isUnited || actionBusy"
+                            @click="openUniqueAuction"
+                        >
+                            경매 시작
+                        </button>
+                    </article>
+                </div>
+
+                <div class="divider"></div>
+
+                <div class="action-grid">
+                    <article class="shop-item simple-item">
+                        <div class="control-row">
+                            <span>랜덤 턴 초기화</span
+                            ><button class="legacy-button" :disabled="isUnited || actionBusy" @click="resetTurnTime">
+                                구입
+                            </button>
+                        </div>
+                        <small
+                            >다다음턴부터 시간이 랜덤하게 바뀝니다. (필요 포인트가 피보나치식으로 증가합니다)<br /><b
+                                >필요 포인트: {{ status.resetCosts.resetTurnTime }}</b
+                            ><template v-if="turnTimeLabel"><br />적용 시간: {{ turnTimeLabel }}</template></small
+                        >
+                    </article>
+                    <article class="shop-item simple-item">
+                        <div class="control-row">
+                            <span>랜덤 유니크 획득</span
+                            ><button class="legacy-button" :disabled="isUnited || actionBusy" @click="buyRandomUnique">
+                                구입
+                            </button>
+                        </div>
+                        <small
+                            >다음 턴에 랜덤 유니크를 얻습니다.<br /><b
+                                >필요 포인트: {{ status.inheritConst.inheritItemRandomPoint }}</b
+                            ></small
+                        >
+                    </article>
+                    <article class="shop-item simple-item">
+                        <div class="control-row">
+                            <span>즉시 전투 특기 초기화</span
+                            ><button class="legacy-button" :disabled="isUnited || actionBusy" @click="resetSpecialWar">
+                                구입
+                            </button>
+                        </div>
+                        <small
+                            >즉시 전투 특기를 초기화합니다. (필요 포인트가 피보나치식으로 증가합니다)<br /><b
+                                >필요 포인트: {{ status.resetCosts.resetSpecialWar }}</b
+                            ></small
+                        >
+                    </article>
+                </div>
+
+                <div class="divider"></div>
+
+                <div class="buff-grid">
+                    <article v-for="key in buffKeys" :key="key" class="shop-item buff-item">
+                        <div class="control-row">
+                            <label :for="`buff-${key}`">{{ buffLabels[key] }}</label>
+                            <input
+                                :id="`buff-${key}`"
+                                v-model.number="buffTargets[key]"
+                                type="number"
+                                :min="status.buffLevels[key] ?? 0"
+                                max="5"
+                            />
+                        </div>
+                        <small
+                            >{{ buffHelp[key] }}<br /><b>필요 포인트: {{ buffCost(key, buffTargets[key]) }}</b></small
+                        >
+                        <div class="dual-buttons">
                             <button
-                                :disabled="isUnited || actionBusy || (status.buffLevels[key] ?? 0) >= 5"
+                                class="legacy-button secondary"
+                                :disabled="actionBusy"
+                                @click="buffTargets[key] = status.buffLevels[key] ?? 0"
+                            >
+                                리셋
+                            </button>
+                            <button
+                                class="legacy-button"
+                                :disabled="isUnited || actionBusy"
                                 @click="buyHiddenBuff(key)"
                             >
                                 구입
                             </button>
                         </div>
-                    </div>
+                    </article>
                 </div>
-            </PanelCard>
 
-            <PanelCard title="전투 특기 제어" subtitle="다음 특기 지정 및 초기화">
-                <div v-if="!status" class="muted">전투 특기 정보를 불러오지 못했습니다.</div>
-                <div v-else class="action-stack">
-                    <div class="action-row">
-                        <label class="form-field">
-                            <span>다음 전투 특기</span>
-                            <select v-model="nextSpecialKey" class="form-input">
-                                <option v-for="special in status.availableSpecialWar" :key="special.key" :value="special.key">
-                                    {{ special.name }}
+                <div class="divider"></div>
+
+                <div class="action-grid bottom-actions">
+                    <article class="shop-item">
+                        <div class="control-row">
+                            <label for="owner-target">장수 소유자 확인</label>
+                            <select id="owner-target" v-model="ownerTargetId">
+                                <option disabled value="">장수 선택</option>
+                                <option
+                                    v-for="general in status.availableTargetGenerals"
+                                    :key="general.id"
+                                    :value="String(general.id)"
+                                >
+                                    {{ general.name }}
                                 </option>
                             </select>
-                            <small class="muted">비용 {{ status.inheritConst.inheritSpecificSpecialPoint }} 포인트</small>
-                        </label>
-                        <button :disabled="isUnited || actionBusy" @click="reserveSpecialWar">예약</button>
-                    </div>
-                    <div class="action-row">
-                        <div>
-                            <div class="muted">현재 전투 특기: {{ currentSpecialName }}</div>
-                            <div class="muted">
-                                초기화 비용 {{ status.resetCosts.resetSpecialWar }} 포인트
-                                ({{ status.resetLevels.resetSpecialWar }}회)
+                        </div>
+                        <small
+                            >장수의 소유자를 찾습니다. 대상에게도 알림이 전송됩니다.<br /><b
+                                >필요 포인트: {{ status.inheritConst.inheritCheckOwnerPoint }}</b
+                            ></small
+                        >
+                        <button class="legacy-button buy-button" :disabled="isUnited || actionBusy" @click="checkOwner">
+                            소유자 찾기
+                        </button>
+                        <p v-if="ownerResult" class="owner-result">
+                            {{ ownerResult.targetName }}의 소유자: {{ ownerResult.ownerName }}
+                        </p>
+                    </article>
+
+                    <article class="shop-item stat-reset">
+                        <div class="stat-layout">
+                            <span>능력치 초기화</span>
+                            <div>
+                                <strong>기본 능력치</strong>
+                                <label
+                                    >통
+                                    <input
+                                        v-model.number="resetStatForm.leadership"
+                                        type="number"
+                                        :min="statRules?.min"
+                                        :max="statRules?.max"
+                                /></label>
+                                <label
+                                    >무
+                                    <input
+                                        v-model.number="resetStatForm.strength"
+                                        type="number"
+                                        :min="statRules?.min"
+                                        :max="statRules?.max"
+                                /></label>
+                                <label
+                                    >지
+                                    <input
+                                        v-model.number="resetStatForm.intel"
+                                        type="number"
+                                        :min="statRules?.min"
+                                        :max="statRules?.max"
+                                /></label>
+                                <strong>추가 능력치</strong>
+                                <label
+                                    >통 <input v-model.number="resetStatForm.bonus[0]" type="number" min="0" max="5"
+                                /></label>
+                                <label
+                                    >무 <input v-model.number="resetStatForm.bonus[1]" type="number" min="0" max="5"
+                                /></label>
+                                <label
+                                    >지 <input v-model.number="resetStatForm.bonus[2]" type="number" min="0" max="5"
+                                /></label>
                             </div>
                         </div>
-                        <button :disabled="isUnited || actionBusy" @click="resetSpecialWar">초기화</button>
-                    </div>
+                        <small
+                            >시즌 당 1회에 한 해 능력치를 초기화합니다.<br /><b>필요 포인트: {{ resetStatCost }}</b
+                            ><br /><span v-if="resetStatErrors.length">{{ resetStatErrors[0] }}</span></small
+                        >
+                        <button
+                            class="legacy-button buy-button"
+                            :disabled="isUnited || actionBusy || resetStatErrors.length > 0"
+                            @click="resetStats"
+                        >
+                            능력치 초기화
+                        </button>
+                    </article>
                 </div>
-            </PanelCard>
+            </section>
 
-            <PanelCard title="턴 시간 초기화" subtitle="턴 시간대를 재설정합니다.">
-                <div v-if="!status" class="muted">턴 시간 정보를 불러오지 못했습니다.</div>
-                <div v-else class="action-stack">
-                    <div class="action-row">
-                        <div class="muted">
-                            비용 {{ status.resetCosts.resetTurnTime }} 포인트 ({{ status.resetLevels.resetTurnTime }}회)
-                        </div>
-                        <button :disabled="isUnited || actionBusy" @click="resetTurnTime">턴 시간 변경</button>
-                    </div>
-                    <div v-if="turnTimeLabel" class="muted">다음 적용 시각: {{ turnTimeLabel }}</div>
+            <section class="inherit-logs">
+                <h2 class="section-title legacy-bg1">유산 포인트 변경 내역</h2>
+                <div v-if="logLoading && logs.length === 0" class="log-empty">불러오는 중...</div>
+                <div v-else-if="logs.length === 0" class="log-empty">기록이 없습니다.</div>
+                <div v-for="entry in logs" v-else :key="entry.id" class="log-row">
+                    <small>[{{ new Date(entry.createdAt).toLocaleString('ko-KR') }}]</small>
+                    <span>{{ entry.text }}</span>
                 </div>
-            </PanelCard>
-
-            <PanelCard title="능력치 초기화" subtitle="능력치를 다시 배분합니다.">
-                <div v-if="!status" class="muted">능력치 정보를 불러오지 못했습니다.</div>
-                <div v-else class="stat-panel">
-                    <div class="stat-grid">
-                        <label class="form-field">
-                            <span>통솔</span>
-                            <input v-model.number="resetStatForm.leadership" type="number" class="form-input" />
-                        </label>
-                        <label class="form-field">
-                            <span>무력</span>
-                            <input v-model.number="resetStatForm.strength" type="number" class="form-input" />
-                        </label>
-                        <label class="form-field">
-                            <span>지력</span>
-                            <input v-model.number="resetStatForm.intel" type="number" class="form-input" />
-                        </label>
-                    </div>
-
-                    <div class="stat-grid">
-                        <label class="form-field">
-                            <span>보너스 통솔</span>
-                            <input v-model.number="resetStatForm.bonus[0]" type="number" min="0" max="5" class="form-input" />
-                        </label>
-                        <label class="form-field">
-                            <span>보너스 무력</span>
-                            <input v-model.number="resetStatForm.bonus[1]" type="number" min="0" max="5" class="form-input" />
-                        </label>
-                        <label class="form-field">
-                            <span>보너스 지력</span>
-                            <input v-model.number="resetStatForm.bonus[2]" type="number" min="0" max="5" class="form-input" />
-                        </label>
-                    </div>
-
-                    <div class="stat-summary">
-                        <div>총합 {{ resetStatTotal }} / {{ statRules?.total ?? '-' }}</div>
-                        <div>보너스 합 {{ resetBonusSum }} · 비용 {{ resetStatCost }}</div>
-                        <div v-if="resetStatErrors.length" class="stat-errors">
-                            <div v-for="item in resetStatErrors" :key="item">{{ item }}</div>
-                        </div>
-                    </div>
-
-                    <div class="action-row">
-                        <button :disabled="isUnited || actionBusy" class="ghost" @click="applyResetBalanced">균형형</button>
-                        <button :disabled="isUnited || actionBusy" @click="resetStats">능력치 초기화</button>
-                    </div>
-                </div>
-            </PanelCard>
-
-            <PanelCard title="유니크 상점" subtitle="유니크 아이템 관련 기능">
-                <div v-if="!status" class="muted">유니크 정보를 불러오지 못했습니다.</div>
-                <div v-else class="action-stack">
-                    <div class="action-row">
-                        <div class="muted">랜덤 유니크 구매 ({{ status.inheritConst.inheritItemRandomPoint }} 포인트)</div>
-                        <button :disabled="isUnited || actionBusy" @click="buyRandomUnique">구입</button>
-                    </div>
-                    <div class="action-row">
-                        <label class="form-field">
-                            <span>유니크 아이템 ID</span>
-                            <input v-model="uniqueForm.itemId" type="text" class="form-input" />
-                        </label>
-                        <label class="form-field">
-                            <span>입찰 포인트</span>
-                            <input v-model.number="uniqueForm.amount" type="number" class="form-input" />
-                            <small class="muted">최소 {{ status.inheritConst.inheritItemUniqueMinPoint }} 포인트</small>
-                        </label>
-                        <button :disabled="isUnited || actionBusy" @click="openUniqueAuction">신청</button>
-                    </div>
-                </div>
-            </PanelCard>
-
-            <PanelCard title="소유자 확인" subtitle="상대 장수의 소유자를 확인합니다.">
-                <div v-if="!status" class="muted">대상 장수 목록을 불러오지 못했습니다.</div>
-                <div v-else class="action-stack">
-                    <label class="form-field">
-                        <span>대상 장수</span>
-                        <select v-model="ownerTargetId" class="form-input">
-                            <option v-for="general in status.availableTargetGenerals" :key="general.id" :value="String(general.id)">
-                                {{ general.name }}
-                            </option>
-                        </select>
-                        <small class="muted">비용 {{ status.inheritConst.inheritCheckOwnerPoint }} 포인트</small>
-                    </label>
-                    <button :disabled="isUnited || actionBusy" @click="checkOwner">확인</button>
-                    <div v-if="ownerResult" class="muted">
-                        {{ ownerResult.targetName }}의 소유자: {{ ownerResult.ownerName }}
-                    </div>
-                </div>
-            </PanelCard>
-
-            <PanelCard title="유산 기록" subtitle="최근 유산 로그">
-                <template #actions>
-                    <button class="ghost" :disabled="logLoading" @click="loadLogs(true)">갱신</button>
-                </template>
-                <div v-if="logLoading && logs.length === 0">
-                    <SkeletonLines :lines="3" />
-                </div>
-                <div v-else-if="logs.length === 0" class="muted">기록이 없습니다.</div>
-                <div v-else class="log-list">
-                    <div v-for="entry in logs" :key="entry.id" class="log-entry">
-                        <span class="log-date">{{ entry.year }}년 {{ entry.month }}월</span>
-                        <span>{{ entry.text }}</span>
-                    </div>
-                </div>
-                <div class="log-footer">
-                    <button class="ghost" :disabled="logLoading || logEnd" @click="loadLogs()">더 보기</button>
-                </div>
-            </PanelCard>
-        </section>
+                <button class="legacy-button more-button" :disabled="logLoading || logEnd" @click="loadLogs()">
+                    더 가져오기
+                </button>
+            </section>
+        </template>
     </main>
 </template>
 
 <style scoped>
-.inherit-page {
-    min-height: 100vh;
-    padding: 24px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-}
-
-.inherit-header {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    gap: 12px;
-    border-bottom: 1px solid rgba(201, 164, 90, 0.4);
-    padding-bottom: 12px;
-}
-
-.inherit-title {
-    font-size: 1.6rem;
-    font-weight: 600;
-}
-
-.inherit-subtitle {
-    font-size: 0.85rem;
-    color: rgba(232, 221, 196, 0.7);
-}
-
-.inherit-actions {
-    display: flex;
-    gap: 8px;
-}
-
-.inherit-error {
-    border: 1px solid rgba(240, 90, 90, 0.6);
-    padding: 8px 10px;
-    color: rgba(240, 150, 150, 0.9);
-}
-
-.inherit-message {
-    border: 1px solid rgba(120, 190, 120, 0.5);
-    padding: 8px 10px;
-    color: rgba(180, 230, 180, 0.9);
-}
-
-.inherit-grid {
+.top-back-bar {
+    width: min(100%, 1000px);
+    min-height: 38px;
+    margin: 0 auto;
+    border: 1px solid #888;
     display: grid;
-    gap: 16px;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-}
-
-.summary-panel {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-.summary-head {
-    display: flex;
+    grid-template-columns: 100px 1fr 100px;
     align-items: center;
-    justify-content: space-between;
-    gap: 8px;
+    text-align: center;
+    padding: 3px 6px;
+    box-sizing: border-box;
 }
 
-.summary-total {
-    font-size: 1rem;
-    font-weight: 600;
-}
-
-.summary-state {
-    font-size: 0.75rem;
+.top-button {
     padding: 4px 8px;
-    border: 1px solid rgba(201, 164, 90, 0.4);
+    text-decoration: none;
 }
 
-.summary-state.united {
-    border-color: rgba(240, 120, 120, 0.6);
-    color: rgba(240, 150, 150, 0.9);
+.inherit-page {
+    width: min(100%, 1000px);
+    margin: 0 auto;
+    border: 1px solid #888;
+    border-top: 0;
+    overflow: hidden;
+    box-sizing: border-box;
+    padding: 0 8px 10px;
+    color: #fff;
+    font:
+        14px/1.3 Pretendard,
+        'Apple SD Gothic Neo',
+        'Noto Sans KR',
+        'Malgun Gothic',
+        sans-serif;
 }
 
-.summary-list {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+.notice,
+.loading-state,
+.log-empty {
+    padding: 10px;
+    text-align: center;
 }
 
-.summary-row {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.8rem;
-    color: rgba(232, 221, 196, 0.8);
+.notice.error {
+    color: #ffb0b0;
 }
 
-.summary-footer {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    font-size: 0.75rem;
-    color: rgba(232, 221, 196, 0.7);
+.notice.success {
+    color: #b6efb6;
 }
 
-.buff-list {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-.buff-row {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    gap: 8px;
-    border: 1px solid rgba(201, 164, 90, 0.2);
-    padding: 8px;
-}
-
-.buff-info {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-.buff-name {
-    font-weight: 600;
-    font-size: 0.85rem;
-}
-
-.buff-level {
-    font-size: 0.7rem;
-    color: rgba(232, 221, 196, 0.7);
-}
-
-.buff-action {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-}
-
-.buff-cost {
-    font-size: 0.75rem;
-    color: rgba(232, 221, 196, 0.7);
-}
-
-.action-stack {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
-.action-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-    justify-content: space-between;
-}
-
-.stat-panel {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
-.stat-grid {
+.point-grid,
+.action-grid,
+.buff-grid {
     display: grid;
-    gap: 12px;
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.stat-summary {
-    font-size: 0.75rem;
-    color: rgba(232, 221, 196, 0.7);
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+.inherit-item,
+.shop-item {
+    padding: 8px 16px;
+    box-sizing: border-box;
+    min-width: 0;
 }
 
-.stat-errors {
-    color: rgba(240, 150, 150, 0.9);
+.inherit-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(100px, 1fr);
+    align-items: start;
+    gap: 6px;
 }
 
-.form-field {
+.inherit-item label {
+    text-align: right;
+    padding: 7px 8px 0 0;
+}
+
+.inherit-item input,
+.shop-item input,
+.shop-item select {
+    width: 100%;
+    min-width: 0;
+    border: 1px solid #6c757d;
+    border-radius: 4px;
+    background: #212529;
+    color: #fff;
+    padding: 6px 8px;
+    box-sizing: border-box;
+}
+
+.inherit-item small,
+.shop-item small {
+    grid-column: 1 / -1;
+    min-height: 34px;
+    text-align: right;
+    color: #aeb2b6;
+}
+
+.inherit-item small {
+    min-height: 36px;
+}
+
+.divider {
+    grid-column: 1 / -1;
+    border-top: 1px solid rgba(255, 255, 255, 0.22);
+    margin: 4px 2px;
+}
+
+.section-title {
+    font-size: 14px;
+    font-weight: 400;
+    text-align: center;
+    margin: 0 -8px;
+    padding: 2px;
+}
+
+.leading-actions .shop-item:first-child {
+    grid-column: 2;
+}
+
+.control-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: center;
+    gap: 8px;
+    min-height: 36px;
+}
+
+.control-row > label,
+.control-row > span {
+    text-align: right;
+}
+
+.shop-item {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    font-size: 0.75rem;
 }
 
-.form-input {
-    border: 1px solid rgba(201, 164, 90, 0.4);
-    background: rgba(10, 10, 10, 0.8);
-    padding: 6px 8px;
-    color: inherit;
+.shop-item .buy-button {
+    width: 50%;
+    margin-left: auto;
 }
 
-button {
-    border: 1px solid rgba(201, 164, 90, 0.4);
-    padding: 6px 12px;
-    font-size: 0.8rem;
-    background: rgba(16, 16, 16, 0.6);
-    color: inherit;
+.simple-item small {
+    min-height: 55px;
 }
 
-button.ghost {
-    background: transparent;
+.buff-item small {
+    min-height: 72px;
 }
 
-.log-list {
-    display: flex;
-    flex-direction: column;
+.dual-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+}
+
+.legacy-button.secondary {
+    border-color: #51585e;
+    background: #5c636a;
+}
+
+.bottom-actions .shop-item:first-child {
+    grid-column: 1;
+}
+
+.stat-layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     gap: 8px;
+    text-align: right;
 }
 
-.log-entry {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    font-size: 0.8rem;
+.stat-layout > div {
+    display: grid;
+    gap: 3px;
 }
 
-.log-date {
-    font-size: 0.7rem;
-    color: rgba(232, 221, 196, 0.6);
+.stat-layout label {
+    display: grid;
+    grid-template-columns: 22px 1fr;
+    align-items: center;
 }
 
-.log-footer {
-    margin-top: 8px;
+.stat-layout strong {
+    text-align: left;
+    font-size: 12px;
 }
 
-.muted {
-    color: rgba(232, 221, 196, 0.6);
-    font-size: 0.75rem;
+.owner-result {
+    margin: 0;
+    color: #fff;
+    text-align: right;
+}
+
+.inherit-logs {
+    margin: 8px 0 0;
+}
+
+.log-row {
+    display: grid;
+    grid-template-columns: minmax(150px, 20ch) 1fr;
+    gap: 8px;
+    padding: 3px 8px;
+}
+
+.log-row small {
+    color: #aeb2b6;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.more-button {
+    width: 100%;
+    margin-top: 6px;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+a:focus-visible {
+    outline: 2px solid #f39c12;
+    outline-offset: 1px;
+}
+
+@media (max-width: 767px) {
+    .point-grid,
+    .action-grid,
+    .buff-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .leading-actions .shop-item:first-child {
+        grid-column: 1;
+    }
+}
+
+@media (max-width: 575px) {
+    .top-back-bar,
+    .inherit-page {
+        width: 500px;
+        max-width: 100%;
+    }
+
+    .point-grid,
+    .action-grid,
+    .buff-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .divider {
+        grid-column: 1;
+    }
+
+    .inherit-item,
+    .shop-item {
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+
+    .log-row {
+        grid-template-columns: 1fr;
+    }
+
+    .log-row small {
+        text-align: left;
+    }
 }
 </style>
