@@ -30,6 +30,9 @@ export * from './auction/types.js';
 export * from './auction/keys.js';
 export * from './auction/scheduler.js';
 export * from './auction/worker.js';
+export * from './tournament/keys.js';
+export * from './tournament/store.js';
+export * from './tournament/types.js';
 export * from './tournament/worker.js';
 
 // Types for TRPC consumer

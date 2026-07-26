@@ -10,6 +10,7 @@ import NationInfoView from '../views/NationInfoView.vue';
 import GlobalInfoView from '../views/GlobalInfoView.vue';
 import CurrentCityView from '../views/CurrentCityView.vue';
 import NationGeneralsView from '../views/NationGeneralsView.vue';
+import NationSecretView from '../views/NationSecretView.vue';
 import NationPersonnelView from '../views/NationPersonnelView.vue';
 import NationStratFinanView from '../views/NationStratFinanView.vue';
 import ChiefCenterView from '../views/ChiefCenterView.vue';
@@ -161,6 +162,12 @@ const routes = [
             requiresAuth: true,
             requiresGeneral: true,
         },
+    },
+    {
+        path: '/nation/secret',
+        name: 'nation-secret',
+        component: NationSecretView,
+        meta: { requiresAuth: true, requiresGeneral: true },
     },
     {
         path: '/nation/personnel',

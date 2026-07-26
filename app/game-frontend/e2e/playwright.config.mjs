@@ -14,6 +14,7 @@ export default defineConfig({
         'inGameInfo.spec.ts',
         'nationOffices.spec.ts',
         'directoryLists.spec.ts',
+        'nationGeneralSecret.spec.ts',
     ],
     fullyParallel: false,
     workers: 1,
