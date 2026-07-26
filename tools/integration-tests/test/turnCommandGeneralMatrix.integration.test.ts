@@ -484,3 +484,81 @@ integration('general command in-action failure matrix', () => {
         120_000
     );
 });
+
+type GeneralConstraintCase = {
+    name: string;
+    action: string;
+    args?: Record<string, unknown>;
+    actorPatch?: Record<string, unknown>;
+    fixturePatches?: FixturePatches;
+};
+
+const constraintCases: GeneralConstraintCase[] = [
+    {
+        name: 'neutral general',
+        action: 'che_훈련',
+        actorPatch: { nationId: 0, officerLevel: 0 },
+    },
+    {
+        name: 'wandering nation',
+        action: 'che_농지개간',
+        fixturePatches: {
+            nations: { 1: { level: 0, capitalCityId: 0, typeCode: 'None' } },
+        },
+    },
+    {
+        name: 'city not occupied by actor nation',
+        action: 'che_농지개간',
+        fixturePatches: { cities: { 3: { nationId: 2 } } },
+    },
+    {
+        name: 'unsupplied city',
+        action: 'che_농지개간',
+        fixturePatches: { cities: { 3: { supplyState: 0 } } },
+    },
+    {
+        name: 'insufficient gold',
+        action: 'che_상업투자',
+        actorPatch: { gold: 0 },
+    },
+    {
+        name: 'insufficient rice',
+        action: 'che_주민선정',
+        actorPatch: { rice: 0 },
+    },
+    {
+        name: 'maximum city trust',
+        action: 'che_주민선정',
+        fixturePatches: { cities: { 3: { trust: 100 } } },
+    },
+];
+
+integration('general command full-constraint fallback matrix', () => {
+    it.each(constraintCases)(
+        '$name: $action falls back exactly like legacy',
+        async ({ action, args, actorPatch, fixturePatches }) => {
+            const request = buildRequest(action, args, actorPatch, fixturePatches);
+            request.setup!.world!.hiddenSeed = `general-constraint-${action}`;
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+
+            expect(reference.execution.outcome).toMatchObject({ completed: false });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: action,
+                actionKey: '휴식',
+                usedFallback: true,
+            });
+            expect(core.execution.outcome).toHaveProperty('blockedReason');
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+        },
+        120_000
+    );
+});

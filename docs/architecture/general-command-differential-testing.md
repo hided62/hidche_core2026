@@ -8,12 +8,15 @@
 - 범위: 명령 결과, RNG 소비, 로그, 예약 턴 lifecycle, DB 영속화
 
 현재 ref MariaDB와 core memory를 잇는 공통 runner, 성공 경로 55개,
-실행 중 확률 실패 9개가 구현됐다. 실패 9개는 내정 critical
+실행 중 확률 실패 9개와 full constraint fallback 7개가 구현됐다.
+실패 9개는 내정 critical
 `주민선정/정착장려/상업투자/기술연구/물자조달`과 모략
 `화계/선동/파괴/탈취`이며 RNG 전체 trace, semantic state delta와 실패
-로그 본문을 비교한다. 나머지 제약 실패·값 경계·alternative와 전체
-core PostgreSQL 재조회가 완료 기준을 통과하기 전까지 55개 명령 전체의
-동적 호환 상태를 `확인`으로 올리지 않는다.
+로그 본문을 비교한다. 제약 7개는 무소속, 방랑국, 타국 도시, 보급 단절,
+금·쌀 부족과 민심 상한을 대표하며 휴식 fallback과 RNG/state delta를
+비교한다. 나머지 명령별 제약 실패·값 경계·alternative와 전체 core
+PostgreSQL 재조회가 완료 기준을 통과하기 전까지 55개 명령 전체의 동적
+호환 상태를 `확인`으로 올리지 않는다.
 
 ## 결정 요약
 
