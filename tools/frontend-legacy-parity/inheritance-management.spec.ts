@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const imageRoot = resolve(repositoryRoot, '../../image');
 const artifactRoot = process.env.FRONTEND_PARITY_ARTIFACT_DIR;
+const gameUrl = `http://127.0.0.1:${process.env.FRONTEND_PARITY_GAME_PORT ?? '15102'}/che/inherit`;
 
 const response = (data: unknown) => ({ result: { data } });
 
@@ -153,7 +154,7 @@ test.describe('inheritance management legacy parity', () => {
     test('matches the ref 1000px grid and computed styles on desktop and mobile', async ({ page }) => {
         await installFixture(page);
         await page.setViewportSize({ width: 1280, height: 900 });
-        await page.goto('http://127.0.0.1:15102/che/inherit');
+        await page.goto(gameUrl);
         await expect(page.locator('#container')).toBeVisible();
         await expect(page.locator('#specific-unique')).toHaveValue('che_무기_12_칠성검');
 
@@ -217,7 +218,7 @@ test.describe('inheritance management legacy parity', () => {
     test('submits a legacy buff purchase and refreshes status and logs', async ({ page }) => {
         const fixture = await installFixture(page);
         page.on('dialog', (dialog) => dialog.accept());
-        await page.goto('http://127.0.0.1:15102/che/inherit');
+        await page.goto(gameUrl);
         await page.locator('#buff-warAvoidRatio').fill('1');
         await page.locator('#buff-warAvoidRatio').locator('xpath=../..').getByRole('button', { name: '구입' }).click();
         await expect.poll(fixture.buffMutationCount).toBe(1);
@@ -227,7 +228,7 @@ test.describe('inheritance management legacy parity', () => {
     test('keeps controls usable and renders an API mutation error', async ({ page }) => {
         await installFixture(page, { failBuff: true });
         page.on('dialog', (dialog) => dialog.accept());
-        await page.goto('http://127.0.0.1:15102/che/inherit');
+        await page.goto(gameUrl);
         await page.locator('#buff-warAvoidRatio').fill('1');
         await page.locator('#buff-warAvoidRatio').locator('xpath=../..').getByRole('button', { name: '구입' }).click();
         await expect(page.locator('[role="alert"]')).toBeVisible();
