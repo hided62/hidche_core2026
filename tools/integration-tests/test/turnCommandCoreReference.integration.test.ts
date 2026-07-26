@@ -77,6 +77,10 @@ integration('core ↔ legacy command-boundary differential', () => {
         ['nation declaration', 'fixtures/turn-differential/nation-declaration.json'],
         ['live sortie conquest', 'fixtures/turn-differential/live-sortie-conquest.json'],
         ['live sortie against a defending general', 'fixtures/turn-differential/live-sortie-defender.json'],
+        [
+            'live sortie against multiple defending generals',
+            'fixtures/turn-differential/live-sortie-multiple-defenders.json',
+        ],
     ])(
         '%s matches command RNG and canonical state delta',
         async (_label, fixturePath) => {
@@ -90,6 +94,17 @@ integration('core ↔ legacy command-boundary differential', () => {
                 request as unknown as Record<string, unknown>
             );
             const core = await runCoreTurnCommandTrace(request, reference.before);
+            if (fixturePath.endsWith('live-sortie-multiple-defenders.json')) {
+                for (const generalId of [2, 3]) {
+                    const beforeGeneral = reference.before.generals.find((general) => general.id === generalId);
+                    const afterGeneral = reference.after.generals.find((general) => general.id === generalId);
+                    expect(Number(beforeGeneral?.crew)).toBeGreaterThan(0);
+                    expect(Number(afterGeneral?.crew)).toBeLessThan(Number(beforeGeneral?.crew));
+                }
+                const beforeCity = reference.before.cities.find((city) => city.id === 70);
+                const afterCity = reference.after.cities.find((city) => city.id === 70);
+                expect(Number(afterCity?.defence)).toBeLessThan(Number(beforeCity?.defence));
+            }
 
             expect(core.execution.outcome).toMatchObject({
                 requestedAction: request.action,
