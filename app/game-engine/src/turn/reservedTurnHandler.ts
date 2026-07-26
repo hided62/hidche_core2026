@@ -37,7 +37,7 @@ import {
 } from '@sammo-ts/logic';
 import { buildLegacyDefaultUniqueItemPool } from '@sammo-ts/logic/rewards/legacyUniqueItemPool.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic';
-import { asRecord, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
+import { asRecord, LEGACY_RANK_DATA_TYPES, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 
 import type { ConstraintContext, StateView } from '@sammo-ts/logic';
 
@@ -57,6 +57,7 @@ import { buildFrontStatePatches } from './frontStateHandler.js';
 import { buildActionContext } from './reservedTurnActionContext.js';
 import { GeneralAI, shouldUseAi } from './ai/generalAi.js';
 import type { AiReservedTurnProvider } from './ai/types.js';
+import { rankMetaKey } from './rankData.js';
 
 const DEFAULT_ACTION = '휴식';
 
@@ -227,44 +228,11 @@ const cloneTurnGeneral = (general: TurnGeneral): TurnGeneral => ({
 
 const resetRetiredGeneral = (general: TurnGeneral): TurnGeneral => {
     const meta = { ...general.meta };
-    for (const key of [
-        'firenum',
-        'rank_warnum',
-        'rank_killnum',
-        'rank_deathnum',
-        'rank_occupied',
-        'rank_killcrew',
-        'rank_deathcrew',
-        'rank_killcrew_person',
-        'rank_deathcrew_person',
-        'rank_ttw',
-        'rank_ttd',
-        'rank_ttl',
-        'rank_ttg',
-        'rank_ttp',
-        'rank_tlw',
-        'rank_tld',
-        'rank_tll',
-        'rank_tlg',
-        'rank_tlp',
-        'rank_tsw',
-        'rank_tsd',
-        'rank_tsl',
-        'rank_tsg',
-        'rank_tsp',
-        'rank_tiw',
-        'rank_tid',
-        'rank_til',
-        'rank_tig',
-        'rank_tip',
-        'rank_betgold',
-        'rank_betwin',
-        'rank_betwingold',
-        'specage',
-        'specage2',
-    ]) {
-        meta[key] = 0;
+    for (const type of LEGACY_RANK_DATA_TYPES) {
+        meta[rankMetaKey(type)] = 0;
     }
+    meta.specage = 0;
+    meta.specage2 = 0;
     for (let dex = 1; dex <= 5; dex += 1) {
         const key = `dex${dex}`;
         meta[key] = Math.round(readMetaNumber(meta, key, 0) * 0.5);

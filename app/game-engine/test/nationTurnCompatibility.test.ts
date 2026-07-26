@@ -164,7 +164,7 @@ describe('레거시 사령부 턴 실행 호환성', () => {
         );
     });
 
-    it('MONTH action 전에 전략·외교 제한, 임시 세율, 첩보 기간을 갱신한다', () => {
+    it('MONTH action 전에 전략·외교 제한, 임시 세율, 첩보 기간을 갱신한다', async () => {
         const updates: Array<{ id: number; patch: Record<string, unknown> }> = [];
         const nations = [
             {
@@ -188,7 +188,7 @@ describe('레거시 사령부 턴 실행 호환성', () => {
                 }) as never,
         });
 
-        handler.beforeMonthChanged?.({} as never);
+        await handler.beforeMonthChanged?.({} as never);
 
         expect(updates).toEqual([
             {

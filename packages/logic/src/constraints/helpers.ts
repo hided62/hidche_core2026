@@ -124,8 +124,11 @@ export const parsePercent = (value: string): number | null => {
 export type CompareOperator = '>' | '>=' | '==' | '<=' | '<' | '!=' | '===' | '!==';
 
 export const compareValues = (target: unknown, op: CompareOperator, source: unknown): boolean => {
-    const lhs = target as any;
-    const rhs = source as any;
+    // The cast is type-only: JavaScript still applies its native relational
+    // coercion rules to the original runtime values, matching the legacy
+    // constraint evaluator without opting the whole comparison into `any`.
+    const lhs = target as number;
+    const rhs = source as number;
     switch (op) {
         case '<':
             return lhs < rhs;

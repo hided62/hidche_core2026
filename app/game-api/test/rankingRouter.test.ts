@@ -9,6 +9,7 @@ import { InMemoryBattleSimTransport } from '../src/battleSim/inMemoryTransport.j
 import type { DatabaseClient, GameApiContext, GameProfile } from '../src/context.js';
 import { InMemoryTurnDaemonTransport } from '../src/daemon/inMemoryTransport.js';
 import { appRouter } from '../src/router.js';
+import { formatLegacyRankingNumber, resolveLegacyTextColor } from '../src/router/ranking/index.js';
 
 const profile: GameProfile = {
     id: 'che',
@@ -40,7 +41,7 @@ const generalRows = [
         npcState: 0,
         picture: '1.jpg',
         imageServer: 0,
-        meta: { ownerName: '공개소유자' },
+        meta: { ownerName: '공개소유자', dex1: 120 },
         experience: 1200,
         dedication: 900,
         horseCode: 'che_명마_15_적토마',
@@ -56,7 +57,7 @@ const generalRows = [
         npcState: 1,
         picture: null,
         imageServer: 0,
-        meta: { owner_name: '빙의소유자' },
+        meta: { owner_name: '빙의소유자', dex1: 80 },
         experience: 1100,
         dedication: 800,
         horseCode: 'None',
@@ -72,7 +73,7 @@ const generalRows = [
         npcState: 2,
         picture: null,
         imageServer: 0,
-        meta: {},
+        meta: { dex1: 200 },
         experience: 1300,
         dedication: 1000,
         horseCode: 'None',
@@ -122,6 +123,9 @@ const buildContext = (options?: {
                 { generalId: 1, type: 'firenum', value: 10 },
                 { generalId: 2, type: 'firenum', value: 20 },
                 { generalId: 3, type: 'firenum', value: 30 },
+                { generalId: 1, type: 'dex1', value: 999 },
+                { generalId: 2, type: 'dex1', value: 999 },
+                { generalId: 3, type: 'dex1', value: 999 },
             ],
         },
         auction: {
@@ -217,6 +221,27 @@ describe('ranking.getBestGeneral', () => {
     it('separates autonomous NPCs from users and possessed generals', async () => {
         const result = await appRouter.createCaller(buildContext()).ranking.getBestGeneral({ view: 'npc' });
         expect(result.sections[0]?.entries.map((entry) => entry.id)).toEqual([3]);
+    });
+
+    it('uses the general dex columns as the legacy source of truth instead of mirrored rank rows', async () => {
+        const result = await appRouter.createCaller(buildContext()).ranking.getBestGeneral({ view: 'user' });
+        const dex = result.sections.find((section) => section.title === '보 병 숙 련 도');
+
+        expect(dex?.entries.map((entry) => [entry.id, entry.value, entry.printValue])).toEqual([
+            [1, 120, '120'],
+            [2, 80, '80'],
+        ]);
+        expect(dex?.entries[0]).toMatchObject({
+            bgColor: '#006400',
+            fgColor: '#000000',
+        });
+    });
+
+    it('matches PHP number_format rounding and the legacy fixed color table', () => {
+        expect(formatLegacyRankingNumber(1.005, 2)).toBe('1.01');
+        expect(formatLegacyRankingNumber(12345.6, 2)).toBe('12,345.60');
+        expect(resolveLegacyTextColor('#006400')).toBe('#000000');
+        expect(resolveLegacyTextColor('#330000')).toBe('#ffffff');
     });
 });
 

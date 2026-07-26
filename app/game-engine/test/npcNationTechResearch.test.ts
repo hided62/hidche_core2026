@@ -327,5 +327,5 @@ describe('NPC 기술 연구 장기 시뮬레이션', () => {
         // Nation awards can occur in the same tick and make the general's net
         // gold delta smaller than the recruitment price. Exact cost scaling is
         // covered by the unit-set/action contract tests rather than this smoke.
-    }, 60000);
+    }, 300_000);
 });

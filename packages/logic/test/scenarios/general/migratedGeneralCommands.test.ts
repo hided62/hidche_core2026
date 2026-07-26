@@ -225,7 +225,7 @@ describe('migrated general commands', () => {
         expect(updatedLord.experience).toBe(700);
     });
 
-    it('che_증여: 최소 보유량을 넘는 자원만 이전한다', async () => {
+    it('che_증여: 금은 레거시 최소 보유량 0을 적용해 요청한 금액을 이전한다', async () => {
         const actor = makeGeneral({ id: 1, nationId: 1, cityId: 1, name: '증여자', gold: 1300 });
         const dest = makeGeneral({ id: 2, nationId: 1, cityId: 1, name: '수령자', gold: 200 });
         const nation = makeNation({ id: 1, name: '오', chiefGeneralId: 1, capitalCityId: 1, level: 1 });
@@ -246,8 +246,8 @@ describe('migrated general commands', () => {
             },
         ]);
 
-        expect(world.getGeneral(actor.id)!.gold).toBe(1000);
-        expect(world.getGeneral(dest.id)!.gold).toBe(500);
+        expect(world.getGeneral(actor.id)!.gold).toBe(800);
+        expect(world.getGeneral(dest.id)!.gold).toBe(700);
     });
 
     it('che_해산: 방랑군 해산 시 세력과 소속을 정리한다', async () => {

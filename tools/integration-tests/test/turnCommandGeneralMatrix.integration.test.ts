@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { LEGACY_RANK_DATA_TYPES } from '@sammo-ts/common';
 
 import { compareTurnSnapshotDeltas } from '../src/turn-differential/compare.js';
 import { runCoreTurnCommandTrace, type TurnCommandFixtureRequest } from '../src/turn-differential/coreCommandTrace.js';
@@ -72,6 +73,7 @@ interface FixturePatches {
     troops?: Array<Record<string, unknown>>;
     diplomacy?: Record<string, Record<string, unknown>>;
     randomFoundingCandidateCityIds?: number[];
+    rankData?: Array<{ generalId: number; type: string; value: number }>;
 }
 
 const buildRequest = (
@@ -166,6 +168,7 @@ const buildRequest = (
             { ...general(2, 2, 70, 12), ...fixturePatches.generals?.[2] },
             { ...general(3, 1, 3, 1), ...fixturePatches.generals?.[3] },
         ],
+        ...(fixturePatches.rankData ? { rankData: fixturePatches.rankData } : {}),
         ...(fixturePatches.troops ? { troops: fixturePatches.troops } : {}),
         ...(fixturePatches.randomFoundingCandidateCityIds
             ? { randomFoundingCandidateCityIds: fixturePatches.randomFoundingCandidateCityIds }
@@ -380,6 +383,67 @@ integration('general command success matrix', () => {
         },
         120_000
     );
+});
+
+integration('명장일람 rank_data command parity', () => {
+    it('화계 increments firenum from the same seeded value as legacy', async () => {
+        const request = buildRequest(
+            'che_화계',
+            { destCityID: 70 },
+            { intelligence: 100 },
+            {
+                generals: { 2: { intelligence: 10 } },
+                rankData: [{ generalId: 1, type: 'firenum', value: 17 }],
+            }
+        );
+        request.setup!.world!.hiddenSeed = 'general-injury-4';
+        const reference = runReferenceTurnCommandTraceRequest(
+            workspaceRoot!,
+            request as unknown as Record<string, unknown>
+        );
+        const core = await runCoreTurnCommandTrace(request, reference.before);
+
+        expect(reference.after.rankData).toContainEqual(
+            expect.objectContaining({ generalId: 1, type: 'firenum', value: 18 })
+        );
+        expect(
+            compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                ignoredPathPatterns: ignoredLifecyclePaths,
+            })
+        ).toEqual([]);
+    }, 120_000);
+
+    it('은퇴 resets every legacy RankColumn row exactly like legacy', async () => {
+        const request = buildRequest(
+            'che_은퇴',
+            undefined,
+            { age: 65, lastTurn: { command: '은퇴', term: 1 } },
+            {
+                rankData: LEGACY_RANK_DATA_TYPES.map((type, index) => ({
+                    generalId: 1,
+                    type,
+                    value: index + 1,
+                })),
+            }
+        );
+        const reference = runReferenceTurnCommandTraceRequest(
+            workspaceRoot!,
+            request as unknown as Record<string, unknown>
+        );
+        const core = await runCoreTurnCommandTrace(request, reference.before);
+
+        expect(reference.after.rankData.filter((row) => row.generalId === 1)).toHaveLength(
+            LEGACY_RANK_DATA_TYPES.length
+        );
+        expect(reference.after.rankData.filter((row) => row.generalId === 1).every((row) => row.value === 0)).toBe(
+            true
+        );
+        expect(
+            compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                ignoredPathPatterns: ignoredLifecyclePaths,
+            })
+        ).toEqual([]);
+    }, 120_000);
 });
 
 type GeneralFailureCase = {

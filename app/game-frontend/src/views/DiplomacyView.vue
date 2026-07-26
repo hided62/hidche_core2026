@@ -189,9 +189,7 @@ const destroyLetter = async (letterId: number) => {
     }
 };
 
-const prevOptions = computed(() =>
-    data.value?.letters.filter((letter) => letter.state !== 'CANCELLED') ?? []
-);
+const prevOptions = computed(() => data.value?.letters.filter((letter) => letter.state !== 'CANCELLED') ?? []);
 
 const formatDate = (value: string) => new Date(value).toLocaleString('ko-KR');
 
@@ -216,12 +214,14 @@ const canRollback = (letter: DiplomacyLetter) =>
     editable.value && data.value?.myNationId === letter.src.nationId && letter.state === 'PROPOSED';
 
 const canDestroy = (letter: DiplomacyLetter) =>
-    editable.value && letter.state === 'ACTIVATED' && (data.value?.myNationId === letter.src.nationId || data.value?.myNationId === letter.dest.nationId);
+    editable.value &&
+    letter.state === 'ACTIVATED' &&
+    (data.value?.myNationId === letter.src.nationId || data.value?.myNationId === letter.dest.nationId);
 
 const canRenew = (letter: DiplomacyLetter) => letter.state !== 'CANCELLED';
 
 onMounted(() => {
-    loadLetters();
+    void loadLetters();
 });
 
 onBeforeUnmount(() => {
@@ -270,26 +270,84 @@ onBeforeUnmount(() => {
             <div class="editor-group">
                 <div class="editor-label">내용(국가 내 공개)</div>
                 <div class="editor-toolbar">
-                    <button type="button" @click="briefEditor?.chain().focus().toggleBold().run()" :class="{ active: briefEditor?.isActive('bold') }">굵게</button>
-                    <button type="button" @click="briefEditor?.chain().focus().toggleItalic().run()" :class="{ active: briefEditor?.isActive('italic') }">기울임</button>
-                    <button type="button" @click="briefEditor?.chain().focus().toggleUnderline().run()" :class="{ active: briefEditor?.isActive('underline') }">밑줄</button>
+                    <button
+                        type="button"
+                        @click="briefEditor?.chain().focus().toggleBold().run()"
+                        :class="{ active: briefEditor?.isActive('bold') }"
+                    >
+                        굵게
+                    </button>
+                    <button
+                        type="button"
+                        @click="briefEditor?.chain().focus().toggleItalic().run()"
+                        :class="{ active: briefEditor?.isActive('italic') }"
+                    >
+                        기울임
+                    </button>
+                    <button
+                        type="button"
+                        @click="briefEditor?.chain().focus().toggleUnderline().run()"
+                        :class="{ active: briefEditor?.isActive('underline') }"
+                    >
+                        밑줄
+                    </button>
                     <button type="button" @click="addLink('brief')">링크</button>
                     <button type="button" @click="briefEditor?.chain().focus().toggleBulletList().run()">목록</button>
-                    <button type="button" @click="briefEditor?.chain().focus().toggleOrderedList().run()">번호 목록</button>
-                    <button type="button" @click="uploadTarget = 'brief'; fileInputRef?.click()" :disabled="uploadBusy">이미지 업로드</button>
+                    <button type="button" @click="briefEditor?.chain().focus().toggleOrderedList().run()">
+                        번호 목록
+                    </button>
+                    <button
+                        type="button"
+                        @click="
+                            uploadTarget = 'brief';
+                            fileInputRef?.click();
+                        "
+                        :disabled="uploadBusy"
+                    >
+                        이미지 업로드
+                    </button>
                 </div>
                 <EditorContent v-if="briefEditor" :editor="briefEditor" />
             </div>
             <div class="editor-group">
                 <div class="editor-label">내용(외교권자 전용)</div>
                 <div class="editor-toolbar">
-                    <button type="button" @click="detailEditor?.chain().focus().toggleBold().run()" :class="{ active: detailEditor?.isActive('bold') }">굵게</button>
-                    <button type="button" @click="detailEditor?.chain().focus().toggleItalic().run()" :class="{ active: detailEditor?.isActive('italic') }">기울임</button>
-                    <button type="button" @click="detailEditor?.chain().focus().toggleUnderline().run()" :class="{ active: detailEditor?.isActive('underline') }">밑줄</button>
+                    <button
+                        type="button"
+                        @click="detailEditor?.chain().focus().toggleBold().run()"
+                        :class="{ active: detailEditor?.isActive('bold') }"
+                    >
+                        굵게
+                    </button>
+                    <button
+                        type="button"
+                        @click="detailEditor?.chain().focus().toggleItalic().run()"
+                        :class="{ active: detailEditor?.isActive('italic') }"
+                    >
+                        기울임
+                    </button>
+                    <button
+                        type="button"
+                        @click="detailEditor?.chain().focus().toggleUnderline().run()"
+                        :class="{ active: detailEditor?.isActive('underline') }"
+                    >
+                        밑줄
+                    </button>
                     <button type="button" @click="addLink('detail')">링크</button>
                     <button type="button" @click="detailEditor?.chain().focus().toggleBulletList().run()">목록</button>
-                    <button type="button" @click="detailEditor?.chain().focus().toggleOrderedList().run()">번호 목록</button>
-                    <button type="button" @click="uploadTarget = 'detail'; fileInputRef?.click()" :disabled="uploadBusy">이미지 업로드</button>
+                    <button type="button" @click="detailEditor?.chain().focus().toggleOrderedList().run()">
+                        번호 목록
+                    </button>
+                    <button
+                        type="button"
+                        @click="
+                            uploadTarget = 'detail';
+                            fileInputRef?.click();
+                        "
+                        :disabled="uploadBusy"
+                    >
+                        이미지 업로드
+                    </button>
                 </div>
                 <EditorContent v-if="detailEditor" :editor="detailEditor" />
             </div>
@@ -327,7 +385,10 @@ onBeforeUnmount(() => {
                         </button>
                         <div v-if="historyOpen[letter.id]" class="history-panel">
                             <template v-if="getPrevLetter(letter)">
-                                <p>#{{ getPrevLetter(letter)?.id }} {{ getPrevLetter(letter)?.src.nationName }} ↔ {{ getPrevLetter(letter)?.dest.nationName }}</p>
+                                <p>
+                                    #{{ getPrevLetter(letter)?.id }} {{ getPrevLetter(letter)?.src.nationName }} ↔
+                                    {{ getPrevLetter(letter)?.dest.nationName }}
+                                </p>
                                 <div class="letter-text" v-html="getPrevLetter(letter)?.brief" />
                             </template>
                             <p v-else class="hint">이전 문서를 찾을 수 없습니다.</p>
@@ -335,11 +396,24 @@ onBeforeUnmount(() => {
                     </div>
                 </div>
                 <footer class="letter-actions">
-                    <button v-if="canRespond(letter)" type="button" @click="respondLetter(letter.id, true)">승인</button>
-                    <button v-if="canRespond(letter)" type="button" @click="respondLetter(letter.id, false, '거부')">거부</button>
+                    <button v-if="canRespond(letter)" type="button" @click="respondLetter(letter.id, true)">
+                        승인
+                    </button>
+                    <button v-if="canRespond(letter)" type="button" @click="respondLetter(letter.id, false, '거부')">
+                        거부
+                    </button>
                     <button v-if="canRollback(letter)" type="button" @click="rollbackLetter(letter.id)">회수</button>
                     <button v-if="canDestroy(letter)" type="button" @click="destroyLetter(letter.id)">파기</button>
-                    <button v-if="canRenew(letter)" type="button" @click="selectedPrevId = letter.id; applyPrevLetter()">추가 문서 작성</button>
+                    <button
+                        v-if="canRenew(letter)"
+                        type="button"
+                        @click="
+                            selectedPrevId = letter.id;
+                            applyPrevLetter();
+                        "
+                    >
+                        추가 문서 작성
+                    </button>
                 </footer>
             </article>
         </section>
