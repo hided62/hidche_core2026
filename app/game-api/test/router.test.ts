@@ -80,6 +80,7 @@ const buildContext = (options?: {
     generalTurnWrites?: unknown[];
     nationTurnWrites?: unknown[];
     auth?: GameSessionTokenPayload | null;
+    worldStateReads?: { count: number };
 }): GameApiContext => {
     const transport = options?.transport ?? new InMemoryTurnDaemonTransport();
     const battleSim = options?.battleSim ?? new InMemoryBattleSimTransport();
@@ -87,7 +88,12 @@ const buildContext = (options?: {
     const nationTurns = options?.nationTurns ?? [];
     const db = {
         worldState: {
-            findFirst: async () => options?.state ?? null,
+            findFirst: async () => {
+                if (options?.worldStateReads) {
+                    options.worldStateReads.count += 1;
+                }
+                return options?.state ?? null;
+            },
         },
         general: {
             findUnique: async ({ where }: { where: { id: number } }) => {
@@ -163,6 +169,45 @@ const buildContext = (options?: {
 };
 
 describe('appRouter', () => {
+    it('rejects general creation before any game-state read when the signed identity gate denies it', async () => {
+        const worldStateReads = { count: 0 };
+        const auth: GameSessionTokenPayload = {
+            version: 1,
+            profile: profile.name,
+            issuedAt: new Date('2026-01-01T00:00:00Z').toISOString(),
+            expiresAt: new Date('2026-01-02T00:00:00Z').toISOString(),
+            sessionId: 'session-local',
+            user: {
+                id: 'local-user',
+                username: 'local-user',
+                displayName: '로컬유저',
+                roles: ['user'],
+            },
+            sanctions: {},
+            identity: {
+                kakaoVerified: false,
+                canCreateGeneral: false,
+                requiresKakaoVerification: true,
+                graceEndsAt: new Date('2026-01-08T00:00:00Z').toISOString(),
+            },
+        };
+        const caller = appRouter.createCaller(buildContext({ auth, worldStateReads }));
+
+        await expect(
+            caller.join.createGeneral({
+                name: '미인증',
+                leadership: 55,
+                strength: 55,
+                intel: 55,
+                character: 'Random',
+            })
+        ).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+            message: expect.stringContaining('카카오 인증'),
+        });
+        expect(worldStateReads.count).toBe(0);
+    });
+
     it('queues turn daemon run commands', async () => {
         const transport = new InMemoryTurnDaemonTransport();
         const caller = appRouter.createCaller(buildContext({ transport }));

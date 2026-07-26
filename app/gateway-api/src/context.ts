@@ -8,6 +8,7 @@ import type { GatewayOrchestratorHandle } from './orchestrator/gatewayOrchestrat
 import type { GatewayProfileStatusService } from './lobby/profileStatusService.js';
 import type { GatewayPrismaClient } from '@sammo-ts/infra';
 import type { AdminAuthContext } from './adminAuth.js';
+import type { PasswordEnvelopeService } from './auth/passwordEnvelope.js';
 
 export interface GatewayApiContext {
     users: UserRepository;
@@ -21,6 +22,9 @@ export interface GatewayApiContext {
     userIconDir: string;
     userIconPublicUrl: string;
     adminLocalAccountEnabled: boolean;
+    localRegistrationEnabled: boolean;
+    localAccountGraceDays: number;
+    passwordEnvelope: PasswordEnvelopeService;
     profiles: GatewayProfileRepository;
     orchestrator: GatewayOrchestratorHandle;
     profileStatus: GatewayProfileStatusService;
@@ -41,6 +45,9 @@ export const createGatewayApiContext = (options: {
     userIconDir?: string;
     userIconPublicUrl?: string;
     adminLocalAccountEnabled: boolean;
+    localRegistrationEnabled: boolean;
+    localAccountGraceDays: number;
+    passwordEnvelope: PasswordEnvelopeService;
     profiles: GatewayProfileRepository;
     orchestrator: GatewayOrchestratorHandle;
     profileStatus: GatewayProfileStatusService;
@@ -58,6 +65,9 @@ export const createGatewayApiContext = (options: {
     userIconDir: options.userIconDir ?? 'uploads/user-icons',
     userIconPublicUrl: options.userIconPublicUrl ?? `${options.publicBaseUrl.replace(/\/$/, '')}/user-icons`,
     adminLocalAccountEnabled: options.adminLocalAccountEnabled,
+    localRegistrationEnabled: options.localRegistrationEnabled,
+    localAccountGraceDays: options.localAccountGraceDays,
+    passwordEnvelope: options.passwordEnvelope,
     profiles: options.profiles,
     orchestrator: options.orchestrator,
     profileStatus: options.profileStatus,

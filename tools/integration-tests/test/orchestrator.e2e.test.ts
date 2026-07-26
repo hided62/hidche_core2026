@@ -7,6 +7,7 @@ import { execFile } from 'node:child_process';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTRPCProxyClient, httpBatchLink } from '@trpc/client';
+import { sealGatewayPassword } from '../src/passwordEnvelope.js';
 
 import type { AppRouter as GatewayAppRouter } from '@sammo-ts/gateway-api';
 import type { AppRouter as GameAppRouter } from '@sammo-ts/game-api';
@@ -518,7 +519,7 @@ describe('pm2 orchestrator e2e', () => {
 
         const login = await gatewayClient.auth.login.mutate({
             username: 'e2e-user',
-            password: 'e2e-pass-123',
+            credential: sealGatewayPassword('e2e-pass-123', await gatewayClient.auth.passwordKey.query()),
         });
 
         const gameSession = await gatewayClient.auth.issueGameSession.mutate({

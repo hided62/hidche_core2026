@@ -5,6 +5,7 @@ import { execFile } from 'node:child_process';
 
 import { beforeAll, afterAll, describe, expect, it } from 'vitest';
 import { createTRPCProxyClient, httpBatchLink } from '@trpc/client';
+import { sealGatewayPassword } from '../src/passwordEnvelope.js';
 
 import type { AppRouter as GatewayAppRouter } from '@sammo-ts/gateway-api';
 import { createGatewayApiServer } from '@sammo-ts/gateway-api';
@@ -305,7 +306,7 @@ describe('auction integration flow', () => {
         for (const user of demoUsers) {
             const login = await gatewayClient.auth.login.mutate({
                 username: user.username,
-                password: user.password,
+                credential: sealGatewayPassword(user.password, await gatewayClient.auth.passwordKey.query()),
             });
             const gatewayToken = await gatewayClient.auth.issueGameSession.mutate({
                 sessionToken: login.sessionToken,

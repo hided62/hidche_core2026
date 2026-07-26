@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 
 import DefaultLayout from '../layouts/DefaultLayout.vue';
 import { trpc } from '../utils/trpc';
+import { sealPassword } from '../utils/passwordEnvelope';
 
 type Account = Awaited<ReturnType<typeof trpc.account.get.query>>;
 
@@ -65,10 +66,14 @@ const changePassword = async (): Promise<void> => {
     await runAction(async () => {
         const token = sessionToken();
         if (!token) throw new Error('로그인이 필요합니다.');
+        const [currentCredential, newCredential] = await Promise.all([
+            sealPassword(currentPassword.value),
+            sealPassword(newPassword.value),
+        ]);
         await trpc.account.changePassword.mutate({
             sessionToken: token,
-            currentPassword: currentPassword.value,
-            newPassword: newPassword.value,
+            currentCredential,
+            newCredential,
         });
         currentPassword.value = '';
         newPassword.value = '';
@@ -92,9 +97,10 @@ const scheduleDeletion = async (): Promise<void> => {
     await runAction(async () => {
         const token = sessionToken();
         if (!token) throw new Error('로그인이 필요합니다.');
+        const currentCredential = await sealPassword(deletePassword.value);
         const result = await trpc.account.scheduleDeletion.mutate({
             sessionToken: token,
-            currentPassword: deletePassword.value,
+            currentCredential,
         });
         window.localStorage.removeItem('sammo-session-token');
         successMessage.value = `${new Date(result.deleteAfter).toLocaleDateString('ko-KR')}까지 정보가 보존됩니다.`;

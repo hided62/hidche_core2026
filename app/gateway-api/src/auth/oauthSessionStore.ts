@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { parseJson } from '@sammo-ts/common';
 
-export type OAuthMode = 'login' | 'change_pw';
+export type OAuthMode = 'login' | 'change_pw' | 'verify';
 
 export interface OAuthPendingState {
     state: string;
     mode: OAuthMode;
     scopes: string[];
+    userId?: string;
     createdAt: string;
 }
 
@@ -23,7 +24,7 @@ export interface OAuthSession {
 }
 
 export interface OAuthSessionStore {
-    createPendingState(mode: OAuthMode, scopes: string[]): Promise<OAuthPendingState>;
+    createPendingState(mode: OAuthMode, scopes: string[], userId?: string): Promise<OAuthPendingState>;
     consumePendingState(state: string): Promise<OAuthPendingState | null>;
     createSession(session: Omit<OAuthSession, 'id'>): Promise<OAuthSession>;
     consumeSession(sessionId: string): Promise<OAuthSession | null>;
@@ -61,11 +62,12 @@ export class RedisOAuthSessionStore implements OAuthSessionStore {
         return `${this.prefix}:oauth-session:${sessionId}`;
     }
 
-    async createPendingState(mode: OAuthMode, scopes: string[]): Promise<OAuthPendingState> {
+    async createPendingState(mode: OAuthMode, scopes: string[], userId?: string): Promise<OAuthPendingState> {
         const state: OAuthPendingState = {
             state: randomUUID(),
             mode,
             scopes,
+            userId,
             createdAt: new Date().toISOString(),
         };
         await this.client.set(this.stateKey(state.state), JSON.stringify(state), {
@@ -111,11 +113,12 @@ export class InMemoryOAuthSessionStore implements OAuthSessionStore {
     private readonly pendingStates = new Map<string, OAuthPendingState>();
     private readonly sessions = new Map<string, OAuthSession>();
 
-    async createPendingState(mode: OAuthMode, scopes: string[]): Promise<OAuthPendingState> {
+    async createPendingState(mode: OAuthMode, scopes: string[], userId?: string): Promise<OAuthPendingState> {
         const pending: OAuthPendingState = {
             state: randomUUID(),
             mode,
             scopes,
+            userId,
             createdAt: new Date().toISOString(),
         };
         this.pendingStates.set(pending.state, pending);

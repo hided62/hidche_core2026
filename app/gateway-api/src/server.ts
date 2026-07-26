@@ -18,6 +18,8 @@ import { RedisGatewayFlushPublisher } from './auth/flushPublisher.js';
 import { KakaoOAuthClient } from './auth/kakaoClient.js';
 import { RedisOAuthSessionStore } from './auth/oauthSessionStore.js';
 import { createPostgresUserRepository } from './auth/postgresUserRepository.js';
+import { createPasswordHasher } from './auth/passwordHasher.js';
+import { createPasswordEnvelopeService } from './auth/passwordEnvelope.js';
 import { RedisGatewaySessionService } from './auth/redisSessionService.js';
 import { createGatewayOrchestrator } from './orchestrator/orchestratorFactory.js';
 import { appRouter } from './router.js';
@@ -30,7 +32,14 @@ export const createGatewayApiServer = async () => {
     await postgres.connect();
     await redis.connect();
 
-    const users = createPostgresUserRepository(postgres.prisma as GatewayPrismaClient);
+    const privateKeyPem = config.passwordEncryptionPrivateKeyFile
+        ? await fs.readFile(config.passwordEncryptionPrivateKeyFile, 'utf8')
+        : undefined;
+    const passwordEnvelope = createPasswordEnvelopeService(privateKeyPem);
+    const users = createPostgresUserRepository(
+        postgres.prisma as GatewayPrismaClient,
+        createPasswordHasher({ legacyGlobalSalt: config.legacyPasswordGlobalSalt })
+    );
     const sessions = new RedisGatewaySessionService(redis.client, {
         keyPrefix: config.redisKeyPrefix,
         sessionTtlSeconds: config.sessionTtlSeconds,
@@ -87,6 +96,9 @@ export const createGatewayApiServer = async () => {
                     userIconDir: path.resolve(process.cwd(), config.userIconDir),
                     userIconPublicUrl: config.userIconPublicUrl,
                     adminLocalAccountEnabled: config.adminLocalAccountEnabled,
+                    localRegistrationEnabled: config.localRegistrationEnabled,
+                    localAccountGraceDays: config.localAccountGraceDays,
+                    passwordEnvelope,
                     profiles,
                     orchestrator,
                     profileStatus,

@@ -9,9 +9,9 @@ import { z } from 'zod';
 import type { GatewayApiContext } from '../context.js';
 import { procedure, router } from '../trpc.js';
 import type { UserRecord, UserSanctions } from '../auth/userRepository.js';
+import { openPassword, zPasswordEnvelope } from '../auth/registrationInput.js';
 
 const zSessionToken = z.string().min(1);
-const zPassword = z.string().min(6).max(128);
 const MAX_ICON_BYTES = 50 * 1024;
 const ALLOWED_ICON_FORMATS = new Set(['avif', 'webp', 'jpeg', 'png', 'gif']);
 
@@ -82,24 +82,27 @@ export const accountRouter = router({
         .input(
             z.object({
                 sessionToken: zSessionToken,
-                currentPassword: zPassword,
-                newPassword: zPassword,
+                currentCredential: zPasswordEnvelope,
+                newCredential: zPasswordEnvelope,
             })
         )
         .mutation(async ({ ctx, input }) => {
             const user = await requireSessionUser(ctx, input.sessionToken);
-            if (!(await ctx.users.verifyPassword(user, input.currentPassword))) {
+            const currentPassword = openPassword(ctx.passwordEnvelope, input.currentCredential);
+            if (!(await ctx.users.verifyPassword(user, currentPassword))) {
                 throw new TRPCError({ code: 'UNAUTHORIZED', message: '현재 비밀번호가 일치하지 않습니다.' });
             }
-            await ctx.users.updatePassword(user.id, input.newPassword);
+            const newPassword = openPassword(ctx.passwordEnvelope, input.newCredential);
+            await ctx.users.updatePassword(user.id, newPassword);
             await ctx.flushPublisher.publishUserFlush(user.id, 'password-changed');
             return { ok: true };
         }),
     scheduleDeletion: procedure
-        .input(z.object({ sessionToken: zSessionToken, currentPassword: zPassword }))
+        .input(z.object({ sessionToken: zSessionToken, currentCredential: zPasswordEnvelope }))
         .mutation(async ({ ctx, input }) => {
             const user = await requireSessionUser(ctx, input.sessionToken);
-            if (!(await ctx.users.verifyPassword(user, input.currentPassword))) {
+            const currentPassword = openPassword(ctx.passwordEnvelope, input.currentCredential);
+            if (!(await ctx.users.verifyPassword(user, currentPassword))) {
                 throw new TRPCError({ code: 'UNAUTHORIZED', message: '현재 비밀번호가 일치하지 않습니다.' });
             }
             if (user.deleteAfter) {

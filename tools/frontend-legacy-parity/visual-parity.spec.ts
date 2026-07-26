@@ -2,12 +2,17 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { dirname, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { generateKeyPairSync } from 'node:crypto';
 
 import { canonicalFrontendFixture as fixture } from './fixtures/canonical';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const imageRoots = [resolve(repositoryRoot, '../image'), resolve(repositoryRoot, '../../image')];
 const artifactRoot = process.env.FRONTEND_PARITY_ARTIFACT_DIR;
+const passwordPublicKey = generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    publicExponent: 0x10001,
+}).publicKey.export({ format: 'pem', type: 'spki' }).toString();
 
 const response = (data: unknown) => ({ result: { data } });
 
@@ -16,11 +21,34 @@ const operationNames = (route: Route): string[] => {
     return decodeURIComponent(pathname.slice(pathname.lastIndexOf('/trpc/') + 6)).split(',');
 };
 
-const fulfillOperations = async (route: Route, resolveOperation: (operation: string) => unknown): Promise<void> => {
+const operationInputs = (route: Route): unknown[] => {
+    const request = route.request();
+    const encoded = new URL(request.url()).searchParams.get('input');
+    let body: unknown = null;
+    try {
+        body = encoded ? JSON.parse(encoded) : request.postDataJSON();
+    } catch {
+        return [];
+    }
+    if (!body || typeof body !== 'object') return [];
+    return operationNames(route).map((_, index) => {
+        const entry = (body as Record<string, unknown>)[String(index)];
+        if (!entry || typeof entry !== 'object') return undefined;
+        return (entry as { json?: unknown }).json ?? entry;
+    });
+};
+
+const fulfillOperations = async (
+    route: Route,
+    resolveOperation: (operation: string, input: unknown) => unknown
+): Promise<void> => {
+    const inputs = operationInputs(route);
     await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(operationNames(route).map((operation) => response(resolveOperation(operation)))),
+        body: JSON.stringify(
+            operationNames(route).map((operation, index) => response(resolveOperation(operation, inputs[index])))
+        ),
     });
 };
 
@@ -50,14 +78,64 @@ const installImages = async (page: Page): Promise<void> => {
 
 const installGatewayFixture = async (page: Page): Promise<void> => {
     let loggedIn = false;
+    let localPending = false;
     await installImages(page);
     await page.route('**/gateway/api/trpc/**', async (route) => {
-        await fulfillOperations(route, (operation) => {
-            if (operation === 'me') return loggedIn ? fixture.gateway.user : null;
-            if (operation === 'lobby.profiles') return [fixture.gateway.profile];
+        await fulfillOperations(route, (operation, input) => {
+            if (operation === 'me') {
+                return loggedIn
+                    ? {
+                          ...fixture.gateway.user,
+                          kakaoVerified: !localPending,
+                          kakaoGraceStartedAt: '2026-07-25T00:00:00.000Z',
+                      }
+                    : null;
+            }
+            if (operation === 'lobby.profiles') {
+                if (!localPending) {
+                    return [{ ...fixture.gateway.profile, localAccountPolicy: null }];
+                }
+                return [
+                    {
+                        ...fixture.gateway.profile,
+                        localAccountPolicy: {
+                            requiresKakaoVerification: true,
+                            kakaoVerified: false,
+                            accessAllowed: true,
+                            canCreateGeneral: false,
+                            graceEndsAt: '2026-08-01T00:00:00.000Z',
+                            generalCreationGraceDays: 0,
+                            accessGraceDays: 7,
+                        },
+                    },
+                    {
+                        ...fixture.gateway.profile,
+                        profileName: 'hwe:2',
+                        profile: 'hwe',
+                        korName: '훼',
+                        localAccountPolicy: {
+                            requiresKakaoVerification: true,
+                            kakaoVerified: false,
+                            accessAllowed: true,
+                            canCreateGeneral: true,
+                            graceEndsAt: '2026-08-01T00:00:00.000Z',
+                            generalCreationGraceDays: 7,
+                            accessGraceDays: 7,
+                        },
+                    },
+                ];
+            }
             if (operation === 'lobby.notice') return [];
+            if (operation === 'auth.passwordKey') {
+                return {
+                    keyId: 'visual-key',
+                    algorithm: 'RSA-OAEP-256',
+                    publicKeyPem: passwordPublicKey,
+                };
+            }
             if (operation === 'auth.login') {
                 loggedIn = true;
+                localPending = false;
                 return {
                     user: fixture.gateway.user,
                     sessionToken: fixture.gateway.sessionToken,
@@ -66,6 +144,33 @@ const installGatewayFixture = async (page: Page): Promise<void> => {
             }
             if (operation === 'auth.kakaoStart') {
                 return { mode: 'login', state: 'visual-state', authUrl: '/gateway/oauth-started' };
+            }
+            if (operation === 'auth.checkRegistrationField') {
+                const fieldInput = input as { field?: string; value?: string } | undefined;
+                return {
+                    available: true,
+                    normalizedValue:
+                        fieldInput?.field === 'username'
+                            ? fieldInput.value?.toLowerCase()
+                            : fieldInput?.value,
+                    message: '사용할 수 있습니다.',
+                };
+            }
+            if (operation === 'auth.registerLocal') {
+                loggedIn = true;
+                localPending = true;
+                return {
+                    user: {
+                        ...fixture.gateway.user,
+                        username: 'visual-local',
+                        displayName: '시각가입',
+                        kakaoVerified: false,
+                        kakaoGraceStartedAt: '2026-07-25T00:00:00.000Z',
+                    },
+                    sessionToken: fixture.gateway.sessionToken,
+                    issuedAt: '2026-07-25T00:00:00.000Z',
+                    requiresKakaoVerification: true,
+                };
             }
             if (operation === 'auth.kakaoExchange') {
                 return {
@@ -95,6 +200,14 @@ const installGatewayFixture = async (page: Page): Promise<void> => {
             if (operation === 'public.getMapLayout') return fixture.game.mapLayout;
             if (operation === 'public.getCachedMap') return fixture.game.map;
             throw new Error(`Unhandled gateway game fixture operation: ${operation}`);
+        });
+    });
+    await page.route('**/hwe/api/trpc/**', async (route) => {
+        await fulfillOperations(route, (operation) => {
+            if (operation === 'lobby.info') return fixture.game.lobby;
+            if (operation === 'public.getMapLayout') return fixture.game.mapLayout;
+            if (operation === 'public.getCachedMap') return fixture.game.map;
+            throw new Error(`Unhandled gateway HWE fixture operation: ${operation}`);
         });
     });
 };
@@ -386,6 +499,118 @@ test.describe('gateway legacy parity', () => {
         await page.getByRole('button', { name: '가입' }).click();
         await expect(page.getByRole('alert')).toBeVisible();
         await expect(page.locator('#oauth-username')).toHaveValue('duplicate-user');
+    });
+
+    for (const viewport of [
+        { name: 'desktop', width: 1365, height: 900 },
+        { name: 'mobile', width: 390, height: 844 },
+    ]) {
+        test(`renders the local signup form at ref-compatible geometry on ${viewport.name}`, async ({ page }) => {
+            await page.setViewportSize(viewport);
+            await page.goto('http://127.0.0.1:15100/gateway/signup');
+            await expect(page.getByRole('heading', { name: '회원가입' })).toBeVisible();
+            await expect(page.locator('iframe[title="이용 약관"]')).toBeVisible();
+            await expect(page.locator('iframe[title="개인정보 제공 및 이용 동의"]')).toBeVisible();
+
+            const geometry = await page.locator('#signup-container').evaluate((element) => {
+                const box = element.getBoundingClientRect();
+                const card = document.querySelector<HTMLElement>('.signup-card')!.getBoundingClientRect();
+                const style = getComputedStyle(element);
+                const terms = document.querySelector<HTMLElement>('.terms')!.getBoundingClientRect();
+                return {
+                    width: box.width,
+                    cardWidth: card.width,
+                    termsHeight: terms.height,
+                    fontFamily: style.fontFamily,
+                };
+            });
+
+            expect(geometry.fontFamily).toContain('Pretendard');
+            expect(geometry.termsHeight).toBe(200);
+            if (viewport.name === 'desktop') {
+                expect(geometry.width).toBe(1140);
+                expect(geometry.cardWidth).toBe(1116);
+            } else {
+                expect(geometry.width).toBe(390);
+                expect(geometry.cardWidth).toBe(366);
+            }
+        });
+    }
+
+    test('registers locally with an encrypted password and shows profile-specific Kakao gates', async ({ page }) => {
+        let registrationBody = '';
+        await page.route('**/gateway/api/trpc/**', async (route) => {
+            if (operationNames(route).includes('auth.registerLocal')) {
+                registrationBody = route.request().postData() ?? '';
+            }
+            await route.fallback();
+        });
+        await page.goto('http://127.0.0.1:15100/gateway/signup');
+        await page.locator('#signup-username').fill('VISUAL-LOCAL');
+        await page.locator('#signup-password').fill('visual-password');
+        await page.locator('#signup-confirm-password').fill('visual-password');
+        await page.locator('#signup-display-name').fill('시각가입');
+        const agreements = page.getByLabel('동의합니다.');
+        await agreements.nth(0).check();
+        await agreements.nth(1).check();
+
+        const register = page.getByRole('button', { name: '가입', exact: true });
+        const before = await register.evaluate((element) => getComputedStyle(element).backgroundColor);
+        await register.hover();
+        const hover = await register.evaluate((element) => getComputedStyle(element).backgroundColor);
+        await register.focus();
+        await expect(register).toBeFocused();
+        expect(hover).not.toBe(before);
+        await register.click();
+
+        await expect(page).toHaveURL(/\/gateway\/lobby\?welcome=local$/);
+        await expect(page.locator('#kakao-verification-banner')).toBeVisible();
+        expect(registrationBody).toContain('ciphertext');
+        expect(registrationBody).not.toContain('visual-password');
+        await expect
+            .poll(() => page.evaluate(() => window.localStorage.getItem('sammo-session-token')))
+            .toBe(fixture.gateway.sessionToken);
+
+        const cheRow = page.locator('tbody tr').filter({ hasText: '체섭' }).first();
+        const hweRow = page.locator('tbody tr').filter({ hasText: '훼섭' }).first();
+        await expect(cheRow.getByRole('button', { name: '인증 필요' })).toBeDisabled();
+        await expect(hweRow.getByRole('button', { name: '장수생성' })).toBeEnabled();
+
+        if (artifactRoot) {
+            await page.screenshot({
+                path: resolve(artifactRoot, 'local-signup-profile-policy.png'),
+                fullPage: true,
+                animations: 'disabled',
+            });
+        }
+    });
+
+    test('keeps local signup input after a registration API error', async ({ page }) => {
+        await page.route('**/gateway/api/trpc/**', async (route) => {
+            if (operationNames(route).includes('auth.registerLocal')) {
+                await route.fulfill({
+                    status: 500,
+                    contentType: 'application/json',
+                    body: JSON.stringify({ error: { message: '이미 사용중인 계정명입니다.' } }),
+                });
+                return;
+            }
+            await route.fallback();
+        });
+        await page.goto('http://127.0.0.1:15100/gateway/signup');
+        await page.locator('#signup-username').fill('duplicate-local');
+        await page.locator('#signup-password').fill('visual-password');
+        await page.locator('#signup-confirm-password').fill('visual-password');
+        await page.locator('#signup-display-name').fill('중복가입');
+        const agreements = page.getByLabel('동의합니다.');
+        await agreements.nth(0).check();
+        await agreements.nth(1).check();
+        await page.getByRole('button', { name: '가입', exact: true }).click();
+
+        await expect(page.getByRole('alert')).toBeVisible();
+        await expect(page.locator('#signup-username')).toHaveValue('duplicate-local');
+        await expect(page.locator('#signup-password')).toHaveValue('visual-password');
+        await expect(page.locator('#signup-display-name')).toHaveValue('중복가입');
     });
 });
 

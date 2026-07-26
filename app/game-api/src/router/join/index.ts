@@ -273,6 +273,12 @@ export const joinRouter = router({
             if (!userId) {
                 throw new TRPCError({ code: 'UNAUTHORIZED' });
             }
+            if (ctx.auth?.identity?.canCreateGeneral === false) {
+                throw new TRPCError({
+                    code: 'FORBIDDEN',
+                    message: '이 서버에서는 카카오 인증을 완료해야 장수를 생성할 수 있습니다.',
+                });
+            }
 
             const worldState = await ctx.db.worldState.findFirst();
             if (!worldState) {

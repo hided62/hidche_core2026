@@ -19,6 +19,10 @@ export interface GatewayApiConfig {
     userIconDir: string;
     userIconPublicUrl: string;
     adminLocalAccountEnabled: boolean;
+    localRegistrationEnabled: boolean;
+    localAccountGraceDays: number;
+    passwordEncryptionPrivateKeyFile?: string;
+    legacyPasswordGlobalSalt?: string;
     orchestratorEnabled: boolean;
     orchestratorReconcileIntervalMs: number;
     orchestratorScheduleIntervalMs: number;
@@ -86,6 +90,14 @@ export const resolveGatewayApiConfigFromEnv = (env: NodeJS.ProcessEnv = process.
         userIconDir: env.GATEWAY_USER_ICON_DIR ?? 'uploads/user-icons',
         userIconPublicUrl: env.GATEWAY_USER_ICON_PUBLIC_URL ?? `${publicBaseUrl.replace(/\/$/, '')}/user-icons`,
         adminLocalAccountEnabled: parseBooleanWithFallback(env.GATEWAY_ADMIN_LOCAL_ACCOUNT_ENABLED, false),
+        localRegistrationEnabled: parseBooleanWithFallback(env.GATEWAY_LOCAL_REGISTRATION_ENABLED, true),
+        localAccountGraceDays: parseNumberWithFallback(
+            env.GATEWAY_LOCAL_ACCOUNT_GRACE_DAYS,
+            7,
+            'GATEWAY_LOCAL_ACCOUNT_GRACE_DAYS'
+        ),
+        passwordEncryptionPrivateKeyFile: env.GATEWAY_PASSWORD_ENCRYPTION_PRIVATE_KEY_FILE,
+        legacyPasswordGlobalSalt: env.GATEWAY_LEGACY_PASSWORD_GLOBAL_SALT,
         orchestratorEnabled: parseBooleanWithFallback(env.GATEWAY_ORCHESTRATOR_ENABLED, false),
         orchestratorReconcileIntervalMs: parseNumberWithFallback(
             env.GATEWAY_ORCHESTRATOR_RECONCILE_MS,

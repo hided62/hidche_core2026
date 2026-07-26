@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 
 import DefaultLayout from '../layouts/DefaultLayout.vue';
 import { trpc } from '../utils/trpc';
+import { sealPassword } from '../utils/passwordEnvelope';
 
 const route = useRoute();
 const router = useRouter();
@@ -19,6 +20,7 @@ const confirmPassword = ref('');
 const displayName = ref('');
 const termsAgreed = ref(false);
 const privacyAgreed = ref(false);
+const thirdPartyUse = ref(false);
 const appBase = import.meta.env.BASE_URL;
 
 const completeExchange = async (): Promise<void> => {
@@ -34,6 +36,11 @@ const completeExchange = async (): Promise<void> => {
         if (result.status === 'login') {
             window.localStorage.setItem('sammo-session-token', result.sessionToken);
             await router.replace('/lobby');
+            return;
+        }
+        if (result.status === 'verified') {
+            window.localStorage.setItem('sammo-session-token', result.sessionToken);
+            await router.replace('/lobby?verified=1');
             return;
         }
         if (result.status === 'change_pw') {
@@ -61,11 +68,15 @@ const register = async (): Promise<void> => {
     }
     submitting.value = true;
     try {
+        const credential = await sealPassword(password.value);
         const result = await trpc.auth.register.mutate({
             oauthSessionId: oauthSessionId.value,
             username: username.value,
-            password: password.value,
-            displayName: displayName.value || undefined,
+            credential,
+            displayName: displayName.value,
+            termsAgreed: true,
+            privacyAgreed: true,
+            thirdPartyUse: thirdPartyUse.value,
         });
         window.localStorage.setItem('sammo-session-token', result.sessionToken);
         await router.replace('/lobby');
@@ -125,6 +136,13 @@ onMounted(() => {
                         <label>
                             <input v-model="privacyAgreed" type="checkbox" />
                             <a :href="`${appBase}terms.2.html`" target="_blank">내용 확인</a> 후 동의합니다.
+                        </label>
+                    </div>
+                    <div class="agreement-row">
+                        <span>개인정보 제3자 제공 (선택)</span>
+                        <label>
+                            <input v-model="thirdPartyUse" type="checkbox" />
+                            동의합니다.
                         </label>
                     </div>
                     <button class="register-button" type="submit" :disabled="submitting">

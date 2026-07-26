@@ -2,6 +2,7 @@ import { createTRPCProxyClient, httpBatchLink } from '@trpc/client';
 import type { AppRouter as GatewayAppRouter } from '@sammo-ts/gateway-api';
 import type { AppRouter as GameAppRouter } from '@sammo-ts/game-api';
 import { expect, test } from '@playwright/test';
+import { constants, publicEncrypt } from 'node:crypto';
 
 const gatewayUrl = process.env.COMMAND_LIVE_GATEWAY_URL ?? 'http://127.0.0.1:13160/trpc';
 const gameUrl = process.env.COMMAND_LIVE_GAME_URL ?? 'http://127.0.0.1:14160/trpc';
@@ -15,9 +16,20 @@ test('reserves an argument command in the real game API and reads it back from P
     const gateway = createTRPCProxyClient<GatewayAppRouter>({
         links: [httpBatchLink({ url: gatewayUrl })],
     });
+    const passwordKey = await gateway.auth.passwordKey.query();
     const login = await gateway.auth.login.mutate({
         username: 'demo1',
-        password: 'demo-pass-1',
+        credential: {
+            keyId: passwordKey.keyId,
+            ciphertext: publicEncrypt(
+                {
+                    key: passwordKey.publicKeyPem,
+                    padding: constants.RSA_PKCS1_OAEP_PADDING,
+                    oaepHash: 'sha256',
+                },
+                Buffer.from('demo-pass-1', 'utf8')
+            ).toString('base64'),
+        },
     });
     const issued = await gateway.auth.issueGameSession.mutate({
         sessionToken: login.sessionToken,

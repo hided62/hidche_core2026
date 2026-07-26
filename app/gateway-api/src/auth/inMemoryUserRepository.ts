@@ -21,6 +21,14 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createSimp
         async findByUsername(username: string): Promise<UserRecord | null> {
             return usersByName.get(username) ?? null;
         },
+        async findByDisplayName(displayName: string): Promise<UserRecord | null> {
+            for (const user of usersByName.values()) {
+                if (user.displayName === displayName) {
+                    return user;
+                }
+            }
+            return null;
+        },
         async findByOauthId(type: 'KAKAO', oauthId: string): Promise<UserRecord | null> {
             return usersByOauthId.get(`${type}:${oauthId}`) ?? null;
         },
@@ -31,8 +39,14 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createSimp
             if (usersByName.has(input.username)) {
                 throw new Error('User already exists.');
             }
-            const salt = hasher.createSalt();
+            for (const existing of usersByName.values()) {
+                if ((input.displayName ?? input.username) === existing.displayName) {
+                    throw new Error('Display name already exists.');
+                }
+            }
+            const password = await hasher.hash(input.password);
             const oauthType = input.oauth?.type ?? 'NONE';
+            const now = new Date();
             const user: UserRecord = {
                 id: randomUUID(),
                 username: input.username,
@@ -45,10 +59,14 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createSimp
                 oauthInfo: input.oauth?.info,
                 picture: 'default.jpg',
                 imageServer: 0,
-                thirdPartyUse: true,
-                passwordSalt: salt,
-                passwordHash: hasher.hash(input.password, salt),
-                createdAt: new Date().toISOString(),
+                thirdPartyUse: input.thirdPartyUse ?? false,
+                termsAcceptedAt: input.termsAcceptedAt?.toISOString(),
+                privacyAcceptedAt: input.privacyAcceptedAt?.toISOString(),
+                kakaoVerifiedAt: input.oauth ? now.toISOString() : undefined,
+                kakaoGraceStartedAt: now.toISOString(),
+                passwordSalt: password.salt,
+                passwordHash: password.hash,
+                createdAt: now.toISOString(),
             };
             usersByName.set(input.username, user);
             if (user.oauthType === 'KAKAO' && user.oauthId) {
@@ -60,14 +78,20 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createSimp
             return user;
         },
         async verifyPassword(user: UserRecord, password: string): Promise<boolean> {
-            return hasher.hash(password, user.passwordSalt) === user.passwordHash;
+            const verified = await hasher.verify(password, user.passwordHash, user.passwordSalt);
+            if (verified.ok && verified.needsUpgrade) {
+                const upgraded = await hasher.hash(password);
+                user.passwordSalt = upgraded.salt;
+                user.passwordHash = upgraded.hash;
+            }
+            return verified.ok;
         },
         async updatePassword(userId: string, password: string): Promise<void> {
             for (const user of usersByName.values()) {
                 if (user.id === userId) {
-                    const salt = hasher.createSalt();
-                    user.passwordSalt = salt;
-                    user.passwordHash = hasher.hash(password, salt);
+                    const next = await hasher.hash(password);
+                    user.passwordSalt = next.salt;
+                    user.passwordHash = next.hash;
                     return;
                 }
             }
@@ -79,6 +103,25 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createSimp
                     user.oauthInfo = oauthInfo;
                     return;
                 }
+            }
+            throw new Error('User not found.');
+        },
+        async linkKakao(userId, input): Promise<UserRecord> {
+            if (usersByOauthId.has(`KAKAO:${input.oauthId}`) || usersByEmail.has(input.email.toLowerCase())) {
+                throw new Error('Kakao account already linked.');
+            }
+            for (const user of usersByName.values()) {
+                if (user.id !== userId) {
+                    continue;
+                }
+                user.oauthType = 'KAKAO';
+                user.oauthId = input.oauthId;
+                user.email = input.email.toLowerCase();
+                user.oauthInfo = input.oauthInfo;
+                user.kakaoVerifiedAt = input.verifiedAt.toISOString();
+                usersByOauthId.set(`KAKAO:${input.oauthId}`, user);
+                usersByEmail.set(user.email, user);
+                return user;
             }
             throw new Error('User not found.');
         },

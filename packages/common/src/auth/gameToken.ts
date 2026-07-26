@@ -34,6 +34,12 @@ export interface GameSessionTokenPayload {
     sessionId: string;
     user: GatewayUserInfo;
     sanctions: UserSanctions;
+    identity?: {
+        kakaoVerified: boolean;
+        canCreateGeneral: boolean;
+        requiresKakaoVerification: boolean;
+        graceEndsAt: string | null;
+    };
 }
 
 const toBase64Url = (data: Buffer): string => data.toString('base64url');
@@ -82,6 +88,20 @@ const parsePayload = (value: unknown): GameSessionTokenPayload | null => {
     }
     if (!payload.sanctions || typeof payload.sanctions !== 'object') {
         return null;
+    }
+    if (payload.identity !== undefined) {
+        if (!payload.identity || typeof payload.identity !== 'object') {
+            return null;
+        }
+        const identity = payload.identity as Partial<NonNullable<GameSessionTokenPayload['identity']>>;
+        if (
+            typeof identity.kakaoVerified !== 'boolean' ||
+            typeof identity.canCreateGeneral !== 'boolean' ||
+            typeof identity.requiresKakaoVerification !== 'boolean' ||
+            (identity.graceEndsAt !== null && typeof identity.graceEndsAt !== 'string')
+        ) {
+            return null;
+        }
     }
     return payload as GameSessionTokenPayload;
 };

@@ -9,6 +9,7 @@ import DefaultLayout from '../layouts/DefaultLayout.vue';
 import { createGameTrpc, type GameRouter } from '../utils/gameTrpc';
 import { trpc } from '../utils/trpc';
 import { formatLog } from '../utils/formatLog';
+import { sealPassword } from '../utils/passwordEnvelope';
 
 type GatewayOutput = inferRouterOutputs<AppRouter>;
 type GameOutput = inferRouterOutputs<GameRouter>;
@@ -84,9 +85,10 @@ const handleLogin = async (): Promise<void> => {
     loginError.value = '';
     loginLoading.value = true;
     try {
+        const credential = await sealPassword(password.value);
         const result = await trpc.auth.login.mutate({
             username: username.value,
-            password: password.value,
+            credential,
         });
         window.localStorage.setItem('sammo-session-token', result.sessionToken);
         await router.push('/lobby');
@@ -146,7 +148,7 @@ const handlePasswordReset = async (): Promise<void> => {
                         required
                     />
                     <button id="btn_kakao_login" class="kakao-button" type="button" @click="handleKakao">
-                        가입&amp;<br />로그인
+                        카카오<br />로그인
                     </button>
                     <button class="login-button" type="submit" :disabled="loginLoading">
                         {{ loginLoading ? '로그인 중…' : '로그인' }}
@@ -154,6 +156,7 @@ const handlePasswordReset = async (): Promise<void> => {
                     <button class="reset-button" type="button" @click="handlePasswordReset">
                         비밀번호 초기화
                     </button>
+                    <RouterLink class="signup-button" to="/signup">아이디로 회원가입</RouterLink>
                 </form>
                 <p v-if="loginError" class="login-error" role="alert">{{ loginError }}</p>
             </section>
@@ -259,6 +262,24 @@ const handlePasswordReset = async (): Promise<void> => {
     border-radius: 4px;
     font-weight: 700;
     cursor: pointer;
+}
+
+.signup-button {
+    grid-column: 1 / -1;
+    min-height: 30px;
+    border: 1px solid #375a7f;
+    border-radius: 4px;
+    background: #223851;
+    color: #fff;
+    font-weight: 700;
+    line-height: 30px;
+    text-align: center;
+    text-decoration: none;
+}
+
+.signup-button:hover,
+.signup-button:focus {
+    background: #2f4d6c;
 }
 
 .reset-button {

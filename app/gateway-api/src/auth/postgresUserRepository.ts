@@ -33,6 +33,10 @@ const mapUser = (row: {
     imageServer: number;
     iconUpdatedAt: Date | null;
     thirdPartyUse: boolean;
+    termsAcceptedAt: Date | null;
+    privacyAcceptedAt: Date | null;
+    kakaoVerifiedAt: Date | null;
+    kakaoGraceStartedAt: Date;
     deleteAfter: Date | null;
     createdAt: Date;
 }): UserRecord => ({
@@ -49,6 +53,10 @@ const mapUser = (row: {
     imageServer: row.imageServer,
     iconUpdatedAt: row.iconUpdatedAt?.toISOString(),
     thirdPartyUse: row.thirdPartyUse,
+    termsAcceptedAt: row.termsAcceptedAt?.toISOString(),
+    privacyAcceptedAt: row.privacyAcceptedAt?.toISOString(),
+    kakaoVerifiedAt: row.kakaoVerifiedAt?.toISOString(),
+    kakaoGraceStartedAt: row.kakaoGraceStartedAt.toISOString(),
     deleteAfter: row.deleteAfter?.toISOString(),
     passwordHash: row.passwordHash,
     passwordSalt: row.passwordSalt,
@@ -76,6 +84,14 @@ export const createPostgresUserRepository = (
             });
             return row ? mapUser(row) : null;
         },
+        async findByDisplayName(displayName: string): Promise<UserRecord | null> {
+            const row = await prisma.appUser.findUnique({
+                where: {
+                    displayName,
+                },
+            });
+            return row ? mapUser(row) : null;
+        },
         async findByOauthId(type: 'KAKAO', oauthId: string): Promise<UserRecord | null> {
             const row = await prisma.appUser.findFirst({
                 where: {
@@ -94,34 +110,53 @@ export const createPostgresUserRepository = (
             return row ? mapUser(row) : null;
         },
         async createUser(input: CreateUserInput): Promise<UserRecord> {
-            const salt = hasher.createSalt();
+            const password = await hasher.hash(input.password);
             const oauthType = input.oauth?.type ?? 'NONE';
+            const now = new Date();
             const row = await prisma.appUser.create({
                 data: {
                     loginId: input.username,
                     displayName: input.displayName ?? input.username,
-                    passwordHash: hasher.hash(input.password, salt),
-                    passwordSalt: salt,
+                    passwordHash: password.hash,
+                    passwordSalt: password.salt,
                     roles: ['user'] satisfies GatewayPrisma.JsonArray,
                     sanctions: {} satisfies GatewayPrisma.JsonObject,
                     oauthType,
                     oauthId: input.oauth?.id,
                     email: input.oauth?.email?.toLowerCase(),
                     oauthInfo: (input.oauth?.info ?? {}) as GatewayPrisma.JsonObject,
+                    termsAcceptedAt: input.termsAcceptedAt,
+                    privacyAcceptedAt: input.privacyAcceptedAt,
+                    thirdPartyUse: input.thirdPartyUse ?? false,
+                    kakaoVerifiedAt: input.oauth ? now : undefined,
+                    kakaoGraceStartedAt: now,
                 },
             });
             return mapUser(row);
         },
         async verifyPassword(user: UserRecord, password: string): Promise<boolean> {
-            return hasher.hash(password, user.passwordSalt) === user.passwordHash;
+            const verified = await hasher.verify(password, user.passwordHash, user.passwordSalt);
+            if (verified.ok && verified.needsUpgrade) {
+                const upgraded = await hasher.hash(password);
+                await prisma.appUser.update({
+                    where: { id: user.id },
+                    data: {
+                        passwordHash: upgraded.hash,
+                        passwordSalt: upgraded.salt,
+                    },
+                });
+                user.passwordHash = upgraded.hash;
+                user.passwordSalt = upgraded.salt;
+            }
+            return verified.ok;
         },
         async updatePassword(userId: string, password: string): Promise<void> {
-            const salt = hasher.createSalt();
+            const next = await hasher.hash(password);
             await prisma.appUser.update({
                 where: { id: userId },
                 data: {
-                    passwordHash: hasher.hash(password, salt),
-                    passwordSalt: salt,
+                    passwordHash: next.hash,
+                    passwordSalt: next.salt,
                 },
             });
         },
@@ -132,6 +167,19 @@ export const createPostgresUserRepository = (
                     oauthInfo: oauthInfo as GatewayPrisma.JsonObject,
                 },
             });
+        },
+        async linkKakao(userId, input): Promise<UserRecord> {
+            const row = await prisma.appUser.update({
+                where: { id: userId },
+                data: {
+                    oauthType: 'KAKAO',
+                    oauthId: input.oauthId,
+                    email: input.email.toLowerCase(),
+                    oauthInfo: input.oauthInfo as GatewayPrisma.JsonObject,
+                    kakaoVerifiedAt: input.verifiedAt,
+                },
+            });
+            return mapUser(row);
         },
         async updateRoles(userId: string, roles: string[]): Promise<void> {
             await prisma.appUser.update({

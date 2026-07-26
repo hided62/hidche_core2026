@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTRPCProxyClient, httpBatchLink } from '@trpc/client';
+import { sealGatewayPassword } from '../src/passwordEnvelope.js';
 
 import type { AppRouter as GatewayAppRouter } from '@sammo-ts/gateway-api';
 import { createGatewayApiServer } from '@sammo-ts/gateway-api';
@@ -223,7 +224,10 @@ describe('actual tournament lifecycle', () => {
         for (const [username, displayName] of users) {
             const login = await gatewayClient.auth.login.mutate({
                 username,
-                password: `${username}-pass`,
+                credential: sealGatewayPassword(
+                    `${username}-pass`,
+                    await gatewayClient.auth.passwordKey.query()
+                ),
             });
             const gatewayToken = await gatewayClient.auth.issueGameSession.mutate({
                 sessionToken: login.sessionToken,

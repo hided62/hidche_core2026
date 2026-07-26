@@ -8,6 +8,7 @@ import type { GatewayOperationCreateInput, GatewayProfileRepository } from '../s
 import { createGatewayApiContext } from '../src/context.js';
 import { InMemoryProfileStatusService } from '../src/lobby/profileStatusService.js';
 import { appRouter } from '../src/router.js';
+import { createPasswordEnvelopeService } from '../src/auth/passwordEnvelope.js';
 
 const buildCaller = async (createOperation: GatewayProfileRepository['createOperation']) => {
     const users = createInMemoryUserRepository();
@@ -74,6 +75,9 @@ const buildCaller = async (createOperation: GatewayProfileRepository['createOper
             oauthSessions: {} as never,
             publicBaseUrl: 'http://localhost',
             adminLocalAccountEnabled: false,
+            localRegistrationEnabled: true,
+            localAccountGraceDays: 7,
+            passwordEnvelope: createPasswordEnvelopeService(),
             profiles,
             orchestrator: {
                 start: () => {},

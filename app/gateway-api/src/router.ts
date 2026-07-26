@@ -11,11 +11,22 @@ import { toPublicUser } from './auth/userRepository.js';
 import type { UserOAuthInfo } from './auth/userRepository.js';
 import { adminRouter } from './adminRouter.js';
 import { accountRouter } from './account/router.js';
+import { resolveLocalAccountProfilePolicy } from './auth/localAccountPolicy.js';
+import {
+    openPassword,
+    zDisplayName,
+    zPasswordEnvelope,
+    zRegistrationUsername,
+} from './auth/registrationInput.js';
 
-const zUsername = z.string().min(2).max(32);
+const zUsername = z
+    .string()
+    .min(2)
+    .max(64)
+    .transform((value) => value.trim().toLocaleLowerCase('en-US'));
 const zPassword = z.string().min(6).max(128);
 const zProfile = z.string().min(1).max(64);
-const zOAuthMode = z.enum(['login', 'change_pw']);
+const zOAuthMode = z.enum(['login', 'change_pw', 'verify']);
 const zBootstrapToken = z.string().min(1);
 
 const parseDate = (value: string): Date | null => {
@@ -54,11 +65,34 @@ export const appRouter = router({
                     .optional()
             )
             .query(async ({ ctx, input }) => {
-                const sessionToken = input?.sessionToken;
+                const sessionToken =
+                    (ctx.requestHeaders['x-session-token'] as string | undefined) ?? input?.sessionToken;
                 const session = sessionToken ? await ctx.sessions.getSession(sessionToken) : null;
-                return ctx.profileStatus.listLobbyProfiles({
+                const profileList = await ctx.profileStatus.listLobbyProfiles({
                     userId: session?.userId,
                 });
+                const user = session ? await ctx.users.findById(session.userId) : null;
+                if (!user) {
+                    return profileList.map((profile) => ({
+                        ...profile,
+                        localAccountPolicy: null,
+                    }));
+                }
+                return Promise.all(
+                    profileList.map(async (profile) => {
+                        const record = await ctx.profiles.getProfile(profile.profileName);
+                        const policy = resolveLocalAccountProfilePolicy({
+                            profile: record?.profile ?? profile.profile,
+                            profileMeta: record?.meta,
+                            defaultGraceDays: ctx.localAccountGraceDays,
+                            user,
+                        });
+                        return {
+                            ...profile,
+                            localAccountPolicy: policy,
+                        };
+                    })
+                );
             }),
     }),
     admin: adminRouter,
@@ -119,13 +153,27 @@ export const appRouter = router({
                     .object({
                         mode: zOAuthMode.optional(),
                         scopes: z.array(z.string()).optional(),
+                        sessionToken: z.string().min(1).optional(),
                     })
                     .optional()
             )
             .query(async ({ ctx, input }) => {
                 const mode = input?.mode ?? 'login';
                 const scopes = input?.scopes ?? ['account_email'];
-                const pending = await ctx.oauthSessions.createPendingState(mode, scopes);
+                let userId: string | undefined;
+                if (mode === 'verify') {
+                    const sessionToken =
+                        (ctx.requestHeaders['x-session-token'] as string | undefined) ?? input?.sessionToken;
+                    const session = sessionToken ? await ctx.sessions.getSession(sessionToken) : null;
+                    if (!session) {
+                        throw new TRPCError({
+                            code: 'UNAUTHORIZED',
+                            message: '카카오 인증을 연결하려면 먼저 로그인해야 합니다.',
+                        });
+                    }
+                    userId = session.userId;
+                }
+                const pending = await ctx.oauthSessions.createPendingState(mode, scopes, userId);
                 const authUrl = ctx.kakaoClient.buildAuthUrl(pending.state, pending.scopes);
                 return {
                     mode,
@@ -187,6 +235,57 @@ export const appRouter = router({
                 const existing =
                     (await ctx.users.findByOauthId('KAKAO', me.id)) ??
                     (await ctx.users.findByEmail(kakaoAccount.email));
+
+                if (pending.mode === 'verify') {
+                    if (!pending.userId) {
+                        throw new TRPCError({
+                            code: 'UNAUTHORIZED',
+                            message: '카카오 인증 연결 세션이 올바르지 않습니다.',
+                        });
+                    }
+                    const localUser = await ctx.users.findById(pending.userId);
+                    if (!localUser) {
+                        throw new TRPCError({
+                            code: 'NOT_FOUND',
+                            message: '연결할 로컬 계정을 찾지 못했습니다.',
+                        });
+                    }
+                    if (existing && existing.id !== localUser.id) {
+                        throw new TRPCError({
+                            code: 'CONFLICT',
+                            message: '이미 다른 계정에 연결된 카카오 계정입니다.',
+                        });
+                    }
+                    let verified = localUser;
+                    if (existing?.id !== localUser.id) {
+                        try {
+                            verified = await ctx.users.linkKakao(localUser.id, {
+                                oauthId: me.id,
+                                email: kakaoAccount.email,
+                                oauthInfo,
+                                verifiedAt: new Date(),
+                            });
+                        } catch (error) {
+                            throw new TRPCError({
+                                code: 'CONFLICT',
+                                message: '이미 다른 계정에 연결된 카카오 계정입니다.',
+                                cause: error,
+                            });
+                        }
+                    }
+                    if (existing?.id === localUser.id) {
+                        await ctx.users.updateOAuthInfo(localUser.id, oauthInfo);
+                    }
+                    const refreshed = (await ctx.users.findById(verified.id)) ?? verified;
+                    const session = await ctx.sessions.createSession(refreshed);
+                    await ctx.flushPublisher.publishUserFlush(refreshed.id, 'kakao-verified');
+                    return {
+                        status: 'verified' as const,
+                        user: toPublicUser(refreshed),
+                        sessionToken: session.sessionToken,
+                        issuedAt: session.issuedAt,
+                    };
+                }
 
                 if (pending.mode === 'change_pw') {
                     if (!existing) {
@@ -255,12 +354,22 @@ export const appRouter = router({
             .input(
                 z.object({
                     oauthSessionId: z.string().min(1),
-                    username: zUsername,
-                    password: zPassword,
-                    displayName: z.string().min(2).max(40).optional(),
+                    username: zRegistrationUsername,
+                    credential: zPasswordEnvelope,
+                    displayName: zDisplayName,
+                    termsAgreed: z.literal(true),
+                    privacyAgreed: z.literal(true),
+                    thirdPartyUse: z.boolean(),
                 })
             )
             .mutation(async ({ ctx, input }) => {
+                if (!ctx.localRegistrationEnabled) {
+                    throw new TRPCError({
+                        code: 'FORBIDDEN',
+                        message: '현재는 가입이 금지되어있습니다!',
+                    });
+                }
+                const password = openPassword(ctx.passwordEnvelope, input.credential);
                 const oauthSession = await ctx.oauthSessions.consumeSession(input.oauthSessionId);
                 if (!oauthSession) {
                     throw new TRPCError({
@@ -273,6 +382,13 @@ export const appRouter = router({
                     throw new TRPCError({
                         code: 'CONFLICT',
                         message: 'Username already exists.',
+                    });
+                }
+                const existingDisplayName = await ctx.users.findByDisplayName(input.displayName);
+                if (existingDisplayName) {
+                    throw new TRPCError({
+                        code: 'CONFLICT',
+                        message: '이미 사용중인 닉네임입니다.',
                     });
                 }
                 const existingOAuth =
@@ -292,10 +408,14 @@ export const appRouter = router({
                 };
                 let created: Awaited<ReturnType<typeof ctx.users.createUser>>;
                 try {
+                    const now = new Date();
                     created = await ctx.users.createUser({
                         username: input.username,
-                        password: input.password,
+                        password,
                         displayName: input.displayName,
+                        termsAcceptedAt: now,
+                        privacyAcceptedAt: now,
+                        thirdPartyUse: input.thirdPartyUse,
                         oauth: {
                             type: 'KAKAO',
                             id: oauthSession.kakaoId,
@@ -317,11 +437,95 @@ export const appRouter = router({
                     issuedAt: session.issuedAt,
                 };
             }),
+        passwordKey: procedure.query(({ ctx }) => ctx.passwordEnvelope.getPublicKey()),
+        checkRegistrationField: procedure
+            .input(
+                z.discriminatedUnion('field', [
+                    z.object({ field: z.literal('username'), value: zRegistrationUsername }),
+                    z.object({ field: z.literal('displayName'), value: zDisplayName }),
+                ])
+            )
+            .query(async ({ ctx, input }) => {
+                const existing =
+                    input.field === 'username'
+                        ? await ctx.users.findByUsername(input.value)
+                        : await ctx.users.findByDisplayName(input.value);
+                return {
+                    available: !existing,
+                    normalizedValue: input.value,
+                    message: existing
+                        ? input.field === 'username'
+                            ? '이미 사용중인 계정명입니다.'
+                            : '이미 사용중인 닉네임입니다.'
+                        : '사용할 수 있습니다.',
+                };
+            }),
+        registerLocal: procedure
+            .input(
+                z.object({
+                    username: zRegistrationUsername,
+                    credential: zPasswordEnvelope,
+                    displayName: zDisplayName,
+                    termsAgreed: z.literal(true),
+                    privacyAgreed: z.literal(true),
+                    thirdPartyUse: z.boolean(),
+                })
+            )
+            .mutation(async ({ ctx, input }) => {
+                if (!ctx.localRegistrationEnabled) {
+                    throw new TRPCError({
+                        code: 'FORBIDDEN',
+                        message: '현재는 가입이 금지되어있습니다!',
+                    });
+                }
+                const [existingUser, existingDisplayName] = await Promise.all([
+                    ctx.users.findByUsername(input.username),
+                    ctx.users.findByDisplayName(input.displayName),
+                ]);
+                if (existingUser) {
+                    throw new TRPCError({
+                        code: 'CONFLICT',
+                        message: '이미 사용중인 계정명입니다.',
+                    });
+                }
+                if (existingDisplayName) {
+                    throw new TRPCError({
+                        code: 'CONFLICT',
+                        message: '이미 사용중인 닉네임입니다.',
+                    });
+                }
+                const password = openPassword(ctx.passwordEnvelope, input.credential);
+                const now = new Date();
+                let created: Awaited<ReturnType<typeof ctx.users.createUser>>;
+                try {
+                    created = await ctx.users.createUser({
+                        username: input.username,
+                        password,
+                        displayName: input.displayName,
+                        termsAcceptedAt: now,
+                        privacyAcceptedAt: now,
+                        thirdPartyUse: input.thirdPartyUse,
+                    });
+                } catch (error) {
+                    throw new TRPCError({
+                        code: 'CONFLICT',
+                        message: '이미 사용중인 계정명 또는 닉네임입니다.',
+                        cause: error,
+                    });
+                }
+                const session = await ctx.sessions.createSession(created);
+                return {
+                    user: toPublicUser(created),
+                    sessionToken: session.sessionToken,
+                    issuedAt: session.issuedAt,
+                    requiresKakaoVerification: true,
+                };
+            }),
         login: procedure
             .input(
                 z.object({
                     username: zUsername,
-                    password: zPassword,
+                    credential: zPasswordEnvelope,
                 })
             )
             .mutation(async ({ ctx, input }) => {
@@ -338,7 +542,8 @@ export const appRouter = router({
                         message: 'Account deletion is pending.',
                     });
                 }
-                const ok = await ctx.users.verifyPassword(user, input.password);
+                const password = openPassword(ctx.passwordEnvelope, input.credential);
+                const ok = await ctx.users.verifyPassword(user, password);
                 if (!ok) {
                     throw new TRPCError({
                         code: 'UNAUTHORIZED',
@@ -363,12 +568,12 @@ export const appRouter = router({
                 if (!session) {
                     return null;
                 }
+                const user = await ctx.users.findById(session.userId);
+                if (!user) {
+                    return null;
+                }
                 return {
-                    user: {
-                        id: session.userId,
-                        username: session.username,
-                        displayName: session.displayName,
-                    },
+                    user: toPublicUser(user),
                     issuedAt: session.issuedAt,
                 };
             }),
@@ -394,6 +599,34 @@ export const appRouter = router({
                 })
             )
             .mutation(async ({ ctx, input }) => {
+                const gatewaySession = await ctx.sessions.getSession(input.sessionToken);
+                if (!gatewaySession) {
+                    throw new TRPCError({
+                        code: 'UNAUTHORIZED',
+                        message: 'Session is not valid.',
+                    });
+                }
+                const user = await ctx.users.findById(gatewaySession.userId);
+                if (!user) {
+                    throw new TRPCError({
+                        code: 'UNAUTHORIZED',
+                        message: 'Session user no longer exists.',
+                    });
+                }
+                const profileRecord = await ctx.profiles.getProfile(input.profile);
+                const profile = profileRecord?.profile ?? input.profile.split(':', 1)[0] ?? input.profile;
+                const localAccountPolicy = resolveLocalAccountProfilePolicy({
+                    profile,
+                    profileMeta: profileRecord?.meta,
+                    defaultGraceDays: ctx.localAccountGraceDays,
+                    user,
+                });
+                if (!localAccountPolicy.accessAllowed) {
+                    throw new TRPCError({
+                        code: 'FORBIDDEN',
+                        message: '카카오 인증 유예기간이 만료되었습니다. 인증 후 계속 이용할 수 있습니다.',
+                    });
+                }
                 const gameSession = await ctx.sessions.createGameSession(input.sessionToken, input.profile);
                 if (!gameSession) {
                     throw new TRPCError({
@@ -416,6 +649,12 @@ export const appRouter = router({
                         createdAt: gameSession.createdAt,
                     },
                     sanctions: gameSession.sanctions,
+                    identity: {
+                        kakaoVerified: localAccountPolicy.kakaoVerified,
+                        canCreateGeneral: localAccountPolicy.canCreateGeneral,
+                        requiresKakaoVerification: localAccountPolicy.requiresKakaoVerification,
+                        graceEndsAt: localAccountPolicy.graceEndsAt,
+                    },
                 } as const;
                 const gameToken = encryptGameSessionToken(payload, ctx.gameTokenSecret);
                 return {

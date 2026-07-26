@@ -38,6 +38,10 @@ const canAccessAdmin = computed(
                 role.startsWith('admin.')
         ) ?? false
 );
+const needsKakaoVerification = computed(() => me.value !== null && !me.value.kakaoVerified);
+
+const formatGraceEndsAt = (value: string | null | undefined): string =>
+    value ? new Date(value).toLocaleString('ko-KR') : '';
 
 onMounted(async () => {
     try {
@@ -82,9 +86,28 @@ onMounted(async () => {
 });
 
 const handleLogout = async () => {
-    // TODO: Implement logout mutation in gateway-api
-    // await trpc.auth.logout.mutation();
+    const sessionToken = window.localStorage.getItem('sammo-session-token');
+    if (sessionToken) {
+        await trpc.auth.logout.mutate({ sessionToken });
+        window.localStorage.removeItem('sammo-session-token');
+    }
     await router.push('/');
+};
+
+const handleKakaoVerification = async (): Promise<void> => {
+    const sessionToken = window.localStorage.getItem('sammo-session-token');
+    if (!sessionToken) {
+        await router.push('/');
+        return;
+    }
+    try {
+        const result = await trpc.auth.kakaoStart.query({
+            mode: 'verify',
+        });
+        window.location.assign(result.authUrl);
+    } catch (error) {
+        alert(error instanceof Error ? error.message : '카카오 인증을 시작하지 못했습니다.');
+    }
 };
 
 const resolveGameUrl = (path: string, profileName: string, gameToken: string): string | null => {
@@ -127,7 +150,7 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
         window.location.href = url;
     } catch (e) {
         console.error('Failed to issue game session', e);
-        alert('게임 서버 접속에 실패했습니다.');
+        alert(e instanceof Error ? e.message : '게임 서버 접속에 실패했습니다.');
     } finally {
         entryLoading.value[profile.profileName] = false;
     }
@@ -142,6 +165,30 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                 <!-- eslint-disable-next-line vue/no-v-html -->
                 <span class="text-orange-500 text-3xl font-bold" v-html="notice"></span>
             </div>
+
+            <section
+                v-if="needsKakaoVerification"
+                id="kakao-verification-banner"
+                class="bg-amber-950/70 border border-amber-600 rounded p-4 text-amber-100"
+            >
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                    <div>
+                        <strong class="block text-amber-300">카카오 인증이 필요합니다.</strong>
+                        <span class="text-sm">
+                            유예기간이 지나면 게임에 입장할 수 없습니다. che·kwe·twe는 인증 전 장수 생성도
+                            제한됩니다.
+                        </span>
+                    </div>
+                    <button
+                        id="connect-kakao"
+                        class="shrink-0 bg-yellow-400 hover:bg-yellow-300 text-black font-bold px-5 py-2 rounded"
+                        type="button"
+                        @click="handleKakaoVerification"
+                    >
+                        카카오 인증 연결
+                    </button>
+                </div>
+            </section>
 
             <!-- Server List Table -->
             <div class="bg-zinc-900 border border-zinc-800 rounded shadow-xl overflow-hidden">
@@ -180,6 +227,21 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                 </div>
                                 <div v-if="profileDetails[profile.profileName]" class="text-xs text-zinc-500 mt-1">
                                     &lt;{{ profileDetails[profile.profileName]?.nationCnt }}국 경쟁중&gt;
+                                </div>
+                                <div
+                                    v-if="
+                                        profile.localAccountPolicy?.requiresKakaoVerification &&
+                                        !profile.localAccountPolicy.canCreateGeneral
+                                    "
+                                    class="mt-2 text-xs text-red-400"
+                                >
+                                    인증 전 생성 불가
+                                </div>
+                                <div
+                                    v-else-if="profile.localAccountPolicy?.requiresKakaoVerification"
+                                    class="mt-2 text-xs text-amber-300"
+                                >
+                                    {{ formatGraceEndsAt(profile.localAccountPolicy.graceEndsAt) }}까지 유예
                                 </div>
                             </td>
 
@@ -251,10 +313,17 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                     <button
                                         v-else
                                         class="w-full bg-zinc-700 hover:bg-zinc-600 text-white py-1.5 rounded text-sm transition-colors"
-                                        :disabled="entryLoading[profile.profileName]"
+                                        :disabled="
+                                            entryLoading[profile.profileName] ||
+                                            profile.localAccountPolicy?.canCreateGeneral === false
+                                        "
                                         @click="handleEnter(profile, '/join')"
                                     >
-                                        장수생성
+                                        {{
+                                            profile.localAccountPolicy?.canCreateGeneral === false
+                                                ? '인증 필요'
+                                                : '장수생성'
+                                        }}
                                     </button>
                                 </template>
                                 <template v-else-if="profile.status === 'STOPPED'">

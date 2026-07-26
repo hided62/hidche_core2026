@@ -5,6 +5,7 @@ import { execFile } from 'node:child_process';
 
 import { beforeAll, afterAll, describe, expect, it } from 'vitest';
 import { createTRPCProxyClient, httpBatchLink } from '@trpc/client';
+import { sealGatewayPassword } from '../src/passwordEnvelope.js';
 
 import type { AppRouter as GatewayAppRouter } from '@sammo-ts/gateway-api';
 import type { AppRouter as GameAppRouter } from '@sammo-ts/game-api';
@@ -228,7 +229,7 @@ describe('integration initialization flow', () => {
             expect(lookup?.username).toBe(user.username);
             const login = await gatewayClient.auth.login.mutate({
                 username: user.username,
-                password: user.password,
+                credential: sealGatewayPassword(user.password, await gatewayClient.auth.passwordKey.query()),
             });
             expect(login.sessionToken).toBeTruthy();
         }
@@ -298,7 +299,7 @@ describe('integration initialization flow', () => {
         for (const [idx, user] of demoUsers.entries()) {
             const login = await gatewayClient.auth.login.mutate({
                 username: user.username,
-                password: user.password,
+                credential: sealGatewayPassword(user.password, await gatewayClient.auth.passwordKey.query()),
             });
             const gatewayToken = await gatewayClient.auth.issueGameSession.mutate({
                 sessionToken: login.sessionToken,
