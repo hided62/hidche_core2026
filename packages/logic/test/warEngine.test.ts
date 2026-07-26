@@ -300,6 +300,8 @@ describe('war triggers', () => {
         );
         cityUnit.setOppose(firstAttacker);
         expect(cityUnit.addConflict()).toBe(false);
+        expect(city.conflict).toEqual({ 1: 1.05 });
+        expect(city.meta.conflict).toBeUndefined();
 
         const secondNation = { ...buildNation(), id: 2 };
         const secondGeneral = { ...buildGeneral(80), id: 2, nationId: 2 };
@@ -316,6 +318,7 @@ describe('war triggers', () => {
         );
         cityUnit.setOppose(secondAttacker);
         expect(cityUnit.addConflict()).toBe(true);
+        expect(city.conflict).toEqual({ 1: 1.05, 2: 1 });
     });
 });
 

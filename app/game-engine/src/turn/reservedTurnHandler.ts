@@ -129,8 +129,9 @@ const applyLegacyGeneralProgression = (
     const preserveLevel = actionKey === 'che_은퇴' || actionKey === 'che_선양';
     if (!preserveLevel && (forceRefreshLevel || general.experience !== previousGeneral.experience)) {
         const previousExpLevel = readMetaNumber(previousGeneral.meta, 'explevel', 0);
+        const actionResolvedExpLevel = readMetaNumber(general.meta, 'explevel', previousExpLevel);
         meta.explevel = expLevel;
-        if (expLevel !== previousExpLevel) {
+        if (expLevel !== previousExpLevel && actionResolvedExpLevel !== expLevel) {
             const josaRo = JosaUtil.pick(String(expLevel), '로');
             logs.push({
                 scope: LogScope.GENERAL,
@@ -1089,6 +1090,9 @@ export const createReservedTurnHandler = async (options: {
 
                 const lastTurnBeforeExecution = JSON.stringify(currentGeneral.lastTurn ?? {});
                 const generalBeforeExecution = currentGeneral;
+                const cityNationIdsBeforeExecution = new Map(
+                    (worldView?.listCities() ?? []).map((city) => [city.id, city.nationId] as const)
+                );
                 const resolution = resolveGeneralAction(
                     definition,
                     actionContext,
@@ -1279,9 +1283,14 @@ export const createReservedTurnHandler = async (options: {
                     }
                 }
 
-                const hasNationChange = (resolution.patches?.cities ?? []).some((patch) =>
-                    Object.prototype.hasOwnProperty.call(patch.patch ?? {}, 'nationId')
-                );
+                const hasNationChange = (resolution.patches?.cities ?? []).some((patch) => {
+                    if (!Object.prototype.hasOwnProperty.call(patch.patch ?? {}, 'nationId')) {
+                        return false;
+                    }
+                    const nextNationId = patch.patch.nationId;
+                    const previousNationId = cityNationIdsBeforeExecution.get(patch.id);
+                    return previousNationId === undefined || nextNationId !== previousNationId;
+                });
                 const refreshesFrontForDiplomacyState =
                     actionKey === 'che_이호경식' &&
                     resolution.effects.some(

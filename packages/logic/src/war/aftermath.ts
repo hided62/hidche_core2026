@@ -13,10 +13,9 @@ import type {
     WarAftermathTechContext,
     WarDiplomacyDelta,
 } from './types.js';
-import { clamp, clampMin, getMetaNumber, round, simpleSerialize } from './utils.js';
+import { clamp, clampMin, getMetaNumber, parseConflict, round, simpleSerialize } from './utils.js';
 
 const META_DEAD = 'dead';
-const META_CONFLICT = 'conflict';
 const MAX_EXP_LEVEL = 255;
 const MAX_DEDICATION_LEVEL = 30;
 
@@ -120,29 +119,24 @@ const applyNationTechGain = <TriggerState extends GeneralTriggerState>(
 };
 
 const resolveConquerNation = (city: City, attackerNationId: number, nations: Nation[]): number => {
-    const rawConflict = city.meta[META_CONFLICT];
-    if (!rawConflict) {
+    const conflict = parseConflict(city.conflict);
+    if (!conflict) {
         return attackerNationId;
     }
-    try {
-        const parsed = JSON.parse(String(rawConflict)) as Record<string, number>;
-        const activeNationIds = new Set(nations.map((nation) => nation.id));
-        const entries = Object.entries(parsed)
-            .map(([key, value]) => [Number(key), value] as const)
-            .filter(
-                ([key, value]) =>
-                    Number.isFinite(key) &&
-                    typeof value === 'number' &&
-                    (key === attackerNationId || activeNationIds.has(key))
-            )
-            .sort(([, lhs], [, rhs]) => rhs - lhs);
-        if (!entries.length) {
-            return attackerNationId;
-        }
-        return entries[0]![0];
-    } catch {
+    const activeNationIds = new Set(nations.map((nation) => nation.id));
+    const entries = Object.entries(conflict)
+        .map(([key, value]) => [Number(key), value] as const)
+        .filter(
+            ([key, value]) =>
+                Number.isFinite(key) &&
+                typeof value === 'number' &&
+                (key === attackerNationId || activeNationIds.has(key))
+        )
+        .sort(([, lhs], [, rhs]) => rhs - lhs);
+    if (!entries.length) {
         return attackerNationId;
     }
+    return entries[0]![0];
 };
 
 const getCityPosition = (city: City): { x: number; y: number } | null => {
@@ -383,7 +377,7 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
     defenderCity.commerce = round(defenderCity.commerce * 0.7);
     defenderCity.security = round(defenderCity.security * 0.7);
     defenderCity.nationId = conquerNationId;
-    defenderCity.meta[META_CONFLICT] = '{}';
+    defenderCity.conflict = {};
 
     if (defenderCity.level > 3) {
         defenderCity.defence = config.defaultCityWall;

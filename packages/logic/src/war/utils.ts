@@ -55,23 +55,26 @@ export const parseConflict = (raw: TriggerValue | undefined): Record<number, num
     if (raw === undefined || raw === null) {
         return null;
     }
+    let parsed: unknown = raw;
     if (typeof raw === 'string') {
         try {
-            const parsed = JSON.parse(raw) as Record<string, number>;
-            const result: Record<number, number> = {};
-            for (const [key, value] of Object.entries(parsed)) {
-                const id = Number(key);
-                if (!Number.isFinite(id) || typeof value !== 'number') {
-                    continue;
-                }
-                result[id] = value;
-            }
-            return Object.keys(result).length ? result : null;
+            parsed = JSON.parse(raw) as unknown;
         } catch {
             return null;
         }
     }
-    return null;
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        return null;
+    }
+    const result: Record<number, number> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+        const id = Number(key);
+        if (!Number.isFinite(id) || typeof value !== 'number') {
+            continue;
+        }
+        result[id] = value;
+    }
+    return Object.keys(result).length ? result : null;
 };
 
 export const stringifyConflict = (conflict: Record<number, number> | null): string => {

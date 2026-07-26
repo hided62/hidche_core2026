@@ -4,7 +4,7 @@ import type { City, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { ActionLogger } from '@sammo-ts/logic/logging/actionLogger.js';
 import type { WarEngineConfig } from '../types.js';
 import type { WarCrewType } from '../crewType.js';
-import { clampMin, round, parseConflict, sortConflict, stringifyConflict } from '../utils.js';
+import { clampMin, round, parseConflict, sortConflict } from '../utils.js';
 import { WarUnit } from './base.js';
 
 // 도시 성벽 전투 유닛(legacy WarUnitCity 포팅).
@@ -133,7 +133,7 @@ export class WarUnitCity extends WarUnit {
     }
 
     public addConflict(): boolean {
-        const raw = this.city.meta.conflict;
+        const raw = this.city.conflict;
         const conflict = parseConflict(raw) ?? {};
         const oppose = this.getOppose();
 
@@ -161,7 +161,7 @@ export class WarUnitCity extends WarUnit {
         }
 
         const sorted = sortConflict(conflict);
-        this.city.meta.conflict = stringifyConflict(sorted);
+        this.city.conflict = sorted;
 
         return isNew;
     }

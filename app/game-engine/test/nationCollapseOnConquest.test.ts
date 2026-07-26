@@ -87,9 +87,7 @@ describe('도시 점령 시 국가 멸망 처리', () => {
         strongFrontCity.frontState = 1;
         strongFrontCity.supplyState = 1;
         const conflictCity = cities.find((city) => city.id === 3)!;
-        Object.assign(conflictCity.meta, {
-            conflict: JSON.stringify({ 2: 100, 1: 50 }),
-        });
+        conflictCity.conflict = { 2: 100, 1: 50 };
 
         const unitSet: UnitSetDefinition = {
             id: 'test_unit_set',
@@ -170,6 +168,7 @@ describe('도시 점령 시 국가 멸망 처리', () => {
                 gold: 0,
                 rice: 0,
                 turnTime: delayedTurnTime,
+                meta: { killturn: 800, belong: 10 },
             }
         );
         generals.push(weakGeneral);
@@ -264,10 +263,11 @@ describe('도시 점령 시 국가 멸망 처리', () => {
         expect(world.getCityById(weakCityId)?.nationId).toBe(1);
         expect(world.getNationById(2)).toBeNull();
         expect(world.listNations().some((nation) => nation.id === 2)).toBe(false);
-        expect(JSON.parse(String(world.getCityById(conflictCity.id)?.meta.conflict))).toEqual({ 1: 50 });
+        expect(world.getCityById(conflictCity.id)?.conflict).toEqual({ 1: 50 });
 
         const updatedWeakGeneral = world.getGeneralById(weakGeneral.id);
         expect(updatedWeakGeneral?.nationId).toBe(0);
         expect(updatedWeakGeneral?.officerLevel).toBe(0);
+        expect(updatedWeakGeneral?.meta.belong).toBe(0);
     });
 });

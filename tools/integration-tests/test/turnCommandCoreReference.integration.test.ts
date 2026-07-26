@@ -76,6 +76,7 @@ integration('core ↔ legacy command-boundary differential', () => {
     it.each([
         ['nation declaration', 'fixtures/turn-differential/nation-declaration.json'],
         ['live sortie conquest', 'fixtures/turn-differential/live-sortie-conquest.json'],
+        ['live sortie against a defending general', 'fixtures/turn-differential/live-sortie-defender.json'],
     ])(
         '%s matches command RNG and canonical state delta',
         async (_label, fixturePath) => {

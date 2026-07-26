@@ -1035,7 +1035,7 @@ export class InMemoryTurnWorld {
         // nation. Without this, a later conquest can award a city to a
         // nation ID that no longer exists.
         for (const city of this.cities.values()) {
-            const rawConflict = city.meta.conflict;
+            const rawConflict = city.conflict;
             if (rawConflict === null || rawConflict === undefined) {
                 continue;
             }
@@ -1056,10 +1056,7 @@ export class InMemoryTurnWorld {
             delete conflict[key];
             this.cities.set(city.id, {
                 ...city,
-                meta: {
-                    ...city.meta,
-                    conflict: JSON.stringify(conflict),
-                },
+                conflict: conflict as City['conflict'],
             });
             this.dirtyCityIds.add(city.id);
         }
@@ -1073,10 +1070,20 @@ export class InMemoryTurnWorld {
             if (general.nationId !== nationId) {
                 continue;
             }
+            const belong = typeof general.meta.belong === 'number' ? general.meta.belong : 0;
+            const maxBelong = typeof general.meta.max_belong === 'number' ? general.meta.max_belong : 0;
             const updated = applyGeneralPatch(general, {
                 nationId: 0,
                 officerLevel: 0,
                 troopId: 0,
+                meta: {
+                    ...general.meta,
+                    belong: 0,
+                    officer_city: 0,
+                    officerCity: 0,
+                    permission: 'normal',
+                    ...(general.npcState < 2 ? { max_belong: Math.max(belong, maxBelong) } : {}),
+                },
             });
             this.generals.set(general.id, normalizeGeneralTurnTime(updated, this.state.lastTurnTime));
             this.dirtyGeneralIds.add(general.id);
