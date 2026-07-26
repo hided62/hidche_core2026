@@ -946,3 +946,85 @@ integration('nation material aid resource boundaries', () => {
         );
     }, 120_000);
 });
+
+const materialAidConstraintCases: Array<{
+    name: string;
+    args: Record<string, unknown>;
+    fixturePatches?: FixturePatches;
+}> = [
+    {
+        name: 'rejects a missing destination nation',
+        args: { destNationID: 9999, amountList: [100, 0] },
+    },
+    {
+        name: 'rejects the source nation as destination',
+        args: { destNationID: 1, amountList: [100, 0] },
+    },
+    {
+        name: 'rejects a source nation under diplomacy restriction',
+        args: { destNationID: 2, amountList: [100, 0] },
+        fixturePatches: { nations: { 1: { diplomacyLimit: 1 } } },
+    },
+    {
+        name: 'rejects a destination nation under diplomacy restriction',
+        args: { destNationID: 2, amountList: [100, 0] },
+        fixturePatches: { nations: { 2: { diplomacyLimit: 1 } } },
+    },
+    {
+        name: 'rejects a negative component',
+        args: { destNationID: 2, amountList: [-1, 100] },
+    },
+    {
+        name: 'rejects a fractional component',
+        args: { destNationID: 2, amountList: [100.5, 0] },
+    },
+    {
+        name: 'rejects a one-element amount list',
+        args: { destNationID: 2, amountList: [100] },
+    },
+    {
+        name: 'rejects a three-element amount list',
+        args: { destNationID: 2, amountList: [100, 0, 0] },
+    },
+    {
+        name: 'rejects a non-array amount list',
+        args: { destNationID: 2, amountList: '100,0' },
+    },
+    {
+        name: 'rejects a zero destination nation ID',
+        args: { destNationID: 0, amountList: [100, 0] },
+    },
+    {
+        name: 'rejects a fractional destination nation ID',
+        args: { destNationID: 2.5, amountList: [100, 0] },
+    },
+];
+
+integration('nation material aid target and input constraints', () => {
+    it.each(materialAidConstraintCases)(
+        '$name matches legacy fallback, RNG, and semantic delta',
+        async ({ args, fixturePatches }) => {
+            const request = buildRequest('che_물자원조', args, fixturePatches);
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+
+            expect(reference.execution.outcome).toMatchObject({ completed: false });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: 'che_물자원조',
+                actionKey: '휴식',
+                usedFallback: true,
+            });
+            expect(reference.rng).toEqual([]);
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+        },
+        120_000
+    );
+});
