@@ -122,7 +122,7 @@ watch(
                 <RouterLink class="ghost" to="/npc-list">빙의일람</RouterLink>
                 <a class="ghost" href="/xe/community" target="_blank" rel="noopener">게시판</a>
                 <RouterLink class="ghost" to="/battle-simulator">전투 시뮬레이터</RouterLink>
-                <RouterLink class="ghost" to="/my-page">내 정보</RouterLink>
+                <RouterLink class="ghost" to="/my-page">내 정보&amp;설정</RouterLink>
                 <RouterLink class="ghost" :class="{ highlight: tournamentStage === 1 }" to="/tournament"
                     >토너먼트</RouterLink
                 >
