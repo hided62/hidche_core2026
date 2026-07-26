@@ -30,6 +30,11 @@ turn 6개는 전투태세 1/2/3턴, 내정·전투 특기 초기화 1턴, 은퇴
 `last_turn`과 진행 로그, RNG 무소비를 비교한다. cooldown 3개는 특기
 초기화 완료 직후 `current + 60 - preReq`, 1턴 전 차단, 경계 월 허용을
 ref `next_execute` KV와 core general meta의 공통 projection으로 비교한다.
+존재하지 않는 대상 경계 4개는 증여·등용의 장수 ID와 첩보·이동의 도시 ID를
+고정해 원 명령 미완료, 휴식 fallback, RNG 무소비와 semantic delta를
+비교한다.
+필수 인자 객체 자체를 생략한 요청은 ref runner가 제한 시간 안에 종료되지
+않아 동적 호환 판정에서 제외한다.
 나머지 명령별 제약 실패·값 경계와 전체 core PostgreSQL 재조회가 완료
 기준을 통과하기 전까지 55개 명령 전체의 동적 호환 상태를 `확인`으로
 올리지 않는다.
