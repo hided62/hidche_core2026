@@ -42,6 +42,14 @@ type NationCountRow = {
 
 type NpcListSort = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 
+type TrafficHistoryItem = {
+    year: number;
+    month: number;
+    refresh: number;
+    online: number;
+    date: string;
+};
+
 const PUBLIC_CACHE_TTL_SECONDS = 600;
 
 const buildPublicCacheKey = (ctx: GameApiContext, key: string): string =>
@@ -163,6 +171,26 @@ const readFiniteMetaNumber = (meta: Record<string, unknown>, key: string): numbe
     return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 };
 
+const parseTrafficHistory = (value: unknown): TrafficHistoryItem[] => {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    const result: TrafficHistoryItem[] = [];
+    for (const item of value) {
+        const row = asRecord(item);
+        const year = readFiniteMetaNumber(row, 'year');
+        const month = readFiniteMetaNumber(row, 'month');
+        const refresh = readFiniteMetaNumber(row, 'refresh');
+        const online = readFiniteMetaNumber(row, 'online');
+        const date = typeof row.date === 'string' ? row.date : '';
+        if (year > 0 && month > 0 && date) {
+            result.push({ year, month, refresh, online, date });
+        }
+    }
+    return result;
+};
+
 const compareString = (left: string, right: string): number => {
     if (left === right) {
         return 0;
@@ -221,6 +249,95 @@ export const publicRouter = router({
     }),
     getNationList: procedure.query(async ({ ctx }) => {
         return loadCachedNationList(ctx);
+    }),
+    getTraffic: procedure.query(async ({ ctx }) => {
+        const worldState = await ctx.db.worldState.findFirst();
+        if (!worldState) {
+            throw new TRPCError({
+                code: 'PRECONDITION_FAILED',
+                message: 'World state is not initialized.',
+            });
+        }
+
+        const meta = asRecord(worldState.meta);
+        const rawOnlineSince = meta.lastTurnTime ?? meta.turntime;
+        const parsedOnlineSince =
+            typeof rawOnlineSince === 'string' || rawOnlineSince instanceof Date
+                ? new Date(rawOnlineSince)
+                : null;
+        const onlineSince =
+            parsedOnlineSince && Number.isFinite(parsedOnlineSince.getTime())
+                ? parsedOnlineSince
+                : new Date(Date.now() - worldState.tickSeconds * 1_000);
+        const [accessTotal, currentOnline, topAccess] = await Promise.all([
+            ctx.db.generalAccessLog.aggregate({
+                _sum: {
+                    refresh: true,
+                    refreshScoreTotal: true,
+                },
+            }),
+            ctx.db.generalAccessLog.count({
+                where: {
+                    lastRefresh: {
+                        gte: onlineSince,
+                    },
+                },
+            }),
+            ctx.db.generalAccessLog.findMany({
+                orderBy: [{ refresh: 'desc' }, { generalId: 'asc' }],
+                take: 5,
+                select: {
+                    generalId: true,
+                    refresh: true,
+                    refreshScoreTotal: true,
+                },
+            }),
+        ]);
+
+        const generalIds = topAccess.map((entry) => entry.generalId);
+        const generalRows =
+            generalIds.length > 0
+                ? await ctx.db.general.findMany({
+                      where: { id: { in: generalIds } },
+                      select: { id: true, name: true },
+                  })
+                : [];
+        const generalName = new Map(generalRows.map((general) => [general.id, general.name]));
+        const totalRefresh = accessTotal._sum.refresh ?? 0;
+        const totalRefreshScore = accessTotal._sum.refreshScoreTotal ?? 0;
+        const currentRefresh = Math.max(readFiniteMetaNumber(meta, 'refresh'), totalRefresh);
+        const history = parseTrafficHistory(meta.recentTraffic);
+        history.push({
+            year: worldState.currentYear,
+            month: worldState.currentMonth,
+            refresh: currentRefresh,
+            online: currentOnline,
+            date: new Date().toISOString(),
+        });
+
+        return {
+            history,
+            maxRefresh: Math.max(
+                1,
+                readFiniteMetaNumber(meta, 'maxrefresh'),
+                ...history.map((entry) => entry.refresh)
+            ),
+            maxOnline: Math.max(1, readFiniteMetaNumber(meta, 'maxonline'), ...history.map((entry) => entry.online)),
+            suspects: [
+                {
+                    generalId: null,
+                    name: '접속자 총합',
+                    refresh: totalRefresh,
+                    refreshScoreTotal: totalRefreshScore,
+                },
+                ...topAccess.map((entry) => ({
+                    generalId: entry.generalId,
+                    name: generalName.get(entry.generalId) ?? `장수 ${entry.generalId}`,
+                    refresh: entry.refresh,
+                    refreshScoreTotal: entry.refreshScoreTotal,
+                })),
+            ],
+        };
     }),
     getGeneralList: procedure.query(async ({ ctx }) => {
         const [generals, nations] = await Promise.all([
