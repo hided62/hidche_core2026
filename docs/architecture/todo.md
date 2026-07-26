@@ -106,7 +106,10 @@ Move items into the main docs once they are finalized.
 - [AI suggestion] Replace smoke/placeholder tests with concrete assertions for success/failure outcomes (e.g., 등용, NPC능동 invalid args, 출병 troop creation).
 - [AI suggestion] Document che*출병 parity gaps vs legacy (city state/term=43, fallback to che*이동 when friendly, nation.war/AllowWar check, post-war static events/unique-item lottery, missing route data when map/diplomacy not provided).
 - [AI suggestion] Verify that "이호경식" followed by "출병" is correctly blocked with the new reserved-turn overlay (diplomacy state sync).
-- [AI suggestion] Survey/unique lottery should account for auction/storage-held unique items once the inventory and auction models are finalized.
+- [AI suggestion] Migrate the legacy `storage` namespaces used to reserve
+  unequipped unique items. Survey, monthly nation-level, and general-command
+  lotteries now count equipped items plus active/finalizing unique auctions,
+  but core2026 has no equivalent persistent storage namespace to include yet.
 
 ## Trigger System
 

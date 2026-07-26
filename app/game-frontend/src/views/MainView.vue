@@ -96,7 +96,10 @@ watch(
                 <span v-else class="ghost disabled" aria-disabled="true">회의실</span>
                 <RouterLink v-if="boardAccess?.canSecret" class="ghost" to="/board/secret">기밀실</RouterLink>
                 <span v-else class="ghost disabled" aria-disabled="true">기밀실</span>
+                <RouterLink class="ghost" to="/nation/info">세력 정보</RouterLink>
                 <RouterLink class="ghost" to="/nation/cities">세력 도시</RouterLink>
+                <RouterLink class="ghost" to="/global-info">중원 정보</RouterLink>
+                <RouterLink class="ghost" to="/current-city">현재 도시</RouterLink>
                 <RouterLink class="ghost" to="/nation/generals">세력 장수</RouterLink>
                 <RouterLink class="ghost" to="/nation/personnel">인사부</RouterLink>
                 <RouterLink class="ghost" to="/troop">부대 편성</RouterLink>

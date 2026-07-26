@@ -24,6 +24,7 @@ import {
     evaluateConstraints,
     resolveGeneralAction,
     ITEM_KEYS,
+    addOccupiedUniqueItemKeys,
     buildGenericUniqueSeed,
     countOccupiedUniqueItems,
     createItemModuleRegistry,
@@ -382,6 +383,7 @@ const buildUniqueLotteryRunner = (options: {
     seedBase: string;
     itemRegistry: Map<string, ItemModule>;
     uniqueConfig: ReturnType<typeof resolveUniqueConfig>;
+    getAdditionalOccupiedUniqueItemKeys?: () => Iterable<string | null | undefined>;
 }): UniqueLotteryRunner => {
     if (!options.worldView) {
         return () => null;
@@ -408,6 +410,11 @@ const buildUniqueLotteryRunner = (options: {
             entry.id === general.id ? general.role.items : entry.role.items
         );
         const occupiedUniqueCounts = countOccupiedUniqueItems(generalItemsList, options.itemRegistry);
+        addOccupiedUniqueItemKeys(
+            occupiedUniqueCounts,
+            options.getAdditionalOccupiedUniqueItemKeys?.() ?? [],
+            options.itemRegistry
+        );
         const rngSeed = buildGenericUniqueSeed(
             options.seedBase,
             world.currentYear,
@@ -723,6 +730,7 @@ export const createReservedTurnHandler = async (options: {
     commandProfile?: TurnCommandProfile;
     commandEnv?: TurnCommandEnv;
     commandRngFactory?: (input: { kind: 'nation' | 'general'; actionKey: string; seed: string }) => RandUtil;
+    getAdditionalOccupiedUniqueItemKeys?: () => Iterable<string | null | undefined>;
     onActionResolved?: (payload: {
         kind: 'nation' | 'general';
         generalId: number;
@@ -944,6 +952,7 @@ export const createReservedTurnHandler = async (options: {
                     seedBase,
                     itemRegistry,
                     uniqueConfig,
+                    getAdditionalOccupiedUniqueItemKeys: options.getAdditionalOccupiedUniqueItemKeys,
                 });
                 let baseContext: ActionContextBase = {
                     general: currentGeneral,

@@ -212,9 +212,9 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
                 id: defender.id,
                 patch: {
                     injury: clamp(defender.injury + injuryAmount, 0, INJURY_MAX),
-                    crew: Math.floor(defender.crew * 0.98),
-                    atmos: Math.floor(defender.atmos * 0.98),
-                    train: Math.floor(defender.train * 0.98),
+                    crew: Math.round(defender.crew * 0.98),
+                    atmos: Math.round(defender.atmos * 0.98),
+                    train: Math.round(defender.train * 0.98),
                 },
             });
         }
@@ -386,7 +386,7 @@ export class ActionResolver<
         for (const injured of result.injuredGenerals) {
             // 타겟 장수는 Draft가 아니므로 Effect 반환
             effects.push(createGeneralPatchEffect(injured.patch, injured.id));
-            context.addLog(`<M>${ACTION_KEY}</>로 인해 <R>부상</>을 당했습니다.`, {
+            context.addLog('<M>계략</>으로 인해 <R>부상</>을 당했습니다.', {
                 generalId: injured.id,
                 format: LogFormat.MONTH,
             });

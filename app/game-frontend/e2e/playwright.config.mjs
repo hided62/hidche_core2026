@@ -6,7 +6,7 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../.
 
 export default defineConfig({
     testDir: '.',
-    testMatch: ['troop.spec.ts', 'board.spec.ts'],
+    testMatch: ['troop.spec.ts', 'board.spec.ts', 'inGameInfo.spec.ts'],
     fullyParallel: false,
     workers: 1,
     timeout: 30_000,
