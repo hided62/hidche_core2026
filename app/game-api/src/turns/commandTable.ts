@@ -205,6 +205,7 @@ const buildCommandEnv = (worldState: WorldStateRow): CommandEnv => {
         baseRice: resolveNumber(constValues, ['baseRice', 'baserice'], 0),
         generalMinimumGold: resolveNumber(constValues, ['generalMinimumGold'], 0),
         generalMinimumRice: resolveNumber(constValues, ['generalMinimumRice'], 500),
+        npcSeizureMessageProb: resolveNumber(constValues, ['npcSeizureMessageProb'], 0.01),
         maxResourceActionAmount: resolveNumber(constValues, ['maxResourceActionAmount'], 0),
     };
 };
