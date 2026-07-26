@@ -89,6 +89,7 @@ describe('buildProcessDefinitions', () => {
         expect(definitions.api.cwd).toBe(path.join(buildWorkspace, 'app', 'game-api'));
         expect(definitions.api.script).toBe(path.join(buildWorkspace, 'app', 'game-api', 'dist', 'index.js'));
         expect(definitions.api.env).toMatchObject({
+            GAME_PROFILE_NAME: 'che:2',
             GAME_TRPC_PATH: '/che/api/trpc',
             GAME_API_EVENTS_PATH: '/che/api/events',
             GAME_UPLOAD_PATH: '/che/api/uploads',

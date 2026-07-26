@@ -55,6 +55,18 @@ const resetScenario = async (page: Page, scenarioId: string, sourceCommit: strin
         timeout: 30_000,
     });
     await expect(profileStatus.locator('..').locator('.text-red-400')).toHaveCount(0);
+    await expect
+        .poll(
+            () =>
+                page.evaluate(async () => {
+                    const response = await fetch(
+                        '/hwe/api/trpc/lobby.info,public.getMapLayout,public.getCachedMap?batch=1&input=%7B%7D'
+                    );
+                    return response.status;
+                }),
+            { timeout: 60_000 }
+        )
+        .toBe(200);
 };
 
 const createGeneralAndInspectIcons = async (

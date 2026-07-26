@@ -25,7 +25,7 @@ export interface GameApiConfig {
 export const resolveGameApiConfigFromEnv = (env: NodeJS.ProcessEnv = process.env): GameApiConfig => {
     const profile = env.PROFILE ?? env.SERVER_PROFILE ?? 'hwe';
     const scenario = env.SCENARIO ?? 'default';
-    const profileName = `${profile}:${scenario}`;
+    const profileName = env.GAME_PROFILE_NAME ?? `${profile}:${scenario}`;
     const secret = env.GAME_TOKEN_SECRET ?? env.GATEWAY_TOKEN_SECRET ?? '';
     if (!secret) {
         throw new Error('GAME_TOKEN_SECRET is required for game token verification.');
