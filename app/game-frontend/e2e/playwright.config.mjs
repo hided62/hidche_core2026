@@ -14,6 +14,7 @@ export default defineConfig({
         'inGameInfo.spec.ts',
         'inGameMenus.spec.ts',
         'nationOffices.spec.ts',
+        'directoryLists.spec.ts',
         'nationGeneralSecret.spec.ts',
         'npcPolicy.spec.ts',
         'auction.spec.ts',

@@ -32,6 +32,8 @@ import TroopView from '../views/TroopView.vue';
 import YearbookView from '../views/YearbookView.vue';
 import NationBettingView from '../views/NationBettingView.vue';
 import NpcListView from '../views/NpcListView.vue';
+import NationListView from '../views/NationListView.vue';
+import GeneralListView from '../views/GeneralListView.vue';
 import TrafficView from '../views/TrafficView.vue';
 import { useSessionStore } from '../stores/session';
 import { trpc } from '../utils/trpc';
@@ -41,6 +43,8 @@ const accessPageByRouteName = {
     'nation-info': 'nation-info',
     'nation-cities': 'nation-cities',
     'global-info': 'global-info',
+    'nation-list': 'nation-list',
+    'general-list': 'general-list',
     'current-city': 'current-city',
     diplomacy: 'diplomacy',
     'nation-generals': 'nation-generals',
@@ -133,6 +137,18 @@ const routes = [
         path: '/global-info',
         name: 'global-info',
         component: GlobalInfoView,
+        meta: { requiresAuth: true, requiresGeneral: true },
+    },
+    {
+        path: '/nation-list',
+        name: 'nation-list',
+        component: NationListView,
+        meta: { requiresAuth: true, requiresGeneral: true },
+    },
+    {
+        path: '/general-list',
+        name: 'general-list',
+        component: GeneralListView,
         meta: { requiresAuth: true, requiresGeneral: true },
     },
     {

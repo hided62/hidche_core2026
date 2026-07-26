@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 import type { DatabaseClient } from '../src/context.js';
 
-import { recordGeneralAccess, resolveAccessWindows } from '../src/services/generalAccess.js';
+import { accessPageWeights, recordGeneralAccess, resolveAccessWindows } from '../src/services/generalAccess.js';
 
 const auth = (roles = ['user']): GameSessionTokenPayload => ({
     version: 1,
@@ -39,6 +39,11 @@ const buildDb = (meta: Record<string, unknown> = {}) => {
 };
 
 describe('general access tracking', () => {
+    it('uses the legacy weight two for both global directory pages', () => {
+        expect(accessPageWeights['nation-list']).toBe(2);
+        expect(accessPageWeights['general-list']).toBe(2);
+    });
+
     it('resolves the UTC day and latest processed turn windows', () => {
         expect(
             resolveAccessWindows(new Date('2026-07-26T03:14:15.000Z'), 600, {
