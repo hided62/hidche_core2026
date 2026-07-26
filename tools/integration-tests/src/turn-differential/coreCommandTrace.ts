@@ -366,6 +366,7 @@ const buildWorldInput = (
                 baseRice: 2_000,
                 generalMinimumGold: 0,
                 generalMinimumRice: 500,
+                npcSeizureMessageProb: 0.01,
                 maxResourceActionAmount: 10_000,
                 maxTechLevel: 12,
                 maxLevel: 255,
