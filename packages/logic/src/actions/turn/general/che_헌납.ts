@@ -21,7 +21,7 @@ import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/action
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import { parseArgsWithSchema } from '../parseArgs.js';
-import { normalizeResourceActionAmount } from './resourceAmount.js';
+import { normalizeResourceActionAmount } from '../resourceAmount.js';
 
 const ACTION_NAME = '헌납';
 const ACTION_KEY = 'che_헌납';

@@ -24,13 +24,11 @@ import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionCo
 import { clamp } from 'es-toolkit';
 import { z } from 'zod';
 import { parseArgsWithSchema } from '../parseArgs.js';
+import { normalizeResourceActionAmount } from '../resourceAmount.js';
 
 const ARGS_SCHEMA = z.object({
     isGold: z.boolean(),
-    amount: z.preprocess(
-        (value) => (typeof value === 'number' ? Math.floor(value / 100) * 100 : value),
-        z.number().int().positive()
-    ),
+    amount: z.number(),
     destGeneralID: z.number(),
 });
 export type SeizureArgs = z.infer<typeof ARGS_SCHEMA>;
@@ -56,9 +54,13 @@ export class ActionDefinition<
         if (!data) {
             return null;
         }
+        const amount = normalizeResourceActionAmount(data.amount, this.env.maxResourceActionAmount);
+        if (amount === null) {
+            return null;
+        }
         return {
             ...data,
-            amount: clamp(data.amount, 100, this.env.maxResourceActionAmount ?? 10000),
+            amount,
         };
     }
 
