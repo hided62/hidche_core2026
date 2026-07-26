@@ -77,6 +77,8 @@ const buildContext = (options?: {
     general?: GeneralRow | null;
     generalTurns?: GeneralTurnRow[];
     nationTurns?: NationTurnRow[];
+    generalTurnWrites?: unknown[];
+    nationTurnWrites?: unknown[];
     auth?: GameSessionTokenPayload | null;
 }): GameApiContext => {
     const transport = options?.transport ?? new InMemoryTurnDaemonTransport();
@@ -105,7 +107,10 @@ const buildContext = (options?: {
             findMany: async ({ where }: { where: { generalId: number } }) =>
                 generalTurns.filter((row) => row.generalId === where.generalId),
             deleteMany: async () => ({}),
-            createMany: async () => ({}),
+            createMany: async (args: unknown) => {
+                options?.generalTurnWrites?.push(args);
+                return {};
+            },
         },
         nationTurn: {
             findMany: async ({ where }: { where: { nationId: number; officerLevel: number } }) =>
@@ -113,7 +118,10 @@ const buildContext = (options?: {
                     (row) => row.nationId === where.nationId && row.officerLevel === where.officerLevel
                 ),
             deleteMany: async () => ({}),
-            createMany: async () => ({}),
+            createMany: async (args: unknown) => {
+                options?.nationTurnWrites?.push(args);
+                return {};
+            },
         },
     };
     const accessTokenStore = new RedisAccessTokenStore(
@@ -279,6 +287,59 @@ describe('appRouter', () => {
 
         expect(response[0]?.action).toBe('che_포상');
         expect(response[0]?.index).toBe(0);
+    });
+
+    it('validates and persists general command arguments from the authenticated owner', async () => {
+        const general = buildGeneralRow({ id: 13 });
+        const writes: unknown[] = [];
+        const caller = appRouter.createCaller(buildContext({ general, generalTurnWrites: writes }));
+
+        const response = await caller.turns.reserved.setGeneral({
+            generalId: 13,
+            turnIndex: 0,
+            action: 'che_화계',
+            args: { destCityId: 7 },
+        });
+
+        expect(response.turns[0]).toMatchObject({ action: 'che_화계', args: { destCityId: 7 } });
+        expect(writes).toHaveLength(1);
+        const written = writes[0] as { data: unknown[] };
+        expect(written.data).toHaveLength(30);
+        expect(written.data[0]).toMatchObject({
+            generalId: 13,
+            turnIdx: 0,
+            actionCode: 'che_화계',
+            arg: { destCityId: 7 },
+        });
+    });
+
+    it('rejects malformed and cross-scope arguments without writing turns', async () => {
+        const general = buildGeneralRow({ id: 14, nationId: 3, officerLevel: 5 });
+        const generalWrites: unknown[] = [];
+        const nationWrites: unknown[] = [];
+        const caller = appRouter.createCaller(
+            buildContext({ general, generalTurnWrites: generalWrites, nationTurnWrites: nationWrites })
+        );
+
+        await expect(
+            caller.turns.reserved.setGeneral({
+                generalId: 14,
+                turnIndex: 0,
+                action: 'che_화계',
+                args: { destCityId: '7' },
+            })
+        ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+        await expect(
+            caller.turns.reserved.setGeneral({
+                generalId: 14,
+                turnIndex: 0,
+                action: 'che_포상',
+                args: { isGold: true, amount: 1, destGeneralId: 7 },
+            })
+        ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+
+        expect(generalWrites).toHaveLength(0);
+        expect(nationWrites).toHaveLength(0);
     });
 
     it('rejects another user general across actor-owned routers', async () => {

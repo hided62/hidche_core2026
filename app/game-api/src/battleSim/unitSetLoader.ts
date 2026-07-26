@@ -1,12 +1,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { parseUnitSetDefinition, type UnitSetDefinition } from '@sammo-ts/logic';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
+import { resolveWorkspaceRoot } from '../paths.js';
+
+const REPO_ROOT = resolveWorkspaceRoot();
 const DEFAULT_UNIT_SET_ROOT = path.resolve(REPO_ROOT, 'resources', 'unitset');
 
 export interface UnitSetLoaderOptions {
