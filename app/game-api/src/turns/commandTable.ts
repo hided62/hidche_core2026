@@ -2,6 +2,7 @@ import type {
     City,
     Constraint,
     ConstraintContext,
+    ConstraintResult,
     General,
     GeneralItemSlots,
     GeneralActionDefinition,
@@ -225,6 +226,8 @@ const buildConstraintEnv = (worldState: WorldStateRow): Record<string, unknown> 
     const scenarioMeta = asRecord(meta.scenarioMeta);
     const startYear = typeof scenarioMeta.startYear === 'number' ? scenarioMeta.startYear : undefined;
     const relYear = typeof startYear === 'number' ? worldState.currentYear - startYear : undefined;
+    const joinModeRaw = config.join_mode ?? config.joinMode;
+    const joinMode = typeof joinModeRaw === 'string' ? joinModeRaw : 'full';
 
     return {
         currentYear: worldState.currentYear,
@@ -233,18 +236,23 @@ const buildConstraintEnv = (worldState: WorldStateRow): Record<string, unknown> 
         month: worldState.currentMonth,
         startYear,
         relYear,
+        join_mode: joinMode,
         openingPartYear: resolveNumber(constValues, ['openingPartYear'], 0),
     };
 };
 
-const mapGeneralRow = (row: GeneralRow): General => {
+const mapGeneralRow = (row: GeneralRow, missingKillturnFallback?: number): General => {
     const legacySlots: GeneralItemSlots = {
         horse: normalizeCode(row.horseCode),
         weapon: normalizeCode(row.weaponCode),
         book: normalizeCode(row.bookCode),
         item: normalizeCode(row.itemCode),
     };
-    const meta = ensureGeneralMeta(asTriggerRecord(row.meta), row.id);
+    const rawMeta = asTriggerRecord(row.meta);
+    const meta =
+        readMetaNumber(rawMeta, 'killturn') === null && missingKillturnFallback !== undefined
+            ? ({ ...rawMeta, killturn: missingKillturnFallback } as General['meta'])
+            : ensureGeneralMeta(rawMeta, row.id);
     const itemInventory = readItemInventoryFromMeta(meta, legacySlots);
     return {
         id: row.id,
@@ -339,10 +347,16 @@ const buildStateView = (
     general: General,
     city: City | null,
     nation: Nation | null,
-    generalList: General[] | null
+    generalList: General[] | null,
+    env: Record<string, unknown>
 ): StateView => {
     const view = new MemoryStateView();
     view.set({ kind: 'general', id: general.id }, general);
+    for (const [key, value] of Object.entries(env)) {
+        if (value !== undefined) {
+            view.set({ kind: 'env', key }, value);
+        }
+    }
     if (city) {
         view.set({ kind: 'city', id: city.id }, city);
     }
@@ -485,14 +499,15 @@ export const buildTurnCommandTable = async (options: {
     const city = options.city ? mapCityRow(options.city) : null;
     const nation = options.nation ? mapNationRow(options.nation) : null;
     const generalList = options.nationGenerals ? options.nationGenerals.map(mapGeneralRow) : null;
-    const view = buildStateView(general, city, nation, generalList);
+    const constraintEnv = buildConstraintEnv(options.worldState);
+    const view = buildStateView(general, city, nation, generalList, constraintEnv);
 
     const ctx: ConstraintContext = {
         actorId: general.id,
         cityId: city?.id,
         nationId: nation?.id,
         args: {},
-        env: buildConstraintEnv(options.worldState),
+        env: constraintEnv,
         mode: 'precheck',
     };
 
@@ -515,4 +530,36 @@ export const buildTurnCommandTable = async (options: {
             items: {},
         },
     };
+};
+
+export const evaluateReservedTurnPermission = async (options: {
+    worldState: WorldStateRow;
+    general: GeneralRow;
+    scope: 'general' | 'nation';
+    action: string;
+    args: Record<string, unknown>;
+}): Promise<ConstraintResult> => {
+    const specs = await loadTurnCommandSpecs();
+    const spec = specs[options.scope].find((entry) => entry.key === options.action);
+    if (!spec) {
+        throw new Error(`Unknown ${options.scope} turn command: ${options.action}`);
+    }
+
+    const definition = spec.createDefinition(buildCommandEnv(options.worldState));
+    if (!definition.buildPermissionConstraints) {
+        return { kind: 'allow' };
+    }
+
+    const general = mapGeneralRow(options.general, 0);
+    const env = buildConstraintEnv(options.worldState);
+    const ctx: ConstraintContext = {
+        actorId: general.id,
+        cityId: general.cityId > 0 ? general.cityId : undefined,
+        nationId: general.nationId > 0 ? general.nationId : undefined,
+        args: options.args,
+        env,
+        mode: 'full',
+    };
+    const view = buildStateView(general, null, null, null, env);
+    return evaluateConstraints(definition.buildPermissionConstraints(ctx, options.args), ctx, view);
 };

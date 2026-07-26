@@ -23,6 +23,25 @@ const profile: GameProfile = {
     name: 'che:default',
 };
 
+const buildWorldState = (joinMode = 'full'): WorldStateRow =>
+    ({
+        id: 1,
+        scenarioCode: 'default',
+        currentYear: 190,
+        currentMonth: 1,
+        tickSeconds: 600,
+        config: {
+            joinMode,
+            const: {},
+        },
+        meta: {
+            scenarioMeta: {
+                startYear: 180,
+            },
+        },
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+    }) as unknown as WorldStateRow;
+
 const buildAuth = (sanctions: GameSessionTokenPayload['sanctions'] = {}): GameSessionTokenPayload => ({
     version: 1,
     profile: profile.name,
@@ -444,7 +463,9 @@ describe('appRouter', () => {
     it('validates and persists general command arguments from the authenticated owner', async () => {
         const general = buildGeneralRow({ id: 13 });
         const writes: unknown[] = [];
-        const caller = appRouter.createCaller(buildContext({ general, generalTurnWrites: writes }));
+        const caller = appRouter.createCaller(
+            buildContext({ state: buildWorldState(), general, generalTurnWrites: writes })
+        );
 
         const response = await caller.turns.reserved.setGeneral({
             generalId: 13,
@@ -479,7 +500,9 @@ describe('appRouter', () => {
     it('applies legacy general sentinel bulk entries and repeats the leading pattern', async () => {
         const general = buildGeneralRow({ id: 16 });
         const bulkWrites: unknown[] = [];
-        const bulkCaller = appRouter.createCaller(buildContext({ general, generalTurnWrites: bulkWrites }));
+        const bulkCaller = appRouter.createCaller(
+            buildContext({ state: buildWorldState(), general, generalTurnWrites: bulkWrites })
+        );
 
         const bulk = await bulkCaller.turns.reserved.setGeneralBulk({
             generalId: general.id,
@@ -538,7 +561,9 @@ describe('appRouter', () => {
     it('accepts the legacy nation amount-12 no-op without incrementing revision', async () => {
         const general = buildGeneralRow({ id: 17, nationId: 3, officerLevel: 12 });
         const nationWrites: unknown[] = [];
-        const caller = appRouter.createCaller(buildContext({ general, nationTurnWrites: nationWrites }));
+        const caller = appRouter.createCaller(
+            buildContext({ state: buildWorldState(), general, nationTurnWrites: nationWrites })
+        );
 
         const shifted = await caller.turns.reserved.shiftNation({
             generalId: general.id,
@@ -559,7 +584,9 @@ describe('appRouter', () => {
     it('applies nation bulk entries sequentially so later entries overwrite overlaps', async () => {
         const general = buildGeneralRow({ id: 18, nationId: 3, officerLevel: 12 });
         const nationWrites: unknown[] = [];
-        const caller = appRouter.createCaller(buildContext({ general, nationTurnWrites: nationWrites }));
+        const caller = appRouter.createCaller(
+            buildContext({ state: buildWorldState(), general, nationTurnWrites: nationWrites })
+        );
 
         const response = await caller.turns.reserved.setNationBulk({
             generalId: general.id,
@@ -581,6 +608,122 @@ describe('appRouter', () => {
         expect(response.turns[0]?.args).toEqual({ isGold: true, amount: 1, destGeneralId: 7 });
         expect(response.turns[2]?.args).toEqual({ isGold: false, amount: 2, destGeneralId: 8 });
         expect(nationWrites).toHaveLength(1);
+    });
+
+    it('enforces only legacy reservation permissions without applying full execution constraints', async () => {
+        const general = buildGeneralRow({ id: 19 });
+        const allowedWrites: unknown[] = [];
+        const allowedCaller = appRouter.createCaller(
+            buildContext({
+                state: buildWorldState('full'),
+                general,
+                generalTurnWrites: allowedWrites,
+            })
+        );
+        await expect(
+            allowedCaller.turns.reserved.setGeneral({
+                generalId: general.id,
+                turnIndex: 0,
+                action: 'che_임관',
+                args: { destNationId: 2 },
+                expectedRevision: 0,
+            })
+        ).resolves.toMatchObject({ ok: true });
+        expect(allowedWrites).toHaveLength(1);
+
+        const randomOnlyWrites: unknown[] = [];
+        const randomOnlyCaller = appRouter.createCaller(
+            buildContext({
+                state: buildWorldState('onlyRandom'),
+                general,
+                generalTurnWrites: randomOnlyWrites,
+            })
+        );
+        await expect(
+            randomOnlyCaller.turns.reserved.setGeneral({
+                generalId: general.id,
+                turnIndex: 0,
+                action: 'che_임관',
+                args: { destNationId: 2 },
+                expectedRevision: 0,
+            })
+        ).rejects.toMatchObject({
+            code: 'PRECONDITION_FAILED',
+            message: expect.stringContaining('랜덤 임관만 가능합니다'),
+        });
+        expect(randomOnlyWrites).toHaveLength(0);
+    });
+
+    it('checks nation treaty-term reservation permission but not full diplomacy state', async () => {
+        const general = buildGeneralRow({ id: 20, nationId: 3, officerLevel: 12 });
+        const shortTermWrites: unknown[] = [];
+        const shortTermCaller = appRouter.createCaller(
+            buildContext({
+                state: buildWorldState(),
+                general,
+                nationTurnWrites: shortTermWrites,
+            })
+        );
+        await expect(
+            shortTermCaller.turns.reserved.setNation({
+                generalId: general.id,
+                turnIndex: 0,
+                action: 'che_불가침제의',
+                args: { destNationId: 2, year: 190, month: 6 },
+                expectedRevision: 0,
+            })
+        ).rejects.toMatchObject({
+            code: 'PRECONDITION_FAILED',
+            message: expect.stringContaining('기한은 6개월 이상'),
+        });
+        expect(shortTermWrites).toHaveLength(0);
+
+        const validTermWrites: unknown[] = [];
+        const validTermCaller = appRouter.createCaller(
+            buildContext({
+                state: buildWorldState(),
+                general,
+                nationTurnWrites: validTermWrites,
+            })
+        );
+        await expect(
+            validTermCaller.turns.reserved.setNation({
+                generalId: general.id,
+                turnIndex: 0,
+                action: 'che_불가침제의',
+                args: { destNationId: 2, year: 190, month: 7 },
+                expectedRevision: 0,
+            })
+        ).resolves.toMatchObject({ ok: true });
+        expect(validTermWrites).toHaveLength(1);
+    });
+
+    it('validates every bulk reservation permission before writing any turn', async () => {
+        const general = buildGeneralRow({ id: 21 });
+        const writes: unknown[] = [];
+        const caller = appRouter.createCaller(
+            buildContext({
+                state: buildWorldState('onlyRandom'),
+                general,
+                generalTurnWrites: writes,
+            })
+        );
+
+        await expect(
+            caller.turns.reserved.setGeneralBulk({
+                generalId: general.id,
+                entries: [
+                    { turnList: [0], action: 'che_훈련' },
+                    {
+                        turnList: [1],
+                        action: 'che_임관',
+                        args: { destNationId: 2 },
+                    },
+                ],
+                expectedRevision: 0,
+            })
+        ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
+        expect(writes).toHaveLength(0);
     });
 
     it('rejects malformed and cross-scope arguments without writing turns', async () => {

@@ -5,7 +5,7 @@ import { ITEM_KEYS, loadItemModules } from '@sammo-ts/logic';
 import { authedProcedure, router } from '../../trpc.js';
 import { buildBattleSimEnvironment } from '../../battleSim/environment.js';
 import { loadBattleSimTraitOptions } from '../../battleSim/simulatorOptions.js';
-import { buildTurnCommandTable } from '../../turns/commandTable.js';
+import { buildTurnCommandTable, evaluateReservedTurnPermission } from '../../turns/commandTable.js';
 import {
     parseReservedTurnArgs,
     TURN_COMMAND_NATION_COLORS,
@@ -28,6 +28,7 @@ import {
     shiftNationTurns,
 } from '../../turns/reservedTurns.js';
 import { getOwnedGeneral } from '../shared/general.js';
+import type { GameApiContext, GeneralRow, WorldStateRow } from '../../context.js';
 
 const zPushAmount = z
     .number()
@@ -78,6 +79,43 @@ const mutateReservedTurns = async <T>(mutation: () => Promise<T>): Promise<T> =>
         }
         throw error;
     }
+};
+
+const getReservationWorldState = async (ctx: GameApiContext): Promise<WorldStateRow> => {
+    const worldState = await ctx.db.worldState.findFirst();
+    if (!worldState) {
+        throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message: 'World state is not initialized.',
+        });
+    }
+    return worldState;
+};
+
+const assertReservedTurnPermission = async (
+    worldState: WorldStateRow,
+    general: GeneralRow,
+    scope: 'general' | 'nation',
+    action: string,
+    args: Record<string, unknown>
+): Promise<void> => {
+    const result = await evaluateReservedTurnPermission({
+        worldState,
+        general,
+        scope,
+        action,
+        args,
+    });
+    if (result.kind === 'allow') {
+        return;
+    }
+    throw new TRPCError({
+        code: 'PRECONDITION_FAILED',
+        message:
+            result.kind === 'deny'
+                ? `예약 불가능한 커맨드 :${result.reason}`
+                : '예약 권한을 확인할 정보가 부족합니다.',
+    });
 };
 
 export const turnsRouter = router({
@@ -239,8 +277,10 @@ export const turnsRouter = router({
                 })
             )
             .mutation(async ({ ctx, input }) => {
-                await getOwnedGeneral(ctx, input.generalId);
+                const general = await getOwnedGeneral(ctx, input.generalId);
                 const args = await parseCommandArgs('general', input.action, input.args);
+                const worldState = await getReservationWorldState(ctx);
+                await assertReservedTurnPermission(worldState, general, 'general', input.action, args);
 
                 const snapshot = await mutateReservedTurns(() =>
                     setGeneralTurn(ctx.db, input.generalId, input.turnIndex, input.action, args, input.expectedRevision)
@@ -293,7 +333,7 @@ export const turnsRouter = router({
                 })
             )
             .mutation(async ({ ctx, input }) => {
-                await getOwnedGeneral(ctx, input.generalId);
+                const general = await getOwnedGeneral(ctx, input.generalId);
                 const updates = await Promise.all(
                     input.entries.map(async (entry) => ({
                         turnIndices: expandGeneralTurnIndices(entry.turnList),
@@ -301,6 +341,16 @@ export const turnsRouter = router({
                         args: await parseCommandArgs('general', entry.action, entry.args),
                     }))
                 );
+                const worldState = await getReservationWorldState(ctx);
+                for (const update of updates) {
+                    await assertReservedTurnPermission(
+                        worldState,
+                        general,
+                        'general',
+                        update.action,
+                        update.args
+                    );
+                }
                 const snapshot = await mutateReservedTurns(() =>
                     setGeneralTurns(ctx.db, input.generalId, updates, input.expectedRevision)
                 );
@@ -335,6 +385,8 @@ export const turnsRouter = router({
                     });
                 }
                 const args = await parseCommandArgs('nation', input.action, input.args);
+                const worldState = await getReservationWorldState(ctx);
+                await assertReservedTurnPermission(worldState, general, 'nation', input.action, args);
 
                 const snapshot = await mutateReservedTurns(() =>
                     setNationTurn(
@@ -451,6 +503,16 @@ export const turnsRouter = router({
                         args: await parseCommandArgs('nation', entry.action, entry.args),
                     }))
                 );
+                const worldState = await getReservationWorldState(ctx);
+                for (const update of updates) {
+                    await assertReservedTurnPermission(
+                        worldState,
+                        general,
+                        'nation',
+                        update.action,
+                        update.args
+                    );
+                }
                 const snapshot = await mutateReservedTurns(() =>
                     setNationTurns(
                         ctx.db,

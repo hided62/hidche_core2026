@@ -161,6 +161,10 @@ export class ActionDefinition<
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
+    buildPermissionConstraints(_ctx: ConstraintContext, _args: EmployArgs): Constraint[] {
+        return [reqEnvValue('join_mode', '!=', 'onlyRandom', '랜덤 임관만 가능합니다')];
+    }
+
     buildMinConstraints(_ctx: ConstraintContext, _args: EmployArgs): Constraint[] {
         return [
             reqEnvValue('join_mode', '!=', 'onlyRandom', '랜덤 임관만 가능합니다'),

@@ -116,6 +116,10 @@ export class ActionDefinition<
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
+    buildPermissionConstraints(_ctx: ConstraintContext, _args: NonAggressionProposalArgs): Constraint[] {
+        return [reqMinimumTreatyTerm(MIN_TERM_MONTHS)];
+    }
+
     buildMinConstraints(_ctx: ConstraintContext, _args: NonAggressionProposalArgs): Constraint[] {
         return [beChief(), notBeNeutral()];
     }

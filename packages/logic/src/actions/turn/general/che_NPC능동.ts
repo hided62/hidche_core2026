@@ -15,6 +15,7 @@ import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js'
 import type { GeneralTurnCommandSpec } from './index.js';
 import type { MapDefinition } from '@sammo-ts/logic/world/types.js';
 import { parseArgsWithSchema } from '../parseArgs.js';
+import { mustBeNPC } from '@sammo-ts/logic/constraints/presets.js';
 
 export type NPCSelfResolveContext<TriggerState extends GeneralTriggerState = GeneralTriggerState> =
     GeneralActionResolveContext<TriggerState> & {
@@ -97,6 +98,10 @@ export class ActionDefinition<
 
     parseArgs(raw: unknown): NPCSelfArgs | null {
         return parseArgsWithSchema(ARGS_SCHEMA, raw);
+    }
+
+    buildPermissionConstraints(_ctx: ConstraintContext, _args: NPCSelfArgs): Constraint[] {
+        return [mustBeNPC()];
     }
 
     buildConstraints(_ctx: ConstraintContext, args: NPCSelfArgs): Constraint[] {

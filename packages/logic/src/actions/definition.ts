@@ -7,10 +7,12 @@ export interface GeneralActionDefinition<
     Args = unknown,
     Context extends GeneralActionResolveContext<TriggerState> = GeneralActionResolveContext<TriggerState>,
 > {
-    // TODO: legacy permissionConstraints(예약 권한) 모델링 필요.
     key: string;
     name: string;
     parseArgs(raw: unknown): Args | null;
+    // 레거시 testPermissionToReserve()와 같은 예약 입력 전용 제약이다.
+    // 정의하지 않은 명령은 레거시처럼 인자 검증 외 상태 제약 없이 예약한다.
+    buildPermissionConstraints?(ctx: ConstraintContext, args: Args): Constraint[];
     // 커맨드 입력 단계에서 최소 조건만 평가할 때 사용한다.
     buildMinConstraints?(ctx: ConstraintContext, args: Args): Constraint[];
     buildConstraints(ctx: ConstraintContext, args: Args): Constraint[];

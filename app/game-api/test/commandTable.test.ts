@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { CityRow, GeneralRow, NationRow, WorldStateRow } from '../src/context.js';
 import { buildTurnCommandTable } from '../src/turns/commandTable.js';
 
-const buildWorldState = (): WorldStateRow =>
+const buildWorldState = (joinMode = 'full'): WorldStateRow =>
     ({
         id: 1,
         scenarioCode: 'default',
@@ -11,6 +11,7 @@ const buildWorldState = (): WorldStateRow =>
         currentMonth: 1,
         tickSeconds: 600,
         config: {
+            joinMode,
             const: {
                 baseGold: 1000,
                 baseRice: 1000,
@@ -114,5 +115,25 @@ describe('buildTurnCommandTable', () => {
         expect(nationCommand).toBeDefined();
         expect(nationCommand?.possible).toBe(true);
         expect(nationCommand?.status).not.toBe('blocked');
+    });
+
+    it('provides join_mode to reservation availability constraints', async () => {
+        const table = await buildTurnCommandTable({
+            worldState: buildWorldState('onlyRandom'),
+            general: buildGeneral(),
+            city: buildCity(),
+            nation: buildNation(),
+            nationGenerals: null,
+        });
+
+        const appointment = table.general
+            .flatMap((group) => group.values)
+            .find((command) => command.key === 'che_임관');
+
+        expect(appointment).toMatchObject({
+            possible: false,
+            status: 'blocked',
+            reason: '랜덤 임관만 가능합니다',
+        });
     });
 });
