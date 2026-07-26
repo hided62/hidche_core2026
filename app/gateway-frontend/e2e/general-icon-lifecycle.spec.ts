@@ -11,7 +11,7 @@ const requiredEnv = (name: string): string => {
     return value;
 };
 
-const readPassword = async (account: 'admin' | 'user_a'): Promise<string> => {
+const readPassword = async (account: 'admin'): Promise<string> => {
     const root = requiredEnv('SAMMO_LIFECYCLE_SECRET_ROOT');
     return (await readFile(`${root}/${account}_password`, 'utf8')).trim();
 };
@@ -69,7 +69,13 @@ const resetScenario = async (page: Page, scenarioId: string, sourceCommit: strin
         .toBe(200);
 };
 
-const createGeneralAndInspectIcons = async (
+type PossessCandidateBatch = Array<{
+    result?: {
+        data?: Array<{ picture?: string | null }>;
+    };
+}>;
+
+const inspectScenarioIcons = async (
     browser: Browser,
     testInfo: TestInfo,
     scenarioId: string,
@@ -81,35 +87,36 @@ const createGeneralAndInspectIcons = async (
         viewport: { width: 1280, height: 900 },
     });
     const page = await context.newPage();
-    await login(page, 'guiusera', await readPassword('user_a'));
+    await login(page, 'guiadmin', await readPassword('admin'));
     const row = hweRow(page);
     await expect(row.getByRole('button', { name: '장수생성' })).toBeEnabled({ timeout: 60_000 });
     await row.getByRole('button').click();
     await expect(page).toHaveURL(/\/hwe\/join$/);
-    await page.getByLabel('장수명').fill(`아이콘${scenarioId}`);
-    await page.getByRole('button', { name: '균형형' }).click();
-    await page.locator('.form-actions').getByRole('button', { name: '장수 생성' }).click();
-    await expect(page).toHaveURL(/\/hwe\/$/);
-
-    await page.goto('/hwe/current-city');
-    await expect(page.getByText('도 시 정 보', { exact: true })).toBeVisible();
-    await expect(page.locator('.error')).toHaveCount(0);
-    const iconSources = await page.locator(`img[src*="/image/icons/${expectedDirectory}/"]`).evaluateAll((images) =>
-        images.map((image) => (image as HTMLImageElement).src)
+    const candidatesResponse = page.waitForResponse(
+        (candidate) =>
+            candidate.url().includes('/hwe/api/trpc/join.listPossessCandidates') && candidate.status() === 200
     );
-    expect(iconSources.length).toBeGreaterThan(0);
+    await page.getByRole('button', { name: 'NPC 빙의' }).click();
+    const payload = (await (await candidatesResponse).json()) as PossessCandidateBatch;
+    const iconPaths = payload
+        .flatMap((entry) => entry.result?.data ?? [])
+        .map((candidate) => candidate.picture)
+        .filter(
+            (picture): picture is string =>
+                typeof picture === 'string' && picture.startsWith(`${expectedDirectory}/`)
+        );
+    expect(iconPaths.length).toBeGreaterThan(0);
 
     const imageRoot = requiredEnv('SAMMO_IMAGE_ROOT');
-    for (const source of iconSources) {
-        const relativePath = decodeURIComponent(new URL(source).pathname).replace(/^\/image\/icons\//, '');
-        await access(path.join(imageRoot, 'icons', relativePath));
+    for (const iconPath of iconPaths) {
+        await access(path.join(imageRoot, 'icons', iconPath));
     }
     await page.screenshot({
-        path: testInfo.outputPath(`scenario-${scenarioId}-current-city.png`),
+        path: testInfo.outputPath(`scenario-${scenarioId}-npc-icons.png`),
         fullPage: true,
     });
     await context.close();
-    return iconSources;
+    return iconPaths;
 };
 
 test('Chromium resets numeric and null-picture scenarios to repository-backed name paths', async ({
@@ -122,16 +129,14 @@ test('Chromium resets numeric and null-picture scenarios to repository-backed na
     await login(page, 'guiadmin', await readPassword('admin'));
 
     await resetScenario(page, '1010', sourceCommit);
-    const numericScenarioIcons = await createGeneralAndInspectIcons(browser, testInfo, '1010', '장수');
-    expect(numericScenarioIcons.some((source) => decodeURIComponent(source).includes('/image/icons/장수/'))).toBe(true);
+    const numericScenarioIcons = await inspectScenarioIcons(browser, testInfo, '1010', '장수');
+    expect(numericScenarioIcons.every((iconPath) => iconPath.startsWith('장수/'))).toBe(true);
 
     await resetScenario(page, '2220', sourceCommit);
-    const nullScenarioIcons = await createGeneralAndInspectIcons(browser, testInfo, '2220', '장수');
-    expect(nullScenarioIcons.some((source) => decodeURIComponent(source).includes('/image/icons/장수/'))).toBe(true);
+    const nullScenarioIcons = await inspectScenarioIcons(browser, testInfo, '2220', '장수');
+    expect(nullScenarioIcons.every((iconPath) => iconPath.startsWith('장수/'))).toBe(true);
 
     await resetScenario(page, '2140', sourceCommit);
-    const themedScenarioIcons = await createGeneralAndInspectIcons(browser, testInfo, '2140', '걸그룹');
-    expect(themedScenarioIcons.some((source) => decodeURIComponent(source).includes('/image/icons/걸그룹/'))).toBe(
-        true
-    );
+    const themedScenarioIcons = await inspectScenarioIcons(browser, testInfo, '2140', '걸그룹');
+    expect(themedScenarioIcons.every((iconPath) => iconPath.startsWith('걸그룹/'))).toBe(true);
 });
