@@ -4,7 +4,7 @@ import { changePermission } from './endpoints/changePermission.js';
 import { getBattleCenter } from './endpoints/getBattleCenter.js';
 import { getChiefCenter } from './endpoints/getChiefCenter.js';
 import { getCityOverview } from './endpoints/getCityOverview.js';
-import { getGeneralList } from './endpoints/getGeneralList.js';
+import { getGeneralList, getSecretGeneralList } from './endpoints/getGeneralList.js';
 import { getGeneralLog } from './endpoints/getGeneralLog.js';
 import { getNationInfo } from './endpoints/getNationInfo.js';
 import { getPersonnelInfo } from './endpoints/getPersonnelInfo.js';
@@ -21,6 +21,7 @@ import { setSecretLimit } from './endpoints/setSecretLimit.js';
 export const nationRouter = router({
     getNationInfo,
     getGeneralList,
+    getSecretGeneralList,
     getCityOverview,
     getPersonnelInfo,
     getStratFinan,

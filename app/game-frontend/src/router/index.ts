@@ -10,6 +10,7 @@ import NationInfoView from '../views/NationInfoView.vue';
 import GlobalInfoView from '../views/GlobalInfoView.vue';
 import CurrentCityView from '../views/CurrentCityView.vue';
 import NationGeneralsView from '../views/NationGeneralsView.vue';
+import NationSecretView from '../views/NationSecretView.vue';
 import NationPersonnelView from '../views/NationPersonnelView.vue';
 import NationStratFinanView from '../views/NationStratFinanView.vue';
 import ChiefCenterView from '../views/ChiefCenterView.vue';
@@ -20,7 +21,6 @@ import NotFoundView from '../views/NotFoundView.vue';
 import TournamentView from '../views/TournamentView.vue';
 import BettingView from '../views/BettingView.vue';
 import MyPageView from '../views/MyPageView.vue';
-import MySettingsView from '../views/MySettingsView.vue';
 import BoardView from '../views/BoardView.vue';
 import DiplomacyView from '../views/DiplomacyView.vue';
 import BestGeneralView from '../views/BestGeneralView.vue';
@@ -32,6 +32,7 @@ import TroopView from '../views/TroopView.vue';
 import YearbookView from '../views/YearbookView.vue';
 import NationBettingView from '../views/NationBettingView.vue';
 import NpcListView from '../views/NpcListView.vue';
+import TrafficView from '../views/TrafficView.vue';
 import { useSessionStore } from '../stores/session';
 
 const routes = [
@@ -149,6 +150,15 @@ const routes = [
         },
     },
     {
+        path: '/nation/secret',
+        name: 'nation-secret',
+        component: NationSecretView,
+        meta: {
+            requiresAuth: true,
+            requiresGeneral: true,
+        },
+    },
+    {
         path: '/nation/personnel',
         name: 'nation-personnel',
         component: NationPersonnelView,
@@ -252,6 +262,11 @@ const routes = [
         },
     },
     {
+        path: '/traffic',
+        name: 'traffic',
+        component: TrafficView,
+    },
+    {
         path: '/npc-list',
         name: 'npc-list',
         component: NpcListView,
@@ -276,8 +291,7 @@ const routes = [
     },
     {
         path: '/my-settings',
-        name: 'my-settings',
-        component: MySettingsView,
+        redirect: '/my-page',
         meta: {
             requiresAuth: true,
             requiresGeneral: true,
