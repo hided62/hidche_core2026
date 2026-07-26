@@ -19,19 +19,30 @@ const profile: GameProfile = {
 class QueuedBattleSimTransport implements BattleSimTransport {
     public simulateCalls = 0;
     public lastPayload: BattleSimJobPayload | null = null;
+    public lastRequesterUserId: string | null = null;
+    private readonly owners = new Map<string, string>();
     private readonly results = new Map<string, BattleSimResultPayload>();
 
-    async simulate(payload: BattleSimJobPayload) {
+    async simulate(payload: BattleSimJobPayload, requesterUserId: string) {
         this.simulateCalls += 1;
         this.lastPayload = payload;
-        return { status: 'queued', jobId: 'job-1' } as const;
+        this.lastRequesterUserId = requesterUserId;
+        const jobId = `job-${this.simulateCalls}`;
+        this.owners.set(jobId, requesterUserId);
+        return { status: 'queued', jobId } as const;
     }
 
-    async getSimulationResult(jobId: string) {
+    async getSimulationResult(jobId: string, requesterUserId: string) {
+        if (this.owners.get(jobId) !== requesterUserId) {
+            return null;
+        }
         return this.results.get(jobId) ?? null;
     }
 
-    pushResult(jobId: string, payload: BattleSimResultPayload) {
+    pushResult(jobId: string, requesterUserId: string, payload: BattleSimResultPayload) {
+        if (this.owners.get(jobId) !== requesterUserId) {
+            throw new Error('requester mismatch');
+        }
         this.results.set(jobId, payload);
     }
 }
@@ -194,8 +205,13 @@ const buildBattleRequest = () => ({
     },
 });
 
-const buildContext = (options: { state: WorldStateRow; battleSim: BattleSimTransport }): GameApiContext => {
-    const db = {
+const buildContext = (options: {
+    state: WorldStateRow;
+    battleSim: BattleSimTransport;
+    userId?: string | null;
+    db?: Partial<DatabaseClient>;
+}): GameApiContext => {
+    const db = options.db ?? {
         worldState: {
             findFirst: async () => options.state,
         },
@@ -207,20 +223,23 @@ const buildContext = (options: { state: WorldStateRow; battleSim: BattleSimTrans
         },
         profile.name
     );
-    const auth: GameSessionTokenPayload = {
-        version: 1,
-        profile: profile.name,
-        issuedAt: new Date('2026-01-01T00:00:00Z').toISOString(),
-        expiresAt: new Date('2026-01-02T00:00:00Z').toISOString(),
-        sessionId: 'session-1',
-        user: {
-            id: 'user-1',
-            username: 'tester',
-            displayName: 'Tester',
-            roles: [],
-        },
-        sanctions: {},
-    };
+    const auth: GameSessionTokenPayload | null =
+        options.userId === null
+            ? null
+            : {
+                  version: 1,
+                  profile: profile.name,
+                  issuedAt: new Date('2026-01-01T00:00:00Z').toISOString(),
+                  expiresAt: new Date('2026-01-02T00:00:00Z').toISOString(),
+                  sessionId: 'session-1',
+                  user: {
+                      id: options.userId ?? 'user-1',
+                      username: 'tester',
+                      displayName: 'Tester',
+                      roles: [],
+                  },
+                  sanctions: {},
+              };
     return {
         db: db as unknown as DatabaseClient,
         turnDaemon: new InMemoryTurnDaemonTransport(),
@@ -255,14 +274,204 @@ describe('battle router orchestration', () => {
         const response = await caller.battle.simulate(buildBattleRequest());
         expect(response.status).toBe('queued');
         expect(battleSim.simulateCalls).toBe(1);
+        expect(battleSim.lastRequesterUserId).toBe('user-1');
 
         const queued = await caller.battle.getSimulation({ jobId: response.jobId });
         expect(queued.status).toBe('queued');
 
-        battleSim.pushResult(response.jobId, { result: true, reason: 'success', avgWar: 1 });
+        battleSim.pushResult(response.jobId, 'user-1', { result: true, reason: 'success', avgWar: 1 });
 
         const completed = await caller.battle.getSimulation({ jobId: response.jobId });
         expect(completed.status).toBe('completed');
         expect(completed.payload?.result).toBe(true);
+    });
+
+    it('requires login, allows a user without a general, and does not open an input-event transaction', async () => {
+        const battleSim = new QueuedBattleSimTransport();
+        const state: WorldStateRow = {
+            id: 1,
+            scenarioCode: 'default',
+            currentYear: 200,
+            currentMonth: 1,
+            tickSeconds: 600,
+            config: {},
+            meta: {},
+            updatedAt: new Date('2026-01-01T00:00:00Z'),
+        };
+        let transactionCalls = 0;
+        const db = {
+            worldState: { findFirst: async () => state },
+            $transaction: async () => {
+                transactionCalls += 1;
+                throw new Error('simulation must not create an input event transaction');
+            },
+        } as unknown as DatabaseClient;
+
+        const anonymous = appRouter.createCaller(buildContext({ state, battleSim, userId: null, db }));
+        await expect(anonymous.battle.simulate(buildBattleRequest())).rejects.toMatchObject({
+            code: 'UNAUTHORIZED',
+        });
+
+        const noGeneralUser = appRouter.createCaller(
+            buildContext({ state, battleSim, userId: 'user-without-general', db })
+        );
+        await expect(noGeneralUser.battle.simulate(buildBattleRequest())).resolves.toMatchObject({
+            status: 'queued',
+        });
+        expect(transactionCalls).toBe(0);
+        expect(battleSim.lastRequesterUserId).toBe('user-without-general');
+    });
+
+    it('does not expose queued results across authenticated users', async () => {
+        const battleSim = new QueuedBattleSimTransport();
+        const state: WorldStateRow = {
+            id: 1,
+            scenarioCode: 'default',
+            currentYear: 200,
+            currentMonth: 1,
+            tickSeconds: 600,
+            config: {},
+            meta: {},
+            updatedAt: new Date('2026-01-01T00:00:00Z'),
+        };
+        const owner = appRouter.createCaller(buildContext({ state, battleSim, userId: 'owner-user' }));
+        const other = appRouter.createCaller(buildContext({ state, battleSim, userId: 'other-user' }));
+        const response = await owner.battle.simulate(buildBattleRequest());
+        battleSim.pushResult(response.jobId, 'owner-user', { result: true, reason: 'success', avgWar: 7 });
+
+        await expect(owner.battle.getSimulation({ jobId: response.jobId })).resolves.toMatchObject({
+            status: 'completed',
+            payload: { avgWar: 7 },
+        });
+        await expect(other.battle.getSimulation({ jobId: response.jobId })).resolves.toEqual({
+            status: 'queued',
+            jobId: response.jobId,
+        });
+    });
+});
+
+describe('battle simulator general import permissions', () => {
+    const state: WorldStateRow = {
+        id: 1,
+        scenarioCode: 'default',
+        currentYear: 200,
+        currentMonth: 1,
+        tickSeconds: 600,
+        config: {},
+        meta: {},
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+    };
+
+    const buildGeneral = (overrides: Record<string, unknown>) => ({
+        id: 1,
+        userId: 'same-nation-user',
+        name: '관전자',
+        npcState: 0,
+        nationId: 1,
+        leadership: 70,
+        strength: 71,
+        intel: 72,
+        officerLevel: 1,
+        injury: 0,
+        rice: 9000,
+        crew: 5000,
+        crewTypeId: 100,
+        atmos: 100,
+        train: 100,
+        experience: 400,
+        horseCode: null,
+        weaponCode: null,
+        bookCode: null,
+        itemCode: null,
+        personalCode: null,
+        special2Code: null,
+        meta: {},
+        ...overrides,
+    });
+
+    const actor = buildGeneral({ id: 1, userId: 'same-nation-user', nationId: 1 });
+    const ally = buildGeneral({
+        id: 2,
+        userId: 'ally-user',
+        name: '아군 장수',
+        nationId: 1,
+        officerLevel: 4,
+        rice: 4321,
+        crew: 3210,
+        train: 97,
+        atmos: 96,
+        horseCode: 'che_적토마',
+        weaponCode: 'che_의천검',
+        bookCode: 'che_손자병법',
+        itemCode: 'che_옥새',
+        meta: {
+            dex1: 10000,
+            rank_warnum: 33,
+            rank_killnum: 22,
+            rank_killcrew: 1111,
+        },
+    });
+    const foreignActor = buildGeneral({ id: 3, userId: 'foreign-user', nationId: 2 });
+    const generals = [actor, ally, foreignActor];
+    const db = {
+        worldState: { findFirst: async () => state },
+        general: {
+            findFirst: async ({ where }: { where: { userId: string } }) =>
+                generals.find((general) => general.userId === where.userId) ?? null,
+            findUnique: async ({ where }: { where: { id: number } }) =>
+                generals.find((general) => general.id === where.id) ?? null,
+        },
+    } as unknown as DatabaseClient;
+
+    it('returns full ally details to the same nation but redacts them for another nation', async () => {
+        const battleSim = new QueuedBattleSimTransport();
+        const sameNation = appRouter.createCaller(buildContext({ state, battleSim, userId: 'same-nation-user', db }));
+        const foreign = appRouter.createCaller(buildContext({ state, battleSim, userId: 'foreign-user', db }));
+
+        const visible = await sameNation.battle.getGeneralDetail({ generalId: ally.id });
+        expect(visible.general).toMatchObject({
+            name: '아군 장수',
+            officer_level: 4,
+            horse: 'che_적토마',
+            crew: 3210,
+            rice: 4321,
+            train: 97,
+            atmos: 96,
+            warnum: 33,
+            killnum: 22,
+            killcrew: 1111,
+        });
+
+        const redacted = await foreign.battle.getGeneralDetail({ generalId: ally.id });
+        expect(redacted.general).toMatchObject({
+            name: '아군 장수',
+            officer_level: 1,
+            horse: null,
+            weapon: null,
+            book: null,
+            item: null,
+            crew: 0,
+            rice: 10000,
+            dex1: 0,
+            warnum: 0,
+            killnum: 0,
+            killcrew: 0,
+        });
+    });
+
+    it('requires a game general only for server-side general import', async () => {
+        const caller = appRouter.createCaller(
+            buildContext({
+                state,
+                battleSim: new QueuedBattleSimTransport(),
+                userId: 'user-without-general',
+                db,
+            })
+        );
+
+        await expect(caller.battle.getGeneralDetail({ generalId: ally.id })).rejects.toMatchObject({
+            code: 'NOT_FOUND',
+            message: 'General not found',
+        });
     });
 });

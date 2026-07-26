@@ -38,6 +38,7 @@ const profile = (runtimeRunning: boolean) => ({
         profileName: 'che:2',
         apiRunning: runtimeRunning,
         daemonRunning: runtimeRunning,
+        battleSimRunning: runtimeRunning,
         tournamentRunning: runtimeRunning,
     },
 });
