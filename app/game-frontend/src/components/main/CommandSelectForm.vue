@@ -34,14 +34,16 @@ const emit = defineEmits<{
 
 const categories = computed(() => {
     if (!props.commandTable) {
-        return [] as Array<{ label: string; category: string; groupType: 'general' | 'nation' }>;
+        return [] as Array<{ id: string; label: string; category: string; groupType: 'general' | 'nation' }>;
     }
     const general = props.commandTable.general.map((group) => ({
+        id: `general:${group.category}`,
         label: group.category,
         category: group.category,
         groupType: 'general' as const,
     }));
     const nation = props.commandTable.nation.map((group) => ({
+        id: `nation:${group.category}`,
         label: `국가:${group.category}`,
         category: group.category,
         groupType: 'nation' as const,
@@ -54,11 +56,9 @@ const selectedGroup = computed(() => {
     if (!props.commandTable) {
         return null;
     }
-    const base = props.commandTable.general.find((group) => group.category === selectedCategory.value);
-    if (base) {
-        return base;
-    }
-    return props.commandTable.nation.find((group) => group.category === selectedCategory.value) ?? null;
+    const [scope, ...categoryParts] = selectedCategory.value.split(':');
+    const category = categoryParts.join(':');
+    return props.commandTable[scope === 'nation' ? 'nation' : 'general'].find((group) => group.category === category) ?? null;
 });
 
 watch(
@@ -77,8 +77,8 @@ watch(
             selectedCategory.value = '';
             return;
         }
-        if (!list.some((item) => item.category === selectedCategory.value)) {
-            selectedCategory.value = list[0].category;
+        if (!list.some((item) => item.id === selectedCategory.value)) {
+            selectedCategory.value = list[0].id;
         }
     },
     { immediate: true }
@@ -116,9 +116,9 @@ const statusLabel = (command: CommandAvailability) => {
             <div class="category-list">
                 <button
                     v-for="category in categories"
-                    :key="category.label"
-                    :class="['category-btn', { active: selectedCategory === category.category }]"
-                    @click="selectedCategory = category.category"
+                    :key="category.id"
+                    :class="['category-btn', { active: selectedCategory === category.id }]"
+                    @click="selectedCategory = category.id"
                 >
                     {{ category.label }}
                 </button>

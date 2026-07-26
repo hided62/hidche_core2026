@@ -5,6 +5,7 @@ import { defineConfig, devices } from '@playwright/test';
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const port = Number(process.env.PLAYWRIGHT_FRONTEND_PORT ?? 15120);
 const baseURL = `http://127.0.0.1:${port}/che/`;
+const gameApiUrl = process.env.PLAYWRIGHT_GAME_API_URL ?? '/che/api/trpc';
 
 export default defineConfig({
     testDir: '.',
@@ -20,6 +21,8 @@ export default defineConfig({
         'auction.spec.ts',
         'battleSimulator.spec.ts',
         'battleSimulatorRef.spec.ts',
+        'commandArguments.spec.ts',
+        'commandArgumentsLive.spec.ts',
     ],
     fullyParallel: false,
     workers: 1,
@@ -41,7 +44,7 @@ export default defineConfig({
         screenshot: 'only-on-failure',
     },
     webServer: {
-        command: `VITE_APP_BASE_PATH=/che VITE_GAME_API_URL=/che/api/trpc pnpm --filter @sammo-ts/game-frontend dev --host 127.0.0.1 --port ${port}`,
+        command: `VITE_APP_BASE_PATH=/che VITE_GAME_API_URL=${gameApiUrl} pnpm --filter @sammo-ts/game-frontend dev --host 127.0.0.1 --port ${port}`,
         cwd: repositoryRoot,
         url: baseURL,
         reuseExistingServer: false,
