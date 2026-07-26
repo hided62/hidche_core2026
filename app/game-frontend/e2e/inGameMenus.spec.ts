@@ -146,6 +146,19 @@ const install = async (page: Page, state: FixtureState) => {
                         autorun_user: {},
                     },
                 });
+            if (operation === 'public.getTraffic')
+                return response({
+                    history: [
+                        { year: 185, month: 1, date: '2026-01-01T00:00:00.000Z', refresh: 120, online: 8 },
+                        { year: 185, month: 2, date: '2026-01-01T00:10:00.000Z', refresh: 240, online: 12 },
+                    ],
+                    maxRefresh: 240,
+                    maxOnline: 12,
+                    suspects: [
+                        { generalId: null, name: '합계', refresh: 360, refreshScoreTotal: 36 },
+                        { generalId: 7, name: '검증장수', refresh: 240, refreshScoreTotal: 24 },
+                    ],
+                });
             if (operation === 'general.getMyLog')
                 return response({ type: 'generalAction', logs: [{ id: 1, text: '<Y>기록</>' }] });
             if (operation === 'general.setMySetting') {
@@ -181,6 +194,54 @@ const install = async (page: Page, state: FixtureState) => {
         });
     });
 };
+
+test('접속량정보 keeps the legacy public 1016px chart geometry', async ({ page }) => {
+    const state: FixtureState = { permission: 'member', myset: 0, settingMutations: [] };
+    await install(page, state);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.goto('traffic');
+    await expect(page.locator('.chart-title').first()).toHaveText('접 속 량');
+
+    const geometry = await page.locator('#traffic-container').evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const title = element.querySelector<HTMLElement>('.title-table')!.getBoundingClientRect();
+        const charts = [...element.querySelectorAll<HTMLElement>('.chart-table')].map((chart) =>
+            chart.getBoundingClientRect()
+        );
+        const row = element.querySelector<HTMLElement>('.chart-row')!.getBoundingClientRect();
+        const bar = element.querySelector<HTMLElement>('.big-bar')!.getBoundingClientRect();
+        const suspect = element.querySelector<HTMLElement>('.suspect-table')!.getBoundingClientRect();
+        return {
+            width: rect.width,
+            minWidth: getComputedStyle(element).minWidth,
+            fontSize: getComputedStyle(element).fontSize,
+            fontFamily: getComputedStyle(element).fontFamily,
+            titleWidth: title.width,
+            chartWidths: charts.map((chart) => chart.width),
+            chartGap: charts[1]!.x - charts[0]!.right,
+            rowHeight: row.height,
+            barHeight: bar.height,
+            suspectWidth: suspect.width,
+        };
+    });
+    expect(geometry.width).toBe(1016);
+    expect(geometry.minWidth).toBe('1016px');
+    expect(geometry.fontSize).toBe('14px');
+    expect(geometry.fontFamily).toContain('Pretendard');
+    expect(geometry.titleWidth).toBe(1000);
+    expect(geometry.chartWidths).toEqual([483, 483]);
+    expect(geometry.chartGap).toBe(26);
+    expect(geometry.rowHeight).toBe(31);
+    expect(geometry.barHeight).toBe(30);
+    expect(geometry.suspectWidth).toBeGreaterThanOrEqual(994);
+    await persistParityArtifact(page, 'traffic-desktop', geometry);
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    const mobileWidth = await page
+        .locator('#traffic-container')
+        .evaluate((element) => element.getBoundingClientRect().width);
+    expect(mobileWidth).toBe(1016);
+});
 
 test('내 정보&설정 keeps the legacy 1000px/500px geometry and saves in place', async ({ page }) => {
     const state: FixtureState = { permission: 'head', myset: 3, settingMutations: [] };
