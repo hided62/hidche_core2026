@@ -82,11 +82,31 @@ export class ActionResolver<
         });
 
         // 2. Recruiter Rewards
+        const recruiterExperience = destGeneral.experience + 100;
+        const recruiterDedication = destGeneral.dedication + 100;
+        const recruiterExpLevel = Math.max(
+            0,
+            Math.min(
+                this.env.maxStatLevel ?? 255,
+                recruiterExperience < 1_000
+                    ? Math.trunc(recruiterExperience / 100)
+                    : Math.trunc(Math.sqrt(recruiterExperience / 10))
+            )
+        );
+        const recruiterDedicationLevel = Math.max(
+            0,
+            Math.min(this.env.maxDedicationLevel ?? 30, Math.ceil(Math.sqrt(recruiterDedication) / 10))
+        );
         effects.push(
             createGeneralPatchEffect(
                 {
-                    experience: destGeneral.experience + 100,
-                    dedication: destGeneral.dedication + 100,
+                    experience: recruiterExperience,
+                    dedication: recruiterDedication,
+                    meta: {
+                        ...destGeneral.meta,
+                        explevel: recruiterExpLevel,
+                        dedlevel: recruiterDedicationLevel,
+                    },
                 },
                 destGeneral.id
             )

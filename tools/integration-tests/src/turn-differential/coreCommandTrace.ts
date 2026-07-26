@@ -34,6 +34,8 @@ export interface TurnCommandFixtureRequest {
     setup?: {
         world?: {
             startYear?: number;
+            initYear?: number;
+            initMonth?: number;
             year?: number;
             month?: number;
             hiddenSeed?: string;
@@ -42,7 +44,9 @@ export interface TurnCommandFixtureRequest {
         generals?: Array<Record<string, unknown>>;
         nations?: Array<Record<string, unknown>>;
         cities?: Array<Record<string, unknown>>;
+        troops?: Array<Record<string, unknown>>;
         diplomacy?: Array<Record<string, unknown>>;
+        randomFoundingCandidateCityIds?: number[];
     };
     observe?: {
         generalIds?: number[];
@@ -245,7 +249,7 @@ const buildNation = (row: Record<string, unknown>, generals: TurnGeneral[]): Nat
         id,
         name: readString(row, 'name', `국가${id}`),
         color: readString(row, 'color', '#777777'),
-        capitalCityId: readNumber(row, 'capitalCityId') || null,
+        capitalCityId: readNumber(row, 'capitalCityId'),
         chiefGeneralId: generals.find((general) => general.nationId === id && general.officerLevel === 12)?.id ?? null,
         gold: readNumber(row, 'gold'),
         rice: readNumber(row, 'rice'),
@@ -274,6 +278,9 @@ const buildWorldInput = (
     const generals = referenceBefore.generals.map((row) => buildGeneral(row, turnTime));
     const nations = referenceBefore.nations.map((row) => buildNation(row, generals));
     const observedCityRows = new Map(referenceBefore.cities.map((row) => [readNumber(row, 'id'), row] as const));
+    const randomFoundingCandidateCityIds = request.setup?.randomFoundingCandidateCityIds
+        ? new Set(request.setup.randomFoundingCandidateCityIds)
+        : null;
     const diplomacy: TurnDiplomacy[] = referenceBefore.diplomacy.map((row) => ({
         fromNationId: readNumber(row, 'fromNationId'),
         toNationId: readNumber(row, 'toNationId'),
@@ -323,7 +330,12 @@ const buildWorldInput = (
                 id: definition.id,
                 name: readString(row, 'name', definition.name),
                 nationId: readNumber(row, 'nationId'),
-                level: readNumber(row, 'level', definition.level),
+                level:
+                    randomFoundingCandidateCityIds === null
+                        ? readNumber(row, 'level', definition.level)
+                        : randomFoundingCandidateCityIds.has(definition.id)
+                          ? 5
+                          : 4,
                 state: readNumber(row, 'state'),
                 population: readNumber(row, 'population', definition.initial.population),
                 populationMax: readNumber(row, 'populationMax', definition.max.population),
@@ -347,7 +359,15 @@ const buildWorldInput = (
             };
         }),
         generals,
-        troops: [],
+        troops:
+            request.setup?.troops?.map((row) => {
+                const id = readNumber(row, 'id');
+                return {
+                    id,
+                    nationId: readNumber(row, 'nationId'),
+                    name: readString(row, 'name', `부대${id}`),
+                };
+            }) ?? [],
         diplomacy,
         events: [],
         initialEvents: [],
@@ -364,8 +384,12 @@ const buildWorldInput = (
                 killturn: 24,
                 isUnited: readNumber(referenceBefore.world, 'isUnited'),
                 scenarioId: readNumber(referenceBefore.world, 'scenarioId'),
-                initYear: readNumber(referenceBefore.world, 'initYear', request.setup?.world?.startYear ?? year),
-                initMonth: readNumber(referenceBefore.world, 'initMonth', 1),
+                initYear: readNumber(
+                    referenceBefore.world,
+                    'initYear',
+                    request.setup?.world?.initYear ?? request.setup?.world?.startYear ?? year
+                ),
+                initMonth: readNumber(referenceBefore.world, 'initMonth', request.setup?.world?.initMonth ?? 1),
             },
         },
         snapshot,

@@ -69,8 +69,8 @@ export class ActionDefinition<
 
         const effects: Array<GeneralActionEffect<TriggerState>> = [];
 
-        const baseGold = this.env.baseGold > 0 ? this.env.baseGold : 1000;
-        const baseRice = this.env.baseRice > 0 ? this.env.baseRice : 1000;
+        const defaultGold = this.env.defaultNpcGold > 0 ? this.env.defaultNpcGold : 1000;
+        const defaultRice = this.env.defaultNpcRice > 0 ? this.env.defaultNpcRice : 1000;
 
         const nationGenerals = context.nationGenerals ?? [];
         for (const targetGeneral of nationGenerals) {
@@ -81,8 +81,11 @@ export class ActionDefinition<
                         nationId: 0,
                         officerLevel: 0,
                         troopId: 0,
-                        gold: Math.min(targetGeneral.gold, baseGold),
-                        rice: Math.min(targetGeneral.rice, baseRice),
+                        gold: Math.min(targetGeneral.gold, defaultGold),
+                        // 레거시는 전체 장수의 gold를 먼저 제한한 뒤 rice UPDATE의
+                        // WHERE에도 gold를 사용한다. 따라서 다른 장수의 rice는
+                        // 그대로 남고, 실행 장수만 아래 명시적 제한을 받는다.
+                        rice: isActor ? Math.min(targetGeneral.rice, defaultRice) : targetGeneral.rice,
                         meta: {
                             ...targetGeneral.meta,
                             belong: 0,

@@ -118,10 +118,15 @@ const applyLegacyGeneralProgression = (
     );
     const dedicationLevel = Math.max(0, Math.min(maxDedicationLevel, Math.ceil(Math.sqrt(general.dedication) / 10)));
     const meta = { ...general.meta };
-    if (general.experience !== previousGeneral.experience) {
+    // 하야는 ref에서 addExperience(0)/addDedication(0)을 호출해 현재 값으로
+    // 등급을 강제 재계산한다. 반대로 은퇴의 rebirth()와 선양의
+    // multiplyVar('experience')는 수치를 줄이면서도 기존 등급을 그대로 둔다.
+    const forceRefreshLevel = actionKey === 'che_하야';
+    const preserveLevel = actionKey === 'che_은퇴' || actionKey === 'che_선양';
+    if (!preserveLevel && (forceRefreshLevel || general.experience !== previousGeneral.experience)) {
         meta.explevel = expLevel;
     }
-    if (general.dedication !== previousGeneral.dedication) {
+    if (!preserveLevel && (forceRefreshLevel || general.dedication !== previousGeneral.dedication)) {
         meta.dedlevel = dedicationLevel;
     }
 
@@ -1224,7 +1229,10 @@ export const createReservedTurnHandler = async (options: {
                 const hasNationChange = (resolution.patches?.cities ?? []).some((patch) =>
                     Object.prototype.hasOwnProperty.call(patch.patch ?? {}, 'nationId')
                 );
-                if (hasNationChange) {
+                // 레거시 건국 계열은 도시의 nation만 바꾸고 supply/front를
+                // 즉시 재계산하지 않는다. 다음 월 처리 전까지 그 상태를 보존한다.
+                const preservesFoundingFrontState = ['che_건국', 'cr_건국', 'che_무작위건국'].includes(actionKey);
+                if (hasNationChange && !preservesFoundingFrontState) {
                     const worldView = worldOverlay?.view ?? worldRef;
                     if (worldView && options.map) {
                         const frontPatches = buildFrontStatePatches({
