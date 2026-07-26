@@ -422,6 +422,37 @@ describe('Nation Missing Actions', () => {
         expect(result.kind).toBe('deny');
     });
 
+    it('che_초토화: blocks when the nation is at war with any nation', () => {
+        const general = buildGeneral(1, 1, 1);
+        const nation = buildNation(1);
+        const destNation = buildNation(2);
+        const city = buildCity(1, 1);
+        const destCity = buildCity(2, 2);
+        const view = new TestStateView();
+        view.set({ kind: 'general', id: general.id }, general);
+        view.set({ kind: 'city', id: city.id }, city);
+        view.set({ kind: 'nation', id: nation.id }, nation);
+        view.set({ kind: 'destCity', id: destCity.id }, destCity);
+        view.set({ kind: 'destNation', id: destNation.id }, destNation);
+        setupDiplomacy(view, nation.id, destNation.id, 3);
+        view.set({ kind: 'diplomacyList' }, [{ fromNationId: nation.id, toNationId: 3, state: 0, term: 12 }]);
+
+        const definition = new ScorchedEarthAction();
+        const args = { destCityId: destCity.id };
+        const ctx: ConstraintContext = {
+            actorId: general.id,
+            nationId: nation.id,
+            cityId: city.id,
+            destCityId: destCity.id,
+            destNationId: destNation.id,
+            args,
+            env: {},
+            mode: 'full',
+        };
+
+        expect(evaluateConstraints(definition.buildConstraints(ctx, args), ctx, view).kind).toBe('deny');
+    });
+
     it('che_초토화: neutralizes city and increases nation resources', () => {
         const general = buildGeneral(1, 1, 1);
         const nation = buildNation(1);

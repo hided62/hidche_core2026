@@ -48,14 +48,23 @@ const DEFAULT_GLOBAL_DELAY = 9;
 const PRE_REQ_TURN = 1;
 const EXP_DED_GAIN = 5 * (PRE_REQ_TURN + 1);
 
+type InclusiveRandomGenerator = GeneralActionResolveContext['rng'] & {
+    nextIntInclusive?: (maxInclusive: number) => number;
+};
+
+const legacyChoiceIndex = (rng: GeneralActionResolveContext['rng'], length: number): number => {
+    const inclusive = rng as InclusiveRandomGenerator;
+    return inclusive.nextIntInclusive ? inclusive.nextIntInclusive(length - 1) : rng.nextInt(0, length);
+};
+
 const pickMoveCityId = (rng: GeneralActionResolveContext['rng'], destCityId: number, candidates: City[]): number => {
     if (candidates.length === 0) {
         return destCityId;
     }
-    let idx = rng.nextInt(0, candidates.length);
+    let idx = legacyChoiceIndex(rng, candidates.length);
     let cityId = candidates[idx]?.id ?? destCityId;
-    if (cityId === destCityId && candidates.length > 1) {
-        idx = rng.nextInt(0, candidates.length);
+    if (cityId === destCityId) {
+        idx = legacyChoiceIndex(rng, candidates.length);
         cityId = candidates[idx]?.id ?? destCityId;
     }
     return cityId;

@@ -93,8 +93,51 @@ export const disallowDiplomacyBetweenStatus = (disallowList: Record<number, stri
 });
 
 export const disallowDiplomacyStatus = (disallowList: Record<number, string>): Constraint => ({
-    ...disallowDiplomacyBetweenStatus(disallowList),
     name: 'disallowDiplomacyStatus',
+    requires: (ctx) => [
+        ...(ctx.nationId !== undefined ? ([{ kind: 'nation', id: ctx.nationId }] as RequirementKey[]) : []),
+        { kind: 'diplomacyList' },
+    ],
+    test: (ctx, view) => {
+        const general = readGeneral(ctx, view);
+        const baseNationId = ctx.nationId ?? general?.nationId;
+        if (baseNationId === undefined) {
+            return unknownOrDeny(ctx, [], '국가 정보가 없습니다.');
+        }
+        const req: RequirementKey = { kind: 'diplomacyList' };
+        if (!view.has(req)) {
+            return unknownOrDeny(ctx, [req], '외교 정보가 없습니다.');
+        }
+        const entries = view.get(req);
+        if (!Array.isArray(entries)) {
+            return unknownOrDeny(ctx, [req], '외교 정보가 없습니다.');
+        }
+        for (const value of entries) {
+            if (!value || typeof value !== 'object') {
+                continue;
+            }
+            const entry = value as {
+                fromNationId?: number;
+                srcNationId?: number;
+                me?: number;
+                state?: number;
+                stateCode?: number;
+            };
+            const fromNationId = entry.fromNationId ?? entry.srcNationId ?? entry.me;
+            if (fromNationId !== baseNationId) {
+                continue;
+            }
+            const state = entry.state ?? entry.stateCode;
+            if (state === undefined) {
+                continue;
+            }
+            const reason = disallowList[state];
+            if (reason !== undefined) {
+                return { kind: 'deny', reason };
+            }
+        }
+        return allow();
+    },
 });
 
 export const allowDiplomacyBetweenStatus = (allowList: number[], reason: string): Constraint => ({

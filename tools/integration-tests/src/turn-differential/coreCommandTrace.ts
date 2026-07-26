@@ -290,7 +290,9 @@ const buildWorldInput = (
         buildNation(
             {
                 ...row,
-                turnLastByOfficerLevel: fixtureNations.get(readNumber(row, 'id'))?.turnLastByOfficerLevel,
+                turnLastByOfficerLevel:
+                    fixtureNations.get(readNumber(row, 'id'))?.coreTurnLastByOfficerLevel ??
+                    fixtureNations.get(readNumber(row, 'id'))?.turnLastByOfficerLevel,
             },
             generals
         )
