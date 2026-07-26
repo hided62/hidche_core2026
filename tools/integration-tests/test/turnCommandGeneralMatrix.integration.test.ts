@@ -114,6 +114,7 @@ const buildRequest = (
                 id: 3,
                 nationId: 1,
                 population: 100_000,
+                populationMax: 200_000,
                 agriculture: 1_000,
                 commerce: 1_000,
                 security: 1_000,
@@ -130,6 +131,7 @@ const buildRequest = (
                 id: 70,
                 nationId: 2,
                 population: 100_000,
+                populationMax: 200_000,
                 agriculture: 1_000,
                 commerce: 1_000,
                 security: 1_000,
@@ -180,6 +182,14 @@ const cases: Array<[string, Record<string, unknown> | undefined, Record<string, 
     ['che_군량매매', { buyRice: true, amount: 100 }, undefined],
     ['che_물자조달', undefined, undefined],
     ['che_헌납', { isGold: true, amount: 100 }, undefined],
+    ['che_이동', { destCityID: 70 }, undefined],
+    ['che_강행', { destCityID: 70 }, undefined],
+    ['che_귀환', undefined, { cityId: 70 }],
+    ['che_접경귀환', undefined, { cityId: 70 }],
+    ['che_증여', { isGold: true, amount: 100, destGeneralID: 3 }, undefined],
+    ['che_첩보', { destCityID: 70 }, undefined],
+    ['che_화계', { destCityID: 70 }, undefined],
+    ['che_파괴', { destCityID: 70 }, undefined],
 ];
 
 integration('general command success matrix', () => {
@@ -197,6 +207,7 @@ integration('general command success matrix', () => {
                     `${JSON.stringify(
                         {
                             action,
+                            coreOutcome: core.execution.outcome,
                             referenceRng: reference.rng,
                             coreRng: core.rng,
                             referenceGeneralDelta: compareTurnSnapshotDeltas(

@@ -17,6 +17,17 @@ const ACTION_KEY = 'che_접경귀환';
 
 export interface BorderReturnArgs {}
 
+type InclusiveRandomGenerator = GeneralActionResolveContext['rng'] & {
+    nextIntInclusive?: (maxInclusive: number) => number;
+};
+
+const legacyChoiceIndex = (rng: GeneralActionResolveContext['rng'], length: number): number => {
+    const inclusive = rng as InclusiveRandomGenerator;
+    return inclusive.nextIntInclusive
+        ? inclusive.nextIntInclusive(length - 1)
+        : rng.nextInt(0, length);
+};
+
 export interface BorderReturnResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > extends GeneralActionResolveContext<TriggerState> {
@@ -84,7 +95,7 @@ export class ActionDefinition<
             return { effects: [] };
         }
 
-        const targetCity = nearestCities[context.rng.nextInt(0, nearestCities.length)]!;
+        const targetCity = nearestCities[legacyChoiceIndex(context.rng, nearestCities.length)]!;
         const josaRo = JosaUtil.pick(targetCity.name, '로');
         context.addLog(`<G><b>${targetCity.name}</b></>${josaRo} 접경귀환했습니다.`, {
             scope: LogScope.GENERAL,
