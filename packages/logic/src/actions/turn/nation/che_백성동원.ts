@@ -21,13 +21,10 @@ import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js'
 import { JosaUtil } from '@sammo-ts/common';
 import type { NationTurnCommandSpec } from './index.js';
 import { z } from 'zod';
-import { parseArgsWithSchema } from '../parseArgs.js';
+import { normalizeLegacyIntegerArg, parseArgsWithSchema } from '../parseArgs.js';
 
 const ARGS_SCHEMA = z.object({
-    destCityId: z.preprocess(
-        (value) => (typeof value === 'number' ? Math.floor(value) : value),
-        z.number().int().positive()
-    ),
+    destCityId: z.preprocess(normalizeLegacyIntegerArg, z.number().int().positive()),
 });
 export type MobilizePeopleArgs = z.infer<typeof ARGS_SCHEMA>;
 

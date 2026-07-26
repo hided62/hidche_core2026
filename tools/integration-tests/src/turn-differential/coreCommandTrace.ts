@@ -31,6 +31,11 @@ interface GeneralCooldownSelector {
     actionName: string;
 }
 
+interface NationCooldownSelector {
+    nationId: number;
+    actionName: string;
+}
+
 export interface TurnCommandFixtureRequest {
     kind: 'general' | 'nation';
     actorGeneralId: number;
@@ -63,6 +68,7 @@ export interface TurnCommandFixtureRequest {
         logAfterId?: number;
         messageAfterId?: number;
         generalCooldowns?: GeneralCooldownSelector[];
+        nationCooldowns?: NationCooldownSelector[];
     };
 }
 
@@ -473,6 +479,7 @@ const projectWorld = (
         cityIds: Set<number>;
         nationIds: Set<number>;
         generalCooldowns: GeneralCooldownSelector[];
+        nationCooldowns: NationCooldownSelector[];
     }
 ): CanonicalTurnSnapshot => {
     const state = world.getState();
@@ -538,6 +545,15 @@ const projectWorld = (
                 const raw = general?.meta[`next_execute_${actionName}`];
                 return {
                     generalId,
+                    actionName,
+                    nextAvailableTurn: typeof raw === 'number' && Number.isFinite(raw) ? raw : null,
+                };
+            }),
+            nationCooldowns: selector.nationCooldowns.map(({ nationId, actionName }) => {
+                const nation = world.getNationById(nationId);
+                const raw = nation?.meta[`next_execute_${actionName}`];
+                return {
+                    nationId,
                     actionName,
                     nextAvailableTurn: typeof raw === 'number' && Number.isFinite(raw) ? raw : null,
                 };
@@ -656,6 +672,7 @@ export const runCoreTurnCommandTrace = async (
         cityIds: new Set(referenceBefore.cities.map((row) => readNumber(row, 'id'))),
         nationIds: new Set(referenceBefore.nations.map((row) => readNumber(row, 'id'))),
         generalCooldowns: request.observe?.generalCooldowns ?? [],
+        nationCooldowns: request.observe?.nationCooldowns ?? [],
     };
     const reservedTurns = new InMemoryReservedTurnStore(emptyDatabaseClient as never, {
         maxGeneralTurns: 10,
