@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { RouterLink, useRouter } from 'vue-router';
 import PanelCard from '../components/ui/PanelCard.vue';
 import SkeletonLines from '../components/ui/SkeletonLines.vue';
 import { trpc } from '../utils/trpc';
@@ -281,6 +281,7 @@ onMounted(() => {
                 <p class="join-subtitle">로그인 완료, 아직 장수가 없는 상태입니다.</p>
             </div>
             <div class="join-tabs">
+                <RouterLink class="simulator-link" to="/battle-simulator">전투 시뮬레이터</RouterLink>
                 <button :class="{ active: activeTab === 'create' }" @click="activeTab = 'create'">장수 생성</button>
                 <button :class="{ active: activeTab === 'possess' }" @click="activeTab = 'possess'">NPC 빙의</button>
             </div>
@@ -464,17 +465,13 @@ onMounted(() => {
         <section v-else class="join-grid">
             <PanelCard title="빙의 가능한 NPC 목록" subtitle="NPC 타입2 장수를 선택해 빙의합니다.">
                 <template #actions>
-                    <button class="ghost" :disabled="npcLoading" @click="loadNpcCandidates(true)">
-                        목록 새로고침
-                    </button>
+                    <button class="ghost" :disabled="npcLoading" @click="loadNpcCandidates(true)">목록 새로고침</button>
                 </template>
                 <div v-if="npcError" class="muted">{{ npcError }}</div>
                 <div v-if="npcLoading && npcCandidates.length === 0">
                     <SkeletonLines :lines="3" />
                 </div>
-                <div v-else-if="npcCandidates.length === 0" class="muted">
-                    빙의 가능한 NPC가 없습니다.
-                </div>
+                <div v-else-if="npcCandidates.length === 0" class="muted">빙의 가능한 NPC가 없습니다.</div>
                 <div v-else class="npc-list">
                     <div v-for="npc in npcCandidates" :key="npc.id" class="npc-card">
                         <div class="npc-header">
@@ -490,9 +487,7 @@ onMounted(() => {
                             <div>나이 {{ npc.age }}</div>
                             <div>도시 {{ npc.city?.name ?? '-' }}</div>
                         </div>
-                        <button class="npc-action" :disabled="submitting" @click="possessGeneral(npc.id)">
-                            빙의
-                        </button>
+                        <button class="npc-action" :disabled="submitting" @click="possessGeneral(npc.id)">빙의</button>
                     </div>
                 </div>
                 <div class="npc-footer">
@@ -540,6 +535,14 @@ onMounted(() => {
     border: 1px solid rgba(201, 164, 90, 0.4);
     padding: 6px 10px;
     font-size: 0.8rem;
+}
+
+.simulator-link {
+    border: 1px solid rgba(112, 170, 141, 0.55);
+    padding: 6px 10px;
+    color: #bfe2cd;
+    font-size: 0.8rem;
+    text-decoration: none;
 }
 
 .join-tabs button.active {

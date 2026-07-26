@@ -11,6 +11,8 @@ const configuredWorkspaceRoot = process.env.TURN_DIFFERENTIAL_WORKSPACE_ROOT;
 const workspaceRoot = configuredWorkspaceRoot ?? findTurnDifferentialWorkspaceRoot(process.cwd());
 const integration = describe.skipIf(!workspaceRoot || process.env.TURN_DIFFERENTIAL_REFERENCE !== '1');
 
+const readGold = (row: { gold?: unknown } | undefined): number => (typeof row?.gold === 'number' ? row.gold : 0);
+
 const ignoredLifecyclePaths = [
     /^generalTurns/,
     /^nationTurns/,
@@ -459,6 +461,162 @@ integration('nation command success matrix', () => {
             });
             expect(reference.execution.outcome).toMatchObject({ completed: true });
             expect(core.execution.outcome).not.toHaveProperty('blockedReason');
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+        },
+        120_000
+    );
+});
+
+const nationResourceAmountCases: Array<{
+    name: string;
+    action: 'che_포상' | 'che_몰수';
+    args: Record<string, unknown>;
+    expectedAmount: number;
+}> = [
+    {
+        name: 'award rounds a half unit up',
+        action: 'che_포상',
+        args: { isGold: true, amount: 150, destGeneralID: 3 },
+        expectedAmount: 200,
+    },
+    {
+        name: 'award clamps below the minimum',
+        action: 'che_포상',
+        args: { isGold: true, amount: 1, destGeneralID: 3 },
+        expectedAmount: 100,
+    },
+    {
+        name: 'award clamps above the maximum',
+        action: 'che_포상',
+        args: { isGold: true, amount: 10_050, destGeneralID: 3 },
+        expectedAmount: 10_000,
+    },
+    {
+        name: 'seizure rounds a half unit up',
+        action: 'che_몰수',
+        args: { isGold: true, amount: 150, destGeneralID: 3 },
+        expectedAmount: 200,
+    },
+    {
+        name: 'seizure clamps below the minimum',
+        action: 'che_몰수',
+        args: { isGold: true, amount: 1, destGeneralID: 3 },
+        expectedAmount: 100,
+    },
+    {
+        name: 'seizure clamps above the maximum',
+        action: 'che_몰수',
+        args: { isGold: true, amount: 10_050, destGeneralID: 3 },
+        expectedAmount: 10_000,
+    },
+];
+
+integration('nation command resource amount normalization matrix', () => {
+    it.each(nationResourceAmountCases)(
+        '$name matches legacy rounding and clamp semantics',
+        async ({ action, args, expectedAmount }) => {
+            const request = buildRequest(action, args);
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+            const referenceTargetBefore = reference.before.generals.find((entry) => entry.id === 3);
+            const referenceTargetAfter = reference.after.generals.find((entry) => entry.id === 3);
+            const coreTargetBefore = core.before.generals.find((entry) => entry.id === 3);
+            const coreTargetAfter = core.after.generals.find((entry) => entry.id === 3);
+            const referenceAmount =
+                action === 'che_포상'
+                    ? readGold(referenceTargetAfter) - readGold(referenceTargetBefore)
+                    : readGold(referenceTargetBefore) - readGold(referenceTargetAfter);
+            const coreAmount =
+                action === 'che_포상'
+                    ? readGold(coreTargetAfter) - readGold(coreTargetBefore)
+                    : readGold(coreTargetBefore) - readGold(coreTargetAfter);
+
+            expect(reference.execution.outcome).toMatchObject({ completed: true });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: action,
+                actionKey: action,
+                usedFallback: false,
+            });
+            expect(referenceAmount).toBe(expectedAmount);
+            expect(coreAmount).toBe(expectedAmount);
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+        },
+        120_000
+    );
+});
+
+const nationResourceBoundaryCases: Array<{
+    name: string;
+    action: 'che_포상' | 'che_몰수';
+    args: Record<string, unknown>;
+    fixturePatches?: FixturePatches;
+    completed: boolean;
+}> = [
+    {
+        name: 'award is limited to the available nation gold',
+        action: 'che_포상',
+        args: { isGold: true, amount: 10_000, destGeneralID: 3 },
+        fixturePatches: { nations: { 1: { gold: 5_000 } } },
+        completed: true,
+    },
+    {
+        name: 'award keeps the legacy base rice reserve',
+        action: 'che_포상',
+        args: { isGold: false, amount: 10_000, destGeneralID: 3 },
+        fixturePatches: { nations: { 1: { rice: 2_100 } } },
+        completed: true,
+    },
+    {
+        name: 'award rejects the actor as its target',
+        action: 'che_포상',
+        args: { isGold: true, amount: 100, destGeneralID: 1 },
+        completed: false,
+    },
+    {
+        name: 'seizure is limited to the target general gold',
+        action: 'che_몰수',
+        args: { isGold: true, amount: 1_000, destGeneralID: 3 },
+        fixturePatches: { generals: { 3: { gold: 50 } } },
+        completed: true,
+    },
+    {
+        name: 'seizure rejects the actor as its target',
+        action: 'che_몰수',
+        args: { isGold: true, amount: 100, destGeneralID: 1 },
+        completed: false,
+    },
+];
+
+integration('nation command resource balance and target boundaries', () => {
+    it.each(nationResourceBoundaryCases)(
+        '$name matches legacy completion, RNG, and state delta',
+        async ({ action, args, fixturePatches, completed }) => {
+            const request = buildRequest(action, args, fixturePatches);
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+
+            expect(reference.execution.outcome).toMatchObject({ completed });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: action,
+                actionKey: completed ? action : '휴식',
+                usedFallback: !completed,
+            });
             expect(core.rng).toEqual(reference.rng);
             expect(
                 compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {

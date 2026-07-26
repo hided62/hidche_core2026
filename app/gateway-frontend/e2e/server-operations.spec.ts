@@ -38,6 +38,8 @@ const profile = (runtimeRunning: boolean) => ({
         profileName: 'che:2',
         apiRunning: runtimeRunning,
         daemonRunning: runtimeRunning,
+        auctionRunning: runtimeRunning,
+        battleSimRunning: runtimeRunning,
         tournamentRunning: runtimeRunning,
     },
 });
@@ -212,7 +214,7 @@ test('separates branch and commit semantics and submits a reset from the dedicat
     await page.screenshot({ path: testInfo.outputPath('mobile-operations.png'), fullPage: true });
 });
 
-test('starts and stops both runtime roles through the operation controls', async ({ page }) => {
+test('starts and stops all runtime roles through the operation controls', async ({ page }) => {
     const state: FixtureState = { operations: [], runtimeRunning: false, requestBodies: [] };
     await installFixture(page, state);
     page.on('dialog', (dialog) => dialog.accept());

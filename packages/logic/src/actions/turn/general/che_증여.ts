@@ -1,6 +1,7 @@
 import type { General, GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
+    denyWithReason,
     existsDestGeneral,
     friendlyDestGeneral,
     notBeNeutral,
@@ -19,15 +20,13 @@ import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js'
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import { parseArgsWithSchema } from '../parseArgs.js';
+import { normalizeResourceActionAmount } from '../resourceAmount.js';
 
 const ACTION_NAME = '증여';
 const ACTION_KEY = 'che_증여';
 const ARGS_SCHEMA = z.object({
     isGold: z.boolean(),
-    amount: z.preprocess(
-        (value) => (typeof value === 'number' ? Math.floor(value / 100) * 100 : value),
-        z.number().int().positive()
-    ),
+    amount: z.number(),
     destGeneralID: z.number().int().positive(),
 });
 export type GiftArgs = z.infer<typeof ARGS_SCHEMA>;
@@ -51,10 +50,13 @@ export class ActionDefinition<
         if (!parsed) {
             return null;
         }
-        const maxAmount = this.env.maxResourceActionAmount > 0 ? this.env.maxResourceActionAmount : 10000;
+        const amount = normalizeResourceActionAmount(parsed.amount, this.env.maxResourceActionAmount);
+        if (amount === null) {
+            return null;
+        }
         return {
             ...parsed,
-            amount: Math.max(100, Math.min(parsed.amount, maxAmount)),
+            amount,
         };
     }
 
@@ -62,9 +64,12 @@ export class ActionDefinition<
         return [notBeNeutral(), occupiedCity(), suppliedCity()];
     }
 
-    buildConstraints(_ctx: ConstraintContext, args: GiftArgs): Constraint[] {
-        const minGold = this.env.baseGold > 0 ? this.env.baseGold : 1000;
-        const minRice = this.env.baseRice > 0 ? this.env.baseRice : 1000;
+    buildConstraints(ctx: ConstraintContext, args: GiftArgs): Constraint[] {
+        if (ctx.actorId === args.destGeneralID) {
+            return [denyWithReason('본인입니다')];
+        }
+        const minGold = this.env.generalMinimumGold ?? 0;
+        const minRice = this.env.generalMinimumRice ?? 500;
 
         return [
             notBeNeutral(),
@@ -83,8 +88,8 @@ export class ActionDefinition<
             throw new Error('증여 대상 장수가 없습니다.');
         }
 
-        const minGold = this.env.baseGold > 0 ? this.env.baseGold : 1000;
-        const minRice = this.env.baseRice > 0 ? this.env.baseRice : 1000;
+        const minGold = this.env.generalMinimumGold ?? 0;
+        const minRice = this.env.generalMinimumRice ?? 500;
 
         const resKey = args.isGold ? 'gold' : 'rice';
         const resName = args.isGold ? '금' : '쌀';

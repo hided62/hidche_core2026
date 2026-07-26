@@ -134,6 +134,7 @@ export interface BattleSimResultPayload {
 
 export interface BattleSimJob {
     jobId: string;
+    requesterUserId: string;
     requestedAt: string;
     payload: BattleSimJobPayload;
 }
