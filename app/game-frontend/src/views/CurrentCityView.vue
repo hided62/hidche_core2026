@@ -131,7 +131,7 @@ onMounted(() => void load());
                                 v-if="general.picture"
                                 width="64"
                                 height="64"
-                                :src="`/image/general/${general.picture}`"
+                                :src="`/image/icons/${general.picture}`"
                             />
                         </td>
                         <td>{{ general.name }}</td>
