@@ -2,22 +2,62 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { asRecord } from '@sammo-ts/common';
-import { router, procedure } from '../../trpc.js';
+
+import { procedure, router } from '../../trpc.js';
 
 const zDynastyDetailInput = z.object({
     emperorId: z.number().int().positive(),
 });
 
 const parseNumberArray = (value: unknown): number[] =>
-    Array.isArray(value) ? value.filter((item): item is number => typeof item === 'number') : [];
+    Array.isArray(value)
+        ? value.filter((item): item is number => typeof item === 'number' && Number.isFinite(item))
+        : [];
+
+const parseTextArray = (value: unknown): string[] =>
+    Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+
+const parseDisplayArray = (value: unknown): Array<string | number> =>
+    Array.isArray(value)
+        ? value.filter(
+              (item): item is string | number =>
+                  typeof item === 'string' || (typeof item === 'number' && Number.isFinite(item))
+          )
+        : [];
+
+const formatNationType = (typeCode: string): string => {
+    const separator = typeCode.indexOf('_');
+    return separator < 0 ? typeCode : typeCode.slice(separator + 1);
+};
+
+const formatNationLevel = (level: number | null): string => {
+    if (level === null) {
+        return '';
+    }
+    return ['방랑군', '호족', '군벌', '주자사', '주목', '공', '왕', '황제'][level] ?? String(level);
+};
 
 export const dynastyRouter = router({
     getList: procedure.query(async ({ ctx }) => {
-        const rows = await ctx.db.emperor.findMany({
-            orderBy: { id: 'desc' },
-        });
+        const [worldState, rows] = await Promise.all([
+            ctx.db.worldState.findFirst({
+                select: {
+                    currentYear: true,
+                    currentMonth: true,
+                },
+            }),
+            ctx.db.emperor.findMany({
+                orderBy: { id: 'desc' },
+            }),
+        ]);
 
         return {
+            current: worldState
+                ? {
+                      year: worldState.currentYear,
+                      month: worldState.currentMonth,
+                  }
+                : null,
             entries: rows.map((row) => ({
                 id: row.id,
                 serverId: row.serverId ?? '',
@@ -30,11 +70,19 @@ export const dynastyRouter = router({
                 power: row.power ?? 0,
                 gennum: row.gennum ?? 0,
                 citynum: row.citynum ?? 0,
+                l12name: row.l12name ?? '',
+                l11name: row.l11name ?? '',
+                l10name: row.l10name ?? '',
+                l9name: row.l9name ?? '',
+                l8name: row.l8name ?? '',
+                l7name: row.l7name ?? '',
+                l6name: row.l6name ?? '',
+                l5name: row.l5name ?? '',
             })),
         };
     }),
     getDetail: procedure.input(zDynastyDetailInput).query(async ({ ctx, input }) => {
-        const emperor = await ctx.db.emperor.findFirst({
+        const emperor = await ctx.db.emperor.findUnique({
             where: { id: input.emperorId },
         });
         if (!emperor) {
@@ -43,7 +91,6 @@ export const dynastyRouter = router({
 
         const aux = asRecord(emperor.aux);
         const winnerNationId = typeof aux.winnerNationId === 'number' ? aux.winnerNationId : null;
-
         const serverId = emperor.serverId ?? '';
         const oldNationRows = await ctx.db.oldNation.findMany({
             where: { serverId },
@@ -54,19 +101,26 @@ export const dynastyRouter = router({
             .map((row) => {
                 const data = asRecord(row.data);
                 const nationId = row.nation ?? (typeof data.nation === 'number' ? data.nation : 0);
+                const typeCode = typeof data.type === 'string' ? data.type : '';
                 return {
                     nation: nationId,
                     isWinner: winnerNationId !== null && nationId === winnerNationId,
-                    name: typeof data.name === 'string' ? data.name : row.nation === 0 ? '재야' : '미상',
+                    name: typeof data.name === 'string' ? data.name : nationId === 0 ? '재야' : '미상',
                     color: typeof data.color === 'string' ? data.color : '#000000',
-                    type: typeof data.type === 'string' ? data.type : '',
+                    type: typeCode,
+                    typeName: formatNationType(typeCode),
                     level: typeof data.level === 'number' ? data.level : null,
                     tech: typeof data.tech === 'number' ? data.tech : null,
-                    maxPower: typeof data.maxPower === 'number' ? data.maxPower : null,
+                    maxPower:
+                        typeof data.maxPower === 'number'
+                            ? data.maxPower
+                            : typeof data.power === 'number'
+                              ? data.power
+                              : null,
                     maxCrew: typeof data.maxCrew === 'number' ? data.maxCrew : null,
-                    maxCities: Array.isArray(data.maxCities) ? data.maxCities : [],
+                    maxCities: parseDisplayArray(data.maxCities),
                     generals: parseNumberArray(data.generals),
-                    history: Array.isArray(data.history) ? data.history : [],
+                    history: parseTextArray(data.history),
                     date: row.date.toISOString(),
                 };
             })
@@ -89,6 +143,7 @@ export const dynastyRouter = router({
 
         const nations = nationEntries.map((entry) => ({
             ...entry,
+            levelName: formatNationLevel(entry.level),
             generalsFull: entry.generals.map((id) => ({
                 generalNo: id,
                 name: generalMap.get(id)?.name ?? `#${id}`,
@@ -131,7 +186,7 @@ export const dynastyRouter = router({
                 tiger: emperor.tiger ?? '',
                 eagle: emperor.eagle ?? '',
                 gen: emperor.gen ?? '',
-                history: Array.isArray(emperor.history) ? emperor.history : [],
+                history: parseTextArray(emperor.history),
             },
             nations,
         };

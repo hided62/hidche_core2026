@@ -7,7 +7,8 @@ import { LogCategory, LogScope } from '@sammo-ts/infra';
 
 import type { GameApiContext } from '../../context.js';
 import { loadPublicMap, type BaseMapResult } from '../../maps/worldMap.js';
-import { procedure, router } from '../../trpc.js';
+import { authedProcedure, router } from '../../trpc.js';
+import { getMyGeneral } from '../shared/general.js';
 
 type YearbookNation = {
     id: number;
@@ -19,6 +20,7 @@ type YearbookNation = {
 };
 
 const joinYearMonth = (year: number, month: number): number => year * 12 + month - 1;
+const zServerId = z.string().trim().min(1).max(64);
 
 const computeHash = (payload: unknown): string =>
     createHash('sha256').update(JSON.stringify(payload)).digest('hex');
@@ -189,53 +191,86 @@ const buildLogs = async (ctx: GameApiContext, year: number, month: number) => {
 };
 
 export const yearbookRouter = router({
-    getRange: procedure.query(async ({ ctx }) => {
-        const worldState = await ctx.db.worldState.findFirst();
-        if (!worldState) {
-            throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'World state is not initialized.' });
-        }
+    getRange: authedProcedure
+        .input(
+            z
+                .object({
+                    serverID: zServerId.optional(),
+                })
+                .optional()
+        )
+        .query(async ({ ctx, input }) => {
+            await getMyGeneral(ctx);
+            const worldState = await ctx.db.worldState.findFirst();
+            if (!worldState) {
+                throw new TRPCError({
+                    code: 'PRECONDITION_FAILED',
+                    message: 'World state is not initialized.',
+                });
+            }
+            const targetProfileName = input?.serverID ?? ctx.profile.name;
+            const isCurrentProfile = targetProfileName === ctx.profile.name;
 
-        const firstRow = await ctx.db.yearbookHistory.findFirst({
-            where: { profileName: ctx.profile.name },
-            select: { year: true, month: true },
-            orderBy: [{ year: 'asc' }, { month: 'asc' }],
-        });
+            const firstRow = await ctx.db.yearbookHistory.findFirst({
+                where: { profileName: targetProfileName },
+                select: { year: true, month: true },
+                orderBy: [{ year: 'asc' }, { month: 'asc' }],
+            });
 
-        const lastRow = await ctx.db.yearbookHistory.findFirst({
-            where: { profileName: ctx.profile.name },
-            select: { year: true, month: true },
-            orderBy: [{ year: 'desc' }, { month: 'desc' }],
-        });
+            const lastRow = await ctx.db.yearbookHistory.findFirst({
+                where: { profileName: targetProfileName },
+                select: { year: true, month: true },
+                orderBy: [{ year: 'desc' }, { month: 'desc' }],
+            });
 
-        const currentYearMonth = joinYearMonth(worldState.currentYear, worldState.currentMonth);
-        const fallbackYearMonth = currentYearMonth - 1;
-        const firstYearMonth = firstRow ? joinYearMonth(firstRow.year, firstRow.month) : fallbackYearMonth;
-        const lastYearMonth = lastRow ? joinYearMonth(lastRow.year, lastRow.month) : fallbackYearMonth;
+            if (!isCurrentProfile && (!firstRow || !lastRow)) {
+                throw new TRPCError({ code: 'NOT_FOUND', message: '연감 범위를 찾을 수 없습니다.' });
+            }
 
-        return {
-            firstYearMonth,
-            lastYearMonth,
-            currentYearMonth,
-        };
-    }),
-    getHistory: procedure
+            const currentYearMonth = joinYearMonth(worldState.currentYear, worldState.currentMonth);
+            const fallbackYearMonth = currentYearMonth - 1;
+            const firstYearMonth = firstRow
+                ? joinYearMonth(firstRow.year, firstRow.month)
+                : fallbackYearMonth;
+            const lastYearMonth = lastRow
+                ? joinYearMonth(lastRow.year, lastRow.month)
+                : fallbackYearMonth;
+            const selectedYearMonth = isCurrentProfile ? currentYearMonth : lastYearMonth;
+
+            return {
+                firstYearMonth,
+                lastYearMonth,
+                currentYearMonth: selectedYearMonth,
+            };
+        }),
+    getHistory: authedProcedure
         .input(
             z.object({
                 year: z.number().int(),
                 month: z.number().int().min(1).max(12),
                 hash: z.string().optional(),
+                serverID: zServerId.optional(),
             })
         )
         .query(async ({ ctx, input }) => {
+            await getMyGeneral(ctx);
             const worldState = await ctx.db.worldState.findFirst();
             if (!worldState) {
                 throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'World state is not initialized.' });
             }
+            const targetProfileName = input.serverID ?? ctx.profile.name;
+            const isCurrentProfile = targetProfileName === ctx.profile.name;
 
             const isCurrent =
+                isCurrentProfile &&
                 worldState.currentYear === input.year && worldState.currentMonth === input.month;
 
-            const { globalHistory, globalAction } = await buildLogs(ctx, input.year, input.month);
+            const { globalHistory, globalAction } = isCurrentProfile
+                ? await buildLogs(ctx, input.year, input.month)
+                : {
+                      globalHistory: [`<C>●</>${input.month}월: 기록 없음`],
+                      globalAction: [`<C>●</>${input.month}월: 기록 없음`],
+                  };
 
             if (isCurrent) {
                 const map = await loadPublicMap(ctx, false);
@@ -260,7 +295,7 @@ export const yearbookRouter = router({
 
             const row = await ctx.db.yearbookHistory.findFirst({
                 where: {
-                    profileName: ctx.profile.name,
+                    profileName: targetProfileName,
                     year: input.year,
                     month: input.month,
                 },
