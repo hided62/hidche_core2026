@@ -100,6 +100,8 @@ export interface General<TriggerState extends GeneralTriggerState = GeneralTrigg
     itemInventory?: GeneralItemInventory;
     meta: GeneralMeta;
     lastTurn?: GeneralLastTurn;
+    turnTime?: Date;
+    recentWarTime?: Date | null;
 }
 
 export interface City {

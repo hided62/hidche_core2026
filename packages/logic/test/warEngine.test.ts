@@ -230,11 +230,13 @@ describe('war triggers', () => {
         const crewType = new WarCrewType(buildUnitSet().crewTypes![0]!);
         const nation = buildNation();
         const city = buildCity();
+        const attackerGeneral = buildGeneral(80);
+        attackerGeneral.turnTime = new Date('2026-07-26T13:38:45.000Z');
 
         const attacker = new WarUnitGeneral(
             rng,
             config,
-            buildGeneral(80),
+            attackerGeneral,
             city,
             nation,
             true,
@@ -255,6 +257,8 @@ describe('war triggers', () => {
 
         attacker.setOppose(defender);
         defender.setOppose(attacker);
+        expect(attackerGeneral.recentWarTime?.toISOString()).toBe('2026-07-26T13:38:45.000Z');
+        expect(attackerGeneral.meta.recent_war_phase).toBe(0);
 
         attacker.beginPhase();
 

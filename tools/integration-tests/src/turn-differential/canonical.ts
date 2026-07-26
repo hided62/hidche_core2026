@@ -162,8 +162,8 @@ export const projectCoreDatabaseSnapshot = (rows: {
             inheritActiveActionPoints: readNumber(meta, 'inherit_active_action') * 3,
             makeLimit: readNumber(meta, 'makelimit'),
             penalty: asRecord(row.penalty),
-            killTurn: readNumber(meta, 'killturn'),
-            mySet: readNumber(meta, 'myset'),
+            killTurn: readNumber(row, 'killTurn', readNumber(meta, 'killturn')),
+            mySet: readNumber(row, 'mySet', readNumber(meta, 'myset')),
         };
     });
     const cities = rows.cities.map((row) => {

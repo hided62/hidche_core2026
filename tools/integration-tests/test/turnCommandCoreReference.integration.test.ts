@@ -25,6 +25,23 @@ const ignoredLifecyclePaths = [
     /^nations\[[^\]]+\]\.meta(?:\.|$)/,
 ];
 
+const comparedLifecycleIgnoredPaths = [
+    /^nationTurns/,
+    /^logs/,
+    /^messages/,
+    /^world\.turnTime$/,
+    /^generalTurns\[[^\]]+\]\.args(?:\.|$)/,
+    /^generals\[[^\]]+\]\.(?:lastTurn|recentWarTime|turnTime)(?:\.|$)/,
+    /^generals\[[^\]]+\]\.meta(?:\.|$)/,
+    /^nations\[[^\]]+\]\.meta(?:\.|$)/,
+];
+
+const timestampMillis = (value: unknown): number => {
+    const raw = String(value);
+    const normalized = raw.includes('T') ? raw : `${raw.replace(' ', 'T').replace(/\.(\d{3})\d*$/, '.$1')}Z`;
+    return new Date(normalized).getTime();
+};
+
 const normalizeStoredLogText = (value: unknown): string =>
     String(value)
         .replace(/^(?:<C>●<\/>|<S>◆<\/>|<R>★<\/>)(?:(?:\d+년 )?\d+월:|\d+년:)?/, '')
@@ -86,10 +103,12 @@ integration('core ↔ legacy command-boundary differential', () => {
         ['live sortie emergency capital', 'fixtures/turn-differential/live-sortie-emergency-capital.json'],
         ['live sortie conflict arbitration', 'fixtures/turn-differential/live-sortie-conflict-arbitration.json'],
         ['live sortie tied conflict', 'fixtures/turn-differential/live-sortie-conflict-tie.json'],
+        ['live sortie outer lifecycle', 'fixtures/turn-differential/live-sortie-defender.json'],
     ])(
         '%s matches command RNG and canonical state delta',
-        async (_label, fixturePath) => {
+        async (label, fixturePath) => {
             const request = readFixture(fixturePath);
+            request.includeLifecycle = label === 'live sortie outer lifecycle';
             if (request.action === 'che_출병') {
                 request.observe!.includeNationHistoryLogs = true;
                 request.observe!.includeGlobalHistoryLogs = true;
@@ -154,6 +173,43 @@ integration('core ↔ legacy command-boundary differential', () => {
                 });
                 expect(reference.after.generals.find((general) => general.id === 1)?.cityId).toBe(3);
             }
+            if (request.includeLifecycle) {
+                const beforeActor = reference.before.generals.find((general) => general.id === 1);
+                const afterActor = reference.after.generals.find((general) => general.id === 1);
+                const coreBeforeActor = core.before.generals.find((general) => general.id === 1);
+                const coreAfterActor = core.after.generals.find((general) => general.id === 1);
+                expect(
+                    reference.before.generalTurns.find((turn) => turn.generalId === 1 && turn.turnIndex === 0)?.action
+                ).toBe('che_출병');
+                expect(
+                    reference.after.generalTurns.find((turn) => turn.generalId === 1 && turn.turnIndex === 0)?.action
+                ).toBe('휴식');
+                expect(timestampMillis(afterActor?.turnTime) - timestampMillis(beforeActor?.turnTime)).toBe(
+                    10 * 60_000
+                );
+                expect(timestampMillis(coreAfterActor?.turnTime) - timestampMillis(coreBeforeActor?.turnTime)).toBe(
+                    10 * 60_000
+                );
+                expect(timestampMillis(coreAfterActor?.turnTime)).toBe(timestampMillis(afterActor?.turnTime));
+                expect(afterActor?.mySet).toBe(Math.min(9, Number(beforeActor?.mySet) + 3));
+                expect(coreAfterActor?.mySet).toBe(afterActor?.mySet);
+                expect(coreAfterActor?.killTurn).toBe(afterActor?.killTurn);
+                expect(afterActor?.lastTurn).not.toBeNull();
+                expect((coreAfterActor?.lastTurn as Record<string, unknown>)?.command).toBe(
+                    (afterActor?.lastTurn as Record<string, unknown>)?.command
+                );
+                for (const generalId of [1, 2]) {
+                    const referenceRecentWar = reference.after.generals.find(
+                        (general) => general.id === generalId
+                    )?.recentWarTime;
+                    const coreRecentWar = core.after.generals.find(
+                        (general) => general.id === generalId
+                    )?.recentWarTime;
+                    expect(referenceRecentWar).not.toBeNull();
+                    expect(coreRecentWar).not.toBeNull();
+                    expect(timestampMillis(coreRecentWar)).toBe(timestampMillis(referenceRecentWar));
+                }
+            }
 
             expect(core.execution.outcome).toMatchObject({
                 requestedAction: request.action,
@@ -178,7 +234,9 @@ integration('core ↔ legacy command-boundary differential', () => {
                 compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
                     ignoredPathPatterns:
                         request.action === 'che_출병'
-                            ? ignoredLifecyclePaths
+                            ? request.includeLifecycle
+                                ? comparedLifecycleIgnoredPaths
+                                : ignoredLifecyclePaths
                             : [...ignoredLifecyclePaths, /^generals\[[^\]]+\]\.killTurn(?:\.|$)/],
                 })
             ).toEqual([]);

@@ -40,6 +40,7 @@ export interface TurnCommandFixtureRequest {
     kind: 'general' | 'nation';
     actorGeneralId: number;
     action: string;
+    includeLifecycle?: boolean;
     args?: unknown;
     coreArgs?: unknown;
     setup?: {
@@ -256,6 +257,7 @@ const buildGeneral = (row: Record<string, unknown>, fallbackTurnTime: Date): Tur
             specage2: readNumber(row, 'specAge2', readNumber(meta, 'specage2')),
             makelimit: readNumber(row, 'makeLimit', readNumber(meta, 'makelimit')),
             killturn: readNumber(row, 'killTurn', readNumber(meta, 'killturn', 24)),
+            myset: readNumber(row, 'mySet', readNumber(meta, 'myset')),
             leadership_exp: readNumber(row, 'leadershipExp', readNumber(meta, 'leadership_exp')),
             strength_exp: readNumber(row, 'strengthExp', readNumber(meta, 'strength_exp')),
             intel_exp: readNumber(row, 'intelExp', readNumber(meta, 'intel_exp')),
@@ -756,7 +758,7 @@ export const runCoreTurnCommandTrace = async (
         nationCooldowns: request.observe?.nationCooldowns ?? [],
     };
     const reservedTurns = new InMemoryReservedTurnStore(emptyDatabaseClient as never, {
-        maxGeneralTurns: 10,
+        maxGeneralTurns: 30,
         maxNationTurns: 12,
     });
     await reservedTurns.loadAll();

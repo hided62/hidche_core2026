@@ -13,12 +13,6 @@ const MINUTES_PER_DAY = 24 * 60;
 
 const toMinuteOfDay = (date: Date): number => date.getHours() * 60 + date.getMinutes();
 
-const toLocalDateAtMinute = (date: Date, minuteOfDay: number, dayOffset = 0): Date => {
-    const hour = Math.floor(minuteOfDay / 60);
-    const minute = minuteOfDay % 60;
-    return new Date(date.getFullYear(), date.getMonth(), date.getDate() + dayOffset, hour, minute, 0, 0);
-};
-
 const normalizeEntries = (entries: TurnScheduleEntries): TurnScheduleEntries => {
     const normalized = entries
         .map((entry) => ({
@@ -52,26 +46,5 @@ export const getTickMinutesAt = (date: Date, schedule: TurnSchedule): number => 
 };
 
 export const getNextTurnAt = (date: Date, schedule: TurnSchedule): Date => {
-    const entries = normalizeEntries(schedule.entries);
-    const minuteOfDay = toMinuteOfDay(date);
-    const index = findCurrentEntryIndex(minuteOfDay, entries);
-    const currentIndex = index >= 0 ? index : entries.length - 1;
-    const startDayOffset = index >= 0 ? 0 : -1;
-    const nextIndex = (currentIndex + 1) % entries.length;
-    const nextDayOffset = startDayOffset + (nextIndex > currentIndex ? 0 : 1);
-
-    const currentEntry = getEntryAt(entries, currentIndex);
-    const nextEntry = getEntryAt(entries, nextIndex);
-    const segmentStart = toLocalDateAtMinute(date, currentEntry.startMinute, startDayOffset);
-    const segmentEnd = toLocalDateAtMinute(date, nextEntry.startMinute, nextDayOffset);
-
-    const elapsedMinutes = (date.getTime() - segmentStart.getTime()) / 60000;
-    const nextStep = Math.floor(elapsedMinutes / currentEntry.tickMinutes) + 1;
-    const nextCandidate = new Date(segmentStart.getTime() + nextStep * currentEntry.tickMinutes * 60000);
-
-    if (nextCandidate.getTime() < segmentEnd.getTime()) {
-        return nextCandidate;
-    }
-
-    return segmentEnd;
+    return new Date(date.getTime() + getTickMinutesAt(date, schedule) * 60_000);
 };

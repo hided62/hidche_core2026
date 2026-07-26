@@ -15,7 +15,7 @@ import { getTechAbility, getTechCost } from '@sammo-ts/logic/world/unitSet.js';
 import type { WarActionPipeline, WarActionContext } from '../actions.js';
 import type { WarEngineConfig } from '../types.js';
 import type { WarCrewType } from '../crewType.js';
-import { clamp, clampMin, getMetaNumber, getMetaString, increaseMetaNumber, round } from '../utils.js';
+import { clamp, clampMin, getMetaNumber, increaseMetaNumber, round } from '../utils.js';
 import { WAR_CRITICAL_RANGE, WarUnit, resolveNationTech } from './base.js';
 type CityUnit = WarUnit & { getCityId: () => number };
 
@@ -23,8 +23,6 @@ const isCityUnit = (unit: WarUnit | null): unit is CityUnit =>
     Boolean(unit && typeof (unit as CityUnit).getCityId === 'function');
 
 const META_EXP_LEVEL = 'explevel';
-const META_TURN_TIME = 'turnTime';
-const META_RECENT_WAR = 'recentWar';
 const META_DEX_PREFIX = 'dex';
 const META_RANK_PREFIX = 'rank_';
 const META_INTEL_EXP = 'intel_exp';
@@ -119,18 +117,16 @@ export class WarUnitGeneral<
         }
 
         const baseTurnTime = this.isAttacker()
-            ? getMetaString(this.general.meta, META_TURN_TIME)
+            ? this.general.turnTime
             : oppose instanceof WarUnitGeneral
-              ? getMetaString(oppose.general.meta, META_TURN_TIME)
-              : getMetaString(this.general.meta, META_TURN_TIME);
+              ? oppose.general.turnTime
+              : this.general.turnTime;
         if (!baseTurnTime) {
             return;
         }
-
-        const base = baseTurnTime.slice(0, Math.max(0, baseTurnTime.length - 2));
         const phase = clamp(this.getRealPhase(), 0, 99);
-        const phaseText = phase.toString().padStart(2, '0');
-        this.general.meta[META_RECENT_WAR] = `${base}${phaseText}`;
+        this.general.recentWarTime = new Date(baseTurnTime.getTime());
+        this.general.meta.recent_war_phase = phase;
     }
 
     public override getMaxPhase(): number {
