@@ -3497,6 +3497,108 @@ integration('general command gift resource and target boundaries', () => {
     }, 120_000);
 });
 
+interface ResourceTransferBoundaryCase {
+    name: string;
+    action: 'che_증여' | 'che_헌납' | 'che_군량매매';
+    args: Record<string, unknown>;
+    actorPatch?: Record<string, unknown>;
+    fixturePatches?: FixturePatches;
+    completed: boolean;
+}
+
+const resourceTransferBoundaryCases: ResourceTransferBoundaryCase[] = [
+    {
+        name: 'gift completes with a zero transferable gold amount at the exact minimum',
+        action: 'che_증여',
+        args: { isGold: true, amount: 100, destGeneralID: 3 },
+        actorPatch: { gold: 0 },
+        completed: true,
+    },
+    {
+        name: 'gift rejects a general from another nation',
+        action: 'che_증여',
+        args: { isGold: true, amount: 100, destGeneralID: 2 },
+        completed: false,
+    },
+    {
+        name: 'donation at the exact rice minimum may spend below that minimum',
+        action: 'che_헌납',
+        args: { isGold: false, amount: 100 },
+        actorPatch: { rice: 500, crew: 0 },
+        completed: true,
+    },
+    {
+        name: 'donation completes with zero gold at the zero minimum',
+        action: 'che_헌납',
+        args: { isGold: true, amount: 100 },
+        actorPatch: { gold: 0 },
+        completed: true,
+    },
+    {
+        name: 'buying rice with one gold preserves the fee and integer persistence boundary',
+        action: 'che_군량매매',
+        args: { buyRice: true, amount: 100 },
+        actorPatch: { gold: 1, rice: 0 },
+        completed: true,
+    },
+    {
+        name: 'selling one rice preserves the fee and integer persistence boundary',
+        action: 'che_군량매매',
+        args: { buyRice: false, amount: 100 },
+        actorPatch: { gold: 0, rice: 1, crew: 0 },
+        completed: true,
+    },
+    {
+        name: 'trade rate 137 preserves resource, tax, stat experience, and logs',
+        action: 'che_군량매매',
+        args: { buyRice: false, amount: 1_000 },
+        fixturePatches: { cities: { 3: { trade: 137 } } },
+        completed: true,
+    },
+    {
+        name: 'a neutral general can trade in a neutral trader city without nation tax',
+        action: 'che_군량매매',
+        args: { buyRice: false, amount: 1_000 },
+        actorPatch: { nationId: 0, officerLevel: 0 },
+        fixturePatches: { cities: { 3: { nationId: 0 } } },
+        completed: true,
+    },
+];
+
+integration('general resource transfer target, fee, state, and log parity', () => {
+    it.each(resourceTransferBoundaryCases)(
+        '$name',
+        async ({ action, args, actorPatch, fixturePatches, completed }) => {
+            const request = buildRequest(action, args, actorPatch, fixturePatches);
+            request.setup!.world!.hiddenSeed = `general-resource-transfer-${action}-${String(args.isGold ?? args.buyRice)}`;
+            request.observe!.includeGlobalHistoryLogs = true;
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+
+            expect(reference.execution.outcome).toMatchObject({ completed });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: action,
+                actionKey: completed ? action : '휴식',
+                usedFallback: !completed,
+            });
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+
+            expect(semanticLogSignatures(core.after.logs)).toEqual(
+                semanticLogSignatures(addedReferenceLogs(reference.before, reference.after.logs))
+            );
+        },
+        120_000
+    );
+});
+
 type GeneralConstraintCase = {
     name: string;
     action: string;

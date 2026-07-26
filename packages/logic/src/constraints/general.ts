@@ -583,7 +583,7 @@ export const friendlyDestGeneral = (): Constraint => ({
         if (destGeneral.nationId === general.nationId) {
             return allow();
         }
-        return { kind: 'deny', reason: '아군이 아닙니다.' };
+        return { kind: 'deny', reason: '아국 장수가 아닙니다.' };
     },
 });
 
