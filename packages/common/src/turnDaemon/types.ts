@@ -155,56 +155,57 @@ export type TurnDaemonCommand =
           updates: Record<string, unknown>;
           expectedUpdatedAt?: string;
       }
-        | {
-                    type: 'adjustGeneralResources';
-                    requestId?: string;
-                    reason?: string;
-                    adjustments: Array<{
-                            generalId: number;
-                            goldDelta?: number;
-                            riceDelta?: number;
-                    }>;
-          }
-        | {
-              type: 'adjustGeneralMeta';
-              requestId?: string;
-              reason?: string;
-              adjustments: Array<{
-                  generalId: number;
-                  metaDelta: Record<string, number>;
-              }>;
-          }
-        | {
-              type: 'tournamentMatchResult';
-              requestId?: string;
-              tournamentType: number;
-              attackerId: number;
-              defenderId: number;
-              result: 'attacker' | 'defender' | 'draw';
-          }
-        | {
-              type: 'patchGeneral';
-              requestId?: string;
+    | {
+          type: 'adjustGeneralResources';
+          requestId?: string;
+          reason?: string;
+          adjustments: Array<{
               generalId: number;
-              patch: {
-                  meta?: Record<string, unknown>;
-                  turnTime?: string;
-                  stats?: {
-                      leadership?: number;
-                      strength?: number;
-                      intelligence?: number;
-                  };
-                  specialWar?: string;
+              goldDelta?: number;
+              riceDelta?: number;
+              minGoldAfter?: number;
+          }>;
+      }
+    | {
+          type: 'adjustGeneralMeta';
+          requestId?: string;
+          reason?: string;
+          adjustments: Array<{
+              generalId: number;
+              metaDelta: Record<string, number>;
+          }>;
+      }
+    | {
+          type: 'tournamentMatchResult';
+          requestId?: string;
+          tournamentType: number;
+          attackerId: number;
+          defenderId: number;
+          result: 'attacker' | 'defender' | 'draw';
+      }
+    | {
+          type: 'patchGeneral';
+          requestId?: string;
+          generalId: number;
+          patch: {
+              meta?: Record<string, unknown>;
+              turnTime?: string;
+              stats?: {
+                  leadership?: number;
+                  strength?: number;
+                  intelligence?: number;
               };
-          }
-        | {
-              type: 'auctionBid';
-              requestId?: string;
-              auctionId: number;
-              generalId: number;
-              amount: number;
-              tryExtendCloseDate?: boolean;
+              specialWar?: string;
           };
+      }
+    | {
+          type: 'auctionBid';
+          requestId?: string;
+          auctionId: number;
+          generalId: number;
+          amount: number;
+          tryExtendCloseDate?: boolean;
+      };
 
 export type TurnDaemonCommandResult =
     | {
@@ -385,70 +386,70 @@ export type TurnDaemonCommandResult =
           reason: string;
           currentUpdatedAt?: string;
       }
-            | {
-                type: 'adjustGeneralResources';
-                ok: true;
-                processed: number;
-                missing: number;
-                totalGoldDelta: number;
-                totalRiceDelta: number;
-            }
-            | {
-                type: 'adjustGeneralResources';
-                ok: false;
-                reason: string;
-                }
-            | {
-                type: 'adjustGeneralMeta';
-                ok: true;
-                processed: number;
-                missing: number;
-            }
-            | {
-                type: 'adjustGeneralMeta';
-                ok: false;
-                reason: string;
-            }
-            | {
-                type: 'tournamentMatchResult';
-                ok: true;
-                tournamentType: number;
-                attackerId: number;
-                defenderId: number;
-                result: 'attacker' | 'defender' | 'draw';
-            }
-            | {
-                type: 'tournamentMatchResult';
-                ok: false;
-                tournamentType: number;
-                attackerId: number;
-                defenderId: number;
-                result: 'attacker' | 'defender' | 'draw';
-                reason: string;
-            }
-                | {
-                    type: 'patchGeneral';
-                    ok: true;
-                    generalId: number;
-                }
-                | {
-                    type: 'patchGeneral';
-                    ok: false;
-                    generalId: number;
-                    reason: string;
-                    }
-                    | {
-                        type: 'auctionBid';
-                        ok: true;
-                        auctionId: number;
-                        closeAt: string;
-                    }
-                    | {
-                        type: 'auctionBid';
-                        ok: false;
-                        auctionId: number;
-                        reason: string;
-                    };
+    | {
+          type: 'adjustGeneralResources';
+          ok: true;
+          processed: number;
+          missing: number;
+          totalGoldDelta: number;
+          totalRiceDelta: number;
+      }
+    | {
+          type: 'adjustGeneralResources';
+          ok: false;
+          reason: string;
+      }
+    | {
+          type: 'adjustGeneralMeta';
+          ok: true;
+          processed: number;
+          missing: number;
+      }
+    | {
+          type: 'adjustGeneralMeta';
+          ok: false;
+          reason: string;
+      }
+    | {
+          type: 'tournamentMatchResult';
+          ok: true;
+          tournamentType: number;
+          attackerId: number;
+          defenderId: number;
+          result: 'attacker' | 'defender' | 'draw';
+      }
+    | {
+          type: 'tournamentMatchResult';
+          ok: false;
+          tournamentType: number;
+          attackerId: number;
+          defenderId: number;
+          result: 'attacker' | 'defender' | 'draw';
+          reason: string;
+      }
+    | {
+          type: 'patchGeneral';
+          ok: true;
+          generalId: number;
+      }
+    | {
+          type: 'patchGeneral';
+          ok: false;
+          generalId: number;
+          reason: string;
+      }
+    | {
+          type: 'auctionBid';
+          ok: true;
+          auctionId: number;
+          closeAt: string;
+      }
+    | {
+          type: 'auctionBid';
+          ok: false;
+          auctionId: number;
+          reason: string;
+      };
 
 export type TurnDaemonEvent =
     | { type: 'status'; requestId?: string; status: TurnDaemonStatus }

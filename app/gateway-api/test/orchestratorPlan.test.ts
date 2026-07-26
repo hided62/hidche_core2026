@@ -29,6 +29,7 @@ describe('planProfileReconcile', () => {
             planProfileReconcile('RUNNING', {
                 apiRunning: true,
                 daemonRunning: false,
+                tournamentRunning: true,
             })
         ).toEqual({ shouldStart: true, shouldStop: false });
     });
@@ -38,6 +39,7 @@ describe('planProfileReconcile', () => {
             planProfileReconcile('PREOPEN', {
                 apiRunning: false,
                 daemonRunning: false,
+                tournamentRunning: false,
             })
         ).toEqual({ shouldStart: true, shouldStop: false });
     });
@@ -47,6 +49,7 @@ describe('planProfileReconcile', () => {
             planProfileReconcile('RUNNING', {
                 apiRunning: true,
                 daemonRunning: true,
+                tournamentRunning: true,
             })
         ).toEqual({ shouldStart: false, shouldStop: false });
     });
@@ -56,6 +59,7 @@ describe('planProfileReconcile', () => {
             planProfileReconcile('STOPPED', {
                 apiRunning: false,
                 daemonRunning: true,
+                tournamentRunning: false,
             })
         ).toEqual({ shouldStart: false, shouldStop: true });
     });
@@ -65,6 +69,7 @@ describe('planProfileReconcile', () => {
             planProfileReconcile('RESERVED', {
                 apiRunning: false,
                 daemonRunning: false,
+                tournamentRunning: false,
             })
         ).toEqual({ shouldStart: false, shouldStop: false });
     });
@@ -90,6 +95,11 @@ describe('buildProcessDefinitions', () => {
         });
         expect(definitions.daemon.cwd).toBe(path.join(buildWorkspace, 'app', 'game-engine'));
         expect(definitions.daemon.script).toBe(path.join(buildWorkspace, 'app', 'game-engine', 'dist', 'index.js'));
+        expect(definitions.tournament).toMatchObject({
+            cwd: path.join(buildWorkspace, 'app', 'game-api'),
+            script: path.join(buildWorkspace, 'app', 'game-api', 'dist', 'index.js'),
+            env: { GAME_API_ROLE: 'tournament-worker' },
+        });
     });
 
     it('keeps main as the runtime for profiles without a commit worktree', () => {
@@ -97,6 +107,7 @@ describe('buildProcessDefinitions', () => {
 
         expect(definitions.api.cwd).toBe(path.join(processConfig.workspaceRoot, 'app', 'game-api'));
         expect(definitions.daemon.cwd).toBe(path.join(processConfig.workspaceRoot, 'app', 'game-engine'));
+        expect(definitions.tournament.cwd).toBe(path.join(processConfig.workspaceRoot, 'app', 'game-api'));
     });
 });
 

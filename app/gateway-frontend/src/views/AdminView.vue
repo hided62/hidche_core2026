@@ -70,6 +70,7 @@ type AdminProfile = {
     runtime: {
         apiRunning: boolean;
         daemonRunning: boolean;
+        tournamentRunning: boolean;
     };
     buildCommitSha?: string;
     meta: Record<string, unknown>;
@@ -121,15 +122,7 @@ type InstallFormState = {
 };
 
 type AdminAction =
-    | 'RESUME'
-    | 'PAUSE'
-    | 'STOP'
-    | 'ACCELERATE'
-    | 'DELAY'
-    | 'RESET_NOW'
-    | 'RESET_SCHEDULED'
-    | 'OPEN_SURVEY'
-    | 'SHUTDOWN';
+    'RESUME' | 'PAUSE' | 'STOP' | 'ACCELERATE' | 'DELAY' | 'RESET_NOW' | 'RESET_SCHEDULED' | 'OPEN_SURVEY' | 'SHUTDOWN';
 
 type AdminClient = {
     system: {
@@ -436,8 +429,7 @@ const toLocalInputValue = (value: unknown): string => {
 const readNumber = (value: unknown, fallback: number): number =>
     typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 
-const readBoolean = (value: unknown, fallback: boolean): boolean =>
-    typeof value === 'boolean' ? value : fallback;
+const readBoolean = (value: unknown, fallback: boolean): boolean => (typeof value === 'boolean' ? value : fallback);
 
 const readString = (value: unknown, fallback: string): string => (typeof value === 'string' ? value : fallback);
 
@@ -1090,21 +1082,16 @@ onMounted(() => {
                             <div class="text-xs text-zinc-400 mt-2">제재 상태</div>
                             <pre class="text-[11px] text-zinc-400 bg-black/50 p-2 rounded whitespace-pre-wrap"
                                 >{{ JSON.stringify(userResult.sanctions, null, 2) }}
-              </pre
-                            >
+              </pre>
                         </div>
                     </div>
 
                     <div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 space-y-4">
                         <div class="flex items-center justify-between">
                             <h4 class="text-base font-semibold">로컬 계정 생성</h4>
-                            <span class="text-xs text-zinc-500">
-                                ENV {{ localAccountEnabled ? 'ON' : 'OFF' }}
-                            </span>
+                            <span class="text-xs text-zinc-500"> ENV {{ localAccountEnabled ? 'ON' : 'OFF' }} </span>
                         </div>
-                        <div class="text-xs text-zinc-500">
-                            카카오 OAuth 없이 로그인 가능한 계정을 생성합니다.
-                        </div>
+                        <div class="text-xs text-zinc-500">카카오 OAuth 없이 로그인 가능한 계정을 생성합니다.</div>
                         <div class="grid gap-2">
                             <input
                                 v-model="localAccountForm.username"
@@ -1365,7 +1352,8 @@ onMounted(() => {
                                 </div>
                                 <div class="text-xs text-zinc-400">
                                     상태: {{ profile.status }} / API: {{ profile.runtime.apiRunning ? 'ON' : 'OFF' }} /
-                                    DAEMON: {{ profile.runtime.daemonRunning ? 'ON' : 'OFF' }}
+                                    DAEMON: {{ profile.runtime.daemonRunning ? 'ON' : 'OFF' }} / TOURNAMENT:
+                                    {{ profile.runtime.tournamentRunning ? 'ON' : 'OFF' }}
                                 </div>
                             </div>
 
@@ -1504,7 +1492,9 @@ onMounted(() => {
                             >
                                 <div class="flex items-center justify-between">
                                     <h4 class="text-sm font-semibold">설치/리셋</h4>
-                                    <span class="text-xs text-zinc-500">{{ profileInstallStatus[profile.profileName] }}</span>
+                                    <span class="text-xs text-zinc-500">{{
+                                        profileInstallStatus[profile.profileName]
+                                    }}</span>
                                 </div>
                                 <div class="grid lg:grid-cols-2 gap-4">
                                     <div class="space-y-3">
@@ -1525,7 +1515,9 @@ onMounted(() => {
                                                     불러오기
                                                 </button>
                                             </div>
-                                            <div class="text-xs text-zinc-500">비워두면 현재 저장소 기준으로 불러옵니다.</div>
+                                            <div class="text-xs text-zinc-500">
+                                                비워두면 현재 저장소 기준으로 불러옵니다.
+                                            </div>
                                         </div>
 
                                         <div class="space-y-1">
@@ -1535,16 +1527,28 @@ onMounted(() => {
                                                 class="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
                                                 :disabled="getScenarioLoading(profile.profileName)"
                                             >
-                                                <option v-if="getScenarioLoading(profile.profileName)" disabled>불러오는 중...</option>
-                                                <template v-for="(items, group) in getScenarioGroups(profile.profileName)" :key="group">
+                                                <option v-if="getScenarioLoading(profile.profileName)" disabled>
+                                                    불러오는 중...
+                                                </option>
+                                                <template
+                                                    v-for="(items, group) in getScenarioGroups(profile.profileName)"
+                                                    :key="group"
+                                                >
                                                     <optgroup :label="group">
-                                                        <option v-for="scenario in items" :key="scenario.id" :value="scenario.id">
+                                                        <option
+                                                            v-for="scenario in items"
+                                                            :key="scenario.id"
+                                                            :value="scenario.id"
+                                                        >
                                                             {{ scenario.title }}
                                                         </option>
                                                     </optgroup>
                                                 </template>
                                             </select>
-                                            <div v-if="getScenarioStatus(profile.profileName)" class="text-xs text-red-400">
+                                            <div
+                                                v-if="getScenarioStatus(profile.profileName)"
+                                                class="text-xs text-red-400"
+                                            >
                                                 {{ getScenarioStatus(profile.profileName) }}
                                             </div>
                                         </div>
@@ -1553,7 +1557,9 @@ onMounted(() => {
                                             <div class="space-y-1">
                                                 <label class="text-xs text-zinc-400">턴 시간(분)</label>
                                                 <select
-                                                    v-model.number="profileInstalls[profile.profileName].turnTermMinutes"
+                                                    v-model.number="
+                                                        profileInstalls[profile.profileName].turnTermMinutes
+                                                    "
                                                     class="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
                                                 >
                                                     <option v-for="term in turnTermOptions" :key="term" :value="term">
@@ -1664,7 +1670,9 @@ onMounted(() => {
                                             <div class="flex gap-2 flex-wrap">
                                                 <label class="flex items-center gap-1 text-xs text-zinc-300">
                                                     <input
-                                                        v-model.number="profileInstalls[profile.profileName].blockGeneralCreate"
+                                                        v-model.number="
+                                                            profileInstalls[profile.profileName].blockGeneralCreate
+                                                        "
                                                         class="accent-yellow-500"
                                                         type="radio"
                                                         :value="0"
@@ -1673,7 +1681,9 @@ onMounted(() => {
                                                 </label>
                                                 <label class="flex items-center gap-1 text-xs text-zinc-300">
                                                     <input
-                                                        v-model.number="profileInstalls[profile.profileName].blockGeneralCreate"
+                                                        v-model.number="
+                                                            profileInstalls[profile.profileName].blockGeneralCreate
+                                                        "
                                                         class="accent-yellow-500"
                                                         type="radio"
                                                         :value="2"
@@ -1682,7 +1692,9 @@ onMounted(() => {
                                                 </label>
                                                 <label class="flex items-center gap-1 text-xs text-zinc-300">
                                                     <input
-                                                        v-model.number="profileInstalls[profile.profileName].blockGeneralCreate"
+                                                        v-model.number="
+                                                            profileInstalls[profile.profileName].blockGeneralCreate
+                                                        "
                                                         class="accent-yellow-500"
                                                         type="radio"
                                                         :value="1"
@@ -1732,7 +1744,9 @@ onMounted(() => {
                                             <div class="flex gap-2 flex-wrap">
                                                 <label class="flex items-center gap-1 text-xs text-zinc-300">
                                                     <input
-                                                        v-model.number="profileInstalls[profile.profileName].showImgLevel"
+                                                        v-model.number="
+                                                            profileInstalls[profile.profileName].showImgLevel
+                                                        "
                                                         class="accent-yellow-500"
                                                         type="radio"
                                                         :value="0"
@@ -1741,7 +1755,9 @@ onMounted(() => {
                                                 </label>
                                                 <label class="flex items-center gap-1 text-xs text-zinc-300">
                                                     <input
-                                                        v-model.number="profileInstalls[profile.profileName].showImgLevel"
+                                                        v-model.number="
+                                                            profileInstalls[profile.profileName].showImgLevel
+                                                        "
                                                         class="accent-yellow-500"
                                                         type="radio"
                                                         :value="1"
@@ -1750,7 +1766,9 @@ onMounted(() => {
                                                 </label>
                                                 <label class="flex items-center gap-1 text-xs text-zinc-300">
                                                     <input
-                                                        v-model.number="profileInstalls[profile.profileName].showImgLevel"
+                                                        v-model.number="
+                                                            profileInstalls[profile.profileName].showImgLevel
+                                                        "
                                                         class="accent-yellow-500"
                                                         type="radio"
                                                         :value="2"
@@ -1759,7 +1777,9 @@ onMounted(() => {
                                                 </label>
                                                 <label class="flex items-center gap-1 text-xs text-zinc-300">
                                                     <input
-                                                        v-model.number="profileInstalls[profile.profileName].showImgLevel"
+                                                        v-model.number="
+                                                            profileInstalls[profile.profileName].showImgLevel
+                                                        "
                                                         class="accent-yellow-500"
                                                         type="radio"
                                                         :value="3"
@@ -1802,7 +1822,11 @@ onMounted(() => {
                                                     class="flex items-center gap-1 text-xs text-zinc-300"
                                                 >
                                                     <input
-                                                        v-model="profileInstalls[profile.profileName].autorunUserOptions[option.key]"
+                                                        v-model="
+                                                            profileInstalls[profile.profileName].autorunUserOptions[
+                                                                option.key
+                                                            ]
+                                                        "
                                                         class="accent-yellow-500"
                                                         type="checkbox"
                                                     />
@@ -1874,30 +1898,41 @@ onMounted(() => {
                                             설치 적용
                                         </button>
 
-                                        <div v-if="getScenarioPreview(profile.profileName)" class="bg-zinc-950 border border-zinc-800 rounded p-3 text-xs text-zinc-300 space-y-2">
+                                        <div
+                                            v-if="getScenarioPreview(profile.profileName)"
+                                            class="bg-zinc-950 border border-zinc-800 rounded p-3 text-xs text-zinc-300 space-y-2"
+                                        >
                                             <div class="font-semibold text-zinc-200">
                                                 {{ getScenarioPreview(profile.profileName)?.title }}
                                             </div>
-                                            <div>시작 연도: {{ getScenarioPreview(profile.profileName)?.year ?? '-' }}년</div>
+                                            <div>
+                                                시작 연도: {{ getScenarioPreview(profile.profileName)?.year ?? '-' }}년
+                                            </div>
                                             <div>
                                                 NPC: {{ getScenarioPreview(profile.profileName)?.npcCount }}명
-                                                <span v-if="getScenarioPreview(profile.profileName)?.npcExCount">+{{ getScenarioPreview(profile.profileName)?.npcExCount }}명</span>
+                                                <span v-if="getScenarioPreview(profile.profileName)?.npcExCount"
+                                                    >+{{ getScenarioPreview(profile.profileName)?.npcExCount }}명</span
+                                                >
                                                 <span v-if="getScenarioPreview(profile.profileName)?.npcNeutralCount">
-                                                    / 중립 {{ getScenarioPreview(profile.profileName)?.npcNeutralCount }}명
+                                                    / 중립
+                                                    {{ getScenarioPreview(profile.profileName)?.npcNeutralCount }}명
                                                 </span>
                                             </div>
                                             <div class="space-y-1">
                                                 <div class="text-zinc-400">국가</div>
                                                 <div class="space-y-1">
                                                     <div
-                                                        v-for="nation in getScenarioPreview(profile.profileName)?.nations ?? []"
+                                                        v-for="nation in getScenarioPreview(profile.profileName)
+                                                            ?.nations ?? []"
                                                         :key="nation.id"
                                                         class="text-[11px]"
                                                     >
                                                         <span :style="{ color: nation.color }">{{ nation.name }}</span>
                                                         {{ nation.generals }}명
                                                         <span v-if="nation.generalsEx">(+{{ nation.generalsEx }})</span>
-                                                        <span class="text-zinc-500">· {{ nation.cities.join(', ') }}</span>
+                                                        <span class="text-zinc-500"
+                                                            >· {{ nation.cities.join(', ') }}</span
+                                                        >
                                                     </div>
                                                 </div>
                                             </div>

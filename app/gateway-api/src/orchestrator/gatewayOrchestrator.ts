@@ -39,6 +39,7 @@ export interface GatewayOrchestratorOptions {
 export interface ProfileRuntimeState {
     apiRunning: boolean;
     daemonRunning: boolean;
+    tournamentRunning: boolean;
 }
 
 export interface ProfileRuntimeSnapshot extends ProfileRuntimeState {
@@ -65,13 +66,13 @@ export const planProfileReconcile = (
 ): { shouldStart: boolean; shouldStop: boolean } => {
     if (status === 'RUNNING' || status === 'PREOPEN' || status === 'PAUSED' || status === 'COMPLETED') {
         return {
-            shouldStart: !(runtime.apiRunning && runtime.daemonRunning),
+            shouldStart: !(runtime.apiRunning && runtime.daemonRunning && runtime.tournamentRunning),
             shouldStop: false,
         };
     }
     return {
         shouldStart: false,
-        shouldStop: runtime.apiRunning || runtime.daemonRunning,
+        shouldStop: runtime.apiRunning || runtime.daemonRunning || runtime.tournamentRunning,
     };
 };
 
@@ -197,14 +198,18 @@ const parseInstallOptions = (
             : undefined;
     const sync = typeof install.sync === 'boolean' ? install.sync : undefined;
     const fiction =
-        typeof install.fiction === 'number' && Number.isFinite(install.fiction) ? Math.floor(install.fiction) : undefined;
+        typeof install.fiction === 'number' && Number.isFinite(install.fiction)
+            ? Math.floor(install.fiction)
+            : undefined;
     const extend = typeof install.extend === 'boolean' ? install.extend : undefined;
     const blockGeneralCreate =
         typeof install.blockGeneralCreate === 'number' && Number.isFinite(install.blockGeneralCreate)
             ? Math.floor(install.blockGeneralCreate)
             : undefined;
     const npcMode =
-        typeof install.npcMode === 'number' && Number.isFinite(install.npcMode) ? Math.floor(install.npcMode) : undefined;
+        typeof install.npcMode === 'number' && Number.isFinite(install.npcMode)
+            ? Math.floor(install.npcMode)
+            : undefined;
     const showImgLevel =
         typeof install.showImgLevel === 'number' && Number.isFinite(install.showImgLevel)
             ? Math.floor(install.showImgLevel)
@@ -241,9 +246,7 @@ const parseInstallOptions = (
                           ? install.adminUser.username
                           : install.adminUser.id,
                   displayName:
-                      typeof install.adminUser.displayName === 'string'
-                          ? install.adminUser.displayName
-                          : undefined,
+                      typeof install.adminUser.displayName === 'string' ? install.adminUser.displayName : undefined,
               }
             : null;
 
@@ -270,8 +273,8 @@ const parseInstallOptions = (
     };
 };
 
-const buildProcessName = (profileName: string, role: 'api' | 'daemon'): string =>
-    `sammo:${profileName}:${role === 'api' ? 'game-api' : 'turn-daemon'}`;
+const buildProcessName = (profileName: string, role: 'api' | 'daemon' | 'tournament'): string =>
+    `sammo:${profileName}:${role === 'api' ? 'game-api' : role === 'daemon' ? 'turn-daemon' : 'tournament-worker'}`;
 
 const isMissingProcessError = (error: unknown): boolean =>
     error instanceof Error && /process or namespace not found/i.test(error.message);
@@ -282,10 +285,12 @@ export const buildProcessDefinitions = (
 ): {
     api: { name: string; script: string; cwd: string; env: Record<string, string> };
     daemon: { name: string; script: string; cwd: string; env: Record<string, string> };
+    tournament: { name: string; script: string; cwd: string; env: Record<string, string> };
 } => {
     const baseEnv = { ...(config.baseEnv ?? {}) };
     const apiName = buildProcessName(profile.profileName, 'api');
     const daemonName = buildProcessName(profile.profileName, 'daemon');
+    const tournamentName = buildProcessName(profile.profileName, 'tournament');
     const runtimeWorkspace = profile.buildWorkspace ?? config.workspaceRoot;
     const apiCwd = path.join(runtimeWorkspace, 'app', 'game-api');
     const daemonCwd = path.join(runtimeWorkspace, 'app', 'game-engine');
@@ -321,6 +326,15 @@ export const buildProcessDefinitions = (
             script: daemonScript,
             cwd: daemonCwd,
             env: daemonEnv,
+        },
+        tournament: {
+            name: tournamentName,
+            script: apiScript,
+            cwd: apiCwd,
+            env: {
+                ...apiEnv,
+                GAME_API_ROLE: 'tournament-worker',
+            },
         },
     };
 };
@@ -362,10 +376,12 @@ const mapRuntimeStates = (profileNames: string[], processNames: Map<string, bool
     profileNames.map((profileName) => {
         const apiName = buildProcessName(profileName, 'api');
         const daemonName = buildProcessName(profileName, 'daemon');
+        const tournamentName = buildProcessName(profileName, 'tournament');
         return {
             profileName,
             apiRunning: processNames.get(apiName) ?? false,
             daemonRunning: processNames.get(daemonName) ?? false,
+            tournamentRunning: processNames.get(tournamentName) ?? false,
         };
     });
 
@@ -756,8 +772,13 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         this.buildInFlight = true;
         this.resetInFlight.add(profile.profileName);
         try {
-            const { installOptions, scenarioId: installScenarioId, adminUser, openAt, preopenAt } =
-                parseInstallOptions(action);
+            const {
+                installOptions,
+                scenarioId: installScenarioId,
+                adminUser,
+                openAt,
+                preopenAt,
+            } = parseInstallOptions(action);
             const tickOverride =
                 installOptions?.turnTermMinutes !== undefined ? installOptions.turnTermMinutes * 60 : undefined;
             const seedInfo = await this.resolveResetSeedInfo(profile, {
@@ -850,7 +871,12 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     private async resolveResetSeedInfo(
         profile: GatewayProfileRecord,
         overrides?: { scenarioId?: number | null; tickSeconds?: number }
-    ): Promise<{ databaseUrl: string; scenarioId: number | null; tickSeconds?: number; meta: Record<string, unknown> } > {
+    ): Promise<{
+        databaseUrl: string;
+        scenarioId: number | null;
+        tickSeconds?: number;
+        meta: Record<string, unknown>;
+    }> {
         const databaseUrl = resolvePostgresConfigFromEnv({
             env: this.processConfig.baseEnv ?? process.env,
             schema: profile.profile,
@@ -871,7 +897,11 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                         scenarioId = resolvedScenario;
                     }
                 }
-                if (tickSeconds === undefined && typeof row.tickSeconds === 'number' && Number.isFinite(row.tickSeconds)) {
+                if (
+                    tickSeconds === undefined &&
+                    typeof row.tickSeconds === 'number' &&
+                    Number.isFinite(row.tickSeconds)
+                ) {
                     tickSeconds = row.tickSeconds;
                 }
                 meta = normalizeMeta(row.meta);
@@ -889,11 +919,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         const workspace = await this.workspaceManager.prepare(commitSha);
         const lastUsedAt = this.now().toISOString();
         await this.repository.updateWorkspaceUsage(profileName, workspace.root, lastUsedAt);
-        const commands = buildWorkspaceCommands(
-            workspace.root,
-            workspace.needsInstall,
-            this.processConfig.baseEnv
-        );
+        const commands = buildWorkspaceCommands(workspace.root, workspace.needsInstall, this.processConfig.baseEnv);
         return this.buildRunner.run(commands);
     }
 
@@ -955,6 +981,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         try {
             await this.processManager.start(definitions.api);
             await this.processManager.start(definitions.daemon);
+            await this.processManager.start(definitions.tournament);
             await this.repository.updateLastError(profile.profileName, null);
             return true;
         } catch (error) {
@@ -969,9 +996,10 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     private async stopProfile(profile: GatewayProfileRecord): Promise<void> {
         const apiName = buildProcessName(profile.profileName, 'api');
         const daemonName = buildProcessName(profile.profileName, 'daemon');
+        const tournamentName = buildProcessName(profile.profileName, 'tournament');
         const existingNames = new Set((await this.processManager.list()).map((process) => process.name));
         const failures: string[] = [];
-        for (const name of [apiName, daemonName]) {
+        for (const name of [apiName, daemonName, tournamentName]) {
             if (!existingNames.has(name)) {
                 continue;
             }
