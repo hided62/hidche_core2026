@@ -187,6 +187,24 @@ describe('gateway auth flow', () => {
 
         expect(validated?.user.username).toBe('tester');
     });
+
+    it('revokes the gateway session and every linked game session on logout', async () => {
+        const { caller, users, sessions } = buildCaller();
+        const user = await users.createUser({
+            username: 'logout-user',
+            password: 'secretpass',
+        });
+        const session = await sessions.createSession(user);
+        const gameSession = await sessions.createGameSession(session.sessionToken, 'che:default');
+        expect(gameSession).not.toBeNull();
+
+        await caller.auth.logout({ sessionToken: session.sessionToken });
+
+        expect(await sessions.getSession(session.sessionToken)).toBeNull();
+        expect(
+            gameSession ? await sessions.getGameSession(gameSession.profile, gameSession.gameToken) : undefined
+        ).toBeNull();
+    });
 });
 
 describe('account self service', () => {

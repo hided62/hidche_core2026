@@ -188,6 +188,16 @@ const installMainFixture = async (page: Page, failRecords = false) => {
                     ? errorResponse(operation, '동향 정보를 불러오지 못했습니다.')
                     : response(frontRecords);
             }
+            if (operation === 'general.getFrontStatus') {
+                return response({
+                    onlineUserCount: 1,
+                    onlineNations: '【재야】',
+                    onlineGenerals: '지도 장수',
+                    nationNotice: '',
+                    lastExecuted: '2026-07-26T00:00:00.000Z',
+                    latestVote: null,
+                });
+            }
             if (operation === 'tournament.getState') return response({ stage: 0 });
             if (operation === 'public.recordAccess') return response({ recorded: true });
             return errorResponse(operation, `Unhandled main operation: ${operation}`);
