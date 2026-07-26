@@ -167,7 +167,7 @@ const COMMANDS_WITH_LEGACY_CORE_ARG_KEYS = new Set([
     'che_몰수',
 ]);
 
-const resolveCoreArgs = (request: TurnCommandFixtureRequest): Record<string, unknown> => {
+export const resolveCoreTurnCommandArgs = (request: TurnCommandFixtureRequest): Record<string, unknown> => {
     const explicit = request.coreArgs;
     if (explicit !== undefined) {
         return asRecord(explicit);
@@ -178,7 +178,7 @@ const resolveCoreArgs = (request: TurnCommandFixtureRequest): Record<string, unk
     return asRecord(canonicalizeTurnCommandArgs(request.args ?? {}));
 };
 
-const createCommandProfile = (request: TurnCommandFixtureRequest): TurnCommandProfile => {
+export const createCoreTurnCommandProfile = (request: TurnCommandFixtureRequest): TurnCommandProfile => {
     if (request.kind === 'general') {
         if (!GENERAL_TURN_COMMAND_KEYS.includes(request.action as (typeof GENERAL_TURN_COMMAND_KEYS)[number])) {
             throw new Error(`Unknown general command: ${request.action}`);
@@ -326,7 +326,7 @@ const buildNation = (row: Record<string, unknown>, generals: TurnGeneral[]): Nat
     };
 };
 
-const buildWorldInput = (
+export const buildCoreTurnCommandWorldInput = (
     request: TurnCommandFixtureRequest,
     referenceBefore: CanonicalTurnSnapshot,
     unitSet: UnitSetDefinition,
@@ -741,7 +741,7 @@ export const runCoreTurnCommandTrace = async (
 ): Promise<CanonicalTurnCommandTrace> => {
     const unitSet = await loadUnitSetDefinitionByName('che');
     const map = await loadMapDefinitionByName('che');
-    const worldInput = buildWorldInput(request, referenceBefore, unitSet, map);
+    const worldInput = buildCoreTurnCommandWorldInput(request, referenceBefore, unitSet, map);
     const { state, snapshot } = worldInput;
     const selector = {
         generalIds: new Set([
@@ -766,7 +766,7 @@ export const runCoreTurnCommandTrace = async (
     if (!actor) {
         throw new Error(`Missing actor general ${request.actorGeneralId}`);
     }
-    const args = resolveCoreArgs(request);
+    const args = resolveCoreTurnCommandArgs(request);
     if (request.kind === 'general') {
         reservedTurns.getGeneralTurns(actor.id)[0] = { action: request.action, args };
     } else {
@@ -794,7 +794,7 @@ export const runCoreTurnCommandTrace = async (
         map,
         unitSet,
         getWorld: () => world,
-        commandProfile: createCommandProfile(request),
+        commandProfile: createCoreTurnCommandProfile(request),
         commandRngFactory: ({ kind, actionKey, seed }) => {
             const tracing = new TracingRng(new LiteHashDRBG(seed));
             if (kind === request.kind && actionKey === request.action) {

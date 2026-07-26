@@ -109,6 +109,27 @@ run_marked_tests app/game-engine "$database_markers" "PostgreSQL"
 run_marked_tests tools/integration-tests \
     'TURN_DIFFERENTIAL_DATABASE_URL|INPUT_EVENT_DATABASE_URL' \
     "PostgreSQL snapshot"
+
+if [ "${TURN_DIFFERENTIAL_REFERENCE:-}" = "1" ]; then
+    live_sortie_schema=${LIVE_SORTIE_PERSISTENCE_SCHEMA:-conditional_live_sortie_persistence}
+    case "$live_sortie_schema" in
+        ''|[!a-z_]*|*[!a-z0-9_]*)
+            echo "live sortie persistence schema must be a lowercase PostgreSQL identifier" >&2
+            exit 64
+            ;;
+    esac
+    live_sortie_database_url=$(build_database_url "$live_sortie_schema")
+    export POSTGRES_SCHEMA=$live_sortie_schema
+    export DATABASE_URL=$live_sortie_database_url
+    export LIVE_SORTIE_PERSISTENCE_DATABASE_URL=$live_sortie_database_url
+    pnpm --filter @sammo-ts/infra prisma:db:push:game
+    run_marked_tests tools/integration-tests \
+        'LIVE_SORTIE_PERSISTENCE_DATABASE_URL' \
+        "live sortie PostgreSQL persistence"
+    export POSTGRES_SCHEMA=$integration_schema
+    export DATABASE_URL=$database_url
+fi
+
 run_marked_tests app/game-api 'process\.env\.REDIS_URL' "Redis"
 
 scenario_database_url=$(build_database_url "$scenario_schema")
