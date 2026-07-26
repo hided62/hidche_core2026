@@ -20,15 +20,9 @@ import { z } from 'zod';
 import { parseArgsWithSchema } from '../parseArgs.js';
 
 const ARGS_SCHEMA = z.object({
-    destNationId: z.preprocess(
-        (value) => (typeof value === 'number' ? Math.floor(value) : value),
-        z.number().int().positive()
-    ),
-    year: z.preprocess((value) => (typeof value === 'number' ? Math.floor(value) : value), z.number().int().min(0)),
-    month: z.preprocess(
-        (value) => (typeof value === 'number' ? Math.floor(value) : value),
-        z.number().int().min(1).max(12)
-    ),
+    destNationId: z.number().int().positive(),
+    year: z.number().int().min(0),
+    month: z.number().int().min(1).max(12),
 });
 export type NonAggressionProposalArgs = z.infer<typeof ARGS_SCHEMA>;
 
@@ -52,12 +46,14 @@ const reqMinimumTreatyTerm = (minMonths: number): Constraint => ({
         { kind: 'arg', key: 'month' },
         { kind: 'env', key: 'year' },
         { kind: 'env', key: 'month' },
+        { kind: 'env', key: 'startYear' },
     ],
     test: (ctx) => {
         const yearValue = typeof ctx.args.year === 'number' ? ctx.args.year : null;
         const monthValue = typeof ctx.args.month === 'number' ? ctx.args.month : null;
         const envYearValue = typeof ctx.env.year === 'number' ? ctx.env.year : null;
         const envMonthValue = typeof ctx.env.month === 'number' ? ctx.env.month : null;
+        const startYearValue = typeof ctx.env.startYear === 'number' ? ctx.env.startYear : null;
         const missing = [];
 
         if (yearValue === null) {
@@ -72,17 +68,27 @@ const reqMinimumTreatyTerm = (minMonths: number): Constraint => ({
         if (envMonthValue === null) {
             missing.push({ kind: 'env', key: 'month' } as const);
         }
+        if (startYearValue === null) {
+            missing.push({ kind: 'env', key: 'startYear' } as const);
+        }
 
         if (
             missing.length > 0 ||
             yearValue === null ||
             monthValue === null ||
             envYearValue === null ||
-            envMonthValue === null
+            envMonthValue === null ||
+            startYearValue === null
         ) {
             return unknownOrDeny(ctx, missing, '기한 정보가 없습니다.');
         }
 
+        if (yearValue < startYearValue) {
+            return {
+                kind: 'deny',
+                reason: '시작 연도보다 이전의 기한은 지정할 수 없습니다.',
+            };
+        }
         const currentMonth = resolveMonthIndex(envYearValue, envMonthValue);
         const targetMonth = resolveMonthIndex(yearValue, monthValue);
         if (targetMonth < currentMonth + minMonths) {
@@ -137,7 +143,7 @@ export class ActionDefinition<
             return { effects: [createLogEffect('국가 정보가 없습니다.')] };
         }
         const destNationName = destNation.name;
-        const josaRo = JosaUtil.pick(destNationName, '로');
+        const josaRo = JosaUtil.pick(nation.name, '로');
         const josaWa = JosaUtil.pick(nation.name, '와');
         const validUntil = new Date(context.messageTime.getTime() + context.messageValidMinutes * 60_000);
         return {

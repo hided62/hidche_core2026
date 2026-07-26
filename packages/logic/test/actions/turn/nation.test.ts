@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { City, General, Nation } from '../../../src/domain/entities.js';
 import { resolveGeneralAction } from '../../../src/actions/engine.js';
 import { ActionDefinition as DeclareWarAction } from '../../../src/actions/turn/nation/che_선전포고.js';
+import { ActionDefinition as NonAggressionProposalAction } from '../../../src/actions/turn/nation/che_불가침제의.js';
+import { ActionDefinition as StopWarProposalAction } from '../../../src/actions/turn/nation/che_종전제의.js';
+import { ActionDefinition as NonAggressionCancelProposalAction } from '../../../src/actions/turn/nation/che_불가침파기제의.js';
 import { ActionDefinition as MoveCapitalAction } from '../../../src/actions/turn/nation/che_천도.js';
 import {
     ActionDefinition as ChangeNationNameAction,
@@ -125,6 +128,9 @@ describe('Nation Actions', () => {
                 destNation: nation2,
                 cities: [city1, city2],
                 nations: [nation1, nation2],
+                currentYear: 190,
+                currentMonth: 1,
+                messageTime: new Date('2026-01-01T00:00:00Z'),
                 rng: {} as any,
                 addLog: () => {},
             };
@@ -144,10 +150,19 @@ describe('Nation Actions', () => {
                     patch: expect.objectContaining({ state: 1 }),
                 })
             );
-            expect(resolution.logs.some((l) => l.scope === LogScope.SYSTEM && l.category === LogCategory.ACTION)).toBe(
+            expect(resolution.logs.some((l) => l.scope === LogScope.SYSTEM && l.category === LogCategory.SUMMARY)).toBe(
                 true
             );
-            expect(resolution.logs.some((l) => l.text.includes('【국메】'))).toBe(true);
+            expect(resolution.effects).toContainEqual(
+                expect.objectContaining({
+                    type: 'message:add',
+                    draft: expect.objectContaining({
+                        msgType: 'national',
+                        text: '【외교】190년 1월:Nation1에서 Nation2에 선전포고',
+                        option: {},
+                    }),
+                })
+            );
         });
 
         it('fails if not neighbor', () => {
@@ -231,6 +246,23 @@ describe('Nation Actions', () => {
             if (result.kind === 'deny') {
                 expect(result.reason).toBe('인접 국가가 아닙니다.');
             }
+        });
+    });
+
+    describe('diplomacy proposal argument boundaries', () => {
+        it.each([
+            ['che_선전포고', new DeclareWarAction(), { destNationId: 2.9 }],
+            [
+                'che_불가침제의 destination',
+                new NonAggressionProposalAction(),
+                { destNationId: 2.9, year: 190, month: 7 },
+            ],
+            ['che_불가침제의 year', new NonAggressionProposalAction(), { destNationId: 2, year: 190.9, month: 7 }],
+            ['che_불가침제의 month', new NonAggressionProposalAction(), { destNationId: 2, year: 190, month: 7.9 }],
+            ['che_종전제의', new StopWarProposalAction(), { destNationId: 2.9 }],
+            ['che_불가침파기제의', new NonAggressionCancelProposalAction(), { destNationId: 2.9 }],
+        ])('%s rejects fractional numeric arguments', (_name, definition, args) => {
+            expect(definition.parseArgs(args)).toBeNull();
         });
     });
 

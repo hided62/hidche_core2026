@@ -30,7 +30,7 @@ const NPC_SEIZURE_MESSAGE_TEXT = '몰수를 하다니... 이것이 윗사람이 
 const normalizeStoredLogText = (value: unknown): string =>
     String(value)
         .replace(/^(?:<C>●<\/>|<S>◆<\/>|<R>★<\/>)(?:(?:\d+년 )?\d+월:|\d+년:)?/, '')
-        .replace(/ <1>\d{2}:\d{2}<\/>$/, '');
+        .replace(/ ?<1>\d{2}:\d{2}<\/>$/, '');
 
 const semanticLogSignatures = (logs: Array<Record<string, unknown>>): string[] =>
     logs
@@ -870,6 +870,309 @@ integration('nation flag boundary parity', () => {
                     semanticLogSignatures(addedReferenceLogs(reference.before, reference.after.logs))
                 );
             }
+        },
+        120_000
+    );
+});
+
+type DiplomacyProposalAction = 'che_선전포고' | 'che_불가침제의' | 'che_종전제의' | 'che_불가침파기제의';
+
+interface DiplomacyProposalBoundaryCase {
+    name: string;
+    action: DiplomacyProposalAction;
+    args?: Record<string, unknown>;
+    fixturePatches?: FixturePatches;
+    completed: boolean;
+}
+
+const diplomacyProposalBoundaryCases: DiplomacyProposalBoundaryCase[] = [
+    ...(['che_선전포고', 'che_불가침제의', 'che_종전제의', 'che_불가침파기제의'] as const).flatMap((action) => [
+        {
+            name: `${action} rejects a numeric-string destination`,
+            action,
+            args: action === 'che_불가침제의' ? { destNationID: '2', year: 190, month: 7 } : { destNationID: '2' },
+            completed: false,
+        },
+        {
+            name: `${action} rejects a fractional destination instead of truncating it`,
+            action,
+            args: action === 'che_불가침제의' ? { destNationID: 2.9, year: 190, month: 7 } : { destNationID: 2.9 },
+            completed: false,
+        },
+        {
+            name: `${action} rejects a missing destination nation`,
+            action,
+            args: action === 'che_불가침제의' ? { destNationID: 9, year: 190, month: 7 } : { destNationID: 9 },
+            completed: false,
+        },
+        {
+            name: `${action} rejects a neutral actor`,
+            action,
+            args: action === 'che_불가침제의' ? { destNationID: 2, year: 190, month: 7 } : { destNationID: 2 },
+            fixturePatches: {
+                generals: { 1: { nationId: 0 } },
+                cities: { 3: { nationId: 0 } },
+            },
+            completed: false,
+        },
+        {
+            name: `${action} rejects an actor below chief`,
+            action,
+            args: action === 'che_불가침제의' ? { destNationID: 2, year: 190, month: 7 } : { destNationID: 2 },
+            fixturePatches: { generals: { 1: { officerLevel: 4 } } },
+            completed: false,
+        },
+    ]),
+    {
+        name: 'declare-war rejects the opening year',
+        action: 'che_선전포고',
+        args: { destNationID: 2 },
+        fixturePatches: { world: { year: 180 } },
+        completed: false,
+    },
+    {
+        name: 'declare-war accepts the exact start-year plus one boundary',
+        action: 'che_선전포고',
+        args: { destNationID: 2 },
+        fixturePatches: { world: { year: 181 } },
+        completed: true,
+    },
+    {
+        name: 'declare-war rejects an actor city occupied by another nation',
+        action: 'che_선전포고',
+        args: { destNationID: 2 },
+        fixturePatches: { cities: { 3: { nationId: 2 } } },
+        completed: false,
+    },
+    {
+        name: 'declare-war rejects an unsupplied actor city',
+        action: 'che_선전포고',
+        args: { destNationID: 2 },
+        fixturePatches: { cities: { 3: { supplyState: 0 } } },
+        completed: false,
+    },
+    {
+        name: 'declare-war rejects forward war state',
+        action: 'che_선전포고',
+        args: { destNationID: 2 },
+        fixturePatches: { diplomacy: { '1:2': { state: 0 }, '2:1': { state: 3 } } },
+        completed: false,
+    },
+    {
+        name: 'declare-war ignores the reverse diplomacy state',
+        action: 'che_선전포고',
+        args: { destNationID: 2 },
+        fixturePatches: { diplomacy: { '1:2': { state: 3 }, '2:1': { state: 0 } } },
+        completed: true,
+    },
+    {
+        name: 'non-aggression rejects a fractional year',
+        action: 'che_불가침제의',
+        args: { destNationID: 2, year: 190.9, month: 7 },
+        completed: false,
+    },
+    {
+        name: 'non-aggression rejects a fractional month',
+        action: 'che_불가침제의',
+        args: { destNationID: 2, year: 190, month: 7.9 },
+        completed: false,
+    },
+    {
+        name: 'non-aggression rejects a year before the scenario start even when six months ahead',
+        action: 'che_불가침제의',
+        args: { destNationID: 2, year: 179, month: 7 },
+        fixturePatches: { world: { year: 179, month: 1 } },
+        completed: false,
+    },
+    {
+        name: 'non-aggression rejects five months ahead',
+        action: 'che_불가침제의',
+        args: { destNationID: 2, year: 190, month: 6 },
+        completed: false,
+    },
+    {
+        name: 'non-aggression accepts exactly six months ahead without city ownership or supply',
+        action: 'che_불가침제의',
+        args: { destNationID: 2, year: 190, month: 7 },
+        fixturePatches: {
+            nations: { 1: { name: '위' }, 2: { name: '탑' } },
+            cities: { 3: { nationId: 2, supplyState: 0 } },
+        },
+        completed: true,
+    },
+    {
+        name: 'non-aggression rejects a forward war state',
+        action: 'che_불가침제의',
+        args: { destNationID: 2, year: 190, month: 7 },
+        fixturePatches: { diplomacy: { '1:2': { state: 0 }, '2:1': { state: 3 } } },
+        completed: false,
+    },
+    {
+        name: 'non-aggression ignores the reverse war state',
+        action: 'che_불가침제의',
+        args: { destNationID: 2, year: 190, month: 7 },
+        fixturePatches: { diplomacy: { '1:2': { state: 3 }, '2:1': { state: 0 } } },
+        completed: true,
+    },
+    {
+        name: 'stop-war accepts forward declaration state zero',
+        action: 'che_종전제의',
+        args: { destNationID: 2 },
+        fixturePatches: { diplomacy: { '1:2': { state: 0 }, '2:1': { state: 3 } } },
+        completed: true,
+    },
+    {
+        name: 'stop-war accepts forward war state one',
+        action: 'che_종전제의',
+        args: { destNationID: 2 },
+        fixturePatches: { diplomacy: { '1:2': { state: 1 }, '2:1': { state: 3 } } },
+        completed: true,
+    },
+    {
+        name: 'stop-war rejects an unrelated forward state',
+        action: 'che_종전제의',
+        args: { destNationID: 2 },
+        completed: false,
+    },
+    {
+        name: 'stop-war rejects an unsupplied actor city',
+        action: 'che_종전제의',
+        args: { destNationID: 2 },
+        fixturePatches: { cities: { 3: { supplyState: 0 } }, diplomacy: { '1:2': { state: 0 } } },
+        completed: false,
+    },
+    {
+        name: 'non-aggression cancellation accepts forward state seven',
+        action: 'che_불가침파기제의',
+        args: { destNationID: 2 },
+        fixturePatches: { diplomacy: { '1:2': { state: 7 }, '2:1': { state: 3 } } },
+        completed: true,
+    },
+    {
+        name: 'non-aggression cancellation rejects an unrelated forward state',
+        action: 'che_불가침파기제의',
+        args: { destNationID: 2 },
+        completed: false,
+    },
+    {
+        name: 'non-aggression cancellation ignores a reverse-only state seven',
+        action: 'che_불가침파기제의',
+        args: { destNationID: 2 },
+        fixturePatches: { diplomacy: { '1:2': { state: 3 }, '2:1': { state: 7 } } },
+        completed: false,
+    },
+];
+
+const expectedDiplomacyMessage = (
+    action: DiplomacyProposalAction,
+    sourceName: string,
+    destinationName: string,
+    year: number,
+    month: number
+): { type: 'national' | 'diplomacy'; text: string; option: Record<string, unknown> } => {
+    switch (action) {
+        case 'che_선전포고':
+            return {
+                type: 'national',
+                text: `【외교】${year}년 ${month}월:${sourceName}에서 ${destinationName}에 선전포고`,
+                option: {},
+            };
+        case 'che_불가침제의':
+            return {
+                type: 'diplomacy',
+                text: `${sourceName}${sourceName === '위' ? '와' : '과'} ${year}년 ${month + 6}월까지 불가침 제의 서신`,
+                option: { action: 'noAggression', year, month: month + 6 },
+            };
+        case 'che_종전제의':
+            return {
+                type: 'diplomacy',
+                text: `${sourceName}의 종전 제의 서신`,
+                option: { action: 'stopWar', deletable: false },
+            };
+        case 'che_불가침파기제의':
+            return {
+                type: 'diplomacy',
+                text: `${sourceName}의 불가침 파기 제의 서신`,
+                option: { action: 'cancelNA', deletable: false },
+            };
+    }
+};
+
+integration('nation diplomacy proposal boundary and message parity', () => {
+    it.each(diplomacyProposalBoundaryCases)(
+        '$name',
+        async ({ action, args, fixturePatches, completed }) => {
+            const request = buildRequest(action, args, fixturePatches);
+            request.observe!.includeNationHistoryLogs = true;
+            request.observe!.includeGlobalHistoryLogs = true;
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+
+            expect(reference.execution.outcome).toMatchObject({ completed });
+            if (
+                fixturePatches?.generals?.[1]?.nationId === 0 ||
+                (typeof fixturePatches?.generals?.[1]?.officerLevel === 'number' &&
+                    fixturePatches.generals[1].officerLevel < 5)
+            ) {
+                expect(core.execution.outcome).toBeUndefined();
+            } else {
+                expect(core.execution.outcome).toMatchObject({
+                    requestedAction: action,
+                    actionKey: completed ? action : '휴식',
+                    usedFallback: !completed,
+                });
+            }
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+
+            const referenceMessages = reference.after.messages.slice(reference.before.messages.length);
+            if (!completed) {
+                expect(referenceMessages).toEqual([]);
+                expect(core.after.messages).toEqual([]);
+                return;
+            }
+
+            const sourceNation = reference.after.nations.find((entry) => entry.id === 1);
+            const destinationNation = reference.after.nations.find((entry) => entry.id === 2);
+            const expected = expectedDiplomacyMessage(
+                action,
+                String(sourceNation?.name),
+                String(destinationNation?.name),
+                Number(reference.after.world.year),
+                Number(reference.after.world.month)
+            );
+            expect(referenceMessages).toHaveLength(2);
+            expect(referenceMessages.find((entry) => entry.mailbox === 9002)).toMatchObject({
+                type: expected.type,
+                sourceId: 9001,
+                destinationId: 9002,
+                payload: {
+                    src: { nation_id: 1, nation: sourceNation?.name },
+                    dest: { nation_id: 2, nation: destinationNation?.name },
+                    text: expected.text,
+                    option: expected.option,
+                },
+            });
+            expect(core.after.messages).toHaveLength(1);
+            expect(core.after.messages[0]).toMatchObject({
+                payload: {
+                    msgType: expected.type,
+                    src: { nationId: 1, nationName: sourceNation?.name },
+                    dest: { nationId: 2, nationName: destinationNation?.name },
+                    text: expected.text,
+                    option: expected.option,
+                },
+            });
+            expect(semanticLogSignatures(nationCommandLogs(core.after.logs))).toEqual(
+                semanticLogSignatures(addedReferenceLogs(reference.before, reference.after.logs))
+            );
         },
         120_000
     );

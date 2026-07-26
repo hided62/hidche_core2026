@@ -15,7 +15,7 @@ import type {
     GeneralActionOutcome,
     GeneralActionResolveContext,
 } from '@sammo-ts/logic/actions/engine.js';
-import { createDiplomacyPatchEffect, createLogEffect } from '@sammo-ts/logic/actions/engine.js';
+import { createDiplomacyPatchEffect, createLogEffect, createMessageEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
@@ -25,14 +25,18 @@ import { z } from 'zod';
 import { parseArgsWithSchema } from '../parseArgs.js';
 
 const ARGS_SCHEMA = z.object({
-    destNationId: z.preprocess(
-        (value) => (typeof value === 'number' ? Math.floor(value) : value),
-        z.number().int().positive()
-    ),
+    destNationId: z.number().int().positive(),
 });
 export type DeclareWarArgs = z.infer<typeof ARGS_SCHEMA>;
 
-// DeclareWarResolveContext is not used anymore as it was replaced by inline type in ActionDefinition
+interface DeclareWarResolveContext<
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
+> extends GeneralActionResolveContext<TriggerState> {
+    destNation: Nation;
+    currentYear: number;
+    currentMonth: number;
+    messageTime: Date;
+}
 
 const ACTION_NAME = '선전포고';
 // legacy 규칙: 선전포고 상태는 24턴 유지.
@@ -41,11 +45,7 @@ const DECLARE_TERM = 24;
 
 export class ActionDefinition<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
-> implements GeneralActionDefinition<
-    TriggerState,
-    DeclareWarArgs,
-    GeneralActionResolveContext<TriggerState> & { destNation: Nation }
-> {
+> implements GeneralActionDefinition<TriggerState, DeclareWarArgs, DeclareWarResolveContext<TriggerState>> {
     public readonly key = 'che_선전포고';
     public readonly name = ACTION_NAME;
 
@@ -98,10 +98,7 @@ export class ActionDefinition<
         ];
     }
 
-    resolve(
-        context: GeneralActionResolveContext<TriggerState> & { destNation: Nation },
-        args: DeclareWarArgs
-    ): GeneralActionOutcome<TriggerState> {
+    resolve(context: DeclareWarResolveContext<TriggerState>, args: DeclareWarArgs): GeneralActionOutcome<TriggerState> {
         const nationId = context.nation?.id;
         if (nationId === undefined || nationId <= 0 || !context.destNation) {
             return {
@@ -157,27 +154,46 @@ export class ActionDefinition<
                 format: LogFormat.YEAR_MONTH,
             }),
             // Global Action Log
-            createLogEffect(`<Y>${generalName}</>${josaYiGeneral} <D><b>${destNationName}</b></>에 <M>선전 포고</> 하였습니다.`, {
-                scope: LogScope.SYSTEM,
-                category: LogCategory.ACTION,
-                format: LogFormat.PLAIN,
-            }),
-            // Global History Log
-            createLogEffect(`<R><b>【선포】</b></><D><b>${nationName}</b></>${josaYiNation} <D><b>${destNationName}</b></>에 선전 포고 하였습니다.`, {
-                scope: LogScope.SYSTEM,
-                category: LogCategory.HISTORY,
-                format: LogFormat.YEAR_MONTH,
-            }),
-            // National Message (국메)
             createLogEffect(
-                `【국메】<Y>${generalName}</>${josaYiGeneral} <Y>${destNationName}</>에게 <R>${ACTION_NAME}</>하였습니다!`,
+                `<Y>${generalName}</>${josaYiGeneral} <D><b>${destNationName}</b></>에 <M>선전 포고</> 하였습니다.`,
                 {
-                    scope: LogScope.NATION,
-                    nationId: nationId,
-                    category: LogCategory.ACTION,
-                    format: LogFormat.PLAIN,
+                    scope: LogScope.SYSTEM,
+                    category: LogCategory.SUMMARY,
+                    format: LogFormat.MONTH,
                 }
             ),
+            // Global History Log
+            createLogEffect(
+                `<R><b>【선포】</b></><D><b>${nationName}</b></>${josaYiNation} <D><b>${destNationName}</b></>에 선전 포고 하였습니다.`,
+                {
+                    scope: LogScope.SYSTEM,
+                    category: LogCategory.HISTORY,
+                    format: LogFormat.YEAR_MONTH,
+                }
+            ),
+            createMessageEffect({
+                msgType: 'national',
+                src: {
+                    generalId: context.general.id,
+                    generalName,
+                    nationId,
+                    nationName,
+                    color: context.nation?.color ?? '',
+                    icon: '',
+                },
+                dest: {
+                    generalId: 0,
+                    generalName: '',
+                    nationId: args.destNationId,
+                    nationName: destNationName,
+                    color: context.destNation.color,
+                    icon: '',
+                },
+                text: `【외교】${context.currentYear}년 ${context.currentMonth}월:${nationName}에서 ${destNationName}에 선전포고`,
+                time: context.messageTime,
+                validUntil: new Date('9999-12-31T00:00:00.000Z'),
+                option: {},
+            }),
         ];
 
         return { effects };
@@ -201,6 +217,9 @@ export const actionContextBuilder: ActionContextBuilder<DeclareWarArgs> = (base,
     return {
         ...base,
         destNation,
+        currentYear: options.world.currentYear,
+        currentMonth: options.world.currentMonth,
+        messageTime: base.general.turnTime,
     };
 };
 
