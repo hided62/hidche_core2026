@@ -64,10 +64,7 @@ const STRATEGIC_COMMANDS: Record<(typeof STRATEGIC_COMMAND_KEYS)[number], string
 };
 
 const ARGS_SCHEMA = z.object({
-    destNationId: z.preprocess(
-        (value) => (typeof value === 'number' ? Math.floor(value) : value),
-        z.number().int().positive()
-    ),
+    destNationId: z.number().int().positive(),
     commandType: z
         .enum(STRATEGIC_COMMAND_KEYS)
         .refine((value) => value !== 'che_피장파장', '같은 전략은 선택할 수 없습니다.'),
@@ -133,7 +130,13 @@ export class ActionResolver<
     }
 
     getTargetPostReqTurn(context: CounterStrategyResolveContext<TriggerState>): number {
-        const genCount = Math.max(context.friendlyGenerals.length, this.initialNationGenLimit);
+        const storedCount = context.nation?.meta.gennum;
+        const genCount = Math.max(
+            typeof storedCount === 'number' && Number.isFinite(storedCount)
+                ? storedCount
+                : context.friendlyGenerals.length,
+            this.initialNationGenLimit
+        );
         const base = Math.round(Math.sqrt(genCount * 2) * 10);
         const triggered = Math.round(this.pipeline.onCalcStrategic(context, ACTION_NAME, 'delay', base));
         return Math.max(triggered, Math.round(TARGET_DELAY * 1.2));
@@ -204,14 +207,6 @@ export class ActionResolver<
                 ...(nation.meta as object),
                 [`next_execute_${targetCommandName}`]: currentYearMonth + this.getTargetPostReqTurn(context),
             };
-            effects.push(
-                createLogEffect(broadcastMessage, {
-                    scope: LogScope.NATION,
-                    category: LogCategory.HISTORY,
-                    nationId: nation.id,
-                    format: LogFormat.YEAR_MONTH,
-                })
-            );
         }
 
         const destMeta = destNation.meta;

@@ -346,6 +346,19 @@ const buildWorldInput = (
             generals
         )
     );
+    const referenceNationCooldowns = Array.isArray(referenceBefore.world.nationCooldowns)
+        ? referenceBefore.world.nationCooldowns
+        : [];
+    for (const rawCooldown of referenceNationCooldowns) {
+        const cooldown = asRecord(rawCooldown);
+        const nationId = readNumber(cooldown, 'nationId');
+        const actionName = readString(cooldown, 'actionName', '');
+        const nextAvailableTurn = cooldown.nextAvailableTurn;
+        const nation = nations.find((entry) => entry.id === nationId);
+        if (nation && actionName && typeof nextAvailableTurn === 'number' && Number.isFinite(nextAvailableTurn)) {
+            nation.meta[`next_execute_${actionName}`] = nextAvailableTurn;
+        }
+    }
     const observedCityRows = new Map(referenceBefore.cities.map((row) => [readNumber(row, 'id'), row] as const));
     const randomFoundingCandidateCityIds = request.setup?.randomFoundingCandidateCityIds
         ? new Set(request.setup.randomFoundingCandidateCityIds)

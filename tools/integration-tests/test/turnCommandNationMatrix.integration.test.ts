@@ -1315,6 +1315,380 @@ integration('nation flood constraints, multistep, city damage, logs, and cooldow
     );
 });
 
+const counterStrategyNames = {
+    che_필사즉생: '필사즉생',
+    che_백성동원: '백성동원',
+    che_수몰: '수몰',
+    che_허보: '허보',
+    che_의병모집: '의병모집',
+    che_이호경식: '이호경식',
+    che_급습: '급습',
+} as const;
+
+type CounterStrategyCommand = keyof typeof counterStrategyNames;
+
+interface CounterStrategyBoundaryCase {
+    name: string;
+    destNationId?: unknown;
+    commandType?: unknown;
+    omitDestNationId?: boolean;
+    omitCommandType?: boolean;
+    fixturePatches?: FixturePatches;
+    outcome: 'fallback' | 'intermediate' | 'completed';
+    coreResolution?: boolean;
+    expectedSourceTargetOffset?: number;
+    expectedDestTargetTurn?: number;
+    expectedDestGeneralLog?: boolean;
+}
+
+const counterStrategyBoundaryCases: CounterStrategyBoundaryCase[] = [
+    {
+        name: 'rejects a missing destination nation argument',
+        omitDestNationId: true,
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects a numeric string destination nation',
+        destNationId: '2',
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects a fractional destination nation instead of truncating it',
+        destNationId: 2.9,
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects a zero destination nation',
+        destNationId: 0,
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects a missing selected strategy',
+        omitCommandType: true,
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects a non-string selected strategy',
+        commandType: 1,
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects an unknown selected strategy',
+        commandType: 'che_초토화',
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects selecting counter strategy itself',
+        commandType: 'che_피장파장',
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects a nation that no longer exists',
+        destNationId: 9,
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects a source city occupied by another nation',
+        fixturePatches: { cities: { 3: { nationId: 2 } } },
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects an actor below chief rank',
+        fixturePatches: { generals: { 1: { officerLevel: 4 } } },
+        outcome: 'fallback',
+        coreResolution: false,
+    },
+    {
+        name: 'rejects a remaining strategic-command delay',
+        fixturePatches: { nations: { 1: { strategicCommandLimit: 1 } } },
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects a selected strategy still cooling down in the source nation',
+        fixturePatches: { nations: { 1: { nationEnv: { next_execute_허보: 2281 } } } },
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects a forward diplomacy state outside declaration or war',
+        fixturePatches: { diplomacy: { '1:2': { state: 2 }, '2:1': { state: 0 } } },
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects a reverse-only war',
+        fixturePatches: { diplomacy: { '1:2': { state: 3 }, '2:1': { state: 0 } } },
+        outcome: 'fallback',
+    },
+    {
+        name: 'allows an unsupplied source city and starts at term one',
+        fixturePatches: { cities: { 3: { supplyState: 0 } } },
+        outcome: 'intermediate',
+    },
+    {
+        name: 'restarts at term one when the same command has different prior arguments',
+        fixturePatches: {
+            nations: {
+                1: {
+                    turnLastByOfficerLevel: {
+                        12: {
+                            command: '피장파장',
+                            arg: { destNationID: 2, commandType: 'che_백성동원' },
+                            term: 1,
+                        },
+                    },
+                },
+            },
+        },
+        outcome: 'intermediate',
+    },
+    {
+        name: 'restarts at term one after another command interrupted the stack',
+        fixturePatches: {
+            nations: {
+                1: {
+                    turnLastByOfficerLevel: {
+                        12: {
+                            command: '수몰',
+                            arg: { destCityID: 70 },
+                            term: 1,
+                        },
+                    },
+                },
+            },
+        },
+        outcome: 'intermediate',
+    },
+    {
+        name: 'completes the default source and destination cooldowns and notifications',
+        outcome: 'completed',
+        expectedSourceTargetOffset: 72,
+        expectedDestTargetTurn: 2340,
+    },
+    {
+        name: 'allows the exact current-turn selected-strategy cooldown',
+        fixturePatches: { nations: { 1: { nationEnv: { next_execute_허보: 2280 } } } },
+        outcome: 'completed',
+        expectedSourceTargetOffset: 72,
+        expectedDestTargetTurn: 2340,
+    },
+    {
+        name: 'adds sixty turns after an existing future destination cooldown',
+        fixturePatches: { nations: { 2: { nationEnv: { next_execute_허보: 2300 } } } },
+        outcome: 'completed',
+        expectedSourceTargetOffset: 72,
+        expectedDestTargetTurn: 2360,
+    },
+    {
+        name: 'uses stored thirty-general count for the source selected-strategy cooldown',
+        fixturePatches: { nations: { 1: { generalCount: 30 } } },
+        outcome: 'completed',
+        expectedSourceTargetOffset: 77,
+        expectedDestTargetTurn: 2340,
+    },
+    {
+        name: 'applies the strategist delay modifier but preserves the seventy-two-turn floor',
+        fixturePatches: { nations: { 1: { typeCode: 'che_종횡가' } } },
+        outcome: 'completed',
+        expectedSourceTargetOffset: 72,
+        expectedDestTargetTurn: 2340,
+    },
+    {
+        name: 'keeps destination nation history when it has no general',
+        fixturePatches: { generals: { 2: { nationId: 0 } } },
+        outcome: 'completed',
+        expectedSourceTargetOffset: 72,
+        expectedDestTargetTurn: 2340,
+        expectedDestGeneralLog: false,
+    },
+    {
+        name: 'allows declaration state one regardless of reverse diplomacy',
+        fixturePatches: { diplomacy: { '1:2': { state: 1 }, '2:1': { state: 7 } } },
+        outcome: 'completed',
+        expectedSourceTargetOffset: 72,
+        expectedDestTargetTurn: 2340,
+    },
+];
+
+integration('nation counter-strategy constraints, stack, dual cooldowns, and log boundaries', () => {
+    it.each(counterStrategyBoundaryCases)(
+        '$name matches legacy progress, cooldowns, notifications, RNG, and semantic delta',
+        async ({
+            destNationId = 2,
+            commandType = 'che_허보',
+            omitDestNationId = false,
+            omitCommandType = false,
+            fixturePatches,
+            outcome,
+            coreResolution = true,
+            expectedSourceTargetOffset,
+            expectedDestTargetTurn,
+            expectedDestGeneralLog = true,
+        }) => {
+            const completed = outcome === 'completed';
+            const fallback = outcome === 'fallback';
+            const completionPatch = completed
+                ? {
+                      turnLastByOfficerLevel: {
+                          12: {
+                              command: '피장파장',
+                              arg: { destNationID: destNationId, commandType },
+                              term: 1,
+                          },
+                      },
+                      coreTurnLastByOfficerLevel: {
+                          12: {
+                              command: '피장파장',
+                              arg: { destNationId, commandType },
+                              term: 1,
+                          },
+                      },
+                  }
+                : {};
+            const args = {
+                ...(omitDestNationId ? {} : { destNationID: destNationId }),
+                ...(omitCommandType ? {} : { commandType }),
+            };
+            const request = buildRequest('che_피장파장', args, {
+                ...fixturePatches,
+                nations: {
+                    ...fixturePatches?.nations,
+                    1: {
+                        ...fixturePatches?.nations?.[1],
+                        ...completionPatch,
+                    },
+                },
+                diplomacy: {
+                    '1:2': { state: 0 },
+                    '2:1': { state: 3 },
+                    ...fixturePatches?.diplomacy,
+                },
+            });
+            const selectedCommand =
+                typeof commandType === 'string' && commandType in counterStrategyNames
+                    ? (commandType as CounterStrategyCommand)
+                    : 'che_허보';
+            const selectedCommandName = counterStrategyNames[selectedCommand];
+            request.observe!.includeNationHistoryLogs = true;
+            request.observe!.nationCooldowns =
+                typeof commandType === 'string' && commandType in counterStrategyNames
+                    ? [
+                          { nationId: 1, actionName: '피장파장' },
+                          { nationId: 1, actionName: selectedCommandName },
+                          { nationId: 2, actionName: selectedCommandName },
+                      ]
+                    : [];
+
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+
+            expect(reference.execution.outcome).toMatchObject({ completed });
+            if (coreResolution) {
+                expect(core.execution.outcome).toMatchObject({
+                    requestedAction: 'che_피장파장',
+                    actionKey: fallback ? '휴식' : 'che_피장파장',
+                    usedFallback: fallback,
+                    ...(fallback ? {} : { completed }),
+                });
+            } else {
+                expect(core.execution.outcome).toBeUndefined();
+            }
+            for (const snapshot of [reference, core]) {
+                const sourceBefore = snapshot.before.nations.find((entry) => entry.id === 1);
+                const sourceAfter = snapshot.after.nations.find((entry) => entry.id === 1);
+                const actorBefore = snapshot.before.generals.find((entry) => entry.id === 1);
+                const actorAfter = snapshot.after.generals.find((entry) => entry.id === 1);
+                expect(readNationResource(sourceBefore, 'gold') - readNationResource(sourceAfter, 'gold')).toBe(0);
+                expect(readNationResource(sourceBefore, 'rice') - readNationResource(sourceAfter, 'rice')).toBe(0);
+                expect(readNumericField(actorAfter, 'experience') - readNumericField(actorBefore, 'experience')).toBe(
+                    completed ? 10 : 0
+                );
+                expect(readNumericField(actorAfter, 'dedication') - readNumericField(actorBefore, 'dedication')).toBe(
+                    completed ? 10 : 0
+                );
+                expect(readNumericField(sourceAfter, 'strategicCommandLimit')).toBe(
+                    readNumericField(sourceBefore, 'strategicCommandLimit')
+                );
+
+                if (completed) {
+                    const nationHistoryWatermark = snapshot.before.logs
+                        .filter((entry) => entry.scope === 'nation')
+                        .reduce((max, entry) => Math.max(max, readNumericField(entry, 'id')), 0);
+                    const addedLogs = snapshot.after.logs.filter((entry) =>
+                        entry.scope === 'nation'
+                            ? readNumericField(entry, 'id') > nationHistoryWatermark
+                            : readNumericField(entry, 'id') > snapshot.before.watermarks.logId
+                    );
+                    expect(
+                        addedLogs.some((entry) => entry.generalId === 3 && String(entry.text).includes('피장파장'))
+                    ).toBe(true);
+                    expect(
+                        addedLogs.some((entry) => entry.generalId === 2 && String(entry.text).includes('피장파장'))
+                    ).toBe(expectedDestGeneralLog);
+                    expect(
+                        addedLogs.filter(
+                            (entry) =>
+                                String(entry.scope).toLowerCase() === 'nation' &&
+                                entry.nationId === 1 &&
+                                String(entry.text).includes('피장파장')
+                        )
+                    ).toHaveLength(1);
+                    expect(
+                        addedLogs.filter(
+                            (entry) =>
+                                String(entry.scope).toLowerCase() === 'nation' &&
+                                entry.nationId === 2 &&
+                                String(entry.text).includes('피장파장')
+                        )
+                    ).toHaveLength(1);
+                }
+            }
+
+            if (outcome === 'intermediate') {
+                expect(reference.execution.outcome).toMatchObject({
+                    lastTurn: {
+                        command: '피장파장',
+                        term: 1,
+                    },
+                });
+                expect(readNationMeta(core.after.nations.find((entry) => entry.id === 1)).turn_last_12).toMatchObject({
+                    command: '피장파장',
+                    term: 1,
+                });
+            }
+            if (completed) {
+                expect(reference.after.world.nationCooldowns).toEqual([
+                    {
+                        nationId: 1,
+                        actionName: '피장파장',
+                        nextAvailableTurn: 2287,
+                    },
+                    {
+                        nationId: 1,
+                        actionName: selectedCommandName,
+                        nextAvailableTurn: 2280 + expectedSourceTargetOffset!,
+                    },
+                    {
+                        nationId: 2,
+                        actionName: selectedCommandName,
+                        nextAvailableTurn: expectedDestTargetTurn,
+                    },
+                ]);
+                expect(core.after.world.nationCooldowns).toEqual(reference.after.world.nationCooldowns);
+            }
+            expect(reference.rng).toEqual([]);
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+        },
+        120_000
+    );
+});
+
 const nationResourceAmountCases: Array<{
     name: string;
     action: 'che_포상' | 'che_몰수';
