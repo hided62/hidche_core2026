@@ -56,8 +56,9 @@ normalized to the core `*Id` spelling before command identity comparison.
       canonical projection.
     - `trace.ts`: before/execute/after capture boundary.
     - `compare.ts`: exact snapshot and delta comparison.
-    - `turnCommandGeneralMatrix.integration.test.ts`: 21 successful general
-      command paths, including the four-call `전투태세` completion path.
+    - `turnCommandGeneralMatrix.integration.test.ts`: 29 successful general
+      command paths, including the four-call `전투태세` completion path and
+      movement/return/gift/spy/sabotage commands.
     - `turnCommandNationMatrix.integration.test.ts`: 8 successful nation
       command paths.
     - `turnCommandCoreReference.integration.test.ts`: declaration and live
@@ -162,9 +163,9 @@ Compatibility is established per case only when:
 4. live sortie also passes the battle trace comparison;
 5. any ignored path is documented in the case evidence.
 
-As of 2026-07-25, 21 general cases, 8 nation cases, declaration and live sortie
+As of 2026-07-25, 29 general cases, 8 nation cases, declaration and live sortie
 pass this boundary. Live sortie covers battle entry, conquest, defeated-general
-neutralization and last-city nation collapse. This is 31 executable comparison
+neutralization and last-city nation collapse. This is 39 executable comparison
 cases, not a claim that all 55 general and 38 nation command classes have been
 dynamically compared.
 
