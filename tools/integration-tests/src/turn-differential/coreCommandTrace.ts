@@ -348,6 +348,8 @@ const buildWorldInput = (
                 maxGeneral: 500,
                 baseGold: 0,
                 baseRice: 2_000,
+                generalMinimumGold: 0,
+                generalMinimumRice: 500,
                 maxResourceActionAmount: 10_000,
                 maxTechLevel: 12,
                 maxLevel: 255,
