@@ -219,6 +219,11 @@ minimum/maximum clamps for gift, donation, and rice trade; donation against
 available and minimum resources; and gift reserve and self-target rejection.
 They compare normalized last-turn arguments, RNG, fallback, and semantic state
 deltas.
+Eleven nation resource cases cover 100-unit rounding and minimum/maximum
+clamps for award and seizure; award against available gold, the base-rice
+reserve, and self-target rejection; and seizure against target holdings and
+self-target rejection. They compare exact target resource deltas, RNG,
+fallback, and semantic state deltas.
 Requests that omit the required argument object remain unverified because the
 reference runner did not terminate within the bounded comparison run.
 This is not yet a claim that every command-specific
