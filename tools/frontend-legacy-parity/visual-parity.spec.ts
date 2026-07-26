@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { canonicalFrontendFixture as fixture } from './fixtures/canonical';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const imageRoot = resolve(repositoryRoot, '../../image');
+const imageRoots = [resolve(repositoryRoot, '../image'), resolve(repositoryRoot, '../../image')];
 const artifactRoot = process.env.FRONTEND_PARITY_ARTIFACT_DIR;
 
 const response = (data: unknown) => ({ result: { data } });
@@ -28,11 +28,11 @@ const installImages = async (page: Page): Promise<void> => {
     await page.route('**/image/**', async (route) => {
         const pathname = decodeURIComponent(new URL(route.request().url()).pathname);
         const relative = pathname.replace(/^\/image\//, '');
-        const candidates = [
+        const candidates = imageRoots.flatMap((imageRoot) => [
             resolve(imageRoot, relative),
             resolve(imageRoot, 'game', relative),
             resolve(imageRoot, 'icons', '22.jpg'),
-        ];
+        ]);
         for (const candidate of candidates) {
             try {
                 const body = await readFile(candidate);
