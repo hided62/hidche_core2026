@@ -14,6 +14,10 @@ const integration = describe.skipIf(!workspaceRoot || process.env.TURN_DIFFERENT
 const readGold = (row: { gold?: unknown } | undefined): number => (typeof row?.gold === 'number' ? row.gold : 0);
 const readNationResource = (row: { gold?: unknown; rice?: unknown } | undefined, resource: 'gold' | 'rice'): number =>
     typeof row?.[resource] === 'number' ? row[resource] : 0;
+const readNationMeta = (row: { meta?: unknown } | undefined): Record<string, unknown> =>
+    typeof row?.meta === 'object' && row.meta !== null && !Array.isArray(row.meta)
+        ? (row.meta as Record<string, unknown>)
+        : {};
 const NPC_SEIZURE_MESSAGE_TEXT = '몰수를 하다니... 이것이 윗사람이 할 짓이란 말입니까...';
 
 const ignoredLifecyclePaths = [
@@ -182,6 +186,17 @@ const buildRequest = (
             { ...general(1, 1, 3, 12), ...fixturePatches.generals?.[1] },
             { ...general(2, 2, 70, 12), ...fixturePatches.generals?.[2] },
             { ...general(3, 1, 3, 1), ...fixturePatches.generals?.[3] },
+            ...Object.entries(fixturePatches.generals ?? {})
+                .filter(([id]) => !['1', '2', '3'].includes(id))
+                .map(([id, patch]) => ({
+                    ...general(
+                        Number(id),
+                        typeof patch.nationId === 'number' ? patch.nationId : 0,
+                        typeof patch.cityId === 'number' ? patch.cityId : 3,
+                        typeof patch.officerLevel === 'number' ? patch.officerLevel : 1
+                    ),
+                    ...patch,
+                })),
         ],
         ...(fixturePatches.troops ? { troops: fixturePatches.troops } : {}),
         ...(fixturePatches.randomFoundingCandidateCityIds
@@ -1027,4 +1042,109 @@ integration('nation material aid target and input constraints', () => {
         },
         120_000
     );
+});
+
+integration('nation material aid accumulated assistance and officer logs', () => {
+    it.each([
+        {
+            name: 'array entry',
+            priorEntry: [1, 250],
+        },
+        {
+            name: 'legacy object entry',
+            priorEntry: { 0: 1, 1: 250 },
+        },
+    ])(
+        'accumulates a repeated aid amount from an existing $name',
+        async ({ priorEntry }) => {
+            const request = buildRequest(
+                'che_물자원조',
+                {
+                    destNationID: 2,
+                    amountList: [100, 200],
+                },
+                {
+                    nations: {
+                        2: {
+                            nationEnv: {
+                                recv_assist: {
+                                    n1: priorEntry,
+                                    n9: [9, 400],
+                                },
+                            },
+                        },
+                    },
+                }
+            );
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+            const referenceDest = reference.after.nations.find((entry) => entry.id === 2);
+            const coreDest = core.after.nations.find((entry) => entry.id === 2);
+
+            expect(readNationMeta(referenceDest).recv_assist).toEqual({
+                n1: [1, 550],
+                n9: [9, 400],
+            });
+            expect(readNationMeta(coreDest).recv_assist).toEqual(readNationMeta(referenceDest).recv_assist);
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+        },
+        120_000
+    );
+
+    it('notifies eligible officers in both nations with the legacy messages', async () => {
+        const request = buildRequest(
+            'che_물자원조',
+            {
+                destNationID: 2,
+                amountList: [100, 200],
+            },
+            {
+                generals: {
+                    3: { officerLevel: 5 },
+                    5: { nationId: 2, cityId: 70, officerLevel: 5, officerCityId: 70 },
+                },
+            }
+        );
+        const reference = runReferenceTurnCommandTraceRequest(
+            workspaceRoot!,
+            request as unknown as Record<string, unknown>
+        );
+        const core = await runCoreTurnCommandTrace(request, reference.before);
+        const referenceLogs = reference.after.logs.slice(reference.before.logs.length);
+        const sourceOfficerLog = {
+            generalId: 3,
+            text: expect.stringContaining('<D><b>타국</b></>으로 금<C>100</> 쌀<C>200</>을 지원했습니다.'),
+        };
+        const destinationOfficerLog = {
+            generalId: 5,
+            text: expect.stringContaining('<D><b>아국</b></>에서 금<C>100</> 쌀<C>200</>을 원조했습니다.'),
+        };
+
+        expect(referenceLogs).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining(sourceOfficerLog),
+                expect.objectContaining(destinationOfficerLog),
+            ])
+        );
+        expect(core.after.logs).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining(sourceOfficerLog),
+                expect.objectContaining(destinationOfficerLog),
+            ])
+        );
+        expect(core.rng).toEqual(reference.rng);
+        expect(
+            compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                ignoredPathPatterns: ignoredLifecyclePaths,
+            })
+        ).toEqual([]);
+    }, 120_000);
 });
