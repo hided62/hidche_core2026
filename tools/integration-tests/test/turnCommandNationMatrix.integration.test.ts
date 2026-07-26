@@ -18,6 +18,8 @@ const readCityPopulation = (row: { population?: unknown } | undefined): number =
     typeof row?.population === 'number' ? row.population : 0;
 const readNumericField = (row: Record<string, unknown> | undefined, field: string): number =>
     typeof row?.[field] === 'number' ? row[field] : 0;
+const readRecord = (value: unknown): Record<string, unknown> =>
+    typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 const readNationMeta = (row: { meta?: unknown } | undefined): Record<string, unknown> =>
     typeof row?.meta === 'object' && row.meta !== null && !Array.isArray(row.meta)
         ? (row.meta as Record<string, unknown>)
@@ -821,6 +823,9 @@ integration('nation name boundary parity', () => {
                 })
             ).toEqual([]);
             if (completed) {
+                expect(readNationMeta(core.after.nations.find((entry) => entry.id === 1)).turn_last_12).toEqual(
+                    readRecord(reference.execution.outcome).lastTurn
+                );
                 expect(core.after.nations.find((entry) => entry.id === 1)?.name).toBe(nationName);
                 expect(semanticLogSignatures(nationCommandLogs(core.after.logs))).toEqual(
                     semanticLogSignatures(addedReferenceLogs(reference.before, reference.after.logs))
@@ -857,6 +862,9 @@ integration('nation flag boundary parity', () => {
                 })
             ).toEqual([]);
             if (completed) {
+                expect(readNationMeta(core.after.nations.find((entry) => entry.id === 1)).turn_last_12).toEqual(
+                    readRecord(reference.execution.outcome).lastTurn
+                );
                 expect(core.after.nations.find((entry) => entry.id === 1)?.color).toBe(nationColors[expectedIndex!]);
                 expect(semanticLogSignatures(nationCommandLogs(core.after.logs))).toEqual(
                     semanticLogSignatures(addedReferenceLogs(reference.before, reference.after.logs))
