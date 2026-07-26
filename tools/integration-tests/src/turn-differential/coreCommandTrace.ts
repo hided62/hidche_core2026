@@ -548,6 +548,7 @@ const projectWorld = (
             belong: readNumber(general.meta, 'belong'),
             permission: readString(general.meta, 'permission', 'normal'),
             maxBelong: readNumber(general.meta, 'max_belong'),
+            maxDomesticCritical: readNumber(general.meta, 'max_domestic_critical'),
             betray: readNumber(general.meta, 'betray'),
             personality: general.role.personality,
             specialDomestic: general.role.specialDomestic,

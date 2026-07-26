@@ -4,6 +4,27 @@ import path from 'node:path';
 
 import type { CanonicalTurnCommandTrace, CanonicalTurnSnapshot, TurnSnapshotSelector } from './canonical.js';
 
+const withProjectedGeneralMeta = (snapshot: CanonicalTurnSnapshot): CanonicalTurnSnapshot => ({
+    ...snapshot,
+    generals: snapshot.generals.map((general) => {
+        const meta =
+            typeof general.meta === 'object' && general.meta !== null && !Array.isArray(general.meta)
+                ? (general.meta as Record<string, unknown>)
+                : {};
+        const value = meta.max_domestic_critical;
+        return {
+            ...general,
+            maxDomesticCritical: typeof value === 'number' && Number.isFinite(value) ? value : 0,
+        };
+    }),
+});
+
+const withProjectedTraceMeta = (trace: CanonicalTurnCommandTrace): CanonicalTurnCommandTrace => ({
+    ...trace,
+    before: withProjectedGeneralMeta(trace.before),
+    after: withProjectedGeneralMeta(trace.after),
+});
+
 export const findTurnDifferentialWorkspaceRoot = (start: string): string | null => {
     let current = path.resolve(start);
     while (true) {
@@ -45,7 +66,7 @@ export const readReferenceDatabaseSnapshot = (
             stdio: ['pipe', 'pipe', 'pipe'],
         }
     );
-    return JSON.parse(stdout) as CanonicalTurnSnapshot;
+    return withProjectedGeneralMeta(JSON.parse(stdout) as CanonicalTurnSnapshot);
 };
 
 export const runReferenceTurnCommandTrace = (workspaceRoot: string, fixturePath: string): CanonicalTurnCommandTrace => {
@@ -60,7 +81,7 @@ export const runReferenceTurnCommandTrace = (workspaceRoot: string, fixturePath:
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
     });
-    return JSON.parse(stdout) as CanonicalTurnCommandTrace;
+    return withProjectedTraceMeta(JSON.parse(stdout) as CanonicalTurnCommandTrace);
 };
 
 export const runReferenceTurnCommandTraceRequest = (
@@ -79,5 +100,5 @@ export const runReferenceTurnCommandTraceRequest = (
             TURN_DIFFERENTIAL_STACK_DIR: stackDirectory,
         },
     });
-    return JSON.parse(stdout) as CanonicalTurnCommandTrace;
+    return withProjectedTraceMeta(JSON.parse(stdout) as CanonicalTurnCommandTrace);
 };

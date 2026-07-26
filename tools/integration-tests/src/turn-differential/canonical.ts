@@ -127,6 +127,7 @@ export const projectCoreDatabaseSnapshot = (rows: {
             belong: readNumber(row, 'belong', readNumber(meta, 'belong')),
             permission: readString(row, 'permission') ?? readString(meta, 'permission') ?? 'normal',
             maxBelong: readNumber(meta, 'max_belong'),
+            maxDomesticCritical: readNumber(meta, 'max_domestic_critical'),
             betray: row.betray,
             personality: row.personality ?? null,
             specialDomestic: row.specialDomestic ?? null,

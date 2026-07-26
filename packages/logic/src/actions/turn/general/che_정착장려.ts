@@ -20,6 +20,7 @@ import {
     CommandResolver,
     type DomesticActionContext,
     type InvestmentConfig,
+    updateDomesticCriticalMeta,
 } from './che_상업투자.js';
 import { JosaUtil } from '@sammo-ts/common';
 import { clamp } from 'es-toolkit';
@@ -95,11 +96,14 @@ export class ActionDefinition<
         context.general.dedication += result.dedication;
         const leadershipExp =
             typeof context.general.meta.leadership_exp === 'number' ? context.general.meta.leadership_exp : 0;
-        context.general.meta = {
-            ...context.general.meta,
-            leadership_exp: leadershipExp + 1,
-            max_domestic_critical: result.pick === 'success' ? result.score : 0,
-        };
+        context.general.meta = updateDomesticCriticalMeta(
+            {
+                ...context.general.meta,
+                leadership_exp: leadershipExp + 1,
+            },
+            result.pick,
+            result.score
+        );
 
         const scoreText = populationGain.toLocaleString();
         const josaUl = JosaUtil.pick(ACTION_NAME, '을');

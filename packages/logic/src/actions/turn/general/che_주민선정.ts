@@ -19,6 +19,7 @@ import {
     CommandResolver,
     type DomesticActionContext,
     type InvestmentConfig,
+    updateDomesticCriticalMeta,
 } from './che_상업투자.js';
 import { JosaUtil } from '@sammo-ts/common';
 import { clamp } from 'es-toolkit';
@@ -48,7 +49,7 @@ const readTrust = (city: City): number => {
 
 // 레거시 city.trust는 MariaDB FLOAT이며 다음 명령에서 6자리 유효숫자로
 // 재조회된다. 같은 턴의 후속 명령도 그 저장 경계를 보도록 정규화한다.
-const toLegacyStoredTrust = (value: number): number => Number(value.toPrecision(6));
+const toLegacyStoredTrust = (value: number): number => Number(Math.fround(value).toPrecision(6));
 
 const remainCityTrust = (): Constraint => ({
     name: 'remainCityTrust',
@@ -117,11 +118,14 @@ export class ActionDefinition<
         context.general.dedication += result.dedication;
         const leadershipExp =
             typeof context.general.meta.leadership_exp === 'number' ? context.general.meta.leadership_exp : 0;
-        context.general.meta = {
-            ...context.general.meta,
-            leadership_exp: leadershipExp + 1,
-            max_domestic_critical: result.pick === 'success' ? result.score : 0,
-        };
+        context.general.meta = updateDomesticCriticalMeta(
+            {
+                ...context.general.meta,
+                leadership_exp: leadershipExp + 1,
+            },
+            result.pick,
+            result.score
+        );
 
         const scoreText = trustDelta.toFixed(1);
         const josaUl = JosaUtil.pick(ACTION_NAME, '을');

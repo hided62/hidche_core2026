@@ -23,6 +23,7 @@ import {
     CommandResolver,
     type DomesticActionContext,
     type InvestmentConfig,
+    updateDomesticCriticalMeta,
 } from './che_상업투자.js';
 import { JosaUtil } from '@sammo-ts/common';
 import { clamp } from 'es-toolkit';
@@ -54,7 +55,7 @@ const readTech = (nation: Nation): number => {
 };
 
 // 레거시 nation.tech는 MariaDB FLOAT이며 다음 명령 재조회 시 6자리 유효숫자로 양자화된다.
-const toLegacyStoredTech = (value: number): number => Number(value.toPrecision(6));
+const toLegacyStoredTech = (value: number): number => Number(Math.fround(value).toPrecision(6));
 
 export class ActionDefinition<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -116,11 +117,14 @@ export class ActionDefinition<
         context.general.experience += result.exp;
         context.general.dedication += result.dedication;
         const intelExp = typeof context.general.meta.intel_exp === 'number' ? context.general.meta.intel_exp : 0;
-        context.general.meta = {
-            ...context.general.meta,
-            intel_exp: intelExp + 1,
-            max_domestic_critical: result.pick === 'success' ? result.score : 0,
-        };
+        context.general.meta = updateDomesticCriticalMeta(
+            {
+                ...context.general.meta,
+                intel_exp: intelExp + 1,
+            },
+            result.pick,
+            result.score
+        );
 
         const scoreText = Math.round(result.score).toLocaleString();
         const josaUl = JosaUtil.pick(ACTION_NAME, '을');

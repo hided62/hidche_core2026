@@ -125,6 +125,15 @@ const addMetaNumber = (meta: GeneralMeta, key: string, delta: number): GeneralMe
     return { ...meta, [key]: current + delta };
 };
 
+export const updateDomesticCriticalMeta = (
+    meta: GeneralMeta,
+    pick: DomesticCriticalPick,
+    score: number
+): GeneralMeta => ({
+    ...meta,
+    max_domestic_critical: pick === 'success' ? (getMetaNumber(meta, 'max_domestic_critical') ?? 0) + score / 2 : 0,
+});
+
 export const buildDomesticContextFromView = <TriggerState extends GeneralTriggerState = GeneralTriggerState>(
     ctx: ConstraintContext,
     view: StateView
@@ -360,10 +369,7 @@ export class ActionResolver<
         general.dedication += result.dedication;
 
         const metaWithStatExp = addMetaNumber(general.meta, this.config.statExpKey, 1);
-        general.meta =
-            result.pick === 'success'
-                ? { ...metaWithStatExp, max_domestic_critical: result.score }
-                : { ...metaWithStatExp, max_domestic_critical: 0 };
+        general.meta = updateDomesticCriticalMeta(metaWithStatExp, result.pick, result.score);
 
         const scoreText = Math.round(result.score).toLocaleString();
         const josaUl = JosaUtil.pick(this.config.name, '을');

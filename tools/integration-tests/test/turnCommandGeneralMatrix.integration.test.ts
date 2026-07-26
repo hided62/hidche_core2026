@@ -1281,6 +1281,112 @@ integration('general domestic command boundary, value, and log parity', () => {
     );
 });
 
+interface CoreDomesticBoundaryCase {
+    name: string;
+    action: 'che_농지개간' | 'che_상업투자' | 'che_주민선정' | 'che_정착장려' | 'che_기술연구';
+    actorPatch?: Record<string, unknown>;
+    fixturePatches?: FixturePatches;
+    hiddenSeed: string;
+    completed: boolean;
+}
+
+const coreDomesticBoundaryCases: CoreDomesticBoundaryCase[] = [
+    {
+        name: 'agriculture rejects a city at its exact capacity',
+        action: 'che_농지개간',
+        fixturePatches: { cities: { 3: { agriculture: 1_000, agricultureMax: 1_000 } } },
+        hiddenSeed: 'general-core-domestic-agriculture-capacity',
+        completed: false,
+    },
+    {
+        name: 'agriculture preserves the early capital front adjustment',
+        action: 'che_농지개간',
+        fixturePatches: {
+            world: { year: 183 },
+            cities: { 3: { frontState: 1, agriculture: 1_000, agricultureMax: 2_000 } },
+        },
+        hiddenSeed: 'turn-command-general-matrix-v1',
+        completed: true,
+    },
+    {
+        name: 'commerce preserves the non-capital front debuff and integer city storage',
+        action: 'che_상업투자',
+        fixturePatches: {
+            nations: { 1: { capitalCityId: 70 } },
+            cities: { 3: { frontState: 1, commerce: 1_000, commerceMax: 2_000 } },
+        },
+        hiddenSeed: 'turn-command-general-matrix-v1',
+        completed: true,
+    },
+    {
+        name: 'resident selection preserves fractional FLOAT storage and accumulates critical score by half',
+        action: 'che_주민선정',
+        actorPatch: { meta: { max_domestic_critical: 10 } },
+        fixturePatches: {
+            cities: { 3: { trust: 10 } },
+        },
+        hiddenSeed: 'turn-command-general-matrix-v1',
+        completed: true,
+    },
+    {
+        name: 'settlement critical success uses the shared half-score accumulator',
+        action: 'che_정착장려',
+        actorPatch: { meta: { max_domestic_critical: 10 } },
+        hiddenSeed: 'turn-command-general-matrix-v1',
+        completed: true,
+    },
+    {
+        name: 'technology critical success uses the shared half-score accumulator',
+        action: 'che_기술연구',
+        actorPatch: { meta: { max_domestic_critical: 10 } },
+        hiddenSeed: 'turn-command-general-matrix-v1',
+        completed: true,
+    },
+    {
+        name: 'commerce failure resets the current domestic critical accumulator',
+        action: 'che_상업투자',
+        actorPatch: { meta: { max_domestic_critical: 10 } },
+        hiddenSeed: 'general-failure-che_상업투자-2',
+        completed: true,
+    },
+];
+
+integration('core domestic command critical, front, and storage boundary parity', () => {
+    it.each(coreDomesticBoundaryCases)(
+        '$name',
+        async ({ action, actorPatch, fixturePatches, hiddenSeed, completed }) => {
+            const request = buildRequest(action, undefined, actorPatch, fixturePatches);
+            request.setup!.world!.hiddenSeed = hiddenSeed;
+            request.observe!.includeGlobalHistoryLogs = true;
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+
+            expect(reference.execution.outcome).toMatchObject({ completed });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: action,
+                actionKey: completed ? action : '휴식',
+                usedFallback: !completed,
+            });
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+
+            if (completed) {
+                expect(semanticLogSignatures(core.after.logs)).toEqual(
+                    semanticLogSignatures(addedReferenceLogs(reference.before, reference.after.logs))
+                );
+            }
+        },
+        120_000
+    );
+});
+
 interface MilitaryPreparationBoundaryCase {
     name: string;
     action: 'che_모병' | 'che_징병' | 'che_장비매매' | 'che_소집해제' | 'cr_맹훈련';
@@ -2365,16 +2471,7 @@ const generalStatusTransitionBoundaryCases: GeneralStatusTransitionBoundaryCase[
 integration('general resignation, retirement, and abdication boundary, state, and log parity', () => {
     it.each(generalStatusTransitionBoundaryCases)(
         '$name',
-        async ({
-            name,
-            action,
-            args,
-            actorPatch,
-            fixturePatches,
-            completed,
-            expectedActionKey,
-            compareLogs,
-        }) => {
+        async ({ name, action, args, actorPatch, fixturePatches, completed, expectedActionKey, compareLogs }) => {
             const request = buildRequest(action, args, actorPatch, fixturePatches);
             request.setup!.world!.hiddenSeed = `general-status-transition-${name}`;
             request.observe!.includeGlobalHistoryLogs = true;
@@ -2550,16 +2647,7 @@ const generalFoundingRebellionBoundaryCases: GeneralFoundingRebellionBoundaryCas
 integration('general uprising, rebellion, and founding boundary, state, RNG, and log parity', () => {
     it.each(generalFoundingRebellionBoundaryCases)(
         '$name',
-        async ({
-            name,
-            action,
-            args,
-            actorPatch,
-            fixturePatches,
-            completed,
-            expectedActionKey,
-            compareLogs,
-        }) => {
+        async ({ name, action, args, actorPatch, fixturePatches, completed, expectedActionKey, compareLogs }) => {
             const request = buildRequest(action, args, actorPatch, fixturePatches);
             request.setup!.world!.hiddenSeed = `general-founding-rebellion-${name}`;
             if (action === 'che_거병') {
