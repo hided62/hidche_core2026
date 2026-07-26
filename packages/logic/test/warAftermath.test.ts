@@ -175,6 +175,61 @@ describe('war aftermath', () => {
         expect(defenderCity.meta.dead).toBe(90);
     });
 
+    it('logs emergency relocation when a surviving nation loses its capital', () => {
+        const attackerNation = buildNation(1);
+        const defenderNation = buildNation(2);
+        const attackerCity = buildCity(1, 1);
+        const defenderCity = buildCity(2, 2);
+        const nextCapital = buildCity(3, 2);
+        const attacker = buildGeneral(1, 1, 1);
+        attacker.officerLevel = 12;
+        const defender = buildGeneral(2, 2, 2);
+        defender.officerLevel = 12;
+
+        const outcome = resolveWarAftermath({
+            battle: {
+                attacker,
+                defenders: [],
+                defenderCity,
+                logs: [],
+                conquered: true,
+                reports: [
+                    {
+                        id: attacker.id,
+                        type: 'general',
+                        name: attacker.name,
+                        isAttacker: true,
+                        killed: 10,
+                        dead: 5,
+                    },
+                ],
+            },
+            attackerNation,
+            defenderNation,
+            attackerCity,
+            defenderCity,
+            nations: [attackerNation, defenderNation],
+            cities: [attackerCity, defenderCity, nextCapital],
+            generals: [attacker, defender],
+            unitSet: buildUnitSet(),
+            config: buildConfig(),
+            time: {
+                year: 200,
+                month: 1,
+                startYear: 180,
+            },
+        });
+
+        expect(defenderNation.capitalCityId).toBe(nextCapital.id);
+        expect(outcome.logs.map((log) => log.text)).toEqual(
+            expect.arrayContaining([
+                '<M><b>【긴급천도】</b></><D><b>Nation2</b></>가 수도가 함락되어 <G><b>City3</b></>으로 긴급천도하였습니다.',
+                '수도가 함락되어 <G><b>City3</b></>으로 <M>긴급천도</>합니다.',
+                '수뇌는 <G><b>City3</b></>으로 집합되었습니다.',
+            ])
+        );
+    });
+
     it('applies conquest collapse rewards', () => {
         const rng = new RandUtil(new ConstantRNG(0));
         const attackerNation = buildNation(1);

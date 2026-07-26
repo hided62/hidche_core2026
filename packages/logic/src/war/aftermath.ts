@@ -321,6 +321,14 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
     if (!nationCollapsed && defenderNation && defenderNation.capitalCityId === defenderCity.id) {
         const nextCapital = findNextCapital(cities, defenderNationId, defenderCity.id, defenderCity);
         if (nextCapital) {
+            const josaRo = JosaUtil.pick(nextCapital.name, '로');
+            const josaYi = JosaUtil.pick(defenderNation.name, '이');
+            attackerLogger.pushGlobalHistoryLog(
+                `<M><b>【긴급천도】</b></><D><b>${defenderNation.name}</b></>${josaYi} 수도가 함락되어 <G><b>${nextCapital.name}</b></>${josaRo} 긴급천도하였습니다.`
+            );
+            const moveLog = `수도가 함락되어 <G><b>${nextCapital.name}</b></>${josaRo} <M>긴급천도</>합니다.`;
+            const gatherLog = `수뇌는 <G><b>${nextCapital.name}</b></>${josaRo} 집합되었습니다.`;
+
             defenderNation.capitalCityId = nextCapital.id;
             defenderNation.gold = round(defenderNation.gold * 0.5);
             defenderNation.rice = round(defenderNation.rice * 0.5);
@@ -332,6 +340,16 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
                 if (general.nationId !== defenderNationId) {
                     continue;
                 }
+                const defenderLogger = new ActionLogger({
+                    generalId: general.id,
+                    nationId: defenderNationId,
+                });
+                defenderLogger.pushGeneralActionLog(moveLog, LogFormat.PLAIN);
+                if (general.officerLevel >= 5) {
+                    defenderLogger.pushGeneralActionLog(gatherLog, LogFormat.PLAIN);
+                }
+                pushLoggers([defenderLogger], logs);
+
                 general.atmos = round(general.atmos * 0.8);
                 if (general.officerLevel >= 5) {
                     general.cityId = nextCapital.id;

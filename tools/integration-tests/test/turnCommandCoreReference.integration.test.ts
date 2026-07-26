@@ -83,6 +83,7 @@ integration('core ↔ legacy command-boundary differential', () => {
         ],
         ['live sortie supply retreat', 'fixtures/turn-differential/live-sortie-supply-retreat.json'],
         ['live sortie noncapital conquest', 'fixtures/turn-differential/live-sortie-noncapital-conquest.json'],
+        ['live sortie emergency capital', 'fixtures/turn-differential/live-sortie-emergency-capital.json'],
     ])(
         '%s matches command RNG and canonical state delta',
         async (_label, fixturePath) => {
@@ -119,6 +120,18 @@ integration('core ↔ legacy command-boundary differential', () => {
                 expect(reference.after.cities.find((city) => city.id === 71)?.nationId).toBe(2);
                 expect(reference.after.nations.some((nation) => nation.id === 2)).toBe(true);
                 expect(reference.after.generals.find((general) => general.id === 2)?.nationId).toBe(2);
+            }
+            if (fixturePath.endsWith('live-sortie-emergency-capital.json')) {
+                const defenderNation = reference.after.nations.find((nation) => nation.id === 2);
+                expect(defenderNation?.capitalCityId).toBe(71);
+                expect(defenderNation?.gold).toBe(50_000);
+                expect(defenderNation?.rice).toBe(40_000);
+                expect(reference.after.generals.find((general) => general.id === 2)).toMatchObject({
+                    nationId: 2,
+                    cityId: 71,
+                    atmos: 80,
+                });
+                expect(reference.after.cities.find((city) => city.id === 71)?.supplyState).toBe(1);
             }
 
             expect(core.execution.outcome).toMatchObject({
