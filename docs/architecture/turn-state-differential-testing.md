@@ -206,6 +206,16 @@ instance and current consumption position. Six pre-required-turn cases cover
 battle-preparation terms 1 through 3 plus the first intermediate turn of both
 trait resets and retirement. They compare the exact intermediate `lastTurn`,
 progress log, zero command-RNG consumption and semantic state delta.
+Three post-required cooldown cases project the legacy `next_execute` KV and
+core general meta into the same world-level cooldown record. They cover the
+stored `current + 60 - preReq` value, rejection one turn before availability,
+and successful execution exactly at the boundary.
+Four missing-target cases cover nonexistent general IDs for gift and
+employment plus nonexistent city IDs for spying and movement. Both engines
+reject the requested command, execute rest without command RNG, and produce
+the same semantic state delta.
+Requests that omit the required argument object remain unverified because the
+reference runner did not terminate within the bounded comparison run.
 This is not yet a claim that every command-specific
 constraint, clamp and persistence boundary has been dynamically
 compared.

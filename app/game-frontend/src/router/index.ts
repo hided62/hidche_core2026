@@ -153,10 +153,7 @@ const routes = [
         path: '/nation/secret',
         name: 'nation-secret',
         component: NationSecretView,
-        meta: {
-            requiresAuth: true,
-            requiresGeneral: true,
-        },
+        meta: { requiresAuth: true, requiresGeneral: true },
     },
     {
         path: '/nation/personnel',
