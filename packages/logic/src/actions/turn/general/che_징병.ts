@@ -418,7 +418,7 @@ export class ActionResolver<
             general.meta = addMetaNumber(general.meta, dexGain.key, dexGain.amount);
         }
 
-        tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
+        tryApplyUniqueLottery(context, { acquireType: '아이템', reason: actionName });
 
         return { effects: [] };
     }

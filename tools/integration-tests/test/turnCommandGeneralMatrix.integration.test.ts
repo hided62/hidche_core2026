@@ -190,6 +190,22 @@ const cases: Array<[string, Record<string, unknown> | undefined, Record<string, 
     ['che_첩보', { destCityID: 70 }, undefined],
     ['che_화계', { destCityID: 70 }, undefined],
     ['che_파괴', { destCityID: 70 }, undefined],
+    ['che_선동', { destCityID: 70 }, undefined],
+    ['che_탈취', { destCityID: 70 }, undefined],
+    ['che_모병', { crewType: 1100, amount: 100 }, undefined],
+    ['che_징병', { crewType: 1100, amount: 100 }, undefined],
+    ['che_숙련전환', { srcArmType: 1, destArmType: 2 }, { dex1: 100 }],
+    [
+        'che_내정특기초기화',
+        undefined,
+        { specialDomestic: 'che_인덕', lastTurn: { command: '내정 특기 초기화', term: 1 } },
+    ],
+    [
+        'che_전투특기초기화',
+        undefined,
+        { specialWar: 'che_귀병', lastTurn: { command: '전투 특기 초기화', term: 1 } },
+    ],
+    ['che_장비매매', { itemType: 'weapon', itemCode: 'che_무기_01_단도' }, undefined],
 ];
 
 integration('general command success matrix', () => {
