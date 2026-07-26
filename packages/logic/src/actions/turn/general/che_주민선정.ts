@@ -46,6 +46,10 @@ const readTrust = (city: City): number => {
     return typeof trust === 'number' && Number.isFinite(trust) ? trust : DEFAULT_TRUST;
 };
 
+// 레거시 city.trust는 MariaDB FLOAT이며 다음 명령에서 6자리 유효숫자로
+// 재조회된다. 같은 턴의 후속 명령도 그 저장 경계를 보도록 정규화한다.
+const toLegacyStoredTrust = (value: number): number => Number(value.toPrecision(6));
+
 const remainCityTrust = (): Constraint => ({
     name: 'remainCityTrust',
     requires: (ctx) => (ctx.cityId !== undefined ? [{ kind: 'city', id: ctx.cityId }] : []),
@@ -106,7 +110,7 @@ export class ActionDefinition<
         const trustDelta = result.score / 10;
         context.city.meta = {
             ...context.city.meta,
-            trust: clamp(readTrust(context.city) + trustDelta, 0, 100),
+            trust: toLegacyStoredTrust(clamp(readTrust(context.city) + trustDelta, 0, 100)),
         };
         context.general.rice = Math.max(0, context.general.rice - result.costGold);
         context.general.experience += result.exp;

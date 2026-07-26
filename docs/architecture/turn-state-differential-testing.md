@@ -169,13 +169,18 @@ Compatibility is established per case only when:
 4. live sortie also passes the battle trace comparison;
 5. any ignored path is documented in the case evidence.
 
-As of 2026-07-26, 54 general matrix cases, 35 nation matrix cases, declaration
-and live sortie pass this boundary. Live sortie is the remaining general
-command key and covers battle entry, conquest, defeated-general neutralization
-and last-city nation collapse. Thus all 55 general command keys have a
-completed success-path comparison. This is 91 executable comparison cases;
-it is not yet a claim that failure/boundary paths or all 38 nation commands
-have been dynamically compared.
+As of 2026-07-26, 54 general matrix cases, 35 reserved nation matrix cases,
+declaration and live sortie pass this boundary. Live sortie is the remaining
+general command key and covers battle entry, conquest, defeated-general
+neutralization and last-city nation collapse. Thus all 55 general command keys
+have a completed success-path comparison. The three instant diplomatic nation
+responses pass a separate reference trace and core resolver/API boundary.
+
+Nine general in-action failure cases now also pass the common differential:
+five domestic critical failures and four sabotage failures. They compare the
+full command RNG trace, semantic state delta and the exact action-log body.
+This is not yet a claim that the remaining constraint, clamp, alternative and
+persistence boundaries have been dynamically compared.
 
 The fixture runner also reports whether the requested legacy command reached
 its completed execution path. For multi-turn commands this is derived from the
