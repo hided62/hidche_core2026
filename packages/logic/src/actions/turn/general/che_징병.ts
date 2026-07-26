@@ -68,14 +68,21 @@ export const ARGS_SCHEMA = z.preprocess(
         return { ...record, crewType };
     },
     z.object({
-        crewType: z.preprocess(
-            (value) => (typeof value === 'number' ? Math.floor(value) : value),
-            z.number().int().positive()
-        ),
-        amount: z.preprocess(
-            (value) => (typeof value === 'number' ? Math.floor(value) : value),
-            z.number().int().min(0)
-        ),
+        crewType: z.number().int().positive(),
+        amount: z.preprocess((value) => {
+            if (typeof value === 'number') {
+                return Number.isFinite(value) ? Math.trunc(value) : value;
+            }
+            if (typeof value === 'string') {
+                const trimmed = value.trim();
+                if (!/^[+-]?(?:(?:\d+(?:\.\d*)?)|(?:\.\d+))(?:[eE][+-]?\d+)?$/.test(trimmed)) {
+                    return value;
+                }
+                const numeric = Number(trimmed);
+                return Number.isFinite(numeric) ? Math.trunc(numeric) : value;
+            }
+            return value;
+        }, z.number().int().min(0)),
     })
 );
 export type RecruitArgs = z.infer<typeof ARGS_SCHEMA>;
@@ -106,6 +113,10 @@ const readCityTrust = (city: City, fallback: number): number => {
     const trust = meta?.trust;
     return typeof trust === 'number' ? trust : fallback;
 };
+
+// 레거시 city.trust는 MariaDB FLOAT이며 다음 명령에서 6자리 유효숫자로
+// 재조회된다. 메모리 상태도 같은 persistence 경계로 정규화한다.
+const toLegacyStoredTrust = (value: number): number => Number(value.toPrecision(6));
 
 const addMetaNumber = (meta: GeneralMeta, key: string, delta: number): GeneralMeta => {
     const current = typeof meta[key] === 'number' ? (meta[key] as number) : 0;
@@ -365,7 +376,7 @@ export class ActionResolver<
         const nextPopulation = Math.max(city.population - recruitPop, 0);
         const baseTrust = readCityTrust(city, this.env.defaultTrust ?? DEFAULT_TRUST);
         const trustLoss = city.population > 0 ? (recruitPop / city.population / costOffset) * 100 : 0;
-        const nextTrust = Math.max(baseTrust - trustLoss, 0);
+        const nextTrust = toLegacyStoredTrust(Math.max(baseTrust - trustLoss, 0));
 
         const actionName = this.env.actionName ?? ACTION_NAME;
         const [nextCrewTypeId, nextCrew, nextTrain, nextAtmos] =

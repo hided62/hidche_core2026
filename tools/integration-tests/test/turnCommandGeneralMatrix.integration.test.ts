@@ -1104,6 +1104,285 @@ integration('general domestic command boundary, value, and log parity', () => {
     );
 });
 
+interface MilitaryPreparationBoundaryCase {
+    name: string;
+    action: 'che_모병' | 'che_징병' | 'che_장비매매' | 'che_소집해제' | 'cr_맹훈련';
+    args?: Record<string, unknown>;
+    actorPatch?: Record<string, unknown>;
+    fixturePatches?: FixturePatches;
+    completed: boolean;
+}
+
+const militaryPreparationBoundaryCases: MilitaryPreparationBoundaryCase[] = [
+    {
+        name: 'recruitment rejects a numeric-string crew type',
+        action: 'che_징병',
+        args: { crewType: '1100', amount: 100 },
+        completed: false,
+    },
+    {
+        name: 'recruitment rejects a fractional crew type',
+        action: 'che_징병',
+        args: { crewType: 1100.9, amount: 100 },
+        completed: false,
+    },
+    {
+        name: 'recruitment accepts a numeric-string amount',
+        action: 'che_징병',
+        args: { crewType: 1100, amount: '100' },
+        completed: true,
+    },
+    {
+        name: 'recruitment rejects a non-decimal numeric-looking amount',
+        action: 'che_징병',
+        args: { crewType: 1100, amount: '0x64' },
+        completed: false,
+    },
+    {
+        name: 'recruitment truncates a fractional amount',
+        action: 'che_징병',
+        args: { crewType: 1100, amount: 100.9 },
+        completed: true,
+    },
+    {
+        name: 'recruitment raises zero amount to the minimum',
+        action: 'che_징병',
+        args: { crewType: 1100, amount: 0 },
+        completed: true,
+    },
+    {
+        name: 'recruitment rejects a negative amount',
+        action: 'che_징병',
+        args: { crewType: 1100, amount: -1 },
+        completed: false,
+    },
+    {
+        name: 'recruitment rejects an unknown crew type',
+        action: 'che_징병',
+        args: { crewType: 9999, amount: 100 },
+        completed: false,
+    },
+    {
+        name: 'recruitment rejects a neutral actor',
+        action: 'che_징병',
+        args: { crewType: 1100, amount: 100 },
+        actorPatch: { nationId: 0 },
+        completed: false,
+    },
+    {
+        name: 'recruitment rejects a foreign-occupied city',
+        action: 'che_징병',
+        args: { crewType: 1100, amount: 100 },
+        fixturePatches: { cities: { 3: { nationId: 2 } } },
+        completed: false,
+    },
+    {
+        name: 'recruitment rejects population below the fixed reserve',
+        action: 'che_징병',
+        args: { crewType: 1100, amount: 100 },
+        fixturePatches: { cities: { 3: { population: 30_099 } } },
+        completed: false,
+    },
+    {
+        name: 'recruitment accepts the exact population reserve',
+        action: 'che_징병',
+        args: { crewType: 1100, amount: 100 },
+        fixturePatches: { cities: { 3: { population: 30_100 } } },
+        completed: true,
+    },
+    {
+        name: 'recruitment rejects trust below twenty',
+        action: 'che_징병',
+        args: { crewType: 1100, amount: 100 },
+        fixturePatches: { cities: { 3: { trust: 19.99 } } },
+        completed: false,
+    },
+    {
+        name: 'recruitment accepts trust exactly twenty',
+        action: 'che_징병',
+        args: { crewType: 1100, amount: 100 },
+        fixturePatches: { cities: { 3: { trust: 20 } } },
+        completed: true,
+    },
+    {
+        name: 'recruitment rejects insufficient gold',
+        action: 'che_징병',
+        args: { crewType: 1100, amount: 100 },
+        actorPatch: { gold: 0 },
+        completed: false,
+    },
+    {
+        name: 'recruitment rejects insufficient rice',
+        action: 'che_징병',
+        args: { crewType: 1100, amount: 100 },
+        actorPatch: { rice: 0 },
+        completed: false,
+    },
+    {
+        name: 'recruitment clamps the same crew type at leadership capacity',
+        action: 'che_징병',
+        args: { crewType: 1100, amount: 99_999 },
+        fixturePatches: { cities: { 3: { population: 200_000 } } },
+        completed: true,
+    },
+    {
+        name: 'mercenary recruitment keeps its doubled price and higher readiness',
+        action: 'che_모병',
+        args: { crewType: 1100, amount: 100 },
+        completed: true,
+    },
+    {
+        name: 'equipment trade rejects an unknown item type',
+        action: 'che_장비매매',
+        args: { itemType: 'armor', itemCode: 'che_무기_01_단도' },
+        completed: false,
+    },
+    {
+        name: 'equipment trade rejects an item from a different slot',
+        action: 'che_장비매매',
+        args: { itemType: 'book', itemCode: 'che_무기_01_단도' },
+        completed: false,
+    },
+    {
+        name: 'equipment trade rejects an unbuyable item',
+        action: 'che_장비매매',
+        args: { itemType: 'weapon', itemCode: 'che_무기_11_고정도' },
+        completed: false,
+    },
+    {
+        name: 'equipment trade does not treat the city trade value as trader availability',
+        action: 'che_장비매매',
+        args: { itemType: 'weapon', itemCode: 'che_무기_01_단도' },
+        fixturePatches: { cities: { 3: { trade: 0 } } },
+        completed: true,
+    },
+    {
+        name: 'equipment trade rejects insufficient gold',
+        action: 'che_장비매매',
+        args: { itemType: 'weapon', itemCode: 'che_무기_01_단도' },
+        actorPatch: { gold: 999 },
+        completed: false,
+    },
+    {
+        name: 'equipment trade rejects buying the equipped item',
+        action: 'che_장비매매',
+        args: { itemType: 'weapon', itemCode: 'che_무기_01_단도' },
+        actorPatch: { itemWeapon: 'che_무기_01_단도' },
+        completed: false,
+    },
+    {
+        name: 'equipment trade rejects selling an empty slot',
+        action: 'che_장비매매',
+        args: { itemType: 'weapon', itemCode: 'None' },
+        completed: false,
+    },
+    {
+        name: 'equipment trade sells a normal item for half price',
+        action: 'che_장비매매',
+        args: { itemType: 'weapon', itemCode: 'None' },
+        actorPatch: { itemWeapon: 'che_무기_01_단도' },
+        completed: true,
+    },
+    {
+        name: 'equipment trade permits selling a unique item and records global logs',
+        action: 'che_장비매매',
+        args: { itemType: 'weapon', itemCode: 'None' },
+        actorPatch: { itemWeapon: 'che_무기_11_고정도' },
+        completed: true,
+    },
+    {
+        name: 'disband rejects zero crew',
+        action: 'che_소집해제',
+        actorPatch: { crew: 0 },
+        completed: false,
+    },
+    {
+        name: 'disband allows a neutral actor and exceeds population capacity',
+        action: 'che_소집해제',
+        actorPatch: { nationId: 0, crew: 1001 },
+        fixturePatches: { cities: { 3: { population: 200_000, populationMax: 200_000 } } },
+        completed: true,
+    },
+    {
+        name: 'fierce training rejects a neutral actor',
+        action: 'cr_맹훈련',
+        actorPatch: { nationId: 0 },
+        completed: false,
+    },
+    {
+        name: 'fierce training rejects a wandering nation',
+        action: 'cr_맹훈련',
+        fixturePatches: { nations: { 1: { level: 0 } } },
+        completed: false,
+    },
+    {
+        name: 'fierce training rejects a foreign-occupied city',
+        action: 'cr_맹훈련',
+        fixturePatches: { cities: { 3: { nationId: 2 } } },
+        completed: false,
+    },
+    {
+        name: 'fierce training rejects zero crew',
+        action: 'cr_맹훈련',
+        actorPatch: { crew: 0 },
+        completed: false,
+    },
+    {
+        name: 'fierce training rejects training at the command maximum',
+        action: 'cr_맹훈련',
+        actorPatch: { train: 100 },
+        completed: false,
+    },
+    {
+        name: 'fierce training enforces the advertised rice cost before execution',
+        action: 'cr_맹훈련',
+        actorPatch: { rice: 0 },
+        completed: false,
+    },
+    {
+        name: 'fierce training succeeds with morale already capped',
+        action: 'cr_맹훈련',
+        actorPatch: { train: 99, atmos: 100, crew: 1001 },
+        completed: true,
+    },
+];
+
+integration('general military preparation boundary, value, RNG, and log parity', () => {
+    it.each(militaryPreparationBoundaryCases)(
+        '$name',
+        async ({ name, action, args, actorPatch, fixturePatches, completed }) => {
+            const request = buildRequest(action, args, actorPatch, fixturePatches);
+            request.setup!.world!.hiddenSeed = `general-military-preparation-${name}`;
+            request.observe!.includeGlobalHistoryLogs = true;
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+
+            expect(reference.execution.outcome).toMatchObject({ completed });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: action,
+                actionKey: completed ? action : '휴식',
+                usedFallback: !completed,
+            });
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+
+            if (completed) {
+                expect(semanticLogSignatures(core.after.logs)).toEqual(
+                    semanticLogSignatures(addedReferenceLogs(reference.before, reference.after.logs))
+                );
+            }
+        },
+        120_000
+    );
+});
+
 integration('명장일람 rank_data command parity', () => {
     it('화계 increments firenum from the same seeded value as legacy', async () => {
         const request = buildRequest(
