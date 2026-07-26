@@ -24,11 +24,13 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     type CommandTable = Awaited<ReturnType<typeof trpc.turns.getCommandTable.query>>;
     type MessageBundle = Awaited<ReturnType<typeof trpc.messages.getRecent.query>>;
     type MessageContacts = Awaited<ReturnType<typeof trpc.messages.getContacts.query>>;
+    type FrontRecords = Awaited<ReturnType<typeof trpc.general.getFrontRecords.query>>;
     type BoardAccess = Awaited<ReturnType<typeof trpc.board.getAccess.query>>;
     type ReservedTurnView = Awaited<ReturnType<typeof trpc.turns.reserved.getGeneral.query>>[number];
 
     const loading = ref(false);
     const error = ref<string | null>(null);
+    const frontRecordsError = ref<string | null>(null);
     const realtimeEnabled = ref(true);
     const realtimeStatus = ref<'idle' | 'connected' | 'paused'>('idle');
 
@@ -39,6 +41,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     const commandTable = ref<CommandTable | null>(null);
     const messages = ref<MessageBundle | null>(null);
     const messageContacts = ref<MessageContacts | null>(null);
+    const frontRecords = ref<FrontRecords | null>(null);
     const boardAccess = ref<BoardAccess | null>(null);
     const reservedGeneralTurns = ref<ReservedTurnView[] | null>(null);
     const reservedNationTurns = ref<ReservedTurnView[] | null>(null);
@@ -197,6 +200,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         }
         loading.value = true;
         error.value = null;
+        frontRecordsError.value = null;
 
         try {
             const context = await trpc.general.me.query();
@@ -217,7 +221,11 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
                 context.general.nationId > 0 && context.general.officerLevel >= 5
                     ? trpc.turns.reserved.getNation.query({ generalId: id })
                     : Promise.resolve(null);
-            const [layout, lobby, map, commands, messageData, contacts, access, generalTurns, nationTurns] =
+            const frontRecordsPromise = trpc.general.getFrontRecords.query().catch((err: unknown) => {
+                frontRecordsError.value = resolveErrorMessage(err);
+                return null;
+            });
+            const [layout, lobby, map, commands, messageData, contacts, access, records, generalTurns, nationTurns] =
                 await Promise.all([
                     layoutPromise,
                     trpc.lobby.info.query(),
@@ -226,6 +234,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
                     trpc.messages.getRecent.query({ generalId: id }),
                     trpc.messages.getContacts.query({ generalId: id }),
                     trpc.board.getAccess.query(),
+                    frontRecordsPromise,
                     generalTurnsPromise,
                     nationTurnsPromise,
                 ]);
@@ -237,6 +246,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             messages.value = messageData;
             messageContacts.value = contacts;
             boardAccess.value = access;
+            frontRecords.value = records;
             reservedGeneralTurns.value = generalTurns;
             reservedNationTurns.value = nationTurns;
             if (initializedMailboxGeneralId !== id) {
@@ -587,6 +597,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     return {
         loading,
         error,
+        frontRecordsError,
         realtimeEnabled,
         realtimeStatus,
         generalContext,
@@ -600,6 +611,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         commandTable,
         messages,
         messageContacts,
+        frontRecords,
         boardAccess,
         reservedGeneralTurns,
         reservedNationTurns,

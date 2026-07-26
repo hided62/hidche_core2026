@@ -8,6 +8,7 @@ import MapPreview from '../components/MapPreview.vue';
 import DefaultLayout from '../layouts/DefaultLayout.vue';
 import { createGameTrpc, type GameRouter } from '../utils/gameTrpc';
 import { trpc } from '../utils/trpc';
+import { formatLog } from '../utils/formatLog';
 
 type GatewayOutput = inferRouterOutputs<AppRouter>;
 type GameOutput = inferRouterOutputs<GameRouter>;
@@ -173,6 +174,11 @@ const handlePasswordReset = async (): Promise<void> => {
                     <li>유저 {{ info.userCnt }}명 · NPC {{ info.npcCnt }}명 · {{ info.nationCnt }}국 경쟁중</li>
                     <li>{{ info.turnTerm }}분 턴 서버</li>
                 </ul>
+                <div v-if="mapData?.history?.length" class="status-history">
+                    <!-- 레거시 색상 tag만 formatLog가 span으로 변환한다. -->
+                    <!-- eslint-disable-next-line vue/no-v-html -->
+                    <div v-for="entry in mapData.history" :key="entry.id" v-html="formatLog(entry.text)" />
+                </div>
                 <button type="button" class="refresh-button" :disabled="statusLoading" @click="loadPublicStatus">
                     현황 새로고침
                 </button>
@@ -301,6 +307,15 @@ const handlePasswordReset = async (): Promise<void> => {
     border: 1px solid #444;
     border-radius: 6px;
     background: #000;
+}
+
+.status-history {
+    border-top: 1px solid #444;
+    padding: 8px 12px;
+    color: #ddd;
+    font-family: 'Times New Roman', serif;
+    font-size: 14px;
+    line-height: 1.35;
 }
 
 .status-card > header {

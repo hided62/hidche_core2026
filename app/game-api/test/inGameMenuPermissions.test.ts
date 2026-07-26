@@ -186,6 +186,42 @@ describe('in-game my information ownership', () => {
             })
         );
     });
+
+    it('returns the three legacy front-page record streams for the session-owned general', async () => {
+        const fixture = createContext({});
+        const caller = appRouter.createCaller(fixture.context);
+
+        await expect(caller.general.getFrontRecords()).resolves.toEqual({
+            global: [{ id: 1, text: '기록' }],
+            general: [{ id: 1, text: '기록' }],
+            history: [{ id: 1, text: '기록' }],
+        });
+
+        expect(fixture.db.logEntry.findMany).toHaveBeenNthCalledWith(
+            1,
+            expect.objectContaining({
+                where: { scope: 'SYSTEM', category: 'ACTION' },
+                orderBy: { id: 'desc' },
+                take: 15,
+            })
+        );
+        expect(fixture.db.logEntry.findMany).toHaveBeenNthCalledWith(
+            2,
+            expect.objectContaining({
+                where: { scope: 'GENERAL', category: 'ACTION', generalId: 7 },
+                orderBy: { id: 'desc' },
+                take: 15,
+            })
+        );
+        expect(fixture.db.logEntry.findMany).toHaveBeenNthCalledWith(
+            3,
+            expect.objectContaining({
+                where: { scope: 'SYSTEM', category: 'HISTORY' },
+                orderBy: { id: 'desc' },
+                take: 15,
+            })
+        );
+    });
 });
 
 describe('battle-center general and user permissions', () => {

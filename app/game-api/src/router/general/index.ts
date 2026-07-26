@@ -15,6 +15,7 @@ const zGeneralSettings = z.object({
 });
 
 const zGeneralLogType = z.enum(['generalHistory', 'battleDetail', 'battleResult', 'generalAction']);
+const FRONT_RECORD_LIMIT = 15;
 
 const readNumber = (value: unknown, fallback: number): number => {
     if (typeof value === 'number' && Number.isFinite(value)) {
@@ -319,4 +320,49 @@ export const generalRouter = router({
                 })),
             };
         }),
+    getFrontRecords: authedProcedure.query(async ({ ctx }) => {
+        const me = await getMyGeneral(ctx);
+        const select = {
+            id: true,
+            text: true,
+        } as const;
+        const orderBy = { id: 'desc' } as const;
+
+        const [global, general, history] = await Promise.all([
+            ctx.db.logEntry.findMany({
+                where: {
+                    scope: LogScope.SYSTEM,
+                    category: LogCategory.ACTION,
+                },
+                select,
+                orderBy,
+                take: FRONT_RECORD_LIMIT,
+            }),
+            ctx.db.logEntry.findMany({
+                where: {
+                    scope: LogScope.GENERAL,
+                    category: LogCategory.ACTION,
+                    generalId: me.id,
+                },
+                select,
+                orderBy,
+                take: FRONT_RECORD_LIMIT,
+            }),
+            ctx.db.logEntry.findMany({
+                where: {
+                    scope: LogScope.SYSTEM,
+                    category: LogCategory.HISTORY,
+                },
+                select,
+                orderBy,
+                take: FRONT_RECORD_LIMIT,
+            }),
+        ]);
+
+        return {
+            global,
+            general,
+            history,
+        };
+    }),
 });
