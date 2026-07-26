@@ -28,6 +28,7 @@ export interface ActionContextWorldState {
     currentYear: number;
     currentMonth: number;
     tickSeconds: number;
+    lastTurnTime?: Date;
     meta?: Record<string, unknown>;
 }
 
