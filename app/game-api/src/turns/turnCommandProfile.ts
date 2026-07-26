@@ -1,12 +1,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { DEFAULT_TURN_COMMAND_PROFILE, parseTurnCommandProfile, type TurnCommandProfile } from '@sammo-ts/logic';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
+import { resolveWorkspaceRoot } from '../paths.js';
+
+const REPO_ROOT = resolveWorkspaceRoot();
 const DEFAULT_PROFILE_PATH = path.resolve(REPO_ROOT, 'resources', 'turn-commands', 'default.json');
 
 export interface TurnCommandProfileOptions {

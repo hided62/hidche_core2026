@@ -1,8 +1,16 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
+import { ITEM_KEYS, loadItemModules } from '@sammo-ts/logic';
 
 import { authedProcedure, router } from '../../trpc.js';
+import { buildBattleSimEnvironment } from '../../battleSim/environment.js';
+import { loadBattleSimTraitOptions } from '../../battleSim/simulatorOptions.js';
 import { buildTurnCommandTable } from '../../turns/commandTable.js';
+import {
+    parseReservedTurnArgs,
+    TURN_COMMAND_NATION_COLORS,
+    type TurnCommandInputOptions,
+} from '../../turns/commandInput.js';
 import {
     MAX_GENERAL_TURNS,
     MAX_NATION_TURNS,
@@ -25,6 +33,18 @@ const buildShiftAmountSchema = (maxTurns: number) =>
             message: 'Amount must be non-zero.',
         });
 
+const parseCommandArgs = async (scope: 'general' | 'nation', action: string, args: unknown) => {
+    try {
+        return await parseReservedTurnArgs(scope, action, args);
+    } catch (error) {
+        throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: error instanceof Error ? error.message : 'Invalid turn command arguments.',
+            cause: error,
+        });
+    }
+};
+
 export const turnsRouter = router({
     getCommandTable: authedProcedure
         .input(
@@ -45,7 +65,8 @@ export const turnsRouter = router({
                 });
             }
 
-            const [city, nation, nationGenerals] = await Promise.all([
+            const [city, nation, nationGenerals, cities, nations, generals, environment, traits, itemModules] =
+                await Promise.all([
                 general.cityId > 0
                     ? ctx.db.city.findUnique({
                           where: { id: general.cityId },
@@ -61,7 +82,68 @@ export const turnsRouter = router({
                           where: { nationId: general.nationId },
                       })
                     : Promise.resolve(null),
+                ctx.db.city.findMany({
+                    select: { id: true, name: true, nationId: true },
+                    orderBy: { id: 'asc' },
+                }),
+                ctx.db.nation.findMany({
+                    select: { id: true, name: true, color: true },
+                    orderBy: { id: 'asc' },
+                }),
+                ctx.db.general.findMany({
+                    where: { npcState: { lt: 2 } },
+                    select: { id: true, name: true, nationId: true, cityId: true },
+                    orderBy: { id: 'asc' },
+                }),
+                buildBattleSimEnvironment(worldState, ctx.profile.id),
+                loadBattleSimTraitOptions(),
+                loadItemModules([...ITEM_KEYS]),
             ]);
+
+            const nationById = new Map(nations.map((entry) => [entry.id, entry]));
+            const cityById = new Map(cities.map((entry) => [entry.id, entry]));
+            const items: TurnCommandInputOptions['items'] = {
+                horse: [{ value: 'None', label: '판매/해제' }],
+                weapon: [{ value: 'None', label: '판매/해제' }],
+                book: [{ value: 'None', label: '판매/해제' }],
+                item: [{ value: 'None', label: '판매/해제' }],
+            };
+            for (const item of itemModules) {
+                if (item.buyable) {
+                    items[item.slot].push({ value: item.key, label: item.name });
+                }
+            }
+            const inputOptions: TurnCommandInputOptions = {
+                cities: cities.map((entry) => ({
+                    value: entry.id,
+                    label: `${entry.name} (${nationById.get(entry.nationId)?.name ?? '무주'})`,
+                })),
+                nations: nations.map((entry) => ({
+                    value: entry.id,
+                    label: entry.name,
+                    color: entry.color,
+                })),
+                generals: generals.map((entry) => ({
+                    value: entry.id,
+                    label: `${entry.name} (${nationById.get(entry.nationId)?.name ?? '무소속'} · ${
+                        cityById.get(entry.cityId)?.name ?? '재야'
+                    })`,
+                })),
+                crewTypes: (environment.unitSet.crewTypes ?? [])
+                    .filter((entry) => !entry.requirements.some((requirement) => requirement.type === 'Impossible'))
+                    .map((entry) => ({ value: entry.id, label: entry.name })),
+                armTypes: Object.entries(environment.unitSet.armTypes ?? {}).map(([value, label]) => ({
+                    value: Number(value),
+                    label,
+                })),
+                nationTypes: traits.nationTypes.map((entry) => ({ value: entry.key, label: entry.name })),
+                colors: TURN_COMMAND_NATION_COLORS.map((color, index) => ({
+                    value: index,
+                    label: `색상 ${index + 1}`,
+                    color,
+                })),
+                items,
+            };
 
             return buildTurnCommandTable({
                 worldState,
@@ -69,6 +151,7 @@ export const turnsRouter = router({
                 city,
                 nation,
                 nationGenerals,
+                inputOptions,
             });
         }),
     reserved: router({
@@ -121,13 +204,14 @@ export const turnsRouter = router({
             )
             .mutation(async ({ ctx, input }) => {
                 await getOwnedGeneral(ctx, input.generalId);
+                const args = await parseCommandArgs('general', input.action, input.args);
 
                 const turns = await setGeneralTurn(
                     ctx.db,
                     input.generalId,
                     input.turnIndex,
                     input.action,
-                    input.args
+                    args
                 );
                 return { ok: true, turns };
             }),
@@ -171,6 +255,7 @@ export const turnsRouter = router({
                         message: 'General is not an officer.',
                     });
                 }
+                const args = await parseCommandArgs('nation', input.action, input.args);
 
                 const turns = await setNationTurn(
                     ctx.db,
@@ -178,7 +263,7 @@ export const turnsRouter = router({
                     general.officerLevel,
                     input.turnIndex,
                     input.action,
-                    input.args
+                    args
                 );
                 return { ok: true, turns };
             }),

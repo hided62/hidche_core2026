@@ -1,7 +1,26 @@
 <script setup lang="ts">
 import { ref } from 'vue';
+import CommandArgumentForm from './CommandArgumentForm.vue';
 import CommandSelectForm from './CommandSelectForm.vue';
 
+interface TurnCommandOption {
+    value: string | number;
+    label: string;
+    color?: string;
+}
+interface TurnCommandInputField {
+    key: string;
+    label: string;
+    kind: 'text' | 'number' | 'boolean' | 'select' | 'numberTuple' | 'hidden';
+    required: boolean;
+    min?: number;
+    max?: number;
+    step?: number;
+    constValue?: string | number;
+    options?: TurnCommandOption[];
+    optionSource?: 'cities' | 'nations' | 'generals' | 'crewTypes' | 'armTypes' | 'nationTypes' | 'colors' | 'items';
+    tupleLabels?: string[];
+}
 interface TurnCommandAvailability {
     key: string;
     name: string;
@@ -9,6 +28,7 @@ interface TurnCommandAvailability {
     status: 'available' | 'blocked' | 'needsInput' | 'unknown';
     possible: boolean;
     reason?: string;
+    inputFields: TurnCommandInputField[];
 }
 
 interface TurnCommandGroup {
@@ -19,6 +39,16 @@ interface TurnCommandGroup {
 interface TurnCommandTable {
     general: TurnCommandGroup[];
     nation: TurnCommandGroup[];
+    inputOptions: {
+        cities: TurnCommandOption[];
+        nations: TurnCommandOption[];
+        generals: TurnCommandOption[];
+        crewTypes: TurnCommandOption[];
+        armTypes: TurnCommandOption[];
+        nationTypes: TurnCommandOption[];
+        colors: TurnCommandOption[];
+        items: Record<string, TurnCommandOption[]>;
+    };
 }
 
 interface SelectedCityInfo {
@@ -50,67 +80,74 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-    (event: 'set-general-turn', payload: { index: number; action: string }): void;
+    (event: 'set-general-turn', payload: { index: number; action: string; args: Record<string, unknown> }): void;
     (event: 'shift-general-turns', amount: number): void;
-    (event: 'set-nation-turn', payload: { index: number; action: string }): void;
+    (event: 'set-nation-turn', payload: { index: number; action: string; args: Record<string, unknown> }): void;
     (event: 'shift-nation-turns', amount: number): void;
 }>();
 
 const activeCategory = ref('');
 const selectedCommand = ref<TurnCommandAvailability | null>(null);
+const selectedScope = ref<'general' | 'nation' | null>(null);
+const commandArgs = ref<Record<string, unknown>>({});
+const commandArgsValid = ref(false);
 
 const handleSelect = (commandKey: string) => {
     if (!props.commandTable) {
         selectedCommand.value = null;
+        selectedScope.value = null;
         return;
     }
-    const allGroups = [...props.commandTable.general, ...props.commandTable.nation];
-    for (const group of allGroups) {
-        const match = group.values.find((entry) => entry.key === commandKey);
-        if (match) {
-            selectedCommand.value = match;
-            return;
+    for (const scope of ['general', 'nation'] as const) {
+        for (const group of props.commandTable[scope]) {
+            const match = group.values.find((entry) => entry.key === commandKey);
+            if (match) {
+                selectedCommand.value = match;
+                selectedScope.value = scope;
+                commandArgs.value = {};
+                commandArgsValid.value = !match.reqArg;
+                return;
+            }
         }
     }
     selectedCommand.value = null;
+    selectedScope.value = null;
 };
 
-const canReserveSelected = () => {
+const canReserveSelected = (scope: 'general' | 'nation') => {
     if (!selectedCommand.value) {
         return false;
     }
+    if (selectedScope.value !== scope) return false;
     if (!selectedCommand.value.possible) {
         return false;
     }
-    if (selectedCommand.value.status !== 'available') {
+    if (!['available', 'needsInput'].includes(selectedCommand.value.status)) {
         return false;
     }
-    if (selectedCommand.value.reqArg) {
-        return false;
-    }
-    return true;
+    return commandArgsValid.value;
 };
 
 const reserveGeneralTurn = (index: number) => {
     if (!selectedCommand.value) {
         return;
     }
-    emit('set-general-turn', { index, action: selectedCommand.value.key });
+    emit('set-general-turn', { index, action: selectedCommand.value.key, args: commandArgs.value });
 };
 
 const reserveNationTurn = (index: number) => {
     if (!selectedCommand.value) {
         return;
     }
-    emit('set-nation-turn', { index, action: selectedCommand.value.key });
+    emit('set-nation-turn', { index, action: selectedCommand.value.key, args: commandArgs.value });
 };
 
 const clearGeneralTurn = (index: number) => {
-    emit('set-general-turn', { index, action: '휴식' });
+    emit('set-general-turn', { index, action: '휴식', args: {} });
 };
 
 const clearNationTurn = (index: number) => {
-    emit('set-nation-turn', { index, action: '휴식' });
+    emit('set-nation-turn', { index, action: '휴식', args: {} });
 };
 
 const canNationReserve = () =>
@@ -146,6 +183,14 @@ const canNationReserve = () =>
             </div>
             <div v-else class="value muted">명령을 선택하세요.</div>
         </div>
+        <CommandArgumentForm
+            v-if="selectedCommand?.reqArg && props.commandTable"
+            :command-key="selectedCommand.key"
+            :fields="selectedCommand.inputFields"
+            :options="props.commandTable.inputOptions"
+            @update:args="commandArgs = $event"
+            @update:valid="commandArgsValid = $event"
+        />
         <div class="reserved-section">
             <div class="reserved-header">
                 <span>일반 예턴</span>
@@ -160,7 +205,7 @@ const canNationReserve = () =>
                     <div class="turn-label">#{{ turn.index + 1 }}</div>
                     <div class="turn-action">{{ turn.action }}</div>
                     <div class="turn-buttons">
-                        <button :disabled="!canReserveSelected()" @click="reserveGeneralTurn(turn.index)">
+                        <button :disabled="!canReserveSelected('general')" @click="reserveGeneralTurn(turn.index)">
                             배치
                         </button>
                         <button class="ghost" @click="clearGeneralTurn(turn.index)">휴식</button>
@@ -183,7 +228,7 @@ const canNationReserve = () =>
                     <div class="turn-label">#{{ turn.index + 1 }}</div>
                     <div class="turn-action">{{ turn.action }}</div>
                     <div class="turn-buttons">
-                        <button :disabled="!canReserveSelected()" @click="reserveNationTurn(turn.index)">
+                        <button :disabled="!canReserveSelected('nation')" @click="reserveNationTurn(turn.index)">
                             배치
                         </button>
                         <button class="ghost" @click="clearNationTurn(turn.index)">휴식</button>

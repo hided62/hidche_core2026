@@ -60,16 +60,16 @@ const {
     realtimeLabel,
 } = storeToRefs(dashboard);
 
-const reserveGeneralTurn = (payload: { index: number; action: string }) => {
-    void dashboard.setGeneralTurn(payload.index, payload.action);
+const reserveGeneralTurn = (payload: { index: number; action: string; args: Record<string, unknown> }) => {
+    void dashboard.setGeneralTurn(payload.index, payload.action, payload.args);
 };
 
 const shiftGeneralTurns = (amount: number) => {
     void dashboard.shiftGeneralTurns(amount);
 };
 
-const reserveNationTurn = (payload: { index: number; action: string }) => {
-    void dashboard.setNationTurn(payload.index, payload.action);
+const reserveNationTurn = (payload: { index: number; action: string; args: Record<string, unknown> }) => {
+    void dashboard.setNationTurn(payload.index, payload.action, payload.args);
 };
 
 const shiftNationTurns = (amount: number) => {

@@ -5,6 +5,7 @@ import { addMinutes, format } from 'date-fns';
 import PanelCard from '../components/ui/PanelCard.vue';
 import SkeletonLines from '../components/ui/SkeletonLines.vue';
 import ChiefTurnCard from '../components/chief/ChiefTurnCard.vue';
+import CommandArgumentForm from '../components/main/CommandArgumentForm.vue';
 import CommandSelectForm from '../components/main/CommandSelectForm.vue';
 import { trpc } from '../utils/trpc';
 import { formatOfficerLevelText } from '../utils/nationFormat';
@@ -48,6 +49,19 @@ type CommandAvailability = {
     status: 'available' | 'blocked' | 'needsInput' | 'unknown';
     possible: boolean;
     reason?: string;
+    inputFields: Array<{
+        key: string;
+        label: string;
+        kind: 'text' | 'number' | 'boolean' | 'select' | 'numberTuple' | 'hidden';
+        required: boolean;
+        min?: number;
+        max?: number;
+        step?: number;
+        constValue?: string | number;
+        options?: Array<{ value: string | number; label: string; color?: string }>;
+        optionSource?: 'cities' | 'nations' | 'generals' | 'crewTypes' | 'armTypes' | 'nationTypes' | 'colors' | 'items';
+        tupleLabels?: string[];
+    }>;
 };
 
 type CommandGroup = {
@@ -58,6 +72,16 @@ type CommandGroup = {
 type CommandTable = {
     general: CommandGroup[];
     nation: CommandGroup[];
+    inputOptions: {
+        cities: Array<{ value: string | number; label: string; color?: string }>;
+        nations: Array<{ value: string | number; label: string; color?: string }>;
+        generals: Array<{ value: string | number; label: string; color?: string }>;
+        crewTypes: Array<{ value: string | number; label: string; color?: string }>;
+        armTypes: Array<{ value: string | number; label: string; color?: string }>;
+        nationTypes: Array<{ value: string | number; label: string; color?: string }>;
+        colors: Array<{ value: string | number; label: string; color?: string }>;
+        items: Record<string, Array<{ value: string | number; label: string; color?: string }>>;
+    };
 };
 
 const chiefApi = trpc as unknown as {
@@ -89,6 +113,8 @@ const commandTable = ref<CommandTable | null>(null);
 const selectedChiefLevel = ref<number | null>(null);
 const activeCategory = ref('');
 const selectedCommandKey = ref<string | null>(null);
+const commandArgs = ref<Record<string, unknown>>({});
+const commandArgsValid = ref(false);
 
 const isMobile = useMediaQuery('(max-width: 1024px)');
 
@@ -210,6 +236,11 @@ const selectedCommand = computed<CommandAvailability | null>(() => {
     return null;
 });
 
+watch(selectedCommand, (command) => {
+    commandArgs.value = {};
+    commandArgsValid.value = Boolean(command && !command.reqArg);
+});
+
 const canReserveSelected = computed(() => {
     if (!selectedCommand.value) {
         return false;
@@ -217,10 +248,10 @@ const canReserveSelected = computed(() => {
     if (!selectedCommand.value.possible) {
         return false;
     }
-    if (selectedCommand.value.status !== 'available') {
+    if (!['available', 'needsInput'].includes(selectedCommand.value.status)) {
         return false;
     }
-    return !selectedCommand.value.reqArg;
+    return commandArgsValid.value;
 });
 
 const selectedChief = computed<ChiefEntry | null>(() => {
@@ -308,7 +339,7 @@ const reserveTurn = async (turnIndex: number) => {
             generalId: data.value.me.id,
             turnIndex,
             action: selectedCommand.value.key,
-            args: {},
+            args: commandArgs.value,
         });
         updateMyTurns(result.turns);
     } catch (err) {
@@ -402,6 +433,14 @@ const shiftTurns = async (amount: number) => {
                     </div>
                     <div v-else class="value muted">명령을 선택하세요.</div>
                 </div>
+                <CommandArgumentForm
+                    v-if="selectedCommand?.reqArg && commandTable"
+                    :command-key="selectedCommand.key"
+                    :fields="selectedCommand.inputFields"
+                    :options="commandTable.inputOptions"
+                    @update:args="commandArgs = $event"
+                    @update:valid="commandArgsValid = $event"
+                />
                 <div class="turn-actions">
                     <button @click="shiftTurns(-1)">앞당김</button>
                     <button @click="shiftTurns(1)">미루기</button>
@@ -479,6 +518,14 @@ const shiftTurns = async (amount: number) => {
                             </div>
                             <div v-else class="value muted">명령을 선택하세요.</div>
                         </div>
+                        <CommandArgumentForm
+                            v-if="selectedCommand?.reqArg && commandTable"
+                            :command-key="selectedCommand.key"
+                            :fields="selectedCommand.inputFields"
+                            :options="commandTable.inputOptions"
+                            @update:args="commandArgs = $event"
+                            @update:valid="commandArgsValid = $event"
+                        />
                         <div class="turn-actions">
                             <button @click="shiftTurns(-1)">앞당김</button>
                             <button @click="shiftTurns(1)">미루기</button>

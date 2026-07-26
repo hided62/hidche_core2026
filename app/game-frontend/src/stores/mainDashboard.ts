@@ -426,7 +426,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         }
     };
 
-    const setGeneralTurn = async (turnIndex: number, action: string) => {
+    const setGeneralTurn = async (turnIndex: number, action: string, args: Record<string, unknown> = {}) => {
         const id = generalId.value;
         if (!id) {
             return;
@@ -436,7 +436,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
                 generalId: id,
                 turnIndex,
                 action,
-                args: {},
+                args,
             });
             reservedGeneralTurns.value = result.turns;
         } catch (err) {
@@ -460,7 +460,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         }
     };
 
-    const setNationTurn = async (turnIndex: number, action: string) => {
+    const setNationTurn = async (turnIndex: number, action: string, args: Record<string, unknown> = {}) => {
         const id = generalId.value;
         const currentGeneral = general.value;
         if (!id || !currentGeneral) {
@@ -474,7 +474,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
                 generalId: id,
                 turnIndex,
                 action,
-                args: {},
+                args,
             });
             reservedNationTurns.value = result.turns;
         } catch (err) {

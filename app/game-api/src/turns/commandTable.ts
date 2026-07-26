@@ -13,12 +13,17 @@ import type {
     TurnCommandEnv,
     TriggerValue,
 } from '@sammo-ts/logic';
-import { evaluateConstraints, loadGeneralTurnCommandSpecs, loadNationTurnCommandSpecs } from '@sammo-ts/logic';
+import { evaluateConstraints } from '@sammo-ts/logic';
 import { projectItemSlots, readItemInventoryFromMeta } from '@sammo-ts/logic/items/index.js';
 import { asRecord, isRecord } from '@sammo-ts/common';
 
 import type { CityRow, GeneralRow, NationRow, WorldStateRow } from '../context.js';
-import { loadTurnCommandProfile } from './turnCommandProfile.js';
+import {
+    buildTurnCommandInputFields,
+    loadTurnCommandSpecs,
+    type TurnCommandInputField,
+    type TurnCommandInputOptions,
+} from './commandInput.js';
 
 type AvailabilityStatus = 'available' | 'blocked' | 'needsInput' | 'unknown';
 
@@ -29,6 +34,7 @@ export interface TurnCommandAvailability {
     possible: boolean;
     status: AvailabilityStatus;
     reason?: string;
+    inputFields: TurnCommandInputField[];
 }
 
 export interface TurnCommandGroup {
@@ -39,6 +45,7 @@ export interface TurnCommandGroup {
 export interface TurnCommandTable {
     general: TurnCommandGroup[];
     nation: TurnCommandGroup[];
+    inputOptions: TurnCommandInputOptions;
 }
 
 type CommandEnv = TurnCommandEnv;
@@ -54,6 +61,7 @@ interface CommandEntry {
     definition: GeneralActionDefinition;
     reqArg: boolean;
     availabilityArgs: Readonly<Record<string, unknown>>;
+    inputFields: TurnCommandInputField[];
     evaluate?: (ctx: ConstraintContext, view: StateView) => AvailabilityCore;
 }
 
@@ -410,6 +418,7 @@ const buildEntries = (env: CommandEnv, specs: TurnCommandSpec[]): CommandEntry[]
             definition,
             reqArg: spec.reqArg,
             availabilityArgs: spec.reqArg ? spec.availabilityArgs : {},
+            inputFields: buildTurnCommandInputFields(spec),
         };
 
         if (spec.key === 'che_포상') {
@@ -445,6 +454,7 @@ const buildGroups = (entries: CommandEntry[], ctx: ConstraintContext, view: Stat
             key: entry.definition.key,
             name: entry.definition.name,
             reqArg: entry.reqArg,
+            inputFields: entry.inputFields,
             ...availability,
         };
 
@@ -468,6 +478,7 @@ export const buildTurnCommandTable = async (options: {
     city: CityRow | null;
     nation: NationRow | null;
     nationGenerals: GeneralRow[] | null;
+    inputOptions?: TurnCommandInputOptions;
 }): Promise<TurnCommandTable> => {
     // 턴 입력 화면에서 쓰는 사전 판단이므로 최소 정보로 가능/불가만 계산한다.
     const general = mapGeneralRow(options.general);
@@ -486,16 +497,22 @@ export const buildTurnCommandTable = async (options: {
     };
 
     const env = buildCommandEnv(options.worldState);
-    const commandProfile = await loadTurnCommandProfile();
-    const [generalSpecs, nationSpecs] = await Promise.all([
-        loadGeneralTurnCommandSpecs(commandProfile.general),
-        loadNationTurnCommandSpecs(commandProfile.nation),
-    ]);
+    const { general: generalSpecs, nation: nationSpecs } = await loadTurnCommandSpecs();
     const generalEntries = buildEntries(env, generalSpecs);
     const nationEntries = buildEntries(env, nationSpecs);
 
     return {
         general: buildGroups(generalEntries, ctx, view),
         nation: buildGroups(nationEntries, ctx, view),
+        inputOptions: options.inputOptions ?? {
+            cities: [],
+            nations: [],
+            generals: [],
+            crewTypes: [],
+            armTypes: [],
+            nationTypes: [],
+            colors: [],
+            items: {},
+        },
     };
 };
