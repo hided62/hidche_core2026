@@ -155,6 +155,7 @@ export const projectCoreDatabaseSnapshot = (rows: {
             dex5: readNumber(meta, 'dex5'),
             specAge: readNumber(meta, 'specage'),
             specAge2: readNumber(meta, 'specage2'),
+            makeLimit: readNumber(meta, 'makelimit'),
             penalty: asRecord(row.penalty),
             killTurn: readNumber(meta, 'killturn'),
             mySet: readNumber(meta, 'myset'),

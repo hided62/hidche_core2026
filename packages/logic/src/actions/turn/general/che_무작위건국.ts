@@ -21,7 +21,6 @@ import {
     createNationPatchEffect,
 } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
-import { z } from 'zod';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
@@ -29,15 +28,15 @@ import { resolveInitYearMonth } from '@sammo-ts/logic/actions/turn/actionContext
 import type { GeneralTurnCommandSpec } from './index.js';
 import { parseArgsWithSchema } from '../parseArgs.js';
 import { JosaUtil } from '@sammo-ts/common';
+import {
+    FOUNDING_ARGS_SCHEMA,
+    getNationTypeDisplayName,
+    NATION_COLORS,
+    type FoundingArgs,
+} from './foundingShared.js';
 
 const ACTION_NAME = '무작위 도시 건국';
 const ACTION_KEY = 'che_무작위건국';
-const ARGS_SCHEMA = z.object({
-    nationName: z.string().min(1),
-    nationType: z.string().min(1),
-    colorType: z.number(),
-});
-export type FoundingArgs = z.infer<typeof ARGS_SCHEMA>;
 
 export interface RandomFoundingResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -48,41 +47,14 @@ export interface RandomFoundingResolveContext<
     initYearMonth?: number;
 }
 
-const NATION_COLORS = [
-    '#FF0000',
-    '#800000',
-    '#A0522D',
-    '#FF6347',
-    '#FFA500',
-    '#FFDAB9',
-    '#FFD700',
-    '#FFFF00',
-    '#7CFC00',
-    '#00FF00',
-    '#808000',
-    '#008000',
-    '#2E8B57',
-    '#008080',
-    '#20B2AA',
-    '#6495ED',
-    '#7FFFD4',
-    '#AFEEEE',
-    '#87CEEB',
-    '#00FFFF',
-    '#00BFFF',
-    '#0000FF',
-    '#000080',
-    '#483D8B',
-    '#7B68EE',
-    '#BA55D3',
-    '#800080',
-    '#FF00FF',
-    '#FFC0CB',
-    '#F5F5DC',
-    '#E0FFFF',
-    '#FFFFFF',
-    '#A9A9A9',
-];
+type InclusiveRandomGenerator = GeneralActionResolveContext['rng'] & {
+    nextIntInclusive?: (maxInclusive: number) => number;
+};
+
+const legacyChoiceIndex = (rng: GeneralActionResolveContext['rng'], length: number): number => {
+    const inclusive = rng as InclusiveRandomGenerator;
+    return inclusive.nextIntInclusive ? inclusive.nextIntInclusive(length - 1) : rng.nextInt(0, length);
+};
 
 export class ActionDefinition<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -94,7 +66,7 @@ export class ActionDefinition<
     }
 
     parseArgs(raw: unknown): FoundingArgs | null {
-        return parseArgsWithSchema(ARGS_SCHEMA, raw);
+        return parseArgsWithSchema(FOUNDING_ARGS_SCHEMA, raw);
     }
 
     buildMinConstraints(_ctx: ConstraintContext, _args: FoundingArgs): Constraint[] {
@@ -131,10 +103,6 @@ export class ActionDefinition<
             return { effects: [], alternative: { commandKey: 'che_인재탐색', args: {} } };
         }
 
-        if (args.colorType < 0 || args.colorType >= NATION_COLORS.length) {
-            throw new Error('Invalid color type');
-        }
-
         const candidates = (context.allCities ?? []).filter(
             (city) => city.nationId === 0 && [5, 6].includes(city.level)
         );
@@ -147,7 +115,7 @@ export class ActionDefinition<
             return { effects: [], alternative: { commandKey: 'che_해산', args: {} } };
         }
 
-        const picked = candidates[context.rng.nextInt(0, candidates.length)]!;
+        const picked = candidates[legacyChoiceIndex(context.rng, candidates.length)]!;
         const cityId = picked.id;
 
         const josaNationUl = JosaUtil.pick(args.nationName, '을');
@@ -161,25 +129,33 @@ export class ActionDefinition<
         });
         context.addLog(`<Y>${general.name}</>${josaGeneralYi} <G><b>${picked.name}</b></>에 국가를 건설하였습니다.`, {
             scope: LogScope.SYSTEM,
-            category: LogCategory.ACTION,
+            category: LogCategory.SUMMARY,
+            format: LogFormat.MONTH,
         });
         context.addLog(
-            `<Y><b>【건국】</b></>${args.nationType} <D><b>${args.nationName}</b></>${josaNationYi} 새로이 등장하였습니다.`,
+            `<Y><b>【건국】</b></>${getNationTypeDisplayName(args.nationType)} <D><b>${args.nationName}</b></>${josaNationYi} 새로이 등장하였습니다.`,
             {
                 scope: LogScope.SYSTEM,
                 category: LogCategory.HISTORY,
+                format: LogFormat.YEAR_MONTH,
             }
         );
         context.addLog(`<D><b>${args.nationName}</b></>${josaNationUl} 건국`, {
             scope: LogScope.GENERAL,
             category: LogCategory.HISTORY,
+            format: LogFormat.YEAR_MONTH,
         });
         context.addLog(`<Y>${general.name}</>${josaGeneralYi} <D><b>${args.nationName}</b></>${josaNationUl} 건국`, {
             scope: LogScope.NATION,
             category: LogCategory.HISTORY,
+            format: LogFormat.YEAR_MONTH,
         });
 
-        tryApplyUniqueLottery(context, { acquireType: '건국', reason: ACTION_NAME });
+        tryApplyUniqueLottery(context, {
+            acquireType: '건국',
+            reason: ACTION_NAME,
+            nationName: args.nationName,
+        });
 
         const effects: Array<GeneralActionEffect<TriggerState>> = [
             createNationPatchEffect(
@@ -200,6 +176,7 @@ export class ActionDefinition<
             createCityPatchEffect(
                 {
                     nationId: nation.id,
+                    conflict: {},
                 },
                 cityId
             ),
@@ -248,6 +225,6 @@ export const commandSpec: GeneralTurnCommandSpec = {
         nationType: 'string',
         colorType: 'number',
     },
-    argsSchema: ARGS_SCHEMA,
+    argsSchema: FOUNDING_ARGS_SCHEMA,
     createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
 };

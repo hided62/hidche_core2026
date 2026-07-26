@@ -787,7 +787,7 @@ describe('Reserved Turn Execution Integration', () => {
                     generalId: 1,
                     turnIdx: 1,
                     actionCode: 'che_건국',
-                    arg: { nationName: 'NewEmpire', nationType: 'che_def', colorType: 0 },
+                    arg: { nationName: 'NewEmpire', nationType: 'che_도적', colorType: 0 },
                 },
                 { generalId: 2, turnIdx: 1, actionCode: 'che_농지개간', arg: {} },
                 // 2
@@ -798,7 +798,7 @@ describe('Reserved Turn Execution Integration', () => {
                     generalId: 1,
                     turnIdx: 3,
                     actionCode: 'che_건국',
-                    arg: { nationName: 'NewEmpire', nationType: 'che_def', colorType: 0 },
+                    arg: { nationName: 'NewEmpire', nationType: 'che_도적', colorType: 0 },
                 },
                 { generalId: 2, turnIdx: 3, actionCode: 'che_농지개간', arg: {} },
                 // 4
@@ -809,7 +809,7 @@ describe('Reserved Turn Execution Integration', () => {
                     generalId: 1,
                     turnIdx: 5,
                     actionCode: 'che_건국',
-                    arg: { nationName: 'NewEmpire', nationType: 'che_def', colorType: 0 },
+                    arg: { nationName: 'NewEmpire', nationType: 'che_도적', colorType: 0 },
                 },
                 { generalId: 2, turnIdx: 5, actionCode: 'che_농지개간', arg: {} },
             ];
@@ -1058,7 +1058,7 @@ describe('Reserved Turn Execution Integration', () => {
                     generalId: 1,
                     turnIdx: 0,
                     actionCode: 'che_건국',
-                    arg: { nationName: 'Empire', nationType: 'che_def', colorType: 0 },
+                    arg: { nationName: 'Empire', nationType: 'che_도적', colorType: 0 },
                 },
             ];
 
@@ -1102,7 +1102,7 @@ describe('Reserved Turn Execution Integration', () => {
             turnsG1[0] = { action: 'che_거병', args: {} };
             turnsG1[1] = {
                 action: 'che_건국',
-                args: { nationName: 'Empire', nationType: 'che_def', colorType: 0 },
+                args: { nationName: 'Empire', nationType: 'che_도적', colorType: 0 },
             };
             await reservedTurnStore.flushChanges();
 
@@ -1112,6 +1112,11 @@ describe('Reserved Turn Execution Integration', () => {
                 maxGenerals: 100,
                 catchUpCap: 10,
             });
+            const uprisingNationId = world.getGeneralById(1)!.nationId;
+            expect(reservedTurnStore.peekDirtyState().nationInitializationKeys).toEqual([
+                `${uprisingNationId}:12`,
+                `${uprisingNationId}:11`,
+            ]);
             world.consumeDirtyState(); // clear logs
 
             // Execute Founding attempt (Turn 2)
@@ -1145,7 +1150,7 @@ describe('Reserved Turn Execution Integration', () => {
             const turnsG1_v2 = reservedTurnStore.getGeneralTurns(1);
             turnsG1_v2[0] = {
                 action: 'che_건국',
-                args: { nationName: 'Empire', nationType: 'che_def', colorType: 0 },
+                args: { nationName: 'Empire', nationType: 'che_도적', colorType: 0 },
             };
             await reservedTurnStore.flushChanges();
 

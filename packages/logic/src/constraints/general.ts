@@ -268,7 +268,7 @@ export const noPenalty = (penaltyKey: string): Constraint => ({
             return unknownOrDeny(ctx, [generalReq], '장수 정보가 없습니다.');
         }
 
-        const penalty = general.meta.penalty;
+        const penalty = (general as General & { penalty?: unknown }).penalty ?? general.meta.penalty;
         if (!penalty || typeof penalty !== 'object' || Array.isArray(penalty)) {
             return allow();
         }

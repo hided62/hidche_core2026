@@ -154,12 +154,10 @@ export const do거병 = (ai: GeneralAI) => {
 };
 
 export const do건국 = (ai: GeneralAI) => {
-    const mapName = ai.scenarioConfig.environment.mapName ?? 'sammo';
-    const prefix = mapName.endsWith('_') ? mapName : `${mapName}_`;
     const nationType =
         ai.aiConst.availableNationTypes.length > 0
             ? (ai.rng.choice(ai.aiConst.availableNationTypes) as string)
-            : `${prefix}def`;
+            : 'che_도적';
     const colorType = ai.rng.nextRangeInt(0, 32);
     const nationName = `㉿${Array.from(ai.general.name).slice(1).join('')}`;
 

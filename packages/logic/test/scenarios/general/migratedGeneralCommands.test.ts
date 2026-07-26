@@ -195,6 +195,7 @@ describe('migrated general commands', () => {
         expect(updatedChief.officerLevel).toBe(12);
         expect(updatedLord.officerLevel).toBe(1);
         expect(updatedLord.experience).toBe(700);
+        expect(world.getNation(nation.id)?.chiefGeneralId).toBe(chief.id);
     });
 
     it('che_선양: 제약 없는 대상에게 선양한다', async () => {
@@ -316,7 +317,7 @@ describe('migrated general commands', () => {
             capitalCityId: null,
             level: 0,
             typeCode: 'None',
-            meta: {},
+            meta: { gennum: 2 },
         });
         const city = makeCity({ id: 1, nationId: 0, level: 5 });
 
@@ -330,7 +331,11 @@ describe('migrated general commands', () => {
                 generalId: lord.id,
                 commandKey: 'cr_건국',
                 resolver: foundNationSpec.createDefinition(SYSTEM_ENV),
-                args: { nationName: '신국', nationType: 'che_def', colorType: 1 },
+                args: { nationName: '신국', nationType: 'che_도적', colorType: 1 },
+                context: {
+                    currentYearMonth: 201 * 12,
+                    initYearMonth: 200 * 12,
+                },
             },
         ]);
 

@@ -265,24 +265,16 @@ export const differentDestNation = (): Constraint => ({
 export const reqNationGeneralCount = (min: number): Constraint => ({
     name: 'reqNationGeneralCount',
     requires: (ctx) => {
-        const reqs: RequirementKey[] = [{ kind: 'generalList' }];
+        const reqs: RequirementKey[] = [];
         if (ctx.nationId !== undefined) {
             reqs.push({ kind: 'nation', id: ctx.nationId });
         } else {
             reqs.push({ kind: 'general', id: ctx.actorId });
+            reqs.push({ kind: 'nationList' });
         }
         return reqs;
     },
     test: (ctx, view) => {
-        const listReq: RequirementKey = { kind: 'generalList' };
-        if (!view.has(listReq)) {
-            return unknownOrDeny(ctx, [listReq], '장수가 없습니다.');
-        }
-        const generals = view.get(listReq) as General[] | null;
-        if (!generals) {
-            return unknownOrDeny(ctx, [listReq], '장수가 없습니다.');
-        }
-
         let baseNationId = ctx.nationId;
         if (baseNationId === undefined) {
             const general = readGeneral(ctx, view);
@@ -296,7 +288,16 @@ export const reqNationGeneralCount = (min: number): Constraint => ({
             baseNationId = general.nationId;
         }
 
-        const count = generals.filter((g) => g.nationId === baseNationId).length;
+        const nationReq: RequirementKey =
+            ctx.nationId !== undefined ? { kind: 'nation', id: baseNationId } : { kind: 'nationList' };
+        const nation =
+            ctx.nationId !== undefined
+                ? (view.get(nationReq) as Nation | null)
+                : ((view.get(nationReq) as Nation[] | null)?.find((entry) => entry.id === baseNationId) ?? null);
+        if (!nation) {
+            return unknownOrDeny(ctx, [nationReq], '국가 정보가 없습니다.');
+        }
+        const count = typeof nation.meta.gennum === 'number' ? nation.meta.gennum : 0;
         if (count >= min) {
             return allow();
         }

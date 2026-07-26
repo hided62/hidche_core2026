@@ -144,7 +144,7 @@ describe('Blank Start Scenario', () => {
 
     const FOUNDING_ARGS = {
         nationName: 'NewChosen',
-        nationType: 'che_def',
+        nationType: 'che_도적',
         colorType: 1,
     };
 
@@ -218,6 +218,7 @@ describe('Blank Start Scenario', () => {
             nationId: newNationId,
             officerLevel: 1,
         } as General;
+        world.getNation(newNationId)!.meta.gennum = 2;
 
         // --- Step 3: Gen 0 performs Founding ---
         // First, check name duplicate
@@ -232,7 +233,7 @@ describe('Blank Start Scenario', () => {
             power: 0,
             level: 1,
             typeCode: 'che_def',
-            meta: {},
+            meta: { gennum: 2 },
         };
         world.snapshot.nations.push(duplicateNation);
         const ctxDuplicate = createConstraintContext(world.getGeneral(gen0.id)!, 189, {
@@ -263,6 +264,10 @@ describe('Blank Start Scenario', () => {
                 commandKey: 'che_건국',
                 resolver: foundNationDef,
                 args: FOUNDING_ARGS,
+                context: {
+                    currentYearMonth: 189 * 12 + 2,
+                    initYearMonth: 189 * 12,
+                },
             },
         ]);
 
@@ -293,7 +298,7 @@ describe('Blank Start Scenario', () => {
             power: 0,
             level: 0,
             typeCode: 'che_def',
-            meta: {},
+            meta: { gennum: 2 },
         };
         world.snapshot.nations.push(newNation);
         const gen0Idx = world.snapshot.generals.findIndex((g) => g.id === gen0.id);

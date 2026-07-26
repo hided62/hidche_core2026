@@ -1261,6 +1261,12 @@ export const createReservedTurnHandler = async (options: {
                 if (resolution.created?.nations) {
                     const newNations = resolution.created.nations as Nation[];
                     createdNations.push(...newNations);
+                    if (actionKey === 'che_거병') {
+                        for (const nation of newNations) {
+                            options.reservedTurns.ensureNationTurns(nation.id, 12);
+                            options.reservedTurns.ensureNationTurns(nation.id, 11);
+                        }
+                    }
                     if (worldOverlay) {
                         for (const nation of newNations) {
                             worldOverlay.syncNation(nation);

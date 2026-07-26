@@ -2240,6 +2240,192 @@ integration('general resignation, retirement, and abdication boundary, state, an
     );
 });
 
+type GeneralFoundingRebellionBoundaryCase = {
+    name: string;
+    action: 'che_거병' | 'che_모반시도' | 'che_건국' | 'cr_건국' | 'che_무작위건국';
+    args?: Record<string, unknown>;
+    actorPatch?: Record<string, unknown>;
+    fixturePatches?: FixturePatches;
+    completed: boolean;
+    expectedActionKey?: string;
+    compareLogs?: boolean;
+};
+
+const foundingArgs = { nationName: '신국', nationType: 'che_도적', colorType: 1 };
+const wanderingFoundingFixture = (overrides: FixturePatches = {}): FixturePatches => ({
+    ...overrides,
+    world: { startYear: 180, initYear: 180, initMonth: 1, year: 181, ...overrides.world },
+    nations: {
+        ...overrides.nations,
+        1: { level: 0, capitalCityId: 0, typeCode: 'None', generalCount: 2, ...overrides.nations?.[1] },
+    },
+    cities: {
+        ...overrides.cities,
+        3: { nationId: 0, level: 5, ...overrides.cities?.[3] },
+    },
+});
+
+const generalFoundingRebellionBoundaryCases: GeneralFoundingRebellionBoundaryCase[] = [
+    {
+        name: 'uprising rejects a no-founding penalty from the general column',
+        action: 'che_거병',
+        actorPatch: { nationId: 0, officerLevel: 0, penalty: { noFoundNation: true } },
+        fixturePatches: { world: { startYear: 180, year: 181 } },
+        completed: false,
+    },
+    {
+        name: 'uprising rejects a remaining join-action cooldown',
+        action: 'che_거병',
+        actorPatch: { nationId: 0, officerLevel: 0, makeLimit: 1 },
+        fixturePatches: { world: { startYear: 180, year: 181 } },
+        completed: false,
+    },
+    {
+        name: 'uprising trims a duplicate full-width nation name and preserves logs',
+        action: 'che_거병',
+        actorPatch: { name: '가나다라마바사아자차', nationId: 0, officerLevel: 0 },
+        fixturePatches: {
+            world: { startYear: 180, year: 181 },
+            nations: { 1: { name: '가나다라마바사아자차' } },
+        },
+        completed: true,
+        compareLogs: true,
+    },
+    {
+        name: 'rebellion rejects an active monarch',
+        action: 'che_모반시도',
+        actorPatch: { officerLevel: 11 },
+        fixturePatches: { generals: { 3: { officerLevel: 12, officerCityId: 3, killTurn: 999_999 } } },
+        completed: false,
+    },
+    {
+        name: 'rebellion rejects an npc monarch',
+        action: 'che_모반시도',
+        actorPatch: { officerLevel: 11 },
+        fixturePatches: { generals: { 3: { officerLevel: 12, officerCityId: 3, killTurn: 0, npcState: 2 } } },
+        completed: false,
+    },
+    {
+        name: 'rebellion rounds the former monarch experience and transfers the chief cache',
+        action: 'che_모반시도',
+        actorPatch: { officerLevel: 11 },
+        fixturePatches: {
+            generals: { 3: { officerLevel: 12, officerCityId: 3, killTurn: 0, experience: 1001 } },
+        },
+        completed: true,
+        compareLogs: true,
+    },
+    ...(['che_건국', 'cr_건국', 'che_무작위건국'] as const).map((action) => ({
+        name: `${action} rejects a fractional color index`,
+        action,
+        args: { ...foundingArgs, colorType: 1.5 },
+        fixturePatches: wanderingFoundingFixture(),
+        completed: false,
+    })),
+    {
+        name: 'founding rejects a nation name wider than eighteen legacy columns',
+        action: 'che_건국',
+        args: { ...foundingArgs, nationName: '가나다라마바사아자차' },
+        fixturePatches: wanderingFoundingFixture(),
+        completed: false,
+    },
+    {
+        name: 'founding rejects an unavailable nation type',
+        action: 'che_건국',
+        args: { ...foundingArgs, nationType: 'che_없는국가형' },
+        fixturePatches: wanderingFoundingFixture(),
+        completed: false,
+    },
+    ...(['che_건국', 'cr_건국', 'che_무작위건국'] as const).map((action) => ({
+        name: `${action} uses the cached nation general count`,
+        action,
+        args: foundingArgs,
+        fixturePatches: wanderingFoundingFixture({ nations: { 1: { generalCount: 1 } } }),
+        completed: false,
+    })),
+    {
+        name: 'founding continues into talent scout during the initial month',
+        action: 'che_건국',
+        args: foundingArgs,
+        fixturePatches: wanderingFoundingFixture({
+            world: { startYear: 180, initYear: 181, initMonth: 1, year: 181 },
+        }),
+        completed: false,
+        expectedActionKey: 'che_인재탐색',
+    },
+    {
+        name: 'restricted founding continues into talent scout during the initial month',
+        action: 'cr_건국',
+        args: foundingArgs,
+        fixturePatches: wanderingFoundingFixture({
+            world: { startYear: 180, initYear: 181, initMonth: 1, year: 181 },
+        }),
+        completed: false,
+        expectedActionKey: 'che_인재탐색',
+    },
+    ...(['che_건국', 'cr_건국', 'che_무작위건국'] as const).map((action) => ({
+        name: `${action} clears the founding city conflict and preserves success logs`,
+        action,
+        args: foundingArgs,
+        fixturePatches: wanderingFoundingFixture({
+            cities: { 3: { conflict: { 2: 7 } } },
+            randomFoundingCandidateCityIds: action === 'che_무작위건국' ? [3] : undefined,
+        }),
+        completed: true,
+        compareLogs: true,
+    })),
+];
+
+integration('general uprising, rebellion, and founding boundary, state, RNG, and log parity', () => {
+    it.each(generalFoundingRebellionBoundaryCases)(
+        '$name',
+        async ({
+            name,
+            action,
+            args,
+            actorPatch,
+            fixturePatches,
+            completed,
+            expectedActionKey,
+            compareLogs,
+        }) => {
+            const request = buildRequest(action, args, actorPatch, fixturePatches);
+            request.setup!.world!.hiddenSeed = `general-founding-rebellion-${name}`;
+            if (action === 'che_거병') {
+                request.observe!.nationIds!.push(3);
+            }
+            request.observe!.includeGlobalHistoryLogs = true;
+            request.observe!.includeNationHistoryLogs = true;
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+            const actionKey = expectedActionKey ?? (completed ? action : '휴식');
+
+            expect(reference.execution.outcome).toMatchObject({ completed });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: action,
+                actionKey,
+                usedFallback: !completed && actionKey === '휴식',
+            });
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+
+            if (compareLogs) {
+                expect(semanticLogSignatures(core.after.logs)).toEqual(
+                    semanticLogSignatures(addedReferenceLogs(reference.before, reference.after.logs))
+                );
+            }
+        },
+        120_000
+    );
+});
+
 type SabotageProbabilityClampCase = {
     name: string;
     action: 'che_화계' | 'che_선동' | 'che_파괴' | 'che_탈취';

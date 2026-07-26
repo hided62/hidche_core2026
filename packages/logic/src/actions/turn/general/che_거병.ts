@@ -13,11 +13,12 @@ import {
     createDiplomacyPatchEffect,
     createNationAddEffect,
 } from '@sammo-ts/logic/actions/engine.js';
-import { LogCategory, LogFormat } from '@sammo-ts/logic/logging/types.js';
+import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { ActionContextBuilder, ActionContextBase } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
+import { getLegacyStringWidth } from '@sammo-ts/logic/troop/management.js';
 
 export interface UprisingArgs {}
 
@@ -29,6 +30,19 @@ export interface UprisingContext extends ActionContextBase {
 }
 
 const ACTION_NAME = '거병';
+const truncateLegacyWidth = (value: string, maxWidth: number): string => {
+    let result = '';
+    let width = 0;
+    for (const character of value) {
+        const characterWidth = getLegacyStringWidth(character);
+        if (width + characterWidth > maxWidth) {
+            break;
+        }
+        result += character;
+        width += characterWidth;
+    }
+    return result;
+};
 
 export class ActionDefinition<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -65,8 +79,7 @@ export class ActionDefinition<
         const nations = uprisingCtx.listNations ? uprisingCtx.listNations() : [];
 
         if (nations.some((n) => n.name === nationName)) {
-            nationName = '㉥' + nationName;
-            if (nationName.length > 18) nationName = nationName.substring(0, 18);
+            nationName = truncateLegacyWidth('㉥' + nationName, 18);
         }
 
         if (nations.some((n) => n.name === nationName)) {
@@ -88,7 +101,7 @@ export class ActionDefinition<
             color: '#330000',
             typeCode: 'che_중립',
             level: 0,
-            capitalCityId: null,
+            capitalCityId: 0,
             chiefGeneralId: general.id,
             gold: 0,
             rice: uprisingCtx.baseRice,
@@ -110,24 +123,29 @@ export class ActionDefinition<
             category: LogCategory.ACTION,
             format: LogFormat.MONTH,
         });
-        context.addLog(`${general.name}${josaYi} ${cityName}에 거병하였습니다.`, {
-            category: LogCategory.USER,
-            format: LogFormat.PLAIN,
+        context.addLog(`<Y>${general.name}</>${josaYi} <G><b>${cityName}</b></>에 거병하였습니다.`, {
+            scope: LogScope.SYSTEM,
+            category: LogCategory.SUMMARY,
+            format: LogFormat.MONTH,
         });
-        context.addLog(`【거병】${general.name}${josaYi} 세력을 결성하였습니다.`, {
+        context.addLog(
+            `<Y><b>【거병】</b></><D><b>${general.name}</b></>${josaYi} 세력을 결성하였습니다.`,
+            {
+                scope: LogScope.SYSTEM,
+                category: LogCategory.HISTORY,
+                format: LogFormat.YEAR_MONTH,
+            }
+        );
+        context.addLog(`<G><b>${cityName}</b></>에서 거병`, {
             category: LogCategory.HISTORY,
-            format: LogFormat.PLAIN,
-        });
-        context.addLog(`${cityName}에서 거병`, {
-            category: LogCategory.HISTORY,
-            format: LogFormat.PLAIN,
-        });
-        context.addLog(`${general.name}${josaYi} ${cityName}에서 거병`, {
-            category: LogCategory.HISTORY,
-            format: LogFormat.PLAIN,
+            format: LogFormat.YEAR_MONTH,
         });
 
-        tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
+        tryApplyUniqueLottery(context, {
+            acquireType: '아이템',
+            reason: ACTION_NAME,
+            nationName,
+        });
 
         const effects: GeneralActionEffect<TriggerState>[] = [
             createNationAddEffect(newNation),

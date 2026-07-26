@@ -14,7 +14,11 @@ import type {
     GeneralActionOutcome,
     GeneralActionResolveContext,
 } from '@sammo-ts/logic/actions/engine.js';
-import { createGeneralPatchEffect, createLogEffect } from '@sammo-ts/logic/actions/engine.js';
+import {
+    createGeneralPatchEffect,
+    createLogEffect,
+    createNationPatchEffect,
+} from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import { JosaUtil } from '@sammo-ts/common';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
@@ -118,7 +122,7 @@ export class ActionDefinition<
             createGeneralPatchEffect(
                 {
                     officerLevel: 1,
-                    experience: Math.floor(lord.experience * 0.7),
+                    experience: Math.round(lord.experience * 0.7),
                     meta: {
                         ...lord.meta,
                         officer_city: 0,
@@ -126,7 +130,8 @@ export class ActionDefinition<
                     },
                 },
                 lord.id
-            )
+            ),
+            createNationPatchEffect({ chiefGeneralId: general.id }, nation.id)
         );
 
         return { effects };
