@@ -199,8 +199,15 @@ of 80, integer persistence after multiplying crew/train/atmosphere by 0.98,
 and the target-general injury log for fire attack, agitation and destruction.
 They restore the legacy Korean particle in the log, add the two missing logs,
 and round rather than floor the integer fields.
+Five general alternative cases cover disband and random-appointment fallback
+to talent search, both random-founding alternatives, and sortie fallback to
+movement. The alternative command reuses the original requested-action RNG
+instance and current consumption position. Six pre-required-turn cases cover
+battle-preparation terms 1 through 3 plus the first intermediate turn of both
+trait resets and retirement. They compare the exact intermediate `lastTurn`,
+progress log, zero command-RNG consumption and semantic state delta.
 This is not yet a claim that every command-specific
-constraint, clamp, alternative and persistence boundary has been dynamically
+constraint, clamp and persistence boundary has been dynamically
 compared.
 
 The fixture runner also reports whether the requested legacy command reached
