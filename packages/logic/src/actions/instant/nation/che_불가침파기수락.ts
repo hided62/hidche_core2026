@@ -1,4 +1,4 @@
-import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
+import type { General, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
     allowDiplomacyBetweenStatus,
@@ -6,21 +6,29 @@ import {
     existsDestGeneral,
     existsDestNation,
     notBeNeutral,
-    reqDestNationValue,
 } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
-import { createDiplomacyPatchEffect, createLogEffect } from '@sammo-ts/logic/actions/engine.js';
-import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
-import { JosaUtil } from '@sammo-ts/common';
+import {
+    destGeneralBelongsToDestNation,
+    resolveInstantDiplomacyResponse,
+} from '@sammo-ts/logic/diplomacy/instantResponse.js';
 
 export interface NonAggressionCancelAcceptArgs {
     destNationId: number;
     destGeneralId: number;
 }
 
+export interface NonAggressionCancelAcceptContext<
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
+> extends GeneralActionResolveContext<TriggerState> {
+    destNation: Nation;
+    destGeneral: General<TriggerState>;
+    currentYear: number;
+    currentMonth: number;
+}
+
 const ACTION_NAME = '불가침 파기 수락';
-const DIPLOMACY_NEUTRAL = 2;
 const DIPLOMACY_NON_AGGRESSION = 7;
 
 const parseNationId = (raw: unknown): number | null => {
@@ -40,7 +48,11 @@ const parseGeneralId = (raw: unknown): number | null => {
 // 불가침 파기 수락은 메시지와 연결되는 즉시 국가 커맨드로 사용한다.
 export class ActionDefinition<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
-> implements GeneralActionDefinition<TriggerState, NonAggressionCancelAcceptArgs> {
+> implements GeneralActionDefinition<
+    TriggerState,
+    NonAggressionCancelAcceptArgs,
+    NonAggressionCancelAcceptContext<TriggerState>
+> {
     public readonly key = 'che_불가침파기수락';
     public readonly name = ACTION_NAME;
 
@@ -60,47 +72,32 @@ export class ActionDefinition<
             notBeNeutral(),
             existsDestNation(),
             existsDestGeneral(),
-            reqDestNationValue('level', '국가규모', '>', 0, '상대국 정보가 없습니다.'),
+            destGeneralBelongsToDestNation(),
             allowDiplomacyBetweenStatus([DIPLOMACY_NON_AGGRESSION], '불가침 중인 상대국에게만 가능합니다.'),
         ];
     }
 
     resolve(
-        context: GeneralActionResolveContext<TriggerState>,
-        args: NonAggressionCancelAcceptArgs
+        context: NonAggressionCancelAcceptContext<TriggerState>,
+        _args: NonAggressionCancelAcceptArgs
     ): GeneralActionOutcome<TriggerState> {
-        const nationId = context.nation?.id;
-        if (nationId === undefined || nationId <= 0) {
-            return {
-                effects: [
-                    createLogEffect(`${ACTION_NAME}을 준비했지만 국가 정보가 없습니다.`, {
-                        scope: LogScope.GENERAL,
-                        category: LogCategory.ACTION,
-                        format: LogFormat.MONTH,
-                    }),
-                ],
-            };
+        const nation = context.nation;
+        if (!nation) {
+            return { effects: [] };
         }
-
-        const destNationName = String(args.destNationId);
-        const josaWa = JosaUtil.pick(destNationName, '와');
-
+        const resolution = resolveInstantDiplomacyResponse<TriggerState>(
+            {
+                actor: context.general,
+                actorNation: nation,
+                proposer: context.destGeneral,
+                proposerNation: context.destNation,
+                currentYear: context.currentYear,
+                currentMonth: context.currentMonth,
+            },
+            { action: 'cancelNA' }
+        );
         return {
-            effects: [
-                createDiplomacyPatchEffect(nationId, args.destNationId, {
-                    state: DIPLOMACY_NEUTRAL,
-                    term: 0,
-                }),
-                createDiplomacyPatchEffect(args.destNationId, nationId, {
-                    state: DIPLOMACY_NEUTRAL,
-                    term: 0,
-                }),
-                createLogEffect(`<D><b>${destNationName}</b></>${josaWa}의 불가침을 파기했습니다.`, {
-                    scope: LogScope.GENERAL,
-                    category: LogCategory.ACTION,
-                    format: LogFormat.MONTH,
-                }),
-            ],
+            effects: resolution.effects,
         };
     }
 }

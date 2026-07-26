@@ -207,11 +207,13 @@ watch(
                         :target-mailbox="targetMailbox"
                         :draft-text="messageDraftText"
                         :mailbox-options="mailboxOptions"
+                        :can-respond-diplomacy="messages?.canRespondDiplomacy ?? false"
                         @update:target-mailbox="targetMailbox = $event"
                         @update:draft-text="messageDraftText = $event"
                         @send="dashboard.sendMessage"
                         @load-older="dashboard.loadOlderMessages"
                         @refresh="dashboard.refreshMessages"
+                        @respond="dashboard.respondToMessage"
                     />
                 </PanelCard>
             </div>
@@ -240,11 +242,13 @@ watch(
                         :target-mailbox="targetMailbox"
                         :draft-text="messageDraftText"
                         :mailbox-options="mailboxOptions"
+                        :can-respond-diplomacy="messages?.canRespondDiplomacy ?? false"
                         @update:target-mailbox="targetMailbox = $event"
                         @update:draft-text="messageDraftText = $event"
                         @send="dashboard.sendMessage"
                         @load-older="dashboard.loadOlderMessages"
                         @refresh="dashboard.refreshMessages"
+                        @respond="dashboard.respondToMessage"
                     />
                 </PanelCard>
             </div>

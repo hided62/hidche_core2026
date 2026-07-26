@@ -8,6 +8,7 @@ interface MessageEntry {
     text: string;
     time: string;
     msgType: MessageType;
+    option?: Record<string, unknown> | null;
 }
 
 interface MessageBucket {
@@ -23,6 +24,7 @@ const props = defineProps<{
     targetMailbox: number;
     draftText: string;
     mailboxOptions: Array<{ label: string; value: number; disabled?: boolean }>;
+    canRespondDiplomacy: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -31,6 +33,7 @@ const emit = defineEmits<{
     (event: 'send'): void;
     (event: 'refresh'): void;
     (event: 'load-older', type: MessageType): void;
+    (event: 'respond', messageId: number, response: boolean): void;
 }>();
 
 const messageTabs: Array<{ key: MessageType; label: string }> = [
@@ -52,6 +55,19 @@ const activeMessages = computed(() => {
 const setMailbox = (value: string) => {
     const parsed = Number(value);
     emit('update:targetMailbox', Number.isFinite(parsed) ? parsed : 0);
+};
+
+const isDiplomacyPrompt = (message: MessageEntry): boolean =>
+    message.msgType === 'diplomacy' &&
+    (message.option?.action === 'noAggression' ||
+        message.option?.action === 'cancelNA' ||
+        message.option?.action === 'stopWar');
+
+const respond = (messageId: number, response: boolean) => {
+    if (!window.confirm(response ? '수락하시겠습니까?' : '거절하시겠습니까?')) {
+        return;
+    }
+    emit('respond', messageId, response);
 };
 </script>
 
@@ -99,14 +115,20 @@ const setMailbox = (value: string) => {
         <div v-if="props.loading">
             <SkeletonLines :lines="4" />
         </div>
-        <div v-else-if="!props.messages" class="empty">
-            메시지를 불러오지 못했습니다.
-        </div>
+        <div v-else-if="!props.messages" class="empty">메시지를 불러오지 못했습니다.</div>
         <div v-else class="message-list">
             <div v-if="activeMessages.length === 0" class="empty">메시지가 없습니다.</div>
             <div v-else>
                 <div v-for="message in activeMessages" :key="message.id" class="message-item">
                     <div class="text">{{ message.text }}</div>
+                    <div v-if="isDiplomacyPrompt(message)" class="message-response">
+                        <button class="accept" :disabled="!canRespondDiplomacy" @click="respond(message.id, true)">
+                            수락
+                        </button>
+                        <button class="decline" :disabled="!canRespondDiplomacy" @click="respond(message.id, false)">
+                            거절
+                        </button>
+                    </div>
                     <div class="time">{{ message.time }}</div>
                 </div>
                 <button class="load-older" @click="emit('load-older', activeTab)">이전 메시지</button>
@@ -181,6 +203,34 @@ const setMailbox = (value: string) => {
     margin-top: 4px;
     font-size: 0.65rem;
     color: rgba(232, 221, 196, 0.6);
+}
+
+.message-response {
+    display: flex;
+    justify-content: flex-end;
+    gap: 4px;
+    margin-top: 5px;
+    margin-right: 5px;
+}
+
+.message-response button {
+    border: 1px solid rgba(201, 164, 90, 0.4);
+    padding: 3px 10px;
+    font-size: 0.7rem;
+    cursor: pointer;
+}
+
+.message-response .accept {
+    color: #8fd18f;
+}
+
+.message-response .decline {
+    color: #e09a9a;
+}
+
+.message-response button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
 }
 
 .load-older {

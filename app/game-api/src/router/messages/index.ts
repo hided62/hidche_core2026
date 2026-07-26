@@ -22,6 +22,7 @@ import {
 import { publishRealtimeEvent } from '../../realtime/publisher.js';
 import { getOwnedGeneral } from '../shared/general.js';
 import { resolveNationPermission } from '../nation/shared.js';
+import { respondToDiplomaticMessage } from '../../messages/diplomaticResponse.js';
 
 const zMessageType = z.enum(['private', 'public', 'national', 'diplomacy']);
 
@@ -45,8 +46,8 @@ export const messagesRouter = router({
                 diplomacy: MESSAGE_MAILBOX_NATIONAL_BASE + nationId,
             } satisfies Record<MessageType, number>;
 
-            const [privateMessages, publicMessages, nationalMessages, diplomacyMessages, readState] = await Promise.all(
-                [
+            const [privateMessages, publicMessages, nationalMessages, diplomacyMessages, readState, nation] =
+                await Promise.all([
                     fetchMessagesFromMailbox({
                         db: ctx.db,
                         mailbox: mailboxes.private,
@@ -76,8 +77,13 @@ export const messagesRouter = router({
                         fromSeq: sequence,
                     }),
                     ctx.db.messageReadState.findUnique({ where: { generalId: general.id } }),
-                ]
-            );
+                    nationId > 0
+                        ? ctx.db.nation.findUnique({
+                              where: { id: nationId },
+                              select: { meta: true },
+                          })
+                        : null,
+                ]);
 
             const messageBuckets: Record<MessageType, MessageView[]> = {
                 private: privateMessages,
@@ -122,6 +128,10 @@ export const messagesRouter = router({
                 sequence: nextSequence,
                 nationId: nationId,
                 generalName: general.name,
+                canRespondDiplomacy:
+                    general.officerLevel > 4 &&
+                    nation !== null &&
+                    resolveNationPermission(general, nation.meta, false) >= 4,
                 latestRead: {
                     diplomacy: readState?.latestDiplomacyMessage ?? 0,
                     private: readState?.latestPrivateMessage ?? 0,
@@ -234,6 +244,40 @@ export const messagesRouter = router({
             const ids = [message.id, ...(typeof receiverMessageId === 'number' ? [receiverMessageId] : [])];
             await invalidateMessages(ctx.db, ids);
             return { ok: true, deletedIds: ids };
+        }),
+    respond: authedProcedure
+        .input(
+            z.object({
+                generalId: z.number().int().positive(),
+                messageId: z.number().int().positive(),
+                response: z.boolean(),
+            })
+        )
+        .mutation(async ({ ctx, input }) => {
+            const general = await getOwnedGeneral(ctx, input.generalId);
+            const result = await respondToDiplomaticMessage({
+                db: ctx.db,
+                actor: general,
+                messageId: input.messageId,
+                response: input.response,
+            });
+            if (result.result) {
+                for (const mailbox of result.affectedMailboxes) {
+                    try {
+                        await publishRealtimeEvent(ctx.redis, ctx.profile.name, {
+                            type: 'messageCreated',
+                            at: new Date().toISOString(),
+                            mailbox,
+                            msgType: 'diplomacy',
+                            messageId: input.messageId,
+                            senderId: general.id,
+                        });
+                    } catch {
+                        // 실시간 알림 실패는 외교 응답 실패로 취급하지 않는다.
+                    }
+                }
+            }
+            return { result: result.result, reason: result.reason };
         }),
     getOld: authedProcedure
         .input(

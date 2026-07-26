@@ -30,11 +30,11 @@ export interface CanonicalTurnCommandTrace {
     schemaVersion: 1;
     engine: CanonicalEngine;
     execution: {
-        kind: 'general' | 'nation';
+        kind: 'general' | 'nation' | 'instantNation';
         actorGeneralId: number;
         action: string;
         args: unknown;
-        seedDomain: 'generalCommand' | 'nationCommand';
+        seedDomain: 'generalCommand' | 'nationCommand' | 'none';
         outcome?: unknown;
     };
     before: CanonicalTurnSnapshot;
