@@ -32,6 +32,7 @@ export interface RandomMoveCapitalResolveContext<
 > extends GeneralActionResolveContext<TriggerState> {
     neutralCandidateCities: City[];
     nationGenerals: General<TriggerState>[];
+    oldCapitalCity?: City;
 }
 
 const ACTION_NAME = '무작위 수도 이전';
@@ -81,13 +82,14 @@ export class ActionDefinition<
         context: RandomMoveCapitalResolveContext<TriggerState>,
         _args: RandomMoveCapitalArgs
     ): GeneralActionOutcome<TriggerState> {
-        const { general, nation, neutralCandidateCities, nationGenerals, rng } = context;
+        const { general, nation, neutralCandidateCities, nationGenerals, oldCapitalCity, rng } = context;
         if (!nation) {
             return { effects: [createLogEffect('국가 정보가 없습니다.', { scope: LogScope.GENERAL })] };
         }
 
         if (neutralCandidateCities.length === 0) {
             return {
+                completed: false,
                 effects: [
                     createLogEffect(`이동할 수 있는 도시가 없습니다.`, {
                         scope: LogScope.GENERAL,
@@ -124,6 +126,7 @@ export class ActionDefinition<
             createCityPatchEffect(
                 {
                     nationId: nation.id,
+                    conflict: {},
                 },
                 destCity.id
             ),
@@ -132,6 +135,11 @@ export class ActionDefinition<
                 {
                     nationId: 0,
                     frontState: 0,
+                    conflict: {},
+                    meta: {
+                        ...oldCapitalCity?.meta,
+                        officer_set: 0,
+                    },
                 },
                 oldCityId!
             ),
@@ -213,11 +221,13 @@ export const actionContextBuilder: ActionContextBuilder = (base, options) => {
     const allCities = worldRef.listCities();
     const neutralCandidateCities = allCities.filter((c) => c.nationId === 0 && c.level >= 5 && c.level <= 6);
     const nationGenerals = worldRef.listGenerals().filter((g) => g.nationId === base.general.nationId);
+    const oldCapitalCity = base.nation?.capitalCityId ? worldRef.getCityById(base.nation.capitalCityId) : undefined;
 
     return {
         ...base,
         neutralCandidateCities,
         nationGenerals,
+        ...(oldCapitalCity ? { oldCapitalCity } : {}),
     };
 };
 

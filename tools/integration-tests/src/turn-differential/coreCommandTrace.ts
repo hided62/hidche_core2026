@@ -18,10 +18,7 @@ import type {
     TurnWorldSnapshot,
     TurnWorldState,
 } from '@sammo-ts/game-engine/turn/types.js';
-import {
-    applyPersistedRankRowsToMeta,
-    buildLegacyComparableRankRows,
-} from '@sammo-ts/game-engine/turn/rankData.js';
+import { applyPersistedRankRowsToMeta, buildLegacyComparableRankRows } from '@sammo-ts/game-engine/turn/rankData.js';
 
 import {
     canonicalizeTurnCommandArgs,
@@ -121,6 +118,10 @@ class TracingRng implements RNG {
 
 const asRecord = (value: unknown): Record<string, unknown> =>
     typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+const asNumberRecord = (value: unknown): Record<string, number> =>
+    Object.fromEntries(
+        Object.entries(asRecord(value)).filter((entry): entry is [string, number] => typeof entry[1] === 'number')
+    );
 
 const readNumber = (record: Record<string, unknown>, key: string, fallback = 0): number => {
     const value = record[key];
@@ -392,12 +393,13 @@ const buildWorldInput = (
                 id: definition.id,
                 name: readString(row, 'name', definition.name),
                 nationId: readNumber(row, 'nationId'),
-                level:
-                    randomFoundingCandidateCityIds === null
-                        ? readNumber(row, 'level', definition.level)
-                        : randomFoundingCandidateCityIds.has(definition.id)
-                          ? 5
-                          : 4,
+                level: observedCityRows.has(definition.id)
+                    ? readNumber(row, 'level', definition.level)
+                    : randomFoundingCandidateCityIds === null
+                      ? definition.level
+                      : randomFoundingCandidateCityIds.has(definition.id)
+                        ? 5
+                        : 4,
                 state: readNumber(row, 'state'),
                 population: readNumber(row, 'population', definition.initial.population),
                 populationMax: readNumber(row, 'populationMax', definition.max.population),
@@ -413,10 +415,12 @@ const buildWorldInput = (
                 defenceMax: readNumber(row, 'defenceMax', definition.max.defence),
                 wall: readNumber(row, 'wall', definition.initial.wall),
                 wallMax: readNumber(row, 'wallMax', definition.max.wall),
+                conflict: asNumberRecord(row.conflict),
                 meta: {
                     trust: readNumber(row, 'trust', map.defaults?.trust ?? 50),
                     trade: readNumber(row, 'trade', map.defaults?.trade ?? 100),
                     term: readNumber(row, 'term'),
+                    officer_set: readNumber(row, 'officerSet'),
                 },
             };
         }),
@@ -567,10 +571,12 @@ const projectWorld = (
                 defenceMax: city.defenceMax,
                 wall: toDatabaseInt(city.wall),
                 wallMax: city.wallMax,
+                conflict: city.conflict ?? {},
                 state: city.state,
                 term: readNumber(city.meta, 'term'),
                 trust: readNumber(city.meta, 'trust'),
                 trade: readNumber(city.meta, 'trade'),
+                officerSet: readNumber(city.meta, 'officer_set'),
             })),
         nations: nations
             .filter((nation) => selector.nationIds.has(nation.id))

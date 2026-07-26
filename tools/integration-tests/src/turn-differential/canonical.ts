@@ -169,10 +169,12 @@ export const projectCoreDatabaseSnapshot = (rows: {
             defenceMax: row.defenceMax,
             wall: row.wall,
             wallMax: row.wallMax,
+            conflict: asRecord(row.conflict),
             state: readNumber(meta, 'state'),
             term: readNumber(meta, 'term'),
             trust: row.trust,
             trade: row.trade,
+            officerSet: readNumber(meta, 'officer_set'),
         };
     });
     const nations = rows.nations.map((row) => {

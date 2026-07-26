@@ -105,6 +105,7 @@ export type GeneralActionEffect<TriggerState extends GeneralTriggerState = Gener
 
 export interface GeneralActionOutcome<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     effects: GeneralActionEffect<TriggerState>[];
+    completed?: boolean;
     alternative?: {
         commandKey: string;
         args: unknown;
@@ -120,6 +121,7 @@ export interface GeneralActionResolution {
     general: General;
     city?: City;
     nation?: Nation | null;
+    completed: boolean;
     nextTurnAt: Date;
     logs: LogEntryDraft[];
     effects: GeneralActionEffect[];
@@ -381,6 +383,7 @@ export const resolveGeneralAction = <TriggerState extends GeneralTriggerState = 
     const resolution: GeneralActionResolution = {
         general: nextWorld.general as General,
         nation: nextWorld.nation as Nation | null,
+        completed: outcome?.completed !== false,
         nextTurnAt,
         logs,
         effects: pendingEffects,
