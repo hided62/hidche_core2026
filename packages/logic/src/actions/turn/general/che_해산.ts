@@ -15,6 +15,7 @@ import {
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import { JosaUtil } from '@sammo-ts/common';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
+import { resolveInitYearMonth } from '@sammo-ts/logic/actions/turn/actionContextHelpers.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 
@@ -145,33 +146,19 @@ export class ActionDefinition<
     }
 }
 
-const resolveStartYear = (currentYear: number, raw: unknown): number => {
-    if (typeof raw === 'number' && Number.isFinite(raw)) {
-        return Math.floor(raw);
-    }
-    if (typeof raw === 'string') {
-        const parsed = Number(raw);
-        if (Number.isFinite(parsed)) {
-            return Math.floor(parsed);
-        }
-    }
-    return currentYear;
-};
-
 export const actionContextBuilder: ActionContextBuilder = (base, options) => {
     const nationId = base.nation?.id ?? base.general.nationId;
     const worldRef = options.worldRef;
     const currentYear = options.world.currentYear;
     const currentMonth = options.world.currentMonth;
-    const initYear = resolveStartYear(currentYear, options.scenarioMeta?.startYear);
-    const initMonth = 1;
+    const init = resolveInitYearMonth(options.world, options.scenarioMeta);
 
     return {
         ...base,
         nationGenerals: worldRef?.listGenerals().filter((general) => general.nationId === nationId) ?? [],
         nationCities: worldRef?.listCities().filter((city) => city.nationId === nationId) ?? [],
         currentYearMonth: currentYear * 12 + currentMonth - 1,
-        initYearMonth: initYear * 12 + initMonth - 1,
+        initYearMonth: init.year * 12 + init.month - 1,
     };
 };
 

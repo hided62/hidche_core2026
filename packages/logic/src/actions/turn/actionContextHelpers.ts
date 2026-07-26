@@ -110,6 +110,31 @@ export const resolveStartYear = (world: ActionContextWorldState, scenarioMeta?: 
     return world.currentYear;
 };
 
+const readFiniteInteger = (value: unknown, fallback: number): number => {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return Math.floor(value);
+    }
+    if (typeof value === 'string') {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) {
+            return Math.floor(parsed);
+        }
+    }
+    return fallback;
+};
+
+export const resolveInitYearMonth = (
+    world: ActionContextWorldState,
+    scenarioMeta?: ScenarioMeta
+): { year: number; month: number } => {
+    const meta = asRecord(world.meta);
+    const startYear = resolveStartYear(world, scenarioMeta);
+    return {
+        year: readFiniteInteger(meta.initYear, startYear),
+        month: readFiniteInteger(meta.initMonth, 1),
+    };
+};
+
 export const resolveTurnTermMinutes = (world: ActionContextWorldState): number =>
     Math.max(1, Math.round(world.tickSeconds / 60));
 
