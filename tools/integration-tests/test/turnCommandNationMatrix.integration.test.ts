@@ -59,7 +59,21 @@ const general = (id: number, nationId: number, cityId: number, officerLevel: num
     meta: {},
 });
 
-const buildRequest = (action: string, args?: Record<string, unknown>): TurnCommandFixtureRequest => ({
+interface FixturePatches {
+    world?: Partial<NonNullable<NonNullable<TurnCommandFixtureRequest['setup']>['world']>>;
+    generals?: Record<number, Record<string, unknown>>;
+    nations?: Record<number, Record<string, unknown>>;
+    cities?: Record<number, Record<string, unknown>>;
+    troops?: Array<Record<string, unknown>>;
+    diplomacy?: Record<string, Record<string, unknown>>;
+    randomFoundingCandidateCityIds?: number[];
+}
+
+const buildRequest = (
+    action: string,
+    args?: Record<string, unknown>,
+    fixturePatches: FixturePatches = {}
+): TurnCommandFixtureRequest => ({
     kind: 'nation',
     actorGeneralId: 1,
     action,
@@ -71,6 +85,7 @@ const buildRequest = (action: string, args?: Record<string, unknown>): TurnComma
             year: 190,
             month: 1,
             hiddenSeed: 'turn-command-nation-matrix-v1',
+            ...fixturePatches.world,
         },
         nations: [
             {
@@ -86,6 +101,7 @@ const buildRequest = (action: string, args?: Record<string, unknown>): TurnComma
                 diplomacyLimit: 0,
                 generalCount: 2,
                 meta: { can_국호변경: 1, can_국기변경: 1, surlimit: 0 },
+                ...fixturePatches.nations?.[1],
             },
             {
                 id: 2,
@@ -100,6 +116,7 @@ const buildRequest = (action: string, args?: Record<string, unknown>): TurnComma
                 diplomacyLimit: 0,
                 generalCount: 1,
                 meta: { surlimit: 0 },
+                ...fixturePatches.nations?.[2],
             },
         ],
         cities: [
@@ -118,6 +135,7 @@ const buildRequest = (action: string, args?: Record<string, unknown>): TurnComma
                 term: 0,
                 trust: 80,
                 trade: 100,
+                ...fixturePatches.cities?.[3],
             },
             {
                 id: 70,
@@ -134,12 +152,35 @@ const buildRequest = (action: string, args?: Record<string, unknown>): TurnComma
                 term: 0,
                 trust: 80,
                 trade: 100,
+                ...fixturePatches.cities?.[70],
             },
         ],
-        generals: [general(1, 1, 3, 12), general(2, 2, 70, 12), general(3, 1, 3, 1)],
+        generals: [
+            { ...general(1, 1, 3, 12), ...fixturePatches.generals?.[1] },
+            { ...general(2, 2, 70, 12), ...fixturePatches.generals?.[2] },
+            { ...general(3, 1, 3, 1), ...fixturePatches.generals?.[3] },
+        ],
+        ...(fixturePatches.troops ? { troops: fixturePatches.troops } : {}),
+        ...(fixturePatches.randomFoundingCandidateCityIds
+            ? { randomFoundingCandidateCityIds: fixturePatches.randomFoundingCandidateCityIds }
+            : {}),
         diplomacy: [
-            { fromNationId: 1, toNationId: 2, state: 3, term: 0, dead: 0 },
-            { fromNationId: 2, toNationId: 1, state: 3, term: 0, dead: 0 },
+            {
+                fromNationId: 1,
+                toNationId: 2,
+                state: 3,
+                term: 0,
+                dead: 0,
+                ...fixturePatches.diplomacy?.['1:2'],
+            },
+            {
+                fromNationId: 2,
+                toNationId: 1,
+                state: 3,
+                term: 0,
+                dead: 0,
+                ...fixturePatches.diplomacy?.['2:1'],
+            },
         ],
     },
     observe: {
@@ -151,7 +192,7 @@ const buildRequest = (action: string, args?: Record<string, unknown>): TurnComma
     },
 });
 
-const cases: Array<[string, Record<string, unknown> | undefined]> = [
+const cases: Array<[string, Record<string, unknown> | undefined, FixturePatches?]> = [
     ['휴식', undefined],
     ['che_포상', { isGold: true, amount: 100, destGeneralID: 3 }],
     ['che_선전포고', { destNationID: 2 }],
@@ -160,13 +201,94 @@ const cases: Array<[string, Record<string, unknown> | undefined]> = [
     ['che_몰수', { isGold: true, amount: 100, destGeneralID: 3 }],
     ['che_물자원조', { destNationID: 2, amountList: [100, 200] }],
     ['che_불가침제의', { destNationID: 2, year: 191, month: 1 }],
+    [
+        'che_부대탈퇴지시',
+        { destGeneralID: 3 },
+        {
+            generals: { 1: { troopId: 1 }, 3: { troopId: 1 } },
+            troops: [{ id: 1, nationId: 1, name: '조조군' }],
+        },
+    ],
+    ['che_발령', { destGeneralID: 3, destCityID: 70 }, { cities: { 70: { nationId: 1 } } }],
+    ['che_종전제의', { destNationID: 2 }, { diplomacy: { '1:2': { state: 0 }, '2:1': { state: 0 } } }],
+    ['che_불가침파기제의', { destNationID: 2 }, { diplomacy: { '1:2': { state: 7 }, '2:1': { state: 7 } } }],
+    ['cr_인구이동', { destCityID: 70, amount: 1000 }, { cities: { 70: { nationId: 1, supplyState: 1 } } }],
+    [
+        'che_천도',
+        { destCityID: 70 },
+        {
+            nations: {
+                1: {
+                    capitalRevision: 0,
+                    turnLastByOfficerLevel: {
+                        12: {
+                            command: '천도',
+                            arg: { destCityID: 70 },
+                            term: 2,
+                            seq: 0,
+                        },
+                    },
+                },
+            },
+            cities: { 70: { nationId: 1, supplyState: 1 } },
+        },
+    ],
+    [
+        'che_증축',
+        undefined,
+        {
+            nations: {
+                1: {
+                    capitalRevision: 0,
+                    turnLastByOfficerLevel: {
+                        12: { command: '증축', arg: {}, term: 5, seq: 0 },
+                    },
+                },
+            },
+            cities: { 3: { level: 7 } },
+        },
+    ],
+    [
+        'che_감축',
+        undefined,
+        {
+            nations: {
+                1: {
+                    capitalRevision: 0,
+                    turnLastByOfficerLevel: {
+                        12: { command: '감축', arg: {}, term: 5, seq: 0 },
+                    },
+                },
+            },
+            cities: { 3: { level: 9 } },
+        },
+    ],
+    [
+        'che_무작위수도이전',
+        undefined,
+        {
+            world: { year: 181 },
+            nations: {
+                1: {
+                    meta: {
+                        can_무작위수도이전: 1,
+                    },
+                    turnLastByOfficerLevel: {
+                        12: { command: '무작위 수도 이전', arg: {}, term: 1 },
+                    },
+                },
+            },
+            cities: { 70: { nationId: 0, supplyState: 0 } },
+            randomFoundingCandidateCityIds: [70],
+        },
+    ],
 ];
 
 integration('nation command success matrix', () => {
     it.each(cases)(
         '%s matches the legacy state delta and command RNG',
-        async (action, args) => {
-            const request = buildRequest(action, args);
+        async (action, args, fixturePatches) => {
+            const request = buildRequest(action, args, fixturePatches);
             const reference = runReferenceTurnCommandTraceRequest(
                 workspaceRoot!,
                 request as unknown as Record<string, unknown>

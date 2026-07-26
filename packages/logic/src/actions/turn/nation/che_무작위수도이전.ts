@@ -36,6 +36,15 @@ export interface RandomMoveCapitalResolveContext<
 
 const ACTION_NAME = '무작위 수도 이전';
 
+type InclusiveRandomGenerator = GeneralActionResolveContext['rng'] & {
+    nextIntInclusive?: (maxInclusive: number) => number;
+};
+
+const legacyChoiceIndex = (rng: GeneralActionResolveContext['rng'], length: number): number => {
+    const inclusive = rng as InclusiveRandomGenerator;
+    return inclusive.nextIntInclusive ? inclusive.nextIntInclusive(length - 1) : rng.nextInt(0, length);
+};
+
 export class ActionDefinition<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionDefinition<
@@ -89,7 +98,8 @@ export class ActionDefinition<
             };
         }
 
-        const destCity = neutralCandidateCities[rng.nextInt(0, neutralCandidateCities.length)]!;
+        // 레거시 RandUtil::choice()는 후보가 하나뿐이어도 nextInt(0)을 소비한다.
+        const destCity = neutralCandidateCities[legacyChoiceIndex(rng, neutralCandidateCities.length)]!;
         const oldCityId = nation.capitalCityId;
         const generalName = general.name;
         const nationName = nation.name;

@@ -245,6 +245,7 @@ const buildGeneral = (row: Record<string, unknown>, turnTime: Date): TurnGeneral
 const buildNation = (row: Record<string, unknown>, generals: TurnGeneral[]): Nation => {
     const id = readNumber(row, 'id');
     const meta = asRecord(row.meta);
+    const turnLastByOfficerLevel = asRecord(row.turnLastByOfficerLevel);
     return {
         id,
         name: readString(row, 'name', `국가${id}`),
@@ -258,10 +259,17 @@ const buildNation = (row: Record<string, unknown>, generals: TurnGeneral[]): Nat
         typeCode: readString(row, 'typeCode', 'che_중립'),
         meta: {
             ...meta,
+            ...Object.fromEntries(
+                Object.entries(turnLastByOfficerLevel).map(([officerLevel, lastTurn]) => [
+                    `turn_last_${officerLevel}`,
+                    lastTurn,
+                ])
+            ),
             tech: readNumber(row, 'tech', readNumber(meta, 'tech')),
             gennum: readNumber(row, 'generalCount', readNumber(meta, 'gennum')),
             war: readNumber(row, 'war', readNumber(meta, 'war')),
             surlimit: readNumber(row, 'diplomacyLimit', readNumber(meta, 'surlimit')),
+            capset: readNumber(row, 'capitalRevision', readNumber(meta, 'capset')),
         },
     };
 };
@@ -276,7 +284,16 @@ const buildWorldInput = (
     const month = readNumber(referenceBefore.world, 'month', request.setup?.world?.month ?? 1);
     const turnTime = new Date(`${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-01T00:00:00.000Z`);
     const generals = referenceBefore.generals.map((row) => buildGeneral(row, turnTime));
-    const nations = referenceBefore.nations.map((row) => buildNation(row, generals));
+    const fixtureNations = new Map((request.setup?.nations ?? []).map((row) => [readNumber(row, 'id'), row] as const));
+    const nations = referenceBefore.nations.map((row) =>
+        buildNation(
+            {
+                ...row,
+                turnLastByOfficerLevel: fixtureNations.get(readNumber(row, 'id'))?.turnLastByOfficerLevel,
+            },
+            generals
+        )
+    );
     const observedCityRows = new Map(referenceBefore.cities.map((row) => [readNumber(row, 'id'), row] as const));
     const randomFoundingCandidateCityIds = request.setup?.randomFoundingCandidateCityIds
         ? new Set(request.setup.randomFoundingCandidateCityIds)
@@ -511,6 +528,7 @@ const projectWorld = (
                 power: nation.power,
                 war: readNumber(nation.meta, 'war'),
                 diplomacyLimit: readNumber(nation.meta, 'surlimit'),
+                capitalRevision: readNumber(nation.meta, 'capset'),
                 meta: nation.meta,
             })),
         diplomacy: world
