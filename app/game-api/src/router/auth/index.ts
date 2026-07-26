@@ -1,5 +1,6 @@
 import { TRPCError } from '@trpc/server';
 import { decryptGameSessionToken } from '@sammo-ts/common/auth/gameToken';
+import { isGameAccessBlocked } from '@sammo-ts/common/auth/sanctions';
 import { isAfter, isValid, parseISO } from 'date-fns';
 import { z } from 'zod';
 
@@ -56,6 +57,12 @@ export const authRouter = router({
                 throw new TRPCError({
                     code: 'UNAUTHORIZED',
                     message: 'Invalid gateway token.',
+                });
+            }
+            if (isGameAccessBlocked(payload.sanctions, [ctx.profile.name, ctx.profile.id])) {
+                throw new TRPCError({
+                    code: 'FORBIDDEN',
+                    message: 'Game access is restricted for this account.',
                 });
             }
             const flushedAt = ctx.flushStore.getFlushedAt(payload.user.id);

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { initTRPC, TRPCError } from '@trpc/server';
+import { isGameAccessBlocked } from '@sammo-ts/common/auth/sanctions';
 
 import type { GameApiContext } from './context.js';
 import { IdempotentTurnDaemonTransport } from './daemon/idempotentTransport.js';
@@ -12,6 +13,13 @@ const requireAuthMiddleware = t.middleware(({ ctx, next }) => {
         throw new TRPCError({
             code: 'UNAUTHORIZED',
             message: 'Unauthorized',
+        });
+    }
+    const profileNames = ctx.profile ? [ctx.profile.name, ctx.profile.id] : [];
+    if (isGameAccessBlocked(ctx.auth.sanctions, profileNames)) {
+        throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'Game access is restricted for this account.',
         });
     }
     return next({

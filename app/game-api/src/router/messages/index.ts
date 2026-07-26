@@ -2,6 +2,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { asRecord } from '@sammo-ts/common';
 import type { UserSanctions } from '@sammo-ts/common/auth/gameToken';
+import { isMessageAccessBlocked } from '@sammo-ts/common/auth/sanctions';
 
 import { authedProcedure, router } from '../../trpc.js';
 import {
@@ -47,35 +48,8 @@ const redactDiplomacyMessages = (messages: MessageView[], permission: number): M
     });
 };
 
-const isFutureDate = (value: string | undefined, now = Date.now()): boolean => {
-    if (!value) {
-        return false;
-    }
-    const parsed = Date.parse(value);
-    return Number.isFinite(parsed) && parsed > now;
-};
-
 const isMessageFeatureBlocked = (sanctions: UserSanctions, profileNames: string[]): boolean => {
-    if (
-        isFutureDate(sanctions.mutedUntil) ||
-        isFutureDate(sanctions.suspendedUntil) ||
-        isFutureDate(sanctions.bannedUntil)
-    ) {
-        return true;
-    }
-    for (const profileName of profileNames) {
-        const restriction = sanctions.serverRestrictions?.[profileName];
-        if (!restriction) {
-            continue;
-        }
-        if (restriction.until && !isFutureDate(restriction.until)) {
-            continue;
-        }
-        if (restriction.blockedFeatures?.includes('messages')) {
-            return true;
-        }
-    }
-    return false;
+    return isMessageAccessBlocked(sanctions, profileNames);
 };
 
 const readPenaltyNumber = (penalty: unknown, key: string, fallback: number): number => {

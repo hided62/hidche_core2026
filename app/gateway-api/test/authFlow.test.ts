@@ -13,7 +13,7 @@ import { createGatewayApiContext } from '../src/context.js';
 import { InMemoryProfileStatusService } from '../src/lobby/profileStatusService.js';
 import { appRouter } from '../src/router.js';
 import type { GatewayPrismaClient } from '@sammo-ts/infra';
-import { decryptGameSessionToken } from '@sammo-ts/common/auth/gameToken';
+import { decryptGameSessionToken, type UserSanctions } from '@sammo-ts/common/auth/gameToken';
 import { createPasswordEnvelopeService } from '../src/auth/passwordEnvelope.js';
 
 const buildCaller = (options: { userIconDir?: string; localAccountGraceDays?: number } = {}) => {
@@ -223,6 +223,90 @@ describe('gateway auth flow', () => {
         expect(login.user.username).toBe('local-user');
     });
 
+    it('blocks password login while a ban is active and allows it after expiry', async () => {
+        const { caller, users, sealPassword } = buildCaller();
+        await caller.auth.registerLocal({
+            username: 'banned-user',
+            credential: sealPassword('banned-password'),
+            displayName: '차단유저',
+            termsAgreed: true,
+            privacyAgreed: true,
+            thirdPartyUse: false,
+        });
+        const user = await users.findByUsername('banned-user');
+        expect(user).not.toBeNull();
+        await users.updateSanctions(user!.id, {
+            bannedUntil: '2099-01-01T00:00:00.000Z',
+        });
+
+        await expect(
+            caller.auth.login({
+                username: 'banned-user',
+                credential: sealPassword('banned-password'),
+            })
+        ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+
+        await users.updateSanctions(user!.id, {
+            bannedUntil: '2000-01-01T00:00:00.000Z',
+        });
+        await expect(
+            caller.auth.login({
+                username: 'banned-user',
+                credential: sealPassword('banned-password'),
+            })
+        ).resolves.toMatchObject({ user: { username: 'banned-user' } });
+    });
+
+    const gameSessionRestrictionCases: Array<{ label: string; sanctions: UserSanctions }> = [
+        {
+            label: 'global suspension',
+            sanctions: { suspendedUntil: '2099-01-01T00:00:00.000Z' },
+        },
+        {
+            label: 'profile login restriction',
+            sanctions: {
+                serverRestrictions: {
+                    'che:default': {
+                        blockedFeatures: ['login'],
+                    },
+                },
+            },
+        },
+        {
+            label: 'base profile gameplay restriction',
+            sanctions: {
+                serverRestrictions: {
+                    che: {
+                        blockedFeatures: ['gameplay'],
+                        until: '2099-01-01T00:00:00.000Z',
+                    },
+                },
+            },
+        },
+    ];
+
+    it.each(gameSessionRestrictionCases)('blocks game-session issuance for $label', async ({ sanctions }) => {
+        const { caller, users, sealPassword } = buildCaller();
+        const register = await caller.auth.registerLocal({
+            username: `restricted-${Object.keys(sanctions)[0]}`,
+            credential: sealPassword('restricted-password'),
+            displayName: '제한유저',
+            termsAgreed: true,
+            privacyAgreed: true,
+            thirdPartyUse: false,
+        });
+        const user = await users.findByUsername(register.user.username);
+        expect(user).not.toBeNull();
+        await users.updateSanctions(user!.id, sanctions);
+
+        await expect(
+            caller.auth.issueGameSession({
+                sessionToken: register.sessionToken,
+                profile: 'che:default',
+            })
+        ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+
     it('blocks pre-verification general creation on che but grants the hwe grace period', async () => {
         const { caller, sealPassword, setSessionHeader } = buildCaller();
         const register = await caller.auth.registerLocal({
@@ -322,6 +406,43 @@ describe('gateway auth flow', () => {
             email: 'tester@example.com',
         });
         expect(stored?.kakaoVerifiedAt).toBeTruthy();
+    });
+
+    it('blocks Kakao login while a ban is active', async () => {
+        const { caller, users, sealPassword, setSessionHeader } = buildCaller();
+        const register = await caller.auth.registerLocal({
+            username: 'kakao-banned-user',
+            credential: sealPassword('kakao-banned-password'),
+            displayName: '카카오제재유저',
+            termsAgreed: true,
+            privacyAgreed: true,
+            thirdPartyUse: false,
+        });
+        setSessionHeader(register.sessionToken);
+        const verifyStart = await caller.auth.kakaoStart({ mode: 'verify' });
+        await caller.auth.kakaoExchange({
+            code: 'oauth-code',
+            state: verifyStart.state,
+        });
+
+        const stored = await users.findByUsername('kakao-banned-user');
+        expect(stored).not.toBeNull();
+        if (stored) {
+            await users.updateSanctions(stored.id, {
+                bannedUntil: new Date(Date.now() + 60_000).toISOString(),
+            });
+        }
+
+        const loginStart = await caller.auth.kakaoStart({ mode: 'login' });
+        await expect(
+            caller.auth.kakaoExchange({
+                code: 'oauth-code',
+                state: loginStart.state,
+            })
+        ).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+            message: 'Account login is blocked.',
+        });
     });
 
     it('carries the bootstrap superuser role into game sessions', async () => {

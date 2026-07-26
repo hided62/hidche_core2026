@@ -23,6 +23,21 @@ const profile: GameProfile = {
     name: 'che:default',
 };
 
+const buildAuth = (sanctions: GameSessionTokenPayload['sanctions'] = {}): GameSessionTokenPayload => ({
+    version: 1,
+    profile: profile.name,
+    issuedAt: new Date('2026-01-01T00:00:00Z').toISOString(),
+    expiresAt: new Date('2026-01-02T00:00:00Z').toISOString(),
+    sessionId: 'session-1',
+    user: {
+        id: 'user-1',
+        username: 'tester',
+        displayName: 'Tester',
+        roles: ['admin'],
+    },
+    sanctions,
+});
+
 const buildGeneralRow = (overrides?: Partial<GeneralRow>): GeneralRow => {
     const base: GeneralRow = {
         id: 1,
@@ -137,20 +152,7 @@ const buildContext = (options?: {
         },
         profile.name
     );
-    const defaultAuth: GameSessionTokenPayload = {
-        version: 1,
-        profile: profile.name,
-        issuedAt: new Date('2026-01-01T00:00:00Z').toISOString(),
-        expiresAt: new Date('2026-01-02T00:00:00Z').toISOString(),
-        sessionId: 'session-1',
-        user: {
-            id: 'user-1',
-            username: 'tester',
-            displayName: 'Tester',
-            roles: ['admin'],
-        },
-        sanctions: {},
-    };
+    const defaultAuth = buildAuth();
     const auth = options && 'auth' in options ? (options.auth ?? null) : defaultAuth;
     return {
         db: db as unknown as DatabaseClient,
@@ -169,6 +171,64 @@ const buildContext = (options?: {
 };
 
 describe('appRouter', () => {
+    const blockedGameAccessCases: Array<{
+        label: string;
+        sanctions: GameSessionTokenPayload['sanctions'];
+    }> = [
+        {
+            label: 'global suspension',
+            sanctions: { suspendedUntil: '2099-01-01T00:00:00.000Z' },
+        },
+        {
+            label: 'instance gameplay restriction',
+            sanctions: {
+                serverRestrictions: {
+                    'che:default': { blockedFeatures: ['game'] },
+                },
+            },
+        },
+        {
+            label: 'base-profile wildcard restriction',
+            sanctions: {
+                serverRestrictions: {
+                    che: { blockedFeatures: ['*'], until: '2099-01-01T00:00:00.000Z' },
+                },
+            },
+        },
+    ];
+
+    it.each(blockedGameAccessCases)('blocks authenticated game API access for $label', async ({ sanctions }) => {
+        const caller = appRouter.createCaller(
+            buildContext({
+                auth: buildAuth(sanctions),
+                general: buildGeneralRow({ id: 11 }),
+            })
+        );
+
+        await expect(caller.turns.reserved.getGeneral({ generalId: 11 })).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+        });
+    });
+
+    it('does not apply an expired or message-only restriction to other game APIs', async () => {
+        const caller = appRouter.createCaller(
+            buildContext({
+                auth: buildAuth({
+                    mutedUntil: '2099-01-01T00:00:00.000Z',
+                    serverRestrictions: {
+                        'che:default': {
+                            blockedFeatures: ['messages'],
+                            until: '2000-01-01T00:00:00.000Z',
+                        },
+                    },
+                }),
+                general: buildGeneralRow({ id: 11 }),
+            })
+        );
+
+        await expect(caller.turns.reserved.getGeneral({ generalId: 11 })).resolves.toBeDefined();
+    });
+
     it('rejects general creation before any game-state read when the signed identity gate denies it', async () => {
         const worldStateReads = { count: 0 };
         const auth: GameSessionTokenPayload = {

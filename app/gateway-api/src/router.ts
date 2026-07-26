@@ -5,6 +5,7 @@ import { addHours, addSeconds, isAfter, isValid, parseISO } from 'date-fns';
 import { z } from 'zod';
 
 import { decryptGameSessionToken, encryptGameSessionToken } from '@sammo-ts/common/auth/gameToken';
+import { isGameAccessBlocked, isLoginBanned } from '@sammo-ts/common/auth/sanctions';
 
 import { procedure, router } from './trpc.js';
 import { toPublicUser } from './auth/userRepository.js';
@@ -250,6 +251,12 @@ export const appRouter = router({
                             message: '연결할 로컬 계정을 찾지 못했습니다.',
                         });
                     }
+                    if (isLoginBanned(localUser.sanctions)) {
+                        throw new TRPCError({
+                            code: 'FORBIDDEN',
+                            message: 'Account login is blocked.',
+                        });
+                    }
                     if (existing && existing.id !== localUser.id) {
                         throw new TRPCError({
                             code: 'CONFLICT',
@@ -323,6 +330,12 @@ export const appRouter = router({
                 }
 
                 if (existing) {
+                    if (isLoginBanned(existing.sanctions)) {
+                        throw new TRPCError({
+                            code: 'FORBIDDEN',
+                            message: 'Account login is blocked.',
+                        });
+                    }
                     await ctx.users.updateOAuthInfo(existing.id, oauthInfo);
                     const session = await ctx.sessions.createSession(existing);
                     return {
@@ -550,6 +563,12 @@ export const appRouter = router({
                         message: 'Invalid username or password.',
                     });
                 }
+                if (isLoginBanned(user.sanctions)) {
+                    throw new TRPCError({
+                        code: 'FORBIDDEN',
+                        message: 'Account login is blocked.',
+                    });
+                }
                 const session = await ctx.sessions.createSession(user);
                 return {
                     user: toPublicUser(user),
@@ -615,6 +634,12 @@ export const appRouter = router({
                 }
                 const profileRecord = await ctx.profiles.getProfile(input.profile);
                 const profile = profileRecord?.profile ?? input.profile.split(':', 1)[0] ?? input.profile;
+                if (isGameAccessBlocked(user.sanctions, [input.profile, profile])) {
+                    throw new TRPCError({
+                        code: 'FORBIDDEN',
+                        message: 'Game access is restricted for this account.',
+                    });
+                }
                 const localAccountPolicy = resolveLocalAccountProfilePolicy({
                     profile,
                     profileMeta: profileRecord?.meta,

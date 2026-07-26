@@ -130,6 +130,56 @@ const hasScopedPermission = (adminAuth: AdminAuthContext, permission: string, pr
     return adminAuth.roles.some((role: string) => roleMatchesScope(role, permission, profileName));
 };
 
+const splitRoleScope = (role: string): { permission: string; scope?: string } => {
+    const separator = role.indexOf(':');
+    if (separator < 0) {
+        return { permission: role };
+    }
+    return {
+        permission: role.slice(0, separator),
+        scope: role.slice(separator + 1),
+    };
+};
+
+const isRootAdminRole = (role: string): boolean =>
+    role === ROLE_SUPERUSER || role === 'admin' || role === ADMIN_ROLE_SUPERUSER;
+
+const canManageRole = (adminAuth: AdminAuthContext, role: string): boolean => {
+    if (adminAuth.isSuperuser) {
+        return true;
+    }
+    if (isRootAdminRole(role)) {
+        return false;
+    }
+    const target = splitRoleScope(role);
+    return adminAuth.roles.some((callerRole) => {
+        const caller = splitRoleScope(callerRole);
+        if (caller.permission !== target.permission) {
+            return false;
+        }
+        return caller.scope === undefined || caller.scope === '*' || caller.scope === target.scope;
+    });
+};
+
+const assertRoleChangesAllowed = (
+    adminAuth: AdminAuthContext,
+    currentRoles: ReadonlySet<string>,
+    nextRoles: ReadonlySet<string>
+): void => {
+    const changedRoles = new Set([...currentRoles, ...nextRoles]);
+    for (const role of changedRoles) {
+        if (currentRoles.has(role) === nextRoles.has(role)) {
+            continue;
+        }
+        if (!canManageRole(adminAuth, role)) {
+            throw new TRPCError({
+                code: 'FORBIDDEN',
+                message: `Role change exceeds caller scope: ${role}`,
+            });
+        }
+    }
+};
+
 const assertPermission = (adminAuth: AdminAuthContext, permission: string, profileName?: string): void => {
     if (hasScopedPermission(adminAuth, permission, profileName)) {
         return;
@@ -465,7 +515,7 @@ export const adminRouter = router({
             .input(
                 z.object({
                     userId: z.string().min(1),
-                    roles: z.array(z.string().min(1)).min(1),
+                    roles: z.array(z.string().trim().min(1).max(128)).min(1),
                     mode: zUserRoleMode.optional(),
                 })
             )
@@ -478,7 +528,8 @@ export const adminRouter = router({
                     });
                 }
                 const mode = input.mode ?? 'set';
-                const roles = new Set(user.roles);
+                const currentRoles = new Set(user.roles);
+                const roles = new Set(currentRoles);
                 if (mode === 'set') {
                     roles.clear();
                     for (const role of input.roles) {
@@ -493,6 +544,8 @@ export const adminRouter = router({
                         roles.delete(role);
                     }
                 }
+                const adminAuth = requireAdminAuth(ctx);
+                assertRoleChangesAllowed(adminAuth, currentRoles, roles);
                 const nextRoles = Array.from(roles);
                 await ctx.users.updateRoles(input.userId, nextRoles);
                 await ctx.flushPublisher.publishUserFlush(input.userId, 'admin-roles-updated');

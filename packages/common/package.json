@@ -13,6 +13,10 @@
         "./auth/gameToken": {
             "types": "./dist/auth/gameToken.d.ts",
             "default": "./dist/auth/gameToken.js"
+        },
+        "./auth/sanctions": {
+            "types": "./dist/auth/sanctions.d.ts",
+            "default": "./dist/auth/sanctions.js"
         }
     },
     "scripts": {

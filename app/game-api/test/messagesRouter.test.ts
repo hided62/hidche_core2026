@@ -358,6 +358,31 @@ describe('messages router missing-flow compatibility', () => {
         });
     });
 
+    it.each(['message', 'messages'])('blocks sends for the profile feature alias %s', async (feature) => {
+        const restrictedAuth = {
+            ...auth,
+            sanctions: {
+                serverRestrictions: {
+                    'che:default': {
+                        blockedFeatures: [feature],
+                    },
+                },
+            },
+        };
+        const { caller } = buildContext({}, { auth: restrictedAuth });
+
+        await expect(
+            caller.messages.send({
+                generalId: general.id,
+                mailbox: 9999,
+                text: 'profile restriction',
+            })
+        ).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+            message: '메시지 전송이 제한된 계정입니다.',
+        });
+    });
+
     it('rejects every remaining general-scoped message mutation for another user general', async () => {
         const foreignGeneral = { ...general, userId: 'user-8' } as GeneralRow;
         const { caller } = buildContext({
