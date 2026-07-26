@@ -1,12 +1,5 @@
 import type { RandomGenerator } from '@sammo-ts/common';
-import type {
-    City,
-    General,
-    GeneralMeta,
-    GeneralTriggerState,
-    Nation,
-    TriggerValue,
-} from '@sammo-ts/logic/domain/entities.js';
+import type { City, General, GeneralMeta, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
     disallowDiplomacyBetweenStatus,
@@ -350,18 +343,13 @@ export class ActionResolver<
             return { effects: [] };
         }
 
-        const updatedCityMeta: Record<string, TriggerValue> = {
-            ...context.destCity.meta,
-            state: CITY_STATE_BURNING,
-        };
-
         // 타겟 도시는 Draft가 아니므로 Effect 반환
         effects.push(
             createCityPatchEffect(
                 {
                     agriculture: context.destCity.agriculture - result.agriDamage,
                     commerce: context.destCity.commerce - result.commDamage,
-                    meta: updatedCityMeta,
+                    state: CITY_STATE_BURNING,
                 },
                 context.destCity.id
             )
