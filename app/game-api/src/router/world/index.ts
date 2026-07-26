@@ -8,6 +8,7 @@ import { asRecord, isRecord } from '@sammo-ts/common';
 import { loadWorldMap } from '../../maps/worldMap.js';
 import { loadMapLayout } from '../../maps/mapLayout.js';
 import { getMyGeneral, getOwnedGeneral } from '../shared/general.js';
+import { getGeneralDirectory, getNationDirectory } from './directory.js';
 
 const isWorldAdmin = (roles: readonly string[]): boolean =>
     roles.some((role) => role === 'superuser' || role === 'admin' || role === 'admin.superuser');
@@ -44,6 +45,8 @@ const toWorldStateSnapshot = (row: WorldStateRow) => ({
 });
 
 export const worldRouter = router({
+    getNationDirectory,
+    getGeneralDirectory,
     getGlobalInfo: authedProcedure.query(async ({ ctx }) => {
         const me = await getMyGeneral(ctx);
         const [nations, cities, diplomacy, map] = await Promise.all([

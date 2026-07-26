@@ -8,7 +8,13 @@ const baseURL = `http://127.0.0.1:${port}/che/`;
 
 export default defineConfig({
     testDir: '.',
-    testMatch: ['troop.spec.ts', 'board.spec.ts', 'inGameInfo.spec.ts', 'nationOffices.spec.ts'],
+    testMatch: [
+        'troop.spec.ts',
+        'board.spec.ts',
+        'inGameInfo.spec.ts',
+        'nationOffices.spec.ts',
+        'directoryLists.spec.ts',
+    ],
     fullyParallel: false,
     workers: 1,
     timeout: 30_000,
