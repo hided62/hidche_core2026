@@ -57,8 +57,9 @@ storage, route guards, and image loading.
 | survey               | `hwe/v_vote.php`, `hwe/ts/PageVote.vue`  | 1000/500px fixed container, blue title/green table textures, list/detail/results/comments, selection/focus/hover, submit and retained-selection API error |
 | nation personnel     | `hwe/b_myBossInfo.php`                   | fixed 1000px document at both viewports, chief icon columns, officer/permission/city/kick controls, role redaction                                        |
 | nation finance       | `hwe/v_nationStratFinan.php`             | 1000/500px at the legacy 940px breakpoint, exact diplomacy grid, policy controls, role gating and failed-mutation rollback                                |
+| NPC policy           | `hwe/v_NPCControl.php`                   | 1000/500px form and priority-list geometry, walnut/green textures, dynamic zero hints, drag/focus/tooltip, successful save and permission failures        |
 | tournament           | `hwe/b_tournament.php`                   | fixed 2000px canvas, 16×125px bracket, eight 250px group tables, walnut texture, 1024px overflow, hover/focus                                             |
-| tournament betting   | `hwe/b_betting.php`                      | fixed 1120px canvas, 16×70px candidates, four 280px rank tables, exact title/button geometry, retained selection on error                                |
+| tournament betting   | `hwe/b_betting.php`                      | fixed 1120px canvas, 16×70px candidates, four 280px rank tables, exact title/button geometry, retained selection on error                                 |
 
 The global game baseline is black, white, Pretendard 14px. Legacy texture
 helpers intentionally follow `common.orig.css`: `bg0` is walnut, `bg1` is
@@ -95,6 +96,22 @@ Set `PLAYWRIGHT_FRONTEND_PORT` when the default `15120` port is occupied. For
 reference collection, `tools/frontend-legacy-parity/reference-nation-offices.mjs`
 records desktop/500px computed DOM and screenshots from the PHP service without
 changing its product code.
+
+The NPC policy suite and its reference collector can be run independently:
+
+```sh
+PLAYWRIGHT_FRONTEND_PORT=15126 \
+  pnpm --filter @sammo-ts/game-frontend test:e2e:npc-policy
+
+REF_PARITY_USER=refuser1 \
+REF_PARITY_PASSWORD_FILE=/path/to/password-file \
+REF_PARITY_BASE_URL=http://127.0.0.1:3400/sam/ \
+  node tools/frontend-legacy-parity/reference-npc-policy.mjs
+```
+
+The collector writes desktop and 500px screenshots plus computed DOM JSON only
+when `REF_PARITY_ARTIFACT_DIR` is set. It requires an existing reference general
+owned by the supplied account and never accepts a password on the command line.
 
 For a review run that also writes full-page screenshots, create an ignored
 artifact directory and set `FRONTEND_PARITY_ARTIFACT_DIR` before invoking the
