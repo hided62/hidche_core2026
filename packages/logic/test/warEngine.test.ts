@@ -417,5 +417,8 @@ describe('resolveWarBattle', () => {
 
         expect(outcome.conquered).toBe(true);
         expect(outcome.reports.length).toBeGreaterThan(0);
+        expect(outcome.logs.map((log) => log.text)).toContain(
+            '<M><b>【패퇴】</b></><D><b>TestNation</b></>이 병량 부족으로 <G><b>TestCity</b></>를 뺏기고 말았습니다.'
+        );
     });
 });

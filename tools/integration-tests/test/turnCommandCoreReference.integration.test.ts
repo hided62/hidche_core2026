@@ -81,6 +81,7 @@ integration('core ↔ legacy command-boundary differential', () => {
             'live sortie against multiple defending generals',
             'fixtures/turn-differential/live-sortie-multiple-defenders.json',
         ],
+        ['live sortie supply retreat', 'fixtures/turn-differential/live-sortie-supply-retreat.json'],
     ])(
         '%s matches command RNG and canonical state delta',
         async (_label, fixturePath) => {
@@ -104,6 +105,13 @@ integration('core ↔ legacy command-boundary differential', () => {
                 const beforeCity = reference.before.cities.find((city) => city.id === 70);
                 const afterCity = reference.after.cities.find((city) => city.id === 70);
                 expect(Number(afterCity?.defence)).toBeLessThan(Number(beforeCity?.defence));
+            }
+            if (fixturePath.endsWith('live-sortie-supply-retreat.json')) {
+                const retreatLogs = reference.after.logs.filter(
+                    (log) => (Number(log.id) || 0) > reference.before.watermarks.historyLogId
+                );
+                expect(retreatLogs.some((log) => String(log.text).includes('병량 부족'))).toBe(true);
+                expect(reference.after.cities.find((city) => city.id === 70)?.nationId).toBe(1);
             }
 
             expect(core.execution.outcome).toMatchObject({

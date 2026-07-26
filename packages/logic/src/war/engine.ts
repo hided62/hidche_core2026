@@ -414,6 +414,13 @@ export const resolveWarBattle = <TriggerState extends GeneralTriggerState = Gene
                     `병량 부족으로 <G><b>${cityName}</b></>의 수비병들이 <R>패퇴</>합니다.`,
                     LogFormat.MONTH
                 );
+                const defenderNationName = input.defenderNation?.name ?? '재야';
+                const josaYiDefenderNation = JosaUtil.pick(defenderNationName, '이');
+                const josaUlCity = JosaUtil.pick(cityName, '을');
+                attackerLogger.pushGlobalHistoryLog(
+                    `<M><b>【패퇴】</b></><D><b>${defenderNationName}</b></>${josaYiDefenderNation} 병량 부족으로 <G><b>${cityName}</b></>${josaUlCity} 뺏기고 말았습니다.`,
+                    LogFormat.YEAR_MONTH
+                );
 
                 conquerCity = true;
                 emitTrace('supply_retreat', defender);
