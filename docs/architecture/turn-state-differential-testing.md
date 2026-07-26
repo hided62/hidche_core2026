@@ -187,6 +187,11 @@ fire attack, agitation, destruction and seizure. The zero boundary skips the
 success RNG primitive, while exactly 0.5 consumes `nextBits(1)`; the complete
 RNG trace and semantic delta match. These cases also fixed fire-attack city
 state persistence and agitation front/trust persistence differences.
+Five sabotage value-boundary cases cover zero floors for fire-attack,
+agitation and destruction city values, the supplied-nation resource cap for
+seizure, and the legacy final state of unsupplied seizure. They also remove
+destruction's unintended front recalculation and preserve the legacy
+unsupplied-seizure overwrite that leaves city resources unchanged.
 This is not yet a claim that every command-specific
 constraint, clamp, alternative and persistence boundary has been dynamically
 compared.

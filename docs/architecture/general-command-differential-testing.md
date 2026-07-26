@@ -9,7 +9,7 @@
 
 현재 ref MariaDB와 core memory를 잇는 공통 runner, 성공 경로 55개,
 실행 중 확률 실패 9개, full constraint fallback 7개와 모략 확률 clamp
-8개가 구현됐다.
+8개, 모략 결과값 경계 5개가 구현됐다.
 실패 9개는 내정 critical
 `주민선정/정착장려/상업투자/기술연구/물자조달`과 모략
 `화계/선동/파괴/탈취`이며 RNG 전체 trace, semantic state delta와 실패
@@ -17,9 +17,11 @@
 금·쌀 부족과 민심 상한을 대표하며 휴식 fallback과 RNG/state delta를
 비교한다. clamp 8개는 `화계/선동/파괴/탈취` 각각의 계산 확률 0과
 0.5 경계에서 성공 판정 RNG의 무소비 또는 `nextBits(1)` 소비와 전체
-state delta를 비교한다. 나머지 명령별 제약 실패·값 경계·alternative와 전체 core
-PostgreSQL 재조회가 완료 기준을 통과하기 전까지 55개 명령 전체의 동적
-호환 상태를 `확인`으로 올리지 않는다.
+state delta를 비교한다. 결과값 5개는 화계 농업·상업, 선동 치안·민심,
+파괴 수비·성벽의 0 바닥과 탈취의 대상 국가 자원 상한·미보급 도시 최종
+저장 상태를 비교한다. 나머지 명령별 제약 실패·값 경계·alternative와
+전체 core PostgreSQL 재조회가 완료 기준을 통과하기 전까지 55개 명령
+전체의 동적 호환 상태를 `확인`으로 올리지 않는다.
 
 ## 결정 요약
 
@@ -587,6 +589,12 @@ fixture가 명시한 필드만 비교하면 예상하지 못한 side effect를 �
 전체 city spread가 불필요한 front 재계산을 일으키는 문제와 MariaDB
 `city.trust FLOAT` 재조회 정밀도 차이도 발견해 부분 patch와 6자리
 유효숫자 저장 경계로 바로잡았다.
+
+결과값 경계 fixture에서는 파괴의 전체 city spread도 선동과 같이
+불필요한 front 재계산을 일으키는 문제를 발견해 수비·성벽·state 부분
+patch로 좁혔다. 미보급 탈취는 레거시가 자원 감소 update 뒤 원본
+`destCity.agri/comm`을 다시 저장하므로 관찰 가능한 최종 자원은 변하지
+않는다. 버그로 보이지만 호환 계약으로 보존하고 `state=32`만 남긴다.
 
 ## 55개 명령 coverage manifest
 
