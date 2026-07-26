@@ -160,8 +160,11 @@ const createCommandProfile = (request: TurnCommandFixtureRequest): TurnCommandPr
         if (!GENERAL_TURN_COMMAND_KEYS.includes(request.action as (typeof GENERAL_TURN_COMMAND_KEYS)[number])) {
             throw new Error(`Unknown general command: ${request.action}`);
         }
+        const generalActions = [request.action, '휴식', 'che_인재탐색', 'che_해산', 'che_이동'] as Array<
+            (typeof GENERAL_TURN_COMMAND_KEYS)[number]
+        >;
         return {
-            general: [request.action as (typeof GENERAL_TURN_COMMAND_KEYS)[number], '휴식'],
+            general: [...new Set(generalActions)],
             nation: ['휴식'],
         };
     }

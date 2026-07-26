@@ -209,6 +209,33 @@ const runTournamentToCompletion = async (options: {
 const delayTick = async (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe('tournament worker (in-memory)', () => {
+    it('locks 64 applicants into eight groups of eight', async () => {
+        const redis = new MemoryRedis();
+        const store = new TournamentStore(redis, buildTournamentKeys('test-groups'));
+        const state = createTournamentState({ stage: 1 });
+        await store.setParticipants(createParticipants(16, 16, 32));
+        await store.setState(state);
+
+        const next = await applyPreBattleStage(
+            store,
+            createPrismaMock({ baseSeed: 'seed' }),
+            state,
+            'seed',
+            createNoopDaemonTransport()
+        );
+        const grouped = await store.getParticipants();
+
+        expect(next).toMatchObject({ stage: 2, phase: 0 });
+        expect(next.participantsLockedAt).toBeTruthy();
+        for (let groupId = 0; groupId < 8; groupId += 1) {
+            const entries = grouped.filter((entry) => entry.groupId === groupId);
+            expect(entries).toHaveLength(8);
+            expect(entries.map((entry) => entry.groupNo).sort((a, b) => Number(a) - Number(b))).toEqual([
+                0, 1, 2, 3, 4, 5, 6, 7,
+            ]);
+        }
+    });
+
     it('64명 고정 seed 대진에서 15번 참가자가 결승을 이긴다', async () => {
         const redis = new MemoryRedis();
         const store = new TournamentStore(redis, buildTournamentKeys('test'));

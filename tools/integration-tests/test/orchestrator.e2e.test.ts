@@ -172,8 +172,8 @@ const createGameClient = (baseUrl: string, trpcPath: string, accessTokenRef: { v
         ],
     });
 
-const buildProcessName = (profileName: string, role: 'api' | 'daemon'): string =>
-    `sammo:${profileName}:${role === 'api' ? 'game-api' : 'turn-daemon'}`;
+const buildProcessName = (profileName: string, role: 'api' | 'daemon' | 'tournament'): string =>
+    `sammo:${profileName}:${role === 'api' ? 'game-api' : role === 'daemon' ? 'turn-daemon' : 'tournament-worker'}`;
 
 const waitForPm2Online = async (manager: Pm2ProcessManager, names: string[], timeoutMs = 30_000) => {
     const deadline = Date.now() + timeoutMs;
@@ -203,10 +203,7 @@ const cleanupPm2 = async (manager: Pm2ProcessManager, names: string[]) => {
     }
 };
 
-const waitForTurnDaemonStatus = async (
-    gameClient: ReturnType<typeof createGameClient>,
-    timeoutMs = 90_000
-) => {
+const waitForTurnDaemonStatus = async (gameClient: ReturnType<typeof createGameClient>, timeoutMs = 90_000) => {
     const deadline = Date.now() + timeoutMs;
     let lastError: string | null = null;
     while (Date.now() < deadline) {
@@ -415,7 +412,11 @@ describe('pm2 orchestrator e2e', () => {
         }
         profileName = `${profile}:${scenario}`;
         apiPort = Number(process.env.GAME_API_PORT ?? '14000');
-        processNames = [buildProcessName(profileName, 'api'), buildProcessName(profileName, 'daemon')];
+        processNames = [
+            buildProcessName(profileName, 'api'),
+            buildProcessName(profileName, 'daemon'),
+            buildProcessName(profileName, 'tournament'),
+        ];
 
         await resetDatabase(profile);
         await resetRedis();
@@ -439,7 +440,7 @@ describe('pm2 orchestrator e2e', () => {
         }
     }, 30_000);
 
-    it('starts game-api/turn-daemon via PM2 and serves commands', async () => {
+    it('starts game-api/turn-daemon/tournament-worker via PM2 and serves commands', async () => {
         if (!gatewayServer || !pm2Manager) {
             throw new Error('test setup failed');
         }

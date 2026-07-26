@@ -857,7 +857,8 @@ export const createReservedTurnHandler = async (options: {
                 fallbackDefinition: GeneralActionDefinition,
                 command: ReservedTurnEntry,
                 applyNextTurnAt: boolean,
-                alternativeDepth = 0
+                alternativeDepth = 0,
+                sharedActionRng?: RandUtil
             ): { nextTurnAt?: Date; actionKey: string; usedFallback: boolean; blockedReason?: string } => {
                 const resolvedDefinition = resolveDefinition(command.action, definitionMap, fallbackDefinition);
                 const rawArgs = extractArgsRecord(command.args);
@@ -954,11 +955,12 @@ export const createReservedTurnHandler = async (options: {
                     uniqueConfig,
                     getAdditionalOccupiedUniqueItemKeys: options.getAdditionalOccupiedUniqueItemKeys,
                 });
+                let actionRng = sharedActionRng ?? buildRng(actionKey);
                 let baseContext: ActionContextBase = {
                     general: currentGeneral,
                     city: currentCity,
                     nation: currentNation,
-                    rng: buildRng(actionKey),
+                    rng: actionRng,
                     uniqueLottery,
                 };
                 let specificContext = buildActionContext(
@@ -985,11 +987,12 @@ export const createReservedTurnHandler = async (options: {
                     usedFallback = true;
                     blockedReason = '예약된 명령을 실행하지 못했습니다.';
                     logs.push(createActionLog('예약된 명령을 실행하지 못했습니다.'));
+                    actionRng = sharedActionRng ?? buildRng(actionKey);
                     baseContext = {
                         general: currentGeneral,
                         city: currentCity,
                         nation: currentNation,
-                        rng: buildRng(actionKey),
+                        rng: actionRng,
                     };
                     specificContext = baseContext;
                 }
@@ -1287,7 +1290,8 @@ export const createReservedTurnHandler = async (options: {
                             args: extractArgsRecord(resolution.alternative.args),
                         },
                         applyNextTurnAt,
-                        alternativeDepth + 1
+                        alternativeDepth + 1,
+                        actionRng
                     );
                 }
 

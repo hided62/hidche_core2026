@@ -717,6 +717,117 @@ integration('general sabotage injury boundary matrix', () => {
     );
 });
 
+integration('general command alternative matrix', () => {
+    const expectAlternativeParity = async (
+        request: TurnCommandFixtureRequest,
+        expectedActionKey: string,
+        expectedLogText: string
+    ): Promise<void> => {
+        const reference = runReferenceTurnCommandTraceRequest(
+            workspaceRoot!,
+            request as unknown as Record<string, unknown>
+        );
+        const core = await runCoreTurnCommandTrace(request, reference.before);
+
+        expect(reference.execution.outcome).toMatchObject({ completed: false });
+        expect(core.execution.outcome).toMatchObject({
+            requestedAction: request.action,
+            actionKey: expectedActionKey,
+            usedFallback: false,
+        });
+        expect(
+            reference.after.logs.some((entry) => typeof entry.text === 'string' && entry.text.includes(expectedLogText))
+        ).toBe(true);
+        expect(
+            core.after.logs.some((entry) => typeof entry.text === 'string' && entry.text.includes(expectedLogText))
+        ).toBe(true);
+        expect(core.rng).toEqual(reference.rng);
+        expect(
+            compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                ignoredPathPatterns: ignoredLifecyclePaths,
+            })
+        ).toEqual([]);
+    };
+
+    it('che_해산 continues into che_인재탐색 with the legacy RNG and state delta', async () => {
+        const request = buildRequest(
+            'che_해산',
+            undefined,
+            {},
+            {
+                world: { initYear: 190, initMonth: 1 },
+                nations: { 1: { level: 0, capitalCityId: 0, typeCode: 'None' } },
+            }
+        );
+        request.setup!.world!.hiddenSeed = 'general-alternative-disband-search';
+        await expectAlternativeParity(request, 'che_인재탐색', '다음 턴부터 해산할 수 있습니다.');
+    }, 120_000);
+
+    it('che_랜덤임관 continues into che_인재탐색 when no eligible nation exists', async () => {
+        const request = buildRequest(
+            'che_랜덤임관',
+            undefined,
+            { nationId: 0, officerLevel: 0 },
+            {
+                generals: {
+                    2: { npcState: 5 },
+                    3: { npcState: 5 },
+                },
+            }
+        );
+        request.setup!.world!.hiddenSeed = 'general-alternative-random-appointment-search';
+        await expectAlternativeParity(request, 'che_인재탐색', '임관 가능한 국가가 없습니다.');
+    }, 120_000);
+
+    it('che_무작위건국 continues into che_인재탐색 during the initial month', async () => {
+        const request = buildRequest(
+            'che_무작위건국',
+            { nationName: '신국', nationType: 'che_도적', colorType: 1 },
+            {},
+            {
+                world: { startYear: 190, initYear: 190, initMonth: 1 },
+                nations: { 1: { level: 0, capitalCityId: 0, typeCode: 'None' } },
+            }
+        );
+        request.setup!.world!.hiddenSeed = 'general-alternative-random-founding-search';
+        await expectAlternativeParity(request, 'che_인재탐색', '다음 턴부터 건국할 수 있습니다.');
+    }, 120_000);
+
+    it('che_무작위건국 continues into che_해산 when no founding city exists', async () => {
+        const request = buildRequest(
+            'che_무작위건국',
+            { nationName: '신국', nationType: 'che_도적', colorType: 1 },
+            {},
+            {
+                world: { initYear: 180, initMonth: 1, year: 181 },
+                nations: { 1: { level: 0, capitalCityId: 0, typeCode: 'None' } },
+                cities: {
+                    3: { nationId: 1, level: 4 },
+                    70: { nationId: 0, level: 4 },
+                },
+                randomFoundingCandidateCityIds: [3],
+            }
+        );
+        request.setup!.world!.hiddenSeed = 'general-alternative-random-founding-disband';
+        await expectAlternativeParity(request, 'che_해산', '건국할 수 있는 도시가 없습니다.');
+    }, 120_000);
+
+    it('che_출병 continues into che_이동 when the destination belongs to the actor nation', async () => {
+        const request = buildRequest(
+            'che_출병',
+            { destCityID: 70 },
+            {},
+            {
+                world: { startYear: 180, year: 185 },
+                cities: { 70: { nationId: 1, supplyState: 1, frontState: 0 } },
+                generals: { 2: { nationId: 1 } },
+            }
+        );
+        request.setup!.world!.hiddenSeed = 'general-alternative-sortie-move';
+        await expectAlternativeParity(request, 'che_이동', '본국입니다.');
+    }, 120_000);
+});
+
 type GeneralConstraintCase = {
     name: string;
     action: string;

@@ -194,7 +194,8 @@ async function handleAdjustGeneralResources(
         }
         const nextGold = general.gold + (adjustment.goldDelta ?? 0);
         const nextRice = general.rice + (adjustment.riceDelta ?? 0);
-        if (nextGold < 0 || nextRice < 0) {
+        const minGoldAfter = adjustment.minGoldAfter ?? 0;
+        if (nextGold < minGoldAfter || nextRice < 0) {
             return { type: 'adjustGeneralResources', ok: false, reason: '자원이 부족합니다.' };
         }
     }
@@ -307,7 +308,7 @@ async function handleTournamentMatchResult(
         };
     }
 
-    const rankKey = (suffix: string): string => `rank_${prefix}${suffix}`;
+    const rankKey = (suffix: string): string => `${prefix}${suffix}`;
     const getRankNumber = (general: TurnGeneral | null, key: string): number =>
         general && typeof general.meta[key] === 'number' ? Number(general.meta[key]) : 0;
 
@@ -1394,8 +1395,8 @@ async function handleTournamentBettingPayout(
             continue;
         }
         const nextMeta = { ...general.meta } as TurnGeneral['meta'];
-        const betwinKey = 'rank_betwin';
-        const betwingoldKey = 'rank_betwingold';
+        const betwinKey = 'betwin';
+        const betwingoldKey = 'betwingold';
         const currentBetwin = typeof nextMeta[betwinKey] === 'number' ? Number(nextMeta[betwinKey]) : 0;
         const currentBetwingold = typeof nextMeta[betwingoldKey] === 'number' ? Number(nextMeta[betwingoldKey]) : 0;
         nextMeta[betwinKey] = currentBetwin + delta.betwin;

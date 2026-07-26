@@ -1,994 +1,438 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { useMediaQuery } from '@vueuse/core';
-import PanelCard from '../components/ui/PanelCard.vue';
-import SkeletonLines from '../components/ui/SkeletonLines.vue';
 import { trpc } from '../utils/trpc';
 
-type TournamentSnapshot = Awaited<ReturnType<typeof trpc.tournament.getSnapshot.query>>;
-type TournamentBettingSummary = Awaited<ReturnType<typeof trpc.tournament.getBettingSummary.query>>;
-type GeneralMe = Awaited<ReturnType<typeof trpc.general.me.query>>;
+type Snapshot = Awaited<ReturnType<typeof trpc.tournament.getSnapshot.query>>;
 
-const isMobile = useMediaQuery('(max-width: 1024px)');
-
+const snapshot = ref<Snapshot | null>(null);
+const betting = ref<Awaited<ReturnType<typeof trpc.tournament.getBettingSummary.query>> | null>(null);
+const myGeneralId = ref(0);
 const loading = ref(false);
 const error = ref<string | null>(null);
-const snapshot = ref<TournamentSnapshot | null>(null);
-const bettingSummary = ref<TournamentBettingSummary | null>(null);
-const myGeneral = ref<GeneralMe | null>(null);
-const lastActionMessage = ref<string | null>(null);
+const actionMessage = ref<string | null>(null);
 const adminEnabled = ref(false);
 
-const mobileTabs = [
-    { key: 'status', label: '상태' },
-    { key: 'bracket', label: '대진' },
-    { key: 'betting', label: '베팅' },
-] as const;
+const typeNames = ['전력전', '통솔전', '일기토', '설전'];
+const stageNames = [
+    '경기 없음',
+    '참가 모집중',
+    '예선 진행중',
+    '본선 추첨중',
+    '본선 진행중',
+    '16강 배정중',
+    '베팅 진행중',
+    '16강 진행중',
+    '8강 진행중',
+    '4강 진행중',
+    '결승 진행중',
+];
 
-type MobileTabKey = (typeof mobileTabs)[number]['key'];
-const mobileTab = ref<MobileTabKey>('status');
+const errorText = (value: unknown) => (value instanceof Error ? value.message : String(value));
 
-const resolveErrorMessage = (value: unknown): string => {
-    if (value instanceof Error) {
-        return value.message;
-    }
-    if (typeof value === 'string') {
-        return value;
-    }
-    return 'unknown_error';
-};
-
-const loadTournament = async () => {
-    if (loading.value) {
-        return;
-    }
+const load = async () => {
     loading.value = true;
     error.value = null;
-    lastActionMessage.value = null;
-
     try {
-        const [snapshotResult, bettingResult, generalResult, adminResult] = await Promise.all([
+        const [nextSnapshot, nextBetting, me, admin] = await Promise.all([
             trpc.tournament.getSnapshot.query(),
             trpc.tournament.getBettingSummary.query(),
             trpc.general.me.query(),
             trpc.tournament.getAdminStatus.query().catch(() => null),
         ]);
-        snapshot.value = snapshotResult;
-        bettingSummary.value = bettingResult;
-        myGeneral.value = generalResult;
-        adminEnabled.value = !!adminResult?.ok;
-    } catch (err) {
-        error.value = resolveErrorMessage(err);
+        snapshot.value = nextSnapshot;
+        betting.value = nextBetting;
+        myGeneralId.value = me?.general?.id ?? 0;
+        adminEnabled.value = !!admin?.ok;
+    } catch (value) {
+        error.value = errorText(value);
     } finally {
         loading.value = false;
     }
 };
 
-onMounted(() => {
-    void loadTournament();
-});
+onMounted(() => void load());
 
-const stageLabelMap: Record<number, string> = {
-    0: '경기 없음',
-    1: '참가 모집중',
-    2: '예선 진행중',
-    3: '본선 추첨중',
-    4: '본선 진행중',
-    5: '16강 배정중',
-    6: '베팅 진행중',
-    7: '16강 진행중',
-    8: '8강 진행중',
-    9: '4강 진행중',
-    10: '결승 진행중',
+const participantsById = computed(
+    () => new Map((snapshot.value?.participants ?? []).map((participant) => [participant.id, participant]))
+);
+const matchesAt = (stage: number) =>
+    (snapshot.value?.matches ?? [])
+        .filter((match) => match.stage === stage)
+        .sort((a, b) => a.roundIndex - b.roundIndex);
+const nameOf = (id?: number) => (id ? (participantsById.value.get(id)?.name ?? `#${id}`) : '-');
+const roundNames = (stage: number, count: number) => {
+    const matches = matchesAt(stage);
+    const ids = matches.flatMap((match) => [match.attackerId, match.defenderId]);
+    return Array.from({ length: count }, (_, index) => nameOf(ids[index]));
 };
-
-const typeLabelMap: Record<number, string> = {
-    0: '전력전',
-    1: '통솔전',
-    2: '일기토',
-    3: '설전',
+const champion = computed(() => {
+    const winner = snapshot.value?.state?.winnerId ?? matchesAt(10)[0]?.winnerId;
+    return nameOf(winner);
+});
+const finalists = computed(() => roundNames(10, 2));
+const semiFinalists = computed(() => roundNames(9, 4));
+const quarterFinalists = computed(() => roundNames(8, 8));
+const top16 = computed(() => roundNames(7, 16));
+const totalBet = computed(() => betting.value?.totalAmount ?? 0);
+const odds = (id?: number) => {
+    if (!id) return '0';
+    const totals = betting.value?.totals as Record<number, number> | undefined;
+    const amount = totals?.[id] ?? 0;
+    if (!amount) return '∞';
+    return (totalBet.value / amount).toFixed(2);
 };
-
-const stageLabel = computed(() => {
-    const state = snapshot.value?.state;
-    if (!state) {
-        return '토너먼트 정보를 불러오는 중';
-    }
-    if (state.stage === 2 || state.stage === 4) {
-        return `예선 진행중(페이즈 ${state.phase + 1})`;
-    }
-    return stageLabelMap[state.stage] ?? '토너먼트 상태 확인 중';
-});
-
-const bettingCloseLabel = computed(() => {
-    const closeAt = snapshot.value?.state?.bettingCloseAt;
-    if (!closeAt) {
-        return null;
-    }
-    const date = new Date(closeAt);
-    if (!Number.isFinite(date.getTime())) {
-        return null;
-    }
-    return `${date.toLocaleString('ko-KR')} 마감`;
-});
-
-const bracketEntries = computed(() => {
-    const matches = snapshot.value?.matches ?? [];
-    const participants = snapshot.value?.participants ?? [];
-    const nameMap = new Map(participants.map((entry) => [entry.id, entry.name]));
-
-    return matches.map((match) => ({
-        ...match,
-        attackerName: nameMap.get(match.attackerId) ?? `#${match.attackerId}`,
-        defenderName: nameMap.get(match.defenderId) ?? `#${match.defenderId}`,
-        winnerName: match.winnerId ? nameMap.get(match.winnerId) ?? `#${match.winnerId}` : null,
-    }));
-});
-
-const stageMatches = (stage: number) => bracketEntries.value.filter((match) => match.stage === stage);
-
+const isParticipant = computed(() =>
+    (snapshot.value?.participants ?? []).some((participant) => participant.id === myGeneralId.value)
+);
+const groups = computed(() =>
+    Array.from({ length: 8 }, (_, index) =>
+        (snapshot.value?.participants ?? [])
+            .filter((participant) => participant.groupId === index + 10)
+            .sort((a, b) => (a.finalRank ?? 99) - (b.finalRank ?? 99) || (a.groupNo ?? 99) - (b.groupNo ?? 99))
+    )
+);
 const currentMatch = computed(() => {
     const state = snapshot.value?.state;
-    if (!state || state.stage < 7 || state.stage > 10) {
-        return null;
-    }
-    const matches = stageMatches(state.stage).sort((lhs, rhs) => lhs.roundIndex - rhs.roundIndex);
-    if (matches.length === 0) {
-        return null;
-    }
-    const fallbackIndex = Math.min(state.phase, matches.length - 1);
-    return matches[fallbackIndex] ?? matches.find((match) => !match.winnerId) ?? matches[0];
+    if (!state || state.stage < 7 || state.stage > 10) return null;
+    return matchesAt(state.stage).find((match) => !match.winnerId) ?? matchesAt(state.stage)[state.phase] ?? null;
 });
 
-const currentEnergy = computed(() => {
-    const match = currentMatch.value;
-    if (!match) {
-        return null;
-    }
-    if (match.lastEnergy) {
-        return match.lastEnergy;
-    }
-    const lastEntry = match.logEntries?.[match.logEntries.length - 1];
-    if (lastEntry) {
-        return { attacker: lastEntry.attackerEnergy, defender: lastEntry.defenderEnergy };
-    }
-    return null;
-});
-
-const currentEnergyStats = computed(() => {
-    const match = currentMatch.value;
-    if (!match) {
-        return null;
-    }
-    const lastEnergy = currentEnergy.value;
-    if (!lastEnergy) {
-        return null;
-    }
-    let maxAttacker = lastEnergy.attacker;
-    let maxDefender = lastEnergy.defender;
-    if (match.logEntries && match.logEntries.length > 0) {
-        for (const entry of match.logEntries) {
-            if (entry.attackerEnergy > maxAttacker) {
-                maxAttacker = entry.attackerEnergy;
-            }
-            if (entry.defenderEnergy > maxDefender) {
-                maxDefender = entry.defenderEnergy;
-            }
-        }
-    }
-    return {
-        attacker: lastEnergy.attacker,
-        defender: lastEnergy.defender,
-        maxAttacker: Math.max(1, maxAttacker),
-        maxDefender: Math.max(1, maxDefender),
-    };
-});
-
-const attackerEnergyPercent = computed(() => {
-    const stats = currentEnergyStats.value;
-    if (!stats) {
-        return 0;
-    }
-    return Math.max(0, Math.min(100, (stats.attacker / stats.maxAttacker) * 100));
-});
-
-const defenderEnergyPercent = computed(() => {
-    const stats = currentEnergyStats.value;
-    if (!stats) {
-        return 0;
-    }
-    return Math.max(0, Math.min(100, (stats.defender / stats.maxDefender) * 100));
-});
-const formattedLogs = computed(() => currentMatch.value?.log ?? []);
-
-const finalists = computed(() => {
-    const matches = stageMatches(7);
-    const ids = new Set<number>();
-    for (const match of matches) {
-        ids.add(match.attackerId);
-        ids.add(match.defenderId);
-    }
-    return Array.from(ids);
-});
-
-const finalistOptions = computed(() => {
-    const participants = snapshot.value?.participants ?? [];
-    const nameMap = new Map(participants.map((entry) => [entry.id, entry.name]));
-    return finalists.value.map((id) => ({ id, name: nameMap.get(id) ?? `#${id}` }));
-});
-
-const myGeneralId = computed(() => myGeneral.value?.general?.id ?? 0);
-const isParticipant = computed(() => {
-    if (!myGeneralId.value) {
-        return false;
-    }
-    return (snapshot.value?.participants ?? []).some((entry) => entry.id === myGeneralId.value);
-});
-
-const showJoinButton = computed(() => snapshot.value?.state?.stage === 1);
-const joinLockedAt = computed(() => snapshot.value?.state?.participantsLockedAt ?? null);
-
-const betTargetId = ref<number>(0);
-const betAmount = ref<number>(0);
-
-const isBettingOpen = computed(() => {
-    const state = snapshot.value?.state;
-    if (!state || state.stage !== 6) {
-        return false;
-    }
-    if (!state.bettingCloseAt) {
-        return true;
-    }
-    const closeAt = new Date(state.bettingCloseAt).getTime();
-    return Number.isFinite(closeAt) ? Date.now() < closeAt : true;
-});
-
-const placeBet = async () => {
-    if (!betTargetId.value || betAmount.value <= 0) {
-        lastActionMessage.value = '베팅 대상과 금액을 입력하세요.';
-        return;
-    }
-    try {
-        await trpc.tournament.placeBet.mutate({ targetId: betTargetId.value, amount: betAmount.value });
-        lastActionMessage.value = '베팅이 등록되었습니다.';
-        await loadTournament();
-    } catch (err) {
-        lastActionMessage.value = resolveErrorMessage(err);
-    }
-};
-
-const toggleJoin = async () => {
+const join = async () => {
+    actionMessage.value = null;
     try {
         await trpc.tournament.join.mutate();
-        lastActionMessage.value = '참가 신청이 반영되었습니다.';
-        await loadTournament();
-    } catch (err) {
-        lastActionMessage.value = resolveErrorMessage(err);
+        actionMessage.value = '참가 신청이 반영되었습니다.';
+        await load();
+    } catch (value) {
+        actionMessage.value = errorText(value);
     }
 };
 
-const bettingTotals = computed<Record<number, number>>(() => bettingSummary.value?.totals ?? {});
-const bettingMine = computed<Record<number, number>>(() => bettingSummary.value?.myTotals ?? {});
-const totalBetAmount = computed(() => bettingSummary.value?.totalAmount ?? 0);
-const myBetAmount = computed(() => bettingSummary.value?.myAmount ?? 0);
-
-const progressSummary = computed(() => {
-    return {
-        participants: snapshot.value?.participants?.length ?? 0,
-        matches: snapshot.value?.matches?.length ?? 0,
-        bets: snapshot.value?.bets?.length ?? 0,
-        nextAt: snapshot.value?.state?.nextAt ?? null,
-        lockedAt: snapshot.value?.state?.participantsLockedAt ?? null,
-    };
-});
-
-const adminMessage = ref<string | null>(null);
-
-const adminStopTournament = async () => {
+const cancel = async () => {
     try {
         await trpc.tournament.cancel.mutate();
-        adminMessage.value = '토너먼트가 취소되었습니다.';
-        await loadTournament();
-    } catch (err) {
-        adminMessage.value = resolveErrorMessage(err);
+        actionMessage.value = '토너먼트가 중단되었습니다.';
+        await load();
+    } catch (value) {
+        actionMessage.value = errorText(value);
     }
 };
 
-const adminStartTournament = async () => {
-    const current = snapshot.value?.state;
-    if (!current) {
-        adminMessage.value = '토너먼트 상태를 찾을 수 없습니다.';
-        return;
-    }
+const start = async () => {
+    const now = new Date();
     try {
-        await Promise.all([
-            trpc.tournament.setParticipants.mutate([]),
-            trpc.tournament.setMatches.mutate([]),
-            trpc.tournament.setBettingEntries.mutate([]),
-        ]);
         await trpc.tournament.setState.mutate({
-            ...current,
             stage: 1,
             phase: 0,
+            type: 0,
             auto: true,
-            nextAt: new Date().toISOString(),
-            bettingId: undefined,
-            bettingCloseAt: undefined,
-            winnerId: undefined,
+            openYear: snapshot.value?.state?.openYear ?? now.getUTCFullYear(),
+            openMonth: snapshot.value?.state?.openMonth ?? now.getUTCMonth() + 1,
+            termSeconds: snapshot.value?.state?.termSeconds ?? 60,
+            nextAt: new Date(Date.now() + 60_000).toISOString(),
             bettingSettled: false,
             rewardSettled: false,
-            participantsLockedAt: undefined,
         });
-        adminMessage.value = '임의 개최가 시작되었습니다.';
-        await loadTournament();
-    } catch (err) {
-        adminMessage.value = resolveErrorMessage(err);
+        actionMessage.value = '토너먼트를 개최했습니다.';
+        await load();
+    } catch (value) {
+        actionMessage.value = errorText(value);
     }
 };
 </script>
 
 <template>
-    <main class="tournament-page">
-        <header class="page-header">
-            <div>
-                <h1 class="page-title">토너먼트</h1>
-                <p class="page-subtitle">{{ stageLabel }}</p>
-            </div>
-            <div class="header-actions">
-                <button class="ghost" @click="loadTournament">새로고침</button>
-            </div>
-        </header>
-
-        <div v-if="error" class="error">{{ error }}</div>
-        <div v-if="lastActionMessage" class="notice">{{ lastActionMessage }}</div>
-
-        <section v-if="isMobile" class="layout-mobile">
-            <div class="mobile-tabs">
-                <button
-                    v-for="tab in mobileTabs"
-                    :key="tab.key"
-                    :class="{ active: mobileTab === tab.key }"
-                    @click="mobileTab = tab.key"
-                >
-                    {{ tab.label }}
-                </button>
-            </div>
-
-            <div v-if="mobileTab === 'status'" class="mobile-panel">
-                <PanelCard title="토너먼트 상태" :subtitle="bettingCloseLabel ?? undefined">
-                    <SkeletonLines v-if="loading" :lines="3" />
-                    <div v-else class="status-grid">
-                        <div>종목: {{ typeLabelMap[snapshot?.state?.type ?? 0] }}</div>
-                        <div>개최: {{ snapshot?.state?.openYear ?? '-' }}년 {{ snapshot?.state?.openMonth ?? '-' }}월</div>
-                        <div>페이즈: {{ snapshot?.state?.phase ?? '-' }}</div>
-                        <div>자동 진행: {{ snapshot?.state?.auto ? 'ON' : 'OFF' }}</div>
-                    </div>
-                    <div class="status-actions">
-                        <button
-                            v-if="showJoinButton"
-                            class="ghost"
-                            :disabled="isParticipant"
-                            @click="toggleJoin"
-                        >
-                            {{ isParticipant ? '참가 완료' : '참가 신청' }}
-                        </button>
-                        <span v-else class="muted">참가 신청 기간이 아닙니다.</span>
-                        <span v-if="joinLockedAt" class="muted">
-                            접수 종료: {{ new Date(joinLockedAt).toLocaleString('ko-KR') }}
-                        </span>
-                    </div>
-                </PanelCard>
-
-                <PanelCard v-if="adminEnabled" title="관리자 진행 상황">
-                    <div class="status-grid">
-                        <div>참가자: {{ progressSummary.participants }}</div>
-                        <div>대진: {{ progressSummary.matches }}</div>
-                        <div>베팅: {{ progressSummary.bets }}</div>
-                        <div>다음 진행: {{ progressSummary.nextAt ? new Date(progressSummary.nextAt).toLocaleString('ko-KR') : '-' }}</div>
-                        <div>접수 종료: {{ progressSummary.lockedAt ? new Date(progressSummary.lockedAt).toLocaleString('ko-KR') : '-' }}</div>
-                    </div>
-                    <div class="status-actions">
-                        <button class="ghost" @click="adminStopTournament">중지</button>
-                        <button class="ghost" @click="adminStartTournament">임의 개최</button>
-                        <span v-if="adminMessage" class="muted">{{ adminMessage }}</span>
-                    </div>
-                </PanelCard>
-
-                <PanelCard title="현재 전투 정보">
-                    <SkeletonLines v-if="loading" :lines="4" />
-                    <div v-else>
-                        <div v-if="currentMatch" class="match-summary">
-                            <div class="match-title">
-                                {{ currentMatch.attackerName }} vs {{ currentMatch.defenderName }}
-                            </div>
-                            <div class="match-meta">
-                                남은 체력: {{ currentEnergy?.attacker ?? '-' }} / {{ currentEnergy?.defender ?? '-' }}
-                            </div>
-                            <div v-if="currentEnergyStats" class="energy-bars">
-                                <div class="energy-row">
-                                    <span class="energy-label">공격</span>
-                                    <div class="energy-track">
-                                        <div class="energy-fill attacker" :style="{ width: `${attackerEnergyPercent}%` }" />
-                                    </div>
-                                    <span class="energy-value">{{ currentEnergyStats.attacker }}</span>
-                                </div>
-                                <div class="energy-row">
-                                    <span class="energy-label">수비</span>
-                                    <div class="energy-track">
-                                        <div class="energy-fill defender" :style="{ width: `${defenderEnergyPercent}%` }" />
-                                    </div>
-                                    <span class="energy-value">{{ currentEnergyStats.defender }}</span>
-                                </div>
-                            </div>
-                            <div class="log-box">
-                                <div
-                                    v-for="(entry, idx) in formattedLogs"
-                                    :key="idx"
-                                    class="log-line"
-                                    v-text="entry"
-                                />
-                            </div>
-                        </div>
-                        <div v-else class="placeholder">현재 진행 중인 전투가 없습니다.</div>
-                    </div>
-                </PanelCard>
-            </div>
-
-            <div v-if="mobileTab === 'bracket'" class="mobile-panel">
-                <PanelCard title="토너먼트 진출 정보" subtitle="16강 기준">
-                    <SkeletonLines v-if="loading" :lines="4" />
-                    <div v-else class="candidate-list">
-                        <div
-                            v-for="entry in stageMatches(7)"
-                            :key="entry.id"
-                            class="match-row"
-                        >
-                            <span :class="{ winner: entry.winnerId === entry.attackerId }">{{ entry.attackerName }}</span>
-                            <span class="vs">vs</span>
-                            <span :class="{ winner: entry.winnerId === entry.defenderId }">{{ entry.defenderName }}</span>
-                        </div>
-                    </div>
-                </PanelCard>
-
-                <PanelCard title="토너먼트 진행">
-                    <div class="bracket-section">
-                        <h3>8강</h3>
-                        <div v-if="stageMatches(8).length === 0" class="placeholder">진행 대기</div>
-                        <div v-else>
-                            <div v-for="entry in stageMatches(8)" :key="entry.id" class="match-row">
-                                <span :class="{ winner: entry.winnerId === entry.attackerId }">{{ entry.attackerName }}</span>
-                                <span class="vs">vs</span>
-                                <span :class="{ winner: entry.winnerId === entry.defenderId }">{{ entry.defenderName }}</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="bracket-section">
-                        <h3>4강</h3>
-                        <div v-if="stageMatches(9).length === 0" class="placeholder">진행 대기</div>
-                        <div v-else>
-                            <div v-for="entry in stageMatches(9)" :key="entry.id" class="match-row">
-                                <span :class="{ winner: entry.winnerId === entry.attackerId }">{{ entry.attackerName }}</span>
-                                <span class="vs">vs</span>
-                                <span :class="{ winner: entry.winnerId === entry.defenderId }">{{ entry.defenderName }}</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="bracket-section">
-                        <h3>결승</h3>
-                        <div v-if="stageMatches(10).length === 0" class="placeholder">진행 대기</div>
-                        <div v-else>
-                            <div v-for="entry in stageMatches(10)" :key="entry.id" class="match-row">
-                                <span :class="{ winner: entry.winnerId === entry.attackerId }">{{ entry.attackerName }}</span>
-                                <span class="vs">vs</span>
-                                <span :class="{ winner: entry.winnerId === entry.defenderId }">{{ entry.defenderName }}</span>
-                            </div>
-                        </div>
-                    </div>
-                </PanelCard>
-            </div>
-
-            <div v-if="mobileTab === 'betting'" class="mobile-panel">
-                <PanelCard title="베팅 현황" :subtitle="bettingCloseLabel ?? undefined">
-                    <SkeletonLines v-if="loading" :lines="3" />
-                    <div v-else>
-                        <div class="status-grid">
-                            <div>전체 베팅: {{ totalBetAmount.toLocaleString('ko-KR') }}</div>
-                            <div>내 베팅: {{ myBetAmount.toLocaleString('ko-KR') }}</div>
-                        </div>
-                        <div class="betting-grid">
-                            <div v-for="entry in finalistOptions" :key="entry.id" class="betting-row">
-                                <span>{{ entry.name }}</span>
-                                <span class="muted">전체 {{ (bettingTotals[entry.id] ?? 0).toLocaleString('ko-KR') }}</span>
-                                <span class="muted">내 {{ (bettingMine[entry.id] ?? 0).toLocaleString('ko-KR') }}</span>
-                            </div>
-                        </div>
-                    </div>
-                </PanelCard>
-
-                <PanelCard title="베팅하기">
-                    <div v-if="!isBettingOpen" class="placeholder">베팅 기간이 아닙니다.</div>
-                    <div v-else class="bet-form">
-                        <label>
-                            대상
-                            <select v-model.number="betTargetId">
-                                <option :value="0">선택</option>
-                                <option v-for="entry in finalistOptions" :key="entry.id" :value="entry.id">
-                                    {{ entry.name }}
-                                </option>
-                            </select>
-                        </label>
-                        <label>
-                            금액
-                            <input v-model.number="betAmount" type="number" min="1" />
-                        </label>
-                        <button class="ghost" @click="placeBet">베팅 등록</button>
-                    </div>
-                </PanelCard>
-            </div>
+    <main id="tournament-container" class="legacy-page">
+        <section class="legacy-title bg0">
+            <div>삼모전 토너먼트</div>
+            <RouterLink class="close-button" to="/">창 닫기</RouterLink>
         </section>
 
-        <section v-else class="layout-desktop">
-            <div class="stack">
-                <PanelCard title="토너먼트 상태" :subtitle="bettingCloseLabel ?? undefined">
-                    <SkeletonLines v-if="loading" :lines="3" />
-                    <div v-else class="status-grid">
-                        <div>종목: {{ typeLabelMap[snapshot?.state?.type ?? 0] }}</div>
-                        <div>개최: {{ snapshot?.state?.openYear ?? '-' }}년 {{ snapshot?.state?.openMonth ?? '-' }}월</div>
-                        <div>페이즈: {{ snapshot?.state?.phase ?? '-' }}</div>
-                        <div>자동 진행: {{ snapshot?.state?.auto ? 'ON' : 'OFF' }}</div>
-                    </div>
-                    <div class="status-actions">
-                        <button
-                            v-if="showJoinButton"
-                            class="ghost"
-                            :disabled="isParticipant"
-                            @click="toggleJoin"
-                        >
-                            {{ isParticipant ? '참가 완료' : '참가 신청' }}
-                        </button>
-                        <span v-else class="muted">참가 신청 기간이 아닙니다.</span>
-                        <span v-if="joinLockedAt" class="muted">
-                            접수 종료: {{ new Date(joinLockedAt).toLocaleString('ko-KR') }}
-                        </span>
-                    </div>
-                </PanelCard>
+        <section class="toolbar bg0">
+            <button type="button" @click="load">갱신</button>
+            <button
+                v-if="snapshot?.state?.stage === 1 && !isParticipant"
+                type="button"
+                class="join-button"
+                @click="join"
+            >
+                참가
+            </button>
+            <span v-if="loading">불러오는 중...</span>
+            <span v-if="actionMessage" role="status">{{ actionMessage }}</span>
+        </section>
 
-                <PanelCard v-if="adminEnabled" title="관리자 진행 상황">
-                    <div class="status-grid">
-                        <div>참가자: {{ progressSummary.participants }}</div>
-                        <div>대진: {{ progressSummary.matches }}</div>
-                        <div>베팅: {{ progressSummary.bets }}</div>
-                        <div>다음 진행: {{ progressSummary.nextAt ? new Date(progressSummary.nextAt).toLocaleString('ko-KR') : '-' }}</div>
-                        <div>접수 종료: {{ progressSummary.lockedAt ? new Date(progressSummary.lockedAt).toLocaleString('ko-KR') : '-' }}</div>
-                    </div>
-                    <div class="status-actions">
-                        <button class="ghost" @click="adminStopTournament">중지</button>
-                        <button class="ghost" @click="adminStartTournament">임의 개최</button>
-                        <span v-if="adminMessage" class="muted">{{ adminMessage }}</span>
-                    </div>
-                </PanelCard>
+        <section v-if="error" class="error-row bg0" role="alert">{{ error }}</section>
+        <section class="operator-row bg0">운영자 메세지 : <span></span></section>
+        <section class="state-row bg0">
+            <span class="type">{{ typeNames[snapshot?.state?.type ?? 0] }}</span>
+            ({{ stageNames[snapshot?.state?.stage ?? 0] ?? '상태 확인 중' }},
+            {{ snapshot?.state?.termSeconds ?? '-' }}초 간격)
+        </section>
+        <section class="section-title bg2">16강 승자전</section>
 
-                <PanelCard title="현재 전투 정보">
-                    <SkeletonLines v-if="loading" :lines="4" />
-                    <div v-else>
-                        <div v-if="currentMatch" class="match-summary">
-                            <div class="match-title">
-                                {{ currentMatch.attackerName }} vs {{ currentMatch.defenderName }}
-                            </div>
-                            <div class="match-meta">
-                                남은 체력: {{ currentEnergy?.attacker ?? '-' }} / {{ currentEnergy?.defender ?? '-' }}
-                            </div>
-                            <div v-if="currentEnergyStats" class="energy-bars">
-                                <div class="energy-row">
-                                    <span class="energy-label">공격</span>
-                                    <div class="energy-track">
-                                        <div class="energy-fill attacker" :style="{ width: `${attackerEnergyPercent}%` }" />
-                                    </div>
-                                    <span class="energy-value">{{ currentEnergyStats.attacker }}</span>
-                                </div>
-                                <div class="energy-row">
-                                    <span class="energy-label">수비</span>
-                                    <div class="energy-track">
-                                        <div class="energy-fill defender" :style="{ width: `${defenderEnergyPercent}%` }" />
-                                    </div>
-                                    <span class="energy-value">{{ currentEnergyStats.defender }}</span>
-                                </div>
-                            </div>
-                            <div class="log-box">
-                                <div
-                                    v-for="(entry, idx) in formattedLogs"
-                                    :key="idx"
-                                    class="log-line"
-                                    v-text="entry"
-                                />
-                            </div>
-                        </div>
-                        <div v-else class="placeholder">현재 진행 중인 전투가 없습니다.</div>
-                    </div>
-                </PanelCard>
-
-                <PanelCard title="예선 참가자" subtitle="간단 목록">
-                    <SkeletonLines v-if="loading" :lines="4" />
-                    <div v-else class="participant-grid">
-                        <div v-for="entry in snapshot?.participants ?? []" :key="entry.id" class="participant-item">
-                            <div class="participant-name">{{ entry.name }}</div>
-                            <div class="muted">통{{ entry.leadership }} / 무{{ entry.strength }} / 지{{ entry.intel }}</div>
-                        </div>
-                    </div>
-                </PanelCard>
+        <section class="bracket bg0" aria-label="토너먼트 대진표">
+            <div class="round champion">
+                <span>{{ champion }}</span>
             </div>
-
-            <div class="stack">
-                <PanelCard title="토너먼트 진출 정보" subtitle="16강 기준">
-                    <SkeletonLines v-if="loading" :lines="4" />
-                    <div v-else class="candidate-list">
-                        <div
-                            v-for="entry in stageMatches(7)"
-                            :key="entry.id"
-                            class="match-row"
-                        >
-                            <span :class="{ winner: entry.winnerId === entry.attackerId }">{{ entry.attackerName }}</span>
-                            <span class="vs">vs</span>
-                            <span :class="{ winner: entry.winnerId === entry.defenderId }">{{ entry.defenderName }}</span>
-                        </div>
-                    </div>
-                </PanelCard>
-
-                <PanelCard title="토너먼트 진행">
-                    <div class="bracket-section">
-                        <h3>8강</h3>
-                        <div v-if="stageMatches(8).length === 0" class="placeholder">진행 대기</div>
-                        <div v-else>
-                            <div v-for="entry in stageMatches(8)" :key="entry.id" class="match-row">
-                                <span :class="{ winner: entry.winnerId === entry.attackerId }">{{ entry.attackerName }}</span>
-                                <span class="vs">vs</span>
-                                <span :class="{ winner: entry.winnerId === entry.defenderId }">{{ entry.defenderName }}</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="bracket-section">
-                        <h3>4강</h3>
-                        <div v-if="stageMatches(9).length === 0" class="placeholder">진행 대기</div>
-                        <div v-else>
-                            <div v-for="entry in stageMatches(9)" :key="entry.id" class="match-row">
-                                <span :class="{ winner: entry.winnerId === entry.attackerId }">{{ entry.attackerName }}</span>
-                                <span class="vs">vs</span>
-                                <span :class="{ winner: entry.winnerId === entry.defenderId }">{{ entry.defenderName }}</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="bracket-section">
-                        <h3>결승</h3>
-                        <div v-if="stageMatches(10).length === 0" class="placeholder">진행 대기</div>
-                        <div v-else>
-                            <div v-for="entry in stageMatches(10)" :key="entry.id" class="match-row">
-                                <span :class="{ winner: entry.winnerId === entry.attackerId }">{{ entry.attackerName }}</span>
-                                <span class="vs">vs</span>
-                                <span :class="{ winner: entry.winnerId === entry.defenderId }">{{ entry.defenderName }}</span>
-                            </div>
-                        </div>
-                    </div>
-                </PanelCard>
-
-                <PanelCard title="베팅 현황" :subtitle="bettingCloseLabel ?? undefined">
-                    <SkeletonLines v-if="loading" :lines="3" />
-                    <div v-else>
-                        <div class="status-grid">
-                            <div>전체 베팅: {{ totalBetAmount.toLocaleString('ko-KR') }}</div>
-                            <div>내 베팅: {{ myBetAmount.toLocaleString('ko-KR') }}</div>
-                        </div>
-                        <div class="betting-grid">
-                            <div v-for="entry in finalistOptions" :key="entry.id" class="betting-row">
-                                <span>{{ entry.name }}</span>
-                                <span class="muted">전체 {{ (bettingTotals[entry.id] ?? 0).toLocaleString('ko-KR') }}</span>
-                                <span class="muted">내 {{ (bettingMine[entry.id] ?? 0).toLocaleString('ko-KR') }}</span>
-                            </div>
-                        </div>
-                    </div>
-                </PanelCard>
-
-                <PanelCard title="베팅하기">
-                    <div v-if="!isBettingOpen" class="placeholder">베팅 기간이 아닙니다.</div>
-                    <div v-else class="bet-form">
-                        <label>
-                            대상
-                            <select v-model.number="betTargetId">
-                                <option :value="0">선택</option>
-                                <option v-for="entry in finalistOptions" :key="entry.id" :value="entry.id">
-                                    {{ entry.name }}
-                                </option>
-                            </select>
-                        </label>
-                        <label>
-                            금액
-                            <input v-model.number="betAmount" type="number" min="1" />
-                        </label>
-                        <button class="ghost" @click="placeBet">베팅 등록</button>
-                    </div>
-                </PanelCard>
+            <div class="connector">┻</div>
+            <div class="round final">
+                <span v-for="(name, index) in finalists" :key="index">{{ name }}</span>
             </div>
+            <div class="connector">┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┻━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓</div>
+            <div class="round semi">
+                <span v-for="(name, index) in semiFinalists" :key="index">{{ name }}</span>
+            </div>
+            <div class="connector">┏━━━━━━━━━━┻━━━━━━━━━━┓&emsp;┏━━━━━━━━━━┻━━━━━━━━━━┓</div>
+            <div class="round quarter">
+                <span v-for="(name, index) in quarterFinalists" :key="index">{{ name }}</span>
+            </div>
+            <div class="connector">┏━━━━┻━━━━┓&emsp;┏━━━━┻━━━━┓&emsp;┏━━━━┻━━━━┓&emsp;┏━━━━┻━━━━┓</div>
+            <div class="round top16">
+                <span v-for="(name, index) in top16" :key="index">{{ name }}</span>
+            </div>
+            <div class="round odds">
+                <span v-for="(matchName, index) in top16" :key="index" :data-candidate="matchName">
+                    {{ odds(matchesAt(7).flatMap((match) => [match.attackerId, match.defenderId])[index]) }}
+                </span>
+            </div>
+            <p>배당률이 낮을수록 베팅된 금액이 많고 유저들이 우승후보로 많이 선택한 장수입니다.</p>
+        </section>
+
+        <section v-if="currentMatch" class="fight bg0">
+            <h2>{{ nameOf(currentMatch.attackerId) }} vs {{ nameOf(currentMatch.defenderId) }}</h2>
+            <p v-for="(line, index) in currentMatch.log ?? []" :key="index">{{ line }}</p>
+        </section>
+
+        <section class="section-title groups-title bg2">조별 본선 순위</section>
+        <section class="group-grid bg0">
+            <table v-for="(group, groupIndex) in groups" :key="groupIndex">
+                <caption>
+                    {{
+                        ['一', '二', '三', '四', '五', '六', '七', '八'][groupIndex]
+                    }}조
+                </caption>
+                <thead>
+                    <tr>
+                        <th>순</th>
+                        <th>장수</th>
+                        <th>경</th>
+                        <th>승</th>
+                        <th>무</th>
+                        <th>패</th>
+                        <th>점</th>
+                        <th>득</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr v-for="rowIndex in 4" :key="rowIndex">
+                        <td>{{ rowIndex }}</td>
+                        <td>{{ group[rowIndex - 1]?.name ?? '' }}</td>
+                        <td>
+                            {{
+                                group[rowIndex - 1]
+                                    ? (group[rowIndex - 1]!.win ?? 0) +
+                                      (group[rowIndex - 1]!.draw ?? 0) +
+                                      (group[rowIndex - 1]!.lose ?? 0)
+                                    : ''
+                            }}
+                        </td>
+                        <td>{{ group[rowIndex - 1]?.win ?? '' }}</td>
+                        <td>{{ group[rowIndex - 1]?.draw ?? '' }}</td>
+                        <td>{{ group[rowIndex - 1]?.lose ?? '' }}</td>
+                        <td>
+                            {{
+                                group[rowIndex - 1]
+                                    ? (group[rowIndex - 1]!.win ?? 0) * 3 + (group[rowIndex - 1]!.draw ?? 0)
+                                    : ''
+                            }}
+                        </td>
+                        <td>{{ group[rowIndex - 1]?.gl ?? '' }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section v-if="adminEnabled" class="admin-row bg0">
+            <strong>관리자 메뉴</strong>
+            <button type="button" @click="start">개최</button>
+            <button type="button" @click="cancel">중단</button>
         </section>
     </main>
 </template>
 
 <style scoped>
-.tournament-page {
+.legacy-page {
+    width: 2000px;
     min-height: 100vh;
-    padding: 24px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
+    margin: 0 auto;
+    color: #fff;
+    font-family: Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+    font-size: 14px;
+    line-height: 1.3;
+    text-align: center;
 }
-
-.page-header {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    gap: 12px;
-    border-bottom: 1px solid rgba(201, 164, 90, 0.4);
-    padding-bottom: 12px;
+.legacy-page,
+.legacy-page * {
+    box-sizing: border-box;
 }
-
-.page-title {
-    font-size: 1.6rem;
-    font-weight: 600;
+.bg0 {
+    background: #3a2118 url('/image/game/back_walnut.jpg');
 }
-
-.page-subtitle {
-    font-size: 0.85rem;
-    color: rgba(232, 221, 196, 0.7);
+.bg2 {
+    background: #142b42 url('/image/game/back_blue.jpg');
 }
-
-.header-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
+.legacy-title {
+    height: 55.6875px;
+    padding: 0;
+    font-size: 14px;
+    line-height: 19.1875px;
 }
-
-.ghost {
-    border: 1px solid rgba(201, 164, 90, 0.4);
-    padding: 6px 12px;
-    font-size: 0.8rem;
+.close-button {
+    display: block;
+    width: 62px;
+    height: 35.5px;
+    padding: 8px 12px;
+    border: 1px solid #375a7f;
+    border-radius: 5.25px;
+    background: #375a7f;
+    color: #fff;
+    font-size: 14px;
+    line-height: 18px;
+    text-decoration: none;
+}
+.toolbar {
+    min-height: 36.5px;
+    padding: 1px;
+}
+.operator-row,
+.state-row,
+.error-row,
+.admin-row {
+    min-height: 32px;
+    padding: 5px;
+}
+button {
+    height: 35.5px;
+    margin: 0 2px;
+    border: 1px solid #666;
+    border-radius: 5.25px;
+    background: #444;
+    color: #fff;
     cursor: pointer;
-    background: rgba(16, 16, 16, 0.6);
-    color: inherit;
 }
-
-.ghost:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
+button:hover,
+button:focus {
+    filter: brightness(1.25);
 }
-
-.error {
-    color: #f5b7b1;
-    font-size: 0.85rem;
+.close-button:hover,
+.close-button:focus {
+    filter: brightness(1.2);
 }
-
-.notice {
-    color: #f5d08a;
-    font-size: 0.85rem;
+button:focus-visible {
+    outline: 2px solid #f39c12;
+    outline-offset: 1px;
 }
-
-.layout-desktop {
+.join-button {
+    background: #8a5b13;
+}
+.operator-row span {
+    color: orange;
+    font-size: 24px;
+}
+.state-row {
+    font-size: 24px;
+}
+.state-row .type {
+    color: cyan;
+}
+.section-title {
+    min-height: 38px;
+    padding: 5px;
+    color: magenta;
+    font-size: 24px;
+}
+.bracket {
+    padding: 10px 0;
+}
+.round {
     display: grid;
-    grid-template-columns: minmax(320px, 1.2fr) minmax(320px, 1fr);
-    gap: 16px;
-}
-
-.stack {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-}
-
-.layout-mobile {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-}
-
-.mobile-tabs {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 6px;
-}
-
-.mobile-tabs button {
-    padding: 6px 4px;
-    border: 1px solid rgba(201, 164, 90, 0.4);
-    font-size: 0.75rem;
-    cursor: pointer;
-    background: rgba(16, 16, 16, 0.6);
-    color: inherit;
-}
-
-.mobile-tabs button.active {
-    background: rgba(201, 164, 90, 0.2);
-}
-
-.mobile-panel {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
-.status-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 8px;
-}
-
-.status-actions {
-    margin-top: 10px;
-    display: flex;
     align-items: center;
-    gap: 8px;
+    min-height: 24px;
 }
-
-.muted {
-    color: rgba(232, 221, 196, 0.7);
-    font-size: 0.85rem;
+.champion {
+    grid-template-columns: 1fr;
 }
-
-.match-summary {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
+.final {
+    grid-template-columns: repeat(2, 1fr);
 }
-
-.match-title {
-    font-weight: 600;
+.semi {
+    grid-template-columns: repeat(4, 1fr);
 }
-
-.match-meta {
-    font-size: 0.85rem;
-    color: rgba(232, 221, 196, 0.7);
+.quarter {
+    grid-template-columns: repeat(8, 1fr);
 }
-
-.energy-bars {
-    margin-top: 6px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
+.top16,
+.odds {
+    grid-template-columns: repeat(16, 125px);
 }
-
-.energy-row {
-    display: grid;
-    grid-template-columns: auto 1fr auto;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.8rem;
+.connector {
+    min-height: 24px;
+    white-space: pre;
+    color: #fff;
 }
-
-.energy-label {
-    width: 36px;
-    color: rgba(232, 221, 196, 0.7);
+.odds {
+    color: skyblue;
 }
-
-.energy-track {
-    height: 8px;
-    background: rgba(201, 164, 90, 0.15);
-    border-radius: 999px;
-    overflow: hidden;
+.bracket p {
+    color: skyblue;
+    font-size: 18px;
 }
-
-.energy-fill {
-    height: 100%;
-    border-radius: 999px;
-}
-
-.energy-fill.attacker {
-    background: linear-gradient(90deg, rgba(245, 184, 101, 0.9), rgba(245, 184, 101, 0.4));
-}
-
-.energy-fill.defender {
-    background: linear-gradient(90deg, rgba(120, 170, 255, 0.9), rgba(120, 170, 255, 0.4));
-}
-
-.energy-value {
-    width: 40px;
-    text-align: right;
-    color: rgba(232, 221, 196, 0.8);
-}
-
-.log-box {
+.fight {
     padding: 8px;
-    border: 1px solid rgba(201, 164, 90, 0.2);
-    background: rgba(12, 12, 12, 0.6);
-    max-height: 240px;
-    overflow: auto;
+    text-align: left;
 }
-
-.log-line {
-    font-size: 0.8rem;
-    line-height: 1.4;
+.fight h2 {
+    margin: 0;
+    text-align: center;
+    color: orange;
+    font-size: 18px;
 }
-
-.candidate-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+.fight p {
+    margin: 2px 10px;
 }
-
-.match-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    font-size: 0.9rem;
+.groups-title {
+    color: orange;
 }
-
-.match-row .vs {
-    color: rgba(232, 221, 196, 0.6);
-}
-
-.winner {
-    color: #f5d08a;
-    font-weight: 600;
-}
-
-.bracket-section {
-    margin-bottom: 12px;
-}
-
-.bracket-section h3 {
-    font-size: 0.9rem;
-    margin-bottom: 6px;
-}
-
-.participant-grid {
+.group-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 8px;
+    grid-template-columns: repeat(8, 250px);
+    align-items: start;
 }
-
-.participant-item {
-    border: 1px solid rgba(201, 164, 90, 0.2);
-    padding: 8px;
-    background: rgba(12, 12, 12, 0.5);
+table {
+    width: 250px;
+    border-collapse: collapse;
+    table-layout: auto;
 }
-
-.participant-name {
-    font-weight: 600;
+caption {
+    padding: 3px;
+    background: #000;
+    color: #fff;
 }
-
-.betting-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin-top: 8px;
+th {
+    background: #154b2a url('/image/game/back_green.jpg');
+    font-weight: 400;
 }
-
-.betting-row {
-    display: grid;
-    grid-template-columns: 1fr auto auto;
-    gap: 8px;
-    font-size: 0.85rem;
+th,
+td {
+    height: 22px;
+    border: 1px solid #555;
+    padding: 1px 3px;
 }
-
-.bet-form {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+.admin-row {
+    text-align: left;
 }
-
-.bet-form label {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    font-size: 0.85rem;
-}
-
-.bet-form input,
-.bet-form select {
-    padding: 6px;
-    background: rgba(16, 16, 16, 0.6);
-    border: 1px solid rgba(201, 164, 90, 0.4);
-    color: inherit;
-}
-
-.placeholder {
-    font-size: 0.85rem;
-    color: rgba(232, 221, 196, 0.7);
+.error-row {
+    color: #ff8080;
 }
 </style>

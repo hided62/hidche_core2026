@@ -4,18 +4,10 @@ import path from 'node:path';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import {
-    createGamePostgresConnector,
-    resolvePostgresConfigFromEnv,
-    type GatewayPrisma,
-} from '@sammo-ts/infra';
+import { createGamePostgresConnector, resolvePostgresConfigFromEnv, type GatewayPrisma } from '@sammo-ts/infra';
 
 import { procedure, router } from './trpc.js';
-import {
-    listScenarioPreviews,
-    resolveGitBranchCommitSha,
-    resolveGitCommitSha,
-} from './scenario/scenarioCatalog.js';
+import { listScenarioPreviews, resolveGitBranchCommitSha, resolveGitCommitSha } from './scenario/scenarioCatalog.js';
 import type { UserSanctions, UserServerRestriction } from './auth/userRepository.js';
 import { toPublicUser } from './auth/userRepository.js';
 import type { AdminAuthContext } from './adminAuth.js';
@@ -40,15 +32,7 @@ const zServerAction = z.enum([
 ]);
 
 const TURN_TERM_MINUTES = [1, 2, 5, 10, 20, 30, 60, 120] as const;
-const AUTORUN_USER_OPTIONS = [
-    'develop',
-    'warp',
-    'recruit',
-    'recruit_high',
-    'train',
-    'battle',
-    'chief',
-] as const;
+const AUTORUN_USER_OPTIONS = ['develop', 'warp', 'recruit', 'recruit_high', 'train', 'battle', 'chief'] as const;
 
 const ADMIN_ROLE_PREFIX = 'admin.';
 const ADMIN_ROLE_SUPERUSER = 'admin.superuser';
@@ -254,9 +238,12 @@ const isUniqueConstraintError = (error: unknown): boolean =>
 
 const zInstallOptions = z.object({
     scenarioId: z.number().int().min(0),
-    turnTermMinutes: z.number().int().refine((value) => isAllowedTurnTerm(value), {
-        message: 'turnTermMinutes must divide 120.',
-    }),
+    turnTermMinutes: z
+        .number()
+        .int()
+        .refine((value) => isAllowedTurnTerm(value), {
+            message: 'turnTermMinutes must divide 120.',
+        }),
     sync: z.boolean(),
     fiction: z.number().int().min(0).max(1),
     extend: z.boolean(),
@@ -771,55 +758,51 @@ export const adminRouter = router({
                     });
                 }
             }),
-        cancel: adminProcedure
-            .input(z.object({ id: z.string().uuid() }))
-            .mutation(async ({ ctx, input }) => {
-                const adminAuth = requireAdminAuth(ctx);
-                const previous = await ctx.profiles.getOperation(input.id);
-                if (!previous) {
-                    throw new TRPCError({ code: 'NOT_FOUND', message: 'Operation not found.' });
-                }
-                assertPermission(adminAuth, ROLE_ADMIN_PROFILES, previous.profileName);
-                const cancelled = await ctx.profiles.cancelOperation(input.id);
-                if (!cancelled) {
+        cancel: adminProcedure.input(z.object({ id: z.string().uuid() })).mutation(async ({ ctx, input }) => {
+            const adminAuth = requireAdminAuth(ctx);
+            const previous = await ctx.profiles.getOperation(input.id);
+            if (!previous) {
+                throw new TRPCError({ code: 'NOT_FOUND', message: 'Operation not found.' });
+            }
+            assertPermission(adminAuth, ROLE_ADMIN_PROFILES, previous.profileName);
+            const cancelled = await ctx.profiles.cancelOperation(input.id);
+            if (!cancelled) {
+                throw new TRPCError({
+                    code: 'CONFLICT',
+                    message: 'Only queued operations can be cancelled.',
+                });
+            }
+            return { ok: true };
+        }),
+        retry: adminProcedure.input(z.object({ id: z.string().uuid() })).mutation(async ({ ctx, input }) => {
+            const adminAuth = requireAdminAuth(ctx);
+            const previous = await ctx.profiles.getOperation(input.id);
+            if (!previous) {
+                throw new TRPCError({ code: 'NOT_FOUND', message: 'Operation not found.' });
+            }
+            assertPermission(adminAuth, ROLE_ADMIN_PROFILES, previous.profileName);
+            try {
+                const operation = await ctx.profiles.retryOperation(input.id, adminAuth.user.id);
+                if (!operation) {
                     throw new TRPCError({
                         code: 'CONFLICT',
-                        message: 'Only queued operations can be cancelled.',
+                        message: 'Only failed or cancelled operations can be retried.',
                     });
                 }
-                return { ok: true };
-            }),
-        retry: adminProcedure
-            .input(z.object({ id: z.string().uuid() }))
-            .mutation(async ({ ctx, input }) => {
-                const adminAuth = requireAdminAuth(ctx);
-                const previous = await ctx.profiles.getOperation(input.id);
-                if (!previous) {
-                    throw new TRPCError({ code: 'NOT_FOUND', message: 'Operation not found.' });
+                return operation;
+            } catch (error) {
+                if (error instanceof TRPCError) {
+                    throw error;
                 }
-                assertPermission(adminAuth, ROLE_ADMIN_PROFILES, previous.profileName);
-                try {
-                    const operation = await ctx.profiles.retryOperation(input.id, adminAuth.user.id);
-                    if (!operation) {
-                        throw new TRPCError({
-                            code: 'CONFLICT',
-                            message: 'Only failed or cancelled operations can be retried.',
-                        });
-                    }
-                    return operation;
-                } catch (error) {
-                    if (error instanceof TRPCError) {
-                        throw error;
-                    }
-                    if (!isUniqueConstraintError(error)) {
-                        throw error;
-                    }
-                    throw new TRPCError({
-                        code: 'CONFLICT',
-                        message: 'This profile already has a queued or running operation.',
-                    });
+                if (!isUniqueConstraintError(error)) {
+                    throw error;
                 }
-            }),
+                throw new TRPCError({
+                    code: 'CONFLICT',
+                    message: 'This profile already has a queued or running operation.',
+                });
+            }
+        }),
     }),
     profiles: router({
         list: adminProcedure.query(async ({ ctx }) => {
@@ -834,6 +817,7 @@ export const adminRouter = router({
                     profileName: profile.profileName,
                     apiRunning: false,
                     daemonRunning: false,
+                    tournamentRunning: false,
                 },
             }));
         }),

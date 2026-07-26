@@ -16,7 +16,7 @@ type Profile = {
     buildWorkspace?: string;
     buildError?: string;
     lastError?: string;
-    runtime: { apiRunning: boolean; daemonRunning: boolean };
+    runtime: { apiRunning: boolean; daemonRunning: boolean; tournamentRunning: boolean };
 };
 
 type Scenario = {
@@ -192,9 +192,7 @@ const requestRuntime = async (action: 'START' | 'STOP') => {
     }
 };
 
-const selectedAutorunOptions = (): Array<
-    'develop' | 'warp' | 'recruit' | 'train' | 'battle'
-> => {
+const selectedAutorunOptions = (): Array<'develop' | 'warp' | 'recruit' | 'train' | 'battle'> => {
     const options: Array<'develop' | 'warp' | 'recruit' | 'train' | 'battle'> = [];
     if (form.autorunDevelop) options.push('develop');
     if (form.autorunWarp) options.push('warp');
@@ -331,7 +329,10 @@ onBeforeUnmount(() => {
             <div v-if="errorMessage" class="rounded border border-red-800 bg-red-950/50 px-4 py-3 text-sm text-red-200">
                 {{ errorMessage }}
             </div>
-            <div v-if="message" class="rounded border border-emerald-800 bg-emerald-950/40 px-4 py-3 text-sm text-emerald-200">
+            <div
+                v-if="message"
+                class="rounded border border-emerald-800 bg-emerald-950/40 px-4 py-3 text-sm text-emerald-200"
+            >
                 {{ message }}
             </div>
 
@@ -376,12 +377,27 @@ onBeforeUnmount(() => {
                                 {{ selectedProfile.runtime.daemonRunning ? 'RUNNING' : 'STOPPED' }}
                             </div>
                         </div>
+                        <div class="rounded bg-zinc-950 p-3">
+                            <div class="text-xs text-zinc-500">Tournament worker</div>
+                            <div
+                                :class="
+                                    selectedProfile.runtime.tournamentRunning ? 'text-emerald-400' : 'text-zinc-500'
+                                "
+                            >
+                                {{ selectedProfile.runtime.tournamentRunning ? 'RUNNING' : 'STOPPED' }}
+                            </div>
+                        </div>
                     </div>
 
                     <div v-if="selectedProfile" class="space-y-1 text-xs text-zinc-500">
-                        <div>현재 커밋: <span class="font-mono text-zinc-300">{{ shortSha(selectedProfile.buildCommitSha) }}</span></div>
+                        <div>
+                            현재 커밋:
+                            <span class="font-mono text-zinc-300">{{ shortSha(selectedProfile.buildCommitSha) }}</span>
+                        </div>
                         <div class="break-all">worktree: {{ selectedProfile.buildWorkspace ?? '기본 workspace' }}</div>
-                        <div v-if="selectedProfile.buildError" class="text-red-400">{{ selectedProfile.buildError }}</div>
+                        <div v-if="selectedProfile.buildError" class="text-red-400">
+                            {{ selectedProfile.buildError }}
+                        </div>
                         <div v-if="selectedProfile.lastError" class="text-red-400">{{ selectedProfile.lastError }}</div>
                     </div>
 
@@ -405,10 +421,16 @@ onBeforeUnmount(() => {
                     </div>
                 </div>
 
-                <form class="rounded-lg border border-zinc-800 bg-zinc-900 p-5 space-y-5" @submit.prevent="requestReset">
+                <form
+                    class="rounded-lg border border-zinc-800 bg-zinc-900 p-5 space-y-5"
+                    @submit.prevent="requestReset"
+                >
                     <div class="flex items-center justify-between">
                         <h3 class="text-lg font-semibold">시나리오 초기화</h3>
-                        <span v-if="activeOperation" class="rounded-full bg-amber-500/15 px-3 py-1 text-xs text-amber-300">
+                        <span
+                            v-if="activeOperation"
+                            class="rounded-full bg-amber-500/15 px-3 py-1 text-xs text-amber-300"
+                        >
                             {{ activeOperation.type }} · {{ activeOperation.status }}
                         </span>
                     </div>
@@ -417,11 +439,21 @@ onBeforeUnmount(() => {
                         <legend class="text-xs text-zinc-400">소스 종류</legend>
                         <div class="flex gap-5">
                             <label class="flex items-center gap-2">
-                                <input v-model="form.sourceMode" type="radio" value="BRANCH" data-testid="source-branch" />
+                                <input
+                                    v-model="form.sourceMode"
+                                    type="radio"
+                                    value="BRANCH"
+                                    data-testid="source-branch"
+                                />
                                 브랜치
                             </label>
                             <label class="flex items-center gap-2">
-                                <input v-model="form.sourceMode" type="radio" value="COMMIT" data-testid="source-commit" />
+                                <input
+                                    v-model="form.sourceMode"
+                                    type="radio"
+                                    value="COMMIT"
+                                    data-testid="source-commit"
+                                />
                                 커밋
                             </label>
                         </div>
@@ -432,7 +464,11 @@ onBeforeUnmount(() => {
                         <input
                             v-model="form.sourceRef"
                             class="rounded border border-zinc-700 bg-zinc-950 px-3 py-2 font-mono text-sm text-white"
-                            :placeholder="form.sourceMode === 'BRANCH' ? '예: main 또는 release/season-12' : '예: 40자리 commit SHA'"
+                            :placeholder="
+                                form.sourceMode === 'BRANCH'
+                                    ? '예: main 또는 release/season-12'
+                                    : '예: 40자리 commit SHA'
+                            "
                             data-testid="source-ref"
                         />
                         <button
@@ -465,7 +501,11 @@ onBeforeUnmount(() => {
                                 v-model.number="form.turnTermMinutes"
                                 class="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white"
                             >
-                                <option v-for="minutes in [1, 2, 5, 10, 20, 30, 60, 120]" :key="minutes" :value="minutes">
+                                <option
+                                    v-for="minutes in [1, 2, 5, 10, 20, 30, 60, 120]"
+                                    :key="minutes"
+                                    :value="minutes"
+                                >
                                     {{ minutes }}분
                                 </option>
                             </select>
@@ -475,39 +515,59 @@ onBeforeUnmount(() => {
                     <details class="rounded border border-zinc-800 bg-zinc-950/50 p-4">
                         <summary class="cursor-pointer text-sm font-semibold">고급 시나리오 옵션</summary>
                         <div class="mt-4 grid gap-4 md:grid-cols-2 text-sm">
-                            <label>동기화
+                            <label
+                                >동기화
                                 <select v-model="form.sync" class="ml-2 rounded bg-zinc-900 px-2 py-1">
-                                    <option :value="true">사용</option><option :value="false">미사용</option>
+                                    <option :value="true">사용</option>
+                                    <option :value="false">미사용</option>
                                 </select>
                             </label>
-                            <label>가상 장수
+                            <label
+                                >가상 장수
                                 <select v-model.number="form.fiction" class="ml-2 rounded bg-zinc-900 px-2 py-1">
-                                    <option :value="1">허용</option><option :value="0">금지</option>
+                                    <option :value="1">허용</option>
+                                    <option :value="0">금지</option>
                                 </select>
                             </label>
-                            <label>연장
+                            <label
+                                >연장
                                 <select v-model="form.extend" class="ml-2 rounded bg-zinc-900 px-2 py-1">
-                                    <option :value="true">사용</option><option :value="false">미사용</option>
+                                    <option :value="true">사용</option>
+                                    <option :value="false">미사용</option>
                                 </select>
                             </label>
-                            <label>가입 방식
+                            <label
+                                >가입 방식
                                 <select v-model="form.joinMode" class="ml-2 rounded bg-zinc-900 px-2 py-1">
-                                    <option value="full">전체</option><option value="onlyRandom">랜덤만</option>
+                                    <option value="full">전체</option>
+                                    <option value="onlyRandom">랜덤만</option>
                                 </select>
                             </label>
-                            <label>장수 생성 제한
-                                <select v-model.number="form.blockGeneralCreate" class="ml-2 rounded bg-zinc-900 px-2 py-1">
-                                    <option :value="0">없음</option><option :value="1">제한</option><option :value="2">차단</option>
+                            <label
+                                >장수 생성 제한
+                                <select
+                                    v-model.number="form.blockGeneralCreate"
+                                    class="ml-2 rounded bg-zinc-900 px-2 py-1"
+                                >
+                                    <option :value="0">없음</option>
+                                    <option :value="1">제한</option>
+                                    <option :value="2">차단</option>
                                 </select>
                             </label>
-                            <label>NPC 모드
+                            <label
+                                >NPC 모드
                                 <select v-model.number="form.npcMode" class="ml-2 rounded bg-zinc-900 px-2 py-1">
-                                    <option :value="0">기본</option><option :value="1">확장</option><option :value="2">전체</option>
+                                    <option :value="0">기본</option>
+                                    <option :value="1">확장</option>
+                                    <option :value="2">전체</option>
                                 </select>
                             </label>
-                            <label>이미지 표시
+                            <label
+                                >이미지 표시
                                 <select v-model.number="form.showImgLevel" class="ml-2 rounded bg-zinc-900 px-2 py-1">
-                                    <option v-for="level in [0, 1, 2, 3]" :key="level" :value="level">{{ level }}</option>
+                                    <option v-for="level in [0, 1, 2, 3]" :key="level" :value="level">
+                                        {{ level }}
+                                    </option>
                                 </select>
                             </label>
                             <label class="flex items-center gap-2">
@@ -536,14 +596,29 @@ onBeforeUnmount(() => {
                     </details>
 
                     <div class="grid gap-4 md:grid-cols-3">
-                        <label class="text-xs text-zinc-400">작업 예약
-                            <input v-model="form.scheduledAt" type="datetime-local" class="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
+                        <label class="text-xs text-zinc-400"
+                            >작업 예약
+                            <input
+                                v-model="form.scheduledAt"
+                                type="datetime-local"
+                                class="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
+                            />
                         </label>
-                        <label class="text-xs text-zinc-400">가오픈
-                            <input v-model="form.preopenAt" type="datetime-local" class="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
+                        <label class="text-xs text-zinc-400"
+                            >가오픈
+                            <input
+                                v-model="form.preopenAt"
+                                type="datetime-local"
+                                class="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
+                            />
                         </label>
-                        <label class="text-xs text-zinc-400">정식 오픈
-                            <input v-model="form.openAt" type="datetime-local" class="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-white" />
+                        <label class="text-xs text-zinc-400"
+                            >정식 오픈
+                            <input
+                                v-model="form.openAt"
+                                type="datetime-local"
+                                class="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-white"
+                            />
                         </label>
                     </div>
 
@@ -572,13 +647,23 @@ onBeforeUnmount(() => {
                     <table class="w-full min-w-[920px] text-left text-sm" data-testid="operations-table">
                         <thead class="border-b border-zinc-700 text-xs text-zinc-500">
                             <tr>
-                                <th class="p-2">요청/예약</th><th class="p-2">프로필</th><th class="p-2">작업</th>
-                                <th class="p-2">상태</th><th class="p-2">소스</th><th class="p-2">해석 커밋</th>
-                                <th class="p-2">요청자/사유</th><th class="p-2">완료/오류</th><th class="p-2"></th>
+                                <th class="p-2">요청/예약</th>
+                                <th class="p-2">프로필</th>
+                                <th class="p-2">작업</th>
+                                <th class="p-2">상태</th>
+                                <th class="p-2">소스</th>
+                                <th class="p-2">해석 커밋</th>
+                                <th class="p-2">요청자/사유</th>
+                                <th class="p-2">완료/오류</th>
+                                <th class="p-2"></th>
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-for="operation in operations" :key="operation.id" class="border-b border-zinc-800 align-top">
+                            <tr
+                                v-for="operation in operations"
+                                :key="operation.id"
+                                class="border-b border-zinc-800 align-top"
+                            >
                                 <td class="p-2 text-xs">
                                     {{ formatTime(operation.createdAt) }}
                                     <div v-if="operation.scheduledAt" class="mt-1 text-amber-300">
@@ -588,7 +673,9 @@ onBeforeUnmount(() => {
                                 <td class="p-2">{{ operation.profileName }}</td>
                                 <td class="p-2">{{ operation.type }}</td>
                                 <td class="p-2 font-semibold">{{ operation.status }}</td>
-                                <td class="p-2 font-mono text-xs">{{ operation.sourceMode ?? '-' }}<br />{{ operation.sourceRef ?? '' }}</td>
+                                <td class="p-2 font-mono text-xs">
+                                    {{ operation.sourceMode ?? '-' }}<br />{{ operation.sourceRef ?? '' }}
+                                </td>
                                 <td class="p-2 font-mono text-xs">{{ shortSha(operation.resolvedCommitSha) }}</td>
                                 <td class="max-w-xs p-2 text-xs">
                                     <div class="font-mono">{{ operation.requestedBy }}</div>

@@ -198,6 +198,7 @@ const zAdjustGeneralResources = z.object({
                     generalId: zFiniteNumber,
                     goldDelta: zFiniteNumber.optional(),
                     riceDelta: zFiniteNumber.optional(),
+                    minGoldAfter: zFiniteNumber.optional(),
                 })
                 .refine((value) => value.goldDelta !== undefined || value.riceDelta !== undefined)
         )
