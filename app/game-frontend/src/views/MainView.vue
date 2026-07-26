@@ -11,6 +11,7 @@ import CityBasicCard from '../components/main/CityBasicCard.vue';
 import NationBasicCard from '../components/main/NationBasicCard.vue';
 import MessagePanel from '../components/main/MessagePanel.vue';
 import SelectedCityPanel from '../components/main/SelectedCityPanel.vue';
+import RecentLogList from '../components/main/RecentLogList.vue';
 import { useSessionStore } from '../stores/session';
 import { useMainDashboardStore } from '../stores/mainDashboard';
 import { trpc } from '../utils/trpc';
@@ -35,16 +36,17 @@ const tournamentStage = ref(0);
 const {
     loading,
     error,
+    frontRecordsError,
     realtimeEnabled,
     general,
     city,
     nation,
-    lobbyInfo,
     worldMap,
     mapLayout,
     selectedCity,
     commandTable,
     messages,
+    frontRecords,
     boardAccess,
     reservedGeneralTurns,
     reservedNationTurns,
@@ -206,19 +208,18 @@ watch(
             <div v-if="mobileTab === 'world'" class="mobile-panel">
                 <PanelCard title="장수 동향">
                     <SkeletonLines v-if="loading" :lines="4" />
-                    <div v-else class="placeholder">장수 동향은 실시간 스트림으로 연결 예정</div>
+                    <div v-else-if="frontRecordsError" class="record-error" role="alert">{{ frontRecordsError }}</div>
+                    <RecentLogList v-else :logs="frontRecords?.global" />
                 </PanelCard>
                 <PanelCard title="개인 기록">
                     <SkeletonLines v-if="loading" :lines="4" />
-                    <div v-else class="placeholder">개인 기록 영역</div>
+                    <div v-else-if="frontRecordsError" class="record-error" role="alert">{{ frontRecordsError }}</div>
+                    <RecentLogList v-else :logs="frontRecords?.general" />
                 </PanelCard>
                 <PanelCard title="중원 정세">
                     <SkeletonLines v-if="loading" :lines="4" />
-                    <div v-else class="placeholder">
-                        <div>유저 {{ lobbyInfo?.userCnt ?? '-' }} / {{ lobbyInfo?.maxUserCnt ?? '-' }}</div>
-                        <div>NPC {{ lobbyInfo?.npcCnt ?? '-' }}</div>
-                        <div>세력 {{ lobbyInfo?.nationCnt ?? '-' }}</div>
-                    </div>
+                    <div v-else-if="frontRecordsError" class="record-error" role="alert">{{ frontRecordsError }}</div>
+                    <RecentLogList v-else :logs="frontRecords?.history" />
                 </PanelCard>
             </div>
 
@@ -255,12 +256,9 @@ watch(
                     <SelectedCityPanel :city="selectedCity" :loading="loading" />
                 </PanelCard>
                 <PanelCard title="중원 정세">
-                    <SkeletonLines v-if="loading" :lines="3" />
-                    <div v-else class="placeholder">
-                        <div>유저 {{ lobbyInfo?.userCnt ?? '-' }} / {{ lobbyInfo?.maxUserCnt ?? '-' }}</div>
-                        <div>NPC {{ lobbyInfo?.npcCnt ?? '-' }}</div>
-                        <div>세력 {{ lobbyInfo?.nationCnt ?? '-' }}</div>
-                    </div>
+                    <SkeletonLines v-if="loading" :lines="4" />
+                    <div v-else-if="frontRecordsError" class="record-error" role="alert">{{ frontRecordsError }}</div>
+                    <RecentLogList v-else :logs="frontRecords?.history" />
                 </PanelCard>
             </div>
 
@@ -284,7 +282,8 @@ watch(
                 </PanelCard>
                 <PanelCard title="장수 동향">
                     <SkeletonLines v-if="loading" :lines="4" />
-                    <div v-else class="placeholder">장수 동향은 실시간 스트림으로 연결 예정</div>
+                    <div v-else-if="frontRecordsError" class="record-error" role="alert">{{ frontRecordsError }}</div>
+                    <RecentLogList v-else :logs="frontRecords?.global" />
                 </PanelCard>
                 <PanelCard title="도시 정보">
                     <CityBasicCard :city="city" :loading="loading" />
@@ -294,7 +293,8 @@ watch(
                 </PanelCard>
                 <PanelCard title="개인 기록">
                     <SkeletonLines v-if="loading" :lines="4" />
-                    <div v-else class="placeholder">개인 기록 영역</div>
+                    <div v-else-if="frontRecordsError" class="record-error" role="alert">{{ frontRecordsError }}</div>
+                    <RecentLogList v-else :logs="frontRecords?.general" />
                 </PanelCard>
             </div>
             <MessagePanel
@@ -337,6 +337,10 @@ watch(
     gap: 12px;
     border-bottom: 1px solid rgba(201, 164, 90, 0.4);
     padding-bottom: 12px;
+}
+
+.record-error {
+    color: #ff8a80;
 }
 
 .page-title {

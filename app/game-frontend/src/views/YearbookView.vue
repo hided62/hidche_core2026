@@ -11,7 +11,7 @@ type MapLayout = Awaited<ReturnType<typeof trpc.public.getMapLayout.query>>;
 type HistoryData = {
     year: number;
     month: number;
-    map: Awaited<ReturnType<typeof trpc.public.getCachedMap.query>>;
+    map: Omit<Awaited<ReturnType<typeof trpc.public.getCachedMap.query>>, 'history'>;
     nations: Array<{
         id: number;
         name: string;

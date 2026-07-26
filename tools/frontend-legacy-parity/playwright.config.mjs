@@ -17,6 +17,7 @@ export default defineConfig({
         'tournament-betting.spec.ts',
         'dynasty-parity.spec.ts',
         'inheritance-management.spec.ts',
+        'map-trend.spec.ts',
     ],
     fullyParallel: false,
     workers: 1,
