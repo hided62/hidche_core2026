@@ -476,6 +476,113 @@ describe('appRouter', () => {
         expect(writes).toHaveLength(1);
     });
 
+    it('applies legacy general sentinel bulk entries and repeats the leading pattern', async () => {
+        const general = buildGeneralRow({ id: 16 });
+        const bulkWrites: unknown[] = [];
+        const bulkCaller = appRouter.createCaller(buildContext({ general, generalTurnWrites: bulkWrites }));
+
+        const bulk = await bulkCaller.turns.reserved.setGeneralBulk({
+            generalId: general.id,
+            entries: [
+                { turnList: [-1], action: 'che_훈련' },
+                { turnList: [-2], action: 'che_사기진작' },
+            ],
+            expectedRevision: 0,
+        });
+        expect(bulk.turns[0]?.action).toBe('che_훈련');
+        expect(bulk.turns[1]?.action).toBe('che_사기진작');
+        expect(bulk.turns[29]?.action).toBe('che_사기진작');
+        expect(bulkWrites).toHaveLength(1);
+
+        const repeatWrites: unknown[] = [];
+        const repeatCaller = appRouter.createCaller(
+            buildContext({
+                general,
+                generalTurns: [
+                    {
+                        id: 1,
+                        generalId: general.id,
+                        turnIdx: 0,
+                        actionCode: 'che_훈련',
+                        arg: {},
+                        createdAt: new Date(),
+                    },
+                    {
+                        id: 2,
+                        generalId: general.id,
+                        turnIdx: 1,
+                        actionCode: 'che_사기진작',
+                        arg: {},
+                        createdAt: new Date(),
+                    },
+                ],
+                generalTurnWrites: repeatWrites,
+            })
+        );
+        const repeated = await repeatCaller.turns.reserved.repeatGeneral({
+            generalId: general.id,
+            amount: 2,
+            expectedRevision: 0,
+        });
+        expect(repeated.turns.slice(0, 6).map((turn) => turn.action)).toEqual([
+            'che_훈련',
+            'che_사기진작',
+            'che_훈련',
+            'che_사기진작',
+            'che_훈련',
+            'che_사기진작',
+        ]);
+        expect(repeatWrites).toHaveLength(1);
+    });
+
+    it('accepts the legacy nation amount-12 no-op without incrementing revision', async () => {
+        const general = buildGeneralRow({ id: 17, nationId: 3, officerLevel: 12 });
+        const nationWrites: unknown[] = [];
+        const caller = appRouter.createCaller(buildContext({ general, nationTurnWrites: nationWrites }));
+
+        const shifted = await caller.turns.reserved.shiftNation({
+            generalId: general.id,
+            amount: 12,
+            expectedRevision: 0,
+        });
+        const repeated = await caller.turns.reserved.repeatNation({
+            generalId: general.id,
+            amount: 12,
+            expectedRevision: 0,
+        });
+
+        expect(shifted.revision).toBe(0);
+        expect(repeated.revision).toBe(0);
+        expect(nationWrites).toHaveLength(0);
+    });
+
+    it('applies nation bulk entries sequentially so later entries overwrite overlaps', async () => {
+        const general = buildGeneralRow({ id: 18, nationId: 3, officerLevel: 12 });
+        const nationWrites: unknown[] = [];
+        const caller = appRouter.createCaller(buildContext({ general, nationTurnWrites: nationWrites }));
+
+        const response = await caller.turns.reserved.setNationBulk({
+            generalId: general.id,
+            entries: [
+                {
+                    turnList: [0, 2],
+                    action: 'che_포상',
+                    args: { isGold: true, amount: 1, destGeneralId: 7 },
+                },
+                {
+                    turnList: [2],
+                    action: 'che_포상',
+                    args: { isGold: false, amount: 2, destGeneralId: 8 },
+                },
+            ],
+            expectedRevision: 0,
+        });
+
+        expect(response.turns[0]?.args).toEqual({ isGold: true, amount: 1, destGeneralId: 7 });
+        expect(response.turns[2]?.args).toEqual({ isGold: false, amount: 2, destGeneralId: 8 });
+        expect(nationWrites).toHaveLength(1);
+    });
+
     it('rejects malformed and cross-scope arguments without writing turns', async () => {
         const general = buildGeneralRow({ id: 14, nationId: 3, officerLevel: 5 });
         const generalWrites: unknown[] = [];

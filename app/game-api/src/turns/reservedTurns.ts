@@ -21,6 +21,12 @@ export interface ReservedTurnSnapshot {
     turns: ReservedTurnView[];
 }
 
+export interface ReservedTurnUpdate {
+    turnIndices: readonly number[];
+    action: string;
+    args: unknown;
+}
+
 export class ReservedTurnRevisionConflictError extends Error {
     constructor(
         readonly expectedRevision: number,
@@ -56,6 +62,43 @@ const applyShift = (turns: ReservedTurnEntry[], amount: number): ReservedTurnEnt
     const padding = Array.from({ length: shift }, () => createDefaultEntry());
     const sliced = turns.slice(shift);
     return sliced.concat(padding);
+};
+
+const applyRepeat = (turns: ReservedTurnEntry[], amount: number): ReservedTurnEntry[] => {
+    if (amount <= 0 || amount >= turns.length) {
+        return turns.slice();
+    }
+    const repeated = turns.map((entry) => ({
+        action: entry.action,
+        args: entry.args,
+    }));
+    const sourceCount = amount * 2 > turns.length ? turns.length - amount : amount;
+    for (let sourceIndex = 0; sourceIndex < sourceCount; sourceIndex += 1) {
+        const source = turns[sourceIndex] ?? createDefaultEntry();
+        for (let targetIndex = sourceIndex + amount; targetIndex < turns.length; targetIndex += amount) {
+            repeated[targetIndex] = {
+                action: source.action,
+                args: source.args,
+            };
+        }
+    }
+    return repeated;
+};
+
+export const expandGeneralTurnIndices = (rawTurnIndices: readonly number[]): number[] => {
+    const expanded = new Set<number>();
+    for (const turnIndex of rawTurnIndices) {
+        if (turnIndex >= 0) {
+            expanded.add(turnIndex);
+            continue;
+        }
+        const start = turnIndex === -2 ? 1 : 0;
+        const step = turnIndex === -3 ? 1 : 2;
+        for (let index = start; index < MAX_GENERAL_TURNS; index += step) {
+            expanded.add(index);
+        }
+    }
+    return Array.from(expanded);
 };
 
 const buildTurnListFromRows = (rows: Array<GeneralTurnRow | NationTurnRow>, maxTurns: number): ReservedTurnEntry[] => {
@@ -234,6 +277,51 @@ const claimNationRevision = async (
     throw new ReservedTurnRevisionConflictError(expectedRevision, current?.revision ?? 0);
 };
 
+const assertGeneralRevision = async (
+    db: DatabaseClient,
+    generalId: number,
+    expectedRevision: number
+): Promise<ReservedTurnSnapshot> => {
+    const snapshot = await getGeneralTurnSnapshot(db, generalId);
+    if (snapshot.revision !== expectedRevision) {
+        throw new ReservedTurnRevisionConflictError(expectedRevision, snapshot.revision);
+    }
+    return snapshot;
+};
+
+const assertNationRevision = async (
+    db: DatabaseClient,
+    nationId: number,
+    officerLevel: number,
+    expectedRevision: number
+): Promise<ReservedTurnSnapshot> => {
+    const snapshot = await getNationTurnSnapshot(db, nationId, officerLevel);
+    if (snapshot.revision !== expectedRevision) {
+        throw new ReservedTurnRevisionConflictError(expectedRevision, snapshot.revision);
+    }
+    return snapshot;
+};
+
+export const setGeneralTurns = async (
+    db: DatabaseClient,
+    generalId: number,
+    updates: readonly ReservedTurnUpdate[],
+    expectedRevision: number
+): Promise<ReservedTurnSnapshot> => {
+    const revision = await claimGeneralRevision(db, generalId, expectedRevision);
+    const turns = await loadGeneralTurns(db, generalId);
+    for (const update of updates) {
+        for (const turnIndex of update.turnIndices) {
+            turns[turnIndex] = {
+                action: normalizeAction(update.action),
+                args: normalizeArgs(update.args),
+            };
+        }
+    }
+    await persistGeneralTurns(db, generalId, turns);
+    return { revision, turns: serializeTurnList(turns) };
+};
+
 export const setGeneralTurn = async (
     db: DatabaseClient,
     generalId: number,
@@ -241,16 +329,8 @@ export const setGeneralTurn = async (
     action: string,
     args: unknown,
     expectedRevision: number
-): Promise<ReservedTurnSnapshot> => {
-    const revision = await claimGeneralRevision(db, generalId, expectedRevision);
-    const turns = await loadGeneralTurns(db, generalId);
-    turns[turnIndex] = {
-        action: normalizeAction(action),
-        args: normalizeArgs(args),
-    };
-    await persistGeneralTurns(db, generalId, turns);
-    return { revision, turns: serializeTurnList(turns) };
-};
+): Promise<ReservedTurnSnapshot> =>
+    setGeneralTurns(db, generalId, [{ turnIndices: [turnIndex], action, args }], expectedRevision);
 
 export const shiftGeneralTurns = async (
     db: DatabaseClient,
@@ -258,11 +338,50 @@ export const shiftGeneralTurns = async (
     amount: number,
     expectedRevision: number
 ): Promise<ReservedTurnSnapshot> => {
+    if (Math.abs(amount) >= MAX_GENERAL_TURNS) {
+        return assertGeneralRevision(db, generalId, expectedRevision);
+    }
     const revision = await claimGeneralRevision(db, generalId, expectedRevision);
     const turns = await loadGeneralTurns(db, generalId);
     const shifted = applyShift(turns, amount);
     await persistGeneralTurns(db, generalId, shifted);
     return { revision, turns: serializeTurnList(shifted) };
+};
+
+export const repeatGeneralTurns = async (
+    db: DatabaseClient,
+    generalId: number,
+    amount: number,
+    expectedRevision: number
+): Promise<ReservedTurnSnapshot> => {
+    if (amount >= MAX_GENERAL_TURNS) {
+        return assertGeneralRevision(db, generalId, expectedRevision);
+    }
+    const revision = await claimGeneralRevision(db, generalId, expectedRevision);
+    const turns = applyRepeat(await loadGeneralTurns(db, generalId), amount);
+    await persistGeneralTurns(db, generalId, turns);
+    return { revision, turns: serializeTurnList(turns) };
+};
+
+export const setNationTurns = async (
+    db: DatabaseClient,
+    nationId: number,
+    officerLevel: number,
+    updates: readonly ReservedTurnUpdate[],
+    expectedRevision: number
+): Promise<ReservedTurnSnapshot> => {
+    const revision = await claimNationRevision(db, nationId, officerLevel, expectedRevision);
+    const turns = await loadNationTurns(db, nationId, officerLevel);
+    for (const update of updates) {
+        for (const turnIndex of update.turnIndices) {
+            turns[turnIndex] = {
+                action: normalizeAction(update.action),
+                args: normalizeArgs(update.args),
+            };
+        }
+    }
+    await persistNationTurns(db, nationId, officerLevel, turns);
+    return { revision, turns: serializeTurnList(turns) };
 };
 
 export const setNationTurn = async (
@@ -273,16 +392,8 @@ export const setNationTurn = async (
     action: string,
     args: unknown,
     expectedRevision: number
-): Promise<ReservedTurnSnapshot> => {
-    const revision = await claimNationRevision(db, nationId, officerLevel, expectedRevision);
-    const turns = await loadNationTurns(db, nationId, officerLevel);
-    turns[turnIndex] = {
-        action: normalizeAction(action),
-        args: normalizeArgs(args),
-    };
-    await persistNationTurns(db, nationId, officerLevel, turns);
-    return { revision, turns: serializeTurnList(turns) };
-};
+): Promise<ReservedTurnSnapshot> =>
+    setNationTurns(db, nationId, officerLevel, [{ turnIndices: [turnIndex], action, args }], expectedRevision);
 
 export const shiftNationTurns = async (
     db: DatabaseClient,
@@ -291,9 +402,28 @@ export const shiftNationTurns = async (
     amount: number,
     expectedRevision: number
 ): Promise<ReservedTurnSnapshot> => {
+    if (Math.abs(amount) >= MAX_NATION_TURNS) {
+        return assertNationRevision(db, nationId, officerLevel, expectedRevision);
+    }
     const revision = await claimNationRevision(db, nationId, officerLevel, expectedRevision);
     const turns = await loadNationTurns(db, nationId, officerLevel);
     const shifted = applyShift(turns, amount);
     await persistNationTurns(db, nationId, officerLevel, shifted);
     return { revision, turns: serializeTurnList(shifted) };
+};
+
+export const repeatNationTurns = async (
+    db: DatabaseClient,
+    nationId: number,
+    officerLevel: number,
+    amount: number,
+    expectedRevision: number
+): Promise<ReservedTurnSnapshot> => {
+    if (amount >= MAX_NATION_TURNS) {
+        return assertNationRevision(db, nationId, officerLevel, expectedRevision);
+    }
+    const revision = await claimNationRevision(db, nationId, officerLevel, expectedRevision);
+    const turns = applyRepeat(await loadNationTurns(db, nationId, officerLevel), amount);
+    await persistNationTurns(db, nationId, officerLevel, turns);
+    return { revision, turns: serializeTurnList(turns) };
 };

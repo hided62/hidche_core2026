@@ -4,8 +4,13 @@ import type { DatabaseClient, GeneralTurnRow, NationTurnRow } from '../src/conte
 import {
     MAX_GENERAL_TURNS,
     MAX_NATION_TURNS,
+    expandGeneralTurnIndices,
+    repeatGeneralTurns,
+    repeatNationTurns,
     setGeneralTurn,
+    setGeneralTurns,
     setNationTurn,
+    setNationTurns,
     shiftGeneralTurns,
     shiftNationTurns,
     ReservedTurnRevisionConflictError,
@@ -237,5 +242,100 @@ describe('reservedTurns', () => {
         const pushed = await shiftNationTurns(db, 2, 5, 1, initial.revision);
         expect(pushed.turns[0]?.action).toBe('휴식');
         expect(pushed.turns[1]?.action).toBe('che_포상');
+    });
+
+    it('expands legacy general sentinel turn lists and applies bulk entries in order', async () => {
+        const { db } = buildDb();
+
+        expect(expandGeneralTurnIndices([-1])).toEqual(
+            Array.from({ length: MAX_GENERAL_TURNS / 2 }, (_, index) => index * 2)
+        );
+        expect(expandGeneralTurnIndices([-2])).toEqual(
+            Array.from({ length: MAX_GENERAL_TURNS / 2 }, (_, index) => index * 2 + 1)
+        );
+        expect(expandGeneralTurnIndices([-3])).toEqual(Array.from({ length: MAX_GENERAL_TURNS }, (_, index) => index));
+
+        const result = await setGeneralTurns(
+            db,
+            3,
+            [
+                {
+                    turnIndices: expandGeneralTurnIndices([-1]),
+                    action: 'che_훈련',
+                    args: {},
+                },
+                {
+                    turnIndices: expandGeneralTurnIndices([-2]),
+                    action: 'che_사기진작',
+                    args: {},
+                },
+                {
+                    turnIndices: [29],
+                    action: '휴식',
+                    args: {},
+                },
+            ],
+            0
+        );
+
+        expect(result.turns[0]?.action).toBe('che_훈련');
+        expect(result.turns[1]?.action).toBe('che_사기진작');
+        expect(result.turns[28]?.action).toBe('che_훈련');
+        expect(result.turns[29]?.action).toBe('휴식');
+    });
+
+    it('repeats the leading general pattern at the legacy interval', async () => {
+        const { db } = buildDb();
+        const seeded = await setGeneralTurns(
+            db,
+            4,
+            [
+                { turnIndices: [0], action: 'che_훈련', args: {} },
+                { turnIndices: [1], action: 'che_사기진작', args: {} },
+                { turnIndices: [2], action: 'che_징병', args: { crewTypeId: 1100, amount: 100 } },
+            ],
+            0
+        );
+        const repeated = await repeatGeneralTurns(db, 4, 3, seeded.revision);
+
+        expect(repeated.turns.slice(0, 9).map((turn) => turn.action)).toEqual([
+            'che_훈련',
+            'che_사기진작',
+            'che_징병',
+            'che_훈련',
+            'che_사기진작',
+            'che_징병',
+            'che_훈련',
+            'che_사기진작',
+            'che_징병',
+        ]);
+    });
+
+    it('supports nation bulk/repeat and preserves the legacy amount-12 no-op', async () => {
+        const { db } = buildDb();
+        const seeded = await setNationTurns(
+            db,
+            5,
+            12,
+            [
+                { turnIndices: [0, 2], action: 'che_포상', args: { amount: 1 } },
+                { turnIndices: [1], action: 'che_몰수', args: { amount: 1 } },
+            ],
+            0
+        );
+        const repeated = await repeatNationTurns(db, 5, 12, 3, seeded.revision);
+        expect(repeated.turns.slice(0, 6).map((turn) => turn.action)).toEqual([
+            'che_포상',
+            'che_몰수',
+            'che_포상',
+            'che_포상',
+            'che_몰수',
+            'che_포상',
+        ]);
+
+        const noOpRepeat = await repeatNationTurns(db, 5, 12, 12, repeated.revision);
+        expect(noOpRepeat).toEqual(repeated);
+        const noOpPush = await shiftNationTurns(db, 5, 12, 12, repeated.revision);
+        expect(noOpPush).toEqual(repeated);
     });
 });

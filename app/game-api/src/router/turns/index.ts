@@ -15,23 +15,42 @@ import {
     MAX_GENERAL_TURNS,
     MAX_NATION_TURNS,
     ReservedTurnRevisionConflictError,
+    expandGeneralTurnIndices,
     getGeneralTurnSnapshot,
     getNationTurnSnapshot,
+    repeatGeneralTurns,
+    repeatNationTurns,
     setGeneralTurn,
+    setGeneralTurns,
     setNationTurn,
+    setNationTurns,
     shiftGeneralTurns,
     shiftNationTurns,
 } from '../../turns/reservedTurns.js';
 import { getOwnedGeneral } from '../shared/general.js';
 
-const buildShiftAmountSchema = (maxTurns: number) =>
+const zPushAmount = z
+    .number()
+    .int()
+    .min(-12)
+    .max(12)
+    .refine((value) => value !== 0, {
+        message: 'Amount must be non-zero.',
+    });
+
+const zRepeatAmount = z.number().int().min(1).max(12);
+
+const buildTurnListSchema = (minimum: number, maximum: number) =>
     z
-        .number()
-        .int()
-        .min(-(maxTurns - 1))
-        .max(maxTurns - 1)
-        .refine((value) => value !== 0, {
-            message: 'Amount must be non-zero.',
+        .array(z.number().int().min(minimum).max(maximum))
+        .min(1);
+
+const buildBulkEntrySchema = (turnList: z.ZodType<number[]>) =>
+    z
+        .object({
+            turnList,
+            action: z.string().min(1),
+            args: z.unknown().optional(),
         });
 
 const parseCommandArgs = async (scope: 'general' | 'nation', action: string, args: unknown) => {
@@ -232,7 +251,7 @@ export const turnsRouter = router({
             .input(
                 z.object({
                     generalId: z.number().int().positive(),
-                    amount: buildShiftAmountSchema(MAX_GENERAL_TURNS),
+                    amount: zPushAmount,
                     expectedRevision: z.number().int().nonnegative(),
                 })
             )
@@ -241,6 +260,49 @@ export const turnsRouter = router({
 
                 const snapshot = await mutateReservedTurns(() =>
                     shiftGeneralTurns(ctx.db, input.generalId, input.amount, input.expectedRevision)
+                );
+                return { ok: true, ...snapshot };
+            }),
+        repeatGeneral: authedProcedure
+            .input(
+                z.object({
+                    generalId: z.number().int().positive(),
+                    amount: zRepeatAmount,
+                    expectedRevision: z.number().int().nonnegative(),
+                })
+            )
+            .mutation(async ({ ctx, input }) => {
+                await getOwnedGeneral(ctx, input.generalId);
+                const snapshot = await mutateReservedTurns(() =>
+                    repeatGeneralTurns(ctx.db, input.generalId, input.amount, input.expectedRevision)
+                );
+                return { ok: true, ...snapshot };
+            }),
+        setGeneralBulk: authedProcedure
+            .input(
+                z.object({
+                    generalId: z.number().int().positive(),
+                    entries: z
+                        .array(
+                            buildBulkEntrySchema(
+                                buildTurnListSchema(-3, MAX_GENERAL_TURNS - 1)
+                            )
+                        )
+                        .min(1),
+                    expectedRevision: z.number().int().nonnegative(),
+                })
+            )
+            .mutation(async ({ ctx, input }) => {
+                await getOwnedGeneral(ctx, input.generalId);
+                const updates = await Promise.all(
+                    input.entries.map(async (entry) => ({
+                        turnIndices: expandGeneralTurnIndices(entry.turnList),
+                        action: entry.action,
+                        args: await parseCommandArgs('general', entry.action, entry.args),
+                    }))
+                );
+                const snapshot = await mutateReservedTurns(() =>
+                    setGeneralTurns(ctx.db, input.generalId, updates, input.expectedRevision)
                 );
                 return { ok: true, ...snapshot };
             }),
@@ -291,7 +353,7 @@ export const turnsRouter = router({
             .input(
                 z.object({
                     generalId: z.number().int().positive(),
-                    amount: buildShiftAmountSchema(MAX_NATION_TURNS),
+                    amount: zPushAmount,
                     expectedRevision: z.number().int().nonnegative(),
                 })
             )
@@ -316,6 +378,85 @@ export const turnsRouter = router({
                         general.nationId,
                         general.officerLevel,
                         input.amount,
+                        input.expectedRevision
+                    )
+                );
+                return { ok: true, ...snapshot };
+            }),
+        repeatNation: authedProcedure
+            .input(
+                z.object({
+                    generalId: z.number().int().positive(),
+                    amount: zRepeatAmount,
+                    expectedRevision: z.number().int().nonnegative(),
+                })
+            )
+            .mutation(async ({ ctx, input }) => {
+                const general = await getOwnedGeneral(ctx, input.generalId);
+                if (general.nationId <= 0) {
+                    throw new TRPCError({
+                        code: 'PRECONDITION_FAILED',
+                        message: 'General is not part of a nation.',
+                    });
+                }
+                if (general.officerLevel < 5) {
+                    throw new TRPCError({
+                        code: 'FORBIDDEN',
+                        message: 'General is not an officer.',
+                    });
+                }
+                const snapshot = await mutateReservedTurns(() =>
+                    repeatNationTurns(
+                        ctx.db,
+                        general.nationId,
+                        general.officerLevel,
+                        input.amount,
+                        input.expectedRevision
+                    )
+                );
+                return { ok: true, ...snapshot };
+            }),
+        setNationBulk: authedProcedure
+            .input(
+                z.object({
+                    generalId: z.number().int().positive(),
+                    entries: z
+                        .array(
+                            buildBulkEntrySchema(
+                                buildTurnListSchema(0, MAX_NATION_TURNS - 1)
+                            )
+                        )
+                        .min(1),
+                    expectedRevision: z.number().int().nonnegative(),
+                })
+            )
+            .mutation(async ({ ctx, input }) => {
+                const general = await getOwnedGeneral(ctx, input.generalId);
+                if (general.nationId <= 0) {
+                    throw new TRPCError({
+                        code: 'PRECONDITION_FAILED',
+                        message: 'General is not part of a nation.',
+                    });
+                }
+                if (general.officerLevel < 5) {
+                    throw new TRPCError({
+                        code: 'FORBIDDEN',
+                        message: 'General is not an officer.',
+                    });
+                }
+                const updates = await Promise.all(
+                    input.entries.map(async (entry) => ({
+                        turnIndices: entry.turnList,
+                        action: entry.action,
+                        args: await parseCommandArgs('nation', entry.action, entry.args),
+                    }))
+                );
+                const snapshot = await mutateReservedTurns(() =>
+                    setNationTurns(
+                        ctx.db,
+                        general.nationId,
+                        general.officerLevel,
+                        updates,
                         input.expectedRevision
                     )
                 );
