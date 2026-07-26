@@ -1573,12 +1573,6 @@ export const createReservedTurnHandler = async (options: {
                 } else {
                     meta.killturn = worldKillturn;
                 }
-                const active = typeof meta.inherit_active_action === 'number' ? meta.inherit_active_action : 0;
-                if (generalResult.actionKey !== DEFAULT_ACTION) {
-                    meta.inherit_active_action = active + 1;
-                } else {
-                    meta.inherit_active_action = active;
-                }
                 currentGeneral = { ...currentGeneral, meta };
                 worldOverlay?.syncGeneral(currentGeneral);
             }

@@ -580,6 +580,7 @@ const projectWorld = (
             dex5: toDatabaseInt(readNumber(general.meta, 'dex5')),
             specAge: toDatabaseInt(readNumber(general.meta, 'specage')),
             specAge2: toDatabaseInt(readNumber(general.meta, 'specage2')),
+            inheritActiveActionPoints: readNumber(general.meta, 'inherit_active_action') * 3,
             makeLimit: toDatabaseInt(readNumber(general.meta, 'makelimit')),
             penalty: asRecord(general.penalty),
             killTurn: readNumber(general.meta, 'killturn'),

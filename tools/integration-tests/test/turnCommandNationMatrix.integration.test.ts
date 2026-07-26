@@ -702,6 +702,80 @@ integration('nation command success matrix', () => {
     );
 });
 
+type NationActiveActionInheritanceCase = {
+    name: string;
+    request: NationMatrixCase;
+    expectedPointDelta: number;
+};
+
+const nationActiveActionInheritanceCases: NationActiveActionInheritanceCase[] = [
+    {
+        name: 'ordinary award does not count as a legacy active action',
+        request: ['che_포상', { isGold: true, amount: 100, destGeneralID: 3 }],
+        expectedPointDelta: 0,
+    },
+    {
+        name: 'nation rename contributes one active action',
+        request: ['che_국호변경', { nationName: '능동아국' }],
+        expectedPointDelta: 3,
+    },
+    {
+        name: 'event research contributes one active action on completion',
+        request: researchCase('event_화시병연구', '화시병 연구', 11),
+        expectedPointDelta: 3,
+    },
+    {
+        name: 'nation rest does not count as a legacy active action',
+        request: ['휴식', undefined],
+        expectedPointDelta: 0,
+    },
+];
+
+const readNationActorActiveActionPoints = (
+    snapshot: { generals: Array<Record<string, unknown>> },
+    generalId: number
+): number => {
+    const general = snapshot.generals.find((entry) => entry.id === generalId);
+    const value = general?.inheritActiveActionPoints;
+    return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+};
+
+integration('nation active-action inheritance point parity', () => {
+    it.each(nationActiveActionInheritanceCases)(
+        '$name',
+        async ({ name, request: [action, args, fixturePatches], expectedPointDelta }) => {
+            const request = buildRequest(action, args, fixturePatches);
+            request.setup!.world!.hiddenSeed = `nation-active-action-${name}`;
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+            const referencePointDelta =
+                readNationActorActiveActionPoints(reference.after, 1) -
+                readNationActorActiveActionPoints(reference.before, 1);
+            const corePointDelta =
+                readNationActorActiveActionPoints(core.after, 1) - readNationActorActiveActionPoints(core.before, 1);
+
+            expect(reference.execution.outcome).toMatchObject({ completed: true });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: action,
+                actionKey: action,
+                usedFallback: false,
+            });
+            expect(referencePointDelta).toBe(expectedPointDelta);
+            expect(corePointDelta).toBe(referencePointDelta);
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+        },
+        120_000
+    );
+});
+
 const nationNameBoundaryCases: Array<{
     name: string;
     nationName: string;

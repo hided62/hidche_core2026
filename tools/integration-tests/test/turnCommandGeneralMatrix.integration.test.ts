@@ -426,6 +426,89 @@ integration('general command success matrix', () => {
     );
 });
 
+type GeneralActiveActionInheritanceCase = {
+    name: string;
+    action: string;
+    args?: Record<string, unknown>;
+    expectedPointDelta?: number;
+};
+
+const generalActiveActionInheritanceCases: GeneralActiveActionInheritanceCase[] = [
+    {
+        name: 'ordinary training does not count as a legacy active action',
+        action: 'che_훈련',
+        expectedPointDelta: 0,
+    },
+    {
+        name: 'spy contributes the legacy half active action',
+        action: 'che_첩보',
+        args: { destCityID: 70 },
+        expectedPointDelta: 1.5,
+    },
+    {
+        name: 'abdication contributes one active action',
+        action: 'che_선양',
+        args: { destGeneralID: 3 },
+        expectedPointDelta: 3,
+    },
+    {
+        name: 'rest does not count as a legacy active action',
+        action: '휴식',
+        expectedPointDelta: 0,
+    },
+    {
+        name: 'talent scouting preserves its probability-weighted active action',
+        action: 'che_인재탐색',
+    },
+];
+
+const readActiveActionPoints = (
+    snapshot: { generals: Array<Record<string, unknown>> },
+    generalId: number
+): number => {
+    const general = snapshot.generals.find((entry) => entry.id === generalId);
+    const value = general?.inheritActiveActionPoints;
+    return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+};
+
+integration('general active-action inheritance point parity', () => {
+    it.each(generalActiveActionInheritanceCases)(
+        '$name',
+        async ({ name, action, args, expectedPointDelta }) => {
+            const request = buildRequest(action, args);
+            request.setup!.world!.hiddenSeed = `general-active-action-${name}`;
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+            const referencePointDelta =
+                readActiveActionPoints(reference.after, 1) - readActiveActionPoints(reference.before, 1);
+            const corePointDelta = readActiveActionPoints(core.after, 1) - readActiveActionPoints(core.before, 1);
+
+            expect(reference.execution.outcome).toMatchObject({ completed: true });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: action,
+                actionKey: action,
+                usedFallback: false,
+            });
+            if (expectedPointDelta !== undefined) {
+                expect(referencePointDelta).toBe(expectedPointDelta);
+            } else {
+                expect(referencePointDelta).toBeGreaterThan(0);
+            }
+            expect(corePointDelta).toBe(referencePointDelta);
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+        },
+        120_000
+    );
+});
+
 interface NpcActiveBoundaryCase {
     name: string;
     args: Record<string, unknown>;
