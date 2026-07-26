@@ -248,9 +248,12 @@ const buildGeneral = (row: Record<string, unknown>, fallbackTurnTime: Date): Tur
         atmos: readNumber(row, 'atmos'),
         age: readNumber(row, 'age', 30),
         npcState: readNumber(row, 'npcState'),
+        penalty: row.penalty,
         triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
         meta: {
             ...meta,
+            specage: readNumber(row, 'specAge', readNumber(meta, 'specage')),
+            specage2: readNumber(row, 'specAge2', readNumber(meta, 'specage2')),
             killturn: readNumber(row, 'killTurn', readNumber(meta, 'killturn', 24)),
             leadership_exp: readNumber(row, 'leadershipExp', readNumber(meta, 'leadership_exp')),
             strength_exp: readNumber(row, 'strengthExp', readNumber(meta, 'strength_exp')),
@@ -568,6 +571,9 @@ const projectWorld = (
             dex3: toDatabaseInt(readNumber(general.meta, 'dex3')),
             dex4: toDatabaseInt(readNumber(general.meta, 'dex4')),
             dex5: toDatabaseInt(readNumber(general.meta, 'dex5')),
+            specAge: toDatabaseInt(readNumber(general.meta, 'specage')),
+            specAge2: toDatabaseInt(readNumber(general.meta, 'specage2')),
+            penalty: asRecord(general.penalty),
             killTurn: readNumber(general.meta, 'killturn'),
             mySet: readNumber(general.meta, 'myset'),
         }));

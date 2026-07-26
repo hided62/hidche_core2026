@@ -68,7 +68,10 @@ const makeGeneral = (patch: Partial<TurnGeneral> = {}): TurnGeneral => ({
     ...patch,
 });
 
-const makeSnapshot = (general: TurnGeneral): TurnWorldSnapshot => ({
+const makeSnapshot = (
+    general: TurnGeneral,
+    extras: { generals?: TurnGeneral[]; troops?: TurnWorldSnapshot['troops'] } = {}
+): TurnWorldSnapshot => ({
     scenarioConfig: {
         stat: { total: 300, min: 10, max: 100, npcTotal: 150, npcMax: 50, npcMin: 10, chiefMin: 70 },
         iconPath: '',
@@ -132,8 +135,8 @@ const makeSnapshot = (general: TurnGeneral): TurnWorldSnapshot => ({
             meta: { trust: 50, trade: 100, region: 1 },
         },
     ],
-    generals: [general],
-    troops: [],
+    generals: [general, ...(extras.generals ?? [])],
+    troops: extras.troops ?? [],
     diplomacy: [],
     events: [],
     initialEvents: [],
@@ -247,5 +250,34 @@ describe('legacy general-turn execution contract', () => {
         expect(updated.meta.myset).toBe(3);
         expect(harness.reservedTurnStore.getGeneralTurn(1, 0).action).toBe('휴식');
         expect(harness.getCollectedLogs().some((log) => log.text.includes('악성유저'))).toBe(true);
+    });
+
+    it('deletes the troop row and releases members when a troop leader resigns', async () => {
+        const leader = makeGeneral({ troopId: 1 });
+        const member = makeGeneral({
+            id: 2,
+            name: '부대원',
+            troopId: 1,
+            turnTime: new Date(start.getTime() + 10 * 60_000),
+        });
+        const snapshot = makeSnapshot(leader, {
+            generals: [member],
+            troops: [{ id: 1, nationId: 1, name: '테스트군' }],
+        });
+        snapshot.nations[0]!.meta.gennum = 2;
+        const harness = await createTurnTestHarness({
+            snapshot,
+            state: makeState(),
+            schedule,
+            map,
+        });
+        harness.reservedTurnStore.getGeneralTurns(1)[0] = { action: 'che_하야', args: {} };
+
+        await harness.runOneTick({ maxGenerals: 1 });
+
+        expect(harness.world.getGeneralById(1)?.troopId).toBe(0);
+        expect(harness.world.getGeneralById(2)?.troopId).toBe(0);
+        expect(harness.world.getTroopById(1)).toBeNull();
+        expect(harness.world.consumeDirtyState().deletedTroops).toEqual([1]);
     });
 });

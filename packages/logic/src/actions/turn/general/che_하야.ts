@@ -66,8 +66,8 @@ export class ActionResolver<
         // Penalty
         const betrayal = typeof general.meta.betray === 'number' ? general.meta.betray : 0;
         const penaltyRatio = betrayal * 0.1;
-        const nextExp = Math.floor(general.experience * (1 - penaltyRatio));
-        const nextDed = Math.floor(general.dedication * (1 - penaltyRatio));
+        const nextExp = Math.round(general.experience * (1 - penaltyRatio));
+        const nextDed = Math.round(general.dedication * (1 - penaltyRatio));
 
         context.addLog(`<D><b>${nation.name}</b></>에서 하야했습니다.`, {
             category: LogCategory.ACTION,
@@ -80,7 +80,7 @@ export class ActionResolver<
         const josaYi = JosaUtil.pick(general.name, '이');
         context.addLog(`<Y>${general.name}</>${josaYi} <D><b>${nation.name}</b></>에서 <R>하야</>했습니다.`, {
             scope: LogScope.SYSTEM,
-            category: LogCategory.ACTION,
+            category: LogCategory.SUMMARY,
             format: LogFormat.RAWTEXT,
         });
 
@@ -125,7 +125,10 @@ export class ActionResolver<
             )
         );
 
-        return { effects };
+        return {
+            effects,
+            ...(general.troopId === general.id ? { deletedTroopIds: [general.id] } : {}),
+        };
     }
 }
 

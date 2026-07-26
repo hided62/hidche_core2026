@@ -223,6 +223,7 @@ describe('migrated general commands', () => {
         expect(updatedHeir.officerLevel).toBe(12);
         expect(updatedLord.officerLevel).toBe(1);
         expect(updatedLord.experience).toBe(700);
+        expect(world.getNation(1)!.chiefGeneralId).toBe(heir.id);
     });
 
     it('che_증여: 금은 레거시 최소 보유량 0을 적용해 요청한 금액을 이전한다', async () => {

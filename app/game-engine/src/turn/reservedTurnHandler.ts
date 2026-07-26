@@ -847,6 +847,7 @@ export const createReservedTurnHandler = async (options: {
             }> = [];
             const createdGenerals: TurnGeneral[] = [];
             const createdNations: Nation[] = [];
+            const commandDeletedTroopIds = new Set<number>();
 
             let currentGeneral = context.general;
             let currentCity = context.city;
@@ -1092,6 +1093,9 @@ export const createReservedTurnHandler = async (options: {
                     },
                     actionArgs
                 );
+                for (const troopId of resolution.deletedTroopIds ?? []) {
+                    commandDeletedTroopIds.add(troopId);
+                }
 
                 currentGeneral = resolution.general as TurnGeneral;
                 currentCity = resolution.city ?? currentCity;
@@ -1599,7 +1603,7 @@ export const createReservedTurnHandler = async (options: {
 
             let lifecycleOutcome: 'active' | 'detached' | 'deleted' | 'retired' = 'active';
             let deleteGeneral = false;
-            const deletedTroopIds: number[] = [];
+            const deletedTroopIds = Array.from(commandDeletedTroopIds);
             const lifecycleSnapshot = cloneTurnGeneral(currentGeneral);
             if (currentGeneral.meta.killturn <= 0 && typeof currentGeneral.deadYear === 'number') {
                 if (
@@ -1752,10 +1756,10 @@ export const createReservedTurnHandler = async (options: {
                               ...(createdNations.length > 0 ? { nations: createdNations } : {}),
                           }
                         : undefined,
-                ...(deleteGeneral
+                ...(deleteGeneral || deletedTroopIds.length > 0
                     ? {
                           deleted: {
-                              general: true,
+                              general: deleteGeneral,
                               ...(deletedTroopIds.length > 0 ? { troopIds: deletedTroopIds } : {}),
                           },
                       }

@@ -106,6 +106,7 @@ export type GeneralActionEffect<TriggerState extends GeneralTriggerState = Gener
 export interface GeneralActionOutcome<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     effects: GeneralActionEffect<TriggerState>[];
     completed?: boolean;
+    deletedTroopIds?: number[];
     alternative?: {
         commandKey: string;
         args: unknown;
@@ -146,6 +147,7 @@ export interface GeneralActionResolution {
         commandKey: string;
         args: unknown;
     };
+    deletedTroopIds?: number[];
 }
 
 export const createGeneralPatchEffect = <TriggerState extends GeneralTriggerState = GeneralTriggerState>(
@@ -388,6 +390,7 @@ export const resolveGeneralAction = <TriggerState extends GeneralTriggerState = 
         logs,
         effects: pendingEffects,
         ...(outcome?.alternative ? { alternative: outcome.alternative } : {}),
+        ...(outcome?.deletedTroopIds?.length ? { deletedTroopIds: outcome.deletedTroopIds } : {}),
     };
     if (nextWorld.city) {
         resolution.city = nextWorld.city as City;

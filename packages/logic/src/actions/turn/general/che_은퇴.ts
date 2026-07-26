@@ -48,8 +48,10 @@ export class ActionResolver<
             const value = typeof nextMeta[key] === 'number' ? nextMeta[key] : 0;
             nextMeta[key] = Math.round(value * 0.5);
         }
-        nextMeta.specAge = 0;
-        nextMeta.specAge2 = 0;
+        delete nextMeta.specAge;
+        delete nextMeta.specAge2;
+        nextMeta.specage = 0;
+        nextMeta.specage2 = 0;
         for (const type of LEGACY_RANK_DATA_TYPES) {
             nextMeta[rankDataMetaKey(type)] = 0;
         }
@@ -57,7 +59,7 @@ export class ActionResolver<
         const josaYi = JosaUtil.pick(general.name, '이');
         context.addLog(`<Y>${general.name}</>${josaYi} <R>은퇴</>하고 그 자손이 유지를 이어받았습니다.`, {
             scope: LogScope.SYSTEM,
-            category: LogCategory.ACTION,
+            category: LogCategory.SUMMARY,
             format: LogFormat.RAWTEXT,
         });
         context.addLog('나이가 들어 <R>은퇴</>하고 자손에게 자리를 물려줍니다.', {

@@ -7,7 +7,11 @@ import type {
     GeneralActionOutcome,
     GeneralActionResolveContext,
 } from '@sammo-ts/logic/actions/engine.js';
-import { createGeneralPatchEffect, createLogEffect } from '@sammo-ts/logic/actions/engine.js';
+import {
+    createGeneralPatchEffect,
+    createLogEffect,
+    createNationPatchEffect,
+} from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import { JosaUtil } from '@sammo-ts/common';
 import { z } from 'zod';
@@ -49,6 +53,15 @@ export class ActionDefinition<
     }
 
     buildConstraints(_ctx: ConstraintContext, _args: AbdicationArgs): Constraint[] {
+        if (_ctx.actorId === _args.destGeneralID) {
+            return [
+                {
+                    name: 'differentDestGeneral',
+                    requires: () => [],
+                    test: () => ({ kind: 'deny', reason: '본인입니다' }),
+                },
+            ];
+        }
         return [beLord(), existsDestGeneral(), friendlyDestGeneral()];
     }
 
@@ -66,7 +79,8 @@ export class ActionDefinition<
             throw new Error('선양 대상 장수가 없습니다.');
         }
 
-        const penaltyRaw = destGeneral.meta.penalty;
+        const penaltyRaw =
+            (destGeneral as General<TriggerState> & { penalty?: unknown }).penalty ?? destGeneral.meta.penalty;
         if (penaltyRaw && typeof penaltyRaw === 'object' && !Array.isArray(penaltyRaw)) {
             const penaltyMap = penaltyRaw as Record<string, unknown>;
             for (const penaltyKey of blockedPenaltyKeys) {
@@ -79,6 +93,7 @@ export class ActionDefinition<
                                 format: LogFormat.MONTH,
                             }),
                         ],
+                        completed: false,
                     };
                 }
             }
@@ -135,7 +150,7 @@ export class ActionDefinition<
             createGeneralPatchEffect(
                 {
                     officerLevel: 1,
-                    experience: Math.floor(general.experience * 0.7),
+                    experience: Math.round(general.experience * 0.7),
                     meta: {
                         ...general.meta,
                         officer_city: 0,
@@ -143,7 +158,8 @@ export class ActionDefinition<
                     },
                 },
                 general.id
-            )
+            ),
+            createNationPatchEffect({ chiefGeneralId: destGeneral.id }, nation.id)
         );
 
         return { effects };

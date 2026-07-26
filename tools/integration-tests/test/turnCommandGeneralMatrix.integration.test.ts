@@ -2089,6 +2089,157 @@ integration('general command in-action failure matrix', () => {
     );
 });
 
+type GeneralStatusTransitionBoundaryCase = {
+    name: string;
+    action: 'che_하야' | 'che_은퇴' | 'che_선양';
+    args?: Record<string, unknown>;
+    actorPatch?: Record<string, unknown>;
+    fixturePatches?: FixturePatches;
+    completed: boolean;
+    expectedActionKey?: string;
+    compareLogs?: boolean;
+};
+
+const generalStatusTransitionBoundaryCases: GeneralStatusTransitionBoundaryCase[] = [
+    {
+        name: 'resignation applies the betrayal penalty and returns excess resources',
+        action: 'che_하야',
+        actorPatch: {
+            officerLevel: 1,
+            experience: 1001,
+            dedication: 1003,
+            gold: 1500,
+            rice: 1600,
+            betray: 3,
+        },
+        completed: true,
+        compareLogs: true,
+    },
+    {
+        name: 'resigning troop leader releases every member',
+        action: 'che_하야',
+        actorPatch: { officerLevel: 1, troopId: 1 },
+        fixturePatches: {
+            generals: { 3: { troopId: 1 } },
+            troops: [{ id: 1, nationId: 1, name: '아국군' }],
+        },
+        completed: true,
+    },
+    {
+        name: 'retirement rejects age fifty nine',
+        action: 'che_은퇴',
+        actorPatch: { age: 59, lastTurn: { command: '은퇴', term: 1 } },
+        completed: false,
+    },
+    {
+        name: 'retirement rounds odd attributes and resets speciality ages and ranks',
+        action: 'che_은퇴',
+        actorPatch: {
+            age: 60,
+            leadership: 91,
+            strength: 81,
+            intelligence: 71,
+            experience: 1001,
+            dedication: 1003,
+            dex1: 101,
+            dex2: 103,
+            dex3: 105,
+            dex4: 107,
+            dex5: 109,
+            specAge: 65,
+            specAge2: 66,
+            lastTurn: { command: '은퇴', term: 1 },
+        },
+        fixturePatches: {
+            rankData: LEGACY_RANK_DATA_TYPES.map((type, index) => ({
+                generalId: 1,
+                type,
+                value: index + 1,
+            })),
+        },
+        completed: true,
+        compareLogs: true,
+    },
+    {
+        name: 'abdication rejects a fractional target ID',
+        action: 'che_선양',
+        args: { destGeneralID: 3.5 },
+        completed: false,
+    },
+    {
+        name: 'abdication rejects the acting monarch as target',
+        action: 'che_선양',
+        args: { destGeneralID: 1 },
+        completed: false,
+    },
+    {
+        name: 'abdication rejects a target with no-chief penalty in action',
+        action: 'che_선양',
+        args: { destGeneralID: 3 },
+        fixturePatches: { generals: { 3: { penalty: { noChief: true } } } },
+        completed: false,
+        expectedActionKey: 'che_선양',
+        compareLogs: true,
+    },
+    {
+        name: 'abdication transfers the monarch office and experience penalty',
+        action: 'che_선양',
+        args: { destGeneralID: 3 },
+        actorPatch: { experience: 1001 },
+        completed: true,
+        compareLogs: true,
+    },
+];
+
+integration('general resignation, retirement, and abdication boundary, state, and log parity', () => {
+    it.each(generalStatusTransitionBoundaryCases)(
+        '$name',
+        async ({
+            name,
+            action,
+            args,
+            actorPatch,
+            fixturePatches,
+            completed,
+            expectedActionKey,
+            compareLogs,
+        }) => {
+            const request = buildRequest(action, args, actorPatch, fixturePatches);
+            request.setup!.world!.hiddenSeed = `general-status-transition-${name}`;
+            request.observe!.includeGlobalHistoryLogs = true;
+            request.observe!.includeNationHistoryLogs = true;
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+            const actionKey = expectedActionKey ?? (completed ? action : '휴식');
+            const coreCompleted = actionKey === '휴식' ? true : completed;
+
+            expect(reference.execution.outcome).toMatchObject({ completed });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: action,
+                actionKey,
+                usedFallback: !completed && actionKey === '휴식',
+                completed: coreCompleted,
+            });
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+
+            if (compareLogs) {
+                expect(semanticLogSignatures(core.after.logs)).toEqual(
+                    semanticLogSignatures(addedReferenceLogs(reference.before, reference.after.logs))
+                );
+            }
+        },
+        120_000
+    );
+});
+
 type SabotageProbabilityClampCase = {
     name: string;
     action: 'che_화계' | 'che_선동' | 'che_파괴' | 'che_탈취';
