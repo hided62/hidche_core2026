@@ -29,6 +29,7 @@ describe('planProfileReconcile', () => {
             planProfileReconcile('RUNNING', {
                 apiRunning: true,
                 daemonRunning: false,
+                auctionRunning: true,
                 battleSimRunning: true,
                 tournamentRunning: true,
             })
@@ -40,6 +41,7 @@ describe('planProfileReconcile', () => {
             planProfileReconcile('PREOPEN', {
                 apiRunning: false,
                 daemonRunning: false,
+                auctionRunning: false,
                 battleSimRunning: false,
                 tournamentRunning: false,
             })
@@ -51,10 +53,23 @@ describe('planProfileReconcile', () => {
             planProfileReconcile('RUNNING', {
                 apiRunning: true,
                 daemonRunning: true,
+                auctionRunning: true,
                 battleSimRunning: true,
                 tournamentRunning: true,
             })
         ).toEqual({ shouldStart: false, shouldStop: false });
+    });
+
+    it('restarts a running profile when only the auction worker is missing', () => {
+        expect(
+            planProfileReconcile('RUNNING', {
+                apiRunning: true,
+                daemonRunning: true,
+                auctionRunning: false,
+                battleSimRunning: true,
+                tournamentRunning: true,
+            })
+        ).toEqual({ shouldStart: true, shouldStop: false });
     });
 
     it('stops processes for non-running profiles', () => {
@@ -62,6 +77,7 @@ describe('planProfileReconcile', () => {
             planProfileReconcile('STOPPED', {
                 apiRunning: false,
                 daemonRunning: true,
+                auctionRunning: false,
                 battleSimRunning: false,
                 tournamentRunning: false,
             })
@@ -73,6 +89,7 @@ describe('planProfileReconcile', () => {
             planProfileReconcile('RESERVED', {
                 apiRunning: false,
                 daemonRunning: false,
+                auctionRunning: false,
                 battleSimRunning: false,
                 tournamentRunning: false,
             })
@@ -100,6 +117,11 @@ describe('buildProcessDefinitions', () => {
         });
         expect(definitions.daemon.cwd).toBe(path.join(buildWorkspace, 'app', 'game-engine'));
         expect(definitions.daemon.script).toBe(path.join(buildWorkspace, 'app', 'game-engine', 'dist', 'index.js'));
+        expect(definitions.auction).toMatchObject({
+            cwd: path.join(buildWorkspace, 'app', 'game-api'),
+            script: path.join(buildWorkspace, 'app', 'game-api', 'dist', 'index.js'),
+            env: { GAME_API_ROLE: 'auction-worker' },
+        });
         expect(definitions.battleSim).toMatchObject({
             cwd: path.join(buildWorkspace, 'app', 'game-api'),
             script: path.join(buildWorkspace, 'app', 'game-api', 'dist', 'index.js'),
@@ -117,6 +139,7 @@ describe('buildProcessDefinitions', () => {
 
         expect(definitions.api.cwd).toBe(path.join(processConfig.workspaceRoot, 'app', 'game-api'));
         expect(definitions.daemon.cwd).toBe(path.join(processConfig.workspaceRoot, 'app', 'game-engine'));
+        expect(definitions.auction.cwd).toBe(path.join(processConfig.workspaceRoot, 'app', 'game-api'));
         expect(definitions.battleSim.cwd).toBe(path.join(processConfig.workspaceRoot, 'app', 'game-api'));
         expect(definitions.tournament.cwd).toBe(path.join(processConfig.workspaceRoot, 'app', 'game-api'));
     });

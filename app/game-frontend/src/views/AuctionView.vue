@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 
-import PanelCard from '../components/ui/PanelCard.vue';
-import SkeletonLines from '../components/ui/SkeletonLines.vue';
 import { formatLog } from '../utils/formatLog';
 import { trpc } from '../utils/trpc';
 
@@ -11,7 +10,8 @@ type ResourceAuction = AuctionOverview['resourceAuctions'][number];
 type UniqueAuction = AuctionOverview['uniqueAuctions'][number];
 type UniqueDetail = Awaited<ReturnType<typeof trpc.auction.getUniqueDetail.query>>;
 
-const activeTab = ref<'resource' | 'unique'>('resource');
+const route = useRoute();
+const activeTab = ref<'resource' | 'unique'>(route.query.type === 'unique' ? 'unique' : 'resource');
 const loading = ref(false);
 const actionBusy = ref(false);
 const error = ref<string | null>(null);
@@ -38,22 +38,57 @@ const resolveErrorMessage = (value: unknown): string => {
 };
 
 const formatNumber = (value: number | null | undefined): string => (value ?? 0).toLocaleString();
-const formatDate = (value: string): string =>
-    new Intl.DateTimeFormat('ko-KR', {
+const cutDateTime = (value: string | null | undefined, showSecond = false): string => {
+    if (!value) {
+        return '-';
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        return value.slice(5, showSecond ? 19 : 16);
+    }
+    const parts = new Intl.DateTimeFormat('ko-KR', {
         month: '2-digit',
         day: '2-digit',
         hour: '2-digit',
         minute: '2-digit',
-        second: '2-digit',
-    }).format(new Date(value));
+        ...(showSecond ? { second: '2-digit' } : {}),
+        hour12: false,
+    }).formatToParts(date);
+    const part = (type: Intl.DateTimeFormatPartTypes): string =>
+        parts.find((entry) => entry.type === type)?.value ?? '';
+    return `${part('month')}-${part('day')} ${part('hour')}:${part('minute')}${showSecond ? `:${part('second')}` : ''}`;
+};
 
-const resourceTitle = (auction: ResourceAuction): string =>
-    auction.type === 'BUY_RICE' ? '쌀 구매' : '쌀 판매';
-const hostResource = (auction: ResourceAuction): string => (auction.type === 'BUY_RICE' ? '쌀' : '금');
-const bidResource = (auction: ResourceAuction): string => (auction.type === 'BUY_RICE' ? '금' : '쌀');
+const buyRice = computed(() =>
+    (overview.value?.resourceAuctions ?? []).filter((auction) => auction.type === 'BUY_RICE')
+);
+const sellRice = computed(() =>
+    (overview.value?.resourceAuctions ?? []).filter((auction) => auction.type === 'SELL_RICE')
+);
+const ongoingUnique = computed(() =>
+    (overview.value?.uniqueAuctions ?? []).filter((auction) => auction.status === 'OPEN')
+);
+const finishedUnique = computed(() =>
+    (overview.value?.uniqueAuctions ?? []).filter((auction) => auction.status !== 'OPEN')
+);
 
-const resourceAuctions = computed(() => overview.value?.resourceAuctions ?? []);
-const uniqueAuctions = computed(() => overview.value?.uniqueAuctions ?? []);
+const selectResource = (auction: ResourceAuction): void => {
+    selectedResource.value = auction;
+    bidAmount.value = auction.highestBid?.amount ?? auction.detail.startBidAmount ?? 0;
+};
+
+const selectUnique = async (auction: UniqueAuction): Promise<void> => {
+    selectedUnique.value = auction;
+    uniqueDetail.value = null;
+    error.value = null;
+    try {
+        uniqueDetail.value = await trpc.auction.getUniqueDetail.query({ auctionId: auction.id });
+        const highest = uniqueDetail.value.bids[0]?.amount ?? auction.detail.startBidAmount ?? 0;
+        bidAmount.value = Math.max(Math.ceil(highest * 1.01), highest + 10);
+    } catch (err) {
+        error.value = resolveErrorMessage(err);
+    }
+};
 
 const loadOverview = async (): Promise<void> => {
     loading.value = true;
@@ -65,30 +100,19 @@ const loadOverview = async (): Promise<void> => {
                 overview.value.resourceAuctions.find((auction) => auction.id === selectedResource.value?.id) ?? null;
         }
         if (selectedUnique.value) {
-            selectedUnique.value =
+            const updated =
                 overview.value.uniqueAuctions.find((auction) => auction.id === selectedUnique.value?.id) ?? null;
+            selectedUnique.value = updated;
+            if (updated) {
+                await selectUnique(updated);
+            }
+        } else if (activeTab.value === 'unique' && ongoingUnique.value[0]) {
+            await selectUnique(ongoingUnique.value[0]);
         }
     } catch (err) {
         error.value = resolveErrorMessage(err);
     } finally {
         loading.value = false;
-    }
-};
-
-const selectResource = (auction: ResourceAuction): void => {
-    selectedResource.value = auction;
-    bidAmount.value = auction.highestBid?.amount ?? auction.detail.startBidAmount ?? 0;
-};
-
-const selectUnique = async (auction: UniqueAuction): Promise<void> => {
-    selectedUnique.value = auction;
-    error.value = null;
-    try {
-        uniqueDetail.value = await trpc.auction.getUniqueDetail.query({ auctionId: auction.id });
-        const highest = uniqueDetail.value.bids[0]?.amount ?? auction.detail.startBidAmount ?? 0;
-        bidAmount.value = Math.max(Math.ceil(highest * 1.01), highest + 10);
-    } catch (err) {
-        error.value = resolveErrorMessage(err);
     }
 };
 
@@ -138,7 +162,7 @@ const bidResourceAuction = (): Promise<void> =>
         } else {
             await trpc.auction.bidSellRice.mutate({ auctionId: auction.id, amount: bidAmount.value });
         }
-        message.value = `${auction.id}번 경매에 입찰했습니다.`;
+        message.value = '입찰했습니다.';
     });
 
 const bidUniqueAuction = (): Promise<void> =>
@@ -147,17 +171,30 @@ const bidUniqueAuction = (): Promise<void> =>
         if (!auction) {
             return;
         }
-        if (!window.confirm(`${auction.detail.title ?? auction.targetCode ?? '유니크'}에 ${bidAmount.value} 포인트를 입찰하시겠습니까?`)) {
+        if (
+            !window.confirm(
+                `${auction.detail.title ?? auction.targetCode ?? '유니크'}에 ${bidAmount.value}유산포인트를 입찰하시겠습니까?`
+            )
+        ) {
             return;
         }
         await trpc.auction.bidUnique.mutate({
             auctionId: auction.id,
             amount: bidAmount.value,
-            tryExtendCloseDate: true,
+            tryExtendCloseDate: false,
         });
-        message.value = `${auction.id}번 유니크 경매에 입찰했습니다.`;
-        await selectUnique(auction);
+        message.value = '입찰이 완료되었습니다.';
     });
+
+const closeWindow = (): void => window.close();
+
+watch(activeTab, (tab) => {
+    error.value = null;
+    message.value = null;
+    if (tab === 'unique' && !selectedUnique.value && ongoingUnique.value[0]) {
+        void selectUnique(ongoingUnique.value[0]);
+    }
+});
 
 onMounted(() => {
     void loadOverview();
@@ -165,188 +202,638 @@ onMounted(() => {
 </script>
 
 <template>
-    <main class="auction-page">
-        <header class="page-header">
-            <div>
-                <h1>거래장</h1>
-                <p>금·쌀 거래와 유니크 아이템 경매를 확인합니다.</p>
-            </div>
-            <button class="ghost" :disabled="loading" @click="loadOverview">새로고침</button>
+    <main id="container" class="legacy-auction-page bg0">
+        <header class="top-back-bar bg0">
+            <button class="legacy-button close-button" type="button" @click="closeWindow">창 닫기</button>
+            <button class="legacy-button reload-button" type="button" :disabled="loading" @click="loadOverview">
+                갱신
+            </button>
+            <h1>{{ activeTab === 'resource' ? '경매장' : '유니크 경매장' }}</h1>
+            <button
+                class="legacy-button tab-button"
+                :aria-pressed="activeTab === 'resource'"
+                @click="activeTab = 'resource'"
+            >
+                금/쌀
+            </button>
+            <button
+                class="legacy-button tab-button"
+                :aria-pressed="activeTab === 'unique'"
+                @click="activeTab = 'unique'"
+            >
+                유니크
+            </button>
         </header>
 
-        <nav class="tabs" aria-label="경매 종류">
-            <button :class="{ active: activeTab === 'resource' }" @click="activeTab = 'resource'">금·쌀 경매</button>
-            <button :class="{ active: activeTab === 'unique' }" @click="activeTab = 'unique'">유니크 경매</button>
-        </nav>
+        <p v-if="error" class="auction-notice error" role="alert">{{ error }}</p>
+        <p v-if="message" class="auction-notice success" role="status">{{ message }}</p>
+        <div v-if="loading && !overview" class="loading-state">불러오는 중...</div>
 
-        <p v-if="error" class="notice error">{{ error }}</p>
-        <p v-if="message" class="notice success">{{ message }}</p>
-        <SkeletonLines v-if="loading && !overview" :lines="8" />
+        <section v-else-if="activeTab === 'resource'" class="resource-auction bg0">
+            <h2 class="section-title bg2">거래장</h2>
 
-        <template v-else-if="activeTab === 'resource'">
-            <PanelCard title="진행 중인 금·쌀 경매" subtitle="행을 선택하면 아래에서 입찰할 수 있습니다.">
-                <div class="auction-table resource-table">
-                    <div class="table-head">
-                        <span>번호</span><span>종류</span><span>판매자</span><span>수량</span><span>입찰자</span>
-                        <span>현재가</span><span>마감가</span><span>종료</span>
-                    </div>
-                    <button
-                        v-for="auction in resourceAuctions"
-                        :key="auction.id"
-                        class="table-row"
-                        :class="{ selected: selectedResource?.id === auction.id }"
-                        @click="selectResource(auction)"
-                    >
-                        <span>{{ auction.id }}</span>
-                        <span>{{ resourceTitle(auction) }}</span>
-                        <span>{{ auction.hostName }}</span>
-                        <span>{{ hostResource(auction) }} {{ formatNumber(auction.detail.amount) }}</span>
-                        <span>{{ auction.highestBid?.bidderName ?? '-' }}</span>
-                        <span>{{ bidResource(auction) }} {{ formatNumber(auction.highestBid?.amount ?? auction.detail.startBidAmount) }}</span>
-                        <span>{{ bidResource(auction) }} {{ formatNumber(auction.detail.finishBidAmount) }}</span>
-                        <span>{{ formatDate(auction.closeAt) }}</span>
-                    </button>
-                    <p v-if="resourceAuctions.length === 0" class="empty">진행 중인 경매가 없습니다.</p>
+            <section class="resource-section" aria-labelledby="buy-rice-heading">
+                <h3 id="buy-rice-heading" class="resource-kind buy-rice">쌀 구매</h3>
+                <div class="resource-row resource-header">
+                    <span class="idx">번호</span><span class="host">판매자</span><span class="amount">수량</span>
+                    <span class="highest-bidder">입찰자</span><span class="highest-bid">입찰가</span>
+                    <span class="bid-ratio">단가</span><span class="finish-bid">마감가</span>
+                    <span class="close-date">거래 종료</span>
                 </div>
+                <button
+                    v-for="auction in buyRice"
+                    :key="auction.id"
+                    class="resource-row clickable-row"
+                    :class="{ selected: selectedResource?.id === auction.id }"
+                    @click="selectResource(auction)"
+                >
+                    <span class="idx tnum">{{ auction.id }}</span>
+                    <span class="host">{{ auction.hostName }}</span>
+                    <span class="amount tnum">쌀 {{ formatNumber(auction.detail.amount) }}</span>
+                    <span class="highest-bidder">{{ auction.highestBid?.bidderName ?? '-' }}</span>
+                    <span class="highest-bid tnum" :class="{ 'no-bid': !auction.highestBid }">
+                        금 {{ formatNumber(auction.highestBid?.amount ?? auction.detail.startBidAmount) }}
+                    </span>
+                    <span class="bid-ratio tnum">
+                        {{
+                            auction.highestBid && auction.detail.amount
+                                ? (auction.highestBid.amount / auction.detail.amount).toFixed(2)
+                                : '-'
+                        }}
+                    </span>
+                    <span class="finish-bid tnum">금 {{ formatNumber(auction.detail.finishBidAmount) }}</span>
+                    <span class="close-date tnum">{{ cutDateTime(auction.closeAt) }}</span>
+                </button>
+                <p v-if="buyRice.length === 0" class="empty-row">진행 중인 쌀 구매 경매가 없습니다.</p>
+            </section>
 
-                <form v-if="selectedResource" class="bid-form" @submit.prevent="bidResourceAuction">
-                    <strong>{{ selectedResource.id }}번 {{ resourceTitle(selectedResource) }}</strong>
-                    <label>
-                        <span>입찰가 ({{ bidResource(selectedResource) }})</span>
-                        <input v-model.number="bidAmount" type="number" min="1" step="10" required />
-                    </label>
-                    <button :disabled="actionBusy || selectedResource.isCallerHost">입찰</button>
-                </form>
-            </PanelCard>
-
-            <PanelCard title="경매 등록" subtitle="레거시와 동일하게 한 장수는 자원 경매를 한 건만 진행할 수 있습니다.">
-                <form class="open-form" @submit.prevent="openResourceAuction">
-                    <label>
-                        <span>매물</span>
-                        <select v-model="openForm.type">
-                            <option value="BUY_RICE">쌀</option>
-                            <option value="SELL_RICE">금</option>
-                        </select>
-                    </label>
-                    <label><span>수량</span><input v-model.number="openForm.amount" type="number" min="100" max="10000" step="10" /></label>
-                    <label><span>기간(턴)</span><input v-model.number="openForm.closeTurnCnt" type="number" min="1" max="24" /></label>
-                    <label><span>시작가</span><input v-model.number="openForm.startBidAmount" type="number" min="1" step="10" /></label>
-                    <label><span>마감가</span><input v-model.number="openForm.finishBidAmount" type="number" min="1" step="10" /></label>
-                    <button :disabled="actionBusy">등록</button>
-                </form>
-            </PanelCard>
-
-            <PanelCard title="이전 경매" subtitle="최근 경매 기록 20건">
-                <ol class="log-list">
-                    <!-- eslint-disable vue/no-v-html -->
-                    <li v-for="log in overview?.recentLogs ?? []" :key="log.id" v-html="formatLog(log.text)" />
-                    <!-- eslint-enable vue/no-v-html -->
-                    <li v-if="(overview?.recentLogs.length ?? 0) === 0" class="empty">경매 기록이 없습니다.</li>
-                </ol>
-            </PanelCard>
-        </template>
-
-        <template v-else>
-            <PanelCard title="유니크 경매" :subtitle="`내 가명: ${overview?.callerAlias ?? '-'}`">
-                <div class="auction-table unique-table">
-                    <div class="table-head">
-                        <span>번호</span><span>경매명</span><span>주최자</span><span>종료</span><span>1순위</span><span>포인트</span>
-                    </div>
-                    <button
-                        v-for="auction in uniqueAuctions"
-                        :key="auction.id"
-                        class="table-row"
-                        :class="{ selected: selectedUnique?.id === auction.id }"
-                        @click="selectUnique(auction)"
-                    >
-                        <span>{{ auction.id }}</span>
-                        <span>{{ auction.detail.title ?? auction.targetCode }}</span>
-                        <span :class="{ me: auction.isCallerHost }">{{ auction.hostName }}</span>
-                        <span>{{ formatDate(auction.closeAt) }}</span>
-                        <span :class="{ me: auction.highestBid?.isCaller }">{{ auction.highestBid?.bidderName ?? '-' }}</span>
-                        <span>{{ formatNumber(auction.highestBid?.amount ?? auction.detail.startBidAmount) }}</span>
-                    </button>
-                    <p v-if="uniqueAuctions.length === 0" class="empty">유니크 경매가 없습니다.</p>
+            <section class="resource-section" aria-labelledby="sell-rice-heading">
+                <h3 id="sell-rice-heading" class="resource-kind sell-rice">쌀 판매</h3>
+                <div class="resource-row resource-header">
+                    <span class="idx">번호</span><span class="host">판매자</span><span class="amount">수량</span>
+                    <span class="highest-bidder">입찰자</span><span class="highest-bid">입찰가</span>
+                    <span class="bid-ratio">단가</span><span class="finish-bid">마감가</span>
+                    <span class="close-date">거래 종료</span>
                 </div>
-            </PanelCard>
+                <button
+                    v-for="auction in sellRice"
+                    :key="auction.id"
+                    class="resource-row clickable-row"
+                    :class="{ selected: selectedResource?.id === auction.id }"
+                    @click="selectResource(auction)"
+                >
+                    <span class="idx tnum">{{ auction.id }}</span>
+                    <span class="host">{{ auction.hostName }}</span>
+                    <span class="amount tnum">금 {{ formatNumber(auction.detail.amount) }}</span>
+                    <span class="highest-bidder">{{ auction.highestBid?.bidderName ?? '-' }}</span>
+                    <span class="highest-bid tnum" :class="{ 'no-bid': !auction.highestBid }">
+                        쌀 {{ formatNumber(auction.highestBid?.amount ?? auction.detail.startBidAmount) }}
+                    </span>
+                    <span class="bid-ratio tnum">
+                        {{
+                            auction.highestBid && auction.detail.amount
+                                ? (auction.highestBid.amount / auction.detail.amount).toFixed(2)
+                                : '-'
+                        }}
+                    </span>
+                    <span class="finish-bid tnum">쌀 {{ formatNumber(auction.detail.finishBidAmount) }}</span>
+                    <span class="close-date tnum">{{ cutDateTime(auction.closeAt) }}</span>
+                </button>
+                <p v-if="sellRice.length === 0" class="empty-row">진행 중인 쌀 판매 경매가 없습니다.</p>
+            </section>
 
-            <PanelCard v-if="uniqueDetail" title="유니크 경매 상세">
+            <form v-if="selectedResource" class="resource-bid-form" @submit.prevent="bidResourceAuction">
+                <span class="bid-description">
+                    {{ selectedResource.id }}번 {{ selectedResource.type === 'BUY_RICE' ? '쌀' : '금' }}
+                    {{ formatNumber(selectedResource.detail.amount) }} 경매에
+                    {{ selectedResource.type === 'BUY_RICE' ? '금' : '쌀' }}
+                </span>
+                <input
+                    v-model.number="bidAmount"
+                    :aria-label="`${selectedResource.id}번 경매 입찰가`"
+                    type="number"
+                    :min="selectedResource.detail.startBidAmount ?? 1"
+                    :max="selectedResource.detail.finishBidAmount ?? undefined"
+                    step="10"
+                    required
+                />
+                <button class="legacy-button" :disabled="actionBusy || selectedResource.isCallerHost">입찰</button>
+            </form>
+
+            <h3 class="subsection-title">경매 등록</h3>
+            <form class="open-form" @submit.prevent="openResourceAuction">
+                <fieldset>
+                    <legend>매물</legend>
+                    <div class="item-toggle">
+                        <button
+                            class="legacy-button"
+                            type="button"
+                            :aria-pressed="openForm.type === 'BUY_RICE'"
+                            @click="openForm.type = 'BUY_RICE'"
+                        >
+                            쌀
+                        </button>
+                        <button
+                            class="legacy-button"
+                            type="button"
+                            :aria-pressed="openForm.type === 'SELL_RICE'"
+                            @click="openForm.type = 'SELL_RICE'"
+                        >
+                            금
+                        </button>
+                    </div>
+                </fieldset>
+                <label>
+                    <span>수량 ({{ openForm.type === 'BUY_RICE' ? '쌀' : '금' }})</span>
+                    <input v-model.number="openForm.amount" type="number" min="100" max="10000" step="10" />
+                </label>
+                <label
+                    ><span>기간(턴)</span><input v-model.number="openForm.closeTurnCnt" type="number" min="3" max="24"
+                /></label>
+                <label>
+                    <span>시작가 ({{ openForm.type === 'BUY_RICE' ? '금' : '쌀' }})</span>
+                    <input v-model.number="openForm.startBidAmount" type="number" min="100" max="10000" step="10" />
+                </label>
+                <label>
+                    <span>마감가 ({{ openForm.type === 'BUY_RICE' ? '금' : '쌀' }})</span>
+                    <input v-model.number="openForm.finishBidAmount" type="number" min="100" max="10000" step="10" />
+                </label>
+                <button class="legacy-button register-button" :disabled="actionBusy">등록</button>
+            </form>
+
+            <h3 class="subsection-title">이전 경매(최근 20건)</h3>
+            <div class="recent-logs">
+                <!-- eslint-disable vue/no-v-html -->
+                <div v-for="log in overview?.recentLogs ?? []" :key="log.id" v-html="formatLog(log.text)" />
+                <!-- eslint-enable vue/no-v-html -->
+                <div v-if="(overview?.recentLogs.length ?? 0) === 0" class="empty-row">경매 기록이 없습니다.</div>
+            </div>
+        </section>
+
+        <section v-else class="unique-auction bg0">
+            <div class="caller-alias">
+                내 가명: <strong>{{ overview?.callerAlias ?? '-' }}</strong>
+            </div>
+
+            <section v-if="uniqueDetail" class="unique-detail">
+                <h2 class="section-title bg2">경매 {{ uniqueDetail.auction.id }}번 상세</h2>
                 <dl class="detail-grid">
-                    <dt>경매명</dt><dd>{{ uniqueDetail.auction.detail.title ?? uniqueDetail.auction.targetCode }}</dd>
-                    <dt>주최자(익명)</dt><dd :class="{ me: uniqueDetail.auction.isCallerHost }">{{ uniqueDetail.auction.hostName }}</dd>
-                    <dt>종료일시</dt><dd>{{ formatDate(uniqueDetail.auction.closeAt) }}</dd>
-                    <dt>잔여 포인트</dt><dd>{{ formatNumber(uniqueDetail.remainPoint) }}</dd>
+                    <dt class="bg1">경매명</dt>
+                    <dd>{{ uniqueDetail.auction.detail.title ?? uniqueDetail.auction.targetCode }}</dd>
+                    <dt class="bg1">주최자(익명)</dt>
+                    <dd :class="{ 'is-me': uniqueDetail.auction.isCallerHost }">{{ uniqueDetail.auction.hostName }}</dd>
+                    <dt class="bg1">종료일시</dt>
+                    <dd class="tnum">{{ cutDateTime(uniqueDetail.auction.closeAt, true) }}</dd>
+                    <dt class="bg1">최대지연</dt>
+                    <dd class="tnum">
+                        {{ cutDateTime(uniqueDetail.auction.detail.availableLatestBidCloseDate, true) }}
+                    </dd>
                 </dl>
-                <div class="bid-history">
-                    <div v-for="bid in uniqueDetail.bids" :key="bid.id" class="bid-entry">
-                        <span :class="{ me: bid.isCaller }">{{ bid.bidderName }}</span>
-                        <strong>{{ formatNumber(bid.amount) }}</strong>
-                        <time>{{ formatDate(bid.eventAt) }}</time>
-                    </div>
+                <h3 class="subsection-title bg1">입찰자 목록</h3>
+                <div class="bid-row bid-header"><span>입찰자</span><span>입찰포인트</span><span>시각</span></div>
+                <div v-for="bid in uniqueDetail.bids" :key="bid.id" class="bid-row">
+                    <span :class="{ 'is-me': bid.isCaller }">{{ bid.bidderName }}</span>
+                    <span class="tnum">{{ formatNumber(bid.amount) }}</span>
+                    <time class="tnum">{{ cutDateTime(bid.eventAt) }}</time>
                 </div>
-                <form v-if="uniqueDetail.auction.status === 'OPEN'" class="bid-form" @submit.prevent="bidUniqueAuction">
-                    <label><span>유산 포인트</span><input v-model.number="bidAmount" type="number" min="1" required /></label>
-                    <button :disabled="actionBusy">입찰</button>
-                </form>
-            </PanelCard>
-        </template>
+                <template v-if="uniqueDetail.auction.status === 'OPEN'">
+                    <h3 class="subsection-title bg1">입찰하기</h3>
+                    <form class="unique-bid-form" @submit.prevent="bidUniqueAuction">
+                        <label for="unique-bid">
+                            유산포인트 (잔여: {{ formatNumber(uniqueDetail.remainPoint) }}포인트)
+                        </label>
+                        <input id="unique-bid" v-model.number="bidAmount" type="number" min="1" required />
+                        <button class="legacy-button" :disabled="actionBusy">입찰</button>
+                    </form>
+                </template>
+            </section>
+
+            <section class="unique-list-section">
+                <h2 class="subsection-title bg1">진행중인 경매 목록</h2>
+                <div class="unique-row unique-header">
+                    <span>번호</span><span>경매명</span><span>주최자</span><span>종료일시</span> <span>연장</span
+                    ><span>1순위</span><span>포인트</span>
+                </div>
+                <button
+                    v-for="auction in ongoingUnique"
+                    :key="auction.id"
+                    class="unique-row clickable-row"
+                    :class="{ selected: selectedUnique?.id === auction.id }"
+                    @click="selectUnique(auction)"
+                >
+                    <span>{{ auction.id }}</span
+                    ><span>{{ auction.detail.title ?? auction.targetCode }}</span>
+                    <span :class="{ 'is-me': auction.isCallerHost }">{{ auction.hostName }}</span>
+                    <span class="tnum">{{ cutDateTime(auction.closeAt) }}</span>
+                    <span>{{ (auction.detail.remainCloseDateExtensionCnt ?? 0) > 0 ? '남음' : '소진' }}</span>
+                    <span :class="{ 'is-me': auction.highestBid?.isCaller }">{{
+                        auction.highestBid?.bidderName ?? '-'
+                    }}</span>
+                    <span class="tnum">{{
+                        formatNumber(auction.highestBid?.amount ?? auction.detail.startBidAmount)
+                    }}</span>
+                </button>
+                <p v-if="ongoingUnique.length === 0" class="empty-row">진행중인 유니크 경매가 없습니다.</p>
+            </section>
+
+            <section class="unique-list-section">
+                <h2 class="subsection-title bg1">종료된 경매 목록</h2>
+                <div class="unique-row unique-header">
+                    <span>번호</span><span>경매명</span><span>주최자</span><span>종료일시</span> <span>연장</span
+                    ><span>1순위</span><span>포인트</span>
+                </div>
+                <button
+                    v-for="auction in finishedUnique"
+                    :key="auction.id"
+                    class="unique-row clickable-row"
+                    :class="{ selected: selectedUnique?.id === auction.id }"
+                    @click="selectUnique(auction)"
+                >
+                    <span>{{ auction.id }}</span
+                    ><span>{{ auction.detail.title ?? auction.targetCode }}</span>
+                    <span :class="{ 'is-me': auction.isCallerHost }">{{ auction.hostName }}</span>
+                    <span class="tnum">{{ cutDateTime(auction.closeAt) }}</span>
+                    <span>{{ (auction.detail.remainCloseDateExtensionCnt ?? 0) > 0 ? '남음' : '소진' }}</span>
+                    <span :class="{ 'is-me': auction.highestBid?.isCaller }">{{
+                        auction.highestBid?.bidderName ?? '-'
+                    }}</span>
+                    <span class="tnum">{{
+                        formatNumber(auction.highestBid?.amount ?? auction.detail.startBidAmount)
+                    }}</span>
+                </button>
+                <p v-if="finishedUnique.length === 0" class="empty-row">종료된 유니크 경매가 없습니다.</p>
+            </section>
+        </section>
+
+        <footer class="bottom-bar bg0">
+            <button class="legacy-button close-button" type="button" @click="closeWindow">창 닫기</button>
+        </footer>
     </main>
 </template>
 
 <style scoped>
-.auction-page {
-    min-height: 100%;
-    padding: 18px;
-    color: #e8ddc4;
-    background: radial-gradient(circle at top, rgba(93, 57, 26, 0.25), transparent 42%), #080807;
+.legacy-auction-page {
+    width: 100%;
+    max-width: 1000px;
+    box-sizing: border-box;
+    margin: 0 auto;
+    color: #fff;
+    font-family: Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+    font-size: 14px;
+    line-height: 21px;
 }
-.page-header, .tabs, .bid-form, .open-form, .detail-grid, .bid-entry {
-    display: flex;
+.bg0 {
+    background-color: #302016;
+    background-image: url('/image/game/back_walnut.jpg');
+}
+.bg1 {
+    background-color: #14241b;
+    background-image: url('/image/game/back_green.jpg');
+}
+.bg2 {
+    background-color: #172a52;
+    background-image: url('/image/game/back_blue.jpg');
+}
+.top-back-bar {
+    width: 100%;
+    height: 32px;
+    display: grid;
+    grid-template-columns: 90px 90px 1fr 90px 90px;
+}
+.top-back-bar h1 {
+    margin: 0;
+    font-size: 24px;
+    font-weight: 500;
+    line-height: 32px;
+    text-align: center;
+}
+.legacy-button {
+    box-sizing: border-box;
+    border: solid #3d3d3d;
+    border-width: 0 1px 4px;
+    border-radius: 5.25px;
+    padding: 5.25px 10.5px;
+    color: #fff;
+    background: #444;
+    font: inherit;
+    font-weight: 700;
+    line-height: 21px;
+    cursor: pointer;
+}
+.legacy-button:hover,
+.legacy-button:focus {
+    border-color: #353535;
+    background: #393939;
+}
+.legacy-button:focus-visible {
+    outline: 2px solid #8ab4f8;
+    outline-offset: -2px;
+}
+.legacy-button:active,
+.legacy-button[aria-pressed='true'] {
+    border-color: #303030;
+    background: #333;
+}
+.legacy-button:disabled {
+    cursor: default;
+    opacity: 0.65;
+}
+.close-button,
+.reload-button {
+    margin-right: 2px;
+    border-color: #004f28;
+    background: #00582c;
+}
+.close-button:hover,
+.close-button:focus,
+.reload-button:hover,
+.reload-button:focus {
+    border-color: #004523;
+    background: #004a25;
+}
+.top-back-bar .close-button,
+.top-back-bar .reload-button {
+    height: 32px;
+}
+.tab-button {
+    border-color: #3d3d3d;
+    background: #444;
+}
+.tab-button[aria-pressed='true'] {
+    border-color: #3d3d3d;
+    background: #444;
+}
+.tab-button:hover,
+.tab-button:focus {
+    border-color: #353535;
+    background: #393939;
+}
+.section-title,
+.subsection-title,
+.resource-kind {
+    margin: 0;
+    min-height: 18px;
+    font: inherit;
+    font-weight: 400;
+}
+.resource-kind.buy-rice {
+    color: #000;
+    background: orange;
+}
+.resource-kind.sell-rice {
+    color: #000;
+    background: skyblue;
+}
+.resource-row {
+    width: 100%;
+    min-height: 22px;
+    display: grid;
+    grid-template-columns: 1fr 2fr 2fr 2fr 2fr 1fr 3fr 2fr;
     align-items: center;
+    box-sizing: border-box;
+    border: 0;
+    border-bottom: 1px solid gray;
+    padding: 0;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    text-align: center;
 }
-.page-header { justify-content: space-between; gap: 16px; margin-bottom: 12px; }
-.page-header h1 { margin: 0; font-size: 1.45rem; }
-.page-header p { margin: 4px 0 0; color: rgba(232, 221, 196, 0.7); }
-.tabs { gap: 6px; margin-bottom: 12px; }
-button, input, select {
-    border: 1px solid rgba(201, 164, 90, 0.55);
-    background: rgba(20, 17, 12, 0.95);
-    color: #e8ddc4;
-    padding: 8px 10px;
+.clickable-row {
+    cursor: pointer;
 }
-button { cursor: pointer; }
-button:hover, button:focus-visible, button.active { background: rgba(201, 164, 90, 0.22); }
-button:disabled { cursor: not-allowed; opacity: 0.45; }
-.ghost { background: transparent; }
-.notice { padding: 9px 12px; border: 1px solid; }
-.notice.error { color: #ffb3a9; border-color: rgba(255, 90, 70, 0.45); }
-.notice.success { color: #b9e6af; border-color: rgba(94, 177, 75, 0.45); }
-.auction-page :deep(.panel-card) { margin-bottom: 12px; }
-.auction-table { overflow-x: auto; }
-.table-head, .table-row { display: grid; min-width: 820px; align-items: center; text-align: center; }
-.resource-table .table-head, .resource-table .table-row { grid-template-columns: 52px 84px 1fr 1fr 1fr 1fr 1fr 150px; }
-.unique-table .table-head, .unique-table .table-row { grid-template-columns: 52px 2fr 1fr 150px 1fr 110px; }
-.table-head { border-bottom: 1px solid rgba(232, 221, 196, 0.4); padding: 7px; color: rgba(232, 221, 196, 0.7); }
-.table-row { width: 100%; border: 0; border-bottom: 1px solid rgba(232, 221, 196, 0.12); background: transparent; }
-.table-row.selected { background: rgba(201, 164, 90, 0.18); }
-.table-row > span { padding: 8px 5px; }
-.bid-form { justify-content: center; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
-.bid-form label, .open-form label { display: grid; gap: 5px; }
-.open-form { align-items: end; gap: 10px; flex-wrap: wrap; }
-.open-form label { min-width: 110px; flex: 1; }
-.empty { padding: 14px; text-align: center; color: rgba(232, 221, 196, 0.6); }
-.log-list { margin: 0; padding-left: 24px; }
-.log-list li { padding: 4px 0; }
-.detail-grid { display: grid; grid-template-columns: 130px 1fr 130px 1fr; gap: 1px; background: rgba(232, 221, 196, 0.18); }
-.detail-grid dt, .detail-grid dd { margin: 0; padding: 9px; background: #11100d; }
-.detail-grid dt { color: rgba(232, 221, 196, 0.65); }
-.bid-history { margin-top: 12px; }
-.bid-entry { justify-content: space-between; gap: 12px; padding: 7px 10px; border-bottom: 1px solid rgba(232, 221, 196, 0.14); }
-.bid-entry time { color: rgba(232, 221, 196, 0.65); }
-.me { color: aquamarine; font-weight: 700; }
-@media (max-width: 720px) {
-    .auction-page { padding: 10px; }
-    .page-header { align-items: flex-start; }
-    .detail-grid { grid-template-columns: 110px 1fr; }
+.clickable-row:hover,
+.clickable-row:focus-visible,
+.clickable-row.selected {
+    background-color: rgb(255 255 255 / 12%);
+    outline: 0;
+}
+.no-bid {
+    color: #ccc;
+}
+.tnum {
+    font-variant-numeric: tabular-nums;
+}
+.empty-row {
+    min-height: 24px;
+    margin: 0;
+    padding: 4px 8px;
+    text-align: center;
+}
+.resource-bid-form {
+    min-height: 42px;
+    display: grid;
+    grid-template-columns: 2fr 2fr 1fr;
+    align-items: center;
+    gap: 4px;
+    padding-right: 33.3333%;
+    padding-left: 25%;
+}
+.bid-description {
+    text-align: right;
+}
+input {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    border: 1px solid #000;
+    border-radius: 5.25px;
+    padding: 5.25px 10.5px;
+    color: #303030;
+    background: #ddd;
+    font: inherit;
+}
+input:focus-visible {
+    outline: 2px solid #8ab4f8;
+    outline-offset: -2px;
+}
+.open-form {
+    min-height: 76px;
+    display: grid;
+    grid-template-columns: 1fr 2fr 1fr 2fr 2fr 1fr;
+    align-items: end;
+    gap: 4px;
+    box-sizing: border-box;
+    padding-right: 8.3333%;
+    padding-left: 16.6667%;
+}
+.open-form fieldset,
+.open-form label {
+    min-width: 0;
+    margin: 0;
+    border: 0;
+    padding: 0;
+}
+.open-form legend {
+    padding: 0;
+}
+.open-form label {
+    display: grid;
+    gap: 2px;
+}
+.item-toggle {
+    display: flex;
+}
+.item-toggle .legacy-button {
+    flex: 1;
+}
+.register-button {
+    height: 100%;
+    align-self: stretch;
+}
+.recent-logs {
+    min-height: 24px;
+}
+.caller-alias {
+    min-height: 20px;
+}
+.caller-alias strong,
+.is-me {
+    color: aqua;
+    font-weight: 700;
+}
+.detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 2fr 1fr 2fr 1fr 2fr 1fr 2fr;
+    margin: 0;
+    text-align: center;
+}
+.detail-grid dt,
+.detail-grid dd {
+    min-width: 0;
+    min-height: 18px;
+    display: grid;
+    align-content: center;
+    margin: 0;
+}
+.bid-row {
+    min-height: 22px;
+    display: grid;
+    grid-template-columns: 3fr 2fr 3fr;
+    align-items: center;
+    padding: 0 20%;
+    text-align: center;
+}
+.bid-header {
+    border-bottom: 1px solid #fff;
+}
+.bid-row > :nth-child(2) {
+    padding-right: 20px;
+    text-align: right;
+}
+.unique-bid-form {
+    min-height: 40px;
+    display: grid;
+    grid-template-columns: 3fr 2fr 1fr;
+    align-items: center;
+    padding: 0 25%;
+}
+.unique-bid-form label {
+    text-align: center;
+}
+.unique-row {
+    width: 100%;
+    min-height: 22px;
+    display: grid;
+    grid-template-columns: 1fr 4fr 1fr 2fr 1fr 1fr 2fr;
+    align-items: center;
+    box-sizing: border-box;
+    border: 0;
+    padding: 0;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    text-align: center;
+}
+.unique-header {
+    border-bottom: 1px solid #fff;
+}
+.unique-row > :last-child {
+    padding-right: 8px;
+    text-align: right;
+}
+.auction-notice {
+    min-height: 28px;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 5px 8px;
+}
+.auction-notice.error {
+    background: #842029;
+}
+.auction-notice.success {
+    background: #0f5132;
+}
+.loading-state {
+    min-height: 120px;
+    display: grid;
+    place-items: center;
+}
+.bottom-bar {
+    padding-top: 20px;
+}
+@media (max-width: 991px) {
+    .legacy-auction-page {
+        max-width: none;
+    }
+}
+@media (max-width: 500px) {
+    .resource-row {
+        min-height: 43px;
+        grid-template-columns: 1fr 3fr 3fr 1fr 2fr 2fr;
+        grid-template-rows: 1fr 1fr;
+    }
+    .resource-row .idx {
+        grid-column: 1;
+        grid-row: 1 / 3;
+    }
+    .resource-row .host {
+        grid-column: 2;
+        grid-row: 1;
+    }
+    .resource-row .amount {
+        grid-column: 2;
+        grid-row: 2;
+    }
+    .resource-row .highest-bidder {
+        grid-column: 3;
+        grid-row: 1;
+    }
+    .resource-row .highest-bid {
+        grid-column: 3;
+        grid-row: 2;
+    }
+    .resource-row .bid-ratio {
+        grid-column: 4;
+        grid-row: 1 / 3;
+    }
+    .resource-row .finish-bid {
+        grid-column: 5;
+        grid-row: 1 / 3;
+    }
+    .resource-row .close-date {
+        grid-column: 6;
+        grid-row: 1 / 3;
+    }
+    .resource-bid-form {
+        grid-template-columns: 4fr 3fr 2fr;
+        padding-right: 16.6667%;
+        padding-left: 8.3333%;
+    }
+    .open-form {
+        grid-template-columns: 2fr 2.3333fr 2fr 2.3333fr 2.3333fr 1fr;
+        padding: 0;
+    }
+    .detail-grid {
+        grid-template-columns: 2fr 4fr 2fr 4fr;
+    }
+    .bid-row {
+        padding: 0;
+        grid-template-columns: 4fr 4fr 4fr;
+    }
+    .unique-bid-form {
+        padding: 0;
+        grid-template-columns: 5fr 4fr 3fr;
+    }
 }
 </style>

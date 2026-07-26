@@ -1109,6 +1109,194 @@ integration('general command missing-target fallback matrix', () => {
     );
 });
 
+const resourceAmountCases: Array<{
+    name: string;
+    action: string;
+    args: Record<string, unknown>;
+    expectedAmount: number;
+}> = [
+    {
+        name: 'gift rounds a half unit up',
+        action: 'che_증여',
+        args: { isGold: true, amount: 150, destGeneralID: 3 },
+        expectedAmount: 200,
+    },
+    {
+        name: 'gift clamps below the minimum',
+        action: 'che_증여',
+        args: { isGold: true, amount: 1, destGeneralID: 3 },
+        expectedAmount: 100,
+    },
+    {
+        name: 'gift clamps above the maximum',
+        action: 'che_증여',
+        args: { isGold: true, amount: 10_050, destGeneralID: 3 },
+        expectedAmount: 10_000,
+    },
+    {
+        name: 'donation rounds a half unit up',
+        action: 'che_헌납',
+        args: { isGold: true, amount: 150 },
+        expectedAmount: 200,
+    },
+    {
+        name: 'donation clamps below the minimum',
+        action: 'che_헌납',
+        args: { isGold: true, amount: 1 },
+        expectedAmount: 100,
+    },
+    {
+        name: 'donation clamps above the maximum',
+        action: 'che_헌납',
+        args: { isGold: true, amount: 10_050 },
+        expectedAmount: 10_000,
+    },
+    {
+        name: 'trade rounds a half unit up',
+        action: 'che_군량매매',
+        args: { buyRice: true, amount: 150 },
+        expectedAmount: 200,
+    },
+    {
+        name: 'trade clamps below the minimum',
+        action: 'che_군량매매',
+        args: { buyRice: true, amount: 1 },
+        expectedAmount: 100,
+    },
+    {
+        name: 'trade clamps above the maximum',
+        action: 'che_군량매매',
+        args: { buyRice: true, amount: 10_050 },
+        expectedAmount: 10_000,
+    },
+];
+
+integration('general command resource amount normalization matrix', () => {
+    it.each(resourceAmountCases)(
+        '$name matches legacy rounding and clamp semantics',
+        async ({ action, args, expectedAmount }) => {
+            const request = buildRequest(action, args);
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+            const referenceActor = reference.after.generals.find((entry) => entry.id === 1);
+            const coreActor = core.after.generals.find((entry) => entry.id === 1);
+            const referenceLastTurn = referenceActor?.lastTurn as { arg?: Record<string, unknown> } | null | undefined;
+            const coreLastTurn = coreActor?.lastTurn as { arg?: Record<string, unknown> } | null | undefined;
+
+            expect(reference.execution.outcome).toMatchObject({ completed: true });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: action,
+                actionKey: action,
+                usedFallback: false,
+            });
+            expect(referenceLastTurn?.arg).toMatchObject({ amount: expectedAmount });
+            expect(coreLastTurn?.arg).toMatchObject({ amount: expectedAmount });
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+        },
+        120_000
+    );
+});
+
+integration('general command donation resource boundaries', () => {
+    it('donates the available resource when the normalized request exceeds the current amount', async () => {
+        const request = buildRequest('che_헌납', { isGold: true, amount: 10_000 }, { gold: 5_000 });
+        const reference = runReferenceTurnCommandTraceRequest(
+            workspaceRoot!,
+            request as unknown as Record<string, unknown>
+        );
+        const core = await runCoreTurnCommandTrace(request, reference.before);
+
+        expect(reference.execution.outcome).toMatchObject({ completed: true });
+        expect(core.execution.outcome).toMatchObject({
+            requestedAction: 'che_헌납',
+            actionKey: 'che_헌납',
+            usedFallback: false,
+        });
+        expect(core.rng).toEqual(reference.rng);
+        expect(
+            compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                ignoredPathPatterns: ignoredLifecyclePaths,
+            })
+        ).toEqual([]);
+    }, 120_000);
+
+    it('falls back when current rice is below the legacy minimum even for a small request', async () => {
+        const request = buildRequest('che_헌납', { isGold: false, amount: 100 }, { rice: 499 });
+        const reference = runReferenceTurnCommandTraceRequest(
+            workspaceRoot!,
+            request as unknown as Record<string, unknown>
+        );
+        const core = await runCoreTurnCommandTrace(request, reference.before);
+
+        expect(reference.execution.outcome).toMatchObject({ completed: false });
+        expect(core.execution.outcome).toMatchObject({
+            requestedAction: 'che_헌납',
+            actionKey: '휴식',
+            usedFallback: true,
+        });
+        expect(core.rng).toEqual(reference.rng);
+        expect(
+            compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                ignoredPathPatterns: ignoredLifecyclePaths,
+            })
+        ).toEqual([]);
+    }, 120_000);
+});
+
+integration('general command gift resource and target boundaries', () => {
+    it('keeps the legacy minimum rice reserve while gifting the available amount', async () => {
+        const request = buildRequest('che_증여', { isGold: false, amount: 10_000, destGeneralID: 3 }, { rice: 600 });
+        const reference = runReferenceTurnCommandTraceRequest(
+            workspaceRoot!,
+            request as unknown as Record<string, unknown>
+        );
+        const core = await runCoreTurnCommandTrace(request, reference.before);
+
+        expect(reference.execution.outcome).toMatchObject({ completed: true });
+        expect(core.execution.outcome).toMatchObject({
+            requestedAction: 'che_증여',
+            actionKey: 'che_증여',
+            usedFallback: false,
+        });
+        expect(core.rng).toEqual(reference.rng);
+        expect(
+            compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                ignoredPathPatterns: ignoredLifecyclePaths,
+            })
+        ).toEqual([]);
+    }, 120_000);
+
+    it('rejects gifting to the actor and falls back without command RNG', async () => {
+        const request = buildRequest('che_증여', { isGold: true, amount: 100, destGeneralID: 1 });
+        const reference = runReferenceTurnCommandTraceRequest(
+            workspaceRoot!,
+            request as unknown as Record<string, unknown>
+        );
+        const core = await runCoreTurnCommandTrace(request, reference.before);
+
+        expect(reference.execution.outcome).toMatchObject({ completed: false });
+        expect(core.execution.outcome).toMatchObject({
+            requestedAction: 'che_증여',
+            actionKey: '휴식',
+            usedFallback: true,
+        });
+        expect(core.rng).toEqual(reference.rng);
+        expect(
+            compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                ignoredPathPatterns: ignoredLifecyclePaths,
+            })
+        ).toEqual([]);
+    }, 120_000);
+});
+
 type GeneralConstraintCase = {
     name: string;
     action: string;

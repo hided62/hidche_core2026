@@ -594,7 +594,7 @@ export const auctionRouter = router({
             auctionId: auction.id,
             generalId: general.id,
             amount: input.amount,
-            tryExtendCloseDate: input.tryExtendCloseDate ?? true,
+            tryExtendCloseDate: input.tryExtendCloseDate ?? false,
         });
         if (!result || result.type !== 'auctionBid') {
             throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
