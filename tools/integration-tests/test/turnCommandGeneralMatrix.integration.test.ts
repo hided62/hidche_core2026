@@ -1058,6 +1058,57 @@ integration('general command post-required cooldown boundary matrix', () => {
     }, 120_000);
 });
 
+const missingTargetCases: Array<{ name: string; action: string; args: Record<string, unknown> }> = [
+    {
+        name: 'gift to a missing general',
+        action: 'che_증여',
+        args: { isGold: true, amount: 100, destGeneralID: 999 },
+    },
+    {
+        name: 'spy on a missing city',
+        action: 'che_첩보',
+        args: { destCityID: 999 },
+    },
+    {
+        name: 'move to a missing city',
+        action: 'che_이동',
+        args: { destCityID: 999 },
+    },
+    {
+        name: 'employ a missing general',
+        action: 'che_등용',
+        args: { destGeneralID: 999 },
+    },
+];
+
+integration('general command missing-target fallback matrix', () => {
+    it.each(missingTargetCases)(
+        '$name rejects the missing target and falls back without command RNG',
+        async ({ action, args }) => {
+            const request = buildRequest(action, args);
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+
+            expect(reference.execution.outcome).toMatchObject({ completed: false });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: action,
+                actionKey: '휴식',
+                usedFallback: true,
+            });
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+        },
+        120_000
+    );
+});
+
 type GeneralConstraintCase = {
     name: string;
     action: string;
