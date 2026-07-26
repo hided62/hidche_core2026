@@ -473,6 +473,8 @@ const createTurnDaemonRuntimeWithLease = async (
         neutralAuctionRegistrar.handler,
         frontStateHandler
     );
+    let occupiedAuctionUniqueItemKeys: string[] = [];
+    let refreshOccupiedAuctionUniqueItemKeys = async (): Promise<void> => {};
     const worldOptions: InMemoryTurnWorldOptions = {
         schedule,
         generalTurnHandler:
@@ -486,6 +488,7 @@ const createTurnDaemonRuntimeWithLease = async (
                 getWorld: () => worldRef,
                 commandProfile,
                 commandEnv: monthlyCommandEnv,
+                getAdditionalOccupiedUniqueItemKeys: () => occupiedAuctionUniqueItemKeys,
             })),
         calendarHandler: calendarHandler ?? undefined,
         autoAdvanceDiplomacyMonth: false,
@@ -501,6 +504,7 @@ const createTurnDaemonRuntimeWithLease = async (
             ? async (general) => {
                   const promises: Promise<unknown>[] = [];
                   promises.push(reservedTurnStoreHandle.store.refreshGeneralTurns(general.id));
+                  promises.push(refreshOccupiedAuctionUniqueItemKeys());
                   if (general.nationId > 0 && general.officerLevel >= 5) {
                       promises.push(
                           reservedTurnStoreHandle.store.refreshNationTurns(general.nationId, general.officerLevel)
@@ -648,6 +652,17 @@ const createTurnDaemonRuntimeWithLease = async (
     if (commandConnector && databaseCommandQueue) {
         await commandConnector.connect();
         await databaseCommandQueue.initialize();
+        refreshOccupiedAuctionUniqueItemKeys = async () => {
+            const rows = await commandConnector.prisma.auction.findMany({
+                where: {
+                    type: 'UNIQUE_ITEM',
+                    status: { in: ['OPEN', 'FINALIZING'] },
+                    targetCode: { not: null },
+                },
+                select: { targetCode: true },
+            });
+            occupiedAuctionUniqueItemKeys = rows.flatMap((row) => (row.targetCode ? [row.targetCode] : []));
+        };
     }
 
     const baseClose = close;

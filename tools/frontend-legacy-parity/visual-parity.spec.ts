@@ -111,6 +111,8 @@ const installHallFixture = async (page: Page): Promise<void> => {
 };
 
 const installAuthenticatedGameFixture = async (page: Page): Promise<void> => {
+    let surveyVoted = false;
+    const surveyComments = fixture.game.surveyDetail.comments.map((comment) => ({ ...comment }));
     await installImages(page);
     await page.addInitScript(
         ({ gameToken, profile }) => {
@@ -139,6 +141,38 @@ const installAuthenticatedGameFixture = async (page: Page): Promise<void> => {
             if (operation === 'public.getMapLayout') return fixture.game.mapLayout;
             if (operation === 'yearbook.getRange') return fixture.game.yearbookRange;
             if (operation === 'yearbook.getHistory') return fixture.game.yearbook;
+            if (operation === 'vote.getVoteList') return fixture.game.surveyList;
+            if (operation === 'vote.getVoteDetail') {
+                return {
+                    ...fixture.game.surveyDetail,
+                    votes: surveyVoted
+                        ? [
+                              { selection: [0], count: 3 },
+                              { selection: [1], count: 1 },
+                          ]
+                        : fixture.game.surveyDetail.votes,
+                    comments: surveyComments,
+                    myVote: surveyVoted ? [0] : null,
+                };
+            }
+            if (operation === 'vote.submitVote') {
+                surveyVoted = true;
+                return { ok: true, wonLottery: false };
+            }
+            if (operation === 'vote.addComment') {
+                surveyComments.push({
+                    id: surveyComments.length + 1,
+                    voteId: 2,
+                    generalId: 1,
+                    nationId: 1,
+                    generalName: '유비',
+                    nationName: '촉',
+                    text: '새 댓글',
+                    createdAt: '2026-07-26T02:34:00.000Z',
+                });
+                return { ok: true };
+            }
+            if (operation === 'vote.getAdminStatus') return { ok: false };
             throw new Error(`Unhandled authenticated game fixture operation: ${operation}`);
         });
     });
@@ -492,5 +526,106 @@ test.describe('yearbook legacy parity', () => {
         await page.goto('http://127.0.0.1:15102/che/yearbook');
         await expect(page.getByRole('alert')).toBeVisible();
         await expect(page.getByLabel('연월 선택')).toBeVisible();
+    });
+});
+
+test.describe('survey legacy parity', () => {
+    test.beforeEach(async ({ page }) => {
+        await installAuthenticatedGameFixture(page);
+    });
+
+    for (const viewport of [
+        { name: 'desktop', width: 1365, height: 768, containerWidth: 1000, commentNameWidth: 260 },
+        { name: 'mobile', width: 390, height: 844, containerWidth: 500, commentNameWidth: 130 },
+    ]) {
+        test(`renders the ref vote tables on ${viewport.name}`, async ({ page }) => {
+            await page.setViewportSize(viewport);
+            await page.goto('http://127.0.0.1:15102/che/survey');
+            await expect(page.getByText('설문 조사(90금과 추첨으로 유니크템 증정!)')).toBeVisible();
+            await expect(page.getByText('기병이 좋습니다.')).toBeVisible();
+            await expect(page.locator('#vote-new-panel')).toHaveCount(0);
+            if (artifactRoot) {
+                await page.screenshot({
+                    path: resolve(artifactRoot, `survey-core-${viewport.name}.png`),
+                    fullPage: true,
+                    animations: 'disabled',
+                });
+            }
+
+            const geometry = await page.evaluate(() => {
+                const rect = (selector: string) =>
+                    document.querySelector<HTMLElement>(selector)!.getBoundingClientRect();
+                const container = document.querySelector<HTMLElement>('#container')!;
+                const title = document.querySelector<HTMLElement>('#vote-title')!;
+                return {
+                    containerWidth: rect('#container').width,
+                    containerHeight: rect('#container').height,
+                    resultWidth: rect('#vote-result').width,
+                    commentNameWidth: rect('#vote-comment .comment-name').width,
+                    fontFamily: getComputedStyle(container).fontFamily,
+                    fontSize: getComputedStyle(container).fontSize,
+                    backgroundImage: getComputedStyle(container).backgroundImage,
+                    title: {
+                        height: rect('#vote-title').height,
+                        fontSize: getComputedStyle(title).fontSize,
+                        backgroundImage: getComputedStyle(title).backgroundImage,
+                    },
+                };
+            });
+
+            expect(geometry.containerWidth).toBe(viewport.containerWidth);
+            expect(geometry.containerHeight).toBeLessThan(viewport.height);
+            expect(geometry.resultWidth).toBe(viewport.containerWidth);
+            expect(geometry.commentNameWidth).toBe(viewport.commentNameWidth);
+            expect(geometry.fontFamily).toContain('Pretendard');
+            expect(geometry.fontSize).toBe('14px');
+            expect(geometry.backgroundImage).toContain('back_walnut.jpg');
+            expect(geometry.title.height).toBeCloseTo(37.8, 0);
+            expect(geometry.title.fontSize).toBe('25.2px');
+            expect(geometry.title.backgroundImage).toContain('back_blue.jpg');
+
+            const secondOption = page.locator('#v-vote-1');
+            await secondOption.check();
+            await expect(secondOption).toBeChecked();
+            await secondOption.focus();
+            await expect(secondOption).toBeFocused();
+
+            const voteButton = page.getByRole('button', { name: '투표', exact: true });
+            const beforeHover = await voteButton.evaluate((element) => getComputedStyle(element).filter);
+            await voteButton.hover();
+            const afterHover = await voteButton.evaluate((element) => getComputedStyle(element).filter);
+            expect(afterHover).not.toBe(beforeHover);
+        });
+    }
+
+    test('submits a vote and comment through the real screen controls', async ({ page }) => {
+        await page.goto('http://127.0.0.1:15102/che/survey');
+        await page.getByRole('button', { name: '투표', exact: true }).click();
+        await expect(page.getByRole('status')).toHaveText('설문을 마쳤습니다.');
+        await expect(page.getByText('결산', { exact: true })).toBeVisible();
+
+        await page.getByLabel('댓글').fill('새 댓글');
+        await page.getByRole('button', { name: '댓글 달기' }).click();
+        await expect(page.getByText('새 댓글')).toBeVisible();
+    });
+
+    test('keeps the selected option after a vote API error', async ({ page }) => {
+        await page.route('**/che/api/trpc/**', async (route) => {
+            if (operationNames(route).includes('vote.submitVote')) {
+                await route.fulfill({
+                    status: 500,
+                    contentType: 'application/json',
+                    body: JSON.stringify({ error: { message: '이미 설문조사를 완료하였습니다.' } }),
+                });
+                return;
+            }
+            await route.fallback();
+        });
+        await page.goto('http://127.0.0.1:15102/che/survey');
+        const secondOption = page.locator('#v-vote-1');
+        await secondOption.check();
+        await page.getByRole('button', { name: '투표', exact: true }).click();
+        await expect(page.getByRole('alert')).toBeVisible();
+        await expect(secondOption).toBeChecked();
     });
 });

@@ -5,6 +5,7 @@ import type { GeneralItemSlots } from '../src/domain/entities.js';
 import type { ItemModule } from '../src/items/types.js';
 import {
     type UniqueAcquireType,
+    addOccupiedUniqueItemKeys,
     buildVoteUniqueSeed,
     countOccupiedUniqueItems,
     resolveUniqueConfig,
@@ -129,6 +130,22 @@ describe('unique lottery', () => {
 
         const counts = countOccupiedUniqueItems(generals, itemRegistry);
         expect(counts.get('uniqueItem')).toBe(1);
+        expect(counts.get('buyableItem')).toBeUndefined();
+    });
+
+    it('adds active auction and storage reservations without counting buyable items', () => {
+        const itemRegistry = new Map<string, ItemModule>([
+            ['uniqueItem', buildItem('uniqueItem', 'weapon', false)],
+            ['buyableItem', buildItem('buyableItem', 'book', true)],
+        ]);
+
+        const counts = addOccupiedUniqueItemKeys(
+            new Map([['uniqueItem', 1]]),
+            ['uniqueItem', 'uniqueItem', 'buyableItem', null],
+            itemRegistry
+        );
+
+        expect(counts.get('uniqueItem')).toBe(3);
         expect(counts.get('buyableItem')).toBeUndefined();
     });
 });
