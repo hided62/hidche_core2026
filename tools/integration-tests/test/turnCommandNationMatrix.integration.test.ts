@@ -12,6 +12,8 @@ const workspaceRoot = configuredWorkspaceRoot ?? findTurnDifferentialWorkspaceRo
 const integration = describe.skipIf(!workspaceRoot || process.env.TURN_DIFFERENTIAL_REFERENCE !== '1');
 
 const readGold = (row: { gold?: unknown } | undefined): number => (typeof row?.gold === 'number' ? row.gold : 0);
+const readNationResource = (row: { gold?: unknown; rice?: unknown } | undefined, resource: 'gold' | 'rice'): number =>
+    typeof row?.[resource] === 'number' ? row[resource] : 0;
 const NPC_SEIZURE_MESSAGE_TEXT = '몰수를 하다니... 이것이 윗사람이 할 짓이란 말입니까...';
 
 const ignoredLifecyclePaths = [
@@ -806,4 +808,141 @@ integration('nation award and seizure target constraints', () => {
         },
         120_000
     );
+});
+
+const materialAidResourceCases: Array<{
+    name: string;
+    amountList: [number, number];
+    fixturePatches?: FixturePatches;
+    completed: boolean;
+    expectedGold: number;
+    expectedRice: number;
+}> = [
+    {
+        name: 'allows a zero rice component',
+        amountList: [100, 0],
+        completed: true,
+        expectedGold: 100,
+        expectedRice: 0,
+    },
+    {
+        name: 'allows a zero gold component',
+        amountList: [0, 100],
+        completed: true,
+        expectedGold: 0,
+        expectedRice: 100,
+    },
+    {
+        name: 'clamps gold to the source available balance',
+        amountList: [100, 0],
+        fixturePatches: { nations: { 1: { gold: 50 } } },
+        completed: true,
+        expectedGold: 50,
+        expectedRice: 0,
+    },
+    {
+        name: 'clamps rice while preserving the source base reserve',
+        amountList: [0, 100],
+        fixturePatches: { nations: { 1: { rice: 2_050 } } },
+        completed: true,
+        expectedGold: 0,
+        expectedRice: 50,
+    },
+    {
+        name: 'allows the exact rank aid limit',
+        amountList: [10_000, 0],
+        completed: true,
+        expectedGold: 10_000,
+        expectedRice: 0,
+    },
+    {
+        name: 'rejects an amount above the rank aid limit',
+        amountList: [10_001, 0],
+        completed: false,
+        expectedGold: 0,
+        expectedRice: 0,
+    },
+    {
+        name: 'rejects two zero components',
+        amountList: [0, 0],
+        completed: false,
+        expectedGold: 0,
+        expectedRice: 0,
+    },
+];
+
+integration('nation material aid resource boundaries', () => {
+    it.each(materialAidResourceCases)(
+        '$name matches legacy completion, amounts, RNG, and semantic delta',
+        async ({ amountList, fixturePatches, completed, expectedGold, expectedRice }) => {
+            const request = buildRequest('che_물자원조', { destNationID: 2, amountList }, fixturePatches);
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+
+            const referenceSourceBefore = reference.before.nations.find((entry) => entry.id === 1);
+            const referenceSourceAfter = reference.after.nations.find((entry) => entry.id === 1);
+            const referenceDestBefore = reference.before.nations.find((entry) => entry.id === 2);
+            const referenceDestAfter = reference.after.nations.find((entry) => entry.id === 2);
+            const coreSourceBefore = core.before.nations.find((entry) => entry.id === 1);
+            const coreSourceAfter = core.after.nations.find((entry) => entry.id === 1);
+            const coreDestBefore = core.before.nations.find((entry) => entry.id === 2);
+            const coreDestAfter = core.after.nations.find((entry) => entry.id === 2);
+
+            for (const [resource, expected] of [
+                ['gold', expectedGold],
+                ['rice', expectedRice],
+            ] as const) {
+                expect(
+                    readNationResource(referenceSourceBefore, resource) -
+                        readNationResource(referenceSourceAfter, resource)
+                ).toBe(expected);
+                expect(
+                    readNationResource(referenceDestAfter, resource) - readNationResource(referenceDestBefore, resource)
+                ).toBe(expected);
+                expect(
+                    readNationResource(coreSourceBefore, resource) - readNationResource(coreSourceAfter, resource)
+                ).toBe(expected);
+                expect(readNationResource(coreDestAfter, resource) - readNationResource(coreDestBefore, resource)).toBe(
+                    expected
+                );
+            }
+
+            expect(reference.execution.outcome).toMatchObject({ completed });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: 'che_물자원조',
+                actionKey: completed ? 'che_물자원조' : '휴식',
+                usedFallback: !completed,
+            });
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+        },
+        120_000
+    );
+
+    it('uses the legacy object particle when the rice component is zero', async () => {
+        const request = buildRequest('che_물자원조', {
+            destNationID: 2,
+            amountList: [100, 0],
+        });
+        const reference = runReferenceTurnCommandTraceRequest(
+            workspaceRoot!,
+            request as unknown as Record<string, unknown>
+        );
+        const core = await runCoreTurnCommandTrace(request, reference.before);
+        const referenceLogs = reference.after.logs.slice(reference.before.logs.length);
+
+        expect(referenceLogs.map((entry) => entry.text)).toEqual(
+            expect.arrayContaining([expect.stringContaining('쌀<C>0</>를 지원')])
+        );
+        expect(core.after.logs.map((entry) => entry.text)).toEqual(
+            expect.arrayContaining([expect.stringContaining('쌀<C>0</>를 지원')])
+        );
+    }, 120_000);
 });
