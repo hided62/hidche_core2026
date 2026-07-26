@@ -1665,6 +1665,266 @@ integration('general training, talent scout, and spy boundary, value, RNG, and l
     );
 });
 
+type GeneralAppointmentBoundaryCase = {
+    name: string;
+    action: 'che_임관' | 'che_랜덤임관' | 'che_장수대상임관' | 'che_등용' | 'che_등용수락';
+    args?: Record<string, unknown>;
+    actorPatch?: Record<string, unknown>;
+    fixturePatches?: FixturePatches;
+    completed: boolean;
+    expectedActionKey?: string;
+    restoresWorldKillTurn?: boolean;
+};
+
+const generalAppointmentBoundaryCases: GeneralAppointmentBoundaryCase[] = [
+    {
+        name: 'direct appointment rejects a fractional nation ID',
+        action: 'che_임관',
+        args: { destNationID: 1.9 },
+        actorPatch: { nationId: 0, officerLevel: 0 },
+        completed: false,
+    },
+    {
+        name: 'direct appointment rejects the cached opening general limit',
+        action: 'che_임관',
+        args: { destNationID: 1 },
+        actorPatch: { nationId: 0, officerLevel: 0 },
+        fixturePatches: {
+            world: { startYear: 180, year: 182 },
+            nations: { 1: { generalCount: 10 } },
+        },
+        completed: false,
+    },
+    {
+        name: 'direct appointment has no normal-era max-general constraint',
+        action: 'che_임관',
+        args: { destNationID: 1 },
+        actorPatch: { nationId: 0, officerLevel: 0 },
+        fixturePatches: {
+            world: { startYear: 180, year: 183 },
+            nations: { 1: { generalCount: 500 } },
+            generals: { 3: { officerLevel: 12, officerCityId: 3 } },
+        },
+        completed: true,
+    },
+    {
+        name: 'direct appointment blocks user generals from governor nations',
+        action: 'che_임관',
+        args: { destNationID: 1 },
+        actorPatch: { nationId: 0, officerLevel: 0, npcState: 0 },
+        fixturePatches: { nations: { 1: { name: 'ⓤ아국' } } },
+        completed: false,
+    },
+    {
+        name: 'direct appointment blocks ordinary NPCs from outsider nations',
+        action: 'che_임관',
+        args: { destNationID: 1 },
+        actorPatch: { nationId: 0, officerLevel: 0, npcState: 2 },
+        fixturePatches: { nations: { 1: { name: 'ⓞ아국' } } },
+        completed: false,
+    },
+    {
+        name: 'direct appointment permits outsider NPC type nine',
+        action: 'che_임관',
+        args: { destNationID: 1 },
+        actorPatch: { nationId: 0, officerLevel: 0, npcState: 9 },
+        fixturePatches: {
+            nations: { 1: { name: 'ⓞ아국' } },
+            generals: { 3: { officerLevel: 12, officerCityId: 3 } },
+        },
+        completed: true,
+    },
+    {
+        name: 'follow appointment uses cached general count at the opening limit',
+        action: 'che_장수대상임관',
+        args: { destGeneralID: 2 },
+        actorPatch: { nationId: 0, officerLevel: 0 },
+        fixturePatches: {
+            world: { startYear: 180, year: 182 },
+            nations: { 2: { generalCount: 10 } },
+        },
+        completed: false,
+    },
+    {
+        name: 'follow appointment blocks user generals from governor nations',
+        action: 'che_장수대상임관',
+        args: { destGeneralID: 2 },
+        actorPatch: { nationId: 0, officerLevel: 0, npcState: 0 },
+        fixturePatches: { nations: { 2: { name: 'ⓤ타국' } } },
+        completed: false,
+    },
+    {
+        name: 'follow appointment blocks ordinary NPCs from outsider nations',
+        action: 'che_장수대상임관',
+        args: { destGeneralID: 2 },
+        actorPatch: { nationId: 0, officerLevel: 0, npcState: 2 },
+        fixturePatches: { nations: { 2: { name: 'ⓞ타국' } } },
+        completed: false,
+    },
+    {
+        name: 'follow appointment preserves the legacy troop field',
+        action: 'che_장수대상임관',
+        args: { destGeneralID: 2 },
+        actorPatch: { nationId: 0, officerLevel: 0, troopId: 7 },
+        completed: true,
+    },
+    {
+        name: 'random appointment uses cached general counts during the opening',
+        action: 'che_랜덤임관',
+        actorPatch: { nationId: 0, officerLevel: 0 },
+        fixturePatches: {
+            world: { startYear: 180, year: 182 },
+            nations: { 1: { generalCount: 10 }, 2: { generalCount: 10 } },
+        },
+        completed: false,
+        expectedActionKey: 'che_인재탐색',
+    },
+    {
+        name: 'random appointment preserves the legacy troop field',
+        action: 'che_랜덤임관',
+        actorPatch: { nationId: 0, officerLevel: 0, troopId: 7 },
+        fixturePatches: { generals: { 3: { officerLevel: 12, officerCityId: 3 } } },
+        completed: true,
+    },
+    {
+        name: 'random appointment uses cached general counts at the normal limit',
+        action: 'che_랜덤임관',
+        actorPatch: { nationId: 0, officerLevel: 0 },
+        fixturePatches: {
+            world: { startYear: 180, year: 183 },
+            nations: { 1: { generalCount: 500 }, 2: { generalCount: 500 } },
+        },
+        completed: false,
+        expectedActionKey: 'che_인재탐색',
+    },
+    {
+        name: 'employment rejects a same-nation target',
+        action: 'che_등용',
+        args: { destGeneralID: 3 },
+        completed: false,
+    },
+    {
+        name: 'employment rejects a target monarch',
+        action: 'che_등용',
+        args: { destGeneralID: 2 },
+        completed: false,
+    },
+    {
+        name: 'employment rejects a neutral actor',
+        action: 'che_등용',
+        args: { destGeneralID: 2 },
+        actorPatch: { nationId: 0, officerLevel: 0 },
+        fixturePatches: { generals: { 2: { officerLevel: 1 } } },
+        completed: false,
+    },
+    {
+        name: 'employment rejects an unsupplied actor city',
+        action: 'che_등용',
+        args: { destGeneralID: 2 },
+        fixturePatches: {
+            generals: { 2: { officerLevel: 1 } },
+            cities: { 3: { supplyState: 0 } },
+        },
+        completed: false,
+    },
+    {
+        name: 'accepting employment applies the opening cached limit',
+        action: 'che_등용수락',
+        args: { destNationID: 2, destGeneralID: 2 },
+        actorPatch: { nationId: 0, officerLevel: 0 },
+        fixturePatches: {
+            world: { startYear: 180, year: 182 },
+            nations: { 2: { generalCount: 10 } },
+        },
+        completed: false,
+    },
+    {
+        name: 'accepting employment has no normal-era max-general constraint',
+        action: 'che_등용수락',
+        args: { destNationID: 2, destGeneralID: 2 },
+        actorPatch: { nationId: 0, officerLevel: 0 },
+        fixturePatches: {
+            world: { startYear: 180, year: 183 },
+            nations: { 2: { generalCount: 500 } },
+        },
+        completed: true,
+    },
+    {
+        name: 'accepting employment rejects the actor as recruiter',
+        action: 'che_등용수락',
+        args: { destNationID: 2, destGeneralID: 1 },
+        actorPatch: { nationId: 0, officerLevel: 0 },
+        completed: false,
+    },
+    {
+        name: 'accepting employment rejects a wandering destination nation',
+        action: 'che_등용수락',
+        args: { destNationID: 2, destGeneralID: 2 },
+        actorPatch: { nationId: 0, officerLevel: 0 },
+        fixturePatches: { nations: { 2: { level: 0 } } },
+        completed: false,
+    },
+    {
+        name: 'accepting employment restores the user kill-turn allowance',
+        action: 'che_등용수락',
+        args: { destNationID: 2, destGeneralID: 2 },
+        actorPatch: { nationId: 0, officerLevel: 0, npcState: 0, killTurn: 5 },
+        completed: true,
+        restoresWorldKillTurn: true,
+    },
+];
+
+integration('general appointment and employment boundary, state, RNG, and log parity', () => {
+    it.each(generalAppointmentBoundaryCases)(
+        '$name',
+        async ({
+            name,
+            action,
+            args,
+            actorPatch,
+            fixturePatches,
+            completed,
+            expectedActionKey,
+            restoresWorldKillTurn,
+        }) => {
+            const request = buildRequest(action, args, actorPatch, fixturePatches);
+            request.setup!.world!.hiddenSeed = `general-appointment-${name}`;
+            request.observe!.includeGlobalHistoryLogs = true;
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+            const actionKey = expectedActionKey ?? (completed ? action : '휴식');
+
+            expect(reference.execution.outcome).toMatchObject({ completed });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: action,
+                actionKey,
+                usedFallback: !completed && actionKey === '휴식',
+            });
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+
+            if (completed) {
+                expect(semanticLogSignatures(core.after.logs)).toEqual(
+                    semanticLogSignatures(addedReferenceLogs(reference.before, reference.after.logs))
+                );
+            }
+            if (restoresWorldKillTurn) {
+                const expectedKillTurn = reference.before.world.killTurn;
+                expect(reference.after.generals.find((entry) => entry.id === 1)?.killTurn).toBe(expectedKillTurn);
+                expect(core.after.generals.find((entry) => entry.id === 1)?.killTurn).toBe(expectedKillTurn);
+            }
+        },
+        120_000
+    );
+});
+
 integration('명장일람 rank_data command parity', () => {
     it('화계 increments firenum from the same seeded value as legacy', async () => {
         const request = buildRequest(

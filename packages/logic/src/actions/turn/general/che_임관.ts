@@ -26,7 +26,7 @@ import { JosaUtil } from '@sammo-ts/common';
 
 const ACTION_NAME = '임관';
 const ARGS_SCHEMA = z.object({
-    destNationId: z.number(),
+    destNationId: z.number().int().positive(),
 });
 export type AppointmentArgs = z.infer<typeof ARGS_SCHEMA>;
 
@@ -37,13 +37,6 @@ interface AppointmentContext<
     destNationGeneralCount: number;
     destCityId: number;
 }
-
-const parseNationId = (raw: unknown): number | null => {
-    if (typeof raw !== 'number' || !Number.isFinite(raw)) {
-        return null;
-    }
-    return raw > 0 ? Math.floor(raw) : null;
-};
 
 export class ActionDefinition<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -57,15 +50,7 @@ export class ActionDefinition<
     }
 
     parseArgs(raw: unknown): AppointmentArgs | null {
-        const data = parseArgsWithSchema(ARGS_SCHEMA, raw);
-        if (!data) {
-            return null;
-        }
-        const destNationId = parseNationId(data.destNationId);
-        if (destNationId === null) {
-            return null;
-        }
-        return { destNationId };
+        return parseArgsWithSchema(ARGS_SCHEMA, raw);
     }
 
     buildMinConstraints(_ctx: ConstraintContext, _args: AppointmentArgs): Constraint[] {
@@ -109,11 +94,15 @@ export class ActionDefinition<
         const josaYi = JosaUtil.pick(context.general.name, '이');
         context.addLog(`<Y>${context.general.name}</>${josaYi} <D><b>${destNationName}</b></>에 <S>임관</>했습니다.`, {
             scope: LogScope.SYSTEM,
-            category: LogCategory.ACTION,
+            category: LogCategory.SUMMARY,
             format: LogFormat.RAWTEXT,
         });
 
-        tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
+        tryApplyUniqueLottery(context, {
+            acquireType: '아이템',
+            reason: ACTION_NAME,
+            nationName: destNationName,
+        });
 
         const effects: GeneralActionOutcome<TriggerState>['effects'] = [
             createGeneralPatchEffect<TriggerState>({
@@ -164,10 +153,14 @@ export const actionContextBuilder: ActionContextBuilder<AppointmentArgs> = (
     }
     const nationGenerals = worldRef.listGenerals().filter((general) => general.nationId === destNation.id);
     const monarch = nationGenerals.find((general) => general.officerLevel === 12);
+    const cachedGeneralCount = destNation.meta.gennum;
     return {
         ...base,
         destNation,
-        destNationGeneralCount: nationGenerals.length,
+        destNationGeneralCount:
+            typeof cachedGeneralCount === 'number' && Number.isFinite(cachedGeneralCount)
+                ? cachedGeneralCount
+                : nationGenerals.length,
         destCityId: monarch?.cityId ?? destNation.capitalCityId ?? base.general.cityId,
     };
 };

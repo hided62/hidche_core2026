@@ -236,7 +236,6 @@ export class ActionDefinition<
                 nationId: destNation.id,
                 officerLevel: 1,
                 cityId: destCityId,
-                troopId: 0,
                 experience: general.experience + expGain,
                 meta,
             }),
@@ -263,13 +262,17 @@ export class ActionDefinition<
                 `<Y>${generalName}</>${josaYi} ${talk} <D><b>${destNationName}</b></>에 <S>임관</>했습니다.`,
                 {
                     scope: LogScope.SYSTEM,
-                    category: LogCategory.ACTION,
+                    category: LogCategory.SUMMARY,
                     format: LogFormat.PLAIN,
                 }
             )
         );
 
-        tryApplyUniqueLottery(context, { acquireType: '랜덤 임관', reason: ACTION_NAME });
+        tryApplyUniqueLottery(context, {
+            acquireType: '랜덤 임관',
+            reason: ACTION_NAME,
+            nationName: destNationName,
+        });
 
         return { effects };
     }
@@ -327,7 +330,8 @@ export const actionContextBuilder: ActionContextBuilder = (base, options) => {
         if (nationGenerals.length === 0) {
             continue;
         }
-        if (typeof genLimit === 'number' && genLimit > 0 && nationGenerals.length >= genLimit) {
+        const generalCount = resolveNumber(meta, ['gennum'], nationGenerals.length);
+        if (typeof genLimit === 'number' && genLimit > 0 && generalCount >= genLimit) {
             continue;
         }
         let monarchCityId = monarchCityByNation.get(nation.id) ?? null;
@@ -347,7 +351,7 @@ export const actionContextBuilder: ActionContextBuilder = (base, options) => {
         candidateNations.push({
             nation,
             generals: nationGenerals,
-            generalCount: resolveNumber(meta, ['gennum'], nationGenerals.length),
+            generalCount,
             monarchCityId,
             monarchAffinity: chief ? resolveNumber(asRecord(chief.meta), ['affinity'], 0) : 0,
         });

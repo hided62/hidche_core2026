@@ -17,7 +17,7 @@ import type {
     GeneralActionResolver,
     GeneralActionEffect,
 } from '@sammo-ts/logic/actions/engine.js';
-import { createGeneralPatchEffect, createNationPatchEffect } from '@sammo-ts/logic/actions/engine.js';
+import { createGeneralPatchEffect, createLogEffect, createNationPatchEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import { JosaUtil } from '@sammo-ts/common';
 import { z } from 'zod';
@@ -29,8 +29,8 @@ import { parseArgsWithSchema } from '../parseArgs.js';
 const ACTION_NAME = '등용수락';
 const ACTION_KEY = 'che_등용수락';
 const ARGS_SCHEMA = z.object({
-    destNationId: z.number(),
-    destGeneralId: z.number(),
+    destNationId: z.number().int().positive(),
+    destGeneralId: z.number().int().positive(),
 });
 export type AcceptScoutArgs = z.infer<typeof ARGS_SCHEMA>;
 
@@ -39,7 +39,20 @@ export interface AcceptScoutResolveContext<
 > extends GeneralActionResolveContext<TriggerState> {
     destNation?: Nation;
     destGeneral?: General<TriggerState>;
+    worldKillturn?: number;
 }
+
+const differentDestGeneral = (destGeneralId: number): Constraint => ({
+    name: 'differentDestGeneral',
+    requires: (ctx) => [
+        { kind: 'general', id: ctx.actorId },
+        { kind: 'destGeneral', id: destGeneralId },
+    ],
+    test: (ctx) =>
+        ctx.actorId === destGeneralId
+            ? { kind: 'deny', reason: '본인의 등용장을 수락할 수 없습니다.' }
+            : { kind: 'allow' },
+});
 
 export class ActionResolver<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -77,7 +90,7 @@ export class ActionResolver<
         // Global Log
         context.addLog(`<Y>${generalName}</>${josaYi} <D><b>${destNationName}</b></>${josaRo} <S>망명</>하였습니다.`, {
             scope: LogScope.SYSTEM,
-            category: LogCategory.ACTION,
+            category: LogCategory.SUMMARY,
             format: LogFormat.PLAIN,
         });
 
@@ -97,6 +110,9 @@ export class ActionResolver<
             0,
             Math.min(this.env.maxDedicationLevel ?? 30, Math.ceil(Math.sqrt(recruiterDedication) / 10))
         );
+        const previousRecruiterExpLevel = typeof destGeneral.meta.explevel === 'number' ? destGeneral.meta.explevel : 0;
+        const previousRecruiterDedicationLevel =
+            typeof destGeneral.meta.dedlevel === 'number' ? destGeneral.meta.dedlevel : 0;
         effects.push(
             createGeneralPatchEffect(
                 {
@@ -111,6 +127,43 @@ export class ActionResolver<
                 destGeneral.id
             )
         );
+        if (recruiterExpLevel !== previousRecruiterExpLevel) {
+            const josaRo = JosaUtil.pick(String(recruiterExpLevel), '로');
+            effects.push(
+                createLogEffect(
+                    recruiterExpLevel > previousRecruiterExpLevel
+                        ? `<C>Lv ${recruiterExpLevel}</>${josaRo} <C>레벨업</>!`
+                        : `<C>Lv ${recruiterExpLevel}</>${josaRo} <R>레벨다운</>!`,
+                    {
+                        scope: LogScope.GENERAL,
+                        generalId: destGeneral.id,
+                        category: LogCategory.ACTION,
+                        format: LogFormat.PLAIN,
+                    }
+                )
+            );
+        }
+        if (recruiterDedicationLevel !== previousRecruiterDedicationLevel) {
+            const maxDedicationLevel = this.env.maxDedicationLevel ?? 30;
+            const dedicationLevelText =
+                recruiterDedicationLevel === 0 ? '무품관' : `${maxDedicationLevel - recruiterDedicationLevel + 1}품관`;
+            const billText = new Intl.NumberFormat('en-US').format(recruiterDedicationLevel * 200 + 400);
+            const josaRoDedication = JosaUtil.pick(dedicationLevelText, '로');
+            const josaRoBill = JosaUtil.pick(billText, '로');
+            effects.push(
+                createLogEffect(
+                    recruiterDedicationLevel > previousRecruiterDedicationLevel
+                        ? `<Y>${dedicationLevelText}</>${josaRoDedication} <C>승급</>하여 봉록이 <C>${billText}</>${josaRoBill} <C>상승</>했습니다!`
+                        : `<Y>${dedicationLevelText}</>${josaRoDedication} <R>강등</>되어 봉록이 <C>${billText}</>${josaRoBill} <R>하락</>했습니다!`,
+                    {
+                        scope: LogScope.GENERAL,
+                        generalId: destGeneral.id,
+                        category: LogCategory.ACTION,
+                        format: LogFormat.PLAIN,
+                    }
+                )
+            );
+        }
 
         // 3. Betrayal Logic
         // Legacy: GameConst::$defaultGold (usually 1000/2000).
@@ -187,10 +240,7 @@ export class ActionResolver<
                         betray: newBetray,
                         ...(general.npcState < 2
                             ? {
-                                  killturn:
-                                      typeof context.general.meta.killturn === 'number'
-                                          ? context.general.meta.killturn
-                                          : 0,
+                                  killturn: context.worldKillturn ?? general.meta.killturn,
                               }
                             : {}),
                     },
@@ -266,12 +316,12 @@ export class ActionDefinition<
     buildConstraints(_ctx: ConstraintContext, _args: AcceptScoutArgs): Constraint[] {
         const env = _ctx.env;
         const year = typeof env.year === 'number' ? env.year : 0;
-        const startYear = typeof env.startyear === 'number' ? env.startyear : 0;
-        const relYear = year - startYear;
+        const relYear = typeof env.relYear === 'number' ? env.relYear : year;
 
         return [
             reqEnvValue('join_mode', '!=', 'onlyRandom', '랜덤 임관만 가능합니다'),
             existsDestNation(),
+            differentDestGeneral(_args.destGeneralId),
             beNeutral(),
             allowJoinDestNation(relYear),
             reqDestNationValue('level', '국가규모', '>', 0, '방랑군에는 임관할 수 없습니다.'),
@@ -304,6 +354,7 @@ export const actionContextBuilder: ActionContextBuilder = (base, options) => {
         ...base,
         destNation,
         destGeneral,
+        worldKillturn: typeof options.world.meta?.killturn === 'number' ? options.world.meta.killturn : undefined,
     };
 };
 

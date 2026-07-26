@@ -329,11 +329,7 @@ export const allowRebellion = (): Constraint => ({
         }
         const rawKillturn = view.get(envReq);
         const worldKillturn =
-            typeof rawKillturn === 'number'
-                ? rawKillturn
-                : typeof rawKillturn === 'string'
-                  ? Number(rawKillturn)
-                  : NaN;
+            typeof rawKillturn === 'number' ? rawKillturn : typeof rawKillturn === 'string' ? Number(rawKillturn) : NaN;
         if (!Number.isFinite(worldKillturn)) {
             return unknownOrDeny(ctx, [envReq], '턴 정보가 없습니다.');
         }
@@ -395,7 +391,6 @@ export const allowJoinDestNation = (relYear: number): Constraint => ({
             { kind: 'general', id: ctx.actorId },
             { kind: 'env', key: 'openingPartYear' },
             { kind: 'env', key: 'initialNationGenLimit' },
-            { kind: 'env', key: 'maxGeneral' },
         ];
         const destNationId = resolveDestNationId(ctx);
         if (destNationId !== undefined) {
@@ -428,17 +423,13 @@ export const allowJoinDestNation = (relYear: number): Constraint => ({
 
         const openingPartYear = view.get({ kind: 'env', key: 'openingPartYear' }) as number | null;
         const initialNationGenLimit = view.get({ kind: 'env', key: 'initialNationGenLimit' }) as number | null;
-        const defaultMaxGeneral = view.get({ kind: 'env', key: 'maxGeneral' }) as number | null;
-
         const gennum = readNationNumeric(destNation, 'gennum') ?? 0;
         const scout = readNationNumeric(destNation, 'scout') ?? 0;
         const name = readStringField(destNation, 'name') ?? '';
 
         const openingLimit = typeof openingPartYear === 'number' ? openingPartYear : 0;
         const initialLimit = typeof initialNationGenLimit === 'number' ? initialNationGenLimit : 0;
-        const normalLimit = typeof defaultMaxGeneral === 'number' ? defaultMaxGeneral : initialLimit;
-        const genLimit = relYear < openingLimit ? initialLimit : normalLimit;
-        if (genLimit > 0 && gennum >= genLimit) {
+        if (relYear < openingLimit && initialLimit > 0 && gennum >= initialLimit) {
             return { kind: 'deny', reason: '임관이 제한되고 있습니다.' };
         }
 

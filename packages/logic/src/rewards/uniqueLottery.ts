@@ -13,6 +13,7 @@ export type UniqueAcquireType = (typeof UNIQUE_ACQUIRE_TYPES)[number];
 export type UniqueLotteryRequest = {
     acquireType: UniqueAcquireType;
     reason: string;
+    nationName?: string;
 };
 
 export type UniqueLotteryRunner = <TriggerState extends GeneralTriggerState = GeneralTriggerState>(
@@ -324,10 +325,11 @@ export const rollUniqueLottery = (input: UniqueLotteryInput): string | null => {
 export const applyUniqueItemGain = <TriggerState extends GeneralTriggerState = GeneralTriggerState>(
     context: GeneralActionResolveContext<TriggerState>,
     itemModule: ItemModule,
-    acquireType: UniqueAcquireType
+    acquireType: UniqueAcquireType,
+    nationNameOverride?: string
 ): void => {
     const general = context.general;
-    const nationName = context.nation?.name ?? '재야';
+    const nationName = nationNameOverride ?? context.nation?.name ?? '재야';
     const generalName = general.name;
     const itemName = itemModule.name;
     const itemRawName = itemModule.rawName;
@@ -375,6 +377,6 @@ export const tryApplyUniqueLottery = <TriggerState extends GeneralTriggerState =
     if (!itemModule) {
         return false;
     }
-    applyUniqueItemGain(context, itemModule, request.acquireType);
+    applyUniqueItemGain(context, itemModule, request.acquireType, request.nationName);
     return true;
 };

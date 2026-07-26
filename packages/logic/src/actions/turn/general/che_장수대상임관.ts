@@ -47,16 +47,21 @@ const existsDestNation = (destGeneralID: number): Constraint => ({
 
 const allowJoinDestNation = (destGeneralID: number): Constraint => ({
     name: 'allowJoinDestNation',
-    requires: () => [
+    requires: (ctx) => [
+        { kind: 'general', id: ctx.actorId },
         { kind: 'destGeneral', id: destGeneralID },
-        { kind: 'generalList' },
         { kind: 'nationList' },
         { kind: 'env', key: 'relYear' },
         { kind: 'env', key: 'openingPartYear' },
         { kind: 'env', key: 'initialNationGenLimit' },
-        { kind: 'env', key: 'maxGeneral' },
     ],
     test: (ctx, view) => {
+        const actorReq: RequirementKey = { kind: 'general', id: ctx.actorId };
+        const actor = view.get(actorReq) as General | null;
+        if (!actor) {
+            return unknownOrDeny(ctx, [actorReq], '장수 정보가 없습니다.');
+        }
+
         const req: RequirementKey = { kind: 'destGeneral', id: destGeneralID };
         if (!view.has(req)) {
             return unknownOrDeny(ctx, [req], '국가 정보가 없습니다.');
@@ -64,15 +69,6 @@ const allowJoinDestNation = (destGeneralID: number): Constraint => ({
         const destGeneral = view.get(req) as General | null;
         if (!destGeneral || destGeneral.nationId <= 0) {
             return { kind: 'deny', reason: '국가 정보가 없습니다.' };
-        }
-
-        const listReq: RequirementKey = { kind: 'generalList' };
-        if (!view.has(listReq)) {
-            return unknownOrDeny(ctx, [listReq], '장수 정보가 없습니다.');
-        }
-        const generals = view.get(listReq) as General[] | null;
-        if (!generals) {
-            return unknownOrDeny(ctx, [listReq], '장수 정보가 없습니다.');
         }
 
         const nationListReq: RequirementKey = { kind: 'nationList' };
@@ -100,28 +96,28 @@ const allowJoinDestNation = (destGeneralID: number): Constraint => ({
             typeof view.get({ kind: 'env', key: 'initialNationGenLimit' }) === 'number'
                 ? (view.get({ kind: 'env', key: 'initialNationGenLimit' }) as number)
                 : 10;
-        const maxGeneral =
-            typeof view.get({ kind: 'env', key: 'maxGeneral' }) === 'number'
-                ? (view.get({ kind: 'env', key: 'maxGeneral' }) as number)
-                : 500;
-
-        const currentCount = generals.filter((general) => general.nationId === destNation.id).length;
-
-        if (destNation.level === 0) {
-            return { kind: 'allow' };
+        const rawGeneralCount = destNation.meta.gennum;
+        const generalCount =
+            typeof rawGeneralCount === 'number'
+                ? rawGeneralCount
+                : typeof rawGeneralCount === 'string'
+                  ? Number(rawGeneralCount)
+                  : 0;
+        if (relYear < openingPartYear && generalCount >= initialNationGenLimit) {
+            return { kind: 'deny', reason: '임관이 제한되고 있습니다.' };
         }
 
-        if (relYear < openingPartYear) {
-            if (currentCount < initialNationGenLimit) {
-                return { kind: 'allow' };
-            }
-            return { kind: 'deny', reason: '초반 등용 제한 인원을 초과했습니다.' };
+        const rawScout = destNation.meta.scout;
+        if (rawScout === 1 || rawScout === '1' || rawScout === true) {
+            return { kind: 'deny', reason: '임관이 금지되어 있습니다.' };
         }
-
-        if (currentCount < maxGeneral) {
-            return { kind: 'allow' };
+        if (actor.npcState < 2 && destNation.name.startsWith('ⓤ')) {
+            return { kind: 'deny', reason: '유저장은 태수국에 임관할 수 없습니다.' };
         }
-        return { kind: 'deny', reason: '등용 제한 인원을 초과했습니다.' };
+        if (actor.npcState !== 9 && destNation.name.startsWith('ⓞ')) {
+            return { kind: 'deny', reason: '이민족 국가에 임관할 수 없습니다.' };
+        }
+        return { kind: 'allow' };
     },
 });
 
@@ -182,14 +178,18 @@ export class ActionDefinition<
         });
         context.addLog(`<Y>${general.name}</>${josaYi} <D><b>${destNation.name}</b></>에 <S>임관</>했습니다.`, {
             scope: LogScope.SYSTEM,
-            category: LogCategory.ACTION,
+            category: LogCategory.SUMMARY,
         });
 
         const initialNationGenLimit = context.initialNationGenLimit ?? 10;
         const destNationGeneralCount = context.destNationGeneralCount ?? 0;
         const expGain = destNationGeneralCount < initialNationGenLimit ? 700 : 100;
 
-        tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
+        tryApplyUniqueLottery(context, {
+            acquireType: '아이템',
+            reason: ACTION_NAME,
+            nationName: destNation.name,
+        });
 
         return {
             effects: [
@@ -197,7 +197,6 @@ export class ActionDefinition<
                     nationId: destNation.id,
                     officerLevel: 1,
                     cityId: targetCityId,
-                    troopId: 0,
                     experience: general.experience + expGain,
                     meta: {
                         ...general.meta,
@@ -239,7 +238,9 @@ export const actionContextBuilder: ActionContextBuilder<FollowAppointmentArgs> =
         return null;
     }
 
-    const currentCount = worldRef.listGenerals().filter((general) => general.nationId === destNation.id).length;
+    const actualCount = worldRef.listGenerals().filter((general) => general.nationId === destNation.id).length;
+    const cachedCount = destNation.meta.gennum;
+    const currentCount = typeof cachedCount === 'number' && Number.isFinite(cachedCount) ? cachedCount : actualCount;
 
     const constValues = (options.scenarioConfig.const ?? {}) as Record<string, unknown>;
     const initialNationGenLimitRaw = constValues.initialNationGenLimit;
