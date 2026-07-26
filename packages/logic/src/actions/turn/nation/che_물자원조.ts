@@ -124,7 +124,7 @@ export class ActionDefinition<
         const goldText = actualGold.toLocaleString();
         const riceText = actualRice.toLocaleString();
         const nationName = nation.name;
-        const josaUlRice = JosaUtil.pick(riceText, '을');
+        const josaUlRice = actualRice === 0 ? '를' : JosaUtil.pick(riceText, '을');
         const josaRo = JosaUtil.pick(destNation.name, '로');
         const josaRoSrc = JosaUtil.pick(nationName, '로');
 
