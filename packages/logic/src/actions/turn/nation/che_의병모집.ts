@@ -417,8 +417,8 @@ export class ActionResolver<
             addMetaValue(meta, 'picture', candidate.picture ?? null);
             addMetaValue(meta, 'birthYear', birthYear);
             addMetaValue(meta, 'deathYear', deathYear);
-            addMetaValue(meta, 'specAge', DEFAULT_SPEC_AGE);
-            addMetaValue(meta, 'specAge2', DEFAULT_SPEC_AGE);
+            addMetaValue(meta, 'specage', DEFAULT_SPEC_AGE);
+            addMetaValue(meta, 'specage2', DEFAULT_SPEC_AGE);
             addMetaValue(meta, 'text', candidate.text ?? null);
 
             const newGeneral = {

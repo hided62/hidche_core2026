@@ -1674,6 +1674,8 @@ integration('nation volunteer-recruitment constraints, creation values, RNG, and
                             dedication: expectedAverageExperience,
                             specialDomestic: null,
                             specialWar: null,
+                            specAge: 19,
+                            specAge2: 19,
                         });
                         expect(String(created.name)).toMatch(/^ⓖ/);
                         expect(
