@@ -485,6 +485,75 @@ integration('general command in-action failure matrix', () => {
     );
 });
 
+type SabotageProbabilityClampCase = {
+    name: string;
+    action: 'che_화계' | 'che_선동' | 'che_파괴' | 'che_탈취';
+    stat: 'leadership' | 'strength' | 'intelligence';
+    boundary: 'zero' | 'max';
+};
+
+const sabotageProbabilityClampCases: SabotageProbabilityClampCase[] = (
+    [
+        ['che_화계', 'intelligence'],
+        ['che_선동', 'leadership'],
+        ['che_파괴', 'strength'],
+        ['che_탈취', 'strength'],
+    ] as const
+).flatMap(([action, stat]) => [
+    { name: `${action} probability zero clamp`, action, stat, boundary: 'zero' },
+    { name: `${action} probability 0.5 clamp`, action, stat, boundary: 'max' },
+]);
+
+integration('general sabotage probability clamp matrix', () => {
+    it.each(sabotageProbabilityClampCases)(
+        '$name preserves the legacy clamp and RNG primitive',
+        async ({ action, stat, boundary }) => {
+            const isZero = boundary === 'zero';
+            const request = buildRequest(
+                action,
+                { destCityID: 70 },
+                { [stat]: isZero ? 10 : 100 },
+                {
+                    generals: { 2: { [stat]: isZero ? 100 : 10 } },
+                    cities: {
+                        70: {
+                            security: isZero ? 2_000 : 0,
+                            securityMax: 2_000,
+                            supplyState: 1,
+                        },
+                    },
+                }
+            );
+            request.setup!.world!.hiddenSeed = `general-probability-clamp-${action}-${boundary}`;
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+
+            expect(reference.execution.outcome).toMatchObject({ completed: true });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: action,
+                actionKey: action,
+                usedFallback: false,
+            });
+            expect(core.execution.outcome).not.toHaveProperty('blockedReason');
+            expect(reference.rng[0]).toMatchObject(
+                isZero
+                    ? { operation: 'nextInt', arguments: { maxInclusive: 99 } }
+                    : { operation: 'nextBits', arguments: { bits: 1 } }
+            );
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+        },
+        120_000
+    );
+});
+
 type GeneralConstraintCase = {
     name: string;
     action: string;

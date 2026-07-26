@@ -8,13 +8,16 @@
 - 범위: 명령 결과, RNG 소비, 로그, 예약 턴 lifecycle, DB 영속화
 
 현재 ref MariaDB와 core memory를 잇는 공통 runner, 성공 경로 55개,
-실행 중 확률 실패 9개와 full constraint fallback 7개가 구현됐다.
+실행 중 확률 실패 9개, full constraint fallback 7개와 모략 확률 clamp
+8개가 구현됐다.
 실패 9개는 내정 critical
 `주민선정/정착장려/상업투자/기술연구/물자조달`과 모략
 `화계/선동/파괴/탈취`이며 RNG 전체 trace, semantic state delta와 실패
 로그 본문을 비교한다. 제약 7개는 무소속, 방랑국, 타국 도시, 보급 단절,
 금·쌀 부족과 민심 상한을 대표하며 휴식 fallback과 RNG/state delta를
-비교한다. 나머지 명령별 제약 실패·값 경계·alternative와 전체 core
+비교한다. clamp 8개는 `화계/선동/파괴/탈취` 각각의 계산 확률 0과
+0.5 경계에서 성공 판정 RNG의 무소비 또는 `nextBits(1)` 소비와 전체
+state delta를 비교한다. 나머지 명령별 제약 실패·값 경계·alternative와 전체 core
 PostgreSQL 재조회가 완료 기준을 통과하기 전까지 55개 명령 전체의 동적
 호환 상태를 `확인`으로 올리지 않는다.
 
@@ -578,9 +581,12 @@ fixture가 명시한 필드만 비교하면 예상하지 못한 side effect를 �
 | `damage-clamp`           | 낮은 농업·상업에서 0 미만 방지                                                        |
 | `constraint-denied`      | 중립/같은 도시/자원/보급/불가침 제약과 queue fallback                                 |
 
-`success-basic`은 현재의 `City.meta.state`와 `City.state` 혼동을 반드시
-실패로 검출해야 한다. 이 fixture가 해당 production line을 고의로 잘못
-바꿨을 때 실패하고 복구하면 통과하는 것을 mutation audit에 기록한다.
+`success-basic`과 확률 상한 fixture는 `City.meta.state`와 `City.state`
+혼동을 검출한다. 상한 fixture에서 실제로 이 결함을 발견해 화계 성공 시
+물리 `City.state=32`를 저장하도록 수정했다. 같은 fixture 묶음에서 선동의
+전체 city spread가 불필요한 front 재계산을 일으키는 문제와 MariaDB
+`city.trust FLOAT` 재조회 정밀도 차이도 발견해 부분 patch와 6자리
+유효숫자 저장 경계로 바로잡았다.
 
 ## 55개 명령 coverage manifest
 

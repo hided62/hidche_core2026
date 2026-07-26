@@ -182,7 +182,12 @@ full command RNG trace, semantic state delta and the exact action-log body.
 Seven full-constraint cases cover neutral status, wandering nation, city
 ownership, supply, gold, rice and trust-cap rejection. Both engines replace
 the denied command with rest, consume the same RNG and produce the same
-semantic delta. This is not yet a claim that every command-specific
+semantic delta. Eight sabotage clamp cases cover probability zero and 0.5 for
+fire attack, agitation, destruction and seizure. The zero boundary skips the
+success RNG primitive, while exactly 0.5 consumes `nextBits(1)`; the complete
+RNG trace and semantic delta match. These cases also fixed fire-attack city
+state persistence and agitation front/trust persistence differences.
+This is not yet a claim that every command-specific
 constraint, clamp, alternative and persistence boundary has been dynamically
 compared.
 
