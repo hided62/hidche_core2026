@@ -304,4 +304,48 @@ describe('war aftermath', () => {
             ])
         );
     });
+
+    it('preserves the first contributor when conflict values are tied', () => {
+        const attackerNation = buildNation(1);
+        const defenderNation = buildNation(2);
+        defenderNation.capitalCityId = 5;
+        const laterNation = buildNation(3);
+        const firstNation = buildNation(4);
+        const attackerCity = buildCity(1, 1);
+        const defenderCity = buildCity(2, 2);
+        defenderCity.conflict = { 3: 100, 4: 100 };
+        defenderCity.meta.conflict_order = [4, 3];
+        const defenderCapital = buildCity(5, 2);
+        const attacker = buildGeneral(1, 1, 1);
+
+        const outcome = resolveWarAftermath({
+            battle: {
+                attacker,
+                defenders: [],
+                defenderCity,
+                logs: [],
+                conquered: true,
+                reports: [],
+            },
+            attackerNation,
+            defenderNation,
+            attackerCity,
+            defenderCity,
+            nations: [attackerNation, defenderNation, laterNation, firstNation],
+            cities: [attackerCity, defenderCity, defenderCapital],
+            generals: [attacker],
+            unitSet: buildUnitSet(),
+            config: buildConfig(),
+            time: {
+                year: 200,
+                month: 1,
+                startYear: 180,
+            },
+        });
+
+        expect(outcome.conquest?.conquerNationId).toBe(4);
+        expect(defenderCity.nationId).toBe(4);
+        expect(defenderCity.meta.conflict_order).toEqual([]);
+        expect(attacker.cityId).toBe(1);
+    });
 });

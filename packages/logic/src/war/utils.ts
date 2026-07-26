@@ -77,6 +77,31 @@ export const parseConflict = (raw: TriggerValue | undefined): Record<number, num
     return Object.keys(result).length ? result : null;
 };
 
+export const readConflictOrder = (meta: Record<string, TriggerValue>): number[] => {
+    const raw = meta.conflict_order;
+    if (!Array.isArray(raw)) {
+        return [];
+    }
+    return raw.filter((value): value is number => typeof value === 'number' && Number.isInteger(value) && value > 0);
+};
+
+export const sortConflictEntries = (
+    conflict: Record<number, number>,
+    preferredOrder: number[] = []
+): Array<readonly [number, number]> => {
+    const orderIndex = new Map(preferredOrder.map((nationId, index) => [nationId, index]));
+    return Object.entries(conflict)
+        .map(([key, value], index) => [Number(key), value, index] as const)
+        .filter(([key, value]) => Number.isFinite(key) && typeof value === 'number')
+        .sort(
+            ([lhsKey, lhsValue, lhsIndex], [rhsKey, rhsValue, rhsIndex]) =>
+                rhsValue - lhsValue ||
+                (orderIndex.get(lhsKey) ?? preferredOrder.length + lhsIndex) -
+                    (orderIndex.get(rhsKey) ?? preferredOrder.length + rhsIndex)
+        )
+        .map(([key, value]) => [key, value] as const);
+};
+
 export const stringifyConflict = (conflict: Record<number, number> | null): string => {
     if (!conflict) {
         return '{}';
@@ -94,14 +119,12 @@ export const stringifyConflict = (conflict: Record<number, number> | null): stri
     return JSON.stringify(ordered);
 };
 
-export const sortConflict = (conflict: Record<number, number>): Record<number, number> => {
+export const sortConflict = (
+    conflict: Record<number, number>,
+    preferredOrder: number[] = []
+): Record<number, number> => {
     const ordered: Record<number, number> = {};
-    const entries = Object.entries(conflict)
-        .map(([key, value]) => [Number(key), value] as const)
-        .filter(([key, value]) => Number.isFinite(key) && typeof value === 'number')
-        .sort(([, lhs], [, rhs]) => rhs - lhs);
-
-    for (const [key, value] of entries) {
+    for (const [key, value] of sortConflictEntries(conflict, preferredOrder)) {
         ordered[key] = value;
     }
 

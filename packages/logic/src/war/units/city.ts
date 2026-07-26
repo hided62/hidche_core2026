@@ -4,7 +4,7 @@ import type { City, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { ActionLogger } from '@sammo-ts/logic/logging/actionLogger.js';
 import type { WarEngineConfig } from '../types.js';
 import type { WarCrewType } from '../crewType.js';
-import { clampMin, round, parseConflict, sortConflict } from '../utils.js';
+import { clampMin, parseConflict, readConflictOrder, round, sortConflict, sortConflictEntries } from '../utils.js';
 import { WarUnit } from './base.js';
 
 // 도시 성벽 전투 유닛(legacy WarUnitCity 포팅).
@@ -144,6 +144,12 @@ export class WarUnitCity extends WarUnit {
 
         let dead = Math.max(1, this.dead);
         let isNew = false;
+        const conflictOrder = readConflictOrder(this.city.meta).filter((id) => conflict[id] !== undefined);
+        for (const id of Object.keys(conflict).map(Number)) {
+            if (!conflictOrder.includes(id)) {
+                conflictOrder.push(id);
+            }
+        }
 
         if (Object.keys(conflict).length === 0 || this.getHP() === 0) {
             dead *= 1.05;
@@ -157,10 +163,13 @@ export class WarUnitCity extends WarUnit {
             conflict[nationId] += dead;
         } else {
             conflict[nationId] = dead;
+            conflictOrder.push(nationId);
             isNew = true;
         }
 
-        const sorted = sortConflict(conflict);
+        const sortedEntries = sortConflictEntries(conflict, conflictOrder);
+        this.city.meta.conflict_order = sortedEntries.map(([id]) => id);
+        const sorted = sortConflict(conflict, conflictOrder);
         this.city.conflict = sorted;
 
         return isNew;

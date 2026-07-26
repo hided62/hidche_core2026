@@ -384,6 +384,7 @@ const buildWorldInput = (
         }
     }
     const observedCityRows = new Map(referenceBefore.cities.map((row) => [readNumber(row, 'id'), row] as const));
+    const fixtureCityRows = new Map((request.setup?.cities ?? []).map((row) => [readNumber(row, 'id'), row] as const));
     const randomFoundingCandidateCityIds = request.setup?.randomFoundingCandidateCityIds
         ? new Set(request.setup.randomFoundingCandidateCityIds)
         : null;
@@ -435,6 +436,19 @@ const buildWorldInput = (
         nations,
         cities: map.cities.map((definition) => {
             const row = observedCityRows.get(definition.id) ?? {};
+            const fixtureRow = fixtureCityRows.get(definition.id) ?? {};
+            const conflictEntries = Array.isArray(fixtureRow.conflictEntries)
+                ? fixtureRow.conflictEntries.filter(
+                      (entry): entry is [number, number] =>
+                          Array.isArray(entry) &&
+                          entry.length === 2 &&
+                          typeof entry[0] === 'number' &&
+                          Number.isInteger(entry[0]) &&
+                          typeof entry[1] === 'number'
+                  )
+                : [];
+            const conflict =
+                conflictEntries.length > 0 ? Object.fromEntries(conflictEntries) : asNumberRecord(row.conflict);
             return {
                 id: definition.id,
                 name: readString(row, 'name', definition.name),
@@ -461,12 +475,15 @@ const buildWorldInput = (
                 defenceMax: readNumber(row, 'defenceMax', definition.max.defence),
                 wall: readNumber(row, 'wall', definition.initial.wall),
                 wallMax: readNumber(row, 'wallMax', definition.max.wall),
-                conflict: asNumberRecord(row.conflict),
+                conflict,
                 meta: {
                     trust: readNumber(row, 'trust', map.defaults?.trust ?? 50),
                     trade: readNumber(row, 'trade', map.defaults?.trade ?? 100),
                     term: readNumber(row, 'term'),
                     officer_set: readNumber(row, 'officerSet'),
+                    ...(conflictEntries.length > 0
+                        ? { conflict_order: conflictEntries.map(([nationId]) => nationId) }
+                        : {}),
                 },
             };
         }),

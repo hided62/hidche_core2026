@@ -13,7 +13,16 @@ import type {
     WarAftermathTechContext,
     WarDiplomacyDelta,
 } from './types.js';
-import { clamp, clampMin, getMetaNumber, parseConflict, round, simpleSerialize } from './utils.js';
+import {
+    clamp,
+    clampMin,
+    getMetaNumber,
+    parseConflict,
+    readConflictOrder,
+    round,
+    simpleSerialize,
+    sortConflictEntries,
+} from './utils.js';
 
 const META_DEAD = 'dead';
 const MAX_EXP_LEVEL = 255;
@@ -124,15 +133,10 @@ const resolveConquerNation = (city: City, attackerNationId: number, nations: Nat
         return attackerNationId;
     }
     const activeNationIds = new Set(nations.map((nation) => nation.id));
-    const entries = Object.entries(conflict)
-        .map(([key, value]) => [Number(key), value] as const)
-        .filter(
-            ([key, value]) =>
-                Number.isFinite(key) &&
-                typeof value === 'number' &&
-                (key === attackerNationId || activeNationIds.has(key))
-        )
-        .sort(([, lhs], [, rhs]) => rhs - lhs);
+    const entries = sortConflictEntries(conflict, readConflictOrder(city.meta)).filter(
+        ([key, value]) =>
+            Number.isFinite(key) && typeof value === 'number' && (key === attackerNationId || activeNationIds.has(key))
+    );
     if (!entries.length) {
         return attackerNationId;
     }
@@ -396,6 +400,7 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
     defenderCity.security = round(defenderCity.security * 0.7);
     defenderCity.nationId = conquerNationId;
     defenderCity.conflict = {};
+    defenderCity.meta.conflict_order = [];
 
     if (defenderCity.level > 3) {
         defenderCity.defence = config.defaultCityWall;
