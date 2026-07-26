@@ -828,6 +828,109 @@ integration('general command alternative matrix', () => {
     }, 120_000);
 });
 
+type GeneralPreReqBoundaryCase = {
+    name: string;
+    action: string;
+    actorPatch?: Record<string, unknown>;
+    expectedCommand: string;
+    expectedTerm: number;
+    expectedProgressText: string;
+};
+
+const generalPreReqBoundaryCases: GeneralPreReqBoundaryCase[] = [
+    {
+        name: 'battle preparation starts at term 1',
+        action: 'che_전투태세',
+        expectedCommand: '전투태세',
+        expectedTerm: 1,
+        expectedProgressText: '전투태세 수행중... (1/4)',
+    },
+    {
+        name: 'battle preparation advances term 1 to 2',
+        action: 'che_전투태세',
+        actorPatch: { lastTurn: { command: '전투태세', term: 1 } },
+        expectedCommand: '전투태세',
+        expectedTerm: 2,
+        expectedProgressText: '전투태세 수행중... (2/4)',
+    },
+    {
+        name: 'battle preparation advances term 2 to 3',
+        action: 'che_전투태세',
+        actorPatch: { lastTurn: { command: '전투태세', term: 2 } },
+        expectedCommand: '전투태세',
+        expectedTerm: 3,
+        expectedProgressText: '전투태세 수행중... (3/4)',
+    },
+    {
+        name: 'domestic trait reset starts at term 1 after another command',
+        action: 'che_내정특기초기화',
+        actorPatch: {
+            specialDomestic: 'che_인덕',
+            lastTurn: { command: '전투태세', term: 3 },
+        },
+        expectedCommand: '내정 특기 초기화',
+        expectedTerm: 1,
+        expectedProgressText: '새로운 적성을 찾는 중... (1/2)',
+    },
+    {
+        name: 'war trait reset starts at term 1',
+        action: 'che_전투특기초기화',
+        actorPatch: { specialWar: 'che_귀병' },
+        expectedCommand: '전투 특기 초기화',
+        expectedTerm: 1,
+        expectedProgressText: '새로운 적성을 찾는 중... (1/2)',
+    },
+    {
+        name: 'retirement starts at term 1 without applying retirement',
+        action: 'che_은퇴',
+        actorPatch: { age: 60 },
+        expectedCommand: '은퇴',
+        expectedTerm: 1,
+        expectedProgressText: '은퇴 수행중... (1/2)',
+    },
+];
+
+integration('general command pre-required turn boundary matrix', () => {
+    it.each(generalPreReqBoundaryCases)(
+        '$name matches legacy intermediate last-turn state without consuming command RNG',
+        async ({ action, actorPatch, expectedCommand, expectedTerm, expectedProgressText }) => {
+            const request = buildRequest(action, undefined, actorPatch);
+            request.setup!.world!.hiddenSeed = `general-prereq-${action}-${expectedTerm}`;
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+            const referenceActor = reference.after.generals.find((entry) => entry.id === 1);
+            const coreActor = core.after.generals.find((entry) => entry.id === 1);
+
+            expect(reference.execution.outcome).toMatchObject({ completed: false });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: action,
+                actionKey: action,
+                usedFallback: false,
+            });
+            expect(referenceActor?.lastTurn).toMatchObject({
+                command: expectedCommand,
+                term: expectedTerm,
+            });
+            expect(coreActor?.lastTurn).toMatchObject({
+                command: expectedCommand,
+                term: expectedTerm,
+            });
+            expect(reference.after.logs.some((entry) => String(entry.text).includes(expectedProgressText))).toBe(true);
+            expect(core.after.logs.some((entry) => String(entry.text).includes(expectedProgressText))).toBe(true);
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+        },
+        120_000
+    );
+});
+
 type GeneralConstraintCase = {
     name: string;
     action: string;
