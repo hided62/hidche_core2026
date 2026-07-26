@@ -140,14 +140,12 @@ export class ActionResolver<
                 )
             );
         } else {
-            const commDmg = stolenGold / 12;
-            const agriDmg = stolenRice / 12;
-
+            // 레거시는 미보급 도시 자원을 먼저 감소시키지만 같은 명령 끝의
+            // 원본 destCity 전체 저장이 이를 덮어쓴다. 관찰 가능한 최종
+            // 상태는 자원 변화 없이 state 32만 남는다.
             effects.push(
                 createCityPatchEffect(
                     {
-                        commerce: Math.round(Math.max(0, destCity.commerce - commDmg)),
-                        agriculture: Math.round(Math.max(0, destCity.agriculture - agriDmg)),
                         state: 32,
                     },
                     args.destCityId

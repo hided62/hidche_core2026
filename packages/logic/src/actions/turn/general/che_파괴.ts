@@ -106,7 +106,6 @@ export class ActionResolver<
         effects.push(
             createCityPatchEffect(
                 {
-                    ...destCity,
                     defence: newDef,
                     wall: newWall,
                     state: 32, // Legacy sabotage state
