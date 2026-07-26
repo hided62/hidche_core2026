@@ -1,6 +1,6 @@
 import type { GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext, StateView } from '@sammo-ts/logic/constraints/types.js';
-import { allow, unknownOrDeny } from '@sammo-ts/logic/constraints/helpers.js';
+import { allow, compareValues, unknownOrDeny } from '@sammo-ts/logic/constraints/helpers.js';
 import { beChief, occupiedCity, reqNationGold, reqNationRice } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
@@ -21,6 +21,14 @@ export interface EventResearchConfig {
     category?: string;
 }
 
+const isLegacyIncompleteResearchValue = (value: unknown): boolean => {
+    if (Array.isArray(value) || (typeof value === 'object' && value !== null)) {
+        // PHP compares arrays above scalar values, so `array < 1` is false.
+        return false;
+    }
+    return compareValues(value ?? 0, '<', 1);
+};
+
 const reqNationAuxValue = (auxKey: string, actionName: string): Constraint => ({
     name: 'reqNationAuxValue',
     requires: (ctx) => (ctx.nationId !== undefined ? [{ kind: 'nation', id: ctx.nationId }] : []),
@@ -32,8 +40,7 @@ const reqNationAuxValue = (auxKey: string, actionName: string): Constraint => ({
         if (!nation) {
             return unknownOrDeny(ctx, [{ kind: 'nation', id: ctx.nationId }], '국가 정보가 없습니다.');
         }
-        const current = typeof nation.meta?.[auxKey] === 'number' ? Number(nation.meta?.[auxKey]) : 0;
-        if (current >= 1) {
+        if (!isLegacyIncompleteResearchValue(nation.meta?.[auxKey])) {
             return { kind: 'deny', reason: `${actionName}가 이미 완료되었습니다.` };
         }
         return allow();

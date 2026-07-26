@@ -99,6 +99,71 @@ const researchCase = (action: string, command: string, term: number): NationMatr
     },
 ];
 
+const researchConfigs: Record<
+    string,
+    {
+        command: string;
+        auxKey: string;
+        preReqTurn: number;
+        cost: number;
+    }
+> = {
+    event_원융노병연구: {
+        command: '원융노병 연구',
+        auxKey: 'can_원융노병사용',
+        preReqTurn: 23,
+        cost: 100_000,
+    },
+    event_화시병연구: {
+        command: '화시병 연구',
+        auxKey: 'can_화시병사용',
+        preReqTurn: 11,
+        cost: 50_000,
+    },
+    event_음귀병연구: {
+        command: '음귀병 연구',
+        auxKey: 'can_음귀병사용',
+        preReqTurn: 11,
+        cost: 50_000,
+    },
+    event_대검병연구: {
+        command: '대검병 연구',
+        auxKey: 'can_대검병사용',
+        preReqTurn: 11,
+        cost: 50_000,
+    },
+    event_화륜차연구: {
+        command: '화륜차 연구',
+        auxKey: 'can_화륜차사용',
+        preReqTurn: 23,
+        cost: 100_000,
+    },
+    event_산저병연구: {
+        command: '산저병 연구',
+        auxKey: 'can_산저병사용',
+        preReqTurn: 11,
+        cost: 50_000,
+    },
+    event_극병연구: {
+        command: '극병 연구',
+        auxKey: 'can_극병사용',
+        preReqTurn: 23,
+        cost: 100_000,
+    },
+    event_상병연구: {
+        command: '상병 연구',
+        auxKey: 'can_상병사용',
+        preReqTurn: 23,
+        cost: 100_000,
+    },
+    event_무희연구: {
+        command: '무희 연구',
+        auxKey: 'can_무희사용',
+        preReqTurn: 23,
+        cost: 100_000,
+    },
+};
+
 const buildRequest = (
     action: string,
     args?: Record<string, unknown>,
@@ -516,6 +581,31 @@ integration('nation command success matrix', () => {
                     ignoredPathPatterns: ignoredLifecyclePaths,
                 })
             ).toEqual([]);
+            const researchConfig = researchConfigs[action];
+            if (researchConfig) {
+                for (const snapshot of [reference, core]) {
+                    const nationBefore = snapshot.before.nations.find((entry) => entry.id === 1);
+                    const nationAfter = snapshot.after.nations.find((entry) => entry.id === 1);
+                    const generalBefore = snapshot.before.generals.find((entry) => entry.id === 1);
+                    const generalAfter = snapshot.after.generals.find((entry) => entry.id === 1);
+                    const expectedProgress = 5 * (researchConfig.preReqTurn + 1);
+
+                    expect(readNationResource(nationBefore, 'gold') - readNationResource(nationAfter, 'gold')).toBe(
+                        researchConfig.cost
+                    );
+                    expect(readNationResource(nationBefore, 'rice') - readNationResource(nationAfter, 'rice')).toBe(
+                        researchConfig.cost
+                    );
+                    expect(
+                        readNumericField(generalAfter, 'experience') - readNumericField(generalBefore, 'experience')
+                    ).toBe(expectedProgress);
+                    expect(
+                        readNumericField(generalAfter, 'dedication') - readNumericField(generalBefore, 'dedication')
+                    ).toBe(expectedProgress);
+                    expect(readNumericField(readNationMeta(nationAfter), researchConfig.auxKey)).toBe(1);
+                    expect(snapshot.rng).toEqual([]);
+                }
+            }
         },
         120_000
     );
@@ -2391,6 +2481,216 @@ integration('nation random capital constraints, candidates, RNG, and city reset 
                     expect.arrayContaining([expect.stringContaining(noCandidateText)])
                 );
             }
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+        },
+        120_000
+    );
+});
+
+type ResearchBoundaryOutcome = 'fallback' | 'intermediate' | 'completed';
+
+const researchBoundaryCases: Array<{
+    name: string;
+    action: 'event_화시병연구' | 'event_원융노병연구';
+    term: number;
+    gold?: number;
+    rice?: number;
+    auxValue?: unknown;
+    setAuxValue?: boolean;
+    fixturePatches?: FixturePatches;
+    outcome: ResearchBoundaryOutcome;
+}> = [
+    {
+        name: 'keeps the short research at its last intermediate turn',
+        action: 'event_화시병연구',
+        term: 10,
+        outcome: 'intermediate',
+    },
+    {
+        name: 'keeps the long research at its last intermediate turn',
+        action: 'event_원융노병연구',
+        term: 22,
+        outcome: 'intermediate',
+    },
+    {
+        name: 'allows the exact short-research reserves without supply',
+        action: 'event_화시병연구',
+        term: 11,
+        fixturePatches: { cities: { 3: { supplyState: 0 } } },
+        outcome: 'completed',
+    },
+    {
+        name: 'allows the exact long-research reserves',
+        action: 'event_원융노병연구',
+        term: 23,
+        outcome: 'completed',
+    },
+    {
+        name: 'rejects one less than the short gold reserve',
+        action: 'event_화시병연구',
+        term: 11,
+        gold: 49_999,
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects one less than the short rice reserve',
+        action: 'event_화시병연구',
+        term: 11,
+        rice: 51_999,
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects one less than the long gold reserve',
+        action: 'event_원융노병연구',
+        term: 23,
+        gold: 99_999,
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects one less than the long rice reserve',
+        action: 'event_원융노병연구',
+        term: 23,
+        rice: 101_999,
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects a numeric completed flag',
+        action: 'event_화시병연구',
+        term: 11,
+        auxValue: 1,
+        setAuxValue: true,
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects a numeric-string completed flag',
+        action: 'event_화시병연구',
+        term: 11,
+        auxValue: '1',
+        setAuxValue: true,
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects a boolean completed flag',
+        action: 'event_원융노병연구',
+        term: 23,
+        auxValue: true,
+        setAuxValue: true,
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects an array-shaped completed flag',
+        action: 'event_원융노병연구',
+        term: 23,
+        auxValue: [],
+        setAuxValue: true,
+        outcome: 'fallback',
+    },
+    {
+        name: 'accepts a numeric-string incomplete flag',
+        action: 'event_원융노병연구',
+        term: 23,
+        auxValue: '0',
+        setAuxValue: true,
+        outcome: 'completed',
+    },
+];
+
+integration('nation event research turn, reserve, and duplicate-state boundaries', () => {
+    it.each(researchBoundaryCases)(
+        '$name matches legacy completion, resources, flags, logs, RNG, and semantic delta',
+        async ({ action, term, gold, rice, auxValue, setAuxValue = false, fixturePatches, outcome }) => {
+            const config = researchConfigs[action]!;
+            const requiredGold = config.cost;
+            const requiredRice = config.cost + 2_000;
+            const request = buildRequest(action, undefined, {
+                ...fixturePatches,
+                nations: {
+                    ...fixturePatches?.nations,
+                    1: {
+                        ...fixturePatches?.nations?.[1],
+                        gold: gold ?? requiredGold,
+                        rice: rice ?? requiredRice,
+                        meta: {
+                            ...(setAuxValue ? { [config.auxKey]: auxValue } : {}),
+                        },
+                        turnLastByOfficerLevel: {
+                            12: {
+                                command: config.command,
+                                term,
+                            },
+                        },
+                    },
+                },
+            });
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+            const completed = outcome === 'completed';
+            const intermediate = outcome === 'intermediate';
+
+            expect(reference.execution.outcome).toMatchObject({ completed });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: action,
+                actionKey: outcome === 'fallback' ? '휴식' : action,
+                usedFallback: outcome === 'fallback',
+                ...(outcome === 'fallback' ? {} : { completed }),
+            });
+
+            for (const snapshot of [reference, core]) {
+                const nationBefore = snapshot.before.nations.find((entry) => entry.id === 1);
+                const nationAfter = snapshot.after.nations.find((entry) => entry.id === 1);
+                const generalBefore = snapshot.before.generals.find((entry) => entry.id === 1);
+                const generalAfter = snapshot.after.generals.find((entry) => entry.id === 1);
+                const expectedCost = completed ? config.cost : 0;
+                const expectedProgress = completed ? 5 * (config.preReqTurn + 1) : 0;
+
+                expect(readNationResource(nationBefore, 'gold') - readNationResource(nationAfter, 'gold')).toBe(
+                    expectedCost
+                );
+                expect(readNationResource(nationBefore, 'rice') - readNationResource(nationAfter, 'rice')).toBe(
+                    expectedCost
+                );
+                expect(
+                    readNumericField(generalAfter, 'experience') - readNumericField(generalBefore, 'experience')
+                ).toBe(expectedProgress);
+                expect(
+                    readNumericField(generalAfter, 'dedication') - readNumericField(generalBefore, 'dedication')
+                ).toBe(expectedProgress);
+
+                if (completed) {
+                    expect(readNumericField(readNationMeta(nationAfter), config.auxKey)).toBe(1);
+                    expect(readNationResource(nationAfter, 'gold')).toBe(0);
+                    expect(readNationResource(nationAfter, 'rice')).toBe(2_000);
+                    expect(snapshot.after.logs.map((entry) => entry.text)).toEqual(
+                        expect.arrayContaining([expect.stringContaining(`<M>${config.command}</> 완료`)])
+                    );
+                } else {
+                    expect(readNationMeta(nationAfter)[config.auxKey]).toEqual(
+                        readNationMeta(nationBefore)[config.auxKey]
+                    );
+                }
+            }
+
+            if (intermediate) {
+                expect(reference.execution.outcome).toMatchObject({
+                    lastTurn: {
+                        command: config.command,
+                        term: config.preReqTurn,
+                    },
+                });
+                expect(readNationMeta(core.after.nations.find((entry) => entry.id === 1)).turn_last_12).toMatchObject({
+                    command: config.command,
+                    term: config.preReqTurn,
+                });
+            }
+            expect(reference.rng).toEqual([]);
             expect(core.rng).toEqual(reference.rng);
             expect(
                 compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
