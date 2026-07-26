@@ -28,6 +28,8 @@ import DynastyDetailView from '../views/DynastyDetailView.vue';
 import SurveyView from '../views/SurveyView.vue';
 import TroopView from '../views/TroopView.vue';
 import YearbookView from '../views/YearbookView.vue';
+import NationBettingView from '../views/NationBettingView.vue';
+import NpcListView from '../views/NpcListView.vue';
 import { useSessionStore } from '../stores/session';
 
 const routes = [
@@ -219,6 +221,20 @@ const routes = [
         meta: {
             requiresAuth: true,
         },
+    },
+    {
+        path: '/nation-betting',
+        name: 'nation-betting',
+        component: NationBettingView,
+        meta: {
+            requiresAuth: true,
+            requiresGeneral: true,
+        },
+    },
+    {
+        path: '/npc-list',
+        name: 'npc-list',
+        component: NpcListView,
     },
     {
         path: '/my-page',

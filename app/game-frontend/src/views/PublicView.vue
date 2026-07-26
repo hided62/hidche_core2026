@@ -107,6 +107,7 @@ onMounted(() => {
                 <RouterLink v-if="!session.isAuthed" class="ghost" to="/login">로그인</RouterLink>
                 <RouterLink v-else-if="session.needsGeneral" class="ghost" to="/join">장수 생성/빙의</RouterLink>
                 <RouterLink v-else class="ghost" to="/">메인으로</RouterLink>
+                <RouterLink class="ghost" to="/npc-list">빙의일람</RouterLink>
                 <button class="ghost" @click="refreshPublicData">새로고침</button>
             </div>
         </header>

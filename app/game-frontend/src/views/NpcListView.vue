@@ -1,0 +1,321 @@
+<script setup lang="ts">
+import { onMounted, ref } from 'vue';
+
+import { trpc } from '../utils/trpc';
+
+type NpcList = Awaited<ReturnType<typeof trpc.public.getNpcList.query>>;
+type NpcListSort = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+
+const sort = ref<NpcListSort>(1);
+const data = ref<NpcList | null>(null);
+const loading = ref(false);
+const errorMessage = ref('');
+
+const getErrorMessage = (error: unknown): string => {
+    if (error instanceof Error) {
+        return error.message;
+    }
+    return typeof error === 'string' ? error : '요청을 처리하지 못했습니다.';
+};
+
+const load = async () => {
+    if (loading.value) {
+        return;
+    }
+    loading.value = true;
+    errorMessage.value = '';
+    try {
+        data.value = await trpc.public.getNpcList.query({ sort: sort.value });
+    } catch (error) {
+        // Keep both the selected sort and the last successful table after a failed refresh.
+        errorMessage.value = getErrorMessage(error);
+    } finally {
+        loading.value = false;
+    }
+};
+
+onMounted(() => {
+    void load();
+});
+</script>
+
+<template>
+    <main id="npc-list-container" class="npc-list-page">
+        <table class="legacy-table title-table legacy-bg0">
+            <tbody>
+                <tr>
+                    <td>
+                        빙 의 일 람<br />
+                        <RouterLink class="legacy-close" to="/">돌아가기</RouterLink>
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        <form class="sort-form" @submit.prevent="load">
+                            <label for="npc-list-sort">정렬순서 :</label>
+                            <select id="npc-list-sort" v-model.number="sort" name="type" size="1">
+                                <option :value="1">이름</option>
+                                <option :value="2">국가</option>
+                                <option :value="3">종능</option>
+                                <option :value="4">통솔</option>
+                                <option :value="5">무력</option>
+                                <option :value="6">지력</option>
+                                <option :value="7">명성</option>
+                                <option :value="8">계급</option>
+                            </select>
+                            <button type="submit" :disabled="loading">정렬하기</button>
+                        </form>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div v-if="errorMessage" class="npc-error" role="alert">{{ errorMessage }}</div>
+        <div v-if="loading && !data" class="npc-loading">불러오는 중...</div>
+
+        <table v-if="data" class="legacy-table npc-table legacy-bg0">
+            <colgroup>
+                <col class="col-name" />
+                <col class="col-owner" />
+                <col class="col-level" />
+                <col class="col-nation" />
+                <col class="col-personality" />
+                <col class="col-special" />
+                <col class="col-stat" />
+                <col class="col-leadership" />
+                <col class="col-strength" />
+                <col class="col-intelligence" />
+                <col class="col-experience" />
+                <col class="col-dedication" />
+            </colgroup>
+            <thead>
+                <tr class="legacy-bg1">
+                    <th>희생된 장수</th>
+                    <th>악령 이름</th>
+                    <th>레벨</th>
+                    <th>국가</th>
+                    <th>성격</th>
+                    <th>특기</th>
+                    <th>종능</th>
+                    <th>통솔</th>
+                    <th>무력</th>
+                    <th>지력</th>
+                    <th>명성</th>
+                    <th>계급</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr v-for="general in data.generals" :key="general.id" :data-general-id="general.id">
+                    <td :class="{ possessed: general.npcState === 1 }">{{ general.name }}</td>
+                    <td>{{ general.ownerName }}</td>
+                    <td>Lv {{ general.level }}</td>
+                    <td>{{ general.nationName }}</td>
+                    <td>
+                        <span v-if="general.personality" class="trait-tooltip" tabindex="0">
+                            {{ general.personality.name }}
+                            <span role="tooltip">{{ general.personality.info }}</span>
+                        </span>
+                        <span v-else>-</span>
+                    </td>
+                    <td>
+                        <span v-if="general.specialDomestic" class="trait-tooltip" tabindex="0">
+                            {{ general.specialDomestic.name }}
+                            <span role="tooltip">{{ general.specialDomestic.info }}</span>
+                        </span>
+                        <span v-else>-</span>
+                        /
+                        <span v-if="general.specialWar" class="trait-tooltip" tabindex="0">
+                            {{ general.specialWar.name }}
+                            <span role="tooltip">{{ general.specialWar.info }}</span>
+                        </span>
+                        <span v-else>-</span>
+                    </td>
+                    <td>{{ general.statTotal }}</td>
+                    <td>{{ general.leadership }}</td>
+                    <td>{{ general.strength }}</td>
+                    <td>{{ general.intelligence }}</td>
+                    <td>{{ general.experience }}</td>
+                    <td>{{ general.dedication }}</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <table class="legacy-table footer-table legacy-bg0">
+            <tbody>
+                <tr>
+                    <td><RouterLink class="legacy-close" to="/">돌아가기</RouterLink></td>
+                </tr>
+                <tr>
+                    <td class="banner">SAMMO · Legacy compatible NPC list</td>
+                </tr>
+            </tbody>
+        </table>
+    </main>
+</template>
+
+<style scoped>
+.npc-list-page {
+    width: 1000px;
+    min-height: 100vh;
+    margin: 0 auto;
+    color: #fff;
+    font-family: Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic';
+    font-size: 14px;
+    line-height: 1.3;
+}
+
+.legacy-table {
+    width: 1000px;
+    border-collapse: collapse;
+    padding: 0;
+    table-layout: fixed;
+    font-size: 14px;
+    word-break: break-all;
+}
+
+.legacy-table td,
+.legacy-table th {
+    border: 1px solid gray;
+    padding: 0;
+    text-align: center;
+    word-break: break-all;
+}
+
+.title-table td {
+    min-height: 20px;
+}
+
+.sort-form {
+    min-height: 25px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+}
+
+.sort-form select,
+.sort-form button {
+    height: 23px;
+    font: inherit;
+}
+
+.sort-form select {
+    background: #ddd;
+    color: #303030;
+}
+
+.sort-form button {
+    cursor: pointer;
+}
+
+.npc-table {
+    margin-top: 0;
+}
+
+.npc-table th {
+    height: 20px;
+    font-weight: 400;
+}
+
+.npc-table td {
+    height: 20px;
+}
+
+.col-name,
+.col-owner {
+    width: 102px;
+}
+
+.col-level,
+.col-personality,
+.col-stat,
+.col-leadership,
+.col-strength,
+.col-intelligence {
+    width: 68px;
+}
+
+.col-nation {
+    width: 118px;
+}
+
+.col-special {
+    width: 88px;
+}
+
+.col-experience,
+.col-dedication {
+    width: 78px;
+}
+
+.possessed {
+    color: skyblue;
+}
+
+.trait-tooltip {
+    position: relative;
+    cursor: help;
+}
+
+.trait-tooltip [role='tooltip'] {
+    display: none;
+    position: absolute;
+    z-index: 10;
+    left: 50%;
+    bottom: calc(100% + 4px);
+    width: 220px;
+    padding: 5px 7px;
+    transform: translateX(-50%);
+    border: 1px solid #888;
+    background: #202020;
+    color: #fff;
+    text-align: left;
+    word-break: keep-all;
+}
+
+.trait-tooltip:hover [role='tooltip'],
+.trait-tooltip:focus [role='tooltip'] {
+    display: block;
+}
+
+.legacy-close {
+    color: #fff;
+}
+
+.legacy-close:hover,
+.legacy-close:focus {
+    color: #fff;
+    text-decoration: underline;
+}
+
+.legacy-close:focus-visible,
+.sort-form select:focus-visible,
+.sort-form button:focus-visible {
+    outline: 2px solid #f39c12;
+    outline-offset: 1px;
+}
+
+.footer-table {
+    margin-top: 0;
+}
+
+.footer-table td {
+    height: 21px;
+}
+
+.banner {
+    font-size: 12px;
+}
+
+.npc-error,
+.npc-loading {
+    width: 1000px;
+    box-sizing: border-box;
+    padding: 6px 10px;
+}
+
+.npc-error {
+    border: 1px solid #9b4848;
+    color: #ffd0d0;
+}
+</style>
