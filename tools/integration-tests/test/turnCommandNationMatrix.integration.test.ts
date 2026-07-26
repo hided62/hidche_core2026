@@ -19,7 +19,7 @@ const ignoredLifecyclePaths = [
     /^world\.turnTime$/,
     /^generals\[[^\]]+\]\.(?:turnTime|recentWarTime|lastTurn|killTurn|mySet)(?:\.|$)/,
     /^generals\[[^\]]+\]\.meta(?:\.|$)/,
-    /^nations\[[^\]]+\]\.meta\.(?:turn_last_\d+|next_execute_.+|capset|tech|gennum|war|surlimit)(?:\.|$)/,
+    /^nations\[[^\]]+\]\.meta\.(?:turn_last_\d+|next_execute_.+|capset|tech|gennum|war|surlimit|strategic_cmd_limit)(?:\.|$)/,
 ];
 
 const general = (id: number, nationId: number, cityId: number, officerLevel: number): Record<string, unknown> => ({
@@ -115,6 +115,7 @@ const buildRequest = (
                 typeCode: 'che_명가',
                 war: 0,
                 diplomacyLimit: 0,
+                strategicCommandLimit: 0,
                 generalCount: 2,
                 meta: { can_국호변경: 1, can_국기변경: 1, surlimit: 0 },
                 ...fixturePatches.nations?.[1],
@@ -130,6 +131,7 @@ const buildRequest = (
                 typeCode: 'che_명가',
                 war: 0,
                 diplomacyLimit: 0,
+                strategicCommandLimit: 0,
                 generalCount: 1,
                 meta: { surlimit: 0 },
                 ...fixturePatches.nations?.[2],
@@ -307,6 +309,13 @@ const cases: NationMatrixCase[] = [
     researchCase('event_극병연구', '극병 연구', 23),
     researchCase('event_상병연구', '상병 연구', 23),
     researchCase('event_무희연구', '무희 연구', 23),
+    ['che_백성동원', { destCityID: 70 }, { cities: { 70: { nationId: 1 } } }],
+    [
+        'che_이호경식',
+        { destNationID: 2 },
+        { diplomacy: { '1:2': { state: 1, term: 12 }, '2:1': { state: 1, term: 12 } } },
+    ],
+    ['che_급습', { destNationID: 2 }, { diplomacy: { '1:2': { state: 1, term: 12 }, '2:1': { state: 1, term: 12 } } }],
 ];
 
 integration('nation command success matrix', () => {
