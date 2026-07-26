@@ -84,6 +84,7 @@ integration('core ↔ legacy command-boundary differential', () => {
         ['live sortie supply retreat', 'fixtures/turn-differential/live-sortie-supply-retreat.json'],
         ['live sortie noncapital conquest', 'fixtures/turn-differential/live-sortie-noncapital-conquest.json'],
         ['live sortie emergency capital', 'fixtures/turn-differential/live-sortie-emergency-capital.json'],
+        ['live sortie conflict arbitration', 'fixtures/turn-differential/live-sortie-conflict-arbitration.json'],
     ])(
         '%s matches command RNG and canonical state delta',
         async (_label, fixturePath) => {
@@ -132,6 +133,18 @@ integration('core ↔ legacy command-boundary differential', () => {
                     atmos: 80,
                 });
                 expect(reference.after.cities.find((city) => city.id === 71)?.supplyState).toBe(1);
+            }
+            if (fixturePath.endsWith('live-sortie-conflict-arbitration.json')) {
+                expect(reference.before.cities.find((city) => city.id === 70)?.conflict).toEqual({ 3: 10_000 });
+                expect(reference.after.cities.find((city) => city.id === 70)).toMatchObject({
+                    nationId: 3,
+                    conflict: {},
+                });
+                expect(reference.after.generals.find((general) => general.id === 1)?.cityId).toBe(3);
+                const arbitrationLogs = reference.after.logs.filter(
+                    (log) => (Number(log.id) || 0) > reference.before.watermarks.historyLogId
+                );
+                expect(arbitrationLogs.some((log) => String(log.text).includes('【분쟁협상】'))).toBe(true);
             }
 
             expect(core.execution.outcome).toMatchObject({
