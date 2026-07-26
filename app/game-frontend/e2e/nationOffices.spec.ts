@@ -14,16 +14,16 @@ type FixtureState = {
 
 const artifactRoot = process.env.OFFICE_PARITY_ARTIFACT_DIR ? resolve(process.env.OFFICE_PARITY_ARTIFACT_DIR) : null;
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
-const imageRoots = [resolve(repositoryRoot, '../image/game'), resolve(repositoryRoot, '../../image/game')];
-const referenceImage = async (filename: string): Promise<Buffer> => {
+const imageRoots = [resolve(repositoryRoot, '../image'), resolve(repositoryRoot, '../../image')];
+const referenceAsset = async (relativePath: string): Promise<Buffer> => {
     for (const root of imageRoots) {
         try {
-            return await readFile(resolve(root, filename));
+            return await readFile(resolve(root, relativePath));
         } catch {
             // Nested worktrees and the primary checkout have different image parents.
         }
     }
-    throw new Error(`Reference image not found: ${filename}`);
+    throw new Error(`Reference image not found: ${relativePath}`);
 };
 const response = (data: unknown) => ({ result: { data } });
 const errorResponse = (path: string, message: string, code = 'BAD_REQUEST') => ({
@@ -170,14 +170,18 @@ const installFixture = async (page: Page, state: FixtureState) => {
     });
     for (const filename of ['back_walnut.jpg', 'back_green.jpg', 'back_blue.jpg']) {
         await page.route(`**/image/game/${filename}`, async (route) =>
-            route.fulfill({ status: 200, contentType: 'image/jpeg', body: await referenceImage(filename) })
+            route.fulfill({
+                status: 200,
+                contentType: 'image/jpeg',
+                body: await referenceAsset(`game/${filename}`),
+            })
         );
     }
     await page.route('**/image/icons/**', async (route) =>
         route.fulfill({
             status: 200,
             contentType: 'image/jpeg',
-            body: await readFile(resolve(repositoryRoot, '../../image/icons/default.jpg')),
+            body: await referenceAsset('icons/default.jpg'),
         })
     );
     await page.route('**/che/api/trpc/**', async (route) => {
