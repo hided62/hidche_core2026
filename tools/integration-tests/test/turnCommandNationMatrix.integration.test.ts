@@ -673,3 +673,81 @@ integration('nation seizure NPC public message parity', () => {
         });
     }, 120_000);
 });
+
+integration('nation seizure zero target balance parity', () => {
+    it('matches the legacy zero-amount logs for a user target', async () => {
+        const request = buildRequest(
+            'che_몰수',
+            { isGold: true, amount: 100, destGeneralID: 3 },
+            { generals: { 3: { name: '무자원장수', gold: 0, npcState: 0 } } }
+        );
+        const reference = runReferenceTurnCommandTraceRequest(
+            workspaceRoot!,
+            request as unknown as Record<string, unknown>
+        );
+        const core = await runCoreTurnCommandTrace(request, reference.before);
+        const referenceLogs = reference.after.logs.slice(reference.before.logs.length);
+
+        expect(reference.execution.outcome).toMatchObject({ completed: true });
+        expect(core.execution.outcome).toMatchObject({
+            requestedAction: 'che_몰수',
+            actionKey: 'che_몰수',
+            usedFallback: false,
+        });
+        expect(reference.rng).toEqual([]);
+        expect(core.rng).toEqual(reference.rng);
+        expect(referenceLogs.map((entry) => entry.text)).toEqual(
+            expect.arrayContaining([
+                expect.stringContaining('금 0를 몰수 당했습니다.'),
+                expect.stringContaining('금 <C>0</>를 몰수했습니다.'),
+            ])
+        );
+        expect(core.after.logs.map((entry) => entry.text)).toEqual(
+            expect.arrayContaining([
+                expect.stringContaining('금 0를 몰수 당했습니다.'),
+                expect.stringContaining('금 <C>0</>를 몰수했습니다.'),
+            ])
+        );
+        expect(
+            compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                ignoredPathPatterns: ignoredLifecyclePaths,
+            })
+        ).toEqual([]);
+    }, 120_000);
+
+    it('preserves NPC message RNG and side effects before applying a zero delta', async () => {
+        const request = buildRequest(
+            'che_몰수',
+            { isGold: true, amount: 100, destGeneralID: 3 },
+            {
+                world: { hiddenSeed: 'seizure-message-37' },
+                generals: { 3: { name: '무자원NPC', gold: 0, npcState: 2 } },
+            }
+        );
+        const reference = runReferenceTurnCommandTraceRequest(
+            workspaceRoot!,
+            request as unknown as Record<string, unknown>
+        );
+        const core = await runCoreTurnCommandTrace(request, reference.before);
+        const referenceMessages = reference.after.messages.slice(reference.before.messages.length);
+
+        expect(reference.execution.outcome).toMatchObject({ completed: true });
+        expect(reference.rng.map((call) => call.operation)).toEqual(['nextFloat1', 'nextInt']);
+        expect(core.rng).toEqual(reference.rng);
+        expect(referenceMessages).toHaveLength(1);
+        expect(core.after.messages).toHaveLength(1);
+        expect(referenceMessages[0]).toMatchObject({
+            type: 'public',
+            sourceId: 3,
+            payload: { text: NPC_SEIZURE_MESSAGE_TEXT },
+        });
+        expect(core.after.messages[0]).toMatchObject({
+            payload: { msgType: 'public', text: NPC_SEIZURE_MESSAGE_TEXT },
+        });
+        expect(
+            compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                ignoredPathPatterns: ignoredLifecyclePaths,
+            })
+        ).toEqual([]);
+    }, 120_000);
+});
