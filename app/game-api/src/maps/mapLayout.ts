@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { loadMapDefinitionByName } from './mapDefinition.js';
 
 export interface MapLayoutCity {
     id: number;
@@ -30,8 +31,7 @@ const LEGACY_CITY_CONST = path.resolve(process.cwd(), 'legacy/hwe/sammo/CityCons
 
 const layoutCache = new Map<string, MapLayout>();
 
-const stripComments = (value: string): string =>
-    value.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+const stripComments = (value: string): string => value.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
 
 const extractPhpArray = (source: string, marker: string): string | null => {
     const idx = source.indexOf(marker);
@@ -196,11 +196,7 @@ const parseCityConstFile = async (filePath: string): Promise<ParsedCityConst> =>
 
 const resolveScenarioFile = async (scenario: string): Promise<string> => {
     const normalized = scenario.replace(/\.json$/i, '');
-    const candidates = [
-        `${normalized}.json`,
-        `scenario_${normalized}.json`,
-        'default.json',
-    ];
+    const candidates = [`${normalized}.json`, `scenario_${normalized}.json`, 'default.json'];
 
     for (const candidate of candidates) {
         const fullPath = path.join(LEGACY_SCENARIO_ROOT, candidate);
@@ -272,15 +268,15 @@ const normalizeInitCity = (
                 typeof levelLabel === 'number'
                     ? levelLabel
                     : typeof levelLabel === 'string'
-                    ? levelMap.nameToId[levelLabel] ?? Number(levelLabel)
-                    : 0;
+                      ? (levelMap.nameToId[levelLabel] ?? Number(levelLabel))
+                      : 0;
 
             const regionValue =
                 typeof regionLabel === 'number'
                     ? regionLabel
                     : typeof regionLabel === 'string'
-                    ? regionMap.nameToId[regionLabel] ?? Number(regionLabel)
-                    : 0;
+                      ? (regionMap.nameToId[regionLabel] ?? Number(regionLabel))
+                      : 0;
 
             const pathNames = Array.isArray(path) ? (path as string[]) : [];
             const pathIds = pathNames
@@ -324,7 +320,19 @@ export const loadMapLayout = async (scenario: string): Promise<MapLayout> => {
     const levelMap = buildLookupMap(levelMapRaw);
 
     const initCity = map.initCity ?? base.initCity ?? [];
-    const cityList = normalizeInitCity(initCity, levelMap, regionMap);
+    let cityList = normalizeInitCity(initCity, levelMap, regionMap);
+    if (cityList.length === 0) {
+        const resourceMap = await loadMapDefinitionByName(mapName);
+        cityList = resourceMap.cities.map((city) => ({
+            id: city.id,
+            name: city.name,
+            level: city.level,
+            region: city.region,
+            x: city.position.x,
+            y: city.position.y,
+            path: [...city.connections],
+        }));
+    }
 
     const layout: MapLayout = {
         mapName,
