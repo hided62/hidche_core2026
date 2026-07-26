@@ -67,6 +67,7 @@ export interface TurnCommandFixtureRequest {
         nationIds?: number[];
         logAfterId?: number;
         messageAfterId?: number;
+        includeNationHistoryLogs?: boolean;
         generalCooldowns?: GeneralCooldownSelector[];
         nationCooldowns?: NationCooldownSelector[];
         diplomacyPairs?: Array<{ fromNationId: number; toNationId: number }>;

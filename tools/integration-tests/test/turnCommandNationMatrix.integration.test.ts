@@ -365,7 +365,8 @@ const buildRequest = (
         action === 'che_급습' ||
         action === 'che_필사즉생' ||
         action === 'che_허보' ||
-        action === 'che_의병모집'
+        action === 'che_의병모집' ||
+        action === 'che_수몰'
             ? {
                   nationCooldowns: [
                       {
@@ -381,7 +382,9 @@ const buildRequest = (
                                         ? '필사즉생'
                                         : action === 'che_허보'
                                           ? '허보'
-                                          : '의병모집',
+                                          : action === 'che_의병모집'
+                                            ? '의병모집'
+                                            : '수몰',
                       },
                   ],
               }
@@ -955,6 +958,352 @@ integration('nation volunteer-recruitment constraints, creation values, RNG, and
                 ]);
                 expect(core.after.world.nationCooldowns).toEqual(reference.after.world.nationCooldowns);
             }
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+        },
+        120_000
+    );
+});
+
+type FloodOutcome = 'fallback' | 'intermediate' | 'completed';
+
+const floodBoundaryCases: Array<{
+    name: string;
+    destCityId: unknown;
+    fixturePatches?: FixturePatches;
+    outcome: FloodOutcome;
+    coreResolution?: boolean;
+    expectedDefence?: number;
+    expectedWall?: number;
+    expectedPostReqTurn?: number;
+    expectedStrategicCommandLimit?: number;
+    expectedDestNationHistory?: boolean;
+}> = [
+    {
+        name: 'rejects a missing destination city',
+        destCityId: 9999,
+        outcome: 'fallback',
+    },
+    {
+        name: 'accepts a numeric string destination city ID',
+        destCityId: '70',
+        outcome: 'completed',
+        expectedPostReqTurn: 61,
+    },
+    {
+        name: 'truncates a fractional destination city ID',
+        destCityId: 70.9,
+        outcome: 'completed',
+        expectedPostReqTurn: 61,
+    },
+    {
+        name: 'rejects a neutral destination city',
+        destCityId: 70,
+        fixturePatches: { cities: { 70: { nationId: 0 } } },
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects a destination city occupied by the source nation',
+        destCityId: 70,
+        fixturePatches: { cities: { 70: { nationId: 1 } } },
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects a source city occupied by another nation',
+        destCityId: 70,
+        fixturePatches: { cities: { 3: { nationId: 2 } } },
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects an actor below chief rank',
+        destCityId: 70,
+        fixturePatches: { generals: { 1: { officerLevel: 4, officerCityId: 0 } } },
+        outcome: 'fallback',
+        coreResolution: false,
+    },
+    {
+        name: 'rejects a remaining strategic-command delay',
+        destCityId: 70,
+        fixturePatches: { nations: { 1: { strategicCommandLimit: 1 } } },
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects a declaration state instead of active war',
+        destCityId: 70,
+        fixturePatches: { diplomacy: { '1:2': { state: 1 } } },
+        outcome: 'fallback',
+    },
+    {
+        name: 'rejects a reverse-only war',
+        destCityId: 70,
+        fixturePatches: {
+            diplomacy: {
+                '1:2': { state: 3 },
+                '2:1': { state: 0 },
+            },
+        },
+        outcome: 'fallback',
+    },
+    {
+        name: 'allows unsupplied source and destination cities at term one',
+        destCityId: 70,
+        fixturePatches: {
+            cities: {
+                3: { supplyState: 0 },
+                70: { supplyState: 0 },
+            },
+        },
+        outcome: 'intermediate',
+    },
+    {
+        name: 'advances the prior first term to term two',
+        destCityId: 70,
+        fixturePatches: {
+            nations: {
+                1: {
+                    turnLastByOfficerLevel: {
+                        12: { command: '수몰', arg: { destCityID: 70 }, term: 1 },
+                    },
+                    coreTurnLastByOfficerLevel: {
+                        12: { command: '수몰', arg: { destCityId: 70 }, term: 1 },
+                    },
+                },
+            },
+        },
+        outcome: 'intermediate',
+    },
+    {
+        name: 'restarts at term one after another command interrupted the stack',
+        destCityId: 70,
+        fixturePatches: {
+            nations: {
+                1: {
+                    turnLastByOfficerLevel: {
+                        12: { command: '의병모집', term: 2 },
+                    },
+                },
+            },
+        },
+        outcome: 'intermediate',
+    },
+    {
+        name: 'completes the default flood effects and notifications',
+        destCityId: 70,
+        outcome: 'completed',
+        expectedPostReqTurn: 61,
+    },
+    {
+        name: 'omits destination nation history when it has no general',
+        destCityId: 70,
+        fixturePatches: { generals: { 2: { nationId: 0 } } },
+        outcome: 'completed',
+        expectedPostReqTurn: 61,
+        expectedDestNationHistory: false,
+    },
+    {
+        name: 'rounds defence and wall multiplication like MariaDB',
+        destCityId: 70,
+        fixturePatches: {
+            cities: {
+                70: {
+                    defence: 1003,
+                    wall: 1002,
+                },
+            },
+        },
+        outcome: 'completed',
+        expectedDefence: 201,
+        expectedWall: 200,
+        expectedPostReqTurn: 61,
+    },
+    {
+        name: 'applies the strategist command and global-delay modifiers',
+        destCityId: 70,
+        fixturePatches: { nations: { 1: { typeCode: 'che_종횡가' } } },
+        outcome: 'completed',
+        expectedPostReqTurn: 45,
+        expectedStrategicCommandLimit: 5,
+    },
+    {
+        name: 'uses stored eleven-general count for the nation cooldown',
+        destCityId: 70,
+        fixturePatches: { nations: { 1: { generalCount: 11 } } },
+        outcome: 'completed',
+        expectedPostReqTurn: 64,
+    },
+];
+
+integration('nation flood constraints, multistep, city damage, logs, and cooldown boundaries', () => {
+    it.each(floodBoundaryCases)(
+        '$name matches legacy progress, damage, notifications, cooldown, RNG, and semantic delta',
+        async ({
+            destCityId,
+            fixturePatches,
+            outcome,
+            coreResolution = true,
+            expectedDefence,
+            expectedWall,
+            expectedPostReqTurn,
+            expectedStrategicCommandLimit = 9,
+            expectedDestNationHistory = true,
+        }) => {
+            const completed = outcome === 'completed';
+            const fallback = outcome === 'fallback';
+            const normalizedDestCityId = Math.trunc(Number(destCityId));
+            const completionNationPatch = completed
+                ? {
+                      turnLastByOfficerLevel: {
+                          12: { command: '수몰', arg: { destCityID: destCityId }, term: 2 },
+                      },
+                      coreTurnLastByOfficerLevel: {
+                          12: { command: '수몰', arg: { destCityId: normalizedDestCityId }, term: 2 },
+                      },
+                  }
+                : {};
+            const request = buildRequest(
+                'che_수몰',
+                { destCityID: destCityId },
+                {
+                    ...fixturePatches,
+                    nations: {
+                        ...fixturePatches?.nations,
+                        1: {
+                            ...fixturePatches?.nations?.[1],
+                            ...completionNationPatch,
+                        },
+                    },
+                    diplomacy: {
+                        '1:2': { state: 0 },
+                        '2:1': { state: 3 },
+                        ...fixturePatches?.diplomacy,
+                    },
+                }
+            );
+            request.observe!.includeNationHistoryLogs = true;
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+
+            expect(reference.execution.outcome).toMatchObject({ completed });
+            if (coreResolution) {
+                expect(core.execution.outcome).toMatchObject({
+                    requestedAction: 'che_수몰',
+                    actionKey: fallback ? '휴식' : 'che_수몰',
+                    usedFallback: fallback,
+                    ...(fallback ? {} : { completed }),
+                });
+            } else {
+                expect(core.execution.outcome).toBeUndefined();
+            }
+
+            for (const snapshot of [reference, core]) {
+                const nationBefore = snapshot.before.nations.find((entry) => entry.id === 1);
+                const nationAfter = snapshot.after.nations.find((entry) => entry.id === 1);
+                const actorBefore = snapshot.before.generals.find((entry) => entry.id === 1);
+                const actorAfter = snapshot.after.generals.find((entry) => entry.id === 1);
+                const cityBefore = snapshot.before.cities.find((entry) => entry.id === normalizedDestCityId);
+                const cityAfter = snapshot.after.cities.find((entry) => entry.id === normalizedDestCityId);
+
+                expect(readNationResource(nationBefore, 'gold') - readNationResource(nationAfter, 'gold')).toBe(0);
+                expect(readNationResource(nationBefore, 'rice') - readNationResource(nationAfter, 'rice')).toBe(0);
+                expect(readNumericField(actorAfter, 'experience') - readNumericField(actorBefore, 'experience')).toBe(
+                    completed ? 15 : 0
+                );
+                expect(readNumericField(actorAfter, 'dedication') - readNumericField(actorBefore, 'dedication')).toBe(
+                    completed ? 15 : 0
+                );
+                expect(readNumericField(nationAfter, 'strategicCommandLimit')).toBe(
+                    completed ? expectedStrategicCommandLimit : readNumericField(nationBefore, 'strategicCommandLimit')
+                );
+                expect(readNumericField(cityAfter, 'defence')).toBe(
+                    completed
+                        ? (expectedDefence ?? Math.round(readNumericField(cityBefore, 'defence') * 0.2))
+                        : readNumericField(cityBefore, 'defence')
+                );
+                expect(readNumericField(cityAfter, 'wall')).toBe(
+                    completed
+                        ? (expectedWall ?? Math.round(readNumericField(cityBefore, 'wall') * 0.2))
+                        : readNumericField(cityBefore, 'wall')
+                );
+
+                if (completed) {
+                    const nationHistoryWatermark = snapshot.before.logs
+                        .filter((entry) => entry.scope === 'nation')
+                        .reduce((max, entry) => Math.max(max, readNumericField(entry, 'id')), 0);
+                    const addedLogs = snapshot.after.logs.filter((entry) =>
+                        entry.scope === 'nation'
+                            ? readNumericField(entry, 'id') > nationHistoryWatermark
+                            : readNumericField(entry, 'id') > snapshot.before.watermarks.logId
+                    );
+                    expect(
+                        addedLogs.some((entry) => entry.generalId === 3 && String(entry.text).includes('수몰'))
+                    ).toBe(true);
+                    const hasDestGeneral = snapshot.before.generals.some((entry) => entry.nationId === 2);
+                    expect(
+                        addedLogs.some((entry) => entry.generalId === 2 && String(entry.text).includes('수몰'))
+                    ).toBe(hasDestGeneral);
+                    expect(
+                        addedLogs.some(
+                            (entry) => String(entry.text).includes('아국의') && String(entry.text).includes('수몰')
+                        )
+                    ).toBe(expectedDestNationHistory);
+                    expect(
+                        addedLogs.some(
+                            (entry) =>
+                                String(entry.text).includes('수몰') &&
+                                !String(entry.text).includes('아국의') &&
+                                String(entry.text).endsWith('발동')
+                        )
+                    ).toBe(true);
+                }
+            }
+
+            if (outcome === 'intermediate') {
+                const priorTurnByOfficerLevel = fixturePatches?.nations?.[1]?.turnLastByOfficerLevel;
+                const priorTerm =
+                    priorTurnByOfficerLevel && typeof priorTurnByOfficerLevel === 'object'
+                        ? (
+                              priorTurnByOfficerLevel as Record<
+                                  number,
+                                  { command?: string; arg?: { destCityID?: unknown }; term?: number }
+                              >
+                          )[12]
+                        : undefined;
+                const expectedTerm =
+                    priorTerm?.command === '수몰' &&
+                    Math.trunc(Number(priorTerm.arg?.destCityID)) === normalizedDestCityId &&
+                    priorTerm.term === 1
+                        ? 2
+                        : 1;
+                expect(reference.execution.outcome).toMatchObject({
+                    lastTurn: {
+                        command: '수몰',
+                        term: expectedTerm,
+                    },
+                });
+                expect(readNationMeta(core.after.nations.find((entry) => entry.id === 1)).turn_last_12).toMatchObject({
+                    command: '수몰',
+                    term: expectedTerm,
+                });
+            }
+            if (completed) {
+                const expectedNextAvailableTurn = 190 * 12 + expectedPostReqTurn!;
+                expect(reference.after.world.nationCooldowns).toEqual([
+                    {
+                        nationId: 1,
+                        actionName: '수몰',
+                        nextAvailableTurn: expectedNextAvailableTurn,
+                    },
+                ]);
+                expect(core.after.world.nationCooldowns).toEqual(reference.after.world.nationCooldowns);
+            }
+            expect(reference.rng).toEqual([]);
             expect(core.rng).toEqual(reference.rng);
             expect(
                 compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {

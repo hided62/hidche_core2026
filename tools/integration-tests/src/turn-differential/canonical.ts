@@ -6,6 +6,7 @@ export interface TurnSnapshotSelector {
     nationIds: number[];
     logAfterId?: number;
     messageAfterId?: number;
+    includeNationHistoryLogs?: boolean;
 }
 
 export interface CanonicalTurnSnapshot {

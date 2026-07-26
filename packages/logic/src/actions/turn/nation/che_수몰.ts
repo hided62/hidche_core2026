@@ -23,13 +23,10 @@ import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js'
 import { JosaUtil } from '@sammo-ts/common';
 import type { NationTurnCommandSpec } from './index.js';
 import { z } from 'zod';
-import { parseArgsWithSchema } from '../parseArgs.js';
+import { normalizeLegacyIntegerArg, parseArgsWithSchema } from '../parseArgs.js';
 
 const ARGS_SCHEMA = z.object({
-    destCityId: z.preprocess(
-        (value) => (typeof value === 'number' ? Math.floor(value) : value),
-        z.number().int().positive()
-    ),
+    destCityId: z.preprocess(normalizeLegacyIntegerArg, z.number().int().positive()),
 });
 export type FloodArgs = z.infer<typeof ARGS_SCHEMA>;
 
@@ -66,7 +63,13 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
     }
 
     getPostReqTurn(context: FloodResolveContext<TriggerState>): number {
-        const genCount = Math.max(context.friendlyGenerals.length, this.initialNationGenLimit);
+        const storedCount = context.nation?.meta.gennum;
+        const genCount = Math.max(
+            typeof storedCount === 'number' && Number.isFinite(storedCount)
+                ? storedCount
+                : context.friendlyGenerals.length,
+            this.initialNationGenLimit
+        );
         const base = Math.round(Math.sqrt(genCount * 4) * 10);
         return Math.round(this.pipeline.onCalcStrategic(context, ACTION_NAME, 'delay', base));
     }
@@ -153,16 +156,19 @@ export class ActionResolver<
                 strategic_cmd_limit: globalDelay,
             };
             effects.push(
-                createLogEffect(broadcastMessage, {
-                    scope: LogScope.NATION,
-                    category: LogCategory.HISTORY,
-                    nationId: nation.id,
-                    format: LogFormat.YEAR_MONTH,
-                })
+                createLogEffect(
+                    `<Y>${generalName}</>${generalJosa} <G><b>${cityName}</b></>에 <M>${ACTION_NAME}</>을 발동`,
+                    {
+                        scope: LogScope.NATION,
+                        category: LogCategory.HISTORY,
+                        nationId: nation.id,
+                        format: LogFormat.YEAR_MONTH,
+                    }
+                )
             );
         }
 
-        if (context.destNation) {
+        if (context.destNation && context.destNationGenerals.length > 0) {
             effects.push(
                 createLogEffect(
                     `<D><b>${nation?.name ?? '상대국'}</b></>의 <Y>${generalName}</>${generalJosa} 아국의 <G><b>${cityName}</b></>에 <M>${ACTION_NAME}</>을 발동`,
