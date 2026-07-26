@@ -1,6 +1,6 @@
 import {
     createGamePostgresConnector,
-    type GamePrisma,
+    GamePrisma,
     type InputJsonValue,
     type TurnEngineCityUpdateInput,
     type TurnEngineDiplomacyCreateManyInput,
@@ -378,6 +378,29 @@ const buildInitialRankRows = (
     general: ReturnType<InMemoryTurnWorld['consumeDirtyState']>['generals'][number]
 ): Array<{ generalId: number; nationId: number; type: string; value: number }> =>
     buildRankRows(general).map((row) => ({ ...row, nationId: 0, value: 0 }));
+
+const RANK_DATA_UPSERT_BATCH_SIZE = 1_000;
+
+const upsertRankRows = async (
+    prisma: GamePrisma.TransactionClient,
+    rows: Array<{ generalId: number; nationId: number; type: string; value: number }>
+): Promise<void> => {
+    for (let offset = 0; offset < rows.length; offset += RANK_DATA_UPSERT_BATCH_SIZE) {
+        const batch = rows.slice(offset, offset + RANK_DATA_UPSERT_BATCH_SIZE);
+        await prisma.$executeRaw(GamePrisma.sql`
+            INSERT INTO "rank_data" ("general_id", "nation_id", "type", "value")
+            VALUES ${GamePrisma.join(
+                batch.map(
+                    (row) => GamePrisma.sql`(${row.generalId}, ${row.nationId}, ${row.type}, ${row.value})`
+                )
+            )}
+            ON CONFLICT ("general_id", "type") DO UPDATE
+            SET
+                "nation_id" = EXCLUDED."nation_id",
+                "value" = EXCLUDED."value"
+        `);
+    }
+};
 
 const buildGeneralUpdate = (
     general: ReturnType<InMemoryTurnWorld['consumeDirtyState']>['generals'][number]
@@ -955,23 +978,7 @@ export const createDatabaseTurnHooks = async (
                     ...createdGenerals.flatMap(buildInitialRankRows),
                     ...rankTargets.flatMap(buildRankRows),
                 ];
-                await Promise.all(
-                    rankRows.map((row) =>
-                        prisma.rankData.upsert({
-                            where: {
-                                generalId_type: {
-                                    generalId: row.generalId,
-                                    type: row.type,
-                                },
-                            },
-                            update: {
-                                nationId: row.nationId,
-                                value: row.value,
-                            },
-                            create: row,
-                        })
-                    )
-                );
+                await upsertRankRows(prisma, rankRows);
             }
 
             if (logs.length > 0) {

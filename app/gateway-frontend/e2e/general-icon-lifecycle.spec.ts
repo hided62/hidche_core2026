@@ -46,9 +46,15 @@ const resetScenario = async (page: Page, scenarioId: string, sourceCommit: strin
     await expect(latestOperation.locator('td').nth(3)).toHaveText('SUCCEEDED', {
         timeout: 300_000,
     });
-    await expect(page.getByTestId('selected-profile-status').locator('.text-emerald-400')).toHaveCount(2, {
+    const profileStatus = page.getByTestId('selected-profile-status');
+    await expect(profileStatus.locator(':scope > div').nth(0)).toContainText('RUNNING', {
         timeout: 30_000,
     });
+    await expect(profileStatus.locator(':scope > div').nth(1)).toContainText('SUCCEEDED');
+    await expect(profileStatus.locator('.text-emerald-400')).toHaveCount(3, {
+        timeout: 30_000,
+    });
+    await expect(profileStatus.locator('..').locator('.text-red-400')).toHaveCount(0);
 };
 
 const createGeneralAndInspectIcons = async (
