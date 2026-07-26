@@ -9,6 +9,7 @@
         "preview": "vite preview",
         "test:e2e:troop": "playwright test troop.spec.ts --config e2e/playwright.config.mjs",
         "test:e2e:nation-offices": "playwright test nationOffices.spec.ts --config e2e/playwright.config.mjs",
+        "test:e2e:npc-policy": "playwright test npcPolicy.spec.ts --config e2e/playwright.config.mjs",
         "test:e2e:board": "playwright test board.spec.ts --config e2e/playwright.config.mjs",
         "test:e2e:auction": "playwright test auction.spec.ts --config e2e/playwright.config.mjs",
         "lint": "eslint .",

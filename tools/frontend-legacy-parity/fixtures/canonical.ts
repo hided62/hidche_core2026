@@ -75,6 +75,82 @@ export const canonicalFrontendFixture = {
                 [2, '진', '#1976d2', 2],
             ],
         },
+        bestGeneral: {
+            isUnited: true,
+            sections: [
+                {
+                    title: '명 성',
+                    valueType: 'int',
+                    entries: [
+                        {
+                            id: 1,
+                            name: '유비',
+                            ownerName: '시각검증',
+                            nationName: '촉',
+                            bgColor: '#006400',
+                            fgColor: '#ffffff',
+                            picture: 'default.jpg',
+                            imageServer: 0,
+                            value: 12000,
+                            printValue: '12,000',
+                        },
+                        {
+                            id: 2,
+                            name: '조조',
+                            ownerName: '검증계정',
+                            nationName: '위',
+                            bgColor: '#8b0000',
+                            fgColor: '#ffffff',
+                            picture: 'default.jpg',
+                            imageServer: 0,
+                            value: 11000,
+                            printValue: '11,000',
+                        },
+                    ],
+                },
+                {
+                    title: '계 급',
+                    valueType: 'int',
+                    entries: [],
+                },
+            ],
+            uniqueItems: [
+                {
+                    title: '명 마',
+                    slot: 'horse',
+                    entries: [
+                        {
+                            itemKey: 'che_명마_15_적토마',
+                            itemName: '적토마',
+                            itemInfo: '최고의 명마',
+                            owner: {
+                                id: 1,
+                                name: '유비',
+                                nationName: '촉',
+                                bgColor: '#006400',
+                                fgColor: '#ffffff',
+                                picture: 'default.jpg',
+                                imageServer: 0,
+                            },
+                        },
+                        {
+                            itemKey: 'che_명마_15_적토마',
+                            itemName: '적토마',
+                            itemInfo: '최고의 명마',
+                            owner: {
+                                id: 0,
+                                name: '경매중',
+                                nationName: '-',
+                                bgColor: '#00582c',
+                                fgColor: '#ffffff',
+                                picture: null,
+                                imageServer: 0,
+                            },
+                        },
+                    ],
+                },
+            ],
+        },
         hallOptions: [
             {
                 season: 1,
