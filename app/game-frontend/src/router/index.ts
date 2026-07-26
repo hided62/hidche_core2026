@@ -197,7 +197,6 @@ const routes = [
         component: BattleSimulatorView,
         meta: {
             requiresAuth: true,
-            requiresGeneral: true,
         },
     },
     {

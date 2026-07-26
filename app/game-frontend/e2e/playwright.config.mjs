@@ -16,6 +16,8 @@ export default defineConfig({
         'nationOffices.spec.ts',
         'nationGeneralSecret.spec.ts',
         'npcPolicy.spec.ts',
+        'battleSimulator.spec.ts',
+        'battleSimulatorRef.spec.ts',
     ],
     fullyParallel: false,
     workers: 1,
