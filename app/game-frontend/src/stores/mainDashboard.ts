@@ -26,9 +26,11 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     type MessageContacts = Awaited<ReturnType<typeof trpc.messages.getContacts.query>>;
     type BoardAccess = Awaited<ReturnType<typeof trpc.board.getAccess.query>>;
     type ReservedTurnView = Awaited<ReturnType<typeof trpc.turns.reserved.getGeneral.query>>[number];
+    type RecentRecord = Awaited<ReturnType<typeof trpc.general.getRecentRecords.query>>['global'][number];
 
     const loading = ref(false);
     const error = ref<string | null>(null);
+    const recordsError = ref<string | null>(null);
     const realtimeEnabled = ref(true);
     const realtimeStatus = ref<'idle' | 'connected' | 'paused'>('idle');
 
@@ -42,6 +44,12 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     const boardAccess = ref<BoardAccess | null>(null);
     const reservedGeneralTurns = ref<ReservedTurnView[] | null>(null);
     const reservedNationTurns = ref<ReservedTurnView[] | null>(null);
+    const globalRecords = ref<RecentRecord[]>([]);
+    const generalRecords = ref<RecentRecord[]>([]);
+    const worldHistory = ref<RecentRecord[]>([]);
+    let lastGeneralRecordId = 0;
+    let lastWorldHistoryId = 0;
+    let recordGeneralId: number | null = null;
 
     const messageDraftText = ref('');
     const targetMailbox = ref<number>(MESSAGE_MAILBOX_PUBLIC);
@@ -191,12 +199,30 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         }
     };
 
+    const mergeRecentRecords = (current: RecentRecord[], incoming: RecentRecord[]): RecentRecord[] => {
+        const merged = new Map(current.map((entry) => [entry.id, entry]));
+        for (const entry of incoming) {
+            merged.set(entry.id, entry);
+        }
+        return [...merged.values()].sort((left, right) => right.id - left.id).slice(0, 15);
+    };
+
+    const resetRecentRecords = (id: number | null) => {
+        globalRecords.value = [];
+        generalRecords.value = [];
+        worldHistory.value = [];
+        lastGeneralRecordId = 0;
+        lastWorldHistoryId = 0;
+        recordGeneralId = id;
+    };
+
     const loadMainData = async () => {
         if (loading.value) {
             return;
         }
         loading.value = true;
         error.value = null;
+        recordsError.value = null;
 
         try {
             const context = await trpc.general.me.query();
@@ -206,18 +232,31 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
                 reservedGeneralTurns.value = null;
                 reservedNationTurns.value = null;
                 boardAccess.value = null;
+                resetRecentRecords(null);
                 loading.value = false;
                 return;
             }
 
             const id = context.general.id;
+            if (recordGeneralId !== id) {
+                resetRecentRecords(id);
+            }
             const layoutPromise = mapLayout.value ? Promise.resolve(mapLayout.value) : trpc.world.getMapLayout.query();
             const generalTurnsPromise = trpc.turns.reserved.getGeneral.query({ generalId: id });
             const nationTurnsPromise =
                 context.general.nationId > 0 && context.general.officerLevel >= 5
                     ? trpc.turns.reserved.getNation.query({ generalId: id })
                     : Promise.resolve(null);
-            const [layout, lobby, map, commands, messageData, contacts, access, generalTurns, nationTurns] =
+            const recordsPromise = trpc.general.getRecentRecords
+                .query({
+                    lastGeneralRecordId,
+                    lastWorldHistoryId,
+                })
+                .catch((err: unknown) => {
+                    recordsError.value = resolveErrorMessage(err);
+                    return null;
+                });
+            const [layout, lobby, map, commands, messageData, contacts, access, generalTurns, nationTurns, records] =
                 await Promise.all([
                     layoutPromise,
                     trpc.lobby.info.query(),
@@ -228,6 +267,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
                     trpc.board.getAccess.query(),
                     generalTurnsPromise,
                     nationTurnsPromise,
+                    recordsPromise,
                 ]);
 
             mapLayout.value = layout;
@@ -239,6 +279,17 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             boardAccess.value = access;
             reservedGeneralTurns.value = generalTurns;
             reservedNationTurns.value = nationTurns;
+            if (records) {
+                globalRecords.value = mergeRecentRecords(globalRecords.value, records.global);
+                generalRecords.value = mergeRecentRecords(generalRecords.value, records.general);
+                worldHistory.value = mergeRecentRecords(worldHistory.value, records.history);
+                lastGeneralRecordId = Math.max(
+                    lastGeneralRecordId,
+                    records.global[0]?.id ?? 0,
+                    records.general[0]?.id ?? 0
+                );
+                lastWorldHistoryId = Math.max(lastWorldHistoryId, records.history[0]?.id ?? 0);
+            }
             if (initializedMailboxGeneralId !== id) {
                 targetMailbox.value = MESSAGE_MAILBOX_NATIONAL_BASE + context.general.nationId;
                 initializedMailboxGeneralId = id;
@@ -587,6 +638,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     return {
         loading,
         error,
+        recordsError,
         realtimeEnabled,
         realtimeStatus,
         generalContext,
@@ -603,6 +655,9 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         boardAccess,
         reservedGeneralTurns,
         reservedNationTurns,
+        globalRecords,
+        generalRecords,
+        worldHistory,
         messageDraftText,
         targetMailbox,
         mailboxGroups,

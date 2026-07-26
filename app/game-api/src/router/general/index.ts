@@ -15,6 +15,18 @@ const zGeneralSettings = z.object({
 });
 
 const zGeneralLogType = z.enum(['generalHistory', 'battleDetail', 'battleResult', 'generalAction']);
+const MAIN_RECORD_LIMIT = 15;
+
+const trimRecentRecords = <Entry extends { id: number }>(entries: Entry[], cursor: number): Entry[] => {
+    if (entries.length === 0) {
+        return entries;
+    }
+    const result = [...entries];
+    if (result.at(-1)?.id === cursor || result.length > MAIN_RECORD_LIMIT) {
+        result.pop();
+    }
+    return result;
+};
 
 const readNumber = (value: unknown, fallback: number): number => {
     if (typeof value === 'number' && Number.isFinite(value)) {
@@ -317,6 +329,56 @@ export const generalRouter = router({
                     id: entry.id,
                     text: entry.text,
                 })),
+            };
+        }),
+    getRecentRecords: authedProcedure
+        .input(
+            z.object({
+                lastGeneralRecordId: z.number().int().nonnegative().default(0),
+                lastWorldHistoryId: z.number().int().nonnegative().default(0),
+            })
+        )
+        .query(async ({ ctx, input }) => {
+            const me = await getMyGeneral(ctx);
+            const take = MAIN_RECORD_LIMIT + 1;
+            const [global, general, history] = await Promise.all([
+                ctx.db.logEntry.findMany({
+                    where: {
+                        scope: LogScope.SYSTEM,
+                        category: LogCategory.SUMMARY,
+                        id: { gte: input.lastGeneralRecordId },
+                    },
+                    orderBy: { id: 'desc' },
+                    take,
+                    select: { id: true, text: true },
+                }),
+                ctx.db.logEntry.findMany({
+                    where: {
+                        scope: LogScope.GENERAL,
+                        category: LogCategory.ACTION,
+                        generalId: me.id,
+                        id: { gte: input.lastGeneralRecordId },
+                    },
+                    orderBy: { id: 'desc' },
+                    take,
+                    select: { id: true, text: true },
+                }),
+                ctx.db.logEntry.findMany({
+                    where: {
+                        scope: LogScope.SYSTEM,
+                        category: LogCategory.HISTORY,
+                        id: { gte: input.lastWorldHistoryId },
+                    },
+                    orderBy: { id: 'desc' },
+                    take,
+                    select: { id: true, text: true },
+                }),
+            ]);
+
+            return {
+                global: trimRecentRecords(global, input.lastGeneralRecordId),
+                general: trimRecentRecords(general, input.lastGeneralRecordId),
+                history: trimRecentRecords(history, input.lastWorldHistoryId),
             };
         }),
 });
