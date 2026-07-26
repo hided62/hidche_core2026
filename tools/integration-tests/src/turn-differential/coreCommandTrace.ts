@@ -311,7 +311,7 @@ const buildWorldInput = (
     }));
     const snapshot: TurnWorldSnapshot = {
         scenarioConfig: {
-            stat: { total: 300, min: 10, max: 100, npcTotal: 150, npcMax: 50, npcMin: 10, chiefMin: 70 },
+            stat: { total: 300, min: 10, max: 100, npcTotal: 150, npcMax: 75, npcMin: 10, chiefMin: 70 },
             iconPath: '',
             map: {},
             const: {
@@ -586,7 +586,10 @@ export const runCoreTurnCommandTrace = async (
     const worldInput = buildWorldInput(request, referenceBefore, unitSet, map);
     const { state, snapshot } = worldInput;
     const selector = {
-        generalIds: new Set(referenceBefore.generals.map((row) => readNumber(row, 'id'))),
+        generalIds: new Set([
+            ...referenceBefore.generals.map((row) => readNumber(row, 'id')),
+            ...(request.observe?.generalIds ?? []),
+        ]),
         cityIds: new Set(referenceBefore.cities.map((row) => readNumber(row, 'id'))),
         nationIds: new Set(referenceBefore.nations.map((row) => readNumber(row, 'id'))),
     };

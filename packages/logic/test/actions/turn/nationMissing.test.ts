@@ -339,7 +339,7 @@ describe('Nation Missing Actions', () => {
         );
 
         expect(resolution.general.experience).toBeGreaterThan(100);
-        expect(resolution.nation?.meta?.strategic_cmd_limit).toBe(8);
+        expect(resolution.nation?.meta?.strategic_cmd_limit).toBe(0);
         expect(resolution.nation?.meta?.next_execute_허보).toBe(227);
         expect(resolution.patches?.nations).toContainEqual({
             id: destNation.id,

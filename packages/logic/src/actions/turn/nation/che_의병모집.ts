@@ -52,8 +52,11 @@ export interface VolunteerRecruitResolveContext<
     nationAverageStats?: StatBlock;
     nationAverageExperience?: number;
     nationAverageDedication?: number;
+    nationAverageDex?: [number, number, number, number, number];
     generalPool?: VolunteerRecruitCandidate[];
     createGeneralId: () => number;
+    turnTermSeconds: number;
+    turnTimeBase: Date;
 }
 
 export interface VolunteerRecruitEnvironment {
@@ -71,6 +74,13 @@ export interface VolunteerRecruitEnvironment {
     npcDeathYears?: number;
     killTurnMin?: number;
     killTurnMax?: number;
+    npcStatTotal?: number;
+    npcStatMin?: number;
+    npcStatMax?: number;
+    randomGeneralFirstNames?: string[];
+    randomGeneralMiddleNames?: string[];
+    randomGeneralLastNames?: string[];
+    availablePersonalities?: string[];
     decorateName?: (name: string, npcState: number) => string;
     pickCandidate?: (context: VolunteerRecruitResolveContext, rng: RandomGenerator) => VolunteerRecruitCandidate | null;
     buildStats?: (
@@ -91,20 +101,9 @@ const DEFAULT_NPC_DEATH_YEARS = 10;
 const DEFAULT_KILLTURN_MIN = 64;
 const DEFAULT_KILLTURN_MAX = 70;
 const DEFAULT_SPEC_AGE = 19;
-
-const resolveKillturnFromDeathYear = (
-    currentYear: number,
-    currentMonth: number,
-    deathYear: number,
-    rng: RandomGenerator
-): number => {
-    if (!Number.isFinite(deathYear) || deathYear <= 0) {
-        return 0;
-    }
-    const deathMonth = randomRangeInt(rng, 1, 12);
-    const diff = (deathYear - currentYear) * 12 + (deathMonth - currentMonth);
-    return Math.max(diff, 0);
-};
+const DEFAULT_NPC_STAT_TOTAL = 150;
+const DEFAULT_NPC_STAT_MIN = 10;
+const DEFAULT_NPC_STAT_MAX = 75;
 
 const addMetaValue = (
     meta: Record<string, TriggerValue>,
@@ -123,6 +122,58 @@ const readMetaNumber = (meta: Record<string, TriggerValue>, key: string): number
 };
 
 const randomRangeInt = (rng: RandomGenerator, min: number, max: number): number => rng.nextInt(min, max + 1);
+
+type InclusiveRandomGenerator = RandomGenerator & {
+    nextIntInclusive?: (maxInclusive: number) => number;
+};
+
+const legacyChoiceIndex = (rng: RandomGenerator, length: number): number => {
+    if (length <= 0) {
+        throw new Error('Empty items');
+    }
+    const inclusive = rng as InclusiveRandomGenerator;
+    return inclusive.nextIntInclusive ? inclusive.nextIntInclusive(length - 1) : rng.nextInt(0, length);
+};
+
+const legacyChoice = <T>(rng: RandomGenerator, values: readonly T[]): T =>
+    values[legacyChoiceIndex(rng, values.length)]!;
+
+const pickByWeight = <T extends string>(rng: RandomGenerator, weights: Record<T, number>): T => {
+    const entries = Object.entries(weights) as Array<[T, number]>;
+    const first = entries[0];
+    if (!first) {
+        throw new Error('Empty weights');
+    }
+    const total = entries.reduce((sum, [, weight]) => sum + Math.max(0, weight), 0);
+    let cursor = rng.nextFloat1() * total;
+    for (const [key, weight] of entries) {
+        cursor -= Math.max(0, weight);
+        if (cursor <= 0) {
+            return key;
+        }
+    }
+    return entries.at(-1)?.[0] ?? first[0];
+};
+
+const buildLegacyRandomStats = (
+    rng: RandomGenerator,
+    env: VolunteerRecruitEnvironment
+): { stats: StatBlock; pickType: '무' | '지' } => {
+    const total = env.npcStatTotal ?? DEFAULT_NPC_STAT_TOTAL;
+    const min = env.npcStatMin ?? DEFAULT_NPC_STAT_MIN;
+    const max = env.npcStatMax ?? DEFAULT_NPC_STAT_MAX;
+    const pickType = pickByWeight(rng, { 무: 5, 지: 5 });
+    const main = max - randomRangeInt(rng, 0, min);
+    const other = min + randomRangeInt(rng, 0, Math.trunc(min / 2));
+    const sub = total - main - other;
+    return {
+        pickType,
+        stats:
+            pickType === '무'
+                ? { leadership: sub, strength: main, intelligence: other }
+                : { leadership: sub, strength: other, intelligence: main },
+    };
+};
 
 const resolveRelYear = (ctx: ConstraintContext): number => {
     const relYear = ctx.env.relYear;
@@ -281,53 +332,92 @@ export class ActionResolver<
         const deathYears = this.env.npcDeathYears ?? DEFAULT_NPC_DEATH_YEARS;
         const killTurnMin = this.env.killTurnMin ?? DEFAULT_KILLTURN_MIN;
         const killTurnMax = this.env.killTurnMax ?? DEFAULT_KILLTURN_MAX;
+        const firstNames = this.env.randomGeneralFirstNames ?? ['가'];
+        const middleNames = this.env.randomGeneralMiddleNames ?? [''];
+        const lastNames = this.env.randomGeneralLastNames ?? ['가'];
+        const candidates = Array.from({ length: createCount }, () => {
+            const selected = resolveCandidate(context, context.rng, this.env);
+            if (selected) {
+                return selected;
+            }
+            return {
+                name: `${legacyChoice(context.rng, firstNames)}${legacyChoice(
+                    context.rng,
+                    middleNames
+                )}${legacyChoice(context.rng, lastNames)}`,
+            };
+        });
 
-        for (let idx = 0; idx < createCount; idx += 1) {
+        for (const candidate of candidates) {
             const newGeneralId = context.createGeneralId();
-            const candidate = resolveCandidate(context, context.rng, this.env) ?? { name: `NPC_${newGeneralId}` };
-            const name = this.env.decorateName ? this.env.decorateName(candidate.name, NPC_TYPE) : candidate.name;
+            const name = this.env.decorateName ? this.env.decorateName(candidate.name, NPC_TYPE) : `ⓖ${candidate.name}`;
             const birthYear = context.currentYear - baseAge;
             const deathYear = context.currentYear + deathYears;
-            const stats = resolveStats(context, context.rng, this.env, candidate);
+            const killturn = randomRangeInt(context.rng, killTurnMin, killTurnMax);
+            const affinity = candidate.affinity ?? randomRangeInt(context.rng, 1, 150);
+            const generated = buildLegacyRandomStats(context.rng, this.env);
+            const stats = candidate.stats ? resolveStats(context, context.rng, this.env, candidate) : generated.stats;
+            const averageDex = context.nationAverageDex ?? [0, 0, 0, 0, 0];
+            const dexTotal = averageDex[0] + averageDex[1] + averageDex[2] + averageDex[3];
+            const dex: [number, number, number, number] =
+                generated.pickType === '무'
+                    ? legacyChoice(context.rng, [
+                          [(dexTotal * 5) / 8, dexTotal / 8, dexTotal / 8, dexTotal / 8],
+                          [dexTotal / 8, (dexTotal * 5) / 8, dexTotal / 8, dexTotal / 8],
+                          [dexTotal / 8, dexTotal / 8, (dexTotal * 5) / 8, dexTotal / 8],
+                      ])
+                    : [dexTotal / 8, dexTotal / 8, dexTotal / 8, (dexTotal * 5) / 8];
+            const personality =
+                candidate.personality ?? legacyChoice(context.rng, this.env.availablePersonalities ?? ['che_안전']);
+            const turnSecond = randomRangeInt(context.rng, 0, context.turnTermSeconds - 1);
+            const turnFraction = randomRangeInt(context.rng, 0, 999_999);
+            const turnTime = new Date(
+                context.turnTimeBase.getTime() + turnSecond * 1_000 + Math.floor(turnFraction / 1_000)
+            );
             const meta: GeneralMeta = {
-                killturn: resolveKillturnFromDeathYear(
-                    context.currentYear,
-                    context.currentMonth,
-                    deathYear,
-                    context.rng
-                ),
+                killturn,
                 npcType: NPC_TYPE,
                 crewTypeId: this.env.defaultCrewTypeId,
+                dex1: dex[0],
+                dex2: dex[1],
+                dex3: dex[2],
+                dex4: dex[3],
+                dex5: averageDex[4],
+                turnSecond,
+                turnFraction,
             };
-            addMetaValue(meta, 'affinity', candidate.affinity ?? null);
+            addMetaValue(meta, 'affinity', affinity);
             addMetaValue(meta, 'picture', candidate.picture ?? null);
             addMetaValue(meta, 'birthYear', birthYear);
+            addMetaValue(meta, 'deathYear', deathYear);
             addMetaValue(meta, 'specAge', DEFAULT_SPEC_AGE);
             addMetaValue(meta, 'specAge2', DEFAULT_SPEC_AGE);
-            addMetaValue(meta, 'killturn', meta.killturn || randomRangeInt(context.rng, killTurnMin, killTurnMax));
             addMetaValue(meta, 'text', candidate.text ?? null);
 
-            const newGeneral = buildRecruitmentGeneral<TriggerState>({
-                id: newGeneralId,
-                name,
-                nationId: context.general.nationId,
-                cityId: context.general.cityId,
-                stats,
-                officerLevel: 1,
-                age: baseAge,
-                npcState: NPC_TYPE,
-                gold: this.env.defaultNpcGold,
-                rice: this.env.defaultNpcRice,
-                experience: context.nationAverageExperience ?? 0,
-                dedication: context.nationAverageDedication ?? 0,
-                crewTypeId: this.env.defaultCrewTypeId,
-                role: {
-                    personality: candidate.personality ?? null,
-                    specialDomestic: this.env.defaultSpecialDomestic,
-                    specialWar: this.env.defaultSpecialWar,
-                },
-                meta,
-            });
+            const newGeneral = {
+                ...buildRecruitmentGeneral<TriggerState>({
+                    id: newGeneralId,
+                    name,
+                    nationId: context.general.nationId,
+                    cityId: context.general.cityId,
+                    stats,
+                    officerLevel: 1,
+                    age: baseAge,
+                    npcState: NPC_TYPE,
+                    gold: this.env.defaultNpcGold,
+                    rice: this.env.defaultNpcRice,
+                    experience: context.nationAverageExperience ?? 0,
+                    dedication: context.nationAverageDedication ?? 0,
+                    crewTypeId: this.env.defaultCrewTypeId,
+                    role: {
+                        personality,
+                        specialDomestic: this.env.defaultSpecialDomestic,
+                        specialWar: this.env.defaultSpecialWar,
+                    },
+                    meta,
+                }),
+                turnTime,
+            };
             effects.push(createGeneralAddEffect(newGeneral));
         }
 
@@ -396,7 +486,10 @@ export const actionContextBuilder: ActionContextBuilder = (base, options) => {
         nationAverageStats: nationSummary.averageStats,
         nationAverageExperience: nationSummary.averageExperience,
         nationAverageDedication: nationSummary.averageDedication,
+        nationAverageDex: nationSummary.averageDex,
         createGeneralId: options.createGeneralId,
+        turnTermSeconds: Math.max(1, Math.round(options.world.tickSeconds)),
+        turnTimeBase: options.world.lastTurnTime ?? base.general.turnTime,
     };
 };
 

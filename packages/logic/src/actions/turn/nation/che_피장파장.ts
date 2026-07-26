@@ -37,7 +37,6 @@ export interface CounterStrategyResolveContext<
 }
 
 const ACTION_NAME = '피장파장';
-const DEFAULT_GLOBAL_DELAY = 8;
 const TARGET_DELAY = 60;
 const PRE_REQ_TURN = 1;
 const EXP_DED_GAIN = 5 * (PRE_REQ_TURN + 1);
@@ -201,10 +200,8 @@ export class ActionResolver<
         }
 
         if (nation) {
-            const globalDelay = DEFAULT_GLOBAL_DELAY;
             nation.meta = {
                 ...(nation.meta as object),
-                strategic_cmd_limit: globalDelay,
                 [`next_execute_${targetCommandName}`]: currentYearMonth + this.getTargetPostReqTurn(context),
             };
             effects.push(

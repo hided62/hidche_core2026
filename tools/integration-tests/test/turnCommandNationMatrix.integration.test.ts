@@ -202,7 +202,7 @@ const buildRequest = (
         ],
     },
     observe: {
-        generalIds: [1, 2, 3],
+        generalIds: [1, 2, 3, 4, 5, 6],
         cityIds: [3, 70],
         nationIds: [1, 2],
         logAfterId: 0,
@@ -362,6 +362,61 @@ const cases: NationMatrixCase[] = [
                 },
             },
             cities: { 70: { nationId: 1, supplyState: 1 } },
+        },
+    ],
+    [
+        'che_의병모집',
+        undefined,
+        {
+            nations: {
+                1: {
+                    turnLastByOfficerLevel: {
+                        12: { command: '의병모집', term: 2 },
+                    },
+                },
+            },
+        },
+    ],
+    [
+        'che_수몰',
+        { destCityID: 70 },
+        {
+            nations: {
+                1: {
+                    turnLastByOfficerLevel: {
+                        12: { command: '수몰', arg: { destCityID: 70 }, term: 2 },
+                    },
+                    coreTurnLastByOfficerLevel: {
+                        12: { command: '수몰', arg: { destCityId: 70 }, term: 2 },
+                    },
+                },
+            },
+            diplomacy: { '1:2': { state: 0 }, '2:1': { state: 0 } },
+        },
+    ],
+    [
+        'che_피장파장',
+        { destNationID: 2, commandType: 'che_필사즉생' },
+        {
+            nations: {
+                1: {
+                    turnLastByOfficerLevel: {
+                        12: {
+                            command: '피장파장',
+                            arg: { destNationID: 2, commandType: 'che_필사즉생' },
+                            term: 1,
+                        },
+                    },
+                    coreTurnLastByOfficerLevel: {
+                        12: {
+                            command: '피장파장',
+                            arg: { destNationId: 2, commandType: 'che_필사즉생' },
+                            term: 1,
+                        },
+                    },
+                },
+            },
+            diplomacy: { '1:2': { state: 0 }, '2:1': { state: 0 } },
         },
     ],
 ];

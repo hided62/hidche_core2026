@@ -62,9 +62,9 @@ normalized to the core `*Id` spelling before command identity comparison.
       The matrix includes the four-call `전투태세` path, lifecycle and
       appointment commands, troop assembly, rebellion and all three founding
       variants.
-    - `turnCommandNationMatrix.integration.test.ts`: 32 successful nation
-      command paths, including all nine unit-research commands and the
-      multi-turn `필사즉생`, `허보`, and `초토화` paths.
+    - `turnCommandNationMatrix.integration.test.ts`: all 35 reserved nation
+      command paths, including the generated-general state and 36-call RNG
+      trace of `의병모집`.
     - `turnCommandCoreReference.integration.test.ts`: declaration and live
       sortie fixtures.
 
@@ -169,11 +169,11 @@ Compatibility is established per case only when:
 4. live sortie also passes the battle trace comparison;
 5. any ignored path is documented in the case evidence.
 
-As of 2026-07-26, 54 general matrix cases, 32 nation matrix cases, declaration
+As of 2026-07-26, 54 general matrix cases, 35 nation matrix cases, declaration
 and live sortie pass this boundary. Live sortie is the remaining general
 command key and covers battle entry, conquest, defeated-general neutralization
 and last-city nation collapse. Thus all 55 general command keys have a
-completed success-path comparison. This is 88 executable comparison cases;
+completed success-path comparison. This is 91 executable comparison cases;
 it is not yet a claim that failure/boundary paths or all 38 nation commands
 have been dynamically compared.
 

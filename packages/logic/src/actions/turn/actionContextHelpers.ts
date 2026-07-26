@@ -16,6 +16,7 @@ export interface NationSummary {
     averageStats?: General['stats'];
     averageExperience?: number;
     averageDedication?: number;
+    averageDex?: [number, number, number, number, number];
 }
 
 export const buildWorldSummary = (world: ActionContextWorldRef | null): WorldSummary => {
@@ -68,6 +69,16 @@ export const buildNationSummary = (world: ActionContextWorldRef | null, nationId
     );
     const expSum = generals.reduce((acc, general) => acc + general.experience, 0);
     const dedSum = generals.reduce((acc, general) => acc + general.dedication, 0);
+    const dexSum = generals.reduce<[number, number, number, number, number]>(
+        (acc, general) => [
+            acc[0] + Number(general.meta.dex1 ?? 0),
+            acc[1] + Number(general.meta.dex2 ?? 0),
+            acc[2] + Number(general.meta.dex3 ?? 0),
+            acc[3] + Number(general.meta.dex4 ?? 0),
+            acc[4] + Number(general.meta.dex5 ?? 0),
+        ],
+        [0, 0, 0, 0, 0] as [number, number, number, number, number]
+    );
     return {
         averageStats: {
             leadership: statSum.leadership / total,
@@ -76,6 +87,7 @@ export const buildNationSummary = (world: ActionContextWorldRef | null, nationId
         },
         averageExperience: expSum / total,
         averageDedication: dedSum / total,
+        averageDex: [dexSum[0] / total, dexSum[1] / total, dexSum[2] / total, dexSum[3] / total, dexSum[4] / total],
     };
 };
 
