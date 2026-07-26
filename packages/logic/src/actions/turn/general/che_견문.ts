@@ -30,9 +30,7 @@ type InclusiveRandomGenerator = GeneralActionResolveContext['rng'] & {
 
 const legacyChoiceIndex = (rng: GeneralActionResolveContext['rng'], length: number): number => {
     const inclusive = rng as InclusiveRandomGenerator;
-    return inclusive.nextIntInclusive
-        ? inclusive.nextIntInclusive(length - 1)
-        : rng.nextInt(0, length);
+    return inclusive.nextIntInclusive ? inclusive.nextIntInclusive(length - 1) : rng.nextInt(0, length);
 };
 
 const SIGHTSEEING_MESSAGES: Array<{
@@ -71,22 +69,25 @@ const SIGHTSEEING_MESSAGES: Array<{
     },
     {
         flags: IncExp | IncGold,
-        texts: ['지나가는 행인에게서 금을 :goldAmount: 받았습니다.'],
+        texts: ['지나가는 행인에게서 금을 <C>:goldAmount:</> 받았습니다.'],
         weight: 1,
     },
     {
         flags: IncExp | IncRice,
-        texts: ['지나가는 행인에게서 쌀을 :riceAmount: 받았습니다.'],
+        texts: ['지나가는 행인에게서 쌀을 <C>:riceAmount:</> 받았습니다.'],
         weight: 1,
     },
     {
         flags: IncExp | DecGold,
-        texts: ['산적을 만나 금 :goldAmount:을 빼앗겼습니다.', '돈을 :goldAmount: 빌려주었다가 떼어먹혔습니다.'],
+        texts: [
+            '산적을 만나 금 <C>:goldAmount:</>을 빼앗겼습니다.',
+            '돈을 <C>:goldAmount:</> 빌려주었다가 떼어먹혔습니다.',
+        ],
         weight: 1,
     },
     {
         flags: IncExp | DecRice,
-        texts: ['쌀을 :riceAmount: 빌려주었다가 떼어먹혔습니다.'],
+        texts: ['쌀을 <C>:riceAmount:</> 빌려주었다가 떼어먹혔습니다.'],
         weight: 1,
     },
     {
@@ -111,22 +112,25 @@ const SIGHTSEEING_MESSAGES: Array<{
     },
     {
         flags: IncHeavyExp | IncStrength | IncGold,
-        texts: ['산적과 싸워 금 :goldAmount:을 빼앗았습니다.'],
+        texts: ['산적과 싸워 금 <C>:goldAmount:</>을 빼앗았습니다.'],
         weight: 1,
     },
     {
         flags: IncHeavyExp | IncStrength | IncRice,
-        texts: ['호랑이를 잡아 고기 :riceAmount:을 얻었습니다.', '곰을 잡아 고기 :riceAmount:을 얻었습니다.'],
+        texts: [
+            '호랑이를 잡아 고기 <C>:riceAmount:</>을 얻었습니다.',
+            '곰을 잡아 고기 <C>:riceAmount:</>을 얻었습니다.',
+        ],
         weight: 1,
     },
     {
         flags: IncHeavyExp | IncIntel | IncGold,
-        texts: ['돈을 빌려주었다가 이자 :goldAmount:을 받았습니다.'],
+        texts: ['돈을 빌려주었다가 이자 <C>:goldAmount:</>을 받았습니다.'],
         weight: 1,
     },
     {
         flags: IncHeavyExp | IncIntel | IncRice,
-        texts: ['쌀을 빌려주었다가 이자 :riceAmount:을 받았습니다.'],
+        texts: ['쌀을 빌려주었다가 이자 <C>:riceAmount:</>을 받았습니다.'],
         weight: 1,
     },
 ];

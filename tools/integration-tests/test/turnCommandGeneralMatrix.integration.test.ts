@@ -12,6 +12,39 @@ const configuredWorkspaceRoot = process.env.TURN_DIFFERENTIAL_WORKSPACE_ROOT;
 const workspaceRoot = configuredWorkspaceRoot ?? findTurnDifferentialWorkspaceRoot(process.cwd());
 const integration = describe.skipIf(!workspaceRoot || process.env.TURN_DIFFERENTIAL_REFERENCE !== '1');
 
+const normalizeStoredLogText = (value: unknown): string =>
+    String(value)
+        .replace(/^(?:<C>●<\/>|<S>◆<\/>|<R>★<\/>)(?:(?:\d+년 )?\d+월:|\d+년:)?/, '')
+        .replace(/ ?<1>\d{2}:\d{2}<\/>$/, '');
+
+const semanticLogSignatures = (logs: Array<Record<string, unknown>>): string[] =>
+    logs
+        .filter((entry) => normalizeStoredLogText(entry.text) !== '아무것도 실행하지 않았습니다.')
+        .map((entry) =>
+            JSON.stringify({
+                scope: String(entry.scope).toLowerCase(),
+                category: String(entry.category).toLowerCase(),
+                generalId: Number(entry.generalId) || null,
+                nationId: Number(entry.nationId) || null,
+                text: normalizeStoredLogText(entry.text),
+            })
+        )
+        .sort();
+
+const addedReferenceLogs = (
+    before: { watermarks: { logId: number; historyLogId: number } },
+    afterLogs: Array<Record<string, unknown>>
+): Array<Record<string, unknown>> =>
+    afterLogs.filter((entry) => {
+        const scope = String(entry.scope).toLowerCase();
+        const category = String(entry.category).toLowerCase();
+        const watermark =
+            scope === 'nation' || (scope === 'system' && category === 'history')
+                ? before.watermarks.historyLogId
+                : before.watermarks.logId;
+        return (Number(entry.id) || 0) > watermark;
+    });
+
 const ignoredLifecyclePaths = [
     /^generalTurns/,
     /^nationTurns/,
@@ -380,6 +413,225 @@ integration('general command success matrix', () => {
                     ignoredPathPatterns: ignoredLifecyclePaths,
                 })
             ).toEqual([]);
+        },
+        120_000
+    );
+});
+
+interface SelfStateBoundaryCase {
+    name: string;
+    action: 'che_단련' | 'che_숙련전환' | 'che_사기진작' | 'che_요양';
+    args?: Record<string, unknown>;
+    actorPatch?: Record<string, unknown>;
+    fixturePatches?: FixturePatches;
+    completed: boolean;
+}
+
+const selfStateBoundaryCases: SelfStateBoundaryCase[] = [
+    { name: 'drill rejects a neutral actor', action: 'che_단련', actorPatch: { nationId: 0 }, completed: false },
+    { name: 'drill rejects zero crew', action: 'che_단련', actorPatch: { crew: 0 }, completed: false },
+    {
+        name: 'drill rejects training one below the floor',
+        action: 'che_단련',
+        actorPatch: { train: 39 },
+        completed: false,
+    },
+    {
+        name: 'drill rejects morale one below the floor',
+        action: 'che_단련',
+        actorPatch: { atmos: 39 },
+        completed: false,
+    },
+    { name: 'drill rejects insufficient gold', action: 'che_단련', actorPatch: { gold: 0 }, completed: false },
+    { name: 'drill rejects insufficient rice', action: 'che_단련', actorPatch: { rice: 0 }, completed: false },
+    {
+        name: 'drill accepts the exact training and morale floors',
+        action: 'che_단련',
+        actorPatch: { train: 40, atmos: 40, crew: 1001 },
+        completed: true,
+    },
+    {
+        name: 'dex transfer rejects numeric-string arm types',
+        action: 'che_숙련전환',
+        args: { srcArmType: '1', destArmType: 2 },
+        completed: false,
+    },
+    {
+        name: 'dex transfer rejects fractional arm types',
+        action: 'che_숙련전환',
+        args: { srcArmType: 1.9, destArmType: 2 },
+        completed: false,
+    },
+    {
+        name: 'dex transfer rejects the same source and destination',
+        action: 'che_숙련전환',
+        args: { srcArmType: 1, destArmType: 1 },
+        completed: false,
+    },
+    {
+        name: 'dex transfer rejects an unknown arm type',
+        action: 'che_숙련전환',
+        args: { srcArmType: 99, destArmType: 2 },
+        completed: false,
+    },
+    {
+        name: 'dex transfer rejects a neutral actor',
+        action: 'che_숙련전환',
+        args: { srcArmType: 1, destArmType: 2 },
+        actorPatch: { nationId: 0 },
+        completed: false,
+    },
+    {
+        name: 'dex transfer rejects a foreign-occupied city',
+        action: 'che_숙련전환',
+        args: { srcArmType: 1, destArmType: 2 },
+        fixturePatches: { cities: { 3: { nationId: 2 } } },
+        completed: false,
+    },
+    {
+        name: 'dex transfer rejects insufficient gold',
+        action: 'che_숙련전환',
+        args: { srcArmType: 1, destArmType: 2 },
+        actorPatch: { gold: 0 },
+        completed: false,
+    },
+    {
+        name: 'dex transfer rejects insufficient rice',
+        action: 'che_숙련전환',
+        args: { srcArmType: 1, destArmType: 2 },
+        actorPatch: { rice: 0 },
+        completed: false,
+    },
+    {
+        name: 'dex transfer preserves integer truncation at a low source value',
+        action: 'che_숙련전환',
+        args: { srcArmType: 1, destArmType: 2 },
+        actorPatch: { dex1: 3, dex2: 7 },
+        completed: true,
+    },
+    {
+        name: 'morale boost rejects a neutral actor',
+        action: 'che_사기진작',
+        actorPatch: { nationId: 0 },
+        completed: false,
+    },
+    {
+        name: 'morale boost rejects a wandering nation',
+        action: 'che_사기진작',
+        fixturePatches: { nations: { 1: { level: 0 } } },
+        completed: false,
+    },
+    {
+        name: 'morale boost rejects a foreign-occupied city',
+        action: 'che_사기진작',
+        fixturePatches: { cities: { 3: { nationId: 2 } } },
+        completed: false,
+    },
+    { name: 'morale boost rejects zero crew', action: 'che_사기진작', actorPatch: { crew: 0 }, completed: false },
+    {
+        name: 'morale boost rejects insufficient gold',
+        action: 'che_사기진작',
+        actorPatch: { gold: 0 },
+        completed: false,
+    },
+    {
+        name: 'morale boost rejects the command maximum',
+        action: 'che_사기진작',
+        actorPatch: { atmos: 100 },
+        completed: false,
+    },
+    {
+        name: 'morale boost clamps at the command maximum',
+        action: 'che_사기진작',
+        actorPatch: { atmos: 99, train: 51, crew: 1001 },
+        completed: true,
+    },
+    {
+        name: 'recovery always clears injury without resource cost',
+        action: 'che_요양',
+        actorPatch: { nationId: 0, injury: 80, gold: 0, rice: 0 },
+        completed: true,
+    },
+];
+
+integration('general self-state command boundary parity', () => {
+    it.each(selfStateBoundaryCases)(
+        '$name',
+        async ({ name, action, args, actorPatch, fixturePatches, completed }) => {
+            const request = buildRequest(action, args, actorPatch, fixturePatches);
+            request.setup!.world!.hiddenSeed = `general-self-state-${name}`;
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+
+            expect(reference.execution.outcome).toMatchObject({ completed });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: action,
+                actionKey: completed ? action : '휴식',
+                usedFallback: !completed,
+            });
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+
+            if (completed) {
+                const referenceActor = reference.after.generals.find((entry) => entry.id === 1);
+                const coreActor = core.after.generals.find((entry) => entry.id === 1);
+                expect(coreActor).toMatchObject({
+                    dex1: referenceActor?.dex1,
+                    dex2: referenceActor?.dex2,
+                    leadershipExp: referenceActor?.leadershipExp,
+                    experience: referenceActor?.experience,
+                    dedication: referenceActor?.dedication,
+                    injury: referenceActor?.injury,
+                    gold: referenceActor?.gold,
+                    rice: referenceActor?.rice,
+                    train: referenceActor?.train,
+                    atmos: referenceActor?.atmos,
+                });
+            }
+        },
+        120_000
+    );
+});
+
+integration('general sightseeing event, RNG, value, and log parity', () => {
+    it.each(Array.from({ length: 20 }, (_, index) => index))(
+        'matches legacy sightseeing seed %i',
+        async (seedIndex) => {
+            const request = buildRequest(
+                'che_견문',
+                undefined,
+                { injury: seedIndex % 2 === 0 ? 0 : 75, gold: seedIndex % 3 === 0 ? 100 : 100_000, rice: 100 },
+                { world: { hiddenSeed: `general-sightseeing-${seedIndex}` } }
+            );
+            request.observe!.includeGlobalHistoryLogs = true;
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+
+            expect(reference.execution.outcome).toMatchObject({ completed: true });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: 'che_견문',
+                actionKey: 'che_견문',
+                usedFallback: false,
+            });
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+            expect(semanticLogSignatures(core.after.logs)).toEqual(
+                semanticLogSignatures(addedReferenceLogs(reference.before, reference.after.logs))
+            );
         },
         120_000
     );
