@@ -34,8 +34,9 @@ const stateOffset = computed(() => -6 * props.mapScale);
 </script>
 
 <template>
-    <div
+    <RouterLink
         class="map-city"
+        :to="{ name: 'current-city', query: { cityId: props.city.id } }"
         :class="[
             `state-${props.city.stateClass}`,
             { mine: props.city.isMyCity, selected: props.city.selected, 'supply-off': !props.city.supply },
@@ -45,20 +46,22 @@ const stateOffset = computed(() => -6 * props.mapScale);
         @mouseleave="emit('leave')"
         @click.stop="emit('select', props.city.id)"
     >
-        <div
-            class="city-dot"
-            :style="{ backgroundColor: props.city.color, width: `${size}px`, height: `${size}px` }"
-        >
+        <div class="city-dot" :style="{ backgroundColor: props.city.color, width: `${size}px`, height: `${size}px` }">
             <span v-if="props.city.isCapital" class="capital" />
         </div>
         <div
             v-if="props.city.state > 0"
             class="city-state"
             :class="`state-${props.city.stateClass}`"
-            :style="{ width: `${stateSize}px`, height: `${stateSize}px`, left: `${stateOffset}px`, top: `${stateOffset}px` }"
+            :style="{
+                width: `${stateSize}px`,
+                height: `${stateSize}px`,
+                left: `${stateOffset}px`,
+                top: `${stateOffset}px`,
+            }"
         />
         <div v-if="props.showName" class="city-name">{{ props.city.name }}</div>
-    </div>
+    </RouterLink>
 </template>
 
 <style scoped>
@@ -71,6 +74,8 @@ const stateOffset = computed(() => -6 * props.mapScale);
     transform: translate(-50%, -50%);
     font-size: 0.65rem;
     color: rgba(232, 221, 196, 0.8);
+    cursor: pointer;
+    text-decoration: none;
 }
 
 .city-dot {

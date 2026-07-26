@@ -520,8 +520,9 @@ export const buildBettingPayouts = (
     const winners = entries.filter((entry) => entry.targetId === winnerId);
     const winnersTotal = winners.reduce((sum, entry) => sum + entry.amount, 0);
     if (winnersTotal <= 0) {
-        const refunds = entries.map((entry) => ({ generalId: entry.generalId, amount: entry.amount }));
-        return { payouts: refunds, total, refundAll: true };
+        // Legacy Betting::_calcRewardExclusive() builds a refund candidate list
+        // but returns no rewards when nobody selected the winner.
+        return { payouts: [], total, refundAll: false };
     }
     const ratio = total / winnersTotal;
     const payouts = winners.map((entry) => ({

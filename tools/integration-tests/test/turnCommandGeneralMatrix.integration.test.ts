@@ -931,6 +931,184 @@ integration('general command pre-required turn boundary matrix', () => {
     );
 });
 
+const readGeneralCooldown = (
+    snapshot: { world: Record<string, unknown> },
+    generalId: number,
+    actionName: string
+): number | null => {
+    const cooldowns = Array.isArray(snapshot.world.generalCooldowns) ? snapshot.world.generalCooldowns : [];
+    const matched = cooldowns.find(
+        (entry) =>
+            typeof entry === 'object' &&
+            entry !== null &&
+            (entry as Record<string, unknown>).generalId === generalId &&
+            (entry as Record<string, unknown>).actionName === actionName
+    );
+    const value =
+        typeof matched === 'object' && matched !== null ? (matched as Record<string, unknown>).nextAvailableTurn : null;
+    return typeof value === 'number' ? value : null;
+};
+
+integration('general command post-required cooldown boundary matrix', () => {
+    it('stores the same 60-turn cooldown after domestic trait reset completion', async () => {
+        const request = buildRequest('che_내정특기초기화', undefined, {
+            specialDomestic: 'che_인덕',
+            lastTurn: { command: '내정 특기 초기화', term: 1 },
+        });
+        request.observe!.generalCooldowns = [{ generalId: 1, actionName: '내정 특기 초기화' }];
+        const reference = runReferenceTurnCommandTraceRequest(
+            workspaceRoot!,
+            request as unknown as Record<string, unknown>
+        );
+        const core = await runCoreTurnCommandTrace(request, reference.before);
+        const expectedNextAvailableTurn = 190 * 12 + 1 - 1 + 60 - 1;
+
+        expect(reference.execution.outcome).toMatchObject({ completed: true });
+        expect(core.execution.outcome).toMatchObject({
+            requestedAction: 'che_내정특기초기화',
+            actionKey: 'che_내정특기초기화',
+            usedFallback: false,
+        });
+        expect(readGeneralCooldown(reference.after, 1, '내정 특기 초기화')).toBe(expectedNextAvailableTurn);
+        expect(readGeneralCooldown(core.after, 1, '내정 특기 초기화')).toBe(expectedNextAvailableTurn);
+        expect(core.rng).toEqual(reference.rng);
+        expect(
+            compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                ignoredPathPatterns: ignoredLifecyclePaths,
+            })
+        ).toEqual([]);
+    }, 120_000);
+
+    it('blocks domestic trait reset one turn before the cooldown boundary', async () => {
+        const currentYearMonth = 190 * 12 + 1 - 1;
+        const request = buildRequest('che_내정특기초기화', undefined, {
+            specialDomestic: 'che_인덕',
+            lastTurn: { command: '내정 특기 초기화', term: 1 },
+        });
+        request.setup!.generalCooldowns = [
+            {
+                generalId: 1,
+                actionName: '내정 특기 초기화',
+                nextAvailableTurn: currentYearMonth + 1,
+            },
+        ];
+        request.observe!.generalCooldowns = [{ generalId: 1, actionName: '내정 특기 초기화' }];
+        const reference = runReferenceTurnCommandTraceRequest(
+            workspaceRoot!,
+            request as unknown as Record<string, unknown>
+        );
+        const core = await runCoreTurnCommandTrace(request, reference.before);
+
+        expect(readGeneralCooldown(reference.before, 1, '내정 특기 초기화')).toBe(currentYearMonth + 1);
+        expect(readGeneralCooldown(core.before, 1, '내정 특기 초기화')).toBe(currentYearMonth + 1);
+        expect(reference.execution.outcome).toMatchObject({ completed: false });
+        expect(core.execution.outcome).toMatchObject({
+            requestedAction: 'che_내정특기초기화',
+            actionKey: '휴식',
+            usedFallback: true,
+            blockedReason: '1턴 더 기다려야 합니다',
+        });
+        expect(reference.after.logs.some((entry) => String(entry.text).includes('1턴 더 기다려야 합니다'))).toBe(true);
+        expect(core.after.logs.some((entry) => String(entry.text).includes('1턴 더 기다려야 합니다'))).toBe(true);
+        expect(readGeneralCooldown(reference.after, 1, '내정 특기 초기화')).toBe(currentYearMonth + 1);
+        expect(readGeneralCooldown(core.after, 1, '내정 특기 초기화')).toBe(currentYearMonth + 1);
+        expect(core.rng).toEqual(reference.rng);
+        expect(
+            compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                ignoredPathPatterns: ignoredLifecyclePaths,
+            })
+        ).toEqual([]);
+    }, 120_000);
+
+    it('allows war trait reset exactly at the cooldown boundary', async () => {
+        const currentYearMonth = 190 * 12 + 1 - 1;
+        const request = buildRequest('che_전투특기초기화', undefined, {
+            specialWar: 'che_귀병',
+            lastTurn: { command: '전투 특기 초기화', term: 1 },
+        });
+        request.setup!.generalCooldowns = [
+            {
+                generalId: 1,
+                actionName: '전투 특기 초기화',
+                nextAvailableTurn: currentYearMonth,
+            },
+        ];
+        request.observe!.generalCooldowns = [{ generalId: 1, actionName: '전투 특기 초기화' }];
+        const reference = runReferenceTurnCommandTraceRequest(
+            workspaceRoot!,
+            request as unknown as Record<string, unknown>
+        );
+        const core = await runCoreTurnCommandTrace(request, reference.before);
+        const expectedNextAvailableTurn = currentYearMonth + 60 - 1;
+
+        expect(reference.execution.outcome).toMatchObject({ completed: true });
+        expect(core.execution.outcome).toMatchObject({
+            requestedAction: 'che_전투특기초기화',
+            actionKey: 'che_전투특기초기화',
+            usedFallback: false,
+        });
+        expect(readGeneralCooldown(reference.after, 1, '전투 특기 초기화')).toBe(expectedNextAvailableTurn);
+        expect(readGeneralCooldown(core.after, 1, '전투 특기 초기화')).toBe(expectedNextAvailableTurn);
+        expect(core.rng).toEqual(reference.rng);
+        expect(
+            compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                ignoredPathPatterns: ignoredLifecyclePaths,
+            })
+        ).toEqual([]);
+    }, 120_000);
+});
+
+const missingTargetCases: Array<{ name: string; action: string; args: Record<string, unknown> }> = [
+    {
+        name: 'gift to a missing general',
+        action: 'che_증여',
+        args: { isGold: true, amount: 100, destGeneralID: 999 },
+    },
+    {
+        name: 'spy on a missing city',
+        action: 'che_첩보',
+        args: { destCityID: 999 },
+    },
+    {
+        name: 'move to a missing city',
+        action: 'che_이동',
+        args: { destCityID: 999 },
+    },
+    {
+        name: 'employ a missing general',
+        action: 'che_등용',
+        args: { destGeneralID: 999 },
+    },
+];
+
+integration('general command missing-target fallback matrix', () => {
+    it.each(missingTargetCases)(
+        '$name rejects the missing target and falls back without command RNG',
+        async ({ action, args }) => {
+            const request = buildRequest(action, args);
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+
+            expect(reference.execution.outcome).toMatchObject({ completed: false });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: action,
+                actionKey: '휴식',
+                usedFallback: true,
+            });
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+        },
+        120_000
+    );
+});
+
 type GeneralConstraintCase = {
     name: string;
     action: string;
