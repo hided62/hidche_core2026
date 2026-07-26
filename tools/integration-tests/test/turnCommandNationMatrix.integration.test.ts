@@ -1645,3 +1645,228 @@ integration('nation capital move target, route, and resource constraints', () =>
         120_000
     );
 });
+
+const expandCityCases: Array<{
+    name: string;
+    fixturePatches?: FixturePatches;
+    completed: boolean;
+}> = [
+    {
+        name: 'rejects a wandering nation without a capital',
+        fixturePatches: { nations: { 1: { capitalCityId: 0 } } },
+        completed: false,
+    },
+    {
+        name: 'rejects a level-three capital',
+        fixturePatches: { cities: { 3: { level: 3 } } },
+        completed: false,
+    },
+    {
+        name: 'allows the minimum level-four capital',
+        fixturePatches: { cities: { 3: { level: 4 } } },
+        completed: true,
+    },
+    {
+        name: 'allows the maximum expandable level-seven capital',
+        fixturePatches: { cities: { 3: { level: 7 } } },
+        completed: true,
+    },
+    {
+        name: 'rejects a level-eight capital',
+        fixturePatches: { cities: { 3: { level: 8 } } },
+        completed: false,
+    },
+    {
+        name: 'allows the exact gold and rice requirement',
+        fixturePatches: { nations: { 1: { gold: 69_000, rice: 71_000 } } },
+        completed: true,
+    },
+    {
+        name: 'rejects one less than the gold requirement',
+        fixturePatches: { nations: { 1: { gold: 68_999, rice: 71_000 } } },
+        completed: false,
+    },
+    {
+        name: 'rejects one less than the rice requirement',
+        fixturePatches: { nations: { 1: { gold: 69_000, rice: 70_999 } } },
+        completed: false,
+    },
+    {
+        name: 'rejects a source city occupied by another nation',
+        fixturePatches: { cities: { 3: { nationId: 2 } } },
+        completed: false,
+    },
+    {
+        name: 'rejects an unsupplied source city',
+        fixturePatches: { cities: { 3: { supplyState: 0 } } },
+        completed: false,
+    },
+];
+
+integration('nation expand city level, resource, and city constraints', () => {
+    it.each(expandCityCases)(
+        '$name matches legacy completion, expansion effects, RNG, and semantic delta',
+        async ({ fixturePatches, completed }) => {
+            const request = buildRequest('che_증축', undefined, {
+                ...fixturePatches,
+                nations: {
+                    ...fixturePatches?.nations,
+                    1: {
+                        ...fixturePatches?.nations?.[1],
+                        capitalRevision: 0,
+                        turnLastByOfficerLevel: {
+                            12: { command: '증축', arg: {}, term: 5, seq: 0 },
+                        },
+                    },
+                },
+                cities: {
+                    ...fixturePatches?.cities,
+                    3: {
+                        level: 5,
+                        populationMax: 300_000,
+                        agricultureMax: 5_000,
+                        commerceMax: 5_000,
+                        securityMax: 5_000,
+                        defenceMax: 5_000,
+                        wallMax: 5_000,
+                        ...fixturePatches?.cities?.[3],
+                    },
+                },
+            });
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+            const referenceCityBefore = reference.before.cities.find((entry) => entry.id === 3);
+            const referenceCityAfter = reference.after.cities.find((entry) => entry.id === 3);
+            const coreCityBefore = core.before.cities.find((entry) => entry.id === 3);
+            const coreCityAfter = core.after.cities.find((entry) => entry.id === 3);
+            const referenceNationBefore = reference.before.nations.find((entry) => entry.id === 1);
+            const referenceNationAfter = reference.after.nations.find((entry) => entry.id === 1);
+            const coreNationBefore = core.before.nations.find((entry) => entry.id === 1);
+            const coreNationAfter = core.after.nations.find((entry) => entry.id === 1);
+            const referenceGeneralBefore = reference.before.generals.find((entry) => entry.id === 1);
+            const referenceGeneralAfter = reference.after.generals.find((entry) => entry.id === 1);
+            const coreGeneralBefore = core.before.generals.find((entry) => entry.id === 1);
+            const coreGeneralAfter = core.after.generals.find((entry) => entry.id === 1);
+            const expectedCost = completed ? 69_000 : 0;
+
+            expect(reference.before.world.develCost).toBe(18);
+            expect(reference.execution.outcome).toMatchObject({ completed });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: 'che_증축',
+                actionKey: completed ? 'che_증축' : '휴식',
+                usedFallback: !completed,
+            });
+            for (const [before, after] of [
+                [referenceNationBefore, referenceNationAfter],
+                [coreNationBefore, coreNationAfter],
+            ] as const) {
+                expect(readNationResource(before, 'gold') - readNationResource(after, 'gold')).toBe(expectedCost);
+                expect(readNationResource(before, 'rice') - readNationResource(after, 'rice')).toBe(expectedCost);
+            }
+            for (const [before, after] of [
+                [referenceGeneralBefore, referenceGeneralAfter],
+                [coreGeneralBefore, coreGeneralAfter],
+            ] as const) {
+                expect(readNumericField(after, 'experience') - readNumericField(before, 'experience')).toBe(
+                    completed ? 30 : 0
+                );
+                expect(readNumericField(after, 'dedication') - readNumericField(before, 'dedication')).toBe(
+                    completed ? 30 : 0
+                );
+            }
+            for (const [field, delta] of [
+                ['level', 1],
+                ['populationMax', 100_000],
+                ['agricultureMax', 2_000],
+                ['commerceMax', 2_000],
+                ['securityMax', 2_000],
+                ['defenceMax', 2_000],
+                ['wallMax', 2_000],
+            ] as const) {
+                const expectedDelta = completed ? delta : 0;
+                expect(readNumericField(referenceCityAfter, field) - readNumericField(referenceCityBefore, field)).toBe(
+                    expectedDelta
+                );
+                expect(readNumericField(coreCityAfter, field) - readNumericField(coreCityBefore, field)).toBe(
+                    expectedDelta
+                );
+            }
+            expect(
+                readNumericField(referenceNationAfter, 'capitalRevision') -
+                    readNumericField(referenceNationBefore, 'capitalRevision')
+            ).toBe(completed ? 1 : 0);
+            expect(
+                readNumericField(coreNationAfter, 'capitalRevision') -
+                    readNumericField(coreNationBefore, 'capitalRevision')
+            ).toBe(completed ? 1 : 0);
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+        },
+        120_000
+    );
+
+    it('restarts at term one when capital revision changes during the stack', async () => {
+        const request = buildRequest('che_증축', undefined, {
+            nations: {
+                1: {
+                    capitalRevision: 1,
+                    turnLastByOfficerLevel: {
+                        12: { command: '증축', arg: {}, term: 5, seq: 0 },
+                    },
+                },
+            },
+            cities: {
+                3: {
+                    level: 5,
+                    populationMax: 300_000,
+                    agricultureMax: 5_000,
+                    commerceMax: 5_000,
+                    securityMax: 5_000,
+                    defenceMax: 5_000,
+                    wallMax: 5_000,
+                },
+            },
+        });
+        const reference = runReferenceTurnCommandTraceRequest(
+            workspaceRoot!,
+            request as unknown as Record<string, unknown>
+        );
+        const core = await runCoreTurnCommandTrace(request, reference.before);
+        const coreNationAfter = core.after.nations.find((entry) => entry.id === 1);
+        const coreLastTurn = readNationMeta(coreNationAfter).turn_last_12;
+
+        expect(reference.execution.outcome).toMatchObject({
+            // The ref runner's completion heuristic only sees the previous term=5
+            // and reports true even though capset reset the persisted result to term 1.
+            completed: true,
+            lastTurn: {
+                command: '증축',
+                term: 1,
+                seq: 1,
+            },
+        });
+        expect(core.execution.outcome).toMatchObject({
+            requestedAction: 'che_증축',
+            actionKey: 'che_증축',
+            usedFallback: false,
+        });
+        expect(coreLastTurn).toMatchObject({
+            command: '증축',
+            term: 1,
+            seq: 1,
+        });
+        expect(core.rng).toEqual(reference.rng);
+        expect(
+            compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                ignoredPathPatterns: ignoredLifecyclePaths,
+            })
+        ).toEqual([]);
+    }, 120_000);
+});
