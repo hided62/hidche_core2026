@@ -14,6 +14,7 @@ export default defineConfig({
         'instant-diplomacy-message.spec.ts',
         'ingame-message-parity.spec.ts',
         'tournament-betting.spec.ts',
+        'inheritance-management.spec.ts',
     ],
     fullyParallel: false,
     workers: 1,

@@ -1,5 +1,3 @@
-import path from 'node:path';
-
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -164,8 +162,6 @@ const FLOAT_POLICY_KEYS = ['safeRecruitCityPopulationRatio'] as const;
 
 type NumericPolicyKey = (typeof INTEGER_POLICY_KEYS)[number];
 type FloatPolicyKey = (typeof FLOAT_POLICY_KEYS)[number];
-
-const UNIT_SET_ROOT = path.resolve(process.cwd(), 'resources', 'unitset');
 
 const readNumber = (value: unknown, fallback = 0): number => {
     if (typeof value === 'number' && Number.isFinite(value)) {
@@ -353,8 +349,8 @@ const buildZeroPolicy = async (
     }
 ): Promise<NationPolicy> => {
     const { statMax, statNpcMax, nationTech, develCost, defaultCrewTypeId, unitSetName } = options;
-    const unitSet = await loadUnitSetDefinitionByName(unitSetName, { unitSetRoot: UNIT_SET_ROOT });
-    const crewType = findCrewTypeById(unitSet, defaultCrewTypeId);
+    const unitSet = await loadUnitSetDefinitionByName(unitSetName);
+    const crewType = findCrewTypeById(unitSet, defaultCrewTypeId || unitSet.defaultCrewTypeId || 0);
     const techCost = getTechCost(nationTech);
     const next = clonePolicy(policy);
 
@@ -364,7 +360,7 @@ const buildZeroPolicy = async (
 
     if (next.reqNPCWarGold === 0 || next.reqNPCWarRice === 0) {
         const baseGold = crewType ? crewType.cost * techCost * statNpcMax : 0;
-        const baseRice = statNpcMax;
+        const baseRice = crewType ? crewType.rice * techCost * statNpcMax : 0;
         if (next.reqNPCWarGold === 0) {
             next.reqNPCWarGold = roundTo(baseGold * 4, -2);
         }
@@ -375,7 +371,7 @@ const buildZeroPolicy = async (
 
     if (next.reqHumanWarUrgentGold === 0 || next.reqHumanWarUrgentRice === 0) {
         const baseGold = crewType ? crewType.cost * techCost * statMax : 0;
-        const baseRice = statMax;
+        const baseRice = crewType ? crewType.rice * techCost * statMax : 0;
         if (next.reqHumanWarUrgentGold === 0) {
             next.reqHumanWarUrgentGold = roundTo(baseGold * 6, -2);
         }
@@ -414,8 +410,6 @@ const resolveSetterInfo = (policy: Record<string, unknown>, kind: 'value' | 'pri
         date: typeof policy.prioritySetTime === 'string' ? policy.prioritySetTime : null,
     };
 };
-
-const ensureUniquePriority = (priority: string[]): string[] => Array.from(new Set(priority));
 
 const validateGeneralPriority = (priority: string[]): string | null => {
     const orderRequired: Array<[string, string]> = [['출병', '일반내정']];
@@ -461,6 +455,7 @@ export const npcRouter = router({
                     id: true,
                     name: true,
                     level: true,
+                    tech: true,
                     meta: true,
                 },
             }),
@@ -508,9 +503,9 @@ export const npcRouter = router({
         const stat = resolveScenarioStat(config);
         const env = resolveCommandEnv(config);
         const unitSetName = resolveUnitSetName(config, 'che');
-        const nationTech = readNumber(asRecord(nationMeta).tech, 0);
+        const nationTech = readNumber(nation.tech, 0);
 
-        const zeroPolicy = await buildZeroPolicy(defaultNationPolicy, {
+        const zeroPolicy = await buildZeroPolicy(DEFAULT_NATION_POLICY, {
             statMax: stat.max,
             statNpcMax: stat.npcMax,
             nationTech,
@@ -542,277 +537,272 @@ export const npcRouter = router({
             permissionLevel,
         };
     }),
-    setNationPolicy: authedProcedure
-        .input(z.record(z.string(), z.unknown()))
-        .mutation(async ({ ctx, input }) => {
-            const general = await getMyGeneral(ctx);
-            if (general.nationId <= 0) {
-                throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Nation membership required.' });
-            }
+    setNationPolicy: authedProcedure.input(z.record(z.string(), z.unknown())).mutation(async ({ ctx, input }) => {
+        const general = await getMyGeneral(ctx);
+        if (general.nationId <= 0) {
+            throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Nation membership required.' });
+        }
 
-            const nation = await ctx.db.nation.findUnique({
-                where: { id: general.nationId },
-                select: { id: true, meta: true },
-            });
-            if (!nation) {
-                throw new TRPCError({ code: 'NOT_FOUND', message: 'Nation not found' });
-            }
+        const nation = await ctx.db.nation.findUnique({
+            where: { id: general.nationId },
+            select: { id: true, meta: true },
+        });
+        if (!nation) {
+            throw new TRPCError({ code: 'NOT_FOUND', message: 'Nation not found' });
+        }
 
-            const permissionLevel = resolveSecretPermission(
-                {
-                    nationId: general.nationId,
-                    officerLevel: general.officerLevel,
-                    meta: general.meta,
-                    penalty: general.penalty,
-                },
-                nation.meta
-            );
-            if (permissionLevel < 3) {
-                throw new TRPCError({ code: 'FORBIDDEN', message: '권한이 부족합니다.' });
-            }
+        const permissionLevel = resolveSecretPermission(
+            {
+                nationId: general.nationId,
+                officerLevel: general.officerLevel,
+                meta: general.meta,
+                penalty: general.penalty,
+            },
+            nation.meta
+        );
+        if (permissionLevel < 3) {
+            throw new TRPCError({ code: 'FORBIDDEN', message: '권한이 부족합니다.' });
+        }
 
-            const keys = Object.keys(input);
-            for (const key of keys) {
-                if (!NATION_POLICY_KEYS.has(key as keyof NationPolicy)) {
+        const keys = Object.keys(input);
+        for (const key of keys) {
+            if (!NATION_POLICY_KEYS.has(key as keyof NationPolicy)) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: `${key}는 올바른 정책값이 아닙니다.` });
+            }
+        }
+
+        const troopRows = await ctx.db.troop.findMany({
+            where: { nationId: general.nationId },
+            select: { troopLeaderId: true },
+        });
+        const cityRows = await ctx.db.city.findMany({ select: { id: true } });
+
+        const troopSet = new Set(troopRows.map((row) => row.troopLeaderId));
+        const citySet = new Set(cityRows.map((row) => row.id));
+        const assigned = new Set<number>();
+
+        const nationMeta = asRecord(nation.meta);
+        const policyRoot = asRecord(nationMeta.npc_nation_policy);
+        const nextValues = applyPolicyValues(DEFAULT_NATION_POLICY, asRecord(policyRoot.values));
+
+        for (const key of INTEGER_POLICY_KEYS) {
+            if (!(key in input)) {
+                continue;
+            }
+            const value = input[key];
+            if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isInteger(value)) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: `${key}는 올바른 값이 아닙니다.` });
+            }
+            nextValues[key] = Math.max(0, value);
+        }
+
+        for (const key of FLOAT_POLICY_KEYS) {
+            if (!(key in input)) {
+                continue;
+            }
+            const value = input[key];
+            if (typeof value !== 'number' || !Number.isFinite(value)) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: `${key}는 올바른 값이 아닙니다.` });
+            }
+            nextValues[key] = value;
+        }
+
+        if ('CombatForce' in input) {
+            const rawCombat = input.CombatForce;
+            if (!isRecord(rawCombat)) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: 'CombatForce는 올바른 정책값이 아닙니다.' });
+            }
+            const combatForce: Record<number, [number, number]> = {};
+            for (const [rawKey, rawValue] of Object.entries(rawCombat)) {
+                const leaderId = Number(rawKey);
+                if (!Number.isFinite(leaderId)) {
+                    throw new TRPCError({ code: 'BAD_REQUEST', message: `${rawKey}는 올바른 부대가 아닙니다.` });
+                }
+                if (!troopSet.has(leaderId)) {
+                    throw new TRPCError({ code: 'BAD_REQUEST', message: `${leaderId}는 국가의 부대가 아닙니다.` });
+                }
+                if (assigned.has(leaderId)) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: `부대(${leaderId})는 하나의 역할만 지정할 수 있습니다.`,
+                    });
+                }
+                if (!Array.isArray(rawValue) || rawValue.length < 2) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: `${leaderId}의 입력양식이 올바르지 않습니다.`,
+                    });
+                }
+                const fromCity = Number(rawValue[0]);
+                const toCity = Number(rawValue[1]);
+                if (!citySet.has(fromCity) || !citySet.has(toCity)) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: `${leaderId}의 도시 ${fromCity}, ${toCity}가 올바른 도시 번호가 아닙니다.`,
+                    });
+                }
+                combatForce[leaderId] = [fromCity, toCity];
+                assigned.add(leaderId);
+            }
+            nextValues.CombatForce = combatForce;
+        }
+
+        for (const key of ['SupportForce', 'DevelopForce'] as const) {
+            if (!(key in input)) {
+                continue;
+            }
+            const rawList = input[key];
+            if (!Array.isArray(rawList)) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: `${key}는 올바른 정책값이 아닙니다.` });
+            }
+            const list: number[] = [];
+            for (const rawValue of rawList) {
+                if (typeof rawValue !== 'number' || !Number.isFinite(rawValue)) {
                     throw new TRPCError({ code: 'BAD_REQUEST', message: `${key}는 올바른 정책값이 아닙니다.` });
                 }
-            }
-
-            const troopRows = await ctx.db.troop.findMany({
-                where: { nationId: general.nationId },
-                select: { troopLeaderId: true },
-            });
-            const cityRows = await ctx.db.city.findMany({ select: { id: true } });
-
-            const troopSet = new Set(troopRows.map((row) => row.troopLeaderId));
-            const citySet = new Set(cityRows.map((row) => row.id));
-            const assigned = new Set<number>();
-
-            const nationMeta = asRecord(nation.meta);
-            const policyRoot = asRecord(nationMeta.npc_nation_policy);
-            const nextValues = applyPolicyValues(DEFAULT_NATION_POLICY, asRecord(policyRoot.values));
-
-            for (const key of INTEGER_POLICY_KEYS) {
-                if (!(key in input)) {
-                    continue;
+                if (!troopSet.has(rawValue)) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: `${rawValue}는 국가의 부대가 아닙니다.`,
+                    });
                 }
-                const value = input[key];
-                if (typeof value !== 'number' || !Number.isFinite(value) || !Number.isInteger(value)) {
-                    throw new TRPCError({ code: 'BAD_REQUEST', message: `${key}는 올바른 값이 아닙니다.` });
+                if (assigned.has(rawValue)) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: `부대(${rawValue})는 하나의 역할만 지정할 수 있습니다.`,
+                    });
                 }
-                nextValues[key] = Math.max(0, value);
+                assigned.add(rawValue);
+                list.push(rawValue);
             }
-
-            for (const key of FLOAT_POLICY_KEYS) {
-                if (!(key in input)) {
-                    continue;
-                }
-                const value = input[key];
-                if (typeof value !== 'number' || !Number.isFinite(value)) {
-                    throw new TRPCError({ code: 'BAD_REQUEST', message: `${key}는 올바른 값이 아닙니다.` });
-                }
-                nextValues[key] = Math.max(0, value);
+            if (key === 'SupportForce') {
+                nextValues.SupportForce = list;
+            } else {
+                nextValues.DevelopForce = list;
             }
+        }
 
-            if ('CombatForce' in input) {
-                const rawCombat = input.CombatForce;
-                if (!isRecord(rawCombat)) {
-                    throw new TRPCError({ code: 'BAD_REQUEST', message: 'CombatForce는 올바른 정책값이 아닙니다.' });
-                }
-                const combatForce: Record<number, [number, number]> = {};
-                for (const [rawKey, rawValue] of Object.entries(rawCombat)) {
-                    const leaderId = Number(rawKey);
-                    if (!Number.isFinite(leaderId)) {
-                        throw new TRPCError({ code: 'BAD_REQUEST', message: `${rawKey}는 올바른 부대가 아닙니다.` });
-                    }
-                    if (!troopSet.has(leaderId)) {
-                        throw new TRPCError({ code: 'BAD_REQUEST', message: `${leaderId}는 국가의 부대가 아닙니다.` });
-                    }
-                    if (assigned.has(leaderId)) {
-                        throw new TRPCError({
-                            code: 'BAD_REQUEST',
-                            message: `부대(${leaderId})는 하나의 역할만 지정할 수 있습니다.`,
-                        });
-                    }
-                    if (!Array.isArray(rawValue) || rawValue.length < 2) {
-                        throw new TRPCError({ code: 'BAD_REQUEST', message: `${leaderId}의 입력양식이 올바르지 않습니다.` });
-                    }
-                    const fromCity = Number(rawValue[0]);
-                    const toCity = Number(rawValue[1]);
-                    if (!citySet.has(fromCity) || !citySet.has(toCity)) {
-                        throw new TRPCError({
-                            code: 'BAD_REQUEST',
-                            message: `${leaderId}의 도시 ${fromCity}, ${toCity}가 올바른 도시 번호가 아닙니다.`,
-                        });
-                    }
-                    combatForce[leaderId] = [fromCity, toCity];
-                    assigned.add(leaderId);
-                }
-                nextValues.CombatForce = combatForce;
+        const nextPolicyRoot = {
+            ...policyRoot,
+            values: nextValues,
+            valueSetter: general.name,
+            valueSetTime: new Date().toISOString(),
+        };
+
+        await updateNationMeta(
+            ctx,
+            nation.id,
+            {
+                npc_nation_policy: nextPolicyRoot,
+            },
+            nationMeta
+        );
+
+        return { ok: true };
+    }),
+    setNationPriority: authedProcedure.input(z.array(z.string())).mutation(async ({ ctx, input }) => {
+        const general = await getMyGeneral(ctx);
+        if (general.nationId <= 0) {
+            throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Nation membership required.' });
+        }
+
+        const nation = await ctx.db.nation.findUnique({
+            where: { id: general.nationId },
+            select: { id: true, meta: true },
+        });
+        if (!nation) {
+            throw new TRPCError({ code: 'NOT_FOUND', message: 'Nation not found' });
+        }
+
+        const permissionLevel = resolveSecretPermission(
+            {
+                nationId: general.nationId,
+                officerLevel: general.officerLevel,
+                meta: general.meta,
+                penalty: general.penalty,
+            },
+            nation.meta
+        );
+        if (permissionLevel < 3) {
+            throw new TRPCError({ code: 'FORBIDDEN', message: '권한이 부족합니다.' });
+        }
+
+        for (const item of input) {
+            if (!DEFAULT_NATION_PRIORITY.includes(item as (typeof DEFAULT_NATION_PRIORITY)[number])) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: `${item}은 올바른 명령이 아닙니다.` });
             }
+        }
 
-            for (const key of ['SupportForce', 'DevelopForce'] as const) {
-                if (!(key in input)) {
-                    continue;
-                }
-                const rawList = input[key];
-                if (!Array.isArray(rawList)) {
-                    throw new TRPCError({ code: 'BAD_REQUEST', message: `${key}는 올바른 정책값이 아닙니다.` });
-                }
-                const list: number[] = [];
-                for (const rawValue of rawList) {
-                    if (typeof rawValue !== 'number' || !Number.isFinite(rawValue)) {
-                        throw new TRPCError({ code: 'BAD_REQUEST', message: `${key}는 올바른 정책값이 아닙니다.` });
-                    }
-                    if (!troopSet.has(rawValue)) {
-                        throw new TRPCError({
-                            code: 'BAD_REQUEST',
-                            message: `${rawValue}는 국가의 부대가 아닙니다.`,
-                        });
-                    }
-                    if (assigned.has(rawValue)) {
-                        throw new TRPCError({
-                            code: 'BAD_REQUEST',
-                            message: `부대(${rawValue})는 하나의 역할만 지정할 수 있습니다.`,
-                        });
-                    }
-                    assigned.add(rawValue);
-                    list.push(rawValue);
-                }
-                if (key === 'SupportForce') {
-                    nextValues.SupportForce = list;
-                } else {
-                    nextValues.DevelopForce = list;
-                }
-            }
+        const nationMeta = asRecord(nation.meta);
+        const policyRoot = asRecord(nationMeta.npc_nation_policy);
+        const nextPolicyRoot = {
+            ...policyRoot,
+            priority: input,
+            prioritySetter: general.name,
+            prioritySetTime: new Date().toISOString(),
+        };
 
-            const nextPolicyRoot = {
-                ...policyRoot,
-                values: nextValues,
-                valueSetter: general.name,
-                valueSetTime: new Date().toISOString(),
-            };
+        await updateNationMeta(
+            ctx,
+            nation.id,
+            {
+                npc_nation_policy: nextPolicyRoot,
+            },
+            nationMeta
+        );
 
-            await updateNationMeta(
-                ctx,
-                nation.id,
-                {
-                    npc_nation_policy: nextPolicyRoot,
-                },
-                nationMeta
-            );
+        return { ok: true };
+    }),
+    setGeneralPriority: authedProcedure.input(z.array(z.string())).mutation(async ({ ctx, input }) => {
+        const general = await getMyGeneral(ctx);
+        if (general.nationId <= 0) {
+            throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Nation membership required.' });
+        }
 
-            return { ok: true };
-        }),
-    setNationPriority: authedProcedure
-        .input(z.array(z.string()))
-        .mutation(async ({ ctx, input }) => {
-            const general = await getMyGeneral(ctx);
-            if (general.nationId <= 0) {
-                throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Nation membership required.' });
-            }
+        const nation = await ctx.db.nation.findUnique({
+            where: { id: general.nationId },
+            select: { id: true, meta: true },
+        });
+        if (!nation) {
+            throw new TRPCError({ code: 'NOT_FOUND', message: 'Nation not found' });
+        }
 
-            const nation = await ctx.db.nation.findUnique({
-                where: { id: general.nationId },
-                select: { id: true, meta: true },
-            });
-            if (!nation) {
-                throw new TRPCError({ code: 'NOT_FOUND', message: 'Nation not found' });
-            }
+        const permissionLevel = resolveSecretPermission(
+            {
+                nationId: general.nationId,
+                officerLevel: general.officerLevel,
+                meta: general.meta,
+                penalty: general.penalty,
+            },
+            nation.meta
+        );
+        if (permissionLevel < 3) {
+            throw new TRPCError({ code: 'FORBIDDEN', message: '권한이 부족합니다.' });
+        }
 
-            const permissionLevel = resolveSecretPermission(
-                {
-                    nationId: general.nationId,
-                    officerLevel: general.officerLevel,
-                    meta: general.meta,
-                    penalty: general.penalty,
-                },
-                nation.meta
-            );
-            if (permissionLevel < 3) {
-                throw new TRPCError({ code: 'FORBIDDEN', message: '권한이 부족합니다.' });
-            }
+        const validationError = validateGeneralPriority(input);
+        if (validationError) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: validationError });
+        }
 
-            const unique = ensureUniquePriority(input);
-            for (const item of unique) {
-                if (!DEFAULT_NATION_PRIORITY.includes(item as (typeof DEFAULT_NATION_PRIORITY)[number])) {
-                    throw new TRPCError({ code: 'BAD_REQUEST', message: `${item}은 올바른 명령이 아닙니다.` });
-                }
-            }
+        const nationMeta = asRecord(nation.meta);
+        const policyRoot = asRecord(nationMeta.npc_general_policy);
+        const nextPolicyRoot = {
+            ...policyRoot,
+            priority: input,
+            prioritySetter: general.name,
+            prioritySetTime: new Date().toISOString(),
+        };
 
-            const nationMeta = asRecord(nation.meta);
-            const policyRoot = asRecord(nationMeta.npc_nation_policy);
-            const nextPolicyRoot = {
-                ...policyRoot,
-                priority: unique,
-                prioritySetter: general.name,
-                prioritySetTime: new Date().toISOString(),
-            };
+        await updateNationMeta(
+            ctx,
+            nation.id,
+            {
+                npc_general_policy: nextPolicyRoot,
+            },
+            nationMeta
+        );
 
-            await updateNationMeta(
-                ctx,
-                nation.id,
-                {
-                    npc_nation_policy: nextPolicyRoot,
-                },
-                nationMeta
-            );
-
-            return { ok: true };
-        }),
-    setGeneralPriority: authedProcedure
-        .input(z.array(z.string()))
-        .mutation(async ({ ctx, input }) => {
-            const general = await getMyGeneral(ctx);
-            if (general.nationId <= 0) {
-                throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Nation membership required.' });
-            }
-
-            const nation = await ctx.db.nation.findUnique({
-                where: { id: general.nationId },
-                select: { id: true, meta: true },
-            });
-            if (!nation) {
-                throw new TRPCError({ code: 'NOT_FOUND', message: 'Nation not found' });
-            }
-
-            const permissionLevel = resolveSecretPermission(
-                {
-                    nationId: general.nationId,
-                    officerLevel: general.officerLevel,
-                    meta: general.meta,
-                    penalty: general.penalty,
-                },
-                nation.meta
-            );
-            if (permissionLevel < 3) {
-                throw new TRPCError({ code: 'FORBIDDEN', message: '권한이 부족합니다.' });
-            }
-
-            const unique = ensureUniquePriority(input);
-            const validationError = validateGeneralPriority(unique);
-            if (validationError) {
-                throw new TRPCError({ code: 'BAD_REQUEST', message: validationError });
-            }
-
-            const nationMeta = asRecord(nation.meta);
-            const policyRoot = asRecord(nationMeta.npc_general_policy);
-            const nextPolicyRoot = {
-                ...policyRoot,
-                priority: unique,
-                prioritySetter: general.name,
-                prioritySetTime: new Date().toISOString(),
-            };
-
-            await updateNationMeta(
-                ctx,
-                nation.id,
-                {
-                    npc_general_policy: nextPolicyRoot,
-                },
-                nationMeta
-            );
-
-            return { ok: true };
-        }),
+        return { ok: true };
+    }),
 });

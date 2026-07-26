@@ -3,7 +3,14 @@ import { z } from 'zod';
 
 import { authedProcedure, router } from '../../trpc.js';
 import { asNumber, asRecord, parseJson, LiteHashDRBG } from '@sammo-ts/common';
-import { loadWarTraitModules, WarTraitLoader, WAR_TRAIT_KEYS, isWarTraitKey } from '@sammo-ts/logic';
+import {
+    ItemLoader,
+    isItemKey,
+    loadWarTraitModules,
+    WarTraitLoader,
+    WAR_TRAIT_KEYS,
+    isWarTraitKey,
+} from '@sammo-ts/logic';
 import type { InheritBuffType } from '@sammo-ts/logic';
 import {
     appendInheritanceLog,
@@ -23,8 +30,8 @@ const BUFF_KEYS: InheritBuffType[] = [
     'warAvoidRatio',
     'warCriticalRatio',
     'warMagicTrialProb',
-    'success',
-    'fail',
+    'domesticSuccessProb',
+    'domesticFailProb',
     'warAvoidRatioOppose',
     'warCriticalRatioOppose',
     'warMagicTrialProbOppose',
@@ -34,8 +41,8 @@ const BUFF_LABELS: Record<InheritBuffType, string> = {
     warAvoidRatio: '회피 확률 증가',
     warCriticalRatio: '필살 확률 증가',
     warMagicTrialProb: '전투계략 시도 확률 증가',
-    success: '내정 성공률 증가',
-    fail: '내정 실패율 감소',
+    domesticSuccessProb: '내정 성공률 증가',
+    domesticFailProb: '내정 실패율 감소',
     warAvoidRatioOppose: '상대 회피 확률 감소',
     warCriticalRatioOppose: '상대 필살 확률 감소',
     warMagicTrialProbOppose: '상대 전투계략 시도 확률 감소',
@@ -57,6 +64,37 @@ const parseBuffRecord = (raw: unknown): Record<string, number> => {
 };
 
 const serializeBuffRecord = (buff: Record<string, number>): string => JSON.stringify(buff);
+
+const readBuffLevel = (buff: Record<string, number>, key: InheritBuffType): number => {
+    const compatibilityKey = key === 'domesticSuccessProb' ? 'success' : key === 'domesticFailProb' ? 'fail' : null;
+    return Math.max(0, Math.min(5, Math.floor(buff[key] ?? (compatibilityKey ? buff[compatibilityKey] : 0) ?? 0)));
+};
+
+const loadAvailableUniqueItems = async (worldState: WorldStateRow) => {
+    const configuredItems = asRecord(asRecord(worldState.config).const).allItems;
+    const enabledKeys: Array<Parameters<ItemLoader['load']>[0]> = [];
+    for (const entries of Object.values(asRecord(configuredItems))) {
+        for (const [key, amount] of Object.entries(asRecord(entries))) {
+            if (asNumber(amount, 0) !== 0 && isItemKey(key)) {
+                enabledKeys.push(key);
+            }
+        }
+    }
+
+    const loader = new ItemLoader();
+    const items = await Promise.all(
+        [...new Set(enabledKeys)].map(async (key) => {
+            const item = await loader.load(key);
+            return {
+                key,
+                name: item.name,
+                rawName: item.rawName,
+                info: item.info ?? '',
+            };
+        })
+    );
+    return items.sort((left, right) => left.name.localeCompare(right.name, 'ko'));
+};
 
 const resolveWorld = async (ctx: { db: { worldState: { findFirst: () => Promise<unknown> } } }) => {
     const worldState = await ctx.db.worldState.findFirst();
@@ -199,6 +237,9 @@ export const inheritRouter = router({
                 special2Code: true,
                 meta: true,
                 turnTime: true,
+                leadership: true,
+                strength: true,
+                intel: true,
             },
         });
 
@@ -219,7 +260,7 @@ export const inheritRouter = router({
         const inheritConst = resolveInheritConstants(worldState);
         const buffState = parseBuffRecord(asRecord(general.meta).inheritBuff);
         const buffLevels = BUFF_KEYS.reduce<Record<string, number>>((acc, key) => {
-            acc[key] = Math.max(0, Math.min(5, Math.floor(buffState[key] ?? 0)));
+            acc[key] = readBuffLevel(buffState, key);
             return acc;
         }, {});
 
@@ -240,11 +281,14 @@ export const inheritRouter = router({
             info: trait.info ?? '',
         }));
 
-        const others = await ctx.db.general.findMany({
-            where: { id: { not: general.id }, userId: { not: null } },
-            select: { id: true, name: true },
-            orderBy: { id: 'asc' },
-        });
+        const [others, availableUnique] = await Promise.all([
+            ctx.db.general.findMany({
+                where: { id: { not: general.id }, npcState: { lt: 2 }, userId: { not: null } },
+                select: { id: true, name: true },
+                orderBy: { id: 'asc' },
+            }),
+            loadAvailableUniqueItems(worldState),
+        ]);
 
         return {
             items,
@@ -260,10 +304,16 @@ export const inheritRouter = router({
                 resetTurnTime: resetTurnLevel,
             },
             availableSpecialWar: warSpecials,
+            availableUnique,
             availableTargetGenerals: others,
             turnTimeZones: buildTurnTimeZoneList(Math.max(1, Math.round(worldState.tickSeconds / 60))),
             isUnited,
             currentSpecialWar: general.special2Code ?? 'None',
+            currentStat: {
+                leadership: general.leadership,
+                strength: general.strength,
+                intel: general.intel,
+            },
         };
     }),
     getLogs: authedProcedure
@@ -285,7 +335,7 @@ export const inheritRouter = router({
                 },
                 orderBy: { id: 'desc' },
                 take: 30,
-                select: { id: true, year: true, month: true, text: true },
+                select: { id: true, year: true, month: true, text: true, createdAt: true },
             });
             return logs;
         }),
@@ -318,7 +368,7 @@ export const inheritRouter = router({
             }
 
             const buff = parseBuffRecord(asRecord(general.meta).inheritBuff);
-            const prevLevel = Math.max(0, Math.min(5, Math.floor(buff[input.type] ?? 0)));
+            const prevLevel = readBuffLevel(buff, input.type);
             if (input.level === prevLevel) {
                 throw new TRPCError({ code: 'BAD_REQUEST', message: '이미 구입했습니다.' });
             }
@@ -417,7 +467,12 @@ export const inheritRouter = router({
                 },
             });
 
-            await setInheritancePoint(ctx.db, userId, 'previous', currentPoint - inheritConst.inheritSpecificSpecialPoint);
+            await setInheritancePoint(
+                ctx.db,
+                userId,
+                'previous',
+                currentPoint - inheritConst.inheritSpecificSpecialPoint
+            );
             await appendInheritanceLog(
                 ctx.db,
                 userId,
@@ -460,7 +515,8 @@ export const inheritRouter = router({
         }
 
         const meta = asRecord(general.meta);
-        const prevList = parseJson<string[]>(typeof meta.prev_types_special2 === 'string' ? meta.prev_types_special2 : null) ?? [];
+        const prevList =
+            parseJson<string[]>(typeof meta.prev_types_special2 === 'string' ? meta.prev_types_special2 : null) ?? [];
         prevList.push(general.special2Code);
 
         await patchGeneral(ctx, general.id, {
@@ -473,7 +529,13 @@ export const inheritRouter = router({
         });
 
         await setInheritancePoint(ctx.db, userId, 'previous', currentPoint - cost);
-        await appendInheritanceLog(ctx.db, userId, worldState.currentYear, worldState.currentMonth, `${cost} 포인트로 전투 특기 초기화`);
+        await appendInheritanceLog(
+            ctx.db,
+            userId,
+            worldState.currentYear,
+            worldState.currentMonth,
+            `${cost} 포인트로 전투 특기 초기화`
+        );
         return { ok: true };
     }),
     resetTurnTime: authedProcedure.mutation(async ({ ctx }) => {
@@ -624,9 +686,7 @@ export const inheritRouter = router({
             const finalBonus =
                 bonusSum === 0
                     ? buildRandomBonus(
-                          new LiteHashDRBG(
-                              `${asRecord(worldState.meta).hiddenSeed ?? 'inherit'}:ResetStat:${userId}`
-                          ),
+                          new LiteHashDRBG(`${asRecord(worldState.meta).hiddenSeed ?? 'inherit'}:ResetStat:${userId}`),
                           [input.leadership, input.strength, input.intel]
                       )
                     : (bonus as [number, number, number]);
@@ -674,9 +734,7 @@ export const inheritRouter = router({
             if (seasonValue !== null) {
                 const userState = await readUserStateMeta(ctx.db, userId);
                 const resetSeasons = readResetSeasons(userState);
-                const nextSeasons = resetSeasons.includes(seasonValue)
-                    ? resetSeasons
-                    : [...resetSeasons, seasonValue];
+                const nextSeasons = resetSeasons.includes(seasonValue) ? resetSeasons : [...resetSeasons, seasonValue];
                 await writeUserStateMeta(ctx.db, userId, {
                     ...userState,
                     last_stat_reset: nextSeasons,
@@ -709,7 +767,10 @@ export const inheritRouter = router({
         }
         const meta = asRecord(general.meta);
         if (meta.inheritRandomUnique !== undefined && meta.inheritRandomUnique !== null) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: '이미 구입 명령을 내렸습니다. 다음 턴까지 기다려주세요.' });
+            throw new TRPCError({
+                code: 'BAD_REQUEST',
+                message: '이미 구입 명령을 내렸습니다. 다음 턴까지 기다려주세요.',
+            });
         }
 
         await patchGeneral(ctx, general.id, {
@@ -803,7 +864,9 @@ export const inheritRouter = router({
                 throw new TRPCError({ code: 'BAD_REQUEST', message: '자신의 정보는 확인할 수 없습니다.' });
             }
 
-            const ownerName = typeof asRecord(target.meta).ownerName === 'string' ? (asRecord(target.meta).ownerName as string) : target.userId;
+            const rawOwnerName = asRecord(target.meta).ownerName;
+            const ownerName =
+                typeof rawOwnerName === 'string' && rawOwnerName.trim().length > 0 ? rawOwnerName : '알수없음';
 
             await setInheritancePoint(ctx.db, userId, 'previous', currentPoint - inheritConst.inheritCheckOwnerPoint);
             await appendInheritanceLog(

@@ -1,19 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
-import { useMediaQuery } from '@vueuse/core';
-import PanelCard from '../components/ui/PanelCard.vue';
-import SkeletonLines from '../components/ui/SkeletonLines.vue';
-import GeneralBasicCard from '../components/main/GeneralBasicCard.vue';
-import CityBasicCard from '../components/main/CityBasicCard.vue';
-import NationBasicCard from '../components/main/NationBasicCard.vue';
 import { trpc } from '../utils/trpc';
 import { formatLog } from '../utils/formatLog';
 
-const SCREEN_MODE_KEY = 'sammo-screen-mode';
-
+const SCREEN_MODE_KEY = 'sam.screenMode';
+const CUSTOM_CSS_KEY = 'sam_customCSS';
+type ScreenMode = 'auto' | '500px' | '1000px';
+type LogType = 'generalHistory' | 'battleDetail' | 'battleResult' | 'generalAction';
+type ItemSlotKey = 'horse' | 'weapon' | 'book' | 'item';
 type MyGeneralResponse = Awaited<ReturnType<typeof trpc.general.me.query>>;
 
-type WorldStateSnapshot = {
+type WorldSnapshot = {
     currentYear: number;
     currentMonth: number;
     tickSeconds: number;
@@ -21,48 +18,54 @@ type WorldStateSnapshot = {
     meta: Record<string, unknown>;
 } | null;
 
-type LogType = 'generalHistory' | 'battleDetail' | 'battleResult' | 'generalAction';
-
-type LogLine = {
-    id: number;
-    html: string;
+type SettingForm = {
+    tnmt: number;
+    defence_train: number;
+    use_treatment: number;
+    use_auto_nation_turn: number;
 };
 
-type ItemSlotKey = 'horse' | 'weapon' | 'book' | 'item';
-
-type ItemSlot = {
-    key: ItemSlotKey;
-    label: string;
-    code: string | null;
-};
-
-const logTypes: LogType[] = ['generalHistory', 'battleDetail', 'battleResult', 'generalAction'];
-const logLabels: Record<LogType, string> = {
-    generalHistory: '장수 열전',
-    battleDetail: '전투 기록',
-    battleResult: '전투 결과',
-    generalAction: '개인 기록',
-};
-
+const data = ref<MyGeneralResponse | null>(null);
+const world = ref<WorldSnapshot>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
-const data = ref<MyGeneralResponse | null>(null);
-const worldState = ref<WorldStateSnapshot>(null);
+const screenMode = ref<ScreenMode>('auto');
+const customCss = ref('');
+const cssSaving = ref(false);
+let cssTimer: number | null = null;
 
-const logs = reactive<Record<LogType, LogLine[]>>({
+const form = reactive<SettingForm>({
+    tnmt: 1,
+    defence_train: 80,
+    use_treatment: 10,
+    use_auto_nation_turn: 1,
+});
+
+const logTypes: LogType[] = ['generalAction', 'battleDetail', 'generalHistory', 'battleResult'];
+const logLabels: Record<LogType, string> = {
+    generalAction: '개인 기록',
+    battleDetail: '전투 기록',
+    generalHistory: '장수 열전',
+    battleResult: '전투 결과',
+};
+const logColors: Record<LogType, string> = {
+    generalAction: 'skyblue',
+    battleDetail: 'orange',
+    generalHistory: 'skyblue',
+    battleResult: 'orange',
+};
+const logs = reactive<Record<LogType, Array<{ id: number; html: string }>>>({
     generalHistory: [],
     battleDetail: [],
     battleResult: [],
     generalAction: [],
 });
-
 const logLoading = reactive<Record<LogType, boolean>>({
     generalHistory: false,
     battleDetail: false,
     battleResult: false,
     generalAction: false,
 });
-
 const logHasMore = reactive<Record<LogType, boolean>>({
     generalHistory: true,
     battleDetail: true,
@@ -70,520 +73,593 @@ const logHasMore = reactive<Record<LogType, boolean>>({
     generalAction: true,
 });
 
-const activeLogTab = ref<LogType>('generalAction');
-const isMobile = useMediaQuery('(max-width: 1024px)');
-const screenMode = ref<'auto' | '500px' | '1000px'>('auto');
+const errorText = (value: unknown): string =>
+    value instanceof Error ? value.message : typeof value === 'string' ? value : 'unknown_error';
 
-const resolveErrorMessage = (value: unknown): string => {
-    if (value instanceof Error) {
-        return value.message;
-    }
-    if (typeof value === 'string') {
-        return value;
-    }
-    return 'unknown_error';
+const asRecord = (value: unknown): Record<string, unknown> =>
+    value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+
+const numberValue = (value: unknown, fallback: number): number => {
+    const parsed = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
 };
 
-const resolveNumber = (value: unknown, fallback: number): number => {
-    if (typeof value === 'number' && Number.isFinite(value)) {
-        return value;
-    }
-    if (typeof value === 'string') {
-        const parsed = Number(value);
-        if (Number.isFinite(parsed)) {
-            return parsed;
-        }
-    }
-    return fallback;
-};
+const statusLine = computed(() =>
+    world.value
+        ? `${world.value.currentYear}년 ${world.value.currentMonth}월 · ${Math.max(
+              1,
+              Math.round(world.value.tickSeconds / 60)
+          )}분 턴`
+        : '내 정보를 불러오는 중'
+);
 
-const statusLine = computed(() => {
-    if (!worldState.value) {
-        return '내 정보를 불러오는 중';
-    }
+const canSave = computed(() => (data.value?.settings.myset ?? 1) > 0);
+const penalties = computed(() => Object.entries(data.value?.penalties ?? {}));
+const items = computed<Array<{ key: ItemSlotKey; name: string; code: string | null }>>(() => [
+    { key: 'horse', name: '말', code: data.value?.general.items.horse ?? null },
+    { key: 'weapon', name: '무기', code: data.value?.general.items.weapon ?? null },
+    { key: 'book', name: '서적', code: data.value?.general.items.book ?? null },
+    { key: 'item', name: '도구', code: data.value?.general.items.item ?? null },
+]);
 
-    const turnTerm = resolveNumber((worldState.value.config as Record<string, unknown>)?.turnTermMinutes, 0);
-    const termLabel = turnTerm > 0 ? ` · 턴 ${turnTerm}분` : '';
-    return `${worldState.value.currentYear}년 ${worldState.value.currentMonth}월${termLabel}`;
-});
-
-const itemSlots = computed<ItemSlot[]>(() => {
-    const items = data.value?.general?.items;
-    return [
-        { key: 'horse', label: '말', code: items?.horse ?? null },
-        { key: 'weapon', label: '무기', code: items?.weapon ?? null },
-        { key: 'book', label: '서적', code: items?.book ?? null },
-        { key: 'item', label: '아이템', code: items?.item ?? null },
-    ];
-});
-
+const autorunUser = computed(() => asRecord(world.value?.meta.autorun_user));
+const showAutoNationTurn = computed(() => Boolean(asRecord(autorunUser.value.options).chief));
+const showVacation = computed(() => !autorunUser.value.limit_minutes);
 const actionAvailability = computed(() => {
     const general = data.value?.general;
-    const meta = (worldState.value?.meta ?? {}) as Record<string, unknown>;
-    const config = (worldState.value?.config ?? {}) as Record<string, unknown>;
-    const autorunUser = (meta.autorun_user ?? {}) as Record<string, unknown>;
-
-    const turntime = meta.turntime ? new Date(String(meta.turntime)) : null;
-    const opentime = meta.opentime ? new Date(String(meta.opentime)) : null;
-    const preopen = Boolean(turntime && opentime && turntime.getTime() <= opentime.getTime());
-
-    const npcMode = resolveNumber(config.npcMode, 0);
-
+    const meta = world.value?.meta ?? {};
+    const config = world.value?.config ?? {};
+    const constConfig = asRecord(config.const);
+    const availableInstantAction = asRecord(constConfig.availableInstantAction ?? config.availableInstantAction);
+    const turnTime = meta.turntime ? new Date(String(meta.turntime)) : null;
+    const openTime = meta.opentime ? new Date(String(meta.opentime)) : null;
+    const preopen = Boolean(turnTime && openTime && turnTime.getTime() <= openTime.getTime());
+    const npcMode = numberValue(config.npcMode ?? config.npcmode, 0);
     return {
-        canDieOnPrestart: Boolean(preopen && general && general.npcState === 0 && general.nationId === 0),
-        canBuildNationCandidate: Boolean(preopen && general && general.nationId === 0),
-        canVacation: !(autorunUser.limit_minutes ?? false),
-        canInstantRetreat: Boolean(general && general.nationId > 0),
-        canSelectOtherGeneral: Boolean(npcMode === 2 && general && general.npcState === 0),
+        dieOnPrestart: Boolean(preopen && general?.npcState === 0 && general.nationId === 0),
+        buildNationCandidate: Boolean(preopen && general?.nationId === 0),
+        instantRetreat: Boolean(availableInstantAction.instantRetreat),
+        selectOtherGeneral: Boolean(npcMode === 2 && general?.npcState === 0),
     };
 });
 
-const loadLogs = async () => {
-    if (!data.value?.general?.id) {
-        return;
+const applyCustomCss = (text: string) => {
+    let style = document.getElementById('sammo-custom-css') as HTMLStyleElement | null;
+    if (!style) {
+        style = document.createElement('style');
+        style.id = 'sammo-custom-css';
+        document.head.appendChild(style);
     }
-
-    await Promise.all(
-        logTypes.map((type) => loadLog(type))
-    );
+    style.textContent = text;
 };
 
 const loadLog = async (type: LogType, beforeId?: number) => {
-    if (logLoading[type]) {
-        return;
-    }
-
+    if (logLoading[type]) return;
     logLoading[type] = true;
     try {
         const response = await trpc.general.getMyLog.query({ type, beforeId });
-        const formatted = response.logs.map((entry) => ({
-            id: entry.id,
-            html: formatLog(entry.text),
-        }));
-
-        if (beforeId) {
-            logs[type].push(...formatted);
-        } else {
-            logs[type] = formatted;
-        }
-
-        logHasMore[type] = formatted.length >= 24;
-    } catch (err) {
-        error.value = resolveErrorMessage(err);
+        const next = response.logs.map((entry) => ({ id: entry.id, html: formatLog(entry.text) }));
+        logs[type] = beforeId ? [...logs[type], ...next] : next;
+        logHasMore[type] = next.length >= 24;
+    } catch (cause) {
+        error.value = errorText(cause);
     } finally {
         logLoading[type] = false;
     }
 };
 
-const loadMyPage = async () => {
-    if (loading.value) {
-        return;
-    }
+const loadPage = async () => {
+    if (loading.value) return;
     loading.value = true;
     error.value = null;
-
     try {
-        const general = await trpc.general.me.query();
-        const world = await (trpc.world.getState.query as unknown as () => Promise<WorldStateSnapshot>)();
+        const [general, state] = await Promise.all([
+            trpc.general.me.query(),
+            trpc.world.getState.query() as Promise<WorldSnapshot>,
+        ]);
         data.value = general;
-        worldState.value = world ?? null;
-        await loadLogs();
-    } catch (err) {
-        error.value = resolveErrorMessage(err);
+        world.value = state;
+        if (general) {
+            Object.assign(form, general.settings);
+        }
+        await Promise.all(logTypes.map((type) => loadLog(type)));
+    } catch (cause) {
+        error.value = errorText(cause);
     } finally {
         loading.value = false;
     }
 };
 
-const confirmAction = async (message: string, action: () => Promise<void>) => {
-    if (!confirm(message)) {
-        return;
-    }
+const saveSettings = async () => {
+    if (!canSave.value) return;
     try {
-        await action();
-        await loadMyPage();
-    } catch (err) {
-        alert(`실패했습니다: ${resolveErrorMessage(err)}`);
+        await trpc.general.setMySetting.mutate({ ...form });
+        await loadPage();
+    } catch (cause) {
+        alert(`실패했습니다: ${errorText(cause)}`);
     }
 };
 
-const handleDieOnPrestart = () =>
-    confirmAction('정말로 삭제하시겠습니까?', async () => {
-        await trpc.general.dieOnPrestart.mutate();
-        window.location.reload();
-    });
-
-const handleBuildNationCandidate = () =>
-    confirmAction('거병 이후 장수를 삭제할 수 없습니다. 거병하시겠습니까?', async () => {
-        await trpc.general.buildNationCandidate.mutate();
-    });
-
-const handleInstantRetreat = () =>
-    confirmAction('아군 접경으로 이동할까요?', async () => {
-        await trpc.general.instantRetreat.mutate();
-    });
-
-const handleVacation = () =>
-    confirmAction('휴가 기능을 신청할까요?', async () => {
-        await trpc.general.vacation.mutate();
-    });
-
-const handleDropItem = (slot: ItemSlot) =>
-    confirmAction(`${slot.label}(${slot.code ?? '-'})을(를) 파기하시겠습니까?`, async () => {
-        await trpc.general.dropItem.mutate({ itemType: slot.key });
-    });
-
-const refreshScreenMode = () => {
-    if (typeof window === 'undefined') {
-        return;
-    }
-    const mode = window.localStorage.getItem(SCREEN_MODE_KEY);
-    if (mode === '500px' || mode === '1000px') {
-        screenMode.value = mode;
-    } else {
-        screenMode.value = 'auto';
+const confirmMutation = async (message: string, mutation: () => Promise<unknown>) => {
+    if (!confirm(message)) return;
+    try {
+        await mutation();
+        await loadPage();
+    } catch (cause) {
+        alert(`실패했습니다: ${errorText(cause)}`);
     }
 };
 
-watch(
-    () => isMobile.value,
-    (value) => {
-        if (value && !logTypes.includes(activeLogTab.value)) {
-            activeLogTab.value = 'generalAction';
-        }
-    }
-);
+const dropItem = (item: { key: ItemSlotKey; name: string; code: string | null }) =>
+    confirmMutation(`${item.code ?? item.name}을(를) 버리시겠습니까?`, () =>
+        trpc.general.dropItem.mutate({ itemType: item.key })
+    );
+
+watch(screenMode, (mode) => {
+    localStorage.setItem(SCREEN_MODE_KEY, mode);
+    document.dispatchEvent(new CustomEvent('tryChangeScreenMode'));
+});
+
+watch(customCss, (text) => {
+    if (cssTimer !== null) window.clearTimeout(cssTimer);
+    cssSaving.value = true;
+    cssTimer = window.setTimeout(() => {
+        localStorage.setItem(CUSTOM_CSS_KEY, text);
+        applyCustomCss(text);
+        cssSaving.value = false;
+    }, 500);
+});
 
 onMounted(() => {
-    refreshScreenMode();
-    void loadMyPage();
+    const storedMode = localStorage.getItem(SCREEN_MODE_KEY);
+    screenMode.value = storedMode === '500px' || storedMode === '1000px' ? storedMode : 'auto';
+    customCss.value = localStorage.getItem(CUSTOM_CSS_KEY) ?? '';
+    applyCustomCss(customCss.value);
+    void loadPage();
 });
 </script>
 
 <template>
-    <main class="my-page" :class="`screen-${screenMode}`">
-        <header class="page-header">
-            <div>
-                <h1 class="page-title">내 정보</h1>
-                <p class="page-subtitle">{{ statusLine }}</p>
-            </div>
-            <div class="header-actions">
-                <RouterLink class="ghost" to="/">메인</RouterLink>
-                <RouterLink class="ghost" to="/my-settings">게임 설정</RouterLink>
-                <button class="ghost" @click="loadMyPage">새로고침</button>
-            </div>
-        </header>
+    <main id="container" class="legacy-page bg0" :class="`screen-${screenMode}`">
+        <div class="title-row">
+            <span>내 정 보</span>
+            <RouterLink class="legacy-button" to="/">돌아가기</RouterLink>
+            <button class="legacy-button" type="button" @click="loadPage">새로고침</button>
+        </div>
 
-        <div v-if="error" class="error">{{ error }}</div>
+        <div v-if="error" class="error-row">{{ error }}</div>
+        <div class="status-row">{{ statusLine }}</div>
 
-        <section class="layout-grid">
-            <div class="stack">
-                <PanelCard title="장수 상태">
-                    <GeneralBasicCard :general="data?.general ?? null" :loading="loading" />
-                </PanelCard>
-                <PanelCard title="도시 상태">
-                    <CityBasicCard :city="data?.city ?? null" :loading="loading" />
-                </PanelCard>
-                <PanelCard title="세력 상태">
-                    <NationBasicCard :nation="data?.nation ?? null" :loading="loading" />
-                </PanelCard>
-            </div>
-
-            <div class="stack">
-                <PanelCard title="장수 상태 변경" subtitle="중요 액션은 확인 후 실행됩니다.">
-                    <div class="action-grid">
-                        <button
-                            v-if="actionAvailability.canVacation"
-                            class="action-btn"
-                            type="button"
-                            @click="handleVacation"
-                        >
-                            휴가 신청
-                        </button>
-                        <button
-                            v-if="actionAvailability.canDieOnPrestart"
-                            class="action-btn"
-                            type="button"
-                            @click="handleDieOnPrestart"
-                        >
-                            장수 삭제
-                        </button>
-                        <button
-                            v-if="actionAvailability.canBuildNationCandidate"
-                            class="action-btn"
-                            type="button"
-                            @click="handleBuildNationCandidate"
-                        >
-                            사전 거병
-                        </button>
-                        <button
-                            v-if="actionAvailability.canInstantRetreat"
-                            class="action-btn"
-                            type="button"
-                            @click="handleInstantRetreat"
-                        >
-                            접경 귀환
-                        </button>
-                        <RouterLink
-                            v-if="actionAvailability.canSelectOtherGeneral"
-                            class="action-btn link"
-                            to="/join"
-                        >
-                            다른 장수 선택
-                        </RouterLink>
+        <section class="top-grid">
+            <div class="general-column">
+                <div class="section-title sky">장수 정보</div>
+                <div v-if="loading || !data" class="loading">불러오는 중...</div>
+                <div v-else class="general-table">
+                    <div class="portrait-cell">
+                        <img
+                            :src="
+                                data.general.picture ? `/image/game/${data.general.picture}` : '/image/game/default.jpg'
+                            "
+                            alt=""
+                        />
+                        <strong>{{ data.general.name }}</strong>
                     </div>
-                </PanelCard>
-
-                <PanelCard title="아이템 파기" subtitle="소지 중인 장비를 선택합니다.">
-                    <div class="item-grid">
-                        <button
-                            v-for="slot in itemSlots"
-                            :key="slot.key"
-                            class="item-btn"
-                            type="button"
-                            :disabled="!slot.code"
-                            @click="handleDropItem(slot)"
-                        >
-                            {{ slot.label }}: {{ slot.code ?? '-' }}
-                        </button>
-                    </div>
-                </PanelCard>
-
-                <PanelCard v-if="isMobile" title="장수 기록">
-                    <div class="log-tabs">
-                        <button
-                            v-for="type in logTypes"
-                            :key="type"
-                            :class="{ active: activeLogTab === type }"
-                            @click="activeLogTab = type"
-                        >
-                            {{ logLabels[type] }}
-                        </button>
-                    </div>
-                    <div class="log-block">
-                        <div class="log-title">{{ logLabels[activeLogTab] }}</div>
-                        <SkeletonLines v-if="loading || logLoading[activeLogTab]" :lines="4" />
-                        <!-- eslint-disable vue/no-v-html -->
-                        <template v-else>
-                            <div v-if="logs[activeLogTab].length === 0" class="empty">기록이 없습니다.</div>
-                            <div
-                                v-for="entry in logs[activeLogTab]"
-                                :key="entry.id"
-                                class="log-line"
-                                v-html="entry.html"
-                            />
-                            <button
-                                v-if="logHasMore[activeLogTab]"
-                                class="ghost log-more"
-                                @click="loadLog(activeLogTab, logs[activeLogTab].at(-1)?.id)"
-                            >
-                                이전 로그 불러오기
-                            </button>
-                        </template>
-                        <!-- eslint-enable vue/no-v-html -->
-                    </div>
-                </PanelCard>
-
-                <PanelCard v-else title="장수 기록" subtitle="개인 기록 및 전투 로그">
-                    <div class="log-grid">
-                        <div v-for="type in logTypes" :key="type" class="log-block">
-                            <div class="log-title">{{ logLabels[type] }}</div>
-                            <SkeletonLines v-if="loading || logLoading[type]" :lines="3" />
-                            <!-- eslint-disable vue/no-v-html -->
-                            <template v-else>
-                                <div v-if="logs[type].length === 0" class="empty">기록이 없습니다.</div>
-                                <div v-for="entry in logs[type]" :key="entry.id" class="log-line" v-html="entry.html" />
-                                <button
-                                    v-if="logHasMore[type]"
-                                    class="ghost log-more"
-                                    @click="loadLog(type, logs[type].at(-1)?.id)"
-                                >
-                                    이전 로그 불러오기
-                                </button>
-                            </template>
-                            <!-- eslint-enable vue/no-v-html -->
+                    <dl>
+                        <div>
+                            <dt>통솔</dt>
+                            <dd>{{ data.general.stats.leadership }}</dd>
                         </div>
-                    </div>
-                </PanelCard>
+                        <div>
+                            <dt>무력</dt>
+                            <dd>{{ data.general.stats.strength }}</dd>
+                        </div>
+                        <div>
+                            <dt>지력</dt>
+                            <dd>{{ data.general.stats.intelligence }}</dd>
+                        </div>
+                        <div>
+                            <dt>소속</dt>
+                            <dd>{{ data.nation?.name ?? '재야' }}</dd>
+                        </div>
+                        <div>
+                            <dt>도시</dt>
+                            <dd>{{ data.city?.name ?? '-' }}</dd>
+                        </div>
+                        <div>
+                            <dt>금/쌀</dt>
+                            <dd>{{ data.general.gold }} / {{ data.general.rice }}</dd>
+                        </div>
+                        <div>
+                            <dt>병력</dt>
+                            <dd>{{ data.general.crew }}</dd>
+                        </div>
+                        <div>
+                            <dt>훈련/사기</dt>
+                            <dd>{{ data.general.train }} / {{ data.general.atmos }}</dd>
+                        </div>
+                        <div>
+                            <dt>경험/공헌</dt>
+                            <dd>{{ data.general.experience }} / {{ data.general.dedication }}</dd>
+                        </div>
+                    </dl>
+                </div>
             </div>
+
+            <div class="settings-column">
+                <div class="setting-line">
+                    토너먼트 【
+                    <label><input v-model.number="form.tnmt" type="radio" :value="0" />수동참여</label>
+                    <label><input v-model.number="form.tnmt" type="radio" :value="1" />자동참여</label>
+                    】
+                </div>
+                <div class="hint">∞ 개막직전 남는자리가 있을경우 랜덤하게 참여합니다.</div>
+
+                <label class="setting-line">
+                    환약 사용 【
+                    <select v-model.number="form.use_treatment">
+                        <option :value="10">경상</option>
+                        <option :value="21">중상</option>
+                        <option :value="41">심각</option>
+                        <option :value="61">위독</option>
+                        <option :value="100">사용안함</option>
+                    </select>
+                    】
+                </label>
+                <div class="hint">∞ 부상을 입었을 때 환약을 사용하는 기준입니다.</div>
+
+                <label v-if="showAutoNationTurn" class="setting-line">
+                    자동 사령턴 허용 【
+                    <select v-model.number="form.use_auto_nation_turn">
+                        <option :value="1">허용</option>
+                        <option :value="0">허용 안함</option>
+                    </select>
+                    】
+                </label>
+
+                <label class="setting-line">
+                    수비 【
+                    <select v-model.number="form.defence_train">
+                        <option :value="90">수비 함(훈사90)</option>
+                        <option :value="80">수비 함(훈사80)</option>
+                        <option :value="60">수비 함(훈사60)</option>
+                        <option :value="40">수비 함(훈사40)</option>
+                        <option :value="999">수비 안함 [훈련 -3, 사기 -6]</option>
+                    </select>
+                    】
+                </label>
+                <button
+                    id="set_my_setting"
+                    class="action-button"
+                    type="button"
+                    :hidden="!canSave"
+                    @click="saveSettings"
+                >
+                    설정저장
+                </button>
+                <div class="hint">∞ 설정저장은 이달중 {{ data?.settings.myset ?? 0 }}회 남았습니다.</div>
+
+                <div v-if="penalties.length" class="penalties">
+                    징계 목록(저장 시 갱신)
+                    <div v-for="[key, value] in penalties" :key="key">{{ key }} : {{ value }}</div>
+                </div>
+
+                <div v-if="showVacation" class="action-line">
+                    휴 가 신 청<br />
+                    <button
+                        class="action-button"
+                        type="button"
+                        @click="confirmMutation('휴가 기능을 신청할까요?', () => trpc.general.vacation.mutate())"
+                    >
+                        휴가 신청
+                    </button>
+                </div>
+                <div v-if="actionAvailability.dieOnPrestart" class="action-line">
+                    가오픈 기간 내 장수 삭제<br />
+                    <button
+                        class="action-button"
+                        @click="confirmMutation('정말로 삭제하시겠습니까?', () => trpc.general.dieOnPrestart.mutate())"
+                    >
+                        장수 삭제
+                    </button>
+                </div>
+                <div v-if="actionAvailability.buildNationCandidate" class="action-line">
+                    서버 개시 이전 거병(2턴부터 건국 가능)<br />
+                    <button
+                        class="action-button"
+                        @click="
+                            confirmMutation('거병 이후 장수를 삭제할 수 없게됩니다. 거병하시겠습니까?', () =>
+                                trpc.general.buildNationCandidate.mutate()
+                            )
+                        "
+                    >
+                        사전 거병
+                    </button>
+                </div>
+                <div v-if="actionAvailability.instantRetreat" class="action-line">
+                    거리 3칸 이내 아국 도시로 즉시 이동<br />
+                    <button
+                        class="action-button"
+                        @click="
+                            confirmMutation('아군 접경으로 이동할까요?', () => trpc.general.instantRetreat.mutate())
+                        "
+                    >
+                        접경 귀환
+                    </button>
+                </div>
+
+                <div class="screen-mode-row">
+                    <span>500px/1000px 모드<br />(모바일 전용, 즉시 설정)</span>
+                    <div class="button-group">
+                        <label><input v-model="screenMode" type="radio" value="auto" />자동</label>
+                        <label><input v-model="screenMode" type="radio" value="500px" />500px</label>
+                        <label><input v-model="screenMode" type="radio" value="1000px" />1000px</label>
+                    </div>
+                </div>
+
+                <div class="item-title">아이템 파기</div>
+                <div class="item-group">
+                    <button
+                        v-for="item in items"
+                        :key="item.key"
+                        type="button"
+                        :disabled="!item.code"
+                        @click="dropItem(item)"
+                    >
+                        {{ item.code ?? '-' }}
+                    </button>
+                </div>
+
+                <label class="custom-css">
+                    개인용 CSS <span>{{ cssSaving ? '(저장 중)' : '' }}</span>
+                    <textarea id="custom_css" v-model="customCss" />
+                </label>
+            </div>
+        </section>
+
+        <section class="log-grid">
+            <article v-for="type in logTypes" :key="type" class="log-panel">
+                <h2 :style="{ color: logColors[type] }">{{ logLabels[type] }}</h2>
+                <div v-if="logLoading[type]" class="loading">불러오는 중...</div>
+                <div v-else>
+                    <div v-for="entry in logs[type]" :key="entry.id" class="log-line" v-html="entry.html" />
+                    <div v-if="logs[type].length === 0" class="empty">기록이 없습니다.</div>
+                    <button
+                        v-if="logHasMore[type]"
+                        class="load-old"
+                        type="button"
+                        @click="loadLog(type, logs[type].at(-1)?.id)"
+                    >
+                        이전 로그 불러오기
+                    </button>
+                </div>
+            </article>
         </section>
     </main>
 </template>
 
 <style scoped>
-.my-page {
+.legacy-page {
+    width: 100%;
+    max-width: 1000px;
+    min-width: 500px;
     min-height: 100vh;
-    padding: 24px;
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-    transition: width 0.2s ease;
     margin: 0 auto;
+    padding: 0;
+    color: #fff;
+    background-color: #111;
+    background-image: url('/image/game/back_walnut.jpg');
+    font-family: Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+    font-size: 14px;
+    line-height: 1.3;
 }
-
-.my-page.screen-500px {
+.legacy-page.screen-500px {
     max-width: 500px;
 }
-
-.my-page.screen-1000px {
+.legacy-page.screen-1000px {
     max-width: 1000px;
 }
-
-.page-header {
+.title-row {
+    height: 54px;
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
+    align-content: flex-start;
+    align-items: flex-start;
+    justify-content: flex-start;
     flex-wrap: wrap;
+    gap: 0 4px;
+    border: 1px solid #666;
+    background: transparent;
+    font-size: 14px;
 }
-
-.page-title {
-    font-size: 1.6rem;
+.title-row > span {
+    flex-basis: 100%;
+    height: 18px;
+    letter-spacing: 0;
+}
+.legacy-button,
+button,
+select,
+textarea {
+    border: 1px solid #777;
+    border-radius: 0;
+    color: #fff;
+    background: #6b6b6b;
+    font: inherit;
+}
+.legacy-button {
+    min-height: 34px;
+    padding: 5px 10px;
+    border-color: #2d5d7f;
+    border-radius: 4px;
+    background: #315f86;
+    color: #fff;
     font-weight: 700;
+    text-decoration: none;
+    letter-spacing: 0;
 }
-
-.page-subtitle {
-    color: rgba(232, 221, 196, 0.7);
-    margin-top: 6px;
-}
-
-.header-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-}
-
-.layout-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
-    gap: 18px;
-}
-
-.stack {
-    display: flex;
-    flex-direction: column;
-    gap: 18px;
-}
-
-.action-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 10px;
-}
-
-.action-btn {
-    border: 1px solid rgba(201, 164, 90, 0.5);
-    background: rgba(12, 12, 12, 0.6);
-    color: inherit;
-    padding: 8px 12px;
-    font-size: 0.85rem;
+button {
     cursor: pointer;
+}
+button:disabled {
+    cursor: default;
+    opacity: 0.45;
+}
+.status-row,
+.error-row {
+    padding: 4px 8px;
     text-align: center;
 }
-
-.action-btn.link {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+.error-row {
+    color: #ff7777;
+    border: 1px solid #a33;
 }
-
-.item-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 8px;
-}
-
-.item-btn {
-    border: 1px solid rgba(201, 164, 90, 0.4);
-    background: rgba(12, 12, 12, 0.6);
-    color: inherit;
-    padding: 8px 10px;
-    font-size: 0.82rem;
-    cursor: pointer;
-    text-align: left;
-}
-
-.item-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
+.top-grid,
 .log-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
 }
-
-.log-block {
-    border: 1px solid rgba(201, 164, 90, 0.3);
-    padding: 8px;
-    background: rgba(12, 12, 12, 0.6);
-    min-height: 160px;
+.general-column,
+.settings-column,
+.log-panel {
+    border: 1px solid #666;
+    background-image: url('/image/game/back_walnut.jpg');
 }
-
-.log-title {
-    font-weight: 600;
-    margin-bottom: 6px;
-    font-size: 0.9rem;
+.section-title,
+.log-panel h2 {
+    min-height: 34px;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-bottom: 1px solid #666;
+    background-color: #14241b;
+    background-image: url('/image/game/back_green.jpg');
+    font-size: 1.25em;
+    font-weight: 500;
 }
-
-.log-line {
-    padding: 4px 0;
-    border-bottom: 1px dashed rgba(201, 164, 90, 0.2);
+.sky {
+    color: skyblue;
 }
-
-.log-line:last-child {
-    border-bottom: none;
+.general-table {
+    display: grid;
+    grid-template-columns: 150px 1fr;
+    padding: 0;
+    background-color: #172a52;
+    background-image: url('/image/game/back_blue.jpg');
 }
-
-.log-more {
+.portrait-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 10px;
+    border-right: 1px solid #777;
+}
+.portrait-cell img {
+    width: 64px;
+    height: 64px;
+    object-fit: cover;
+}
+dl {
+    margin: 0;
+}
+dl > div {
+    display: grid;
+    grid-template-columns: 80px 1fr;
+    border-bottom: 1px solid #777;
+}
+dt,
+dd {
+    margin: 0;
+    padding: 2px 5px;
+    border-right: 1px solid #777;
+}
+dt {
+    color: #aaa;
+}
+.settings-column {
+    padding: 10px 18px;
+}
+.setting-line {
+    display: block;
+    margin-top: 5px;
+}
+.hint {
+    margin: 0 0 13px;
+    color: orange;
+}
+.action-button {
+    width: 160px;
+    height: 30px;
+    margin: 4px 0;
+    background: #225500;
+}
+.action-line {
+    margin: 12px 0;
+}
+.penalties {
+    margin: 12px 0;
+    color: #f66;
+}
+.screen-mode-row {
+    display: grid;
+    grid-template-columns: 160px 1fr;
+    align-items: center;
+    margin: 14px 0;
+}
+.button-group {
+    display: flex;
+}
+.button-group label {
+    padding: 5px 8px;
+    border: 1px solid #666;
+    background: #26384d;
+}
+.button-group input {
+    margin-right: 4px;
+}
+.item-title {
+    margin-top: 12px;
+}
+.item-group {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    margin: 5px 0 14px;
+}
+.item-group button {
+    min-height: 30px;
+}
+.custom-css {
+    display: block;
+}
+.custom-css textarea {
+    display: block;
+    width: 420px;
+    max-width: 100%;
+    height: 150px;
+    color: #fff;
+    background: #000;
+}
+.log-panel {
+    min-height: 180px;
+}
+.log-panel h2 {
+    color: orange;
+}
+.log-line,
+.empty,
+.loading {
+    padding: 2px 8px;
+}
+.load-old {
+    width: 100%;
+    min-height: 32px;
     margin-top: 8px;
 }
-
-.log-tabs {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-bottom: 12px;
-}
-
-.log-tabs button {
-    border: 1px solid rgba(201, 164, 90, 0.4);
-    background: transparent;
-    color: inherit;
-    padding: 6px 10px;
-    font-size: 0.8rem;
-    cursor: pointer;
-}
-
-.log-tabs button.active {
-    background: rgba(201, 164, 90, 0.2);
-}
-
-.ghost {
-    border: 1px solid rgba(201, 164, 90, 0.5);
-    background: transparent;
-    color: inherit;
-    padding: 6px 10px;
-    font-size: 0.8rem;
-    cursor: pointer;
-}
-
-.empty {
-    color: rgba(232, 221, 196, 0.6);
-    font-size: 0.85rem;
-}
-
-.error {
-    color: #f08a5d;
-    font-size: 0.9rem;
-}
-
-@media (max-width: 1024px) {
-    .layout-grid {
-        grid-template-columns: 1fr;
+@media (max-width: 991px) {
+    .legacy-page {
+        width: 500px;
     }
-
+    .top-grid,
     .log-grid {
         grid-template-columns: 1fr;
     }

@@ -2,7 +2,21 @@ import { TRPCError } from '@trpc/server';
 
 import { authedProcedure } from '../../../trpc.js';
 import { getMyGeneral } from '../../shared/general.js';
-import { assertNationAccess, loadTraitNames, mapGeneralList, resolveChiefStatMin } from '../shared.js';
+import {
+    assertNationAccess,
+    loadTraitNames,
+    mapGeneralList,
+    resolveChiefStatMin,
+    resolveNationPermission,
+} from '../shared.js';
+
+const experienceLevel = (experience: number): number =>
+    Math.max(
+        0,
+        Math.min(100, experience < 1000 ? Math.floor(experience / 100) : Math.floor(Math.sqrt(experience / 10)))
+    );
+const dedicationLevel = (dedication: number): number =>
+    Math.max(0, Math.min(10, Math.ceil(Math.sqrt(dedication) / 10)));
 
 export const getGeneralList = authedProcedure.query(async ({ ctx }) => {
     const general = await getMyGeneral(ctx);
@@ -62,7 +76,38 @@ export const getGeneralList = authedProcedure.query(async ({ ctx }) => {
     const cityNameMap = new Map(cityRows.map((city) => [city.id, city.name]));
     const troopNameMap = new Map(troopRows.map((troop) => [troop.troopLeaderId, troop.name]));
     const list = await mapGeneralList(generalRows, cityNameMap, troopNameMap);
+    const accessRows = generalRows.length
+        ? await ctx.db.generalAccessLog.findMany({
+              where: { generalId: { in: generalRows.map((entry) => entry.id) } },
+              select: { generalId: true, refreshScoreTotal: true },
+          })
+        : [];
+    const accessByGeneral = new Map(accessRows.map((entry) => [entry.generalId, entry.refreshScoreTotal]));
     const nationTrait = (await loadTraitNames([nation.typeCode], 'nation')).get(nation.typeCode);
+    const permission = resolveNationPermission(general, nation.meta, true);
+    const visibleList = list.map((entry) => {
+        const { permission: _targetPermission, ...safeEntry } = entry;
+        if (permission >= 1) {
+            return {
+                ...safeEntry,
+                refreshScoreTotal: accessByGeneral.get(entry.id) ?? 0,
+                experienceLevel: experienceLevel(entry.experience),
+                dedicationLevel: dedicationLevel(entry.dedication),
+            };
+        }
+        const { crew: _crew, experience: _experience, dedication: _dedication, ...visible } = safeEntry;
+        return {
+            ...visible,
+            refreshScoreTotal: accessByGeneral.get(entry.id) ?? 0,
+            officerLevel: entry.officerLevel >= 5 ? entry.officerLevel : Math.min(1, entry.officerLevel),
+            cityName: null,
+            troopName: null,
+            officerCity: 0,
+            officerCityName: null,
+            experienceLevel: experienceLevel(entry.experience),
+            dedicationLevel: dedicationLevel(entry.dedication),
+        };
+    });
 
     return {
         nation: {
@@ -79,6 +124,7 @@ export const getGeneralList = authedProcedure.query(async ({ ctx }) => {
             capitalCityId: nation.capitalCityId ?? 0,
         },
         chiefStatMin: resolveChiefStatMin(worldState),
-        generals: list,
+        viewer: { generalId: general.id, permission },
+        generals: visibleList,
     };
 });
