@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { canonicalFrontendFixture as fixture } from './fixtures/canonical';
 
 const artifactRoot = process.env.FRONTEND_PARITY_ARTIFACT_DIR;
+const gamePort = process.env.FRONTEND_PARITY_GAME_PORT ?? '15102';
 const response = (data: unknown) => ({ result: { data } });
 
 const operationNames = (route: Route): string[] => {
@@ -90,6 +91,7 @@ const messageBundle = (visible: boolean, canRespondDiplomacy = true) => ({
     sequence: visible ? diplomacyMessage.id : -1,
     nationId: 1,
     generalName: general.name,
+    permission: canRespondDiplomacy ? 4 : 2,
     canRespondDiplomacy,
     latestRead: { diplomacy: 0, private: 0 },
 });
@@ -131,6 +133,9 @@ const installFixture = async (
             if (operation === 'messages.getRecent') {
                 return response(messageBundle(visible, options.canRespondDiplomacy));
             }
+            if (operation === 'messages.getContacts') return response({ nation: [] });
+            if (operation === 'board.getAccess') return response({ canMeeting: true, canSecret: true });
+            if (operation === 'tournament.getState') return response({ stage: 0 });
             if (operation === 'messages.respond') {
                 mutations.push({ operation, body: requestBody });
                 if (options.acceptResponse) {
@@ -151,9 +156,9 @@ const installFixture = async (
 };
 
 const openDiplomacyTab = async (page: Page) => {
-    await page.goto('http://127.0.0.1:15102/che/');
+    await page.goto(`http://127.0.0.1:${gamePort}/che/`);
     await expect(page.getByRole('heading', { name: '전장 현황' })).toBeVisible();
-    await page.getByRole('button', { name: '외교', exact: true }).last().click();
+    await expect(page.locator('.DiplomacyTalk')).toBeVisible();
     await expect(page.getByText(diplomacyMessage.text)).toBeVisible();
 };
 
@@ -186,20 +191,20 @@ test.describe('instant diplomacy response UI', () => {
         });
 
         expect(geometry.buttons).toHaveLength(2);
-        expect(geometry.buttons[1]!.x - (geometry.buttons[0]!.x + geometry.buttons[0]!.width)).toBeCloseTo(4, 0);
+        expect(geometry.buttons[1]!.x - (geometry.buttons[0]!.x + geometry.buttons[0]!.width)).toBeCloseTo(0, 0);
         expect(geometry.buttons[0]).toMatchObject({
-            color: 'rgb(143, 209, 143)',
-            fontSize: '11.2px',
+            color: 'rgb(255, 255, 255)',
+            fontSize: '12.5px',
             borderWidth: '1px',
             cursor: 'pointer',
         });
         expect(geometry.buttons[1]).toMatchObject({
-            color: 'rgb(224, 154, 154)',
-            fontSize: '11.2px',
+            color: 'rgb(255, 255, 255)',
+            fontSize: '12.5px',
             borderWidth: '1px',
             cursor: 'pointer',
         });
-        expect(geometry.buttons.every((button) => button.height >= 22 && button.height <= 26)).toBe(true);
+        expect(geometry.buttons.every((button) => button.height >= 20 && button.height <= 22)).toBe(true);
 
         await decline.hover();
         expect(await decline.evaluate((element) => getComputedStyle(element).cursor)).toBe('pointer');
@@ -234,18 +239,17 @@ test.describe('instant diplomacy response UI', () => {
     test('keeps the message and exposes a rejected response on mobile Chromium', async ({ page }) => {
         const mutations = await installFixture(page, { acceptResponse: false });
         await page.setViewportSize({ width: 390, height: 844 });
-        await page.goto('http://127.0.0.1:15102/che/');
+        await page.goto(`http://127.0.0.1:${gamePort}/che/`);
         await expect(page.getByRole('heading', { name: '전장 현황' })).toBeVisible();
         await page.getByRole('button', { name: '메시지', exact: true }).click();
-        await page.getByRole('button', { name: '외교', exact: true }).click();
 
         const responseRow = page.locator('.message-response');
         await expect(responseRow).toBeVisible();
         const itemWidth = await page
-            .locator('.message-item')
+            .locator('.DiplomacyTalk .msg-plate')
             .evaluate((element) => element.getBoundingClientRect().width);
-        expect(itemWidth).toBeGreaterThan(320);
-        expect(itemWidth).toBeLessThanOrEqual(342);
+        expect(itemWidth).toBeGreaterThanOrEqual(389);
+        expect(itemWidth).toBeLessThanOrEqual(390);
 
         page.once('dialog', async (dialog) => {
             expect(dialog.message()).toBe('거절하시겠습니까?');
@@ -272,10 +276,9 @@ test.describe('instant diplomacy response UI', () => {
             canRespondDiplomacy: false,
         });
         await page.setViewportSize({ width: 390, height: 844 });
-        await page.goto('http://127.0.0.1:15102/che/');
+        await page.goto(`http://127.0.0.1:${gamePort}/che/`);
         await expect(page.getByRole('heading', { name: '전장 현황' })).toBeVisible();
         await page.getByRole('button', { name: '메시지', exact: true }).click();
-        await page.getByRole('button', { name: '외교', exact: true }).click();
 
         const accept = page.locator('.message-response').getByRole('button', { name: '수락' });
         await expect(accept).toBeDisabled();
@@ -284,7 +287,7 @@ test.describe('instant diplomacy response UI', () => {
                 const style = getComputedStyle(element);
                 return { cursor: style.cursor, opacity: style.opacity };
             })
-        ).toEqual({ cursor: 'not-allowed', opacity: '0.5' });
+        ).toEqual({ cursor: 'not-allowed', opacity: '0.65' });
         await accept.click({ force: true });
         expect(mutations).toHaveLength(0);
     });

@@ -30,7 +30,7 @@ const auth: GameSessionTokenPayload = {
     sanctions: {},
 };
 
-const buildContext = (overrides: Record<string, unknown> = {}) => {
+const buildContext = (overrides: Record<string, unknown> = {}, contextOverrides: Record<string, unknown> = {}) => {
     const executeRaw = vi.fn(async () => 1);
     const updateMany = vi.fn(async () => ({ count: 1 }));
     const db = {
@@ -55,11 +55,15 @@ const buildContext = (overrides: Record<string, unknown> = {}) => {
         $executeRaw: executeRaw,
         ...overrides,
     };
+    const redis = {
+        set: vi.fn(async () => 'OK'),
+        publish: vi.fn(async () => 1),
+    };
     const context = {
         db,
         auth,
         profile: { id: 'che', scenario: 'default', name: 'che:default' },
-        redis: {},
+        redis,
         turnDaemon: {},
         battleSim: {},
         uploadDir: 'uploads',
@@ -68,8 +72,9 @@ const buildContext = (overrides: Record<string, unknown> = {}) => {
         accessTokenStore: {},
         flushStore: {},
         gameTokenSecret: 'test-secret',
+        ...contextOverrides,
     } as unknown as GameApiContext;
-    return { caller: appRouter.createCaller(context), db, executeRaw, updateMany };
+    return { caller: appRouter.createCaller(context), db, executeRaw, updateMany, redis };
 };
 
 describe('messages router missing-flow compatibility', () => {
@@ -97,6 +102,291 @@ describe('messages router missing-flow compatibility', () => {
         const result = await caller.messages.getRecent({ generalId: ruler.id });
 
         expect(result.canRespondDiplomacy).toBe(true);
+    });
+
+    it('lists an appointed ambassador as permission 4 but keeps responses limited to officers', async () => {
+        const ambassador = {
+            ...general,
+            officerLevel: 1,
+            meta: { permission: 'ambassador' },
+        } as GeneralRow;
+        const { caller } = buildContext({
+            general: {
+                findUnique: vi.fn(async () => ambassador),
+                findMany: vi.fn(async () => []),
+            },
+            nation: {
+                findMany: vi.fn(async () => []),
+                findUnique: vi.fn(async () => ({ meta: {} })),
+            },
+        });
+
+        const result = await caller.messages.getRecent({ generalId: ambassador.id });
+
+        expect(result.permission).toBe(4);
+        expect(result.canRespondDiplomacy).toBe(false);
+    });
+
+    it('redacts recent and old diplomacy content below secret permission 3', async () => {
+        const diplomacyRow = {
+            id: 19,
+            mailbox: 9001,
+            type: 'diplomacy',
+            src: 9002,
+            dest: 9001,
+            time: new Date(),
+            valid_until: new Date('9999-12-31T00:00:00Z'),
+            message: {
+                src: {
+                    generalId: 8,
+                    generalName: '외교관',
+                    nationId: 2,
+                    nationName: '촉',
+                    color: '#000000',
+                    icon: '',
+                },
+                dest: {
+                    generalId: 0,
+                    generalName: '',
+                    nationId: 1,
+                    nationName: '위',
+                    color: '#ffffff',
+                    icon: '',
+                },
+                text: '보이면 안 되는 외교 본문',
+                option: { action: 'noAggression' },
+            },
+        };
+        const queryRaw = vi.fn(async () => [diplomacyRow]);
+        const { caller } = buildContext({
+            $queryRaw: queryRaw,
+            nation: {
+                findMany: vi.fn(async () => []),
+                findUnique: vi.fn(async () => ({ meta: {} })),
+            },
+        });
+
+        const recent = await caller.messages.getRecent({ generalId: general.id });
+        const old = await caller.messages.getOld({
+            generalId: general.id,
+            type: 'diplomacy',
+            to: 20,
+        });
+
+        expect(recent.permission).toBe(2);
+        expect(recent.diplomacy[0]).toMatchObject({
+            text: '(외교 메시지입니다)',
+            option: { action: 'noAggression', invalid: true },
+        });
+        expect(old.diplomacy[0]).toMatchObject({
+            text: '(외교 메시지입니다)',
+            option: { action: 'noAggression', invalid: true },
+        });
+    });
+
+    it('forces a non-diplomat foreign nation target back to the owned nation mailbox', async () => {
+        const queryRaw = vi.fn(async () => [{ id: 51 }]);
+        const findNation = vi.fn(async ({ where }: { where: { id: number } }) => ({
+            id: where.id,
+            name: where.id === 1 ? '위' : '촉',
+            color: '#112233',
+            meta: {},
+        }));
+        const { caller } = buildContext({
+            $queryRaw: queryRaw,
+            nation: {
+                findMany: vi.fn(async () => []),
+                findUnique: findNation,
+            },
+        });
+
+        const result = await caller.messages.send({
+            generalId: general.id,
+            mailbox: 9002,
+            text: '국가 메시지',
+        });
+
+        expect(result.msgType).toBe('national');
+        expect(queryRaw.mock.calls[0]?.slice(1)).toEqual(expect.arrayContaining([9001, 'national']));
+    });
+
+    it('allows an ambassador to target a foreign nation mailbox as diplomacy', async () => {
+        const ambassador = {
+            ...general,
+            officerLevel: 1,
+            meta: { permission: 'ambassador' },
+        } as GeneralRow;
+        const queryRaw = vi.fn(async () => [{ id: 52 }]);
+        const { caller } = buildContext({
+            $queryRaw: queryRaw,
+            general: {
+                findUnique: vi.fn(async () => ambassador),
+                findMany: vi.fn(async () => []),
+            },
+            nation: {
+                findMany: vi.fn(async () => []),
+                findUnique: vi.fn(async ({ where }: { where: { id: number } }) => ({
+                    id: where.id,
+                    name: where.id === 1 ? '위' : '촉',
+                    color: '#112233',
+                    meta: {},
+                })),
+            },
+        });
+
+        const result = await caller.messages.send({
+            generalId: ambassador.id,
+            mailbox: 9002,
+            text: '외교 메시지',
+        });
+
+        expect(result.msgType).toBe('diplomacy');
+        expect(queryRaw.mock.calls[0]?.slice(1)).toEqual(expect.arrayContaining([9002, 'diplomacy']));
+    });
+
+    it('blocks private messages between foreign ambassadors', async () => {
+        const ambassador = {
+            ...general,
+            officerLevel: 1,
+            meta: { permission: 'ambassador' },
+        } as GeneralRow;
+        const foreignAmbassador = {
+            ...ambassador,
+            id: 8,
+            userId: 'user-8',
+            name: '상대 외교관',
+            nationId: 2,
+        } as GeneralRow;
+        const { caller } = buildContext({
+            general: {
+                findUnique: vi.fn(async ({ where }: { where: { id: number } }) =>
+                    where.id === ambassador.id ? ambassador : foreignAmbassador
+                ),
+                findMany: vi.fn(async () => []),
+            },
+            nation: {
+                findMany: vi.fn(async () => []),
+                findUnique: vi.fn(async ({ where }: { where: { id: number } }) => ({
+                    id: where.id,
+                    name: where.id === 1 ? '위' : '촉',
+                    color: '#112233',
+                    meta: {},
+                })),
+            },
+        });
+
+        await expect(
+            caller.messages.send({
+                generalId: ambassador.id,
+                mailbox: foreignAmbassador.id,
+                text: '개인 메시지',
+            })
+        ).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+            message: '외교권자끼리는 메시지를 보낼 수 없습니다.',
+        });
+    });
+
+    it.each([
+        ['public', { noSendPublicMsg: 1 }, 9999, '공개 메세지를 보낼 수 없습니다.'],
+        ['private', { noSendPrivateMsg: 1 }, 8, '개인 메세지를 보낼 수 없습니다.'],
+    ])('enforces the general %s-message penalty', async (_type, penalty, mailbox, message) => {
+        const penalized = { ...general, penalty } as GeneralRow;
+        const { caller } = buildContext({
+            general: {
+                findUnique: vi.fn(async () => penalized),
+                findMany: vi.fn(async () => []),
+            },
+            nation: {
+                findMany: vi.fn(async () => []),
+                findUnique: vi.fn(async () => ({ id: 1, name: '위', color: '#fff', meta: {} })),
+            },
+        });
+
+        await expect(
+            caller.messages.send({
+                generalId: penalized.id,
+                mailbox,
+                text: '차단 메시지',
+            })
+        ).rejects.toMatchObject({ code: 'FORBIDDEN', message });
+    });
+
+    it('enforces the legacy private-message interval through Redis without touching lifecycle', async () => {
+        const redis = {
+            set: vi.fn(async () => null),
+            publish: vi.fn(async () => 1),
+        };
+        const { caller } = buildContext(
+            {
+                nation: {
+                    findMany: vi.fn(async () => []),
+                    findUnique: vi.fn(async () => ({ id: 1, name: '위', color: '#fff', meta: {} })),
+                },
+            },
+            { redis }
+        );
+
+        await expect(
+            caller.messages.send({
+                generalId: general.id,
+                mailbox: 8,
+                text: '너무 빠른 메시지',
+            })
+        ).rejects.toMatchObject({
+            code: 'TOO_MANY_REQUESTS',
+            message: '개인메세지는 2초당 1건만 보낼 수 있습니다!',
+        });
+    });
+
+    it('blocks sends for a muted authenticated user independently of general permission', async () => {
+        const mutedAuth = {
+            ...auth,
+            sanctions: { mutedUntil: '2099-01-01T00:00:00.000Z' },
+        };
+        const { caller } = buildContext({}, { auth: mutedAuth });
+
+        await expect(
+            caller.messages.send({
+                generalId: general.id,
+                mailbox: 9999,
+                text: '사용자 mute',
+            })
+        ).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+            message: '메시지 전송이 제한된 계정입니다.',
+        });
+    });
+
+    it('rejects every remaining general-scoped message mutation for another user general', async () => {
+        const foreignGeneral = { ...general, userId: 'user-8' } as GeneralRow;
+        const { caller } = buildContext({
+            general: {
+                findUnique: vi.fn(async () => foreignGeneral),
+                findMany: vi.fn(async () => []),
+            },
+        });
+
+        await expect(caller.messages.getContacts({ generalId: foreignGeneral.id })).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+        });
+        await expect(
+            caller.messages.readLatest({
+                generalId: foreignGeneral.id,
+                type: 'private',
+                messageId: 1,
+            })
+        ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+        await expect(caller.messages.delete({ generalId: foreignGeneral.id, messageId: 1 })).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+        });
+        await expect(
+            caller.messages.respond({
+                generalId: foreignGeneral.id,
+                messageId: 1,
+                response: true,
+            })
+        ).rejects.toMatchObject({ code: 'FORBIDDEN' });
     });
 
     it('persists latest-read updates through the monotonic upsert', async () => {
@@ -150,6 +440,49 @@ describe('messages router missing-flow compatibility', () => {
         expect(result.deletedIds).toEqual([21, 22]);
         expect(updateMany).toHaveBeenCalledWith({
             where: { id: { in: [21, 22] } },
+            data: { validUntil: expect.any(Date) },
+        });
+    });
+
+    it('lets the sender delete a manual diplomacy copy without deleting the receiver copy', async () => {
+        const queryRaw = vi.fn(async () => [
+            {
+                id: 25,
+                mailbox: 9001,
+                type: 'diplomacy',
+                src: 9001,
+                dest: 9002,
+                time: new Date(),
+                valid_until: new Date('9999-12-31T00:00:00Z'),
+                message: {
+                    src: {
+                        generalId: general.id,
+                        generalName: general.name,
+                        nationId: 1,
+                        nationName: '위',
+                        color: '#fff',
+                        icon: '',
+                    },
+                    dest: {
+                        generalId: 0,
+                        generalName: '',
+                        nationId: 2,
+                        nationName: '촉',
+                        color: '#000',
+                        icon: '',
+                    },
+                    text: '일반 외교 메시지',
+                    option: { receiverMessageID: 26 },
+                },
+            },
+        ]);
+        const { caller, updateMany } = buildContext({ $queryRaw: queryRaw });
+
+        const result = await caller.messages.delete({ generalId: general.id, messageId: 25 });
+
+        expect(result.deletedIds).toEqual([25]);
+        expect(updateMany).toHaveBeenCalledWith({
+            where: { id: { in: [25] } },
             data: { validUntil: expect.any(Date) },
         });
     });

@@ -50,7 +50,7 @@ const {
     reservedNationTurns,
     messageDraftText,
     targetMailbox,
-    mailboxOptions,
+    mailboxGroups,
     statusLine,
     realtimeLabel,
 } = storeToRefs(dashboard);
@@ -216,22 +216,26 @@ watch(
             </div>
 
             <div v-if="mobileTab === 'messages'" class="mobile-panel">
-                <PanelCard title="메시지함">
-                    <MessagePanel
-                        :messages="messages"
-                        :loading="loading"
-                        :target-mailbox="targetMailbox"
-                        :draft-text="messageDraftText"
-                        :mailbox-options="mailboxOptions"
-                        :can-respond-diplomacy="messages?.canRespondDiplomacy ?? false"
-                        @update:target-mailbox="targetMailbox = $event"
-                        @update:draft-text="messageDraftText = $event"
-                        @send="dashboard.sendMessage"
-                        @load-older="dashboard.loadOlderMessages"
-                        @refresh="dashboard.refreshMessages"
-                        @respond="dashboard.respondToMessage"
-                    />
-                </PanelCard>
+                <MessagePanel
+                    class="mobile-message-panel"
+                    :messages="messages"
+                    :loading="loading"
+                    :target-mailbox="targetMailbox"
+                    :draft-text="messageDraftText"
+                    :mailbox-groups="mailboxGroups"
+                    :general-id="general?.id ?? 0"
+                    :general-name="general?.name ?? ''"
+                    :nation-id="general?.nationId ?? 0"
+                    :can-respond-diplomacy="messages?.canRespondDiplomacy ?? false"
+                    @update:target-mailbox="targetMailbox = $event"
+                    @update:draft-text="messageDraftText = $event"
+                    @send="dashboard.sendMessage"
+                    @load-older="dashboard.loadOlderMessages"
+                    @refresh="dashboard.refreshMessages"
+                    @respond="dashboard.respondToMessage"
+                    @read-latest="dashboard.readLatestMessage"
+                    @delete="dashboard.deleteMessage"
+                />
             </div>
         </section>
 
@@ -250,22 +254,6 @@ watch(
                         <div>NPC {{ lobbyInfo?.npcCnt ?? '-' }}</div>
                         <div>세력 {{ lobbyInfo?.nationCnt ?? '-' }}</div>
                     </div>
-                </PanelCard>
-                <PanelCard title="메시지함">
-                    <MessagePanel
-                        :messages="messages"
-                        :loading="loading"
-                        :target-mailbox="targetMailbox"
-                        :draft-text="messageDraftText"
-                        :mailbox-options="mailboxOptions"
-                        :can-respond-diplomacy="messages?.canRespondDiplomacy ?? false"
-                        @update:target-mailbox="targetMailbox = $event"
-                        @update:draft-text="messageDraftText = $event"
-                        @send="dashboard.sendMessage"
-                        @load-older="dashboard.loadOlderMessages"
-                        @refresh="dashboard.refreshMessages"
-                        @respond="dashboard.respondToMessage"
-                    />
                 </PanelCard>
             </div>
 
@@ -302,6 +290,26 @@ watch(
                     <div v-else class="placeholder">개인 기록 영역</div>
                 </PanelCard>
             </div>
+            <MessagePanel
+                class="desktop-message-panel"
+                :messages="messages"
+                :loading="loading"
+                :target-mailbox="targetMailbox"
+                :draft-text="messageDraftText"
+                :mailbox-groups="mailboxGroups"
+                :general-id="general?.id ?? 0"
+                :general-name="general?.name ?? ''"
+                :nation-id="general?.nationId ?? 0"
+                :can-respond-diplomacy="messages?.canRespondDiplomacy ?? false"
+                @update:target-mailbox="targetMailbox = $event"
+                @update:draft-text="messageDraftText = $event"
+                @send="dashboard.sendMessage"
+                @load-older="dashboard.loadOlderMessages"
+                @refresh="dashboard.refreshMessages"
+                @respond="dashboard.respondToMessage"
+                @read-latest="dashboard.readLatestMessage"
+                @delete="dashboard.deleteMessage"
+            />
         </section>
     </main>
 </template>
@@ -394,6 +402,15 @@ button {
     display: flex;
     flex-direction: column;
     gap: 16px;
+}
+
+.desktop-message-panel {
+    grid-column: 1 / -1;
+}
+
+.mobile-message-panel {
+    width: calc(100% + 48px);
+    margin-left: -24px;
 }
 
 .layout-mobile {

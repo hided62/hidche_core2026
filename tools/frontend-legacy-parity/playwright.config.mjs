@@ -12,6 +12,7 @@ export default defineConfig({
         'visual-parity.spec.ts',
         'public-gaps.spec.ts',
         'instant-diplomacy-message.spec.ts',
+        'ingame-message-parity.spec.ts',
         'tournament-betting.spec.ts',
     ],
     fullyParallel: false,
