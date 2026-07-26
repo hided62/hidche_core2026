@@ -751,3 +751,59 @@ integration('nation seizure zero target balance parity', () => {
         ).toEqual([]);
     }, 120_000);
 });
+
+const nationPersonnelTargetCases: Array<{
+    name: string;
+    action: 'che_포상' | 'che_몰수';
+    destGeneralID: number;
+}> = [
+    {
+        name: 'award rejects a missing target general',
+        action: 'che_포상',
+        destGeneralID: 9999,
+    },
+    {
+        name: 'award rejects a foreign target general',
+        action: 'che_포상',
+        destGeneralID: 2,
+    },
+    {
+        name: 'seizure rejects a missing target general',
+        action: 'che_몰수',
+        destGeneralID: 9999,
+    },
+    {
+        name: 'seizure rejects a foreign target general',
+        action: 'che_몰수',
+        destGeneralID: 2,
+    },
+];
+
+integration('nation award and seizure target constraints', () => {
+    it.each(nationPersonnelTargetCases)(
+        '$name matches legacy fallback, RNG, and semantic delta',
+        async ({ action, destGeneralID }) => {
+            const request = buildRequest(action, { isGold: true, amount: 100, destGeneralID });
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+
+            expect(reference.execution.outcome).toMatchObject({ completed: false });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: action,
+                actionKey: '휴식',
+                usedFallback: true,
+            });
+            expect(reference.rng).toEqual([]);
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+        },
+        120_000
+    );
+});
