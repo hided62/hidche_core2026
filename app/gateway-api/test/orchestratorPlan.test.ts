@@ -29,6 +29,7 @@ describe('planProfileReconcile', () => {
             planProfileReconcile('RUNNING', {
                 apiRunning: true,
                 daemonRunning: false,
+                battleSimRunning: true,
                 tournamentRunning: true,
             })
         ).toEqual({ shouldStart: true, shouldStop: false });
@@ -39,6 +40,7 @@ describe('planProfileReconcile', () => {
             planProfileReconcile('PREOPEN', {
                 apiRunning: false,
                 daemonRunning: false,
+                battleSimRunning: false,
                 tournamentRunning: false,
             })
         ).toEqual({ shouldStart: true, shouldStop: false });
@@ -49,6 +51,7 @@ describe('planProfileReconcile', () => {
             planProfileReconcile('RUNNING', {
                 apiRunning: true,
                 daemonRunning: true,
+                battleSimRunning: true,
                 tournamentRunning: true,
             })
         ).toEqual({ shouldStart: false, shouldStop: false });
@@ -59,6 +62,7 @@ describe('planProfileReconcile', () => {
             planProfileReconcile('STOPPED', {
                 apiRunning: false,
                 daemonRunning: true,
+                battleSimRunning: false,
                 tournamentRunning: false,
             })
         ).toEqual({ shouldStart: false, shouldStop: true });
@@ -69,6 +73,7 @@ describe('planProfileReconcile', () => {
             planProfileReconcile('RESERVED', {
                 apiRunning: false,
                 daemonRunning: false,
+                battleSimRunning: false,
                 tournamentRunning: false,
             })
         ).toEqual({ shouldStart: false, shouldStop: false });
@@ -95,6 +100,11 @@ describe('buildProcessDefinitions', () => {
         });
         expect(definitions.daemon.cwd).toBe(path.join(buildWorkspace, 'app', 'game-engine'));
         expect(definitions.daemon.script).toBe(path.join(buildWorkspace, 'app', 'game-engine', 'dist', 'index.js'));
+        expect(definitions.battleSim).toMatchObject({
+            cwd: path.join(buildWorkspace, 'app', 'game-api'),
+            script: path.join(buildWorkspace, 'app', 'game-api', 'dist', 'index.js'),
+            env: { GAME_API_ROLE: 'battle-sim-worker' },
+        });
         expect(definitions.tournament).toMatchObject({
             cwd: path.join(buildWorkspace, 'app', 'game-api'),
             script: path.join(buildWorkspace, 'app', 'game-api', 'dist', 'index.js'),
@@ -107,6 +117,7 @@ describe('buildProcessDefinitions', () => {
 
         expect(definitions.api.cwd).toBe(path.join(processConfig.workspaceRoot, 'app', 'game-api'));
         expect(definitions.daemon.cwd).toBe(path.join(processConfig.workspaceRoot, 'app', 'game-engine'));
+        expect(definitions.battleSim.cwd).toBe(path.join(processConfig.workspaceRoot, 'app', 'game-api'));
         expect(definitions.tournament.cwd).toBe(path.join(processConfig.workspaceRoot, 'app', 'game-api'));
     });
 });

@@ -19,6 +19,11 @@ tree instead of replacing images with layout-neutral placeholders.
 NPC list, including mutations and recoverable API failures.
 `tournament-betting.spec.ts` covers the separate tournament and tournament
 betting routes, including a recoverable failed bet.
+`reference-rankings.mjs` records the authenticated PHP 명장일람 and public
+명예의 전당 computed DOM without embedding the reference password.
+`battleSimulator.spec.ts` covers the authenticated simulator with and without
+an owned general. `battleSimulatorRef.spec.ts` can additionally exercise the
+live reference page when its URL, user, and ignored password file are supplied.
 
 Run the suite from the core2026 repository root:
 
@@ -30,6 +35,16 @@ When another worktree occupies the default ports, set
 `FRONTEND_PARITY_GATEWAY_PORT`, `FRONTEND_PARITY_GAME_PORT`, and
 `FRONTEND_PARITY_GAME_URL`. `FRONTEND_PARITY_ARTIFACT_DIR` retains the
 tournament and betting screenshots.
+
+Run the focused simulator fixture with:
+
+```sh
+pnpm --filter game-frontend test:e2e:battle-simulator
+```
+
+The optional reference check uses `REF_BATTLE_SIM_URL`, `REF_USER_ID`, and
+`REF_USER_PASSWORD_FILE`. The password is read inside the test and is never
+written to screenshots or reports.
 
 The suite starts both applications at their public prefixes:
 
@@ -43,22 +58,27 @@ storage, route guards, and image loading.
 
 ## Enforced contracts
 
-| Screen               | Ref entry point                          | Current automated contract                                                                                                                                |
-| -------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| gateway login/status | `index.php`                              | 450/700px desktop widths, mobile collapse, Pretendard title, real login mutation/session storage, actual seasonal map asset                               |
-| gateway account      | `i_entrance/user_info.php`               | 550px × minimum 575px panel, 14px Pretendard, three legacy textures, success and API-error password flows                                                 |
-| gateway OAuth join   | `oauth_kakao/join.php`                   | 700px centered registration card, Kakao exchange/register success, retained-input API error, hover/focus                                                  |
-| game login hand-off  | unauthenticated `hwe/index.php` redirect | `/che/login` delegates to `/gateway/`                                                                                                                     |
-| troop                | `hwe/v_troop.php`                        | existing `app/game-frontend/e2e/troop.spec.ts` desktop/mobile geometry and interaction suite                                                              |
-| hall of fame         | `hwe/a_hallOfFame.php`                   | 500/1000px container, 100px ranking cells, 64px natural image, walnut/green textures, Pretendard, close-button focus                                      |
-| yearbook             | `hwe/v_history.php`                      | 1000px 700+300 desktop grid, 500px stacked grid, month navigation, legacy textures, success and API-error flows                                           |
-| nation betting       | `hwe/v_nationBetting.php`                | 1000px/6-column desktop and 500px/3-column mobile grids, picked card style, payout table, success and retained-form error                                 |
-| public NPC list      | `hwe/a_npcList.php`                      | 1000px 12-column table with Chromium-expanded legacy widths, NPC color, eight sorts, retained table/sort after API error                                  |
-| survey               | `hwe/v_vote.php`, `hwe/ts/PageVote.vue`  | 1000/500px fixed container, blue title/green table textures, list/detail/results/comments, selection/focus/hover, submit and retained-selection API error |
-| nation personnel     | `hwe/b_myBossInfo.php`                   | fixed 1000px document at both viewports, chief icon columns, officer/permission/city/kick controls, role redaction                                        |
-| nation finance       | `hwe/v_nationStratFinan.php`             | 1000/500px at the legacy 940px breakpoint, exact diplomacy grid, policy controls, role gating and failed-mutation rollback                                |
-| tournament           | `hwe/b_tournament.php`                   | fixed 2000px canvas, 16×125px bracket, eight 250px group tables, walnut texture, 1024px overflow, hover/focus                                             |
-| tournament betting   | `hwe/b_betting.php`                      | fixed 1120px canvas, 16×70px candidates, four 280px rank tables, exact title/button geometry, retained selection on error                                |
+| Screen               | Ref entry point                          | Current automated contract                                                                                                                                                                       |
+| -------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| gateway login/status | `index.php`                              | 450/700px desktop widths, mobile collapse, Pretendard title, real login mutation/session storage, actual seasonal map asset                                                                      |
+| gateway account      | `i_entrance/user_info.php`               | 550px × minimum 575px panel, 14px Pretendard, three legacy textures, success and API-error password flows                                                                                        |
+| gateway OAuth join   | `oauth_kakao/join.php`                   | 700px centered registration card, Kakao exchange/register success, retained-input API error, hover/focus                                                                                         |
+| game login hand-off  | unauthenticated `hwe/index.php` redirect | `/che/login` delegates to `/gateway/`                                                                                                                                                            |
+| troop                | `hwe/v_troop.php`                        | existing `app/game-frontend/e2e/troop.spec.ts` desktop/mobile geometry and interaction suite                                                                                                     |
+| current city         | `hwe/b_currentCity.php`                  | ref-specific 16px Times New Roman, 1000px summary/1024px general tables, 400px selector, 64px icon, nation title color, force summary, actor/spy/admin redaction, and map-click query navigation |
+| best general         | `hwe/a_bestGeneral.php`                  | authenticated 500/1000px ranking and unique-item grids, user/NPC switch, 100/64px cell/image geometry, title/button computed styles, retained-data API error                                     |
+| hall of fame         | `hwe/a_hallOfFame.php`                   | public 500/1000px container, 100px ranking cells, 64px natural image, title/button/select computed styles, scenario switch and retained-data API error                                           |
+| yearbook             | `hwe/v_history.php`                      | 1000px 700+300 desktop grid, 500px stacked grid, month navigation, legacy textures, success and API-error flows                                                                                  |
+| inheritance          | `hwe/v_inheritPoint.php`                 | 1000px 3-column desktop and 500px stacked layout, walnut/green textures, Pretendard 14px, scenario unique selector, buff purchase success and retained-input API error                           |
+| nation betting       | `hwe/v_nationBetting.php`                | 1000px/6-column desktop and 500px/3-column mobile grids, picked card style, payout table, success and retained-form error                                                                        |
+| public NPC list      | `hwe/a_npcList.php`                      | 1000px 12-column table with Chromium-expanded legacy widths, NPC color, eight sorts, retained table/sort after API error                                                                         |
+| survey               | `hwe/v_vote.php`, `hwe/ts/PageVote.vue`  | 1000/500px fixed container, blue title/green table textures, list/detail/results/comments, selection/focus/hover, submit and retained-selection API error                                        |
+| nation personnel     | `hwe/b_myBossInfo.php`                   | fixed 1000px document at both viewports, chief icon columns, officer/permission/city/kick controls, role redaction                                                                               |
+| nation finance       | `hwe/v_nationStratFinan.php`             | 1000/500px at the legacy 940px breakpoint, exact diplomacy grid, policy controls, role gating and failed-mutation rollback                                                                       |
+| battle simulator     | `hwe/battle_simulator.php`               | centered 1000px desktop document, 500px responsive stacking, independent/current presets, owned-general import gating, fixed-seed result/logs, retained input after API error                    |
+| NPC policy           | `hwe/v_NPCControl.php`                   | 1000/500px form and priority-list geometry, walnut/green textures, dynamic zero hints, drag/focus/tooltip, successful save and permission failures                                               |
+| tournament           | `hwe/b_tournament.php`                   | fixed 2000px canvas, 16×125px bracket, eight 250px group tables, walnut texture, 1024px overflow, hover/focus                                                                                    |
+| tournament betting   | `hwe/b_betting.php`                      | fixed 1120px canvas, 16×70px candidates, four 280px rank tables, exact title/button geometry, retained selection on error                                                                        |
 
 The global game baseline is black, white, Pretendard 14px. Legacy texture
 helpers intentionally follow `common.orig.css`: `bg0` is walnut, `bg1` is
@@ -85,6 +105,16 @@ Adding or changing a frontend route requires:
 Pixel snapshots may be added after these structural assertions pass. Dynamic
 regions must not be hidden merely to make a pixel threshold pass.
 
+To refresh the PHP ranking evidence after building the ignored reference
+webpack assets, run:
+
+```sh
+REF_RANKING_URL=http://127.0.0.1:3400/sam/ \
+REF_RANKING_PASSWORD_FILE=/path/to/ignored/user1_password \
+REF_RANKING_ARTIFACT_DIR=/path/to/ignored/artifacts \
+node tools/frontend-legacy-parity/reference-rankings.mjs
+```
+
 The nation office suite can be run independently:
 
 ```sh
@@ -95,6 +125,30 @@ Set `PLAYWRIGHT_FRONTEND_PORT` when the default `15120` port is occupied. For
 reference collection, `tools/frontend-legacy-parity/reference-nation-offices.mjs`
 records desktop/500px computed DOM and screenshots from the PHP service without
 changing its product code.
+
+The NPC policy suite and its reference collector can be run independently:
+
+```sh
+PLAYWRIGHT_FRONTEND_PORT=15126 \
+  pnpm --filter @sammo-ts/game-frontend test:e2e:npc-policy
+
+REF_PARITY_USER=refuser1 \
+REF_PARITY_PASSWORD_FILE=/path/to/password-file \
+REF_PARITY_BASE_URL=http://127.0.0.1:3400/sam/ \
+  node tools/frontend-legacy-parity/reference-npc-policy.mjs
+```
+
+The collector writes desktop and 500px screenshots plus computed DOM JSON only
+when `REF_PARITY_ARTIFACT_DIR` is set. It requires an existing reference general
+owned by the supplied account and never accepts a password on the command line.
+
+The current-city reference can be collected independently with
+`tools/frontend-legacy-parity/reference-current-city.mjs`. It requires
+`REF_PARITY_PASSWORD_FILE` and accepts `REF_PARITY_URL`, `REF_PARITY_USER`, and
+`REF_PARITY_ARTIFACT_DIR`; the password is read from the ignored secret file
+and is never written to the artifact. The matching core fixture is
+`app/game-frontend/e2e/inGameInfo.spec.ts`, which writes its computed DOM and
+screenshot only when `CITY_PARITY_ARTIFACT_DIR` is set.
 
 For a review run that also writes full-page screenshots, create an ignored
 artifact directory and set `FRONTEND_PARITY_ARTIFACT_DIR` before invoking the

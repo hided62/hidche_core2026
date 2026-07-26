@@ -210,6 +210,17 @@ Three post-required cooldown cases project the legacy `next_execute` KV and
 core general meta into the same world-level cooldown record. They cover the
 stored `current + 60 - preReq` value, rejection one turn before availability,
 and successful execution exactly at the boundary.
+Four missing-target cases cover nonexistent general IDs for gift and
+employment plus nonexistent city IDs for spying and movement. Both engines
+reject the requested command, execute rest without command RNG, and produce
+the same semantic state delta.
+Thirteen resource argument and balance cases cover 100-unit rounding and
+minimum/maximum clamps for gift, donation, and rice trade; donation against
+available and minimum resources; and gift reserve and self-target rejection.
+They compare normalized last-turn arguments, RNG, fallback, and semantic state
+deltas.
+Requests that omit the required argument object remain unverified because the
+reference runner did not terminate within the bounded comparison run.
 This is not yet a claim that every command-specific
 constraint, clamp and persistence boundary has been dynamically
 compared.

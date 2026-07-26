@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { asRecord } from '@sammo-ts/common';
 import { getDexLevel } from '@sammo-ts/logic';
 
-import { authedProcedure, procedure, router } from '../../trpc.js';
+import { authedProcedure, readOnlyAuthedProcedure, router } from '../../trpc.js';
 import { buildBattleSimEnvironment, buildBattleSimJobPayload } from '../../battleSim/environment.js';
 import { zBattleSimJobId, zBattleSimRequest } from '../../battleSim/schema.js';
 import {
@@ -30,6 +30,14 @@ const normalizeOptionalKey = (value: string | null): string | null => {
     return value;
 };
 
+const getAuthenticatedUserId = (auth: { user: { id: string } } | null): string => {
+    const userId = auth?.user.id;
+    if (!userId) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Unauthorized' });
+    }
+    return userId;
+};
+
 const resolveExpLevel = (meta: Record<string, unknown>, experience: number): number => {
     const expLevel = meta.explevel ?? meta.expLevel;
     if (typeof expLevel === 'number' && Number.isFinite(expLevel)) {
@@ -48,7 +56,7 @@ const resolveDexValue = (meta: Record<string, unknown>, key: string): number => 
 };
 
 export const battleRouter = router({
-    simulate: procedure.input(zBattleSimRequest).mutation(async ({ ctx, input }) => {
+    simulate: readOnlyAuthedProcedure.input(zBattleSimRequest).mutation(async ({ ctx, input }) => {
         const worldState = await ctx.db.worldState.findFirst();
         if (!worldState) {
             throw new TRPCError({
@@ -58,10 +66,10 @@ export const battleRouter = router({
         }
 
         const payload = await buildBattleSimJobPayload(worldState, input, ctx.profile.id);
-        return ctx.battleSim.simulate(payload);
+        return ctx.battleSim.simulate(payload, getAuthenticatedUserId(ctx.auth));
     }),
-    getSimulation: procedure.input(zBattleSimJobId).query(async ({ ctx, input }) => {
-        const result = await ctx.battleSim.getSimulationResult(input.jobId);
+    getSimulation: readOnlyAuthedProcedure.input(zBattleSimJobId).query(async ({ ctx, input }) => {
+        const result = await ctx.battleSim.getSimulationResult(input.jobId, getAuthenticatedUserId(ctx.auth));
         if (!result) {
             return { status: 'queued', jobId: input.jobId };
         }

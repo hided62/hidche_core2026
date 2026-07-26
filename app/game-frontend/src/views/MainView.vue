@@ -50,7 +50,7 @@ const {
     reservedNationTurns,
     messageDraftText,
     targetMailbox,
-    mailboxOptions,
+    mailboxGroups,
     statusLine,
     realtimeLabel,
 } = storeToRefs(dashboard);
@@ -104,6 +104,10 @@ watch(
                 <RouterLink class="ghost" to="/global-info">중원 정보</RouterLink>
                 <RouterLink class="ghost" to="/current-city">현재 도시</RouterLink>
                 <RouterLink class="ghost" to="/nation/generals">세력 장수</RouterLink>
+                <RouterLink v-if="(boardAccess?.permission ?? -1) >= 1" class="ghost" to="/nation/secret"
+                    >암행부</RouterLink
+                >
+                <span v-else class="ghost disabled" aria-disabled="true">암행부</span>
                 <RouterLink class="ghost" to="/nation/personnel">인사부</RouterLink>
                 <RouterLink class="ghost" to="/troop">부대 편성</RouterLink>
                 <RouterLink class="ghost" to="/nation/finance">내무부</RouterLink>
@@ -115,10 +119,11 @@ watch(
                 <RouterLink class="ghost" to="/dynasty">왕조일람</RouterLink>
                 <RouterLink class="ghost" to="/yearbook">연감</RouterLink>
                 <RouterLink class="ghost" to="/nation-betting">천통국 베팅</RouterLink>
+                <RouterLink class="ghost" to="/traffic">접속량정보</RouterLink>
                 <RouterLink class="ghost" to="/npc-list">빙의일람</RouterLink>
                 <a class="ghost" href="/xe/community" target="_blank" rel="noopener">게시판</a>
                 <RouterLink class="ghost" to="/battle-simulator">전투 시뮬레이터</RouterLink>
-                <RouterLink class="ghost" to="/my-page">내 정보</RouterLink>
+                <RouterLink class="ghost" to="/my-page">내 정보&amp;설정</RouterLink>
                 <RouterLink class="ghost" :class="{ highlight: tournamentStage === 1 }" to="/tournament"
                     >토너먼트</RouterLink
                 >
@@ -216,22 +221,26 @@ watch(
             </div>
 
             <div v-if="mobileTab === 'messages'" class="mobile-panel">
-                <PanelCard title="메시지함">
-                    <MessagePanel
-                        :messages="messages"
-                        :loading="loading"
-                        :target-mailbox="targetMailbox"
-                        :draft-text="messageDraftText"
-                        :mailbox-options="mailboxOptions"
-                        :can-respond-diplomacy="messages?.canRespondDiplomacy ?? false"
-                        @update:target-mailbox="targetMailbox = $event"
-                        @update:draft-text="messageDraftText = $event"
-                        @send="dashboard.sendMessage"
-                        @load-older="dashboard.loadOlderMessages"
-                        @refresh="dashboard.refreshMessages"
-                        @respond="dashboard.respondToMessage"
-                    />
-                </PanelCard>
+                <MessagePanel
+                    class="mobile-message-panel"
+                    :messages="messages"
+                    :loading="loading"
+                    :target-mailbox="targetMailbox"
+                    :draft-text="messageDraftText"
+                    :mailbox-groups="mailboxGroups"
+                    :general-id="general?.id ?? 0"
+                    :general-name="general?.name ?? ''"
+                    :nation-id="general?.nationId ?? 0"
+                    :can-respond-diplomacy="messages?.canRespondDiplomacy ?? false"
+                    @update:target-mailbox="targetMailbox = $event"
+                    @update:draft-text="messageDraftText = $event"
+                    @send="dashboard.sendMessage"
+                    @load-older="dashboard.loadOlderMessages"
+                    @refresh="dashboard.refreshMessages"
+                    @respond="dashboard.respondToMessage"
+                    @read-latest="dashboard.readLatestMessage"
+                    @delete="dashboard.deleteMessage"
+                />
             </div>
         </section>
 
@@ -250,22 +259,6 @@ watch(
                         <div>NPC {{ lobbyInfo?.npcCnt ?? '-' }}</div>
                         <div>세력 {{ lobbyInfo?.nationCnt ?? '-' }}</div>
                     </div>
-                </PanelCard>
-                <PanelCard title="메시지함">
-                    <MessagePanel
-                        :messages="messages"
-                        :loading="loading"
-                        :target-mailbox="targetMailbox"
-                        :draft-text="messageDraftText"
-                        :mailbox-options="mailboxOptions"
-                        :can-respond-diplomacy="messages?.canRespondDiplomacy ?? false"
-                        @update:target-mailbox="targetMailbox = $event"
-                        @update:draft-text="messageDraftText = $event"
-                        @send="dashboard.sendMessage"
-                        @load-older="dashboard.loadOlderMessages"
-                        @refresh="dashboard.refreshMessages"
-                        @respond="dashboard.respondToMessage"
-                    />
                 </PanelCard>
             </div>
 
@@ -302,6 +295,26 @@ watch(
                     <div v-else class="placeholder">개인 기록 영역</div>
                 </PanelCard>
             </div>
+            <MessagePanel
+                class="desktop-message-panel"
+                :messages="messages"
+                :loading="loading"
+                :target-mailbox="targetMailbox"
+                :draft-text="messageDraftText"
+                :mailbox-groups="mailboxGroups"
+                :general-id="general?.id ?? 0"
+                :general-name="general?.name ?? ''"
+                :nation-id="general?.nationId ?? 0"
+                :can-respond-diplomacy="messages?.canRespondDiplomacy ?? false"
+                @update:target-mailbox="targetMailbox = $event"
+                @update:draft-text="messageDraftText = $event"
+                @send="dashboard.sendMessage"
+                @load-older="dashboard.loadOlderMessages"
+                @refresh="dashboard.refreshMessages"
+                @respond="dashboard.respondToMessage"
+                @read-latest="dashboard.readLatestMessage"
+                @delete="dashboard.deleteMessage"
+            />
         </section>
     </main>
 </template>
@@ -394,6 +407,16 @@ button {
     display: flex;
     flex-direction: column;
     gap: 16px;
+}
+
+.desktop-message-panel {
+    grid-column: 1 / -1;
+}
+
+.mobile-message-panel {
+    width: 100vw;
+    min-width: 0;
+    margin-left: -24px;
 }
 
 .layout-mobile {
