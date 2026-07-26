@@ -3754,6 +3754,9 @@ integration('general command full-constraint fallback matrix', () => {
                     ignoredPathPatterns: ignoredLifecyclePaths,
                 })
             ).toEqual([]);
+            expect(semanticLogSignatures(core.after.logs)).toEqual(
+                semanticLogSignatures(addedReferenceLogs(reference.before, reference.after.logs))
+            );
         },
         120_000
     );

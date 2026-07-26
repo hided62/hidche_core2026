@@ -57,7 +57,9 @@ const remainCityTrust = (): Constraint => ({
     test: (ctx, view) => {
         const city = ctx.cityId !== undefined ? (view.get({ kind: 'city', id: ctx.cityId }) as City | null) : null;
         if (!city) return { kind: 'deny', reason: '도시 정보가 없습니다.' };
-        return readTrust(city) >= 100 ? { kind: 'deny', reason: '민심이 충분합니다.' } : { kind: 'allow' };
+        return readTrust(city) >= 100
+            ? { kind: 'deny', reason: '주민 선정은 충분합니다.' }
+            : { kind: 'allow' };
     },
 });
 

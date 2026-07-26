@@ -908,6 +908,7 @@ export const createReservedTurnHandler = async (options: {
                 const result = evaluateConstraints(constraints, constraintCtx, view);
                 if (result.kind !== 'allow') {
                     const failedDefinition = definition;
+                    const failedActionArgs = actionArgs;
                     definition = fallbackDefinition;
                     actionArgs = definition.parseArgs({}) ?? {};
                     actionKey = definition.key;
@@ -916,7 +917,7 @@ export const createReservedTurnHandler = async (options: {
                     blockedReason = reason;
                     const meta = result.kind === 'deny' ? { constraintName: result.constraintName } : undefined;
                     const failureText =
-                        failedDefinition.formatConstraintFailure?.(reason, constraintCtx, actionArgs, view) ??
+                        failedDefinition.formatConstraintFailure?.(reason, constraintCtx, failedActionArgs, view) ??
                         `${reason} ${failedDefinition.name} 실패.`;
                     logs.push(createActionLog(failureText, meta));
                 }
