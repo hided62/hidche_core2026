@@ -330,6 +330,7 @@ export const buildProcessDefinitions = (
         ...baseEnv,
         PROFILE: profile.profile,
         SCENARIO: profile.scenario,
+        GAME_PROFILE_NAME: profile.profileName,
         GAME_API_PORT: String(profile.apiPort),
         GAME_TRPC_PATH: `/${profile.profile}/api/trpc`,
         GAME_API_EVENTS_PATH: `/${profile.profile}/api/events`,

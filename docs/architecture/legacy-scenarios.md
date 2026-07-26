@@ -41,6 +41,30 @@ Notes:
   `affinity, name, picture, nationName, city, leadership, strength, intel,
 officerLevel, birth, death, ego, char, text`.
 
+## General Icon Paths
+
+Scenario general rows store an explicit path relative to `/image/icons`.
+New shared portraits use `장수/<general-name>.<extension>`; scenario-specific
+portraits keep their existing directory such as `걸그룹/` or `롤시나리오/`.
+This makes active and delayed generals persist the same path without requiring
+the legacy image service's runtime `list.json` lookup.
+
+`resources/general-icons.json` records the canonical general name, current
+path, retained numeric legacy aliases, and source image. The numeric files in
+the image repository remain compatibility aliases for deployed legacy
+versions. Run the following from a core2026 checkout whenever scenarios or
+portrait assets change:
+
+```sh
+pnpm manage:general-icons --image-root /path/to/image --write
+pnpm manage:general-icons --image-root /path/to/image
+```
+
+The first command synchronizes canonical aliases and scenario paths. The second
+is a read-only drift and file-content check. Missing source images stay listed
+under the catalog's `unresolved` field and resolve to `default.jpg` when they
+were an explicit numeric reference.
+
 ## How Scenario Chooses Commands and Effects
 
 Scenario config influences runtime rules via `GameConst` and `ScenarioEffect`:
