@@ -1,5 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
+import { asRecord } from '@sammo-ts/common';
+import type { UserSanctions } from '@sammo-ts/common/auth/gameToken';
 
 import { authedProcedure, router } from '../../trpc.js';
 import {
@@ -25,6 +27,75 @@ import { resolveNationPermission } from '../nation/shared.js';
 import { respondToDiplomaticMessage } from '../../messages/diplomaticResponse.js';
 
 const zMessageType = z.enum(['private', 'public', 'national', 'diplomacy']);
+
+const redactDiplomacyMessages = (messages: MessageView[], permission: number): MessageView[] => {
+    if (permission >= 3) {
+        return messages;
+    }
+    return messages.map((message) => {
+        if (!message.dest || message.dest.nationId === 0) {
+            return message;
+        }
+        return {
+            ...message,
+            text: '(외교 메시지입니다)',
+            option: {
+                ...(message.option ?? {}),
+                invalid: true,
+            },
+        };
+    });
+};
+
+const isFutureDate = (value: string | undefined, now = Date.now()): boolean => {
+    if (!value) {
+        return false;
+    }
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) && parsed > now;
+};
+
+const isMessageFeatureBlocked = (sanctions: UserSanctions, profileNames: string[]): boolean => {
+    if (
+        isFutureDate(sanctions.mutedUntil) ||
+        isFutureDate(sanctions.suspendedUntil) ||
+        isFutureDate(sanctions.bannedUntil)
+    ) {
+        return true;
+    }
+    for (const profileName of profileNames) {
+        const restriction = sanctions.serverRestrictions?.[profileName];
+        if (!restriction) {
+            continue;
+        }
+        if (restriction.until && !isFutureDate(restriction.until)) {
+            continue;
+        }
+        if (restriction.blockedFeatures?.includes('messages')) {
+            return true;
+        }
+    }
+    return false;
+};
+
+const readPenaltyNumber = (penalty: unknown, key: string, fallback: number): number => {
+    const value = asRecord(penalty)[key];
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return value;
+    }
+    if (typeof value === 'string') {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) {
+            return parsed;
+        }
+    }
+    return fallback;
+};
+
+const hasPenalty = (penalty: unknown, key: string): boolean => {
+    const value = asRecord(penalty)[key];
+    return value === true || value === 1 || value === '1';
+};
 
 export const messagesRouter = router({
     getRecent: authedProcedure
@@ -85,11 +156,12 @@ export const messagesRouter = router({
                         : null,
                 ]);
 
+            const permission = nationId > 0 && nation ? resolveNationPermission(general, nation.meta, false) : -1;
             const messageBuckets: Record<MessageType, MessageView[]> = {
                 private: privateMessages,
                 public: publicMessages,
                 national: nationalMessages,
-                diplomacy: diplomacyMessages,
+                diplomacy: redactDiplomacyMessages(diplomacyMessages, permission),
             };
 
             let nextSequence = sequence;
@@ -128,10 +200,8 @@ export const messagesRouter = router({
                 sequence: nextSequence,
                 nationId: nationId,
                 generalName: general.name,
-                canRespondDiplomacy:
-                    general.officerLevel > 4 &&
-                    nation !== null &&
-                    resolveNationPermission(general, nation.meta, false) >= 4,
+                permission,
+                canRespondDiplomacy: permission >= 4 && general.officerLevel > 4,
                 latestRead: {
                     diplomacy: readState?.latestDiplomacyMessage ?? 0,
                     private: readState?.latestPrivateMessage ?? 0,
@@ -178,6 +248,7 @@ export const messagesRouter = router({
             ];
             return {
                 nation: nationList.map((nation) => ({
+                    nationId: nation.id,
                     mailbox: MESSAGE_MAILBOX_NATIONAL_BASE + nation.id,
                     name: nation.name,
                     color: nation.color,
@@ -234,14 +305,24 @@ export const messagesRouter = router({
             if (message.payload.src.generalId !== general.id) {
                 throw new TRPCError({ code: 'FORBIDDEN', message: '본인의 메시지만 삭제할 수 있습니다.' });
             }
-            if (message.msgType === 'diplomacy' || message.payload.option?.deletable === false) {
+            if (message.msgType === 'diplomacy' && message.payload.option?.action) {
+                throw new TRPCError({
+                    code: 'BAD_REQUEST',
+                    message: '시스템 외교 메시지는 삭제할 수 없습니다.',
+                });
+            }
+            if (message.payload.option?.deletable === false) {
                 throw new TRPCError({ code: 'BAD_REQUEST', message: '삭제할 수 없는 메시지입니다.' });
             }
             if (Date.now() - message.time.getTime() > 5 * 60 * 1000) {
                 throw new TRPCError({ code: 'BAD_REQUEST', message: '5분 이내의 메시지만 삭제할 수 있습니다.' });
             }
             const receiverMessageId = message.payload.option?.receiverMessageID;
-            const ids = [message.id, ...(typeof receiverMessageId === 'number' ? [receiverMessageId] : [])];
+            const shouldDeleteReceiverCopy = message.msgType === 'private' || message.msgType === 'national';
+            const ids = [
+                message.id,
+                ...(shouldDeleteReceiverCopy && typeof receiverMessageId === 'number' ? [receiverMessageId] : []),
+            ];
             await invalidateMessages(ctx.db, ids);
             return { ok: true, deletedIds: ids };
         }),
@@ -291,6 +372,14 @@ export const messagesRouter = router({
             const general = await getOwnedGeneral(ctx, input.generalId);
 
             const nationId = general.nationId;
+            const nation =
+                nationId > 0
+                    ? await ctx.db.nation.findUnique({
+                          where: { id: nationId },
+                          select: { meta: true },
+                      })
+                    : null;
+            const permission = nationId > 0 && nation ? resolveNationPermission(general, nation.meta, false) : -1;
             const mailboxes = {
                 private: general.id,
                 public: MESSAGE_MAILBOX_PUBLIC,
@@ -312,7 +401,8 @@ export const messagesRouter = router({
                 toSeq: input.to,
                 limit: 15,
             });
-            messageBuckets[input.type] = messages;
+            messageBuckets[input.type] =
+                input.type === 'diplomacy' ? redactDiplomacyMessages(messages, permission) : messages;
 
             return {
                 result: true,
@@ -320,6 +410,7 @@ export const messagesRouter = router({
                 sequence: 0,
                 nationId,
                 generalName: general.name,
+                permission,
                 ...messageBuckets,
             };
         }),
@@ -333,6 +424,12 @@ export const messagesRouter = router({
         )
         .mutation(async ({ ctx, input }) => {
             const general = await getOwnedGeneral(ctx, input.generalId);
+            if (!ctx.auth || isMessageFeatureBlocked(ctx.auth.sanctions, [ctx.profile.name, ctx.profile.id])) {
+                throw new TRPCError({
+                    code: 'FORBIDDEN',
+                    message: '메시지 전송이 제한된 계정입니다.',
+                });
+            }
 
             const src = await buildTargetFromGeneral(ctx.db, general);
             const now = new Date();
@@ -340,28 +437,93 @@ export const messagesRouter = router({
 
             let msgType: MessageType;
             let dest = src;
+            let receiverMailbox = input.mailbox;
 
             if (input.mailbox === MESSAGE_MAILBOX_PUBLIC) {
-                msgType = 'public';
-            } else if (input.mailbox >= MESSAGE_MAILBOX_NATIONAL_BASE) {
-                const destNationId = input.mailbox - MESSAGE_MAILBOX_NATIONAL_BASE;
-                if (destNationId <= 0) {
+                if (hasPenalty(general.penalty, 'noSendPublicMsg')) {
                     throw new TRPCError({
-                        code: 'BAD_REQUEST',
-                        message: 'Invalid nation mailbox.',
+                        code: 'FORBIDDEN',
+                        message: '공개 메세지를 보낼 수 없습니다.',
                     });
                 }
+                msgType = 'public';
+            } else if (input.mailbox >= MESSAGE_MAILBOX_NATIONAL_BASE) {
+                const sourceNation =
+                    general.nationId > 0
+                        ? await ctx.db.nation.findUnique({
+                              where: { id: general.nationId },
+                              select: { meta: true },
+                          })
+                        : null;
+                const permission =
+                    general.nationId > 0 && sourceNation ? resolveNationPermission(general, sourceNation.meta) : -1;
+                const destNationId = permission < 4 ? general.nationId : input.mailbox - MESSAGE_MAILBOX_NATIONAL_BASE;
                 const nationInfo = await resolveNationInfo(ctx.db, destNationId);
+                if (destNationId > 0) {
+                    const destNation = await ctx.db.nation.findUnique({ where: { id: destNationId } });
+                    if (!destNation) {
+                        throw new TRPCError({
+                            code: 'NOT_FOUND',
+                            message: '존재하지 않는 국가입니다.',
+                        });
+                    }
+                }
                 dest = buildNationTarget(destNationId, nationInfo.name, nationInfo.color);
                 msgType = destNationId === general.nationId ? 'national' : 'diplomacy';
+                receiverMailbox = MESSAGE_MAILBOX_NATIONAL_BASE + destNationId;
             } else if (input.mailbox > 0) {
+                if (hasPenalty(general.penalty, 'noSendPrivateMsg')) {
+                    throw new TRPCError({
+                        code: 'FORBIDDEN',
+                        message: '개인 메세지를 보낼 수 없습니다.',
+                    });
+                }
+                const intervalSeconds = Math.max(
+                    0,
+                    Math.ceil(readPenaltyNumber(general.penalty, 'sendPrivateMsgDelay', 2))
+                );
+                if (intervalSeconds > 0) {
+                    const rateLimitKey = `game:${ctx.profile.name}:message:private:${ctx.auth.sessionId}`;
+                    const acquired = await ctx.redis.set(rateLimitKey, '1', {
+                        NX: true,
+                        PX: intervalSeconds * 1000,
+                    });
+                    if (acquired === null) {
+                        throw new TRPCError({
+                            code: 'TOO_MANY_REQUESTS',
+                            message: `개인메세지는 ${intervalSeconds}초당 1건만 보낼 수 있습니다!`,
+                        });
+                    }
+                }
                 const destGeneral = await ctx.db.general.findUnique({
                     where: { id: input.mailbox },
                 });
                 if (!destGeneral) {
                     throw new TRPCError({
                         code: 'NOT_FOUND',
-                        message: 'Destination general not found.',
+                        message: '존재하지 않는 유저입니다.',
+                    });
+                }
+                const [sourceNation, destNation] = await Promise.all([
+                    general.nationId > 0
+                        ? ctx.db.nation.findUnique({ where: { id: general.nationId }, select: { meta: true } })
+                        : null,
+                    destGeneral.nationId > 0
+                        ? ctx.db.nation.findUnique({ where: { id: destGeneral.nationId }, select: { meta: true } })
+                        : null,
+                ]);
+                const sourcePermission =
+                    sourceNation && general.nationId > 0
+                        ? resolveNationPermission(general, sourceNation.meta, false)
+                        : -1;
+                const destPermission =
+                    destNation && destGeneral.nationId > 0
+                        ? resolveNationPermission(destGeneral, destNation.meta, false)
+                        : -1;
+                if (sourcePermission === 4 && destPermission === 4 && destGeneral.nationId !== general.nationId) {
+                    throw new TRPCError({
+                        code: 'FORBIDDEN',
+                        message: '외교권자끼리는 메시지를 보낼 수 없습니다.',
                     });
                 }
                 dest = await buildTargetFromGeneral(ctx.db, destGeneral);
@@ -394,7 +556,7 @@ export const messagesRouter = router({
                 await publishRealtimeEvent(ctx.redis, ctx.profile.name, {
                     type: 'messageCreated',
                     at: now.toISOString(),
-                    mailbox: input.mailbox,
+                    mailbox: receiverMailbox,
                     msgType,
                     messageId: result.receiverId,
                     senderId: general.id,

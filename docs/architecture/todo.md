@@ -49,7 +49,7 @@ Move items into the main docs once they are finalized.
 - [AI suggestion] Define gateway login handoff + profile selection flow for the game frontend (token delivery, auto-login, cookie vs localStorage policy).
 - [AI suggestion] Implement Public 화면: 캐싱된 지도/중원정세/세력일람 + 제한된 장수일람 API/뷰.
 - [AI suggestion] Define main screen SSE contract + 실시간 동기화 토글 연동 (지도/명령/도시/국가/장수/메시지/동향/기록).
-- [AI suggestion] Port legacy main UI components into `app/game-frontend` (MapViewer, CommandSelectForm, MessagePanel 등).
+- [AI suggestion] Port remaining legacy main UI components into `app/game-frontend` (MessagePanel 이관 완료; 나머지 패널 추적).
 - [AI suggestion] Provide map city name/position data for MapViewer (API or scenario export) and replace placeholder layout.
 - [AI suggestion] Implement join/빙의 UI and post-creation refresh flow.
 - [AI suggestion] Build and maintain a legacy-to-SPA route mapping table with data requirements.
@@ -57,7 +57,7 @@ Move items into the main docs once they are finalized.
 - [AI suggestion] Wire `realtimeEnabled` to an SSE or polling channel and update main dashboard data buckets (map/lobby/messages/commands).
 - [AI suggestion] Finalize static asset and web base URLs (`VITE_GAME_WEB_URL`, `VITE_GAME_ASSET_URL`) and document deployment mapping for legacy images.
 - [AI suggestion] Expand Join UI to cover inherit options (특기/도시/턴타임/보너스 스탯) using `join.getConfig` and `join.createGeneral` inputs.
-- [AI suggestion] Extend MessagePanel to support private/diplomacy targets and surface sender/receiver metadata from message payloads.
+- [x] Extend MessagePanel to support private/diplomacy targets and surface sender/receiver metadata from message payloads.
 - [AI suggestion] Port legacy TipTap-based editors (국가 방침/임관 권유) into game-frontend and reuse the new board image upload policy.
 
 ## Runtime and Operations (Lower Priority)

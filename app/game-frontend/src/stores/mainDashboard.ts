@@ -23,6 +23,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     type MapLayout = Awaited<ReturnType<typeof trpc.world.getMapLayout.query>>;
     type CommandTable = Awaited<ReturnType<typeof trpc.turns.getCommandTable.query>>;
     type MessageBundle = Awaited<ReturnType<typeof trpc.messages.getRecent.query>>;
+    type MessageContacts = Awaited<ReturnType<typeof trpc.messages.getContacts.query>>;
     type BoardAccess = Awaited<ReturnType<typeof trpc.board.getAccess.query>>;
     type ReservedTurnView = Awaited<ReturnType<typeof trpc.turns.reserved.getGeneral.query>>[number];
 
@@ -37,12 +38,14 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
     const mapLayout = ref<MapLayout | null>(null);
     const commandTable = ref<CommandTable | null>(null);
     const messages = ref<MessageBundle | null>(null);
+    const messageContacts = ref<MessageContacts | null>(null);
     const boardAccess = ref<BoardAccess | null>(null);
     const reservedGeneralTurns = ref<ReservedTurnView[] | null>(null);
     const reservedNationTurns = ref<ReservedTurnView[] | null>(null);
 
     const messageDraftText = ref('');
     const targetMailbox = ref<number>(MESSAGE_MAILBOX_PUBLIC);
+    let initializedMailboxGeneralId: number | null = null;
 
     const general = computed(() => generalContext.value?.general ?? null);
     const city = computed(() => generalContext.value?.city ?? null);
@@ -86,18 +89,85 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         } as const;
     });
 
-    const mailboxOptions = computed(() => {
-        const options: Array<{ label: string; value: number; disabled?: boolean }> = [
-            { label: '공공', value: MESSAGE_MAILBOX_PUBLIC },
+    const mailboxGroups = computed(() => {
+        type MailboxOption = {
+            label: string;
+            value: number;
+            disabled?: boolean;
+            color?: string;
+        };
+        type MailboxGroup = {
+            label: string;
+            color?: string;
+            options: MailboxOption[];
+        };
+
+        const ownNationId = general.value?.nationId ?? 0;
+        const ownMailbox = MESSAGE_MAILBOX_NATIONAL_BASE + ownNationId;
+        const permission = messages.value?.permission ?? -1;
+        const contacts = messageContacts.value?.nation ?? [];
+        const ownNation = contacts.find((nation) => nation.mailbox === ownMailbox);
+        const groups: MailboxGroup[] = [
+            {
+                label: '즐겨찾기',
+                color: '#000000',
+                options: [
+                    {
+                        label: '【 아국 메세지 】',
+                        value: ownMailbox,
+                        color: ownNation?.color ?? '#000000',
+                    },
+                    {
+                        label: '【 전체 메세지 】',
+                        value: MESSAGE_MAILBOX_PUBLIC,
+                        color: '#000000',
+                    },
+                ],
+            },
         ];
-        if (nationId.value) {
-            options.push({ label: '국가', value: MESSAGE_MAILBOX_NATIONAL_BASE + nationId.value });
-        } else {
-            options.push({ label: '국가', value: -1, disabled: true });
+
+        if (permission >= 4) {
+            groups.push({
+                label: '외교메시지',
+                color: '#000000',
+                options: contacts
+                    .filter((nation) => nation.mailbox !== ownMailbox && nation.nationId > 0)
+                    .map((nation) => ({
+                        label: nation.name,
+                        value: nation.mailbox,
+                        color: nation.color,
+                    })),
+            });
         }
-        options.push({ label: '외교', value: -2, disabled: true });
-        options.push({ label: '개인', value: -3, disabled: true });
-        return options;
+
+        const sortedContacts = [...contacts].sort((left, right) => {
+            if (left.mailbox === ownMailbox) return -1;
+            if (right.mailbox === ownMailbox) return 1;
+            return left.mailbox - right.mailbox;
+        });
+        for (const nation of sortedContacts) {
+            const options = [...nation.general]
+                .filter(([id]) => id !== generalId.value)
+                .sort((left, right) => left[1].localeCompare(right[1], 'ko'))
+                .map(([id, name, flags]) => {
+                    const ruler = Boolean(flags & 1);
+                    const ambassador = Boolean(flags & 4);
+                    return {
+                        label: ruler ? `*${name}*` : ambassador ? `#${name}#` : name,
+                        value: id,
+                        disabled: permission === 4 && ambassador && nation.mailbox !== ownMailbox,
+                        color: nation.color,
+                    };
+                });
+            if (options.length > 0) {
+                groups.push({
+                    label: nation.name,
+                    color: nation.color,
+                    options,
+                });
+            }
+        }
+        return groups;
     });
 
     const statusLine = computed(() => {
@@ -147,25 +217,32 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
                 context.general.nationId > 0 && context.general.officerLevel >= 5
                     ? trpc.turns.reserved.getNation.query({ generalId: id })
                     : Promise.resolve(null);
-            const [layout, lobby, map, commands, messageData, access, generalTurns, nationTurns] = await Promise.all([
-                layoutPromise,
-                trpc.lobby.info.query(),
-                trpc.world.getMap.query({ generalId: id, showMe: true, useCache: true }),
-                trpc.turns.getCommandTable.query({ generalId: id }),
-                trpc.messages.getRecent.query({ generalId: id }),
-                trpc.board.getAccess.query(),
-                generalTurnsPromise,
-                nationTurnsPromise,
-            ]);
+            const [layout, lobby, map, commands, messageData, contacts, access, generalTurns, nationTurns] =
+                await Promise.all([
+                    layoutPromise,
+                    trpc.lobby.info.query(),
+                    trpc.world.getMap.query({ generalId: id, showMe: true, useCache: true }),
+                    trpc.turns.getCommandTable.query({ generalId: id }),
+                    trpc.messages.getRecent.query({ generalId: id }),
+                    trpc.messages.getContacts.query({ generalId: id }),
+                    trpc.board.getAccess.query(),
+                    generalTurnsPromise,
+                    nationTurnsPromise,
+                ]);
 
             mapLayout.value = layout;
             lobbyInfo.value = lobby;
             worldMap.value = map;
             commandTable.value = commands;
             messages.value = messageData;
+            messageContacts.value = contacts;
             boardAccess.value = access;
             reservedGeneralTurns.value = generalTurns;
             reservedNationTurns.value = nationTurns;
+            if (initializedMailboxGeneralId !== id) {
+                targetMailbox.value = MESSAGE_MAILBOX_NATIONAL_BASE + context.general.nationId;
+                initializedMailboxGeneralId = id;
+            }
         } catch (err) {
             error.value = resolveErrorMessage(err);
         } finally {
@@ -200,12 +277,12 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         }
 
         try {
+            messageDraftText.value = '';
             await trpc.messages.send.mutate({
                 generalId: id,
                 mailbox,
                 text,
             });
-            messageDraftText.value = '';
             await refreshMessages();
         } catch (err) {
             error.value = resolveErrorMessage(err);
@@ -254,6 +331,44 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             if (!result.result) {
                 error.value = result.reason;
             }
+            await refreshMessages();
+        } catch (err) {
+            error.value = resolveErrorMessage(err);
+        }
+    };
+
+    const readLatestMessage = async (type: 'private' | 'diplomacy', messageId: number) => {
+        const id = generalId.value;
+        if (!id || messageId <= 0) {
+            return;
+        }
+        try {
+            await trpc.messages.readLatest.mutate({
+                generalId: id,
+                type,
+                messageId,
+            });
+            if (messages.value) {
+                messages.value = {
+                    ...messages.value,
+                    latestRead: {
+                        ...messages.value.latestRead,
+                        [type]: Math.max(messages.value.latestRead[type], messageId),
+                    },
+                };
+            }
+        } catch (err) {
+            error.value = resolveErrorMessage(err);
+        }
+    };
+
+    const deleteMessage = async (messageId: number) => {
+        const id = generalId.value;
+        if (!id) {
+            return;
+        }
+        try {
+            await trpc.messages.delete.mutate({ generalId: id, messageId });
             await refreshMessages();
         } catch (err) {
             error.value = resolveErrorMessage(err);
@@ -484,12 +599,13 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         selectedCity,
         commandTable,
         messages,
+        messageContacts,
         boardAccess,
         reservedGeneralTurns,
         reservedNationTurns,
         messageDraftText,
         targetMailbox,
-        mailboxOptions,
+        mailboxGroups,
         statusLine,
         realtimeLabel,
         setRealtimeEnabled,
@@ -498,6 +614,8 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         sendMessage,
         loadOlderMessages,
         respondToMessage,
+        readLatestMessage,
+        deleteMessage,
         setGeneralTurn,
         shiftGeneralTurns,
         setNationTurn,

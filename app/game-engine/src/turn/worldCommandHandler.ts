@@ -809,8 +809,34 @@ async function handleVacation(
     if (!general) {
         return { type: 'vacation', ok: false, generalId: command.generalId, reason: '장수 정보를 찾을 수 없습니다.' };
     }
+    const autorunUser = asRecord(world.getState().meta.autorun_user);
+    if (autorunUser.limit_minutes) {
+        return {
+            type: 'vacation',
+            ok: false,
+            generalId: command.generalId,
+            reason: '자동 턴인 경우에는 휴가 명령이 불가능합니다.',
+        };
+    }
+    const killturn = readMetaNumber(asRecord(world.getState().meta), 'killturn', 0);
+    world.updateGeneral(general.id, {
+        meta: {
+            ...general.meta,
+            killturn: killturn * 3,
+        },
+    });
     return { type: 'vacation', ok: true, generalId: command.generalId };
 }
+
+const normalizeDefenceTrain = (value: number): number => {
+    if (value <= 40) {
+        return 40;
+    }
+    if (value <= 90) {
+        return Math.round(value / 10) * 10;
+    }
+    return 999;
+};
 
 async function handleSetMySetting(
     ctx: CommandHandlerContext,
@@ -826,11 +852,48 @@ async function handleSetMySetting(
             reason: '장수 정보를 찾을 수 없습니다.',
         };
     }
+
+    const settings = command.settings;
+    const previousDefenceTrain = readMetaNumber(general.meta, 'defence_train', 80);
+    const nextDefenceTrain =
+        settings.defence_train === undefined ? previousDefenceTrain : normalizeDefenceTrain(settings.defence_train);
+    const nextMeta = { ...general.meta };
+
+    if (settings.tnmt !== undefined) {
+        nextMeta.tnmt = settings.tnmt < 0 || settings.tnmt > 1 ? 1 : settings.tnmt;
+    }
+    if (settings.use_treatment !== undefined) {
+        nextMeta.use_treatment = Math.max(10, Math.min(100, settings.use_treatment));
+    }
+    if (settings.use_auto_nation_turn !== undefined) {
+        nextMeta.use_auto_nation_turn = settings.use_auto_nation_turn;
+    }
+
+    let nextTrain = general.train;
+    let nextAtmos = general.atmos;
+    if (nextDefenceTrain !== previousDefenceTrain) {
+        nextMeta.myset = readMetaNumber(general.meta, 'myset', 0) - 1;
+        nextMeta.defence_train = nextDefenceTrain;
+        if (nextDefenceTrain === 999) {
+            const scenarioEffect = world.getScenarioConfig().environment.scenarioEffect;
+            const ignoresPenalty =
+                scenarioEffect === 'event_UnlimitedDefenceThresholdChange' ||
+                scenarioEffect === 'event_StrongAttacker' ||
+                scenarioEffect === 'event_MoreEffect';
+            const constValues = asRecord(world.getScenarioConfig().const);
+            const maxTrain = readMetaNumber(constValues, 'maxTrainByWar', 100);
+            const maxAtmos = readMetaNumber(constValues, 'maxAtmosByWar', 100);
+            const trainDelta = ignoresPenalty ? 0 : -3;
+            const atmosDelta = ignoresPenalty ? 0 : -6;
+            nextTrain = Math.max(20, Math.min(maxTrain, general.train + trainDelta));
+            nextAtmos = Math.max(20, Math.min(maxAtmos, general.atmos + atmosDelta));
+        }
+    }
+
     world.updateGeneral(command.generalId, {
-        meta: {
-            ...general.meta,
-            ...command.settings,
-        },
+        meta: nextMeta,
+        train: nextTrain,
+        atmos: nextAtmos,
     });
     return { type: 'setMySetting', ok: true, generalId: command.generalId };
 }
@@ -844,10 +907,8 @@ async function handleDropItem(
     if (!general) {
         return { type: 'dropItem', ok: false, generalId: command.generalId, reason: '장수 정보를 찾을 수 없습니다.' };
     }
-    const slot = (['horse', 'weapon', 'book', 'item'] as const).find(
-        (candidate) => general.role.items[candidate] === command.itemType
-    );
-    if (!slot) {
+    const slot = (['horse', 'weapon', 'book', 'item'] as const).find((candidate) => candidate === command.itemType);
+    if (!slot || !general.role.items[slot]) {
         return { type: 'dropItem', ok: false, generalId: command.generalId, reason: '아이템을 가지고 있지 않습니다.' };
     }
     const nextGeneral = {

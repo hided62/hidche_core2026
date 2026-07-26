@@ -21,7 +21,6 @@ import NotFoundView from '../views/NotFoundView.vue';
 import TournamentView from '../views/TournamentView.vue';
 import BettingView from '../views/BettingView.vue';
 import MyPageView from '../views/MyPageView.vue';
-import MySettingsView from '../views/MySettingsView.vue';
 import BoardView from '../views/BoardView.vue';
 import DiplomacyView from '../views/DiplomacyView.vue';
 import BestGeneralView from '../views/BestGeneralView.vue';
@@ -33,6 +32,7 @@ import TroopView from '../views/TroopView.vue';
 import YearbookView from '../views/YearbookView.vue';
 import NationBettingView from '../views/NationBettingView.vue';
 import NpcListView from '../views/NpcListView.vue';
+import TrafficView from '../views/TrafficView.vue';
 import { useSessionStore } from '../stores/session';
 
 const routes = [
@@ -197,7 +197,6 @@ const routes = [
         component: BattleSimulatorView,
         meta: {
             requiresAuth: true,
-            requiresGeneral: true,
         },
     },
     {
@@ -259,6 +258,11 @@ const routes = [
         },
     },
     {
+        path: '/traffic',
+        name: 'traffic',
+        component: TrafficView,
+    },
+    {
         path: '/npc-list',
         name: 'npc-list',
         component: NpcListView,
@@ -283,8 +287,7 @@ const routes = [
     },
     {
         path: '/my-settings',
-        name: 'my-settings',
-        component: MySettingsView,
+        redirect: '/my-page',
         meta: {
             requiresAuth: true,
             requiresGeneral: true,

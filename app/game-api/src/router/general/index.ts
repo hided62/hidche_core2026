@@ -2,7 +2,6 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { LogCategory, LogScope } from '@sammo-ts/infra';
-import type { GamePrisma } from '@sammo-ts/infra';
 import { asRecord } from '@sammo-ts/common';
 
 import { authedProcedure, router } from '../../trpc.js';
@@ -38,15 +37,19 @@ const normalizeItemCode = (value: string | null): string | null => {
 };
 
 const resolveUserSettings = (meta: Record<string, unknown>) => {
-    const settings = asRecord(meta.userSettings);
-    const mysetRaw = settings.myset;
+    // The legacy general columns are persisted at the top level of General.meta.
+    // Keep reading the short-lived nested shape for installations that ran the
+    // initial rewrite implementation before this compatibility fix.
+    const nestedSettings = asRecord(meta.userSettings);
+    const readSetting = (key: string): unknown => meta[key] ?? nestedSettings[key];
+    const mysetRaw = readSetting('myset');
     const myset = typeof mysetRaw === 'number' && Number.isFinite(mysetRaw) ? mysetRaw : null;
 
     return {
-        tnmt: readNumber(settings.tnmt, 1),
-        defence_train: readNumber(settings.defence_train, 80),
-        use_treatment: readNumber(settings.use_treatment, 10),
-        use_auto_nation_turn: readNumber(settings.use_auto_nation_turn, 1),
+        tnmt: readNumber(readSetting('tnmt'), 1),
+        defence_train: readNumber(readSetting('defence_train'), 80),
+        use_treatment: readNumber(readSetting('use_treatment'), 10),
+        use_auto_nation_turn: readNumber(readSetting('use_auto_nation_turn'), 1),
         myset,
     };
 };
@@ -262,28 +265,6 @@ export const generalRouter = router({
         if (!result.ok) {
             throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
         }
-
-        const metaRecord = asRecord(general.meta);
-        const prevSettings = asRecord(metaRecord.userSettings);
-        const prevMyset =
-            typeof prevSettings.myset === 'number' && Number.isFinite(prevSettings.myset) ? prevSettings.myset : null;
-        const nextSettings = {
-            ...prevSettings,
-            ...input,
-        } as Record<string, unknown>;
-        if (typeof prevMyset === 'number') {
-            nextSettings.myset = Math.max(0, prevMyset - 1);
-        }
-
-        await ctx.db.general.update({
-            where: { id: general.id },
-            data: {
-                meta: {
-                    ...metaRecord,
-                    userSettings: nextSettings,
-                } as GamePrisma.InputJsonValue,
-            },
-        });
 
         return { ok: true };
     }),

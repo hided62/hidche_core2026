@@ -4,10 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const imageRoots = [
-    resolve(repositoryRoot, '../image/game'),
-    resolve(repositoryRoot, '../../image/game'),
-];
+const imageRoots = [resolve(repositoryRoot, '../image/game'), resolve(repositoryRoot, '../../image/game')];
 const artifactRoot = process.env.FRONTEND_PARITY_ARTIFACT_DIR;
 
 const response = (data: unknown) => ({ result: { data } });
@@ -214,12 +211,39 @@ test('nation betting matches the legacy desktop geometry and preserves a failed 
     const geometry = await page.locator('#nation-betting-container').evaluate((container) => {
         const containerRect = container.getBoundingClientRect();
         const bar = container.querySelector<HTMLElement>('.legacy-top-bar')!.getBoundingClientRect();
+        const detail = container.querySelector<HTMLElement>('.betting-detail')!;
+        const detailRect = detail.getBoundingClientRect();
+        const candidateRowElement = container.querySelector<HTMLElement>('.betting-candidates')!;
+        const candidateRow = candidateRowElement.getBoundingClientRect();
+        const candidateCells = Array.from(container.querySelectorAll<HTMLElement>('.betting-candidate-cell'));
         const cards = Array.from(container.querySelectorAll<HTMLElement>('.betting-candidate'));
         const cardStyle = getComputedStyle(cards[0]!);
+        const optionalRect = (selector: string) => {
+            const element = container.querySelector<HTMLElement>(selector);
+            if (!element) return null;
+            const rect = element.getBoundingClientRect();
+            return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+        };
         return {
-            container: { x: containerRect.x, width: containerRect.width },
+            container: { x: containerRect.x, width: containerRect.width, height: containerRect.height },
             bar: { width: bar.width, height: bar.height },
-            cardWidths: cards.map((card) => card.getBoundingClientRect().width),
+            detail: { x: detailRect.x, width: detailRect.width },
+            candidateRow: {
+                x: candidateRow.x,
+                width: candidateRow.width,
+            },
+            candidateCells: candidateCells.map((cell) => {
+                const rect = cell.getBoundingClientRect();
+                return { x: rect.x, width: rect.width };
+            }),
+            cards: cards.map((card) => {
+                const rect = card.getBoundingClientRect();
+                return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+            }),
+            bettingForm: optionalRect('.betting-form'),
+            payoutTable: optionalRect('.payout-table'),
+            bettingList: optionalRect('.betting-list'),
+            bottomBar: optionalRect('.betting-footer'),
             cardStyle: {
                 borderWidth: cardStyle.borderWidth,
                 borderRadius: cardStyle.borderRadius,
@@ -229,24 +253,43 @@ test('nation betting matches the legacy desktop geometry and preserves a failed 
             },
         };
     });
-
-    expect(geometry.container).toEqual({ x: 140, width: 1000 });
+    expect(geometry.container).toEqual({ x: 140, width: 1000, height: 435 });
     expect(geometry.bar).toEqual({ width: 1000, height: 32 });
-    expect(geometry.cardWidths.every((width) => Math.abs(width - 162) < 1)).toBe(true);
+    expect(geometry.detail).toEqual({ x: 140, width: 1000 });
+    expect(geometry.candidateRow).toEqual({ x: 138.25, width: 1003.5 });
+    expect(geometry.candidateCells.map(({ width }) => width)).toEqual(Array(6).fill(167.25));
+    expect(geometry.cards.map(({ width }) => width)).toEqual(Array(6).fill(163.75));
+    expect(geometry.cards.map(({ height }) => height)).toEqual(Array(6).fill(143));
+    expect(geometry.cards.map(({ y }) => y)).toEqual(Array(6).fill(53));
+    expect(geometry.bettingForm).toEqual({ x: 140, y: 196, width: 1000, height: 35.5 });
+    expect(geometry.payoutTable).toEqual({ x: 140, y: 231.5, width: 1000, height: 85 });
+    expect(geometry.bettingList).toEqual({ x: 140, y: 330.5, width: 1000, height: 45.5 });
+    expect(geometry.bottomBar).toEqual({ x: 140, y: 379.5, width: 1000, height: 55.5 });
     expect(geometry.cardStyle).toEqual({
         borderWidth: '1px',
         borderRadius: '7px',
         cursor: 'pointer',
         fontSize: '14px',
-        lineHeight: '18.2px',
+        lineHeight: '21px',
     });
+    await expect(page.locator('.legacy-top-bar .legacy-nav-button')).toHaveCount(1);
+    await expect(page.locator('.payout-row:not(.payout-head)').first().locator('div').nth(2)).toHaveText(
+        '(50 -> 100.0)'
+    );
 
     await page.locator('.betting-candidate').nth(0).click();
     await page.locator('.betting-candidate').nth(1).click();
-    const pickedStyle = await page.locator('.betting-candidate').first().evaluate((candidate) => {
-        const style = getComputedStyle(candidate);
-        return { borderColor: style.borderColor, outlineWidth: style.outlineWidth, titleWeight: getComputedStyle(candidate.querySelector('.candidate-title')!).fontWeight };
-    });
+    const pickedStyle = await page
+        .locator('.betting-candidate')
+        .first()
+        .evaluate((candidate) => {
+            const style = getComputedStyle(candidate);
+            return {
+                borderColor: style.borderColor,
+                outlineWidth: style.outlineWidth,
+                titleWeight: getComputedStyle(candidate.querySelector('.candidate-title')!).fontWeight,
+            };
+        });
     expect(pickedStyle.borderColor).toBe('rgb(255, 255, 255)');
     // Chromium snaps the legacy 1.5px CSS outline to one device pixel at DSF 1.
     expect(pickedStyle.outlineWidth).toBe('1px');
@@ -281,6 +324,7 @@ test('nation betting keeps the legacy 500px three-column mobile contract', async
         return {
             x: rect.x,
             width: rect.width,
+            firstX: cards[0]!.getBoundingClientRect().x,
             firstWidth: cards[0]!.getBoundingClientRect().width,
             fourthY: cards[3]!.getBoundingClientRect().y,
             firstY: cards[0]!.getBoundingClientRect().y,
@@ -288,7 +332,8 @@ test('nation betting keeps the legacy 500px three-column mobile contract', async
     });
     expect(geometry.x).toBe(0);
     expect(geometry.width).toBe(500);
-    expect(geometry.firstWidth).toBeCloseTo(161.328125, 3);
+    expect(geometry.firstX).toBe(0);
+    expect(geometry.firstWidth).toBe(164.328125);
     expect(geometry.fourthY).toBeGreaterThan(geometry.firstY);
 
     if (artifactRoot) {
@@ -325,17 +370,7 @@ test('NPC list matches the legacy table geometry, sorting and error retention', 
     expect(geometry.tableWidth).toBe(1000);
     // The legacy width attributes total 974px; Chromium proportionally expands them into the 1000px table.
     expect(geometry.headerWidths).toEqual([
-        104.609375,
-        104.609375,
-        69.734375,
-        121.015625,
-        69.734375,
-        90.25,
-        69.734375,
-        69.734375,
-        69.734375,
-        69.734375,
-        80,
+        104.609375, 104.609375, 69.734375, 121.015625, 69.734375, 90.25, 69.734375, 69.734375, 69.734375, 69.734375, 80,
         80.109375,
     ]);
     expect(geometry.headerStyle).toEqual({
@@ -346,7 +381,10 @@ test('NPC list matches the legacy table geometry, sorting and error retention', 
         lineHeight: '18.2px',
     });
     await expect(page.locator('.npc-table tbody tr').first()).toContainText('관우');
-    await expect(page.locator('.npc-table tbody tr').first().locator('td').first()).toHaveCSS('color', 'rgb(135, 206, 235)');
+    await expect(page.locator('.npc-table tbody tr').first().locator('td').first()).toHaveCSS(
+        'color',
+        'rgb(135, 206, 235)'
+    );
     const personality = page.locator('.npc-table tbody tr').first().locator('.trait-tooltip').first();
     await personality.hover();
     await expect(personality.getByRole('tooltip')).toBeVisible();
