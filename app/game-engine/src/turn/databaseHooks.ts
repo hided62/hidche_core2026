@@ -22,7 +22,7 @@ import {
     type LogEntryDraft,
     type MessageRecordDraft,
 } from '@sammo-ts/logic';
-import { asRecord, type RankDataType } from '@sammo-ts/common';
+import { asRecord } from '@sammo-ts/common';
 
 import type { TurnDaemonCommandResult, TurnDaemonHooks } from '../lifecycle/types.js';
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
@@ -33,6 +33,7 @@ import { persistGeneralLifecycleEvents } from './generalTurnLifecyclePersistence
 import type { DatabaseTurnDaemonLease } from '../lifecycle/databaseTurnDaemonLease.js';
 import { calculateNationBettingRewards } from '../betting/nationBettingSettlement.js';
 import type { NationBettingCandidate, PendingNationBettingFinish, PendingNationBettingOpen } from './types.js';
+import { buildPersistedRankRows } from './rankData.js';
 
 export interface DatabaseTurnHooks {
     hooks: TurnDaemonHooks;
@@ -270,20 +271,6 @@ const toLegacyDatabaseInt = (value: number): number => {
     return value >= 0 ? Math.floor(value + 0.5) : Math.ceil(value - 0.5);
 };
 
-const readRankMetaNumber = (meta: Record<string, unknown>, key: string): number => {
-    const value = meta[key];
-    if (typeof value === 'number' && Number.isFinite(value)) {
-        return toLegacyDatabaseInt(value);
-    }
-    if (typeof value === 'string') {
-        const parsed = Number(value);
-        if (Number.isFinite(parsed)) {
-            return toLegacyDatabaseInt(parsed);
-        }
-    }
-    return 0;
-};
-
 const LEGACY_INTEGER_GENERAL_META_KEYS = [
     'leadership_exp',
     'strength_exp',
@@ -312,72 +299,10 @@ const buildPersistedGeneralMeta = (
     return asJson(meta);
 };
 
-const buildRankRows = (
-    general: ReturnType<InMemoryTurnWorld['consumeDirtyState']>['generals'][number]
-): Array<{ generalId: number; nationId: number; type: string; value: number }> => {
-    const meta = asRecord(general.meta);
-    const readMeta = (key: string) => readRankMetaNumber(meta, key);
-    const readRank = (key: string) => readRankMetaNumber(meta, `rank_${key}`);
-
-    const entries: Array<[RankDataType, number]> = [
-        ['experience', toLegacyDatabaseInt(general.experience)],
-        ['dedication', toLegacyDatabaseInt(general.dedication)],
-        ['firenum', readMeta('firenum')],
-        ['warnum', readRank('warnum')],
-        ['killnum', readRank('killnum')],
-        ['deathnum', readRank('deathnum')],
-        ['occupied', readRank('occupied')],
-        ['killcrew', readRank('killcrew')],
-        ['deathcrew', readRank('deathcrew')],
-        ['killcrew_person', readRank('killcrew_person')],
-        ['deathcrew_person', readRank('deathcrew_person')],
-        ['dex1', readMeta('dex1')],
-        ['dex2', readMeta('dex2')],
-        ['dex3', readMeta('dex3')],
-        ['dex4', readMeta('dex4')],
-        ['dex5', readMeta('dex5')],
-        ['ttw', readMeta('ttw')],
-        ['ttd', readMeta('ttd')],
-        ['ttl', readMeta('ttl')],
-        ['ttg', readMeta('ttg')],
-        ['ttp', readMeta('ttp')],
-        ['tlw', readMeta('tlw')],
-        ['tld', readMeta('tld')],
-        ['tll', readMeta('tll')],
-        ['tlg', readMeta('tlg')],
-        ['tlp', readMeta('tlp')],
-        ['tsw', readMeta('tsw')],
-        ['tsd', readMeta('tsd')],
-        ['tsl', readMeta('tsl')],
-        ['tsg', readMeta('tsg')],
-        ['tsp', readMeta('tsp')],
-        ['tiw', readMeta('tiw')],
-        ['tid', readMeta('tid')],
-        ['til', readMeta('til')],
-        ['tig', readMeta('tig')],
-        ['tip', readMeta('tip')],
-        ['betgold', readMeta('betgold')],
-        ['betwin', readMeta('betwin')],
-        ['betwingold', readMeta('betwingold')],
-        ['inherit_earned', readMeta('inherit_earned')],
-        ['inherit_spent', readMeta('inherit_spent')],
-        ['inherit_earned_dyn', readMeta('inherit_earned_dyn')],
-        ['inherit_earned_act', readMeta('inherit_earned_act')],
-        ['inherit_spent_dyn', readMeta('inherit_spent_dyn')],
-    ];
-
-    return entries.map(([type, value]) => ({
-        generalId: general.id,
-        nationId: general.nationId,
-        type,
-        value,
-    }));
-};
-
 const buildInitialRankRows = (
     general: ReturnType<InMemoryTurnWorld['consumeDirtyState']>['generals'][number]
 ): Array<{ generalId: number; nationId: number; type: string; value: number }> =>
-    buildRankRows(general).map((row) => ({ ...row, nationId: 0, value: 0 }));
+    buildPersistedRankRows(general).map((row) => ({ ...row, nationId: 0, value: 0 }));
 
 const RANK_DATA_UPSERT_BATCH_SIZE = 1_000;
 
@@ -976,7 +901,7 @@ export const createDatabaseTurnHooks = async (
             if (createdGenerals.length > 0 || rankTargets.length > 0) {
                 const rankRows = [
                     ...createdGenerals.flatMap(buildInitialRankRows),
-                    ...rankTargets.flatMap(buildRankRows),
+                    ...rankTargets.flatMap(buildPersistedRankRows),
                 ];
                 await upsertRankRows(prisma, rankRows);
             }

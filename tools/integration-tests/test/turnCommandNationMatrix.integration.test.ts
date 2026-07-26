@@ -12,6 +12,7 @@ const workspaceRoot = configuredWorkspaceRoot ?? findTurnDifferentialWorkspaceRo
 const integration = describe.skipIf(!workspaceRoot || process.env.TURN_DIFFERENTIAL_REFERENCE !== '1');
 
 const readGold = (row: { gold?: unknown } | undefined): number => (typeof row?.gold === 'number' ? row.gold : 0);
+const NPC_SEIZURE_MESSAGE_TEXT = '몰수를 하다니... 이것이 윗사람이 할 짓이란 말입니까...';
 
 const ignoredLifecyclePaths = [
     /^generalTurns/,
@@ -626,4 +627,49 @@ integration('nation command resource balance and target boundaries', () => {
         },
         120_000
     );
+});
+
+integration('nation seizure NPC public message parity', () => {
+    it('matches the legacy fixed-seed RNG and public message side effect', async () => {
+        const request = buildRequest(
+            'che_몰수',
+            { isGold: true, amount: 100, destGeneralID: 3 },
+            {
+                world: { hiddenSeed: 'seizure-message-37' },
+                generals: { 3: { name: '몰수NPC', npcState: 2 } },
+            }
+        );
+        const reference = runReferenceTurnCommandTraceRequest(
+            workspaceRoot!,
+            request as unknown as Record<string, unknown>
+        );
+        const core = await runCoreTurnCommandTrace(request, reference.before);
+
+        expect(reference.execution.outcome).toMatchObject({ completed: true });
+        expect(reference.rng).toHaveLength(2);
+        expect(reference.rng.map((call) => call.operation)).toEqual(['nextFloat1', 'nextInt']);
+        expect(core.rng).toEqual(reference.rng);
+        const referenceMessages = reference.after.messages.slice(reference.before.messages.length);
+        expect(referenceMessages).toHaveLength(1);
+        expect(core.after.messages).toHaveLength(1);
+        expect(referenceMessages[0]).toMatchObject({
+            mailbox: 9999,
+            type: 'public',
+            sourceId: 3,
+            destinationId: 9999,
+            payload: {
+                src: { id: 3, name: '몰수NPC', nation_id: 1, nation: '아국' },
+                dest: { id: 3, name: '몰수NPC', nation_id: 1, nation: '아국' },
+                text: NPC_SEIZURE_MESSAGE_TEXT,
+            },
+        });
+        expect(core.after.messages[0]).toMatchObject({
+            payload: {
+                msgType: 'public',
+                src: { generalId: 3, generalName: '몰수NPC', nationId: 1, nationName: '아국' },
+                dest: { generalId: 3, generalName: '몰수NPC', nationId: 1, nationName: '아국' },
+                text: NPC_SEIZURE_MESSAGE_TEXT,
+            },
+        });
+    }, 120_000);
 });

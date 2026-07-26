@@ -134,7 +134,7 @@ watch(
 );
 
 onMounted(() => {
-    loadData();
+    void loadData();
 });
 
 onBeforeUnmount(() => {
@@ -168,7 +168,11 @@ onBeforeUnmount(() => {
             </div>
 
             <div v-if="editing" class="editor-toolbar">
-                <button type="button" @click="editor?.chain().focus().toggleBold().run()" :class="{ active: editor?.isActive('bold') }">
+                <button
+                    type="button"
+                    @click="editor?.chain().focus().toggleBold().run()"
+                    :class="{ active: editor?.isActive('bold') }"
+                >
                     굵게
                 </button>
                 <button

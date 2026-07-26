@@ -11,10 +11,14 @@ export const readCoreDatabaseSnapshot = async (
     try {
         const db = connector.prisma;
         const world = await db.worldState.findFirstOrThrow({ orderBy: { id: 'asc' } });
-        const [generals, cities, nations, diplomacy, generalTurns, nationTurns, logs] = await Promise.all([
+        const [generals, rankData, cities, nations, diplomacy, generalTurns, nationTurns, logs] = await Promise.all([
             db.general.findMany({
                 where: { id: { in: selector.generalIds } },
                 orderBy: { id: 'asc' },
+            }),
+            db.rankData.findMany({
+                where: { generalId: { in: selector.generalIds } },
+                orderBy: [{ generalId: 'asc' }, { type: 'asc' }],
             }),
             db.city.findMany({
                 where: { id: { in: selector.cityIds } },
@@ -54,6 +58,7 @@ export const readCoreDatabaseSnapshot = async (
         return projectCoreDatabaseSnapshot({
             world,
             generals,
+            rankData,
             cities,
             nations,
             diplomacy,

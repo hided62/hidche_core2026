@@ -55,7 +55,7 @@ export const runBattleSimWorker = async (options: BattleSimWorkerOptions = {}): 
                 continue;
             }
 
-            let job: BattleSimJob | null = null;
+            let job: BattleSimJob;
             try {
                 job = JSON.parse(raw) as BattleSimJob;
             } catch {

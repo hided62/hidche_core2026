@@ -1125,7 +1125,7 @@ const shouldShowUI = computed(() => !loading.value && !!options.value);
 
                 <BattleGeneralCard
                     v-if="attackerGeneral"
-                    :general="attackerGeneral!"
+                    v-model:general="attackerGeneral"
                     :options="options!"
                     mode="attacker"
                     title="출병자 설정"
@@ -1193,7 +1193,7 @@ const shouldShowUI = computed(() => !loading.value && !!options.value);
                     <BattleGeneralCard
                         v-for="(defender, index) in defenders"
                         :key="defender.id"
-                        :general="defender"
+                        v-model:general="defenders[index]"
                         :options="options!"
                         mode="defender"
                         :title="`수비자 설정 ${index + 1}`"

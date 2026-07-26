@@ -33,6 +33,15 @@ ref `next_execute` KV와 core general meta의 공통 projection으로 비교한�
 존재하지 않는 대상 경계 4개는 증여·등용의 장수 ID와 첩보·이동의 도시 ID를
 고정해 원 명령 미완료, 휴식 fallback, RNG 무소비와 semantic delta를
 비교한다.
+
+2026-07-26부터 canonical snapshot은 관찰 장수의 `rank_data`도 비교한다.
+ref의 `RankColumn` 37종만 의미 행으로 정규화하며, ref에서 자연 `general`
+column인 경험·공헌·숙련을 위해 core가 보유한 7개 mirror row는 비교에서
+제외한다. 화계 fixture는 같은 초기 `firenum`에서 성공 명령 뒤 양쪽이
+동일하게 1 증가하는지 확인한다. 은퇴 fixture는 37종 전부를 서로 다른
+비영 값으로 채운 뒤 양쪽이 전부 0으로 만드는지 확인한다. 이 검증으로
+일반 명령 snapshot에서 누락됐던 명장일람 누적치와 은퇴 후 메모리→DB
+재저장 경로를 관찰한다.
 자원 인자·보유량 경계 13개는 증여·헌납·군량매매의 100단위 반올림과
 100..max clamp 9개, 헌납의 보유량보다 큰 요청·최소 쌀 미달 2개,
 증여의 최소 쌀 보존·자기 자신 거부 2개를 비교한다.

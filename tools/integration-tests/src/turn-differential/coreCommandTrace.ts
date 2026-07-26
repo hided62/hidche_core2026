@@ -18,6 +18,10 @@ import type {
     TurnWorldSnapshot,
     TurnWorldState,
 } from '@sammo-ts/game-engine/turn/types.js';
+import {
+    applyPersistedRankRowsToMeta,
+    buildLegacyComparableRankRows,
+} from '@sammo-ts/game-engine/turn/rankData.js';
 
 import {
     canonicalizeTurnCommandArgs,
@@ -47,6 +51,7 @@ export interface TurnCommandFixtureRequest {
         };
         isolateWorld?: boolean;
         generals?: Array<Record<string, unknown>>;
+        rankData?: Array<{ generalId: number; type: string; value: number }>;
         nations?: Array<Record<string, unknown>>;
         cities?: Array<Record<string, unknown>>;
         troops?: Array<Record<string, unknown>>;
@@ -295,6 +300,17 @@ const buildWorldInput = (
     const month = readNumber(referenceBefore.world, 'month', request.setup?.world?.month ?? 1);
     const turnTime = new Date(`${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-01T00:00:00.000Z`);
     const generals = referenceBefore.generals.map((row) => buildGeneral(row, turnTime));
+    for (const general of generals) {
+        applyPersistedRankRowsToMeta(
+            general.meta,
+            referenceBefore.rankData
+                .filter((row) => readNumber(row, 'generalId') === general.id)
+                .map((row) => ({
+                    type: readString(row, 'type', ''),
+                    value: readNumber(row, 'value'),
+                }))
+        );
+    }
     const referenceGeneralCooldowns = Array.isArray(referenceBefore.world.generalCooldowns)
         ? referenceBefore.world.generalCooldowns
         : [];
@@ -350,6 +366,7 @@ const buildWorldInput = (
                 baseRice: 2_000,
                 generalMinimumGold: 0,
                 generalMinimumRice: 500,
+                npcSeizureMessageProb: 0.01,
                 maxResourceActionAmount: 10_000,
                 maxTechLevel: 12,
                 maxLevel: 255,
@@ -523,6 +540,11 @@ const projectWorld = (
             }),
         },
         generals,
+        rankData: world
+            .listGenerals()
+            .filter((general) => selector.generalIds.has(general.id))
+            .flatMap(buildLegacyComparableRankRows)
+            .map((row) => ({ ...row })),
         cities: world
             .listCities()
             .filter((city) => selector.cityIds.has(city.id))
