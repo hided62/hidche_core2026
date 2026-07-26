@@ -57,11 +57,23 @@ describe('scenario parser', () => {
         const firstGeneral = scenario.generals[0]!;
         expect(firstGeneral.name).toBe('소제1');
         expect(firstGeneral.affinity).toBe(1);
-        expect(firstGeneral.picture).toBe(1001);
+        expect(firstGeneral.picture).toBe('장수/소제1.jpg');
         expect(firstGeneral.nation).toBe(1);
         expect(firstGeneral.city).toBe(null);
         expect(firstGeneral.leadership).toBe(20);
         expect(firstGeneral.personality).toBe('유지');
         expect(firstGeneral.special).toBe(null);
+    });
+
+    it('reuses the canonical name-based icon in a scenario that omitted numeric pictures', async () => {
+        const defaultsRaw = await readJson(path.join(scenarioRoot, 'default.json'));
+        const scenarioRaw = await readJson(path.join(scenarioRoot, 'scenario_2220.json'));
+        const defaults = parseScenarioDefaults(defaultsRaw);
+        const scenario = parseScenarioDefinition(scenarioRaw, defaults);
+
+        expect(scenario.generals[0]).toMatchObject({
+            name: '아회남',
+            picture: '장수/아회남.jpg',
+        });
     });
 });

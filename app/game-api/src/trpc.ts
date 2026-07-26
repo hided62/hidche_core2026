@@ -7,6 +7,21 @@ import { DuplicateInputEventError, executeInputEvent } from './inputEventBoundar
 
 const t = initTRPC.context<GameApiContext>().create();
 
+const requireAuthMiddleware = t.middleware(({ ctx, next }) => {
+    if (!ctx.auth) {
+        throw new TRPCError({
+            code: 'UNAUTHORIZED',
+            message: 'Unauthorized',
+        });
+    }
+    return next({
+        ctx: {
+            ...ctx,
+            auth: ctx.auth,
+        },
+    });
+});
+
 const inputEventMiddleware = t.middleware(async ({ ctx, type, path, next }) => {
     if (type !== 'mutation' || !ctx.db.$transaction) {
         return next();
@@ -46,17 +61,12 @@ const inputEventMiddleware = t.middleware(async ({ ctx, type, path, next }) => {
 
 export const router = t.router;
 export const procedure = t.procedure.use(inputEventMiddleware);
-export const authedProcedure: typeof procedure = procedure.use(({ ctx, next }) => {
-    if (!ctx.auth) {
-        throw new TRPCError({
-            code: 'UNAUTHORIZED',
-            message: 'Unauthorized',
-        });
-    }
-    return next({
-        ctx: {
-            ...ctx,
-            auth: ctx.auth,
-        },
-    });
-});
+export const authedProcedure: typeof procedure = procedure.use(requireAuthMiddleware);
+
+// 페이지 조회 계측처럼 game state/input-event 원장과 무관한 세션 보조
+// mutation에 사용한다. gameplay state 변경에는 사용하지 않는다.
+export const sessionActivityProcedure = t.procedure;
+
+// 시뮬레이터처럼 게임 상태를 변경하지 않는 계산은 input-event transaction과
+// 이벤트 원장을 만들지 않는다. 인증은 유지하되 lifecycle DB 경계 밖에서 실행한다.
+export const readOnlyAuthedProcedure: typeof procedure = t.procedure.use(requireAuthMiddleware);

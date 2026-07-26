@@ -2,11 +2,35 @@ import { z } from 'zod';
 
 import { asRecord, HALL_OF_FAME_TYPES, type HallOfFameType } from '@sammo-ts/common';
 import { ITEM_KEYS, ItemLoader, loadItemModules } from '@sammo-ts/logic/items/index.js';
+import type { ItemModule } from '@sammo-ts/logic/items/types.js';
+import { buildLegacyDefaultUniqueItemPool } from '@sammo-ts/logic/rewards/legacyUniqueItemPool.js';
+import { resolveUniqueConfig } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 
-import { procedure, router } from '../../trpc.js';
+import { authedProcedure, procedure, router } from '../../trpc.js';
 
-const DEFAULT_BG_COLOR = '#2b2b2b';
+const DEFAULT_BG_COLOR = '#330000';
 const DEFAULT_FG_COLOR = '#ffffff';
+const NEUTRAL_BG_COLOR = '#000000';
+const LEGACY_WHITE_TEXT_COLORS = new Set([
+    '',
+    '#330000',
+    '#FF0000',
+    '#800000',
+    '#A0522D',
+    '#FF6347',
+    '#808000',
+    '#008000',
+    '#2E8B57',
+    '#008080',
+    '#6495ED',
+    '#0000FF',
+    '#000080',
+    '#483D8B',
+    '#7B68EE',
+    '#800080',
+    '#A9A9A9',
+    '#000000',
+]);
 
 const readMetaNumber = (value: unknown): number => {
     if (typeof value === 'number' && Number.isFinite(value)) {
@@ -21,33 +45,43 @@ const readMetaNumber = (value: unknown): number => {
     return 0;
 };
 
-const percentText = (value: number): string => `${(value * 100).toFixed(2)}%`;
+export const formatLegacyRankingNumber = (value: number, fractionDigits = 0): string =>
+    new Intl.NumberFormat('en-US', {
+        minimumFractionDigits: fractionDigits,
+        maximumFractionDigits: fractionDigits,
+        useGrouping: true,
+    }).format(value);
+
+export const resolveLegacyTextColor = (backgroundColor: string): string =>
+    LEGACY_WHITE_TEXT_COLORS.has(backgroundColor.toUpperCase()) ? '#ffffff' : '#000000';
+
+const percentText = (value: number): string => `${formatLegacyRankingNumber(value * 100, 2)}%`;
+
+const readOwnerDisplayName = (value: unknown): string | null => {
+    const meta = asRecord(value);
+    if (typeof meta.ownerName === 'string' && meta.ownerName.length > 0) {
+        return meta.ownerName;
+    }
+    if (typeof meta.owner_name === 'string' && meta.owner_name.length > 0) {
+        return meta.owner_name;
+    }
+    return null;
+};
 
 const itemLoader = new ItemLoader();
-let cachedUniqueItems: Promise<
-    Array<{ key: string; name: string; slot: string; unique: boolean; buyable: boolean; info: string }>
-> | null = null;
+let cachedUniqueItems: Promise<ItemModule[]> | null = null;
 
 const loadUniqueItems = () => {
     if (!cachedUniqueItems) {
         cachedUniqueItems = loadItemModules([...ITEM_KEYS], itemLoader).then((modules) =>
-            modules
-                .filter((module) => module.unique && !module.buyable)
-                .map((module) => ({
-                    key: module.key,
-                    name: module.name,
-                    slot: module.slot,
-                    unique: module.unique,
-                    buyable: module.buyable,
-                    info: module.info,
-                }))
+            modules.filter((module) => module.unique && !module.buyable)
         );
     }
     return cachedUniqueItems;
 };
 
 export const rankingRouter = router({
-    getBestGeneral: procedure
+    getBestGeneral: authedProcedure
         .input(
             z
                 .object({
@@ -57,7 +91,7 @@ export const rankingRouter = router({
         )
         .query(async ({ ctx, input }) => {
             const worldState = await ctx.db.worldState.findFirst({
-                select: { meta: true },
+                select: { meta: true, config: true },
             });
             const meta = asRecord(worldState?.meta);
             const isUnited = typeof meta.isUnited === 'number' && meta.isUnited !== 0;
@@ -69,6 +103,7 @@ export const rankingRouter = router({
                 ctx.db.nation.findMany({ select: { id: true, name: true, color: true } }),
                 ctx.db.general.findMany({
                     where: { npcState: npcFilter },
+                    orderBy: { id: 'asc' },
                     select: {
                         id: true,
                         name: true,
@@ -76,6 +111,7 @@ export const rankingRouter = router({
                         userId: true,
                         picture: true,
                         imageServer: true,
+                        meta: true,
                         experience: true,
                         dedication: true,
                         horseCode: true,
@@ -129,11 +165,11 @@ export const rankingRouter = router({
                     }
                     return (r.killcrew_person ?? 0) / Math.max(1, r.deathcrew_person ?? 0);
                 }],
-                ['보 병 숙 련 도', 'int', (_g, r) => r.dex1 ?? 0],
-                ['궁 병 숙 련 도', 'int', (_g, r) => r.dex2 ?? 0],
-                ['기 병 숙 련 도', 'int', (_g, r) => r.dex3 ?? 0],
-                ['귀 병 숙 련 도', 'int', (_g, r) => r.dex4 ?? 0],
-                ['차 병 숙 련 도', 'int', (_g, r) => r.dex5 ?? 0],
+                ['보 병 숙 련 도', 'int', (g) => readMetaNumber(asRecord(g.meta).dex1)],
+                ['궁 병 숙 련 도', 'int', (g) => readMetaNumber(asRecord(g.meta).dex2)],
+                ['기 병 숙 련 도', 'int', (g) => readMetaNumber(asRecord(g.meta).dex3)],
+                ['귀 병 숙 련 도', 'int', (g) => readMetaNumber(asRecord(g.meta).dex4)],
+                ['차 병 숙 련 도', 'int', (g) => readMetaNumber(asRecord(g.meta).dex5)],
                 ['전 력 전 승 률', 'percent', (_g, r) => {
                     const total = (r.ttw ?? 0) + (r.ttd ?? 0) + (r.ttl ?? 0);
                     if (total < 50) {
@@ -182,17 +218,20 @@ export const rankingRouter = router({
                         const ranks = rankMap.get(general.id) ?? {};
                         const value = valueFn(general, ranks);
                         const nation = nationMap.get(general.nationId) ?? null;
+                        const bgColor =
+                            nation?.color ?? (general.nationId === 0 ? NEUTRAL_BG_COLOR : DEFAULT_BG_COLOR);
                         let display = {
                             id: general.id,
                             name: general.name,
-                            ownerName: general.userId ?? null,
+                            ownerName: isUnited ? readOwnerDisplayName(general.meta) : null,
                             nationName: nation?.name ?? '재야',
-                            bgColor: nation?.color ?? DEFAULT_BG_COLOR,
-                            fgColor: DEFAULT_FG_COLOR,
+                            bgColor,
+                            fgColor: resolveLegacyTextColor(bgColor),
                             picture: general.picture ?? null,
                             imageServer: general.imageServer ?? 0,
                             value,
-                            printValue: valueType === 'percent' ? percentText(value) : Math.floor(value).toLocaleString('ko-KR'),
+                            printValue:
+                                valueType === 'percent' ? percentText(value) : formatLegacyRankingNumber(value),
                         };
 
                         if (!isUnited && (title === '계 략 성 공' || title === '유 산 소 모 량' || title === '유 산 획 득 량')) {
@@ -202,7 +241,7 @@ export const rankingRouter = router({
                                 ownerName: null,
                                 nationName: '???',
                                 bgColor: DEFAULT_BG_COLOR,
-                                fgColor: DEFAULT_FG_COLOR,
+                                fgColor: resolveLegacyTextColor(DEFAULT_BG_COLOR),
                                 picture: null,
                                 imageServer: 0,
                             };
@@ -217,46 +256,93 @@ export const rankingRouter = router({
             });
 
             const uniqueItems = await loadUniqueItems();
-            const itemEntries = uniqueItems.map((item) => {
-                const owners = generals.filter((general) => {
-                    if (item.slot === 'horse') {
-                        return general.horseCode === item.key;
+            const itemRegistry = new Map(uniqueItems.map((item) => [item.key, item]));
+            const uniqueConfig = resolveUniqueConfig(asRecord(asRecord(worldState?.config).const));
+            if (Object.keys(uniqueConfig.allItems).length === 0) {
+                uniqueConfig.allItems = buildLegacyDefaultUniqueItemPool(itemRegistry);
+            }
+            const activeAuctions = await ctx.db.auction.findMany({
+                where: {
+                    type: 'UNIQUE_ITEM',
+                    status: { in: ['OPEN', 'FINALIZING'] },
+                    targetCode: { not: null },
+                },
+                select: { targetCode: true },
+            });
+            const auctionCounts = new Map<string, number>();
+            for (const auction of activeAuctions) {
+                if (auction.targetCode) {
+                    auctionCounts.set(auction.targetCode, (auctionCounts.get(auction.targetCode) ?? 0) + 1);
+                }
+            }
+            const slotTitles = {
+                horse: '명 마',
+                weapon: '명 검',
+                book: '명 서',
+                item: '도 구',
+            } as const;
+            const itemEntries = (['horse', 'weapon', 'book', 'item'] as const).map((slot) => {
+                const configuredItems = Object.entries(uniqueConfig.allItems[slot] ?? {}).reverse();
+                const entries = configuredItems.flatMap(([itemKey, rawCount]) => {
+                    const item = itemRegistry.get(itemKey);
+                    if (!item || item.buyable) {
+                        return [];
                     }
-                    if (item.slot === 'weapon') {
-                        return general.weaponCode === item.key;
+                    const owners = generals
+                        .filter((general) => {
+                            if (slot === 'horse') {
+                                return general.horseCode === itemKey;
+                            }
+                            if (slot === 'weapon') {
+                                return general.weaponCode === itemKey;
+                            }
+                            if (slot === 'book') {
+                                return general.bookCode === itemKey;
+                            }
+                            return general.itemCode === itemKey;
+                        })
+                        .map((general) => {
+                            const nation = nationMap.get(general.nationId) ?? null;
+                            const bgColor =
+                                nation?.color ?? (general.nationId === 0 ? NEUTRAL_BG_COLOR : DEFAULT_BG_COLOR);
+                            return {
+                                id: general.id,
+                                name: general.name,
+                                nationName: nation?.name ?? '재야',
+                                bgColor,
+                                fgColor: resolveLegacyTextColor(bgColor),
+                                picture: general.picture ?? null,
+                                imageServer: general.imageServer ?? 0,
+                            };
+                        });
+                    for (let index = 0; index < (auctionCounts.get(itemKey) ?? 0); index += 1) {
+                        owners.push({
+                            id: 0,
+                            name: '경매중',
+                            nationName: '-',
+                            bgColor: '#00582c',
+                            fgColor: '#ffffff',
+                            picture: null,
+                            imageServer: 0,
+                        });
                     }
-                    if (item.slot === 'book') {
-                        return general.bookCode === item.key;
-                    }
-                    return general.itemCode === item.key;
+                    const count = Math.max(0, Math.floor(rawCount));
+                    return Array.from({ length: count }, (_, index) => ({
+                        itemKey,
+                        itemName: item.name,
+                        itemInfo: item.info,
+                        owner: owners[index] ?? {
+                            id: 0,
+                            name: '미발견',
+                            nationName: '-',
+                            bgColor: DEFAULT_BG_COLOR,
+                            fgColor: resolveLegacyTextColor(DEFAULT_BG_COLOR),
+                            picture: null,
+                            imageServer: 0,
+                        },
+                    }));
                 });
-
-                const displayOwners = owners.length
-                    ? owners.map((general) => {
-                          const nation = nationMap.get(general.nationId) ?? null;
-                          return {
-                              id: general.id,
-                              name: general.name,
-                              nationName: nation?.name ?? '재야',
-                              bgColor: nation?.color ?? DEFAULT_BG_COLOR,
-                              fgColor: DEFAULT_FG_COLOR,
-                          };
-                      })
-                    : [
-                          {
-                              id: 0,
-                              name: '미발견',
-                              nationName: '-',
-                              bgColor: DEFAULT_BG_COLOR,
-                              fgColor: DEFAULT_FG_COLOR,
-                          },
-                      ];
-
-                return {
-                    title: item.name,
-                    slot: item.slot,
-                    owners: displayOwners,
-                };
+                return { title: slotTitles[slot], slot, entries };
             });
 
             return {
@@ -339,13 +425,20 @@ export const rankingRouter = router({
                         return {
                             generalId: row.generalNo,
                             name: String(aux.name ?? ''),
+                            ownerName:
+                                typeof aux.ownerDisplayName === 'string' && aux.ownerDisplayName.length > 0
+                                    ? aux.ownerDisplayName
+                                    : null,
                             nationName: String(aux.nationName ?? ''),
                             bgColor: String(aux.bgColor ?? DEFAULT_BG_COLOR),
                             fgColor: String(aux.fgColor ?? DEFAULT_FG_COLOR),
                             picture: typeof aux.picture === 'string' ? aux.picture : null,
                             imageServer: readMetaNumber(aux.imgsvr),
                             value: row.value,
-                            printValue: type.type === 'percent' ? percentText(row.value) : Math.floor(row.value).toLocaleString('ko-KR'),
+                            printValue:
+                                type.type === 'percent'
+                                    ? percentText(row.value)
+                                    : formatLegacyRankingNumber(row.value),
                             serverName: String(aux.serverName ?? ''),
                             serverIdx: readMetaNumber(aux.serverIdx),
                             scenarioName: String(aux.scenarioName ?? ''),

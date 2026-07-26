@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import MapViewer from '../components/main/MapViewer.vue';
 import { formatLog } from '../utils/formatLog';
@@ -25,12 +25,18 @@ type HistoryData = {
 };
 
 const router = useRouter();
+const route = useRoute();
 const loading = ref(false);
 const errorMessage = ref('');
 const range = ref<YearbookRange | null>(null);
 const mapLayout = ref<MapLayout | null>(null);
 const history = ref<HistoryData | null>(null);
 const selectedYearMonth = ref<number | null>(null);
+const serverID = computed(() => {
+    const value = route.query.serverID;
+    const raw = Array.isArray(value) ? value[0] : value;
+    return typeof raw === 'string' && raw.trim() ? raw.trim() : undefined;
+});
 
 const parseYearMonth = (value: number): { year: number; month: number } => ({
     year: Math.floor(value / 12),
@@ -66,7 +72,7 @@ const loadHistory = async (): Promise<void> => {
     errorMessage.value = '';
     try {
         const { year, month } = parseYearMonth(selectedYearMonth.value);
-        const result = await trpc.yearbook.getHistory.query({ year, month });
+        const result = await trpc.yearbook.getHistory.query({ year, month, serverID: serverID.value });
         if ('data' in result) {
             history.value = result.data;
         }
@@ -96,7 +102,7 @@ onMounted(async () => {
     loading.value = true;
     try {
         const [loadedRange, loadedLayout] = await Promise.all([
-            trpc.yearbook.getRange.query(),
+            trpc.yearbook.getRange.query(serverID.value ? { serverID: serverID.value } : undefined),
             trpc.public.getMapLayout.query(),
         ]);
         range.value = loadedRange;

@@ -21,7 +21,6 @@ import NotFoundView from '../views/NotFoundView.vue';
 import TournamentView from '../views/TournamentView.vue';
 import BettingView from '../views/BettingView.vue';
 import MyPageView from '../views/MyPageView.vue';
-import MySettingsView from '../views/MySettingsView.vue';
 import BoardView from '../views/BoardView.vue';
 import DiplomacyView from '../views/DiplomacyView.vue';
 import BestGeneralView from '../views/BestGeneralView.vue';
@@ -35,7 +34,38 @@ import NationBettingView from '../views/NationBettingView.vue';
 import NpcListView from '../views/NpcListView.vue';
 import NationListView from '../views/NationListView.vue';
 import GeneralListView from '../views/GeneralListView.vue';
+import TrafficView from '../views/TrafficView.vue';
 import { useSessionStore } from '../stores/session';
+import { trpc } from '../utils/trpc';
+
+const accessPageByRouteName = {
+    home: 'front-info',
+    'nation-info': 'nation-info',
+    'nation-cities': 'nation-cities',
+    'global-info': 'global-info',
+    'nation-list': 'nation-list',
+    'general-list': 'general-list',
+    'current-city': 'current-city',
+    diplomacy: 'diplomacy',
+    'nation-generals': 'nation-generals',
+    'nation-personnel': 'nation-personnel',
+    'nation-finance': 'nation-finance',
+    'battle-center': 'battle-center',
+    board: 'board',
+    'board-secret': 'board',
+    'best-general': 'best-general',
+    'hall-of-fame': 'hall-of-fame',
+    'dynasty-list': 'dynasty',
+    'dynasty-detail': 'dynasty',
+    yearbook: 'yearbook',
+    'nation-betting': 'nation-betting',
+    traffic: 'traffic',
+    'npc-list': 'npc-list',
+    'my-page': 'my-page',
+    'npc-control': 'npc-control',
+    tournament: 'tournament',
+    betting: 'betting',
+} as const;
 
 const routes = [
     {
@@ -211,7 +241,6 @@ const routes = [
         component: BattleSimulatorView,
         meta: {
             requiresAuth: true,
-            requiresGeneral: true,
         },
     },
     {
@@ -261,6 +290,7 @@ const routes = [
         component: YearbookView,
         meta: {
             requiresAuth: true,
+            requiresGeneral: true,
         },
     },
     {
@@ -271,6 +301,11 @@ const routes = [
             requiresAuth: true,
             requiresGeneral: true,
         },
+    },
+    {
+        path: '/traffic',
+        name: 'traffic',
+        component: TrafficView,
     },
     {
         path: '/npc-list',
@@ -297,8 +332,7 @@ const routes = [
     },
     {
         path: '/my-settings',
-        name: 'my-settings',
-        component: MySettingsView,
+        redirect: '/my-page',
         meta: {
             requiresAuth: true,
             requiresGeneral: true,
@@ -379,6 +413,16 @@ router.beforeEach(async (to) => {
     }
 
     return true;
+});
+
+router.afterEach((to) => {
+    const session = useSessionStore();
+    const routeName = typeof to.name === 'string' ? to.name : '';
+    const page = accessPageByRouteName[routeName as keyof typeof accessPageByRouteName];
+    if (!page || !session.hasGeneral) {
+        return;
+    }
+    void trpc.public.recordAccess.mutate({ page }).catch(() => undefined);
 });
 
 export default router;

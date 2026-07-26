@@ -26,6 +26,7 @@ type BattleExport = {
 type ExportedInfo = { objType: 'general'; data: GeneralExport } | { objType: 'battle'; data: BattleExport };
 
 type GeneralListResponse = Awaited<ReturnType<typeof trpc.battle.getGeneralList.query>>;
+type GeneralMeResponse = Awaited<ReturnType<typeof trpc.general.me.query>>;
 
 const loading = ref(true);
 const error = ref<string | null>(null);
@@ -72,6 +73,7 @@ const importTarget = ref<GeneralDraft | null>(null);
 const generalList = ref<GeneralListResponse | null>(null);
 const generalListLoading = ref(false);
 const selectedGeneralId = ref<number | null>(null);
+const gameDefaults = ref<GeneralMeResponse>(null);
 
 let generalIdSeed = 0;
 
@@ -250,6 +252,7 @@ const initializeDefaults = async () => {
     try {
         const [context, me] = await Promise.all([trpc.battle.getSimulatorContext.query(), trpc.general.me.query()]);
         options.value = context;
+        gameDefaults.value = me;
         year.value = context.world.currentYear;
         month.value = context.world.currentMonth;
         repeatCnt.value = 1;
@@ -281,6 +284,47 @@ const initializeDefaults = async () => {
     } finally {
         loading.value = false;
     }
+};
+
+const hasGameGeneral = computed(() => !!gameDefaults.value?.general?.id);
+
+const applyGameEnvironment = () => {
+    if (!options.value) {
+        return;
+    }
+    const me = gameDefaults.value;
+    const nationTypeDefault = options.value.nationTypes[0]?.key ?? 'che_중립';
+    year.value = options.value.world.currentYear;
+    month.value = options.value.world.currentMonth;
+    attackerNation.type = me?.nation?.typeCode ?? nationTypeDefault;
+    defenderNation.type = attackerNation.type;
+    attackerNation.level = me?.nation?.level ?? 0;
+    defenderNation.level = attackerNation.level;
+    attackerNation.tech = me?.nation?.tech ? Math.floor(me.nation.tech / 1000) : 1;
+    defenderNation.tech = attackerNation.tech;
+    attackerCity.level = me?.city?.level ?? 5;
+    defenderCity.level = attackerCity.level;
+    defenderCity.def = me?.city?.defence ?? 1000;
+    defenderCity.wall = me?.city?.wall ?? 1000;
+    attackerNation.isCapital = !!me?.city && me.nation?.capitalCityId === me.city.id;
+    defenderNation.isCapital = attackerNation.isCapital;
+    error.value = null;
+};
+
+const applyIndependentEnvironment = () => {
+    if (!options.value) {
+        return;
+    }
+    const nationTypeDefault = options.value.nationTypes[0]?.key ?? 'che_중립';
+    year.value = options.value.world.startYear;
+    month.value = 1;
+    seed.value = '';
+    repeatCnt.value = 1;
+    Object.assign(attackerNation, { type: nationTypeDefault, tech: 1, level: 0, isCapital: false });
+    Object.assign(defenderNation, { type: nationTypeDefault, tech: 1, level: 0, isCapital: false });
+    attackerCity.level = 5;
+    Object.assign(defenderCity, { level: 5, def: 1000, wall: 1000 });
+    error.value = null;
 };
 
 onMounted(() => {
@@ -536,13 +580,19 @@ const runSimulation = async (action: BattleSimRequestPayload['action']) => {
     }
 
     isSimulating.value = true;
+    error.value = null;
+    if (action === 'battle') {
+        battleResult.value = null;
+    }
     statusMessage.value = action === 'battle' ? '전투를 진행 중입니다.' : '수비자 순서를 계산 중입니다.';
 
     try {
         const payload = buildBattlePayload(action);
         const response = await trpc.battle.simulate.mutate(payload);
         const result =
-            'payload' in response && response.payload ? response.payload : await waitForSimulationResult(response.jobId);
+            'payload' in response && response.payload
+                ? response.payload
+                : await waitForSimulationResult(response.jobId);
 
         if (!result.result) {
             error.value = result.reason || 'battle_failed';
@@ -786,6 +836,10 @@ const loadGeneralList = async () => {
 };
 
 const openImportModal = async (target: GeneralDraft) => {
+    if (!hasGameGeneral.value) {
+        error.value = '게임 장수를 보유한 사용자만 서버 장수 정보를 가져올 수 있습니다.';
+        return;
+    }
     importTarget.value = target;
     importOpen.value = true;
     if (!generalList.value) {
@@ -801,47 +855,62 @@ const closeImportModal = () => {
     importTarget.value = null;
 };
 
+const applyServerGeneral = async (target: GeneralDraft, generalId: number) => {
+    const response = await trpc.battle.getGeneralDetail.query({ generalId });
+    applyGeneralExport(target, {
+        no: response.general.no,
+        name: response.general.name,
+        officerLevel: response.general.officer_level,
+        expLevel: response.general.explevel,
+        leadership: response.general.leadership,
+        strength: response.general.strength,
+        intel: response.general.intel,
+        horse: response.general.horse,
+        weapon: response.general.weapon,
+        book: response.general.book,
+        item: response.general.item,
+        injury: response.general.injury,
+        rice: response.general.rice,
+        personal: response.general.personal,
+        special2: response.general.special2,
+        crew: response.general.crew,
+        crewtype: response.general.crewtype,
+        atmos: response.general.atmos,
+        train: response.general.train,
+        dex1: response.general.dex1,
+        dex2: response.general.dex2,
+        dex3: response.general.dex3,
+        dex4: response.general.dex4,
+        dex5: response.general.dex5,
+        defenceTrain: response.general.defence_train,
+        warnum: response.general.warnum,
+        killnum: response.general.killnum,
+        killcrew: response.general.killcrew,
+        inheritBuff: createInheritBuff(),
+    });
+    target.no = target === attackerGeneral.value ? 1 : resolveGeneralNo(response.general.no, target.id);
+};
+
+const applyMyGeneralToAttacker = async () => {
+    const generalId = gameDefaults.value?.general?.id;
+    if (!attackerGeneral.value || !generalId) {
+        error.value = '불러올 내 장수가 없습니다.';
+        return;
+    }
+    try {
+        error.value = null;
+        await applyServerGeneral(attackerGeneral.value, generalId);
+    } catch (err) {
+        error.value = resolveErrorMessage(err);
+    }
+};
+
 const confirmImport = async () => {
     if (!importTarget.value || !selectedGeneralId.value) {
         return;
     }
     try {
-        const response = await trpc.battle.getGeneralDetail.query({ generalId: selectedGeneralId.value });
-        applyGeneralExport(importTarget.value, {
-            no: response.general.no,
-            name: response.general.name,
-            officerLevel: response.general.officer_level,
-            expLevel: response.general.explevel,
-            leadership: response.general.leadership,
-            strength: response.general.strength,
-            intel: response.general.intel,
-            horse: response.general.horse,
-            weapon: response.general.weapon,
-            book: response.general.book,
-            item: response.general.item,
-            injury: response.general.injury,
-            rice: response.general.rice,
-            personal: response.general.personal,
-            special2: response.general.special2,
-            crew: response.general.crew,
-            crewtype: response.general.crewtype,
-            atmos: response.general.atmos,
-            train: response.general.train,
-            dex1: response.general.dex1,
-            dex2: response.general.dex2,
-            dex3: response.general.dex3,
-            dex4: response.general.dex4,
-            dex5: response.general.dex5,
-            defenceTrain: response.general.defence_train,
-            warnum: response.general.warnum,
-            killnum: response.general.killnum,
-            killcrew: response.general.killcrew,
-            inheritBuff: createInheritBuff(),
-        });
-        importTarget.value.no =
-            importTarget.value === attackerGeneral.value
-                ? 1
-                : resolveGeneralNo(response.general.no, importTarget.value.id);
+        await applyServerGeneral(importTarget.value, selectedGeneralId.value);
     } catch (err) {
         error.value = resolveErrorMessage(err);
     } finally {
@@ -882,19 +951,21 @@ const summaryRows = computed(() => {
         { label: '전투 페이즈', value: formatNumber(battleResult.value.phase) },
         {
             label: '준 피해',
-            value: battleResult.value.minKilled !== battleResult.value.maxKilled
-                ? `${formatNumber(battleResult.value.killed)} (${formatNumber(battleResult.value.minKilled)} ~ ${formatNumber(
-                      battleResult.value.maxKilled
-                  )})`
-                : formatNumber(battleResult.value.killed),
+            value:
+                battleResult.value.minKilled !== battleResult.value.maxKilled
+                    ? `${formatNumber(battleResult.value.killed)} (${formatNumber(battleResult.value.minKilled)} ~ ${formatNumber(
+                          battleResult.value.maxKilled
+                      )})`
+                    : formatNumber(battleResult.value.killed),
         },
         {
             label: '받은 피해',
-            value: battleResult.value.minDead !== battleResult.value.maxDead
-                ? `${formatNumber(battleResult.value.dead)} (${formatNumber(battleResult.value.minDead)} ~ ${formatNumber(
-                      battleResult.value.maxDead
-                  )})`
-                : formatNumber(battleResult.value.dead),
+            value:
+                battleResult.value.minDead !== battleResult.value.maxDead
+                    ? `${formatNumber(battleResult.value.dead)} (${formatNumber(battleResult.value.minDead)} ~ ${formatNumber(
+                          battleResult.value.maxDead
+                      )})`
+                    : formatNumber(battleResult.value.dead),
         },
         { label: '출병자 군량 소모', value: formatNumber(battleResult.value.attackerRice) },
         { label: '수비자 군량 소모', value: formatNumber(battleResult.value.defenderRice) },
@@ -936,6 +1007,32 @@ const shouldShowUI = computed(() => !loading.value && !!options.value);
                 <button class="ghost" type="button" @click="triggerBattleLoad">모두 불러오기</button>
             </div>
         </header>
+
+        <section class="independence-notice" aria-label="시뮬레이터 데이터 안내">
+            <div>
+                <strong>게임 상태와 분리된 모의 계산</strong>
+                <p>
+                    현재 연도·국가·도시는 시작값으로만 읽으며, 아래 편집과 전투 결과는 턴·DB·장수 상태를 변경하지
+                    않습니다.
+                </p>
+            </div>
+            <div class="notice-actions">
+                <button class="ghost" type="button" :disabled="!options" @click="applyGameEnvironment">
+                    현재 게임 환경 적용
+                </button>
+                <button class="ghost" type="button" :disabled="!options" @click="applyIndependentEnvironment">
+                    독립 기본값
+                </button>
+                <button
+                    class="ghost"
+                    type="button"
+                    :disabled="!hasGameGeneral || !attackerGeneral"
+                    @click="applyMyGeneralToAttacker"
+                >
+                    내 장수를 출병자로
+                </button>
+            </div>
+        </section>
 
         <div v-if="error" class="error">{{ error }}</div>
         <div v-if="statusMessage" class="status">{{ statusMessage }}</div>
@@ -1028,10 +1125,11 @@ const shouldShowUI = computed(() => !loading.value && !!options.value);
 
                 <BattleGeneralCard
                     v-if="attackerGeneral"
-                    :general="attackerGeneral!"
+                    v-model:general="attackerGeneral"
                     :options="options!"
                     mode="attacker"
                     title="출병자 설정"
+                    :can-import-server="hasGameGeneral"
                     @import="openImportModal(attackerGeneral!)"
                     @save="saveGeneral(attackerGeneral!)"
                     @load="(payload) => handleGeneralLoad({ target: attackerGeneral!, file: payload.file })"
@@ -1095,10 +1193,11 @@ const shouldShowUI = computed(() => !loading.value && !!options.value);
                     <BattleGeneralCard
                         v-for="(defender, index) in defenders"
                         :key="defender.id"
-                        :general="defender"
+                        v-model:general="defenders[index]"
                         :options="options!"
                         mode="defender"
                         :title="`수비자 설정 ${index + 1}`"
+                        :can-import-server="hasGameGeneral"
                         @import="openImportModal(defender)"
                         @save="saveGeneral(defender)"
                         @load="(payload) => handleGeneralLoad({ target: defender, file: payload.file })"
@@ -1146,11 +1245,7 @@ const shouldShowUI = computed(() => !loading.value && !!options.value);
                     </div>
                     <div v-else class="select-wrap">
                         <select v-model.number="selectedGeneralId">
-                            <optgroup
-                                v-for="group in generalGroups"
-                                :key="group.nation.id"
-                                :label="group.nation.name"
-                            >
+                            <optgroup v-for="group in generalGroups" :key="group.nation.id" :label="group.nation.name">
                                 <option
                                     v-for="general in group.generals"
                                     :key="general.id"
@@ -1176,6 +1271,8 @@ const shouldShowUI = computed(() => !loading.value && !!options.value);
     display: flex;
     flex-direction: column;
     gap: 18px;
+    width: min(100%, 1000px);
+    margin: 0 auto;
     padding-bottom: 30px;
     background:
         radial-gradient(circle at top left, rgba(201, 164, 90, 0.15), transparent 45%),
@@ -1207,6 +1304,34 @@ const shouldShowUI = computed(() => !loading.value && !!options.value);
     gap: 8px;
 }
 
+.independence-notice {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 10px 12px;
+    border: 1px solid rgba(112, 170, 141, 0.45);
+    background: rgba(18, 52, 40, 0.35);
+}
+
+.independence-notice strong {
+    color: #bfe2cd;
+    font-size: 0.85rem;
+}
+
+.independence-notice p {
+    margin: 4px 0 0;
+    color: rgba(221, 239, 228, 0.75);
+    font-size: 0.75rem;
+}
+
+.notice-actions {
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
 button {
     font-family: inherit;
     background: none;
@@ -1228,6 +1353,11 @@ button {
 
 .ghost {
     background: rgba(16, 16, 16, 0.6);
+}
+
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
 }
 
 .error {
@@ -1368,6 +1498,11 @@ button {
     .battle-header {
         flex-direction: column;
         align-items: flex-start;
+    }
+
+    .independence-notice {
+        align-items: flex-start;
+        flex-direction: column;
     }
 }
 </style>

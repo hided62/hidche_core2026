@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { LEGACY_RANK_DATA_TYPES } from '@sammo-ts/common';
 import type { TurnSchedule } from '@sammo-ts/logic';
 
+import { rankMetaKey } from '../src/turn/rankData.js';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 import { createTurnTestHarness } from './helpers/turnTestHarness.js';
 
@@ -294,6 +296,9 @@ describe('legacy general turn lifecycle', () => {
     });
 
     it('retires a player general and resets inherited stats and rank state', async () => {
+        const legacyRankMeta = Object.fromEntries(
+            LEGACY_RANK_DATA_TYPES.map((type, index) => [rankMetaKey(type), index + 1])
+        );
         const harness = await createTurnTestHarness({
             snapshot: makeSnapshot([
                 makeGeneral({
@@ -302,11 +307,11 @@ describe('legacy general turn lifecycle', () => {
                     experience: 101,
                     dedication: 81,
                     meta: {
+                        ...legacyRankMeta,
                         killturn: 24,
                         dex1: 101,
                         inherit_lived_month: 10,
                         inherit_active_action: 4,
-                        rank_warnum: 12,
                     },
                 }),
             ]),
@@ -325,7 +330,9 @@ describe('legacy general turn lifecycle', () => {
         expect(updated.meta.dex1).toBe(51);
         expect(updated.meta.inherit_lived_month).toBe(0);
         expect(updated.meta.inherit_active_action).toBe(0);
-        expect(updated.meta.rank_warnum).toBe(0);
+        for (const type of LEGACY_RANK_DATA_TYPES) {
+            expect(updated.meta[rankMetaKey(type)], type).toBe(0);
+        }
         expect(harness.world.peekDirtyState().lifecycleEvents[0]?.outcome).toBe('retired');
     });
 });

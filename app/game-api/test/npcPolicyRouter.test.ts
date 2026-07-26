@@ -1,0 +1,275 @@
+import { describe, expect, it, vi } from 'vitest';
+
+import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
+import type { RedisConnector } from '@sammo-ts/infra';
+
+import { RedisAccessTokenStore } from '../src/auth/accessTokenStore.js';
+import { InMemoryFlushStore } from '../src/auth/flushStore.js';
+import type { DatabaseClient, GameApiContext, GeneralRow } from '../src/context.js';
+import type { TurnDaemonTransport } from '../src/daemon/transport.js';
+import { appRouter } from '../src/router.js';
+
+const baseGeneral: GeneralRow = {
+    id: 22,
+    userId: 'user-22',
+    name: '정책담당',
+    nationId: 1,
+    cityId: 1,
+    troopId: 0,
+    npcState: 0,
+    affinity: null,
+    bornYear: 180,
+    deadYear: 300,
+    picture: 'default.jpg',
+    imageServer: 0,
+    leadership: 70,
+    strength: 70,
+    intel: 70,
+    injury: 0,
+    experience: 0,
+    dedication: 0,
+    officerLevel: 12,
+    gold: 1_000,
+    rice: 1_000,
+    crew: 0,
+    crewTypeId: 0,
+    train: 0,
+    atmos: 0,
+    weaponCode: 'None',
+    bookCode: 'None',
+    horseCode: 'None',
+    itemCode: 'None',
+    turnTime: new Date('2026-01-01T00:00:00.000Z'),
+    recentWarTime: null,
+    age: 20,
+    startAge: 20,
+    personalCode: 'None',
+    specialCode: 'None',
+    special2Code: 'None',
+    lastTurn: {},
+    meta: { belong: 5, permission: 'normal' },
+    penalty: {},
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+};
+
+const auth: GameSessionTokenPayload = {
+    version: 1,
+    profile: 'che:default',
+    issuedAt: '2026-01-01T00:00:00.000Z',
+    expiresAt: '2026-01-02T00:00:00.000Z',
+    sessionId: 'session-22',
+    user: { id: 'user-22', username: 'tester', displayName: 'Tester', roles: [] },
+    sanctions: {},
+};
+
+const baseNation = {
+    id: 1,
+    name: '위',
+    level: 3,
+    tech: 3_000,
+    meta: {
+        _updatedAt: '2026-01-01T00:00:00.000Z',
+        npc_nation_policy: {
+            values: { reqNationRice: 456 },
+            priority: ['천도', '천도'],
+        },
+        npc_general_policy: {
+            priority: ['출병', '일반내정', '출병'],
+        },
+    },
+};
+
+const baseWorld = {
+    config: {
+        stat: { max: 80, npcMax: 75 },
+        environment: { unitSet: 'basic' },
+        const: { develCost: 100 },
+    },
+    meta: {
+        npc_nation_policy: { values: { reqNationGold: 123 } },
+        npc_general_policy: {},
+    },
+};
+
+const createContext = (
+    options: {
+        me?: GeneralRow;
+        nation?: typeof baseNation;
+        world?: typeof baseWorld;
+        requestCommand?: ReturnType<typeof vi.fn>;
+        troopRows?: Array<{ troopLeaderId: number }>;
+        cityRows?: Array<{ id: number }>;
+    } = {}
+): { context: GameApiContext; findFirst: ReturnType<typeof vi.fn>; requestCommand: ReturnType<typeof vi.fn> } => {
+    const requestCommand =
+        options.requestCommand ??
+        vi.fn(async () => ({
+            type: 'setNationMeta',
+            ok: true,
+            nationId: 1,
+            updatedAt: '2026-01-01T00:01:00.000Z',
+        }));
+    const findFirst = vi.fn(async () => options.me ?? baseGeneral);
+    const db = {
+        general: { findFirst },
+        nation: { findUnique: vi.fn(async () => options.nation ?? baseNation) },
+        worldState: { findFirst: vi.fn(async () => options.world ?? baseWorld) },
+        troop: { findMany: vi.fn(async () => options.troopRows ?? [{ troopLeaderId: 101 }]) },
+        city: { findMany: vi.fn(async () => options.cityRows ?? [{ id: 1 }, { id: 2 }]) },
+    };
+    const redisClient = { get: async () => null, set: async () => null };
+    return {
+        context: {
+            db: db as unknown as DatabaseClient,
+            redis: {} as RedisConnector['client'],
+            turnDaemon: { requestCommand } as unknown as TurnDaemonTransport,
+            battleSim: {} as GameApiContext['battleSim'],
+            profile: { id: 'che', scenario: 'default', name: 'che:default' },
+            auth,
+            uploadDir: 'uploads',
+            uploadPath: '/uploads',
+            uploadPublicUrl: null,
+            accessTokenStore: new RedisAccessTokenStore(redisClient, 'che:default'),
+            flushStore: new InMemoryFlushStore(),
+            gameTokenSecret: 'test-secret',
+        },
+        findFirst,
+        requestCommand,
+    };
+};
+
+describe('NPC policy router', () => {
+    it('loads server and nation overrides while calculating legacy zero-value hints from nation tech', async () => {
+        const fixture = createContext();
+        const result = await appRouter.createCaller(fixture.context).npc.getPolicy();
+
+        expect(fixture.findFirst).toHaveBeenCalledWith({ where: { userId: 'user-22' } });
+        expect(result.currentNationPolicy).toMatchObject({ reqNationGold: 123, reqNationRice: 456 });
+        expect(result.currentNationPriority).toEqual(['천도', '천도']);
+        expect(result.currentGeneralActionPriority).toEqual(['출병', '일반내정', '출병']);
+        expect(result.zeroPolicy).toMatchObject({
+            reqNationGold: 10_000,
+            reqNationRice: 12_000,
+            reqNPCDevelGold: 3_000,
+            reqNPCWarGold: 3_900,
+            reqNPCWarRice: 3_900,
+            reqHumanWarUrgentGold: 6_300,
+            reqHumanWarUrgentRice: 6_300,
+            reqHumanWarRecommandGold: 12_600,
+            reqHumanWarRecommandRice: 12_600,
+        });
+    });
+
+    it('lets a secret-level reader load the page but rejects every mutation before daemon dispatch', async () => {
+        const reader = { ...baseGeneral, officerLevel: 2 };
+        const fixture = createContext({ me: reader });
+        const caller = appRouter.createCaller(fixture.context);
+
+        await expect(caller.npc.getPolicy()).resolves.toMatchObject({ permissionLevel: 1 });
+        await expect(caller.npc.setNationPriority(['천도'])).rejects.toMatchObject({ code: 'FORBIDDEN' });
+        await expect(caller.npc.setGeneralPriority(['출병', '일반내정'])).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+        });
+        await expect(caller.npc.setNationPolicy({ reqNationGold: 100 })).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+        });
+        expect(fixture.requestCommand).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['군주', { ...baseGeneral, officerLevel: 12 }],
+        ['감찰권자', { ...baseGeneral, officerLevel: 1, meta: { belong: 0, permission: 'auditor' } }],
+        ['외교권자', { ...baseGeneral, officerLevel: 1, meta: { belong: 0, permission: 'ambassador' } }],
+    ])('%s can persist policy through the daemon-owned metadata command', async (_label, me) => {
+        const fixture = createContext({ me });
+        await expect(appRouter.createCaller(fixture.context).npc.setNationPriority(['천도', '천도'])).resolves.toEqual({
+            ok: true,
+        });
+        expect(fixture.requestCommand).toHaveBeenCalledWith({
+            type: 'setNationMeta',
+            nationId: 1,
+            updates: {
+                npc_nation_policy: expect.objectContaining({
+                    priority: ['천도', '천도'],
+                    prioritySetter: '정책담당',
+                    prioritySetTime: expect.any(String),
+                }),
+            },
+            expectedUpdatedAt: '2026-01-01T00:00:00.000Z',
+        });
+    });
+
+    it('clamps legacy integer values, preserves float values, and validates troop ownership before dispatch', async () => {
+        const fixture = createContext();
+        const caller = appRouter.createCaller(fixture.context);
+
+        await caller.npc.setNationPolicy({
+            reqNationGold: -100,
+            safeRecruitCityPopulationRatio: -0.5,
+            CombatForce: { 101: [1, 2] },
+        });
+        expect(fixture.requestCommand).toHaveBeenCalledWith(
+            expect.objectContaining({
+                updates: {
+                    npc_nation_policy: expect.objectContaining({
+                        values: expect.objectContaining({
+                            reqNationGold: 0,
+                            safeRecruitCityPopulationRatio: -0.5,
+                            CombatForce: { 101: [1, 2] },
+                        }),
+                    }),
+                },
+            })
+        );
+
+        fixture.requestCommand.mockClear();
+        await expect(caller.npc.setNationPolicy({ SupportForce: [999] })).rejects.toMatchObject({
+            code: 'BAD_REQUEST',
+        });
+        expect(fixture.requestCommand).not.toHaveBeenCalled();
+    });
+
+    it('preserves duplicate legacy priority entries and enforces required general actions and ordering', async () => {
+        const fixture = createContext();
+        const caller = appRouter.createCaller(fixture.context);
+
+        await caller.npc.setGeneralPriority(['출병', '출병', '일반내정']);
+        expect(fixture.requestCommand).toHaveBeenCalledWith(
+            expect.objectContaining({
+                updates: {
+                    npc_general_policy: expect.objectContaining({
+                        priority: ['출병', '출병', '일반내정'],
+                    }),
+                },
+            })
+        );
+        await expect(caller.npc.setGeneralPriority(['일반내정', '출병'])).rejects.toMatchObject({
+            code: 'BAD_REQUEST',
+        });
+        await expect(caller.npc.setGeneralPriority(['출병'])).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    });
+
+    it('blocks nationless, penalized, and stale writers without changing lifecycle state directly', async () => {
+        const nationless = createContext({ me: { ...baseGeneral, nationId: 0, officerLevel: 0 } });
+        await expect(appRouter.createCaller(nationless.context).npc.getPolicy()).rejects.toMatchObject({
+            code: 'PRECONDITION_FAILED',
+        });
+
+        const penalized = createContext({ me: { ...baseGeneral, penalty: { noChief: true } } });
+        await expect(appRouter.createCaller(penalized.context).npc.getPolicy()).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+        });
+
+        const staleCommand = vi.fn(async () => ({
+            type: 'setNationMeta',
+            ok: false,
+            nationId: 1,
+            reason: 'CONFLICT',
+        }));
+        const stale = createContext({ requestCommand: staleCommand });
+        await expect(appRouter.createCaller(stale.context).npc.setNationPriority(['천도'])).rejects.toMatchObject({
+            code: 'CONFLICT',
+        });
+    });
+});

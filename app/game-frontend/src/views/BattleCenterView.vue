@@ -3,7 +3,6 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import PanelCard from '../components/ui/PanelCard.vue';
 import SkeletonLines from '../components/ui/SkeletonLines.vue';
-import GeneralBasicCard from '../components/main/GeneralBasicCard.vue';
 import { trpc } from '../utils/trpc';
 import { getNpcColor } from '../utils/npcColor';
 import { formatLog } from '../utils/formatLog';
@@ -269,7 +268,26 @@ onMounted(() => {
                 </PanelCard>
 
                 <PanelCard title="장수 정보">
-                    <GeneralBasicCard :general="selectedGeneral" :loading="loading" />
+                    <SkeletonLines v-if="loading" :lines="5" />
+                    <div v-else-if="selectedGeneral" class="battle-general-card">
+                        <div class="battle-general-name">
+                            {{ selectedGeneral.name }} (관직 {{ selectedGeneral.officerLevel }})
+                        </div>
+                        <div class="battle-general-grid">
+                            <span>통솔</span><strong>{{ selectedGeneral.stats.leadership }}</strong> <span>무력</span
+                            ><strong>{{ selectedGeneral.stats.strength }}</strong> <span>지력</span
+                            ><strong>{{ selectedGeneral.stats.intelligence }}</strong> <span>자금</span
+                            ><strong>{{ selectedGeneral.gold }}</strong> <span>군량</span
+                            ><strong>{{ selectedGeneral.rice }}</strong> <span>병력</span
+                            ><strong>{{ selectedGeneral.crew }}</strong> <span>훈련</span
+                            ><strong>{{ selectedGeneral.train }}</strong> <span>사기</span
+                            ><strong>{{ selectedGeneral.atmos }}</strong> <span>부상</span
+                            ><strong>{{ selectedGeneral.injury }}</strong> <span>경험</span
+                            ><strong>{{ selectedGeneral.experience }}</strong> <span>공헌</span
+                            ><strong>{{ selectedGeneral.dedication }}</strong> <span>전투</span
+                            ><strong>{{ selectedGeneral.warnum }}회</strong>
+                        </div>
+                    </div>
                     <div v-if="selectedGeneral" class="general-meta">
                         <div>최근 턴: {{ selectedGeneral.turnTime ? selectedGeneral.turnTime.slice(-5) : '-' }}</div>
                         <div>최근 전투: {{ selectedGeneral.recentWar || '-' }}</div>
@@ -286,12 +304,7 @@ onMounted(() => {
                             <SkeletonLines v-if="loading || logLoading" :lines="3" />
                             <template v-else>
                                 <div v-if="logs[type].length === 0" class="empty">기록이 없습니다.</div>
-                                <div
-                                    v-for="entry in logs[type]"
-                                    :key="entry.id"
-                                    class="log-line"
-                                    v-html="entry.html"
-                                />
+                                <div v-for="entry in logs[type]" :key="entry.id" class="log-line" v-html="entry.html" />
                             </template>
                         </div>
                     </div>
@@ -303,126 +316,237 @@ onMounted(() => {
 
 <style scoped>
 .battle-page {
+    width: 100%;
+    min-width: 500px;
+    max-width: 1000px;
     min-height: 100vh;
-    padding: 24px;
+    margin: 0 auto;
+    padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 24px;
+    gap: 0;
+    color: #fff;
+    background-color: #302016;
+    background-image: url('/image/game/back_walnut.jpg');
+    font-family: Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
 }
 
 .page-header {
+    position: relative;
+    min-height: 32px;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 16px;
+    justify-content: center;
+    gap: 10px;
     flex-wrap: wrap;
+    padding: 0 8px;
+    border: 1px solid #666;
+    background-color: #302016;
+    background-image: url('/image/game/back_walnut.jpg');
 }
 
 .page-title {
-    font-size: 1.6rem;
-    font-weight: 700;
+    font-size: 17px;
+    font-weight: 500;
 }
 
 .page-subtitle {
-    color: rgba(232, 221, 196, 0.7);
-    margin-top: 6px;
+    display: none;
 }
 
 .header-actions {
+    position: absolute;
+    left: 0;
+    top: 0;
     display: flex;
     flex-wrap: wrap;
-    gap: 10px;
+    gap: 4px;
 }
 
 .layout-grid {
     display: grid;
-    grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
-    gap: 18px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0;
 }
 
 .stack {
-    display: flex;
-    flex-direction: column;
-    gap: 18px;
+    display: contents;
 }
 
 .selector-row {
     display: grid;
-    grid-template-columns: auto minmax(140px, 1fr) minmax(180px, 2fr) auto;
-    gap: 8px;
+    grid-template-columns: 8.333% 33.333% 50% 8.333%;
+    gap: 0;
     align-items: center;
 }
 
 .select-input {
     min-width: 0;
-    padding: 6px 8px;
-    border: 1px solid rgba(201, 164, 90, 0.4);
-    background: rgba(12, 12, 12, 0.7);
+    height: 36px;
+    padding: 4px 6px;
+    border: 1px solid #777;
+    border-radius: 0;
+    background: #303030;
     color: inherit;
-    font-size: 0.85rem;
+    font: inherit;
 }
 
 .ghost {
-    border: 1px solid rgba(201, 164, 90, 0.5);
-    background: transparent;
+    min-height: 32px;
+    border: 1px solid #777;
+    border-radius: 0;
+    background: #303030;
     color: inherit;
-    padding: 6px 10px;
-    font-size: 0.8rem;
+    padding: 4px 8px;
+    font: inherit;
     cursor: pointer;
 }
 
 .general-meta {
-    margin-top: 10px;
-    font-size: 0.85rem;
-    color: rgba(232, 221, 196, 0.75);
+    margin: 0;
+    padding: 6px 8px;
+    color: #ccc;
     display: grid;
     gap: 4px;
 }
 
-.log-grid {
+.battle-general-card {
+    min-height: 292px;
+    background-color: #172a52;
+    background-image: url('/image/game/back_blue.jpg');
+}
+
+.battle-general-name {
+    min-height: 24px;
+    padding: 2px 6px;
+    text-align: center;
+    border-bottom: 1px solid #777;
+    background: rgba(220, 220, 220, 0.85);
+    color: #111;
+    font-weight: 700;
+}
+
+.battle-general-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(6, 1fr);
+}
+
+.battle-general-grid > * {
+    min-height: 24px;
+    padding: 2px 5px;
+    border-right: 1px solid #777;
+    border-bottom: 1px solid #777;
+}
+
+.battle-general-grid > span {
+    background-color: rgba(20, 75, 42, 0.7);
+    color: #fff;
+    text-align: center;
+}
+
+.battle-general-grid > strong {
+    text-align: right;
+    font-weight: 500;
+}
+
+.log-grid {
+    display: contents;
 }
 
 .log-block {
-    border: 1px solid rgba(201, 164, 90, 0.3);
-    padding: 8px;
-    background: rgba(12, 12, 12, 0.6);
-    min-height: 160px;
+    border: 1px solid #666;
+    padding: 0;
+    background: #111;
+    min-height: 180px;
 }
 
 .log-title {
-    font-weight: 600;
-    margin-bottom: 6px;
-    font-size: 0.9rem;
+    min-height: 34px;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-bottom: 1px solid #666;
+    color: orange;
+    background: #252525;
+    font-size: 1.3em;
+    font-weight: 500;
 }
 
 .log-line {
-    padding: 4px 0;
-    border-bottom: 1px dashed rgba(201, 164, 90, 0.2);
-}
-
-.log-line:last-child {
-    border-bottom: none;
+    padding: 2px 8px;
+    border-bottom: 0;
 }
 
 .empty {
-    color: rgba(232, 221, 196, 0.6);
-    font-size: 0.85rem;
+    padding: 2px 8px;
+    color: #999;
 }
 
 .error {
-    color: #f08a5d;
-    font-size: 0.9rem;
+    padding: 5px 8px;
+    color: #ff7777;
+    border: 1px solid #a33;
+    text-align: center;
 }
 
-@media (max-width: 1024px) {
+/* PanelCard is retained as a data wrapper, but its presentation follows the
+   flat bootstrap rows used by the reference page. */
+:deep(.panel-card) {
+    height: 100%;
+    border: 1px solid #666;
+    border-radius: 0;
+    background-color: #302016;
+    background-image: url('/image/game/back_walnut.jpg');
+    box-shadow: none;
+}
+.stack:first-child :deep(.panel-card:first-child) {
+    grid-column: 1 / -1;
+    border: 0;
+}
+.stack:first-child :deep(.panel-card:first-child .panel-header) {
+    display: none;
+}
+.stack:first-child :deep(.panel-card:first-child .panel-body) {
+    padding: 0;
+}
+.stack:nth-child(2) :deep(.panel-card),
+.stack:nth-child(2) :deep(.panel-body) {
+    display: contents;
+}
+.stack:nth-child(2) :deep(.panel-header) {
+    display: none;
+}
+:deep(.panel-header) {
+    min-height: 29px;
+    justify-content: center;
+    padding: 0;
+}
+:deep(.panel-title) {
+    color: skyblue;
+    font-size: 18px;
+    font-weight: 500;
+}
+:deep(.panel-header),
+.log-title {
+    background-image: url('/image/game/back_green.jpg');
+}
+
+@media (max-width: 991px) {
+    .battle-page {
+        width: 500px;
+    }
     .layout-grid {
         grid-template-columns: 1fr;
     }
 
     .selector-row {
+        grid-template-columns: 16.666% 25% 41.666% 16.666%;
+    }
+
+    .log-grid {
         grid-template-columns: 1fr;
     }
 }

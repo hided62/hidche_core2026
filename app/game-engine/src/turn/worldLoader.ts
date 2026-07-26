@@ -32,6 +32,7 @@ import type { UnitSetLoaderOptions } from '../scenario/unitSetLoader.js';
 import { loadUnitSetDefinitionByName } from '../scenario/unitSetLoader.js';
 import type { TurnDiplomacy, TurnEvent, TurnGeneral, TurnWorldLoadResult } from './types.js';
 import { readDiplomacyMeta } from '@sammo-ts/logic';
+import { applyPersistedRankRowsToMeta } from './rankData.js';
 
 interface TurnWorldLoaderOptions {
     databaseUrl: string;
@@ -157,17 +158,6 @@ const mapScenarioConfig = (raw: JsonValue): ScenarioConfig => {
     return parsed.data;
 };
 
-const GENERAL_RANK_META_PREFIX_TYPES = new Set([
-    'warnum',
-    'killnum',
-    'deathnum',
-    'occupied',
-    'killcrew',
-    'deathcrew',
-    'killcrew_person',
-    'deathcrew_person',
-]);
-
 const mapGeneralRow = (
     row: TurnEngineGeneralRow,
     rankRows: readonly TurnEngineRankDataRow[],
@@ -181,12 +171,7 @@ const mapGeneralRow = (
         item: normalizeCode(row.itemCode),
     };
     const rawMeta = { ...(asTriggerRecord(row.meta) as Record<string, unknown>) };
-    for (const rank of rankRows) {
-        if (rank.type === 'experience' || rank.type === 'dedication') {
-            continue;
-        }
-        rawMeta[GENERAL_RANK_META_PREFIX_TYPES.has(rank.type) ? `rank_${rank.type}` : rank.type] = rank.value;
-    }
+    applyPersistedRankRowsToMeta(rawMeta, rankRows);
     const inheritancePoints = Object.fromEntries(inheritanceRows.map((entry) => [entry.key, entry.value]));
     const itemInventory = readItemInventoryFromMeta(rawMeta, legacySlots);
     return {

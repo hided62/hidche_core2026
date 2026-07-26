@@ -21,6 +21,7 @@ import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/action
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import { parseArgsWithSchema } from '../parseArgs.js';
+import { normalizeResourceActionAmount } from '../resourceAmount.js';
 
 const ACTION_NAME = '헌납';
 const ACTION_KEY = 'che_헌납';
@@ -96,12 +97,23 @@ export class ActionDefinition<
     public readonly name = ACTION_NAME;
     private readonly resolver: ActionResolver<TriggerState>;
 
-    constructor() {
+    constructor(private readonly env: TurnCommandEnv) {
         this.resolver = new ActionResolver();
     }
 
     parseArgs(raw: unknown): DonateArgs | null {
-        return parseArgsWithSchema(ARGS_SCHEMA, raw);
+        const parsed = parseArgsWithSchema(ARGS_SCHEMA, raw);
+        if (!parsed) {
+            return null;
+        }
+        const amount = normalizeResourceActionAmount(parsed.amount, this.env.maxResourceActionAmount);
+        if (amount === null) {
+            return null;
+        }
+        return {
+            ...parsed,
+            amount,
+        };
     }
 
     buildMinConstraints(_ctx: ConstraintContext, _args: DonateArgs): Constraint[] {
@@ -109,10 +121,12 @@ export class ActionDefinition<
     }
 
     buildConstraints(_ctx: ConstraintContext, args: DonateArgs): Constraint[] {
+        const minGold = this.env.generalMinimumGold ?? 0;
+        const minRice = this.env.generalMinimumRice ?? 500;
         if (args.isGold) {
-            return [notBeNeutral(), occupiedCity(), suppliedCity(), reqGeneralGold(() => args.amount)];
+            return [notBeNeutral(), occupiedCity(), suppliedCity(), reqGeneralGold(() => minGold)];
         }
-        return [notBeNeutral(), occupiedCity(), suppliedCity(), reqGeneralRice(() => args.amount)];
+        return [notBeNeutral(), occupiedCity(), suppliedCity(), reqGeneralRice(() => minRice)];
     }
 
     resolve(context: GeneralActionResolveContext<TriggerState>, args: DonateArgs): GeneralActionOutcome<TriggerState> {
@@ -128,5 +142,5 @@ export const commandSpec: GeneralTurnCommandSpec = {
     reqArg: true,
     availabilityArgs: { isGold: true, amount: 0 },
     argsSchema: ARGS_SCHEMA,
-    createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
+    createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env),
 };

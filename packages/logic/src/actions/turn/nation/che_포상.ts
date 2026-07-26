@@ -144,10 +144,10 @@ export class ActionResolver<
             createLogEffect(
                 `<Y>${context.destGeneral.name}</>에게 ${label} <C>${amountText}</>${amountJosa} 수여했습니다.`,
                 {
-                scope: LogScope.GENERAL,
-                category: LogCategory.ACTION,
-                format: LogFormat.MONTH,
-            }
+                    scope: LogScope.GENERAL,
+                    category: LogCategory.ACTION,
+                    format: LogFormat.MONTH,
+                }
             )
         );
 
@@ -199,7 +199,7 @@ export class ActionDefinition<
             requirements.push({ kind: 'destGeneral', id: ctx.destGeneralId });
         }
 
-        if (ctx.destGeneralId === ctx.actorId) {
+        if (args.destGeneralId === ctx.actorId) {
             return [denyWithReason('본인입니다')];
         }
 

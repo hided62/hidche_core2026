@@ -23,13 +23,14 @@ export const resolveNationInfo = async (
 
 export const buildTargetFromGeneral = async (db: DatabaseClient, general: GeneralRow): Promise<MessageTarget> => {
     const nation = await resolveNationInfo(db, general.nationId);
+    const picture = general.picture?.trim() || 'default.jpg';
     return {
         generalId: general.id,
         generalName: general.name,
         nationId: general.nationId,
         nationName: nation.name,
         color: nation.color,
-        icon: '',
+        icon: general.imageServer ? `d_pic/${picture}` : `/image/icons/${picture}`,
     };
 };
 

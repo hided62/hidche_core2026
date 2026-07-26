@@ -1,13 +1,25 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
-import SkeletonLines from '../ui/SkeletonLines.vue';
+import { computed, reactive } from 'vue';
 import type { MessageType } from '@sammo-ts/logic';
+import SkeletonLines from '../ui/SkeletonLines.vue';
+import MessagePlate from './MessagePlate.vue';
+
+interface MessageTarget {
+    generalId: number;
+    generalName: string;
+    nationId: number;
+    nationName: string;
+    color: string;
+    icon: string;
+}
 
 interface MessageEntry {
     id: number;
     text: string;
     time: string;
     msgType: MessageType;
+    src: MessageTarget;
+    dest: MessageTarget | null;
     option?: Record<string, unknown> | null;
 }
 
@@ -16,6 +28,22 @@ interface MessageBucket {
     public: MessageEntry[];
     national: MessageEntry[];
     diplomacy: MessageEntry[];
+    permission: number;
+    latestRead: {
+        private: number;
+        diplomacy: number;
+    };
+}
+
+interface MailboxGroup {
+    label: string;
+    color?: string;
+    options: Array<{
+        label: string;
+        value: number;
+        disabled?: boolean;
+        color?: string;
+    }>;
 }
 
 const props = defineProps<{
@@ -23,7 +51,10 @@ const props = defineProps<{
     loading: boolean;
     targetMailbox: number;
     draftText: string;
-    mailboxOptions: Array<{ label: string; value: number; disabled?: boolean }>;
+    mailboxGroups: MailboxGroup[];
+    generalId: number;
+    generalName: string;
+    nationId: number;
     canRespondDiplomacy: boolean;
 }>();
 
@@ -34,213 +65,390 @@ const emit = defineEmits<{
     (event: 'refresh'): void;
     (event: 'load-older', type: MessageType): void;
     (event: 'respond', messageId: number, response: boolean): void;
+    (event: 'read-latest', type: 'private' | 'diplomacy', messageId: number): void;
+    (event: 'delete', messageId: number): void;
 }>();
 
-const messageTabs: Array<{ key: MessageType; label: string }> = [
-    { key: 'public', label: '전체' },
-    { key: 'national', label: '국가' },
-    { key: 'private', label: '개인' },
-    { key: 'diplomacy', label: '외교' },
+const sections: Array<{ type: MessageType; label: string; className: string }> = [
+    { type: 'public', label: '전체 메시지', className: 'PublicTalk' },
+    { type: 'national', label: '국가 메시지', className: 'NationalTalk' },
+    { type: 'private', label: '개인 메시지', className: 'PrivateTalk' },
+    { type: 'diplomacy', label: '외교 메시지', className: 'DiplomacyTalk' },
 ];
 
-const activeTab = ref<MessageType>('public');
-
-const activeMessages = computed(() => {
-    if (!props.messages) {
-        return [] as MessageEntry[];
-    }
-    return props.messages[activeTab.value] ?? [];
+const visibleLimits = reactive<Record<MessageType, number>>({
+    public: Number.POSITIVE_INFINITY,
+    national: Number.POSITIVE_INFINITY,
+    private: Number.POSITIVE_INFINITY,
+    diplomacy: Number.POSITIVE_INFINITY,
 });
+
+const bucket = (type: MessageType): MessageEntry[] => props.messages?.[type] ?? [];
+const visibleMessages = (type: MessageType): MessageEntry[] => bucket(type).slice(0, visibleLimits[type]);
+
+const permission = computed(() => props.messages?.permission ?? -1);
 
 const setMailbox = (value: string) => {
     const parsed = Number(value);
     emit('update:targetMailbox', Number.isFinite(parsed) ? parsed : 0);
 };
 
-const isDiplomacyPrompt = (message: MessageEntry): boolean =>
-    message.msgType === 'diplomacy' &&
-    (message.option?.action === 'noAggression' ||
-        message.option?.action === 'cancelNA' ||
-        message.option?.action === 'stopWar');
-
-const respond = (messageId: number, response: boolean) => {
-    if (!window.confirm(response ? '수락하시겠습니까?' : '거절하시겠습니까?')) {
+const submit = () => {
+    if (!props.draftText.trim()) {
+        emit('refresh');
         return;
     }
+    emit('send');
+};
+
+const newestIncomingId = (type: 'private' | 'diplomacy'): number =>
+    bucket(type)
+        .filter((message) => message.src.generalId !== props.generalId)
+        .reduce((latest, message) => Math.max(latest, message.id), 0);
+
+const canMarkRead = (type: 'private' | 'diplomacy'): boolean => {
+    if (!props.messages) {
+        return false;
+    }
+    const newest = newestIncomingId(type);
+    return newest > props.messages.latestRead[type];
+};
+
+const markRead = (type: 'private' | 'diplomacy') => {
+    const messageId = newestIncomingId(type);
+    if (messageId > 0) {
+        emit('read-latest', type, messageId);
+    }
+};
+
+const setSectionMailbox = (type: MessageType) => {
+    if (type === 'public') {
+        emit('update:targetMailbox', 9999);
+    } else if (type === 'national') {
+        emit('update:targetMailbox', 9000 + props.nationId);
+    }
+};
+
+const setReplyTarget = (type: MessageType, target: MessageTarget) => {
+    const mailbox =
+        (type === 'diplomacy' || type === 'national') && target.nationId !== props.nationId
+            ? 9000 + target.nationId
+            : target.generalId;
+    if (mailbox > 0) {
+        emit('update:targetMailbox', mailbox);
+    }
+};
+
+const fold = (type: MessageType) => {
+    if (bucket(type).length >= 10) {
+        visibleLimits[type] = 10;
+    }
+};
+
+const forwardResponse = (messageId: number, response: boolean) => {
     emit('respond', messageId, response);
 };
 </script>
 
 <template>
-    <div class="message-panel">
-        <div class="message-input">
-            <select
-                class="message-select"
-                :value="targetMailbox"
-                @change="setMailbox(($event.target as HTMLSelectElement).value)"
-            >
-                <option
-                    v-for="option in mailboxOptions"
-                    :key="option.label"
-                    :value="option.value"
-                    :disabled="option.disabled"
+    <div class="MessagePanel">
+        <div class="MessageInputForm">
+            <div id="mailbox_list-col">
+                <select
+                    id="mailbox_list"
+                    class="message-select"
+                    :value="targetMailbox"
+                    aria-label="메시지 수신 대상"
+                    @change="setMailbox(($event.target as HTMLSelectElement).value)"
                 >
-                    {{ option.label }}
-                </option>
-            </select>
-            <input
-                class="message-text"
-                type="text"
-                maxlength="99"
-                :value="draftText"
-                placeholder="메시지 입력"
-                @input="emit('update:draftText', ($event.target as HTMLInputElement).value)"
-                @keydown.enter="emit('send')"
-            />
-            <button class="message-send" @click="emit('send')">전송</button>
-        </div>
-
-        <div class="message-tabs">
-            <button
-                v-for="tab in messageTabs"
-                :key="tab.key"
-                :class="{ active: activeTab === tab.key }"
-                @click="activeTab = tab.key"
-            >
-                {{ tab.label }}
-            </button>
-            <button class="refresh" @click="emit('refresh')">갱신</button>
-        </div>
-
-        <div v-if="props.loading">
-            <SkeletonLines :lines="4" />
-        </div>
-        <div v-else-if="!props.messages" class="empty">메시지를 불러오지 못했습니다.</div>
-        <div v-else class="message-list">
-            <div v-if="activeMessages.length === 0" class="empty">메시지가 없습니다.</div>
-            <div v-else>
-                <div v-for="message in activeMessages" :key="message.id" class="message-item">
-                    <div class="text">{{ message.text }}</div>
-                    <div v-if="isDiplomacyPrompt(message)" class="message-response">
-                        <button class="accept" :disabled="!canRespondDiplomacy" @click="respond(message.id, true)">
-                            수락
-                        </button>
-                        <button class="decline" :disabled="!canRespondDiplomacy" @click="respond(message.id, false)">
-                            거절
-                        </button>
-                    </div>
-                    <div class="time">{{ message.time }}</div>
-                </div>
-                <button class="load-older" @click="emit('load-older', activeTab)">이전 메시지</button>
+                    <optgroup
+                        v-for="group in mailboxGroups"
+                        :key="group.label"
+                        :label="group.label"
+                        :style="{ backgroundColor: group.color ?? '#000000', color: '#ffffff' }"
+                    >
+                        <option
+                            v-for="option in group.options"
+                            :key="`${group.label}-${option.value}`"
+                            :value="option.value"
+                            :disabled="option.disabled"
+                            :style="{ backgroundColor: option.color ?? '#000000', color: '#ffffff' }"
+                        >
+                            {{ option.label }}
+                        </option>
+                    </optgroup>
+                </select>
+            </div>
+            <div id="msg_input-col">
+                <input
+                    class="message-text"
+                    type="text"
+                    maxlength="99"
+                    :value="draftText"
+                    aria-label="메시지 입력"
+                    @input="emit('update:draftText', ($event.target as HTMLInputElement).value)"
+                    @keydown.enter="submit"
+                />
+            </div>
+            <div id="msg_submit-col">
+                <button class="message-send" type="button" @click="submit">서신전달&amp;갱신</button>
             </div>
         </div>
+
+        <div v-if="loading && !messages" class="message-loading">
+            <SkeletonLines :lines="4" />
+        </div>
+
+        <template v-else>
+            <section
+                v-for="section in sections"
+                :key="section.type"
+                :class="['message-section', section.className]"
+                :data-message-type="section.type"
+            >
+                <div class="stickyAnchor"></div>
+                <header class="BoardHeader">
+                    <div class="header-label">{{ section.label }}</div>
+                    <button
+                        v-if="section.type === 'public' || section.type === 'national'"
+                        class="btn-more-small action-primary"
+                        type="button"
+                        @click="setSectionMailbox(section.type)"
+                    >
+                        ↩ 여기로
+                    </button>
+                    <button
+                        v-else
+                        class="btn-more-small action-secondary"
+                        type="button"
+                        :disabled="!canMarkRead(section.type)"
+                        @click="markRead(section.type)"
+                    >
+                        모두 읽음
+                    </button>
+                </header>
+
+                <div v-if="bucket(section.type).length === 0" class="empty-message">메시지가 없습니다.</div>
+                <div v-else class="MessageList">
+                    <MessagePlate
+                        v-for="message in visibleMessages(section.type)"
+                        :key="message.id"
+                        :message="message"
+                        :general-id="generalId"
+                        :general-name="generalName"
+                        :nation-id="nationId"
+                        :permission="permission"
+                        :can-respond-diplomacy="canRespondDiplomacy"
+                        @set-target="setReplyTarget"
+                        @delete="emit('delete', $event)"
+                        @respond="forwardResponse"
+                    />
+                    <div class="Actions">
+                        <button class="fold-message" type="button" @click="fold(section.type)">접기</button>
+                        <button class="load-older" type="button" @click="emit('load-older', section.type)">
+                            이전 메시지 불러오기
+                        </button>
+                    </div>
+                </div>
+            </section>
+        </template>
     </div>
 </template>
 
 <style scoped>
-.message-panel {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+.MessagePanel {
+    color: #fff;
+    font-size: 14px;
 }
 
-.message-input {
+.MessageInputForm {
     display: grid;
-    grid-template-columns: minmax(90px, 120px) 1fr auto;
-    gap: 6px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 4fr) minmax(0, 1fr);
+    grid-template-areas: 'mailbox input submit';
+    background-color: #302016;
+    background-image: url('/image/game/back_walnut.jpg');
+}
+
+#mailbox_list-col {
+    grid-area: mailbox;
+}
+
+#msg_input-col {
+    grid-area: input;
+}
+
+#msg_submit-col {
+    grid-area: submit;
+}
+
+#mailbox_list-col,
+#msg_input-col,
+#msg_submit-col {
+    display: grid;
 }
 
 .message-select,
+.message-text,
+.message-send {
+    height: 35.5px;
+    border: 1px solid #6c757d;
+    border-radius: 4px;
+    font: inherit;
+}
+
+.message-select {
+    width: 100%;
+    background-color: #212529;
+    padding: 4px 30px 4px 12px;
+    color: #fff;
+    font-weight: 700;
+}
+
 .message-text {
-    background: rgba(16, 16, 16, 0.8);
-    border: 1px solid rgba(201, 164, 90, 0.4);
-    color: inherit;
-    padding: 6px;
-    font-size: 0.75rem;
+    width: 100%;
+    background-color: #fff;
+    padding: 4px 8px;
+    color: #212529;
+}
+
+.message-send,
+.action-primary {
+    background-color: #337ab7;
+    color: #fff;
 }
 
 .message-send {
-    border: 1px solid rgba(201, 164, 90, 0.4);
-    padding: 6px 10px;
-    font-size: 0.75rem;
-    cursor: pointer;
-}
-
-.message-tabs {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-}
-
-.message-tabs button {
-    border: 1px solid rgba(201, 164, 90, 0.4);
     padding: 4px 8px;
-    font-size: 0.7rem;
     cursor: pointer;
 }
 
-.message-tabs button.active {
-    background: rgba(201, 164, 90, 0.2);
+.message-send:hover {
+    background-color: #375a7f;
 }
 
-.message-tabs .refresh {
-    margin-left: auto;
+.message-send:focus,
+.message-send:focus-visible {
+    outline: none !important;
+    outline-width: 0 !important;
+    box-shadow: none !important;
 }
 
-.message-list {
+.message-loading {
+    padding: 8px;
+}
+
+.message-section {
+    min-width: 0;
+}
+
+.BoardHeader {
     display: flex;
-    flex-direction: column;
-    gap: 8px;
+    min-height: 25px;
+    align-items: center;
+    outline: 1px solid gray;
+    background-color: #302016;
+    background-image: url('/image/game/back_walnut.jpg');
+    color: #fff;
 }
 
-.message-item {
-    border: 1px solid rgba(201, 164, 90, 0.2);
-    padding: 6px;
-    font-size: 0.75rem;
+.header-label {
+    flex: 1;
 }
 
-.message-item .time {
-    margin-top: 4px;
-    font-size: 0.65rem;
-    color: rgba(232, 221, 196, 0.6);
-}
-
-.message-response {
-    display: flex;
-    justify-content: flex-end;
-    gap: 4px;
-    margin-top: 5px;
-    margin-right: 5px;
-}
-
-.message-response button {
-    border: 1px solid rgba(201, 164, 90, 0.4);
-    padding: 3px 10px;
-    font-size: 0.7rem;
+.btn-more-small {
+    margin: 1px;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    padding: 2px 6px;
+    font-size: 11.2px;
+    line-height: 1.5;
     cursor: pointer;
 }
 
-.message-response .accept {
-    color: #8fd18f;
+.action-secondary {
+    border-color: #6c757d;
+    background-color: #6c757d;
+    color: #fff;
 }
 
-.message-response .decline {
-    color: #e09a9a;
+.btn-more-small:disabled {
+    cursor: default;
+    opacity: 0.65;
 }
 
-.message-response button:disabled {
-    cursor: not-allowed;
-    opacity: 0.5;
+.empty-message {
+    min-height: 22px;
+}
+
+.MessageList {
+    overflow-x: hidden;
+}
+
+.Actions {
+    display: grid;
+}
+
+.fold-message,
+.load-older {
+    border: 1px solid transparent;
+    padding: 6px 12px;
+    color: #fff;
+    font: inherit;
+    cursor: pointer;
+}
+
+.fold-message {
+    background-color: #212529;
 }
 
 .load-older {
-    border: 1px dashed rgba(201, 164, 90, 0.3);
-    padding: 6px;
-    font-size: 0.7rem;
-    cursor: pointer;
+    background-color: #6c757d;
 }
 
-.empty {
-    color: rgba(232, 221, 196, 0.6);
+@media (min-width: 940px) {
+    .MessagePanel {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .MessageInputForm,
+    .message-loading {
+        grid-column: 1 / 3;
+    }
+
+    .PublicTalk,
+    .PrivateTalk {
+        border-right: 1px solid gray;
+    }
+
+    .fold-message {
+        display: none;
+    }
+
+    .MessageList {
+        overflow-y: auto;
+    }
+}
+
+@media (max-width: 939.98px) {
+    .MessageInputForm {
+        position: sticky;
+        z-index: 5;
+        top: 0;
+        grid-template-columns: 1fr 1fr;
+        grid-template-areas:
+            'mailbox submit'
+            'input input';
+    }
+
+    .message-text {
+        height: 33.5px;
+    }
+
+    .BoardHeader {
+        position: sticky;
+        z-index: 4;
+        top: 62px;
+    }
 }
 </style>

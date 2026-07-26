@@ -16,6 +16,7 @@
         "build:server": "pnpm --filter ./tools/build-scripts build:server --",
         "generate:resource-schemas": "pnpm --filter @sammo-ts/tools-scripts generate:resource-schemas",
         "validate:resources": "pnpm --filter @sammo-ts/tools-scripts validate:resources",
+        "manage:general-icons": "node tools/manage-general-icons.mjs",
         "check:legacy:nation": "node tools/compare-command-constraints.mjs --include '^Nation/' --check && node tools/compare-command-logs.mjs --include '^Nation/' --mode action --check",
         "check:legacy:general": "node tools/compare-command-constraints.mjs --include '^General/' --check && node tools/compare-command-logs.mjs --include '^General/' --mode action --check && node tools/compare-general-turn-contracts.mjs --check",
         "test:e2e:frontend-legacy": "playwright test --config tools/frontend-legacy-parity/playwright.config.mjs --tsconfig tools/frontend-legacy-parity/tsconfig.json"

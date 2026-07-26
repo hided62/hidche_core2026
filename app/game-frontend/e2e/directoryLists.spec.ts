@@ -141,7 +141,8 @@ const parseSort = (route: Route): number => {
 
 const install = async (
     page: Page,
-    mode: 'general' | 'no-general' | 'error-after-load' = 'general'
+    mode: 'general' | 'no-general' | 'error-after-load' = 'general',
+    accessPages: string[] = []
 ) => {
     let generalDirectoryCalls = 0;
     await page.addInitScript(() => {
@@ -159,12 +160,21 @@ const install = async (
         route.fulfill({ status: 200, contentType: 'image/jpeg', body: Buffer.from('') })
     );
     await page.route('**/che/api/trpc/**', async (route) => {
-        const results = operationNames(route).map((operation) => {
+        const requestBody = route.request().postDataJSON() as
+            | Record<string, { json?: { page?: unknown }; page?: unknown }>
+            | undefined;
+        const results = operationNames(route).map((operation, operationIndex) => {
             if (operation === 'lobby.info') {
                 return response({ myGeneral: mode === 'no-general' ? null : { id: 1, name: '조회자' } });
             }
             if (operation === 'join.getConfig') return response({});
             if (operation === 'world.getNationDirectory') return response(nationDirectory);
+            if (operation === 'public.recordAccess') {
+                const payload = requestBody?.[String(operationIndex)];
+                const pageName = payload?.json?.page ?? payload?.page;
+                if (typeof pageName === 'string') accessPages.push(pageName);
+                return response({ recorded: true });
+            }
             if (operation === 'world.getGeneralDirectory') {
                 generalDirectoryCalls += 1;
                 if (mode === 'error-after-load' && generalDirectoryCalls > 1) {
@@ -191,7 +201,8 @@ const install = async (
 };
 
 test('nation and general directories preserve the fixed legacy Chromium geometry', async ({ page }) => {
-    await install(page);
+    const accessPages: string[] = [];
+    await install(page, 'general', accessPages);
     await page.setViewportSize({ width: 1200, height: 900 });
 
     const measurements: Record<string, unknown> = {};
@@ -272,6 +283,7 @@ test('nation and general directories preserve the fixed legacy Chromium geometry
             ).toBe(65);
         }
     }
+    await expect.poll(() => accessPages).toEqual(expect.arrayContaining(['nation-list', 'general-list']));
 
     const header = page.locator('.general-table thead td').first();
     expect(await header.evaluate((element) => getComputedStyle(element).backgroundImage)).toContain('back_green.jpg');

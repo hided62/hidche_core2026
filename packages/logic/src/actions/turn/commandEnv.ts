@@ -51,6 +51,9 @@ export interface TurnCommandEnv {
     initialAllowedTechLevel?: number;
     baseGold: number;
     baseRice: number;
+    generalMinimumGold?: number;
+    generalMinimumRice?: number;
+    npcSeizureMessageProb?: number;
     maxResourceActionAmount: number;
     itemCatalog?: Record<string, TurnCommandItemCatalogEntry>;
     generalActionModules?: Array<GeneralActionModule>;
