@@ -1,17 +1,12 @@
 import { clamp } from 'es-toolkit';
 
-// 외교 상태 코드 (legacy 기준).
-export const DIPLOMACY_STATE = {
-    WAR: 0,
-    DECLARATION: 1,
-    TRADE: 2,
-    NON_AGGRESSION: 7,
-} as const;
+import { DIPLOMACY_STATE } from './constants.js';
+
+export { DIPLOMACY_STATE } from './constants.js';
 
 export const DEFAULT_DECLARE_WAR_TERM = 24;
 export const DEFAULT_WAR_TERM = 6;
 
-// TODO: 불가침 제의/수락 등 외교 커맨드 전환 규칙을 이 모듈에 추가 예정.
 const MAX_WAR_TERM = 13;
 
 export interface DiplomacyEntry {
@@ -141,3 +136,6 @@ export const processDiplomacyMonth = (
 
     return next;
 };
+
+export * from './frontState.js';
+export * from './instantResponse.js';

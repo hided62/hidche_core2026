@@ -1,4 +1,4 @@
-import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
+import type { General, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import {
     beChief,
@@ -7,15 +7,15 @@ import {
     existsDestNation,
     notBeNeutral,
     occupiedCity,
-    reqDestNationValue,
     suppliedCity,
 } from '@sammo-ts/logic/constraints/presets.js';
 import { allow, unknownOrDeny } from '@sammo-ts/logic/constraints/helpers.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
-import { createDiplomacyPatchEffect, createLogEffect } from '@sammo-ts/logic/actions/engine.js';
-import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
-import { JosaUtil } from '@sammo-ts/common';
+import {
+    destGeneralBelongsToDestNation,
+    resolveInstantDiplomacyResponse,
+} from '@sammo-ts/logic/diplomacy/instantResponse.js';
 
 export interface NonAggressionAcceptArgs {
     destNationId: number;
@@ -29,11 +29,11 @@ export interface NonAggressionAcceptContext<
 > extends GeneralActionResolveContext<TriggerState> {
     currentYear: number;
     currentMonth: number;
+    destNation: Nation;
+    destGeneral: General<TriggerState>;
 }
 
 const ACTION_NAME = '불가침 수락';
-const DIPLOMACY_NON_AGGRESSION = 7;
-
 const parseNationId = (raw: unknown): number | null => {
     if (typeof raw !== 'number' || !Number.isFinite(raw)) {
         return null;
@@ -147,7 +147,7 @@ export class ActionDefinition<
             suppliedCity(),
             existsDestNation(),
             existsDestGeneral(),
-            reqDestNationValue('level', '국가규모', '>', 0, '상대국 정보가 없습니다.'),
+            destGeneralBelongsToDestNation(),
             reqFutureTreatyTerm(),
             disallowDiplomacyBetweenStatus({
                 0: '아국과 이미 교전중입니다.',
@@ -160,44 +160,29 @@ export class ActionDefinition<
         context: NonAggressionAcceptContext<TriggerState>,
         args: NonAggressionAcceptArgs
     ): GeneralActionOutcome<TriggerState> {
-        const nationId = context.nation?.id;
-        if (nationId === undefined || nationId <= 0) {
+        const nation = context.nation;
+        if (!nation) {
             return {
-                effects: [
-                    createLogEffect(`${ACTION_NAME}을 준비했지만 국가 정보가 없습니다.`, {
-                        scope: LogScope.GENERAL,
-                        category: LogCategory.ACTION,
-                        format: LogFormat.MONTH,
-                    }),
-                ],
+                effects: [],
             };
         }
-
-        const currentMonth = resolveMonthIndex(context.currentYear, context.currentMonth);
-        const targetMonth = args.year * 12 + args.month;
-        const term = Math.max(0, targetMonth - currentMonth);
-        const destNationName = String(args.destNationId);
-        const josaWa = JosaUtil.pick(destNationName, '와');
-
+        const resolution = resolveInstantDiplomacyResponse<TriggerState>(
+            {
+                actor: context.general,
+                actorNation: nation,
+                proposer: context.destGeneral,
+                proposerNation: context.destNation,
+                currentYear: context.currentYear,
+                currentMonth: context.currentMonth,
+            },
+            {
+                action: 'noAggression',
+                treatyYear: args.year,
+                treatyMonth: args.month,
+            }
+        );
         return {
-            effects: [
-                createDiplomacyPatchEffect(nationId, args.destNationId, {
-                    state: DIPLOMACY_NON_AGGRESSION,
-                    term,
-                }),
-                createDiplomacyPatchEffect(args.destNationId, nationId, {
-                    state: DIPLOMACY_NON_AGGRESSION,
-                    term,
-                }),
-                createLogEffect(
-                    `<D><b>${destNationName}</b></>${josaWa} <C>${args.year}</>년 <C>${args.month}</>월까지 불가침에 성공했습니다.`,
-                    {
-                    scope: LogScope.GENERAL,
-                    category: LogCategory.ACTION,
-                    format: LogFormat.MONTH,
-                    }
-                ),
-            ],
+            effects: resolution.effects,
         };
     }
 }

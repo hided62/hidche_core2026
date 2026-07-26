@@ -235,6 +235,26 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         }
     };
 
+    const respondToMessage = async (messageId: number, response: boolean) => {
+        const id = generalId.value;
+        if (!id) {
+            return;
+        }
+        try {
+            const result = await trpc.messages.respond.mutate({
+                generalId: id,
+                messageId,
+                response,
+            });
+            if (!result.result) {
+                error.value = result.reason;
+            }
+            await refreshMessages();
+        } catch (err) {
+            error.value = resolveErrorMessage(err);
+        }
+    };
+
     const setGeneralTurn = async (turnIndex: number, action: string) => {
         const id = generalId.value;
         if (!id) {
@@ -310,7 +330,6 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
             error.value = resolveErrorMessage(err);
         }
     };
-
 
     let realtimeSource: EventSource | null = null;
     let realtimeToken: string | null = null;
@@ -472,6 +491,7 @@ export const useMainDashboardStore = defineStore('mainDashboard', () => {
         refreshMessages,
         sendMessage,
         loadOlderMessages,
+        respondToMessage,
         setGeneralTurn,
         shiftGeneralTurns,
         setNationTurn,
