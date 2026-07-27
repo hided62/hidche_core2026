@@ -2331,13 +2331,22 @@ integration('명장일람 rank_data command parity', () => {
                 rankData: [{ generalId: 1, type: 'firenum', value: 17 }],
             }
         );
-        request.setup!.world!.hiddenSeed = 'general-injury-4';
+        request.setup!.world!.hiddenSeed = 'general-value-0';
         const reference = runReferenceTurnCommandTraceRequest(
             workspaceRoot!,
             request as unknown as Record<string, unknown>
         );
         const core = await runCoreTurnCommandTrace(request, reference.before);
 
+        expect(reference.execution.outcome).toMatchObject({ completed: true });
+        expect(core.execution.outcome).toMatchObject({
+            requestedAction: 'che_화계',
+            actionKey: 'che_화계',
+            usedFallback: false,
+        });
+        expect(hasSuccessfulSabotageLog(reference.after.logs)).toBe(true);
+        expect(hasSuccessfulSabotageLog(core.after.logs)).toBe(true);
+        expect(core.rng).toEqual(reference.rng);
         expect(reference.after.rankData).toContainEqual(
             expect.objectContaining({ generalId: 1, type: 'firenum', value: 18 })
         );
