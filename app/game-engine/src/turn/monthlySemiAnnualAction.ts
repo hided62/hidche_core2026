@@ -3,6 +3,7 @@ import { createIncomeActionContext, type NationTraitModule } from '@sammo-ts/log
 
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
 import type { MonthlyEventActionHandler } from './monthlyEventHandler.js';
+import { resolveAppliedNationRate } from './nationTaxRate.js';
 
 type SemiAnnualResource = 'gold' | 'rice';
 
@@ -20,8 +21,6 @@ const resolveBasePopulationIncrease = (world: InMemoryTurnWorld): number => {
     const value = world.getScenarioConfig().const.basePopIncreaseAmount;
     return typeof value === 'number' && Number.isFinite(value) ? value : 5_000;
 };
-
-const resolveNationRate = (meta: Record<string, unknown>): number => asNumber(meta.rate, 20);
 
 const decayDomesticValue = (value: number): number => roundLegacyIntegerColumn(value * 0.99);
 
@@ -82,15 +81,11 @@ export const createProcessSemiAnnualHandler = (options: {
 
         const basePopulationIncrease = resolveBasePopulationIncrease(world);
         for (const nation of world.listNations()) {
-            const rate = resolveNationRate(nation.meta);
+            const rate = resolveAppliedNationRate(nation.meta);
             let populationRatio = (30 - rate) / 200;
             const trait = options.nationTraits?.get(nation.typeCode);
             if (trait?.onCalcNationalIncome) {
-                populationRatio = trait.onCalcNationalIncome(
-                    createIncomeActionContext(nation),
-                    'pop',
-                    populationRatio
-                );
+                populationRatio = trait.onCalcNationalIncome(createIncomeActionContext(nation), 'pop', populationRatio);
             }
             const genericRatio = (20 - rate) / 200;
             const trustDiff = 20 - rate;
@@ -114,15 +109,9 @@ export const createProcessSemiAnnualHandler = (options: {
                     agriculture: roundLegacyIntegerColumn(
                         Math.min(city.agricultureMax, city.agriculture * (1 + genericRatio))
                     ),
-                    commerce: roundLegacyIntegerColumn(
-                        Math.min(city.commerceMax, city.commerce * (1 + genericRatio))
-                    ),
-                    security: roundLegacyIntegerColumn(
-                        Math.min(city.securityMax, city.security * (1 + genericRatio))
-                    ),
-                    defence: roundLegacyIntegerColumn(
-                        Math.min(city.defenceMax, city.defence * (1 + genericRatio))
-                    ),
+                    commerce: roundLegacyIntegerColumn(Math.min(city.commerceMax, city.commerce * (1 + genericRatio))),
+                    security: roundLegacyIntegerColumn(Math.min(city.securityMax, city.security * (1 + genericRatio))),
+                    defence: roundLegacyIntegerColumn(Math.min(city.defenceMax, city.defence * (1 + genericRatio))),
                     wall: roundLegacyIntegerColumn(Math.min(city.wallMax, city.wall * (1 + genericRatio))),
                     meta: {
                         ...city.meta,

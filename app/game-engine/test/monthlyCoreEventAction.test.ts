@@ -258,4 +258,60 @@ describe('core monthly event actions at the real month boundary', () => {
             })
         );
     });
+
+    it('uses the staged rate_tmp for income when the desired rate changes mid-period', async () => {
+        const nation = buildNation();
+        nation.meta = { ...nation.meta, rate: 35, rate_tmp: 10 };
+        const world = buildWorld(
+            [
+                {
+                    id: 3,
+                    targetCode: 'month',
+                    priority: 1,
+                    condition: true,
+                    action: [['ProcessIncome', 'gold']],
+                    meta: {},
+                },
+            ],
+            (getWorld) => {
+                const incomeHandler = createIncomeHandler({
+                    getWorld,
+                    scenarioConfig: {
+                        stat: {
+                            total: 300,
+                            min: 10,
+                            max: 100,
+                            npcTotal: 150,
+                            npcMax: 50,
+                            npcMin: 10,
+                            chiefMin: 70,
+                        },
+                        iconPath: '',
+                        map: {},
+                        const: { baseGold: 0, baseRice: 0 },
+                        environment: { mapName: map.id, unitSet: 'default' },
+                    },
+                    nationTraits: new Map(),
+                });
+                return new Map([['ProcessIncome', createProcessIncomeActionHandler(incomeHandler)]]);
+            },
+            {
+                currentMonth: 6,
+                generals: [buildGeneral(1, 1, 3)],
+                nations: [nation],
+                cities: [buildCity()],
+            }
+        );
+
+        await world.advanceMonth(new Date('0190-07-01T00:00:00.000Z'));
+
+        expect(world.getNationById(1)).toMatchObject({
+            gold: 10_105,
+            meta: {
+                rate: 35,
+                rate_tmp: 10,
+                prev_income_gold: 105,
+            },
+        });
+    });
 });

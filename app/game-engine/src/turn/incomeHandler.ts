@@ -18,6 +18,7 @@ import {
 import type { ScenarioConfig } from '@sammo-ts/logic';
 
 import type { InMemoryTurnWorld, TurnCalendarHandler, TurnCalendarContext } from './inMemoryWorld.js';
+import { resolveAppliedNationRate } from './nationTaxRate.js';
 import type { TurnGeneral } from './types.js';
 
 const resolveNumber = (source: Record<string, unknown>, keys: string[], fallback: number): number => {
@@ -29,8 +30,6 @@ const resolveNumber = (source: Record<string, unknown>, keys: string[], fallback
     }
     return fallback;
 };
-
-const resolveNationRate = (nation: Nation): number => asNumber(nation.meta.rate, 20);
 
 const resolveNationBill = (nation: Nation): number => asNumber(nation.meta.bill, 100);
 
@@ -72,7 +71,7 @@ const buildNationIncomeContext = (nation: Nation, trait: NationTraitModule | nul
         ? (type: TriggerNationalIncomeType, amount: number) => trait.onCalcNationalIncome!(actionContext, type, amount)
         : undefined;
     return {
-        rate: resolveNationRate(nation),
+        rate: resolveAppliedNationRate(nation.meta),
         modifyIncome,
     };
 };

@@ -65,7 +65,7 @@ integration('core monthly event action persistence', () => {
             power: 0,
             level: 1,
             typeCode: 'che_중립',
-            meta: { rate: 20, bill: 0, chief_set: 1 },
+            meta: { rate: 35, rate_tmp: 10, bill: 0, chief_set: 1 },
         };
         const city: City = {
             id: cityId,
@@ -287,9 +287,14 @@ integration('core monthly event action persistence', () => {
             expect(
                 await db.nation.findUnique({ where: { id: nationId }, select: { gold: true, rice: true, meta: true } })
             ).toEqual({
-                gold: 10_210,
+                gold: 10_105,
                 rice: 20_000,
-                meta: expect.objectContaining({ chief_set: 0, prev_income_gold: 210 }),
+                meta: expect.objectContaining({
+                    rate: 35,
+                    rate_tmp: 10,
+                    chief_set: 0,
+                    prev_income_gold: 105,
+                }),
             });
             expect(await db.city.findUnique({ where: { id: cityId }, select: { meta: true } })).toEqual({
                 meta: expect.objectContaining({ officer_set: 0 }),

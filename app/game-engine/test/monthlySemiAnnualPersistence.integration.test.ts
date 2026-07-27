@@ -25,7 +25,7 @@ const nation: Nation = {
     power: 0,
     level: 1,
     typeCode: 'che_중립',
-    meta: { rate: 20 },
+    meta: { rate: 50, rate_tmp: 20 },
 };
 
 const buildCity = (id: number, nationIdValue: number): City => ({
@@ -265,7 +265,7 @@ integration('monthly semi-annual database persistence', () => {
             expect(await db.nation.findUniqueOrThrow({ where: { id: nationId } })).toMatchObject({
                 gold: 95_001,
                 rice: 7_777,
-                meta: { rate: 20 },
+                meta: { rate: 50, rate_tmp: 20 },
             });
         } finally {
             await dbHooks.close();

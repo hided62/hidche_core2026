@@ -93,13 +93,15 @@ const populationTrait: NationTraitModule = {
     onCalcNationalIncome: (_context, type, amount) => (type === 'pop' ? amount * 1.2 : amount),
 };
 
-const buildHarness = (options: {
-    cities?: City[];
-    nations?: Nation[];
-    generals?: TurnGeneral[];
-    configConst?: Record<string, unknown>;
-    traits?: ReadonlyMap<string, NationTraitModule>;
-} = {}) => {
+const buildHarness = (
+    options: {
+        cities?: City[];
+        nations?: Nation[];
+        generals?: TurnGeneral[];
+        configConst?: Record<string, unknown>;
+        traits?: ReadonlyMap<string, NationTraitModule>;
+    } = {}
+) => {
     const state: TurnWorldState = {
         id: 1,
         currentYear: 193,
@@ -152,11 +154,7 @@ describe('ProcessSemiAnnual monthly action', () => {
     it('preserves the global popIncrease order, neutral double decay, supplied filtering, and nation trait', async () => {
         const { world, handler } = buildHarness({
             configConst: { basePopIncreaseAmount: 15_000 },
-            cities: [
-                buildCity(1),
-                buildCity(2, { supplyState: 0 }),
-                buildCity(3, { nationId: 0 }),
-            ],
+            cities: [buildCity(1), buildCity(2, { supplyState: 0 }), buildCity(3, { nationId: 0 })],
             nations: [buildNation(1, { typeCode: populationTrait.key })],
             traits: new Map([[populationTrait.key, populationTrait]]),
         });
@@ -224,6 +222,25 @@ describe('ProcessSemiAnnual monthly action', () => {
         });
     });
 
+    it('uses the staged rate_tmp when the desired rate changes mid-period', async () => {
+        const { world, handler } = buildHarness({
+            cities: [buildCity(1)],
+            nations: [buildNation(1, { meta: { rate: 50, rate_tmp: 20 } })],
+        });
+
+        await handler(['gold'], environment, event);
+
+        expect(world.getCityById(1)).toMatchObject({
+            population: 15_525,
+            agriculture: 991,
+            commerce: 991,
+            security: 991,
+            defence: 991,
+            wall: 991,
+            meta: { trust: 55, dead: 0 },
+        });
+    });
+
     it('applies strict legacy resource thresholds to generals and nations for either resource', async () => {
         const amounts = [1_000, 1_001, 10_000, 10_001, 100_000, 100_001];
         const { world, handler } = buildHarness({
@@ -236,18 +253,10 @@ describe('ProcessSemiAnnual monthly action', () => {
         await handler(['gold'], environment, event);
         await handler(['rice'], environment, event);
 
-        expect(world.listGenerals().map((general) => general.gold)).toEqual([
-            1_000, 991, 9_900, 9_701, 97_000, 97_001,
-        ]);
-        expect(world.listGenerals().map((general) => general.rice)).toEqual([
-            1_000, 991, 9_900, 9_701, 97_000, 97_001,
-        ]);
-        expect(world.listNations().map((nation) => nation.gold)).toEqual([
-            1_000, 991, 9_900, 9_701, 97_000, 95_001,
-        ]);
-        expect(world.listNations().map((nation) => nation.rice)).toEqual([
-            1_000, 991, 9_900, 9_701, 97_000, 95_001,
-        ]);
+        expect(world.listGenerals().map((general) => general.gold)).toEqual([1_000, 991, 9_900, 9_701, 97_000, 97_001]);
+        expect(world.listGenerals().map((general) => general.rice)).toEqual([1_000, 991, 9_900, 9_701, 97_000, 97_001]);
+        expect(world.listNations().map((nation) => nation.gold)).toEqual([1_000, 991, 9_900, 9_701, 97_000, 95_001]);
+        expect(world.listNations().map((nation) => nation.rice)).toEqual([1_000, 991, 9_900, 9_701, 97_000, 95_001]);
     });
 
     it('rejects resources outside the legacy enum', () => {
