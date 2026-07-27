@@ -93,6 +93,7 @@ export const upsertGeneralAccess = async (
         worldStateId: number;
         year: number;
         month: number;
+        tickSeconds: number;
         generalId: number;
         userId: string;
         weight: number;
@@ -105,8 +106,45 @@ export const upsertGeneralAccess = async (
         throw new Error('Traffic access persistence requires transaction support.');
     }
     await db.$transaction(async (transaction) => {
+        const periodKey = input.year * 12 + input.month - 1;
         const periodRows = await transaction.$queryRaw<Array<{ id: number }>>(
             GamePrisma.sql`
+                WITH latest_period AS (
+                    SELECT MAX(year * 12 + month - 1)::INTEGER AS period_key
+                    FROM traffic_period
+                    WHERE world_state_id = ${input.worldStateId}
+                ),
+                missing_periods AS (
+                    INSERT INTO traffic_period (
+                        world_state_id,
+                        year,
+                        month,
+                        started_at,
+                        last_refresh,
+                        refresh,
+                        online
+                    )
+                    SELECT
+                        ${input.worldStateId},
+                        (missing_key / 12)::INTEGER,
+                        (missing_key % 12 + 1)::INTEGER,
+                        CAST(${input.periodStartedAt} AS TIMESTAMP) - (
+                            (${periodKey} - missing_key) * ${input.tickSeconds}
+                        ) * INTERVAL '1 second',
+                        CAST(${input.periodStartedAt} AS TIMESTAMP) - (
+                            (${periodKey} - missing_key - 1) * ${input.tickSeconds}
+                        ) * INTERVAL '1 second',
+                        0,
+                        0
+                    FROM latest_period
+                    CROSS JOIN LATERAL generate_series(
+                        latest_period.period_key + 1,
+                        ${periodKey} - 1
+                    ) AS missing_key
+                    WHERE latest_period.period_key IS NOT NULL
+                    ON CONFLICT (world_state_id, year, month) DO NOTHING
+                    RETURNING id
+                )
                 INSERT INTO traffic_period (
                     world_state_id,
                     year,
@@ -265,6 +303,7 @@ export const recordGeneralAccess = async (
         worldStateId: worldState.id,
         year: worldState.currentYear,
         month: worldState.currentMonth,
+        tickSeconds: worldState.tickSeconds,
         generalId: general.id,
         userId: user.id,
         weight,

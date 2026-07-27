@@ -50,6 +50,7 @@ integration('general access tracking persistence', () => {
             worldStateId,
             year: 185,
             month: 3,
+            tickSeconds: 600,
             generalId,
             userId: 'access-user-a',
             now: new Date('2026-07-26T03:05:00.000Z'),
@@ -100,6 +101,7 @@ integration('general access tracking persistence', () => {
             worldStateId,
             year: 185,
             month: 4,
+            tickSeconds: 600,
             generalId,
             userId: 'access-user-b',
             now: new Date('2026-07-26T03:15:00.000Z'),
@@ -120,6 +122,7 @@ integration('general access tracking persistence', () => {
             worldStateId,
             year: 185,
             month: 4,
+            tickSeconds: 600,
             generalId: secondGeneralId,
             userId: 'access-user-c',
             now: new Date('2026-07-26T03:15:01.000Z'),
@@ -154,6 +157,35 @@ integration('general access tracking persistence', () => {
                 },
             ],
         });
+
+        await upsertGeneralAccess(db, {
+            worldStateId,
+            year: 185,
+            month: 6,
+            tickSeconds: 600,
+            generalId,
+            userId: 'access-user-b',
+            now: new Date('2026-07-26T03:35:00.000Z'),
+            periodStartedAt: new Date('2026-07-26T03:30:00.000Z'),
+            scoreStartedAt: new Date('2026-07-26T03:30:00.000Z'),
+            weight: 1,
+        });
+        await expect(
+            db.trafficPeriod.findUniqueOrThrow({
+                where: {
+                    worldStateId_year_month: {
+                        worldStateId,
+                        year: 185,
+                        month: 5,
+                    },
+                },
+            })
+        ).resolves.toMatchObject({
+            startedAt: new Date('2026-07-26T03:20:00.000Z'),
+            lastRefresh: new Date('2026-07-26T03:30:00.000Z'),
+            refresh: 0,
+            online: 0,
+        });
     });
 
     it('rolls back the period and member rows when the legacy access update fails', async () => {
@@ -174,6 +206,7 @@ integration('general access tracking persistence', () => {
                 worldStateId,
                 year: 186,
                 month: 1,
+                tickSeconds: 600,
                 generalId: rollbackGeneralId,
                 userId: 'rollback-user',
                 now: new Date('2026-07-26T03:20:00.000Z'),

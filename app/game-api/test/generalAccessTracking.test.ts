@@ -80,8 +80,15 @@ describe('general access tracking', () => {
 
         const periodStatement = queryRaw.mock.calls[0]![0] as { sql: string; values: unknown[] };
         expect(periodStatement.sql).toContain('INSERT INTO traffic_period');
+        expect(periodStatement.sql).toContain('generate_series');
         expect(periodStatement.sql).toContain('ON CONFLICT (world_state_id, year, month) DO UPDATE');
-        expect(periodStatement.values).toEqual([3, 185, 4, new Date('2026-07-26T03:00:00.000Z'), now, 2]);
+        expect(periodStatement.values).toContain(3);
+        expect(periodStatement.values).toContain(185);
+        expect(periodStatement.values).toContain(4);
+        expect(periodStatement.values).toContain(600);
+        expect(periodStatement.values).toContain(2);
+        expect(periodStatement.values).toContain(now);
+        expect(periodStatement.values).toContainEqual(new Date('2026-07-26T03:00:00.000Z'));
 
         const memberStatement = executeRaw.mock.calls[0]![0] as { sql: string; values: unknown[] };
         expect(memberStatement.sql).toContain('INSERT INTO traffic_period_general');
