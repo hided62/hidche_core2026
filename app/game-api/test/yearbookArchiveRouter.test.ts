@@ -21,20 +21,26 @@ const archiveRows = [
     {
         id: 1,
         profileName: archiveServerId,
+        sourceId: 101,
         year: 200,
         month: 1,
         map: { year: 200, month: 1, startYear: 190, cityList: [], nationList: [] },
         nations: [{ id: 1, name: '촉', color: '#FF0000', level: 7, power: 1000, cities: ['성도'] }],
+        globalHistory: ['<C>●</>1월: 기록 없음'],
+        globalAction: ['<C>●</>1월: 기록 없음'],
         hash: 'archive-1',
         createdAt: new Date('2026-07-25T00:00:00.000Z'),
     },
     {
         id: 2,
         profileName: archiveServerId,
+        sourceId: 102,
         year: 200,
         month: 2,
         map: { year: 200, month: 2, startYear: 190, cityList: [], nationList: [] },
         nations: [{ id: 1, name: '촉', color: '#FF0000', level: 7, power: 1200, cities: ['성도'] }],
+        globalHistory: ['<C>●</>2월: 기록 없음'],
+        globalAction: ['<C>●</>2월: 기록 없음'],
         hash: 'archive-2',
         createdAt: new Date('2026-07-25T01:00:00.000Z'),
     },
@@ -55,10 +61,7 @@ const authFor = (userId: string): GameSessionTokenPayload => ({
     sanctions: {},
 });
 
-const buildContext = (
-    auth: GameSessionTokenPayload | null,
-    options: { hasGeneral?: boolean } = {}
-): GameApiContext => {
+const buildContext = (auth: GameSessionTokenPayload | null, options: { hasGeneral?: boolean } = {}): GameApiContext => {
     const db = {
         general: {
             findFirst: async ({ where }: { where: { userId: string } }) =>

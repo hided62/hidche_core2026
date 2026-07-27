@@ -670,9 +670,10 @@ export const createDatabaseTurnHooks = async (
                     deletedNationSnapshots.map((snapshot) =>
                         prisma.oldNation.upsert({
                             where: {
-                                serverId_nation: {
+                                serverId_nation_sourceId: {
                                     serverId,
                                     nation: snapshot.nation.id,
+                                    sourceId: 0,
                                 },
                             },
                             update: {
@@ -695,6 +696,7 @@ export const createDatabaseTurnHooks = async (
                             create: {
                                 serverId,
                                 nation: snapshot.nation.id,
+                                sourceId: 0,
                                 data: {
                                     nation: snapshot.nation.id,
                                     name: snapshot.nation.name,

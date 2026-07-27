@@ -1,0 +1,29 @@
+{
+    "name": "@sammo-ts/legacy-db-migration",
+    "private": true,
+    "version": "0.0.0",
+    "type": "module",
+    "bin": {
+        "sammo-migrate-legacy-db": "./dist/cli.mjs"
+    },
+    "scripts": {
+        "build": "tsdown src/cli.ts --no-config --format esm --out-dir dist --dts --sourcemap --target node22 --platform node",
+        "lint": "eslint .",
+        "lint:fix": "eslint . --fix",
+        "test": "vitest run --config vitest.config.ts",
+        "typecheck": "tsc -b",
+        "migrate": "tsx src/cli.ts"
+    },
+    "dependencies": {
+        "mariadb": "3.5.3",
+        "pg": "^8.16.3"
+    },
+    "devDependencies": {
+        "@types/node": "^26.1.1",
+        "@types/pg": "^8.15.6",
+        "tsdown": "^0.22.14",
+        "tsx": "^4.20.6",
+        "typescript": "6.0.2",
+        "vitest": "^4.0.16"
+    }
+}

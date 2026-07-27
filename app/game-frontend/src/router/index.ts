@@ -35,6 +35,7 @@ import NpcListView from '../views/NpcListView.vue';
 import NationListView from '../views/NationListView.vue';
 import GeneralListView from '../views/GeneralListView.vue';
 import TrafficView from '../views/TrafficView.vue';
+import PastPlaysView from '../views/PastPlaysView.vue';
 import { useSessionStore } from '../stores/session';
 import { trpc } from '../utils/trpc';
 
@@ -319,6 +320,14 @@ const routes = [
         meta: {
             requiresAuth: true,
             requiresGeneral: true,
+        },
+    },
+    {
+        path: '/past-plays',
+        name: 'past-plays',
+        component: PastPlaysView,
+        meta: {
+            requiresAuth: true,
         },
     },
     {

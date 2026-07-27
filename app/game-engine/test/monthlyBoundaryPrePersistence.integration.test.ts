@@ -218,10 +218,11 @@ integration('monthly pre-update persistence', () => {
             ]);
             const yearbookRow = await db.yearbookHistory.findUniqueOrThrow({
                 where: {
-                    profileName_year_month: {
+                    profileName_year_month_sourceId: {
                         profileName: yearbookProfile,
                         year: 200,
                         month: 12,
+                        sourceId: 0,
                     },
                 },
             });

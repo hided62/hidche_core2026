@@ -361,7 +361,7 @@ integration('monthly wandering nation persistence', () => {
                 })
             ).toBe(0);
             const archive = await db.oldNation.findUniqueOrThrow({
-                where: { serverId_nation: { serverId, nation: nationIds[1]! } },
+                where: { serverId_nation_sourceId: { serverId, nation: nationIds[1]!, sourceId: 0 } },
             });
             expect(archive.data).toMatchObject({
                 nation: nationIds[1],

@@ -160,10 +160,11 @@ export const createYearbookHandler = (options: {
 
             await connector.prisma.yearbookHistory.upsert({
                 where: {
-                    profileName_year_month: {
+                    profileName_year_month_sourceId: {
                         profileName: options.profileName,
                         year: context.previousYear,
                         month: context.previousMonth,
+                        sourceId: 0,
                     },
                 },
                 update: {
@@ -173,6 +174,7 @@ export const createYearbookHandler = (options: {
                 },
                 create: {
                     profileName: options.profileName,
+                    sourceId: 0,
                     year: context.previousYear,
                     month: context.previousMonth,
                     map,

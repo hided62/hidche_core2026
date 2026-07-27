@@ -277,10 +277,11 @@ model OldNation {
   id       Int      @id @default(autoincrement())
   serverId String   @map("server_id")
   nation   Int      @default(0)
+  sourceId Int      @default(0) @map("source_id")
   data     Json     @default(dbgenerated("'{}'::jsonb"))
   date     DateTime @default(now())
 
-  @@unique([serverId, nation])
+  @@unique([serverId, nation, sourceId])
   @@index([serverId, nation], name: "by_server")
   @@map("ng_old_nations")
 }
@@ -303,6 +304,7 @@ model OldGeneral {
 
 model Emperor {
   id           Int     @id @default(autoincrement()) @map("no")
+  legacyId     Int?    @unique @map("legacy_id")
   serverId     String? @map("server_id")
   phase        String? @default("")
   nationCount  String? @map("nation_count")
@@ -438,16 +440,19 @@ model DiplomacyLetter {
 }
 
 model YearbookHistory {
-  id          Int      @id @default(autoincrement())
-  profileName String   @map("profile_name")
-  year        Int
-  month       Int
-  map         Json
-  nations     Json
-  hash        String   @default("")
-  createdAt   DateTime @default(now()) @map("created_at")
+  id            Int      @id @default(autoincrement())
+  profileName   String   @map("profile_name")
+  sourceId      Int      @default(0) @map("source_id")
+  year          Int
+  month         Int
+  map           Json
+  nations       Json
+  globalHistory Json     @default(dbgenerated("'[]'::jsonb")) @map("global_history")
+  globalAction  Json     @default(dbgenerated("'[]'::jsonb")) @map("global_action")
+  hash          String   @default("")
+  createdAt     DateTime @default(now()) @map("created_at")
 
-  @@unique([profileName, year, month])
+  @@unique([profileName, year, month, sourceId])
   @@index([profileName, year, month])
   @@map("yearbook_history")
 }
@@ -553,7 +558,10 @@ model NationBet {
 
 model InheritanceLog {
   id        Int      @id @default(autoincrement())
+  legacyId  Int?     @unique @map("legacy_id")
   userId    String   @map("user_id")
+  serverId  String?  @map("server_id")
+  logType   String   @default("inheritPoint") @map("log_type")
   year      Int
   month     Int
   text      String
@@ -565,6 +573,7 @@ model InheritanceLog {
 
 model InheritanceResult {
   id        Int      @id @default(autoincrement())
+  legacyId  Int?     @unique @map("legacy_id")
   serverId  String   @map("server_id")
   owner     String   @map("owner")
   generalId Int      @map("general_id")
@@ -622,6 +631,21 @@ model InheritanceUserState {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("inheritance_user_state")
+}
+
+model LegacyGameStorage {
+  id         Int      @id @default(autoincrement())
+  sourceId   Int      @map("source_id")
+  namespace  String
+  key        String
+  value      Json
+  scope      String
+  migratedAt DateTime @default(now()) @map("migrated_at")
+
+  @@unique([sourceId])
+  @@unique([namespace, key])
+  @@index([scope, namespace])
+  @@map("legacy_game_storage")
 }
 
 model BoardPost {

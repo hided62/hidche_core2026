@@ -22,8 +22,10 @@ type YearbookNation = {
 const joinYearMonth = (year: number, month: number): number => year * 12 + month - 1;
 const zServerId = z.string().trim().min(1).max(64);
 
-const computeHash = (payload: unknown): string =>
-    createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+const computeHash = (payload: unknown): string => createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+
+const parseTextArray = (value: unknown): string[] =>
+    Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 
 const parseYearbookNations = (value: unknown): YearbookNation[] => {
     if (!Array.isArray(value)) {
@@ -103,8 +105,7 @@ const buildNationSnapshot = async (ctx: GameApiContext) => {
 
     for (const city of cityRows) {
         const entry = cityStatsByNation.get(city.nationId) ?? { popSum: 0, valueSum: 0, maxSum: 0 };
-        const valueSum =
-            city.population + city.agriculture + city.commerce + city.security + city.wall + city.defence;
+        const valueSum = city.population + city.agriculture + city.commerce + city.security + city.wall + city.defence;
         const maxSum =
             city.populationMax +
             city.agricultureMax +
@@ -229,12 +230,8 @@ export const yearbookRouter = router({
 
             const currentYearMonth = joinYearMonth(worldState.currentYear, worldState.currentMonth);
             const fallbackYearMonth = currentYearMonth - 1;
-            const firstYearMonth = firstRow
-                ? joinYearMonth(firstRow.year, firstRow.month)
-                : fallbackYearMonth;
-            const lastYearMonth = lastRow
-                ? joinYearMonth(lastRow.year, lastRow.month)
-                : fallbackYearMonth;
+            const firstYearMonth = firstRow ? joinYearMonth(firstRow.year, firstRow.month) : fallbackYearMonth;
+            const lastYearMonth = lastRow ? joinYearMonth(lastRow.year, lastRow.month) : fallbackYearMonth;
             const selectedYearMonth = isCurrentProfile ? currentYearMonth : lastYearMonth;
 
             return {
@@ -262,17 +259,10 @@ export const yearbookRouter = router({
             const isCurrentProfile = targetProfileName === ctx.profile.name;
 
             const isCurrent =
-                isCurrentProfile &&
-                worldState.currentYear === input.year && worldState.currentMonth === input.month;
-
-            const { globalHistory, globalAction } = isCurrentProfile
-                ? await buildLogs(ctx, input.year, input.month)
-                : {
-                      globalHistory: [`<C>●</>${input.month}월: 기록 없음`],
-                      globalAction: [`<C>●</>${input.month}월: 기록 없음`],
-                  };
+                isCurrentProfile && worldState.currentYear === input.year && worldState.currentMonth === input.month;
 
             if (isCurrent) {
+                const { globalHistory, globalAction } = await buildLogs(ctx, input.year, input.month);
                 const map = await loadPublicMap(ctx, false);
                 if (!map) {
                     throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'World map is not available.' });
@@ -299,6 +289,7 @@ export const yearbookRouter = router({
                     year: input.year,
                     month: input.month,
                 },
+                orderBy: [{ sourceId: 'desc' }, { id: 'desc' }],
             });
             if (!row) {
                 throw new TRPCError({ code: 'NOT_FOUND', message: '연감 데이터를 찾을 수 없습니다.' });
@@ -306,6 +297,14 @@ export const yearbookRouter = router({
 
             const map = asRecord(row.map) as BaseMapResult;
             const nations = parseYearbookNations(row.nations);
+            const archivedLogs =
+                isCurrentProfile && row.sourceId === 0
+                    ? await buildLogs(ctx, input.year, input.month)
+                    : {
+                          globalHistory: parseTextArray(row.globalHistory),
+                          globalAction: parseTextArray(row.globalAction),
+                      };
+            const { globalHistory, globalAction } = archivedLogs;
             const data = {
                 year: input.year,
                 month: input.month,

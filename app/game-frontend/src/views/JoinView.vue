@@ -281,6 +281,7 @@ onMounted(() => {
                 <p class="join-subtitle">로그인 완료, 아직 장수가 없는 상태입니다.</p>
             </div>
             <div class="join-tabs">
+                <RouterLink class="simulator-link" to="/past-plays">내 지난 플레이</RouterLink>
                 <RouterLink class="simulator-link" to="/battle-simulator">전투 시뮬레이터</RouterLink>
                 <button :class="{ active: activeTab === 'create' }" @click="activeTab = 'create'">장수 생성</button>
                 <button :class="{ active: activeTab === 'possess' }" @click="activeTab = 'possess'">NPC 빙의</button>

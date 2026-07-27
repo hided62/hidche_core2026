@@ -16,6 +16,7 @@ export default defineConfig({
         'inGameMenus.spec.ts',
         'nationOffices.spec.ts',
         'directoryLists.spec.ts',
+        'pastPlays.spec.ts',
         'nationGeneralSecret.spec.ts',
         'npcPolicy.spec.ts',
         'auction.spec.ts',

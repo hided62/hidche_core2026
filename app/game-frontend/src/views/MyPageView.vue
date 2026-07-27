@@ -223,6 +223,7 @@ onMounted(() => {
     <main id="container" class="legacy-page bg0" :class="`screen-${screenMode}`">
         <div class="title-row">
             <span>내 정 보</span>
+            <RouterLink class="legacy-button" to="/past-plays">지난 플레이</RouterLink>
             <RouterLink class="legacy-button" to="/">돌아가기</RouterLink>
             <button class="legacy-button" type="button" @click="loadPage">새로고침</button>
         </div>

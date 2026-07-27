@@ -24,6 +24,7 @@ import { rankingRouter } from './router/ranking/index.js';
 import { dynastyRouter } from './router/dynasty/index.js';
 import { voteRouter } from './router/vote/index.js';
 import { bettingRouter } from './router/betting/index.js';
+import { archiveRouter } from './router/archive/index.js';
 
 export const appRouter = router({
     health: healthRouter,
@@ -50,6 +51,7 @@ export const appRouter = router({
     dynasty: dynastyRouter,
     vote: voteRouter,
     betting: bettingRouter,
+    archive: archiveRouter,
 });
 
 export type AppRouter = typeof appRouter;

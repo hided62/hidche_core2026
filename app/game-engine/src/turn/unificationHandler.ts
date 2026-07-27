@@ -558,9 +558,10 @@ export const createUnificationHandler = (options: {
 
         await prisma.oldNation.upsert({
             where: {
-                serverId_nation: {
+                serverId_nation_sourceId: {
                     serverId,
                     nation: winnerNationId,
+                    sourceId: 0,
                 },
             },
             update: {
@@ -583,6 +584,7 @@ export const createUnificationHandler = (options: {
             create: {
                 serverId,
                 nation: winnerNationId,
+                sourceId: 0,
                 data: {
                     nation: winnerNationId,
                     name: winnerNation.name,
@@ -602,9 +604,10 @@ export const createUnificationHandler = (options: {
 
         await prisma.oldNation.upsert({
             where: {
-                serverId_nation: {
+                serverId_nation_sourceId: {
                     serverId,
                     nation: 0,
+                    sourceId: 0,
                 },
             },
             update: {
@@ -627,6 +630,7 @@ export const createUnificationHandler = (options: {
             create: {
                 serverId,
                 nation: 0,
+                sourceId: 0,
                 data: {
                     nation: 0,
                     name: '재야',

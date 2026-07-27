@@ -151,6 +151,7 @@ watch(
                 <a class="ghost" href="/xe/community" target="_blank" rel="noopener">게시판</a>
                 <RouterLink class="ghost" to="/battle-simulator">전투 시뮬레이터</RouterLink>
                 <RouterLink class="ghost" to="/my-page">내 정보&amp;설정</RouterLink>
+                <RouterLink class="ghost" to="/past-plays">내 지난 플레이</RouterLink>
                 <RouterLink class="ghost" :class="{ highlight: tournamentStage === 1 }" to="/tournament"
                     >토너먼트</RouterLink
                 >
