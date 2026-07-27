@@ -93,6 +93,10 @@ integration('core ↔ legacy command-boundary differential', () => {
     it.each([
         ['nation declaration', 'fixtures/turn-differential/nation-declaration.json'],
         ['live sortie conquest', 'fixtures/turn-differential/live-sortie-conquest.json'],
+        [
+            'live sortie collapsed nation conflict cleanup',
+            'fixtures/turn-differential/live-sortie-collapse-conflict.json',
+        ],
         ['live sortie against a defending general', 'fixtures/turn-differential/live-sortie-defender.json'],
         [
             'live sortie against multiple defending generals',
@@ -104,6 +108,10 @@ integration('core ↔ legacy command-boundary differential', () => {
         ['live sortie conflict arbitration', 'fixtures/turn-differential/live-sortie-conflict-arbitration.json'],
         ['live sortie tied conflict', 'fixtures/turn-differential/live-sortie-conflict-tie.json'],
         ['live sortie outer lifecycle: conquest', 'fixtures/turn-differential/live-sortie-conquest.json'],
+        [
+            'live sortie outer lifecycle: collapsed nation conflict cleanup',
+            'fixtures/turn-differential/live-sortie-collapse-conflict.json',
+        ],
         ['live sortie outer lifecycle: defender', 'fixtures/turn-differential/live-sortie-defender.json'],
         [
             'live sortie outer lifecycle: multiple defenders',
@@ -172,6 +180,12 @@ integration('core ↔ legacy command-boundary differential', () => {
                     atmos: 80,
                 });
                 expect(reference.after.cities.find((city) => city.id === 71)?.supplyState).toBe(1);
+            }
+            if (fixturePath.endsWith('live-sortie-collapse-conflict.json')) {
+                expect(reference.before.cities.find((city) => city.id === 71)?.conflict).toEqual({ 2: 1234 });
+                expect(reference.after.nations.some((nation) => nation.id === 2)).toBe(false);
+                expect(Object.keys(reference.after.cities.find((city) => city.id === 71)?.conflict ?? {})).toEqual([]);
+                expect(Object.keys(core.after.cities.find((city) => city.id === 71)?.conflict ?? {})).toEqual([]);
             }
             if (fixturePath.endsWith('live-sortie-conflict-arbitration.json')) {
                 expect(reference.before.cities.find((city) => city.id === 70)?.conflict).toEqual({ 3: 10_000 });
