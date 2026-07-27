@@ -443,7 +443,7 @@ export const createRaiseInvaderHandler = (options: {
                 scope: LogScope.SYSTEM,
                 category: LogCategory.HISTORY,
                 text,
-                format: LogFormat.NOTICE_YEAR_MONTH,
+                format: LogFormat.YEAR_MONTH,
                 year: environment.year,
                 month: environment.month,
             });
@@ -524,7 +524,7 @@ export const createInvaderEndingHandler = (options: {
                 scope: LogScope.SYSTEM,
                 category: LogCategory.HISTORY,
                 text,
-                format: LogFormat.NOTICE_YEAR_MONTH,
+                format: LogFormat.YEAR_MONTH,
                 year: environment.year,
                 month: environment.month,
             });

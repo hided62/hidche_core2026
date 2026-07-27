@@ -1,3 +1,7 @@
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createGamePostgresConnector, type GamePrismaClient } from '@sammo-ts/infra';
 import type { City, Nation } from '@sammo-ts/logic';
@@ -24,6 +28,60 @@ const ordinaryCityId = 991_100;
 const invaderCityId = 991_101;
 const sourceEventId = 991_100;
 const createdEventIds = [991_101, 991_102];
+
+type ReferenceInvaderLifecycleTrace = {
+    phases: {
+        afterRaise: {
+            createdNationCount: number;
+            generalCountsPerNation: number[];
+            diplomacyCountsPerNation: number[];
+            diplomacyStates: string[];
+            isunited: number;
+            blockChangeScout: boolean;
+        };
+        atWar: { results: string[]; autoDeleteEventCount: number };
+        atPeace: {
+            results: string[];
+            autoDeleteEventCount: number;
+            rulerWanderTurnCount: number;
+            endingEventPresent: boolean;
+        };
+        afterUserWin: {
+            result: string;
+            endingEventPresent: boolean;
+            isunited: number;
+            refreshLimit: number;
+            logs: string[];
+        };
+    };
+};
+
+const runReferenceInvaderLifecycle = (): ReferenceInvaderLifecycleTrace | null => {
+    const workspaceRoot = process.env.TURN_DIFFERENTIAL_WORKSPACE_ROOT;
+    if (process.env.TURN_DIFFERENTIAL_REFERENCE !== '1' || !workspaceRoot) {
+        return null;
+    }
+    const stackDirectory = path.join(workspaceRoot, 'docker_compose_files/reference');
+    const runnerScript =
+        process.env.MONTHLY_INVADER_LIFECYCLE_RUNNER_SCRIPT ??
+        path.join(workspaceRoot, 'ref/sam/hwe/compare/monthly_event_trace.php');
+    const fixturePath =
+        process.env.MONTHLY_INVADER_LIFECYCLE_FIXTURE ??
+        path.join(path.dirname(runnerScript), 'fixtures/monthly_invader_lifecycle.json');
+    const stdout = execFileSync('./scripts/run-turn-differential-case.sh', ['-'], {
+        cwd: stackDirectory,
+        input: fs.readFileSync(fixturePath, 'utf8'),
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: {
+            ...process.env,
+            COMPOSE_PROJECT_NAME: 'sam-rebuild-reference',
+            TURN_DIFFERENTIAL_RUNNER_SCRIPT: runnerScript,
+            TURN_DIFFERENTIAL_COMPARE_DIR: path.dirname(runnerScript),
+        },
+    });
+    return JSON.parse(stdout) as ReferenceInvaderLifecycleTrace;
+};
 
 const buildCity = (id: number, nationId: number, level: number, name: string): City => ({
     id,
@@ -155,6 +213,7 @@ integration('RaiseInvader database persistence', () => {
     });
 
     it('commits invader entities, dynamic events, diplomacy, turns, ranks, city state, and logs atomically', async () => {
+        const referenceTrace = runReferenceInvaderLifecycle();
         const createdGeneralIds = Array.from({ length: 10 }, (_, index) => firstCreatedGeneralId + index);
         const createCity = (city: City) =>
             db.city.create({
@@ -386,6 +445,15 @@ integration('RaiseInvader database persistence', () => {
             expect(await db.worldState.findUniqueOrThrow({ where: { id: stateRow.id } })).toMatchObject({
                 meta: expect.objectContaining({ isunited: 1, block_change_scout: false }),
             });
+            if (referenceTrace) {
+                expect(referenceTrace.phases.afterRaise).toMatchObject({
+                    generalCountsPerNation: [10],
+                    diplomacyCountsPerNation: [2],
+                    diplomacyStates: ['1:24'],
+                    isunited: 1,
+                    blockChangeScout: false,
+                });
+            }
             const sequenceProbe = await db.event.create({
                 data: {
                     targetCode: 'month',
@@ -399,6 +467,23 @@ integration('RaiseInvader database persistence', () => {
             await db.event.delete({ where: { id: sequenceProbe.id } });
 
             expect(world.removeEvent(sourceEventId)).toBe(true);
+            await world.advanceMonth(new Date('0200-02-01T00:00:00.000Z'));
+            await dbHooks.hooks.flushChanges?.({
+                lastTurnTime: world.getState().lastTurnTime.toISOString(),
+                processedGenerals: 0,
+                processedTurns: 1,
+                durationMs: 0,
+                partial: false,
+            });
+
+            expect(await db.event.findUnique({ where: { id: createdEventIds[0]! } })).not.toBeNull();
+            if (referenceTrace) {
+                expect(referenceTrace.phases.atWar).toEqual({
+                    results: ['On War'],
+                    autoDeleteEventCount: referenceTrace.phases.afterRaise.createdNationCount,
+                });
+            }
+
             world.applyDiplomacyPatch({
                 srcNationId: createdNationId,
                 destNationId: existingNationId,
@@ -409,7 +494,7 @@ integration('RaiseInvader database persistence', () => {
                 destNationId: createdNationId,
                 patch: { state: 2, term: 0 },
             });
-            await world.advanceMonth(new Date('0200-02-01T00:00:00.000Z'));
+            await world.advanceMonth(new Date('0200-03-01T00:00:00.000Z'));
             await dbHooks.hooks.flushChanges?.({
                 lastTurnTime: world.getState().lastTurnTime.toISOString(),
                 processedGenerals: 0,
@@ -426,13 +511,24 @@ integration('RaiseInvader database persistence', () => {
                 })
             ).toEqual(Array.from({ length: 30 }, () => ({ actionCode: 'che_방랑' })));
             expect(await db.event.findUnique({ where: { id: createdEventIds[1]! } })).not.toBeNull();
+            if (referenceTrace) {
+                expect(referenceTrace.phases.atPeace).toMatchObject({
+                    results: ['Deleted'],
+                    autoDeleteEventCount: 0,
+                    endingEventPresent: true,
+                });
+                expect(
+                    referenceTrace.phases.atPeace.rulerWanderTurnCount /
+                        referenceTrace.phases.afterRaise.createdNationCount
+                ).toBe(30);
+            }
 
             for (const generalId of createdGeneralIds) {
                 expect(world.removeGeneral(generalId)).toBe(true);
             }
             expect(world.removeNation(createdNationId)).toBe(true);
             world.updateCity(invaderCityId, { nationId: existingNationId });
-            await world.advanceMonth(new Date('0200-03-01T00:00:00.000Z'));
+            await world.advanceMonth(new Date('0200-04-01T00:00:00.000Z'));
             await dbHooks.hooks.flushChanges?.({
                 lastTurnTime: world.getState().lastTurnTime.toISOString(),
                 processedGenerals: 0,
@@ -447,14 +543,26 @@ integration('RaiseInvader database persistence', () => {
             });
             expect(
                 await db.logEntry.findMany({
-                    where: { year: 200, month: 3, text: { contains: '【이벤트】' } },
+                    where: { year: 200, month: 4, text: { contains: '【이벤트】' } },
                     orderBy: { id: 'asc' },
                     select: { text: true },
                 })
             ).toEqual([
-                { text: '<R>★</>200년 3월:<L><b>【이벤트】</b></>이민족을 모두 소탕했습니다!' },
-                { text: '<R>★</>200년 3월:<L><b>【이벤트】</b></>중원은 당분간 태평성대를 누릴 것입니다.' },
+                { text: '<C>●</>200년 4월:<L><b>【이벤트】</b></>이민족을 모두 소탕했습니다!' },
+                { text: '<C>●</>200년 4월:<L><b>【이벤트】</b></>중원은 당분간 태평성대를 누릴 것입니다.' },
             ]);
+            if (referenceTrace) {
+                expect(referenceTrace.phases.afterUserWin).toEqual({
+                    result: 'Deleted',
+                    endingEventPresent: false,
+                    isunited: 3,
+                    refreshLimit: 300,
+                    logs: [
+                        '<C>●</>200년 4월:<L><b>【이벤트】</b></>이민족을 모두 소탕했습니다!',
+                        '<C>●</>200년 4월:<L><b>【이벤트】</b></>중원은 당분간 태평성대를 누릴 것입니다.',
+                    ],
+                });
+            }
         } finally {
             await dbHooks.close();
         }
