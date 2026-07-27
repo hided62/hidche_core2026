@@ -884,12 +884,13 @@ export const createReservedTurnHandler = async (options: {
                 let blockedReason: string | undefined = undefined;
 
                 if (parsedArgs === null) {
+                    const failureText = `인자가 올바르지 않습니다. ${resolvedDefinition.name} 실패.`;
                     definition = fallbackDefinition;
                     actionArgs = definition.parseArgs({}) ?? {};
                     actionKey = definition.key;
                     usedFallback = true;
-                    blockedReason = '예약된 명령을 실행하지 못했습니다.';
-                    logs.push(createActionLog('예약된 명령을 실행하지 못했습니다.'));
+                    blockedReason = failureText;
+                    logs.push(createActionLog(failureText));
                 }
 
                 const actionConstraintEnv = {

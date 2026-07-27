@@ -456,7 +456,7 @@ describe('Reserved Turn Execution Integration', () => {
 
         const dirty = world.consumeDirtyState();
         expect(world.getGeneralById(1)!.cityId).toBe(1);
-        expect(dirty.logs.some((log) => log.text.includes('예약된 명령을 실행하지 못했습니다.'))).toBe(true);
+        expect(dirty.logs.some((log) => log.text.includes('인자가 올바르지 않습니다. 이동 실패.'))).toBe(true);
         expect(dirty.logs.some((log) => log.text.includes('아무것도 실행하지 않았습니다.'))).toBe(true);
     });
 

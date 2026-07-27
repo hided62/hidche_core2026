@@ -2695,6 +2695,38 @@ integration('nation command resource balance and target boundaries', () => {
     );
 });
 
+integration('nation command missing argument object parity', () => {
+    it.each(['che_포상', 'che_몰수'] as const)(
+        '%s falls back with the legacy invalid-argument log and no RNG',
+        async (action) => {
+            const request = buildRequest(action);
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+
+            expect(reference.execution.outcome).toMatchObject({ completed: false });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: action,
+                actionKey: '휴식',
+                usedFallback: true,
+            });
+            expect(reference.rng).toEqual([]);
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+            expect(semanticLogSignatures(nationCommandLogs(core.after.logs))).toEqual(
+                semanticLogSignatures(addedReferenceLogs(reference.before, reference.after.logs))
+            );
+        },
+        120_000
+    );
+});
+
 integration('nation seizure NPC public message parity', () => {
     it('matches the legacy fixed-seed RNG and public message side effect', async () => {
         const request = buildRequest(
