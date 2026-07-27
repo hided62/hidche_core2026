@@ -1,3 +1,7 @@
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
+import { fileURLToPath } from 'node:url';
+
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createGamePostgresConnector, type GamePrisma, type GamePrismaClient } from '@sammo-ts/infra';
@@ -7,6 +11,41 @@ import { DatabaseTurnDaemonLease, TurnDaemonLeaseLostError } from '../src/lifecy
 const databaseUrl = process.env.TURN_DAEMON_LEASE_DATABASE_URL ?? process.env.INPUT_EVENT_DATABASE_URL;
 const integration = describe.skipIf(!databaseUrl);
 const profilePrefix = 'integration:turn-lease:';
+const holderScript = fileURLToPath(new URL('./helpers/turnDaemonLeaseHolder.mjs', import.meta.url));
+
+type HolderReady = {
+    profile: string;
+    ownerId: string;
+    fencingEpoch: string;
+};
+
+const waitForHolderReady = async (child: ReturnType<typeof spawn>, timeoutMs = 10_000): Promise<HolderReady> => {
+    let output = '';
+    const ready = new Promise<HolderReady>((resolve, reject) => {
+        child.stdout?.setEncoding('utf8');
+        child.stdout?.on('data', (chunk: string) => {
+            output += chunk;
+            const newline = output.indexOf('\n');
+            if (newline < 0) {
+                return;
+            }
+            resolve(JSON.parse(output.slice(0, newline)) as HolderReady);
+        });
+        child.once('error', reject);
+        child.once('exit', (code, signal) => {
+            reject(new Error(`lease holder exited before readiness: code=${String(code)} signal=${String(signal)}`));
+        });
+    });
+    const timeout = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('lease holder readiness timed out')), timeoutMs).unref();
+    });
+    return Promise.race([ready, timeout]);
+};
+
+const delay = (durationMs: number): Promise<void> =>
+    new Promise((resolve) => {
+        setTimeout(resolve, durationMs);
+    });
 
 integration('database turn daemon lease and fencing', () => {
     let db: GamePrismaClient;
@@ -115,4 +154,61 @@ integration('database turn daemon lease and fencing', () => {
         expect((await second.acquire())?.fencingEpoch).toBe(2n);
         await expect(first.assertActive()).rejects.toBeInstanceOf(TurnDaemonLeaseLostError);
     });
+
+    it('takes over after a heartbeat owner process is killed and its lease expires', async () => {
+        const profile = `${profilePrefix}process-kill`;
+        const leaseDurationMs = 1_200;
+        const holder = spawn(process.execPath, ['--experimental-strip-types', holderScript], {
+            env: {
+                ...process.env,
+                TURN_DAEMON_LEASE_DATABASE_URL: databaseUrl!,
+                TURN_DAEMON_LEASE_PROFILE: profile,
+                TURN_DAEMON_LEASE_OWNER_ID: 'process-owner',
+                TURN_DAEMON_LEASE_DURATION_MS: String(leaseDurationMs),
+            },
+            stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        let successor: DatabaseTurnDaemonLease | null = null;
+        try {
+            await expect(waitForHolderReady(holder)).resolves.toEqual({
+                profile,
+                ownerId: 'process-owner',
+                fencingEpoch: '1',
+            });
+            expect(await db.turnDaemonLease.findUniqueOrThrow({ where: { profile } })).toMatchObject({
+                ownerId: 'process-owner',
+                fencingEpoch: 1n,
+            });
+
+            expect(holder.kill('SIGKILL')).toBe(true);
+            const [exitCode, signal] = (await once(holder, 'exit')) as [number | null, NodeJS.Signals | null];
+            expect(exitCode).toBeNull();
+            expect(signal).toBe('SIGKILL');
+
+            successor = await createLease(profile, 'successor-owner');
+            expect(await successor.acquire()).toBeNull();
+
+            const deadline = Date.now() + leaseDurationMs * 4;
+            let successorToken = null;
+            while (Date.now() < deadline) {
+                successorToken = await successor.acquire();
+                if (successorToken) {
+                    break;
+                }
+                await delay(100);
+            }
+            expect(successorToken).toMatchObject({
+                profile,
+                ownerId: 'successor-owner',
+                fencingEpoch: 2n,
+            });
+            expect(await successor.assertActive()).toBeUndefined();
+        } finally {
+            if (holder.exitCode === null && holder.signalCode === null) {
+                holder.kill('SIGKILL');
+                await once(holder, 'exit');
+            }
+            await successor?.release();
+        }
+    }, 15_000);
 });

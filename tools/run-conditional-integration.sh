@@ -91,6 +91,7 @@ cd "$workspace_root"
 pnpm install --frozen-lockfile
 pnpm --filter @sammo-ts/infra prisma:generate
 pnpm --filter @sammo-ts/common build
+pnpm --filter @sammo-ts/infra build
 
 database_url=$(build_database_url "$integration_schema")
 export POSTGRES_SCHEMA=$integration_schema
