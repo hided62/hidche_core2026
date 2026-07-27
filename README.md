@@ -1,75 +1,214 @@
-# 삼국지 모의전투 HiDCHe (sammo-ts)
+# 삼국지 모의전투 HiDCHe — core2026
 
-삼국지 모의전투 HiDCHe(삼모/삼모전/힏체섭)의 레거시 PHP 코드베이스를 TypeScript 기반 pnpm 모노레포로 재작성하는 저장소입니다.
-현재 운영 중인 소스는 `legacy/` 아래에 있으며, 새 런타임은 단계적으로 전환 중입니다.
+`core2026`은 삼국지 모의전투 HiDCHe(삼모/삼모전/힏체섭)의 PHP 서비스를
+TypeScript로 호환 이관하는 pnpm 모노레포입니다. 기준 구현은 이 저장소 안의
+`legacy/`가 아니라 작업공간의 `../ref/sam`이며, 제품 동작·저장 상태·화면은
+그 기준과 실제 실행 결과를 대조합니다.
 
-## 목표
+## 현재 상태
 
-- 레거시 PHP 기반 런타임을 TypeScript 기반 모노레포로 전환
-- 게임 로직을 순수 모듈로 분리하고 API/엔진/프론트를 서비스 단위로 구성
-- 서버+시나리오 프로파일별 빌드 및 배포 흐름 정립
+2026-07-27의 `main` 기준으로 gateway, game API/프론트엔드, turn daemon과
+주요 게임 명령·월간 이벤트가 구현되어 있습니다. 최근 백엔드 누락 감사에서
+재현 가능한 구체적 미구현 또는 미병합 항목은 남지 않았지만, 이것이 전체
+호환성이나 운영 준비 완료를 뜻하지는 않습니다.
 
-## 구조
+현재 열린 경계는 주로 다음과 같습니다.
 
-- `legacy/`: 현재 운영 중인 PHP 런타임
-- `packages/common`: 공유 유틸 및 타입 정의
-- `packages/infra`: Prisma/Redis 커넥터 등 런타임 인프라
-- `packages/logic`: 순수 게임 로직 (DI/인터페이스 기반)
-- `app/gateway-frontend`: 게이트웨이 UI
-- `app/gateway-api`: 게이트웨이 API
-- `app/game-frontend`: 게임 UI
-- `app/game-api`: 게임 API
-- `app/game-engine`: 턴 엔진/데몬
-- `tools/build-scripts`: 빌드 및 배포 스크립트
+- 아직 fixture가 없는 명령 실패값·조합과 live 출병 조합의 차등 범위 확대
+- 실제 배포 profile에서 worker의 장시간 소비, 재시작, host/firewall 장애 검증
+- 인증 fixture가 필요한 화면과 남은 페이지의 Chromium 룩앤필 비교
+- 외부 Caddy의 `/gateway/`, `/che/`, `/hwe/` 경로에서 tRPC, SSE, 자산,
+  새로고침과 로그인 인계의 반복 검증
+- 운영 DB 이관 전 backup/restore, maintenance mode와 dry-run count 재확인
 
-## 개발 도구 및 스크립트
+테스트가 통과했다는 사실만으로 PHP 기준과의 호환성이 증명되지는 않습니다.
+기능별 근거와 남은 범위는 작업공간의 `../docs/ref-core2026-mapping.md`와
+`../report/`를 함께 확인해 주세요.
 
-- 패키지 매니저: pnpm 워크스페이스
-- TypeScript: 워크스페이스 전체에서 정확히 `6.0.2`를 사용합니다.
-  TypeScript 7은 저장소와 도구가 요구하는 API 및 생태계 지원이 준비될 때까지
-  사용하지 않습니다. 적용 범위와 7로 올리는 조건은
-  [`docs/architecture/typescript-version.md`](docs/architecture/typescript-version.md)를
-  참고하십시오.
-- 현재 개발 호스트는 `fnm`으로 Node.js와 pnpm을 관리한다. 대화형 zsh가
-  아닌 환경에서 `pnpm`을 찾지 못하면 아래 형태로 실행한다.
+## 구성
 
-    ```sh
-    /home/letrhee/.local/share/fnm/fnm exec --using=default -- pnpm <command>
-    ```
+| 경로                           | 역할                                              |
+| ------------------------------ | ------------------------------------------------- |
+| `app/gateway-frontend`         | 가입·로그인, 로비, 계정과 관리자 운영 UI          |
+| `app/gateway-api`              | 계정·세션·profile 정책과 PM2 운영 orchestration   |
+| `app/game-frontend`            | 게임 SPA와 ref 룩앤필 호환 화면                   |
+| `app/game-api`                 | profile별 tRPC/SSE, 조회·입력 API와 비동기 worker |
+| `app/game-engine`              | 턴 scheduler/daemon, 월간 처리와 DB flush         |
+| `packages/common`              | 공통 타입, 직렬화, 결정적 RNG와 유틸리티          |
+| `packages/logic`               | 전투·명령·월간 action 등 게임 도메인 로직         |
+| `packages/infra`               | game/gateway Prisma schema, migration과 client    |
+| `packages/tools-scripts`       | resource schema 생성·검증 도구                    |
+| `tools/integration-tests`      | PostgreSQL/Redis 및 ref↔core 통합·차등 테스트     |
+| `tools/frontend-legacy-parity` | 실제 Chromium 기반 화면·상호작용 비교             |
+| `tools/legacy-db-migration`    | 레거시 장기보존 데이터 CLI 이관                   |
+| `docs`                         | 런타임, 테스트, 배포 prefix와 운영 문서           |
 
-  2026-07-25 확인 기준 default는 Node.js `v24.18.0`, pnpm은 `11.17.0`이다.
-- 초기 개발기간 동안 npm 패키지는 가능한 최신버전을 유지
-- 공통 스크립트
-    - `pnpm install`
-    - `pnpm lint`
-    - `pnpm test`
-    - `pnpm build`
-    - `pnpm typecheck`: turbo를 통해 전체 패키지 타입 체크 실행
-    - `pnpm dev`
-- 서버 빌드
-    - `pnpm build:server --profile <server> --scenario <scenario>`
-    - 예: `pnpm build:server --profile che --scenario default`
+런타임의 영속 입력은 PostgreSQL `input_event`가 담당합니다. game API가
+요청을 기록하고 turn daemon이 claim한 뒤, 게임 상태·로그·예약 턴·결과와
+event 완료를 transaction으로 commit합니다. Redis는 session, realtime fan-out,
+battle simulation 등 해당 기능의 계약에만 사용하며 게임 mutation의 영속
+성공 여부를 대신하지 않습니다. 자세한 흐름은
+[`docs/architecture/runtime.md`](docs/architecture/runtime.md)와
+[`docs/architecture/turn-daemon-lifecycle.md`](docs/architecture/turn-daemon-lifecycle.md)에
+있습니다.
 
-## 빌드 프로파일(예정)
+## 도구 체인
 
-- 프로파일은 서버+시나리오 조합이며, 시나리오 파일 지정은 필수(기본값은 별도 정의).
-- 시나리오 파일에 따라 유닛 세트, DB 세팅 등의 사전 준비가 달라짐.
-- 서버 ID: `che`, `kwe`, `pwe`, `twe`, `nya`, `pya`
-- 빌드 출력: `/dist/{profileName}`
+- pnpm workspace와 Turbo
+- TypeScript `6.0.2` 고정
+- Node.js + Fastify + tRPC + zod
+- Vue 3 + Pinia + Vue Router + Vite
+- PostgreSQL + Prisma, Redis
+- Vitest와 Playwright/Chromium
 
-## 난수 정책 (Verifiable RNG)
+package manager 버전은 루트 `package.json`의 `packageManager`를 따릅니다.
+현재 값은 `pnpm@11.17.0`입니다. 저장소는 Node `engines`를 고정하지 않으므로
+개발 호스트의 임의 버전을 README 계약으로 간주하지 말고, lockfile 설치와
+전체 검증 결과로 호환성을 확인해 주세요.
 
-게임 로직에 영향을 주는 모든 난수는 재현 가능해야 합니다.
-현 구현을 사용합니다: `packages/common/src/util/LiteHashDRBG.ts`, `packages/common/src/util/RNG.ts`.
+## 로컬 시작
 
-## 문서
+```sh
+pnpm install --frozen-lockfile
+cp .env.example .env
+pnpm --filter @sammo-ts/infra prisma:generate
+CI=1 pnpm typecheck
+```
 
-- `docs/architecture/overview.md`
-- `docs/architecture/legacy-engine.md`
-- `docs/architecture/rewrite-plan.md`
-- `docs/architecture/runtime.md`
-- `docs/architecture/typescript-version.md`
+`.env`는 Git에서 제외됩니다. `.env.example`의 placeholder를 실제 비밀값으로
+바꾸되 secret을 커밋, 명령행, 로그, 스크린샷 또는 `VITE_*` 변수에 넣지
+말아 주세요.
 
-## 참고
+PostgreSQL과 Redis가 필요합니다. 전체 `sam_rebuild` 작업공간에서는
+`../docker_compose_files/development/README.md`의 worktree별 격리 stack을
+사용할 수 있습니다. standalone checkout이라면 `.env.example` 계약에 맞는
+별도 PostgreSQL/Redis를 준비해 주세요.
 
-레거시 데이터(`legacy/`)는 마이그레이션용으로만 유지되며, DB 이전 이후에는 런타임 의존성을 제거합니다.
+작업공간 helper를 사용하는 기본 예시는 다음과 같습니다.
+
+```sh
+cd ../docker_compose_files/development
+./scripts/prepare-instance.sh main 15433 16379 ../../core2026
+./scripts/compose.sh main up -d --wait
+
+cd ../../core2026
+pnpm --filter @sammo-ts/infra prisma:generate
+pnpm test:integration
+```
+
+`prepare-instance.sh`는 ignored `.env`와 `.env.ci`를 생성합니다. 통합 테스트는
+schema를 truncate하거나 Redis를 비울 수 있으므로 다른 worktree나 개발
+데이터와 DB/Redis instance를 공유하지 말아 주세요. volume 삭제는 명시적으로
+데이터 폐기를 결정한 경우에만 수행해 주세요.
+
+## 자주 쓰는 명령
+
+```sh
+pnpm lint
+pnpm test
+CI=1 pnpm typecheck
+pnpm build
+pnpm dev
+```
+
+`pnpm test`의 일부 PostgreSQL/Redis 테스트는 전용 환경 변수가 없으면
+의도적으로 skip됩니다. 외부 서비스가 필요한 경계까지 실행하려면 격리된
+instance를 준비한 뒤 다음을 사용해 주세요.
+
+```sh
+pnpm test:integration
+pnpm test:integration:conditional
+```
+
+레거시 명령의 정적 계약과 실제 Chromium 화면 비교는 각각 다음 entry
+point를 사용해 주세요.
+
+```sh
+pnpm check:legacy:general
+pnpm check:legacy:nation
+pnpm test:e2e:frontend-legacy
+```
+
+이 명령들은 ref checkout, fixture, 로그인 상태 또는 별도 서비스가 필요할
+수 있습니다. 실행 조건과 coverage는
+[`docs/integration-tests.md`](docs/integration-tests.md)와
+[`docs/frontend-legacy-parity.md`](docs/frontend-legacy-parity.md)를 따라 주세요.
+
+프론트엔드나 개별 서비스만 실행할 때는 workspace filter를 사용해 주세요.
+
+```sh
+pnpm --filter @sammo-ts/gateway-frontend dev
+pnpm --filter @sammo-ts/gateway-api dev
+pnpm --filter @sammo-ts/game-frontend dev
+pnpm --filter @sammo-ts/game-api dev
+pnpm --filter @sammo-ts/game-engine dev
+```
+
+## DB schema와 migration
+
+Gateway는 기본적으로 PostgreSQL `public` schema를 사용하고, 게임은
+`PROFILE`별 schema를 사용합니다.
+
+```sh
+pnpm --filter @sammo-ts/infra prisma:migrate:status:game
+pnpm --filter @sammo-ts/infra prisma:migrate:deploy:game
+pnpm --filter @sammo-ts/infra prisma:migrate:deploy:gateway
+```
+
+새 영속 필드는 Prisma schema와 migration만 추가해서 끝내지 말아 주세요. runtime
+model/type, loader, transaction flush와 실제 PostgreSQL 검증까지 연결해 주세요.
+기존 migration 파일이나 checksum을 고치지 말아 주세요.
+
+레거시 장기보존 데이터 이관은 HTTP 기능이 아닌 CLI입니다. 기본 동작은
+dry-run이며 실제 쓰기에는 `--apply`가 필요합니다.
+
+```sh
+pnpm migrate:legacy -- --help
+```
+
+현재 기수의 `general`, `city`, `nation`, queue, 시장, 메시지 등은 이관
+범위가 아닙니다. 운영 적용 절차와 table별 범위는
+[`docs/legacy-db-migration.md`](docs/legacy-db-migration.md)와
+[`tools/legacy-db-migration/README.md`](tools/legacy-db-migration/README.md)를
+따라 주세요.
+
+## 배포 경로와 자산
+
+현재 외부 계약의 활성 경로는 gateway `/gateway/`, game `/che/`와 `/hwe/`입니다.
+프론트 build와 API는 같은 prefix의 tRPC/SSE/direct navigation 계약을
+지켜야 합니다. `/image/*`는 외부 Caddy가 별도 파일 시스템에서 제공하므로 앱이
+rewrite하거나 복제하지 말아 주세요.
+
+`kwe`, `twe`, `nya`, `pya`, `pwe` 같은 profile 이름이 코드나 계획 문서에
+존재하더라도 외부 route가 활성화됐다는 뜻은 아닙니다. 실제 포트와 build-time
+환경 변수는 [`docs/e2e-caddy-routing.md`](docs/e2e-caddy-routing.md)를
+현재 인프라와 다시 대조해 주세요.
+
+루트의 `build:server` 스크립트는 현재 profile resource를 `dist/<profile>`로
+복사하기 위한 placeholder이며, API·daemon·frontend의 완전한 배포 bundle을
+만들지 않습니다. 운영 build는 gateway operation/orchestrator와 profile별
+worktree 흐름을 사용합니다.
+
+## 호환성 원칙
+
+- 전투 결과, 판정·반올림·정렬과 RNG 소비 순서를 최우선으로 보존합니다.
+- actor와 archive owner는 인증 session에서 서버가 결정합니다. client가 보낸
+  general ID나 owner 값을 권한 근거로 신뢰하지 않습니다.
+- gameplay 난수는 `packages/common/src/util/LiteHashDRBG.ts`,
+  `RNG.ts`, `RandUtil.ts`의 기존 흐름을 사용합니다.
+- ref와 같은 viewport, Chromium, font, image, 로그인 fixture에서 geometry와
+  hover/focus/active/disabled 상태를 비교합니다.
+- 동일한 CSS class 이름만으로 page별 layout을 합치지 않습니다. 공통 token과
+  shell의 기준은 [`docs/frontend-css-architecture.md`](docs/frontend-css-architecture.md)입니다.
+- mock/local E2E 성공과 외부 Caddy·운영 데이터 검증을 구분합니다.
+
+## 핵심 문서
+
+- [테스트 정책](docs/testing-policy.md)
+- [테스트 suite 감사](docs/test-suite-audit.md)
+- [통합 테스트](docs/integration-tests.md)
+- [프론트엔드 ref 호환 검증](docs/frontend-legacy-parity.md)
+- [Caddy prefix E2E](docs/e2e-caddy-routing.md)
+- [레거시 DB 이관](docs/legacy-db-migration.md)
+- [TypeScript 버전 정책](docs/architecture/typescript-version.md)
+- [저장소 작업 지침](AGENTS.md)
