@@ -102,7 +102,11 @@ const segments = [
         kind: 'multi-month',
         actions: ['OpenNationBetting', 'FinishNationBetting'],
         coreEvidence: ['monthlyNationBettingPersistence.integration.test.ts'],
-        refEvidence: ['monthly_open_nation_betting.json', 'monthly_finish_nation_betting.json'],
+        refEvidence: [
+            'monthly_open_nation_betting.json',
+            'monthly_finish_nation_betting.json',
+            'monthly_nation_betting_lifecycle.json',
+        ],
     },
     {
         name: 'scout-block-boundaries',
