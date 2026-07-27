@@ -29,7 +29,7 @@ defineProps<{
     border-top: 1px solid gray;
     border-bottom: 1px solid gray;
     background-color: #14241b;
-    background-image: url('/image/game/back_green.jpg');
+    background-image: var(--sammo-texture-green);
     color: #fff;
     font: inherit;
     text-align: center;

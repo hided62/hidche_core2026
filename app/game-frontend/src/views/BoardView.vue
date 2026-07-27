@@ -233,21 +233,21 @@ onMounted(() => {
     margin: 0 auto;
     color: #fff;
     background: #000;
-    font-family: Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+    font-family: var(--sammo-font-sans);
     font-size: 14px;
     line-height: 1.3;
 }
 
 .bg0 {
-    background-image: url('/image/game/back_walnut.jpg');
+    background-image: var(--sammo-texture-walnut);
 }
 
 .bg1 {
-    background-image: url('/image/game/back_green.jpg');
+    background-image: var(--sammo-texture-green);
 }
 
 .bg2 {
-    background-image: url('/image/game/back_blue.jpg');
+    background-image: var(--sammo-texture-blue);
 }
 
 .center {

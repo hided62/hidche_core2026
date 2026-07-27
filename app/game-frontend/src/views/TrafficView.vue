@@ -181,7 +181,7 @@ onMounted(() => {
     margin: 0 auto;
     padding: 0;
     color: #fff;
-    font-family: Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+    font-family: var(--sammo-font-sans);
     font-size: 14px;
     line-height: normal;
 }
@@ -203,7 +203,7 @@ onMounted(() => {
 
 .legacy-bg0 {
     background-color: #302016;
-    background-image: url('/image/game/back_walnut.jpg');
+    background-image: var(--sammo-texture-walnut);
 }
 
 .legacy-bg1 {
@@ -213,7 +213,7 @@ onMounted(() => {
 
 .legacy-bg2 {
     background-color: #14241b;
-    background-image: url('/image/game/back_green.jpg');
+    background-image: var(--sammo-texture-green);
 }
 
 .title-table,

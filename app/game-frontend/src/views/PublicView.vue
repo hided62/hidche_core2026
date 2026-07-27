@@ -97,24 +97,24 @@ onMounted(() => {
 </script>
 
 <template>
-    <main class="public-page">
-        <header class="page-header">
+    <main class="game-shell public-page">
+        <header class="game-shell__header">
             <div>
-                <h1 class="page-title">공개 동향</h1>
-                <p class="page-subtitle">{{ trendSummary }}</p>
+                <h1 class="game-shell__title">공개 동향</h1>
+                <p class="game-shell__subtitle">{{ trendSummary }}</p>
                 <p class="page-hint">지도/정세는 10분 캐시된 정보로 제공됩니다.</p>
             </div>
-            <div class="header-actions">
-                <RouterLink v-if="!session.isAuthed" class="ghost" to="/login">로그인</RouterLink>
-                <RouterLink v-else-if="session.needsGeneral" class="ghost" to="/join">장수 생성/빙의</RouterLink>
-                <RouterLink v-else class="ghost" to="/">메인으로</RouterLink>
-                <RouterLink class="ghost" to="/npc-list">빙의일람</RouterLink>
-                <RouterLink class="ghost" to="/traffic">접속량정보</RouterLink>
-                <button class="ghost" @click="refreshPublicData">새로고침</button>
+            <div class="game-shell__actions">
+                <RouterLink v-if="!session.isAuthed" class="game-shell__action" to="/login">로그인</RouterLink>
+                <RouterLink v-else-if="session.needsGeneral" class="game-shell__action" to="/join">장수 생성/빙의</RouterLink>
+                <RouterLink v-else class="game-shell__action" to="/">메인으로</RouterLink>
+                <RouterLink class="game-shell__action" to="/npc-list">빙의일람</RouterLink>
+                <RouterLink class="game-shell__action" to="/traffic">접속량정보</RouterLink>
+                <button class="game-shell__action" @click="refreshPublicData">새로고침</button>
             </div>
         </header>
 
-        <div v-if="error" class="error">{{ error }}</div>
+        <div v-if="error" class="game-feedback game-feedback--error" role="alert">{{ error }}</div>
 
         <section v-if="isMobile" class="layout-mobile">
             <PanelCard title="캐시 지도">
@@ -256,58 +256,10 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.public-page {
-    min-height: 100vh;
-    padding: 24px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-}
-
-.page-header {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    gap: 12px;
-    border-bottom: 1px solid rgba(201, 164, 90, 0.4);
-    padding-bottom: 12px;
-}
-
-.page-title {
-    font-size: 1.6rem;
-    font-weight: 600;
-}
-
-.page-subtitle {
-    font-size: 0.85rem;
-    color: rgba(232, 221, 196, 0.7);
-}
-
 .page-hint {
     margin-top: 6px;
     font-size: 0.75rem;
     color: rgba(232, 221, 196, 0.5);
-}
-
-.header-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-
-.ghost {
-    border: 1px solid rgba(201, 164, 90, 0.4);
-    padding: 6px 12px;
-    font-size: 0.8rem;
-    cursor: pointer;
-    text-decoration: none;
-    color: inherit;
-    background: rgba(16, 16, 16, 0.6);
-}
-
-.error {
-    color: #f5b7b1;
-    font-size: 0.85rem;
 }
 
 .layout-desktop {

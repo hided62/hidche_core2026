@@ -379,7 +379,7 @@ const generalImage = (general: General) => {
 .stats th,
 .generals th {
     background-color: #14241b;
-    background-image: url('/image/game/back_green.jpg');
+    background-image: var(--sammo-texture-green);
 }
 .city-title {
     text-align: center;

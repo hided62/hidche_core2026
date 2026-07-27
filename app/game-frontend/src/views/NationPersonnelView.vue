@@ -501,7 +501,7 @@ onMounted(() => void loadPersonnel());
     margin: 0 auto;
     border-collapse: collapse;
     table-layout: fixed;
-    background: url('/image/game/back_walnut.jpg');
+    background: var(--sammo-texture-walnut);
 }
 .legacy-table td {
     border: 1px solid gray;
@@ -618,10 +618,10 @@ select[multiple] {
 .green-cell,
 .city-header,
 .region-heading {
-    background: url('/image/game/back_green.jpg');
+    background: var(--sammo-texture-green);
 }
 .blue-cell {
-    background: url('/image/game/back_blue.jpg');
+    background: var(--sammo-texture-blue);
 }
 .spacer {
     height: 5px;
@@ -700,7 +700,7 @@ select[multiple] {
     box-sizing: border-box;
     border: 1px solid gray;
     padding: 6px 8px;
-    background: url('/image/game/back_walnut.jpg');
+    background: var(--sammo-texture-walnut);
 }
 .error {
     color: #ff8080;

@@ -199,7 +199,7 @@ td {
 }
 th {
     height: 30px;
-    background: #14241b url('/image/game/back_green.jpg');
+    background: #14241b var(--sammo-texture-green);
     font-weight: 400;
 }
 tbody tr {

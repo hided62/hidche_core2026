@@ -228,26 +228,26 @@ onMounted(() => {
 </script>
 
 <template>
-    <main class="battle-page">
-        <header class="page-header">
+    <main class="ref-shell battle-page">
+        <header class="ref-shell__topbar">
             <div>
-                <h1 class="page-title">감찰부</h1>
-                <p class="page-subtitle">{{ statusLine }}</p>
+                <h1 class="ref-shell__title">감찰부</h1>
+                <p class="ref-shell__subtitle">{{ statusLine }}</p>
             </div>
-            <div class="header-actions">
-                <RouterLink class="ghost" to="/">메인</RouterLink>
-                <RouterLink class="ghost" to="/nation/finance">내무부</RouterLink>
-                <button class="ghost" @click="loadBattleCenter">새로고침</button>
+            <div class="ref-shell__actions">
+                <RouterLink class="ref-shell__control" to="/">메인</RouterLink>
+                <RouterLink class="ref-shell__control" to="/nation/finance">내무부</RouterLink>
+                <button class="ref-shell__control" @click="loadBattleCenter">새로고침</button>
             </div>
         </header>
 
-        <div v-if="error" class="error">{{ error }}</div>
+        <div v-if="error" class="ref-feedback ref-feedback--error" role="alert">{{ error }}</div>
 
         <section class="layout-grid">
             <div class="stack">
                 <PanelCard title="대상 선택" subtitle="정렬 기준과 장수를 선택합니다.">
                     <div class="selector-row">
-                        <button class="ghost" @click="changeTargetByOffset(-1)">◀ 이전</button>
+                        <button class="ref-shell__control" @click="changeTargetByOffset(-1)">◀ 이전</button>
                         <select v-model="orderBy" class="select-input">
                             <option v-for="option in orderOptions" :key="option.key" :value="option.key">
                                 {{ option.label }}
@@ -263,7 +263,7 @@ onMounted(() => {
                                 {{ formatGeneralLabel(general) }}
                             </option>
                         </select>
-                        <button class="ghost" @click="changeTargetByOffset(1)">다음 ▶</button>
+                        <button class="ref-shell__control" @click="changeTargetByOffset(1)">다음 ▶</button>
                     </div>
                 </PanelCard>
 
@@ -315,56 +315,6 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.battle-page {
-    width: 100%;
-    min-width: 500px;
-    max-width: 1000px;
-    min-height: 100vh;
-    margin: 0 auto;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-    color: #fff;
-    background-color: #302016;
-    background-image: url('/image/game/back_walnut.jpg');
-    font-family: Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
-    font-size: 14px;
-    line-height: 1.5;
-}
-
-.page-header {
-    position: relative;
-    min-height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    flex-wrap: wrap;
-    padding: 0 8px;
-    border: 1px solid #666;
-    background-color: #302016;
-    background-image: url('/image/game/back_walnut.jpg');
-}
-
-.page-title {
-    font-size: 17px;
-    font-weight: 500;
-}
-
-.page-subtitle {
-    display: none;
-}
-
-.header-actions {
-    position: absolute;
-    left: 0;
-    top: 0;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-}
-
 .layout-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -393,17 +343,6 @@ onMounted(() => {
     font: inherit;
 }
 
-.ghost {
-    min-height: 32px;
-    border: 1px solid #777;
-    border-radius: 0;
-    background: #303030;
-    color: inherit;
-    padding: 4px 8px;
-    font: inherit;
-    cursor: pointer;
-}
-
 .general-meta {
     margin: 0;
     padding: 6px 8px;
@@ -415,7 +354,7 @@ onMounted(() => {
 .battle-general-card {
     min-height: 292px;
     background-color: #172a52;
-    background-image: url('/image/game/back_blue.jpg');
+    background-image: var(--sammo-texture-blue);
 }
 
 .battle-general-name {
@@ -485,13 +424,6 @@ onMounted(() => {
     color: #999;
 }
 
-.error {
-    padding: 5px 8px;
-    color: #ff7777;
-    border: 1px solid #a33;
-    text-align: center;
-}
-
 /* PanelCard is retained as a data wrapper, but its presentation follows the
    flat bootstrap rows used by the reference page. */
 :deep(.panel-card) {
@@ -499,7 +431,7 @@ onMounted(() => {
     border: 1px solid #666;
     border-radius: 0;
     background-color: #302016;
-    background-image: url('/image/game/back_walnut.jpg');
+    background-image: var(--sammo-texture-walnut);
     box-shadow: none;
 }
 .stack:first-child :deep(.panel-card:first-child) {
@@ -531,13 +463,10 @@ onMounted(() => {
 }
 :deep(.panel-header),
 .log-title {
-    background-image: url('/image/game/back_green.jpg');
+    background-image: var(--sammo-texture-green);
 }
 
 @media (max-width: 991px) {
-    .battle-page {
-        width: 500px;
-    }
     .layout-grid {
         grid-template-columns: 1fr;
     }

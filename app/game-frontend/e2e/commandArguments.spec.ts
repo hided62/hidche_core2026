@@ -85,6 +85,22 @@ const generalContext = {
 };
 const turns = (count: number) =>
     Array.from({ length: count }, (_, index) => ({ index, action: '휴식', args: {} }));
+const chiefCenter = {
+    me: { id: 1, officerLevel: 5, nationId: 1 },
+    nation: { id: 1, name: '아국', level: 1 },
+    currentYear: 200,
+    currentMonth: 1,
+    turnTermMinutes: 10,
+    maxTurns: 12,
+    chiefs: [12, 10, 8, 6, 11, 9, 7, 5].map((officerLevel) => ({
+        officerLevel,
+        name: officerLevel === 5 ? '장수' : null,
+        npcState: officerLevel === 5 ? 0 : null,
+        turnTime: null,
+        revision: 0,
+        turns: turns(12),
+    })),
+};
 
 const install = async (page: Page, rejectGeneral = false) => {
     const requests: unknown[] = [];
@@ -115,8 +131,20 @@ const install = async (page: Page, rejectGeneral = false) => {
                 spyList: {}, shownByGeneralList: [], myCity: 1, myNation: 1,
             });
             if (name === 'turns.getCommandTable') return response(commandTable);
-            if (name === 'turns.reserved.getGeneral') return response(turns(30));
-            if (name === 'turns.reserved.getNation') return response(turns(12));
+            if (name === 'nation.getChiefCenter') return response(chiefCenter);
+            if (name === 'turns.reserved.getGeneral') return response({ turns: turns(30), revision: 0 });
+            if (name === 'turns.reserved.getNation') return response({ turns: turns(12), revision: 0 });
+            if (name === 'general.getRecentRecords')
+                return response({ global: [], general: [], history: [] });
+            if (name === 'general.getFrontStatus')
+                return response({
+                    onlineUserCount: 1,
+                    onlineNations: '아국(1)',
+                    onlineGenerals: '장수',
+                    nationNotice: '',
+                    lastExecuted: null,
+                    latestVote: null,
+                });
             if (name === 'messages.getRecent') return response({
                 private: [], national: [], public: [], diplomacy: [], sequence: -1,
                 hasMore: { private: false, national: false, public: false, diplomacy: false },
@@ -197,6 +225,70 @@ test('keeps the entered command visible and reports a server validation error', 
     await page.locator('.reserved-section').filter({ hasText: '일반 예턴' })
         .getByRole('button', { name: '배치' }).first().click();
 
-    await expect(page.locator('.error')).toContainText('대상 도시를 선택할 수 없습니다.');
+    await expect(page.getByRole('alert')).toContainText('대상 도시를 선택할 수 없습니다.');
     await expect(page.getByTestId('command-argument-form').locator('select')).toHaveValue('2');
+});
+
+test('keeps the shared main and chief shell geometry and interaction states', async ({ page }) => {
+    await install(page);
+    await page.setViewportSize({ width: 1000, height: 900 });
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: '전장 현황' })).toBeVisible();
+
+    const mainGeometry = await page.locator('.main-page').evaluate((element) => {
+        const header = element.querySelector<HTMLElement>('.game-shell__header')!;
+        const title = element.querySelector<HTMLElement>('.game-shell__title')!;
+        const subtitle = element.querySelector<HTMLElement>('.game-shell__subtitle')!;
+        const action = element.querySelector<HTMLElement>('.game-shell__action')!;
+        return {
+            width: element.getBoundingClientRect().width,
+            padding: getComputedStyle(element).padding,
+            gap: getComputedStyle(element).gap,
+            headerWidth: header.getBoundingClientRect().width,
+            headerGap: getComputedStyle(header).gap,
+            headerBorder: getComputedStyle(header).borderBottomWidth,
+            headerPadding: getComputedStyle(header).paddingBottom,
+            titleFontSize: getComputedStyle(title).fontSize,
+            subtitleFontSize: getComputedStyle(subtitle).fontSize,
+            actionPadding: getComputedStyle(action).padding,
+            actionFontSize: getComputedStyle(action).fontSize,
+        };
+    });
+    expect(mainGeometry).toEqual({
+        width: 1000,
+        padding: '24px',
+        gap: '16px',
+        headerWidth: 952,
+        headerGap: '12px',
+        headerBorder: '1px',
+        headerPadding: '12px',
+        titleFontSize: '22.4px',
+        subtitleFontSize: '11.9px',
+        actionPadding: '6px 12px',
+        actionFontSize: '11.2px',
+    });
+
+    const mainAction = page.getByRole('link', { name: '세력 정보' });
+    await mainAction.hover();
+    expect(await mainAction.evaluate((element) => getComputedStyle(element).cursor)).toBe('pointer');
+    await mainAction.focus();
+    expect(await mainAction.evaluate((element) => document.activeElement === element)).toBe(true);
+
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.goto('chief-center');
+    await expect(page.getByRole('heading', { name: '사령부', exact: true })).toBeVisible();
+    const chiefDesktop = await page.locator('.chief-page').evaluate((element) => ({
+        width: element.getBoundingClientRect().width,
+        padding: getComputedStyle(element).padding,
+        headerWidth: element.querySelector<HTMLElement>('.game-shell__header')!.getBoundingClientRect().width,
+    }));
+    expect(chiefDesktop).toEqual({ width: 1200, padding: '24px', headerWidth: 1152 });
+
+    await page.setViewportSize({ width: 500, height: 900 });
+    const chiefMobile = await page.locator('.chief-page').evaluate((element) => ({
+        width: element.getBoundingClientRect().width,
+        padding: getComputedStyle(element).padding,
+        headerWidth: element.querySelector<HTMLElement>('.game-shell__header')!.getBoundingClientRect().width,
+    }));
+    expect(chiefMobile).toEqual({ width: 500, padding: '16px', headerWidth: 468 });
 });
