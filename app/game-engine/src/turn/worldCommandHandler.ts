@@ -34,6 +34,11 @@ import {
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
 import type { TurnGeneral } from './types.js';
 import { openAuction } from '../auction/opener.js';
+import {
+    hasScenarioStaticEventHandler,
+    IMMEDIATE_TROOP_JOIN_MOVE_HANDLER,
+    LEGACY_TROOP_JOIN_EVENT,
+} from './scenarioStaticEvents.js';
 
 let itemRegistryPromise: Promise<Map<string, ItemModule>> | null = null;
 
@@ -87,15 +92,6 @@ const resolveMaxSecretPermission = (general: TurnGeneral): number => {
     if (penalty.noTopSecret || penalty.noChief) return 1;
     if (penalty.noAmbassador) return 2;
     return 4;
-};
-
-const LEGACY_TROOP_JOIN_EVENT = 'sammo\\API\\Troop\\JoinTroop';
-const IMMEDIATE_TROOP_JOIN_MOVE_HANDLER = 'event_부대탑승즉시이동';
-
-const hasStaticEventHandler = (world: InMemoryTurnWorld, eventType: string, handlerName: string): boolean => {
-    const handlersByEvent = asRecord(world.getScenarioConfig().const.staticEventHandlers);
-    const handlers = handlersByEvent[eventType];
-    return Array.isArray(handlers) && handlers.includes(handlerName);
 };
 
 const refreshActorKillturn = (world: InMemoryTurnWorld, actor: TurnGeneral): void => {
@@ -494,7 +490,13 @@ async function handleTroopJoin(
     world.updateGeneral(command.generalId, {
         troopId: command.troopId,
     });
-    if (hasStaticEventHandler(world, LEGACY_TROOP_JOIN_EVENT, IMMEDIATE_TROOP_JOIN_MOVE_HANDLER)) {
+    if (
+        hasScenarioStaticEventHandler(
+            world.getScenarioConfig(),
+            LEGACY_TROOP_JOIN_EVENT,
+            IMMEDIATE_TROOP_JOIN_MOVE_HANDLER
+        )
+    ) {
         const leader = world.getGeneralById(troop.id);
         if (
             leader &&

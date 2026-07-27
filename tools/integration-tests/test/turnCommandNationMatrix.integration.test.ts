@@ -1415,10 +1415,7 @@ integration('nation personnel command boundary parity', () => {
                 })
             ).toEqual([]);
             if (!completed) {
-                if (
-                    originalCommandFailure ||
-                    (action === 'che_발령' && args.destGeneralID !== 9)
-                ) {
+                if (originalCommandFailure || (action === 'che_발령' && args.destGeneralID !== 9)) {
                     expect(semanticLogSignatures(nationCommandLogs(core.after.logs))).toEqual(
                         semanticLogSignatures(addedReferenceLogs(reference.before, reference.after.logs))
                     );
@@ -1436,6 +1433,91 @@ integration('nation personnel command boundary parity', () => {
                 expect(referenceTarget?.cityId).toBe(expectedCityId);
                 expect(coreTarget?.cityId).toBe(expectedCityId);
                 expect(readGeneralMeta(coreTarget).last발령).toBe(readGeneralMeta(referenceTarget).last발령);
+            }
+            expect(semanticLogSignatures(nationCommandLogs(core.after.logs))).toEqual(
+                semanticLogSignatures(addedReferenceLogs(reference.before, reference.after.logs))
+            );
+        },
+        120_000
+    );
+});
+
+const scenario911AssignmentCases: Array<{
+    name: string;
+    targetTroopId: number;
+    expectedActorCityId: number;
+    expectedMemberCityId: number;
+}> = [
+    {
+        name: 'gathers remote members when the assigned general is their troop leader',
+        targetTroopId: 3,
+        expectedActorCityId: 70,
+        expectedMemberCityId: 70,
+    },
+    {
+        name: 'does not gather members when the assigned general is not their troop leader',
+        targetTroopId: 1,
+        expectedActorCityId: 3,
+        expectedMemberCityId: 3,
+    },
+];
+
+integration('scenario 911 assignment troop gather parity', () => {
+    it.each(scenario911AssignmentCases)(
+        '$name',
+        async ({ targetTroopId, expectedActorCityId, expectedMemberCityId }) => {
+            const request = buildRequest(
+                'che_발령',
+                { destGeneralID: 3, destCityID: 70 },
+                {
+                    world: {
+                        staticEventHandlers: {
+                            'sammo\\Command\\Nation\\che_발령': ['event_부대발령즉시집합'],
+                        },
+                    },
+                    cities: { 70: { nationId: 1 } },
+                    generals: {
+                        1: { troopId: 3 },
+                        3: { troopId: targetTroopId },
+                        4: { nationId: 1, cityId: 3, troopId: 3 },
+                        5: { nationId: 1, cityId: 70, troopId: 3 },
+                        6: { nationId: 1, cityId: 3, troopId: 6 },
+                    },
+                    troops: [
+                        { id: 1, nationId: 1, name: '선봉대' },
+                        { id: 3, nationId: 1, name: '백마대' },
+                        { id: 6, nationId: 1, name: '별동대' },
+                    ],
+                }
+            );
+            const reference = runReferenceTurnCommandTraceRequest(
+                workspaceRoot!,
+                request as unknown as Record<string, unknown>
+            );
+            const core = await runCoreTurnCommandTrace(request, reference.before);
+
+            expect(reference.execution.outcome).toMatchObject({ completed: true });
+            expect(core.execution.outcome).toMatchObject({
+                requestedAction: 'che_발령',
+                actionKey: 'che_발령',
+                usedFallback: false,
+            });
+            expect(core.rng).toEqual(reference.rng);
+            expect(
+                compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                    ignoredPathPatterns: ignoredLifecyclePaths,
+                })
+            ).toEqual([]);
+
+            for (const [generalId, expectedCityId] of [
+                [1, expectedActorCityId],
+                [3, 70],
+                [4, expectedMemberCityId],
+                [5, 70],
+                [6, 3],
+            ] as const) {
+                expect(reference.after.generals.find((entry) => entry.id === generalId)?.cityId).toBe(expectedCityId);
+                expect(core.after.generals.find((entry) => entry.id === generalId)?.cityId).toBe(expectedCityId);
             }
             expect(semanticLogSignatures(nationCommandLogs(core.after.logs))).toEqual(
                 semanticLogSignatures(addedReferenceLogs(reference.before, reference.after.logs))

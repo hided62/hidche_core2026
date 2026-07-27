@@ -51,6 +51,7 @@ export interface TurnCommandFixtureRequest {
             year?: number;
             month?: number;
             hiddenSeed?: string;
+            staticEventHandlers?: Record<string, string[]>;
         };
         isolateWorld?: boolean;
         generals?: Array<Record<string, unknown>>;
@@ -423,6 +424,9 @@ export const buildCoreTurnCommandWorldInput = (
                 maxLevel: 255,
                 maxDedLevel: 30,
                 upgradeLimit: 30,
+                ...(request.setup?.world?.staticEventHandlers
+                    ? { staticEventHandlers: request.setup.world.staticEventHandlers }
+                    : {}),
             },
             environment: { mapName: map.id, unitSet: unitSet.id },
         },

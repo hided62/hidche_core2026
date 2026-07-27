@@ -59,6 +59,11 @@ import { buildActionContext } from './reservedTurnActionContext.js';
 import { GeneralAI, shouldUseAi } from './ai/generalAi.js';
 import type { AiReservedTurnProvider } from './ai/types.js';
 import { rankMetaKey } from './rankData.js';
+import {
+    hasScenarioStaticEventHandler,
+    IMMEDIATE_ASSIGNMENT_GATHER_HANDLER,
+    LEGACY_NATION_ASSIGNMENT_EVENT,
+} from './scenarioStaticEvents.js';
 
 const DEFAULT_ACTION = '휴식';
 
@@ -1258,6 +1263,59 @@ export const createReservedTurnHandler = async (options: {
                         }
                         for (const patch of resolution.patches.nations) {
                             worldOverlay.applyNationPatch(patch.id, patch.patch);
+                        }
+                    }
+                }
+
+                if (
+                    kind === 'nation' &&
+                    actionKey === 'che_발령' &&
+                    !usedFallback &&
+                    resolution.completed &&
+                    worldOverlay &&
+                    hasScenarioStaticEventHandler(
+                        options.scenarioConfig,
+                        LEGACY_NATION_ASSIGNMENT_EVENT,
+                        IMMEDIATE_ASSIGNMENT_GATHER_HANDLER
+                    )
+                ) {
+                    const destGeneralId = actionArgsRecord.destGeneralId;
+                    const destCityId = actionArgsRecord.destCityId;
+                    if (typeof destGeneralId === 'number' && typeof destCityId === 'number') {
+                        const destGeneral = worldOverlay.view.getGeneralById(destGeneralId);
+                        const destCity = worldOverlay.view.getCityById(destCityId);
+                        if (
+                            destGeneral &&
+                            destCity &&
+                            destGeneral.id === destGeneral.troopId &&
+                            destGeneral.nationId === currentGeneral.nationId
+                        ) {
+                            const troopName = worldOverlay.view.getTroopById(destGeneral.id)?.name ?? '';
+                            const cityJosa = JosaUtil.pick(destCity.name, '로');
+                            const troopMembers = worldOverlay.view
+                                .listGenerals()
+                                .filter(
+                                    (member) =>
+                                        member.id !== destGeneral.id &&
+                                        member.nationId === destGeneral.nationId &&
+                                        member.troopId === destGeneral.id &&
+                                        member.cityId !== destCity.id
+                                );
+                            for (const member of troopMembers) {
+                                const patch = { cityId: destCity.id };
+                                patches.generals.push({ id: member.id, patch });
+                                worldOverlay.applyGeneralPatch(member.id, patch);
+                                if (member.id === currentGeneral.id) {
+                                    currentGeneral = applyGeneralPatch(currentGeneral, patch);
+                                }
+                                logs.push({
+                                    scope: LogScope.GENERAL,
+                                    category: LogCategory.ACTION,
+                                    generalId: member.id,
+                                    format: LogFormat.PLAIN,
+                                    text: `${troopName} 부대원들은 <G><b>${destCity.name}</b></>${cityJosa} 즉시 집합되었습니다.`,
+                                });
+                            }
                         }
                     }
                 }
