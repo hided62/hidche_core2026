@@ -57,31 +57,43 @@ const createPartitionableTcpProxy = async (
     restore: () => Promise<void>;
     close: () => Promise<void>;
 }> => {
-    const sockets = new Set<Socket>();
+    type ProxyPair = {
+        client: Socket;
+        upstream: Socket;
+    };
+    const pairs = new Set<ProxyPair>();
     let server: Server | null = null;
     let port = 0;
+    let partitioned = false;
+
+    const resumePair = (pair: ProxyPair): void => {
+        if (partitioned || pair.client.destroyed || pair.upstream.destroyed || pair.upstream.connecting) {
+            return;
+        }
+        pair.client.pipe(pair.upstream);
+        pair.upstream.pipe(pair.client);
+    };
 
     const listen = async (requestedPort: number): Promise<void> => {
         const nextServer = createServer((client) => {
             const upstream = createConnection({ host: upstreamHost, port: upstreamPort });
-            sockets.add(client);
-            sockets.add(upstream);
+            const pair = { client, upstream };
+            pairs.add(pair);
             client.on('error', () => undefined);
             upstream.on('error', () => undefined);
             client.once('close', () => {
-                sockets.delete(client);
+                pairs.delete(pair);
                 if (!upstream.destroyed) {
                     upstream.destroy();
                 }
             });
             upstream.once('close', () => {
-                sockets.delete(upstream);
+                pairs.delete(pair);
                 if (!client.destroyed) {
                     client.destroy();
                 }
             });
-            client.pipe(upstream);
-            upstream.pipe(client);
+            upstream.once('connect', () => resumePair(pair));
         });
         await new Promise<void>((resolve, reject) => {
             const onError = (error: Error): void => reject(error);
@@ -99,7 +111,16 @@ const createPartitionableTcpProxy = async (
         port = address.port;
     };
 
-    const partition = async (): Promise<void> => {
+    const partition = (): Promise<void> => {
+        partitioned = true;
+        for (const pair of pairs) {
+            pair.client.unpipe(pair.upstream);
+            pair.upstream.unpipe(pair.client);
+        }
+        return Promise.resolve();
+    };
+
+    const close = async (): Promise<void> => {
         const activeServer = server;
         server = null;
         if (!activeServer) {
@@ -114,10 +135,11 @@ const createPartitionableTcpProxy = async (
                 }
             });
         });
-        for (const socket of sockets) {
-            socket.destroy();
+        for (const pair of pairs) {
+            pair.client.destroy();
+            pair.upstream.destroy();
         }
-        sockets.clear();
+        pairs.clear();
         await closed;
     };
 
@@ -127,12 +149,14 @@ const createPartitionableTcpProxy = async (
             return port;
         },
         partition,
-        restore: async () => {
-            if (!server) {
-                await listen(port);
+        restore: () => {
+            partitioned = false;
+            for (const pair of pairs) {
+                resumePair(pair);
             }
+            return Promise.resolve();
         },
-        close: partition,
+        close,
     };
 };
 
@@ -321,14 +345,14 @@ integration('database turn daemon lease and fencing', () => {
             expect((await partitionedOwner.acquire())?.fencingEpoch).toBe(1n);
 
             await proxy.partition();
+            successor = await createLease(profile, 'partition-successor');
+            expect(await successor.acquire()).toBeNull();
+
             const lostDeadline = Date.now() + leaseDurationMs * 2;
             while (!partitionedOwner.isLost() && Date.now() < lostDeadline) {
                 await delay(50);
             }
             expect(partitionedOwner.isLost()).toBe(true);
-
-            successor = await createLease(profile, 'partition-successor');
-            expect(await successor.acquire()).toBeNull();
 
             const takeoverDeadline = Date.now() + leaseDurationMs * 4;
             let successorToken = null;

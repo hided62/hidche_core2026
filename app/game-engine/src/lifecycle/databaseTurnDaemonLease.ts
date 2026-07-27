@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 
 import { createGamePostgresConnector, GamePrisma, type GamePrismaClient } from '@sammo-ts/infra';
 
@@ -46,6 +47,8 @@ export class DatabaseTurnDaemonLease {
     private readonly heartbeatEnabled: boolean;
     private token: TurnDaemonLeaseToken | null = null;
     private heartbeatTimer: NodeJS.Timeout | null = null;
+    private expiryTimer: NodeJS.Timeout | null = null;
+    private renewalInFlight = false;
     private lost = false;
 
     private constructor(
@@ -71,6 +74,7 @@ export class DatabaseTurnDaemonLease {
     }
 
     async acquire(): Promise<TurnDaemonLeaseToken | null> {
+        const requestStartedAt = performance.now();
         const rows = await this.db.$queryRaw<LeaseRow[]>(GamePrisma.sql`
             INSERT INTO "turn_daemon_lease" (
                 "profile",
@@ -111,6 +115,7 @@ export class DatabaseTurnDaemonLease {
             fencingEpoch: BigInt(row.fencing_epoch),
         };
         this.lost = false;
+        this.scheduleExpiryWatchdog(requestStartedAt);
         if (this.heartbeatEnabled) {
             this.startHeartbeat();
         }
@@ -127,26 +132,36 @@ export class DatabaseTurnDaemonLease {
 
     async renew(): Promise<boolean> {
         const token = this.token;
-        if (!token || this.lost) {
+        if (!token || this.lost || this.renewalInFlight) {
             return false;
         }
-        const rows = await this.db.$queryRaw<LeaseRow[]>(GamePrisma.sql`
-            UPDATE "turn_daemon_lease"
-            SET
-                "lease_until" = CURRENT_TIMESTAMP + (${this.leaseDurationMs} * INTERVAL '1 millisecond'),
-                "heartbeat_at" = CURRENT_TIMESTAMP
-            WHERE
-                "profile" = ${token.profile}
-                AND "owner_id" = ${token.ownerId}
-                AND "fencing_epoch" = ${token.fencingEpoch}
-                AND "lease_until" > CURRENT_TIMESTAMP
-            RETURNING "profile", "owner_id", "fencing_epoch"
-        `);
-        if (rows.length === 0) {
-            this.markLost();
-            return false;
+        const requestStartedAt = performance.now();
+        this.renewalInFlight = true;
+        try {
+            const rows = await this.db.$queryRaw<LeaseRow[]>(GamePrisma.sql`
+                UPDATE "turn_daemon_lease"
+                SET
+                    "lease_until" = CURRENT_TIMESTAMP + (${this.leaseDurationMs} * INTERVAL '1 millisecond'),
+                    "heartbeat_at" = CURRENT_TIMESTAMP
+                WHERE
+                    "profile" = ${token.profile}
+                    AND "owner_id" = ${token.ownerId}
+                    AND "fencing_epoch" = ${token.fencingEpoch}
+                    AND "lease_until" > CURRENT_TIMESTAMP
+                RETURNING "profile", "owner_id", "fencing_epoch"
+            `);
+            if (rows.length === 0) {
+                this.markLost();
+                return false;
+            }
+            if (this.lost) {
+                return false;
+            }
+            this.scheduleExpiryWatchdog(requestStartedAt);
+            return true;
+        } finally {
+            this.renewalInFlight = false;
         }
-        return true;
     }
 
     async assertActive(transaction?: GamePrisma.TransactionClient): Promise<void> {
@@ -173,6 +188,7 @@ export class DatabaseTurnDaemonLease {
 
     async release(): Promise<void> {
         this.stopHeartbeat();
+        this.stopExpiryWatchdog();
         const token = this.token;
         this.token = null;
         if (!token || this.lost) {
@@ -216,8 +232,27 @@ export class DatabaseTurnDaemonLease {
         }
     }
 
+    private scheduleExpiryWatchdog(requestStartedAt: number): void {
+        // DB가 lease_until을 정하는 시점보다 앞선 요청 시작 시각을 기준으로
+        // 잡아, heartbeat 응답이 멈춰도 DB lease 만료보다 늦게 pause하지 않는다.
+        this.stopExpiryWatchdog();
+        const remainingMs = Math.max(0, this.leaseDurationMs - (performance.now() - requestStartedAt));
+        this.expiryTimer = setTimeout(() => {
+            this.markLost();
+        }, remainingMs);
+        this.expiryTimer.unref();
+    }
+
+    private stopExpiryWatchdog(): void {
+        if (this.expiryTimer) {
+            clearTimeout(this.expiryTimer);
+            this.expiryTimer = null;
+        }
+    }
+
     private markLost(): void {
         this.lost = true;
         this.stopHeartbeat();
+        this.stopExpiryWatchdog();
     }
 }
