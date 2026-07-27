@@ -119,6 +119,7 @@ integration('live sortie PostgreSQL persistence retry', () => {
 
     it.each([
         ['conquest and nation collapse', 'live-sortie-conquest.json'],
+        ['collapsed nation conflict cleanup', 'live-sortie-collapse-conflict.json'],
         ['single defending general', 'live-sortie-defender.json'],
         ['multiple defending generals', 'live-sortie-multiple-defenders.json'],
         ['supply retreat', 'live-sortie-supply-retreat.json'],
