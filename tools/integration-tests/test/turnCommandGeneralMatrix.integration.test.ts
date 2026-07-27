@@ -3584,6 +3584,34 @@ integration('general command missing-target fallback matrix', () => {
     );
 });
 
+integration('general gift missing argument object parity', () => {
+    it('falls back with the legacy invalid-argument log and no RNG', async () => {
+        const request = buildRequest('che_증여');
+        const reference = runReferenceTurnCommandTraceRequest(
+            workspaceRoot!,
+            request as unknown as Record<string, unknown>
+        );
+        const core = await runCoreTurnCommandTrace(request, reference.before);
+
+        expect(reference.execution.outcome).toMatchObject({ completed: false });
+        expect(core.execution.outcome).toMatchObject({
+            requestedAction: 'che_증여',
+            actionKey: '휴식',
+            usedFallback: true,
+        });
+        expect(reference.rng).toEqual([]);
+        expect(core.rng).toEqual(reference.rng);
+        expect(
+            compareTurnSnapshotDeltas(reference.before, reference.after, core.before, core.after, {
+                ignoredPathPatterns: ignoredLifecyclePaths,
+            })
+        ).toEqual([]);
+        expect(semanticLogSignatures(core.after.logs)).toEqual(
+            semanticLogSignatures(addedReferenceLogs(reference.before, reference.after.logs))
+        );
+    }, 120_000);
+});
+
 const resourceAmountCases: Array<{
     name: string;
     action: string;
