@@ -1,9 +1,14 @@
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createGamePostgresConnector, type GamePrismaClient } from '@sammo-ts/infra';
 import type { City, MapDefinition, Nation } from '@sammo-ts/logic';
 
 import { createDatabaseTurnHooks } from '../src/turn/databaseHooks.js';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
+import { createProvideNpcTroopLeaderHandler } from '../src/turn/monthlyProvideNpcTroopLeaderAction.js';
 import { createRaiseNpcNationHandler } from '../src/turn/monthlyRaiseNpcNationAction.js';
 import { createMonthlyEventHandler } from '../src/turn/monthlyEventHandler.js';
 import { InMemoryReservedTurnStore } from '../src/turn/reservedTurnStore.js';
@@ -17,6 +22,54 @@ const createdNationId = 990_086;
 const occupiedCityId = 990_083;
 const targetCityId = 990_086;
 const createdGeneralId = 990_086;
+const existingNationLeaderId = 990_087;
+const createdNationLeaderId = 990_088;
+const createdGeneralIds = [createdGeneralId, existingNationLeaderId, createdNationLeaderId];
+
+type ReferenceNpcNationLifecycleTrace = {
+    phases: {
+        afterRaise: {
+            createdNationCount: number;
+            createdGeneralCount: number;
+            generalCountsPerCreatedNation: number[];
+            historyLogs: string[];
+        };
+        afterProvide: {
+            createdLeaderCount: number;
+            leaderCountsPerActiveNation: number[];
+            troopCount: number;
+            gatherTurnCounts: number[];
+            leaderCounterDelta: number;
+        };
+    };
+};
+
+const runReferenceNpcNationLifecycle = (): ReferenceNpcNationLifecycleTrace | null => {
+    const workspaceRoot = process.env.TURN_DIFFERENTIAL_WORKSPACE_ROOT;
+    if (process.env.TURN_DIFFERENTIAL_REFERENCE !== '1' || !workspaceRoot) {
+        return null;
+    }
+    const stackDirectory = path.join(workspaceRoot, 'docker_compose_files/reference');
+    const runnerScript =
+        process.env.MONTHLY_NPC_LIFECYCLE_RUNNER_SCRIPT ??
+        path.join(workspaceRoot, 'ref/sam/hwe/compare/monthly_event_trace.php');
+    const fixturePath =
+        process.env.MONTHLY_NPC_LIFECYCLE_FIXTURE ??
+        path.join(path.dirname(runnerScript), 'fixtures/monthly_npc_nation_lifecycle.json');
+    const stdout = execFileSync('./scripts/run-turn-differential-case.sh', ['-'], {
+        cwd: stackDirectory,
+        input: fs.readFileSync(fixturePath, 'utf8'),
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: {
+            ...process.env,
+            COMPOSE_PROJECT_NAME: 'sam-rebuild-reference',
+            TURN_DIFFERENTIAL_RUNNER_SCRIPT: runnerScript,
+            TURN_DIFFERENTIAL_COMPARE_DIR: path.dirname(runnerScript),
+        },
+    });
+    return JSON.parse(stdout) as ReferenceNpcNationLifecycleTrace;
+};
 
 const buildCity = (id: number, nationId: number, name: string): City => ({
     id,
@@ -91,7 +144,7 @@ const event: TurnEvent = {
     targetCode: 'month',
     priority: 1_000,
     condition: true,
-    action: [['RaiseNPCNation']],
+    action: [['RaiseNPCNation'], ['ProvideNPCTroopLeader']],
     meta: {},
 };
 
@@ -103,14 +156,15 @@ integration('RaiseNPCNation database persistence', () => {
         await db.logEntry.deleteMany({
             where: {
                 OR: [
-                    { generalId: createdGeneralId },
+                    { generalId: { in: createdGeneralIds } },
                     { year: 200, month: 1, text: { contains: '공백지에 임의의 국가' } },
                 ],
             },
         });
-        await db.generalTurn.deleteMany({ where: { generalId: createdGeneralId } });
-        await db.rankData.deleteMany({ where: { generalId: createdGeneralId } });
-        await db.general.deleteMany({ where: { id: createdGeneralId } });
+        await db.generalTurn.deleteMany({ where: { generalId: { in: createdGeneralIds } } });
+        await db.rankData.deleteMany({ where: { generalId: { in: createdGeneralIds } } });
+        await db.troop.deleteMany({ where: { troopLeaderId: { in: createdGeneralIds } } });
+        await db.general.deleteMany({ where: { id: { in: createdGeneralIds } } });
         await db.nationTurn.deleteMany({ where: { nationId: createdNationId } });
         await db.diplomacy.deleteMany({
             where: {
@@ -135,6 +189,7 @@ integration('RaiseNPCNation database persistence', () => {
     });
 
     it('commits the nation, city, diplomacy, ruler, turns, ranks, and history in one flush', async () => {
+        const referenceTrace = runReferenceNpcNationLifecycle();
         const createCity = (city: City) =>
             db.city.create({
                 data: {
@@ -191,6 +246,7 @@ integration('RaiseNPCNation database persistence', () => {
                     hiddenSeed: 'raise-npc-nation-persistence',
                     lastGeneralId: createdGeneralId - 1,
                     lastNationId: createdNationId - 1,
+                    lastNPCTroopLeaderID: 40,
                     serverId: 'raise-npc-nation-persistence',
                 },
             },
@@ -205,6 +261,7 @@ integration('RaiseNPCNation database persistence', () => {
                 hiddenSeed: 'raise-npc-nation-persistence',
                 lastGeneralId: createdGeneralId - 1,
                 lastNationId: createdNationId - 1,
+                lastNPCTroopLeaderID: 40,
                 serverId: 'raise-npc-nation-persistence',
             },
         };
@@ -240,12 +297,20 @@ integration('RaiseNPCNation database persistence', () => {
             map,
             loadArchivedNationMaxId: async () => 0,
         });
+        const provide = createProvideNpcTroopLeaderHandler({
+            getWorld: () => world,
+            reservedTurns,
+            env: buildCommandEnv(snapshot.scenarioConfig),
+        });
         world = new InMemoryTurnWorld(state, snapshot, {
             schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
             calendarHandler: createMonthlyEventHandler({
                 getWorld: () => world,
                 startYear: 190,
-                actions: new Map([['RaiseNPCNation', handler]]),
+                actions: new Map([
+                    ['RaiseNPCNation', handler],
+                    ['ProvideNPCTroopLeader', provide],
+                ]),
             }),
         });
         const dbHooks = await createDatabaseTurnHooks(databaseUrl!, world, { reservedTurns });
@@ -297,10 +362,79 @@ integration('RaiseNPCNation database persistence', () => {
                 })
             ).toBe(2);
             expect(
+                await db.general.findMany({
+                    where: { id: { in: [existingNationLeaderId, createdNationLeaderId] } },
+                    orderBy: { id: 'asc' },
+                    select: {
+                        id: true,
+                        name: true,
+                        nationId: true,
+                        cityId: true,
+                        troopId: true,
+                        npcState: true,
+                    },
+                })
+            ).toEqual([
+                {
+                    id: existingNationLeaderId,
+                    name: '㉥부대장  41',
+                    nationId: existingNationId,
+                    cityId: occupiedCityId,
+                    troopId: existingNationLeaderId,
+                    npcState: 5,
+                },
+                {
+                    id: createdNationLeaderId,
+                    name: '㉥부대장  42',
+                    nationId: createdNationId,
+                    cityId: targetCityId,
+                    troopId: createdNationLeaderId,
+                    npcState: 5,
+                },
+            ]);
+            expect(
+                await db.troop.count({
+                    where: { troopLeaderId: { in: [existingNationLeaderId, createdNationLeaderId] } },
+                })
+            ).toBe(2);
+            for (const leaderId of [existingNationLeaderId, createdNationLeaderId]) {
+                expect(
+                    await db.generalTurn.count({
+                        where: { generalId: leaderId, actionCode: 'che_집합' },
+                    })
+                ).toBe(30);
+                expect(await db.rankData.count({ where: { generalId: leaderId } })).toBe(44);
+            }
+            expect(await db.worldState.findUniqueOrThrow({ where: { id: stateRow.id } })).toMatchObject({
+                meta: expect.objectContaining({ lastNPCTroopLeaderID: 42 }),
+            });
+            expect(
                 await db.logEntry.findFirst({
                     where: { year: 200, month: 1, text: { contains: '공백지에 임의의 국가' } },
+                    select: { text: true },
                 })
-            ).not.toBeNull();
+            ).toEqual({
+                text: '<C>●</>200년 1월:<L><b>【공지】</b></>공백지에 임의의 국가가 생성되었습니다.',
+            });
+            if (referenceTrace) {
+                expect(referenceTrace.phases).toEqual({
+                    afterRaise: {
+                        createdNationCount: 1,
+                        createdGeneralCount: 1,
+                        generalCountsPerCreatedNation: [1],
+                        historyLogs: [
+                            '<C>●</>200년 1월:<L><b>【공지】</b></>공백지에 임의의 국가가 생성되었습니다.',
+                        ],
+                    },
+                    afterProvide: {
+                        createdLeaderCount: 2,
+                        leaderCountsPerActiveNation: [1],
+                        troopCount: 2,
+                        gatherTurnCounts: [30],
+                        leaderCounterDelta: 2,
+                    },
+                });
+            }
         } finally {
             await dbHooks.close();
             await db.worldState.delete({ where: { id: stateRow.id } });

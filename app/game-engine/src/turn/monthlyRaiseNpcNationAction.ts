@@ -390,7 +390,7 @@ export const createRaiseNpcNationHandler = (options: {
                 scope: LogScope.SYSTEM,
                 category: LogCategory.HISTORY,
                 text: '<L><b>【공지】</b></>공백지에 임의의 국가가 생성되었습니다.',
-                format: LogFormat.NOTICE_YEAR_MONTH,
+                format: LogFormat.YEAR_MONTH,
                 year: environment.year,
                 month: environment.month,
             });
