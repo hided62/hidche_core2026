@@ -140,7 +140,7 @@ onMounted(async () => {
 .info-table th {
     width: 98px;
     text-align: center;
-    background-image: url('/image/game/back_green.jpg');
+    background-image: var(--sammo-texture-green);
 }
 .info-table td {
     text-align: center;

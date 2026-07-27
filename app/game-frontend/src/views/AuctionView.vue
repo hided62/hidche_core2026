@@ -478,21 +478,21 @@ onMounted(() => {
     box-sizing: border-box;
     margin: 0 auto;
     color: #fff;
-    font-family: Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+    font-family: var(--sammo-font-sans);
     font-size: 14px;
     line-height: 21px;
 }
 .bg0 {
     background-color: #302016;
-    background-image: url('/image/game/back_walnut.jpg');
+    background-image: var(--sammo-texture-walnut);
 }
 .bg1 {
     background-color: #14241b;
-    background-image: url('/image/game/back_green.jpg');
+    background-image: var(--sammo-texture-green);
 }
 .bg2 {
     background-color: #172a52;
-    background-image: url('/image/game/back_blue.jpg');
+    background-image: var(--sammo-texture-blue);
 }
 .top-back-bar {
     width: 100%;

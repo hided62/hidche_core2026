@@ -28,7 +28,7 @@ defineProps<Props>();
 .panel-card {
     border: 1px solid gray;
     background-color: #302016;
-    background-image: url('/image/game/back_walnut.jpg');
+    background-image: var(--sammo-texture-walnut);
 }
 
 .panel-header {
@@ -38,7 +38,7 @@ defineProps<Props>();
     gap: 8px;
     border-bottom: 1px solid gray;
     background-color: #14241b;
-    background-image: url('/image/game/back_green.jpg');
+    background-image: var(--sammo-texture-green);
     padding: 3px 6px;
 }
 

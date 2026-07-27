@@ -187,7 +187,7 @@ watch(viewMode, () => {
     min-height: 100vh;
     margin: 0 auto 100px;
     color: #fff;
-    font-family: Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+    font-family: var(--sammo-font-sans);
     font-size: 14px;
 }
 

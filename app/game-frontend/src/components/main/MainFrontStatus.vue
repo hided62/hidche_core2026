@@ -39,7 +39,7 @@ defineProps<{
     width: calc(100% + 48px);
     margin-left: -24px;
     background-color: #302016;
-    background-image: url('/image/game/back_walnut.jpg');
+    background-image: var(--sammo-texture-walnut);
     color: #fff;
     font-size: 14px;
     font-weight: 400;

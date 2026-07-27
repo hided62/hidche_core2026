@@ -392,5 +392,5 @@ test('감찰부 keeps the selector interaction and shows the permission error pa
     const member: FixtureState = { permission: 'member', myset: 3, settingMutations: [], accessPages: [] };
     await install(page, member);
     await page.reload();
-    await expect(page.locator('.error')).toContainText('권한이 부족합니다.');
+    await expect(page.getByRole('alert')).toContainText('권한이 부족합니다.');
 });

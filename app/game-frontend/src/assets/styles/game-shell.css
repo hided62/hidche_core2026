@@ -1,0 +1,54 @@
+/*
+ * Shared shell for the main dashboard family.
+ *
+ * Keep geometry here limited to declarations that are identical on the main,
+ * chief-center, and public screens. Page-specific grids remain scoped in their
+ * owning SFC so a generic class cannot silently change a ref measurement.
+ */
+.game-shell {
+    min-height: 100vh;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.game-shell__header {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 12px;
+    border-bottom: 1px solid var(--sammo-color-border);
+    padding-bottom: 12px;
+}
+
+.game-shell__title {
+    font-size: 1.6rem;
+    font-weight: 600;
+}
+
+.game-shell__subtitle {
+    font-size: 0.85rem;
+    color: var(--sammo-color-text-muted);
+}
+
+.game-shell__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.game-shell__action {
+    border: 1px solid var(--sammo-color-border);
+    padding: 6px 12px;
+    background: var(--sammo-color-action-bg);
+    color: inherit;
+    text-decoration: none;
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+
+.game-feedback--error {
+    color: var(--sammo-color-error);
+    font-size: 0.85rem;
+}

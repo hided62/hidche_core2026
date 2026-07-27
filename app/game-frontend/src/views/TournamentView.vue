@@ -267,7 +267,7 @@ const start = async () => {
     min-height: 100vh;
     margin: 0 auto;
     color: #fff;
-    font-family: Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+    font-family: var(--sammo-font-sans);
     font-size: 14px;
     line-height: 1.3;
     text-align: center;
@@ -277,10 +277,10 @@ const start = async () => {
     box-sizing: border-box;
 }
 .bg0 {
-    background: #3a2118 url('/image/game/back_walnut.jpg');
+    background: #3a2118 var(--sammo-texture-walnut);
 }
 .bg2 {
-    background: #142b42 url('/image/game/back_blue.jpg');
+    background: #142b42 var(--sammo-texture-blue);
 }
 .legacy-title {
     height: 55.6875px;
@@ -420,7 +420,7 @@ caption {
     color: #fff;
 }
 th {
-    background: #154b2a url('/image/game/back_green.jpg');
+    background: #154b2a var(--sammo-texture-green);
     font-weight: 400;
 }
 th,

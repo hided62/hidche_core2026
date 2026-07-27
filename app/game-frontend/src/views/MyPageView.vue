@@ -448,8 +448,8 @@ onMounted(() => {
     padding: 0;
     color: #fff;
     background-color: #111;
-    background-image: url('/image/game/back_walnut.jpg');
-    font-family: Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+    background-image: var(--sammo-texture-walnut);
+    font-family: var(--sammo-font-sans);
     font-size: 14px;
     line-height: 1.3;
 }
@@ -522,7 +522,7 @@ button:disabled {
 .settings-column,
 .log-panel {
     border: 1px solid #666;
-    background-image: url('/image/game/back_walnut.jpg');
+    background-image: var(--sammo-texture-walnut);
 }
 .section-title,
 .log-panel h2 {
@@ -533,7 +533,7 @@ button:disabled {
     justify-content: center;
     border-bottom: 1px solid #666;
     background-color: #14241b;
-    background-image: url('/image/game/back_green.jpg');
+    background-image: var(--sammo-texture-green);
     font-size: 1.25em;
     font-weight: 500;
 }
@@ -545,7 +545,7 @@ button:disabled {
     grid-template-columns: 150px 1fr;
     padding: 0;
     background-color: #172a52;
-    background-image: url('/image/game/back_blue.jpg');
+    background-image: var(--sammo-texture-blue);
 }
 .portrait-cell {
     display: flex;

@@ -150,7 +150,7 @@ onMounted(async () => {
 .city th {
     width: 60px;
     text-align: center;
-    background-image: url('/image/game/back_green.jpg');
+    background-image: var(--sammo-texture-green);
 }
 .city td {
     width: 140px;

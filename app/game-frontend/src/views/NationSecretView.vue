@@ -176,7 +176,7 @@ select {
 }
 .summary th,
 .list th {
-    background: #14241b url('/image/game/back_green.jpg');
+    background: #14241b var(--sammo-texture-green);
 }
 .summary th {
     width: 120px;

@@ -113,67 +113,67 @@ watch(
 </script>
 
 <template>
-    <main class="main-page">
-        <header class="page-header">
+    <main class="game-shell main-page">
+        <header class="game-shell__header">
             <div>
-                <h1 class="page-title">전장 현황</h1>
-                <p class="page-subtitle">{{ statusLine }}</p>
+                <h1 class="game-shell__title">전장 현황</h1>
+                <p class="game-shell__subtitle">{{ statusLine }}</p>
             </div>
-            <div class="header-actions">
-                <RouterLink v-if="boardAccess?.canMeeting" class="ghost" to="/board">회의실</RouterLink>
-                <span v-else class="ghost disabled" aria-disabled="true">회의실</span>
-                <RouterLink v-if="boardAccess?.canSecret" class="ghost" to="/board/secret">기밀실</RouterLink>
-                <span v-else class="ghost disabled" aria-disabled="true">기밀실</span>
-                <RouterLink class="ghost" to="/nation/info">세력 정보</RouterLink>
-                <RouterLink class="ghost" to="/nation/cities">세력 도시</RouterLink>
-                <RouterLink class="ghost" to="/global-info">중원 정보</RouterLink>
-                <RouterLink class="ghost" to="/nation-list">세력일람</RouterLink>
-                <RouterLink class="ghost" to="/general-list">장수일람</RouterLink>
-                <RouterLink class="ghost" to="/current-city">현재 도시</RouterLink>
-                <RouterLink class="ghost" to="/nation/generals">세력 장수</RouterLink>
-                <RouterLink v-if="(boardAccess?.permission ?? -1) >= 1" class="ghost" to="/nation/secret"
+            <div class="game-shell__actions">
+                <RouterLink v-if="boardAccess?.canMeeting" class="game-shell__action" to="/board">회의실</RouterLink>
+                <span v-else class="game-shell__action disabled" aria-disabled="true">회의실</span>
+                <RouterLink v-if="boardAccess?.canSecret" class="game-shell__action" to="/board/secret">기밀실</RouterLink>
+                <span v-else class="game-shell__action disabled" aria-disabled="true">기밀실</span>
+                <RouterLink class="game-shell__action" to="/nation/info">세력 정보</RouterLink>
+                <RouterLink class="game-shell__action" to="/nation/cities">세력 도시</RouterLink>
+                <RouterLink class="game-shell__action" to="/global-info">중원 정보</RouterLink>
+                <RouterLink class="game-shell__action" to="/nation-list">세력일람</RouterLink>
+                <RouterLink class="game-shell__action" to="/general-list">장수일람</RouterLink>
+                <RouterLink class="game-shell__action" to="/current-city">현재 도시</RouterLink>
+                <RouterLink class="game-shell__action" to="/nation/generals">세력 장수</RouterLink>
+                <RouterLink v-if="(boardAccess?.permission ?? -1) >= 1" class="game-shell__action" to="/nation/secret"
                     >암행부</RouterLink
                 >
-                <span v-else class="ghost disabled" aria-disabled="true">암행부</span>
-                <RouterLink class="ghost" to="/nation/personnel">인사부</RouterLink>
-                <RouterLink class="ghost" to="/troop">부대 편성</RouterLink>
-                <RouterLink class="ghost" to="/nation/finance">내무부</RouterLink>
-                <RouterLink class="ghost" to="/diplomacy">외교부</RouterLink>
-                <RouterLink class="ghost" to="/chief-center">사령부</RouterLink>
-                <RouterLink class="ghost" to="/battle-center">감찰부</RouterLink>
-                <RouterLink class="ghost" to="/best-general">명장일람</RouterLink>
-                <RouterLink class="ghost" to="/hall-of-fame">명예의 전당</RouterLink>
-                <RouterLink class="ghost" to="/dynasty">왕조일람</RouterLink>
-                <RouterLink class="ghost" to="/yearbook">연감</RouterLink>
-                <RouterLink class="ghost" to="/nation-betting">천통국 베팅</RouterLink>
-                <RouterLink class="ghost" to="/traffic">접속량정보</RouterLink>
-                <RouterLink class="ghost" to="/npc-list">빙의일람</RouterLink>
-                <a class="ghost" href="/xe/community" target="_blank" rel="noopener">게시판</a>
-                <RouterLink class="ghost" to="/battle-simulator">전투 시뮬레이터</RouterLink>
-                <RouterLink class="ghost" to="/my-page">내 정보&amp;설정</RouterLink>
-                <RouterLink class="ghost" to="/past-plays">내 지난 플레이</RouterLink>
-                <RouterLink class="ghost" :class="{ highlight: tournamentStage === 1 }" to="/tournament"
+                <span v-else class="game-shell__action disabled" aria-disabled="true">암행부</span>
+                <RouterLink class="game-shell__action" to="/nation/personnel">인사부</RouterLink>
+                <RouterLink class="game-shell__action" to="/troop">부대 편성</RouterLink>
+                <RouterLink class="game-shell__action" to="/nation/finance">내무부</RouterLink>
+                <RouterLink class="game-shell__action" to="/diplomacy">외교부</RouterLink>
+                <RouterLink class="game-shell__action" to="/chief-center">사령부</RouterLink>
+                <RouterLink class="game-shell__action" to="/battle-center">감찰부</RouterLink>
+                <RouterLink class="game-shell__action" to="/best-general">명장일람</RouterLink>
+                <RouterLink class="game-shell__action" to="/hall-of-fame">명예의 전당</RouterLink>
+                <RouterLink class="game-shell__action" to="/dynasty">왕조일람</RouterLink>
+                <RouterLink class="game-shell__action" to="/yearbook">연감</RouterLink>
+                <RouterLink class="game-shell__action" to="/nation-betting">천통국 베팅</RouterLink>
+                <RouterLink class="game-shell__action" to="/traffic">접속량정보</RouterLink>
+                <RouterLink class="game-shell__action" to="/npc-list">빙의일람</RouterLink>
+                <a class="game-shell__action" href="/xe/community" target="_blank" rel="noopener">게시판</a>
+                <RouterLink class="game-shell__action" to="/battle-simulator">전투 시뮬레이터</RouterLink>
+                <RouterLink class="game-shell__action" to="/my-page">내 정보&amp;설정</RouterLink>
+                <RouterLink class="game-shell__action" to="/past-plays">내 지난 플레이</RouterLink>
+                <RouterLink class="game-shell__action" :class="{ highlight: tournamentStage === 1 }" to="/tournament"
                     >토너먼트</RouterLink
                 >
-                <RouterLink class="ghost" :class="{ highlight: tournamentStage === 6 }" to="/betting"
+                <RouterLink class="game-shell__action" :class="{ highlight: tournamentStage === 6 }" to="/betting"
                     >베팅장</RouterLink
                 >
-                <RouterLink class="ghost" to="/auction">거래장</RouterLink>
-                <RouterLink class="ghost" to="/survey">설문조사</RouterLink>
-                <RouterLink class="ghost" to="/npc-control">NPC 정책</RouterLink>
-                <RouterLink class="ghost" to="/inherit">유산 강화</RouterLink>
+                <RouterLink class="game-shell__action" to="/auction">거래장</RouterLink>
+                <RouterLink class="game-shell__action" to="/survey">설문조사</RouterLink>
+                <RouterLink class="game-shell__action" to="/npc-control">NPC 정책</RouterLink>
+                <RouterLink class="game-shell__action" to="/inherit">유산 강화</RouterLink>
                 <button
-                    class="toggle"
+                    class="game-shell__action toggle"
                     :class="{ active: realtimeEnabled }"
                     @click="dashboard.setRealtimeEnabled(!realtimeEnabled)"
                 >
                     실시간 동기화: {{ realtimeLabel }}
                 </button>
-                <button class="ghost" @click="loadMainData">새로고침</button>
+                <button class="game-shell__action" @click="loadMainData">새로고침</button>
             </div>
         </header>
 
-        <div v-if="error" class="error">{{ error }}</div>
+        <div v-if="error" class="game-feedback game-feedback--error" role="alert">{{ error }}</div>
         <div v-if="frontStatusError" class="front-status-error" role="alert">{{ frontStatusError }}</div>
 
         <div v-if="session.needsGeneral" class="warning">
@@ -413,39 +413,6 @@ watch(
 </template>
 
 <style scoped>
-.main-page {
-    min-height: 100vh;
-    padding: 24px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-}
-
-.page-header {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    gap: 12px;
-    border-bottom: 1px solid rgba(201, 164, 90, 0.4);
-    padding-bottom: 12px;
-}
-
-.page-title {
-    font-size: 1.6rem;
-    font-weight: 600;
-}
-
-.page-subtitle {
-    font-size: 0.85rem;
-    color: rgba(232, 221, 196, 0.7);
-}
-
-.header-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-
 button {
     font-family: inherit;
     background: none;
@@ -453,36 +420,19 @@ button {
     color: inherit;
 }
 
-.toggle,
-.ghost {
-    border: 1px solid rgba(201, 164, 90, 0.4);
-    padding: 6px 12px;
-    font-size: 0.8rem;
-    cursor: pointer;
-}
-
 .toggle.active {
     background: rgba(201, 164, 90, 0.2);
 }
 
-.ghost {
-    background: rgba(16, 16, 16, 0.6);
-}
-
-.ghost.highlight {
+.game-shell__action.highlight {
     border-color: #f39c12;
     background: #8a5b13;
     color: #fff;
 }
 
-.ghost.disabled {
+.game-shell__action.disabled {
     cursor: not-allowed;
     opacity: 0.5;
-}
-
-.error {
-    color: #f5b7b1;
-    font-size: 0.85rem;
 }
 
 .front-status-error {

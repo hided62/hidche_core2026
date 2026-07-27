@@ -414,7 +414,7 @@ onMounted(() => void loadStratFinan());
     min-height: 100vh;
     margin: 0 auto;
     color: #fff;
-    background: url('/image/game/back_walnut.jpg');
+    background: var(--sammo-texture-walnut);
     font:
         14px/1.3 Pretendard,
         'Apple SD Gothic Neo',
@@ -502,14 +502,14 @@ textarea:focus-visible {
     white-space: nowrap;
 }
 .diplomacy-header {
-    background: url('/image/game/back_green.jpg');
+    background: var(--sammo-texture-green);
 }
 .green-header {
     display: flex;
     min-height: 32px;
     align-items: center;
     justify-content: space-between;
-    background: url('/image/game/back_green.jpg');
+    background: var(--sammo-texture-green);
 }
 .message-preview,
 textarea {
@@ -545,7 +545,7 @@ textarea {
 .blue-heading {
     height: 18.19px;
     text-align: center;
-    background: url('/image/game/back_blue.jpg');
+    background: var(--sammo-texture-blue);
 }
 .budget-row,
 .policy-cell {
@@ -556,7 +556,7 @@ textarea {
 }
 .budget-row span:first-child,
 .green-label {
-    background: url('/image/game/back_green.jpg');
+    background: var(--sammo-texture-green);
 }
 .budget-row > span,
 .green-label,

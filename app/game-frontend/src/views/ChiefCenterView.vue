@@ -388,19 +388,19 @@ const shiftTurns = async (amount: number) => {
 </script>
 
 <template>
-    <main class="chief-page">
-        <header class="page-header">
+    <main class="game-shell chief-page">
+        <header class="game-shell__header">
             <div>
-                <h1 class="page-title">사령부</h1>
-                <p class="page-subtitle">{{ statusLine }}</p>
+                <h1 class="game-shell__title">사령부</h1>
+                <p class="game-shell__subtitle">{{ statusLine }}</p>
             </div>
-            <div class="header-actions">
-                <RouterLink class="ghost" to="/">메인</RouterLink>
-                <button class="ghost" @click="loadChiefCenter">새로고침</button>
+            <div class="game-shell__actions">
+                <RouterLink class="game-shell__action" to="/">메인</RouterLink>
+                <button class="game-shell__action" @click="loadChiefCenter">새로고침</button>
             </div>
         </header>
 
-        <div v-if="error" class="error">{{ error }}</div>
+        <div v-if="error" class="game-feedback game-feedback--error" role="alert">{{ error }}</div>
 
         <section v-if="loading && !data" class="loading-panel">
             <PanelCard title="사령부 로딩">
@@ -558,53 +558,6 @@ const shiftTurns = async (amount: number) => {
 </template>
 
 <style scoped>
-.chief-page {
-    min-height: 100vh;
-    padding: 24px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-}
-
-.page-header {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    gap: 12px;
-    border-bottom: 1px solid rgba(201, 164, 90, 0.4);
-    padding-bottom: 12px;
-}
-
-.page-title {
-    font-size: 1.6rem;
-    font-weight: 600;
-}
-
-.page-subtitle {
-    font-size: 0.85rem;
-    color: rgba(232, 221, 196, 0.7);
-}
-
-.header-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-
-.ghost {
-    border: 1px solid rgba(201, 164, 90, 0.4);
-    padding: 6px 12px;
-    font-size: 0.8rem;
-    cursor: pointer;
-    background: rgba(16, 16, 16, 0.6);
-    color: inherit;
-}
-
-.error {
-    color: #f5b7b1;
-    font-size: 0.85rem;
-}
-
 .layout-desktop {
     display: grid;
     grid-template-columns: minmax(0, 2.2fr) minmax(280px, 1fr);

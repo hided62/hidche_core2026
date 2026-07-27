@@ -560,7 +560,7 @@ const dropPriority = (event: DragEvent, section: PrioritySectionKey, bucket: Pri
     min-width: 500px;
     margin: 0;
     background: #000;
-    font-family: Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+    font-family: var(--sammo-font-sans);
     font-size: 14px;
     line-height: 21px;
 }
@@ -573,21 +573,21 @@ const dropPriority = (event: DragEvent, section: PrioritySectionKey, bucket: Pri
 .npc-page {
     min-height: 100vh;
     color: #fff;
-    font-family: Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+    font-family: var(--sammo-font-sans);
     font-size: 14px;
     line-height: 21px;
 }
 
 .legacy-bg0 {
-    background-image: url('/image/game/back_walnut.jpg');
+    background-image: var(--sammo-texture-walnut);
 }
 
 .legacy-bg1 {
-    background-image: url('/image/game/back_green.jpg');
+    background-image: var(--sammo-texture-green);
 }
 
 .legacy-bg2 {
-    background-image: url('/image/game/back_blue.jpg');
+    background-image: var(--sammo-texture-blue);
 }
 
 .top-back-bar {

@@ -266,7 +266,7 @@ const forwardResponse = (messageId: number, response: boolean) => {
     grid-template-columns: minmax(0, 1fr) minmax(0, 4fr) minmax(0, 1fr);
     grid-template-areas: 'mailbox input submit';
     background-color: #302016;
-    background-image: url('/image/game/back_walnut.jpg');
+    background-image: var(--sammo-texture-walnut);
 }
 
 #mailbox_list-col {
@@ -347,7 +347,7 @@ const forwardResponse = (messageId: number, response: boolean) => {
     align-items: center;
     outline: 1px solid gray;
     background-color: #302016;
-    background-image: url('/image/game/back_walnut.jpg');
+    background-image: var(--sammo-texture-walnut);
     color: #fff;
 }
 

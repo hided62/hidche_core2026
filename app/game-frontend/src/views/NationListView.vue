@@ -247,7 +247,7 @@ onMounted(() => {
     width: 80px;
     text-align: center;
     background-color: #14241b;
-    background-image: url('/image/game/back_green.jpg');
+    background-image: var(--sammo-texture-green);
 }
 .value-wide {
     width: 170px;
@@ -273,7 +273,7 @@ onMounted(() => {
 }
 .neutral-label {
     background-color: #14241b;
-    background-image: url('/image/game/back_green.jpg');
+    background-image: var(--sammo-texture-green);
 }
 .center {
     text-align: center;

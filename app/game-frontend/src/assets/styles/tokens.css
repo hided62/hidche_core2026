@@ -1,0 +1,12 @@
+:root {
+    --sammo-font-sans: Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+    --sammo-color-text: #fff;
+    --sammo-color-text-muted: rgba(232, 221, 196, 0.7);
+    --sammo-color-accent: #f39c12;
+    --sammo-color-border: rgba(201, 164, 90, 0.4);
+    --sammo-color-action-bg: rgba(16, 16, 16, 0.6);
+    --sammo-color-error: #f5b7b1;
+    --sammo-texture-walnut: url('/image/game/back_walnut.jpg');
+    --sammo-texture-green: url('/image/game/back_green.jpg');
+    --sammo-texture-blue: url('/image/game/back_blue.jpg');
+}

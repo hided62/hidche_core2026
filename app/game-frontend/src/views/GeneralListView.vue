@@ -239,7 +239,7 @@ onMounted(() => {
     height: 18px;
     text-align: center;
     background-color: #14241b;
-    background-image: url('/image/game/back_green.jpg');
+    background-image: var(--sammo-texture-green);
 }
 .general-icon {
     display: inline;

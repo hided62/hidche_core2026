@@ -1,0 +1,77 @@
+/*
+ * Fixed ref geometry. This namespace is intentionally separate from
+ * .game-shell: its 1000/500px contract must win over generic responsive styles.
+ */
+.ref-shell {
+    width: 100%;
+    min-width: 500px;
+    max-width: 1000px;
+    min-height: 100vh;
+    margin: 0 auto;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    background-color: #302016;
+    background-image: var(--sammo-texture-walnut);
+    color: var(--sammo-color-text);
+    font-family: var(--sammo-font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.ref-shell__topbar {
+    position: relative;
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 0 8px;
+    border: 1px solid #666;
+    background-color: #302016;
+    background-image: var(--sammo-texture-walnut);
+}
+
+.ref-shell__title {
+    font-size: 17px;
+    font-weight: 500;
+}
+
+.ref-shell__subtitle {
+    display: none;
+}
+
+.ref-shell__actions {
+    position: absolute;
+    left: 0;
+    top: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.ref-shell__control {
+    min-height: 32px;
+    border: 1px solid #777;
+    border-radius: 0;
+    background: #303030;
+    color: inherit;
+    padding: 4px 8px;
+    font: inherit;
+    cursor: pointer;
+}
+
+.ref-feedback--error {
+    padding: 5px 8px;
+    border: 1px solid #a33;
+    color: #ff7777;
+    text-align: center;
+}
+
+@media (max-width: 991px) {
+    .ref-shell {
+        width: 500px;
+    }
+}

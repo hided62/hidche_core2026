@@ -416,15 +416,15 @@ onMounted(() => {
 }
 
 .bg0 {
-    background-image: url('/image/game/back_walnut.jpg');
+    background-image: var(--sammo-texture-walnut);
 }
 
 .bg1 {
-    background-image: url('/image/game/back_green.jpg');
+    background-image: var(--sammo-texture-green);
 }
 
 .bg2 {
-    background-image: url('/image/game/back_blue.jpg');
+    background-image: var(--sammo-texture-blue);
 }
 
 .back_bar {
