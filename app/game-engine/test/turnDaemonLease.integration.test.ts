@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { createConnection, createServer, type Server, type Socket } from 'node:net';
 import { fileURLToPath } from 'node:url';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -46,6 +47,94 @@ const delay = (durationMs: number): Promise<void> =>
     new Promise((resolve) => {
         setTimeout(resolve, durationMs);
     });
+
+const createPartitionableTcpProxy = async (
+    upstreamHost: string,
+    upstreamPort: number
+): Promise<{
+    port: number;
+    partition: () => Promise<void>;
+    restore: () => Promise<void>;
+    close: () => Promise<void>;
+}> => {
+    const sockets = new Set<Socket>();
+    let server: Server | null = null;
+    let port = 0;
+
+    const listen = async (requestedPort: number): Promise<void> => {
+        const nextServer = createServer((client) => {
+            const upstream = createConnection({ host: upstreamHost, port: upstreamPort });
+            sockets.add(client);
+            sockets.add(upstream);
+            client.on('error', () => undefined);
+            upstream.on('error', () => undefined);
+            client.once('close', () => {
+                sockets.delete(client);
+                if (!upstream.destroyed) {
+                    upstream.destroy();
+                }
+            });
+            upstream.once('close', () => {
+                sockets.delete(upstream);
+                if (!client.destroyed) {
+                    client.destroy();
+                }
+            });
+            client.pipe(upstream);
+            upstream.pipe(client);
+        });
+        await new Promise<void>((resolve, reject) => {
+            const onError = (error: Error): void => reject(error);
+            nextServer.once('error', onError);
+            nextServer.listen(requestedPort, '127.0.0.1', () => {
+                nextServer.off('error', onError);
+                resolve();
+            });
+        });
+        server = nextServer;
+        const address = nextServer.address();
+        if (!address || typeof address === 'string') {
+            throw new Error('TCP proxy did not expose a numeric port');
+        }
+        port = address.port;
+    };
+
+    const partition = async (): Promise<void> => {
+        const activeServer = server;
+        server = null;
+        if (!activeServer) {
+            return;
+        }
+        const closed = new Promise<void>((resolve, reject) => {
+            activeServer.close((error) => {
+                if (error) {
+                    reject(error);
+                } else {
+                    resolve();
+                }
+            });
+        });
+        for (const socket of sockets) {
+            socket.destroy();
+        }
+        sockets.clear();
+        await closed;
+    };
+
+    await listen(0);
+    return {
+        get port() {
+            return port;
+        },
+        partition,
+        restore: async () => {
+            if (!server) {
+                await listen(port);
+            }
+        },
+        close: partition,
+    };
+};
 
 integration('database turn daemon lease and fencing', () => {
     let db: GamePrismaClient;
@@ -211,4 +300,58 @@ integration('database turn daemon lease and fencing', () => {
             await successor?.release();
         }
     }, 15_000);
+
+    it('stays fenced after a database partition outlasts the heartbeat lease and connectivity recovers', async () => {
+        const profile = `${profilePrefix}database-partition`;
+        const leaseDurationMs = 1_800;
+        const directUrl = new URL(databaseUrl!);
+        const upstreamPort = Number(directUrl.port || '5432');
+        const proxy = await createPartitionableTcpProxy(directUrl.hostname, upstreamPort);
+        directUrl.hostname = '127.0.0.1';
+        directUrl.port = String(proxy.port);
+        const partitionedOwner = await DatabaseTurnDaemonLease.connect(directUrl.toString(), {
+            profile,
+            ownerId: 'partitioned-owner',
+            leaseDurationMs,
+            heartbeat: true,
+        });
+        leases.push(partitionedOwner);
+        let successor: DatabaseTurnDaemonLease | null = null;
+        try {
+            expect((await partitionedOwner.acquire())?.fencingEpoch).toBe(1n);
+
+            await proxy.partition();
+            const lostDeadline = Date.now() + leaseDurationMs * 2;
+            while (!partitionedOwner.isLost() && Date.now() < lostDeadline) {
+                await delay(50);
+            }
+            expect(partitionedOwner.isLost()).toBe(true);
+
+            successor = await createLease(profile, 'partition-successor');
+            expect(await successor.acquire()).toBeNull();
+
+            const takeoverDeadline = Date.now() + leaseDurationMs * 4;
+            let successorToken = null;
+            while (Date.now() < takeoverDeadline) {
+                successorToken = await successor.acquire();
+                if (successorToken) {
+                    break;
+                }
+                await delay(100);
+            }
+            expect(successorToken).toMatchObject({
+                profile,
+                ownerId: 'partition-successor',
+                fencingEpoch: 2n,
+            });
+
+            await proxy.restore();
+            expect(await partitionedOwner.renew()).toBe(false);
+            await expect(partitionedOwner.assertActive()).rejects.toBeInstanceOf(TurnDaemonLeaseLostError);
+            await expect(successor.assertActive()).resolves.toBeUndefined();
+        } finally {
+            await proxy.close();
+            await successor?.release();
+        }
+    }, 20_000);
 });
