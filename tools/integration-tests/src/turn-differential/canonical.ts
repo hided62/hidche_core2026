@@ -34,7 +34,7 @@ export interface CanonicalTurnCommandTrace {
     schemaVersion: 1;
     engine: CanonicalEngine;
     execution: {
-        kind: 'general' | 'nation' | 'instantNation';
+        kind: 'general' | 'nation' | 'instantNation' | 'troopJoinStaticEvent';
         actorGeneralId: number;
         action: string;
         args: unknown;

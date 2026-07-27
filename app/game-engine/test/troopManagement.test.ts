@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { TriggerValue, TurnSchedule } from '@sammo-ts/logic';
+import { LogCategory, LogFormat, LogScope, type City, type TriggerValue, type TurnSchedule } from '@sammo-ts/logic';
 
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
@@ -41,10 +41,35 @@ const buildGeneral = (id: number, overrides: Partial<TurnGeneral> = {}): TurnGen
     ...overrides,
 });
 
+const buildCity = (id: number, name: string): City => ({
+    id,
+    name,
+    nationId: 1,
+    level: 1,
+    state: 0,
+    population: 1_000,
+    populationMax: 2_000,
+    agriculture: 500,
+    agricultureMax: 1_000,
+    commerce: 500,
+    commerceMax: 1_000,
+    security: 500,
+    securityMax: 1_000,
+    supplyState: 1,
+    frontState: 0,
+    defence: 500,
+    defenceMax: 1_000,
+    wall: 500,
+    wallMax: 1_000,
+    meta: {},
+});
+
 const buildWorld = (options: {
     generals?: TurnGeneral[];
+    cities?: City[];
     troops?: Array<{ id: number; nationId: number; name: string }>;
     nationMeta?: Record<string, TriggerValue>;
+    staticEventHandlers?: Record<string, string[]>;
 }) => {
     const state: TurnWorldState = {
         id: 1,
@@ -56,7 +81,7 @@ const buildWorld = (options: {
     };
     const snapshot: TurnWorldSnapshot = {
         generals: options.generals ?? [buildGeneral(1)],
-        cities: [],
+        cities: options.cities ?? [],
         nations: [
             {
                 id: 1,
@@ -80,7 +105,9 @@ const buildWorld = (options: {
             stat: { total: 300, min: 10, max: 100, npcTotal: 150, npcMax: 50, npcMin: 10, chiefMin: 70 },
             iconPath: '',
             map: {},
-            const: {},
+            const: {
+                ...(options.staticEventHandlers ? { staticEventHandlers: options.staticEventHandlers } : {}),
+            },
             environment: { mapName: 'test', unitSet: 'test' },
         },
         map: {
@@ -94,6 +121,69 @@ const buildWorld = (options: {
 };
 
 describe('troop management world commands', () => {
+    it('applies scenario 911 immediate movement and plain action log after joining a troop', async () => {
+        const world = buildWorld({
+            generals: [buildGeneral(1, { cityId: 1 }), buildGeneral(2, { cityId: 2, troopId: 2 })],
+            cities: [buildCity(1, '장안'), buildCity(2, '낙양')],
+            troops: [{ id: 2, nationId: 1, name: '백마대' }],
+            staticEventHandlers: {
+                'sammo\\API\\Troop\\JoinTroop': ['event_부대탑승즉시이동'],
+            },
+        });
+        const handler = createTurnDaemonCommandHandler({ world });
+
+        await expect(handler.handle({ type: 'troopJoin', generalId: 1, troopId: 2 })).resolves.toEqual({
+            type: 'troopJoin',
+            ok: true,
+            generalId: 1,
+            troopId: 2,
+        });
+        expect(world.getGeneralById(1)).toMatchObject({ troopId: 2, cityId: 2 });
+        expect(world.peekDirtyState().logs).toEqual([
+            {
+                scope: LogScope.GENERAL,
+                category: LogCategory.ACTION,
+                format: LogFormat.PLAIN,
+                text: '부대 주둔지인 <G><b>낙양</b></>으로 즉시 이동합니다.',
+                generalId: 1,
+                meta: {},
+            },
+        ]);
+    });
+
+    it('keeps the ordinary join location when the scenario static handler is absent', async () => {
+        const world = buildWorld({
+            generals: [buildGeneral(1, { cityId: 1 }), buildGeneral(2, { cityId: 2, troopId: 2 })],
+            cities: [buildCity(1, '장안'), buildCity(2, '낙양')],
+            troops: [{ id: 2, nationId: 1, name: '백마대' }],
+        });
+        const handler = createTurnDaemonCommandHandler({ world });
+
+        await expect(handler.handle({ type: 'troopJoin', generalId: 1, troopId: 2 })).resolves.toMatchObject({
+            ok: true,
+        });
+        expect(world.getGeneralById(1)).toMatchObject({ troopId: 2, cityId: 1 });
+        expect(world.peekDirtyState().logs).toEqual([]);
+    });
+
+    it('does not emit the scenario movement log when the member is already with the troop leader', async () => {
+        const world = buildWorld({
+            generals: [buildGeneral(1, { cityId: 2 }), buildGeneral(2, { cityId: 2, troopId: 2 })],
+            cities: [buildCity(2, '낙양')],
+            troops: [{ id: 2, nationId: 1, name: '백마대' }],
+            staticEventHandlers: {
+                'sammo\\API\\Troop\\JoinTroop': ['event_부대탑승즉시이동'],
+            },
+        });
+        const handler = createTurnDaemonCommandHandler({ world });
+
+        await expect(handler.handle({ type: 'troopJoin', generalId: 1, troopId: 2 })).resolves.toMatchObject({
+            ok: true,
+        });
+        expect(world.getGeneralById(1)).toMatchObject({ troopId: 2, cityId: 2 });
+        expect(world.peekDirtyState().logs).toEqual([]);
+    });
+
     it('creates a troop and assigns the authenticated general atomically in dirty state', async () => {
         const world = buildWorld({});
         const handler = createTurnDaemonCommandHandler({ world });

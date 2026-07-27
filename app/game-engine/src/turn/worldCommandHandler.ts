@@ -89,6 +89,15 @@ const resolveMaxSecretPermission = (general: TurnGeneral): number => {
     return 4;
 };
 
+const LEGACY_TROOP_JOIN_EVENT = 'sammo\\API\\Troop\\JoinTroop';
+const IMMEDIATE_TROOP_JOIN_MOVE_HANDLER = 'event_부대탑승즉시이동';
+
+const hasStaticEventHandler = (world: InMemoryTurnWorld, eventType: string, handlerName: string): boolean => {
+    const handlersByEvent = asRecord(world.getScenarioConfig().const.staticEventHandlers);
+    const handlers = handlersByEvent[eventType];
+    return Array.isArray(handlers) && handlers.includes(handlerName);
+};
+
 const refreshActorKillturn = (world: InMemoryTurnWorld, actor: TurnGeneral): void => {
     const worldKillturn = readMetaNumber(asRecord(world.getState().meta), 'killturn', 0);
     const actorKillturn = readMetaNumber(asRecord(actor.meta), 'killturn', 0);
@@ -485,6 +494,32 @@ async function handleTroopJoin(
     world.updateGeneral(command.generalId, {
         troopId: command.troopId,
     });
+    if (hasStaticEventHandler(world, LEGACY_TROOP_JOIN_EVENT, IMMEDIATE_TROOP_JOIN_MOVE_HANDLER)) {
+        const leader = world.getGeneralById(troop.id);
+        if (
+            leader &&
+            leader.troopId === leader.id &&
+            leader.nationId === general.nationId &&
+            leader.cityId !== general.cityId
+        ) {
+            const city = world.getCityById(leader.cityId);
+            if (city) {
+                world.updateGeneral(command.generalId, {
+                    troopId: command.troopId,
+                    cityId: leader.cityId,
+                });
+                const josaRo = JosaUtil.pick(city.name, '로');
+                world.pushLog({
+                    scope: LogScope.GENERAL,
+                    category: LogCategory.ACTION,
+                    format: LogFormat.PLAIN,
+                    text: `부대 주둔지인 <G><b>${city.name}</b></>${josaRo} 즉시 이동합니다.`,
+                    generalId: general.id,
+                    meta: {},
+                });
+            }
+        }
+    }
     return {
         type: 'troopJoin',
         ok: true,
