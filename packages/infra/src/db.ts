@@ -7,6 +7,8 @@ export interface DatabaseClient {
     worldState: GamePrisma.WorldStateDelegate;
     general: GamePrisma.GeneralDelegate;
     generalAccessLog: GamePrisma.GeneralAccessLogDelegate;
+    trafficPeriod: GamePrisma.TrafficPeriodDelegate;
+    trafficPeriodGeneral: GamePrisma.TrafficPeriodGeneralDelegate;
     messageReadState: GamePrisma.MessageReadStateDelegate;
     message: GamePrisma.MessageDelegate;
     city: GamePrisma.CityDelegate;

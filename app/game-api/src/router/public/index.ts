@@ -173,26 +173,6 @@ const readFiniteMetaNumber = (meta: Record<string, unknown>, key: string): numbe
     return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 };
 
-const parseTrafficHistory = (value: unknown): TrafficHistoryItem[] => {
-    if (!Array.isArray(value)) {
-        return [];
-    }
-
-    const result: TrafficHistoryItem[] = [];
-    for (const item of value) {
-        const row = asRecord(item);
-        const year = readFiniteMetaNumber(row, 'year');
-        const month = readFiniteMetaNumber(row, 'month');
-        const refresh = readFiniteMetaNumber(row, 'refresh');
-        const online = readFiniteMetaNumber(row, 'online');
-        const date = typeof row.date === 'string' ? row.date : '';
-        if (year > 0 && month > 0 && date) {
-            result.push({ year, month, refresh, online, date });
-        }
-    }
-    return result;
-};
-
 const compareString = (left: string, right: string): number => {
     if (left === right) {
         return 0;
@@ -298,69 +278,120 @@ export const publicRouter = router({
         }
 
         const meta = asRecord(worldState.meta);
-        const rawOnlineSince = meta.lastTurnTime ?? meta.turntime;
-        const parsedOnlineSince =
-            typeof rawOnlineSince === 'string' || rawOnlineSince instanceof Date
-                ? new Date(rawOnlineSince)
-                : null;
-        const onlineSince =
-            parsedOnlineSince && Number.isFinite(parsedOnlineSince.getTime())
-                ? parsedOnlineSince
-                : new Date(Date.now() - worldState.tickSeconds * 1_000);
-        const [accessTotal, currentOnline, topAccess] = await Promise.all([
-            ctx.db.generalAccessLog.aggregate({
-                _sum: {
-                    refresh: true,
-                    refreshScoreTotal: true,
-                },
-            }),
-            ctx.db.generalAccessLog.count({
+        const [currentPeriod, previousPeriods, periodMaximums, accessTotal] = await Promise.all([
+            ctx.db.trafficPeriod.findUnique({
                 where: {
-                    lastRefresh: {
-                        gte: onlineSince,
+                    worldStateId_year_month: {
+                        worldStateId: worldState.id,
+                        year: worldState.currentYear,
+                        month: worldState.currentMonth,
+                    },
+                },
+                include: {
+                    _count: {
+                        select: { generals: true },
                     },
                 },
             }),
-            ctx.db.generalAccessLog.findMany({
-                orderBy: [{ refresh: 'desc' }, { generalId: 'asc' }],
+            ctx.db.trafficPeriod.findMany({
+                where: {
+                    worldStateId: worldState.id,
+                    NOT: {
+                        year: worldState.currentYear,
+                        month: worldState.currentMonth,
+                    },
+                },
+                orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
                 take: 5,
-                select: {
-                    generalId: true,
+                include: {
+                    _count: {
+                        select: { generals: true },
+                    },
+                },
+            }),
+            ctx.db.trafficPeriod.aggregate({
+                where: { worldStateId: worldState.id },
+                _max: {
                     refresh: true,
+                    online: true,
+                },
+            }),
+            ctx.db.generalAccessLog.aggregate({
+                _sum: {
                     refreshScoreTotal: true,
                 },
             }),
         ]);
 
+        const topAccess = currentPeriod
+            ? await ctx.db.trafficPeriodGeneral.findMany({
+                  where: { periodId: currentPeriod.id },
+                  orderBy: [{ refresh: 'desc' }, { generalId: 'asc' }],
+                  take: 5,
+                  select: {
+                      generalId: true,
+                      refresh: true,
+                  },
+              })
+            : [];
         const generalIds = topAccess.map((entry) => entry.generalId);
-        const generalRows =
+        const [generalRows, generalAccessRows] =
             generalIds.length > 0
-                ? await ctx.db.general.findMany({
-                      where: { id: { in: generalIds } },
-                      select: { id: true, name: true },
-                  })
-                : [];
+                ? await Promise.all([
+                      ctx.db.general.findMany({
+                          where: { id: { in: generalIds } },
+                          select: { id: true, name: true },
+                      }),
+                      ctx.db.generalAccessLog.findMany({
+                          where: { generalId: { in: generalIds } },
+                          select: { generalId: true, refreshScoreTotal: true },
+                      }),
+                  ])
+                : [[], []];
         const generalName = new Map(generalRows.map((general) => [general.id, general.name]));
-        const totalRefresh = accessTotal._sum.refresh ?? 0;
+        const accessScore = new Map(generalAccessRows.map((entry) => [entry.generalId, entry.refreshScoreTotal]));
+        const totalRefresh = currentPeriod?.refresh ?? 0;
         const totalRefreshScore = accessTotal._sum.refreshScoreTotal ?? 0;
-        const currentRefresh = Math.max(readFiniteMetaNumber(meta, 'refresh'), totalRefresh);
-        const history = parseTrafficHistory(meta.recentTraffic);
-        history.push({
-            year: worldState.currentYear,
-            month: worldState.currentMonth,
-            refresh: currentRefresh,
-            online: currentOnline,
-            date: new Date().toISOString(),
-        });
+        const currentOnline = currentPeriod ? Math.max(currentPeriod.online, currentPeriod._count.generals) : 0;
+        const history: TrafficHistoryItem[] = previousPeriods.reverse().map((period) => ({
+            year: period.year,
+            month: period.month,
+            refresh: period.refresh,
+            online: Math.max(period.online, period._count.generals),
+            date: period.lastRefresh.toISOString(),
+        }));
+        history.push(
+            currentPeriod
+                ? {
+                      year: currentPeriod.year,
+                      month: currentPeriod.month,
+                      refresh: currentPeriod.refresh,
+                      online: currentOnline,
+                      date: currentPeriod.lastRefresh.toISOString(),
+                  }
+                : {
+                      year: worldState.currentYear,
+                      month: worldState.currentMonth,
+                      refresh: 0,
+                      online: 0,
+                      date: new Date().toISOString(),
+                  }
+        );
 
         return {
             history,
             maxRefresh: Math.max(
                 1,
                 readFiniteMetaNumber(meta, 'maxrefresh'),
+                periodMaximums._max.refresh ?? 0,
                 ...history.map((entry) => entry.refresh)
             ),
-            maxOnline: Math.max(1, readFiniteMetaNumber(meta, 'maxonline'), ...history.map((entry) => entry.online)),
+            maxOnline: Math.max(
+                1,
+                readFiniteMetaNumber(meta, 'maxonline'),
+                periodMaximums._max.online ?? 0,
+                ...history.map((entry) => entry.online)
+            ),
             suspects: [
                 {
                     generalId: null,
@@ -372,7 +403,7 @@ export const publicRouter = router({
                     generalId: entry.generalId,
                     name: generalName.get(entry.generalId) ?? `장수 ${entry.generalId}`,
                     refresh: entry.refresh,
-                    refreshScoreTotal: entry.refreshScoreTotal,
+                    refreshScoreTotal: accessScore.get(entry.generalId) ?? 0,
                 })),
             ],
         };

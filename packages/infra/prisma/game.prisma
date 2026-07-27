@@ -97,6 +97,8 @@ model WorldState {
   meta         Json     @default(dbgenerated("'{}'::jsonb"))
   updatedAt    DateTime @updatedAt @map("updated_at")
 
+  trafficPeriods TrafficPeriod[]
+
   @@map("world_state")
 }
 
@@ -202,6 +204,38 @@ model GeneralAccessLog {
 
   @@index([userId])
   @@map("general_access_log")
+}
+
+model TrafficPeriod {
+  id           Int      @id @default(autoincrement())
+  worldStateId Int      @map("world_state_id")
+  year         Int
+  month        Int
+  startedAt    DateTime @map("started_at")
+  lastRefresh  DateTime @map("last_refresh")
+  refresh      Int      @default(0)
+  online       Int      @default(0)
+
+  worldState WorldState             @relation(fields: [worldStateId], references: [id], onDelete: Cascade)
+  generals   TrafficPeriodGeneral[]
+
+  @@unique([worldStateId, year, month])
+  @@index([worldStateId, startedAt])
+  @@map("traffic_period")
+}
+
+model TrafficPeriodGeneral {
+  periodId    Int      @map("period_id")
+  generalId   Int      @map("general_id")
+  userId      String?  @map("user_id")
+  refresh     Int      @default(0)
+  lastRefresh DateTime @map("last_refresh")
+
+  period TrafficPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
+
+  @@id([periodId, generalId])
+  @@index([periodId, refresh, generalId])
+  @@map("traffic_period_general")
 }
 
 model MessageReadState {

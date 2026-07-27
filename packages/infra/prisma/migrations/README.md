@@ -33,6 +33,8 @@ pnpm --filter @sammo-ts/infra prisma:migrate:status:game
 - `nation.chief_general_id` 존재
 - `city.trade` nullable, `city.trust` REAL
 - `auction_bid.meta` JSONB, NOT NULL
+- `traffic_period`, `traffic_period_general` 존재 및
+  `(world_state_id, year, month)`/`(period_id, general_id)` unique key
 
 검증 뒤에는 이름을 확인한 임시 database와 role만 제거한다. 공유 개발
 database나 Compose volume을 삭제하지 않는다.

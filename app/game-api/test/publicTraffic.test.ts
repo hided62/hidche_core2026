@@ -44,17 +44,50 @@ const buildContext = (): GameApiContext => {
         generalAccessLog: {
             aggregate: async () => ({
                 _sum: {
-                    refresh: 12,
                     refreshScoreTotal: 21,
                 },
             }),
-            count: async (args: { where: { lastRefresh: { gte: Date } } }) => {
-                expect(args.where.lastRefresh.gte).toEqual(new Date('2026-07-26T03:00:00.000Z'));
-                return 2;
-            },
             findMany: async () => [
-                { generalId: 7, refresh: 9, refreshScoreTotal: 15 },
-                { generalId: 8, refresh: 3, refreshScoreTotal: 6 },
+                { generalId: 7, refreshScoreTotal: 15 },
+                { generalId: 8, refreshScoreTotal: 6 },
+            ],
+        },
+        trafficPeriod: {
+            findUnique: async () => ({
+                id: 12,
+                worldStateId: 1,
+                year: 185,
+                month: 3,
+                startedAt: new Date('2026-07-26T03:00:00.000Z'),
+                lastRefresh: new Date('2026-07-26T03:05:00.000Z'),
+                refresh: 12,
+                online: 0,
+                _count: { generals: 2 },
+            }),
+            findMany: async () => [
+                {
+                    id: 11,
+                    worldStateId: 1,
+                    year: 185,
+                    month: 2,
+                    startedAt: new Date('2026-07-26T02:50:00.000Z'),
+                    lastRefresh: new Date('2026-07-26T02:50:00.000Z'),
+                    refresh: 30,
+                    online: 5,
+                    _count: { generals: 0 },
+                },
+            ],
+            aggregate: async () => ({
+                _max: {
+                    refresh: 30,
+                    online: 5,
+                },
+            }),
+        },
+        trafficPeriodGeneral: {
+            findMany: async () => [
+                { generalId: 7, refresh: 9 },
+                { generalId: 8, refresh: 3 },
             ],
         },
         general: {
@@ -95,13 +128,14 @@ describe('public.getTraffic', () => {
             month: 2,
             refresh: 30,
             online: 5,
-            date: '2026-07-26 02:50:00',
+            date: '2026-07-26T02:50:00.000Z',
         });
         expect(result.history[1]).toMatchObject({
             year: 185,
             month: 3,
             refresh: 12,
             online: 2,
+            date: '2026-07-26T03:05:00.000Z',
         });
         expect(result.maxRefresh).toBe(30);
         expect(result.maxOnline).toBe(5);

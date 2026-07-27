@@ -76,8 +76,7 @@ export const resolveAccessWindows = (
     now: Date,
     tickSeconds: number,
     worldMeta: unknown
-): { dayStartedAt: Date; scoreStartedAt: Date } => {
-    const dayStartedAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+): { periodStartedAt: Date; scoreStartedAt: Date } => {
     const meta = asRecord(worldMeta);
     const tickStartedAt = readDate(meta.lastTurnTime) ?? readDate(meta.turntime);
     const fallbackTickMs = Math.max(1, Math.floor(tickSeconds)) * 1_000;
@@ -85,60 +84,140 @@ export const resolveAccessWindows = (
         tickStartedAt && tickStartedAt.getTime() <= now.getTime()
             ? tickStartedAt
             : new Date(now.getTime() - fallbackTickMs);
-    return { dayStartedAt, scoreStartedAt };
+    return { periodStartedAt: scoreStartedAt, scoreStartedAt };
 };
 
 export const upsertGeneralAccess = async (
-    db: Pick<GameApiContext['db'], '$executeRaw'>,
+    db: Pick<GameApiContext['db'], '$transaction'>,
     input: {
+        worldStateId: number;
+        year: number;
+        month: number;
         generalId: number;
         userId: string;
         weight: number;
         now: Date;
-        dayStartedAt: Date;
+        periodStartedAt: Date;
         scoreStartedAt: Date;
     }
 ): Promise<void> => {
-    await db.$executeRaw(
-        GamePrisma.sql`
-            INSERT INTO general_access_log (
-                general_id,
-                user_id,
-                last_refresh,
-                refresh,
-                refresh_total,
-                refresh_score,
-                refresh_score_total
-            )
-            VALUES (
-                ${input.generalId},
-                ${input.userId},
-                ${input.now},
-                ${input.weight},
-                ${input.weight},
-                ${input.weight},
-                ${input.weight}
-            )
-            ON CONFLICT (general_id) DO UPDATE SET
-                user_id = EXCLUDED.user_id,
-                last_refresh = EXCLUDED.last_refresh,
-                refresh = CASE
-                    WHEN general_access_log.last_refresh IS NULL
-                        OR general_access_log.last_refresh < ${input.dayStartedAt}
-                    THEN EXCLUDED.refresh
-                    ELSE general_access_log.refresh + EXCLUDED.refresh
-                END,
-                refresh_total = general_access_log.refresh_total + EXCLUDED.refresh_total,
-                refresh_score = CASE
-                    WHEN general_access_log.last_refresh IS NULL
-                        OR general_access_log.last_refresh < ${input.scoreStartedAt}
-                    THEN EXCLUDED.refresh_score
-                    ELSE general_access_log.refresh_score + EXCLUDED.refresh_score
-                END,
-                refresh_score_total =
-                    general_access_log.refresh_score_total + EXCLUDED.refresh_score_total
-        `
-    );
+    if (!db.$transaction) {
+        throw new Error('Traffic access persistence requires transaction support.');
+    }
+    await db.$transaction(async (transaction) => {
+        const periodRows = await transaction.$queryRaw<Array<{ id: number }>>(
+            GamePrisma.sql`
+                INSERT INTO traffic_period (
+                    world_state_id,
+                    year,
+                    month,
+                    started_at,
+                    last_refresh,
+                    refresh
+                )
+                VALUES (
+                    ${input.worldStateId},
+                    ${input.year},
+                    ${input.month},
+                    ${input.periodStartedAt},
+                    ${input.now},
+                    ${input.weight}
+                )
+                ON CONFLICT (world_state_id, year, month) DO UPDATE SET
+                    started_at = LEAST(traffic_period.started_at, EXCLUDED.started_at),
+                    last_refresh = GREATEST(traffic_period.last_refresh, EXCLUDED.last_refresh),
+                    refresh = traffic_period.refresh + EXCLUDED.refresh
+                RETURNING id
+            `
+        );
+        const periodId = periodRows[0]?.id;
+        if (periodId === undefined) {
+            throw new Error('Failed to resolve the traffic period.');
+        }
+
+        await transaction.$executeRaw(
+            GamePrisma.sql`
+                WITH inserted_general AS (
+                    INSERT INTO traffic_period_general (
+                        period_id,
+                        general_id,
+                        user_id,
+                        refresh,
+                        last_refresh
+                    )
+                    VALUES (
+                        ${periodId},
+                        ${input.generalId},
+                        ${input.userId},
+                        ${input.weight},
+                        ${input.now}
+                    )
+                    ON CONFLICT (period_id, general_id) DO NOTHING
+                    RETURNING period_id
+                ),
+                updated_general AS (
+                    UPDATE traffic_period_general
+                    SET
+                        user_id = ${input.userId},
+                        refresh = traffic_period_general.refresh + ${input.weight},
+                        last_refresh = GREATEST(
+                            traffic_period_general.last_refresh,
+                            ${input.now}
+                        )
+                    WHERE period_id = ${periodId}
+                      AND general_id = ${input.generalId}
+                      AND NOT EXISTS (SELECT 1 FROM inserted_general)
+                    RETURNING period_id
+                )
+                UPDATE traffic_period
+                SET online = traffic_period.online + (
+                    SELECT COUNT(*)::INTEGER FROM inserted_general
+                )
+                WHERE id = ${periodId}
+            `
+        );
+
+        await transaction.$executeRaw(
+            GamePrisma.sql`
+                INSERT INTO general_access_log (
+                    general_id,
+                    user_id,
+                    last_refresh,
+                    refresh,
+                    refresh_total,
+                    refresh_score,
+                    refresh_score_total
+                )
+                VALUES (
+                    ${input.generalId},
+                    ${input.userId},
+                    ${input.now},
+                    ${input.weight},
+                    ${input.weight},
+                    ${input.weight},
+                    ${input.weight}
+                )
+                ON CONFLICT (general_id) DO UPDATE SET
+                    user_id = EXCLUDED.user_id,
+                    last_refresh = EXCLUDED.last_refresh,
+                    refresh = CASE
+                        WHEN general_access_log.last_refresh IS NULL
+                            OR general_access_log.last_refresh < ${input.periodStartedAt}
+                        THEN EXCLUDED.refresh
+                        ELSE general_access_log.refresh + EXCLUDED.refresh
+                    END,
+                    refresh_total = general_access_log.refresh_total + EXCLUDED.refresh_total,
+                    refresh_score = CASE
+                        WHEN general_access_log.last_refresh IS NULL
+                            OR general_access_log.last_refresh < ${input.scoreStartedAt}
+                        THEN EXCLUDED.refresh_score
+                        ELSE general_access_log.refresh_score + EXCLUDED.refresh_score
+                    END,
+                    refresh_score_total =
+                        general_access_log.refresh_score_total + EXCLUDED.refresh_score_total
+            `
+        );
+    });
 };
 
 export const recordGeneralAccess = async (
@@ -159,7 +238,13 @@ export const recordGeneralAccess = async (
         }),
         ctx.db.worldState.findFirst({
             orderBy: { id: 'asc' },
-            select: { tickSeconds: true, meta: true },
+            select: {
+                id: true,
+                currentYear: true,
+                currentMonth: true,
+                tickSeconds: true,
+                meta: true,
+            },
         }),
     ]);
     if (!general || !worldState) {
@@ -174,14 +259,17 @@ export const recordGeneralAccess = async (
     }
 
     const weight = accessPageWeights[page];
-    const { dayStartedAt, scoreStartedAt } = resolveAccessWindows(now, worldState.tickSeconds, meta);
+    const { periodStartedAt, scoreStartedAt } = resolveAccessWindows(now, worldState.tickSeconds, meta);
 
     await upsertGeneralAccess(ctx.db, {
+        worldStateId: worldState.id,
+        year: worldState.currentYear,
+        month: worldState.currentMonth,
         generalId: general.id,
         userId: user.id,
         weight,
         now,
-        dayStartedAt,
+        periodStartedAt,
         scoreStartedAt,
     });
     return true;

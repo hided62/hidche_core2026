@@ -21,8 +21,17 @@ const auth = (roles = ['user']): GameSessionTokenPayload => ({
 
 const buildDb = (meta: Record<string, unknown> = {}) => {
     const executeRaw = vi.fn(async (_query: unknown) => 1);
+    const queryRaw = vi.fn(async (_query: unknown) => [{ id: 41 }]);
+    const transaction = vi.fn(
+        async (
+            callback: (client: { $executeRaw: typeof executeRaw; $queryRaw: typeof queryRaw }) => Promise<unknown>
+        ) => callback({ $executeRaw: executeRaw, $queryRaw: queryRaw })
+    );
     const findGeneral = vi.fn(async () => ({ id: 7, userId: 'user-7' }));
     const findWorld = vi.fn(async () => ({
+        id: 3,
+        currentYear: 185,
+        currentMonth: 4,
         tickSeconds: 600,
         meta: {
             opentime: '2026-07-25T00:00:00.000Z',
@@ -31,11 +40,11 @@ const buildDb = (meta: Record<string, unknown> = {}) => {
         },
     }));
     const db = {
-        $executeRaw: executeRaw,
+        $transaction: transaction,
         general: { findFirst: findGeneral },
         worldState: { findFirst: findWorld },
     } as unknown as DatabaseClient;
-    return { db, executeRaw, findGeneral, findWorld };
+    return { db, executeRaw, queryRaw, transaction, findGeneral, findWorld };
 };
 
 describe('general access tracking', () => {
@@ -44,19 +53,19 @@ describe('general access tracking', () => {
         expect(accessPageWeights['general-list']).toBe(2);
     });
 
-    it('resolves the UTC day and latest processed turn windows', () => {
+    it('uses the latest processed game turn as the traffic period and score window', () => {
         expect(
             resolveAccessWindows(new Date('2026-07-26T03:14:15.000Z'), 600, {
                 lastTurnTime: '2026-07-26T03:10:00.000Z',
             })
         ).toEqual({
-            dayStartedAt: new Date('2026-07-26T00:00:00.000Z'),
+            periodStartedAt: new Date('2026-07-26T03:10:00.000Z'),
             scoreStartedAt: new Date('2026-07-26T03:10:00.000Z'),
         });
     });
 
     it('uses the session user actor and the legacy page weight in one atomic upsert', async () => {
-        const { db, executeRaw, findGeneral } = buildDb();
+        const { db, executeRaw, queryRaw, transaction, findGeneral } = buildDb();
         const now = new Date('2026-07-26T03:05:00.000Z');
 
         await expect(recordGeneralAccess({ auth: auth(), db }, 'npc-list', now)).resolves.toBe(true);
@@ -65,22 +74,28 @@ describe('general access tracking', () => {
             orderBy: { id: 'asc' },
             select: { id: true, userId: true },
         });
-        expect(executeRaw).toHaveBeenCalledTimes(1);
+        expect(transaction).toHaveBeenCalledTimes(1);
+        expect(queryRaw).toHaveBeenCalledTimes(1);
+        expect(executeRaw).toHaveBeenCalledTimes(2);
 
-        const statement = executeRaw.mock.calls[0]![0] as { sql: string; values: unknown[] };
-        expect(statement.sql).toContain('ON CONFLICT (general_id) DO UPDATE');
-        expect(statement.sql).toContain('general_access_log.refresh + EXCLUDED.refresh');
-        expect(statement.values).toEqual([
-            7,
-            'user-7',
-            now,
-            2,
-            2,
-            2,
-            2,
-            new Date('2026-07-26T00:00:00.000Z'),
-            new Date('2026-07-26T03:00:00.000Z'),
-        ]);
+        const periodStatement = queryRaw.mock.calls[0]![0] as { sql: string; values: unknown[] };
+        expect(periodStatement.sql).toContain('INSERT INTO traffic_period');
+        expect(periodStatement.sql).toContain('ON CONFLICT (world_state_id, year, month) DO UPDATE');
+        expect(periodStatement.values).toEqual([3, 185, 4, new Date('2026-07-26T03:00:00.000Z'), now, 2]);
+
+        const memberStatement = executeRaw.mock.calls[0]![0] as { sql: string; values: unknown[] };
+        expect(memberStatement.sql).toContain('INSERT INTO traffic_period_general');
+        expect(memberStatement.sql).toContain('ON CONFLICT (period_id, general_id) DO NOTHING');
+        expect(memberStatement.sql).toContain('SET online = traffic_period.online');
+
+        const accessStatement = executeRaw.mock.calls[1]![0] as { sql: string; values: unknown[] };
+        expect(accessStatement.sql).toContain('ON CONFLICT (general_id) DO UPDATE');
+        expect(accessStatement.sql).toContain('general_access_log.refresh + EXCLUDED.refresh');
+        expect(accessStatement.values).toContain(7);
+        expect(accessStatement.values).toContain('user-7');
+        expect(accessStatement.values).toContain(2);
+        expect(accessStatement.values).toContain(now);
+        expect(accessStatement.values).toContainEqual(new Date('2026-07-26T03:00:00.000Z'));
     });
 
     it('does not write for anonymous/admin users, a future opening, or a finished world', async () => {
@@ -96,10 +111,10 @@ describe('general access tracking', () => {
         await expect(
             recordGeneralAccess({ auth: auth(), db: future.db }, 'traffic', new Date('2026-07-26T03:05:00.000Z'))
         ).resolves.toBe(false);
-        expect(future.executeRaw).not.toHaveBeenCalled();
+        expect(future.transaction).not.toHaveBeenCalled();
 
         const united = buildDb({ isUnited: 2 });
         await expect(recordGeneralAccess({ auth: auth(), db: united.db }, 'traffic')).resolves.toBe(false);
-        expect(united.executeRaw).not.toHaveBeenCalled();
+        expect(united.transaction).not.toHaveBeenCalled();
     });
 });
