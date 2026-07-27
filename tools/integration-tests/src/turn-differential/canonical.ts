@@ -145,6 +145,7 @@ export const projectCoreDatabaseSnapshot = (rows: {
             atmos: row.atmos,
             age: row.age,
             npcState: row.npcState,
+            hasOwner: typeof row.userId === 'string' && row.userId.length > 0,
             turnTime: row.turnTime instanceof Date ? serializeDate(row.turnTime) : row.turnTime,
             recentWarTime: row.recentWarTime instanceof Date ? serializeDate(row.recentWarTime) : row.recentWarTime,
             lastTurn: row.lastTurn,

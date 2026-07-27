@@ -249,6 +249,7 @@ const buildGeneral = (row: Record<string, unknown>, fallbackTurnTime: Date): Tur
         atmos: readNumber(row, 'atmos'),
         age: readNumber(row, 'age', 30),
         npcState: readNumber(row, 'npcState'),
+        userId: row.hasOwner === true ? 'turn-differential-owner' : null,
         penalty: row.penalty,
         triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
         meta: {
@@ -585,6 +586,7 @@ const projectWorld = (
             atmos: toDatabaseInt(general.atmos),
             age: general.age,
             npcState: general.npcState,
+            hasOwner: Boolean(general.userId),
             turnTime: general.turnTime.toISOString(),
             recentWarTime: general.recentWarTime?.toISOString() ?? null,
             lastTurn: general.lastTurn ?? null,

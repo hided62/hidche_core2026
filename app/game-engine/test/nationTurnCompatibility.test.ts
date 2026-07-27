@@ -7,8 +7,9 @@ import { createTurnTestHarness } from './helpers/turnTestHarness.js';
 
 const mockDate = new Date('0189-01-01T00:00:00Z');
 
-const createChief = (): TurnGeneral => ({
+const createChief = (userId: string | null): TurnGeneral => ({
     id: 1,
+    userId,
     name: '군주',
     nationId: 1,
     cityId: 1,
@@ -38,131 +39,137 @@ const createChief = (): TurnGeneral => ({
 });
 
 describe('레거시 사령부 턴 실행 호환성', () => {
-    it('화시병 연구는 선행 11턴을 누적한 뒤 12번째 턴에만 완료한다', async () => {
-        const cities = buildLargeTestCities();
-        for (const city of cities) {
-            city.nationId = city.id === 1 ? 1 : city.id === 2 ? 2 : 0;
-        }
-        const snapshot: TurnWorldSnapshot = {
-            generals: [createChief()],
-            cities,
-            nations: [
-                {
-                    id: 1,
-                    name: '테스트국',
-                    color: '#aa0000',
-                    capitalCityId: 1,
-                    chiefGeneralId: 1,
-                    gold: 1_000_000,
-                    rice: 1_000_000,
-                    power: 0,
-                    level: 1,
-                    typeCode: 'large_test_map_def',
-                    meta: { can_화시병사용: 0 },
+    it.each([
+        { ownerLabel: '소유 장수', userId: 'test-user', expectedActiveAction: 1 },
+        { ownerLabel: '무소유 장수', userId: null, expectedActiveAction: undefined },
+    ])(
+        '화시병 연구는 $ownerLabel에서 12번째 턴에 완료하고 소유자에게만 능동 행동을 준다',
+        async ({ userId, expectedActiveAction }) => {
+            const cities = buildLargeTestCities();
+            for (const city of cities) {
+                city.nationId = city.id === 1 ? 1 : city.id === 2 ? 2 : 0;
+            }
+            const snapshot: TurnWorldSnapshot = {
+                generals: [createChief(userId)],
+                cities,
+                nations: [
+                    {
+                        id: 1,
+                        name: '테스트국',
+                        color: '#aa0000',
+                        capitalCityId: 1,
+                        chiefGeneralId: 1,
+                        gold: 1_000_000,
+                        rice: 1_000_000,
+                        power: 0,
+                        level: 1,
+                        typeCode: 'large_test_map_def',
+                        meta: { can_화시병사용: 0 },
+                    },
+                    {
+                        id: 2,
+                        name: '상대국',
+                        color: '#0000aa',
+                        capitalCityId: 2,
+                        chiefGeneralId: null,
+                        gold: 1_000_000,
+                        rice: 1_000_000,
+                        power: 0,
+                        level: 1,
+                        typeCode: 'large_test_map_def',
+                        meta: {},
+                    },
+                ],
+                troops: [],
+                diplomacy: [
+                    { fromNationId: 1, toNationId: 2, state: 0, term: 1200, dead: 0, meta: {} },
+                    { fromNationId: 2, toNationId: 1, state: 0, term: 1200, dead: 0, meta: {} },
+                ],
+                events: [],
+                initialEvents: [],
+                map: LARGE_TEST_MAP,
+                scenarioConfig: {
+                    stat: { total: 300, min: 10, max: 100, npcTotal: 150, npcMax: 50, npcMin: 10, chiefMin: 70 },
+                    iconPath: '',
+                    map: {},
+                    const: {
+                        openingPartYear: 3,
+                        develCost: 10,
+                        baseGold: 1000,
+                        baseRice: 1000,
+                        maxResourceActionAmount: 10000,
+                        maxTechLevel: 12000,
+                    },
+                    environment: { mapName: 'large_test_map', unitSet: 'default' },
                 },
-                {
-                    id: 2,
-                    name: '상대국',
-                    color: '#0000aa',
-                    capitalCityId: 2,
-                    chiefGeneralId: null,
-                    gold: 1_000_000,
-                    rice: 1_000_000,
-                    power: 0,
-                    level: 1,
-                    typeCode: 'large_test_map_def',
-                    meta: {},
+                scenarioMeta: { startYear: 189 } as never,
+                unitSet: {} as never,
+            };
+            const state: TurnWorldState = {
+                id: 1,
+                currentYear: 189,
+                currentMonth: 1,
+                tickSeconds: 600,
+                lastTurnTime: mockDate,
+                meta: { seed: 1 },
+            };
+            const schedule: TurnSchedule = { entries: [{ startMinute: 0, tickMinutes: 10 }] };
+            const resolvedActions: Array<{ requestedAction: string; actionKey: string; blockedReason?: string }> = [];
+            const { world, reservedTurnStore, runOneTick } = await createTurnTestHarness({
+                snapshot,
+                state,
+                schedule,
+                map: LARGE_TEST_MAP,
+                reservedTurnStoreOptions: { maxGeneralTurns: 12, maxNationTurns: 12 },
+                onActionResolved: (event) => {
+                    if (event.kind === 'nation') {
+                        resolvedActions.push(event);
+                    }
                 },
-            ],
-            troops: [],
-            diplomacy: [
-                { fromNationId: 1, toNationId: 2, state: 0, term: 1200, dead: 0, meta: {} },
-                { fromNationId: 2, toNationId: 1, state: 0, term: 1200, dead: 0, meta: {} },
-            ],
-            events: [],
-            initialEvents: [],
-            map: LARGE_TEST_MAP,
-            scenarioConfig: {
-                stat: { total: 300, min: 10, max: 100, npcTotal: 150, npcMax: 50, npcMin: 10, chiefMin: 70 },
-                iconPath: '',
-                map: {},
-                const: {
-                    openingPartYear: 3,
-                    develCost: 10,
-                    baseGold: 1000,
-                    baseRice: 1000,
-                    maxResourceActionAmount: 10000,
-                    maxTechLevel: 12000,
-                },
-                environment: { mapName: 'large_test_map', unitSet: 'default' },
-            },
-            scenarioMeta: { startYear: 189 } as never,
-            unitSet: {} as never,
-        };
-        const state: TurnWorldState = {
-            id: 1,
-            currentYear: 189,
-            currentMonth: 1,
-            tickSeconds: 600,
-            lastTurnTime: mockDate,
-            meta: { seed: 1 },
-        };
-        const schedule: TurnSchedule = { entries: [{ startMinute: 0, tickMinutes: 10 }] };
-        const resolvedActions: Array<{ requestedAction: string; actionKey: string; blockedReason?: string }> = [];
-        const { world, reservedTurnStore, runOneTick } = await createTurnTestHarness({
-            snapshot,
-            state,
-            schedule,
-            map: LARGE_TEST_MAP,
-            reservedTurnStoreOptions: { maxGeneralTurns: 12, maxNationTurns: 12 },
-            onActionResolved: (event) => {
-                if (event.kind === 'nation') {
-                    resolvedActions.push(event);
-                }
-            },
-        });
-        const turns = reservedTurnStore.getNationTurns(1, 12);
-        turns.fill({ action: 'event_화시병연구', args: {} });
+            });
+            const turns = reservedTurnStore.getNationTurns(1, 12);
+            turns.fill({ action: 'event_화시병연구', args: {} });
 
-        for (let index = 1; index <= 11; index += 1) {
+            for (let index = 1; index <= 11; index += 1) {
+                await runOneTick();
+                const nation = world.getNationById(1)!;
+                expect(nation.meta.can_화시병사용 ?? 0).toBe(0);
+                expect(nation.meta.turn_last_12).toMatchObject({
+                    command: '화시병 연구',
+                    term: index,
+                });
+            }
+
             await runOneTick();
             const nation = world.getNationById(1)!;
-            expect(nation.meta.can_화시병사용 ?? 0).toBe(0);
+            expect(nation.meta.can_화시병사용).toBe(1);
             expect(nation.meta.turn_last_12).toMatchObject({
                 command: '화시병 연구',
-                term: index,
+                term: 0,
             });
+            expect(world.getGeneralById(1)!.meta.inherit_active_action).toBe(expectedActiveAction);
+            expect(world.getGeneralById(1)!.experience).toBe(60);
+            expect(world.getGeneralById(1)!.dedication).toBe(60);
+
+            reservedTurnStore.getNationTurns(1, 12)[0] = {
+                action: 'che_종전제의',
+                args: { destNationId: 2 },
+            };
+            await runOneTick();
+            expect(resolvedActions.at(-1)?.blockedReason).toBeUndefined();
+            expect(resolvedActions.at(-1)).toMatchObject({
+                requestedAction: 'che_종전제의',
+                actionKey: 'che_종전제의',
+            });
+            expect(world.peekDirtyState().messages).toContainEqual(
+                expect.objectContaining({
+                    msgType: 'diplomacy',
+                    dest: expect.objectContaining({ nationId: 2 }),
+                    option: { action: 'stopWar', deletable: false },
+                })
+            );
         }
-
-        await runOneTick();
-        const nation = world.getNationById(1)!;
-        expect(nation.meta.can_화시병사용).toBe(1);
-        expect(nation.meta.turn_last_12).toMatchObject({
-            command: '화시병 연구',
-            term: 0,
-        });
-        expect(world.getGeneralById(1)!.meta.inherit_active_action).toBe(1);
-        expect(world.getGeneralById(1)!.experience).toBe(60);
-        expect(world.getGeneralById(1)!.dedication).toBe(60);
-
-        reservedTurnStore.getNationTurns(1, 12)[0] = {
-            action: 'che_종전제의',
-            args: { destNationId: 2 },
-        };
-        await runOneTick();
-        expect(resolvedActions.at(-1)?.blockedReason).toBeUndefined();
-        expect(resolvedActions.at(-1)).toMatchObject({
-            requestedAction: 'che_종전제의',
-            actionKey: 'che_종전제의',
-        });
-        expect(world.peekDirtyState().messages).toContainEqual(
-            expect.objectContaining({
-                msgType: 'diplomacy',
-                dest: expect.objectContaining({ nationId: 2 }),
-                option: { action: 'stopWar', deletable: false },
-            })
-        );
-    });
+    );
 
     it('MONTH action 전에 전략·외교 제한, 임시 세율, 첩보 기간을 갱신한다', async () => {
         const updates: Array<{ id: number; patch: Record<string, unknown> }> = [];

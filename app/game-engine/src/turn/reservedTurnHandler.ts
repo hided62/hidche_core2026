@@ -1123,7 +1123,9 @@ export const createReservedTurnHandler = async (options: {
                     kind === 'nation' &&
                     !usedFallback &&
                     resolution.completed &&
-                    definition.countsAsInheritanceActiveAction
+                    definition.countsAsInheritanceActiveAction &&
+                    Boolean(currentGeneral.userId) &&
+                    currentGeneral.npcState < 2
                 ) {
                     const meta = { ...currentGeneral.meta };
                     const active = typeof meta.inherit_active_action === 'number' ? meta.inherit_active_action : 0;
@@ -1135,7 +1137,9 @@ export const createReservedTurnHandler = async (options: {
                     kind === 'general' &&
                     !usedFallback &&
                     resolution.completed &&
-                    executionDefinition.getInheritanceActiveActionAmount
+                    executionDefinition.getInheritanceActiveActionAmount &&
+                    Boolean(currentGeneral.userId) &&
+                    currentGeneral.npcState < 2
                 ) {
                     const amount = executionDefinition.getInheritanceActiveActionAmount(actionContext, actionArgs);
                     if (Number.isFinite(amount) && amount !== 0) {
