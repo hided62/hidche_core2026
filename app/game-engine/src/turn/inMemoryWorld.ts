@@ -119,6 +119,52 @@ export interface TurnWorldChanges {
     pendingNationBettingFinishes: PendingNationBettingFinish[];
 }
 
+export interface InMemoryTurnWorldStateSnapshot {
+    schedule: TurnSchedule;
+    state: TurnWorldState;
+    checkpoint?: TurnCheckpoint;
+    generals: Array<[number, TurnGeneral]>;
+    cities: Array<[number, City]>;
+    nations: Array<[number, Nation]>;
+    troops: Array<[number, Troop]>;
+    diplomacy: Array<[string, TurnDiplomacy]>;
+    events: Array<[number, TurnEvent]>;
+    dirtyGeneralIds: number[];
+    dirtyCityIds: number[];
+    dirtyNationIds: number[];
+    dirtyTroopIds: number[];
+    dirtyDiplomacyKeys: string[];
+    createdGeneralIds: number[];
+    createdNationIds: number[];
+    createdTroopIds: number[];
+    createdDiplomacyKeys: string[];
+    createdEventIds: number[];
+    deletedTroopIds: number[];
+    deletedGeneralIds: number[];
+    deletedNationIds: number[];
+    deletedEventIds: number[];
+    deletedNationSnapshots: Array<{ nation: Nation; generalIds: number[]; removedAt: Date }>;
+    logs: LogEntryDraft[];
+    messages: MessageDraft[];
+    lifecycleEvents: GeneralLifecycleEvent[];
+    pendingNeutralAuctions: PendingNeutralAuction[];
+    inheritancePointAdjustments: Array<{ userId: string; key: string; amount: number }>;
+    pendingNationBettingOpens: PendingNationBettingOpen[];
+    pendingNationBettingFinishes: PendingNationBettingFinish[];
+}
+
+export interface InMemoryTurnWorldInspection {
+    state: TurnWorldState;
+    checkpoint?: TurnCheckpoint;
+    generals: TurnGeneral[];
+    cities: City[];
+    nations: Nation[];
+    troops: Troop[];
+    diplomacy: TurnDiplomacy[];
+    events: TurnEvent[];
+    changes: TurnWorldChanges;
+}
+
 const compareTurnOrder = (left: TurnGeneral, right: TurnGeneral): number => {
     const timeDiff = left.turnTime.getTime() - right.turnTime.getTime();
     if (timeDiff !== 0) {
@@ -333,6 +379,91 @@ export class InMemoryTurnWorld {
             this.events.set(event.id, { ...event, meta: { ...event.meta } });
         }
         this.ensureDiplomacyMatrix();
+    }
+
+    captureState(): InMemoryTurnWorldStateSnapshot {
+        return structuredClone({
+            schedule: this.schedule,
+            state: this.state,
+            checkpoint: this.checkpoint,
+            generals: Array.from(this.generals.entries()),
+            cities: Array.from(this.cities.entries()),
+            nations: Array.from(this.nations.entries()),
+            troops: Array.from(this.troops.entries()),
+            diplomacy: Array.from(this.diplomacy.entries()),
+            events: Array.from(this.events.entries()),
+            dirtyGeneralIds: Array.from(this.dirtyGeneralIds),
+            dirtyCityIds: Array.from(this.dirtyCityIds),
+            dirtyNationIds: Array.from(this.dirtyNationIds),
+            dirtyTroopIds: Array.from(this.dirtyTroopIds),
+            dirtyDiplomacyKeys: Array.from(this.dirtyDiplomacyKeys),
+            createdGeneralIds: Array.from(this.createdGeneralIds),
+            createdNationIds: Array.from(this.createdNationIds),
+            createdTroopIds: Array.from(this.createdTroopIds),
+            createdDiplomacyKeys: Array.from(this.createdDiplomacyKeys),
+            createdEventIds: Array.from(this.createdEventIds),
+            deletedTroopIds: Array.from(this.deletedTroopIds),
+            deletedGeneralIds: Array.from(this.deletedGeneralIds),
+            deletedNationIds: Array.from(this.deletedNationIds),
+            deletedEventIds: Array.from(this.deletedEventIds),
+            deletedNationSnapshots: this.deletedNationSnapshots,
+            logs: this.logs,
+            messages: this.messages,
+            lifecycleEvents: this.lifecycleEvents,
+            pendingNeutralAuctions: this.pendingNeutralAuctions,
+            inheritancePointAdjustments: this.inheritancePointAdjustments,
+            pendingNationBettingOpens: this.pendingNationBettingOpens,
+            pendingNationBettingFinishes: this.pendingNationBettingFinishes,
+        } satisfies InMemoryTurnWorldStateSnapshot);
+    }
+
+    restoreState(snapshot: InMemoryTurnWorldStateSnapshot): void {
+        const restored = structuredClone(snapshot);
+        this.schedule = restored.schedule;
+        this.state = restored.state;
+        this.checkpoint = restored.checkpoint;
+        this.replaceMap(this.generals, restored.generals);
+        this.replaceMap(this.cities, restored.cities);
+        this.replaceMap(this.nations, restored.nations);
+        this.replaceMap(this.troops, restored.troops);
+        this.replaceMap(this.diplomacy, restored.diplomacy);
+        this.replaceMap(this.events, restored.events);
+        this.replaceSet(this.dirtyGeneralIds, restored.dirtyGeneralIds);
+        this.replaceSet(this.dirtyCityIds, restored.dirtyCityIds);
+        this.replaceSet(this.dirtyNationIds, restored.dirtyNationIds);
+        this.replaceSet(this.dirtyTroopIds, restored.dirtyTroopIds);
+        this.replaceSet(this.dirtyDiplomacyKeys, restored.dirtyDiplomacyKeys);
+        this.replaceSet(this.createdGeneralIds, restored.createdGeneralIds);
+        this.replaceSet(this.createdNationIds, restored.createdNationIds);
+        this.replaceSet(this.createdTroopIds, restored.createdTroopIds);
+        this.replaceSet(this.createdDiplomacyKeys, restored.createdDiplomacyKeys);
+        this.replaceSet(this.createdEventIds, restored.createdEventIds);
+        this.replaceSet(this.deletedTroopIds, restored.deletedTroopIds);
+        this.replaceSet(this.deletedGeneralIds, restored.deletedGeneralIds);
+        this.replaceSet(this.deletedNationIds, restored.deletedNationIds);
+        this.replaceSet(this.deletedEventIds, restored.deletedEventIds);
+        this.replaceArray(this.deletedNationSnapshots, restored.deletedNationSnapshots);
+        this.replaceArray(this.logs, restored.logs);
+        this.replaceArray(this.messages, restored.messages);
+        this.replaceArray(this.lifecycleEvents, restored.lifecycleEvents);
+        this.replaceArray(this.pendingNeutralAuctions, restored.pendingNeutralAuctions);
+        this.replaceArray(this.inheritancePointAdjustments, restored.inheritancePointAdjustments);
+        this.replaceArray(this.pendingNationBettingOpens, restored.pendingNationBettingOpens);
+        this.replaceArray(this.pendingNationBettingFinishes, restored.pendingNationBettingFinishes);
+    }
+
+    inspectState(): InMemoryTurnWorldInspection {
+        return structuredClone({
+            state: this.state,
+            checkpoint: this.checkpoint,
+            generals: Array.from(this.generals.values()),
+            cities: Array.from(this.cities.values()),
+            nations: Array.from(this.nations.values()),
+            troops: Array.from(this.troops.values()),
+            diplomacy: Array.from(this.diplomacy.values()),
+            events: Array.from(this.events.values()),
+            changes: this.peekDirtyState(),
+        } satisfies InMemoryTurnWorldInspection);
     }
 
     getState(): TurnWorldState {
@@ -1165,5 +1296,23 @@ export class InMemoryTurnWorld {
                 }
             }
         }
+    }
+
+    private replaceMap<K, V>(target: Map<K, V>, entries: Array<[K, V]>): void {
+        target.clear();
+        for (const [key, value] of entries) {
+            target.set(key, value);
+        }
+    }
+
+    private replaceSet<T>(target: Set<T>, values: T[]): void {
+        target.clear();
+        for (const value of values) {
+            target.add(value);
+        }
+    }
+
+    private replaceArray<T>(target: T[], values: T[]): void {
+        target.splice(0, target.length, ...values);
     }
 }

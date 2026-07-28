@@ -17,6 +17,7 @@ export * from './scenario/scenarioSeeder.js';
 export * from './turn/types.js';
 export * from './turn/worldLoader.js';
 export * from './turn/inMemoryWorld.js';
+export * from './turn/engineStateManager.js';
 export * from './turn/inMemoryStateStore.js';
 export * from './turn/inMemoryTurnProcessor.js';
 export * from './turn/databaseHooks.js';

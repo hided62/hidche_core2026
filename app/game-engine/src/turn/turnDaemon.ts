@@ -75,6 +75,7 @@ import {
 } from './monthlyCoreEventAction.js';
 import { buildCommandEnv } from './reservedTurnCommands.js';
 import { DatabaseTurnDaemonLease, TurnDaemonLeaseUnavailableError } from '../lifecycle/databaseTurnDaemonLease.js';
+import { EngineStateManager } from './engineStateManager.js';
 
 export interface TurnDaemonRuntimeOptions {
     profile: string;
@@ -106,6 +107,7 @@ export interface TurnDaemonRuntime {
     world: InMemoryTurnWorld;
     controlQueue: TurnDaemonControlQueue;
     stateStore: InMemoryTurnStateStore;
+    stateManager: EngineStateManager;
     processor: InMemoryTurnProcessor;
     hooks?: TurnDaemonHooks;
     close(): Promise<void>;
@@ -475,6 +477,7 @@ const createTurnDaemonRuntimeWithLease = async (
     );
     let occupiedAuctionUniqueItemKeys: string[] = [];
     let refreshOccupiedAuctionUniqueItemKeys = async (): Promise<void> => {};
+    const prefetchedNationTurns = new Set<string>();
     const worldOptions: InMemoryTurnWorldOptions = {
         schedule,
         generalTurnHandler:
@@ -496,8 +499,38 @@ const createTurnDaemonRuntimeWithLease = async (
     const world = new InMemoryTurnWorld(resolvedState, snapshot, worldOptions);
     worldRef = world;
 
+    const stateManager = new EngineStateManager();
+    stateManager.register('world', {
+        capture: () => world.captureState(),
+        restore: (captured) => world.restoreState(captured),
+        inspect: () => world.inspectState(),
+    });
+    if (reservedTurnStoreHandle) {
+        stateManager.register('reservedTurns', {
+            capture: () => reservedTurnStoreHandle.store.captureState(),
+            restore: (captured) => reservedTurnStoreHandle.store.restoreState(captured),
+            inspect: () => reservedTurnStoreHandle.store.inspectState(),
+        });
+    }
+    stateManager.register('runtimeCaches', {
+        capture: () => ({
+            monthlyNationPowerRollCount,
+            monthlyTournamentRollConsumed,
+            occupiedAuctionUniqueItemKeys: [...occupiedAuctionUniqueItemKeys],
+            prefetchedNationTurns: Array.from(prefetchedNationTurns),
+        }),
+        restore: (captured) => {
+            monthlyNationPowerRollCount = captured.monthlyNationPowerRollCount;
+            monthlyTournamentRollConsumed = captured.monthlyTournamentRollConsumed;
+            occupiedAuctionUniqueItemKeys = [...captured.occupiedAuctionUniqueItemKeys];
+            prefetchedNationTurns.clear();
+            for (const key of captured.prefetchedNationTurns) {
+                prefetchedNationTurns.add(key);
+            }
+        },
+    });
+
     const stateStore = new InMemoryTurnStateStore(world);
-    const prefetchedNationTurns = new Set<string>();
     const processor = new InMemoryTurnProcessor(world, {
         tickMinutes,
         beforeExecuteGeneral: reservedTurnStoreHandle
@@ -709,6 +742,7 @@ const createTurnDaemonRuntimeWithLease = async (
             pauseGate: async () => turnDaemonLease?.isLost() || ((await pauseGate?.()) ?? false),
             commandHandler,
             commandResponder: options.controlQueue ? undefined : (databaseCommandQueue ?? undefined),
+            stateManager,
         },
         { profile: options.profile, defaultBudget }
     );
@@ -749,6 +783,7 @@ const createTurnDaemonRuntimeWithLease = async (
         world,
         controlQueue: resolvedControlQueue,
         stateStore,
+        stateManager,
         processor,
         hooks,
         close,

@@ -3,6 +3,7 @@ import { asRecord } from '@sammo-ts/common';
 
 import {
     InMemoryControlQueue,
+    EngineStateManager,
     ManualClock,
     TurnDaemonLifecycle,
     type TurnDaemonCommandResult,
@@ -253,6 +254,14 @@ describe('input event atomicity', () => {
             resolveError = resolve;
         });
         const publishCommandResult = vi.fn(async () => {});
+        let engineState = { value: 'before' };
+        const stateManager = new EngineStateManager();
+        stateManager.register('test', {
+            capture: () => structuredClone(engineState),
+            restore: (snapshot) => {
+                engineState = snapshot;
+            },
+        });
         const lifecycle = new TurnDaemonLifecycle(
             {
                 clock: new ManualClock(new Date('2026-01-01T00:00:00.000Z').getTime()),
@@ -261,8 +270,12 @@ describe('input event atomicity', () => {
                 stateStore: createStateStore(),
                 processor,
                 commandHandler: {
-                    handle: async () => ({ type: 'vacation', ok: true, generalId: 7 }),
+                    handle: async () => {
+                        engineState.value = 'calculated';
+                        return { type: 'vacation', ok: true, generalId: 7 };
+                    },
                 },
+                stateManager,
                 hooks: {
                     commitCommand: async () => {
                         throw new Error('injected commit failure');
@@ -292,6 +305,8 @@ describe('input event atomicity', () => {
             lastError: 'injected commit failure',
         });
         expect(publishCommandResult).not.toHaveBeenCalled();
+        expect(engineState).toEqual({ value: 'calculated' });
+        expect(stateManager.getRevision()).toBe(1);
 
         await lifecycle.stop('done');
         await loop;
@@ -305,6 +320,14 @@ describe('input event atomicity', () => {
         });
         const commitCommand = vi.fn(async () => {});
         const publishCommandResult = vi.fn(async () => {});
+        let engineState = { value: 'before' };
+        const stateManager = new EngineStateManager();
+        stateManager.register('test', {
+            capture: () => structuredClone(engineState),
+            restore: (snapshot) => {
+                engineState = snapshot;
+            },
+        });
         const lifecycle = new TurnDaemonLifecycle(
             {
                 clock: new ManualClock(new Date('2026-01-01T00:00:00.000Z').getTime()),
@@ -314,9 +337,11 @@ describe('input event atomicity', () => {
                 processor,
                 commandHandler: {
                     handle: async () => {
+                        engineState.value = 'partial';
                         throw new Error('injected handler failure');
                     },
                 },
+                stateManager,
                 hooks: {
                     commitCommand,
                     onRunError: async () => {
@@ -345,6 +370,8 @@ describe('input event atomicity', () => {
         });
         expect(commitCommand).not.toHaveBeenCalled();
         expect(publishCommandResult).not.toHaveBeenCalled();
+        expect(engineState).toEqual({ value: 'before' });
+        expect(stateManager.getRevision()).toBe(0);
 
         await lifecycle.stop('done');
         await loop;

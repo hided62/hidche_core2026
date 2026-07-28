@@ -94,6 +94,17 @@ export interface ReservedTurnChanges {
     nationLeaseKeys: string[];
 }
 
+export interface InMemoryReservedTurnStateSnapshot {
+    generalTurns: Array<[number, ReservedTurnEntry[]]>;
+    nationTurns: Array<[string, ReservedTurnEntry[]]>;
+    dirtyGeneralIds: number[];
+    dirtyNationKeys: string[];
+    pendingGeneralInitializationIds: number[];
+    pendingNationInitializationKeys: string[];
+    leasedGeneralIds: number[];
+    leasedNationKeys: string[];
+}
+
 export class ReservedTurnLeaseConflictError extends Error {
     constructor(readonly queueKey: string) {
         super(`Reserved turn queue lease conflict: ${queueKey}.`);
@@ -130,6 +141,35 @@ export class InMemoryReservedTurnStore {
         this.leaseDurationMs = options.leaseDurationMs ?? DEFAULT_LEASE_DURATION_MS;
     }
 
+    captureState(): InMemoryReservedTurnStateSnapshot {
+        return structuredClone({
+            generalTurns: Array.from(this.generalTurns.entries()),
+            nationTurns: Array.from(this.nationTurns.entries()),
+            dirtyGeneralIds: Array.from(this.dirtyGeneralIds),
+            dirtyNationKeys: Array.from(this.dirtyNationKeys),
+            pendingGeneralInitializationIds: Array.from(this.pendingGeneralInitializationIds),
+            pendingNationInitializationKeys: Array.from(this.pendingNationInitializationKeys),
+            leasedGeneralIds: Array.from(this.leasedGeneralIds),
+            leasedNationKeys: Array.from(this.leasedNationKeys),
+        } satisfies InMemoryReservedTurnStateSnapshot);
+    }
+
+    restoreState(snapshot: InMemoryReservedTurnStateSnapshot): void {
+        const restored = structuredClone(snapshot);
+        this.replaceMap(this.generalTurns, restored.generalTurns);
+        this.replaceMap(this.nationTurns, restored.nationTurns);
+        this.replaceSet(this.dirtyGeneralIds, restored.dirtyGeneralIds);
+        this.replaceSet(this.dirtyNationKeys, restored.dirtyNationKeys);
+        this.replaceSet(this.pendingGeneralInitializationIds, restored.pendingGeneralInitializationIds);
+        this.replaceSet(this.pendingNationInitializationKeys, restored.pendingNationInitializationKeys);
+        this.replaceSet(this.leasedGeneralIds, restored.leasedGeneralIds);
+        this.replaceSet(this.leasedNationKeys, restored.leasedNationKeys);
+    }
+
+    inspectState(): InMemoryReservedTurnStateSnapshot {
+        return this.captureState();
+    }
+
     async loadAll(): Promise<void> {
         const [generalRows, nationRows] = await Promise.all([
             this.prisma.generalTurn.findMany(),
@@ -161,6 +201,20 @@ export class InMemoryReservedTurnStore {
         }
         for (const [key, rows] of nationGroups.entries()) {
             this.nationTurns.set(key, buildTurnListFromRows(rows, this.maxNationTurns));
+        }
+    }
+
+    private replaceMap<K, V>(target: Map<K, V>, entries: Array<[K, V]>): void {
+        target.clear();
+        for (const [key, value] of entries) {
+            target.set(key, value);
+        }
+    }
+
+    private replaceSet<T>(target: Set<T>, values: T[]): void {
+        target.clear();
+        for (const value of values) {
+            target.add(value);
         }
     }
 

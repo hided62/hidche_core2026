@@ -15,6 +15,7 @@ import type {
     TurnDaemonCommandResult,
     TurnDaemonCommandExecutionContext,
 } from './types.js';
+import type { EngineStateManager } from '../turn/engineStateManager.js';
 
 type PendingRun = {
     reason: RunReason;
@@ -43,6 +44,7 @@ export interface TurnDaemonLifecycleDeps {
     commandHandler?: TurnDaemonCommandHandler;
     commandResponder?: TurnDaemonCommandResponder;
     pauseGate?: () => Promise<boolean>;
+    stateManager?: Pick<EngineStateManager, 'transaction'>;
 }
 
 export class TurnDaemonLifecycle {
@@ -56,6 +58,7 @@ export class TurnDaemonLifecycle {
     private readonly commandHandler?: TurnDaemonCommandHandler;
     private readonly commandResponder?: TurnDaemonCommandResponder;
     private readonly pauseGate?: () => Promise<boolean>;
+    private readonly stateManager?: Pick<EngineStateManager, 'transaction'>;
     private readonly options: TurnDaemonLifecycleOptions;
 
     private status: TurnDaemonStatus;
@@ -75,6 +78,7 @@ export class TurnDaemonLifecycle {
         this.commandHandler = deps.commandHandler;
         this.commandResponder = deps.commandResponder;
         this.pauseGate = deps.pauseGate;
+        this.stateManager = deps.stateManager;
         this.options = options;
         this.status = {
             state: 'idle',
@@ -272,15 +276,18 @@ export class TurnDaemonLifecycle {
         const executeHandler = async (
             context?: TurnDaemonCommandExecutionContext
         ): Promise<TurnDaemonCommandResult> => {
-            const handled = this.commandHandler ? await this.commandHandler.handle(command, context) : null;
-            return (
-                handled ?? {
-                    type: 'commandRejected',
-                    ok: false,
-                    commandType: command.type,
-                    reason: '턴 데몬이 명령을 처리할 수 없습니다.',
-                }
-            );
+            const execute = async (): Promise<TurnDaemonCommandResult> => {
+                const handled = this.commandHandler ? await this.commandHandler.handle(command, context) : null;
+                return (
+                    handled ?? {
+                        type: 'commandRejected',
+                        ok: false,
+                        commandType: command.type,
+                        reason: '턴 데몬이 명령을 처리할 수 없습니다.',
+                    }
+                );
+            };
+            return this.stateManager ? this.stateManager.transaction(execute) : execute();
         };
         try {
             if (command.requestId && this.hooks?.executeCommand) {
@@ -331,7 +338,8 @@ export class TurnDaemonLifecycle {
         let result: TurnRunResult;
 
         try {
-            result = await this.processor.run(targetTime, budget, checkpoint);
+            const runProcessor = () => this.processor.run(targetTime, budget, checkpoint);
+            result = this.stateManager ? await this.stateManager.transaction(runProcessor) : await runProcessor();
         } catch (error) {
             this.status.running = false;
             this.status.state = 'paused';
