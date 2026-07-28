@@ -43,6 +43,39 @@ Idle -> Running -> Flushing -> Idle
 - `running` flag prevents re-entrant execution when multiple triggers arrive.
 - `pendingReason` tracks why a run was requested (schedule, manual, poke).
 
+### Engine-owned state boundary
+
+`EngineStateManager` is the worker-local unit-of-work coordinator. It does not
+replace the daemon process or the PostgreSQL inbox transport:
+
+```text
+game-api
+  -> PostgreSQL input_event
+  -> game-engine worker
+       -> EngineStateManager transaction
+            - InMemoryTurnWorld
+            - InMemoryReservedTurnStore
+            - runtime calculation caches
+       -> databaseHooks transaction/flush
+```
+
+Each participant provides a detached snapshot and a restore operation. The
+manager captures all participants before a command handler or scheduled turn
+calculation. A calculation exception restores the world entities, checkpoint,
+dirty journals, pending logs/messages/events, reserved-turn queues and
+calculation caches together. Successful calculations advance a monotonic
+worker-local revision.
+
+The runtime exposes `stateManager.inspect()` for deterministic diagnostics and
+tests. Inspection results are detached copies; modifying one cannot mutate the
+live world. Tests may also capture a reusable savepoint and restore it between
+cases. A savepoint is manager-specific and cannot be restored into another
+runtime.
+
+This is intentionally an in-process boundary. PostgreSQL remains the durable
+source of truth across worker restarts, and Redis remains best-effort realtime
+fan-out. No engine snapshot is sent through the API transport.
+
 ## Main Loop Sketch
 
 The daemon interleaves API request handling between scheduled turn executions.
@@ -220,12 +253,31 @@ If any step before commit fails, PostgreSQL rolls back and dirty sets are not
 cleared. Realtime publication happens after commit and cannot roll gameplay
 state back.
 
+There are two distinct failure boundaries:
+
+- If command/turn calculation throws, `EngineStateManager` restores the
+  pre-calculation in-memory snapshot, so a partially mutated handler is not
+  observable to the next calculation.
+- If calculation succeeds but PostgreSQL persistence fails, the calculated
+  dirty state remains in memory and the daemon pauses, preserving the existing
+  restart/reload recovery contract. The input event is not acknowledged.
+
+State-manager restore does not attempt to compensate arbitrary external side
+effects. New engine components that own mutable in-memory state must register a
+participant; new database writes must remain inside `databaseHooks` or the
+command's supplied transaction client.
+
 ## Testing with a Controlled Clock
 
 - Turn daemon tests should use a controllable `Clock` implementation (예: `ManualClock`) to
   advance time deterministically without relying on wall-clock time.
 - 기준 시간은 DB에 저장된 `game_env.turntime`을 우선으로 삼고, 테스트에서도 동일한 기준을
   사용해 스케줄 계산과 체크포인트 동작을 검증한다.
+- 상태 관련 단위 테스트는 `EngineStateManager.transaction()` 실패 전후의
+  inspection을 비교해 entity 값뿐 아니라 dirty journal과 pending output도
+  원복됐는지 확인한다.
+- persistence failure test는 계산 실패 test와 분리한다. 전자는 dirty state
+  유지와 미acknowledge를, 후자는 완전한 in-memory restore를 검증한다.
 
 ## TypeScript Sketch (Draft)
 
