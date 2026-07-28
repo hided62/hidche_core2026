@@ -267,6 +267,16 @@ effects. New engine components that own mutable in-memory state must register a
 participant; new database writes must remain inside `databaseHooks` or the
 command's supplied transaction client.
 
+Known pre-existing exceptions are not covered by this in-memory transaction:
+`yearbookHandler` performs an idempotent PostgreSQL upsert,
+`tournamentAutoStart` writes Redis tournament keys, and `unificationHandler`
+starts archive/inheritance writes outside `databaseHooks`. If a later calendar
+handler throws, those external effects are not rolled back even though the
+registered in-memory participants are restored. Therefore this boundary is not
+a distributed transaction. Moving these three effects into the durable flush
+outbox is separate follow-up work and is required before claiming atomic
+rollback of an entire monthly boundary.
+
 ## Testing with a Controlled Clock
 
 - Turn daemon tests should use a controllable `Clock` implementation (예: `ManualClock`) to
