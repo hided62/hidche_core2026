@@ -111,17 +111,6 @@ const calculateAverageCity = (rng: RandUtil, cities: City[]): CityValues => {
     ) as CityValues;
 };
 
-const shuffleLegacy = <T>(values: T[]): T[] => {
-    const result = [...values];
-    // ref Util::shuffle_assoc()도 action DRBG가 아닌 PHP의 process-global
-    // shuffle()을 사용한다.
-    for (let index = result.length - 1; index > 0; index -= 1) {
-        const target = Math.floor(Math.random() * (index + 1));
-        [result[index], result[target]] = [result[target]!, result[index]!];
-    }
-    return result;
-};
-
 const buildSpecialityAge = (retirementYear: number, age: number, relativeYear: number, divisor: number): number =>
     Math.max(Math.round((retirementYear - age) / divisor - relativeYear / 2), 3) + age;
 
@@ -245,9 +234,20 @@ export const createRaiseNpcNationHandler = (options: {
                 simpleSerialize(resolveHiddenSeed(world), 'RaiseNPCNation', environment.year, environment.month)
             )
         );
+        const cityShuffleRng = new RandUtil(
+            new LiteHashDRBG(
+                simpleSerialize(
+                    resolveHiddenSeed(world),
+                    'RaiseNPCNation',
+                    environment.year,
+                    environment.month,
+                    'emptyCities'
+                )
+            )
+        );
         const averageCity = calculateAverageCity(rng, targetCities);
         const occupiedCityIds = targetCities.filter((city) => city.nationId !== 0).map((city) => city.id);
-        const emptyCities = shuffleLegacy(targetCities.filter((city) => city.nationId === 0));
+        const emptyCities = cityShuffleRng.shuffle(targetCities.filter((city) => city.nationId === 0));
         const activeNations = world.listNations().filter((nation) => nation.id !== 0 && nation.level > 0);
         const generalCounts = activeNations.map(
             (nation) => world.listGenerals().filter((general) => general.nationId === nation.id).length

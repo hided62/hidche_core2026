@@ -1,10 +1,20 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ScenarioDefinition } from '../src/scenario/types.js';
 import type { MapDefinition, UnitSetDefinition } from '../src/world/types.js';
 import { buildScenarioBootstrap } from '../src/world/bootstrap.js';
 
 describe('scenario bootstrap', () => {
+    beforeEach(() => {
+        vi.spyOn(Math, 'random').mockImplementation(() => {
+            throw new Error('scenario bootstrap must not use Math.random');
+        });
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
     it('builds snapshot and seed from scenario/map inputs', () => {
         const scenario: ScenarioDefinition = {
             title: 'Test Scenario',
@@ -120,7 +130,14 @@ describe('scenario bootstrap', () => {
         expect(result.snapshot.generals[0]?.role.specialDomestic).toBe('Special');
         expect(result.snapshot.generals[0]?.role.specialWar).toBeNull();
         expect(result.snapshot.generals[0]?.meta).toMatchObject({ specage: 25, specage2: 30 });
-        expect(result.seed.generals[0]?.meta).toMatchObject({ specage: 25, specage2: 30 });
+        expect(result.seed.generals[0]?.meta).toMatchObject({
+            deathMonth: expect.any(Number),
+            specage: 25,
+            specage2: 30,
+        });
+        expect(buildScenarioBootstrap({ scenario, map, unitSet }).snapshot.generals[0]?.meta).toEqual(
+            result.snapshot.generals[0]?.meta
+        );
         expect(result.seed.generals[0]?.npcType).toBe(2);
         expect(result.snapshot.scenarioMeta?.title).toBe('Test Scenario');
     });

@@ -27,17 +27,6 @@ const resolveServerId = (world: InMemoryTurnWorld): string | null => {
     return typeof value === 'string' && value !== '' ? value : null;
 };
 
-const shuffleLegacy = <T>(values: T[]): T[] => {
-    const result = [...values];
-    // ref의 follower 병종 숙련 배열은 action DRBG가 아니라 PHP process-global
-    // shuffle()로 섞인다.
-    for (let index = result.length - 1; index > 0; index -= 1) {
-        const target = Math.floor(Math.random() * (index + 1));
-        [result[index], result[target]] = [result[target]!, result[index]!];
-    }
-    return result;
-};
-
 const createTurnTime = (rng: RandUtil, environment: MonthlyEventEnvironment, tickSeconds: number): Date => {
     const turnMinutes = tickSeconds / 60;
     if (!(turnMinutes > 0) || !Number.isInteger(turnMinutes)) {
@@ -235,6 +224,17 @@ export const createRaiseInvaderHandler = (options: {
                 simpleSerialize(resolveHiddenSeed(world), 'RaiseInvader', environment.year, environment.month)
             )
         );
+        const dexShuffleRng = new RandUtil(
+            new LiteHashDRBG(
+                simpleSerialize(
+                    resolveHiddenSeed(world),
+                    'RaiseInvader',
+                    environment.year,
+                    environment.month,
+                    'martialDex'
+                )
+            )
+        );
 
         for (const nation of world.listNations()) {
             world.updateNation(nation.id, {
@@ -363,7 +363,7 @@ export const createRaiseInvaderHandler = (options: {
                 const mainStat = rng.nextRangeInt(toInteger(specAverage * 1.2), toInteger(specAverage * 1.4));
                 const subStat = specAverage * 3 - leadership - mainStat;
                 const isWarrior = rng.nextBit();
-                const martialDex = isWarrior ? shuffleLegacy([dex * 2, dex, dex]) : [dex, dex, dex];
+                const martialDex = isWarrior ? dexShuffleRng.shuffle([dex * 2, dex, dex]) : [dex, dex, dex];
                 createInvaderGeneral({
                     world,
                     reservedTurns: options.reservedTurns,

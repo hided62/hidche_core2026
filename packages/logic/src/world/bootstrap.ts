@@ -1,3 +1,4 @@
+import { LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 import type {
     City,
     General,
@@ -18,6 +19,7 @@ import type {
     WorldSeedPayload,
     WorldSnapshot,
 } from './types.js';
+import { simpleSerialize } from '../war/utils.js';
 
 export interface ScenarioBootstrapOptions {
     includeNeutralNation?: boolean;
@@ -144,15 +146,37 @@ const resolveKillturnFromDeathYear = (
     currentYear: number | null,
     currentMonth: number,
     deathYear: number,
+    deathMonth: number,
     fallback: number
 ): number => {
     if (currentYear === null || !Number.isFinite(deathYear) || deathYear <= 0) {
         return fallback;
     }
-    const deathMonth = Math.floor(Math.random() * 12) + 1;
     const diff = (deathYear - currentYear) * 12 + (deathMonth - currentMonth);
     return Math.max(diff, 0);
 };
+
+export const resolveScenarioGeneralDeathMonth = (input: {
+    scenarioTitle: string;
+    startYear: number | null;
+    contextLabel: string;
+    generalId: number;
+    generalName: string;
+    deathYear: number;
+}): number =>
+    new RandUtil(
+        new LiteHashDRBG(
+            simpleSerialize(
+                input.scenarioTitle,
+                input.startYear ?? 0,
+                input.contextLabel,
+                input.generalId,
+                input.generalName,
+                input.deathYear,
+                'deathMonth'
+            )
+        )
+    ).nextRangeInt(1, 12);
 
 const resolveAge = (startYear: number | null, birthYear: number): number => {
     if (startYear === null || birthYear <= 0) {
@@ -309,6 +333,14 @@ const buildGeneralSeeds = (
         const cityId = resolveCityId(row.city, cityByName, warnings, row.name);
         const birthYear = resolveBirthYear(row.birthYear, scenario.startYear);
         const deathYear = resolveDeathYear(row.deathYear, birthYear, scenario.startYear);
+        const deathMonth = resolveScenarioGeneralDeathMonth({
+            scenarioTitle: scenario.title,
+            startYear: scenario.startYear,
+            contextLabel,
+            generalId: id,
+            generalName: row.name,
+            deathYear,
+        });
         const officerLevel = resolveOfficerLevel(row.officerLevel, nationId);
         const age = resolveAge(scenario.startYear, birthYear);
         const stats = {
@@ -319,6 +351,7 @@ const buildGeneralSeeds = (
 
         const seedMeta: Record<string, unknown> = {
             source: contextLabel,
+            deathMonth,
             specage: buildSpecialityAge(retirementYear, age, 12),
             specage2: buildSpecialityAge(retirementYear, age, 6),
         };
@@ -379,7 +412,14 @@ const buildGeneralSeeds = (
         seeds.push(seed);
 
         const generalMeta: GeneralMeta = {
-            killturn: resolveKillturnFromDeathYear(scenario.startYear, 1, deathYear, DEFAULT_GENERAL_KILLTURN),
+            killturn: resolveKillturnFromDeathYear(
+                scenario.startYear,
+                1,
+                deathYear,
+                deathMonth,
+                DEFAULT_GENERAL_KILLTURN
+            ),
+            deathMonth,
             npcType,
             crewTypeId: defaultCrewTypeId,
             specage: buildSpecialityAge(retirementYear, age, 12),

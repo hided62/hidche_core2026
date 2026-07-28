@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PERSONALITY_TRAIT_KEYS, type City, type MapDefinition, type Nation } from '@sammo-ts/logic';
 
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
@@ -192,6 +192,16 @@ const buildHarness = (archivedNationMaxId = 0, hiddenSeed = 'raise-npc-nation-fi
 };
 
 describe('RaiseNPCNation monthly action', () => {
+    beforeEach(() => {
+        vi.spyOn(Math, 'random').mockImplementation(() => {
+            throw new Error('RaiseNPCNation must not use Math.random');
+        });
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
     it('creates only distance-qualified NPC nations and initializes their ruler and turns', async () => {
         const { world, reservedTurns, handler, environment } = buildHarness();
 

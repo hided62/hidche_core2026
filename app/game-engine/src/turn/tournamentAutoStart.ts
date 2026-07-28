@@ -57,14 +57,16 @@ const readPattern = (world: InMemoryTurnWorld, config: Record<string, unknown>):
     );
 };
 
-const shuffledDefaultPattern = (): number[] => {
-    const pattern = [0, 0, 1, 2, 3];
-    for (let index = pattern.length - 1; index > 0; index -= 1) {
-        const swapIndex = Math.floor(Math.random() * (index + 1));
-        [pattern[index], pattern[swapIndex]] = [pattern[swapIndex]!, pattern[index]!];
-    }
-    return pattern;
-};
+const shuffledDefaultPattern = (
+    hiddenSeed: string | number,
+    previousYear: number,
+    previousMonth: number
+): number[] =>
+    new RandUtil(
+        new LiteHashDRBG(
+            simpleSerialize(hiddenSeed, 'monthly', previousYear, previousMonth, 'tournamentPattern')
+        )
+    ).shuffle([0, 0, 1, 2, 3]);
 
 export const createTournamentAutoStartHandler = (options: {
     profileName: string;
@@ -112,7 +114,10 @@ export const createTournamentAutoStartHandler = (options: {
             }
 
             const pattern = readPattern(world, config);
-            const resolvedPattern = pattern.length > 0 ? pattern : shuffledDefaultPattern();
+            const resolvedPattern =
+                pattern.length > 0
+                    ? pattern
+                    : shuffledDefaultPattern(hiddenSeed, context.previousYear, context.previousMonth);
             const type = resolvedPattern.pop() ?? 0;
             world.updateWorldMeta({ tournamentPattern: resolvedPattern });
             const now = options.now?.() ?? new Date();

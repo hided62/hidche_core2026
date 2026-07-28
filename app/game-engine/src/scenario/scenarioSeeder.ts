@@ -1,6 +1,12 @@
 import { createGamePostgresConnector, type InputJsonValue, type TurnEngineEventCreateManyInput } from '@sammo-ts/infra';
 import { asRecord } from '@sammo-ts/common';
-import { buildScenarioBootstrap, type GeneralMeta, type ScenarioBootstrapWarning, type WorldSeedPayload } from '@sammo-ts/logic';
+import {
+    buildScenarioBootstrap,
+    resolveScenarioGeneralDeathMonth,
+    type GeneralMeta,
+    type ScenarioBootstrapWarning,
+    type WorldSeedPayload,
+} from '@sammo-ts/logic';
 
 import type { MapLoaderOptions } from './mapLoader.js';
 import { loadMapDefinitionByName } from './mapLoader.js';
@@ -150,12 +156,12 @@ const resolveKillturnFromDeathYear = (
     currentYear: number,
     currentMonth: number,
     deathYear: number,
+    deathMonth: number,
     fallback: number
 ): number => {
     if (!Number.isFinite(deathYear) || deathYear <= 0) {
         return fallback;
     }
-    const deathMonth = Math.floor(Math.random() * 12) + 1;
     const diff = (deathYear - currentYear) * 12 + (deathMonth - currentMonth);
     return Math.max(diff, 0);
 };
@@ -442,15 +448,32 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
                             delete meta.deadYear;
                             const fallbackKillturn =
                                 typeof meta.killturn === 'number' && Number.isFinite(meta.killturn) ? meta.killturn : 0;
+                            const deathMonth =
+                                typeof meta.deathMonth === 'number' &&
+                                Number.isInteger(meta.deathMonth) &&
+                                meta.deathMonth >= 1 &&
+                                meta.deathMonth <= 12
+                                    ? meta.deathMonth
+                                    : resolveScenarioGeneralDeathMonth({
+                                          scenarioTitle: String(seed.scenarioMeta?.title ?? ''),
+                                          startYear: seed.scenarioMeta?.startYear ?? null,
+                                          contextLabel:
+                                              typeof meta.source === 'string' ? meta.source : 'general',
+                                          generalId: general.id,
+                                          generalName: general.name,
+                                          deathYear: general.deathYear,
+                                      });
                             const killturn = resolveKillturnFromDeathYear(
                                 startState.currentYear,
                                 startState.currentMonth,
                                 general.deathYear,
+                                deathMonth,
                                 fallbackKillturn
                             );
                             return {
                                 ...meta,
                                 killturn,
+                                deathMonth,
                                 npcType: general.npcType,
                                 crewTypeId: general.crewTypeId,
                             } satisfies GeneralMeta;
