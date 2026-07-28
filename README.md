@@ -41,7 +41,8 @@ TypeScript로 호환 이관하는 pnpm 모노레포입니다. 기준 구현은 �
 | `tools/integration-tests`      | PostgreSQL/Redis 및 ref↔core 통합·차등 테스트     |
 | `tools/frontend-legacy-parity` | 실제 Chromium 기반 화면·상호작용 비교             |
 | `tools/legacy-db-migration`    | 레거시 장기보존 데이터 CLI 이관                   |
-| `docs`                         | 런타임, 테스트, 배포 prefix와 운영 문서           |
+| `tools/docs`                   | 플레이어 커맨드 문서 자동 생성                    |
+| `docs`                         | VitePress 핸드북과 런타임·테스트·운영 문서        |
 
 런타임의 영속 입력은 PostgreSQL `input_event`가 담당합니다. game API가
 요청을 기록하고 turn daemon이 claim한 뒤, 게임 상태·로그·예약 턴·결과와
@@ -60,6 +61,7 @@ battle simulation 등 해당 기능의 계약에만 사용하며 게임 mutation
 - Vue 3 + Pinia + Vue Router + Vite
 - PostgreSQL + Prisma, Redis
 - Vitest와 Playwright/Chromium
+- VitePress 정적 HTML 문서 사이트
 
 package manager 버전은 루트 `package.json`의 `packageManager`를 따릅니다.
 현재 값은 `pnpm@11.17.0`입니다. 저장소는 Node `engines`를 고정하지 않으므로
@@ -144,6 +146,29 @@ pnpm --filter @sammo-ts/game-api dev
 pnpm --filter @sammo-ts/game-engine dev
 ```
 
+## 문서 사이트
+
+개발자 아키텍처·파일 흐름·핵심 클래스와 플레이어 커맨드·시기별 가이드는
+[`docs/index.md`](docs/index.md)에서 시작합니다. VitePress 개발 서버와 정적 HTML
+빌드는 다음 명령으로 실행합니다.
+
+```sh
+pnpm docs:dev
+pnpm docs:build
+pnpm docs:preview
+```
+
+`docs:dev`와 `docs:build`는 먼저 `pnpm docs:generate`를 실행합니다. 이 단계는
+현재 장수·국가 명령 등록부와 각 `commandSpec`에서
+`docs/user/command-catalog.generated.md`를 다시 만듭니다. 생성 파일을 직접
+수정하지 말고 명령 정의나 생성기를 고쳐 주세요. 정적 HTML은
+`docs/.vitepress/dist`에 생성되며 Git에서 제외됩니다.
+
+핸드북이 조사한 코드 기준은
+[`docs/reference-baseline.md`](docs/reference-baseline.md)에 고정해 두었습니다.
+기능 리팩터링 뒤에는 기준 commit부터 현재 commit까지의 diff를 대조하고 관련
+페이지, 생성 목록과 기준선을 같은 변경에서 갱신해 주세요.
+
 ## DB schema와 migration
 
 Gateway는 기본적으로 PostgreSQL `public` schema를 사용하고, 게임은
@@ -204,6 +229,10 @@ worktree 흐름을 사용합니다.
 
 ## 핵심 문서
 
+- [core2026 핸드북](docs/index.md)
+- [문서 기준 커밋](docs/reference-baseline.md)
+- [개발자 핸드북](docs/developer/index.md)
+- [플레이어 가이드](docs/user/index.md)
 - [테스트 정책](docs/testing-policy.md)
 - [테스트 suite 감사](docs/test-suite-audit.md)
 - [통합 테스트](docs/integration-tests.md)

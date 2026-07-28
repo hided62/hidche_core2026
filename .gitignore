@@ -119,6 +119,10 @@ packages/infra/prisma/generated/
 # Docusaurus cache and generated files
 .docusaurus
 
+# VitePress documentation build output
+docs/.vitepress/cache/
+docs/.vitepress/dist/
+
 # Serverless directories
 .serverless/
 
