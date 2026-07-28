@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { RedisConnector } from '@sammo-ts/infra';
 import type { Nation } from '@sammo-ts/logic';
 
@@ -142,5 +142,87 @@ describe('monthly tournament auto start', () => {
 
         expect(consumed).toEqual([false]);
         expect(world.peekDirtyState().logs).toEqual([]);
+    });
+
+    it('derives an empty tournament pattern from the monthly seed without Math.random', async () => {
+        const run = async () => {
+            const state: TurnWorldState = {
+                id: 1,
+                currentYear: 193,
+                currentMonth: 1,
+                tickSeconds: 600,
+                lastTurnTime: new Date('0193-01-01T00:00:00.000Z'),
+                meta: { hiddenSeed: 'monthly-post-tail-2' },
+            };
+            const snapshot: TurnWorldSnapshot = {
+                scenarioConfig: {
+                    stat: {
+                        total: 300,
+                        min: 10,
+                        max: 100,
+                        npcTotal: 150,
+                        npcMax: 50,
+                        npcMin: 10,
+                        chiefMin: 70,
+                    },
+                    iconPath: '',
+                    map: {},
+                    const: {},
+                    environment: { mapName: 'test', unitSet: 'default' },
+                },
+                map: { id: 'test', name: 'test', cities: [] },
+                diplomacy: [],
+                events: [],
+                initialEvents: [],
+                generals: [],
+                cities: [],
+                nations: [buildNation(1), buildNation(2)],
+                troops: [],
+            };
+            const values = new Map<string, string>();
+            const redis = {
+                get: async (key: string) => values.get(key) ?? null,
+                set: async (key: string, value: string) => {
+                    values.set(key, value);
+                    return 'OK';
+                },
+            } as unknown as RedisConnector['client'];
+            let world: InMemoryTurnWorld | null = null;
+            world = new InMemoryTurnWorld(state, snapshot, {
+                schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+                calendarHandler: createTournamentAutoStartHandler({
+                    profileName: 'test',
+                    getWorld: () => world,
+                    getRedisClient: () => redis,
+                    getWorldConfig: () => ({ tournamentTrig: true }),
+                    getNationPowerRollCount: () => 2,
+                    now: () => new Date('2026-07-25T00:00:00.000Z'),
+                }),
+            });
+
+            await world.advanceMonth(new Date('0193-02-01T00:00:00.000Z'));
+
+            return {
+                tournamentState: JSON.parse(values.get('sammo:test:tournament:state') ?? '{}') as {
+                    type?: number;
+                },
+                remainingPattern: world.getState().meta.tournamentPattern,
+            };
+        };
+
+        const random = vi.spyOn(Math, 'random').mockImplementation(() => {
+            throw new Error('tournament fallback must not use Math.random');
+        });
+        try {
+            const first = await run();
+            const second = await run();
+            expect(second).toEqual(first);
+            expect(first).toEqual({
+                tournamentState: expect.objectContaining({ type: 1 }),
+                remainingPattern: [2, 0, 0, 3],
+            });
+        } finally {
+            random.mockRestore();
+        }
     });
 });

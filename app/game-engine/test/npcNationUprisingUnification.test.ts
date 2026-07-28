@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { performance } from 'node:perf_hooks';
 import type { LogEntryDraft, TurnSchedule, UnitSetDefinition } from '@sammo-ts/logic';
 import { DIPLOMACY_STATE, LogCategory, LogFormat, LogScope } from '@sammo-ts/logic';
 import type { InMemoryTurnWorld, TurnCalendarHandler } from '../src/turn/inMemoryWorld.js';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 import { LARGE_TEST_MAP, buildLargeTestCities } from './fixtures/largeTestMap.js';
 import { createTurnTestHarness } from './helpers/turnTestHarness.js';
+import { NpcUnificationMemoryProfiler } from './helpers/npcUnificationMemoryProfiler.js';
 
 const mockDate = new Date('0181-08-01T00:00:00Z');
 
@@ -148,6 +152,8 @@ const dumpWorldStatus = (world: InMemoryTurnWorld, label: string) => {
 
 describe('NPC 건국/통일 장기 시뮬레이션', () => {
     it('건국, 선포, 출병, 점령과 장기 국가 감소가 안정적으로 진행되어야 한다', async () => {
+        const memoryProfileEnabled = process.env.NPC_UNIFICATION_MEMORY_PROFILE === '1';
+        const profileStartedAtMs = performance.now();
         const cities = buildLargeTestCities().map(maxCityStats);
         for (const city of cities) {
             city.nationId = 0;
@@ -253,6 +259,7 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
 
         const worldRef = { current: null as InMemoryTurnWorld | null };
 
+        let unificationLogObserved = false;
         const unificationHandler: TurnCalendarHandler = {
             onMonthChanged: () => {
                 const world = worldRef.current;
@@ -279,6 +286,7 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
                 }
                 world.updateWorldMeta({ isUnited: 2 });
                 world.pushLog(buildUnificationLog(winner.name));
+                unificationLogObserved = true;
             },
         };
 
@@ -287,7 +295,14 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
         let sortieCount = 0;
         let lastResolvedAction = 'none';
 
-        const { runUntil, getCollectedLogs, getCollectedLogsCount, getCollectedLogsRange } =
+        const {
+            runUntil,
+            reservedTurnStore,
+            getCollectedLogs,
+            getCollectedLogsCount,
+            getCollectedLogsRange,
+            getAndClearCollectedLogs,
+        } =
             await createTurnTestHarness({
                 snapshot,
                 state,
@@ -326,6 +341,30 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
                     }
                 },
             });
+        const memoryProfiler =
+            memoryProfileEnabled && worldRef.current
+                ? new NpcUnificationMemoryProfiler(worldRef.current, reservedTurnStore)
+                : null;
+        memoryProfiler?.sample('initialized');
+        let lastProfileYearMonth = -1;
+        const observeProfileMonth = (current: TurnWorldState) => {
+            if (!memoryProfiler) {
+                return;
+            }
+            const yearMonth = current.currentYear * 100 + current.currentMonth;
+            if (yearMonth === lastProfileYearMonth) {
+                return;
+            }
+            lastProfileYearMonth = yearMonth;
+            memoryProfiler.observeTick();
+            const logs = getAndClearCollectedLogs();
+            if (logs.some((log) => log.text.includes('전토를 통일하였습니다.'))) {
+                unificationLogObserved = true;
+            }
+            if (current.currentMonth === 1) {
+                memoryProfiler.sample(`year-${current.currentYear}`);
+            }
+        };
 
         let monthlyLogCursor = 0;
         const maxMonthlyLogEntries = 20;
@@ -355,7 +394,9 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
 
         try {
             await runUntil(
-                (current) => current.currentYear > 182 || (current.currentYear === 182 && current.currentMonth >= 1)
+                (current) => current.currentYear > 182 || (current.currentYear === 182 && current.currentMonth >= 1),
+                undefined,
+                observeProfileMonth
             );
 
             const world = worldRef.current;
@@ -366,10 +407,14 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
             const foundedNations = world.listNations().filter((nation) => nation.level > 0);
             expect(foundedNations.length).toBeGreaterThanOrEqual(2);
             const foundedNationCount = foundedNations.length;
+            memoryProfiler?.sample('nations-founded');
 
             await runUntil(
-                (current) => current.currentYear > 183 || (current.currentYear === 183 && current.currentMonth >= 6)
+                (current) => current.currentYear > 183 || (current.currentYear === 183 && current.currentMonth >= 6),
+                undefined,
+                observeProfileMonth
             );
+            memoryProfiler?.sample('all-cities-occupied');
 
             const neutralCities = world.listCities().filter((city) => city.nationId <= 0);
             expect(neutralCities.length).toBe(0);
@@ -381,7 +426,9 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
 
             if (declarationCount === 0) {
                 await runUntil(
-                    (current) => current.currentYear > 190 || (current.currentYear === 190 && current.currentMonth >= 1)
+                    (current) => current.currentYear > 190 || (current.currentYear === 190 && current.currentMonth >= 1),
+                    undefined,
+                    observeProfileMonth
                 );
                 if (declarationCount === 0) {
                     const generals = world.listGenerals().filter((general) => general.nationId > 0);
@@ -488,7 +535,9 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
                 await runUntil(
                     (current) =>
                         current.currentYear > target.year ||
-                        (current.currentYear === target.year && current.currentMonth >= target.month)
+                        (current.currentYear === target.year && current.currentMonth >= target.month),
+                    undefined,
+                    observeProfileMonth
                 );
                 //_dumpMonthlyLogs(`${target.year}-${String(target.month).padStart(2, '0')}`);
 
@@ -521,9 +570,12 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
                     await runUntil(
                         (current) =>
                             current.currentYear > nextMonth.year ||
-                            (current.currentYear === nextMonth.year && current.currentMonth >= nextMonth.month)
+                            (current.currentYear === nextMonth.year && current.currentMonth >= nextMonth.month),
+                        undefined,
+                        observeProfileMonth
                     );
                     unifiedAt = nextMonth;
+                    memoryProfiler?.sample('unified');
                     break;
                 }
 
@@ -537,7 +589,8 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
 
             const meta = world.getState().meta as Record<string, unknown>;
             const logs = getCollectedLogs();
-            const hasUnificationLog = logs.some((log) => log.text.includes('전토를 통일하였습니다.'));
+            const hasUnificationLog =
+                unificationLogObserved || logs.some((log) => log.text.includes('전토를 통일하였습니다.'));
             if (unifiedAt) {
                 expect(meta.isUnited).toBe(2);
                 expect(hasUnificationLog).toBe(true);
@@ -546,6 +599,39 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
                 expect(meta.isUnited ?? 0).toBe(0);
             }
             expect(sortieCount).toBeGreaterThan(0);
+
+            if (memoryProfiler) {
+                expect(typeof globalThis.gc).toBe('function');
+                expect(unifiedAt).not.toBeNull();
+                if (!unifiedAt) {
+                    throw new Error('memory profile requires actual unification');
+                }
+                const report = memoryProfiler.buildReport({
+                    startedAtMs: profileStartedAtMs,
+                    initialGeneralCount: generals.length,
+                    foundedNationCount,
+                    declarationCount,
+                    sortieCount,
+                    unifiedAt,
+                    startYear: state.currentYear,
+                    startMonth: state.currentMonth,
+                });
+                const reportPath = resolve(
+                    process.env.NPC_UNIFICATION_MEMORY_REPORT_PATH ??
+                        'test-results/npc-unification-memory.json'
+                );
+                mkdirSync(dirname(reportPath), { recursive: true });
+                writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
+                console.log(
+                    `[NPC_UNIFICATION_MEMORY_REPORT]${JSON.stringify({
+                        reportPath,
+                        runtime: report.runtime,
+                        scenario: report.scenario,
+                        result: report.result,
+                        memory: report.memory,
+                    })}`
+                );
+            }
         } catch (error) {
             const world = worldRef.current;
             if (world) {

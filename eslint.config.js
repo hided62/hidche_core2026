@@ -99,6 +99,20 @@ export default tseslint.config(
         },
     },
     {
+        files: ['app/game-engine/src/**/*.{ts,tsx}', 'packages/logic/src/**/*.{ts,tsx}'],
+        rules: {
+            'no-restricted-properties': [
+                'error',
+                {
+                    object: 'Math',
+                    property: 'random',
+                    message:
+                        'Authoritative game state must use an explicitly seeded RandUtil/LiteHashDRBG stream.',
+                },
+            ],
+        },
+    },
+    {
         files: ['**/*.js', '**/*.mjs', '**/*.cjs'],
         rules: {
             'no-unused-vars': [

@@ -118,6 +118,30 @@ Dynamic event actions can use deterministic RNG by constructing
 `LiteHashDRBG` with `UniqueConst::$hiddenSeed` and an event-specific tag.
 Examples include `RandomizeCityTradeRate` and `UpdateNationLevel`.
 
+core2026의 authoritative game-state 계산에서는 `Math.random()`을 사용하지
+않는다. 레거시 PHP 전역 `shuffle()`을 사용하던 다음 경로도 입력별 독립
+`LiteHashDRBG` substream으로 고정한다.
+
+- `RaiseNPCNation`: `hiddenSeed, "RaiseNPCNation", year, month,
+  "emptyCities"`
+- `RaiseInvader`: `hiddenSeed, "RaiseInvader", year, month,
+  "martialDex"`
+- 빈 tournament pattern: `hiddenSeed, "monthly", previousYear,
+  previousMonth, "tournamentPattern"`
+- scenario general 사망월: scenario title/start year, source group,
+  general id/name/death year와 `"deathMonth"`
+
+독립 substream을 쓰는 이유는 레거시 전역 shuffle의 비결정성만 제거하고
+이미 호환 검증된 action/monthly RNG의 후속 소비 위치는 바꾸지 않기
+위해서다. 테스트는 해당 경로에서 `Math.random()`을 호출하면 즉시
+실패한다. 인증 token, request/event correlation ID 같은 보안·운영 식별자의
+`crypto` RNG와 사용자가 랜덤 능력치 버튼으로 만드는 클라이언트 입력은
+이 게임-state 재현 계약과 구분한다.
+
+root ESLint 설정도 `app/game-engine/src`와 `packages/logic/src`에서
+`Math.random` property 사용을 오류로 처리하므로 새 authoritative 경로가
+같은 결함을 다시 도입할 수 없다.
+
 ## Open Questions / Follow-ups
 
 - `Event\Engine` is a stub with a TODO; it is not currently used in the main

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { City, Nation } from '@sammo-ts/logic';
 
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
@@ -166,6 +166,16 @@ const buildHarness = (options?: {
 };
 
 describe('invader monthly actions', () => {
+    beforeEach(() => {
+        vi.spyOn(Math, 'random').mockImplementation(() => {
+            throw new Error('monthly invader actions must not use Math.random');
+        });
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
     it('creates the invader nation, generals, diplomacy, follow-up events, and city state', async () => {
         const harness = buildHarness();
         const handler = createRaiseInvaderHandler({
