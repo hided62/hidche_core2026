@@ -15,6 +15,13 @@ type CapturedParticipant = {
     snapshot: unknown;
 };
 
+type EngineStateSavepointData = {
+    owner: symbol;
+    participants: readonly CapturedParticipant[];
+};
+
+const savepointData = new WeakMap<EngineStateSavepoint, EngineStateSavepointData>();
+
 export interface EngineStateInspection {
     revision: number;
     transactionActive: boolean;
@@ -23,13 +30,10 @@ export interface EngineStateInspection {
 
 export class EngineStateSavepoint {
     readonly revision: number;
-    readonly participants: readonly CapturedParticipant[];
-    readonly owner: symbol;
 
     constructor(owner: symbol, revision: number, participants: CapturedParticipant[]) {
-        this.owner = owner;
         this.revision = revision;
-        this.participants = participants;
+        savepointData.set(this, { owner, participants });
     }
 }
 
@@ -57,9 +61,9 @@ export class EngineStateManager {
             throw new Error(`Engine state participant is already registered: ${name}`);
         }
         this.participants.set(name, {
-            capture: participant.capture,
+            capture: () => participant.capture(),
             restore: (snapshot) => participant.restore(snapshot as T),
-            inspect: participant.inspect,
+            inspect: participant.inspect ? () => participant.inspect?.() : undefined,
         });
     }
 
@@ -127,23 +131,27 @@ export class EngineStateManager {
     }
 
     private assertOwnedSavepoint(savepoint: EngineStateSavepoint): void {
-        if (savepoint.owner !== this.owner) {
+        if (savepointData.get(savepoint)?.owner !== this.owner) {
             throw new Error('Engine state savepoint belongs to a different manager.');
         }
     }
 
     private restoreParticipants(savepoint: EngineStateSavepoint): void {
         this.assertOwnedSavepoint(savepoint);
+        const capturedParticipants = savepointData.get(savepoint)?.participants;
+        if (!capturedParticipants) {
+            throw new Error('Engine state savepoint data is unavailable.');
+        }
         const currentNames = Array.from(this.participants.keys());
-        const capturedNames = savepoint.participants.map(({ name }) => name);
+        const capturedNames = capturedParticipants.map(({ name }) => name);
         if (
             currentNames.length !== capturedNames.length ||
             currentNames.some((name, index) => name !== capturedNames[index])
         ) {
             throw new Error('Engine state participant set changed after the savepoint was captured.');
         }
-        for (let index = savepoint.participants.length - 1; index >= 0; index -= 1) {
-            const captured = savepoint.participants[index];
+        for (let index = capturedParticipants.length - 1; index >= 0; index -= 1) {
+            const captured = capturedParticipants[index];
             if (!captured) {
                 continue;
             }
