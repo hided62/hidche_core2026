@@ -1,3 +1,6 @@
+import { TRPCError } from '@trpc/server';
+import { z } from 'zod';
+
 import { asRecord } from '@sammo-ts/common';
 
 import { readOnlyAuthedProcedure, router } from '../../trpc.js';
@@ -5,7 +8,40 @@ import { readOnlyAuthedProcedure, router } from '../../trpc.js';
 const numberOrNull = (value: unknown): number | null =>
     typeof value === 'number' && Number.isFinite(value) ? value : null;
 
-const textOrNull = (value: unknown): string | null => (typeof value === 'string' ? value : null);
+const firstNumber = (record: Record<string, unknown>, ...keys: string[]): number | null => {
+    for (const key of keys) {
+        const value = numberOrNull(record[key]);
+        if (value !== null) {
+            return value;
+        }
+    }
+    return null;
+};
+
+const displayTextOrNull = (value: unknown): string | null => {
+    if (typeof value === 'string') {
+        return value;
+    }
+    return typeof value === 'number' && Number.isFinite(value) ? String(value) : null;
+};
+
+const parseHistory = (value: unknown): string[] => {
+    if (Array.isArray(value)) {
+        return value.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0);
+    }
+    if (typeof value !== 'string') {
+        return [];
+    }
+    return value
+        .split(/<br\s*\/?>/i)
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+};
+
+const zPastPlayDetailInput = z.object({
+    serverId: z.string().trim().min(1).max(64),
+    generalNo: z.number().int().positive(),
+});
 
 export const archiveRouter = router({
     myPastPlays: readOnlyAuthedProcedure.query(async ({ ctx }) => {
@@ -22,7 +58,7 @@ export const archiveRouter = router({
         }
 
         const serverIds = [...new Set(generals.map((general) => general.serverId))];
-        const [games, nations] = await Promise.all([
+        const [games, nations, emperors] = await Promise.all([
             ctx.db.gameHistory.findMany({
                 where: { serverId: { in: serverIds } },
             }),
@@ -30,9 +66,20 @@ export const archiveRouter = router({
                 where: { serverId: { in: serverIds } },
                 orderBy: [{ date: 'desc' }, { id: 'desc' }],
             }),
+            ctx.db.emperor.findMany({
+                where: { serverId: { in: serverIds } },
+                orderBy: { id: 'desc' },
+                select: { id: true, serverId: true },
+            }),
         ]);
 
         const gameByServer = new Map(games.map((game) => [game.serverId, game]));
+        const emperorByServer = new Map<string, number>();
+        for (const emperor of emperors) {
+            if (emperor.serverId && !emperorByServer.has(emperor.serverId)) {
+                emperorByServer.set(emperor.serverId, emperor.id);
+            }
+        }
         const nationByServerAndId = new Map<string, (typeof nations)[number]>();
         for (const nation of nations) {
             const key = `${nation.serverId}:${nation.nation}`;
@@ -49,6 +96,7 @@ export const archiveRouter = router({
                 season: number | null;
                 scenario: number | null;
                 scenarioName: string | null;
+                dynastyId: number | null;
                 generals: Array<{
                     generalNo: number;
                     name: string;
@@ -65,6 +113,7 @@ export const archiveRouter = router({
                     personal: string | null;
                     special: string | null;
                     special2: string | null;
+                    historyCount: number;
                 }>;
             }
         >();
@@ -79,13 +128,16 @@ export const archiveRouter = router({
                     season: game?.season ?? null,
                     scenario: game?.scenario ?? null,
                     scenarioName: game?.scenarioName ?? null,
+                    dynastyId: emperorByServer.get(general.serverId) ?? null,
                     generals: [],
                 };
                 seasons.set(general.serverId, season);
             }
 
             const data = asRecord(general.data);
-            const nationId = numberOrNull(data.nation) ?? 0;
+            const stats = asRecord(data.stats);
+            const role = asRecord(data.role);
+            const nationId = firstNumber(data, 'nationId', 'nation') ?? 0;
             const nation = nationByServerAndId.get(`${general.serverId}:${nationId}`);
             const nationData = asRecord(nation?.data);
             season.generals.push({
@@ -93,17 +145,18 @@ export const archiveRouter = router({
                 name: general.name,
                 lastYearMonth: general.lastYearMonth,
                 nationId,
-                nationName: textOrNull(nationData.name) ?? (nationId === 0 ? '재야' : '미상'),
-                nationColor: textOrNull(nationData.color) ?? '#000000',
-                leadership: numberOrNull(data.leadership),
-                strength: numberOrNull(data.strength),
-                intel: numberOrNull(data.intel),
+                nationName: displayTextOrNull(nationData.name) ?? (nationId === 0 ? '재야' : '미상'),
+                nationColor: displayTextOrNull(nationData.color) ?? '#000000',
+                leadership: firstNumber(data, 'leadership', 'leader') ?? numberOrNull(stats.leadership),
+                strength: firstNumber(data, 'strength', 'power') ?? numberOrNull(stats.strength),
+                intel: firstNumber(data, 'intel', 'intelligence') ?? numberOrNull(stats.intelligence),
                 experience: numberOrNull(data.experience),
                 dedication: numberOrNull(data.dedication),
-                officerLevel: numberOrNull(data.officer_level),
-                personal: textOrNull(data.personal),
-                special: textOrNull(data.special),
-                special2: textOrNull(data.special2),
+                officerLevel: firstNumber(data, 'officerLevel', 'officer_level'),
+                personal: displayTextOrNull(data.personalCode ?? data.personal ?? role.personality),
+                special: displayTextOrNull(data.specialCode ?? data.special ?? role.specialDomestic),
+                special2: displayTextOrNull(data.special2Code ?? data.special2 ?? role.specialWar),
+                historyCount: parseHistory(data.history).length,
             });
         }
 
@@ -113,6 +166,30 @@ export const archiveRouter = router({
                 const rightTime = right.date ? new Date(right.date).getTime() : 0;
                 return rightTime - leftTime || right.serverId.localeCompare(left.serverId);
             }),
+        };
+    }),
+    myPastPlayDetail: readOnlyAuthedProcedure.input(zPastPlayDetailInput).query(async ({ ctx, input }) => {
+        const owner = ctx.auth?.user.id;
+        if (!owner) {
+            throw new Error('Authenticated archive query is missing its user identity');
+        }
+        const general = await ctx.db.oldGeneral.findFirst({
+            where: {
+                owner,
+                serverId: input.serverId,
+                generalNo: input.generalNo,
+            },
+        });
+        if (!general) {
+            throw new TRPCError({ code: 'NOT_FOUND', message: '지난 장수 기록을 찾을 수 없습니다.' });
+        }
+        const data = asRecord(general.data);
+        return {
+            serverId: general.serverId,
+            generalNo: general.generalNo,
+            name: general.name,
+            lastYearMonth: general.lastYearMonth,
+            history: parseHistory(data.history),
         };
     }),
 });

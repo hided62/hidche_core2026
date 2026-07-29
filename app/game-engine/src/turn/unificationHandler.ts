@@ -651,6 +651,26 @@ export const createUnificationHandler = (options: {
         const oldGeneralTargets = generalRows.filter(
             (general) => general.nationId === 0 || general.nationId === winnerNationId
         );
+        const generalHistoryRows = oldGeneralTargets.length
+            ? await prisma.logEntry.findMany({
+                  where: {
+                      generalId: { in: oldGeneralTargets.map((general) => general.id) },
+                      scope: LogScope.GENERAL,
+                      category: LogCategory.HISTORY,
+                  },
+                  orderBy: { id: 'desc' },
+                  select: { generalId: true, text: true },
+              })
+            : [];
+        const historyByGeneral = new Map<number, string[]>();
+        for (const row of generalHistoryRows) {
+            if (row.generalId === null) {
+                continue;
+            }
+            const history = historyByGeneral.get(row.generalId) ?? [];
+            history.push(row.text);
+            historyByGeneral.set(row.generalId, history);
+        }
         await Promise.all(
             oldGeneralTargets.map((general) =>
                 ((snapshot) =>
@@ -680,6 +700,7 @@ export const createUnificationHandler = (options: {
                     }))({
                     ...general,
                     turnTime: general.turnTime.toISOString(),
+                    history: historyByGeneral.get(general.id) ?? [],
                 })
             )
         );

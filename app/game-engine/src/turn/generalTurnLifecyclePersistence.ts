@@ -1,5 +1,6 @@
 import { asRecord, HALL_OF_FAME_TYPES, type HallOfFameType } from '@sammo-ts/common';
 import type { GamePrisma, InputJsonValue } from '@sammo-ts/infra';
+import { LogCategory, LogScope } from '@sammo-ts/logic';
 
 import type { GeneralLifecycleEvent } from './inMemoryWorld.js';
 
@@ -260,10 +261,20 @@ const archiveDeletedGeneral = async (
 ): Promise<void> => {
     const serverId =
         typeof worldMeta.serverId === 'string' && worldMeta.serverId.trim() ? worldMeta.serverId.trim() : 'default';
+    const history = await prisma.logEntry.findMany({
+        where: {
+            generalId: event.generalId,
+            scope: LogScope.GENERAL,
+            category: LogCategory.HISTORY,
+        },
+        orderBy: { id: 'desc' },
+        select: { text: true },
+    });
     const data = {
         ...event.before,
         turnTime: event.before.turnTime.toISOString(),
         recentWarTime: event.before.recentWarTime?.toISOString() ?? null,
+        history: history.map((entry) => entry.text),
     };
     await prisma.oldGeneral.upsert({
         where: { by_no: { serverId, generalNo: event.generalId } },

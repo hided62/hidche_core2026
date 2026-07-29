@@ -77,6 +77,26 @@ excluded. In particular, `general`, `city`, `nation`, their turn queues,
 `ng_betting`, `reserved_open`, `select_pool`, `select_npc_token` and `plock`
 must not be used to reconstruct a running season.
 
+## Archived play read model
+
+`/past-plays` is an authenticated, read-only projection. The server derives the
+archive owner from the game session and never accepts an owner ID from the
+browser.
+
+- `archive.myPastPlays` combines the owner's `ng_old_generals` rows with
+  `ng_games`, the latest matching `ng_old_nations` snapshot and an optional
+  `emperior` row. It returns summary fields and a link target for the existing
+  public dynasty/nation detail.
+- `archive.myPastPlayDetail(serverId, generalNo)` includes the session owner in
+  the database predicate before returning `data.history`. A foreign or missing
+  record uses the same not-found response.
+- Legacy `data.history` may be either an array or a `<br>`-joined string. The API
+  normalizes both to a newest-first string array, and the frontend renders plain
+  text rather than archived markup.
+- Runtime death and unification archival writes the current general
+  `GENERAL/HISTORY` rows into the same `data.history` field, so newly completed
+  seasons remain compatible with imported rows.
+
 ## Cutover procedure
 
 1. Keep the original compressed dumps immutable and restore each source to a
@@ -90,8 +110,8 @@ must not be used to reconstruct a running season.
    run the same commands with `--apply`.
 6. Repeat each apply. Counts must remain unchanged.
 7. Verify Kakao migration timestamps, password-hash shapes, archive ownership,
-   old-nation/history duplicate preservation and the `/past-plays` authenticated
-   read path.
+   old-nation/history duplicate preservation, `/past-plays` list/detail access,
+   foreign-owner denial and the dynasty link.
 8. Retain the MariaDB dumps as rollback evidence. Rollback restores the
    pre-cutover PostgreSQL backup; it does not reverse individual importer
    upserts.

@@ -24,6 +24,7 @@ const installArchive = async (page: Page) => {
                             season: 51,
                             scenario: 2,
                             scenarioName: '천하쟁패',
+                            dynastyId: 7,
                             generals: [
                                 {
                                     generalNo: 17,
@@ -41,10 +42,20 @@ const installArchive = async (page: Page) => {
                                     personal: '대담',
                                     special: '상재',
                                     special2: '신산',
+                                    historyCount: 2,
                                 },
                             ],
                         },
                     ],
+                });
+            }
+            if (operation === 'archive.myPastPlayDetail') {
+                return response({
+                    serverId: 'che_2024_01',
+                    generalNo: 17,
+                    name: '관우',
+                    lastYearMonth: 21403,
+                    history: ['<C>●</>214년 3월: 촉에 임관', '<Y>●</>214년 1월: 성도에서 거병'],
                 });
             }
             return { error: { message: `unhandled ${operation}`, data: { code: 'BAD_REQUEST' } } };
@@ -65,6 +76,12 @@ test('past plays is available without a current general and preserves desktop in
     await expect(page.getByRole('heading', { name: '내 지난 플레이 보기' })).toBeVisible();
     await expect(page.getByText('천하쟁패 · 51기')).toBeVisible();
     await expect(page.locator('.general-name')).toHaveText('관우');
+    await expect(page.getByRole('link', { name: '이 기수 국가 정보' })).toHaveAttribute('href', '/che/dynasty/7');
+    const historyToggle = page.locator('.history-toggle');
+    await expect(historyToggle).toHaveText('보기 (2)');
+    await historyToggle.click();
+    await expect(page.getByText('214년 3월: 촉에 임관')).toBeVisible();
+    await expect(historyToggle).toHaveAttribute('aria-expanded', 'true');
 
     const geometry = await root.evaluate((element) => {
         const rect = element.getBoundingClientRect();
@@ -117,6 +134,6 @@ test('past plays keeps the legacy-width table scrollable on a mobile viewport', 
         overflowX: getComputedStyle(element).overflowX,
     }));
     // The shared legacy shell keeps its historical 500 px minimum canvas.
-    expect(metrics).toEqual({ clientWidth: 500, scrollWidth: 820, overflowX: 'auto' });
+    expect(metrics).toEqual({ clientWidth: 500, scrollWidth: 940, overflowX: 'auto' });
     await expect(page.locator('.title-row')).toHaveCSS('flex-direction', 'column');
 });

@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asRecord } from '@sammo-ts/common';
 import { createGamePostgresConnector, type GamePrismaClient } from '@sammo-ts/infra';
+import { LogCategory, LogScope } from '@sammo-ts/logic';
 
 import type { GeneralLifecycleEvent } from '../src/turn/inMemoryWorld.js';
 import { persistGeneralLifecycleEvents } from '../src/turn/generalTurnLifecyclePersistence.js';
@@ -72,6 +74,7 @@ integration('general turn lifecycle persistence', () => {
     let close: (() => Promise<void>) | undefined;
 
     const cleanup = async () => {
+        await db.logEntry.deleteMany({ where: { generalId: { in: generalIds } } });
         await db.generalAccessLog.deleteMany({ where: { generalId: { in: generalIds } } });
         await db.rankData.deleteMany({ where: { generalId: { in: generalIds } } });
         await db.oldGeneral.deleteMany({ where: { serverId, generalNo: { in: generalIds } } });
@@ -116,6 +119,26 @@ integration('general turn lifecycle persistence', () => {
                 { generalId: general.id, nationId: 0, type: 'firenum', value: 1 },
             ],
         });
+        await db.logEntry.createMany({
+            data: [
+                {
+                    scope: LogScope.GENERAL,
+                    category: LogCategory.HISTORY,
+                    year: 199,
+                    month: 12,
+                    generalId: general.id,
+                    text: '<C>●</>첫 기록',
+                },
+                {
+                    scope: LogScope.GENERAL,
+                    category: LogCategory.HISTORY,
+                    year: 200,
+                    month: 1,
+                    generalId: general.id,
+                    text: '<Y>●</>둘째 기록',
+                },
+            ],
+        });
 
         await db.$transaction((tx) =>
             persistGeneralLifecycleEvents(
@@ -127,7 +150,10 @@ integration('general turn lifecycle persistence', () => {
         );
 
         expect(await db.generalAccessLog.findUnique({ where: { generalId: general.id } })).toBeNull();
-        expect(await db.oldGeneral.findUnique({ where: { by_no: { serverId, generalNo: general.id } } })).not.toBeNull();
+        const archived = await db.oldGeneral.findUniqueOrThrow({
+            where: { by_no: { serverId, generalNo: general.id } },
+        });
+        expect(asRecord(archived.data).history).toEqual(['<Y>●</>둘째 기록', '<C>●</>첫 기록']);
         expect(
             await db.inheritancePoint.findUnique({
                 where: { userId_key: { userId: general.userId!, key: 'previous' } },
