@@ -21,7 +21,11 @@
         "check:legacy:nation": "node tools/compare-command-constraints.mjs --include '^Nation/' --check && node tools/compare-command-logs.mjs --include '^Nation/' --mode action --check",
         "check:legacy:general": "node tools/compare-command-constraints.mjs --include '^General/' --check && node tools/compare-command-logs.mjs --include '^General/' --mode action --check && node tools/compare-general-turn-contracts.mjs --check",
         "test:e2e:frontend-legacy": "playwright test --config tools/frontend-legacy-parity/playwright.config.mjs --tsconfig tools/frontend-legacy-parity/tsconfig.json",
-        "migrate:legacy": "pnpm --filter @sammo-ts/legacy-db-migration migrate"
+        "migrate:legacy": "pnpm --filter @sammo-ts/legacy-db-migration migrate",
+        "docs:generate": "node tools/docs/generate-command-reference.mjs",
+        "docs:dev": "pnpm docs:generate && vitepress dev docs",
+        "docs:build": "pnpm docs:generate && vitepress build docs",
+        "docs:preview": "vitepress preview docs"
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",
@@ -39,6 +43,7 @@
         "turbo": "^2.10.6",
         "typescript": "6.0.2",
         "typescript-eslint": "^8.65.0",
-        "vue-eslint-parser": "^10.4.1"
+        "vue-eslint-parser": "^10.4.1",
+        "vitepress": "1.6.4"
     }
 }
