@@ -86,7 +86,7 @@ export const createNeutralAuctionRegistrar = async (options: {
                     SELECT type, count(*) AS count
                     FROM auction
                     WHERE host_general_id = 0
-                      AND type IN ('BUY_RICE'::"AuctionType", 'SELL_RICE'::"AuctionType")
+                      AND type IN ('BUY_RICE'::"auction_type", 'SELL_RICE'::"auction_type")
                     GROUP BY type
                 `
             ));
