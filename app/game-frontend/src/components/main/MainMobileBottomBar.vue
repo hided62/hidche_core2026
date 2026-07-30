@@ -66,21 +66,33 @@ const onQuick = (item: QuickNavigationItem) => {
                             @navigate="close()"
                         />
                     </li>
-                    <template v-else>
+                    <template v-else-if="entry.kind === 'group'">
                         <li class="bottom-heading" role="presentation">
-                            {{ entry.kind === 'group' ? entry.label : entry.main.label }}
+                            {{ entry.label }}
                         </li>
-                        <template v-if="entry.kind === 'split'">
-                            <li role="none">
+                        <template v-for="item in entry.items" :key="item.id">
+                            <li v-if="item.kind === 'divider'" class="bottom-divider" role="separator"></li>
+                            <li v-else role="none">
                                 <MainNavigationLink
-                                    :link="entry.main"
-                                    :enabled="isNavigationConfigured(entry.main)"
+                                    :link="item"
+                                    :enabled="isNavigationConfigured(item)"
                                     compact
                                     role="menuitem"
                                     @navigate="close()"
                                 />
                             </li>
                         </template>
+                    </template>
+                    <template v-else-if="entry.kind === 'split'">
+                        <li role="none">
+                            <MainNavigationLink
+                                :link="entry.main"
+                                :enabled="isNavigationConfigured(entry.main)"
+                                compact
+                                role="menuitem"
+                                @navigate="close()"
+                            />
+                        </li>
                         <template v-for="item in entry.items" :key="item.id">
                             <li v-if="item.kind === 'divider'" class="bottom-divider" role="separator"></li>
                             <li v-else role="none">
@@ -123,15 +135,6 @@ const onQuick = (item: QuickNavigationItem) => {
                         />
                     </li>
                     <template v-else-if="entry.kind === 'split'">
-                        <li role="none">
-                            <MainNavigationLink
-                                :link="entry.main"
-                                :enabled="isNationNavigationEnabled(entry.main, access)"
-                                compact
-                                role="menuitem"
-                                @navigate="close()"
-                            />
-                        </li>
                         <li v-for="item in entry.items" :key="item.id" role="none">
                             <template v-if="item.kind === 'link'">
                                 <MainNavigationLink
@@ -162,7 +165,10 @@ const onQuick = (item: QuickNavigationItem) => {
             </button>
             <ul v-show="openId === 'quick'" id="mobile-quick-menu" class="bottom-popup" role="menu">
                 <template v-for="item in quickNavigation" :key="item.id">
-                    <li v-if="'kind' in item" class="bottom-divider" role="separator"></li>
+                    <template v-if="'kind' in item">
+                        <li class="bottom-heading" role="presentation">{{ item.label }}</li>
+                        <li class="bottom-divider" role="separator"></li>
+                    </template>
                     <li v-else role="none">
                         <button
                             class="quick-link"

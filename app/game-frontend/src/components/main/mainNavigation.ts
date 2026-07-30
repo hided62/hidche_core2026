@@ -17,6 +17,7 @@ export type MainNavigationLink = {
 export interface MainNavigationDivider {
     kind: 'divider';
     id: string;
+    label?: string;
 }
 
 export interface MainNavigationGroup {
@@ -317,18 +318,18 @@ export const nationNavigation: MainNavigationEntry[] = [
 ];
 
 export const quickNavigation: Array<QuickNavigationItem | MainNavigationDivider> = [
-    { kind: 'divider', id: 'quick-nation-heading' },
+    { kind: 'divider', id: 'quick-nation-heading', label: '국가 정보' },
     { id: 'policy', label: '방침', tab: 'map', selector: '[data-main-target="policy"]' },
     { id: 'commands', label: '명령', tab: 'commands', selector: '[data-main-target="commands"]' },
     { id: 'nation', label: '국가', tab: 'status', selector: '[data-main-target="nation"]' },
     { id: 'general', label: '장수', tab: 'status', selector: '[data-main-target="general"]' },
     { id: 'city', label: '도시', tab: 'status', selector: '[data-main-target="city"]' },
-    { kind: 'divider', id: 'quick-record-heading' },
+    { kind: 'divider', id: 'quick-record-heading', label: '동향 정보' },
     { id: 'map', label: '지도', tab: 'map', selector: '[data-main-target="map"]' },
     { id: 'global-records', label: '동향', tab: 'world', selector: '[data-main-target="global-records"]' },
     { id: 'general-records', label: '개인', tab: 'world', selector: '[data-main-target="general-records"]' },
     { id: 'world-history', label: '정세', tab: 'world', selector: '[data-main-target="world-history"]' },
-    { kind: 'divider', id: 'quick-message-heading' },
+    { kind: 'divider', id: 'quick-message-heading', label: '메시지' },
     { id: 'public-message', label: '전체', tab: 'messages', selector: '[data-message-type="public"]' },
     { id: 'national-message', label: '국가', tab: 'messages', selector: '[data-message-type="national"]' },
     { id: 'private-message', label: '개인', tab: 'messages', selector: '[data-message-type="private"]' },

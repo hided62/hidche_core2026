@@ -143,7 +143,7 @@ watch(
 
 <template>
     <main class="game-shell main-page">
-        <MainGlobalMenu :npc-mode="npcMode" :vote-active="voteActive" />
+        <MainGlobalMenu data-menu-position="top" :npc-mode="npcMode" :vote-active="voteActive" />
 
         <header class="game-shell__header">
             <div>
@@ -280,6 +280,13 @@ watch(
                 </RecordPanel>
             </div>
 
+            <MainGlobalMenu
+                class="common-menu-middle"
+                data-menu-position="middle"
+                :npc-mode="npcMode"
+                :vote-active="voteActive"
+            />
+
             <div v-if="mobileTab === 'messages'" class="mobile-panel">
                 <MessagePanel
                     class="mobile-message-panel"
@@ -383,6 +390,12 @@ watch(
                     </div>
                 </RecordPanel>
             </section>
+            <MainGlobalMenu
+                class="common-menu-middle"
+                data-menu-position="middle"
+                :npc-mode="npcMode"
+                :vote-active="voteActive"
+            />
             <MessagePanel
                 class="desktop-message-panel"
                 :messages="messages"
@@ -405,8 +418,12 @@ watch(
             />
         </section>
 
-        <MainGlobalMenu class="common-menu-repeat" :npc-mode="npcMode" :vote-active="voteActive" />
-        <MainGlobalMenu class="common-menu-repeat" :npc-mode="npcMode" :vote-active="voteActive" />
+        <MainGlobalMenu
+            class="common-menu-repeat"
+            data-menu-position="bottom"
+            :npc-mode="npcMode"
+            :vote-active="voteActive"
+        />
 
         <MainMobileBottomBar
             :access="nationAccess"
@@ -512,6 +529,10 @@ button {
 }
 
 .desktop-message-panel {
+    grid-column: 1 / -1;
+}
+
+.common-menu-middle {
     grid-column: 1 / -1;
 }
 

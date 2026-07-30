@@ -288,6 +288,17 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     await expect(page.locator('.main-mobile-bottom')).toBeHidden();
     await expect(page.locator('.layout-desktop')).toBeVisible();
     await expect(page.locator('.layout-mobile')).toHaveCount(0);
+    const contentOrder = await page
+        .locator('.record-zone, [data-menu-position="middle"], .desktop-message-panel, [data-menu-position="bottom"]')
+        .evaluateAll((elements) =>
+            elements.map((element) => {
+                if (element.classList.contains('record-zone')) return 'records';
+                if (element.getAttribute('data-menu-position') === 'middle') return 'middle-menu';
+                if (element.classList.contains('desktop-message-panel')) return 'messages';
+                return 'bottom-menu';
+            })
+        );
+    expect(contentOrder).toEqual(['records', 'middle-menu', 'messages', 'bottom-menu']);
 
     const global = page.locator('.main-global-menu').first();
     await expect(global.locator('[data-navigation-id="nation-betting"]')).toHaveAttribute(
@@ -383,8 +394,30 @@ test('the 939/940 boundary and 500px bottom bar match the ref responsive contrac
     expect(popupStyle.overflowY).toBe('auto');
     expect(popupStyle.maxHeight).toBe('850px');
     expect(popupStyle.bottom).toBe('47px');
+    const globalPopup = page.locator('#mobile-global-menu');
+    await expect(globalPopup.getByText('게시판', { exact: true })).toHaveCount(1);
+    await expect(globalPopup.getByText('공식 오픈 톡', { exact: true })).toHaveCount(1);
+    await expect(globalPopup.getByText('게임정보', { exact: true })).toHaveCount(1);
+    await expect(globalPopup.getByText('기타 정보', { exact: true })).toHaveCount(1);
+    await persistArtifact(page, `${basePath.slice(1)}-mobile-global-open-500`);
     await page.keyboard.press('Escape');
     await expect(externalTrigger).toBeFocused();
+
+    await page.locator('[data-bottom-menu="nation"]').click();
+    const nationPopup = page.locator('#mobile-nation-menu');
+    await expect(nationPopup.getByText('금/쌀 경매장', { exact: true })).toHaveCount(1);
+    await expect(nationPopup.getByText('유니크 경매장', { exact: true })).toHaveCount(1);
+    await page.keyboard.press('Escape');
+
+    await page.locator('[data-bottom-menu="quick"]').click();
+    const quickPopup = page.locator('#mobile-quick-menu');
+    for (const heading of ['국가 정보', '동향 정보', '메시지']) {
+        await expect(quickPopup.locator('.bottom-heading').getByText(heading, { exact: true })).toHaveCount(1);
+    }
+    await expect(quickPopup.locator('.bottom-heading')).toHaveCount(3);
+    await expect(quickPopup.locator('.bottom-divider')).toHaveCount(3);
+    await persistArtifact(page, `${basePath.slice(1)}-mobile-quick-open-500`);
+    await page.keyboard.press('Escape');
     await persistArtifact(page, `${basePath.slice(1)}-mobile-500`);
 });
 
