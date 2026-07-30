@@ -1,17 +1,22 @@
 import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
-import type { GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
+import type { GeneralActionModule } from '@sammo-ts/logic/actionModules/general.js';
+import {
+    createGeneralActionEvent,
+    dispatchGeneralActionEventHandlers,
+    type GeneralActionEvent,
+    type GeneralActionEventContext,
+    type GeneralActionEventType,
+} from '@sammo-ts/logic/actionModules/events.js';
 import { GeneralTriggerCaller, type GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
 import type {
     GeneralStatName,
-    TriggerActionPhase,
-    TriggerActionType,
     TriggerDomesticActionType,
     TriggerDomesticVarType,
     TriggerNationalIncomeType,
     TriggerStrategicActionType,
     TriggerStrategicVarType,
     WarStatName,
-} from '@sammo-ts/logic/triggers/types.js';
+} from '@sammo-ts/logic/actionModules/types.js';
 import type { WarActionContext, WarActionModule } from '@sammo-ts/logic/war/actions.js';
 import { WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
 import type { WarUnit } from '@sammo-ts/logic/war/units.js';
@@ -275,7 +280,7 @@ const defaultImporters: Record<ItemKey, ItemImporter> = {
     che_약탈_옥벽: async () => import('./che_약탈_옥벽.js'),
     che_위압_조목삭: async () => {
         const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
-            import('../triggers/special/war/che_위압.js'),
+            import('../actionModules/traits/war/che_위압.js'),
             import('./eventBattleTrait.js'),
         ]);
         return {
@@ -312,140 +317,140 @@ const defaultImporters: Record<ItemKey, ItemImporter> = {
     che_훈련_청주: async () => import('./che_훈련_청주.js'),
     event_전투특기_격노: async () => {
         const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
-            import('../triggers/special/war/che_격노.js'),
+            import('../actionModules/traits/war/che_격노.js'),
             import('./eventBattleTrait.js'),
         ]);
         return { itemModule: createEventBattleTraitItemModule('event_전투특기_격노', traitModule) };
     },
     event_전투특기_견고: async () => {
         const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
-            import('../triggers/special/war/che_견고.js'),
+            import('../actionModules/traits/war/che_견고.js'),
             import('./eventBattleTrait.js'),
         ]);
         return { itemModule: createEventBattleTraitItemModule('event_전투특기_견고', traitModule) };
     },
     event_전투특기_공성: async () => {
         const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
-            import('../triggers/special/war/che_공성.js'),
+            import('../actionModules/traits/war/che_공성.js'),
             import('./eventBattleTrait.js'),
         ]);
         return { itemModule: createEventBattleTraitItemModule('event_전투특기_공성', traitModule) };
     },
     event_전투특기_궁병: async () => {
         const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
-            import('../triggers/special/war/che_궁병.js'),
+            import('../actionModules/traits/war/che_궁병.js'),
             import('./eventBattleTrait.js'),
         ]);
         return { itemModule: createEventBattleTraitItemModule('event_전투특기_궁병', traitModule) };
     },
     event_전투특기_귀병: async () => {
         const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
-            import('../triggers/special/war/che_귀병.js'),
+            import('../actionModules/traits/war/che_귀병.js'),
             import('./eventBattleTrait.js'),
         ]);
         return { itemModule: createEventBattleTraitItemModule('event_전투특기_귀병', traitModule) };
     },
     event_전투특기_기병: async () => {
         const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
-            import('../triggers/special/war/che_기병.js'),
+            import('../actionModules/traits/war/che_기병.js'),
             import('./eventBattleTrait.js'),
         ]);
         return { itemModule: createEventBattleTraitItemModule('event_전투특기_기병', traitModule) };
     },
     event_전투특기_돌격: async () => {
         const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
-            import('../triggers/special/war/che_돌격.js'),
+            import('../actionModules/traits/war/che_돌격.js'),
             import('./eventBattleTrait.js'),
         ]);
         return { itemModule: createEventBattleTraitItemModule('event_전투특기_돌격', traitModule) };
     },
     event_전투특기_무쌍: async () => {
         const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
-            import('../triggers/special/war/che_무쌍.js'),
+            import('../actionModules/traits/war/che_무쌍.js'),
             import('./eventBattleTrait.js'),
         ]);
         return { itemModule: createEventBattleTraitItemModule('event_전투특기_무쌍', traitModule) };
     },
     event_전투특기_반계: async () => {
         const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
-            import('../triggers/special/war/che_반계.js'),
+            import('../actionModules/traits/war/che_반계.js'),
             import('./eventBattleTrait.js'),
         ]);
         return { itemModule: createEventBattleTraitItemModule('event_전투특기_반계', traitModule) };
     },
     event_전투특기_보병: async () => {
         const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
-            import('../triggers/special/war/che_보병.js'),
+            import('../actionModules/traits/war/che_보병.js'),
             import('./eventBattleTrait.js'),
         ]);
         return { itemModule: createEventBattleTraitItemModule('event_전투특기_보병', traitModule) };
     },
     event_전투특기_신산: async () => {
         const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
-            import('../triggers/special/war/che_신산.js'),
+            import('../actionModules/traits/war/che_신산.js'),
             import('./eventBattleTrait.js'),
         ]);
         return { itemModule: createEventBattleTraitItemModule('event_전투특기_신산', traitModule) };
     },
     event_전투특기_신중: async () => {
         const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
-            import('../triggers/special/war/che_신중.js'),
+            import('../actionModules/traits/war/che_신중.js'),
             import('./eventBattleTrait.js'),
         ]);
         return { itemModule: createEventBattleTraitItemModule('event_전투특기_신중', traitModule) };
     },
     event_전투특기_위압: async () => {
         const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
-            import('../triggers/special/war/che_위압.js'),
+            import('../actionModules/traits/war/che_위압.js'),
             import('./eventBattleTrait.js'),
         ]);
         return { itemModule: createEventBattleTraitItemModule('event_전투특기_위압', traitModule) };
     },
     event_전투특기_의술: async () => {
         const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
-            import('../triggers/special/war/che_의술.js'),
+            import('../actionModules/traits/war/che_의술.js'),
             import('./eventBattleTrait.js'),
         ]);
         return { itemModule: createEventBattleTraitItemModule('event_전투특기_의술', traitModule) };
     },
     event_전투특기_저격: async () => {
         const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
-            import('../triggers/special/war/che_저격.js'),
+            import('../actionModules/traits/war/che_저격.js'),
             import('./eventBattleTrait.js'),
         ]);
         return { itemModule: createEventBattleTraitItemModule('event_전투특기_저격', traitModule) };
     },
     event_전투특기_집중: async () => {
         const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
-            import('../triggers/special/war/che_집중.js'),
+            import('../actionModules/traits/war/che_집중.js'),
             import('./eventBattleTrait.js'),
         ]);
         return { itemModule: createEventBattleTraitItemModule('event_전투특기_집중', traitModule) };
     },
     event_전투특기_징병: async () => {
         const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
-            import('../triggers/special/war/che_징병.js'),
+            import('../actionModules/traits/war/che_징병.js'),
             import('./eventBattleTrait.js'),
         ]);
         return { itemModule: createEventBattleTraitItemModule('event_전투특기_징병', traitModule) };
     },
     event_전투특기_척사: async () => {
         const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
-            import('../triggers/special/war/che_척사.js'),
+            import('../actionModules/traits/war/che_척사.js'),
             import('./eventBattleTrait.js'),
         ]);
         return { itemModule: createEventBattleTraitItemModule('event_전투특기_척사', traitModule) };
     },
     event_전투특기_필살: async () => {
         const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
-            import('../triggers/special/war/che_필살.js'),
+            import('../actionModules/traits/war/che_필살.js'),
             import('./eventBattleTrait.js'),
         ]);
         return { itemModule: createEventBattleTraitItemModule('event_전투특기_필살', traitModule) };
     },
     event_전투특기_환술: async () => {
         const [{ traitModule }, { createEventBattleTraitItemModule }] = await Promise.all([
-            import('../triggers/special/war/che_환술.js'),
+            import('../actionModules/traits/war/che_환술.js'),
             import('./eventBattleTrait.js'),
         ]);
         return { itemModule: createEventBattleTraitItemModule('event_전투특기_환술', traitModule) };
@@ -521,9 +526,7 @@ export const createItemModuleRegistry = <TriggerState extends GeneralTriggerStat
     return registry;
 };
 
-class ItemGeneralActionRouter<
-    TriggerState extends GeneralTriggerState = GeneralTriggerState,
-> implements GeneralActionModule<TriggerState> {
+class ItemGeneralActionRouter<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     constructor(private readonly registry: ItemModuleRegistry<TriggerState>) {}
 
     private resolveModules(context: GeneralActionContext<TriggerState>): Array<ItemModule<TriggerState>> {
@@ -631,38 +634,21 @@ class ItemGeneralActionRouter<
         return current;
     }
 
-    onArbitraryAction(
-        context: GeneralActionContext<TriggerState>,
-        actionType: TriggerActionType,
-        phase?: TriggerActionPhase | null,
-        aux?: Record<string, unknown> | null
-    ): Record<string, unknown> | null {
-        let current = aux ?? null;
+    handleEvent<K extends GeneralActionEventType>(
+        context: GeneralActionEventContext<K, TriggerState>,
+        event: GeneralActionEvent<K, TriggerState>
+    ): GeneralActionEvent<K, TriggerState> {
+        let current = event;
         for (const module of this.resolveModules(context)) {
-            if (!module.onArbitraryAction) {
-                // Declarative consumption rules are evaluated below even when
-                // the item has no custom arbitrary-action hook.
-            } else {
-                const result = module.onArbitraryAction(context, actionType, phase, current);
-                if (result !== undefined) {
-                    current = result;
-                }
-            }
+            current = dispatchGeneralActionEventHandlers(module.eventHandlers, context, current);
 
-            const shouldConsume = module.consumeOn?.some(
-                (rule) =>
-                    rule.actionType === actionType &&
-                    (rule.phase === undefined || rule.phase === phase) &&
-                    (rule.command === undefined || current?.['command'] === rule.command) &&
-                    (!rule.successOnly || current?.['success'] === true)
-            );
-            if (shouldConsume) {
+            if (current.type === 'strategy.succeeded' && module.consumeOnStrategySuccess) {
                 const removed = removeEquippedItem(context.general, module.slot);
                 if (removed?.itemKey === module.key) {
-                    const consumedItems = Array.isArray(current?.['consumedItems'])
-                        ? (current['consumedItems'] as unknown[])
-                        : [];
-                    current = { ...(current ?? {}), consumedItems: [...consumedItems, module.key] };
+                    const strategyEvent = current as GeneralActionEvent<'strategy.succeeded', TriggerState>;
+                    current = createGeneralActionEvent<TriggerState, 'strategy.succeeded'>('strategy.succeeded', {
+                        consumedItems: [...strategyEvent.payload.consumedItems, module.key],
+                    }) as GeneralActionEvent<K, TriggerState>;
                 }
             }
         }
@@ -762,7 +748,7 @@ class ItemWarActionRouter<
 
 export const createItemActionModules = <TriggerState extends GeneralTriggerState = GeneralTriggerState>(
     registry: ItemModuleRegistry<TriggerState>
-): { general: GeneralActionModule<TriggerState>[]; war: WarActionModule<TriggerState>[] } => ({
+): { general: ReadonlyArray<GeneralActionModule<TriggerState>>; war: WarActionModule<TriggerState>[] } => ({
     general: [new ItemGeneralActionRouter(registry)],
     war: [new ItemWarActionRouter(registry)],
 });

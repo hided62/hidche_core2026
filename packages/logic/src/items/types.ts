@@ -2,27 +2,19 @@ import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { GeneralActionContext, GeneralTriggerCaller } from '@sammo-ts/logic/triggers/general.js';
 import type {
     GeneralStatName,
-    TriggerActionPhase,
-    TriggerActionType,
     TriggerDomesticActionType,
     TriggerDomesticVarType,
     TriggerNationalIncomeType,
     TriggerStrategicActionType,
     TriggerStrategicVarType,
     WarStatName,
-} from '@sammo-ts/logic/triggers/types.js';
+} from '@sammo-ts/logic/actionModules/types.js';
+import type { GeneralActionEventHandlers } from '@sammo-ts/logic/actionModules/events.js';
 import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
 import type { WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
 import type { WarUnit } from '@sammo-ts/logic/war/units.js';
 
 export type ItemSlot = 'horse' | 'weapon' | 'book' | 'item';
-
-export interface ItemActionConsumptionRule {
-    actionType: TriggerActionType;
-    phase?: TriggerActionPhase | null;
-    command?: string;
-    successOnly?: boolean;
-}
 
 export interface ItemModule<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     key: string;
@@ -34,7 +26,7 @@ export interface ItemModule<TriggerState extends GeneralTriggerState = GeneralTr
     buyable: boolean;
     consumable: boolean;
     initialCharges?: number;
-    consumeOn?: ItemActionConsumptionRule[];
+    consumeOnStrategySuccess?: boolean;
     reqSecu: number;
     unique: boolean;
 
@@ -83,12 +75,7 @@ export interface ItemModule<TriggerState extends GeneralTriggerState = GeneralTr
         amount: number
     ): number;
 
-    onArbitraryAction?(
-        context: GeneralActionContext<TriggerState>,
-        actionType: TriggerActionType,
-        phase?: TriggerActionPhase | null,
-        aux?: Record<string, unknown> | null
-    ): Record<string, unknown> | null;
+    eventHandlers?: GeneralActionEventHandlers<TriggerState>;
 
     getBattleInitTriggerList?(context: WarActionContext<TriggerState>): WarTriggerCaller | null;
 

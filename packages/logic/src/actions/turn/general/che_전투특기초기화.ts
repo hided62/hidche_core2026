@@ -8,7 +8,7 @@ import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/action
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import { setMetaNumber } from '@sammo-ts/logic/war/utils.js';
-import { WAR_TRAIT_KEYS } from '@sammo-ts/logic/triggers/special/war/index.js';
+import { WAR_TRAIT_KEYS } from '@sammo-ts/logic/actionModules/traits/war/index.js';
 
 export interface ResetSpecialWarArgs {}
 

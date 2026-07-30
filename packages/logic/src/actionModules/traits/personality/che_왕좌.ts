@@ -1,0 +1,43 @@
+import type { TraitModule } from '@sammo-ts/logic/actionModules/traits/types.js';
+import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
+import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
+import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/actionModules/types.js';
+
+export const traitModule: TraitModule = {
+    key: 'che_왕좌',
+    name: '왕좌',
+    info: '명성 +10%, 사기 -5',
+    kind: 'personality',
+    getName: () => '왕좌',
+    getInfo: () => '명성 +10%, 사기 -5',
+    onCalcStat: (() => {
+        function onCalcStat(
+            _context: GeneralActionContext,
+            statName: GeneralStatName,
+            value: number,
+            _aux?: unknown
+        ): number;
+        function onCalcStat(
+            _context: WarActionContext,
+            statName: WarStatName,
+            value: number | [number, number],
+            _aux?: unknown
+        ): number | [number, number];
+        function onCalcStat(
+            _context: GeneralActionContext | WarActionContext,
+            statName: GeneralStatName | WarStatName,
+            value: number | [number, number]
+        ): number | [number, number] {
+            if (typeof value === 'number') {
+                if (statName === 'experience') {
+                    return value * 1.1;
+                }
+                if (statName === 'bonusAtmos') {
+                    return value - 5;
+                }
+            }
+            return value;
+        }
+        return onCalcStat;
+    })() as Exclude<TraitModule['onCalcStat'], undefined>,
+};

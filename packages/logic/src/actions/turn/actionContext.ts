@@ -22,6 +22,11 @@ export type ActionContextBase = {
     worldView?: GeneralWorldView;
     rng: ActionRandomSource;
     uniqueLottery?: UniqueLotteryRunner;
+    time?: {
+        year: number;
+        month: number;
+        startYear: number;
+    };
 };
 
 export type ActionResolveContext = ActionContextBase & Record<string, unknown>;

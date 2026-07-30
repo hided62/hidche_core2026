@@ -23,6 +23,7 @@ import {
     getEquippedItemInstance,
     loadItemModules,
 } from '../../src/items/index.js';
+import { createRefOrderedActionStack } from '../../src/actionModules/bundle.js';
 
 describe('General Commands New Scenario', () => {
     // 1. Setup Environment
@@ -449,7 +450,21 @@ describe('General Commands New Scenario', () => {
         expect(spyInfo['2']).toBe(3); // City 2 spied level 3
 
         // 3. Destroy (G1 -> C2)
-        const strategyEnv = { ...systemEnv, generalActionModules: itemGeneralModules };
+        const noOpModule = {};
+        const strategyEnv: TurnCommandEnv = {
+            ...systemEnv,
+            generalActionModules: createRefOrderedActionStack({
+                nation: noOpModule,
+                officer: noOpModule,
+                domestic: noOpModule,
+                war: noOpModule,
+                personality: noOpModule,
+                crewType: null,
+                inheritance: noOpModule,
+                scenario: null,
+                items: itemGeneralModules,
+            }),
+        };
         const destroyDef = destroySpec.createDefinition(strategyEnv);
         await runner.runTurn([
             {

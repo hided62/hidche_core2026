@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { General } from '../src/domain/entities.js';
 import { createInheritBuffModules } from '../src/inheritance/inheritBuff.js';
-import { GeneralActionPipeline } from '../src/triggers/general-action.js';
+import { GeneralActionPipeline } from '../src/actionModules/general.js';
 
 const buildGeneral = (inheritBuff: Record<string, number>): General => ({
     id: 1,

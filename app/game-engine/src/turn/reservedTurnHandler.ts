@@ -976,6 +976,11 @@ export const createReservedTurnHandler = async (options: {
                     getAdditionalOccupiedUniqueItemKeys: options.getAdditionalOccupiedUniqueItemKeys,
                 });
                 let actionRng = sharedActionRng ?? buildRng(actionKey);
+                const actionTime = {
+                    year: context.world.currentYear,
+                    month: context.world.currentMonth,
+                    startYear: resolveStartYear(context.world, options.scenarioMeta),
+                };
                 let baseContext: ActionContextBase = {
                     general: currentGeneral,
                     city: currentCity,
@@ -991,6 +996,7 @@ export const createReservedTurnHandler = async (options: {
                           }
                         : {}),
                     rng: actionRng,
+                    time: actionTime,
                     uniqueLottery,
                 };
                 let specificContext = buildActionContext(
@@ -1023,6 +1029,7 @@ export const createReservedTurnHandler = async (options: {
                         city: currentCity,
                         nation: currentNation,
                         rng: actionRng,
+                        time: actionTime,
                     };
                     specificContext = baseContext;
                 }

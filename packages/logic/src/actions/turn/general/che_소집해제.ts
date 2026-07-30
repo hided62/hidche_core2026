@@ -6,7 +6,7 @@ import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-t
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
-import { GeneralActionPipeline } from '@sammo-ts/logic/triggers/general-action.js';
+import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js';
 
 export interface DisbandArgs {}
 

@@ -8,7 +8,7 @@ import {
     notOccupiedDestCity,
     occupiedCity,
 } from '@sammo-ts/logic/constraints/presets.js';
-import { GeneralActionPipeline, type GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
+import { GeneralActionPipeline, type GeneralActionModule } from '@sammo-ts/logic/actionModules/general.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionEffect,
@@ -72,7 +72,7 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
     private readonly pipeline: GeneralActionPipeline<TriggerState>;
 
     constructor(
-        modules: Array<GeneralActionModule<TriggerState> | null | undefined>,
+        modules: ReadonlyArray<GeneralActionModule<TriggerState> | null | undefined>,
         private readonly initialNationGenLimit = 10
     ) {
         this.pipeline = new GeneralActionPipeline(modules);
@@ -96,7 +96,10 @@ export class ActionResolver<
     readonly key = 'che_허보';
     private readonly command: CommandResolver<TriggerState>;
 
-    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>, initialNationGenLimit = 10) {
+    constructor(
+        modules: ReadonlyArray<GeneralActionModule<TriggerState> | null | undefined>,
+        initialNationGenLimit = 10
+    ) {
         this.command = new CommandResolver(modules, initialNationGenLimit);
     }
 
@@ -195,7 +198,10 @@ export class ActionDefinition<
     public readonly name = ACTION_NAME;
     private readonly resolver: ActionResolver<TriggerState>;
 
-    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>, initialNationGenLimit = 10) {
+    constructor(
+        modules: ReadonlyArray<GeneralActionModule<TriggerState> | null | undefined>,
+        initialNationGenLimit = 10
+    ) {
         this.resolver = new ActionResolver(modules, initialNationGenLimit);
     }
 

@@ -31,7 +31,8 @@ import type { WarAftermathConfig, WarEngineConfig, WarTimeContext } from '@sammo
 import { resolveWarAftermath } from '@sammo-ts/logic/war/aftermath.js';
 import { resolveWarBattle } from '@sammo-ts/logic/war/engine.js';
 import type { WarActionModule } from '@sammo-ts/logic/war/actions.js';
-import type { NationTraitModule } from '@sammo-ts/logic/triggers/special/nation/index.js';
+import type { NationTraitModule } from '@sammo-ts/logic/actionModules/traits/nation/index.js';
+import type { GeneralActionModule } from '@sammo-ts/logic/actionModules/general.js';
 import { increaseMetaNumber, simpleSerialize } from '@sammo-ts/logic/war/utils.js';
 import type { MapDefinition, UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
@@ -163,9 +164,7 @@ const pickCandidateCity = (
         const legacyCompatibleRng = rng as typeof rng & {
             nextIntInclusive?: (maxInclusive: number) => number;
         };
-        const index =
-            legacyCompatibleRng.nextIntInclusive?.(items.length - 1) ??
-            rng.nextInt(0, items.length);
+        const index = legacyCompatibleRng.nextIntInclusive?.(items.length - 1) ?? rng.nextInt(0, items.length);
         return items[index]!;
     };
     const distances = Array.from(distanceList.keys()).sort((a, b) => a - b);
@@ -255,15 +254,18 @@ export class ActionDefinition<
     getInheritanceActiveActionAmount(): number {
         return 1;
     }
-    private readonly warModules: Array<WarActionModule<TriggerState>>;
+    private readonly warModules: ReadonlyArray<WarActionModule<TriggerState>>;
     private readonly nationTraitModules: Map<string, NationTraitModule>;
+    private readonly generalModules: ReadonlyArray<GeneralActionModule<TriggerState>>;
 
     constructor(
-        modules: Array<WarActionModule<TriggerState> | null | undefined> = [],
-        nationTraitModules: NationTraitModule[] = []
+        modules: ReadonlyArray<WarActionModule<TriggerState> | null | undefined> = [],
+        nationTraitModules: NationTraitModule[] = [],
+        generalModules: ReadonlyArray<GeneralActionModule<TriggerState> | null | undefined> = []
     ) {
-        this.warModules = modules.filter(Boolean) as Array<WarActionModule<TriggerState>>;
+        this.warModules = modules.filter(Boolean) as ReadonlyArray<WarActionModule<TriggerState>>;
         this.nationTraitModules = new Map(nationTraitModules.map((module) => [module.key, module]));
+        this.generalModules = generalModules.filter(Boolean) as ReadonlyArray<GeneralActionModule<TriggerState>>;
     }
 
     parseArgs(raw: unknown): DispatchArgs | null {
@@ -474,15 +476,12 @@ export class ActionDefinition<
             config: context.aftermathConfig,
             time,
             hiddenSeed: context.seedBase,
+            generalActionModules: this.generalModules,
             calcNationTechGain: ({ nation, baseGain }) => {
                 const module = this.nationTraitModules.get(nation.typeCode);
                 return (
-                    module?.onCalcDomestic?.(
-                        { general: context.general, nation },
-                        '기술',
-                        'score',
-                        baseGain
-                    ) ?? baseGain
+                    module?.onCalcDomestic?.({ general: context.general, nation }, '기술', 'score', baseGain) ??
+                    baseGain
                 );
             },
         });
@@ -601,5 +600,5 @@ export const commandSpec: GeneralTurnCommandSpec = {
     availabilityArgs: { destCityId: 0 },
     argsSchema: ARGS_SCHEMA,
     createDefinition: (env: TurnCommandEnv) =>
-        new ActionDefinition(env.warActionModules ?? [], env.nationTraitModules ?? []),
+        new ActionDefinition(env.warActionModules ?? [], env.nationTraitModules ?? [], env.generalActionModules ?? []),
 };

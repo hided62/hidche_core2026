@@ -1,4 +1,4 @@
-import type { GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
+import type { GeneralActionModule } from '@sammo-ts/logic/actionModules/general.js';
 import type { WarActionModule } from '@sammo-ts/logic/war/actions.js';
 import type { CrewTypeDefinition, UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
 

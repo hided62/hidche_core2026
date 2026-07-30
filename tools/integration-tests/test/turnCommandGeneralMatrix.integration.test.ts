@@ -462,10 +462,7 @@ const generalActiveActionInheritanceCases: GeneralActiveActionInheritanceCase[] 
     },
 ];
 
-const readActiveActionPoints = (
-    snapshot: { generals: Array<Record<string, unknown>> },
-    generalId: number
-): number => {
+const readActiveActionPoints = (snapshot: { generals: Array<Record<string, unknown>> }, generalId: number): number => {
     const general = snapshot.generals.find((entry) => entry.id === generalId);
     const value = general?.inheritActiveActionPoints;
     return typeof value === 'number' && Number.isFinite(value) ? value : 0;
@@ -1689,6 +1686,13 @@ const militaryPreparationBoundaryCases: MilitaryPreparationBoundaryCase[] = [
         action: 'che_장비매매',
         args: { itemType: 'weapon', itemCode: 'None' },
         actorPatch: { itemWeapon: 'che_무기_11_고정도' },
+        completed: true,
+    },
+    {
+        name: 'equipment trade applies the dogi sale side effect before removing it',
+        action: 'che_장비매매',
+        args: { itemType: 'item', itemCode: 'None' },
+        actorPatch: { itemExtra: 'che_보물_도기' },
         completed: true,
     },
     {
@@ -3524,7 +3528,12 @@ integration('general special reset constraint, state, unique lottery, and log pa
                     referenceActor?.itemBook,
                     referenceActor?.itemExtra,
                 ];
-                const coreItems = [coreActor?.itemHorse, coreActor?.itemWeapon, coreActor?.itemBook, coreActor?.itemExtra];
+                const coreItems = [
+                    coreActor?.itemHorse,
+                    coreActor?.itemWeapon,
+                    coreActor?.itemBook,
+                    coreActor?.itemExtra,
+                ];
                 expect(referenceItems.some((item) => item && item !== 'None')).toBe(true);
                 expect(coreItems).toEqual(referenceItems);
             }

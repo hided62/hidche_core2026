@@ -200,6 +200,22 @@ non-item versions (see `ActionItem/che_저격_매화수전.php`).
   per-phase activation.
 - Ensure RNG usage stays deterministic (`RandUtil` everywhere in triggers).
 
+## Current core2026 boundary
+
+core2026 does not expose the whole legacy `iAction` surface as one interface.
+Modifier folds and semantic side effects live under `src/actionModules/`;
+priority callers remain under `src/triggers/` and the war trigger modules.
+This separation is required because `TriggerCaller` sorts by priority and
+deduplicates unique IDs, while semantic events synchronously preserve module
+order and producer-owned mutation/RNG boundaries.
+
+The former copied `onArbitraryAction(actionName, phase, aux)` surface was
+removed. Equipment purchase/sale, strategy success and city conquest now use
+the closed, nominally branded protocol documented in
+[장수 행동 모듈 프로토콜](./action-module-protocol.md). This is a core2026
+typing boundary only; the ref call order and persisted effects remain the
+compatibility contract.
+
 ## Related Files
 
 - `legacy/hwe/sammo/iAction.php`

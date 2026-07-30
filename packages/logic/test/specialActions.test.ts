@@ -5,14 +5,14 @@ import { ConstantRNG, RandUtil } from '@sammo-ts/common';
 import type { City, General, Nation } from '../src/domain/entities.js';
 import type { RandomGenerator } from '../src/index.js';
 import type { UnitSetDefinition } from '../src/world/types.js';
-import { GeneralActionPipeline } from '../src/triggers/general-action.js';
+import { GeneralActionPipeline } from '../src/actionModules/general.js';
 import { createGeneralTriggerContext } from '../src/triggers/general.js';
 import {
-    createTraitModuleRegistry,
+    createTraitCatalog,
     createTraitModules,
     loadDomesticTraitModules,
     loadWarTraitModules,
-} from '../src/triggers/special/index.js';
+} from '../src/actionModules/traits/index.js';
 import { ActionLogger } from '../src/logging/actionLogger.js';
 import { WarActionPipeline } from '../src/war/actions.js';
 import { WarCrewType } from '../src/war/crewType.js';
@@ -174,7 +174,7 @@ describe('trait modules', () => {
     it('applies domestic and war modifiers in general pipeline', async () => {
         const domestic = await loadDomesticTraitModules(['che_인덕', 'che_발명']);
         const war = await loadWarTraitModules(['che_의술', 'che_징병']);
-        const registry = createTraitModuleRegistry({ domestic, war });
+        const registry = createTraitCatalog({ domestic, war });
         const traitModules = createTraitModules(registry);
 
         const pipeline = new GeneralActionPipeline(traitModules.general);
@@ -201,7 +201,7 @@ describe('trait modules', () => {
     it('heals city generals with 의술 pre-turn trigger', async () => {
         const domestic = await loadDomesticTraitModules(['che_인덕', 'che_발명']);
         const war = await loadWarTraitModules(['che_의술', 'che_징병']);
-        const registry = createTraitModuleRegistry({ domestic, war });
+        const registry = createTraitCatalog({ domestic, war });
         const traitModules = createTraitModules(registry);
         const pipeline = new GeneralActionPipeline(traitModules.general);
 
@@ -254,7 +254,7 @@ describe('trait modules', () => {
     it('activates 의술 battle trigger and reduces damage', async () => {
         const domestic = await loadDomesticTraitModules(['che_인덕', 'che_발명']);
         const war = await loadWarTraitModules(['che_의술', 'che_징병']);
-        const registry = createTraitModuleRegistry({ domestic, war });
+        const registry = createTraitCatalog({ domestic, war });
         const traitModules = createTraitModules(registry);
 
         const rng = new RandUtil(new ConstantRNG(0));

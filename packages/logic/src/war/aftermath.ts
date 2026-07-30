@@ -1,8 +1,10 @@
 import { JosaUtil, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 
 import type { City, General, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
+import { createGeneralActionEvent } from '@sammo-ts/logic/actionModules/events.js';
+import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js';
 import { ActionLogger } from '@sammo-ts/logic/logging/actionLogger.js';
-import { LogFormat, type LogEntryDraft } from '@sammo-ts/logic/logging/types.js';
+import { LogCategory, LogFormat, LogScope, type LogEntryDraft } from '@sammo-ts/logic/logging/types.js';
 import { buildCrewTypeIndex, getTechCost, getTechLevel } from '@sammo-ts/logic/world/unitSet.js';
 import type { WarUnitReport } from './types.js';
 import type {
@@ -530,6 +532,49 @@ export const resolveWarAftermath = <TriggerState extends GeneralTriggerState = G
                     )
                 )
             );
+
+        // Legacy ConquerCity calls every general action module for every
+        // defender-nation general stationed in the conquered city, before any
+        // nation-collapse RNG is consumed. Keep that order and the same RNG
+        // object instead of opening a second random stream.
+        const pipeline = new GeneralActionPipeline(input.generalActionModules ?? []);
+        const cityDefenders = input.generals.filter(
+            (general) =>
+                general.nationId !== 0 &&
+                general.nationId === input.defenderCity.nationId &&
+                general.cityId === input.defenderCity.id
+        );
+        for (const general of cityDefenders) {
+            pipeline.dispatch(
+                {
+                    general,
+                    nation: input.defenderNation,
+                    rng,
+                    worldView: {
+                        listGenerals: () => input.generals,
+                        listGeneralsByCity: (cityId) =>
+                            input.generals.filter((candidate) => candidate.cityId === cityId),
+                        listNations: () => input.nations,
+                    },
+                    log: {
+                        push: (text) =>
+                            logs.push({
+                                scope: LogScope.GENERAL,
+                                category: LogCategory.ACTION,
+                                format: LogFormat.MONTH,
+                                generalId: general.id,
+                                nationId: general.nationId,
+                                text,
+                            }),
+                    },
+                },
+                createGeneralActionEvent('city.conquered', {
+                    attacker: input.battle.attacker,
+                })
+            );
+            affectedGenerals.add(general);
+        }
+
         conquest = resolveConquerCity(input, rng);
         logs.push(...conquest.logs);
 

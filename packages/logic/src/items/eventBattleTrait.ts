@@ -1,4 +1,4 @@
-import type { TraitModule } from '@sammo-ts/logic/triggers/special/types.js';
+import type { TraitModule } from '@sammo-ts/logic/actionModules/traits/types.js';
 import type { ItemModule } from './types.js';
 
 export const createEventBattleTraitItemModule = (
@@ -38,8 +38,8 @@ export const createEventBattleTraitItemModule = (
     if (traitModule.onCalcNationalIncome) {
         itemModule.onCalcNationalIncome = traitModule.onCalcNationalIncome;
     }
-    if (traitModule.onArbitraryAction) {
-        itemModule.onArbitraryAction = traitModule.onArbitraryAction;
+    if (traitModule.eventHandlers) {
+        itemModule.eventHandlers = traitModule.eventHandlers;
     }
     if (traitModule.getBattleInitTriggerList) {
         itemModule.getBattleInitTriggerList = traitModule.getBattleInitTriggerList;

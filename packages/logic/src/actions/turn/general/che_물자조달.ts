@@ -1,7 +1,7 @@
 import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import { notBeNeutral, notWanderingNation, occupiedCity, suppliedCity } from '@sammo-ts/logic/constraints/presets.js';
-import { GeneralActionPipeline, type GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
+import { GeneralActionPipeline, type GeneralActionModule } from '@sammo-ts/logic/actionModules/general.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionOutcome,
@@ -31,7 +31,7 @@ export class ActionResolver<
     readonly key = ACTION_KEY;
     private readonly pipeline: GeneralActionPipeline<TriggerState>;
 
-    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>) {
+    constructor(modules: ReadonlyArray<GeneralActionModule<TriggerState> | null | undefined>) {
         this.pipeline = new GeneralActionPipeline(modules);
     }
 
@@ -186,7 +186,7 @@ export class ActionDefinition<
     public readonly name = ACTION_NAME;
     private readonly resolver: ActionResolver<TriggerState>;
 
-    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>) {
+    constructor(modules: ReadonlyArray<GeneralActionModule<TriggerState> | null | undefined>) {
         this.resolver = new ActionResolver(modules);
     }
 

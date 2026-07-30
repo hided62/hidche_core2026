@@ -1,6 +1,7 @@
 import type { RandUtil } from '@sammo-ts/common';
 
 import type { City, General, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
+import type { GeneralActionModule } from '@sammo-ts/logic/actionModules/general.js';
 import type { ActionLogger } from '@sammo-ts/logic/logging/actionLogger.js';
 import type { LogEntryDraft } from '@sammo-ts/logic/logging/types.js';
 import type { UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
@@ -39,7 +40,7 @@ export interface WarGeneralInput<TriggerState extends GeneralTriggerState = Gene
     city: City;
     nation: Nation | null;
     logger?: ActionLogger;
-    modules?: Array<WarActionModule<TriggerState> | null | undefined>;
+    modules?: ReadonlyArray<WarActionModule<TriggerState> | null | undefined>;
 }
 
 export interface WarBattleInput<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
@@ -177,6 +178,7 @@ export interface WarAftermathInput<TriggerState extends GeneralTriggerState = Ge
     time: WarTimeContext;
     hiddenSeed?: string;
     rng?: RandUtil;
+    generalActionModules?: ReadonlyArray<GeneralActionModule<TriggerState> | null | undefined>;
     calcNationTechGain?: (context: WarAftermathTechContext) => number;
 }
 

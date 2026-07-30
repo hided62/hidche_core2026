@@ -1,5 +1,5 @@
 import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
-import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/types.js';
+import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/actionModules/types.js';
 import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
 import { WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
 import { che_부적 } from '@sammo-ts/logic/war/triggers/che_부적.js';

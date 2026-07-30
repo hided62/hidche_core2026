@@ -1,4 +1,4 @@
-import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/types.js';
+import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/actionModules/types.js';
 import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
 import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
 import { clamp } from '@sammo-ts/logic/war/utils.js';

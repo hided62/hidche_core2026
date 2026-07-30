@@ -2,7 +2,7 @@ import type { RandUtil } from '@sammo-ts/common';
 
 import type { City, General, GeneralTriggerState, Nation } from '@sammo-ts/logic/domain/entities.js';
 import type { ActionLogger } from '@sammo-ts/logic/logging/actionLogger.js';
-import type { WarStatName } from '@sammo-ts/logic/triggers/types.js';
+import type { WarStatName } from '@sammo-ts/logic/actionModules/types.js';
 import type { WarUnit } from './units.js';
 import { WarTriggerCaller } from './triggers.js';
 
@@ -54,7 +54,7 @@ export class WarActionPipeline<TriggerState extends GeneralTriggerState = Genera
     // 전투용 iAction 파이프라인: 스탯/트리거/전투력 보정 흐름을 순서대로 적용한다.
     private readonly modules: WarActionModule<TriggerState>[];
 
-    constructor(modules: Array<WarActionModule<TriggerState> | null | undefined>) {
+    constructor(modules: ReadonlyArray<WarActionModule<TriggerState> | null | undefined>) {
         this.modules = modules.filter(Boolean) as WarActionModule<TriggerState>[];
     }
 

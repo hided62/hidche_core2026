@@ -1,4 +1,4 @@
-import { NATION_TRAIT_KEYS } from '@sammo-ts/logic/triggers/special/nation/index.js';
+import { NATION_TRAIT_KEYS } from '@sammo-ts/logic/actionModules/traits/nation/index.js';
 import { getLegacyStringWidth } from '@sammo-ts/logic/troop/management.js';
 import { z } from 'zod';
 

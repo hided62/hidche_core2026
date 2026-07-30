@@ -25,7 +25,7 @@ import type { ActionContextBase, ActionContextOptions } from '@sammo-ts/logic/ac
 import type { GeneralTurnCommandSpec } from './index.js';
 import { JosaUtil } from '@sammo-ts/common';
 import { parseArgsWithSchema } from '../parseArgs.js';
-import { GeneralActionPipeline } from '@sammo-ts/logic/triggers/general-action.js';
+import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js';
 import { consumeSuccessfulStrategyItem } from './strategyItemConsumption.js';
 import {
     buildStrategyActionContext,

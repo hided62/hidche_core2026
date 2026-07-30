@@ -10,7 +10,7 @@ import type {
 } from '@sammo-ts/logic/domain/entities.js';
 import type { ActionLogger } from '@sammo-ts/logic/logging/actionLogger.js';
 import { LogFormat } from '@sammo-ts/logic/logging/types.js';
-import type { WarStatName } from '@sammo-ts/logic/triggers/types.js';
+import type { WarStatName } from '@sammo-ts/logic/actionModules/types.js';
 import { getTechAbility, getTechCost } from '@sammo-ts/logic/world/unitSet.js';
 import type { WarActionPipeline, WarActionContext } from '../actions.js';
 import type { WarEngineConfig } from '../types.js';

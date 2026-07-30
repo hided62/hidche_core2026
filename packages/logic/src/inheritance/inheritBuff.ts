@@ -1,5 +1,9 @@
-import type { TriggerDomesticActionType, TriggerDomesticVarType, WarStatName } from '@sammo-ts/logic/triggers/types.js';
-import type { GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
+import type {
+    TriggerDomesticActionType,
+    TriggerDomesticVarType,
+    WarStatName,
+} from '@sammo-ts/logic/actionModules/types.js';
+import type { GeneralActionModule } from '@sammo-ts/logic/actionModules/general.js';
 import type { WarActionModule } from '@sammo-ts/logic/war/actions.js';
 import { asRecord, parseJson } from '@sammo-ts/common';
 

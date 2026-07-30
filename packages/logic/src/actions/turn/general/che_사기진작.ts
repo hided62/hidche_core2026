@@ -16,7 +16,7 @@ import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/action
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import { clamp } from 'es-toolkit';
-import { GeneralActionPipeline } from '@sammo-ts/logic/triggers/general-action.js';
+import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js';
 
 export interface BoostMoraleArgs {}
 

@@ -1,6 +1,6 @@
 import type { General, Nation } from '../domain/entities.js';
 import type { GeneralActionContext } from '../triggers/general.js';
-import type { TriggerNationalIncomeType } from '../triggers/types.js';
+import type { TriggerNationalIncomeType } from '../actionModules/types.js';
 
 export type NationIncomeModifier = (type: TriggerNationalIncomeType, amount: number) => number;
 

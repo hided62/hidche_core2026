@@ -1,11 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { ConstantRNG, RandUtil } from '@sammo-ts/common';
 
 import type { City, General, Nation } from '../src/domain/entities.js';
+import type { GeneralActionModule } from '../src/actionModules/general.js';
 import type { UnitSetDefinition } from '../src/world/types.js';
 import { resolveWarAftermath } from '../src/war/aftermath.js';
 import type { WarAftermathConfig } from '../src/war/types.js';
+import { LogFormat } from '../src/logging/types.js';
 
 const buildUnitSet = (): UnitSetDefinition => ({
     id: 'test',
@@ -302,6 +304,88 @@ describe('war aftermath', () => {
                 '<D><b>Nation2</b></>가 <R>멸망</>했습니다.',
                 '<D><b>Nation2</b></> 정복으로 금<C>2,600</> 쌀<C>3,600</>을 획득했습니다.',
             ])
+        );
+    });
+
+    it('dispatches city conquest to every stationed defender before collapse RNG', () => {
+        const rng = new RandUtil(new ConstantRNG(0));
+        const draws = [0.01, 0.02, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7];
+        const nextFloat = vi.spyOn(rng, 'nextFloat1').mockImplementation(() => {
+            const value = draws.shift();
+            if (value === undefined) {
+                throw new Error('unexpected RNG draw');
+            }
+            return value;
+        });
+        const attackerNation = buildNation(1);
+        const defenderNation = buildNation(2);
+        const attackerCity = buildCity(1, 1);
+        const defenderCity = buildCity(2, 2);
+        const attacker = buildGeneral(1, 1, 1);
+        const firstDefender = buildGeneral(2, 2, 2);
+        const secondDefender = buildGeneral(3, 2, 2);
+        secondDefender.crew = 0;
+        const elsewhere = buildGeneral(4, 2, 3);
+        const dispatchOrder: number[] = [];
+        const module: GeneralActionModule = {
+            eventHandlers: {
+                'city.conquered': (context, event) => {
+                    dispatchOrder.push(context.general.id);
+                    context.general.triggerState.meta.conqueredBy = event.payload.attacker.id;
+                    context.rng.nextFloat1();
+                    context.log?.push(`점령 이벤트 ${context.general.id}`);
+                },
+            },
+        };
+
+        const outcome = resolveWarAftermath({
+            battle: {
+                attacker,
+                defenders: [firstDefender],
+                defenderCity,
+                logs: [],
+                conquered: true,
+                reports: [],
+            },
+            attackerNation,
+            defenderNation,
+            attackerCity,
+            defenderCity,
+            nations: [attackerNation, defenderNation],
+            cities: [attackerCity, defenderCity],
+            generals: [attacker, firstDefender, secondDefender, elsewhere],
+            unitSet: buildUnitSet(),
+            config: buildConfig(),
+            time: {
+                year: 200,
+                month: 1,
+                startYear: 180,
+            },
+            rng,
+            generalActionModules: [module],
+        });
+
+        expect(dispatchOrder).toEqual([firstDefender.id, secondDefender.id]);
+        expect(firstDefender.triggerState.meta.conqueredBy).toBe(attacker.id);
+        expect(secondDefender.triggerState.meta.conqueredBy).toBe(attacker.id);
+        expect(elsewhere.triggerState.meta.conqueredBy).toBeUndefined();
+        // The first two draws belong to the two event handlers. Collapse then
+        // consumes the same stream: 0.2/0.3 for the first defender and
+        // 0.4/0.5 for the second.
+        expect(firstDefender.gold).toBe(740);
+        expect(firstDefender.rice).toBe(710);
+        expect(secondDefender.gold).toBe(680);
+        expect(secondDefender.rice).toBe(650);
+        expect(elsewhere.gold).toBe(620);
+        expect(elsewhere.rice).toBe(590);
+        expect(nextFloat).toHaveBeenCalledTimes(8);
+        expect(draws).toEqual([]);
+        expect(outcome.logs.filter((log) => log.text.startsWith('점령 이벤트')).map((log) => log.format)).toEqual([
+            LogFormat.MONTH,
+            LogFormat.MONTH,
+        ]);
+        expect(outcome.generals.map((general) => general.id)).toEqual(
+            expect.arrayContaining([firstDefender.id, secondDefender.id])
         );
     });
 

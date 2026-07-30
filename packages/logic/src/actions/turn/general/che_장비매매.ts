@@ -8,8 +8,12 @@ import {
     reqGeneralRice,
 } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
-import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-ts/logic/actions/engine.js';
-import { createGeneralPatchEffect } from '@sammo-ts/logic/actions/engine.js';
+import type {
+    GeneralActionEffect,
+    GeneralActionOutcome,
+    GeneralActionResolveContext,
+} from '@sammo-ts/logic/actions/engine.js';
+import { createGeneralPatchEffect, createNationPatchEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.js';
 import { JosaUtil } from '@sammo-ts/common';
 import { z } from 'zod';
@@ -19,6 +23,8 @@ import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/action
 import type { GeneralTurnCommandSpec } from './index.js';
 import { parseArgsWithSchema } from '../parseArgs.js';
 import { equipNewItem, removeEquippedItem } from '@sammo-ts/logic/items/inventory.js';
+import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js';
+import { createGeneralActionEvent } from '@sammo-ts/logic/actionModules/events.js';
 
 const ACTION_NAME = '장비매매';
 const ACTION_KEY = 'che_장비매매';
@@ -54,8 +60,11 @@ export class ActionDefinition<
 > implements GeneralActionDefinition<TriggerState, TradeItemArgs> {
     public readonly key = ACTION_KEY;
     public readonly name = ACTION_NAME;
+    private readonly pipeline: GeneralActionPipeline<TriggerState>;
 
-    constructor(private readonly env: TurnCommandEnv) {}
+    constructor(private readonly env: TurnCommandEnv) {
+        this.pipeline = new GeneralActionPipeline(env.generalActionModules ?? []);
+    }
 
     parseArgs(raw: unknown): TradeItemArgs | null {
         const args = parseArgsWithSchema(ARGS_SCHEMA, raw);
@@ -144,6 +153,7 @@ export class ActionDefinition<
     ): GeneralActionOutcome<TriggerState> {
         const general = context.general;
         const nation = context.nation;
+        const nationResourcesBeforeEvent = nation ? { gold: nation.gold, rice: nation.rice } : null;
 
         const itemType = args.itemType;
         const requestedItemCode = args.itemCode;
@@ -163,14 +173,6 @@ export class ActionDefinition<
 
         const nextGold = buying ? Math.max(0, general.gold - itemCost) : general.gold + Math.floor(itemCost / 2);
         if (buying) {
-            equipNewItem(general, itemType, finalItemCode, {
-                ...(item?.initialCharges === undefined ? {} : { charges: item.initialCharges }),
-            });
-        } else {
-            removeEquippedItem(general, itemType);
-        }
-
-        if (buying) {
             context.addLog(`<C>${itemName}</>${josaUl} 구입했습니다.`, {
                 scope: LogScope.GENERAL,
                 category: LogCategory.ACTION,
@@ -182,6 +184,43 @@ export class ActionDefinition<
                 category: LogCategory.ACTION,
                 format: LogFormat.MONTH,
             });
+        }
+
+        general.gold = nextGold;
+        if (buying) {
+            equipNewItem(general, itemType, finalItemCode, {
+                ...(item?.initialCharges === undefined ? {} : { charges: item.initialCharges }),
+            });
+        }
+
+        const eventLog = {
+            push: (message: string) =>
+                context.addLog(message, {
+                    scope: LogScope.GENERAL,
+                    category: LogCategory.ACTION,
+                    format: LogFormat.MONTH,
+                }),
+        };
+        if (buying) {
+            this.pipeline.dispatch(
+                { ...context, log: eventLog },
+                createGeneralActionEvent<TriggerState, 'item.purchased'>('item.purchased', {
+                    itemKey: finalItemCode,
+                    slot: itemType,
+                })
+            );
+        } else {
+            if (!context.time) {
+                throw new Error('장비 판매 이벤트에는 현재 연도와 시나리오 시작 연도가 필요합니다.');
+            }
+            this.pipeline.dispatch(
+                { ...context, time: context.time, log: eventLog },
+                createGeneralActionEvent<TriggerState, 'item.sold'>('item.sold', {
+                    itemKey: finalItemCode,
+                    slot: itemType,
+                })
+            );
+            removeEquippedItem(general, itemType);
         }
 
         if (!buying && item && !item.buyable && nation) {
@@ -201,13 +240,31 @@ export class ActionDefinition<
 
         tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
 
+        const effects: Array<GeneralActionEffect<TriggerState>> = [
+            createGeneralPatchEffect<TriggerState>({
+                gold: general.gold,
+                rice: general.rice,
+                experience: general.experience + 10,
+            }),
+        ];
+        if (
+            nation &&
+            nationResourcesBeforeEvent &&
+            (nation.gold !== nationResourcesBeforeEvent.gold || nation.rice !== nationResourcesBeforeEvent.rice)
+        ) {
+            effects.push(
+                createNationPatchEffect(
+                    {
+                        gold: nation.gold,
+                        rice: nation.rice,
+                    },
+                    nation.id
+                )
+            );
+        }
+
         return {
-            effects: [
-                createGeneralPatchEffect<TriggerState>({
-                    gold: nextGold,
-                    experience: general.experience + 10,
-                }),
-            ],
+            effects,
         };
     }
 }

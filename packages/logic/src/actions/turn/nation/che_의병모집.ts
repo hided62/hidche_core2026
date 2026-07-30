@@ -14,7 +14,7 @@ import {
     notOpeningPart,
     occupiedCity,
 } from '@sammo-ts/logic/constraints/presets.js';
-import { GeneralActionPipeline, type GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
+import { GeneralActionPipeline, type GeneralActionModule } from '@sammo-ts/logic/actionModules/general.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionEffect,
@@ -238,7 +238,7 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
     private readonly env: VolunteerRecruitEnvironment;
 
     constructor(
-        modules: Array<GeneralActionModule<TriggerState> | null | undefined>,
+        modules: ReadonlyArray<GeneralActionModule<TriggerState> | null | undefined>,
         env: VolunteerRecruitEnvironment
     ) {
         this.pipeline = new GeneralActionPipeline(modules);
@@ -272,7 +272,7 @@ export class ActionResolver<
     private readonly command: CommandResolver<TriggerState>;
 
     constructor(
-        modules: Array<GeneralActionModule<TriggerState> | null | undefined>,
+        modules: ReadonlyArray<GeneralActionModule<TriggerState> | null | undefined>,
         env: VolunteerRecruitEnvironment
     ) {
         this.env = env;
@@ -461,7 +461,7 @@ export class ActionDefinition<
     private readonly env: VolunteerRecruitEnvironment;
 
     constructor(
-        modules: Array<GeneralActionModule<TriggerState> | null | undefined>,
+        modules: ReadonlyArray<GeneralActionModule<TriggerState> | null | undefined>,
         env: VolunteerRecruitEnvironment
     ) {
         this.env = env;

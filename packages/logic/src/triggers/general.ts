@@ -36,6 +36,11 @@ export interface GeneralActionContext<TriggerState extends GeneralTriggerState =
     worldView?: GeneralWorldView<TriggerState>;
     log?: GeneralActionLogSink;
     rng?: RandomGenerator;
+    time?: {
+        year: number;
+        month: number;
+        startYear: number;
+    };
 }
 
 export interface GeneralTriggerContext<

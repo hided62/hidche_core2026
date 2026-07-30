@@ -9,7 +9,7 @@ import type {
 } from '@sammo-ts/logic/domain/entities.js';
 import type { Constraint, ConstraintContext } from '@sammo-ts/logic/constraints/types.js';
 import { reqGeneralGold, reqGeneralRice } from '@sammo-ts/logic/constraints/presets.js';
-import { GeneralActionPipeline, type GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
+import { GeneralActionPipeline, type GeneralActionModule } from '@sammo-ts/logic/actionModules/general.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionOutcome,
@@ -175,12 +175,11 @@ const legacyChoiceIndex = (rng: RandomGenerator, length: number): number => {
         throw new Error('Empty items');
     }
     const inclusive = rng as InclusiveRandomGenerator;
-    return inclusive.nextIntInclusive
-        ? inclusive.nextIntInclusive(length - 1)
-        : rng.nextInt(0, length);
+    return inclusive.nextIntInclusive ? inclusive.nextIntInclusive(length - 1) : rng.nextInt(0, length);
 };
 
-const legacyChoice = <T>(rng: RandomGenerator, values: readonly T[]): T => values[legacyChoiceIndex(rng, values.length)]!;
+const legacyChoice = <T>(rng: RandomGenerator, values: readonly T[]): T =>
+    values[legacyChoiceIndex(rng, values.length)]!;
 
 const resolveCandidate = (
     context: TalentScoutResolveContext,
@@ -239,7 +238,10 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
     private readonly pipeline: GeneralActionPipeline<TriggerState>;
     private readonly env: TalentScoutEnvironment;
 
-    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>, env: TalentScoutEnvironment) {
+    constructor(
+        modules: ReadonlyArray<GeneralActionModule<TriggerState> | null | undefined>,
+        env: TalentScoutEnvironment
+    ) {
         this.pipeline = new GeneralActionPipeline(modules);
         this.env = env;
     }
@@ -269,7 +271,10 @@ export class ActionResolver<
     private readonly env: TalentScoutEnvironment;
     private readonly command: CommandResolver<TriggerState>;
 
-    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>, env: TalentScoutEnvironment) {
+    constructor(
+        modules: ReadonlyArray<GeneralActionModule<TriggerState> | null | undefined>,
+        env: TalentScoutEnvironment
+    ) {
         this.env = env;
         this.command = new CommandResolver(modules, env);
     }
@@ -353,20 +358,19 @@ export class ActionResolver<
         let dex: [number, number, number, number, number];
         if (pickType === '무') {
             const distributions = [
-                [dexTotal * 5 / 8, dexTotal / 8, dexTotal / 8, dexTotal / 8],
-                [dexTotal / 8, dexTotal * 5 / 8, dexTotal / 8, dexTotal / 8],
-                [dexTotal / 8, dexTotal / 8, dexTotal * 5 / 8, dexTotal / 8],
+                [(dexTotal * 5) / 8, dexTotal / 8, dexTotal / 8, dexTotal / 8],
+                [dexTotal / 8, (dexTotal * 5) / 8, dexTotal / 8, dexTotal / 8],
+                [dexTotal / 8, dexTotal / 8, (dexTotal * 5) / 8, dexTotal / 8],
             ] as const;
             const picked = legacyChoice(context.rng, distributions);
             dex = [picked[0], picked[1], picked[2], picked[3], averageDex[4]];
         } else if (pickType === '지') {
-            dex = [dexTotal / 8, dexTotal / 8, dexTotal / 8, dexTotal * 5 / 8, averageDex[4]];
+            dex = [dexTotal / 8, dexTotal / 8, dexTotal / 8, (dexTotal * 5) / 8, averageDex[4]];
         } else {
             dex = [dexTotal / 4, dexTotal / 4, dexTotal / 4, dexTotal / 4, averageDex[4]];
         }
         const personality =
-            resolvedCandidate.personality ??
-            legacyChoice(context.rng, this.env.availablePersonalities ?? ['che_안전']);
+            resolvedCandidate.personality ?? legacyChoice(context.rng, this.env.availablePersonalities ?? ['che_안전']);
         const name = this.env.decorateName
             ? this.env.decorateName(resolvedCandidate.name, NPC_TYPE)
             : `ⓜ${resolvedCandidate.name}`;
@@ -374,10 +378,7 @@ export class ActionResolver<
         const turnSecond = randomRangeInt(context.rng, 0, context.turnTermMinutes * 60 - 1);
         const turnFraction = randomRangeInt(context.rng, 0, 999_999);
         const killturn =
-            (deathYear - context.currentYear) * 12 +
-            randomRangeInt(context.rng, 0, 11) +
-            context.currentMonth -
-            1;
+            (deathYear - context.currentYear) * 12 + randomRangeInt(context.rng, 0, 11) + context.currentMonth - 1;
         const meta: GeneralMeta = {
             killturn,
             npcType: NPC_TYPE,
@@ -461,7 +462,10 @@ export class ActionDefinition<
     private readonly command: CommandResolver<TriggerState>;
     private readonly resolver: ActionResolver<TriggerState>;
 
-    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>, env: TalentScoutEnvironment) {
+    constructor(
+        modules: ReadonlyArray<GeneralActionModule<TriggerState> | null | undefined>,
+        env: TalentScoutEnvironment
+    ) {
         this.command = new CommandResolver(modules, env);
         this.resolver = new ActionResolver(modules, env);
     }
@@ -517,6 +521,5 @@ export const commandSpec: GeneralTurnCommandSpec = {
     category: '인사',
     reqArg: false,
 
-    createDefinition: (env: TurnCommandEnv) =>
-        new ActionDefinition(env.generalActionModules ?? [], env),
+    createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env.generalActionModules ?? [], env),
 };

@@ -1,7 +1,12 @@
 import type { GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
 import { GeneralTriggerCaller } from '@sammo-ts/logic/triggers/general.js';
-import type { GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
+import { dispatchGeneralActionModuleEvent, type GeneralActionModule } from '@sammo-ts/logic/actionModules/general.js';
+import {
+    type GeneralActionEvent,
+    type GeneralActionEventContext,
+    type GeneralActionEventType,
+} from '@sammo-ts/logic/actionModules/events.js';
 import type { WarActionContext, WarActionModule } from '@sammo-ts/logic/war/actions.js';
 import { WarTriggerCaller, type WarTriggerRegistry } from '@sammo-ts/logic/war/triggers.js';
 import type { CrewTypeDefinition, CrewTypeRequirement, UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
@@ -109,6 +114,16 @@ const createGeneralActionRouter = <TriggerState extends GeneralTriggerState>(
         (byId.get(context.general.crewTypeId)?.actions ?? [])
             .map((action) => action.general as GeneralActionModule<TriggerState> | undefined)
             .filter((action): action is GeneralActionModule<TriggerState> => action !== undefined);
+    const handleEvent = <K extends GeneralActionEventType>(
+        context: GeneralActionEventContext<K, TriggerState>,
+        event: GeneralActionEvent<K, TriggerState>
+    ): GeneralActionEvent<K, TriggerState> => {
+        let current = event;
+        for (const module of modules(context)) {
+            current = dispatchGeneralActionModuleEvent(module, context, current);
+        }
+        return current;
+    };
 
     return {
         getPreTurnExecuteTriggerList: (context) => {
@@ -153,13 +168,7 @@ const createGeneralActionRouter = <TriggerState extends GeneralTriggerState>(
             }
             return current;
         },
-        onArbitraryAction: (context, actionType, phase, aux) => {
-            let current = aux ?? null;
-            for (const module of modules(context)) {
-                current = module.onArbitraryAction?.(context, actionType, phase, current) ?? current;
-            }
-            return current;
-        },
+        handleEvent,
     } satisfies GeneralActionModule<TriggerState>;
 };
 

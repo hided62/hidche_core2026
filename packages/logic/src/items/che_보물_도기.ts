@@ -1,4 +1,3 @@
-import { JosaUtil } from '@sammo-ts/common';
 import type { ItemModule } from './types.js';
 
 const ITEM_KEY = 'che_보물_도기';
@@ -17,46 +16,32 @@ export const itemModule: ItemModule = {
     consumable: false,
     reqSecu: 0,
     unique: true,
-    onArbitraryAction: (context, actionType, phase, aux) => {
-        if (!aux || actionType !== '장비매매' || phase !== '판매') {
-            return aux ?? null;
-        }
-        if (aux['itemKey'] !== ITEM_KEY && aux['itemCode'] !== ITEM_KEY) {
-            return aux;
-        }
-
-        const year = resolveNumber(aux['year']);
-        const startYear = resolveNumber(aux['startYear']);
-        const relYear = Math.max(0, year - startYear);
-        const score = Math.round(10000 + 5000 * Math.floor(relYear / 2));
-
-        const rng = context.rng;
-        const pick = rng?.nextBool(0.5) ?? true;
-        const resName = pick ? '금' : '쌀';
-        const resKey = pick ? 'gold' : 'rice';
-
-        const nation = aux['nation'];
-        if (nation && typeof nation === 'object') {
-            const cast = nation as { gold?: number; rice?: number };
-            const half = Math.floor(score / 2);
-            if (resKey === 'gold') {
-                cast.gold = (cast.gold ?? 0) + half;
-            } else {
-                cast.rice = (cast.rice ?? 0) + half;
+    eventHandlers: {
+        'item.sold': (context, event) => {
+            if (event.payload.itemKey !== ITEM_KEY) {
+                return event;
             }
-        }
 
-        const selfGain = score - Math.floor(score / 2);
-        if (resKey === 'gold') {
-            context.general.gold += selfGain;
-        } else {
-            context.general.rice += selfGain;
-        }
+            const year = resolveNumber(context.time.year);
+            const startYear = resolveNumber(context.time.startYear);
+            const relYear = Math.max(0, year - startYear);
+            const score = Math.round(10000 + 5000 * Math.floor(relYear / 2));
 
-        const josa = JosaUtil.pick('도기', '을');
-        context.log?.push(
-            `<C>${itemModule.name}</>${josa} 판매하여 ${resName} <C>${score.toLocaleString('en-US')}</>을 보충합니다.`
-        );
-        return aux;
+            // ref RandUtil::choice([gold, rice])는 index 0을 금으로 고릅니다.
+            const pickGold = context.rng.nextInt(0, 2) === 0;
+            const resName = pickGold ? '금' : '쌀';
+            const resKey = pickGold ? 'gold' : 'rice';
+
+            const nation = context.nation;
+            if (nation && nation.id !== 0) {
+                const half = Math.floor(score / 2);
+                nation[resKey] += half;
+            }
+
+            const selfGain = score - Math.floor(score / 2);
+            context.general[resKey] += selfGain;
+            context.log?.push(`재산과 국고에 총 ${resName} <C>${score.toLocaleString('en-US')}</>을 보충합니다.`);
+            return event;
+        },
     },
 };

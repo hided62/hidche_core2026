@@ -211,7 +211,7 @@ const projectReferenceLogs = (trace: ReferenceMonthlyTrace) => [
         })),
 ];
 
-const buildCoreWorld = async (generalActionModules: GeneralActionModule[]): Promise<InMemoryTurnWorld> => {
+const buildCoreWorld = async (generalActionModules: ReadonlyArray<GeneralActionModule>): Promise<InMemoryTurnWorld> => {
     const state: TurnWorldState = {
         id: 1,
         currentYear: 193,

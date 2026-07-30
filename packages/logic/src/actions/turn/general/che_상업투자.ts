@@ -11,8 +11,8 @@ import {
     reqGeneralRice,
     suppliedCity,
 } from '@sammo-ts/logic/constraints/presets.js';
-import { GeneralActionPipeline, type GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
-import type { TriggerDomesticActionType } from '@sammo-ts/logic/triggers/types.js';
+import { GeneralActionPipeline, type GeneralActionModule } from '@sammo-ts/logic/actionModules/general.js';
+import type { TriggerDomesticActionType } from '@sammo-ts/logic/actionModules/types.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionOutcome,
@@ -168,7 +168,7 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
     private readonly config: InvestmentConfig;
 
     constructor(
-        modules: Array<GeneralActionModule<TriggerState> | null | undefined>,
+        modules: ReadonlyArray<GeneralActionModule<TriggerState> | null | undefined>,
         env: InvestmentEnvironment,
         config: InvestmentConfig = DEFAULT_CONFIG
     ) {
@@ -324,7 +324,7 @@ export class ActionResolver<
     private readonly config: InvestmentConfig;
 
     constructor(
-        modules: Array<GeneralActionModule<TriggerState> | null | undefined>,
+        modules: ReadonlyArray<GeneralActionModule<TriggerState> | null | undefined>,
         env: InvestmentEnvironment,
         config: InvestmentConfig = DEFAULT_CONFIG
     ) {
@@ -398,7 +398,7 @@ export class ActionDefinition<
     private readonly config: InvestmentConfig;
 
     constructor(
-        modules: Array<GeneralActionModule<TriggerState> | null | undefined>,
+        modules: ReadonlyArray<GeneralActionModule<TriggerState> | null | undefined>,
         env: InvestmentEnvironment,
         config: InvestmentConfig = DEFAULT_CONFIG
     ) {

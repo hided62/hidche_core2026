@@ -60,7 +60,7 @@ commit 또는 삭제를 하지 말아 주세요.
 - `app/game-api`: tRPC/SSE, 조회·입력 API와 battle/auction/tournament worker
 - `app/game-engine`: turn daemon, scheduler, 월간 lifecycle와 DB flush
 - `packages/common`: 타입, 직렬화, RNG와 공통 유틸리티
-- `packages/logic`: 전투·명령·월간 action 등 도메인 로직
+- `packages/logic`: 전투·명령·월간 action과 typed action module 도메인 로직
 - `packages/infra`: gateway/game Prisma schema, migration과 client
 - `tools/integration-tests`: PostgreSQL/Redis 및 ref↔core 차등
 - `tools/frontend-legacy-parity`: 실제 Chromium 비교
@@ -70,6 +70,14 @@ commit 또는 삭제를 하지 말아 주세요.
 placeholder입니다. 이를 완성된 배포 bundle이나 검증된 profile build로 설명하지
 않습니다. 운영 build/reset/open은 gateway operation, commit별 worktree와
 orchestrator 실행 경로를 조사해 주세요.
+
+장수 action은 `packages/logic/src/actionModules/`에 둡니다. 계산 fold,
+priority/unique-ID trigger와 닫힌 의미 이벤트를 한 범용 hook으로 합치지
+말아 주세요. 제품용 module 순서는 `loadActionModuleBundle()`의
+`RefOrderedActionStack`에서만 조립하며, 새 의미 이벤트는
+`GeneralActionEventPayloadMap`에 payload와 필수 context를 먼저 선언해
+주세요. 자세한 계약은 `docs/architecture/action-module-protocol.md`에
+있습니다.
 
 ## 레거시 매핑과 비교
 

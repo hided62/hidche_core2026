@@ -1,7 +1,7 @@
 import { createStatItemModule } from './base.js';
 import type { ItemModule } from './types.js';
 import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
-import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/types.js';
+import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/actionModules/types.js';
 import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
 
 const STAT_VALUE = 3;

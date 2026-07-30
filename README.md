@@ -35,7 +35,7 @@ TypeScript로 호환 이관하는 pnpm 모노레포입니다. 기준 구현은 �
 | `app/game-api`                 | profile별 tRPC/SSE, 조회·입력 API와 비동기 worker |
 | `app/game-engine`              | 턴 scheduler/daemon, 월간 처리와 DB flush         |
 | `packages/common`              | 공통 타입, 직렬화, 결정적 RNG와 유틸리티          |
-| `packages/logic`               | 전투·명령·월간 action 등 게임 도메인 로직         |
+| `packages/logic`               | 전투·명령·월간 action과 typed action module 로직  |
 | `packages/infra`               | game/gateway Prisma schema, migration과 client    |
 | `packages/tools-scripts`       | resource schema 생성·검증 도구                    |
 | `tools/integration-tests`      | PostgreSQL/Redis 및 ref↔core 통합·차등 테스트     |
@@ -52,6 +52,12 @@ battle simulation 등 해당 기능의 계약에만 사용하며 게임 mutation
 [`docs/architecture/runtime.md`](docs/architecture/runtime.md)와
 [`docs/architecture/turn-daemon-lifecycle.md`](docs/architecture/turn-daemon-lifecycle.md)에
 있습니다.
+
+장수 특기·관직·병종·계승·아이템 효과는
+[`docs/architecture/action-module-protocol.md`](docs/architecture/action-module-protocol.md)의
+계산 hook, 우선순위 trigger, 닫힌 의미 이벤트 경계를 따릅니다. 제품용
+action stack은 ref의 소유권 순서를 brand한 `loadActionModuleBundle()`에서만
+조립합니다.
 
 ## 도구 체인
 

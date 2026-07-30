@@ -12,7 +12,7 @@ import {
     suppliedCity,
 } from '@sammo-ts/logic/constraints/presets.js';
 import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
-import { GeneralActionPipeline, type GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
+import { GeneralActionPipeline, type GeneralActionModule } from '@sammo-ts/logic/actionModules/general.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionEffect,
@@ -125,7 +125,10 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
     private readonly env: FireAttackEnvironment;
     private readonly statKey: 'leadership' | 'strength' | 'intelligence';
 
-    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>, env: FireAttackEnvironment) {
+    constructor(
+        modules: ReadonlyArray<GeneralActionModule<TriggerState> | null | undefined>,
+        env: FireAttackEnvironment
+    ) {
         this.pipeline = new GeneralActionPipeline(modules);
         this.env = env;
         this.statKey = env.statKey ?? 'intelligence';
@@ -287,7 +290,10 @@ export class ActionResolver<
     private readonly command: CommandResolver<TriggerState>;
     private readonly pipeline: GeneralActionPipeline<TriggerState>;
 
-    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>, env: FireAttackEnvironment) {
+    constructor(
+        modules: ReadonlyArray<GeneralActionModule<TriggerState> | null | undefined>,
+        env: FireAttackEnvironment
+    ) {
         this.command = new CommandResolver(modules, env);
         this.pipeline = new GeneralActionPipeline(modules);
     }
@@ -376,8 +382,7 @@ export class ActionResolver<
         );
 
         const itemCode = general.role.items.item;
-        const actionResult = consumeSuccessfulStrategyItem(this.pipeline, context);
-        const consumedItems = Array.isArray(actionResult?.['consumedItems']) ? actionResult['consumedItems'] : [];
+        const consumedItems = consumeSuccessfulStrategyItem(this.pipeline, context);
         if (typeof itemCode === 'string' && consumedItems.includes(itemCode)) {
             context.addLog(`<C>${itemCode}</>${JosaUtil.pick(itemCode, '을')} 사용!`, {
                 format: LogFormat.PLAIN,
@@ -405,7 +410,10 @@ export class ActionDefinition<
     private readonly command: CommandResolver<TriggerState>;
     private readonly resolver: ActionResolver<TriggerState>;
 
-    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>, env: FireAttackEnvironment) {
+    constructor(
+        modules: ReadonlyArray<GeneralActionModule<TriggerState> | null | undefined>,
+        env: FireAttackEnvironment
+    ) {
         this.command = new CommandResolver(modules, env);
         this.resolver = new ActionResolver(modules, env);
     }

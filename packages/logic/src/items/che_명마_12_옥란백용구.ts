@@ -1,5 +1,5 @@
 import type { GeneralActionContext } from '@sammo-ts/logic/triggers/general.js';
-import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/triggers/types.js';
+import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/actionModules/types.js';
 import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
 import { createStatItemModule } from './base.js';
 import type { ItemModule } from './types.js';
@@ -33,10 +33,7 @@ export const itemModule: ItemModule = {
         }
         if (statName === 'warAvoidRatio' && typeof newValue === 'number') {
             const leadership =
-                typeof aux === 'object' &&
-                aux !== null &&
-                'leadership' in aux &&
-                typeof aux.leadership === 'number'
+                typeof aux === 'object' && aux !== null && 'leadership' in aux && typeof aux.leadership === 'number'
                     ? aux.leadership
                     : context.general.stats.leadership + STAT_VALUE;
             const crewL = context.general.crew / 100;

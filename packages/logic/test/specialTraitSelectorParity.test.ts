@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { RandUtil, type RNG } from '@sammo-ts/common';
 
-import { TraitRequirement, TraitWeightType } from '../src/triggers/special/requirements.js';
-import { TraitSelector } from '../src/triggers/special/selector.js';
-import type { TraitModule } from '../src/triggers/special/types.js';
+import { TraitRequirement, TraitWeightType } from '../src/actionModules/traits/requirements.js';
+import { TraitSelector } from '../src/actionModules/traits/selector.js';
+import type { TraitModule } from '../src/actionModules/traits/types.js';
 
 class ScriptedRng implements RNG {
     public floatCalls = 0;
@@ -62,22 +62,12 @@ const trait = (
 
 describe('legacy speciality selector parity', () => {
     it('sets positive and negative stat bits in the legacy order', () => {
-        expect(
-            TraitSelector.calcCondGeneric(
-                { leadership: 80, strength: 75, intelligence: 40 },
-                scenarioStat
-            )
-        ).toBe(
-            TraitRequirement.STAT_LEADERSHIP |
-                TraitRequirement.STAT_STRENGTH |
-                TraitRequirement.STAT_NOT_INTEL
+        expect(TraitSelector.calcCondGeneric({ leadership: 80, strength: 75, intelligence: 40 }, scenarioStat)).toBe(
+            TraitRequirement.STAT_LEADERSHIP | TraitRequirement.STAT_STRENGTH | TraitRequirement.STAT_NOT_INTEL
         );
-        expect(
-            TraitSelector.calcCondGeneric(
-                { leadership: 70, strength: 70, intelligence: 70 },
-                scenarioStat
-            )
-        ).toBe(TraitRequirement.STAT_STRENGTH);
+        expect(TraitSelector.calcCondGeneric({ leadership: 70, strength: 70, intelligence: 70 }, scenarioStat)).toBe(
+            TraitRequirement.STAT_STRENGTH
+        );
     });
 
     it('rounds the dex threshold and still consumes a value choice when every dex is zero', () => {

@@ -186,8 +186,8 @@ export const buildReservedTurnDefinitions = async (options: {
             },
         ])
     );
-    options.env.generalActionModules = [...(options.env.generalActionModules ?? []), ...moduleBundle.general];
-    options.env.warActionModules = [...(options.env.warActionModules ?? []), ...moduleBundle.war];
+    options.env.generalActionModules ??= moduleBundle.general;
+    options.env.warActionModules ??= moduleBundle.war;
     options.env.nationTraitModules = moduleBundle.nationTraitModules;
 
     const generalSpecs = await loadGeneralTurnCommandSpecs(options.commandProfile.general);

@@ -9,7 +9,7 @@ import {
     reqGeneralGold,
     reqGeneralRice,
 } from '@sammo-ts/logic/constraints/presets.js';
-import { GeneralActionPipeline, type GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
+import { GeneralActionPipeline, type GeneralActionModule } from '@sammo-ts/logic/actionModules/general.js';
 import type { GeneralActionDefinition } from '@sammo-ts/logic/actions/definition.js';
 import type {
     GeneralActionOutcome,
@@ -217,7 +217,7 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
     private readonly pipeline: GeneralActionPipeline<TriggerState>;
     private readonly env: RecruitEnvironment;
 
-    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>, env: RecruitEnvironment) {
+    constructor(modules: ReadonlyArray<GeneralActionModule<TriggerState> | null | undefined>, env: RecruitEnvironment) {
         this.pipeline = new GeneralActionPipeline(modules);
         this.env = env;
     }
@@ -331,7 +331,7 @@ export class ActionResolver<
     private readonly env: RecruitEnvironment;
     private readonly command: CommandResolver<TriggerState>;
 
-    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>, env: RecruitEnvironment) {
+    constructor(modules: ReadonlyArray<GeneralActionModule<TriggerState> | null | undefined>, env: RecruitEnvironment) {
         this.env = env;
         this.command = new CommandResolver(modules, env);
     }
@@ -444,7 +444,7 @@ export class ActionDefinition<
     private readonly resolver: ActionResolver<TriggerState>;
     private readonly env: RecruitEnvironment;
 
-    constructor(modules: Array<GeneralActionModule<TriggerState> | null | undefined>, env: RecruitEnvironment) {
+    constructor(modules: ReadonlyArray<GeneralActionModule<TriggerState> | null | undefined>, env: RecruitEnvironment) {
         this.command = new CommandResolver(modules, env);
         this.resolver = new ActionResolver(modules, env);
         this.env = env;

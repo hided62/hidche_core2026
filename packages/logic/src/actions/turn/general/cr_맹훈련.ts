@@ -15,7 +15,7 @@ import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js'
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
-import { GeneralActionPipeline } from '@sammo-ts/logic/triggers/general-action.js';
+import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js';
 
 const ACTION_NAME = '맹훈련';
 const ACTION_KEY = 'cr_맹훈련';

@@ -6,7 +6,7 @@ import {
 } from './che_징병.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { GeneralTurnCommandSpec } from './index.js';
-import type { GeneralActionModule } from '@sammo-ts/logic/triggers/general-action.js';
+import type { GeneralActionModule } from '@sammo-ts/logic/actionModules/general.js';
 
 export class ActionDefinition<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -14,7 +14,7 @@ export class ActionDefinition<
     public override readonly key = 'che_모병';
     public override readonly name = '모병';
 
-    constructor(modules: GeneralActionModule<TriggerState>[]) {
+    constructor(modules: ReadonlyArray<GeneralActionModule<TriggerState>>) {
         super(modules, {
             actionName: '모병',
             costOffset: 2,

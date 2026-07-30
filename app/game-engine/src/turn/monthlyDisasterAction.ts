@@ -22,7 +22,11 @@ const DISASTER_TEXT_BY_MONTH: Readonly<Record<number, DisasterText[]>> = {
     1: [
         { title: '<M><b>【재난】</b></>', stateCode: 4, body: '역병이 발생하여 도시가 황폐해지고 있습니다.' },
         { title: '<M><b>【재난】</b></>', stateCode: 5, body: '지진으로 피해가 속출하고 있습니다.' },
-        { title: '<M><b>【재난】</b></>', stateCode: 3, body: '추위가 풀리지 않아 얼어죽는 백성들이 늘어나고 있습니다.' },
+        {
+            title: '<M><b>【재난】</b></>',
+            stateCode: 3,
+            body: '추위가 풀리지 않아 얼어죽는 백성들이 늘어나고 있습니다.',
+        },
         { title: '<M><b>【재난】</b></>', stateCode: 9, body: '황건적이 출현해 도시를 습격하고 있습니다.' },
     ],
     4: [
@@ -67,7 +71,7 @@ const roundLegacyIntegerColumn = (value: number): number => Math.round(value);
 
 export const createRaiseDisasterHandler = (options: {
     getWorld: () => InMemoryTurnWorld | null;
-    generalActionModules?: GeneralActionModule[];
+    generalActionModules?: ReadonlyArray<GeneralActionModule>;
 }): MonthlyEventActionHandler => {
     const generalPipeline = new GeneralActionPipeline(options.generalActionModules ?? []);
 
@@ -95,9 +99,7 @@ export const createRaiseDisasterHandler = (options: {
             throw new Error(`Unsupported month for RaiseDisaster: ${environment.month}`);
         }
         const rng = new RandUtil(
-            new LiteHashDRBG(
-                simpleSerialize(resolveHiddenSeed(world), 'disater', environment.year, environment.month)
-            )
+            new LiteHashDRBG(simpleSerialize(resolveHiddenSeed(world), 'disater', environment.year, environment.month))
         );
         const isGood = rng.nextBool(boomingRate);
         const targetCities = cities.filter((city) => {
@@ -135,9 +137,7 @@ export const createRaiseDisasterHandler = (options: {
             world.updateCity(city.id, {
                 state: picked.stateCode,
                 population: roundLegacyIntegerColumn(
-                    isGood
-                        ? Math.min(city.population * affectRatio, city.populationMax)
-                        : city.population * affectRatio
+                    isGood ? Math.min(city.population * affectRatio, city.populationMax) : city.population * affectRatio
                 ),
                 agriculture: roundLegacyIntegerColumn(
                     isGood
@@ -171,8 +171,7 @@ export const createRaiseDisasterHandler = (options: {
                     nation: world.getNationById(general.nationId),
                     worldView: {
                         listGenerals: () => allGenerals,
-                        listGeneralsByCity: (cityId) =>
-                            allGenerals.filter((candidate) => candidate.cityId === cityId),
+                        listGeneralsByCity: (cityId) => allGenerals.filter((candidate) => candidate.cityId === cityId),
                     },
                     rng,
                 });

@@ -11,10 +11,11 @@ import {
     resolveWarBattle,
     createItemActionModules,
     createItemModuleRegistry,
+    createRefOrderedActionStack,
     ITEM_KEYS,
     loadItemModules,
     createInheritBuffModules,
-    createTraitModuleRegistry,
+    createTraitCatalog,
     createOfficerLevelActionModules,
     DOMESTIC_TRAIT_KEYS,
     loadDomesticTraitModules,
@@ -30,6 +31,7 @@ import {
     type City,
     type General,
     type Nation,
+    type RefOrderedActionStack,
     type UnitSetDefinition,
     type WarBattleOutcome,
     type WarActionModule,
@@ -48,23 +50,31 @@ const itemWarModules: WarActionModule[] = createItemActionModules(
     createItemModuleRegistry(await loadItemModules([...ITEM_KEYS]))
 ).war;
 const crewTypeWarTriggerRegistry = createCrewTypeWarTriggerRegistry();
-const traitRegistry = createTraitModuleRegistry({
+const traitCatalog = createTraitCatalog({
     domestic: await loadDomesticTraitModules([...DOMESTIC_TRAIT_KEYS]),
     war: await loadWarTraitModules([...WAR_TRAIT_KEYS]),
     personality: await loadPersonalityTraitModules([...PERSONALITY_TRAIT_KEYS]),
     nation: await loadNationTraitModules([...NATION_TRAIT_KEYS]),
 });
-const traitWarModules: WarActionModule[] = [
-    new TraitWarActionRouter('nation', traitRegistry),
-    createOfficerLevelActionModules().war,
-    new TraitWarActionRouter('domestic', traitRegistry),
-    new TraitWarActionRouter('war', traitRegistry),
-    new TraitWarActionRouter('personality', traitRegistry),
-];
+const nationWarModule = new TraitWarActionRouter('nation', traitCatalog);
+const officerWarModule = createOfficerLevelActionModules().war;
+const domesticWarModule = new TraitWarActionRouter('domestic', traitCatalog);
+const warTraitModule = new TraitWarActionRouter('war', traitCatalog);
+const personalityWarModule = new TraitWarActionRouter('personality', traitCatalog);
 
-const buildWarActionModules = (unitSet: UnitSetDefinition): WarActionModule[] => {
+const buildWarActionModules = (unitSet: UnitSetDefinition): RefOrderedActionStack<WarActionModule> => {
     const crewTypeCatalog = compileCrewTypeCatalog(unitSet, crewTypeWarTriggerRegistry);
-    return [...traitWarModules, crewTypeCatalog.warActionModule, inheritBuffModules.war, ...itemWarModules];
+    return createRefOrderedActionStack<WarActionModule>({
+        nation: nationWarModule,
+        officer: officerWarModule,
+        domestic: domesticWarModule,
+        war: warTraitModule,
+        personality: personalityWarModule,
+        crewType: crewTypeCatalog.warActionModule,
+        inheritance: inheritBuffModules.war,
+        scenario: null,
+        items: itemWarModules,
+    });
 };
 
 const normalizeItemCode = (value: string | null): string | null => (value === 'None' ? null : value);
