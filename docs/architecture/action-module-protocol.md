@@ -1,7 +1,7 @@
 # 장수 행동 모듈 프로토콜
 
-`packages/logic/src/actionModules/`는 ref의 `iAction`을 그대로 복사한 범용
-interface가 아니라, 실제 core2026 실행 경계만 타입으로 표현합니다. 계산
+`packages/logic/src/actionModules/`는 core2026 실행 경계를 타입으로
+표현합니다. 계산
 hook, 우선순위 trigger, 의미 이벤트는 서로 다른 실행 계약입니다.
 
 ## 세 가지 실행 계약
@@ -61,7 +61,7 @@ source입니다. 현재 이벤트는 장비 구매·판매, 계략 성공, 도�
 ## 저장과 RNG 경계
 
 의미 이벤트는 producer가 가진 객체를 동기적으로 수정합니다. producer는
-이벤트 전후의 ref mutation 순서를 그대로 유지한 뒤 기존 effect/flush
+이벤트 전후의 ref mutation 순서를 유지한 뒤 effect/flush
 경계에 결과를 전달합니다.
 
 - 장비 판매는 판매 대금 반영 → 판매 이벤트 → 슬롯 제거 순서입니다.

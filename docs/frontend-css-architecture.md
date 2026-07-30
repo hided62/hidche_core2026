@@ -35,8 +35,8 @@ loads the following layers:
   `.layout-grid` must not be promoted from a scoped SFC merely because the same
   spelling appears elsewhere.
 
-Existing feature hooks may remain while a screen is migrated, but new shared
-presentation must be selected through one of the explicit shell namespaces.
+Feature hooks stay inside their owning component. Shared presentation uses one
+of the explicit shell namespaces.
 
 ## Consolidation rule
 

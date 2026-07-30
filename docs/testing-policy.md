@@ -1,115 +1,97 @@
-# Testing Policy (Draft)
+# 테스트 정책
 
-This document summarizes the testing strategy for the Sammo/HiDCHe repository.
-The key is to separate "DB behavior emulation" from "state/logic/flow validation"
-so each layer is tested with the right scope.
+## 원칙
 
-## Historical Test Trust Boundary (2026-07-25)
+- 변경한 계약과 가장 가까운 test부터 실행하고 범위를 넓힙니다.
+- deterministic clock, seed와 fixture를 사용합니다.
+- ref 호환성은 결과, 순서, RNG, 저장 상태와 출력으로 검증합니다.
+- 인증·권한은 session actor, 소유권, role, sanction과 redaction을 포함합니다.
+- DB 코드는 실제 PostgreSQL transaction과 reload 경로를 검증합니다.
+- UI는 실제 Chromium에서 geometry, computed style과 interaction을 비교합니다.
+- skip, baseline failure와 환경 미검증을 pass와 분리합니다.
 
-Tests already present at the 2026-07-25 review baseline
-(`main@a05f46130e621ff30fcac330af33c9e7e169f440`) or inherited from an older
-commit are **untrusted legacy tests until individually audited**. A large part
-of this suite was AI-authored, and some tests appear optimized to make the
-current implementation pass rather than to detect incorrect behavior.
+## 기본 검증
 
-Consequently:
+```sh
+CI=1 pnpm typecheck
+pnpm lint
+pnpm test
+pnpm build
+```
 
-- A passing baseline test proves only that its current assertions passed. It
-  does not by itself prove legacy compatibility, domain correctness, complete
-  side effects, authorization, transaction safety, or production readiness.
-- Do not raise a mapping or implementation status to "verified" using only an
-  unaudited baseline test.
-- Do not preserve behavior merely because an unaudited test expects it. Resolve
-  conflicts against the legacy implementation, an approved compatibility
-  contract, or an independently captured trace.
-- Keep existing tests for possible regression value, but mark each audited test
-  or suite with its evidence source and review date.
+문서만 변경한 경우에도 Markdown link, Prettier, 생성 문서 일치와
+`pnpm docs:build`를 확인합니다. 제품 코드 동작을 바꾸지 않은 문서 작업은
+typecheck·unit·Chromium 검증을 실행한 것으로 설명하지 않습니다.
 
-An audit must confirm that a test:
+## 테스트 계층
 
-1. names the behavior and failure mode it is intended to protect;
-2. derives expected values independently from the implementation under test;
-3. asserts game-impacting numeric state and all relevant persistence side
-   effects, rather than only truthiness, types, or absence of exceptions;
-4. covers important rejection, boundary, ordering, and concurrency paths;
-5. fails when the protected behavior is deliberately perturbed;
-6. uses a real DB/Redis or a differential legacy fixture where infrastructure
-   semantics or compatibility are part of the contract.
+### Unit
 
-Until this audit is recorded, test counts and green status are inventory
-information only, not evidence of correctness.
+`packages/common`, `packages/logic`, 각 app의 `test/`가 순수 계산, parser,
+constraint, lifecycle과 service를 검증합니다. Gameplay 계산에는 fixed seed와
+정확한 state/log 기대값을 사용합니다.
 
-The executable TypeScript suite was reviewed on 2026-07-25. Its per-suite
-disposition, intended scope, and evidence limits are recorded in
-[`test-suite-audit.md`](./test-suite-audit.md). A `kept` or `corrected`
-disposition means the test has useful regression value at the recorded layer;
-it does not promote smoke or contract coverage into legacy-compatibility
-evidence. New suites and material scope changes must update that registry.
+### Integration
 
-## Core Principles
+`tools/integration-tests`와 `*.integration.test.ts`가 PostgreSQL, Redis,
+Fastify transport, Prisma transaction, lease와 worker 경계를 검증합니다.
 
-- Prefer Repository/DB Port interfaces over ORM mocks; split implementations:
-    - InMemory Repository (Fake)
-    - Real DB Repository (e.g., Prisma)
-- Validate domain constraints in the logic layer where possible; DB constraints
-  act as a secondary safety net.
-- Use deterministic seeds for all gameplay-impacting RNG.
-- Run TypeScript validation with the workspace-standard TypeScript `6.0.2`.
-  TypeScript 5 or 7 results do not replace the required repository typecheck.
-  See `docs/architecture/typescript-version.md`.
+```sh
+pnpm test:integration
+pnpm test:integration:conditional
+```
 
-## Test Layers
+조건부 suite는 worktree별 PostgreSQL·Redis instance를 준비합니다. Test가
+schema truncate와 Redis 정리를 수행하므로 공유 개발 instance를 사용하지
+않습니다.
 
-### 1) Constraint Tests
+### Differential
 
-Goal: ensure constraints (unique/foreign key/check) behave consistently in
-both InMemory state and the DB.
+```sh
+pnpm check:legacy:general
+pnpm check:legacy:nation
+```
 
-- Unit tests: validate domain constraints with InMemory repositories.
-- Integration tests: verify the same violations fail in the real DB.
-- Mock target: InMemory Repository (Fake).
-- Use real DB only in integration tests.
+실제 ref runner와 canonical snapshot 계약은
+[차등 검증](architecture/turn-state-differential-testing.md)을 따릅니다.
 
-### 2) Game Logic / Command Tests
+### Browser
 
-Goal: verify state input -> state output and that flush behaves as expected.
+```sh
+pnpm test:e2e:frontend-legacy
+```
 
-- Unit tests: run logic against InMemory state and assert outputs.
-- Integration tests: execute the same command and confirm DB persistence.
-- Mock target: InMemory Repository (Fake).
-- "Send to DB" behavior is validated via real DB tests.
-- Cross-engine compatibility compares a canonical semantic snapshot rather than
-  raw MariaDB/PostgreSQL dumps. General-turn commands use the three-way
-  ref DB ↔ core InMemory ↔ core PostgreSQL design in
-  [`architecture/general-command-differential-testing.md`](./architecture/general-command-differential-testing.md).
+같은 Chromium, viewport, device scale, zoom, locale, font, image, 로그인과
+test data를 사용합니다. Screenshot과 함께 `getBoundingClientRect()`와
+`getComputedStyle()`을 수집하고 hover, focus, pointer down/up,
+checked/selected/disabled, dropdown, modal과 transition을 확인합니다.
 
-### 3) Turn Flow Tests
+## 권한 matrix
 
-Goal: verify the end-to-end scheduler/turn processing flow.
+API 변경은 최소한 다음 행위자를 구분합니다.
 
-- Nature: integration/system tests.
-- Stack: Real DB + (test) Redis.
-- RNG uses fixed seeds for determinism.
-- Keep a small set of smoke/regression scenarios due to cost.
+- 무인증
+- 인증됐지만 장수가 없는 사용자
+- 자기 장수
+- 같은 국가의 다른 장수
+- 외국 장수
+- NPC
+- 직책·서비스 role별 사용자
+- sanction 대상 사용자
 
-### 4) Scenario Build Tests
+거부 경로는 DB·queue·Redis side effect가 없어야 합니다. Public DTO는 숨겨야
+할 field가 빠졌는지 확인하고, role 이름만 비교하지 말고 실제 capability와
+resource relation을 검증합니다.
 
-Goal: ensure scenario parsing and DB application are correct.
+## DB와 migration
 
-- Unit tests: parse/validate scenario files (map size, ID collisions, ranges).
-- Integration tests: load scenarios into a test DB and verify key tables.
+Schema 변경은 빈 DB 전체 migration, 기존 DB 증분 migration, 두 번째 deploy의
+no-op, unique/FK/index, runtime query와 reload를 확인합니다. 기존 migration
+파일과 checksum은 수정하지 않습니다. `prisma db push`는 격리 fixture의
+일시적 schema 준비에만 사용합니다.
 
-## Result Composition Guidelines
+## 결과 기록
 
-- Unit tests: fast, wide coverage.
-- Integration tests: focus on real DB/Redis behavior.
-- Smoke tests: minimal coverage of turn flow/build/scenario loading.
-- Test-specific Rule Relaxations:
-    - To simplify mocking and complex state preparation, the use of `any` type is allowed in test files.
-    - Type casting tricks like `as unknown as YourType` are also permitted in test code for convenience.
-    - However, test code must still be covered by TypeScript type checking to ensure API consistency and prevent regressions.
-
-## MockDB Conclusion
-
-- "InMemory Repository (Fake)" is more practical than an ORM mock.
-- DB-level behavior (constraints/transactions/locks) belongs to integration tests.
+Report에는 실행 명령, commit, 서비스와 fixture, pass/fail/skip 수, baseline
+failure, 미검증 경계와 artifact 위치를 기록합니다. Screenshot과 log에는
+token, password, 개인정보를 포함하지 않습니다.

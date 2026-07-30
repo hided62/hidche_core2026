@@ -41,7 +41,7 @@ screenshots.
 Run the focused simulator fixture with:
 
 ```sh
-pnpm --filter game-frontend test:e2e:battle-simulator
+pnpm --filter @sammo-ts/game-frontend test:e2e:battle-simulator
 ```
 
 The optional reference check uses `REF_BATTLE_SIM_URL`, `REF_USER_ID`, and
@@ -85,8 +85,8 @@ storage, route guards, and image loading.
 The global game baseline is black, white, Pretendard 14px. Legacy texture
 helpers intentionally follow `common.orig.css`: `bg0` is walnut, `bg1` is
 green, and `bg2` is blue. Shared `PanelCard` uses the same walnut body and green
-header so screens that still use the common component no longer inherit the
-discarded Galmuri/parchment visual system.
+header. Screens using the common component therefore render the walnut/green
+contract with Pretendard typography.
 
 The survey fixture covers both the poll list and an open detail. Its result
 rows are visible before the current general votes when the poll uses the

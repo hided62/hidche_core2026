@@ -10,8 +10,8 @@ uses a stable legacy key with `ON CONFLICT`, so an interrupted run is
 repeatable.
 
 The source of truth for eligibility is the checked ref schema, not every table
-that happens to exist in an old dump. An extra root `config` table found in the
-2026-07-27 dump is therefore retained only in the recovery dump.
+that happens to exist in a dump. Tables outside that schema remain only in the
+recovery dump.
 
 ### Gateway
 
@@ -29,11 +29,9 @@ that UUID, so references such as `ng_old_generals.owner` remain stable even
 when an old account was deleted before the dump.
 
 Kakao members retain `oauth_id`, email and metadata. Cutover sets
-`kakao_verified_at` and `kakao_grace_started_at` to the migration time, starting
-the current verification policy from the migration instead of treating an old
-Kakao login as unverified. Five source Kakao rows have no OAuth ID; their
-metadata is retained for audit, but an absent provider identifier is not
-invented.
+`kakao_verified_at` and `kakao_grace_started_at` to the migration time and starts
+the verification grace period there. Source rows without an OAuth ID retain
+their metadata, but the importer does not invent a provider identifier.
 
 Legacy password hashes remain usable when gateway-api has
 `GATEWAY_LEGACY_PASSWORD_GLOBAL_SALT`; a successful login upgrades the stored
@@ -115,6 +113,3 @@ browser.
 8. Retain the MariaDB dumps as rollback evidence. Rollback restores the
    pre-cutover PostgreSQL backup; it does not reverse individual importer
    upserts.
-
-The supplied dump inventory has data for `che`, `hwe` and `root`. The `kwe`
-directory is empty, so there is no KWE dataset to import or validate.
