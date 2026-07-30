@@ -276,6 +276,12 @@ describe('auction integration flow', () => {
             apiPort: Number(process.env.GAME_API_PORT ?? 14000),
             status: 'RUNNING',
         });
+        await gatewayClient.admin.profiles.updateMeta.mutate({
+            profileName: 'che:908',
+            patch: {
+                localAccountGeneralCreationGraceDays: 7,
+            },
+        });
 
         await gatewayClient.admin.profiles.installNow.mutate({
             profileName: 'che:908',

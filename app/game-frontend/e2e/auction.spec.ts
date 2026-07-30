@@ -4,7 +4,13 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
-const imageRoots = [resolve(repositoryRoot, '../image/game'), resolve(repositoryRoot, '../../image/game')];
+const imageRoots = [
+    ...(process.env.FRONTEND_PARITY_IMAGE_ROOT
+        ? [resolve(process.env.FRONTEND_PARITY_IMAGE_ROOT, 'game')]
+        : []),
+    resolve(repositoryRoot, '../image/game'),
+    resolve(repositoryRoot, '../../image/game'),
+];
 
 type AuctionFixture = {
     failResourceBid?: boolean;

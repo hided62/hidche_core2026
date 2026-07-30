@@ -1,8 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { resolveRefRoot } from './resolve-ref-root.mjs';
 
 const root = process.cwd();
-const phpDir = path.join(root, 'legacy/hwe/sammo/Command/General');
+const refRoot = resolveRefRoot(root);
+const phpDir = path.join(refRoot, 'hwe/sammo/Command/General');
 const tsDir = path.join(root, 'packages/logic/src/actions/turn/general');
 const check = process.argv.includes('--check');
 
@@ -116,8 +118,10 @@ const dynamicChecks = [
     },
     {
         key: 'post-turn myset',
-        ok: /myset:\s*Math\.min\([\s\S]*9,[\s\S]*currentGeneral\.meta\.myset[\s\S]*\+\s*3/.test(handlerSource),
-        contract: '매 턴 +3, 상한 9',
+        ok: /const incDefSettingChange = readConfigNumber\(options\.scenarioConfig,\s*'incDefSettingChange',\s*3\);[\s\S]*const maxDefSettingChange = readConfigNumber\(options\.scenarioConfig,\s*'maxDefSettingChange',\s*9\);[\s\S]*myset:\s*Math\.min\(\s*maxDefSettingChange,\s*readMetaNumber\(currentGeneral\.meta,\s*'myset',\s*0\)\s*\+\s*incDefSettingChange/.test(
+            handlerSource
+        ),
+        contract: '매 턴 scenario 증가량/상한 적용 (기본 +3, 상한 9)',
     },
 ];
 

@@ -14,7 +14,11 @@ type FixtureState = {
 
 const artifactRoot = process.env.OFFICE_PARITY_ARTIFACT_DIR ? resolve(process.env.OFFICE_PARITY_ARTIFACT_DIR) : null;
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
-const imageRoots = [resolve(repositoryRoot, '../image'), resolve(repositoryRoot, '../../image')];
+const imageRoots = [
+    ...(process.env.FRONTEND_PARITY_IMAGE_ROOT ? [resolve(process.env.FRONTEND_PARITY_IMAGE_ROOT)] : []),
+    resolve(repositoryRoot, '../image'),
+    resolve(repositoryRoot, '../../image'),
+];
 const referenceAsset = async (relativePath: string): Promise<Buffer> => {
     for (const root of imageRoots) {
         try {

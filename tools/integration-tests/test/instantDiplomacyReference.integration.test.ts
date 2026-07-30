@@ -99,7 +99,7 @@ integration('legacy instant diplomacy responses', () => {
         expect(addedLogs(trace).map((log) => [log.generalId, log.category])).toEqual([
             [1, 'history'],
             [1, 'action'],
-            [0, 'history'],
+            [0, 'summary'],
             [2, 'history'],
             [2, 'action'],
         ]);
@@ -130,7 +130,7 @@ integration('legacy instant diplomacy responses', () => {
         expect(addedLogs(trace).map((log) => [log.generalId, log.category])).toEqual([
             [1, 'history'],
             [1, 'action'],
-            [0, 'history'],
+            [0, 'summary'],
             [2, 'history'],
             [2, 'action'],
         ]);

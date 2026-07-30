@@ -64,6 +64,16 @@ pnpm --filter @sammo-ts/integration-tests test:integration
 
 These are loaded from `.env.ci` and can be overridden per run.
 
+The HTTP lifecycle fixtures explicitly set
+`localAccountGeneralCreationGraceDays` on their disposable profile before
+issuing game sessions for locally provisioned users. This keeps the test on the
+same profile-policy path as production instead of bypassing Kakao eligibility in
+the game API. The PM2 orchestrator fixture also uses a temporary `PM2_HOME` and
+deletes all five profile roles before stopping that dedicated daemon. Cleanup
+verifies the temporary daemon PID and command line, waits for its exit, and only
+then removes `PM2_HOME`, so it does not share the operator's global PM2 daemon
+or retain processes and paths from an older worktree.
+
 ## Notes
 
 - `auth.bootstrapLocal` only works when no users exist; the test resets the DB

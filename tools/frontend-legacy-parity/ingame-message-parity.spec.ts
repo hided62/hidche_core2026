@@ -202,12 +202,26 @@ const installFixture = async (
             }
             if (operation === 'turns.getCommandTable') return response({ general: [], nation: [] });
             if (operation === 'turns.reserved.getGeneral' || operation === 'turns.reserved.getNation') {
-                return response([]);
+                return response({ turns: [], revision: 0 });
+            }
+            if (operation === 'general.getFrontStatus') {
+                return response({
+                    onlineUserCount: 1,
+                    onlineNations: '테스트국(1)',
+                    onlineGenerals: general.name,
+                    nationNotice: '',
+                    lastExecuted: null,
+                    latestVote: null,
+                });
+            }
+            if (operation === 'general.getRecentRecords') {
+                return response({ global: [], general: [], history: [] });
             }
             if (operation === 'messages.getRecent') return response(buildMessages(options.permission));
             if (operation === 'messages.getContacts') return response(contacts);
             if (operation === 'board.getAccess') return response({ canMeeting: true, canSecret: true });
             if (operation === 'tournament.getState') return response({ stage: 0 });
+            if (operation === 'public.recordAccess') return response({ recorded: true });
             if (
                 operation === 'messages.send' ||
                 operation === 'messages.readLatest' ||
@@ -379,6 +393,6 @@ test('redacts diplomacy for a low-permission general and preserves the failed-se
     await page.getByLabel('메시지 입력').fill('차단될 메시지');
     await page.getByRole('button', { name: '서신전달&갱신' }).click();
     await expect(page.getByLabel('메시지 입력')).toHaveValue('');
-    await expect(page.locator('.error')).toHaveText('공개 메세지를 보낼 수 없습니다.');
+    await expect(page.getByRole('alert').filter({ hasText: '공개 메세지를 보낼 수 없습니다.' })).toBeVisible();
     await expect.poll(() => mutations.filter((entry) => entry.operation === 'messages.send').length).toBe(1);
 });

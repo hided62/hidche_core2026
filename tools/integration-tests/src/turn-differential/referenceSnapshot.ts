@@ -76,10 +76,15 @@ export const runReferenceTurnCommandTrace = (workspaceRoot: string, fixturePath:
     if (resolvedFixture !== fixtureRoot && !resolvedFixture.startsWith(`${fixtureRoot}${path.sep}`)) {
         throw new Error(`Reference turn fixture must be under ${fixtureRoot}`);
     }
-    const stdout = execFileSync('./scripts/run-turn-differential-case.sh', [resolvedFixture], {
+    const runner = process.env.TURN_DIFFERENTIAL_CASE_SCRIPT ?? './scripts/run-turn-differential-case.sh';
+    const stdout = execFileSync(runner, [resolvedFixture], {
         cwd: stackDirectory,
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
+        env: {
+            ...process.env,
+            TURN_DIFFERENTIAL_STACK_DIR: stackDirectory,
+        },
     });
     return withProjectedTraceMeta(JSON.parse(stdout) as CanonicalTurnCommandTrace);
 };
@@ -89,7 +94,7 @@ export const runReferenceTurnCommandTraceRequest = (
     request: Record<string, unknown>
 ): CanonicalTurnCommandTrace => {
     const stackDirectory = path.join(workspaceRoot, 'docker_compose_files/reference');
-    const runner = process.env.TURN_DIFFERENTIAL_RUNNER_SCRIPT ?? './scripts/run-turn-differential-case.sh';
+    const runner = process.env.TURN_DIFFERENTIAL_CASE_SCRIPT ?? './scripts/run-turn-differential-case.sh';
     const stdout = execFileSync(runner, ['-'], {
         cwd: stackDirectory,
         input: JSON.stringify(request),

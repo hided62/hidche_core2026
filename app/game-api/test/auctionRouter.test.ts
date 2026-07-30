@@ -272,7 +272,7 @@ describe('auction router actor and permission boundaries', () => {
                             hostGeneralId: 88,
                             detail: { startBidAmount: 100, isReverse: false },
                             status: 'OPEN',
-                            closeAt: new Date('2026-07-27T00:00:00Z'),
+                            closeAt: new Date(Date.now() + 60 * 60_000),
                         },
                     ];
                 }

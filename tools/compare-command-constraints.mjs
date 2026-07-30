@@ -1,9 +1,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import ts from 'typescript';
+import { resolveRefRoot } from './resolve-ref-root.mjs';
 
 const ROOT_DIR = process.cwd();
-const PHP_ROOT = path.join(ROOT_DIR, 'legacy', 'hwe', 'sammo', 'Command');
+const REF_ROOT = resolveRefRoot(ROOT_DIR);
+const PHP_ROOT = path.join(REF_ROOT, 'hwe', 'sammo', 'Command');
 const TS_ROOT = path.join(ROOT_DIR, 'packages', 'logic', 'src', 'actions');
 
 const DEFAULT_MODE = 'all';
@@ -70,6 +72,7 @@ if (!Number.isFinite(similarityThreshold) || similarityThreshold < 0 || similari
 }
 
 let compatibilityRules = [];
+let oneSidedCompatibilityRules = [];
 let loadedCompatFile = null;
 
 const collectFiles = async (dir) => {
@@ -546,6 +549,36 @@ const compileCompatibilityRules = (parsed) => {
     return compiled;
 };
 
+const compileOneSidedCompatibilityRules = (parsed) => {
+    const rawRules = toArrayOrEmpty(parsed?.oneSidedRules);
+    return rawRules.map((rule, idx) => {
+        if (!rule || typeof rule !== 'object' || Array.isArray(rule)) {
+            throw new Error(`One-sided compatibility rule at index ${idx} must be an object.`);
+        }
+        const id =
+            typeof rule.id === 'string' && rule.id.trim().length > 0
+                ? rule.id.trim()
+                : `one_sided_compat_rule_${idx + 1}`;
+        const command = typeof rule.command === 'string' ? rule.command.trim() : '';
+        const kind = rule.kind === 'full' || rule.kind === 'min' ? rule.kind : null;
+        const side = rule.side === 'php' || rule.side === 'ts' ? rule.side : null;
+        const rawName = typeof rule.name === 'string' ? rule.name.trim() : '';
+        if (!command || !kind || !side || !rawName) {
+            throw new Error(
+                `One-sided compatibility rule "${id}" requires command, kind (full|min), side (php|ts), and name.`
+            );
+        }
+        return {
+            id,
+            command,
+            kind,
+            side,
+            name: normalizeRuleConstraintName(side, rawName),
+            note: typeof rule.note === 'string' ? rule.note : '',
+        };
+    });
+};
+
 const formatCompatibilityNote = (template, bindings) => {
     if (!template) {
         const keys = Object.keys(bindings);
@@ -623,6 +656,7 @@ const findCompatibilityMatch = (phpEntry, tsEntry) => {
 
 const loadCompatibilityRules = async () => {
     compatibilityRules = [];
+    oneSidedCompatibilityRules = [];
     loadedCompatFile = null;
     if (!useCompat) {
         return;
@@ -631,6 +665,7 @@ const loadCompatibilityRules = async () => {
     const text = await fs.readFile(resolvedFile, 'utf-8');
     const parsed = JSON.parse(text);
     compatibilityRules = compileCompatibilityRules(parsed);
+    oneSidedCompatibilityRules = compileOneSidedCompatibilityRules(parsed);
     loadedCompatFile = path.relative(ROOT_DIR, resolvedFile);
 };
 
@@ -1155,7 +1190,7 @@ const extractTsConstraintEntriesFromExpr = (expr, sourceFile, side, kind, file, 
         }
         const looksConstraintFactory =
             factorySet.has(callName) ||
-            /^(req|not|be|exists|exist|friendly|different|always|near|allow|disallow|must|check|occupied|supplied|hasRoute|available)/i.test(
+            /^(req|not|be|exists|exist|friendly|different|dest|always|near|allow|disallow|must|check|occupied|supplied|hasRoute|available)/i.test(
                 callName
             );
         if (looksConstraintFactory) {
@@ -1603,7 +1638,7 @@ const pairCompatibleMatches = (phpIndex, tsIndex, missing, extra) => {
     return { compatible, unresolvedMissing, unresolvedExtra };
 };
 
-const compareConstraintSet = (phpEntries, tsEntries, kind) => {
+const compareConstraintSet = (commandKey, phpEntries, tsEntries, kind) => {
     const phpIndex = indexByName(phpEntries);
     const tsIndex = indexByName(tsEntries);
     const phpKeys = [...phpIndex.keys()].sort();
@@ -1625,6 +1660,24 @@ const compareConstraintSet = (phpEntries, tsEntries, kind) => {
         near = nearPair.near;
         missingInTs = nearPair.unresolvedMissing;
         extraInTs = nearPair.unresolvedExtra;
+
+        for (const rule of oneSidedCompatibilityRules) {
+            if (rule.command !== commandKey || rule.kind !== kind) {
+                continue;
+            }
+            const bucket = rule.side === 'php' ? missingInTs : extraInTs;
+            const index = bucket.indexOf(rule.name);
+            if (index < 0) {
+                continue;
+            }
+            bucket.splice(index, 1);
+            compatible.push({
+                phpName: rule.side === 'php' ? rule.name : '[legacy runtime check]',
+                tsName: rule.side === 'ts' ? rule.name : '[core resolve-time check]',
+                ruleId: rule.id,
+                note: rule.note,
+            });
+        }
     }
 
     let status = 'MATCH';
@@ -1687,8 +1740,8 @@ const buildReport = (phpByCommand, tsByCommand) => {
             continue;
         }
 
-        const fullResult = compareConstraintSet(php.full ?? [], tsEntry.full ?? [], 'full');
-        const minResult = compareConstraintSet(php.min ?? [], tsEntry.min ?? [], 'min');
+        const fullResult = compareConstraintSet(key, php.full ?? [], tsEntry.full ?? [], 'full');
+        const minResult = compareConstraintSet(key, php.min ?? [], tsEntry.min ?? [], 'min');
 
         let overallStatus = 'MATCH';
         const activeResults = [];
@@ -1713,15 +1766,7 @@ const buildReport = (phpByCommand, tsByCommand) => {
         });
     }
 
-    const comparedCommands = commands.filter((command) => {
-        if (mode === 'full') {
-            return true;
-        }
-        if (mode === 'min') {
-            return true;
-        }
-        return true;
-    });
+    const comparedCommands = commands;
 
     const totals = {
         phpCommands: phpByCommand.size,
@@ -1768,7 +1813,9 @@ const printReport = (report) => {
         `Compare command constraints (mode: ${mode}, strict: ${strict ? 'on' : 'off'}, compat: ${useCompat ? 'on' : 'off'}, similarity: ${similarityThreshold})`
     );
     if (useCompat) {
-        console.log(`Compatibility rules: ${compatibilityRules.length} (${loadedCompatFile ?? compatFile})`);
+        console.log(
+            `Compatibility rules: ${compatibilityRules.length} pair + ${oneSidedCompatibilityRules.length} one-sided (${loadedCompatFile ?? compatFile})`
+        );
     }
     console.log(`PHP commands: ${report.totals.phpCommands}`);
     console.log(`TS commands: ${report.totals.tsCommands}`);

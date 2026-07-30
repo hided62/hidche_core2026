@@ -2,6 +2,7 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import https from 'node:https';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 
@@ -173,8 +174,19 @@ const createGameClient = (baseUrl: string, trpcPath: string, accessTokenRef: { v
         ],
     });
 
-const buildProcessName = (profileName: string, role: 'api' | 'daemon' | 'tournament'): string =>
-    `sammo:${profileName}:${role === 'api' ? 'game-api' : role === 'daemon' ? 'turn-daemon' : 'tournament-worker'}`;
+const buildProcessName = (
+    profileName: string,
+    role: 'api' | 'daemon' | 'auction' | 'battle' | 'tournament'
+): string => {
+    const roleName = {
+        api: 'game-api',
+        daemon: 'turn-daemon',
+        auction: 'auction-worker',
+        battle: 'battle-sim-worker',
+        tournament: 'tournament-worker',
+    }[role];
+    return `sammo:${profileName}:${roleName}`;
+};
 
 const waitForPm2Online = async (manager: Pm2ProcessManager, names: string[], timeoutMs = 30_000) => {
     const deadline = Date.now() + timeoutMs;
@@ -201,6 +213,55 @@ const cleanupPm2 = async (manager: Pm2ProcessManager, names: string[]) => {
         } catch {
             // Cleanup is best-effort when the process is already deleted.
         }
+    }
+};
+
+const processIsAlive = (pid: number): boolean => {
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch {
+        return false;
+    }
+};
+
+const stopDedicatedPm2Daemon = async (pm2Home: string): Promise<void> => {
+    let daemonPid: number | null = null;
+    try {
+        const rawPid = await fs.readFile(path.join(pm2Home, 'pm2.pid'), 'utf8');
+        const parsedPid = Number(rawPid.trim());
+        if (Number.isSafeInteger(parsedPid) && parsedPid > 1) {
+            daemonPid = parsedPid;
+        }
+    } catch {
+        // PM2 might already have removed its pid file.
+    }
+
+    await execCommand('pnpm', ['exec', 'pm2', 'kill'], {
+        ...process.env,
+        PM2_HOME: pm2Home,
+    }).catch(() => undefined);
+
+    if (daemonPid === null || !processIsAlive(daemonPid)) {
+        return;
+    }
+    for (let attempt = 0; attempt < 50 && processIsAlive(daemonPid); attempt += 1) {
+        await sleep(100);
+    }
+    if (!processIsAlive(daemonPid)) {
+        return;
+    }
+
+    const commandLine = (await fs.readFile(`/proc/${daemonPid}/cmdline`, 'utf8')).replaceAll('\0', ' ');
+    if (!commandLine.includes('PM2') || !commandLine.includes(pm2Home)) {
+        throw new Error(`Refusing to stop PID ${daemonPid}: it is not the dedicated PM2 daemon for ${pm2Home}`);
+    }
+    process.kill(daemonPid, 'SIGTERM');
+    for (let attempt = 0; attempt < 50 && processIsAlive(daemonPid); attempt += 1) {
+        await sleep(100);
+    }
+    if (processIsAlive(daemonPid)) {
+        throw new Error(`Dedicated PM2 daemon did not stop: PID ${daemonPid}, PM2_HOME ${pm2Home}`);
     }
 };
 
@@ -399,11 +460,16 @@ describe('pm2 orchestrator e2e', () => {
     let profileName = 'che:2';
     let apiPort = 14000;
     let processNames: string[] = [];
+    let pm2Home: string | null = null;
+    let previousPm2Home: string | undefined;
 
     beforeAll(async () => {
         await loadEnv();
         process.chdir(workspaceRoot);
         await ensureBuildArtifacts();
+        previousPm2Home = process.env.PM2_HOME;
+        pm2Home = await fs.mkdtemp(path.join(os.tmpdir(), 'sammo-pm2-e2e-'));
+        process.env.PM2_HOME = pm2Home;
 
         profile = process.env.PROFILE ?? 'che';
         scenario = process.env.SCENARIO ?? '2';
@@ -416,6 +482,8 @@ describe('pm2 orchestrator e2e', () => {
         processNames = [
             buildProcessName(profileName, 'api'),
             buildProcessName(profileName, 'daemon'),
+            buildProcessName(profileName, 'auction'),
+            buildProcessName(profileName, 'battle'),
             buildProcessName(profileName, 'tournament'),
         ];
 
@@ -433,11 +501,23 @@ describe('pm2 orchestrator e2e', () => {
     }, 60_000);
 
     afterAll(async () => {
-        if (pm2Manager) {
-            await cleanupPm2(pm2Manager, processNames);
-        }
-        if (gatewayServer) {
-            await gatewayServer.app.close();
+        try {
+            if (pm2Manager) {
+                await cleanupPm2(pm2Manager, processNames);
+            }
+            if (gatewayServer) {
+                await gatewayServer.app.close();
+            }
+            if (pm2Home) {
+                await stopDedicatedPm2Daemon(pm2Home);
+                await fs.rm(pm2Home, { recursive: true, force: true });
+            }
+        } finally {
+            if (previousPm2Home === undefined) {
+                delete process.env.PM2_HOME;
+            } else {
+                process.env.PM2_HOME = previousPm2Home;
+            }
         }
     }, 30_000);
 
@@ -456,7 +536,7 @@ describe('pm2 orchestrator e2e', () => {
         const adminGameAccessRef: { value?: string } = {};
         const accessTokenRef: { value?: string } = {};
         const gatewayClient = createGatewayClient(gatewayUrl, gatewayServer.config.trpcPath, adminSessionRef);
-        const gameTrpcPath = process.env.GAME_TRPC_PATH ?? process.env.TRPC_PATH ?? '/trpc';
+        const gameTrpcPath = `/${profile}/api/trpc`;
         const gameClientPublic = createGameClient(gameUrl, gameTrpcPath, { value: undefined });
         const gameClientAdmin = createGameClient(gameUrl, gameTrpcPath, adminGameAccessRef);
         const gameClientAuthed = createGameClient(gameUrl, gameTrpcPath, accessTokenRef);
@@ -481,6 +561,12 @@ describe('pm2 orchestrator e2e', () => {
             scenario,
             apiPort,
             status: 'RUNNING',
+        });
+        await gatewayClient.admin.profiles.updateMeta.mutate({
+            profileName,
+            patch: {
+                localAccountGeneralCreationGraceDays: 7,
+            },
         });
 
         await gatewayClient.admin.profiles.installNow.mutate({
@@ -556,7 +642,7 @@ describe('pm2 orchestrator e2e', () => {
         });
         expect(createdGeneral.generalId).toBeGreaterThan(0);
 
-        const eventsPath = process.env.GAME_API_EVENTS_PATH ?? '/events';
+        const eventsPath = `/${profile}/api/events`;
         const runStartMs = Date.now();
         const ssePromise = waitForSseEvent({
             url: `${gameUrl}${eventsPath}`,

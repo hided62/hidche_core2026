@@ -18,7 +18,7 @@ test('reserves an argument command in the real game API and reads it back from P
     });
     const passwordKey = await gateway.auth.passwordKey.query();
     const login = await gateway.auth.login.mutate({
-        username: 'demo1',
+        username: 'demo2',
         credential: {
             keyId: passwordKey.keyId,
             ciphertext: publicEncrypt(
@@ -27,7 +27,7 @@ test('reserves an argument command in the real game API and reads it back from P
                     padding: constants.RSA_PKCS1_OAEP_PADDING,
                     oaepHash: 'sha256',
                 },
-                Buffer.from('demo-pass-1', 'utf8')
+                Buffer.from('demo-pass-2', 'utf8')
             ).toString('base64'),
         },
     });
@@ -46,7 +46,9 @@ test('reserves an argument command in the real game API and reads it back from P
     });
     accessToken = (await game.auth.exchangeGatewayToken.mutate({ gatewayToken: issued.gameToken })).accessToken;
     const context = await game.general.me.query();
-    if (!context) throw new Error('demo1 general is missing');
+    if (!context) throw new Error('demo2 general is missing');
+    if (!context.nation) throw new Error('demo2 nation is missing');
+    const nationName = context.nation.name;
     const generalId = context.general.id;
     const originalGeneralSnapshot = await game.turns.reserved.getGeneral.query({ generalId });
     const original = (originalGeneralSnapshot.turns as unknown as PlainTurn[])[29];
@@ -95,8 +97,19 @@ test('reserves an argument command in the real game API and reads it back from P
         const generalSelect = form.locator('select');
         const generalValues = await generalSelect
             .locator('option')
-            .evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value));
-        const targetGeneralId = Number(generalValues.find((value) => Number(value) !== generalId));
+            .evaluateAll((options) =>
+                options.map((option) => ({
+                    value: (option as HTMLOptionElement).value,
+                    label: option.textContent ?? '',
+                }))
+            );
+        const targetGeneralId = Number(
+            generalValues.find(
+                (option) =>
+                    Number(option.value) !== generalId &&
+                    option.label.includes(`(${nationName} ·`)
+            )?.value
+        );
         expect(targetGeneralId).toBeGreaterThan(0);
         await generalSelect.selectOption(String(targetGeneralId));
         const nationSection = page.locator('.reserved-section').filter({ hasText: '국가 예턴' });
@@ -110,7 +123,7 @@ test('reserves an argument command in the real game API and reads it back from P
             args: { isGold: false, amount: 1, destGeneralId: targetGeneralId },
         });
         await page.screenshot({
-            path: testInfo.outputPath('real-hwe-command-reserved.png'),
+            path: testInfo.outputPath('real-che-command-reserved.png'),
             fullPage: true,
         });
     } finally {

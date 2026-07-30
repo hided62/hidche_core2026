@@ -240,6 +240,12 @@ describe('integration initialization flow', () => {
             apiPort: Number(process.env.GAME_API_PORT ?? 14000),
             status: 'RUNNING',
         });
+        await gatewayClient.admin.profiles.updateMeta.mutate({
+            profileName: 'che:2',
+            patch: {
+                localAccountGeneralCreationGraceDays: 7,
+            },
+        });
 
         await gatewayClient.admin.profiles.installNow.mutate({
             profileName: 'che:2',
@@ -358,7 +364,7 @@ describe('integration initialization flow', () => {
                     action: 'che_건국',
                     args: {
                         nationName: `TestNation${idx + 1}`,
-                        nationType: 'che_def',
+                        nationType: 'che_명가',
                         colorType: idx,
                     },
                     expectedRevision: queueRevision,
@@ -462,10 +468,9 @@ describe('integration initialization flow', () => {
                 const nation = nationRows.find((row) => row.id === nationId);
                 expect(nation).toBeTruthy();
                 const count = generalCountMap.get(nationId) ?? 0;
-                if (count >= 2) {
-                    if (nation!.capitalCityId !== null) {
-                        expect(cityNationMap.get(nation!.capitalCityId)).toBe(nationId);
-                    }
+                expect(count).toBeGreaterThanOrEqual(1);
+                if ((nation!.capitalCityId ?? 0) > 0) {
+                    expect(cityNationMap.get(nation!.capitalCityId!)).toBe(nationId);
                 } else {
                     expect(nation!.level).toBe(0);
                 }

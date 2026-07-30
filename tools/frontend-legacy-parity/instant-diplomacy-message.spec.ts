@@ -128,7 +128,20 @@ const installFixture = async (
             }
             if (operation === 'turns.getCommandTable') return response({ general: [], nation: [] });
             if (operation === 'turns.reserved.getGeneral' || operation === 'turns.reserved.getNation') {
-                return response([]);
+                return response({ turns: [], revision: 0 });
+            }
+            if (operation === 'general.getFrontStatus') {
+                return response({
+                    onlineUserCount: 1,
+                    onlineNations: '수락국(1)',
+                    onlineGenerals: general.name,
+                    nationNotice: '',
+                    lastExecuted: null,
+                    latestVote: null,
+                });
+            }
+            if (operation === 'general.getRecentRecords') {
+                return response({ global: [], general: [], history: [] });
             }
             if (operation === 'messages.getRecent') {
                 return response(messageBundle(visible, options.canRespondDiplomacy));
@@ -136,6 +149,7 @@ const installFixture = async (
             if (operation === 'messages.getContacts') return response({ nation: [] });
             if (operation === 'board.getAccess') return response({ canMeeting: true, canSecret: true });
             if (operation === 'tournament.getState') return response({ stage: 0 });
+            if (operation === 'public.recordAccess') return response({ recorded: true });
             if (operation === 'messages.respond') {
                 mutations.push({ operation, body: requestBody });
                 if (options.acceptResponse) {
@@ -256,7 +270,9 @@ test.describe('instant diplomacy response UI', () => {
             await dialog.accept();
         });
         await responseRow.getByRole('button', { name: '거절' }).click();
-        await expect(page.locator('.error')).toHaveText('현재 외교 상태에서는 수락할 수 없습니다.');
+        await expect(
+            page.getByRole('alert').filter({ hasText: '현재 외교 상태에서는 수락할 수 없습니다.' })
+        ).toBeVisible();
         await expect(page.getByText(diplomacyMessage.text)).toBeVisible();
         expect(mutations).toHaveLength(1);
         expect(JSON.stringify(mutations[0]!.body)).toContain('"response":false');

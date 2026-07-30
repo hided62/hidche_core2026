@@ -200,7 +200,8 @@ const assertTraceParity = (
     }
 };
 
-const workspaceRoot = findWorkspaceRoot(process.cwd());
+const configuredWorkspaceRoot = process.env.TURN_DIFFERENTIAL_WORKSPACE_ROOT;
+const workspaceRoot = configuredWorkspaceRoot ?? findWorkspaceRoot(process.cwd());
 const describeWithReference = workspaceRoot ? describe : describe.skip;
 
 describeWithReference('ref ↔ core2026 battle differential', () => {

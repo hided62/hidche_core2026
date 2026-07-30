@@ -1,9 +1,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import ts from 'typescript';
+import { resolveRefRoot } from './resolve-ref-root.mjs';
 
 const ROOT_DIR = process.cwd();
-const PHP_ROOT = path.join(ROOT_DIR, 'legacy', 'hwe', 'sammo', 'Command');
+const REF_ROOT = resolveRefRoot(ROOT_DIR);
+const PHP_ROOT = path.join(REF_ROOT, 'hwe', 'sammo', 'Command');
 const TS_ROOT = path.join(ROOT_DIR, 'packages', 'logic', 'src', 'actions');
 
 const DEFAULT_MODE = 'action';
@@ -480,7 +482,7 @@ const extractPhpLogCalls = (text, assignments) => {
     const actorGeneralVars = findPhpActorGeneralVars(text);
     const actorLoggerVars = findPhpActorLoggerVars(text, actorGeneralVars);
     const regex =
-        /([$\w><:\-\(\)]+)\s*->\s*(pushGeneralActionLog|pushGeneralHistoryLog|pushNationalActionLog|pushNationalHistoryLog|pushGlobalActionLog|pushGlobalHistoryLog)\s*\(/g;
+        /([$\w><:\-()]+)\s*->\s*(pushGeneralActionLog|pushGeneralHistoryLog|pushNationalActionLog|pushNationalHistoryLog|pushGlobalActionLog|pushGlobalHistoryLog)\s*\(/g;
 
     while (true) {
         const match = regex.exec(text);
@@ -786,9 +788,12 @@ const compileIgnoreRules = (config) => {
     return {
         globalTemplates: new Set(normalizeList(global.templates)),
         globalRegex: compileRegex(global.regex),
+        sharedTsLogCommands: new Map(
+            Object.entries(config.SharedTsLogCommands ?? {}).map(([key, reason]) => [key, String(reason)])
+        ),
         perCommand: new Map(
             Object.entries(config)
-                .filter(([key]) => key !== 'Global')
+                .filter(([key]) => key !== 'Global' && key !== 'SharedTsLogCommands')
                 .map(([key, value]) => [
                     key,
                     {
@@ -1044,6 +1049,7 @@ const buildReport = (phpLogs, tsLogs, ignoreRules) => {
     const mismatches = [];
     const matches = [];
     const ignored = [];
+    const ignoredCommands = [];
 
     for (const key of sortedKeys) {
         const phpEntries = phpLogs.get(key) ?? [];
@@ -1053,6 +1059,12 @@ const buildReport = (phpLogs, tsLogs, ignoreRules) => {
             continue;
         }
         if (tsEntries.length === 0) {
+            const reason = ignoreRules.sharedTsLogCommands.get(key);
+            if (reason) {
+                matches.push(key);
+                ignoredCommands.push({ key, side: 'ts', reason });
+                continue;
+            }
             missingInTs.push(key);
             continue;
         }
@@ -1118,12 +1130,13 @@ const buildReport = (phpLogs, tsLogs, ignoreRules) => {
             sharedCommands: keys.size - missingInPhp.length - missingInTs.length,
             matches: matches.length,
             mismatches: mismatches.length,
-            ignored: ignored.length,
+            ignored: ignored.length + ignoredCommands.length,
         },
         missingInTs,
         missingInPhp,
         mismatches,
         ignored,
+        ignoredCommands,
     };
 };
 
@@ -1176,6 +1189,13 @@ const main = async () => {
         console.log(`Missing in TS: ${report.missingInTs.length}`);
         console.log(`Missing in PHP: ${report.missingInPhp.length}`);
         console.log(`Ignored mismatches: ${report.totals.ignored}`);
+
+        if (report.ignoredCommands.length > 0) {
+            console.log('\nShared TS log implementations excluded from per-command extraction:');
+            for (const item of report.ignoredCommands) {
+                console.log(`- ${item.key}: ${item.reason}`);
+            }
+        }
 
         if (report.missingInTs.length > 0) {
             console.log('\nMissing in TS:');

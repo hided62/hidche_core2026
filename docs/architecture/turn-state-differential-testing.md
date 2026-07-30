@@ -118,6 +118,12 @@ cd docker_compose_files/reference
   > /tmp/ref-trace.json
 ```
 
+When the integration tests need to exercise a feature-worktree copy of the
+case wrapper, set `TURN_DIFFERENTIAL_CASE_SCRIPT` to that shell script. This is
+intentionally distinct from `TURN_DIFFERENTIAL_RUNNER_SCRIPT`, which the shell
+wrapper forwards to select the PHP comparison runner inside the reference
+container.
+
 Capture the core side by wrapping the real reserved-turn or daemon execution
 with `captureCoreDatabaseTurnTrace()`. Save the returned JSON, then compare:
 

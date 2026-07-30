@@ -26,7 +26,8 @@ integration('legacy command trace runner', () => {
             expect.objectContaining({ fromNationId: 1, toNationId: 2, state: 1, term: 24 }),
             expect.objectContaining({ fromNationId: 2, toNationId: 1, state: 1, term: 24 }),
         ]);
-        expect(trace.after.messages).toHaveLength(2);
+        const addedMessages = trace.after.messages.slice(trace.before.messages.length);
+        expect(addedMessages).toHaveLength(2);
     });
 
     it('runs live sortie through conquest and nation collapse', () => {

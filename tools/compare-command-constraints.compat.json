@@ -75,6 +75,70 @@
             "ts": {
                 "name": "notBeNeutral"
             }
+        },
+        {
+            "id": "reqDestNationValue(nation==destGeneral.nation) -> destGeneralBelongsToDestNation",
+            "noteTemplate": "destination general belongs to destination nation",
+            "php": {
+                "name": "reqDestNationValue",
+                "equals": [
+                    { "index": 0, "value": "nation", "transform": "field" },
+                    { "index": 2, "value": "==", "transform": "comp" }
+                ]
+            },
+            "ts": {
+                "name": "destGeneralBelongsToDestNation"
+            }
+        }
+    ],
+    "oneSidedRules": [
+        {
+            "id": "npc-active destination loaded by legacy argTest",
+            "command": "General/che_NPC능동",
+            "kind": "full",
+            "side": "ts",
+            "name": "existsDestCity",
+            "note": "legacy argTest loads and rejects a missing destination; core exposes the equivalent constraint"
+        },
+        {
+            "id": "recruit-accept self target checked outside legacy constraint array",
+            "command": "General/che_등용수락",
+            "kind": "full",
+            "side": "ts",
+            "name": "differentDestGeneral",
+            "note": "legacy argTest rejects self before building constraints"
+        },
+        {
+            "id": "abdication self target checked outside legacy constraint array",
+            "command": "General/che_선양",
+            "kind": "full",
+            "side": "ts",
+            "name": "differentDestGeneral",
+            "note": "legacy argTest rejects self before building constraints"
+        },
+        {
+            "id": "gift self target checked outside legacy constraint array",
+            "command": "General/che_증여",
+            "kind": "full",
+            "side": "ts",
+            "name": "alwaysFail",
+            "note": "legacy argTest rejects self before building constraints"
+        },
+        {
+            "id": "assignment self target becomes legacy dynamic AlwaysFail",
+            "command": "Nation/che_발령",
+            "kind": "full",
+            "side": "php",
+            "name": "alwaysFail",
+            "note": "core preserves the legacy completed-false action in resolve-time handling"
+        },
+        {
+            "id": "troop-kick self target becomes legacy dynamic AlwaysFail",
+            "command": "Nation/che_부대탈퇴지시",
+            "kind": "full",
+            "side": "php",
+            "name": "alwaysFail",
+            "note": "core preserves the legacy completed-false action in resolve-time handling"
         }
     ]
 }

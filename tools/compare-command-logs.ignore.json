@@ -1,9 +1,15 @@
 {
+    "SharedTsLogCommands": {
+        "Nation/che_불가침수락": "logs are emitted by diplomacy/instantResponse.ts and verified by instantDiplomacyReference.integration.test.ts",
+        "Nation/che_불가침파기수락": "logs are emitted by diplomacy/instantResponse.ts and verified by instantDiplomacyReference.integration.test.ts",
+        "Nation/che_종전수락": "logs are emitted by diplomacy/instantResponse.ts and verified by instantDiplomacyReference.integration.test.ts"
+    },
     "Global": {
         "templates": [
             "${}에게서 몰수할 ${}이 없습니다.",
             "이동할 인구가 부족합니다.",
             "이미 같은 국호를 가진 곳이 있습니다. ${} 실패",
+            "이미 같은 국호를 가진 곳이 있습니다. 국호변경 실패",
             "<Y>${}</>에게 등용 권유 서신을 보내지 못했습니다. ${}",
             "<Y>${}</>에게 부대 탈퇴를 지시 받았습니다.",
             "<Y>${}</>에 의해 <G>${}</>${} 발령됐습니다.",
@@ -24,6 +30,13 @@
     },
     "General/che_장비매매": {
         "templates": ["${}"],
+        "regex": []
+    },
+    "General/che_인재탐색": {
+        "templates": [
+            "<Y>${}</>${}는 <C>인재</>를 ${}하였습니다!",
+            "<Y>${}</>${}는 <C>인재</>를 발견하였습니다!"
+        ],
         "regex": []
     },
     "General/che_기술연구": {
@@ -73,6 +86,14 @@
     },
     "General/che_파괴": {
         "templates": ["<G>${}</>에 파괴${} 실패했습니다."],
+        "regex": []
+    },
+    "Nation/che_발령": {
+        "templates": ["본인입니다 <Y>${}</> 발령 실패."],
+        "regex": []
+    },
+    "Nation/che_부대탈퇴지시": {
+        "templates": ["본인입니다 부대 탈퇴 지시 실패."],
         "regex": []
     }
 }
