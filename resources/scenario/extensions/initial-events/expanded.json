@@ -1,0 +1,14 @@
+{
+    "initialEvents": [
+        [
+            true,
+            [
+                "ChangeCity",
+                "all",
+                {
+                    "trade": 100
+                }
+            ]
+        ]
+    ]
+}

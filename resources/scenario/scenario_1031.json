@@ -1,5 +1,6 @@
 {
     "title": "【역사모드3-2】 군웅축록",
+    "extends": ["extensions/initial-events/research.json"],
     "startYear": 192,
     "life": 1,
     "fiction": 0,
@@ -725,34 +726,5 @@
     "general_ex": [],
     "cities": [],
     "history": ["<C>●</>195년 1월:<L><b>【역사모드3-2】</b>군욱축록</>", "<C>●</>195년 1월:<L><b>【이벤트】</b></>천하는 분열하고 군웅할거가 도래하다"],
-    "initialEvents": [
-        [
-            true,
-            [
-                "ChangeCity",
-                "free",
-                {
-                    "pop": "70%",
-                    "agri": "70%",
-                    "comm": "70%",
-                    "secu": "70%",
-                    "trust": 80
-                }
-            ],
-            [
-                "ChangeCity",
-                "occupied",
-                {
-                    "pop": "70%",
-                    "agri": "70%",
-                    "comm": "70%",
-                    "secu": "70%",
-                    "trust": 80,
-                    "def": "70%",
-                    "wall": "70%"
-                }
-            ]
-        ]
-    ],
     "events": [["destroy_nation", 1000, ["and", ["Date", ">=", 195, 1], ["RemainNation", "==", 1]], ["BlockScoutAction"], ["DeleteEvent"]]]
 }

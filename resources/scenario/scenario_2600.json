@@ -1,5 +1,6 @@
 {
     "title": "【가상모드26】 삼모 시네마틱 유니버스!",
+    "extends": ["extensions/events/standard.json"],
     "startYear": 180,
     "history": ["<C>●</>180년 1월:<L><b>【가상모드26】</b>삼모 시네마틱 유니버스!</>", "<C>●</>180년 1월:<L><b>【이벤트】</b></>Sammo Cinematic Universe! 최강의 유저는 과연 누구인가?"],
     "stat": {
@@ -894,6 +895,5 @@
         [0, "천고l금", null, 0, null, 37, 83, 95, 0, 160, 300, null, null]
     ],
     "general_ex": [],
-    "initialEvents": [],
-    "events": [["destroy_nation", 1000, ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]], ["BlockScoutAction"], ["DeleteEvent"]]]
+    "initialEvents": []
 }

@@ -1,5 +1,6 @@
 {
     "title": "【가상모드24】 유저무쌍 멀티 유니버스!",
+    "extends": ["extensions/events/standard.json"],
     "startYear": 180,
     "history": ["<C>●</>180년 1월:<L><b>【가상모드24】</b>유저무쌍 멀티 유니버스!</>", "<C>●</>180년 1월:<L><b>【이벤트】</b></>졸장과 명장, 충신과 간신, 무장과 지장, 모든 것이 뒤바뀐 세계"],
     "stat": {
@@ -667,6 +668,5 @@
         [0, "Cure", null, 0, null, 89, 63, 94, 0, 160, 300, null, null]
     ],
     "general_ex": [],
-    "initialEvents": [],
-    "events": [["destroy_nation", 1000, ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]], ["BlockScoutAction"], ["DeleteEvent"]]]
+    "initialEvents": []
 }

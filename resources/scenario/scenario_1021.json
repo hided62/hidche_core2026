@@ -1,5 +1,6 @@
 {
     "title": "【역사모드2-2】 반동탁연합 결성(정사)",
+    "extends": ["extensions/events/standard.json", "extensions/initial-events/research.json"],
     "startYear": 187,
     "life": 1,
     "fiction": 0,
@@ -932,35 +933,5 @@
     ],
     "general_ex": [],
     "cities": [],
-    "history": ["<C>●</>190년 1월:<L><b>【역사모드2-2】</b></>반동탁연합 결성(정사)", "<C>●</>190년 1월:<G><b>【연합】</b></>동탁을 토벌하기 위해 18로 제후가 뭉쳤다."],
-    "initialEvents": [
-        [
-            true,
-            [
-                "ChangeCity",
-                "free",
-                {
-                    "pop": "70%",
-                    "agri": "70%",
-                    "comm": "70%",
-                    "secu": "70%",
-                    "trust": 80
-                }
-            ],
-            [
-                "ChangeCity",
-                "occupied",
-                {
-                    "pop": "70%",
-                    "agri": "70%",
-                    "comm": "70%",
-                    "secu": "70%",
-                    "trust": 80,
-                    "def": "70%",
-                    "wall": "70%"
-                }
-            ]
-        ]
-    ],
-    "events": [["destroy_nation", 1000, ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]], ["BlockScoutAction"], ["DeleteEvent"]]]
+    "history": ["<C>●</>190년 1월:<L><b>【역사모드2-2】</b></>반동탁연합 결성(정사)", "<C>●</>190년 1월:<G><b>【연합】</b></>동탁을 토벌하기 위해 18로 제후가 뭉쳤다."]
 }

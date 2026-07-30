@@ -1,5 +1,6 @@
 {
     "title": "【가상모드8】 가요대잔치",
+    "extends": ["extensions/events/standard.json"],
     "life": 1,
     "fiction": 1,
     "nation": [],
@@ -408,6 +409,5 @@
     "general_ex": [],
     "cities": [],
     "history": ["<C>●</>180년 1월:<L><b>【가상모드7】</b>가요대잔치</>", "<C>●</>180년 1월:<L><b>【이벤트】</b></>올해의 가요대상은!"],
-    "initialEvents": [],
-    "events": [["destroy_nation", 1000, ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]], ["BlockScoutAction"], ["DeleteEvent"]]]
+    "initialEvents": []
 }

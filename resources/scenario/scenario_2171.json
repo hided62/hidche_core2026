@@ -1,5 +1,6 @@
 {
     "title": "【가상모드17】 루드라사움",
+    "extends": ["extensions/events/standard.json"],
     "startYear": 1,
     "history": ["<C>●</>180년 1월:<L><b>【가상모드16】 루드라사움</>", "<C>●</>180년 1월:<L><b>【이벤트】</b>제작자 : Cure,거북마루, 네이미</>", "<C>●</>180년 1월:<L><b>【이벤트】</b>루드라사움의 세계관을 불러옵니다.</>"],
     "stat": {
@@ -589,6 +590,5 @@
         [999, "하모니트", null, 0, null, 1, 1, 1, 0, -15, 300, null, null],
         [999, "후지와라", "루드라사움/후지와라.png", 0, null, 1, 1, 1, 0, -15, 300, null, null]
     ],
-    "initialEvents": [],
-    "events": [["destroy_nation", 1000, ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]], ["BlockScoutAction"], ["DeleteEvent"]]]
+    "initialEvents": []
 }

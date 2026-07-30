@@ -3,12 +3,13 @@
 이 핸드북은 새 기능을 어디에 넣을지뿐 아니라 요청이 어떤 경계를 지나 상태로 남는지 설명합니다. 먼저
 [문서 기준선](../reference-baseline.md)을 확인하고, 변경 성격에 따라 다음 순서로 읽어 주세요.
 
-| 변경하려는 것              | 먼저 읽을 문서                                       | 주로 확인할 코드                             |
-| -------------------------- | ---------------------------------------------------- | -------------------------------------------- |
-| 화면·라우팅·조회 API       | [시스템 아키텍처](./system-architecture.md)          | `app/*-frontend`, `app/*-api`                |
-| 턴 입력·게임 상태 mutation | [요청·턴·저장 흐름](./request-turn-persistence.md)   | `app/game-api`, `app/game-engine`            |
-| 명령·전투·월간 로직        | [도메인 로직과 핵심 클래스](./domain-and-classes.md) | `packages/logic`, `app/game-engine/src/turn` |
-| 새 파일 위치·검증 범위     | [파일 지도와 변경 절차](./code-map.md)               | package manifest, test, docs                 |
+| 변경하려는 것              | 먼저 읽을 문서                                                  | 주로 확인할 코드                             |
+| -------------------------- | --------------------------------------------------------------- | -------------------------------------------- |
+| 화면·라우팅·조회 API       | [시스템 아키텍처](./system-architecture.md)                     | `app/*-frontend`, `app/*-api`                |
+| 턴 입력·게임 상태 mutation | [요청·턴·저장 흐름](./request-turn-persistence.md)              | `app/game-api`, `app/game-engine`            |
+| 명령·전투·월간 로직        | [도메인 로직과 핵심 클래스](./domain-and-classes.md)            | `packages/logic`, `app/game-engine/src/turn` |
+| 시나리오 이벤트·규칙 조합  | [시나리오 리소스 합성](../architecture/scenario-composition.md) | `resources/scenario`, `scenarioLoader.ts`    |
+| 새 파일 위치·검증 범위     | [파일 지도와 변경 절차](./code-map.md)                          | package manifest, test, docs                 |
 
 ## 읽을 때 지켜야 할 경계
 

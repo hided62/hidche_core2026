@@ -1,5 +1,6 @@
 {
     "title": "【역사모드4】 황제는 허도로",
+    "extends": ["extensions/events/standard.json", "extensions/initial-events/research.json"],
     "startYear": 193,
     "life": 1,
     "fiction": 0,
@@ -718,35 +719,5 @@
         "<C>●</>196년 1월:<L><b>【이벤트】</b></><Y>유비</>는 <Y>여포</>에게 <G><b>소패</b></>를 내어줍니다.",
         "<C>●</>196년 1월:<L><b>【이벤트】</b></><G><b>동오</b></>의 <Y>손책</>은 소패왕의 이름을 떨칩니다.",
         "<C>●</>196년 1월:<L><b>【이벤트】</b></><G><b>회남</b></>의 <Y>원술</>은 황제가 될 기회를 노리고 있습니다."
-    ],
-    "initialEvents": [
-        [
-            true,
-            [
-                "ChangeCity",
-                "free",
-                {
-                    "pop": "70%",
-                    "agri": "70%",
-                    "comm": "70%",
-                    "secu": "70%",
-                    "trust": 80
-                }
-            ],
-            [
-                "ChangeCity",
-                "occupied",
-                {
-                    "pop": "70%",
-                    "agri": "70%",
-                    "comm": "70%",
-                    "secu": "70%",
-                    "trust": 80,
-                    "def": "70%",
-                    "wall": "70%"
-                }
-            ]
-        ]
-    ],
-    "events": [["destroy_nation", 1000, ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]], ["BlockScoutAction"], ["DeleteEvent"]]]
+    ]
 }

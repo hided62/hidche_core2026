@@ -1,5 +1,6 @@
 {
     "title": "【가상모드5】 결사항전",
+    "extends": ["extensions/events/standard.json"],
     "life": 1,
     "fiction": 1,
     "nation": [["유저", "#FF0000", 10000, 10000, "오랑캐를 막아내라", 0, "유가", 7, []]],
@@ -97,6 +98,5 @@
     "general_ex": [],
     "cities": [],
     "history": ["<C>●</>180년 1월:<L><b>【가상모드4】</b>결사항전</>", "<C>●</>180년 1월:<L><b>【이벤트】</b></>오랑캐에 맞서 버텨내야 합니다!"],
-    "initialEvents": [],
-    "events": [["destroy_nation", 1000, ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]], ["BlockScoutAction"], ["DeleteEvent"]]]
+    "initialEvents": []
 }

@@ -244,3 +244,21 @@ describeDb('scenario database seed', () => {
         }
     });
 });
+
+describe('tracked scenario composition', () => {
+    test('loads the shared event and buyable unique extensions', async () => {
+        const standard = await loadScenarioDefinitionById(1010);
+        const expanded = await loadScenarioDefinitionById(2141);
+        const mixedConst = await loadScenarioDefinitionById(2904);
+
+        expect(standard.events).toHaveLength(1);
+        expect(standard.initialEvents).toHaveLength(1);
+        expect(expanded.events).toHaveLength(7);
+        expect(expanded.initialEvents).toHaveLength(1);
+        expect(expanded.config.const.availableSpecialWar).toHaveLength(20);
+        expect(Object.keys(expanded.config.const.allItems as object)).toEqual(['horse', 'weapon', 'book', 'item']);
+        expect(mixedConst.config.const.scenarioEffect).toBe('event_StrongAttacker');
+        expect(mixedConst.config.const.availableSpecialWar).toEqual(expanded.config.const.availableSpecialWar);
+        expect(mixedConst.config.const.allItems).toEqual(expanded.config.const.allItems);
+    });
+});

@@ -1,5 +1,6 @@
 {
     "title": "【가상모드4】 영웅 시대",
+    "extends": ["extensions/events/standard.json"],
     "life": 1,
     "fiction": 1,
     "nation": [],
@@ -691,6 +692,5 @@
     ],
     "cities": [],
     "history": ["<C>●</>180년 1월:<L><b>【가상모드3】</b>영웅 시대</>", "<C>●</>180년 1월:<L><b>【이벤트】</b></>생몰년에 맞춰 장수들이 재야로 등장하는 가상 시나리오."],
-    "initialEvents": [],
-    "events": [["destroy_nation", 1000, ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]], ["BlockScoutAction"], ["DeleteEvent"]]]
+    "initialEvents": []
 }

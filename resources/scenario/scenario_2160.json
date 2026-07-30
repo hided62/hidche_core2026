@@ -1,5 +1,6 @@
 {
     "title": "【가상모드16】 애니집결",
+    "extends": ["extensions/events/standard.json"],
     "startYear": 180,
     "history": ["<C>●</>180년 1월:<L><b>【이벤트】</b></>제작자: 강서유서.", "<C>●</>180년 1월:<L><b>【가상모드16】</b>애니집결</>", "<C>●</>180년 1월:<L><b>【이벤트】</b></>더더욱 많아진 애니 캐릭터들이 삼국지에서 자웅을 겨룬다"],
     "stat": {
@@ -772,6 +773,5 @@
         [0, "실비아 셔우드", null, 0, null, 94, 77, 90, 0, 160, 300, null, null, "네 빈약한 경험치로 모든 일을 판단하지 마. 너도 첩보원 나부랭이라면 객관적인 사고로 움직여. 자잘한 정보 하나조차 사람의 목숨이 걸려 있다는 걸 잊지 마라"],
         [0, "헨리 헨더슨", null, 0, null, 83, 55, 92, 0, 160, 300, null, null, "에⋯엘레강트⋯! 베리 엘레강트!(E⋯Elegant⋯! Very Elegant!)  저 가족은 대체 뭐지?!"]
     ],
-    "initialEvents": [],
-    "events": [["destroy_nation", 1000, ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]], ["BlockScoutAction"], ["DeleteEvent"]]]
+    "initialEvents": []
 }

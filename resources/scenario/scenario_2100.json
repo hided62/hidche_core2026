@@ -1,5 +1,6 @@
 {
     "title": "【가상모드10-a】 천인 강림",
+    "extends": ["extensions/events/standard.json"],
     "life": 1,
     "fiction": 1,
     "nation": [],
@@ -697,6 +698,5 @@
     ],
     "cities": [],
     "history": ["<C>●</>180년 1월:<L><b>【이벤트】</b></>차원이 다른 존재들이 나타납니다."],
-    "initialEvents": [],
-    "events": [["destroy_nation", 1000, ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]], ["BlockScoutAction"], ["DeleteEvent"]]]
+    "initialEvents": []
 }

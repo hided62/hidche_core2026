@@ -1,5 +1,6 @@
 {
     "title": "【가상모드13-b】 환상향 춘",
+    "extends": ["extensions/events/standard.json"],
     "life": 0,
     "fiction": 0,
     "stat": {
@@ -279,6 +280,5 @@
     ],
     "cities": [],
     "history": ["<C>●</>180년 1월:<L><b>【이벤트】</b></>제작자 : Cure.", "<C>●</>180년 1월:<L><b>【이벤트】</b></>도움을주신분 : 네이미.", "<C>●</>180년 1월:<L><b>【이벤트】</b></>환상향의 세계관을 불러옵니다.", "<C>●</>180년 1월:<L><b>【가상모드12-b】</b></>환상향 춘."],
-    "initialActions": [],
-    "events": [["destroy_nation", 1000, ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]], ["BlockScoutAction"], ["DeleteEvent"]]]
+    "initialActions": []
 }
