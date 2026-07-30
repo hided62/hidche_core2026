@@ -3,8 +3,8 @@ layout: home
 
 hero:
     name: core2026 핸드북
-    text: 구현과 플레이를 한곳에서 설명합니다
-    tagline: 현재 코드의 아키텍처·실행 흐름·핵심 클래스와 커맨드·시기별 이용 방법을 연결한 문서입니다.
+    text: 코드와 게임 동작을 연결합니다
+    tagline: 런타임, 저장 경계, 호환 검증과 플레이 방법을 현재 소스 구조에 맞춰 설명합니다.
     actions:
         - theme: brand
           text: 개발자 핸드북
@@ -14,19 +14,27 @@ hero:
           link: /user/
 
 features:
-    - title: 코드에서 실행까지
-      details: frontend, tRPC, input_event, daemon, in-memory world와 PostgreSQL flush의 실제 경계를 따라갑니다.
-    - title: 커맨드와 시기
-      details: 장수·국가 커맨드 전체 목록을 소스에서 생성하고, 언제 왜 실행 가능하거나 막히는지 설명합니다.
-    - title: 고정된 기준선
-      details: 문서가 조사한 Git 기준 커밋과 재검증 지점을 밝혀 이후 리팩터링의 출발점을 남깁니다.
+    - title: 시스템 구조
+      details: gateway, game API, turn daemon, package와 PostgreSQL·Redis의 책임을 설명합니다.
+    - title: 요청과 상태
+      details: session actor부터 input_event, in-memory world와 transaction flush까지 추적합니다.
+    - title: ref 호환
+      details: 명령·RNG·상태·로그와 Chromium 화면을 같은 fixture에서 비교합니다.
 ---
 
-## 문서 성격
+## 문서 안내
 
-이 사이트는 `report/`의 작업 일지가 아니라 제품 저장소 안에서 계속 갱신하는 핸드북입니다.
-개발자는 [시스템 아키텍처](./developer/system-architecture.md)부터, 플레이어는
-[시간과 턴](./user/time-and-turns.md)부터 읽으면 됩니다.
+개발자는 [개발자 핸드북](./developer/index.md)과
+[아키텍처 개요](./architecture/overview.md)에서 시작해 주세요. 플레이어는
+[시간과 턴](./user/time-and-turns.md)과
+[커맨드 목록](./user/command-catalog.generated.md)을 확인해 주세요.
 
-문서의 사실관계는 [기준 커밋](./reference-baseline.md)의 코드에서 확인했습니다. 기능을 변경했다면 같은
-작업에서 관련 페이지와 자동 생성 커맨드 목록을 함께 갱신해 주세요.
+세부 문서는 다음 책임으로 나뉩니다.
+
+- `architecture/`: 현재 runtime, action module, scenario와 차등 검증 계약
+- `developer/`: 파일 위치, 도메인 조립, 요청·저장 흐름
+- `user/`: 화면, 시간, 국가 기능과 생성된 command catalog
+- 루트 문서: 통합 테스트, Chromium 비교, Caddy, DB 이관과 운영 절차
+
+작업 이력은 상위 작업공간의 `report/`에 보존합니다. ref PHP와 core2026의
+구체적 대응은 상위 `../docs/ref-core2026-mapping.md`를 사용합니다.

@@ -37,8 +37,9 @@ commit 또는 삭제를 하지 말아 주세요.
 
 ## 완료 상태를 해석하는 법
 
-2026-07-27의 백엔드 누락 감사에서는 현재 `main`에서 재현 가능한 구체적
-미구현·미병합 항목을 찾지 못했습니다. 이를 “이관 전체 완료”로 해석하지 말아 주세요.
+이관 상태는 현재 `main`의 코드, Git ancestry, 실행 경로와 ref 비교로
+판정해 주세요. 기능 목록이나 report의 완료 표현만으로 전체 이관이 끝났다고
+판정하지 말아 주세요.
 
 - 새 차등 fixture가 mismatch를 드러내면 다시 제품 결함으로 분류해 주세요.
 - green unit test는 ref 호환, 실제 DB transaction, Chromium geometry 또는
@@ -160,7 +161,7 @@ API request
 - 전투·명령·월간 action의 호출, state patch, 로그와 RNG 소비 순서를
   리팩터링 편의로 바꾸지 말아 주세요.
 
-게임 난수는 기존 `packages/common/src/util/LiteHashDRBG.ts`, `RNG.ts`,
+게임 난수는 `packages/common/src/util/LiteHashDRBG.ts`, `RNG.ts`,
 `RandUtil.ts` 흐름을 사용해 주세요. `Math.random()` 같은 임의 경로를 gameplay에
 추가하지 말아 주세요. 후보가 하나뿐인 선택, 실패 분기, fallback에서도 ref가
 소비하는 RNG call을 생략하지 말아 주세요.

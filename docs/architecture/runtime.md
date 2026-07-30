@@ -1,297 +1,122 @@
-# Runtime and Build Profiles
+# 런타임 아키텍처
 
-Build outputs should be emitted to `/dist/{profileName}` per profile to keep
-deployments predictable. Profiles are server+scenario pairs, and scenario
-selection is required because it drives unit sets and DB settings.
+## 프로세스
 
-## TypeScript Toolchain
+| 프로세스             | 시작점                                                   | 책임                                        |
+| -------------------- | -------------------------------------------------------- | ------------------------------------------- |
+| gateway API          | `app/gateway-api/src/server.ts`                          | 계정, session, profile, admin operation     |
+| gateway orchestrator | `app/gateway-api/src/orchestrator/orchestratorServer.ts` | DB queue, build, PM2 reconciliation         |
+| game API             | `app/game-api/src/server.ts`                             | profile tRPC, SSE, worker transport         |
+| turn daemon          | `app/game-engine/src/turn/cli.ts`                        | schedule, command, 월간 lifecycle, DB flush |
+| battle worker        | `app/game-api/src/battleSim/worker.ts`                   | 격리된 전투 시뮬레이션                      |
+| auction worker       | `app/game-api/src/auction/worker.ts`                     | 경매 timer와 낙찰 처리                      |
+| tournament worker    | `app/game-api/src/tournament/worker.ts`                  | 대회 진행과 결과 처리                       |
 
-The rewrite workspace uses exactly TypeScript `6.0.2`. TypeScript 7 is not a
-supported build or validation environment until the compiler/tooling APIs used
-by this repository and the dependent toolchain are available and compatible.
-Package-local TypeScript 5 or 7 overrides are not allowed in `app/*`,
-`packages/*`, or `tools/*`. The legacy runtime under `legacy/` is maintained
-separately and is outside this rule.
+Gateway API와 game API는 기본적으로 `0.0.0.0`에 bind합니다. 실제 port와
+prefix는 환경 변수와 배포 profile이 결정합니다.
 
-The rationale, scope, and TypeScript 7 upgrade gate are defined in
-[`typescript-version.md`](typescript-version.md).
+## Gateway 실행
 
-## Database Schemas (Gateway vs Game)
+`resolveGatewayApiConfigFromEnv()`가 PostgreSQL schema, Redis prefix, session
+TTL, game-token secret, OAuth, local-account 정책과 orchestrator 설정을
+검증합니다.
 
-Gateway uses a shared schema (default `public`) for login/profile state, while
-each game profile runs against its own schema. This keeps gateway data stable
-and allows profile-scoped game data resets.
+Gateway API는 다음 저장 경계를 사용합니다.
 
-- Gateway schema: `GATEWAY_DB_SCHEMA` (default `public`)
-- Game schema: `PROFILE` value (e.g., `hwe`, `che`)
-- Optional override for gateway DB URL: `GATEWAY_DATABASE_URL`
+- `AppUser`, `SystemSetting`: 계정과 정책
+- `GatewayProfile`: profile, scenario, port, 상태와 build 결과
+- `GatewayOperation`: build/reset/open/close 등 실행 요청과 결과
+- Redis: gateway session, OAuth 임시 상태, flush channel
 
-## Suggested Build Pattern
+Orchestrator는 `GatewayOperation`을 claim하고 source ref를 commit으로
+해결합니다. `WorkspaceManager`가 commit별 worktree를 준비하고 build runner가
+artifact를 만들며 `Pm2ProcessManager`가 profile process를 조정합니다.
+재시작 시 DB 상태와 process 상태를 reconciliation합니다.
 
-- Wrapper script under `tools/build-scripts`
-- `pnpm build:server --profile che --scenario default`
-- CI-friendly: `PROFILE=che SCENARIO=default pnpm build:server`
-- Build tooling: use `tsdown` for backend/libs, and Vite for frontend apps.
+## Game API 실행
 
-## Deterministic RNG Policy
+`resolveGameApiConfigFromEnv()`가 `PROFILE`, `SCENARIO`,
+`GAME_PROFILE_NAME`, API·SSE·upload 경로와 worker timeout을 결정합니다.
+기본 profile name은 `${profile}:${scenario}`입니다.
 
-- Gameplay randomness must be reproducible from a deterministic seed
-- Prefer `legacy/hwe/ts/util/LiteHashDRBG.ts` and `legacy/hwe/ts/util/RNG.ts`
-- Seed composition should include hidden base seed plus action context
+Fastify server는 요청에서 game token을 검증해 `GameApiContext.auth`에
+넣습니다. Router는 public procedure와 인증 procedure를 구분하고, 변경
+대상 장수·국가·archive owner를 session actor와 DB에서 해석합니다.
 
-## Gateway Orchestration (Single Host Draft)
+Mutation은 두 형태입니다.
 
-Gateway API is the single source of truth for profile state and reconciles
-PM2-managed processes on boot and on a short interval. The orchestrator runs
-as a separate process (`GATEWAY_ROLE=orchestrator`). The DB owns the desired
-state; PM2 is treated as the actuator. The runtime state is grouped so that
-`game-api` + `turn-daemon` are either on together or off together.
+- API transaction으로 끝나는 mutation은 `executeInputEvent()`가
+  `target=API` event를 만들고 결과와 event 상태를 같은 transaction에서
+  commit합니다.
+- turn world가 필요한 mutation은 daemon transport가 `target=DAEMON`
+  event를 만들고 turn daemon의 처리 대상으로 전달합니다.
 
-### DB-Owned Profile State
+같은 `requestId`의 완료·처리 중 event는 중복 수락하지 않습니다. 실패 event는
+claim 가능한 상태에서 attempts를 증가시켜 재처리합니다.
 
-Profiles are tracked by `profileName` (= `${profile}:${scenario}`).
-Gateway loads the profile table on boot, then reconciles PM2 to match.
+## Turn daemon 조립
 
-- `예약됨` (RESERVED): preopen/open timestamps are set; processes off.
-- `가오픈` (PREOPEN): build done; API+daemon on, daemon paused.
-- `가동중` (RUNNING): both `game-api` and `turn-daemon` should be on.
-- `정지됨` (STOPPED): processes off; may be resumed later.
-- `정지(오류)` (PAUSED): fatal error; daemon paused but process remains on.
-- `천하통일` (COMPLETED): game finished; API on, daemon paused.
-- `비활성화` (DISABLED): excluded from orchestration; start forbidden.
+`createTurnDaemonRuntime()`은 다음 순서로 런타임을 구성합니다.
 
-### Boot Reconciliation
+1. `DatabaseTurnDaemonLease`가 profile lease와 fencing token을 확보합니다.
+2. `loadTurnWorldFromDatabase()`가 world, 장수, 국가, 도시, 외교, 예약 턴,
+   event와 resource snapshot을 읽습니다.
+3. scenario, map, unit set과 command profile을 적재합니다.
+4. action-module bundle, AI, command registry, 월간 event action을 조립합니다.
+5. `EngineStateManager`가 in-memory mutation과 transaction flush를 묶습니다.
+6. `TurnDaemonLifecycle`이 control queue와 schedule을 실행합니다.
 
-1. Load profile rows from DB.
-2. List PM2 processes and map `profileName -> running state`.
-3. For each profile:
-    - If desired `RUNNING/PREOPEN/PAUSED/COMPLETED` and any process is missing, start.
-    - If desired `RESERVED/STOPPED/DISABLED` and any process is running, stop both.
-4. Persist errors to DB for audit.
+Lifecycle은 가장 빠른 장수 턴과 다음 tick 중 앞선 시각을 선택합니다.
+pause gate, 수동 run, shutdown과 budget을 같은 loop에서 처리합니다.
 
-### Internal Scheduler (Gateway Cron)
+## 한 번의 실행과 저장
 
-Gateway runs a lightweight cron loop (setInterval) that:
-
-- When `RESERVED` and `preopenAt <= now`, queue a build for the reserved commit.
-- When build succeeds, status becomes `PREOPEN` (daemon paused).
-- When `openAt <= now`, status becomes `RUNNING` and daemon resumes.
-- Optionally drains a build queue (see build workflow).
-
-### Build Workflow (Admin)
-
-- 관리자는 gateway의 `/admin/server-operations` 전용 화면에서 profile별
-  runtime, build, worktree, 오류와 작업 이력을 확인하고 시작·정지·초기화를
-  요청한다.
-- 운영 요청은 `gateway_operation` 행으로 기록된다. 같은 profile에는
-  `QUEUED` 또는 `RUNNING` 작업이 하나만 존재할 수 있으며, 상태는
-  `QUEUED -> RUNNING -> SUCCEEDED|FAILED` 또는 실행 전 `CANCELLED`로
-  전이된다. 실패·취소 작업은 같은 입력으로 재시도할 수 있다.
-- `BRANCH` 소스는 요청 시 유효성을 검사하지만 branch 이름을 보존하고,
-  실행 직전에 원격을 다시 fetch하여 최신 commit을 확정한다. `COMMIT`
-  소스는 요청 시 full SHA로 정규화하여 이후 branch 이동과 무관하게
-  동일 commit을 사용한다. 실제 사용한 SHA는 작업의
-  `resolvedCommitSha`와 profile의 `buildCommitSha`에 기록한다.
-- 초기화 작업은 profile 프로세스를 정지한 뒤 선택 commit worktree에서
-  build하고, 같은 worktree의 scenario/map/unitset으로 profile DB를 seed한
-  후 `PREOPEN` 또는 `RUNNING`으로 전환하여 API와 daemon을 함께 시작한다.
-  대기 중 작업은 취소할 수 있으나 DB 변경이 시작된 `RUNNING` 작업은
-  중간 취소하지 않는다.
-- Admin triggers a build request for a profile.
-- Gateway queues a build job with `(profileName, commitSha)` and prepares a
-  per-commit workspace (`/.worktrees/{commitSha}` by default).
-- Workspace is backed by `git worktree` and is reused across builds for the same commit.
-- Each workspace stores `lastUsedAt` in DB so cleanup can remove stale worktrees.
-- Cleanup is invoked manually by admin API and removes worktrees unused for 6+ months.
-- Build runs `pnpm install` when workspace is created, then executes
-  the common build, Prisma client generation, and infra/logic dependency builds before
-  `pnpm --filter @sammo-ts/game-api build` and
-  `pnpm --filter @sammo-ts/game-engine build`, then marks build success/failure.
-- On success, status moves to `PREOPEN` for reserved builds or stays unchanged for manual builds.
-- PM2 starts API/daemon from the profile row's `buildWorkspace`, so profiles
-  pinned to different commits execute the artifacts from their own detached
-  worktrees. A profile without `buildWorkspace` intentionally falls back to the
-  main workspace; this is the `hwe`/main compatibility path.
-
-`GatewayProfile.meta.adminActions` polling is retained only for requests
-created by the older admin page. New operations must use `gateway_operation`
-so concurrency, audit history, cancellation, retry, source intent, and the
-resolved commit remain first-class data.
-
-## Current Implementation Status
-
-- Turn daemon lifecycle + in-memory state live in `app/game-engine` with DB flush hooks.
-- 모든 tRPC mutation은 PostgreSQL `input_event` 경계에서 request ID와 처리
-  상태를 기록한다.
-- 월드 mutation과 daemon control은 PostgreSQL inbox로 전달된다. Redis는
-  더 이상 이 명령들의 영속 큐가 아니며 realtime/battle-sim 전송에만 남아
-  있다.
-- API가 직접 변경하는 예약 턴·메시지 등의 DB 쓰기는 API input event 완료와
-  같은 transaction에서 commit된다.
-- 엔진 명령은 도메인 DB 쓰기, in-memory world flush, 예약 턴, 로그, 결과
-  저장과 inbox 완료를 하나의 transaction으로 commit한다.
-
-## Turn Daemon and API Server Behavior (Outline)
-
-- Turn daemon responsibilities: scheduling, turn resolution, state persistence
-- API server responsibilities: query/command intake, validation, response shaping
-- Concurrency model between daemon and API server
-- Durable command channel: PostgreSQL `input_event`
-- Client updates: SSE between API server and frontend where appropriate
-
-## Durable Input Event Split
-
-PostgreSQL is the source of truth for accepted input. Redis pub/sub remains a
-best-effort notification/fan-out path and must not decide whether a gameplay
-mutation was committed.
-
-### Recommended Split
-
-- PostgreSQL `input_event`:
-    - API mutation acceptance, idempotency, attempts and audit state.
-    - API server -> daemon mutation/control payloads and durable results.
-    - `FOR UPDATE SKIP LOCKED` claim plus worker lease for concurrent consumers.
-    - engine result and gameplay state commit in the same transaction.
-- Redis pub/sub:
-    - Daemon -> API server: low-stakes live update signals (run started/ended).
-    - API server -> frontend: SSE fan-out triggered by pub/sub updates.
-    - Do not use pub/sub for data that must be replayed or audited.
-
-### Operational Notes
-
-- 각 profile은 별도 game DB schema/connection을 사용한다.
-- HTTP `Idempotency-Key`(없으면 Fastify request ID)와 tRPC path를 합친 값이
-  API input event key다.
-- 처리 중 lease가 만료된 engine event만 `PENDING`으로 회수한다.
-- 완료 event 보존/정리 기간과 `FAILED` 재처리 운영 정책은 별도로 정해야 한다.
-
-Detailed lifecycle and control flow are defined in
-`docs/architecture/turn-daemon-lifecycle.md`.
-
-## Authentication and Session Management (Draft)
-
-Login uses Kakao OAuth as the primary identity provider because it leverages
-Korean real-name verification and helps prevent multi-account abuse. The system
-also supports local ID/password login for users who cannot use Kakao.
-
-### Login Options
-
-- Kakao login button (OAuth flow via Gateway).
-- Local login with ID/password (managed by Gateway).
-- Passkey is a possible future option; define later if required.
-- Auto-login should be supported when an active session exists.
-
-### Session and SSO-Like Behavior
-
-- Gateway handles login and owns primary sessions in Redis.
-- Game servers may run different branches; treat Gateway as a central SSO
-  authority that issues session tokens for each server+scenario profile.
-- API servers validate tokens against Redis and accept sessions issued by
-  Gateway without re-authentication.
-- Session tokens should be scoped by server+scenario profile to avoid cross-server leaks.
-
-### Operational Notes
-
-- Prefer HTTP-only secure cookies for session tokens where possible.
-- Provide a logout flow that revokes tokens in Redis.
-- Track last-login and session metadata for audit and abuse detection.
-
-## Engine Runtime Flow (Draft)
-
-### Turn Daemon Loop
-
-- The turn daemon runs as a single-threaded loop.
-- The daemon engine uses in-memory state as the primary working set.
-- The daemon waits on two conditions during the event loop.
-    - Query/command requests from the external API server.
-    - The scheduled start time of the next turn.
-- External requests are processed until the next turn start time is reached.
-    - If no requests arrive, the daemon waits until the next turn start time.
-    - When the next turn start time arrives, the daemon starts turn processing
-      immediately even if requests remain queued.
-- While the daemon is resolving a turn, the API server queues incoming requests.
-
-현재 구현은 control 명령과 registry의 모든 world mutation을 같은 DB queue로
-읽어 턴 사이에 처리한다.
-
-### Daemon Control Contract (Draft)
-
-API server commands are inserted into PostgreSQL `input_event`; the daemon
-stores status/results on the same row. An in-process queue remains available
-for tests and internal signals.
-
-```ts
-export type RunReason = 'schedule' | 'manual' | 'poke';
-
-export type DaemonCommand =
-    | { type: 'run'; reason: RunReason; targetTime?: string; budget?: TurnRunBudget }
-    | { type: 'pause'; reason?: string }
-    | { type: 'resume'; reason?: string }
-    | { type: 'getStatus'; requestId: string };
-
-export type DaemonEvent =
-    | { type: 'status'; requestId?: string; status: TurnDaemonStatus }
-    | { type: 'runStarted'; at: string; reason: RunReason }
-    | { type: 'runCompleted'; at: string; result: TurnRunResult }
-    | { type: 'runFailed'; at: string; error: string };
+```text
+lease/fencing 확인
+  -> input_event claim
+  -> in-memory command 또는 calendar action
+  -> world dirty state와 side effect 수집
+  -> EngineStateManager transaction
+       -> world/general/nation/city/turn/log flush
+       -> input_event result/status 갱신
+       -> checkpoint 갱신
+  -> commit
+  -> realtime 알림
 ```
 
-### API Server Flow
+Transaction 실패 시 in-memory snapshot을 복원하고 event는 재시도 가능한 실패
+상태로 남깁니다. Lease 소유권을 잃은 daemon은 flush를 확정하지 않습니다.
 
-- The API server validates commands and records every tRPC mutation in
-  PostgreSQL.
-- After a request is processed, the API server returns the result to clients.
-- Read-only queries may access the DBMS directly.
-- The API server may use SSE to stream live updates to the frontend.
+예약 턴은 revision/CAS와 lease를 사용합니다. API의 편집과 daemon의 실행이
+경합해도 오래된 revision이 새 queue를 덮어쓰지 않게 합니다.
 
-### Queue and Rate Limits
+## 월간 경계
 
-- Engine-owned requests are delivered through the PostgreSQL inbox.
-- Per-user pending limits and event retention remain operational follow-up
-  work; idempotency and exclusive claim are implemented.
+Calendar handler는 turn time이 월 경계를 지날 때 scenario event table의
+action을 순서대로 실행합니다. Core event, 수입, 국가 등급, NPC, 이민족,
+도시 공급, 전쟁 수입, 특기, 유니크·유산, 베팅, 통일·연감 처리는
+`app/game-engine/src/turn/monthly*.ts`, `calendarHandlers.ts`,
+`unificationHandler.ts`, `yearbookHandler.ts`에서 조립됩니다.
 
-### In-Memory and DBMS Flush
+Action 순서, RNG 소비와 persistence 순서는 ref 호환 계약입니다. 새 handler는
+event catalog, in-memory state, dirty marking, flush와 reload 검증까지
+연결합니다.
 
-- The daemon processes actions against in-memory state by default.
-- DBMS writes are flushed in bulk after turn processing completes.
-- Frequently changing "next-turn intent" data is stored separately.
-    - The API server persists this data in the DBMS.
-    - The daemon loads only this data when the next turn begins.
+## 장애 경계
 
-## Turn Daemon vs API Query Priority (Outline)
+- PostgreSQL은 gameplay mutation과 daemon 소유권의 기준입니다.
+- Redis pub/sub, SSE와 flush notification은 commit 이후 best-effort입니다.
+- Worker timeout은 요청 실패로 반환하며 DB commit 여부를 별도로 확인합니다.
+- API·daemon process 재시작은 `InputEvent`, lease, checkpoint와 operation
+  상태에서 이어집니다.
+- 운영 process와 외부 Caddy 상태는 local build·mock E2E로 증명되지 않습니다.
 
-- Expected priority order under load
-- Rules for preemption or deferral
-- Handling of write-heavy operations during turn resolution
+## Build와 배포
 
-## In-Memory Processing and DBMS Flush (Outline)
+Gateway operation은 source commit, worktree, build artifact와 process를
+연결합니다. `tools/build-scripts/build-server.mjs`는 profile resource 복사만
+담당합니다.
 
-- When in-memory state is authoritative
-- Flush checkpoints and transactional boundaries
-- Recovery strategy after crash during flush
-
-## Testing and Observability (Outline)
-
-- Metrics and logs required to validate scheduling and flush behavior
-- Suggested test scenarios for concurrency and consistency
-
-## Game Logic Testing (Draft)
-
-### Deterministic Inputs
-
-- RNG seed composition (hidden server seed, turn info, general info).
-- Scenario selection and scenario data.
-- Trigger set inputs: nation, general, and city state.
-- Game time and tick schedule.
-
-### Recommended Unit Test Flow
-
-- Prepare a deterministic test fixture (mock DB or in-memory state snapshot).
-- Execute game logic unit tests with fixed inputs and seeds.
-- Compare expected outputs against the pre-flush change set that would be
-  written to the DBMS.
-
-### Notes
-
-- Deterministic RNG makes output comparison stable and repeatable.
-- Prefer snapshotting inputs/outputs so regressions are easy to track.
+외부 공개 경로는 `/gateway/`, `/che/`, `/hwe/`입니다. frontend base,
+tRPC, SSE, upload와 direct navigation은 해당 prefix를 유지합니다.
+`/image/*`는 Caddy의 별도 파일 시스템 경로입니다.

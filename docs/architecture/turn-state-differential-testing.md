@@ -1,238 +1,118 @@
-# Turn command state differential testing
+# ref ↔ core2026 차등 검증
 
-## Scope
+## 목적
 
-This harness compares observable state changes produced by:
+차등 검증은 같은 입력과 seed에서 ref와 core2026의 판정, RNG 소비, 출력,
+상태 mutation과 persistence 순서를 비교합니다. 명령 이름이나 최종 성공 여부만
+같은 것은 호환성 근거가 아닙니다.
 
-- general reserved commands;
-- nation reserved commands;
-- live `che_출병`, including persisted battle aftermath.
+## 검증 계층
 
-It complements the battle simulator differential suite. The simulator suite
-compares phase order, RNG and battle numbers. This harness compares the command
-boundary, logs, queues, diplomacy and final database state.
+| 계층              | 위치                                            | 보장 범위                                  |
+| ----------------- | ----------------------------------------------- | ------------------------------------------ |
+| 정적 catalog 비교 | `tools/compare-command-*.mjs`                   | command key, constraint, log 계약          |
+| logic unit        | `packages/logic/test`                           | 계산, constraint, trigger, fixed-seed 결과 |
+| engine unit       | `app/game-engine/test`                          | handler 순서, in-memory state, lifecycle   |
+| DB integration    | `tools/integration-tests`, app integration test | Prisma transaction, lease, queue, reload   |
+| ref 차등          | `tools/integration-tests/src/legacy*`           | 동일 fixture의 ref/core 결과               |
+| live Chromium     | `tools/frontend-legacy-parity`                  | 실제 화면 geometry와 interaction           |
 
-## Execution flow
+각 계층은 다른 계층을 대체하지 않습니다. Unit test는 PostgreSQL commit을
+증명하지 않고, API mock은 인증 transport를 증명하지 않으며, screenshot
+한 장은 hover·focus·error 흐름을 증명하지 않습니다.
 
-```text
-canonical case
-  ├─ ref ng_compare command runner
-  │    ├─ clone root/HWE MariaDB
-  │    ├─ execute legacy GeneralCommand or NationCommand
-  │    └─ before/after snapshot + command RNG trace
-  └─ core2026 execution boundary
-       ├─ construct the in-memory turn world from the prepared ref snapshot
-       ├─ execute the real reserved-turn handler
-       └─ before/after snapshot + command RNG trace
+## Fixture 계약
 
-ref delta ─┐
-           ├─ exact semantic path comparison
-core delta ┘
-```
+Fixture에는 다음 값이 명시되어야 합니다.
 
-The comparison uses entity IDs rather than physical row order. Numeric leaves
-are compared as `after - before`, so a fixture may use different harmless
-starting balances while still requiring the same effect. Insertions, deletions
-and non-numeric changes retain explicit before/after values.
+- ref 기준 commit과 core2026 기준 commit
+- profile, scenario, game time과 turn term
+- user, general, nation, city, diplomacy, troop과 예약 턴
+- command key와 원시 args
+- seed와 RNG 초기 상태
+- 성공·실패 경로에 필요한 resource
+- 비교 대상 state field, log, message와 side effect
 
-Logs and messages are sequence-sensitive and are therefore paired by observed
-order rather than database primary key. Their physical IDs can be ignored
-without losing ordering checks. Legacy `*ID` command argument keys are
-normalized to the core `*Id` spelling before command identity comparison.
+ref MariaDB fixture는 전용 schema를 사용합니다. core PostgreSQL과 Redis도
+worktree 전용 instance를 사용합니다. 다른 실행이 공유 RNG, queue, table,
+Redis key를 변경할 수 있는 환경에서 결과를 비교하지 않습니다.
 
-## Components
+## 실행 경로
 
-- Ref `ng_compare`
-    - `hwe/compare/turn_state_snapshot.php`: read-only canonical projection.
-    - `hwe/compare/turn_command_trace.php`: guarded CLI action runner.
-- Workspace reference stack
-    - `scripts/run-turn-differential-case.sh`: clones both MariaDB databases,
-      injects temporary DB configuration, runs one case and deletes only
-      validated `sammo_td_*` databases.
-- Core integration tools
-    - `canonical.ts`: shared snapshot and trace contracts.
-    - `databaseSnapshot.ts`: PostgreSQL projection.
-    - `coreCommandTrace.ts`: real in-memory reserved-turn execution and
-      canonical projection.
-    - `trace.ts`: before/execute/after capture boundary.
-    - `compare.ts`: exact snapshot and delta comparison.
-    - `turnCommandGeneralMatrix.integration.test.ts`: 54 successful general
-      command paths. Together with the live sortie fixture, this exercises a
-      completed success path for every one of the 55 general command keys.
-      The matrix includes the four-call `전투태세` path, lifecycle and
-      appointment commands, troop assembly, rebellion and all three founding
-      variants.
-    - `turnCommandNationMatrix.integration.test.ts`: all 35 reserved nation
-      command paths, including the generated-general state and 36-call RNG
-      trace of `의병모집`.
-    - `turnCommandCoreReference.integration.test.ts`: declaration and live
-      sortie fixtures.
-
-The ref runner refuses mutation unless `TURN_DIFFERENTIAL_ENABLED=1` is present.
-The wrapper injects it only into the disposable tool container. Direct
-execution against the reference database is not a supported workflow.
-
-Two committed cases exercise the guarded runner end to end:
-
-- `nation-declaration.json`: chief nation command, directed diplomacy
-  `state/term` changes and national messages.
-- `live-sortie-conquest.json`: real `che_출병 -> processWar`, city capture,
-  defeated-general neutralization and last-city nation collapse.
-
-Each case may include a structured `setup` object for `world`, `nations`,
-`cities`, `generals`, `troops` and `diplomacy`. The runner accepts only
-explicitly mapped fields; it does not accept SQL. Founding fixtures may pin
-`initYear`/`initMonth` and an ordered random-founding city candidate set so
-both maps expose the same RNG domain. Setup and command mutation happen only
-inside the cloned `sammo_td_*` databases.
-
-## Case request
-
-```json
-{
-    "kind": "general",
-    "actorGeneralId": 101,
-    "action": "che_출병",
-    "args": { "destCityID": 12 },
-    "observe": {
-        "generalIds": [101, 201],
-        "cityIds": [11, 12],
-        "nationIds": [1, 2],
-        "logAfterId": 0,
-        "messageAfterId": 0
-    }
-}
-```
-
-Legacy argument spelling is retained at the ref boundary (`destCityID`,
-`destNationID`). The core execution request uses the core spelling
-(`destCityId`, `destNationId`), while the trace's semantic entity IDs remain
-the same.
-
-Run a ref case:
+정적 명령 계약:
 
 ```sh
-cd docker_compose_files/reference
-./scripts/run-turn-differential-case.sh \
-  fixtures/turn-differential/nation-declaration.json \
-  > /tmp/ref-trace.json
+pnpm check:legacy:general
+pnpm check:legacy:nation
 ```
 
-Capture the core side by wrapping the real reserved-turn or daemon execution
-with `captureCoreDatabaseTurnTrace()`. Save the returned JSON, then compare:
+기본 integration:
 
 ```sh
-TURN_REFERENCE_TRACE=/tmp/ref-trace.json \
-TURN_CORE_TRACE=/tmp/core-trace.json \
-pnpm --filter @sammo-ts/integration-tests test:integration \
-  turnTraceFiles.integration.test.ts
+pnpm test:integration
 ```
 
-## Canonical coverage
+PostgreSQL·Redis 조건부 경계:
 
-Snapshots currently include:
+```sh
+pnpm test:integration:conditional
+```
 
-- world year/month, tick term, last turn time and unification state;
-- selected general numeric state, location, nation, troop, equipment metadata,
-  last turn and lifecycle counters;
-- selected city ownership and all domestic/defence values;
-- selected nation resources, type, capital, technology, cached power/counts;
-- directed diplomacy state, term and death flag;
-- general and nation reserved queues;
-- action/history/battle logs;
-- legacy messages and log/message watermarks.
+개별 suite와 test name은 package script 뒤에 전달합니다.
 
-Core2026 has no physical legacy `message` table, so its message projection is
-empty. Message-equivalent effects must currently be compared through core log
-effects or a command-specific projection. The saved-trace comparison explicitly
-ignores the `messages` subtree for this reason; this is a documented schema
-boundary, not a claim that message delivery is equal.
+```sh
+pnpm --filter @sammo-ts/game-engine test inputEventAtomicity.test.ts
+pnpm --filter @sammo-ts/integration-tests test:integration
+```
 
-For live `che_출병`, use both suites:
+실제 script 인자는 해당 package의 `package.json`을 확인해 주세요.
 
-1. `battleDifferential.test.ts` for internal war RNG/event/numeric parity.
-2. Turn command traces for route choice RNG, costs, general/city/nation changes,
-   queues, logs, conquest and nation deletion.
+## 비교 snapshot
 
-## Test trust boundary
+Canonical 비교값은 의미 단위로 정규화합니다.
 
-Comparator unit tests prove path identity, order independence, numeric delta
-handling and deletion detection. Adapter integration tests prove that both
-actual databases can produce the canonical form. They do not by themselves
-claim that all 55 general and 38 nation commands match.
+- general: 위치, 소속, 자원, 병력, 능력치, 경험·공헌, penalty, aux, turn time
+- nation: 자원, level, 수도, 외교, 정책, aux
+- city: 소유권, 인구·내정·방어, conflict, supply와 인접 상태
+- queue: command, args, term, next available, revision
+- output: 개인·국가·역사 log, message, 공개 문구와 error
+- execution: RNG trace, handler 순서, input event와 checkpoint
 
-Compatibility is established per case only when:
+DB auto ID, 생성 시각처럼 의미 없는 차이는 comparator에서 이름과 이유를
+명시합니다. 의미 field를 ignore하거나 숫자 허용 범위를 넓혀 mismatch를
+숨기지 않습니다.
 
-1. both engines executed the requested action rather than a fallback;
-2. RNG operations and results match;
-3. the semantic delta comparison is empty;
-4. live sortie also passes the battle trace comparison;
-5. any ignored path is documented in the case evidence.
+## RNG
 
-As of 2026-07-26, 54 general matrix cases, 35 reserved nation matrix cases,
-declaration and live sortie pass this boundary. Live sortie is the remaining
-general command key and covers battle entry, conquest, defeated-general
-neutralization and last-city nation collapse. Thus all 55 general command keys
-have a completed success-path comparison. The three instant diplomatic nation
-responses pass a separate reference trace and core resolver/API boundary.
+Gameplay RNG는 `LiteHashDRBG`, `RNG`, `RandUtil` 경로를 추적합니다.
+후보가 하나인 선택, 실패 분기, fallback도 ref가 소비한 호출 수와 순서를
+보존합니다. 보조 무작위성이 필요하면 main stream과 분리된 seeded substream을
+사용하고 main stream의 소비량이 변하지 않는지 확인합니다.
 
-Nine general in-action failure cases now also pass the common differential:
-five domestic critical failures and four sabotage failures. They compare the
-full command RNG trace, semantic state delta and the exact action-log body.
-Seven common full-constraint cases cover neutral status, wandering nation,
-city ownership, supply, gold, rice and trust-cap rejection. Five sabotage
-constraint cases add the occupied-city target, neutral target, non-aggression
-status and insufficient sabotage gold or rice. Both engines replace the denied
-command with rest, consume the same RNG and produce the same semantic delta.
-Eight sabotage clamp cases cover probability zero and 0.5 for
-fire attack, agitation, destruction and seizure. The zero boundary skips the
-success RNG primitive, while exactly 0.5 consumes `nextBits(1)`; the complete
-RNG trace and semantic delta match. These cases also fixed fire-attack city
-state persistence and agitation front/trust persistence differences.
-Five sabotage value-boundary cases cover zero floors for fire-attack,
-agitation and destruction city values, the supplied-nation resource cap for
-seizure, and the legacy final state of unsupplied seizure. They also remove
-destruction's unintended front recalculation and preserve the legacy
-unsupplied-seizure overwrite that leaves city resources unchanged.
-Three sabotage injury-boundary cases cover per-defender rolls, the injury cap
-of 80, integer persistence after multiplying crew/train/atmosphere by 0.98,
-and the target-general injury log for fire attack, agitation and destruction.
-They restore the legacy Korean particle in the log, add the two missing logs,
-and round rather than floor the integer fields.
-Five general alternative cases cover disband and random-appointment fallback
-to talent search, both random-founding alternatives, and sortie fallback to
-movement. The alternative command reuses the original requested-action RNG
-instance and current consumption position. Six pre-required-turn cases cover
-battle-preparation terms 1 through 3 plus the first intermediate turn of both
-trait resets and retirement. They compare the exact intermediate `lastTurn`,
-progress log, zero command-RNG consumption and semantic state delta.
-Three post-required cooldown cases project the legacy `next_execute` KV and
-core general meta into the same world-level cooldown record. They cover the
-stored `current + 60 - preReq` value, rejection one turn before availability,
-and successful execution exactly at the boundary.
-Four missing-target cases cover nonexistent general IDs for gift and
-employment plus nonexistent city IDs for spying and movement. Both engines
-reject the requested command, execute rest without command RNG, and produce
-the same semantic state delta.
-Thirteen resource argument and balance cases cover 100-unit rounding and
-minimum/maximum clamps for gift, donation, and rice trade; donation against
-available and minimum resources; and gift reserve and self-target rejection.
-They compare normalized last-turn arguments, RNG, fallback, and semantic state
-deltas.
-Eleven nation resource cases cover 100-unit rounding and minimum/maximum
-clamps for award and seizure; award against available gold, the base-rice
-reserve, and self-target rejection; and seizure against target holdings and
-self-target rejection. They compare exact target resource deltas, RNG,
-fallback, and semantic state deltas.
-Requests that omit the required argument object remain unverified because the
-reference runner did not terminate within the bounded comparison run.
-This is not yet a claim that every command-specific
-constraint, clamp and persistence boundary has been dynamically
-compared.
+전투는 최종 승패 외에 phase, 공격 순서, critical·회피·계략 판정, 피해,
+부상, 병량, 도시·국가 후처리와 log까지 비교합니다.
 
-The fixture runner also reports whether the requested legacy command reached
-its completed execution path. For multi-turn commands this is derived from the
-pre-execution `LastTurn`, because commands such as `전투태세` reset their result
-term to `1` on the completion call. `등용수락` and the founding commands have
-explicit state-based completion checks because their successful legacy result
-turn is not a reliable completion marker.
+## 실패 판정
+
+Mismatch는 다음 정보를 함께 남깁니다.
+
+- fixture와 command
+- 첫 RNG divergence
+- 첫 state divergence
+- ref/core log
+- transaction 또는 reload 결과
+- 재현 명령
+
+기준선 자체의 실패와 변경으로 생긴 회귀를 분리합니다. 환경 누락으로 skip된
+suite는 통과로 집계하지 않습니다.
+
+## 완료 조건
+
+기능별 완료에는 다음 근거가 모두 필요합니다.
+
+1. 정상, 권한 실패, 입력 실패와 경계값 fixture
+2. 같은 seed의 RNG와 결과 비교
+3. state, log, queue와 persistence 비교
+4. 실제 PostgreSQL 경로 또는 명시된 미검증 경계
+5. UI 기능이면 같은 Chromium 조건의 화면·상호작용 비교
+6. 상위 `ref-core2026-mapping.md`와 날짜가 있는 report의 재현 정보
