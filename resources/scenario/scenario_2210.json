@@ -1,5 +1,6 @@
 {
     "title": "【가상모드21】 Poke-관동지방",
+    "extends": ["extensions/events/standard.json"],
     "startYear": 1993,
     "history": ["<C>●</>1996년 1월:<L><b>【PoKe-관동】</b></>", "<C>●</>1996년 1월:<L><b>【포켓몬vs트레이너! 포켓몬이 될것인가 트레이너가 될것인가】</b></>"],
     "stat": {
@@ -220,6 +221,5 @@
         [0, "목호", "포켓몬스터/목호.gif", 0, "석영고원", 94, 73, 94, 0, 1973, 2100, null, null],
         [0, "로켓단", "포켓몬스터/로켓단.png", 0, null, 85, 85, 85, 0, 1973, 2100, null, null, "우리가 그렇게 궁금하시다면 대답해 드리는게 인지상정\n이 세계의 파괴를 막기 위해! 이 세계의 평화를 지키기 위해! \n사랑과 진실, 어둠을 뿌리고 다니는...! \n포켓몬의 감초 귀"]
     ],
-    "initialEvents": [],
-    "events": [["destroy_nation", 1000, ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]], ["BlockScoutAction"], ["DeleteEvent"]]]
+    "initialEvents": []
 }

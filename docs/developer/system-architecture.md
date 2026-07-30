@@ -82,7 +82,8 @@ lease/fencing은 오래된 daemon owner의 commit을 막습니다.
 
 - `packages/infra/prisma/schema.gateway.prisma`: 계정·profile·operation 같은 gateway 모델
 - `packages/infra/prisma/schema.game.prisma`: profile별 world·general·city·nation·turn·event·log 모델
-- `resources/scenario`: 시작 연도, 상수, 월간 event 등 scenario 정의
+- `resources/scenario`: 시작 연도, 상수, 월간 event 등 scenario 정의.
+  `extensions/`의 이벤트·규칙·아이템 팩은 `extends`로 순서 있게 합성합니다.
 - `resources/map`, `resources/unitset`: 지형과 병종 정의
 - `resources/turn-commands`: profile별 허용 명령 목록
 

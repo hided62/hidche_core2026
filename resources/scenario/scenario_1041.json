@@ -1,5 +1,6 @@
 {
     "title": "【역사모드4-2】 황제 원술",
+    "extends": ["extensions/events/standard.json", "extensions/initial-events/research.json"],
     "startYear": 194,
     "life": 1,
     "fiction": 0,
@@ -721,35 +722,5 @@
     ],
     "general_ex": [],
     "cities": [],
-    "history": ["<C>●</>197년 1월:<L><b>【역사모드4-2】</b>황제 원술</>", "<C>●</>197년 1월:<L><b>【이벤트】</b></>원술이 황제가 되고 반원술 연합이 결성되다"],
-    "initialEvents": [
-        [
-            true,
-            [
-                "ChangeCity",
-                "free",
-                {
-                    "pop": "70%",
-                    "agri": "70%",
-                    "comm": "70%",
-                    "secu": "70%",
-                    "trust": 80
-                }
-            ],
-            [
-                "ChangeCity",
-                "occupied",
-                {
-                    "pop": "70%",
-                    "agri": "70%",
-                    "comm": "70%",
-                    "secu": "70%",
-                    "trust": 80,
-                    "def": "70%",
-                    "wall": "70%"
-                }
-            ]
-        ]
-    ],
-    "events": [["destroy_nation", 1000, ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]], ["BlockScoutAction"], ["DeleteEvent"]]]
+    "history": ["<C>●</>197년 1월:<L><b>【역사모드4-2】</b>황제 원술</>", "<C>●</>197년 1월:<L><b>【이벤트】</b></>원술이 황제가 되고 반원술 연합이 결성되다"]
 }

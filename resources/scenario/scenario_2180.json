@@ -1,5 +1,6 @@
 {
     "title": "【가상모드18】 고대무장 신대륙가다!",
+    "extends": ["extensions/events/standard.json"],
     "startYear": 180,
     "history": ["<C>●</>180년 1월:<L><b>【가상모드18】</b>고대무장 신대륙가다!</>", "<C>●</>180년 1월:<L><b>【이벤트】</b></>춘추전국+초한지+삼국지+체삼모 모두 모였다! 근데 여긴 어디...?"],
     "stat": {
@@ -778,6 +779,5 @@
         [0, "뇌서", null, 0, null, 76, 74, 61, 0, 160, 300, null, null],
         [0, "번궁", null, 0, null, 71, 67, 58, 0, 160, 300, null, null]
     ],
-    "initialEvents": [],
-    "events": [["destroy_nation", 1000, ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]], ["BlockScoutAction"], ["DeleteEvent"]]]
+    "initialEvents": []
 }

@@ -1,5 +1,6 @@
 {
     "title": "【가상모드19b】 진유저무쌍! (대형 지도)",
+    "extends": ["extensions/events/standard.json"],
     "startYear": 180,
     "history": ["<C>●</>180년 1월:<L><b>【가상모드19】</b>진유저무쌍! (대형 지도)</>", "<C>●</>180년 1월:<L><b>【이벤트】</b></>고대장수 다 덤벼라! 유저가 최강이다!"],
     "stat": {
@@ -656,6 +657,5 @@
         [0, "시뉴카린", null, 0, null, 85, 88, 75, 0, 160, 300, null, null, "흔들흔들"]
     ],
     "general_ex": [],
-    "initialEvents": [],
-    "events": [["destroy_nation", 1000, ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]], ["BlockScoutAction"], ["DeleteEvent"]]]
+    "initialEvents": []
 }

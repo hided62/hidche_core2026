@@ -5,6 +5,10 @@ rule set, commands, and effects. Core references include
 `legacy/hwe/sammo/Scenario.php`, `legacy/hwe/sammo/ResetHelper.php`, and
 `legacy/hwe/sammo/GameConstBase.php`.
 
+core2026 리소스는 레거시 JSON 결과를 유지하면서 공통 이벤트와 규칙을
+`extends`로 합성할 수 있습니다. 새 시나리오 구성과 합성 순서는
+[시나리오 리소스 합성](./scenario-composition.md)을 확인해 주세요.
+
 ## Scenario Loading Flow
 
 1. Server reset/init calls `ResetHelper::buildScenario()`.

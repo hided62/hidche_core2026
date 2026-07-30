@@ -8,6 +8,7 @@
 | 화면·라우팅·조회 API       | [시스템 아키텍처](./system-architecture.md)                                                                                | `app/*-frontend`, `app/*-api`                |
 | 턴 입력·게임 상태 mutation | [요청·턴·저장 흐름](./request-turn-persistence.md)                                                                         | `app/game-api`, `app/game-engine`            |
 | 명령·전투·월간 로직        | [도메인 로직과 핵심 클래스](./domain-and-classes.md), [장수 행동 모듈 프로토콜](../architecture/action-module-protocol.md) | `packages/logic`, `app/game-engine/src/turn` |
+| 시나리오 이벤트·규칙 조합  | [시나리오 리소스 합성](../architecture/scenario-composition.md)                                                            | `resources/scenario`, `scenarioLoader.ts`    |
 | 새 파일 위치·검증 범위     | [파일 지도와 변경 절차](./code-map.md)                                                                                     | package manifest, test, docs                 |
 
 ## 읽을 때 지켜야 할 경계

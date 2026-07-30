@@ -1,5 +1,6 @@
 {
     "title": "【공백지】 이벤트 클래식",
+    "extends": ["extensions/events/classic.json"],
     "startYear": 180,
     "history": ["<C>●</>180년 1월:<L><b>【공백지】</b></>예전 지도에서 장비를 많이 가지고 즐겨보는 이벤트 깃수"],
     "const": {
@@ -151,12 +152,5 @@
                 "che_필살_둔갑천서": 4
             }
         }
-    },
-    "events": [
-        ["month", 1000, ["or", ["Date", "==", null, 12], ["Date", "==", null, 6]], ["CreateManyNPC", 10, 10], ["DeleteEvent"]],
-        ["month", 1000, ["Date", "==", 181, 1], ["RaiseNPCNation"], ["DeleteEvent"]],
-        ["month", 999, ["Date", "==", 181, 1], ["OpenNationBetting", 4, 5000], ["OpenNationBetting", 1, 2000], ["DeleteEvent"]],
-        ["month", 999, ["and", ["Date", ">=", 183, 1], ["RemainNation", "<=", 8]], ["OpenNationBetting", 1, 1000], ["DeleteEvent"]],
-        ["destroy_nation", 1000, ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]], ["BlockScoutAction"], ["DeleteEvent"]]
-    ]
+    }
 }

@@ -9,6 +9,7 @@ import {
 } from '@sammo-ts/logic';
 
 import { resolveWorkspaceRoot } from '../paths.js';
+import { composeScenarioResource } from './scenarioComposition.js';
 
 const REPO_ROOT = resolveWorkspaceRoot();
 const DEFAULT_SCENARIO_ROOT = path.resolve(REPO_ROOT, 'resources', 'scenario');
@@ -41,8 +42,16 @@ export const loadScenarioDefinition = async (
     scenarioPath: string,
     defaults: ScenarioDefaults
 ): Promise<ScenarioDefinition> => {
-    // 시나리오 본문을 읽고 기본값과 합쳐서 파싱한다.
-    const raw = await readJsonFile(scenarioPath);
+    // 시나리오 확장 조각을 먼저 합성한 뒤 기본값과 함께 정규화한다.
+    const scenarioRoot = path.dirname(scenarioPath);
+    const raw = await composeScenarioResource(path.basename(scenarioPath), async (relativePath) => {
+        const resolvedPath = path.resolve(scenarioRoot, relativePath);
+        const rootPrefix = `${path.resolve(scenarioRoot)}${path.sep}`;
+        if (!resolvedPath.startsWith(rootPrefix)) {
+            throw new Error(`Scenario resource path escapes the configured root: ${relativePath}.`);
+        }
+        return readJsonFile(resolvedPath);
+    });
     return parseScenarioDefinition(raw, defaults);
 };
 

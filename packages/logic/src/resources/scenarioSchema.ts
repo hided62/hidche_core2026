@@ -17,9 +17,11 @@ export const ScenarioDefaultsInputSchema = z.object({
     iconPath: z.string().optional(),
 });
 
-export const ScenarioDefinitionInputSchema = z
+export const ScenarioExtendsInputSchema = z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]);
+
+const ScenarioBodyInputSchema = z
     .object({
-        title: z.string(),
+        extends: ScenarioExtendsInputSchema.optional(),
         startYear: z.number().optional(),
         life: z.number().optional(),
         fiction: z.number().optional(),
@@ -41,7 +43,20 @@ export const ScenarioDefinitionInputSchema = z
     })
     .passthrough();
 
-export const ScenarioResourceSchema = z.union([ScenarioDefaultsInputSchema, ScenarioDefinitionInputSchema]);
+export const ScenarioDefinitionInputSchema = ScenarioBodyInputSchema.extend({
+    title: z.string(),
+});
+
+export const ScenarioFragmentInputSchema = ScenarioBodyInputSchema.extend({
+    title: z.never().optional(),
+});
+
+export const ScenarioResourceSchema = z.union([
+    ScenarioDefaultsInputSchema,
+    ScenarioDefinitionInputSchema,
+    ScenarioFragmentInputSchema,
+]);
 
 export type ScenarioDefaultsInput = z.infer<typeof ScenarioDefaultsInputSchema>;
 export type ScenarioDefinitionInput = z.infer<typeof ScenarioDefinitionInputSchema>;
+export type ScenarioFragmentInput = z.infer<typeof ScenarioFragmentInputSchema>;

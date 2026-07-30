@@ -1,0 +1,31 @@
+{
+    "initialEvents": [
+        [
+            true,
+            [
+                "ChangeCity",
+                "free",
+                {
+                    "pop": "70%",
+                    "agri": "70%",
+                    "comm": "70%",
+                    "secu": "70%",
+                    "trust": 80
+                }
+            ],
+            [
+                "ChangeCity",
+                "occupied",
+                {
+                    "pop": "70%",
+                    "agri": "70%",
+                    "comm": "70%",
+                    "secu": "70%",
+                    "trust": 80,
+                    "def": "70%",
+                    "wall": "70%"
+                }
+            ]
+        ]
+    ]
+}

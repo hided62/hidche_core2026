@@ -1,5 +1,6 @@
 {
     "title": "【가상모드9】 확산성 밀리언 아서",
+    "extends": ["extensions/events/standard.json"],
     "life": 1,
     "fiction": 1,
     "nation": [],
@@ -239,6 +240,5 @@
     "general_ex": [],
     "cities": [],
     "history": ["<C>●</>180년 1월:<L><b>【가상모드8】</b>확산성 밀리언 아서</>", "<C>●</>180년 1월:<L><b>【이벤트】</b></>삼모전에 확밀아가 빙의됩니다!"],
-    "initialEvents": [],
-    "events": [["destroy_nation", 1000, ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]], ["BlockScoutAction"], ["DeleteEvent"]]]
+    "initialEvents": []
 }

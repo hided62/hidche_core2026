@@ -1,5 +1,6 @@
 {
     "title": "【역사모드2】 반동탁연합 결성",
+    "extends": ["extensions/events/standard.json", "extensions/initial-events/research.json"],
     "startYear": 187,
     "life": 1,
     "fiction": 0,
@@ -807,35 +808,5 @@
         "<C>●</>190년 1월:<G><b>【연합】</b></><G><b>평원</b></>의 <Y>유비</>가 연합에 참가했습니다.",
         "<C>●</>190년 1월:<G><b>【연합】</b></><G><b>북해</b></>의 <Y>공융</>이 연합에 참가했습니다.",
         "<C>●</>190년 1월:<G><b>【연합】</b></><G><b>초</b></>의 <Y>공주</>가 연합에 참가했습니다."
-    ],
-    "initialEvents": [
-        [
-            true,
-            [
-                "ChangeCity",
-                "free",
-                {
-                    "pop": "70%",
-                    "agri": "70%",
-                    "comm": "70%",
-                    "secu": "70%",
-                    "trust": 80
-                }
-            ],
-            [
-                "ChangeCity",
-                "occupied",
-                {
-                    "pop": "70%",
-                    "agri": "70%",
-                    "comm": "70%",
-                    "secu": "70%",
-                    "trust": 80,
-                    "def": "70%",
-                    "wall": "70%"
-                }
-            ]
-        ]
-    ],
-    "events": [["destroy_nation", 1000, ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]], ["BlockScoutAction"], ["DeleteEvent"]]]
+    ]
 }

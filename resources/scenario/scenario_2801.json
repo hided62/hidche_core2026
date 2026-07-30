@@ -1,5 +1,6 @@
 {
     "title": "【가상모드28-b】 강서유서 월드(비세력)",
+    "extends": ["extensions/events/expanded.json", "extensions/initial-events/expanded.json"],
     "startYear": 180,
     "history": ["<C>●</>180년 1월:<L><b>【가상모드28】</b>강서유서 월드</>", "<C>●</>180년 1월:<L><b>【이벤트】</b></>강서유서의 세계 속 캐릭터들이 날뛰는곳"],
     "stat": {
@@ -377,98 +378,5 @@
         [0, "큐어 릴리안", "강서유서월드/큐어 릴리안.webp", 0, null, 87, 82, 80, 0, 160, 300, null, null],
         [0, "마시로 리마", null, 0, null, 86, 79, 82, 0, 160, 300, null, null]
     ],
-    "general_ex": [],
-    "initialEvents": [
-        [
-            true,
-            [
-                "ChangeCity",
-                "all",
-                {
-                    "trade": 100
-                }
-            ]
-        ]
-    ],
-    "events": [
-        [
-            "month",
-            1000,
-            ["Date", "==", 180, 1],
-            [
-                "ChangeCity",
-                "all",
-                {
-                    "trade": 100
-                }
-            ],
-            ["DeleteEvent"]
-        ],
-        [
-            "month",
-            1000,
-            ["Date", "==", 180, 7],
-            [
-                "ChangeCity",
-                "all",
-                {
-                    "trade": 100
-                }
-            ],
-            ["DeleteEvent"]
-        ],
-        [
-            "month",
-            1000,
-            ["Date", "==", 181, 1],
-            [
-                "ChangeCity",
-                "all",
-                {
-                    "trade": 100
-                }
-            ],
-            ["DeleteEvent"]
-        ],
-        [
-            "month",
-            1000,
-            ["Date", "==", 181, 7],
-            [
-                "ChangeCity",
-                "all",
-                {
-                    "trade": 100
-                }
-            ],
-            ["DeleteEvent"]
-        ],
-        [
-            "month",
-            1000,
-            ["Date", "==", 182, 1],
-            [
-                "ChangeCity",
-                "all",
-                {
-                    "trade": 100
-                }
-            ],
-            ["DeleteEvent"]
-        ],
-        [
-            "month",
-            1000,
-            ["Date", "==", 182, 7],
-            [
-                "ChangeCity",
-                "all",
-                {
-                    "trade": 100
-                }
-            ],
-            ["DeleteEvent"]
-        ],
-        ["destroy_nation", 1000, ["and", ["Date", ">=", 183, 1], ["RemainNation", "==", 1]], ["BlockScoutAction"], ["DeleteEvent"]]
-    ]
+    "general_ex": []
 }

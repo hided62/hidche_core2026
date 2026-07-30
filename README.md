@@ -42,6 +42,7 @@ TypeScript로 호환 이관하는 pnpm 모노레포입니다. 기준 구현은 �
 | `tools/frontend-legacy-parity` | 실제 Chromium 기반 화면·상호작용 비교             |
 | `tools/legacy-db-migration`    | 레거시 장기보존 데이터 CLI 이관                   |
 | `tools/docs`                   | 플레이어 커맨드 문서 자동 생성                    |
+| `resources/scenario`           | 시나리오 본문과 조합 가능한 이벤트·규칙 확장      |
 | `docs`                         | VitePress 핸드북과 런타임·테스트·운영 문서        |
 
 런타임의 영속 입력은 PostgreSQL `input_event`가 담당합니다. game API가
