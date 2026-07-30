@@ -29,12 +29,16 @@ enum AuctionStatus {
   FINALIZING
   FINISHED
   CANCELED
+
+  @@map("auction_status")
 }
 
 enum AuctionType {
   BUY_RICE
   SELL_RICE
   UNIQUE_ITEM
+
+  @@map("auction_type")
 }
 
 enum DiplomacyLetterState {
@@ -42,6 +46,8 @@ enum DiplomacyLetterState {
   ACTIVATED
   CANCELLED
   REPLACED
+
+  @@map("diplomacy_letter_state")
 }
 
 enum InputEventStatus {

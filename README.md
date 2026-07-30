@@ -149,6 +149,10 @@ pnpm --filter @sammo-ts/infra prisma:migrate:deploy:gateway
 pnpm migrate:legacy -- --help
 ```
 
+Game과 gateway가 같은 database/schema를 쓰므로 deploy 순서는
+`game → gateway`입니다. 양쪽 migration directory 이름은 공유
+`_prisma_migrations`에서 충돌하지 않도록 전역적으로 고유해야 합니다.
+
 활성 외부 prefix는 `/gateway/`, `/che/`, `/hwe/`입니다. 앱은 필요한
 listener를 `0.0.0.0`에 bind하고 prefix를 보존한 frontend, tRPC, SSE,
 direct-navigation URL을 사용합니다. `/image/*`는 외부 Caddy가 소유합니다.
