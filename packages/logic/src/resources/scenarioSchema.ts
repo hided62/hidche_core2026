@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SCENARIO_EFFECT_KEYS } from '../scenario/scenarioEffect.js';
 
 export const ScenarioStatBlockSchema = z
     .object({
@@ -19,6 +20,12 @@ export const ScenarioDefaultsInputSchema = z.object({
 
 export const ScenarioExtendsInputSchema = z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]);
 
+const ScenarioConstInputSchema = z
+    .object({
+        scenarioEffect: z.union([z.enum(SCENARIO_EFFECT_KEYS), z.literal(''), z.literal('None'), z.null()]).optional(),
+    })
+    .catchall(z.unknown());
+
 const ScenarioBodyInputSchema = z
     .object({
         extends: ScenarioExtendsInputSchema.optional(),
@@ -29,7 +36,7 @@ const ScenarioBodyInputSchema = z
         iconPath: z.string().optional(),
         stat: ScenarioStatBlockSchema.optional(),
         map: z.record(z.string(), z.unknown()).optional(),
-        const: z.record(z.string(), z.unknown()).optional(),
+        const: ScenarioConstInputSchema.optional(),
         nation: z.array(z.unknown()).optional(),
         diplomacy: z.array(z.unknown()).optional(),
         general: z.array(z.unknown()).optional(),

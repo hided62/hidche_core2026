@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { TurnSchedule } from '@sammo-ts/logic';
+import type { ScenarioEffectKey, TurnSchedule } from '@sammo-ts/logic';
 
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
@@ -51,7 +51,7 @@ const buildGeneral = (overrides: Partial<TurnGeneral> = {}): TurnGeneral => ({
 
 const buildWorld = (
     general = buildGeneral(),
-    options: { autorunLimit?: boolean; scenarioEffect?: string | null } = {}
+    options: { autorunLimit?: boolean; scenarioEffect?: ScenarioEffectKey | null } = {}
 ) => {
     const state: TurnWorldState = {
         id: 1,
@@ -143,15 +143,22 @@ describe('my information world commands', () => {
         });
     });
 
-    it('preserves the event scenarios that waive the no-defence penalty', async () => {
-        const fixture = buildWorld(buildGeneral(), { scenarioEffect: 'event_StrongAttacker' });
-        await fixture.handler.handle({
-            type: 'setMySetting',
-            generalId: 7,
-            settings: { defence_train: 999 },
-        });
-        expect(fixture.world.getGeneralById(7)).toMatchObject({ train: 90, atmos: 90 });
-    });
+    it.each([
+        'event_UnlimitedDefenceThresholdChange',
+        'event_StrongAttacker',
+        'event_MoreEffect',
+    ] satisfies ScenarioEffectKey[])(
+        'preserves the %s scenario that waives the no-defence penalty',
+        async (scenarioEffect) => {
+            const fixture = buildWorld(buildGeneral(), { scenarioEffect });
+            await fixture.handler.handle({
+                type: 'setMySetting',
+                generalId: 7,
+                settings: { defence_train: 999 },
+            });
+            expect(fixture.world.getGeneralById(7)).toMatchObject({ train: 90, atmos: 90 });
+        }
+    );
 
     it('applies vacation killturn and rejects it in automatic-turn mode', async () => {
         const allowed = buildWorld();

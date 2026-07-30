@@ -50,15 +50,7 @@ type ScenarioSeederPrismaClient = {
     };
 };
 
-const requiredTables = [
-    'world_state',
-    'nation',
-    'city',
-    'general',
-    'diplomacy',
-    'troop',
-    'event',
-];
+const requiredTables = ['world_state', 'nation', 'city', 'general', 'diplomacy', 'troop', 'event'];
 
 const hasRequiredTables = async (prisma: ScenarioSeederPrismaClient, schemaName: string): Promise<boolean> => {
     for (const table of requiredTables) {
@@ -239,6 +231,25 @@ describeDb('scenario database seed', () => {
             const autorun = (meta.autorun_user ?? {}) as Record<string, unknown>;
             const autorunOptions = (autorun.options ?? {}) as Record<string, unknown>;
             expect(autorunOptions.develop).toBe(true);
+        } finally {
+            await connector.disconnect();
+        }
+    });
+
+    test('persists a tracked scenario effect in the world configuration', async () => {
+        await seedScenarioToDatabase({
+            scenarioId: 906,
+            databaseUrl,
+        });
+
+        const connector = createGamePostgresConnector({ url: databaseUrl });
+        await connector.connect();
+        try {
+            const prisma = connector.prisma as unknown as ScenarioSeederPrismaClient;
+            const worldState = await prisma.worldState.findFirst();
+            const config = (worldState?.config ?? {}) as Record<string, unknown>;
+            const environment = (config.environment ?? {}) as Record<string, unknown>;
+            expect(environment.scenarioEffect).toBe('event_StrongAttacker');
         } finally {
             await connector.disconnect();
         }

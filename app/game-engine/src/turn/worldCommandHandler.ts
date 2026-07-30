@@ -15,6 +15,7 @@ import {
     buildVoteUniqueSeed,
     countOccupiedUniqueItems,
     createItemModuleRegistry,
+    isDefenceTrainPenaltyWaivedByScenarioEffect,
     isValidTroopNameWidth,
     loadItemModules,
     normalizeTroopName,
@@ -948,10 +949,7 @@ async function handleSetMySetting(
         nextMeta.defence_train = nextDefenceTrain;
         if (nextDefenceTrain === 999) {
             const scenarioEffect = world.getScenarioConfig().environment.scenarioEffect;
-            const ignoresPenalty =
-                scenarioEffect === 'event_UnlimitedDefenceThresholdChange' ||
-                scenarioEffect === 'event_StrongAttacker' ||
-                scenarioEffect === 'event_MoreEffect';
+            const ignoresPenalty = isDefenceTrainPenaltyWaivedByScenarioEffect(scenarioEffect);
             const constValues = asRecord(world.getScenarioConfig().const);
             const maxTrain = readMetaNumber(constValues, 'maxTrainByWar', 100);
             const maxAtmos = readMetaNumber(constValues, 'maxAtmosByWar', 100);

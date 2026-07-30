@@ -13,6 +13,7 @@ import type {
     ScenarioNation,
     ScenarioStatBlock,
 } from './types.js';
+import { normalizeScenarioEffect } from './scenarioEffect.js';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -45,12 +46,9 @@ const parseScenarioEnvironment = (mapConfig: UnknownRecord, constConfig: Unknown
     const merged = { ...mapConfig, ...constConfig };
     const mapName = asString(merged.mapName, 'che');
     const unitSet = asString(merged.unitSet, 'che');
-    const scenarioEffect =
-        typeof merged.scenarioEffect === 'string' || merged.scenarioEffect === null ? merged.scenarioEffect : undefined;
-
     const result: ScenarioEnvironment = { mapName, unitSet };
-    if (scenarioEffect !== undefined) {
-        result.scenarioEffect = scenarioEffect;
+    if (Object.hasOwn(merged, 'scenarioEffect')) {
+        result.scenarioEffect = normalizeScenarioEffect(merged.scenarioEffect);
     }
     return result;
 };

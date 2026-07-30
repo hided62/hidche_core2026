@@ -9,6 +9,7 @@ const buildPayload = (action: BattleSimJobPayload['action']): BattleSimJobPayloa
     year: 200,
     month: 1,
     seed: 'test-seed',
+    scenarioEffect: null,
     attackerGeneral: {
         no: 1,
         name: 'Attacker',
@@ -250,6 +251,14 @@ describe('battle sim processor', () => {
         expect(result.lastWarLog?.generalActionLog).toContain('퇴각했습니다.');
     });
 
+    it('treats a queued job from before scenarioEffect existed as the no-effect baseline', () => {
+        const baselinePayload = buildPayload('battle');
+        const legacyPayload = buildPayload('battle');
+        delete legacyPayload.scenarioEffect;
+
+        expect(processBattleSimJob(legacyPayload)).toEqual(processBattleSimJob(baselinePayload));
+    });
+
     it('returns the fixed defender ID order for reorder action', () => {
         const payload = buildPayload('reorder');
         const result = processBattleSimJob(payload);
@@ -280,5 +289,54 @@ describe('battle sim processor', () => {
         payload.unitSet.crewTypes![0]!.iActionList = ['missing_action'];
 
         expect(() => processBattleSimJob(payload)).toThrow('Unknown crew type action');
+    });
+
+    it('applies StrongAttacker to general combat in the server-enriched simulator job', () => {
+        const baseline = processBattleSimJob(buildPayload('battle'));
+        const payload = buildPayload('battle');
+        payload.scenarioEffect = 'event_StrongAttacker';
+        const strong = processBattleSimJob(payload);
+
+        expect(strong.killed).toBeGreaterThan(baseline.killed ?? 0);
+    });
+
+    it('keeps StrongAttacker city combat identical but applies MoreEffect to it', () => {
+        const baselinePayload = buildPayload('battle');
+        baselinePayload.defenderGenerals = [];
+        const baseline = processBattleSimJob(baselinePayload);
+
+        const strongPayload = buildPayload('battle');
+        strongPayload.defenderGenerals = [];
+        strongPayload.scenarioEffect = 'event_StrongAttacker';
+        expect(processBattleSimJob(strongPayload)).toEqual(baseline);
+
+        const morePayload = buildPayload('battle');
+        morePayload.defenderGenerals = [];
+        morePayload.scenarioEffect = 'event_MoreEffect';
+        const more = processBattleSimJob(morePayload);
+        expect(more.dead).toBeLessThan(baseline.dead ?? Number.POSITIVE_INFINITY);
+    });
+
+    it('fails fast for an unknown server-derived scenario effect', () => {
+        const payload = buildPayload('battle');
+        payload.scenarioEffect = 'event_Missing';
+        expect(() => processBattleSimJob(payload)).toThrow('Unknown scenario effect: event_Missing');
+    });
+
+    it('runs the advance trigger when a progressed attacker meets the next fresh defender', () => {
+        const payload = buildPayload('battle');
+        payload.scenarioEffect = 'event_StrongAttacker';
+        payload.defenderGenerals[0]!.crew = 100;
+        payload.defenderGenerals.push({
+            ...payload.defenderGenerals[0]!,
+            no: 3,
+            name: 'Next Defender',
+            crew: 1000,
+        });
+
+        const result = processBattleSimJob(payload);
+        expect(result.lastWarLog?.generalBattleDetailLog).toContain(
+            '적군의 전멸에 <font color=cyan>진격</font>이 이어집니다!'
+        );
     });
 });

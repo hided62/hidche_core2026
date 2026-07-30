@@ -21,6 +21,7 @@ import type {
     Troop,
     TriggerValue,
 } from '@sammo-ts/logic';
+import { normalizeScenarioEffect } from '@sammo-ts/logic';
 import { projectItemSlots, readItemInventoryFromMeta } from '@sammo-ts/logic/items/index.js';
 import { z } from 'zod';
 import { asRecord, isRecord } from '@sammo-ts/common';
@@ -90,7 +91,20 @@ const zScenarioStatBlock = z.object({
 const zScenarioEnvironment = z.object({
     mapName: z.string(),
     unitSet: z.string(),
-    scenarioEffect: z.union([z.string(), z.null()]).optional(),
+    scenarioEffect: z
+        .union([z.string(), z.null()])
+        .optional()
+        .refine(
+            (value) => {
+                try {
+                    normalizeScenarioEffect(value);
+                    return true;
+                } catch {
+                    return false;
+                }
+            },
+            { message: 'Unknown scenario effect' }
+        ),
 });
 
 const zScenarioConfig = z.object({
@@ -155,7 +169,13 @@ const mapScenarioConfig = (raw: JsonValue): ScenarioConfig => {
     if (!parsed.success) {
         throw new Error(`world_state.config is invalid: ${parsed.error.message}`);
     }
-    return parsed.data;
+    return {
+        ...parsed.data,
+        environment: {
+            ...parsed.data.environment,
+            scenarioEffect: normalizeScenarioEffect(parsed.data.environment.scenarioEffect),
+        },
+    };
 };
 
 const mapGeneralRow = (

@@ -12,6 +12,7 @@ import {
     createItemActionModules,
     createItemModuleRegistry,
     createRefOrderedActionStack,
+    createScenarioEffectActionModules,
     ITEM_KEYS,
     loadItemModules,
     createInheritBuffModules,
@@ -62,8 +63,12 @@ const domesticWarModule = new TraitWarActionRouter('domestic', traitCatalog);
 const warTraitModule = new TraitWarActionRouter('war', traitCatalog);
 const personalityWarModule = new TraitWarActionRouter('personality', traitCatalog);
 
-const buildWarActionModules = (unitSet: UnitSetDefinition): RefOrderedActionStack<WarActionModule> => {
+const buildWarActionModules = (
+    unitSet: UnitSetDefinition,
+    scenarioEffect?: string | null
+): RefOrderedActionStack<WarActionModule> => {
     const crewTypeCatalog = compileCrewTypeCatalog(unitSet, crewTypeWarTriggerRegistry);
+    const scenario = createScenarioEffectActionModules(scenarioEffect);
     return createRefOrderedActionStack<WarActionModule>({
         nation: nationWarModule,
         officer: officerWarModule,
@@ -72,7 +77,7 @@ const buildWarActionModules = (unitSet: UnitSetDefinition): RefOrderedActionStac
         personality: personalityWarModule,
         crewType: crewTypeCatalog.warActionModule,
         inheritance: inheritBuffModules.war,
-        scenario: null,
+        scenario: scenario.war,
         items: itemWarModules,
     });
 };
@@ -296,7 +301,7 @@ const resolveDefenderOrderPayload = (payload: BattleSimJobPayload): number[] => 
     const defenderCity = mapCityPayload(payload.defenderCity);
     const attacker = mapGeneralPayload(payload.attackerGeneral);
     const defenders = payload.defenderGenerals.map(mapGeneralPayload);
-    const warActionModules = buildWarActionModules(payload.unitSet);
+    const warActionModules = buildWarActionModules(payload.unitSet, payload.scenarioEffect);
 
     return resolveDefenderOrder({
         unitSet: payload.unitSet,
@@ -338,7 +343,7 @@ export const processBattleSimJob = (
     }
 
     let repeatCnt = payload.repeatCnt;
-    const warActionModules = buildWarActionModules(payload.unitSet);
+    const warActionModules = buildWarActionModules(payload.unitSet, payload.scenarioEffect);
     const baseSeed = payload.seed ?? '';
     if (baseSeed) {
         repeatCnt = 1;

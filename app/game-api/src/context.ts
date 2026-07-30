@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 import type { DatabaseClient as InfraDatabaseClient, RedisConnector, GamePrisma } from '@sammo-ts/infra';
+import { normalizeScenarioEffect, SCENARIO_EFFECT_KEYS } from '@sammo-ts/logic';
 
 import type { TurnDaemonTransport } from './daemon/transport.js';
 import type { BattleSimTransport } from './battleSim/transport.js';
@@ -25,6 +26,14 @@ export const zWorldStateConfig = z.object({
     extendedGeneral: z.boolean().optional(),
     turnTermMinutes: z.number().optional(),
     syncTurnTime: z.boolean().optional(),
+    environment: z
+        .object({
+            scenarioEffect: z
+                .union([z.enum(SCENARIO_EFFECT_KEYS), z.literal(''), z.literal('None'), z.null()])
+                .transform(normalizeScenarioEffect)
+                .optional(),
+        })
+        .optional(),
 });
 export type WorldStateConfig = z.infer<typeof zWorldStateConfig>;
 

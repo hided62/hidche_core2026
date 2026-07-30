@@ -81,6 +81,7 @@ export const buildCommandEnv = (config: ScenarioConfig, unitSet?: UnitSetDefinit
 
     return {
         ...(unitSet ? { unitSet } : {}),
+        scenarioEffect: config.environment.scenarioEffect ?? null,
         develCost: resolveNumber(constValues, ['develCost', 'develcost', 'develrate'], 0),
         minAvailableRecruitPop: resolveNumber(constValues, ['minAvailableRecruitPop'], 30000),
         trainDelta: resolveNumber(constValues, ['trainDelta'], DEFAULT_TRAIN_DELTA),
@@ -169,7 +170,7 @@ export const buildReservedTurnDefinitions = async (options: {
     general: Map<string, GeneralActionDefinition>;
     nation: Map<string, GeneralActionDefinition>;
 }> => {
-    const moduleBundle = await loadActionModuleBundle(options.env.unitSet);
+    const moduleBundle = await loadActionModuleBundle(options.env.unitSet, options.env.scenarioEffect);
     const itemModules = moduleBundle.itemModules;
     options.env.itemCatalog = Object.fromEntries(
         itemModules.map((item) => [

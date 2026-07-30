@@ -100,6 +100,7 @@ export interface BattleSimJobPayload extends BattleSimRequestPayload {
     unitSet: UnitSetDefinition;
     config: WarEngineConfig;
     time: WarTimeContext;
+    scenarioEffect?: string | null;
 }
 
 export interface BattleSimLogBuckets {

@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 import { LiteHashDRBG, RandUtil, type RNG } from '@sammo-ts/common';
@@ -28,6 +29,21 @@ interface ReferenceTrace {
     conquered: boolean;
     events: WarBattleTraceEvent[];
     rng: RandomCall[];
+    logs: {
+        attacker: ReferenceLogBuckets;
+        defenders: Record<string, ReferenceLogBuckets>;
+        city: ReferenceLogBuckets;
+    };
+}
+
+interface ReferenceLogBuckets {
+    generalHistoryLog: string[];
+    generalActionLog: string[];
+    generalBattleResultLog: string[];
+    generalBattleDetailLog: string[];
+    nationalHistoryLog: string[];
+    globalHistoryLog: string[];
+    globalActionLog: string[];
 }
 
 interface RandomCall {
@@ -110,6 +126,60 @@ const findWorkspaceRoot = (start: string): string | null => {
 const readJson = <T>(filePath: string): T => JSON.parse(fs.readFileSync(filePath, 'utf8')) as T;
 
 const runReferenceTrace = (workspaceRoot: string, fixtureJson: string): ReferenceTrace => {
+    const compareSourceRoot = process.env.REF_COMPARE_SOURCE_ROOT;
+    if (compareSourceRoot) {
+        const resolvedCompareRoot = path.resolve(compareSourceRoot);
+        const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sammo-ref-battle-'));
+        fs.cpSync(resolvedCompareRoot, runtimeRoot, {
+            recursive: true,
+            filter: (source) => {
+                const relative = path.relative(resolvedCompareRoot, source);
+                return !(
+                    relative === '.git' ||
+                    relative.startsWith(`.git${path.sep}`) ||
+                    relative === 'vendor' ||
+                    relative.startsWith(`vendor${path.sep}`) ||
+                    relative === 'd_log' ||
+                    relative.startsWith(`d_log${path.sep}`) ||
+                    relative === path.join('hwe', 'd_setting') ||
+                    relative.startsWith(`${path.join('hwe', 'd_setting')}${path.sep}`)
+                );
+            },
+        });
+        fs.mkdirSync(path.join(runtimeRoot, 'd_log'));
+        try {
+            const stdout = execFileSync(
+                'docker',
+                [
+                    'run',
+                    '--rm',
+                    '-i',
+                    '-v',
+                    `${runtimeRoot}:/var/www/html`,
+                    '-v',
+                    `${path.join(workspaceRoot, 'ref/sam/vendor')}:/var/www/html/vendor:ro`,
+                    '-v',
+                    `${path.join(workspaceRoot, 'ref/sam/hwe/d_setting')}:/var/www/html/hwe/d_setting:ro`,
+                    'sam-rebuild-ref-php:8.3',
+                    'php',
+                    '-d',
+                    'display_errors=0',
+                    '-d',
+                    'log_errors=0',
+                    '/var/www/html/hwe/compare/battle_trace.php',
+                    '-',
+                ],
+                {
+                    input: fixtureJson,
+                    encoding: 'utf8',
+                    stdio: ['pipe', 'pipe', 'pipe'],
+                }
+            );
+            return JSON.parse(stdout) as ReferenceTrace;
+        } finally {
+            fs.rmSync(runtimeRoot, { recursive: true, force: true });
+        }
+    }
     const stdout = execFileSync(
         'docker',
         ['compose', 'exec', '-T', 'php', 'php', '/var/www/html/hwe/compare/battle_trace.php', '-'],
@@ -165,6 +235,9 @@ const expectNearlyEqual = (actual: unknown, expected: unknown, label: string): v
     ).toBeLessThanOrEqual(tolerance);
 };
 
+const normalizeRandomArguments = (value: Record<string, unknown>): Record<string, unknown> =>
+    Array.isArray(value) && value.length === 0 ? {} : value;
+
 const assertTraceParity = (
     coreEvents: WarBattleTraceEvent[],
     reference: ReferenceTrace,
@@ -176,8 +249,20 @@ const assertTraceParity = (
         coreEventNames,
         `event sequence\ncore=${JSON.stringify(coreEventNames)}\nref=${JSON.stringify(referenceEventNames)}`
     ).toEqual(referenceEventNames);
-    expect(coreRng?.calls.map(({ operation, result }) => ({ operation, result }))).toEqual(
-        reference.rng.map(({ operation, result }) => ({ operation, result }))
+    expect(
+        coreRng?.calls.map(({ seq, operation, arguments: args, result }) => ({
+            seq,
+            operation,
+            arguments: normalizeRandomArguments(args),
+            result,
+        }))
+    ).toEqual(
+        reference.rng.map(({ seq, operation, arguments: args, result }) => ({
+            seq,
+            operation,
+            arguments: normalizeRandomArguments(args),
+            result,
+        }))
     );
 
     for (let index = 0; index < reference.events.length; index += 1) {
@@ -185,10 +270,16 @@ const assertTraceParity = (
         const ref = reference.events[index]!;
         expectNearlyEqual(core.attacker.hp, ref.attacker.hp, `event ${index} attacker.hp`);
         expectNearlyEqual(core.attacker.warPower, ref.attacker.warPower, `event ${index} attacker.warPower`);
+        expect(core.attacker.phase, `event ${index} attacker.phase`).toBe(ref.attacker.phase);
+        expect(core.attacker.realPhase, `event ${index} attacker.realPhase`).toBe(ref.attacker.realPhase);
+        expect(core.attacker.maxPhase, `event ${index} attacker.maxPhase`).toBe(ref.attacker.maxPhase);
         if (core.defender && ref.defender) {
             expect(core.defender.kind, `event ${index} defender.kind`).toBe(ref.defender.kind);
             expectNearlyEqual(core.defender.hp, ref.defender.hp, `event ${index} defender.hp`);
             expectNearlyEqual(core.defender.warPower, ref.defender.warPower, `event ${index} defender.warPower`);
+            expect(core.defender.phase, `event ${index} defender.phase`).toBe(ref.defender.phase);
+            expect(core.defender.realPhase, `event ${index} defender.realPhase`).toBe(ref.defender.realPhase);
+            expect(core.defender.maxPhase, `event ${index} defender.maxPhase`).toBe(ref.defender.maxPhase);
         } else {
             expect(core.defender, `event ${index} defender presence`).toBe(ref.defender);
         }
@@ -202,9 +293,137 @@ const assertTraceParity = (
 
 const configuredWorkspaceRoot = process.env.TURN_DIFFERENTIAL_WORKSPACE_ROOT;
 const workspaceRoot = configuredWorkspaceRoot ?? findWorkspaceRoot(process.cwd());
+if (process.env.TURN_DIFFERENTIAL_REFERENCE === '1' && !workspaceRoot) {
+    throw new Error(
+        'TURN_DIFFERENTIAL_REFERENCE=1 requires TURN_DIFFERENTIAL_WORKSPACE_ROOT when running outside the workspace tree.'
+    );
+}
 const describeWithReference = workspaceRoot ? describe : describe.skip;
 
 describeWithReference('ref ↔ core2026 battle differential', () => {
+    it('matches all scenario effects across general, direct-city, and fresh-defender combat', () => {
+        const unitSet = readJson<UnitSetDefinition>(
+            path.resolve(process.cwd(), '../../resources/unitset/unitset_che.json')
+        );
+        const config: WarEngineConfig = {
+            armPerPhase: 500,
+            maxTrainByCommand: 100,
+            maxAtmosByCommand: 100,
+            maxTrainByWar: 110,
+            maxAtmosByWar: 150,
+            castleCrewTypeId: 1000,
+            armTypes: { footman: 1, archer: 2, cavalry: 3, wizard: 4, siege: 5, misc: 6, castle: 0 },
+        };
+        const cases: Array<{
+            name: string;
+            effect: string;
+            directCity?: boolean;
+            multipleDefenders?: boolean;
+        }> = [
+            { name: 'unlimited-general', effect: 'event_UnlimitedDefenceThresholdChange' },
+            { name: 'strong-general', effect: 'event_StrongAttacker' },
+            { name: 'more-general', effect: 'event_MoreEffect' },
+            { name: 'strong-city', effect: 'event_StrongAttacker', directCity: true },
+            { name: 'more-city', effect: 'event_MoreEffect', directCity: true },
+            { name: 'strong-fresh-defender', effect: 'event_StrongAttacker', multipleDefenders: true },
+        ];
+
+        for (const entry of cases) {
+            const base = readJson<BattleSimRequestPayload & { startYear: number; scenarioEffect?: string }>(
+                path.resolve(process.cwd(), 'fixtures/battle/basic-infantry.json')
+            );
+            base.seed = `battle-differential-scenario-${entry.name}`;
+            base.scenarioEffect = entry.effect;
+            base.attackerGeneral.crew = entry.multipleDefenders ? 5000 : 3000;
+            if (entry.directCity) {
+                base.defenderGenerals = [];
+            }
+            if (entry.multipleDefenders) {
+                base.defenderGenerals[0]!.crew = 1;
+            }
+            if (entry.multipleDefenders) {
+                base.defenderGenerals.push({
+                    ...base.defenderGenerals[0]!,
+                    no: 3,
+                    name: '새 수비자',
+                    crew: 1200,
+                    leadership: 1,
+                    strength: 1,
+                    intel: 1,
+                });
+            }
+
+            const coreEvents: WarBattleTraceEvent[] = [];
+            let coreRng: TracingRng | null = null;
+            const coreResult = processBattleSimJob(
+                {
+                    ...base,
+                    unitSet,
+                    config,
+                    time: { year: base.year, month: base.month, startYear: base.startYear },
+                    scenarioEffect: entry.effect,
+                },
+                {
+                    trace: (event) => coreEvents.push(event),
+                    rngFactory: (seed) => {
+                        coreRng = new TracingRng(LiteHashDRBG.build(seed));
+                        return new RandUtil(coreRng);
+                    },
+                }
+            );
+
+            try {
+                const reference = runReferenceTrace(workspaceRoot!, JSON.stringify(base));
+                assertTraceParity(coreEvents, reference, coreRng);
+                const opponentSwitches = coreEvents.filter((event) => event.event === 'opponent_switched');
+                if (entry.directCity) {
+                    expect(
+                        coreEvents.some(
+                            (event) => event.event === 'opponent_initialized' && event.defender?.kind === 'city'
+                        ),
+                        `${entry.name}: must execute direct city combat`
+                    ).toBe(true);
+                }
+                if (entry.multipleDefenders) {
+                    expect(
+                        opponentSwitches.some((event) => event.defender?.kind === 'general' && event.defender.id === 3),
+                        `${entry.name}: must transition to the fresh defender`
+                    ).toBe(true);
+                    const switchedIndex = coreEvents.findIndex(
+                        (event) =>
+                            event.event === 'opponent_switched' &&
+                            event.defender?.kind === 'general' &&
+                            event.defender.id === 3
+                    );
+                    const maxPhaseBeforeAdvance = coreEvents[switchedIndex]!.attacker.maxPhase;
+                    expect(
+                        coreEvents
+                            .slice(switchedIndex + 1)
+                            .some(
+                                (event) =>
+                                    event.event === 'phase_triggered' &&
+                                    event.attacker.maxPhase === maxPhaseBeforeAdvance + 1
+                            ),
+                        `${entry.name}: advance trigger must extend attacker phases after the switch`
+                    ).toBe(true);
+                    expect(reference.logs.attacker.generalBattleDetailLog).toContain(
+                        '<C>●</>적군의 전멸에 <C>진격</>이 이어집니다!'
+                    );
+                    expect(reference.logs.defenders['3']?.generalBattleDetailLog).toContain(
+                        '<C>●</>아군의 전멸에 상대의 <R>진격</>이 이어집니다!'
+                    );
+                    expect(coreResult.lastWarLog?.generalBattleDetailLog).toContain(
+                        '적군의 전멸에 <font color=cyan>진격</font>이 이어집니다!'
+                    );
+                }
+            } catch (error) {
+                throw new Error(`${entry.name}: ${error instanceof Error ? error.message : String(error)}`, {
+                    cause: error,
+                });
+            }
+        }
+    });
+
     it('matches every legacy trait name and description', async () => {
         const reference = runReferenceTraitCatalog(workspaceRoot!);
         const [nation, domestic, war, personality] = await Promise.all([
@@ -285,9 +504,12 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
             try {
                 assertTraceParity(coreEvents, runReferenceTrace(workspaceRoot!, JSON.stringify(base)), coreRng);
             } catch (error) {
-                throw new Error(`${entry.kind}/${entry.key}: ${error instanceof Error ? error.message : String(error)}`, {
-                    cause: error,
-                });
+                throw new Error(
+                    `${entry.kind}/${entry.key}: ${error instanceof Error ? error.message : String(error)}`,
+                    {
+                        cause: error,
+                    }
+                );
             }
         }
     });
@@ -805,12 +1027,16 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
                     process.env['ITEM_PARITY_DEBUG'] === '1'
                         ? `\ncore=${JSON.stringify(
                               coreEvents
-                                      .map((event, index) => ({ index, event }))
-                                      .filter(({ event }) => event.event === 'phase_power' || event.event === 'phase_damage')
+                                  .map((event, index) => ({ index, event }))
+                                  .filter(
+                                      ({ event }) => event.event === 'phase_power' || event.event === 'phase_damage'
+                                  )
                           )}\nref=${JSON.stringify(
                               reference.events
-                                      .map((event, index) => ({ index, event }))
-                                      .filter(({ event }) => event.event === 'phase_power' || event.event === 'phase_damage')
+                                  .map((event, index) => ({ index, event }))
+                                  .filter(
+                                      ({ event }) => event.event === 'phase_power' || event.event === 'phase_damage'
+                                  )
                           )}`
                         : '';
                 failures.push(`${itemKey}: ${error instanceof Error ? error.message : String(error)}${debug}`);
@@ -910,11 +1136,15 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
                         ? `\ncore=${JSON.stringify(
                               coreEvents
                                   .map((event, index) => ({ index, event }))
-                                  .filter(({ event }) => event.event === 'phase_power' || event.event === 'phase_damage')
+                                  .filter(
+                                      ({ event }) => event.event === 'phase_power' || event.event === 'phase_damage'
+                                  )
                           )}\nref=${JSON.stringify(
                               reference.events
                                   .map((event, index) => ({ index, event }))
-                                  .filter(({ event }) => event.event === 'phase_power' || event.event === 'phase_damage')
+                                  .filter(
+                                      ({ event }) => event.event === 'phase_power' || event.event === 'phase_damage'
+                                  )
                           )}`
                         : '';
                 failures.push(`${itemKey}: ${error instanceof Error ? error.message : String(error)}${debug}`);

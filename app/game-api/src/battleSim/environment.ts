@@ -1,7 +1,7 @@
 import type { WorldStateRow } from '../context.js';
 import type { BattleSimJobPayload, BattleSimRequestPayload } from './types.js';
 import { loadUnitSetDefinitionByName } from './unitSetLoader.js';
-import type { WarEngineConfig } from '@sammo-ts/logic';
+import { normalizeScenarioEffect, type ScenarioEffectKey, type WarEngineConfig } from '@sammo-ts/logic';
 import { asRecord } from '@sammo-ts/common';
 import type { UnitSetDefinition } from '@sammo-ts/logic';
 
@@ -79,6 +79,7 @@ export interface BattleSimEnvironment {
     unitSet: UnitSetDefinition;
     config: WarEngineConfig;
     startYear: number;
+    scenarioEffect: ScenarioEffectKey | null;
 }
 
 export const buildBattleSimEnvironment = async (
@@ -89,6 +90,7 @@ export const buildBattleSimEnvironment = async (
     const unitSet = await loadUnitSetDefinitionByName(unitSetName);
 
     const configRecord = asRecord(worldState.config);
+    const scenarioEnvironment = asRecord(configRecord.environment ?? configRecord.map);
     const constValues = asRecord(configRecord.const ?? configRecord.consts);
     const castleCrewTypeId = resolveNumber(constValues, ['castleCrewTypeId'], resolveCastleCrewTypeId(unitSet));
     const castleArmType = resolveCastleArmType(unitSet, castleCrewTypeId);
@@ -117,6 +119,7 @@ export const buildBattleSimEnvironment = async (
         unitSet,
         config,
         startYear: resolveStartYear(worldState),
+        scenarioEffect: normalizeScenarioEffect(scenarioEnvironment.scenarioEffect),
     };
 };
 
@@ -136,5 +139,6 @@ export const buildBattleSimJobPayload = async (
             month: request.month,
             startYear: environment.startYear,
         },
+        scenarioEffect: environment.scenarioEffect,
     };
 };

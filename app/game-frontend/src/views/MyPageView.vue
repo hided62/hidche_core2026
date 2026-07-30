@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { trpc } from '../utils/trpc';
 import { formatLog } from '../utils/formatLog';
+import { isDefenceTrainPenaltyWaivedByScenarioEffect } from '@sammo-ts/logic';
 
 const SCREEN_MODE_KEY = 'sam.screenMode';
 const CUSTOM_CSS_KEY = 'sam_customCSS';
@@ -95,6 +96,13 @@ const statusLine = computed(() =>
 
 const canSave = computed(() => (data.value?.settings.myset ?? 1) > 0);
 const penalties = computed(() => Object.entries(data.value?.penalties ?? {}));
+const noDefencePenaltyWaived = computed(() => {
+    const environment = asRecord(world.value?.config.environment);
+    return isDefenceTrainPenaltyWaivedByScenarioEffect(
+        typeof environment.scenarioEffect === 'string' ? environment.scenarioEffect : null
+    );
+});
+const noDefenceLabel = computed(() => (noDefencePenaltyWaived.value ? '×' : '× [훈련 -3,사기 -6]'));
 const items = computed<Array<{ key: ItemSlotKey; name: string; code: string | null }>>(() => [
     { key: 'horse', name: '말', code: data.value?.general.items.horse ?? null },
     { key: 'weapon', name: '무기', code: data.value?.general.items.weapon ?? null },
@@ -319,12 +327,16 @@ onMounted(() => {
 
                 <label class="setting-line">
                     수비 【
-                    <select v-model.number="form.defence_train">
-                        <option :value="90">수비 함(훈사90)</option>
-                        <option :value="80">수비 함(훈사80)</option>
-                        <option :value="60">수비 함(훈사60)</option>
-                        <option :value="40">수비 함(훈사40)</option>
-                        <option :value="999">수비 안함 [훈련 -3, 사기 -6]</option>
+                    <select
+                        id="defence_train"
+                        v-model.number="form.defence_train"
+                        :class="{ 'penalty-waived': noDefencePenaltyWaived }"
+                    >
+                        <option :value="90">☆(훈사90)</option>
+                        <option :value="80">◎(훈사80)</option>
+                        <option :value="60">○(훈사60)</option>
+                        <option :value="40">△(훈사40)</option>
+                        <option :value="999">{{ noDefenceLabel }}</option>
                     </select>
                     】
                 </label>
@@ -583,6 +595,12 @@ dt {
 .setting-line {
     display: block;
     margin-top: 5px;
+}
+#defence_train {
+    width: 134px;
+}
+#defence_train.penalty-waived {
+    width: 86px;
 }
 .hint {
     margin: 0 0 13px;

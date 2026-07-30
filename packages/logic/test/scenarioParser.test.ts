@@ -76,4 +76,33 @@ describe('scenario parser', () => {
             picture: '장수/아회남.jpg',
         });
     });
+
+    it('keeps the complete seven-scenario effect inventory typed and executable', async () => {
+        const defaults = parseScenarioDefaults(await readJson(path.join(scenarioRoot, 'default.json')));
+        const expected = new Map([
+            [906, 'event_StrongAttacker'],
+            [911, 'event_UnlimitedDefenceThresholdChange'],
+            [913, 'event_MoreEffect'],
+            [2703, 'event_StrongAttacker'],
+            [2704, 'event_StrongAttacker'],
+            [2903, 'event_StrongAttacker'],
+            [2904, 'event_StrongAttacker'],
+        ]);
+
+        for (const [scenarioId, scenarioEffect] of expected) {
+            const raw = await readJson(path.join(scenarioRoot, `scenario_${scenarioId}.json`));
+            expect(parseScenarioDefinition(raw, defaults).config.environment.scenarioEffect).toBe(scenarioEffect);
+        }
+    });
+
+    it('fails before seeding when a scenario references an unknown effect', async () => {
+        const defaults = parseScenarioDefaults(await readJson(path.join(scenarioRoot, 'default.json')));
+        const raw = (await readJson(path.join(scenarioRoot, 'scenario_0.json'))) as Record<string, unknown>;
+        raw.const = {
+            ...((raw.const as Record<string, unknown> | undefined) ?? {}),
+            scenarioEffect: 'event_Missing',
+        };
+
+        expect(() => parseScenarioDefinition(raw, defaults)).toThrow();
+    });
 });

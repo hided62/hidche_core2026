@@ -37,7 +37,7 @@ const makeGeneral = (): General => ({
 describe('typed general action events', () => {
     it('folds synchronous event handlers in the supplied ref ownership order', () => {
         const trace: string[] = [];
-        const names = ['nation', 'officer', 'domestic', 'war', 'personality', 'crew', 'inherit', 'item'];
+        const names = ['nation', 'officer', 'domestic', 'war', 'personality', 'crew', 'inherit', 'scenario', 'item'];
         const modules: GeneralActionModule[] = names.map((name) => ({
             eventHandlers: {
                 'strategy.succeeded': (_context, event) => {
@@ -56,8 +56,8 @@ describe('typed general action events', () => {
             personality: modules[4]!,
             crewType: modules[5]!,
             inheritance: modules[6]!,
-            scenario: null,
-            items: [modules[7]!],
+            scenario: modules[7]!,
+            items: [modules[8]!],
         });
         const pipeline = new GeneralActionPipeline(stack);
 

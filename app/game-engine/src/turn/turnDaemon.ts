@@ -219,7 +219,10 @@ const createTurnDaemonRuntimeWithLease = async (
     let redisConnector: ReturnType<typeof createRedisConnector> | null = null;
     const nationTraits = await loadNationTraitModules([...NATION_TRAIT_KEYS], new NationTraitLoader());
     const nationTraitMap = new Map(nationTraits.map((module) => [module.key, module]));
-    const monthlyActionModules = await loadActionModuleBundle(snapshot.unitSet);
+    const monthlyActionModules = await loadActionModuleBundle(
+        snapshot.unitSet,
+        snapshot.scenarioConfig.environment.scenarioEffect
+    );
     const monthlyCommandEnv = buildCommandEnv(snapshot.scenarioConfig, snapshot.unitSet);
     const unification = options.calendarHandler
         ? null

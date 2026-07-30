@@ -51,6 +51,7 @@ liveDescribe('battle simulator worker with live Redis', () => {
             unitSet: environment.unitSet,
             config: environment.config,
             time: { year: request.year, month: request.month, startYear },
+            scenarioEffect: environment.scenarioEffect,
         };
 
         const clientConnector = createRedisConnector(resolveRedisConfigFromEnv());

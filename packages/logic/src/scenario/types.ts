@@ -16,7 +16,7 @@ export interface ScenarioDefaults {
 export interface ScenarioEnvironment {
     mapName: string;
     unitSet: string;
-    scenarioEffect?: string | null;
+    scenarioEffect?: ScenarioEffectKey | null;
 }
 
 export interface ScenarioConfig {
@@ -86,3 +86,4 @@ export interface ScenarioDefinition {
     initialEvents: unknown[];
     ignoreDefaultEvents: boolean;
 }
+import type { ScenarioEffectKey } from './scenarioEffect.js';

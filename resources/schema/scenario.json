@@ -110,8 +110,30 @@
                 },
                 "const": {
                     "type": "object",
-                    "propertyNames": {
-                        "type": "string"
+                    "properties": {
+                        "scenarioEffect": {
+                            "anyOf": [
+                                {
+                                    "type": "string",
+                                    "enum": [
+                                        "event_UnlimitedDefenceThresholdChange",
+                                        "event_StrongAttacker",
+                                        "event_MoreEffect"
+                                    ]
+                                },
+                                {
+                                    "type": "string",
+                                    "const": ""
+                                },
+                                {
+                                    "type": "string",
+                                    "const": "None"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ]
+                        }
                     },
                     "additionalProperties": {}
                 },
@@ -236,8 +258,30 @@
                 },
                 "const": {
                     "type": "object",
-                    "propertyNames": {
-                        "type": "string"
+                    "properties": {
+                        "scenarioEffect": {
+                            "anyOf": [
+                                {
+                                    "type": "string",
+                                    "enum": [
+                                        "event_UnlimitedDefenceThresholdChange",
+                                        "event_StrongAttacker",
+                                        "event_MoreEffect"
+                                    ]
+                                },
+                                {
+                                    "type": "string",
+                                    "const": ""
+                                },
+                                {
+                                    "type": "string",
+                                    "const": "None"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ]
+                        }
                     },
                     "additionalProperties": {}
                 },

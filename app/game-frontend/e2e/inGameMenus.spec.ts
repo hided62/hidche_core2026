@@ -22,6 +22,7 @@ const persistParityArtifact = async (page: Page, name: string, geometry: unknown
 type FixtureState = {
     permission: 'head' | 'member';
     myset: number;
+    scenarioEffect?: string | null;
     settingMutations: Array<Record<string, unknown>>;
     accessPages: string[];
 };
@@ -154,7 +155,11 @@ const install = async (page: Page, state: FixtureState) => {
                     currentYear: 185,
                     currentMonth: 1,
                     tickSeconds: 600,
-                    config: { npcMode: 0, const: { availableInstantAction: {} } },
+                    config: {
+                        npcMode: 0,
+                        const: { availableInstantAction: {} },
+                        environment: { scenarioEffect: state.scenarioEffect ?? null },
+                    },
                     meta: {
                         turntime: '2026-01-01T00:00:00.000Z',
                         opentime: '2025-12-01T00:00:00.000Z',
@@ -266,11 +271,20 @@ test('접속량정보 keeps the legacy public 1016px chart geometry', async ({ p
 test('내 정보&설정 keeps the legacy 1000px/500px geometry and saves in place', async ({ page }) => {
     const state: FixtureState = { permission: 'head', myset: 3, settingMutations: [], accessPages: [] };
     await install(page, state);
-    await page.setViewportSize({ width: 1200, height: 900 });
+    await page.setViewportSize({ width: 1000, height: 900 });
     await page.goto('my-page');
     await expect(page.locator('.title-row')).toContainText('내 정 보');
     await expect(page.locator('#set_my_setting')).toBeVisible();
     await expect.poll(() => state.accessPages).toContain('my-page');
+    const noDefenceOption = page.locator('option[value="999"]');
+    await expect(noDefenceOption).toHaveText('× [훈련 -3,사기 -6]');
+    await expect(page.locator('#defence_train option')).toHaveText([
+        '☆(훈사90)',
+        '◎(훈사80)',
+        '○(훈사60)',
+        '△(훈사40)',
+        '× [훈련 -3,사기 -6]',
+    ]);
 
     const desktop = await page.locator('#container').evaluate((element) => {
         const rect = element.getBoundingClientRect();
@@ -311,13 +325,61 @@ test('내 정보&설정 keeps the legacy 1000px/500px geometry and saves in plac
     expect(desktop.sectionBackgroundImage).toContain('back_green.jpg');
     await persistParityArtifact(page, 'core-my-page-desktop', desktop);
 
-    await page
-        .locator('select')
-        .filter({ has: page.locator('option[value="999"]') })
-        .selectOption('999');
+    const defenceSelect = page.locator('select').filter({ has: page.locator('option[value="999"]') });
+    await defenceSelect.selectOption('999');
+    const noEffectState = await defenceSelect.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+            scenarioEffect: null,
+            optionText: element.querySelector<HTMLOptionElement>('option[value="999"]')?.textContent,
+            selectedText: element.querySelector<HTMLOptionElement>('option:checked')?.textContent,
+            rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+            fontSize: style.fontSize,
+            lineHeight: style.lineHeight,
+            color: style.color,
+            backgroundColor: style.backgroundColor,
+        };
+    });
+    expect(noEffectState.rect.width).toBe(134);
+    expect(noEffectState.rect.height).toBe(20);
+    await persistParityArtifact(page, 'core-my-page-no-effect-999', noEffectState);
     await page.locator('#set_my_setting').click();
     await expect.poll(() => state.settingMutations.length).toBe(1);
     expect(state.settingMutations[0]).not.toHaveProperty('generalId');
+
+    for (const [effectIndex, scenarioEffect] of [
+        'event_UnlimitedDefenceThresholdChange',
+        'event_StrongAttacker',
+        'event_MoreEffect',
+    ].entries()) {
+        state.scenarioEffect = scenarioEffect;
+        state.myset = 1;
+        await page.reload();
+        await expect(noDefenceOption).toHaveText('×');
+        await defenceSelect.selectOption('999');
+        const effectState = await defenceSelect.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            return {
+                optionText: element.querySelector<HTMLOptionElement>('option[value="999"]')?.textContent,
+                selectedText: element.querySelector<HTMLOptionElement>('option:checked')?.textContent,
+                rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+                fontSize: style.fontSize,
+                lineHeight: style.lineHeight,
+                color: style.color,
+                backgroundColor: style.backgroundColor,
+            };
+        });
+        expect(effectState.optionText).toBe('×');
+        expect(effectState.selectedText).toBe('×');
+        expect(effectState.rect.width).toBe(86);
+        expect(effectState.rect.height).toBe(20);
+        await persistParityArtifact(page, `core-my-page-${scenarioEffect}`, effectState);
+        await page.locator('#set_my_setting').click();
+        await expect.poll(() => state.settingMutations.length).toBe(effectIndex + 2);
+        expect(state.settingMutations.at(-1)).not.toHaveProperty('generalId');
+    }
 
     await page.setViewportSize({ width: 500, height: 900 });
     await page.reload();

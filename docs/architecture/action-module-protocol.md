@@ -34,9 +34,36 @@ priority trigger를 의미 이벤트로 바꾸거나, 의미 이벤트를 `Trigg
 `RefOrderedActionStack`의 readonly unique-symbol brand는 임의 배열을 제품용
 표준 stack으로 오인하지 않게 하는 shadow type입니다. 모든 slot을 명시하는
 factory에서만 이 brand를 만들 수 있으며, 예약턴 runtime env에도 spread하지
-않고 그대로 전달합니다. 현재 시나리오 효과 runtime module은 이식되지 않아
-해당 slot은 명시적으로 `null`입니다. 따라서 이 brand는 순서와 slot 소유권을
-증명하며, 시나리오 효과 구현 완료를 뜻하지 않습니다.
+않고 그대로 전달합니다. `scenarioEffect`가 없으면 scenario slot은
+`null`이며, 지원하는 값이면 `createScenarioEffectActionModules()`가
+general·war module을 생성합니다. 표준 순서 테스트는
+`inheritance → scenario → items`를 포함한 아홉 slot을 직접 검증합니다.
+
+## 시나리오 효과
+
+`SCENARIO_EFFECT_KEYS`가 저장·실행 가능한 효과의 단일 registry입니다.
+scenario parser, resource schema, PostgreSQL world loader와 battle simulator
+환경은 이 registry로 값을 정규화하며 알 수 없는 값은 실행 전에 거부합니다.
+
+| 효과                                    | General hook                                      | War hook                                                            |
+| --------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------- |
+| `event_UnlimitedDefenceThresholdChange` | 무수비 설정의 훈련·사기 penalty를 0으로 만듭니다. | 없음                                                                |
+| `event_StrongAttacker`                  | 같은 penalty를 0으로 만듭니다.                    | 장수전 공격측 `1.4`, 상대 `0.7143`; 성벽전 제외; 전멸 뒤 진격 phase |
+| `event_MoreEffect`                      | penalty 제거, 8개 내정 score를 2배로 만듭니다.    | 성벽전을 포함한 공격측 배율과 전멸 뒤 진격 phase                    |
+
+진격 trigger는 진행한 unit이 phase 0인 새 상대를 만날 때 bonus phase를
+정확히 1 추가합니다. trigger 자체는 RNG를 소비하지 않으며, 추가 phase가
+이후 전투 RNG를 정상적으로 더 소비합니다.
+
+`event_MoreEffect::onCalcNationalIncome()`은 ref class에 존재하지만 실제
+월간 수입 entry point는 General action list가 아니라 nation type hook만
+호출합니다. Core도 protocol hook은 보존하되 월간 수입 경로에는 연결하지
+않습니다.
+
+전투 시뮬레이터의 효과는 공개 request가 아니라 저장된 world config에서
+서버가 파생합니다. 내부 queue payload의 필드는 optional이므로 배포 전에
+생성된 payload는 효과 없음으로 처리하며, 신·구 API/worker 혼재 시에는
+효과 누락을 피하기 위해 queue를 비우거나 API와 worker를 함께 재시작합니다.
 
 ## 닫힌 의미 이벤트
 

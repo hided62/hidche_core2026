@@ -5,6 +5,7 @@ import type { City, General, Nation } from '../../src/domain/entities.js';
 import type { WorldSnapshot } from '../../src/world/types.js';
 import { commandSpec as developAgricultureSpec } from '../../src/actions/turn/general/che_농지개간.js';
 import type { TurnCommandEnv } from '../../src/actions/turn/commandEnv.js';
+import { loadActionModuleBundle } from '../../src/actionModules/bundle.js';
 
 describe('Domestic Affairs Scenario', () => {
     it('should increase agriculture when executing "Farming" command', async () => {
@@ -97,6 +98,8 @@ describe('Domestic Affairs Scenario', () => {
             events: [],
             initialEvents: [],
         };
+        const moduleBaselineSnapshot = structuredClone(snapshot);
+        const moreEffectSnapshot = structuredClone(snapshot);
 
         const world = new InMemoryWorld(snapshot);
         const runner = new TestGameRunner(world, 200, 1);
@@ -143,6 +146,39 @@ describe('Domestic Affairs Scenario', () => {
         const updatedCity = world.getCity(1)!;
         // 레거시 che_농지개간: 능력치·경험등급·0.8~1.2 난수·성공 배율을 모두 반영한다.
         expect(updatedCity.agriculture).toBe(664);
+
+        const baselineModuleWorld = new InMemoryWorld(moduleBaselineSnapshot);
+        const baselineModuleRunner = new TestGameRunner(baselineModuleWorld, 200, 1);
+        const baselineBundle = await loadActionModuleBundle();
+        await baselineModuleRunner.runTurn([
+            {
+                generalId: 1,
+                commandKey: 'che_농지개간',
+                resolver: developAgricultureSpec.createDefinition({
+                    ...systemEnv,
+                    generalActionModules: baselineBundle.general,
+                }),
+                args: {},
+            },
+        ]);
+
+        const moreEffectWorld = new InMemoryWorld(moreEffectSnapshot);
+        const moreEffectRunner = new TestGameRunner(moreEffectWorld, 200, 1);
+        const moduleBundle = await loadActionModuleBundle(undefined, 'event_MoreEffect');
+        const moreEffectDefinition = developAgricultureSpec.createDefinition({
+            ...systemEnv,
+            generalActionModules: moduleBundle.general,
+        });
+        await moreEffectRunner.runTurn([
+            {
+                generalId: 1,
+                commandKey: 'che_농지개간',
+                resolver: moreEffectDefinition,
+                args: {},
+            },
+        ]);
+        expect(baselineModuleWorld.getCity(1)?.agriculture).toBe(672);
+        expect(moreEffectWorld.getCity(1)?.agriculture).toBe(844);
     });
 
     it('should not increase agriculture when city is already maxed', async () => {

@@ -350,7 +350,14 @@ describe('appRouter', () => {
             currentYear: 1,
             currentMonth: 2,
             tickSeconds: 600,
-            config: { maxUserCnt: 500, hiddenSeed: 'config-secret' },
+            config: {
+                maxUserCnt: 500,
+                hiddenSeed: 'config-secret',
+                environment: {
+                    scenarioEffect: 'event_StrongAttacker',
+                    hiddenSeed: 'environment-secret',
+                },
+            },
             meta: { otherTextInfo: 'sample', hiddenSeed: 'meta-secret' },
             updatedAt: new Date('2026-01-01T00:00:00Z'),
         };
@@ -360,9 +367,48 @@ describe('appRouter', () => {
 
         expect(response?.scenarioCode).toBe('default');
         expect(response?.currentYear).toBe(1);
-        expect(response?.config).toEqual({ maxUserCnt: 500 });
+        expect(response?.config).toEqual({
+            maxUserCnt: 500,
+            environment: { scenarioEffect: 'event_StrongAttacker' },
+        });
         expect(response?.meta).toEqual({ otherTextInfo: 'sample' });
         expect(response?.updatedAt).toBe('2026-01-01T00:00:00.000Z');
+    });
+
+    it.each(['', 'None', null])('normalizes the persisted no-effect sentinel %j in world snapshots', async (value) => {
+        const state: WorldStateRow = {
+            id: 1,
+            scenarioCode: 'default',
+            currentYear: 1,
+            currentMonth: 2,
+            tickSeconds: 600,
+            config: { environment: { scenarioEffect: value } },
+            meta: {},
+            updatedAt: new Date('2026-01-01T00:00:00Z'),
+        };
+
+        const caller = appRouter.createCaller(buildContext({ state }));
+
+        await expect(caller.world.getState()).resolves.toMatchObject({
+            config: { environment: { scenarioEffect: null } },
+        });
+    });
+
+    it('rejects unknown persisted scenario effects in world snapshots', async () => {
+        const state: WorldStateRow = {
+            id: 1,
+            scenarioCode: 'default',
+            currentYear: 1,
+            currentMonth: 2,
+            tickSeconds: 600,
+            config: { environment: { scenarioEffect: 'event_Missing' } },
+            meta: {},
+            updatedAt: new Date('2026-01-01T00:00:00Z'),
+        };
+
+        const caller = appRouter.createCaller(buildContext({ state }));
+
+        await expect(caller.world.getState()).rejects.toThrow();
     });
 
     it('requires profile administration permission for turn daemon control', async () => {

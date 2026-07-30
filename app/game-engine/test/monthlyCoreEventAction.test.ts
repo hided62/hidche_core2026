@@ -198,7 +198,7 @@ describe('core monthly event actions at the real month boundary', () => {
         ]);
     });
 
-    it('uses the ProcessIncome resource argument instead of inferring it from the month', async () => {
+    it('uses the ProcessIncome resource argument and keeps MoreEffect income dormant like ref', async () => {
         const world = buildWorld(
             [
                 {
@@ -226,7 +226,11 @@ describe('core monthly event actions at the real month boundary', () => {
                         iconPath: '',
                         map: {},
                         const: { baseGold: 0, baseRice: 0 },
-                        environment: { mapName: map.id, unitSet: 'default' },
+                        environment: {
+                            mapName: map.id,
+                            unitSet: 'default',
+                            scenarioEffect: 'event_MoreEffect',
+                        },
                     },
                     nationTraits: new Map(),
                 });

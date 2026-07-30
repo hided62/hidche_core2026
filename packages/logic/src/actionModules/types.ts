@@ -13,7 +13,8 @@ export type TriggerDomesticActionType =
     | '기술'
     | '모병'
     | '단련'
-    | '조달';
+    | '조달'
+    | 'changeDefenceTrain';
 
 export type TriggerDomesticVarType = 'cost' | 'score' | 'success' | 'fail' | 'train' | 'atmos' | 'rice' | 'probability';
 

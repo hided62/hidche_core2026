@@ -27,6 +27,8 @@ import {
     WAR_TRAIT_KEYS,
 } from './traits/index.js';
 import type { NationTraitModule } from './traits/nation/index.js';
+import { createScenarioEffectActionModules } from './scenarioEffect.js';
+import type { ScenarioEffectKey } from '@sammo-ts/logic/scenario/scenarioEffect.js';
 
 export interface ActionModuleBundle<TriggerState extends GeneralTriggerState = GeneralTriggerState> {
     general: RefOrderedActionStack<GeneralActionModule<TriggerState>>;
@@ -82,7 +84,8 @@ export const createRefOrderedActionStack = <Module>(slots: RefActionSlots<Module
 
 // General::getActionList와 같은 소유권 순서로 실제 턴과 시뮬레이터의 모듈을 조립한다.
 export const loadActionModuleBundle = async <TriggerState extends GeneralTriggerState = GeneralTriggerState>(
-    unitSet?: UnitSetDefinition
+    unitSet?: UnitSetDefinition,
+    scenarioEffect?: ScenarioEffectKey | null
 ): Promise<ActionModuleBundle<TriggerState>> => {
     const [domestic, war, personality, nation, itemModules] = await Promise.all([
         loadDomesticTraitModules([...DOMESTIC_TRAIT_KEYS]),
@@ -95,6 +98,7 @@ export const loadActionModuleBundle = async <TriggerState extends GeneralTrigger
     const officer = createOfficerLevelActionModules<TriggerState>();
     const items = createItemActionModules(createItemModuleRegistry(itemModules));
     const inherit = createInheritBuffModules();
+    const scenario = createScenarioEffectActionModules<TriggerState>(scenarioEffect);
     const crewTypeCatalog = unitSet?.crewTypes?.length
         ? compileCrewTypeCatalog(unitSet, createCrewTypeWarTriggerRegistry())
         : null;
@@ -110,8 +114,7 @@ export const loadActionModuleBundle = async <TriggerState extends GeneralTrigger
                 ? (crewTypeCatalog.generalActionModule as GeneralActionModule<TriggerState>)
                 : null,
             inheritance: inherit.general as GeneralActionModule<TriggerState>,
-            // scenarioEffect는 현재 core runtime module이 없어 명시적으로 빈 slot입니다.
-            scenario: null,
+            scenario: scenario.general,
             items: items.general,
         }),
         war: createRefOrderedActionStack<WarActionModule<TriggerState>>({
@@ -122,8 +125,7 @@ export const loadActionModuleBundle = async <TriggerState extends GeneralTrigger
             personality: new TraitWarActionRouter('personality', traitCatalog),
             crewType: crewTypeCatalog ? (crewTypeCatalog.warActionModule as WarActionModule<TriggerState>) : null,
             inheritance: inherit.war as WarActionModule<TriggerState>,
-            // ref의 scenarioEffect 위치를 보존하되 미이식 module은 별도 gap으로 남깁니다.
-            scenario: null,
+            scenario: scenario.war,
             items: items.war,
         }),
         itemModules,

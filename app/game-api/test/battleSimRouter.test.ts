@@ -265,7 +265,7 @@ describe('battle router orchestration', () => {
             currentYear: 200,
             currentMonth: 1,
             tickSeconds: 600,
-            config: {},
+            config: { environment: { scenarioEffect: 'event_MoreEffect' } },
             meta: {},
             updatedAt: new Date('2026-01-01T00:00:00Z'),
         };
@@ -275,6 +275,7 @@ describe('battle router orchestration', () => {
         expect(response.status).toBe('queued');
         expect(battleSim.simulateCalls).toBe(1);
         expect(battleSim.lastRequesterUserId).toBe('user-1');
+        expect(battleSim.lastPayload?.scenarioEffect).toBe('event_MoreEffect');
 
         const queued = await caller.battle.getSimulation({ jobId: response.jobId });
         expect(queued.status).toBe('queued');
@@ -284,6 +285,48 @@ describe('battle router orchestration', () => {
         const completed = await caller.battle.getSimulation({ jobId: response.jobId });
         expect(completed.status).toBe('completed');
         expect(completed.payload?.result).toBe(true);
+    });
+
+    it('uses the stored scenario effect even when a client sends a same-named field', async () => {
+        const battleSim = new QueuedBattleSimTransport();
+        const state: WorldStateRow = {
+            id: 1,
+            scenarioCode: 'default',
+            currentYear: 200,
+            currentMonth: 1,
+            tickSeconds: 600,
+            config: { environment: { scenarioEffect: 'event_MoreEffect' } },
+            meta: {},
+            updatedAt: new Date('2026-01-01T00:00:00Z'),
+        };
+        const caller = appRouter.createCaller(buildContext({ state, battleSim }));
+        const maliciousRequest = {
+            ...buildBattleRequest(),
+            scenarioEffect: 'event_StrongAttacker',
+        } as ReturnType<typeof buildBattleRequest>;
+
+        await expect(caller.battle.simulate(maliciousRequest)).resolves.toMatchObject({ status: 'queued' });
+        expect(battleSim.lastPayload?.scenarioEffect).toBe('event_MoreEffect');
+    });
+
+    it('rejects an unknown stored scenario effect before queuing the simulation', async () => {
+        const battleSim = new QueuedBattleSimTransport();
+        const state: WorldStateRow = {
+            id: 1,
+            scenarioCode: 'default',
+            currentYear: 200,
+            currentMonth: 1,
+            tickSeconds: 600,
+            config: { environment: { scenarioEffect: 'event_Missing' } },
+            meta: {},
+            updatedAt: new Date('2026-01-01T00:00:00Z'),
+        };
+        const caller = appRouter.createCaller(buildContext({ state, battleSim }));
+
+        await expect(caller.battle.simulate(buildBattleRequest())).rejects.toThrow(
+            'Unknown scenario effect: event_Missing'
+        );
+        expect(battleSim.simulateCalls).toBe(0);
     });
 
     it('requires login, allows a user without a general, and does not open an input-event transaction', async () => {

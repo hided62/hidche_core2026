@@ -25,6 +25,20 @@ const withProjectedTraceMeta = (trace: CanonicalTurnCommandTrace): CanonicalTurn
     after: withProjectedGeneralMeta(trace.after),
 });
 
+const referenceRunnerEnvironment = (workspaceRoot: string, stackDirectory: string): NodeJS.ProcessEnv => {
+    const compareSourceRoot = process.env.REF_COMPARE_SOURCE_ROOT;
+    return {
+        ...process.env,
+        TURN_DIFFERENTIAL_STACK_DIR: stackDirectory,
+        ...(compareSourceRoot
+            ? {
+                  TURN_DIFFERENTIAL_APP_DIR: path.resolve(compareSourceRoot),
+                  TURN_DIFFERENTIAL_RUNTIME_DIR: path.join(workspaceRoot, 'ref/sam'),
+              }
+            : {}),
+    };
+};
+
 export const findTurnDifferentialWorkspaceRoot = (start: string): string | null => {
     let current = path.resolve(start);
     while (true) {
@@ -82,8 +96,7 @@ export const runReferenceTurnCommandTrace = (workspaceRoot: string, fixturePath:
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
         env: {
-            ...process.env,
-            TURN_DIFFERENTIAL_STACK_DIR: stackDirectory,
+            ...referenceRunnerEnvironment(workspaceRoot, stackDirectory),
         },
     });
     return withProjectedTraceMeta(JSON.parse(stdout) as CanonicalTurnCommandTrace);
@@ -101,8 +114,7 @@ export const runReferenceTurnCommandTraceRequest = (
         encoding: 'utf8',
         stdio: ['pipe', 'pipe', 'pipe'],
         env: {
-            ...process.env,
-            TURN_DIFFERENTIAL_STACK_DIR: stackDirectory,
+            ...referenceRunnerEnvironment(workspaceRoot, stackDirectory),
         },
     });
     return withProjectedTraceMeta(JSON.parse(stdout) as CanonicalTurnCommandTrace);

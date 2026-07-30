@@ -108,6 +108,33 @@ const unitSet: UnitSetDefinition = {
 };
 
 describe('reserved turn crew type wiring', () => {
+    it('derives scenario modules from the stored scenario config and keeps them before items', async () => {
+        const env = buildCommandEnv(
+            {
+                ...scenarioConfig,
+                environment: {
+                    ...scenarioConfig.environment,
+                    scenarioEffect: 'event_MoreEffect',
+                },
+            },
+            unitSet
+        );
+
+        await buildReservedTurnDefinitions({
+            env,
+            commandProfile: { general: ['휴식'], nation: ['휴식'] },
+            defaultActionKey: '휴식',
+        });
+
+        expect(env.scenarioEffect).toBe('event_MoreEffect');
+        const scenarioGeneral = env.generalActionModules?.at(-2);
+        const scenarioWar = env.warActionModules?.at(-2);
+        const attacker = { isAttacker: () => true } as unknown as WarUnitGeneral;
+        const defender = { isAttacker: () => false } as unknown as WarUnitGeneral;
+        expect(scenarioGeneral?.onCalcDomestic?.({ general }, '상업', 'score', 10)).toBe(20);
+        expect(scenarioWar?.getWarPowerMultiplier?.({ general }, attacker, defender)).toEqual([1.4, 0.7143]);
+    });
+
     it('installs the crew action router before inherit and item handlers', async () => {
         const env = buildCommandEnv(scenarioConfig, unitSet);
 
@@ -221,9 +248,9 @@ describe('reserved turn crew type wiring', () => {
             100,
             100
         );
-        expect(
-            warPipeline.getWarPowerMultiplier(attacker.getActionContext(), attacker, defender)
-        ).toEqual([1.284, 0.93]);
+        expect(warPipeline.getWarPowerMultiplier(attacker.getActionContext(), attacker, defender)).toEqual([
+            1.284, 0.93,
+        ]);
         expect(warPipeline.onCalcStat(attacker.getActionContext(), 'bonusTrain', 100)).toBe(105);
     });
 });

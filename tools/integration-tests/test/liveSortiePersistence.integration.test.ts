@@ -13,6 +13,7 @@ import {
 } from '@sammo-ts/game-engine/turn/reservedTurnStore.js';
 import { loadMapDefinitionByName } from '@sammo-ts/game-engine/scenario/mapLoader.js';
 import { loadUnitSetDefinitionByName } from '@sammo-ts/game-engine/scenario/unitSetLoader.js';
+import { loadTurnWorldFromDatabase } from '@sammo-ts/game-engine/turn/worldLoader.js';
 import { createGamePostgresConnector, type GamePrismaClient, type InputJsonValue } from '@sammo-ts/infra';
 
 import {
@@ -49,7 +50,7 @@ const assertDedicatedDatabase = (rawUrl: string): void => {
     }
 };
 
-const readFixture = (fixtureName: string): TurnCommandFixtureRequest => {
+const readFixture = (fixtureName: string, scenarioEffect?: string): TurnCommandFixtureRequest => {
     const fixturePath = path.join(
         workspaceRoot!,
         `docker_compose_files/reference/fixtures/turn-differential/${fixtureName}`
@@ -64,6 +65,7 @@ const readFixture = (fixtureName: string): TurnCommandFixtureRequest => {
             world: {
                 ...fixture.setup?.world,
                 hiddenSeed: 'turn-command-differential-seed',
+                ...(scenarioEffect ? { scenarioEffect } : {}),
             },
             generals: fixture.setup?.generals?.map((general) => ({
                 ...general,
@@ -117,6 +119,42 @@ integration('live sortie PostgreSQL persistence retry', () => {
         await disconnect?.();
     });
 
+    it('rejects an unknown persisted scenario effect before turn execution', async () => {
+        await db.worldState.create({
+            data: {
+                id: 1,
+                scenarioCode: 'invalid-scenario-effect',
+                currentYear: 180,
+                currentMonth: 1,
+                tickSeconds: 600,
+                config: asJson({
+                    stat: {
+                        total: 300,
+                        min: 10,
+                        max: 100,
+                        npcTotal: 150,
+                        npcMax: 50,
+                        npcMin: 10,
+                        chiefMin: 65,
+                    },
+                    iconPath: '',
+                    map: {},
+                    const: {},
+                    environment: {
+                        mapName: 'che',
+                        unitSet: 'che',
+                        scenarioEffect: 'event_Missing',
+                    },
+                }),
+                meta: {},
+            },
+        });
+
+        await expect(loadTurnWorldFromDatabase({ databaseUrl: databaseUrl! })).rejects.toThrow(
+            'world_state.config is invalid'
+        );
+    });
+
     it.each([
         ['conquest and nation collapse', 'live-sortie-conquest.json'],
         ['collapsed nation conflict cleanup', 'live-sortie-collapse-conflict.json'],
@@ -127,15 +165,25 @@ integration('live sortie PostgreSQL persistence retry', () => {
         ['emergency capital', 'live-sortie-emergency-capital.json'],
         ['conflict arbitration', 'live-sortie-conflict-arbitration.json'],
         ['tied conflict', 'live-sortie-conflict-tie.json'],
+        ['StrongAttacker scenario effect', 'live-sortie-multiple-defenders.json', 'event_StrongAttacker'],
     ])(
         '%s rolls back a lost lease and flushes exactly once on retry',
-        async (_label, fixtureName) => {
-            const request = readFixture(fixtureName);
+        async (_label, fixtureName, scenarioEffect?: string) => {
+            const request = readFixture(fixtureName, scenarioEffect);
             const reference = runReferenceTurnCommandTraceRequest(
                 workspaceRoot!,
                 request as unknown as Record<string, unknown>
             );
             const expected = await runCoreTurnCommandTrace(request, reference.before);
+            if (scenarioEffect) {
+                expect(expected.rng).toEqual(reference.rng);
+                expect(
+                    reference.after.logs.some((entry) => typeof entry.text === 'string' && entry.text.includes('진격'))
+                ).toBe(true);
+                expect(
+                    expected.after.logs.some((entry) => typeof entry.text === 'string' && entry.text.includes('진격'))
+                ).toBe(true);
+            }
             const coreArgs = resolveCoreTurnCommandArgs(request);
             const unitSet = await loadUnitSetDefinitionByName('che');
             const map = await loadMapDefinitionByName('che');
@@ -431,6 +479,8 @@ integration('live sortie PostgreSQL persistence retry', () => {
                     revision: committedRevision.revision,
                     leaseOwner: committedRevision.leaseOwner,
                 });
+                const reloaded = await loadTurnWorldFromDatabase({ databaseUrl: databaseUrl! });
+                expect(reloaded.snapshot.scenarioConfig.environment.scenarioEffect).toBe(scenarioEffect ?? null);
             } finally {
                 await hooks.close();
             }

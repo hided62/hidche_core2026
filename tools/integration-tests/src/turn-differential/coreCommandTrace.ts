@@ -2,6 +2,7 @@ import { LiteHashDRBG, RandUtil, type RNG } from '@sammo-ts/common';
 import {
     GENERAL_TURN_COMMAND_KEYS,
     NATION_TURN_COMMAND_KEYS,
+    normalizeScenarioEffect,
     type MapDefinition,
     type Nation,
     type TurnCommandProfile,
@@ -51,6 +52,7 @@ export interface TurnCommandFixtureRequest {
             year?: number;
             month?: number;
             hiddenSeed?: string;
+            scenarioEffect?: string | null;
             staticEventHandlers?: Record<string, string[]>;
         };
         isolateWorld?: boolean;
@@ -428,7 +430,13 @@ export const buildCoreTurnCommandWorldInput = (
                     ? { staticEventHandlers: request.setup.world.staticEventHandlers }
                     : {}),
             },
-            environment: { mapName: map.id, unitSet: unitSet.id },
+            environment: {
+                mapName: map.id,
+                unitSet: unitSet.id,
+                ...(request.setup?.world?.scenarioEffect !== undefined
+                    ? { scenarioEffect: normalizeScenarioEffect(request.setup.world.scenarioEffect) }
+                    : {}),
+            },
         },
         scenarioMeta: {
             title: '턴 명령 차등',
