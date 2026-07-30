@@ -1,9 +1,11 @@
 import { createGatewayPostgresConnector } from '@sammo-ts/infra';
 import { isRecord } from '@sammo-ts/common';
 
-export type GatewayAdminActionStatus = 'REQUESTED' | 'APPLIED' | 'FAILED' | 'IGNORED';
+export type GatewayAdminActionStatus = 'REQUESTED' | 'PARTIAL' | 'APPLIED' | 'FAILED' | 'IGNORED';
 
 export interface GatewayAdminActionRecord {
+    id?: string;
+    profileName?: string;
     action?: string;
     requestedAt?: string;
     durationMinutes?: number | null;
@@ -79,12 +81,71 @@ export const createGatewayAdminActionConsumer = async (
     let timer: NodeJS.Timeout | null = null;
     let inFlight = false;
 
+    const pollRuntimeActions = async (): Promise<void> => {
+        const pending = await prisma.gatewayRuntimeAction.findMany({
+            where: {
+                profileName: options.profileName,
+                status: { in: ['REQUESTED', 'PARTIAL'] },
+                OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: new Date() } }],
+            },
+            orderBy: { createdAt: 'asc' },
+        });
+        for (const action of pending) {
+            const actionRecord: GatewayAdminActionRecord = {
+                id: action.id,
+                profileName: action.profileName,
+                action: action.action,
+                requestedAt: action.createdAt.toISOString(),
+                durationMinutes: action.durationMinutes,
+                scheduledAt: action.scheduledAt?.toISOString() ?? null,
+                reason: action.reason,
+                status: action.status,
+                handledAt: action.handledAt?.toISOString() ?? null,
+                handler: action.handler,
+                detail: action.detail,
+            };
+            let result: GatewayAdminActionResult;
+            try {
+                result = await options.handler(actionRecord);
+            } catch (error) {
+                result = {
+                    status: 'PARTIAL',
+                    detail: error instanceof Error ? error.message : String(error),
+                };
+            }
+            if (result.status === 'REQUESTED') {
+                continue;
+            }
+            const terminal = result.status !== 'PARTIAL';
+            const updated = await prisma.gatewayRuntimeAction.updateMany({
+                where: {
+                    id: action.id,
+                    status: { in: ['REQUESTED', 'PARTIAL'] },
+                },
+                data: {
+                    status: result.status,
+                    detail: result.detail ?? null,
+                    handler: 'turn-daemon',
+                    handledAt: terminal ? new Date() : null,
+                    attempts: { increment: 1 },
+                    nextAttemptAt: terminal
+                        ? null
+                        : new Date(Date.now() + Math.min(60_000, 1_000 * 2 ** Math.min(action.attempts, 6))),
+                },
+            });
+            if (terminal && updated.count > 0) {
+                await options.onActionApplied?.(actionRecord, result);
+            }
+        }
+    };
+
     const pollOnce = async (): Promise<void> => {
         if (inFlight) {
             return;
         }
         inFlight = true;
         try {
+            await pollRuntimeActions();
             const profile = await prisma.gatewayProfile.findUnique({
                 where: { profileName: options.profileName },
             });

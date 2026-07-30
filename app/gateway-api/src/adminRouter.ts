@@ -860,12 +860,27 @@ export const adminRouter = router({
     profiles: router({
         list: adminProcedure.query(async ({ ctx }) => {
             const profiles = await ctx.profiles.listProfiles();
+            const runtimeActions = await ctx.prisma.gatewayRuntimeAction.findMany({
+                where: {
+                    profileName: { in: profiles.map((profile) => profile.profileName) },
+                },
+                orderBy: { createdAt: 'desc' },
+            });
+            const runtimeActionsByProfile = new Map<string, typeof runtimeActions>();
+            for (const action of runtimeActions) {
+                const bucket = runtimeActionsByProfile.get(action.profileName) ?? [];
+                if (bucket.length < 10) {
+                    bucket.push(action);
+                    runtimeActionsByProfile.set(action.profileName, bucket);
+                }
+            }
             const runtimeStates = await ctx.orchestrator.listRuntimeStates(
                 profiles.map((profile) => profile.profileName)
             );
             const runtimeMap = new Map(runtimeStates.map((state) => [state.profileName, state]));
             return profiles.map((profile) => ({
                 ...profile,
+                runtimeActions: runtimeActionsByProfile.get(profile.profileName) ?? [],
                 runtime: runtimeMap.get(profile.profileName) ?? {
                     profileName: profile.profileName,
                     apiRunning: false,
@@ -1251,6 +1266,12 @@ export const adminRouter = router({
                         message: 'scheduledAt is required for scheduled reset.',
                     });
                 }
+                if (input.action !== 'RESET_SCHEDULED' && input.scheduledAt) {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: 'scheduledAt is supported only for scheduled reset.',
+                    });
+                }
                 const profile = await ctx.profiles.getProfile(input.profileName);
                 if (!profile) {
                     throw new TRPCError({
@@ -1305,6 +1326,36 @@ export const adminRouter = router({
                         code: 'FORBIDDEN',
                         message: 'Profile management permission is required.',
                     });
+                }
+
+                if (input.action === 'OPEN_SURVEY') {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: '설문은 게임 내 설문 관리 화면에서 생성해 주세요.',
+                    });
+                }
+
+                if (input.action === 'ACCELERATE' || input.action === 'DELAY') {
+                    try {
+                        const runtimeAction = await ctx.prisma.gatewayRuntimeAction.create({
+                            data: {
+                                profileName: input.profileName,
+                                action: input.action,
+                                durationMinutes: input.durationMinutes,
+                                reason: input.reason,
+                                requestedBy: adminAuth.user.id,
+                            },
+                        });
+                        return { ok: true, action: runtimeAction };
+                    } catch (error) {
+                        if (!isUniqueConstraintError(error)) {
+                            throw error;
+                        }
+                        throw new TRPCError({
+                            code: 'CONFLICT',
+                            message: '이 프로필의 이전 시간 조정 요청이 아직 처리 중입니다.',
+                        });
+                    }
                 }
 
                 const statusMap = {

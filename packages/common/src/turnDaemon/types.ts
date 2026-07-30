@@ -51,6 +51,12 @@ export type TurnDaemonCommand =
     | { type: 'pause'; requestId?: string; reason?: string }
     | { type: 'resume'; requestId?: string; reason?: string }
     | { type: 'shutdown'; requestId?: string; reason?: string }
+    | {
+          type: 'shiftSchedule';
+          requestId?: string;
+          actionId: string;
+          deltaMinutes: number;
+      }
     | { type: 'getStatus'; requestId?: string }
     | { type: 'troopCreate'; requestId?: string; generalId: number; troopName: string }
     | { type: 'troopJoin'; requestId?: string; generalId: number; troopId: number }
@@ -212,6 +218,22 @@ export type TurnDaemonCommandResult =
           type: 'commandRejected';
           ok: false;
           commandType: TurnDaemonCommand['type'];
+          reason: string;
+      }
+    | {
+          type: 'shiftSchedule';
+          ok: true;
+          actionId: string;
+          deltaMinutes: number;
+          lastTurnTime: string;
+          shiftedGenerals: number;
+          shiftedAuctions: number;
+          checkpoint?: TurnCheckpoint;
+      }
+    | {
+          type: 'shiftSchedule';
+          ok: false;
+          actionId: string;
           reason: string;
       }
     | {

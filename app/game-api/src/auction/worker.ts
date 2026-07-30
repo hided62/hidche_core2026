@@ -2,6 +2,7 @@ import {
     createGamePostgresConnector,
     createRedisConnector,
     GamePrisma,
+    type GamePrismaClient,
     resolvePostgresConfigFromEnv,
     resolveRedisConfigFromEnv,
 } from '@sammo-ts/infra';
@@ -48,6 +49,50 @@ const getNextDueMs = async (redis: RedisTimerClient, timerKey: string): Promise<
     return next[0]?.score ?? null;
 };
 
+export const processDueAuctionId = async (options: {
+    db: GamePrismaClient;
+    redis: RedisTimerClient;
+    timerKey: string;
+    historyKey: string;
+    id: string;
+    nowMs: number;
+    sendCommand: (command: { type: 'auctionFinalize'; auctionId: number }) => Promise<unknown>;
+}): Promise<'FINALIZING' | 'RESCHEDULED' | 'IGNORED'> => {
+    const { db, redis, timerKey, historyKey, id, nowMs, sendCommand } = options;
+    const auctionId = Number(id);
+    if (!Number.isFinite(auctionId)) {
+        return 'IGNORED';
+    }
+    const now = new Date(nowMs);
+    const updated = await db.$executeRaw(
+        GamePrisma.sql`
+            UPDATE auction
+            SET status = 'FINALIZING',
+                finalizing_at = ${now},
+                updated_at = ${now}
+            WHERE id = ${auctionId}
+              AND status = 'OPEN'
+              AND close_at <= ${now}
+        `
+    );
+
+    if (updated > 0) {
+        await redis.zAdd(historyKey, [{ score: nowMs, value: id }]);
+        await sendCommand({ type: 'auctionFinalize', auctionId });
+        return 'FINALIZING';
+    }
+
+    const current = await db.auction.findFirst({
+        where: { id: auctionId, status: 'OPEN' },
+        select: { closeAt: true },
+    });
+    if (!current) {
+        return 'IGNORED';
+    }
+    await redis.zAdd(timerKey, [{ score: current.closeAt.getTime(), value: String(auctionId) }]);
+    return 'RESCHEDULED';
+};
+
 export const runAuctionWorker = async (): Promise<void> => {
     const config = resolveGameApiConfigFromEnv();
     const postgres = createGamePostgresConnector(resolvePostgresConfigFromEnv({ schema: config.profile }));
@@ -84,32 +129,16 @@ export const runAuctionWorker = async (): Promise<void> => {
 
         const dueIds = await popDueAuctionIds(redis.client, keys.timerKey, nowMs, 100);
         if (dueIds.length > 0) {
-            const now = new Date(nowMs);
-            await redis.client.zAdd(
-                keys.historyKey,
-                dueIds.map((id) => ({ score: nowMs, value: id }))
-            );
             for (const id of dueIds) {
-                const auctionId = Number(id);
-                if (!Number.isFinite(auctionId)) {
-                    continue;
-                }
-
-                const updated = await postgres.prisma.$executeRaw(
-                    GamePrisma.sql`
-                        UPDATE auction
-                        SET status = 'FINALIZING',
-                            finalizing_at = ${now},
-                            updated_at = ${now}
-                        WHERE id = ${auctionId}
-                          AND status = 'OPEN'
-                          AND close_at <= ${now}
-                    `
-                );
-
-                if (updated > 0) {
-                    await daemonTransport.sendCommand({ type: 'auctionFinalize', auctionId });
-                }
+                await processDueAuctionId({
+                    db: postgres.prisma,
+                    redis: redis.client,
+                    timerKey: keys.timerKey,
+                    historyKey: keys.historyKey,
+                    id,
+                    nowMs,
+                    sendCommand: (command) => daemonTransport.sendCommand(command),
+                });
             }
             continue;
         }

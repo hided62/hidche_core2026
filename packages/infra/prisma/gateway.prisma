@@ -45,6 +45,14 @@ enum GatewayOperationStatus {
   CANCELLED
 }
 
+enum GatewayRuntimeActionStatus {
+  REQUESTED
+  PARTIAL
+  APPLIED
+  FAILED
+  IGNORED
+}
+
 enum GatewaySourceMode {
   BRANCH
   COMMIT
@@ -113,30 +121,54 @@ model LegacyRootKeyValue {
 }
 
 model GatewayProfile {
-  profileName      String               @id @map("profile_name")
+  profileName      String                 @id @map("profile_name")
   profile          String
   scenario         String
-  apiPort          Int                  @map("api_port")
+  apiPort          Int                    @map("api_port")
   status           GatewayProfileStatus
-  buildStatus      GatewayBuildStatus   @default(IDLE) @map("build_status")
-  buildCommitSha   String?              @map("build_commit_sha")
-  buildWorkspace   String?              @map("build_workspace")
-  buildLastUsedAt  DateTime?            @map("build_last_used_at")
-  preopenAt        DateTime?            @map("preopen_at")
-  openAt           DateTime?            @map("open_at")
-  scheduledStartAt DateTime?            @map("scheduled_start_at")
-  buildRequestedAt DateTime?            @map("build_requested_at")
-  buildStartedAt   DateTime?            @map("build_started_at")
-  buildCompletedAt DateTime?            @map("build_completed_at")
-  buildError       String?              @map("build_error")
-  lastError        String?              @map("last_error")
-  meta             Json                 @default(dbgenerated("'{}'::jsonb"))
-  createdAt        DateTime             @default(now()) @map("created_at")
-  updatedAt        DateTime             @updatedAt @map("updated_at")
+  buildStatus      GatewayBuildStatus     @default(IDLE) @map("build_status")
+  buildCommitSha   String?                @map("build_commit_sha")
+  buildWorkspace   String?                @map("build_workspace")
+  buildLastUsedAt  DateTime?              @map("build_last_used_at")
+  preopenAt        DateTime?              @map("preopen_at")
+  openAt           DateTime?              @map("open_at")
+  scheduledStartAt DateTime?              @map("scheduled_start_at")
+  buildRequestedAt DateTime?              @map("build_requested_at")
+  buildStartedAt   DateTime?              @map("build_started_at")
+  buildCompletedAt DateTime?              @map("build_completed_at")
+  buildError       String?                @map("build_error")
+  lastError        String?                @map("last_error")
+  meta             Json                   @default(dbgenerated("'{}'::jsonb"))
+  createdAt        DateTime               @default(now()) @map("created_at")
+  updatedAt        DateTime               @updatedAt @map("updated_at")
   operations       GatewayOperation[]
+  runtimeActions   GatewayRuntimeAction[]
 
   @@unique([profile, scenario])
   @@map("gateway_profile")
+}
+
+model GatewayRuntimeAction {
+  id              String                     @id @default(uuid())
+  profileName     String                     @map("profile_name")
+  profile         GatewayProfile             @relation(fields: [profileName], references: [profileName], onDelete: Cascade)
+  action          String
+  durationMinutes Int?                       @map("duration_minutes")
+  scheduledAt     DateTime?                  @map("scheduled_at")
+  reason          String?
+  requestedBy     String                     @map("requested_by")
+  status          GatewayRuntimeActionStatus @default(REQUESTED)
+  detail          String?
+  handler         String?
+  handledAt       DateTime?                  @map("handled_at")
+  attempts        Int                        @default(0)
+  nextAttemptAt   DateTime?                  @map("next_attempt_at")
+  createdAt       DateTime                   @default(now()) @map("created_at")
+  updatedAt       DateTime                   @updatedAt @map("updated_at")
+
+  @@index([profileName, status, createdAt])
+  @@index([profileName, createdAt])
+  @@map("gateway_runtime_action")
 }
 
 model GatewayOperation {

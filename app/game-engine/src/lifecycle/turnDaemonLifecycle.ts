@@ -276,30 +276,36 @@ export class TurnDaemonLifecycle {
         const executeHandler = async (
             context?: TurnDaemonCommandExecutionContext
         ): Promise<TurnDaemonCommandResult> => {
-            const execute = async (): Promise<TurnDaemonCommandResult> => {
-                const handled = this.commandHandler ? await this.commandHandler.handle(command, context) : null;
-                return (
-                    handled ?? {
-                        type: 'commandRejected',
-                        ok: false,
-                        commandType: command.type,
-                        reason: '턴 데몬이 명령을 처리할 수 없습니다.',
-                    }
-                );
-            };
-            return this.stateManager ? this.stateManager.transaction(execute) : execute();
+            const handled = this.commandHandler ? await this.commandHandler.handle(command, context) : null;
+            return (
+                handled ?? {
+                    type: 'commandRejected',
+                    ok: false,
+                    commandType: command.type,
+                    reason: '턴 데몬이 명령을 처리할 수 없습니다.',
+                }
+            );
         };
         try {
-            if (command.requestId && this.hooks?.executeCommand) {
-                result = await this.hooks.executeCommand(command.requestId, executeHandler);
-                committedByExecutionBoundary = true;
-            } else {
-                result = await executeHandler();
-            }
+            const executeAndCommit = async (): Promise<TurnDaemonCommandResult> => {
+                let nextResult: TurnDaemonCommandResult;
+                if (command.requestId && this.hooks?.executeCommand) {
+                    nextResult = await this.hooks.executeCommand(command.requestId, executeHandler);
+                    committedByExecutionBoundary = true;
+                } else {
+                    nextResult = await executeHandler();
+                }
+                if (!committedByExecutionBoundary && command.requestId && this.hooks?.commitCommand) {
+                    await this.hooks.commitCommand(command.requestId, nextResult);
+                }
+                return nextResult;
+            };
+            result = this.stateManager
+                ? await this.stateManager.transaction(executeAndCommit)
+                : await executeAndCommit();
         } catch (error) {
-            // A handler may already have changed the in-memory world. Do not commit
-            // either those changes or the inbox completion marker after an exception.
-            // Pausing forces a reload/retry instead of acknowledging a partial event.
+            // The state-manager boundary includes the durable command commit, so a
+            // database/fencing failure restores every in-memory mutation as well.
             this.status.state = 'paused';
             this.status.paused = true;
             this.errorPaused = true;
@@ -308,17 +314,11 @@ export class TurnDaemonLifecycle {
             return;
         }
 
-        if (!committedByExecutionBoundary && command.requestId && this.hooks?.commitCommand) {
-            try {
-                await this.hooks.commitCommand(command.requestId, result);
-            } catch (error) {
-                this.status.state = 'paused';
-                this.status.paused = true;
-                this.errorPaused = true;
-                this.status.lastError = error instanceof Error ? error.message : 'Unknown input event commit error.';
-                await this.hooks.onRunError?.(error);
-                return;
-            }
+        if (result.type === 'shiftSchedule' && result.ok) {
+            this.status.lastTurnTime = result.lastTurnTime;
+            this.status.checkpoint = result.checkpoint;
+            await this.stateStore.saveCheckpoint(result.checkpoint);
+            await this.resolveNextRunTime();
         }
 
         if (this.commandResponder && command.requestId) {

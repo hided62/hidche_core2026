@@ -76,6 +76,16 @@ type AdminProfile = {
     };
     buildCommitSha?: string;
     meta: Record<string, unknown>;
+    runtimeActions: Array<{
+        id: string;
+        action: string;
+        durationMinutes: number | null;
+        status: 'REQUESTED' | 'PARTIAL' | 'APPLIED' | 'FAILED' | 'IGNORED';
+        detail: string | null;
+        handler: string | null;
+        handledAt: string | null;
+        createdAt: string;
+    }>;
 };
 
 type ScenarioNationPreview = {
@@ -235,7 +245,7 @@ type AdminClient = {
                 durationMinutes?: number;
                 scheduledAt?: string;
                 reason?: string;
-            }) => Promise<{ ok: boolean }>;
+            }) => Promise<{ ok: boolean; action?: AdminProfile['runtimeActions'][number] }>;
         };
     };
 };
@@ -290,9 +300,33 @@ const profileActions = ref<
     >
 >({});
 const profileActionStatus = ref<Record<string, string>>({});
+const profileActionSubmitting = ref<Record<string, boolean>>({});
 const scenarioCatalogs = ref<Record<string, ScenarioCatalogState>>({});
 const profileInstalls = ref<Record<string, InstallFormState>>({});
 const profileInstallStatus = ref<Record<string, string>>({});
+
+const runtimeActionPending = (profile: AdminProfile): boolean => {
+    return profile.runtimeActions.some((action) => action.status === 'REQUESTED' || action.status === 'PARTIAL');
+};
+
+const validDuration = (profileName: string): boolean => {
+    const value = Number(profileActions.value[profileName]?.durationMinutes);
+    return Number.isInteger(value) && value >= 1 && value <= 1440;
+};
+
+const runtimeActionStatusClass = (status: AdminProfile['runtimeActions'][number]['status']): string => {
+    if (status === 'APPLIED') return 'text-emerald-400';
+    if (status === 'FAILED') return 'text-red-400';
+    if (status === 'IGNORED') return 'text-orange-400';
+    if (status === 'PARTIAL') return 'text-amber-400';
+    return 'text-zinc-400';
+};
+
+const isRuntimeActionTerminal = (status: AdminProfile['runtimeActions'][number]['status']): boolean =>
+    status === 'APPLIED' || status === 'FAILED' || status === 'IGNORED';
+
+const formatRuntimeActionTime = (value: string | null): string =>
+    value ? new Date(value).toLocaleString('ko-KR') : '';
 
 const autorunOptionLabels = [
     { key: 'develop', label: '내정' },
@@ -557,6 +591,13 @@ const loadProfiles = async () => {
         result.forEach((profile) => {
             ensureProfileBuffers(profile);
             ensureProfileInstallBuffers(profile);
+            const latest = profile.runtimeActions[0];
+            if (latest && isRuntimeActionTerminal(latest.status)) {
+                profileActionStatus.value = {
+                    ...profileActionStatus.value,
+                    [profile.profileName]: '',
+                };
+            }
         });
         profiles.value = result;
         const refs = new Set<string>();
@@ -575,6 +616,32 @@ const loadProfiles = async () => {
         };
     } finally {
         profilesLoading.value = false;
+    }
+};
+
+const refreshRuntimeActionUntilTerminal = async (profileName: string, actionId: string): Promise<void> => {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+        const current = profiles.value
+            .find((profile) => profile.profileName === profileName)
+            ?.runtimeActions.find((action) => action.id === actionId);
+        if (current && isRuntimeActionTerminal(current.status)) {
+            profileActionStatus.value = {
+                ...profileActionStatus.value,
+                [profileName]: '',
+            };
+            return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
+        try {
+            const result = await adminClient.profiles.list.query();
+            result.forEach((profile) => {
+                ensureProfileBuffers(profile);
+                ensureProfileInstallBuffers(profile);
+            });
+            profiles.value = result;
+        } catch {
+            // 일시적인 조회 실패는 다음 bounded poll에서 다시 확인합니다.
+        }
     }
 };
 
@@ -663,13 +730,26 @@ const updateProfileMeta = async (profileName: string) => {
 };
 
 const requestProfileAction = async (profileName: string, action: AdminAction) => {
+    if (profileActionSubmitting.value[profileName]) {
+        return;
+    }
+    profileActionSubmitting.value = {
+        ...profileActionSubmitting.value,
+        [profileName]: true,
+    };
     const actionState = profileActions.value[profileName];
-    const durationMinutes = actionState?.durationMinutes ? Number(actionState.durationMinutes) : undefined;
-    const durationValue = durationMinutes && durationMinutes > 0 ? durationMinutes : undefined;
-    const scheduledAt = actionState?.scheduledAt ? new Date(actionState.scheduledAt).toISOString() : undefined;
+    const timeShiftAction = action === 'ACCELERATE' || action === 'DELAY';
+    const durationMinutes =
+        timeShiftAction && actionState?.durationMinutes ? Number(actionState.durationMinutes) : undefined;
+    const durationValue = durationMinutes && validDuration(profileName) ? durationMinutes : undefined;
+    const scheduledAt =
+        action === 'RESET_SCHEDULED' && actionState?.scheduledAt
+            ? new Date(actionState.scheduledAt).toISOString()
+            : undefined;
     const reason = actionState?.reason.trim() || undefined;
+    let runtimeActionId: string | undefined;
     try {
-        await adminClient.profiles.requestAction.mutate({
+        const result = await adminClient.profiles.requestAction.mutate({
             profileName,
             action,
             durationMinutes: durationValue,
@@ -678,13 +758,28 @@ const requestProfileAction = async (profileName: string, action: AdminAction) =>
         });
         profileActionStatus.value = {
             ...profileActionStatus.value,
-            [profileName]: `요청 완료: ${action}`,
+            [profileName]:
+                result.action && (action === 'ACCELERATE' || action === 'DELAY')
+                    ? `접수됨 · ${result.action.status} · ${action} ${result.action.durationMinutes ?? ''}분`
+                    : `요청 접수: ${action}`,
         };
+        if (result.action) {
+            runtimeActionId = result.action.id;
+            await loadProfiles();
+        }
     } catch (error) {
         profileActionStatus.value = {
             ...profileActionStatus.value,
             [profileName]: `요청 실패: ${action}`,
         };
+    } finally {
+        profileActionSubmitting.value = {
+            ...profileActionSubmitting.value,
+            [profileName]: false,
+        };
+    }
+    if (runtimeActionId) {
+        void refreshRuntimeActionUntilTerminal(profileName, runtimeActionId);
     }
 };
 
@@ -1414,14 +1509,33 @@ onMounted(() => {
                                         class="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
                                         placeholder="사유 / 메모"
                                     />
-                                    <label class="text-xs text-zinc-400">가속/연기 (분)</label>
+                                    <label
+                                        class="text-xs text-zinc-400"
+                                        :for="`runtime-duration-${profile.profileName}`"
+                                    >
+                                        가속/연기 (분)
+                                    </label>
                                     <input
+                                        :id="`runtime-duration-${profile.profileName}`"
                                         v-model="profileActions[profile.profileName].durationMinutes"
                                         type="number"
                                         min="1"
                                         max="1440"
+                                        step="1"
+                                        :aria-describedby="`runtime-duration-help-${profile.profileName}`"
+                                        :aria-invalid="
+                                            profileActions[profile.profileName].durationMinutes
+                                                ? !validDuration(profile.profileName)
+                                                : undefined
+                                        "
                                         class="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-white"
                                     />
+                                    <div
+                                        :id="`runtime-duration-help-${profile.profileName}`"
+                                        class="text-xs text-zinc-500"
+                                    >
+                                        1~1440 사이의 정수로 입력해 주세요.
+                                    </div>
                                     <label class="text-xs text-zinc-400">리셋 예약</label>
                                     <input
                                         v-model="profileActions[profile.profileName].scheduledAt"
@@ -1448,13 +1562,23 @@ onMounted(() => {
                                             중지
                                         </button>
                                         <button
-                                            class="bg-orange-600 hover:bg-orange-500 text-black font-semibold px-3 py-2 rounded"
+                                            class="bg-orange-600 hover:bg-orange-500 text-black font-semibold px-3 py-2 rounded disabled:opacity-40 disabled:cursor-not-allowed"
+                                            :disabled="
+                                                profileActionSubmitting[profile.profileName] ||
+                                                !validDuration(profile.profileName) ||
+                                                runtimeActionPending(profile)
+                                            "
                                             @click="requestProfileAction(profile.profileName, 'ACCELERATE')"
                                         >
                                             가속
                                         </button>
                                         <button
-                                            class="bg-yellow-600 hover:bg-yellow-500 text-black font-semibold px-3 py-2 rounded"
+                                            class="bg-yellow-600 hover:bg-yellow-500 text-black font-semibold px-3 py-2 rounded disabled:opacity-40 disabled:cursor-not-allowed"
+                                            :disabled="
+                                                profileActionSubmitting[profile.profileName] ||
+                                                !validDuration(profile.profileName) ||
+                                                runtimeActionPending(profile)
+                                            "
                                             @click="requestProfileAction(profile.profileName, 'DELAY')"
                                         >
                                             연기
@@ -1472,10 +1596,12 @@ onMounted(() => {
                                             리셋 예약
                                         </button>
                                         <button
-                                            class="bg-teal-700 hover:bg-teal-600 text-white font-semibold px-3 py-2 rounded"
-                                            @click="requestProfileAction(profile.profileName, 'OPEN_SURVEY')"
+                                            class="bg-zinc-800 text-zinc-500 font-semibold px-3 py-2 rounded cursor-not-allowed"
+                                            disabled
+                                            title="게임 내 설문 관리 화면에서 생성해 주세요."
+                                            :aria-describedby="`survey-action-help-${profile.profileName}`"
                                         >
-                                            설문 오픈
+                                            설문 오픈 (게임 내 관리)
                                         </button>
                                         <button
                                             class="bg-black hover:bg-zinc-800 text-white font-semibold px-3 py-2 rounded col-span-2"
@@ -1487,6 +1613,47 @@ onMounted(() => {
                                     <div class="text-xs text-zinc-500">
                                         {{ profileActionStatus[profile.profileName] }}
                                     </div>
+                                    <div
+                                        v-if="profile.runtimeActions[0]"
+                                        class="rounded border border-zinc-800 bg-zinc-950 p-2 text-xs"
+                                        role="status"
+                                        aria-live="polite"
+                                    >
+                                        <div :class="runtimeActionStatusClass(profile.runtimeActions[0].status)">
+                                            {{ profile.runtimeActions[0].status }} ·
+                                            {{ profile.runtimeActions[0].action }}
+                                            {{
+                                                profile.runtimeActions[0].durationMinutes
+                                                    ? `${profile.runtimeActions[0].durationMinutes}분`
+                                                    : ''
+                                            }}
+                                        </div>
+                                        <div v-if="profile.runtimeActions[0].detail" class="mt-1 text-zinc-500">
+                                            {{ profile.runtimeActions[0].detail }}
+                                        </div>
+                                        <div
+                                            v-if="
+                                                profile.runtimeActions[0].handler || profile.runtimeActions[0].handledAt
+                                            "
+                                            class="mt-1 text-zinc-600"
+                                        >
+                                            {{ profile.runtimeActions[0].handler || '처리자 미상' }}
+                                            {{
+                                                profile.runtimeActions[0].handledAt
+                                                    ? ` · ${formatRuntimeActionTime(profile.runtimeActions[0].handledAt)}`
+                                                    : ''
+                                            }}
+                                        </div>
+                                    </div>
+                                    <div
+                                        :id="`survey-action-help-${profile.profileName}`"
+                                        class="text-xs text-zinc-500"
+                                    >
+                                        설문 생성은 해당 게임의 설문 관리 화면에서 진행해 주세요.
+                                    </div>
+                                    <button type="button" class="text-xs text-zinc-400 underline" @click="loadProfiles">
+                                        실제 처리 상태 새로고침
+                                    </button>
                                 </div>
                             </div>
 

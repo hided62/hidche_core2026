@@ -4,7 +4,7 @@ import type {
     TurnDaemonCommandExecutionContext,
     TurnDaemonCommandResult,
 } from '../lifecycle/types.js';
-import type { GamePrisma } from '@sammo-ts/infra';
+import { GamePrisma } from '@sammo-ts/infra';
 import { asRecord, JosaUtil, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 import {
     LogCategory,
@@ -440,6 +440,41 @@ async function handlePatchGeneral(
 
     world.updateGeneral(command.generalId, patch);
     return { type: 'patchGeneral', ok: true, generalId: command.generalId };
+}
+
+async function handleShiftSchedule(
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'shiftSchedule' }>
+): Promise<TurnDaemonCommandResult> {
+    if (!ctx.commandDb) {
+        return {
+            type: 'shiftSchedule',
+            ok: false,
+            actionId: command.actionId,
+            reason: '시간 조정은 데이터베이스 transaction 경계에서만 실행할 수 있습니다.',
+        };
+    }
+
+    const shifted = ctx.world.shiftSchedule(command.deltaMinutes);
+    const shiftedAuctions = await ctx.commandDb.$executeRaw(
+        GamePrisma.sql`
+            UPDATE auction
+            SET close_at = close_at + (${command.deltaMinutes} * INTERVAL '1 minute'),
+                updated_at = NOW()
+            WHERE status = 'OPEN'
+        `
+    );
+
+    return {
+        type: 'shiftSchedule',
+        ok: true,
+        actionId: command.actionId,
+        deltaMinutes: command.deltaMinutes,
+        lastTurnTime: shifted.lastTurnTime,
+        shiftedGenerals: shifted.shiftedGenerals,
+        shiftedAuctions,
+        checkpoint: ctx.world.getCheckpoint(),
+    };
 }
 
 async function handleTroopJoin(
@@ -1812,6 +1847,8 @@ export const createTurnDaemonCommandHandler = (options: {
             handleTournamentMatchResult(ctx, command as Extract<TurnDaemonCommand, { type: 'tournamentMatchResult' }>),
         patchGeneral: (command) =>
             handlePatchGeneral(ctx, command as Extract<TurnDaemonCommand, { type: 'patchGeneral' }>),
+        shiftSchedule: (command) =>
+            handleShiftSchedule(ctx, command as Extract<TurnDaemonCommand, { type: 'shiftSchedule' }>),
     };
 
     return {

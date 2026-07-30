@@ -12,7 +12,11 @@ import { createPasswordEnvelopeService } from '../src/auth/passwordEnvelope.js';
 
 const buildCaller = async (
     createOperation: GatewayProfileRepository['createOperation'],
-    options: { adminRoles?: string[]; firstUserIsAdmin?: boolean } = {}
+    options: {
+        adminRoles?: string[];
+        firstUserIsAdmin?: boolean;
+        runtimeActionCreateError?: unknown;
+    } = {}
 ) => {
     const users = createInMemoryUserRepository();
     const admin = await users.createUser({
@@ -28,6 +32,7 @@ const buildCaller = async (
     });
     const session = await sessions.createSession({ ...admin, roles: adminRoles });
     const createdInputs: GatewayOperationCreateInput[] = [];
+    const createdRuntimeActions: Array<Record<string, unknown>> = [];
     const flushes: Array<{ userId: string; reason?: string }> = [];
     const profile = {
         profileName: 'che:2',
@@ -104,10 +109,29 @@ const buildCaller = async (
                 appUser: {
                     findFirst: async () => ({ id: options.firstUserIsAdmin === false ? 'bootstrap-user' : admin.id }),
                 },
+                gatewayRuntimeAction: {
+                    create: async ({ data }: { data: Record<string, unknown> }) => {
+                        if (options.runtimeActionCreateError) {
+                            throw options.runtimeActionCreateError;
+                        }
+                        createdRuntimeActions.push(data);
+                        return {
+                            id: '68f1f0e4-3b95-4aeb-9925-c7e93caf1ba7',
+                            ...data,
+                            status: 'REQUESTED',
+                            detail: null,
+                            handler: null,
+                            handledAt: null,
+                            scheduledAt: null,
+                            createdAt: new Date('2026-07-30T01:00:00.000Z'),
+                            updatedAt: new Date('2026-07-30T01:00:00.000Z'),
+                        };
+                    },
+                },
             } as unknown as GatewayPrismaClient,
         })
     );
-    return { caller, createdInputs, users, admin, flushes };
+    return { caller, createdInputs, createdRuntimeActions, users, admin, flushes };
 };
 
 describe('admin operation API', () => {
@@ -149,6 +173,90 @@ describe('admin operation API', () => {
                 action: 'STOP',
             })
         ).rejects.toMatchObject({ code: 'CONFLICT' });
+    });
+});
+
+describe('admin runtime clock action API', () => {
+    const unusedCreateOperation: GatewayProfileRepository['createOperation'] = async () => {
+        throw new Error('not used');
+    };
+
+    it('creates a first-class clock action owned by the authenticated administrator', async () => {
+        const harness = await buildCaller(unusedCreateOperation);
+
+        const result = await harness.caller.admin.profiles.requestAction({
+            profileName: 'che:2',
+            action: 'ACCELERATE',
+            durationMinutes: 15,
+            reason: '운영 일정 조정',
+        });
+
+        expect(result).toMatchObject({
+            ok: true,
+            action: {
+                action: 'ACCELERATE',
+                durationMinutes: 15,
+                status: 'REQUESTED',
+            },
+        });
+        expect(harness.createdRuntimeActions).toEqual([
+            {
+                profileName: 'che:2',
+                action: 'ACCELERATE',
+                durationMinutes: 15,
+                reason: '운영 일정 조정',
+                requestedBy: harness.admin.id,
+            },
+        ]);
+    });
+
+    it('reports a conflict when another clock action is still pending', async () => {
+        const harness = await buildCaller(unusedCreateOperation, {
+            runtimeActionCreateError: { code: 'P2002' },
+        });
+
+        await expect(
+            harness.caller.admin.profiles.requestAction({
+                profileName: 'che:2',
+                action: 'DELAY',
+                durationMinutes: 5,
+            })
+        ).rejects.toMatchObject({
+            code: 'CONFLICT',
+            message: '이 프로필의 이전 시간 조정 요청이 아직 처리 중입니다.',
+        });
+    });
+
+    it('rejects a scheduled clock shift instead of silently applying it immediately', async () => {
+        const harness = await buildCaller(unusedCreateOperation);
+
+        await expect(
+            harness.caller.admin.profiles.requestAction({
+                profileName: 'che:2',
+                action: 'ACCELERATE',
+                durationMinutes: 15,
+                scheduledAt: '2026-07-31T01:00:00.000Z',
+            })
+        ).rejects.toMatchObject({
+            code: 'BAD_REQUEST',
+            message: 'scheduledAt is supported only for scheduled reset.',
+        });
+        expect(harness.createdRuntimeActions).toEqual([]);
+    });
+
+    it('rejects OPEN_SURVEY instead of reporting a false success', async () => {
+        const harness = await buildCaller(unusedCreateOperation);
+
+        await expect(
+            harness.caller.admin.profiles.requestAction({
+                profileName: 'che:2',
+                action: 'OPEN_SURVEY',
+            })
+        ).rejects.toMatchObject({
+            code: 'BAD_REQUEST',
+            message: '설문은 게임 내 설문 관리 화면에서 생성해 주세요.',
+        });
+        expect(harness.createdRuntimeActions).toEqual([]);
     });
 });
 

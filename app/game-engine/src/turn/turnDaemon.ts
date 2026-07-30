@@ -76,6 +76,7 @@ import {
 import { buildCommandEnv } from './reservedTurnCommands.js';
 import { DatabaseTurnDaemonLease, TurnDaemonLeaseUnavailableError } from '../lifecycle/databaseTurnDaemonLease.js';
 import { EngineStateManager } from './engineStateManager.js';
+import { applyRuntimeClockShift } from './runtimeClockShift.js';
 
 export interface TurnDaemonRuntimeOptions {
     profile: string;
@@ -755,9 +756,23 @@ const createTurnDaemonRuntimeWithLease = async (
             pollIntervalMs: options.adminActionIntervalMs,
             handler: async (action) => {
                 const reason = action.reason ?? `admin:${action.action ?? 'action'}`;
+                if (turnDaemonLease?.isLost()) {
+                    return { status: 'REQUESTED', detail: 'turn-daemon lease 재획득을 기다리는 중입니다.' };
+                }
                 if (action.action === 'RESET_NOW' || action.action === 'RESET_SCHEDULED') {
                     // 리셋은 오케스트레이터에서 빌드+재기동으로 처리한다.
                     return { status: 'REQUESTED', detail: 'waiting for orchestrator reset' };
+                }
+                if (action.action === 'ACCELERATE' || action.action === 'DELAY') {
+                    if (!commandConnector) {
+                        return { status: 'FAILED', detail: '게임 command database 연결이 없습니다.' };
+                    }
+                    return applyRuntimeClockShift({
+                        action,
+                        profileName: options.profileName!,
+                        db: commandConnector.prisma,
+                        redis: redisConnector?.client,
+                    });
                 }
                 switch (action.action) {
                     case 'RESUME':

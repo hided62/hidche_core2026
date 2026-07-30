@@ -305,8 +305,8 @@ describe('input event atomicity', () => {
             lastError: 'injected commit failure',
         });
         expect(publishCommandResult).not.toHaveBeenCalled();
-        expect(engineState).toEqual({ value: 'calculated' });
-        expect(stateManager.getRevision()).toBe(1);
+        expect(engineState).toEqual({ value: 'before' });
+        expect(stateManager.getRevision()).toBe(0);
 
         await lifecycle.stop('done');
         await loop;

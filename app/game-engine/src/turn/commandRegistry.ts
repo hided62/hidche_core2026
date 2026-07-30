@@ -270,6 +270,12 @@ const zShutdown = z.object({
     reason: z.string().optional(),
 });
 
+const zShiftSchedule = z.object({
+    type: z.literal('shiftSchedule'),
+    actionId: z.string().uuid(),
+    deltaMinutes: z.number().int().min(-1440).max(1440).refine((value) => value !== 0),
+});
+
 const normalizeAuctionFinalize: CommandNormalizer<'auctionFinalize'> = (envelope) => {
     const command = parseWith(zAuctionFinalize, envelope.command);
     if (!command) {
@@ -506,6 +512,14 @@ const normalizeShutdown: CommandNormalizer<'shutdown'> = (envelope) => {
     return command ? { ...command, requestId: envelope.requestId } : null;
 };
 
+const normalizeShiftSchedule: CommandNormalizer<'shiftSchedule'> = (envelope) => {
+    const command = parseWith(zShiftSchedule, envelope.command);
+    if (!command) {
+        return null;
+    }
+    return { ...command, requestId: envelope.requestId };
+};
+
 const normalizers: CommandNormalizerMap = {
     auctionFinalize: normalizeAuctionFinalize,
     auctionOpen: normalizeAuctionOpen,
@@ -538,6 +552,7 @@ const normalizers: CommandNormalizerMap = {
     pause: normalizePause,
     resume: normalizeResume,
     shutdown: normalizeShutdown,
+    shiftSchedule: normalizeShiftSchedule,
 };
 
 export const normalizeTurnDaemonCommand = (envelope: TurnDaemonCommandEnvelope): TurnDaemonCommand | null => {

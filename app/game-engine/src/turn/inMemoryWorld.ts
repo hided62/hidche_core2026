@@ -782,6 +782,78 @@ export class InMemoryTurnWorld {
         };
     }
 
+    shiftSchedule(deltaMinutes: number): { shiftedGenerals: number; lastTurnTime: string } {
+        if (!Number.isInteger(deltaMinutes) || deltaMinutes === 0) {
+            throw new Error('Schedule shift must be a non-zero integer number of minutes.');
+        }
+        const deltaMs = deltaMinutes * 60_000;
+        const shiftDate = (date: Date): Date => new Date(date.getTime() + deltaMs);
+        const shiftMetaDate = (value: unknown): unknown => {
+            if (typeof value !== 'string' || !value.trim()) {
+                return value;
+            }
+            if (value.includes('T')) {
+                const shifted = shiftDate(new Date(value));
+                return Number.isNaN(shifted.getTime()) ? value : shifted.toISOString();
+            }
+            const match = /^(\d{4})-(\d{2})-(\d{2})[ ](\d{2}):(\d{2}):(\d{2})(\.\d{1,6})?$/.exec(value);
+            if (!match) {
+                return value;
+            }
+            const parts = match.slice(1).map(Number);
+            const shifted = new Date(
+                Date.UTC(parts[0]!, parts[1]! - 1, parts[2]!, parts[3]!, parts[4]!, parts[5]!) + deltaMs
+            );
+            return (
+                [
+                    shifted.getUTCFullYear().toString().padStart(4, '0'),
+                    (shifted.getUTCMonth() + 1).toString().padStart(2, '0'),
+                    shifted.getUTCDate().toString().padStart(2, '0'),
+                ].join('-') +
+                ' ' +
+                [
+                    shifted.getUTCHours().toString().padStart(2, '0'),
+                    shifted.getUTCMinutes().toString().padStart(2, '0'),
+                    shifted.getUTCSeconds().toString().padStart(2, '0'),
+                ].join(':') +
+                (match[7] ?? '')
+            );
+        };
+
+        const nextLastTurnTime = shiftDate(this.state.lastTurnTime);
+        const nextMeta = {
+            ...this.state.meta,
+            lastTurnTime: nextLastTurnTime.toISOString(),
+            turntime: shiftMetaDate(this.state.meta.turntime),
+            starttime: shiftMetaDate(this.state.meta.starttime),
+            tnmt_time: shiftMetaDate(this.state.meta.tnmt_time),
+        };
+        this.state = {
+            ...this.state,
+            lastTurnTime: nextLastTurnTime,
+            meta: nextMeta,
+        };
+
+        for (const general of this.generals.values()) {
+            this.updateGeneral(general.id, { turnTime: shiftDate(general.turnTime) });
+        }
+        for (const auction of this.pendingNeutralAuctions) {
+            auction.closeAt = shiftDate(auction.closeAt);
+        }
+        if (this.checkpoint) {
+            const checkpointTime = shiftDate(new Date(this.checkpoint.turnTime));
+            this.checkpoint = {
+                ...this.checkpoint,
+                turnTime: checkpointTime.toISOString(),
+            };
+        }
+
+        return {
+            shiftedGenerals: this.generals.size,
+            lastTurnTime: nextLastTurnTime.toISOString(),
+        };
+    }
+
     getNextNationId(): number {
         const meta = this.state.meta as Record<string, unknown>;
         let lastId = (meta.lastNationId as number | undefined) ?? 0;

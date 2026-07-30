@@ -57,9 +57,18 @@ runtime role을 삭제하고 PID와 명령행 및 daemon 종료를 확인한 뒤
 - auth header, role, sanction과 owner별 HTTP transport
 - ref/core command snapshot, RNG trace와 persistence
 - auction, tournament와 worker transaction
+- 관리자 시간 가속·연기의 durable action, checkpoint, Redis 부분 재시도와
+  경매 timer race
 
 실제 포함 suite는 `tools/run-conditional-integration.sh`, 각 package의
 `package.json`, `*.integration.test.ts`를 기준으로 확인합니다.
+
+관리자 시간 조정의 PostgreSQL 경계는
+`runtimeClockShiftPersistence.integration.test.ts`, gateway action
+`PARTIAL → APPLIED` 경계는 `gatewayRuntimeAction.integration.test.ts`입니다.
+후자는 `GATEWAY_RUNTIME_ACTION_DATABASE_URL`, 전자는
+`INPUT_EVENT_DATABASE_URL`이 없으면 skip되므로 결과에서 실제 실행 여부를
+따로 확인해 주세요.
 
 ## 안전 경계
 

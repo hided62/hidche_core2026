@@ -26,12 +26,22 @@ Gateway API는 다음 저장 경계를 사용합니다.
 - `AppUser`, `SystemSetting`: 계정과 정책
 - `GatewayProfile`: profile, scenario, port, 상태와 build 결과
 - `GatewayOperation`: build/reset/open/close 등 실행 요청과 결과
+- `GatewayRuntimeAction`: profile별 시간 가속·연기 요청, 부분 적용과 최종 결과
 - Redis: gateway session, OAuth 임시 상태, flush channel
 
 Orchestrator는 `GatewayOperation`을 claim하고 source ref를 commit으로
 해결합니다. `WorkspaceManager`가 commit별 worktree를 준비하고 build runner가
 artifact를 만들며 `Pm2ProcessManager`가 profile process를 조정합니다.
 재시작 시 DB 상태와 process 상태를 reconciliation합니다.
+
+시간 가속·연기는 일반 profile meta log가 아니라 UUID가 있는
+`GatewayRuntimeAction`으로 접수합니다. Profile별 `REQUESTED`/`PARTIAL`은
+DB partial unique index로 한 건만 허용합니다. Turn daemon은 자신의 lease를
+확인한 뒤 action ID로 결정적인 `InputEvent`를 만들고, world·전 장수·OPEN
+경매·checkpoint를 같은 PostgreSQL transaction에서 이동합니다. Commit 뒤
+경매 timer와 활성 토너먼트 시각을 Redis에 idempotent하게 투영합니다.
+Redis 단계가 실패하면 action은 `PARTIAL`과 backoff 상태로 남고 DB 시간은
+다시 이동하지 않습니다.
 
 ## Game API 실행
 
@@ -120,3 +130,10 @@ Gateway operation은 source commit, worktree, build artifact와 process를
 외부 공개 경로는 `/gateway/`, `/che/`, `/hwe/`입니다. frontend base,
 tRPC, SSE, upload와 direct navigation은 해당 prefix를 유지합니다.
 `/image/*`는 Caddy의 별도 파일 시스템 경로입니다.
+
+Game과 gateway가 같은 PostgreSQL database/schema를 사용할 때 migration은
+반드시 game 다음 gateway 순서로 적용합니다. 두 migration history는 하나의
+`_prisma_migrations`를 공유하므로 새 migration directory 이름은 양쪽을
+통틀어 고유해야 합니다. 과거 양쪽의
+`20260727000000_add_legacy_migration_archive` 이름 충돌은 checksum을 바꾸지
+않고 별도의 idempotent reconciliation migration으로 보정합니다.
