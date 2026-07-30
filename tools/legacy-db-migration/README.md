@@ -38,9 +38,9 @@ After reviewing the JSON counts and excluded-table reasons, add
 `GATEWAY_DATABASE_URL` or `GAME_DATABASE_URL` and repeat with `--apply`.
 
 Kakao members retain their OAuth ID, email, and OAuth metadata.
-`kakao_verified_at` and `kakao_grace_started_at` are set to the migration time,
-which renews verification at cutover. Legacy password hashes and salts are
-retained and upgraded to Argon2id after the first successful login when
+`kakao_verified_at` and `kakao_grace_started_at` are set to the migration time.
+Legacy password hashes and salts are retained and upgraded to Argon2id after
+the first successful login when
 `GATEWAY_LEGACY_PASSWORD_GLOBAL_SALT` is configured in gateway-api.
 
 Only tables present in the checked ref schemas are eligible. Extra tables found

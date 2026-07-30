@@ -38,8 +38,8 @@
 순서를 소유하도록 작성해 주세요. 같은 key를 여러 확장이 설정한다면
 `extends`의 뒤쪽 확장이 우선하며, 시나리오 본문이 항상 최종 우선권을 가집니다.
 
-`default.json`의 능력치·아이콘 기본값은 확장 합성이 끝난 뒤 기존과 같은
-파서 단계에서 적용됩니다. `parseScenarioDefinition()`은 이미 합성된 객체를
+`default.json`의 능력치·아이콘 기본값은 확장 합성이 끝난 뒤
+파서에서 적용됩니다. `parseScenarioDefinition()`은 합성된 객체를
 정규화하는 함수이므로 파일을 직접 읽는 코드에서는 사용하지 말아 주세요.
 실제 설치는 `loadScenarioDefinitionById()`, Git commit 미리보기는
 `composeScenarioResource()`를 거쳐 같은 합성 규칙을 사용합니다.
@@ -55,8 +55,8 @@
 | `extensions/initial-events/expanded.json`           | 전 도시 교역 초기화 이벤트               |
 | `extensions/items/buyable-war-special-uniques.json` | 구매 가능한 전특과 해당 유니크 아이템 풀 |
 
-기존 시나리오 70개가 위 확장을 사용합니다. 특히 구매 가능한 전특/유니크 표를
-가지던 10개 시나리오는 같은 item 확장 하나를 참조합니다.
+시나리오 80개 중 70개가 확장을 사용합니다. 구매 가능한 전특·유니크 표를
+사용하는 10개 시나리오는 같은 item 확장을 참조합니다.
 
 ## 검증
 
@@ -70,6 +70,6 @@ pnpm --filter @sammo-ts/gateway-api test scenarioCatalog.test.ts
 ```
 
 `validate:resources`는 하위 `extensions/**/*.json`도 재귀적으로 검사합니다.
-`scenarioLoader.test.ts`는 추적 중인 시나리오 80개를 실제 합성 로더로 모두
-읽습니다. 기존 시나리오를 확장으로 이관할 때에는 변경 전 JSON과 합성 결과를
-전수 구조 비교하여 이벤트 배열 순서와 `const` 값이 같은지도 확인해 주세요.
+`scenarioLoader.test.ts`는 시나리오 80개를 합성 로더로 모두 읽습니다. 합성
+구조를 바꿀 때에는 기준 JSON과 결과를 전수 구조 비교하여 이벤트 배열 순서와
+`const` 값이 같은지 확인해 주세요.

@@ -1,55 +1,37 @@
-# TypeScript Version Policy
+# TypeScript 버전 정책
 
-## Decision
+## 버전
 
-The `core2026` rewrite workspace standardizes on exactly TypeScript `6.0.2`.
-TypeScript 7 must not be introduced into individual workspace packages while
-this policy is active.
+Workspace 전체는 TypeScript `6.0.2`를 정확한 버전으로 사용합니다.
+`pnpm-workspace.yaml`의 override가 transitive resolution에도 같은 버전을
+적용합니다.
 
-This is a temporary compatibility decision. TypeScript 7 currently does not
-provide all compiler/tooling APIs required by this repository and its dependent
-tools, which has caused typecheck, lint, and comparison-tool failures. The
-workspace will remain on TypeScript 6 until those APIs and the surrounding
-tooling support are available.
+적용 범위는 다음과 같습니다.
 
-## Scope
-
-This policy applies to every pnpm workspace package under:
-
+- 루트 개발 도구
 - `app/*`
 - `packages/*`
 - `tools/*`
-- the root development toolchain
 
-All direct `typescript` dependencies in that scope must use the exact version
-`6.0.2`. Do not use a caret range, package-local TypeScript 5 fallback, a
-TypeScript 7 override, or an alias to another TypeScript version. A single
-version must be resolved in `pnpm-lock.yaml`; the root `pnpm-workspace.yaml`
-override enforces the same version for transitive TypeScript peer resolution.
+Package별 다른 TypeScript 버전, caret range, alias와 fallback compiler를
+추가하지 않습니다. `pnpm-lock.yaml`에는 승인된 한 버전만 resolve되어야
+합니다. Ref PHP 저장소 `../ref/sam`의 도구 체인은 이 workspace 정책에
+포함되지 않습니다.
 
-The PHP runtime and its historical frontend under `legacy/` are not pnpm
-workspace packages and retain their existing toolchain. This exception must not
-be used by rewrite packages.
+공유 `tsconfig.base.json`은 TypeScript 6의 `baseUrl` deprecation 경고에
+대해 `ignoreDeprecations: "6.0"`을 사용합니다. Package별 suppression을
+추가하지 않습니다.
 
-TypeScript 6 reports the existing `baseUrl` configuration as deprecated. The
-shared `tsconfig.base.json` sets `ignoreDeprecations` to `6.0` so the current
-path mapping continues to work during this compatibility period. Removing or
-replacing `baseUrl` remains part of the TypeScript 7 upgrade work; packages must
-not add their own suppression values.
+## 버전 변경
 
-## TypeScript 7 Upgrade Gate
+Compiler major version은 workspace 전체를 한 변경으로 갱신합니다. 다음
+항목을 모두 확인해 주세요.
 
-Moving to TypeScript 7 requires a deliberate workspace-wide change. Upgrade
-only after all of the following are true:
+1. 저장소 script가 사용하는 compiler API
+2. `typescript-eslint`, `vue-tsc`, tsdown, Vite와 Prisma 도구 지원
+3. 모든 manifest와 lockfile의 단일 version resolution
+4. `CI=1 pnpm typecheck`, `pnpm lint`, `pnpm build`, `pnpm test`
+5. `pnpm check:legacy:general`, `pnpm check:legacy:nation`
+6. 별도 compiler 설치나 alias 없이 실행되는 비교 도구
 
-1. The compiler/tooling APIs used by repository scripts are available.
-2. `typescript-eslint`, `vue-tsc`, `tsdown`, Vite integrations, and other direct
-   TypeScript consumers officially support the selected TypeScript 7 release.
-3. `CI=1 pnpm typecheck`, `pnpm lint`, `pnpm build`, and relevant tests pass.
-4. Legacy comparison tools, including `pnpm check:legacy:nation`, pass without
-   a fallback TypeScript installation or version alias.
-5. Every workspace manifest and `pnpm-lock.yaml` is updated together so only
-   the approved TypeScript 7 version is resolved for the rewrite workspace.
-
-Until this gate is satisfied, failures caused by running TypeScript 7 are not a
-supported baseline and must not be worked around by mixing compiler versions.
+검증되지 않은 compiler major version을 package 한 곳에만 적용하지 않습니다.
