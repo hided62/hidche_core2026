@@ -33,8 +33,10 @@ pnpm test:e2e:frontend-legacy
 
 When another worktree occupies the default ports, set
 `FRONTEND_PARITY_GATEWAY_PORT`, `FRONTEND_PARITY_GAME_PORT`, and
-`FRONTEND_PARITY_GAME_URL`. `FRONTEND_PARITY_ARTIFACT_DIR` retains the
-tournament and betting screenshots.
+`FRONTEND_PARITY_GAME_URL`. If the core2026 worktree is outside the workspace
+that owns `image/`, set `FRONTEND_PARITY_IMAGE_ROOT` to that ignored image
+checkout. `FRONTEND_PARITY_ARTIFACT_DIR` retains the tournament and betting
+screenshots.
 
 Run the focused simulator fixture with:
 

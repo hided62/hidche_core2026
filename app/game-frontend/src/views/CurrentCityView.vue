@@ -361,7 +361,7 @@ const generalImage = (general: General) => {
     margin: 1em 0;
 }
 .back-row {
-    margin-top: 14px;
+    margin-top: 16px;
 }
 .stats {
     margin-top: 0;

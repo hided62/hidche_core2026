@@ -20,7 +20,7 @@ import { trpc } from '../utils/trpc';
 
 const session = useSessionStore();
 const dashboard = useMainDashboardStore();
-const isMobile = useMediaQuery('(max-width: 991px)');
+const isMobile = useMediaQuery('(max-width: 1024px)');
 
 const mobileTabs = [
     { key: 'map', label: '지도' },

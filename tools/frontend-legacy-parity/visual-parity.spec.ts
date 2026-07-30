@@ -7,7 +7,11 @@ import { generateKeyPairSync } from 'node:crypto';
 import { canonicalFrontendFixture as fixture } from './fixtures/canonical';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const imageRoots = [resolve(repositoryRoot, '../image'), resolve(repositoryRoot, '../../image')];
+const imageRoots = [
+    ...(process.env.FRONTEND_PARITY_IMAGE_ROOT ? [resolve(process.env.FRONTEND_PARITY_IMAGE_ROOT)] : []),
+    resolve(repositoryRoot, '../image'),
+    resolve(repositoryRoot, '../../image'),
+];
 const artifactRoot = process.env.FRONTEND_PARITY_ARTIFACT_DIR;
 const passwordPublicKey = generateKeyPairSync('rsa', {
     modulusLength: 2048,

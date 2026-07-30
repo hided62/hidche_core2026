@@ -6,7 +6,11 @@ import { fileURLToPath } from 'node:url';
 const response = (data: unknown) => ({ result: { data } });
 const artifactRoot = process.env.CITY_PARITY_ARTIFACT_DIR;
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
-const imageRoots = [resolve(repositoryRoot, '../image'), resolve(repositoryRoot, '../../image')];
+const imageRoots = [
+    ...(process.env.FRONTEND_PARITY_IMAGE_ROOT ? [resolve(process.env.FRONTEND_PARITY_IMAGE_ROOT)] : []),
+    resolve(repositoryRoot, '../image'),
+    resolve(repositoryRoot, '../../image'),
+];
 const readImage = async (relativePath: string): Promise<Buffer> => {
     if (relativePath.includes('..')) throw new Error(`Unsafe fixture image path: ${relativePath}`);
     for (const root of imageRoots) {
@@ -126,10 +130,25 @@ const install = async (page: Page, mode: 'member' | 'wanderer' | 'admin' = 'memb
             if (operation === 'general.me') return response(generalContext);
             if (operation === 'world.getMap') return response(map);
             if (operation === 'turns.getCommandTable') return response({ general: [], nation: [] });
-            if (operation === 'turns.reserved.getGeneral') return response([]);
+            if (operation === 'turns.reserved.getGeneral' || operation === 'turns.reserved.getNation') {
+                return response({ turns: [], revision: 0 });
+            }
             if (operation === 'messages.getRecent') return response(emptyMessages);
+            if (operation === 'messages.getContacts') return response({ nation: [] });
+            if (operation === 'general.getRecentRecords')
+                return response({ global: [], general: [], history: [] });
+            if (operation === 'general.getFrontStatus')
+                return response({
+                    onlineUserCount: 1,
+                    onlineNations: '아국(1)',
+                    onlineGenerals: '장수',
+                    nationNotice: '',
+                    lastExecuted: null,
+                    latestVote: null,
+                });
             if (operation === 'board.getAccess') return response({ canMeeting: false, canSecret: false });
             if (operation === 'tournament.getState') return response({ stage: 0 });
+            if (operation === 'public.recordAccess') return response({ recorded: true });
             if (operation === 'nation.getNationInfo')
                 return response({
                     nation: {
