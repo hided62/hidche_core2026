@@ -672,6 +672,7 @@ export const appRouter = router({
                         displayName: gameSession.displayName,
                         roles: gameSession.roles,
                         createdAt: gameSession.createdAt,
+                        legacyMemberNo: gameSession.legacyMemberNo,
                     },
                     sanctions: gameSession.sanctions,
                     identity: {

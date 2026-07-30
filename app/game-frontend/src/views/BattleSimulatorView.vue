@@ -134,6 +134,7 @@ const createGeneralDraft = (overrides?: Partial<GeneralDraft>): GeneralDraft => 
         injury: 0,
         rice: 5000,
         personal: null,
+        special: null,
         special2: null,
         crew: 7000,
         crewtype: baseCrew,
@@ -193,6 +194,7 @@ const applyGeneralExport = (target: GeneralDraft, data: GeneralExport) => {
     target.injury = data.injury;
     target.rice = data.rice;
     target.personal = data.personal;
+    target.special = data.special;
     target.special2 = data.special2;
     target.crew = data.crew;
     target.crewtype = data.crewtype;
@@ -228,6 +230,7 @@ const toExportedGeneral = (general: GeneralDraft): GeneralExport => ({
     injury: general.injury,
     rice: general.rice,
     personal: general.personal,
+    special: general.special,
     special2: general.special2,
     crew: general.crew,
     crewtype: general.crewtype,
@@ -401,6 +404,7 @@ const normalizeGeneralExport = (raw: Record<string, unknown>): GeneralExport => 
     injury: readNumberValue(raw.injury, 0),
     rice: readNumberValue(raw.rice, 0),
     personal: readOptionalString(raw.personal),
+    special: readOptionalString(raw.special),
     special2: readOptionalString(raw.special2),
     crew: readNumberValue(raw.crew, 0),
     crewtype: readNumberValue(raw.crewtype, 0),
@@ -438,6 +442,7 @@ const buildGeneralPayload = (
         nation: nationId,
         turntime: timestamp,
         personal: general.personal,
+        special: general.special,
         special2: general.special2,
         crew: general.crew,
         crewtype: general.crewtype,
@@ -872,6 +877,7 @@ const applyServerGeneral = async (target: GeneralDraft, generalId: number) => {
         injury: response.general.injury,
         rice: response.general.rice,
         personal: response.general.personal,
+        special: response.general.special,
         special2: response.general.special2,
         crew: response.general.crew,
         crewtype: response.general.crewtype,

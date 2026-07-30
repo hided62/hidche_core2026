@@ -300,6 +300,16 @@ describe('battle sim processor', () => {
         expect(strong.killed).toBeGreaterThan(baseline.killed ?? 0);
     });
 
+    it('applies the event-domestic trait carried by an imported general', () => {
+        const baseline = processBattleSimJob(buildPayload('battle'));
+        const payload = buildPayload('battle');
+        payload.attackerGeneral.special = 'che_event_무쌍';
+        const eventDomestic = processBattleSimJob(payload);
+
+        expect(eventDomestic.killed).toBeGreaterThan(baseline.killed ?? 0);
+        expect(eventDomestic).not.toEqual(baseline);
+    });
+
     it('keeps StrongAttacker city combat identical but applies MoreEffect to it', () => {
         const baselinePayload = buildPayload('battle');
         baselinePayload.defenderGenerals = [];

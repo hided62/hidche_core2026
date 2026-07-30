@@ -74,6 +74,9 @@ importers:
       '@sammo-ts/common':
         specifier: workspace:*
         version: link:../../packages/common
+      '@sammo-ts/game-engine':
+        specifier: workspace:*
+        version: link:../game-engine
       '@sammo-ts/infra':
         specifier: workspace:*
         version: link:../../packages/infra

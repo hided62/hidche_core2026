@@ -5,7 +5,7 @@ import { isAfter, isValid, parseISO } from 'date-fns';
 import { z } from 'zod';
 
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
-import { procedure, router } from '../../trpc.js';
+import { authedProcedure, procedure, router } from '../../trpc.js';
 
 const parseDate = (value: string): Date | null => {
     const parsed = parseISO(value);
@@ -45,6 +45,13 @@ const verifyGatewayToken = (
 };
 
 export const authRouter = router({
+    status: authedProcedure.query(({ ctx }) => {
+        const userId = ctx.auth?.user.id;
+        if (!userId) {
+            throw new TRPCError({ code: 'UNAUTHORIZED' });
+        }
+        return { userId };
+    }),
     exchangeGatewayToken: procedure
         .input(z.object({ gatewayToken: z.string().min(1) }))
         .mutation(async ({ ctx, input }) => {

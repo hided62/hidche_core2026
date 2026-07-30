@@ -7,6 +7,7 @@ import { LiteHashDRBG, RandUtil, type RNG } from '@sammo-ts/common';
 import {
     ITEM_KEYS,
     DOMESTIC_TRAIT_KEYS,
+    EVENT_DOMESTIC_TRAIT_KEYS,
     NATION_TRAIT_KEYS,
     PERSONALITY_TRAIT_KEYS,
     WAR_TRAIT_KEYS,
@@ -450,7 +451,7 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
         expect(failures, failures.join('\n')).toEqual([]);
     });
 
-    it('matches every war, personality, and nation trait in battle', { timeout: 180_000 }, () => {
+    it('matches every event-domestic, war, personality, and nation trait in battle', { timeout: 180_000 }, () => {
         const unitSet = readJson<UnitSetDefinition>(
             path.resolve(process.cwd(), '../../resources/unitset/unitset_che.json')
         );
@@ -464,9 +465,25 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
             armTypes: { footman: 1, archer: 2, cavalry: 3, wizard: 4, siege: 5, misc: 6, castle: 0 },
         };
         const cases = [
+            ...EVENT_DOMESTIC_TRAIT_KEYS.map((key) => ({
+                kind: 'eventDomestic' as const,
+                key,
+            })),
             ...WAR_TRAIT_KEYS.map((key) => ({ kind: 'war' as const, key })),
             ...PERSONALITY_TRAIT_KEYS.map((key) => ({ kind: 'personality' as const, key })),
             ...NATION_TRAIT_KEYS.map((key) => ({ kind: 'nation' as const, key })),
+            {
+                kind: 'dualSlot' as const,
+                key: 'che_event_무쌍+che_무쌍',
+                special: 'che_event_무쌍',
+                special2: 'che_무쌍',
+            },
+            {
+                kind: 'dualSlot' as const,
+                key: 'che_event_견고+che_견고',
+                special: 'che_event_견고',
+                special2: 'che_견고',
+            },
         ];
 
         for (const entry of cases) {
@@ -478,7 +495,18 @@ describeWithReference('ref ↔ core2026 battle differential', () => {
             base.attackerGeneral.leadership = 90;
             base.attackerGeneral.strength = 85;
             base.attackerGeneral.intel = 80;
-            base.attackerGeneral.special2 = entry.kind === 'war' ? entry.key : 'None';
+            base.attackerGeneral.special =
+                entry.kind === 'dualSlot'
+                    ? entry.special
+                    : entry.kind === 'eventDomestic'
+                      ? entry.key
+                      : 'None';
+            base.attackerGeneral.special2 =
+                entry.kind === 'dualSlot'
+                    ? entry.special2
+                    : entry.kind === 'war'
+                      ? entry.key
+                      : 'None';
             base.attackerGeneral.personal = entry.kind === 'personality' ? entry.key : 'None';
             if (entry.kind === 'nation') {
                 base.attackerNation.type = entry.key;

@@ -52,6 +52,7 @@ const simulatorOptions = {
         ],
     },
     nationTypes: [{ key: 'che_중립', name: '중립', info: '특별한 효과 없음' }],
+    eventDomesticTraits: [{ key: 'che_event_신산', name: '신산', info: '계략 강화' }],
     warTraits: [{ key: 'che_필살', name: '필살', info: '필살 확률 증가' }],
     personalities: [{ key: 'che_대담', name: '대담', info: '공격적인 성격' }],
     items: { horse: [], weapon: [], book: [], item: [] },
@@ -163,6 +164,7 @@ type Fixture = {
     queueFirst?: boolean;
     pollingCount: number;
     requests: string[];
+    simulationPayloads: unknown[];
 };
 
 const installImages = async (page: Page) => {
@@ -185,8 +187,14 @@ const installApi = async (page: Page, fixture: Fixture) => {
     });
     await page.route('**/che/api/trpc/**', async (route) => {
         const operations = operationNames(route);
-        const results = operations.map((operation) => {
+        const rawRequestBody: unknown = route.request().postData() ? route.request().postDataJSON() : {};
+        const requestBody =
+            rawRequestBody && typeof rawRequestBody === 'object'
+                ? (rawRequestBody as Record<string, unknown>)
+                : {};
+        const results = operations.map((operation, operationIndex) => {
             fixture.requests.push(operation);
+            if (operation === 'auth.status') return response({ userId: 'battle-sim-user' });
             if (operation === 'lobby.info') {
                 return response({
                     year: 205,
@@ -206,6 +214,18 @@ const installApi = async (page: Page, fixture: Fixture) => {
             }
             if (operation === 'battle.getGeneralDetail') return response(importedGeneral);
             if (operation === 'battle.simulate') {
+                const rawPayload =
+                    requestBody[String(operationIndex)] ?? (operations.length === 1 ? requestBody : undefined);
+                const payload =
+                    rawPayload && typeof rawPayload === 'object'
+                        ? (rawPayload as {
+                              json?: unknown;
+                              input?: { json?: unknown };
+                          })
+                        : undefined;
+                fixture.simulationPayloads.push(
+                    payload?.json ?? payload?.input?.json ?? rawPayload
+                );
                 if (fixture.failNextSimulation) {
                     fixture.failNextSimulation = false;
                     return errorResponse(operation, '시뮬레이터 입력 오류');
@@ -244,7 +264,13 @@ const gotoSimulator = async (page: Page) => {
 };
 
 test('operates independent/game presets, imports my general, and renders battle logs', async ({ page }) => {
-    const fixture: Fixture = { hasGeneral: true, queueFirst: true, pollingCount: 0, requests: [] };
+    const fixture: Fixture = {
+        hasGeneral: true,
+        queueFirst: true,
+        pollingCount: 0,
+        requests: [],
+        simulationPayloads: [],
+    };
     await installApi(page, fixture);
     await page.setViewportSize({ width: 1280, height: 900 });
     await gotoSimulator(page);
@@ -265,6 +291,9 @@ test('operates independent/game presets, imports my general, and renders battle 
     await page.getByRole('button', { name: '내 장수를 출병자로' }).click();
     await expect(page.getByLabel('이름').first()).toHaveValue('유비');
     await expect(page.getByLabel('병사').first()).toHaveValue('4321');
+    const attackerDomesticTrait = page.getByLabel('내정특기').first();
+    await attackerDomesticTrait.selectOption('che_event_신산');
+    await expect(attackerDomesticTrait).toHaveValue('che_event_신산');
 
     const battleButton = page.getByRole('button', { name: '전투', exact: true });
     await battleButton.hover();
@@ -276,6 +305,34 @@ test('operates independent/game presets, imports my general, and renders battle 
     await expect(page.getByText('5', { exact: true })).toBeVisible();
     expect(fixture.pollingCount).toBe(2);
     expect(fixture.requests).toContain('battle.getSimulation');
+    expect(fixture.simulationPayloads[0]).toMatchObject({
+        attackerGeneral: { special: 'che_event_신산' },
+    });
+
+    const downloadPromise = page.waitForEvent('download');
+    await page.getByRole('button', { name: '모두 저장' }).click();
+    const download = await downloadPromise;
+    const downloadPath = await download.path();
+    expect(downloadPath).not.toBeNull();
+    const exportedBattle = JSON.parse(await readFile(downloadPath!, 'utf8')) as {
+        objType: string;
+        data: { attackerGeneral: { special?: string | null } };
+    };
+    expect(exportedBattle).toMatchObject({
+        objType: 'battle',
+        data: { attackerGeneral: { special: 'che_event_신산' } },
+    });
+
+    await attackerDomesticTrait.selectOption({ label: '-' });
+    await expect(attackerDomesticTrait).toHaveValue('-');
+    await page.locator('.header-actions input[type="file"]').setInputFiles(downloadPath!);
+    await expect(attackerDomesticTrait).toHaveValue('che_event_신산');
+
+    await battleButton.click();
+    await expect.poll(() => fixture.simulationPayloads.length).toBe(2);
+    expect(fixture.simulationPayloads[1]).toMatchObject({
+        attackerGeneral: { special: 'che_event_신산' },
+    });
 
     if (artifactRoot) {
         await page.screenshot({
@@ -292,6 +349,7 @@ test('keeps simulation available without a game general and preserves input afte
         failNextSimulation: true,
         pollingCount: 0,
         requests: [],
+        simulationPayloads: [],
     };
     await installApi(page, fixture);
     await page.setViewportSize({ width: 500, height: 900 });

@@ -3,6 +3,7 @@ import MainView from '../views/MainView.vue';
 import PublicView from '../views/PublicView.vue';
 import LoginView from '../views/LoginView.vue';
 import JoinView from '../views/JoinView.vue';
+import SelectGeneralView from '../views/SelectGeneralView.vue';
 import InheritView from '../views/InheritView.vue';
 import AuctionView from '../views/AuctionView.vue';
 import NationCitiesView from '../views/NationCitiesView.vue';
@@ -90,6 +91,14 @@ const routes = [
         meta: {
             requiresAuth: true,
             requiresNoGeneral: true,
+        },
+    },
+    {
+        path: '/select-general',
+        name: 'select-general',
+        component: SelectGeneralView,
+        meta: {
+            requiresAuth: true,
         },
     },
     {

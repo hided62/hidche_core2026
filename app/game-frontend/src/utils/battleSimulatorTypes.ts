@@ -23,6 +23,7 @@ export type GeneralDraft = {
     injury: number;
     rice: number;
     personal: string | null;
+    special: string | null;
     special2: string | null;
     crew: number;
     crewtype: number;
@@ -57,6 +58,7 @@ export type BattleSimOptions = {
         crewTypes: Array<{ id: number; name: string; armType: number }>;
     };
     nationTypes: Array<{ key: string; name: string; info: string }>;
+    eventDomesticTraits: Array<{ key: string; name: string; info: string }>;
     warTraits: Array<{ key: string; name: string; info: string }>;
     personalities: Array<{ key: string; name: string; info: string }>;
     items: {

@@ -10,6 +10,7 @@ export interface BattleSimGeneralPayload {
     nation: number;
     turntime: string;
     personal: string | null;
+    special?: string | null;
     special2: string | null;
     crew: number;
     crewtype: number;

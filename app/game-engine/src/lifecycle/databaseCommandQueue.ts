@@ -17,6 +17,7 @@ export class DatabaseTurnDaemonCommandQueue implements TurnDaemonControlQueue, T
     private readonly localQueue: TurnDaemonCommand[] = [];
     private readonly workerId = randomUUID();
     private readonly leaseDurationMs = 60_000;
+    private readonly maxAttempts = 3;
 
     constructor(private readonly db: GamePrismaClient) {}
 
@@ -60,6 +61,48 @@ export class DatabaseTurnDaemonCommandQueue implements TurnDaemonControlQueue, T
 
     async publishCommandResult(requestId: string, result: TurnDaemonCommandResult): Promise<void> {
         await this.complete(requestId, result);
+    }
+
+    async publishCommandError(requestId: string, error: unknown): Promise<void> {
+        const message = error instanceof Error ? error.message : 'Unknown command error.';
+        await this.db.$transaction(async (transaction) => {
+            const event = await transaction.inputEvent.findUnique({
+                where: { requestId },
+                select: {
+                    status: true,
+                    target: true,
+                    lockedBy: true,
+                    attempts: true,
+                },
+            });
+            if (
+                !event ||
+                event.target !== 'ENGINE' ||
+                event.status !== 'PROCESSING' ||
+                event.lockedBy !== this.workerId
+            ) {
+                return;
+            }
+            const terminal = event.attempts >= this.maxAttempts;
+            await transaction.inputEvent.updateMany({
+                where: {
+                    requestId,
+                    target: 'ENGINE',
+                    status: 'PROCESSING',
+                    lockedBy: this.workerId,
+                    attempts: event.attempts,
+                },
+                data: {
+                    status: terminal ? 'FAILED' : 'PENDING',
+                    processingAt: null,
+                    lockedBy: null,
+                    leaseUntil: null,
+                    completedAt: terminal ? new Date() : null,
+                    result: GamePrisma.DbNull,
+                    error: message,
+                },
+            });
+        });
     }
 
     private async claimPending(limit = 100): Promise<TurnDaemonCommand[]> {
@@ -132,13 +175,36 @@ export class DatabaseTurnDaemonCommandQueue implements TurnDaemonControlQueue, T
     }
 
     private async complete(requestId: string, result: unknown): Promise<void> {
-        await this.db.inputEvent.update({
-            where: { requestId },
+        const completed = await this.db.inputEvent.updateMany({
+            where: {
+                requestId,
+                target: 'ENGINE',
+                status: 'PROCESSING',
+                lockedBy: this.workerId,
+            },
             data: {
                 status: 'SUCCEEDED',
                 result: asJson(result),
                 completedAt: new Date(),
                 error: null,
+                lockedBy: null,
+                leaseUntil: null,
+            },
+        });
+        if (completed.count > 0) {
+            return;
+        }
+        // Database hooks commit mutation results atomically with game state and
+        // may already have set SUCCEEDED. Only the worker that still owns the
+        // lease may clear that committed row's claim metadata.
+        await this.db.inputEvent.updateMany({
+            where: {
+                requestId,
+                target: 'ENGINE',
+                status: 'SUCCEEDED',
+                lockedBy: this.workerId,
+            },
+            data: {
                 lockedBy: null,
                 leaseUntil: null,
             },

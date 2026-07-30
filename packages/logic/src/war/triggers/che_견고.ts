@@ -3,8 +3,8 @@ import { BaseWarUnitTrigger } from '@sammo-ts/logic/war/triggers.js';
 import type { WarUnit } from '@sammo-ts/logic/war/units.js';
 
 export class che_부상무효 extends BaseWarUnitTrigger {
-    constructor(unit: WarUnit) {
-        super(unit, TriggerPriority.Begin + 200);
+    constructor(unit: WarUnit, raiseType = BaseWarUnitTrigger.TYPE_NONE) {
+        super(unit, TriggerPriority.Begin + 200, raiseType);
     }
 
     protected actionWar(

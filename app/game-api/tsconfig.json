@@ -11,6 +11,12 @@
             "@sammo-ts/common/*": [
                 "../../packages/common/src/*"
             ],
+            "@sammo-ts/game-engine": [
+                "../../app/game-engine/src/index.ts"
+            ],
+            "@sammo-ts/game-engine/*": [
+                "../../app/game-engine/src/*"
+            ],
             "@sammo-ts/infra": [
                 "../../packages/infra/src/index.ts"
             ],
@@ -39,6 +45,9 @@
         },
         {
             "path": "../../packages/logic"
+        },
+        {
+            "path": "../game-engine"
         }
     ]
 }

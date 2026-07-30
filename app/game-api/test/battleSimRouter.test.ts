@@ -427,6 +427,7 @@ describe('battle simulator general import permissions', () => {
         bookCode: null,
         itemCode: null,
         personalCode: null,
+        specialCode: null,
         special2Code: null,
         meta: {},
         ...overrides,
@@ -447,6 +448,7 @@ describe('battle simulator general import permissions', () => {
         weaponCode: 'che_의천검',
         bookCode: 'che_손자병법',
         itemCode: 'che_옥새',
+        specialCode: 'che_event_신산',
         meta: {
             dex1: 10000,
             rank_warnum: 33,
@@ -483,6 +485,7 @@ describe('battle simulator general import permissions', () => {
             warnum: 33,
             killnum: 22,
             killcrew: 1111,
+            special: 'che_event_신산',
         });
 
         const redacted = await foreign.battle.getGeneralDetail({ generalId: ally.id });
@@ -499,6 +502,7 @@ describe('battle simulator general import permissions', () => {
             warnum: 0,
             killnum: 0,
             killcrew: 0,
+            special: 'che_event_신산',
         });
     });
 

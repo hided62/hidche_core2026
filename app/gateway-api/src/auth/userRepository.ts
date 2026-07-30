@@ -20,6 +20,7 @@ export interface UserRecord {
     passwordHash: string;
     passwordSalt: string;
     createdAt: string;
+    legacyMemberNo?: number;
 }
 
 export interface PublicUser {

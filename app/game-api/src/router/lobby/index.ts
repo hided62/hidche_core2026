@@ -1,6 +1,7 @@
 import { TRPCError } from '@trpc/server';
 
 import { zWorldStateConfig, zWorldStateMeta } from '../../context.js';
+import { isSelectionPoolWorld } from '../../services/selectPool.js';
 import { procedure, router } from '../../trpc.js';
 
 export const lobbyRouter = router({
@@ -27,12 +28,13 @@ export const lobbyRouter = router({
         if (ctx.auth?.user.id) {
             const general = await ctx.db.general.findFirst({
                 where: { userId: ctx.auth.user.id },
-                select: { name: true, picture: true },
+                select: { name: true, picture: true, imageServer: true },
             });
             if (general) {
                 myGeneral = {
                     name: general.name,
                     picture: general.picture,
+                    imageServer: general.imageServer,
                 };
             }
         }
@@ -51,6 +53,7 @@ export const lobbyRouter = router({
             turntime: worldState.meta.turntime ?? '',
             otherTextInfo: worldState.meta.otherTextInfo ?? '',
             isUnited: worldState.meta.isUnited ?? 0,
+            selectionPoolEnabled: isSelectionPoolWorld(rawWorldState),
             myGeneral,
         };
     }),

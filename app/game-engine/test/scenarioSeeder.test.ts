@@ -30,6 +30,12 @@ type ScenarioSeederPrismaClient = {
         count(): Promise<number>;
         findFirst(): Promise<{ age: number; startAge: number; meta: unknown } | null>;
     };
+    selectPoolEntry: {
+        count(): Promise<number>;
+        findFirst(args: {
+            orderBy: { id: 'asc' | 'desc' };
+        }): Promise<{ uniqueName: string; info: unknown } | null>;
+    };
     diplomacy: {
         count(): Promise<number>;
         findFirst(args: {
@@ -47,6 +53,10 @@ type ScenarioSeederPrismaClient = {
             currentYear: number;
             currentMonth: number;
         } | null>;
+    };
+    gameHistory: {
+        findUnique(args: { where: { serverId: string } }): Promise<{ env: unknown } | null>;
+        deleteMany(args: { where: { serverId: string } }): Promise<{ count: number }>;
     };
 };
 
@@ -251,6 +261,167 @@ describeDb('scenario database seed', () => {
             const environment = (config.environment ?? {}) as Record<string, unknown>;
             expect(environment.scenarioEffect).toBe('event_StrongAttacker');
         } finally {
+            await connector.disconnect();
+        }
+    });
+
+    test('seeds the exact scenario 903 UnderS30 selection pool', async () => {
+        await seedScenarioToDatabase({
+            scenarioId: 903,
+            databaseUrl,
+        });
+
+        const connector = createGamePostgresConnector({ url: databaseUrl });
+        await connector.connect();
+        try {
+            const prisma = connector.prisma as unknown as ScenarioSeederPrismaClient;
+            expect(await prisma.selectPoolEntry.count()).toBe(1844);
+            expect(await prisma.selectPoolEntry.findFirst({ orderBy: { id: 'asc' } })).toMatchObject({
+                uniqueName: '⑨탈곡기',
+                info: {
+                    generalName: '⑨탈곡기',
+                    specialDomestic: 'che_event_징병',
+                },
+            });
+            expect(await prisma.selectPoolEntry.findFirst({ orderBy: { id: 'desc' } })).toMatchObject({
+                uniqueName: '④야부키 나코',
+            });
+        } finally {
+            await connector.disconnect();
+        }
+    });
+
+    test('clears general lifecycle rows before reusing general ids on reseed', async () => {
+        await seedScenarioToDatabase({
+            scenarioId: 903,
+            databaseUrl,
+        });
+
+        const connector = createGamePostgresConnector({ url: databaseUrl });
+        await connector.connect();
+        try {
+            const prisma = connector.prisma;
+            const generalId = 990_903;
+            const createSelectedGeneral = async (): Promise<void> => {
+                await prisma.general.create({
+                    data: {
+                        id: generalId,
+                        userId: 'scenario-reseed-user',
+                        name: '재설치선택장수',
+                        turnTime: new Date('2026-07-30T12:00:00.000Z'),
+                    },
+                });
+            };
+            const createLifecycleRows = async (): Promise<void> => {
+                await prisma.generalTurn.create({
+                    data: {
+                        generalId,
+                        turnIdx: 0,
+                        actionCode: '휴식',
+                    },
+                });
+                await prisma.generalTurnRevision.create({
+                    data: {
+                        generalId,
+                        revision: 7,
+                    },
+                });
+                await prisma.rankData.create({
+                    data: {
+                        nationId: 0,
+                        generalId,
+                        type: 'experience',
+                        value: 123,
+                    },
+                });
+                await prisma.generalAccessLog.create({
+                    data: {
+                        generalId,
+                        userId: 'scenario-reseed-user',
+                    },
+                });
+            };
+            const expectLifecycleRows = async (count: number): Promise<void> => {
+                await expect(
+                    Promise.all([
+                        prisma.generalTurn.count({ where: { generalId } }),
+                        prisma.generalTurnRevision.count({ where: { generalId } }),
+                        prisma.rankData.count({ where: { generalId } }),
+                        prisma.generalAccessLog.count({ where: { generalId } }),
+                    ])
+                ).resolves.toEqual([count, count, count, count]);
+            };
+
+            await createSelectedGeneral();
+            await createLifecycleRows();
+            await expectLifecycleRows(1);
+
+            await seedScenarioToDatabase({
+                scenarioId: 903,
+                databaseUrl,
+            });
+            await expectLifecycleRows(0);
+            await expect(prisma.general.findUnique({ where: { id: generalId } })).resolves.toBeNull();
+
+            await createSelectedGeneral();
+            await createLifecycleRows();
+            await expectLifecycleRows(1);
+
+            await seedScenarioToDatabase({
+                scenarioId: 903,
+                databaseUrl,
+            });
+            await expectLifecycleRows(0);
+        } finally {
+            await connector.disconnect();
+        }
+    });
+
+    test('persists a private hidden seed without copying it into game history', async () => {
+        const envName = 'INTEGRATION_WORLD_SEED';
+        const originalSeed = process.env[envName];
+        const serverId = 'scenario-seeder-hidden-seed-test';
+        const connector = createGamePostgresConnector({ url: databaseUrl });
+        try {
+            process.env[envName] = 'scenario-seeder-explicit-hidden-seed';
+            await seedScenarioToDatabase({
+                scenarioId: 903,
+                databaseUrl,
+                installOptions: { serverId },
+            });
+
+            await connector.connect();
+            const prisma = connector.prisma as unknown as ScenarioSeederPrismaClient;
+            const explicitWorld = await prisma.worldState.findFirst();
+            expect(explicitWorld?.meta).toMatchObject({
+                hiddenSeed: 'scenario-seeder-explicit-hidden-seed',
+            });
+            const explicitHistory = await prisma.gameHistory.findUnique({ where: { serverId } });
+            expect((explicitHistory?.env as { meta?: Record<string, unknown> })?.meta).not.toHaveProperty(
+                'hiddenSeed'
+            );
+
+            delete process.env[envName];
+            await seedScenarioToDatabase({
+                scenarioId: 903,
+                databaseUrl,
+                installOptions: { serverId },
+            });
+            const randomWorld = await prisma.worldState.findFirst();
+            const randomSeed = (randomWorld?.meta as Record<string, unknown>)?.hiddenSeed;
+            expect(randomSeed).toMatch(/^[0-9a-f]{32}$/);
+            expect(randomSeed).not.toBe('scenario-seeder-explicit-hidden-seed');
+            const randomHistory = await prisma.gameHistory.findUnique({ where: { serverId } });
+            expect((randomHistory?.env as { meta?: Record<string, unknown> })?.meta).not.toHaveProperty(
+                'hiddenSeed'
+            );
+            await prisma.gameHistory.deleteMany({ where: { serverId } });
+        } finally {
+            if (originalSeed === undefined) {
+                delete process.env[envName];
+            } else {
+                process.env[envName] = originalSeed;
+            }
             await connector.disconnect();
         }
     });

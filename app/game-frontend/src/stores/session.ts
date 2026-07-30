@@ -101,7 +101,7 @@ export const useSessionStore = defineStore('session', {
         },
         async refreshGeneralStatus() {
             if (!this.gameToken) {
-                this.status = 'authed';
+                this.status = this.sessionToken ? 'authed' : 'public';
                 return;
             }
             if (!isAccessToken(this.gameToken)) {
@@ -111,11 +111,44 @@ export const useSessionStore = defineStore('session', {
                     return;
                 }
             }
+
+            try {
+                await gameTrpc.auth.status.query();
+            } catch {
+                this.setGameToken(null);
+                if (this.sessionToken && this.profile) {
+                    try {
+                        const issued = await gatewayTrpc.auth.issueGameSession.mutate({
+                            sessionToken: this.sessionToken,
+                            profile: this.profile,
+                        });
+                        this.setGameToken(issued.gameToken);
+                        if (await this.exchangeGatewayToken()) {
+                            await gameTrpc.auth.status.query();
+                        } else {
+                            throw new Error('Game token exchange failed.');
+                        }
+                    } catch {
+                        this.setGameToken(null);
+                        this.error = 'game_session_invalid';
+                        this.status = 'public';
+                        return;
+                    }
+                } else {
+                    this.error = 'game_session_invalid';
+                    this.status = 'public';
+                    return;
+                }
+            }
+
             try {
                 const lobby = await gameTrpc.lobby.info.query();
                 this.status = lobby.myGeneral ? 'general' : 'authed';
             } catch {
-                this.error = 'game_status_unavailable';
+                this.error = 'game_lobby_unavailable';
+                if (this.status === 'unknown' || this.status === 'public') {
+                    this.status = 'authed';
+                }
             }
         },
         async exchangeGatewayToken(): Promise<boolean> {

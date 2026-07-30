@@ -194,6 +194,10 @@ const loadConfig = async () => {
     error.value = null;
     try {
         const config = await trpc.join.getConfig.query();
+        if (config.selectionPool.enabled) {
+            await router.replace({ name: 'select-general' });
+            return;
+        }
         joinConfig.value = config;
         form.value.name = config.user.displayName || '';
         applyBalancedStats();

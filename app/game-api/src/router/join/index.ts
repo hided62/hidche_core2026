@@ -2,8 +2,8 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { randomBytes } from 'node:crypto';
 
-import type { DatabaseClient, WorldStateRow } from '../../context.js';
-import { authedProcedure, router } from '../../trpc.js';
+import type { DatabaseClient, GameApiContext, WorldStateRow } from '../../context.js';
+import { authedProcedure, engineAuthedProcedure, router } from '../../trpc.js';
 import { asNumber, asRecord, asStringArray, LiteHashDRBG } from '@sammo-ts/common';
 import {
     isPersonalityTraitKey,
@@ -21,6 +21,58 @@ import {
     resolveInheritConstants,
     setInheritancePoint,
 } from '../../services/inheritance.js';
+import {
+    getSelectionPoolStatus,
+    reserveSelectionPool,
+    resolveSelectionMaxGeneral,
+} from '../../services/selectPool.js';
+
+const resolveSelectionCommandResult = (
+    result:
+        | Awaited<ReturnType<GameApiContext['turnDaemon']['requestCommand']>>
+        | null,
+    expectedType: 'selectPoolCreate' | 'selectPoolReselect'
+): { ok: true; generalId: number } => {
+    if (!result) {
+        throw new TRPCError({
+            code: 'TIMEOUT',
+            message:
+                '장수 선택 요청은 접수됐지만 처리 결과를 아직 확인하지 못했습니다. 같은 요청으로 다시 시도해 주세요.',
+        });
+    }
+    if (result.type !== expectedType) {
+        throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: '턴 데몬이 올바르지 않은 장수 선택 결과를 반환했습니다.',
+        });
+    }
+    if (!result.ok) {
+        throw new TRPCError({
+            code: result.code,
+            message: result.reason,
+        });
+    }
+    return { ok: true, generalId: result.generalId };
+};
+
+const resolveSelectionRequestId = (
+    contextRequestId: string | undefined,
+    userId: string,
+    clientRequestId: string | undefined,
+    operation: 'create' | 'reselect'
+): string | undefined => {
+    if (clientRequestId) {
+        return `select-pool:${userId}:${clientRequestId}:${operation}`;
+    }
+    if (!contextRequestId) {
+        return undefined;
+    }
+    const path =
+        operation === 'create'
+            ? 'join.selectPoolGeneral'
+            : 'join.reselectPoolGeneral';
+    return `${contextRequestId}:${path}`;
+};
 
 const DEFAULT_JOIN_STAT = {
     total: 165,
@@ -181,10 +233,12 @@ export const joinRouter = router({
         const availableSpecialWar = asStringArray(configConst.availableSpecialWar);
         const warKeys = availableSpecialWar.length > 0 ? availableSpecialWar : [...WAR_TRAIT_KEYS];
 
-        const [personalities, warSpecials, nationRows] = await Promise.all([
+        const [personalities, warSpecials, nationRows, userGeneralCount, npcGeneralCount] =
+            await Promise.all([
             loadPersonalityOptions(),
             loadWarOptions(warKeys),
             ctx.db.nation.findMany({
+                where: { id: { gt: 0 } },
                 select: {
                     id: true,
                     name: true,
@@ -193,6 +247,8 @@ export const joinRouter = router({
                 },
                 orderBy: { id: 'asc' },
             }),
+            ctx.db.general.count({ where: { npcState: { lt: 2 } } }),
+            ctx.db.general.count({ where: { npcState: { gte: 2 } } }),
         ]);
 
         const nations = nationRows.map((nation) => {
@@ -209,7 +265,13 @@ export const joinRouter = router({
         const inheritTotalPoint = ctx.auth?.user.id
             ? await readInheritancePoint(ctx.db, ctx.auth.user.id, 'previous')
             : 0;
+        const selectionPool = await getSelectionPoolStatus(
+            ctx.db,
+            worldState,
+            ctx.auth?.user.id ?? ''
+        );
         const tickMinutes = Math.max(1, Math.round(worldState.tickSeconds / 60));
+        const maxGeneral = resolveSelectionMaxGeneral(worldState);
         const inheritCitiesRaw = await ctx.db.city.findMany({
             where: { level: { in: [5, 6] }, nationId: 0 },
             select: { id: true, name: true, level: true, region: true },
@@ -239,6 +301,14 @@ export const joinRouter = router({
             ],
             warSpecials,
             nations,
+            serverInfo: {
+                currentYear: worldState.currentYear,
+                currentMonth: worldState.currentMonth,
+                tickMinutes,
+                maxGeneral,
+                userGeneralCount,
+                npcGeneralCount,
+            },
             inherit: {
                 totalPoint: inheritTotalPoint,
                 costs: {
@@ -251,8 +321,93 @@ export const joinRouter = router({
                 turnTimeZones: buildTurnTimeZones(tickMinutes),
                 availableSpecialWar: warSpecials,
             },
+            selectionPool,
         };
     }),
+    getSelectionPool: authedProcedure.mutation(async ({ ctx }) => {
+        const userId = ctx.auth?.user.id;
+        if (!userId) {
+            throw new TRPCError({ code: 'UNAUTHORIZED' });
+        }
+        const worldState = await ctx.db.worldState.findFirst();
+        if (!worldState) {
+            throw new TRPCError({
+                code: 'PRECONDITION_FAILED',
+                message: 'World state is not initialized.',
+            });
+        }
+        return reserveSelectionPool({
+            db: ctx.db,
+            worldState,
+            userId,
+            seedOwnerIdentity: ctx.auth?.user.legacyMemberNo ?? userId,
+        });
+    }),
+    selectPoolGeneral: engineAuthedProcedure
+        .input(
+            z.object({
+                uniqueName: z.string().min(1).max(20),
+                personality: z.string().min(1),
+                clientRequestId: z.string().uuid().optional(),
+            })
+        )
+        .mutation(async ({ ctx, input }) => {
+            const auth = ctx.auth;
+            if (!auth) {
+                throw new TRPCError({ code: 'UNAUTHORIZED' });
+            }
+            const userId = auth.user.id;
+            if (auth.identity?.canCreateGeneral === false) {
+                throw new TRPCError({
+                    code: 'FORBIDDEN',
+                    message: '이 서버에서는 카카오 인증을 완료해야 장수를 생성할 수 있습니다.',
+                });
+            }
+            const commandRequestId = resolveSelectionRequestId(
+                ctx.requestId,
+                userId,
+                input.clientRequestId,
+                'create'
+            );
+            const result = await ctx.turnDaemon.requestCommand({
+                type: 'selectPoolCreate',
+                ...(commandRequestId ? { requestId: commandRequestId } : {}),
+                userId,
+                ownerDisplayName: auth.user.displayName,
+                uniqueName: input.uniqueName,
+                personality: input.personality,
+                seedOwnerIdentity: auth.user.legacyMemberNo ?? userId,
+            });
+            return resolveSelectionCommandResult(result, 'selectPoolCreate');
+        }),
+    reselectPoolGeneral: engineAuthedProcedure
+        .input(
+            z.object({
+                uniqueName: z.string().min(1).max(20),
+                clientRequestId: z.string().uuid().optional(),
+            })
+        )
+        .mutation(async ({ ctx, input }) => {
+            const auth = ctx.auth;
+            if (!auth) {
+                throw new TRPCError({ code: 'UNAUTHORIZED' });
+            }
+            const userId = auth.user.id;
+            const commandRequestId = resolveSelectionRequestId(
+                ctx.requestId,
+                userId,
+                input.clientRequestId,
+                'reselect'
+            );
+            const result = await ctx.turnDaemon.requestCommand({
+                type: 'selectPoolReselect',
+                ...(commandRequestId ? { requestId: commandRequestId } : {}),
+                userId,
+                ownerDisplayName: auth.user.displayName,
+                uniqueName: input.uniqueName,
+            });
+            return resolveSelectionCommandResult(result, 'selectPoolReselect');
+        }),
     createGeneral: authedProcedure
         .input(
             z.object({
@@ -285,6 +440,13 @@ export const joinRouter = router({
                 throw new TRPCError({
                     code: 'PRECONDITION_FAILED',
                     message: 'World state is not initialized.',
+                });
+            }
+            const selectionPool = await getSelectionPoolStatus(ctx.db, worldState, userId);
+            if (selectionPool.enabled) {
+                throw new TRPCError({
+                    code: 'PRECONDITION_FAILED',
+                    message: '장수 선택 목록에서 장수를 골라 주세요.',
                 });
             }
 

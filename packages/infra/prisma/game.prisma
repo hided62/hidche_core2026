@@ -198,6 +198,19 @@ model General {
   @@map("general")
 }
 
+model SelectPoolEntry {
+  id            Int       @id @default(autoincrement())
+  uniqueName    String    @unique @map("unique_name") @db.VarChar(20)
+  ownerUserId   String?   @map("owner_user_id")
+  generalId     Int?      @unique @map("general_id")
+  reservedUntil DateTime? @map("reserved_until")
+  info          Json
+
+  @@index([ownerUserId])
+  @@index([reservedUntil, generalId])
+  @@map("select_pool")
+}
+
 model GeneralAccessLog {
   id                Int       @id @default(autoincrement())
   generalId         Int       @unique @map("general_id")

@@ -16,7 +16,9 @@ import { createOfficerLevelActionModules } from './officerLevel.js';
 import {
     createTraitCatalog,
     DOMESTIC_TRAIT_KEYS,
+    EVENT_DOMESTIC_TRAIT_KEYS,
     loadDomesticTraitModules,
+    loadEventDomesticTraitModules,
     loadNationTraitModules,
     loadPersonalityTraitModules,
     loadWarTraitModules,
@@ -87,14 +89,20 @@ export const loadActionModuleBundle = async <TriggerState extends GeneralTrigger
     unitSet?: UnitSetDefinition,
     scenarioEffect?: ScenarioEffectKey | null
 ): Promise<ActionModuleBundle<TriggerState>> => {
-    const [domestic, war, personality, nation, itemModules] = await Promise.all([
+    const [domestic, eventDomestic, war, personality, nation, itemModules] = await Promise.all([
         loadDomesticTraitModules([...DOMESTIC_TRAIT_KEYS]),
+        loadEventDomesticTraitModules([...EVENT_DOMESTIC_TRAIT_KEYS]),
         loadWarTraitModules([...WAR_TRAIT_KEYS]),
         loadPersonalityTraitModules([...PERSONALITY_TRAIT_KEYS]),
         loadNationTraitModules([...NATION_TRAIT_KEYS]),
         loadItemModules([...ITEM_KEYS]) as Promise<ItemModule<TriggerState>[]>,
     ]);
-    const traitCatalog = createTraitCatalog<TriggerState>({ domestic, war, personality, nation });
+    const traitCatalog = createTraitCatalog<TriggerState>({
+        domestic: [...domestic, ...eventDomestic],
+        war,
+        personality,
+        nation,
+    });
     const officer = createOfficerLevelActionModules<TriggerState>();
     const items = createItemActionModules(createItemModuleRegistry(itemModules));
     const inherit = createInheritBuffModules();

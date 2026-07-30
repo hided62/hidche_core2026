@@ -205,6 +205,22 @@ export type TurnDaemonCommand =
           };
       }
     | {
+          type: 'selectPoolCreate';
+          requestId?: string;
+          userId: string;
+          ownerDisplayName: string;
+          uniqueName: string;
+          personality: string;
+          seedOwnerIdentity: string | number;
+      }
+    | {
+          type: 'selectPoolReselect';
+          requestId?: string;
+          userId: string;
+          ownerDisplayName: string;
+          uniqueName: string;
+      }
+    | {
           type: 'auctionBid';
           requestId?: string;
           auctionId: number;
@@ -458,6 +474,28 @@ export type TurnDaemonCommandResult =
           type: 'patchGeneral';
           ok: false;
           generalId: number;
+          reason: string;
+      }
+    | {
+          type: 'selectPoolCreate';
+          ok: true;
+          generalId: number;
+      }
+    | {
+          type: 'selectPoolCreate';
+          ok: false;
+          code: 'BAD_REQUEST' | 'PRECONDITION_FAILED' | 'CONFLICT' | 'INTERNAL_SERVER_ERROR';
+          reason: string;
+      }
+    | {
+          type: 'selectPoolReselect';
+          ok: true;
+          generalId: number;
+      }
+    | {
+          type: 'selectPoolReselect';
+          ok: false;
+          code: 'BAD_REQUEST' | 'PRECONDITION_FAILED' | 'CONFLICT' | 'INTERNAL_SERVER_ERROR';
           reason: string;
       }
     | {

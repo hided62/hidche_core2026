@@ -6,7 +6,7 @@ export type GameRouter = typeof appRouter;
 const resolveProfileUrl = (template: string, profile: string): string =>
     template.replaceAll('{profile}', encodeURIComponent(profile));
 
-export const createGameTrpc = (profile: string, port: number) => {
+export const createGameTrpc = (profile: string, port: number, gameToken?: string) => {
     const urlTemplate = import.meta.env.VITE_GAME_API_URL_TEMPLATE;
     const url = urlTemplate
         ? resolveProfileUrl(urlTemplate, profile)
@@ -15,6 +15,7 @@ export const createGameTrpc = (profile: string, port: number) => {
         links: [
             httpBatchLink({
                 url,
+                headers: gameToken ? { authorization: `Bearer ${gameToken}` } : undefined,
             }),
         ],
     });

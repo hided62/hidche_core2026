@@ -310,6 +310,17 @@ export class TurnDaemonLifecycle {
             this.status.paused = true;
             this.errorPaused = true;
             this.status.lastError = error instanceof Error ? error.message : 'Unknown command error.';
+            if (command.requestId && this.commandResponder?.publishCommandError) {
+                try {
+                    await this.commandResponder.publishCommandError(command.requestId, error);
+                } catch (reportError) {
+                    const reportMessage =
+                        reportError instanceof Error
+                            ? reportError.message
+                            : 'Unknown command failure reporting error.';
+                    this.status.lastError = `${this.status.lastError} (failure report: ${reportMessage})`;
+                }
+            }
             await this.hooks?.onRunError?.(error);
             return;
         }

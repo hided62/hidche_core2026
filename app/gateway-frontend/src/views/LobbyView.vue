@@ -14,6 +14,7 @@ type GameRouterOutput = inferRouterOutputs<GameRouter>;
 type MeOutput = GatewayRouterOutput['me'];
 type LobbyProfile = GatewayRouterOutput['lobby']['profiles'][number];
 type LobbyInfo = GameRouterOutput['lobby']['info'];
+type LobbyGeneral = NonNullable<LobbyInfo['myGeneral']>;
 type PublicMap = GameRouterOutput['public']['getCachedMap'];
 type PublicMapLayout = GameRouterOutput['public']['getMapLayout'];
 type MapPreviewBundle = {
@@ -38,9 +39,25 @@ const canAccessAdmin = computed(
         ) ?? false
 );
 const needsKakaoVerification = computed(() => me.value !== null && !me.value.kakaoVerified);
+const userIconBaseUrl =
+    import.meta.env.VITE_GATEWAY_USER_ICON_BASE_URL ?? '/gateway/api/user-icons';
 
 const formatGraceEndsAt = (value: string | null | undefined): string =>
     value ? new Date(value).toLocaleString('ko-KR') : '';
+const resolveGeneralPicture = (general: LobbyGeneral): string => {
+    const picture = general.picture?.trim() || 'default.jpg';
+    return general.imageServer
+        ? `${userIconBaseUrl.replace(/\/$/, '')}/${encodeURIComponent(picture)}`
+        : `/image/icons/${encodeURIComponent(picture)}`;
+};
+const handleGeneralPictureError = (event: Event): void => {
+    const image = event.currentTarget as HTMLImageElement;
+    if (image.dataset.fallbackApplied === 'true') {
+        return;
+    }
+    image.dataset.fallbackApplied = 'true';
+    image.src = '/image/icons/default.jpg';
+};
 
 onMounted(async () => {
     try {
@@ -52,12 +69,31 @@ onMounted(async () => {
 
         notice.value = await trpc.lobby.notice.query();
         profiles.value = await trpc.lobby.profiles.query();
+        const sessionToken = window.localStorage.getItem('sammo-session-token');
 
         const detailTasks = profiles.value.map(async (profile) => {
             if (profile.status !== 'RUNNING' && profile.status !== 'PREOPEN') {
                 return;
             }
-            const gameTrpc = createGameTrpc(profile.profile, profile.apiPort);
+            const publicGameTrpc = createGameTrpc(profile.profile, profile.apiPort);
+            let gameToken: string | undefined;
+            if (sessionToken) {
+                try {
+                    const issued = await trpc.auth.issueGameSession.mutate({
+                        sessionToken,
+                        profile: profile.profileName,
+                    });
+                    const exchanged = await publicGameTrpc.auth.exchangeGatewayToken.mutate({
+                        gatewayToken: issued.gameToken,
+                    });
+                    gameToken = exchanged.accessToken;
+                } catch (error) {
+                    console.error(`Failed to authenticate lobby game session for ${profile.profileName}`, error);
+                }
+            }
+            const gameTrpc = gameToken
+                ? createGameTrpc(profile.profile, profile.apiPort, gameToken)
+                : publicGameTrpc;
             const [infoResult, layoutResult, mapResult] = await Promise.allSettled([
                 gameTrpc.lobby.info.query(),
                 gameTrpc.public.getMapLayout.query(),
@@ -69,7 +105,6 @@ onMounted(async () => {
             } else {
                 console.error(`Failed to fetch info for ${profile.profileName}`, infoResult.reason);
             }
-
             if (layoutResult.status === 'fulfilled' && mapResult.status === 'fulfilled') {
                 profileMapPreviews.value[profile.profileName] = {
                     mapLayout: layoutResult.value,
@@ -302,8 +337,13 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                     class="w-12 h-12 mx-auto bg-zinc-800 rounded overflow-hidden border border-zinc-700"
                                 >
                                     <img
-                                        :src="profileDetails[profile.profileName]?.myGeneral?.picture ?? undefined"
+                                        :src="
+                                            resolveGeneralPicture(
+                                                profileDetails[profile.profileName]!.myGeneral!
+                                            )
+                                        "
                                         class="w-full h-full object-cover"
+                                        @error="handleGeneralPictureError"
                                     />
                                 </div>
                             </td>
@@ -332,12 +372,21 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                             entryLoading[profile.profileName] ||
                                             profile.localAccountPolicy?.canCreateGeneral === false
                                         "
-                                        @click="handleEnter(profile, '/join')"
+                                        @click="
+                                            handleEnter(
+                                                profile,
+                                                profileDetails[profile.profileName]?.selectionPoolEnabled
+                                                    ? '/select-general'
+                                                    : '/join'
+                                            )
+                                        "
                                     >
                                         {{
                                             profile.localAccountPolicy?.canCreateGeneral === false
                                                 ? '인증 필요'
-                                                : '장수생성'
+                                                : profileDetails[profile.profileName]?.selectionPoolEnabled
+                                                  ? '장수선택'
+                                                  : '장수생성'
                                         }}
                                     </button>
                                 </template>

@@ -2,7 +2,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createGamePostgresConnector, type GamePrismaClient } from '@sammo-ts/infra';
 
 import { DuplicateInputEventError, executeInputEvent } from '../src/inputEventBoundary.js';
-import { ConflictingTurnDaemonCommandError, DatabaseTurnDaemonTransport } from '../src/daemon/databaseTransport.js';
+import {
+    ConflictingTurnDaemonCommandError,
+    DatabaseTurnDaemonTransport,
+    FailedTurnDaemonCommandError,
+} from '../src/daemon/databaseTransport.js';
 
 const databaseUrl = process.env.INPUT_EVENT_DATABASE_URL;
 const integration = describe.skipIf(!databaseUrl);
@@ -143,5 +147,26 @@ integration('API input event boundary', () => {
         await expect(transport.sendCommand({ type: 'vacation', requestId, generalId: 8 })).rejects.toBeInstanceOf(
             ConflictingTurnDaemonCommandError
         );
+    });
+
+    it('distinguishes a stored terminal engine failure from a result timeout', async () => {
+        const transport = new DatabaseTurnDaemonTransport(db, 100);
+        const requestId = 'integration:api:engine-failed';
+        const command = { type: 'vacation' as const, requestId, generalId: 7 };
+        await transport.sendCommand(command);
+        await db.inputEvent.update({
+            where: { requestId },
+            data: {
+                status: 'FAILED',
+                error: 'injected terminal engine failure',
+                completedAt: new Date(),
+            },
+        });
+
+        await expect(transport.requestCommand(command)).rejects.toMatchObject({
+            name: FailedTurnDaemonCommandError.name,
+            requestId,
+            storedError: 'injected terminal engine failure',
+        });
     });
 });

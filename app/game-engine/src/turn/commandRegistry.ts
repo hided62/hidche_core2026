@@ -243,6 +243,28 @@ const zPatchGeneral = z.object({
     }),
 });
 
+const zSelectPoolCreate = z
+    .object({
+        type: z.literal('selectPoolCreate'),
+        requestId: z.string().optional(),
+        userId: z.string().min(1),
+        ownerDisplayName: z.string().min(1),
+        uniqueName: z.string().min(1).max(20),
+        personality: z.string().min(1),
+        seedOwnerIdentity: z.union([z.string().min(1), zFiniteNumber]),
+    })
+    .strict();
+
+const zSelectPoolReselect = z
+    .object({
+        type: z.literal('selectPoolReselect'),
+        requestId: z.string().optional(),
+        userId: z.string().min(1),
+        ownerDisplayName: z.string().min(1),
+        uniqueName: z.string().min(1).max(20),
+    })
+    .strict();
+
 const zGetStatus = z.object({
     type: z.literal('getStatus'),
     requestId: z.string().optional(),
@@ -484,6 +506,22 @@ const normalizePatchGeneral: CommandNormalizer<'patchGeneral'> = (envelope) => {
     return { ...command, requestId: envelope.requestId };
 };
 
+const normalizeSelectPoolCreate: CommandNormalizer<'selectPoolCreate'> = (envelope) => {
+    const command = parseWith(zSelectPoolCreate, envelope.command);
+    if (!command) {
+        return null;
+    }
+    return { ...command, requestId: envelope.requestId };
+};
+
+const normalizeSelectPoolReselect: CommandNormalizer<'selectPoolReselect'> = (envelope) => {
+    const command = parseWith(zSelectPoolReselect, envelope.command);
+    if (!command) {
+        return null;
+    }
+    return { ...command, requestId: envelope.requestId };
+};
+
 const normalizeGetStatus: CommandNormalizer<'getStatus'> = (envelope) => {
     const command = parseWith(zGetStatus, envelope.command);
     if (!command) {
@@ -547,6 +585,8 @@ const normalizers: CommandNormalizerMap = {
     adjustGeneralMeta: normalizeAdjustGeneralMeta,
     tournamentMatchResult: normalizeTournamentMatchResult,
     patchGeneral: normalizePatchGeneral,
+    selectPoolCreate: normalizeSelectPoolCreate,
+    selectPoolReselect: normalizeSelectPoolReselect,
     getStatus: normalizeGetStatus,
     run: normalizeRun,
     pause: normalizePause,

@@ -27,6 +27,7 @@ export interface TurnGeneral extends General {
     deadYear?: number;
     affinity?: number | null;
     picture?: string | null;
+    imageServer?: number;
     turnTime: Date;
     recentWarTime?: Date | null;
     lastTurn?: GeneralLastTurn;

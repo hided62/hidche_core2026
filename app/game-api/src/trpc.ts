@@ -71,6 +71,11 @@ export const router = t.router;
 export const procedure = t.procedure.use(inputEventMiddleware);
 export const authedProcedure: typeof procedure = procedure.use(requireAuthMiddleware);
 
+// 턴 데몬이 ENGINE input_event와 world/DB 변경을 자체 transaction으로
+// 커밋하는 mutation에 사용한다. API input-event transaction으로 한 번 더
+// 감싸면 daemon이 아직 commit되지 않은 command를 볼 수 없어 교착된다.
+export const engineAuthedProcedure: typeof procedure = t.procedure.use(requireAuthMiddleware);
+
 // 페이지 조회 계측처럼 game state/input-event 원장과 무관한 세션 보조
 // mutation에 사용한다. gameplay state 변경에는 사용하지 않는다.
 export const sessionActivityProcedure = t.procedure;

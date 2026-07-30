@@ -6,6 +6,7 @@ export interface DatabaseClient {
     $executeRaw: GamePrismaClient['$executeRaw'];
     worldState: GamePrisma.WorldStateDelegate;
     general: GamePrisma.GeneralDelegate;
+    selectPoolEntry: GamePrisma.SelectPoolEntryDelegate;
     generalAccessLog: GamePrisma.GeneralAccessLogDelegate;
     trafficPeriod: GamePrisma.TrafficPeriodDelegate;
     trafficPeriodGeneral: GamePrisma.TrafficPeriodGeneralDelegate;

@@ -135,7 +135,7 @@ describe('InMemoryTurnProcessor ordering', () => {
             currentMonth: 1,
             tickSeconds: 3600,
             lastTurnTime: baseTime,
-            meta: {},
+            meta: { lastGeneralId: 1 },
         };
 
         const world = new InMemoryTurnWorld(state, snapshot, {
@@ -157,5 +157,8 @@ describe('InMemoryTurnProcessor ordering', () => {
         });
 
         expect(executed).toEqual([2, 3, 1]);
+        expect(world.getNextGeneralId()).toBe(4);
+        expect(world.getNextGeneralId()).toBe(5);
+        expect(world.getState().meta).toMatchObject({ lastGeneralId: 5 });
     });
 });

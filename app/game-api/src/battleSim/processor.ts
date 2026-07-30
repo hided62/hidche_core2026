@@ -19,7 +19,9 @@ import {
     createTraitCatalog,
     createOfficerLevelActionModules,
     DOMESTIC_TRAIT_KEYS,
+    EVENT_DOMESTIC_TRAIT_KEYS,
     loadDomesticTraitModules,
+    loadEventDomesticTraitModules,
     loadNationTraitModules,
     loadPersonalityTraitModules,
     loadWarTraitModules,
@@ -52,7 +54,10 @@ const itemWarModules: WarActionModule[] = createItemActionModules(
 ).war;
 const crewTypeWarTriggerRegistry = createCrewTypeWarTriggerRegistry();
 const traitCatalog = createTraitCatalog({
-    domestic: await loadDomesticTraitModules([...DOMESTIC_TRAIT_KEYS]),
+    domestic: [
+        ...(await loadDomesticTraitModules([...DOMESTIC_TRAIT_KEYS])),
+        ...(await loadEventDomesticTraitModules([...EVENT_DOMESTIC_TRAIT_KEYS])),
+    ],
     war: await loadWarTraitModules([...WAR_TRAIT_KEYS]),
     personality: await loadPersonalityTraitModules([...PERSONALITY_TRAIT_KEYS]),
     nation: await loadNationTraitModules([...NATION_TRAIT_KEYS]),
@@ -145,7 +150,7 @@ const mapGeneralPayload = (payload: BattleSimJobPayload['attackerGeneral']): Gen
     officerLevel: payload.officer_level,
     role: {
         personality: payload.personal,
-        specialDomestic: null,
+        specialDomestic: payload.special ?? null,
         specialWar: payload.special2,
         items: {
             horse: normalizeItemCode(payload.horse),

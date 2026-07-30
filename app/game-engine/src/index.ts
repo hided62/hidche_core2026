@@ -12,6 +12,7 @@ export * from './lifecycle/turnDaemonLifecycle.js';
 export * from './lifecycle/getNextTickTime.js';
 export * from './scenario/scenarioLoader.js';
 export * from './scenario/scenarioComposition.js';
+export * from './scenario/generalPoolLoader.js';
 export * from './scenario/databaseUrl.js';
 export * from './scenario/mapLoader.js';
 export * from './scenario/scenarioSeeder.js';
@@ -22,6 +23,7 @@ export * from './turn/engineStateManager.js';
 export * from './turn/inMemoryStateStore.js';
 export * from './turn/inMemoryTurnProcessor.js';
 export * from './turn/databaseHooks.js';
+export * from './turn/selectPoolService.js';
 export * from './turn/turnDaemon.js';
 export * from './turn/cli.js';
 

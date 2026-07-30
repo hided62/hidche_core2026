@@ -3,8 +3,11 @@ import type { GeneralStatName, WarStatName } from '@sammo-ts/logic/actionModules
 import type { WarActionContext } from '@sammo-ts/logic/war/actions.js';
 import type { TraitModule } from '@sammo-ts/logic/actionModules/traits/types.js';
 import { TraitRequirement, TraitWeightType } from '../requirements.js';
-import { WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
+import { BaseWarUnitTrigger, WarTriggerCaller } from '@sammo-ts/logic/war/triggers.js';
 import { che_부상무효 } from '@sammo-ts/logic/war/triggers/che_견고.js';
+
+export const GYEONGO_RAISE_TYPE =
+    BaseWarUnitTrigger.TYPE_NONE + BaseWarUnitTrigger.TYPE_DEDUP_TYPE_BASE * 404;
 
 function onCalcStat(context: GeneralActionContext, statName: GeneralStatName, value: number, aux?: unknown): number;
 function onCalcStat(
@@ -45,11 +48,11 @@ export const traitModule: TraitModule = {
     }) as TraitModule['onCalcOpposeStat'],
     getBattleInitTriggerList: (_context) => {
         if (!_context.unit) return null;
-        return new WarTriggerCaller(new che_부상무효(_context.unit));
+        return new WarTriggerCaller(new che_부상무효(_context.unit, GYEONGO_RAISE_TYPE));
     },
     getBattlePhaseTriggerList: (_context) => {
         if (!_context.unit) return null;
-        return new WarTriggerCaller(new che_부상무효(_context.unit));
+        return new WarTriggerCaller(new che_부상무효(_context.unit, GYEONGO_RAISE_TYPE));
     },
     getWarPowerMultiplier: (_context, _unit, _oppose) => {
         return [1, 0.9];

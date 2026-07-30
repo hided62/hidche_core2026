@@ -1,5 +1,7 @@
 import {
     ITEM_KEYS,
+    EVENT_DOMESTIC_TRAIT_KEYS,
+    loadEventDomesticTraitModules,
     loadItemModules,
     loadNationTraitModules,
     loadPersonalityTraitModules,
@@ -95,22 +97,26 @@ const toTraitOption = (module: TraitModule): BattleSimTraitOption => ({
 
 let cachedTraitOptions: Promise<{
     nationTypes: BattleSimTraitOption[];
+    eventDomesticTraits: BattleSimTraitOption[];
     warTraits: BattleSimTraitOption[];
     personalities: BattleSimTraitOption[];
 }> | null = null;
 
 export const loadBattleSimTraitOptions = async (): Promise<{
     nationTypes: BattleSimTraitOption[];
+    eventDomesticTraits: BattleSimTraitOption[];
     warTraits: BattleSimTraitOption[];
     personalities: BattleSimTraitOption[];
 }> => {
     if (!cachedTraitOptions) {
         cachedTraitOptions = Promise.all([
             loadNationTraitModules([...NATION_TRAIT_KEYS]),
+            loadEventDomesticTraitModules([...EVENT_DOMESTIC_TRAIT_KEYS]),
             loadWarTraitModules([...WAR_TRAIT_KEYS]),
             loadPersonalityTraitModules([...PERSONALITY_TRAIT_KEYS]),
-        ]).then(([nationTraits, warTraits, personalities]) => ({
+        ]).then(([nationTraits, eventDomesticTraits, warTraits, personalities]) => ({
             nationTypes: nationTraits.map(toTraitOption),
+            eventDomesticTraits: eventDomesticTraits.map(toTraitOption),
             warTraits: warTraits.map(toTraitOption),
             personalities: personalities.map(toTraitOption),
         }));

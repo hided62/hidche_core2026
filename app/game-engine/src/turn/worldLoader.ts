@@ -237,6 +237,7 @@ const mapGeneralRow = (
         deadYear: row.deadYear,
         affinity: row.affinity,
         picture: row.picture,
+        imageServer: row.imageServer,
         triggerState: {
             flags: {},
             counters: {},

@@ -516,6 +516,34 @@ describe('gateway auth flow', () => {
         expect(validated?.user.username).toBe('tester');
     });
 
+    it('keeps the migrated member number inside the encrypted game identity', async () => {
+        const { caller, users, sessions } = buildCaller();
+        const user = await users.createUser({
+            username: 'legacy-seed-user',
+            password: 'secretpass',
+        });
+        user.legacyMemberNo = 42;
+        const session = await sessions.createSession(user);
+
+        const issued = await caller.auth.issueGameSession({
+            sessionToken: session.sessionToken,
+            profile: 'che:default',
+        });
+        const payload = decryptGameSessionToken(issued.gameToken, 'test-secret');
+
+        expect(payload?.user.legacyMemberNo).toBe(42);
+        const validated = await caller.auth.validateGameSession({
+            profile: 'che:default',
+            gameToken: issued.gameToken,
+        });
+        expect(validated).toMatchObject({
+            user: {
+                id: user.id,
+            },
+        });
+        expect(validated?.user).not.toHaveProperty('legacyMemberNo');
+    });
+
     it('revokes the gateway session and every linked game session on logout', async () => {
         const { caller, users, sessions } = buildCaller();
         const user = await users.createUser({

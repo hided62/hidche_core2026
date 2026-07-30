@@ -274,6 +274,29 @@ describe('appRouter', () => {
         });
     });
 
+    it('reports the authenticated game access-token identity', async () => {
+        const caller = appRouter.createCaller(buildContext({ auth: buildAuth() }));
+
+        await expect(caller.auth.status()).resolves.toEqual({ userId: 'user-1' });
+    });
+
+    it('rejects unauthenticated or game-blocked auth status checks', async () => {
+        await expect(
+            appRouter.createCaller(buildContext({ auth: null })).auth.status()
+        ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+        await expect(
+            appRouter
+                .createCaller(
+                    buildContext({
+                        auth: buildAuth({
+                            suspendedUntil: '2099-01-01T00:00:00.000Z',
+                        }),
+                    })
+                )
+                .auth.status()
+        ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+
     it('does not apply an expired or message-only restriction to other game APIs', async () => {
         const caller = appRouter.createCaller(
             buildContext({

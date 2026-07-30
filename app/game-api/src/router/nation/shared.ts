@@ -5,11 +5,14 @@ import { asNumber, asRecord } from '@sammo-ts/common';
 import {
     createIncomeActionContext,
     DomesticTraitLoader,
+    EventDomesticTraitLoader,
     isDomesticTraitKey,
+    isEventDomesticTraitKey,
     isNationTraitKey,
     isPersonalityTraitKey,
     isWarTraitKey,
     loadDomesticTraitModules,
+    loadEventDomesticTraitModules,
     loadNationTraitModules,
     loadPersonalityTraitModules,
     loadWarTraitModules,
@@ -301,8 +304,18 @@ export const loadTraitNames = async (keys: Array<string | null>, kind: keyof Tra
 
     if (kind === 'domestic') {
         const filtered = missing.filter((key) => isDomesticTraitKey(key));
+        const eventFiltered = missing.filter((key) => isEventDomesticTraitKey(key));
         if (filtered.length) {
             const modules = await loadDomesticTraitModules(filtered, new DomesticTraitLoader());
+            for (const module of modules) {
+                cache.set(module.key, { name: module.name, info: module.info ?? '' });
+            }
+        }
+        if (eventFiltered.length) {
+            const modules = await loadEventDomesticTraitModules(
+                eventFiltered,
+                new EventDomesticTraitLoader()
+            );
             for (const module of modules) {
                 cache.set(module.key, { name: module.name, info: module.info ?? '' });
             }

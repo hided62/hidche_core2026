@@ -351,6 +351,8 @@ const buildGeneralUpdate = (
     bornYear: general.bornYear,
     deadYear: general.deadYear,
     picture: general.picture ?? null,
+    imageServer: general.imageServer ?? 0,
+    startAge: general.startAge ?? general.age,
     npcState: general.npcState,
     horseCode: toCode(general.role.items.horse),
     weaponCode: toCode(general.role.items.weapon),
@@ -369,6 +371,7 @@ const buildGeneralCreate = (
     general: ReturnType<InMemoryTurnWorld['consumeDirtyState']>['generals'][number]
 ): TurnEngineGeneralCreateManyInput => ({
     id: general.id,
+    userId: general.userId ?? null,
     name: general.name,
     nationId: general.nationId,
     cityId: general.cityId,
@@ -392,6 +395,8 @@ const buildGeneralCreate = (
     bornYear: general.bornYear,
     deadYear: general.deadYear,
     picture: general.picture ?? null,
+    imageServer: general.imageServer ?? 0,
+    startAge: general.startAge ?? general.age,
     horseCode: toCode(general.role.items.horse),
     weaponCode: toCode(general.role.items.weapon),
     bookCode: toCode(general.role.items.book),
@@ -799,6 +804,14 @@ export const createDatabaseTurnHooks = async (
             }
 
             if (deletedGenerals.length > 0) {
+                await prisma.selectPoolEntry.updateMany({
+                    where: { generalId: { in: deletedGenerals } },
+                    data: {
+                        generalId: null,
+                        ownerUserId: null,
+                        reservedUntil: null,
+                    },
+                });
                 if (prisma.generalTurnRevision) {
                     await prisma.generalTurnRevision.deleteMany({
                         where: { generalId: { in: deletedGenerals } },
@@ -969,6 +982,8 @@ export const createDatabaseTurnHooks = async (
                         result: asJson(commandCompletion.result),
                         completedAt: new Date(),
                         error: null,
+                        lockedBy: null,
+                        leaseUntil: null,
                     },
                 });
             }

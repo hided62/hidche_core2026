@@ -207,6 +207,21 @@ const officerLevelOptions = [
                     <input v-model.number="general.atmos" type="number" min="40" :max="options.config.maxAtmosByWar" />
                 </label>
                 <label class="field">
+                    <span>내정특기</span>
+                    <select v-model="general.special">
+                        <option :value="null">-</option>
+                        <option
+                            v-for="trait in options.eventDomesticTraits"
+                            :key="trait.key"
+                            :value="trait.key"
+                        >
+                            {{ trait.name }}
+                        </option>
+                    </select>
+                </label>
+            </div>
+            <div class="form-row">
+                <label class="field">
                     <span>전특</span>
                     <select v-model="general.special2">
                         <option :value="null">-</option>

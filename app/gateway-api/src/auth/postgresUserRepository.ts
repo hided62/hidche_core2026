@@ -17,6 +17,14 @@ const readObject = <T extends object>(value: unknown, fallback: T): T => {
     return value as T;
 };
 
+const readLegacyMemberNo = (value: unknown): number | undefined => {
+    const legacyData = readObject<Record<string, unknown>>(value, {});
+    const memberNo = legacyData.memberNo;
+    return typeof memberNo === 'number' && Number.isSafeInteger(memberNo) && memberNo > 0
+        ? memberNo
+        : undefined;
+};
+
 const mapUser = (row: {
     id: string;
     loginId: string;
@@ -39,6 +47,7 @@ const mapUser = (row: {
     kakaoGraceStartedAt: Date;
     deleteAfter: Date | null;
     createdAt: Date;
+    legacyData: GatewayPrisma.JsonValue;
 }): UserRecord => ({
     id: row.id,
     username: row.loginId,
@@ -61,6 +70,7 @@ const mapUser = (row: {
     passwordHash: row.passwordHash,
     passwordSalt: row.passwordSalt,
     createdAt: row.createdAt.toISOString(),
+    legacyMemberNo: readLegacyMemberNo(row.legacyData),
 });
 
 export const createPostgresUserRepository = (

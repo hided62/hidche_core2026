@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { trpc } from '../utils/trpc';
 import { formatLog } from '../utils/formatLog';
+import { formatSeoulDateTime } from '../utils/legacyDateTime';
 import { isDefenceTrainPenaltyWaivedByScenarioEffect } from '@sammo-ts/logic';
 
 const SCREEN_MODE_KEY = 'sam.screenMode';
@@ -10,6 +11,7 @@ type ScreenMode = 'auto' | '500px' | '1000px';
 type LogType = 'generalHistory' | 'battleDetail' | 'battleResult' | 'generalAction';
 type ItemSlotKey = 'horse' | 'weapon' | 'book' | 'item';
 type MyGeneralResponse = Awaited<ReturnType<typeof trpc.general.me.query>>;
+type SelectionPoolStatus = Awaited<ReturnType<typeof trpc.join.getConfig.query>>['selectionPool'];
 
 type WorldSnapshot = {
     currentYear: number;
@@ -28,6 +30,7 @@ type SettingForm = {
 
 const data = ref<MyGeneralResponse | null>(null);
 const world = ref<WorldSnapshot>(null);
+const selectionPoolStatus = ref<SelectionPoolStatus | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
 const screenMode = ref<ScreenMode>('auto');
@@ -130,6 +133,11 @@ const actionAvailability = computed(() => {
         selectOtherGeneral: Boolean(npcMode === 2 && general?.npcState === 0),
     };
 });
+const formatSelectionAvailableAt = computed(() => {
+    const value = selectionPoolStatus.value?.nextChangeAt;
+    if (!value) return '';
+    return formatSeoulDateTime(value);
+});
 
 const applyCustomCss = (text: string) => {
     let style = document.getElementById('sammo-custom-css') as HTMLStyleElement | null;
@@ -161,12 +169,14 @@ const loadPage = async () => {
     loading.value = true;
     error.value = null;
     try {
-        const [general, state] = await Promise.all([
+        const [general, state, joinConfig] = await Promise.all([
             trpc.general.me.query(),
             trpc.world.getState.query() as Promise<WorldSnapshot>,
+            trpc.join.getConfig.query(),
         ]);
         data.value = general;
         world.value = state;
+        selectionPoolStatus.value = joinConfig.selectionPool;
         if (general) {
             Object.assign(form, general.settings);
         }
@@ -399,6 +409,20 @@ onMounted(() => {
                         접경 귀환
                     </button>
                 </div>
+                <div
+                    v-if="actionAvailability.selectOtherGeneral && selectionPoolStatus?.enabled"
+                    class="action-line"
+                >
+                    다른 장수 선택
+                    <template v-if="formatSelectionAvailableAt">
+                        ({{ formatSelectionAvailableAt }} 부터)
+                    </template>
+                    <br />
+                    <RouterLink class="action-button select-general-link" to="/select-general">
+                        다른 장수 선택
+                    </RouterLink>
+                    <br /><br />
+                </div>
 
                 <div class="screen-mode-row">
                     <span>500px/1000px 모드<br />(모바일 전용, 즉시 설정)</span>
@@ -611,6 +635,14 @@ dt {
     height: 30px;
     margin: 4px 0;
     background: #225500;
+}
+.select-general-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    color: #fff;
+    text-decoration: none;
 }
 .action-line {
     margin: 12px 0;

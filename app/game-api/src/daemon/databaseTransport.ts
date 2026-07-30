@@ -29,6 +29,16 @@ export class ConflictingTurnDaemonCommandError extends Error {
     }
 }
 
+export class FailedTurnDaemonCommandError extends Error {
+    constructor(
+        readonly requestId: string,
+        readonly storedError: string | null
+    ) {
+        super(storedError ?? `Engine input event ${requestId} failed.`);
+        this.name = 'FailedTurnDaemonCommandError';
+    }
+}
+
 export class DatabaseTurnDaemonTransport implements TurnDaemonTransport {
     constructor(
         private readonly db: DatabaseClient,
@@ -45,6 +55,10 @@ export class DatabaseTurnDaemonTransport implements TurnDaemonTransport {
                     target: 'ENGINE',
                     eventType: command.type,
                     payload: asJson(durableCommand),
+                    actorUserId:
+                        'userId' in command && typeof command.userId === 'string'
+                            ? command.userId
+                            : null,
                 },
             });
         } catch (error) {
@@ -80,13 +94,13 @@ export class DatabaseTurnDaemonTransport implements TurnDaemonTransport {
         while (Date.now() < deadline) {
             const event = await this.db.inputEvent.findUnique({
                 where: { requestId },
-                select: { status: true, result: true },
+                select: { status: true, result: true, error: true },
             });
             if (event?.status === 'SUCCEEDED') {
                 return event.result as T;
             }
             if (event?.status === 'FAILED') {
-                return null;
+                throw new FailedTurnDaemonCommandError(requestId, event.error);
             }
             await delay(Math.min(50, Math.max(1, deadline - Date.now())));
         }

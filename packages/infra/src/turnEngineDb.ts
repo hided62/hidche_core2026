@@ -49,6 +49,7 @@ export interface TurnEngineGeneralRow {
     deadYear: number;
     affinity: number | null;
     picture: string | null;
+    imageServer: number;
     meta: JsonValue;
     penalty: JsonValue;
     turnTime: Date;
@@ -193,6 +194,8 @@ export interface TurnEngineGeneralUpdateInput {
     bornYear?: number;
     deadYear?: number;
     picture: string | null;
+    imageServer: number;
+    startAge: number;
     horseCode: string;
     weaponCode: string;
     bookCode: string;
@@ -208,6 +211,7 @@ export interface TurnEngineGeneralUpdateInput {
 
 export interface TurnEngineGeneralCreateManyInput {
     id: number;
+    userId?: string | null;
     name: string;
     nationId: number;
     cityId: number;
@@ -241,6 +245,8 @@ export interface TurnEngineGeneralCreateManyInput {
     bornYear?: number;
     deadYear?: number;
     picture?: string | null;
+    imageServer?: number;
+    startAge?: number;
     lastTurn?: InputJsonValue;
     penalty?: InputJsonValue;
 }

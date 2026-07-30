@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto';
+
 import { createGamePostgresConnector, type InputJsonValue, type TurnEngineEventCreateManyInput } from '@sammo-ts/infra';
 import { asRecord } from '@sammo-ts/common';
 import {
@@ -14,6 +16,8 @@ import type { ScenarioLoaderOptions } from './scenarioLoader.js';
 import { loadScenarioDefinitionById } from './scenarioLoader.js';
 import type { UnitSetLoaderOptions } from './unitSetLoader.js';
 import { loadUnitSetDefinitionByName } from './unitSetLoader.js';
+import type { GeneralPoolLoaderOptions } from './generalPoolLoader.js';
+import { loadGeneralPoolEntries } from './generalPoolLoader.js';
 import { applyInitialChangeCityEvents } from '../turn/monthlyChangeCityAction.js';
 
 const DEFAULT_TICK_SECONDS = 120 * 60;
@@ -51,6 +55,7 @@ export interface ScenarioSeedOptions {
     scenarioOptions?: ScenarioLoaderOptions;
     mapOptions?: MapLoaderOptions;
     unitSetOptions?: UnitSetLoaderOptions;
+    generalPoolOptions?: GeneralPoolLoaderOptions;
     resetTables?: boolean;
     now?: Date;
     tickSeconds?: number;
@@ -209,6 +214,11 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
     const scenarioDefinition = includeExtendedGeneral ? scenario : { ...scenario, generalsEx: [] };
     const map = await loadMapDefinitionByName(scenario.config.environment.mapName, options.mapOptions);
     const unitSet = await loadUnitSetDefinitionByName(scenario.config.environment.unitSet, options.unitSetOptions);
+    const targetGeneralPool =
+        typeof scenario.config.map.targetGeneralPool === 'string' ? scenario.config.map.targetGeneralPool : null;
+    const generalPoolEntries = targetGeneralPool
+        ? await loadGeneralPoolEntries(targetGeneralPool, options.generalPoolOptions)
+        : [];
 
     const { seed, warnings } = buildScenarioBootstrap({
         scenario: scenarioDefinition,
@@ -271,10 +281,11 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
         worldMeta.serverId = install.serverId.trim();
     }
 
-    const integrationSeed = process.env[INTEGRATION_WORLD_SEED_ENV];
-    if (typeof integrationSeed === 'string' && integrationSeed.trim().length > 0) {
-        worldMeta.hiddenSeed = integrationSeed.trim();
-    }
+    const integrationSeed = process.env[INTEGRATION_WORLD_SEED_ENV]?.trim();
+    worldMeta.hiddenSeed =
+        integrationSeed && integrationSeed.length > 0
+            ? integrationSeed
+            : randomBytes(16).toString('hex');
 
     if (install?.preopenAt) {
         worldMeta.preopenAt = formatDateTime(install.preopenAt);
@@ -286,6 +297,8 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
             options: install.autorunUser.options,
         };
     }
+    const archivedWorldMeta = { ...worldMeta };
+    delete archivedWorldMeta.hiddenSeed;
 
     await connector.connect();
     try {
@@ -297,6 +310,11 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
             if (eventTableReady) {
                 await prisma.event.deleteMany();
             }
+            await prisma.selectPoolEntry.deleteMany();
+            await prisma.generalTurn.deleteMany();
+            await prisma.generalTurnRevision.deleteMany();
+            await prisma.rankData.deleteMany();
+            await prisma.generalAccessLog.deleteMany();
             await prisma.diplomacy.deleteMany();
             await prisma.general.deleteMany();
             await prisma.troop.deleteMany();
@@ -316,6 +334,15 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
             },
         });
 
+        if (generalPoolEntries.length > 0) {
+            await prisma.selectPoolEntry.createMany({
+                data: generalPoolEntries.map((entry) => ({
+                    uniqueName: entry.uniqueName,
+                    info: asJson(entry.info),
+                })),
+            });
+        }
+
         if (typeof worldMeta.serverId === 'string' && worldMeta.serverId) {
             await prisma.gameHistory.upsert({
                 where: { serverId: worldMeta.serverId },
@@ -332,7 +359,7 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
                     scenarioName: String(seed.scenarioMeta?.title ?? ''),
                     env: asJson({
                         config: scenarioConfig,
-                        meta: worldMeta,
+                        meta: archivedWorldMeta,
                     }),
                 },
                 update: {
@@ -347,7 +374,7 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
                     scenarioName: String(seed.scenarioMeta?.title ?? ''),
                     env: asJson({
                         config: scenarioConfig,
-                        meta: worldMeta,
+                        meta: archivedWorldMeta,
                     }),
                 },
             });

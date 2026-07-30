@@ -93,4 +93,48 @@ integration('database command queue', () => {
             lockedBy: 'active-worker',
         });
     });
+
+    it('retries an owned command twice and then records a terminal failure', async () => {
+        const requestId = 'integration:engine:bounded-failure';
+        await db.inputEvent.create({
+            data: {
+                requestId,
+                target: 'ENGINE',
+                eventType: 'vacation',
+                payload: {
+                    type: 'vacation',
+                    requestId,
+                    generalId: 10,
+                } as GamePrisma.InputJsonValue,
+            },
+        });
+
+        const owner = new DatabaseTurnDaemonCommandQueue(db);
+        const stale = new DatabaseTurnDaemonCommandQueue(db);
+        for (const attempt of [1, 2, 3]) {
+            await expect(owner.drain()).resolves.toEqual([
+                { type: 'vacation', requestId, generalId: 10 },
+            ]);
+            await stale.publishCommandError(requestId, new Error('stale worker failure'));
+            await expect(
+                db.inputEvent.findUniqueOrThrow({ where: { requestId } })
+            ).resolves.toMatchObject({
+                status: 'PROCESSING',
+                attempts: attempt,
+            });
+
+            await owner.publishCommandError(requestId, new Error('injected command failure'));
+            await expect(
+                db.inputEvent.findUniqueOrThrow({ where: { requestId } })
+            ).resolves.toMatchObject({
+                status: attempt < 3 ? 'PENDING' : 'FAILED',
+                attempts: attempt,
+                error: 'injected command failure',
+                lockedBy: null,
+                leaseUntil: null,
+            });
+        }
+
+        await expect(owner.drain()).resolves.toEqual([]);
+    });
 });

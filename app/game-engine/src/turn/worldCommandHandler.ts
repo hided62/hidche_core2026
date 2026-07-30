@@ -4,7 +4,7 @@ import type {
     TurnDaemonCommandExecutionContext,
     TurnDaemonCommandResult,
 } from '../lifecycle/types.js';
-import { GamePrisma } from '@sammo-ts/infra';
+import { GamePrisma, type DatabaseClient } from '@sammo-ts/infra';
 import { asRecord, JosaUtil, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 import {
     LogCategory,
@@ -40,6 +40,11 @@ import {
     IMMEDIATE_TROOP_JOIN_MOVE_HANDLER,
     LEGACY_TROOP_JOIN_EVENT,
 } from './scenarioStaticEvents.js';
+import {
+    createGeneralFromSelectionPool,
+    reselectGeneralFromSelectionPool,
+    SelectPoolError,
+} from './selectPoolService.js';
 
 let itemRegistryPromise: Promise<Map<string, ItemModule>> | null = null;
 
@@ -115,6 +120,108 @@ interface CommandHandlerContext {
     auctionFinalizer?: AuctionFinalizer;
     auctionBidder?: AuctionBidder;
     tournamentRewardFinalizer?: TournamentRewardFinalizer;
+}
+
+const requireCommandDatabase = (ctx: CommandHandlerContext): DatabaseClient => {
+    if (!ctx.commandDb) {
+        throw new Error('ENGINE mutation transaction is required for selection-pool commands.');
+    }
+    return ctx.commandDb as unknown as DatabaseClient;
+};
+
+const resolveCommandAcceptedAt = async (
+    db: DatabaseClient,
+    command: Extract<TurnDaemonCommand, { type: 'selectPoolCreate' | 'selectPoolReselect' }>
+): Promise<Date> => {
+    if (!command.requestId) {
+        throw new Error(`${command.type} requestId is required.`);
+    }
+    const event = await db.inputEvent.findUnique({
+        where: { requestId: command.requestId },
+        select: { createdAt: true },
+    });
+    if (!event) {
+        throw new Error(`ENGINE input event ${command.requestId} is missing.`);
+    }
+    return event.createdAt;
+};
+
+async function handleSelectPoolCreate(
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'selectPoolCreate' }>
+): Promise<TurnDaemonCommandResult> {
+    const db = requireCommandDatabase(ctx);
+    const worldState = await db.worldState.findUnique({
+        where: { id: ctx.world.getState().id },
+    });
+    if (!worldState) {
+        throw new Error('Selection-pool world state is missing.');
+    }
+    const acceptedAt = await resolveCommandAcceptedAt(db, command);
+    try {
+        return {
+            type: 'selectPoolCreate',
+            ...(await createGeneralFromSelectionPool({
+                db,
+                world: ctx.world,
+                worldState,
+                userId: command.userId,
+                ownerDisplayName: command.ownerDisplayName,
+                uniqueName: command.uniqueName,
+                personality: command.personality,
+                seedOwnerIdentity: command.seedOwnerIdentity,
+                now: acceptedAt,
+            })),
+        };
+    } catch (error) {
+        if (error instanceof SelectPoolError) {
+            return {
+                type: 'selectPoolCreate',
+                ok: false,
+                code: error.code,
+                reason: error.message,
+            };
+        }
+        throw error;
+    }
+}
+
+async function handleSelectPoolReselect(
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'selectPoolReselect' }>
+): Promise<TurnDaemonCommandResult> {
+    const db = requireCommandDatabase(ctx);
+    const worldState = await db.worldState.findUnique({
+        where: { id: ctx.world.getState().id },
+    });
+    if (!worldState) {
+        throw new Error('Selection-pool world state is missing.');
+    }
+    const acceptedAt = await resolveCommandAcceptedAt(db, command);
+    try {
+        return {
+            type: 'selectPoolReselect',
+            ...(await reselectGeneralFromSelectionPool({
+                db,
+                world: ctx.world,
+                worldState,
+                userId: command.userId,
+                ownerDisplayName: command.ownerDisplayName,
+                uniqueName: command.uniqueName,
+                now: acceptedAt,
+            })),
+        };
+    } catch (error) {
+        if (error instanceof SelectPoolError) {
+            return {
+                type: 'selectPoolReselect',
+                ok: false,
+                code: error.code,
+                reason: error.message,
+            };
+        }
+        throw error;
+    }
 }
 
 interface AuctionFinalizer {
@@ -1845,6 +1952,16 @@ export const createTurnDaemonCommandHandler = (options: {
             handleTournamentMatchResult(ctx, command as Extract<TurnDaemonCommand, { type: 'tournamentMatchResult' }>),
         patchGeneral: (command) =>
             handlePatchGeneral(ctx, command as Extract<TurnDaemonCommand, { type: 'patchGeneral' }>),
+        selectPoolCreate: (command) =>
+            handleSelectPoolCreate(
+                ctx,
+                command as Extract<TurnDaemonCommand, { type: 'selectPoolCreate' }>
+            ),
+        selectPoolReselect: (command) =>
+            handleSelectPoolReselect(
+                ctx,
+                command as Extract<TurnDaemonCommand, { type: 'selectPoolReselect' }>
+            ),
         shiftSchedule: (command) =>
             handleShiftSchedule(ctx, command as Extract<TurnDaemonCommand, { type: 'shiftSchedule' }>),
     };

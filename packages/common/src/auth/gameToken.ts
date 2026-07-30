@@ -24,6 +24,7 @@ export interface GatewayUserInfo {
     displayName: string;
     roles: string[];
     createdAt?: string;
+    legacyMemberNo?: number;
 }
 
 export interface GameSessionTokenPayload {
@@ -82,7 +83,9 @@ const parsePayload = (value: unknown): GameSessionTokenPayload | null => {
         typeof user.id !== 'string' ||
         typeof user.username !== 'string' ||
         typeof user.displayName !== 'string' ||
-        !Array.isArray(user.roles)
+        !Array.isArray(user.roles) ||
+        (user.legacyMemberNo !== undefined &&
+            (!Number.isSafeInteger(user.legacyMemberNo) || user.legacyMemberNo <= 0))
     ) {
         return null;
     }

@@ -254,6 +254,7 @@ describe('input event atomicity', () => {
             resolveError = resolve;
         });
         const publishCommandResult = vi.fn(async () => {});
+        const publishCommandError = vi.fn(async () => {});
         let engineState = { value: 'before' };
         const stateManager = new EngineStateManager();
         stateManager.register('test', {
@@ -287,6 +288,7 @@ describe('input event atomicity', () => {
                 commandResponder: {
                     publishStatus: async () => {},
                     publishCommandResult,
+                    publishCommandError,
                 },
             },
             {
@@ -305,6 +307,10 @@ describe('input event atomicity', () => {
             lastError: 'injected commit failure',
         });
         expect(publishCommandResult).not.toHaveBeenCalled();
+        expect(publishCommandError).toHaveBeenCalledWith(
+            'event-2',
+            expect.objectContaining({ message: 'injected commit failure' })
+        );
         expect(engineState).toEqual({ value: 'before' });
         expect(stateManager.getRevision()).toBe(0);
 
@@ -320,6 +326,7 @@ describe('input event atomicity', () => {
         });
         const commitCommand = vi.fn(async () => {});
         const publishCommandResult = vi.fn(async () => {});
+        const publishCommandError = vi.fn(async () => {});
         let engineState = { value: 'before' };
         const stateManager = new EngineStateManager();
         stateManager.register('test', {
@@ -351,6 +358,7 @@ describe('input event atomicity', () => {
                 commandResponder: {
                     publishStatus: async () => {},
                     publishCommandResult,
+                    publishCommandError,
                 },
             },
             {
@@ -370,6 +378,10 @@ describe('input event atomicity', () => {
         });
         expect(commitCommand).not.toHaveBeenCalled();
         expect(publishCommandResult).not.toHaveBeenCalled();
+        expect(publishCommandError).toHaveBeenCalledWith(
+            'event-3',
+            expect.objectContaining({ message: 'injected handler failure' })
+        );
         expect(engineState).toEqual({ value: 'before' });
         expect(stateManager.getRevision()).toBe(0);
 

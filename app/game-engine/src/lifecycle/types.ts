@@ -33,6 +33,7 @@ export interface TurnDaemonCommandExecutionContext {
 export interface TurnDaemonCommandResponder {
     publishStatus(requestId: string, status: TurnDaemonStatus): Promise<void>;
     publishCommandResult(requestId: string, result: TurnDaemonCommandResult): Promise<void>;
+    publishCommandError?(requestId: string, error: unknown): Promise<void>;
 }
 
 export type { Clock } from '@sammo-ts/common';

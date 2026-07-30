@@ -28,6 +28,7 @@ export default defineConfig({
         'commandArguments.spec.ts',
         'commandArgumentsLive.spec.ts',
         'mainNavigation.spec.ts',
+        'session-auth.spec.ts',
     ],
     fullyParallel: false,
     workers: 1,

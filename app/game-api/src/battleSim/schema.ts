@@ -8,6 +8,7 @@ export const zBattleSimGeneral = z.object({
     nation: z.number().int().positive(),
     turntime: z.string().min(1),
     personal: z.string().nullable(),
+    special: z.string().nullable().optional(),
     special2: z.string().nullable(),
     crew: z.number().int().min(0),
     crewtype: z.number().int().positive(),

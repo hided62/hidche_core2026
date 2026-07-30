@@ -34,6 +34,7 @@
         "@fastify/cors": "^11.2.0",
         "@fastify/static": "^9.0.0",
         "@sammo-ts/common": "workspace:*",
+        "@sammo-ts/game-engine": "workspace:*",
         "@sammo-ts/infra": "workspace:*",
         "@sammo-ts/logic": "workspace:*",
         "@trpc/server": "^11.8.1",

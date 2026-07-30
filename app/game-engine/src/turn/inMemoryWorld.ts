@@ -881,10 +881,9 @@ export class InMemoryTurnWorld {
     getNextGeneralId(): number {
         const meta = this.state.meta as Record<string, unknown>;
         let lastId = (meta.lastGeneralId as number | undefined) ?? 0;
-        if (lastId === 0) {
-            const currentIds = Array.from(this.generals.keys());
-            lastId = currentIds.length > 0 ? Math.max(...currentIds) : 0;
-        }
+        const currentIds = Array.from(this.generals.keys());
+        const currentMaxId = currentIds.length > 0 ? Math.max(...currentIds) : 0;
+        lastId = Math.max(lastId, currentMaxId);
 
         const nextId = lastId + 1;
         this.state = {

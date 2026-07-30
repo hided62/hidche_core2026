@@ -10,6 +10,7 @@ export default defineConfig({
         'server-operations.spec.ts',
         'admin-runtime-actions.spec.ts',
         'lobby-admin-navigation.spec.ts',
+        'lobby-game-auth.spec.ts',
         'logout.spec.ts',
     ],
     fullyParallel: false,
