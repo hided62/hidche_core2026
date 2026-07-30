@@ -42,6 +42,8 @@ export class Pm2ProcessManager implements ProcessManager {
                                 name: item.name ?? 'unknown',
                                 status: item.pm2_env?.status ?? 'unknown',
                                 pid: item.pid ?? undefined,
+                                cwd: item.pm2_env?.pm_cwd ?? undefined,
+                                script: item.pm2_env?.pm_exec_path ?? undefined,
                             })) ?? [];
                         resolve(normalized);
                     });

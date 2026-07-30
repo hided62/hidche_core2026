@@ -2,6 +2,8 @@ export interface ManagedProcessInfo {
     name: string;
     status: string;
     pid?: number;
+    cwd?: string;
+    script?: string;
 }
 
 export interface ProcessDefinition {

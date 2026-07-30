@@ -305,6 +305,19 @@ const buildProcessName = (
 const isMissingProcessError = (error: unknown): boolean =>
     error instanceof Error && /process or namespace not found/i.test(error.message);
 
+const isRuntimeProcessActive = (status: string): boolean => {
+    const normalized = status.toLowerCase();
+    return normalized === 'online' || normalized === 'launching' || normalized === 'stopping';
+};
+
+const isPathInside = (candidate: string | undefined, root: string): boolean => {
+    if (!candidate) {
+        return false;
+    }
+    const relative = path.relative(path.resolve(root), path.resolve(candidate));
+    return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+};
+
 export const buildProcessDefinitions = (
     profile: GatewayProfileRecord,
     config: GatewayProcessConfig
@@ -1003,10 +1016,36 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             workspaceMap.set(workspace, entry);
         }
 
+        const activeProcesses = (await this.processManager.list()).filter((process) =>
+            isRuntimeProcessActive(process.status)
+        );
+        const referencedWorkspaces = new Set<string>();
+        for (const [workspace, entry] of workspaceMap.entries()) {
+            const profileProcessNames = new Set(
+                entry.profileNames.flatMap((profileName) => [
+                    buildProcessName(profileName, 'api'),
+                    buildProcessName(profileName, 'daemon'),
+                    buildProcessName(profileName, 'auction'),
+                    buildProcessName(profileName, 'battle-sim'),
+                    buildProcessName(profileName, 'tournament'),
+                ])
+            );
+            if (
+                activeProcesses.some(
+                    (process) =>
+                        profileProcessNames.has(process.name) ||
+                        isPathInside(process.cwd, workspace) ||
+                        isPathInside(process.script, workspace)
+                )
+            ) {
+                referencedWorkspaces.add(workspace);
+            }
+        }
+
         const removed: string[] = [];
         const skipped: string[] = [];
         for (const [workspace, entry] of workspaceMap.entries()) {
-            if (!entry.lastUsedAt || entry.hasActiveBuild) {
+            if (!entry.lastUsedAt || entry.hasActiveBuild || referencedWorkspaces.has(workspace)) {
                 skipped.push(workspace);
                 continue;
             }
