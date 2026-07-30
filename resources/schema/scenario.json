@@ -40,8 +40,21 @@
         {
             "type": "object",
             "properties": {
-                "title": {
-                    "type": "string"
+                "extends": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1
+                        },
+                        {
+                            "minItems": 1,
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "minLength": 1
+                            }
+                        }
+                    ]
                 },
                 "startYear": {
                     "type": "number"
@@ -140,11 +153,137 @@
                 },
                 "ignoreDefaultEvents": {
                     "type": "boolean"
+                },
+                "title": {
+                    "type": "string"
                 }
             },
             "required": [
                 "title"
             ],
+            "additionalProperties": {}
+        },
+        {
+            "type": "object",
+            "properties": {
+                "extends": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1
+                        },
+                        {
+                            "minItems": 1,
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "minLength": 1
+                            }
+                        }
+                    ]
+                },
+                "startYear": {
+                    "type": "number"
+                },
+                "life": {
+                    "type": "number"
+                },
+                "fiction": {
+                    "type": "number"
+                },
+                "history": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "iconPath": {
+                    "type": "string"
+                },
+                "stat": {
+                    "type": "object",
+                    "properties": {
+                        "total": {
+                            "type": "number"
+                        },
+                        "min": {
+                            "type": "number"
+                        },
+                        "max": {
+                            "type": "number"
+                        },
+                        "npcTotal": {
+                            "type": "number"
+                        },
+                        "npcMax": {
+                            "type": "number"
+                        },
+                        "npcMin": {
+                            "type": "number"
+                        },
+                        "chiefMin": {
+                            "type": "number"
+                        }
+                    },
+                    "additionalProperties": false
+                },
+                "map": {
+                    "type": "object",
+                    "propertyNames": {
+                        "type": "string"
+                    },
+                    "additionalProperties": {}
+                },
+                "const": {
+                    "type": "object",
+                    "propertyNames": {
+                        "type": "string"
+                    },
+                    "additionalProperties": {}
+                },
+                "nation": {
+                    "type": "array",
+                    "items": {}
+                },
+                "diplomacy": {
+                    "type": "array",
+                    "items": {}
+                },
+                "general": {
+                    "type": "array",
+                    "items": {}
+                },
+                "general_ex": {
+                    "type": "array",
+                    "items": {}
+                },
+                "general_neutral": {
+                    "type": "array",
+                    "items": {}
+                },
+                "cities": {
+                    "type": "array",
+                    "items": {}
+                },
+                "events": {
+                    "type": "array",
+                    "items": {}
+                },
+                "initialEvents": {
+                    "type": "array",
+                    "items": {}
+                },
+                "initialActions": {
+                    "type": "array",
+                    "items": {}
+                },
+                "ignoreDefaultEvents": {
+                    "type": "boolean"
+                },
+                "title": {
+                    "not": {}
+                }
+            },
             "additionalProperties": {}
         }
     ]

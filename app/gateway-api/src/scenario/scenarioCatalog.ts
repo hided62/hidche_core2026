@@ -3,7 +3,11 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-import { loadScenarioDefinitionById, resolveScenarioDefaultsPath } from '@sammo-ts/game-engine';
+import {
+    composeScenarioResource,
+    loadScenarioDefinitionById,
+    resolveScenarioDefaultsPath,
+} from '@sammo-ts/game-engine';
 import { parseScenarioDefaults, parseScenarioDefinition, type ScenarioDefaults } from '@sammo-ts/logic';
 import { resolveWorkspaceRoot } from '../orchestrator/workspaceRoot.js';
 
@@ -172,7 +176,9 @@ const listScenarioIdsFromGit = async (commitSha: string): Promise<number[]> => {
     return ids.sort((a, b) => a - b);
 };
 
-const buildNationIdResolver = (nations: Array<{ id: number; name: string }>): ((value: number | string | null) => number | null) => {
+const buildNationIdResolver = (
+    nations: Array<{ id: number; name: string }>
+): ((value: number | string | null) => number | null) => {
     const byName = new Map(nations.map((nation) => [nation.name, nation.id]));
     return (value) => {
         if (typeof value === 'number' && Number.isFinite(value)) {
@@ -243,7 +249,9 @@ const loadScenarioDefaultsFromGit = async (commitSha: string): Promise<ScenarioD
 
 const buildScenarioPreviewFromGit = async (commitSha: string, scenarioId: number): Promise<ScenarioPreview> => {
     const defaults = await loadScenarioDefaultsFromGit(commitSha);
-    const rawScenario = await readGitJson(commitSha, path.join(SCENARIO_ROOT, `scenario_${scenarioId}.json`));
+    const rawScenario = await composeScenarioResource(`scenario_${scenarioId}.json`, (relativePath) =>
+        readGitJson(commitSha, path.posix.join(SCENARIO_ROOT, relativePath))
+    );
     const scenario = parseScenarioDefinition(rawScenario, defaults);
     const resolveNationId = buildNationIdResolver(scenario.nations);
 

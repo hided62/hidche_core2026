@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 
 import {
     MapResourceSchema,
+    ScenarioDefinitionInputSchema,
+    ScenarioFragmentInputSchema,
     ScenarioResourceSchema,
     TurnCommandProfileInputSchema,
     UnitSetDefinitionInputSchema,
@@ -23,10 +25,17 @@ const RESOURCE_SCHEMAS: Record<string, (value: unknown) => void> = {
 
 const listJsonFiles = async (dirPath: string): Promise<string[]> => {
     const entries = await fs.readdir(dirPath, { withFileTypes: true });
-    return entries
-        .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
-        .map((entry) => entry.name)
-        .sort((a, b) => a.localeCompare(b));
+    const files = await Promise.all(
+        entries.map(async (entry): Promise<string[]> => {
+            if (entry.isDirectory()) {
+                return (await listJsonFiles(path.join(dirPath, entry.name))).map((fileName) =>
+                    path.join(entry.name, fileName)
+                );
+            }
+            return entry.isFile() && entry.name.endsWith('.json') ? [entry.name] : [];
+        })
+    );
+    return files.flat().sort((a, b) => a.localeCompare(b));
 };
 
 const validateFolder = async (folder: string): Promise<string[]> => {
@@ -50,7 +59,13 @@ const validateFolder = async (folder: string): Promise<string[]> => {
             continue;
         }
         try {
-            schema(parsed);
+            if (folder === 'scenario' && /^scenario_\d+\.json$/.test(fileName)) {
+                ScenarioDefinitionInputSchema.parse(parsed);
+            } else if (folder === 'scenario' && fileName.startsWith(`extensions${path.sep}`)) {
+                ScenarioFragmentInputSchema.parse(parsed);
+            } else {
+                schema(parsed);
+            }
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             errors.push(`${path.relative(REPO_ROOT, filePath)}: ${message}`);

@@ -5,7 +5,7 @@
             "url": "./resources/schema/map.json"
         },
         {
-            "fileMatch": ["resources/scenario/*.json"],
+            "fileMatch": ["resources/scenario/*.json", "resources/scenario/**/*.json"],
             "url": "./resources/schema/scenario.json"
         },
         {
