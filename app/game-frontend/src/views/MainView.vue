@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onUnmounted, ref, watch } from 'vue';
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useMediaQuery } from '@vueuse/core';
 import PanelCard from '../components/ui/PanelCard.vue';
@@ -13,6 +13,10 @@ import MessagePanel from '../components/main/MessagePanel.vue';
 import SelectedCityPanel from '../components/main/SelectedCityPanel.vue';
 import RecordPanel from '../components/main/RecordPanel.vue';
 import MainFrontStatus from '../components/main/MainFrontStatus.vue';
+import MainGlobalMenu from '../components/main/MainGlobalMenu.vue';
+import MainNationMenu from '../components/main/MainNationMenu.vue';
+import MainMobileBottomBar from '../components/main/MainMobileBottomBar.vue';
+import type { QuickNavigationItem } from '../components/main/mainNavigation';
 import { formatLog } from '../utils/formatLog';
 import { useSessionStore } from '../stores/session';
 import { useMainDashboardStore } from '../stores/mainDashboard';
@@ -20,7 +24,7 @@ import { trpc } from '../utils/trpc';
 
 const session = useSessionStore();
 const dashboard = useMainDashboardStore();
-const isMobile = useMediaQuery('(max-width: 1024px)');
+const isMobile = useMediaQuery('(max-width: 939.98px)');
 
 const mobileTabs = [
     { key: 'map', label: '지도' },
@@ -34,6 +38,7 @@ type MobileTabKey = (typeof mobileTabs)[number]['key'];
 
 const mobileTab = ref<MobileTabKey>('map');
 const tournamentStage = ref(0);
+const npcMode = ref(0);
 
 const {
     loading,
@@ -63,6 +68,14 @@ const {
     statusLine,
     realtimeLabel,
 } = storeToRefs(dashboard);
+
+const nationAccess = computed(() => ({
+    permission: boardAccess.value?.permission ?? -1,
+    officerLevel: general.value?.officerLevel ?? 0,
+    nationLevel: nation.value?.level ?? 0,
+}));
+const nationColor = computed(() => nation.value?.color ?? '#000000');
+const voteActive = computed(() => Boolean(frontStatus.value?.latestVote));
 
 let surveyNoticeTimer: ReturnType<typeof setTimeout> | null = null;
 watch(surveyNotice, (notice) => {
@@ -97,8 +110,24 @@ const shiftNationTurns = (amount: number) => {
 };
 
 const loadMainData = async () => {
-    const [, state] = await Promise.all([dashboard.loadMainData(), trpc.tournament.getState.query().catch(() => null)]);
+    const [, state, worldState] = await Promise.all([
+        dashboard.loadMainData(),
+        trpc.tournament.getState.query().catch(() => null),
+        trpc.world.getState.query().catch(() => null),
+    ]);
     tournamentStage.value = state?.stage ?? 0;
+    npcMode.value = worldState?.config.npcMode ?? 0;
+};
+
+const moveLobby = () => {
+    window.location.replace(import.meta.env.VITE_GATEWAY_WEB_URL?.trim() || '/gateway/');
+};
+
+const quickNavigate = async (item: QuickNavigationItem) => {
+    mobileTab.value = item.tab;
+    await nextTick();
+    await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+    document.querySelector<HTMLElement>(item.selector)?.scrollIntoView({ behavior: 'auto', block: 'start' });
 };
 
 watch(
@@ -114,64 +143,28 @@ watch(
 
 <template>
     <main class="game-shell main-page">
+        <MainGlobalMenu :npc-mode="npcMode" :vote-active="voteActive" />
+
         <header class="game-shell__header">
             <div>
                 <h1 class="game-shell__title">전장 현황</h1>
                 <p class="game-shell__subtitle">{{ statusLine }}</p>
             </div>
-            <div class="game-shell__actions">
-                <RouterLink v-if="boardAccess?.canMeeting" class="game-shell__action" to="/board">회의실</RouterLink>
-                <span v-else class="game-shell__action disabled" aria-disabled="true">회의실</span>
-                <RouterLink v-if="boardAccess?.canSecret" class="game-shell__action" to="/board/secret">기밀실</RouterLink>
-                <span v-else class="game-shell__action disabled" aria-disabled="true">기밀실</span>
-                <RouterLink class="game-shell__action" to="/nation/info">세력 정보</RouterLink>
-                <RouterLink class="game-shell__action" to="/nation/cities">세력 도시</RouterLink>
-                <RouterLink class="game-shell__action" to="/global-info">중원 정보</RouterLink>
-                <RouterLink class="game-shell__action" to="/nation-list">세력일람</RouterLink>
-                <RouterLink class="game-shell__action" to="/general-list">장수일람</RouterLink>
-                <RouterLink class="game-shell__action" to="/current-city">현재 도시</RouterLink>
-                <RouterLink class="game-shell__action" to="/nation/generals">세력 장수</RouterLink>
-                <RouterLink v-if="(boardAccess?.permission ?? -1) >= 1" class="game-shell__action" to="/nation/secret"
-                    >암행부</RouterLink
-                >
-                <span v-else class="game-shell__action disabled" aria-disabled="true">암행부</span>
-                <RouterLink class="game-shell__action" to="/nation/personnel">인사부</RouterLink>
-                <RouterLink class="game-shell__action" to="/troop">부대 편성</RouterLink>
-                <RouterLink class="game-shell__action" to="/nation/finance">내무부</RouterLink>
-                <RouterLink class="game-shell__action" to="/diplomacy">외교부</RouterLink>
-                <RouterLink class="game-shell__action" to="/chief-center">사령부</RouterLink>
-                <RouterLink class="game-shell__action" to="/battle-center">감찰부</RouterLink>
-                <RouterLink class="game-shell__action" to="/best-general">명장일람</RouterLink>
-                <RouterLink class="game-shell__action" to="/hall-of-fame">명예의 전당</RouterLink>
-                <RouterLink class="game-shell__action" to="/dynasty">왕조일람</RouterLink>
-                <RouterLink class="game-shell__action" to="/yearbook">연감</RouterLink>
-                <RouterLink class="game-shell__action" to="/nation-betting">천통국 베팅</RouterLink>
-                <RouterLink class="game-shell__action" to="/traffic">접속량정보</RouterLink>
-                <RouterLink class="game-shell__action" to="/npc-list">빙의일람</RouterLink>
-                <a class="game-shell__action" href="/xe/community" target="_blank" rel="noopener">게시판</a>
-                <RouterLink class="game-shell__action" to="/battle-simulator">전투 시뮬레이터</RouterLink>
-                <RouterLink class="game-shell__action" to="/my-page">내 정보&amp;설정</RouterLink>
-                <RouterLink class="game-shell__action" to="/past-plays">내 지난 플레이</RouterLink>
-                <RouterLink class="game-shell__action" :class="{ highlight: tournamentStage === 1 }" to="/tournament"
-                    >토너먼트</RouterLink
-                >
-                <RouterLink class="game-shell__action" :class="{ highlight: tournamentStage === 6 }" to="/betting"
-                    >베팅장</RouterLink
-                >
-                <RouterLink class="game-shell__action" to="/auction">거래장</RouterLink>
-                <RouterLink class="game-shell__action" to="/survey">설문조사</RouterLink>
-                <RouterLink class="game-shell__action" to="/npc-control">NPC 정책</RouterLink>
-                <RouterLink class="game-shell__action" to="/inherit">유산 강화</RouterLink>
+            <div class="game-shell__actions desktop-action-controls">
                 <button
                     class="game-shell__action toggle"
                     :class="{ active: realtimeEnabled }"
+                    type="button"
                     @click="dashboard.setRealtimeEnabled(!realtimeEnabled)"
                 >
                     실시간 동기화: {{ realtimeLabel }}
                 </button>
-                <button class="game-shell__action" @click="loadMainData">새로고침</button>
+                <button class="game-shell__action" type="button" @click="loadMainData">갱 신</button>
+                <button class="game-shell__action" type="button" @click="moveLobby">로비로</button>
             </div>
         </header>
+
+        <MainNationMenu :access="nationAccess" :tournament-stage="tournamentStage" :nation-color="nationColor" />
 
         <div v-if="error" class="game-feedback game-feedback--error" role="alert">{{ error }}</div>
         <div v-if="frontStatusError" class="front-status-error" role="alert">{{ frontStatusError }}</div>
@@ -180,7 +173,9 @@ watch(
             장수가 아직 생성되지 않았습니다. <RouterLink to="/join">장수 생성/빙의</RouterLink>
         </div>
 
-        <MainFrontStatus :status="frontStatus" />
+        <div data-main-target="policy">
+            <MainFrontStatus :status="frontStatus" />
+        </div>
 
         <aside v-if="surveyNotice" class="survey-notice" role="status" aria-live="polite">
             <div class="survey-notice-title">
@@ -203,7 +198,7 @@ watch(
             </div>
 
             <div v-if="mobileTab === 'map'" class="mobile-panel">
-                <PanelCard title="지도">
+                <PanelCard title="지도" data-main-target="map">
                     <MapViewer :map-data="worldMap" :map-layout="mapLayout" :loading="loading" />
                 </PanelCard>
                 <PanelCard title="선택 도시">
@@ -212,7 +207,7 @@ watch(
             </div>
 
             <div v-if="mobileTab === 'commands'" class="mobile-panel">
-                <PanelCard title="명령 목록" subtitle="예턴/명령 배치 영역">
+                <PanelCard title="명령 목록" subtitle="예턴/명령 배치 영역" data-main-target="commands">
                     <CommandListPanel
                         :command-table="commandTable"
                         :loading="loading"
@@ -229,19 +224,19 @@ watch(
             </div>
 
             <div v-if="mobileTab === 'status'" class="mobile-panel">
-                <PanelCard title="장수 스탯">
+                <PanelCard title="장수 스탯" data-main-target="general">
                     <GeneralBasicCard :general="general" :loading="loading" />
                 </PanelCard>
-                <PanelCard title="도시 정보">
+                <PanelCard title="도시 정보" data-main-target="city">
                     <CityBasicCard :city="city" :loading="loading" />
                 </PanelCard>
-                <PanelCard title="국가 정보">
+                <PanelCard title="국가 정보" data-main-target="nation">
                     <NationBasicCard :nation="nation" :loading="loading" />
                 </PanelCard>
             </div>
 
             <div v-if="mobileTab === 'world'" class="mobile-panel record-zone-mobile">
-                <RecordPanel title="장수 동향">
+                <RecordPanel title="장수 동향" data-main-target="global-records">
                     <SkeletonLines v-if="loading" :lines="4" />
                     <div v-else-if="recordsError" class="record-error" role="alert">{{ recordsError }}</div>
                     <div v-else class="record-list" data-record-bucket="global">
@@ -255,7 +250,7 @@ watch(
                         <div v-if="globalRecords.length === 0" class="record-empty">기록이 없습니다.</div>
                     </div>
                 </RecordPanel>
-                <RecordPanel title="개인 기록">
+                <RecordPanel title="개인 기록" data-main-target="general-records">
                     <SkeletonLines v-if="loading" :lines="4" />
                     <div v-else-if="recordsError" class="record-error" role="alert">{{ recordsError }}</div>
                     <div v-else class="record-list" data-record-bucket="general">
@@ -269,7 +264,7 @@ watch(
                         <div v-if="generalRecords.length === 0" class="record-empty">기록이 없습니다.</div>
                     </div>
                 </RecordPanel>
-                <RecordPanel title="중원 정세">
+                <RecordPanel title="중원 정세" data-main-target="world-history">
                     <SkeletonLines v-if="loading" :lines="4" />
                     <div v-else-if="recordsError" class="record-error" role="alert">{{ recordsError }}</div>
                     <div v-else class="record-list" data-record-bucket="history">
@@ -311,7 +306,7 @@ watch(
 
         <section v-else class="layout-desktop">
             <div class="stack">
-                <PanelCard title="지도" subtitle="실시간 지도 + 도시 상황">
+                <PanelCard title="지도" subtitle="실시간 지도 + 도시 상황" data-main-target="map">
                     <MapViewer :map-data="worldMap" :map-layout="mapLayout" :loading="loading" />
                 </PanelCard>
                 <PanelCard title="선택 도시">
@@ -320,7 +315,7 @@ watch(
             </div>
 
             <div class="stack">
-                <PanelCard title="명령 목록" subtitle="예턴/명령 배치 영역">
+                <PanelCard title="명령 목록" subtitle="예턴/명령 배치 영역" data-main-target="commands">
                     <CommandListPanel
                         :command-table="commandTable"
                         :loading="loading"
@@ -334,18 +329,18 @@ watch(
                         @shift-nation-turns="shiftNationTurns"
                     />
                 </PanelCard>
-                <PanelCard title="장수 스탯">
+                <PanelCard title="장수 스탯" data-main-target="general">
                     <GeneralBasicCard :general="general" :loading="loading" />
                 </PanelCard>
-                <PanelCard title="도시 정보">
+                <PanelCard title="도시 정보" data-main-target="city">
                     <CityBasicCard :city="city" :loading="loading" />
                 </PanelCard>
-                <PanelCard title="국가 정보">
+                <PanelCard title="국가 정보" data-main-target="nation">
                     <NationBasicCard :nation="nation" :loading="loading" />
                 </PanelCard>
             </div>
             <section class="record-zone">
-                <RecordPanel title="장수 동향">
+                <RecordPanel title="장수 동향" data-main-target="global-records">
                     <SkeletonLines v-if="loading" :lines="4" />
                     <div v-else-if="recordsError" class="record-error" role="alert">{{ recordsError }}</div>
                     <div v-else class="record-list" data-record-bucket="global">
@@ -359,7 +354,7 @@ watch(
                         <div v-if="globalRecords.length === 0" class="record-empty">기록이 없습니다.</div>
                     </div>
                 </RecordPanel>
-                <RecordPanel title="개인 기록">
+                <RecordPanel title="개인 기록" data-main-target="general-records">
                     <SkeletonLines v-if="loading" :lines="4" />
                     <div v-else-if="recordsError" class="record-error" role="alert">{{ recordsError }}</div>
                     <div v-else class="record-list" data-record-bucket="general">
@@ -373,7 +368,7 @@ watch(
                         <div v-if="generalRecords.length === 0" class="record-empty">기록이 없습니다.</div>
                     </div>
                 </RecordPanel>
-                <RecordPanel class="world-history-panel" title="중원 정세">
+                <RecordPanel class="world-history-panel" title="중원 정세" data-main-target="world-history">
                     <SkeletonLines v-if="loading" :lines="4" />
                     <div v-else-if="recordsError" class="record-error" role="alert">{{ recordsError }}</div>
                     <div v-else class="record-list" data-record-bucket="history">
@@ -409,6 +404,19 @@ watch(
                 @delete="dashboard.deleteMessage"
             />
         </section>
+
+        <MainGlobalMenu class="common-menu-repeat" :npc-mode="npcMode" :vote-active="voteActive" />
+        <MainGlobalMenu class="common-menu-repeat" :npc-mode="npcMode" :vote-active="voteActive" />
+
+        <MainMobileBottomBar
+            :access="nationAccess"
+            :tournament-stage="tournamentStage"
+            :nation-color="nationColor"
+            :npc-mode="npcMode"
+            @refresh="loadMainData"
+            @lobby="moveLobby"
+            @quick="quickNavigate"
+        />
     </main>
 </template>
 
@@ -584,5 +592,20 @@ button {
     display: flex;
     flex-direction: column;
     gap: 6px;
+}
+
+@media (max-width: 939.98px) {
+    .main-page {
+        padding-bottom: 61px;
+    }
+
+    .desktop-action-controls {
+        display: none;
+    }
+
+    .survey-notice {
+        z-index: 90;
+        bottom: 61px;
+    }
 }
 </style>
