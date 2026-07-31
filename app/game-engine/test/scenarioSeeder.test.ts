@@ -32,9 +32,7 @@ type ScenarioSeederPrismaClient = {
     };
     selectPoolEntry: {
         count(): Promise<number>;
-        findFirst(args: {
-            orderBy: { id: 'asc' | 'desc' };
-        }): Promise<{ uniqueName: string; info: unknown } | null>;
+        findFirst(args: { orderBy: { id: 'asc' | 'desc' } }): Promise<{ uniqueName: string; info: unknown } | null>;
     };
     diplomacy: {
         count(): Promise<number>;
@@ -397,9 +395,7 @@ describeDb('scenario database seed', () => {
                 hiddenSeed: 'scenario-seeder-explicit-hidden-seed',
             });
             const explicitHistory = await prisma.gameHistory.findUnique({ where: { serverId } });
-            expect((explicitHistory?.env as { meta?: Record<string, unknown> })?.meta).not.toHaveProperty(
-                'hiddenSeed'
-            );
+            expect((explicitHistory?.env as { meta?: Record<string, unknown> })?.meta).not.toHaveProperty('hiddenSeed');
 
             delete process.env[envName];
             await seedScenarioToDatabase({
@@ -412,9 +408,7 @@ describeDb('scenario database seed', () => {
             expect(randomSeed).toMatch(/^[0-9a-f]{32}$/);
             expect(randomSeed).not.toBe('scenario-seeder-explicit-hidden-seed');
             const randomHistory = await prisma.gameHistory.findUnique({ where: { serverId } });
-            expect((randomHistory?.env as { meta?: Record<string, unknown> })?.meta).not.toHaveProperty(
-                'hiddenSeed'
-            );
+            expect((randomHistory?.env as { meta?: Record<string, unknown> })?.meta).not.toHaveProperty('hiddenSeed');
             await prisma.gameHistory.deleteMany({ where: { serverId } });
         } finally {
             if (originalSeed === undefined) {
@@ -422,6 +416,399 @@ describeDb('scenario database seed', () => {
             } else {
                 process.env[envName] = originalSeed;
             }
+            await connector.disconnect();
+        }
+    });
+
+    test('serializes and skips the same committed install generation inside the seed transaction', async () => {
+        const envName = 'INTEGRATION_WORLD_SEED';
+        const originalSeed = process.env[envName];
+        const serverId = 'scenario-seeder-idempotent-generation';
+        const installOperationId = 'scenario-seeder-idempotent-operation';
+        const installCommitSha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+        const connector = createGamePostgresConnector({ url: databaseUrl });
+        try {
+            process.env[envName] = 'scenario-seeder-idempotent-hidden-seed';
+            const results = await Promise.all([
+                seedScenarioToDatabase({
+                    scenarioId: 1010,
+                    databaseUrl,
+                    installOptions: { serverId, installOperationId, installCommitSha },
+                }),
+                seedScenarioToDatabase({
+                    scenarioId: 1010,
+                    databaseUrl,
+                    installOptions: { serverId, installOperationId, installCommitSha },
+                }),
+            ]);
+            expect(results.map(({ applied }) => applied).sort()).toEqual([false, true]);
+
+            await connector.connect();
+            const worldBeforeMismatch = await connector.prisma.worldState.findFirstOrThrow();
+            expect(worldBeforeMismatch.meta).toMatchObject({
+                hiddenSeed: 'scenario-seeder-idempotent-hidden-seed',
+                installOperationId,
+                installCommitSha,
+            });
+            await expect(
+                seedScenarioToDatabase({
+                    scenarioId: 903,
+                    databaseUrl,
+                    installOptions: {
+                        serverId,
+                        installOperationId,
+                        installCommitSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+                    },
+                })
+            ).rejects.toThrow('belongs to a different source commit');
+            await expect(connector.prisma.worldState.findFirstOrThrow()).resolves.toEqual(worldBeforeMismatch);
+            await expect(connector.prisma.gameHistory.count({ where: { serverId } })).resolves.toBe(1);
+        } finally {
+            if (originalSeed === undefined) {
+                delete process.env[envName];
+            } else {
+                process.env[envName] = originalSeed;
+            }
+            await connector.prisma.gameHistory.deleteMany({ where: { serverId } });
+            await connector.disconnect();
+        }
+    });
+
+    test('rolls back the complete season replacement when the final seed hook fails', async () => {
+        const envName = 'INTEGRATION_WORLD_SEED';
+        const originalSeed = process.env[envName];
+        const baselineServerId = 'scenario-seeder-rollback-baseline';
+        const failedServerId = 'scenario-seeder-rollback-failed';
+        const connector = createGamePostgresConnector({ url: databaseUrl });
+        try {
+            process.env[envName] = 'scenario-seeder-rollback-hidden-seed';
+            await seedScenarioToDatabase({
+                scenarioId: 1010,
+                databaseUrl,
+                now: new Date('2031-01-01T00:00:00.000Z'),
+                installOptions: {
+                    serverId: baselineServerId,
+                    installOperationId: 'baseline-operation',
+                },
+            });
+
+            await connector.connect();
+            const prisma = connector.prisma;
+            const readSnapshot = async () => ({
+                world: await prisma.worldState.findMany({ orderBy: { id: 'asc' } }),
+                nations: await prisma.nation.findMany({ orderBy: { id: 'asc' } }),
+                cities: await prisma.city.findMany({ orderBy: { id: 'asc' } }),
+                generals: await prisma.general.findMany({ orderBy: { id: 'asc' } }),
+                troops: await prisma.troop.findMany({ orderBy: { troopLeaderId: 'asc' } }),
+                diplomacy: await prisma.diplomacy.findMany({ orderBy: { id: 'asc' } }),
+                events: await prisma.event.findMany({ orderBy: { id: 'asc' } }),
+                history: await prisma.gameHistory.findMany({ orderBy: { id: 'asc' } }),
+            });
+            const before = await readSnapshot();
+
+            await expect(
+                seedScenarioToDatabase({
+                    scenarioId: 903,
+                    databaseUrl,
+                    now: new Date('2032-01-01T00:00:00.000Z'),
+                    installOptions: {
+                        serverId: baselineServerId,
+                        installOperationId: 'colliding-operation',
+                    },
+                })
+            ).rejects.toThrow('Game history serverId collision');
+            expect(await readSnapshot()).toEqual(before);
+
+            await expect(
+                seedScenarioToDatabase({
+                    scenarioId: 903,
+                    databaseUrl,
+                    now: new Date('2032-02-02T00:00:00.000Z'),
+                    installOptions: {
+                        serverId: failedServerId,
+                        installOperationId: 'failed-operation',
+                    },
+                    onBeforeCommit: async () => {
+                        throw new Error('injected final seed failure');
+                    },
+                })
+            ).rejects.toThrow('injected final seed failure');
+
+            expect(await readSnapshot()).toEqual(before);
+            await expect(prisma.gameHistory.findUnique({ where: { serverId: failedServerId } })).resolves.toBeNull();
+        } finally {
+            if (originalSeed === undefined) {
+                delete process.env[envName];
+            } else {
+                process.env[envName] = originalSeed;
+            }
+            await connector.prisma.gameHistory.deleteMany({
+                where: { serverId: { in: [baselineServerId, failedServerId] } },
+            });
+            await connector.disconnect();
+        }
+    });
+
+    test('clears current-season services while preserving archive and diagnostic data', async () => {
+        const marker = 'scenario-reset-boundary';
+        const serverId = 'rst-boundary-server';
+        const connector = createGamePostgresConnector({ url: databaseUrl });
+        await seedScenarioToDatabase({ scenarioId: 1010, databaseUrl });
+        await connector.connect();
+        const prisma = connector.prisma;
+        try {
+            const world = await prisma.worldState.findFirstOrThrow();
+            const general = await prisma.general.findFirstOrThrow({ orderBy: { id: 'asc' } });
+            const nation = await prisma.nation.findFirstOrThrow({ orderBy: { id: 'asc' } });
+            const trafficPeriod = await prisma.trafficPeriod.create({
+                data: {
+                    worldStateId: world.id,
+                    year: 999,
+                    month: 12,
+                    startedAt: new Date('2033-01-01T00:00:00.000Z'),
+                    lastRefresh: new Date('2033-01-01T00:00:00.000Z'),
+                },
+            });
+            await prisma.trafficPeriodGeneral.create({
+                data: {
+                    periodId: trafficPeriod.id,
+                    generalId: general.id,
+                    refresh: 1,
+                    lastRefresh: new Date('2033-01-01T00:00:00.000Z'),
+                },
+            });
+            await prisma.inputEvent.create({
+                data: { requestId: marker, target: 'API', eventType: marker },
+            });
+            await prisma.turnDaemonLease.create({
+                data: {
+                    profile: marker,
+                    ownerId: marker,
+                    leaseUntil: new Date('2033-01-01T00:00:00.000Z'),
+                },
+            });
+            await prisma.npcSelectionToken.create({
+                data: {
+                    ownerUserId: marker,
+                    validUntil: new Date('2033-01-01T00:00:00.000Z'),
+                    pickMoreFrom: new Date('2033-01-01T00:00:00.000Z'),
+                    pickResult: {},
+                    nonce: 1,
+                },
+            });
+            await prisma.messageReadState.create({ data: { generalId: general.id } });
+            await prisma.message.create({
+                data: {
+                    mailbox: general.id,
+                    type: marker,
+                    src: general.id,
+                    dest: general.id,
+                    time: new Date('2033-01-01T00:00:00.000Z'),
+                    validUntil: new Date('2033-02-01T00:00:00.000Z'),
+                    message: { marker },
+                },
+            });
+            await prisma.nationTurn.create({
+                data: { nationId: nation.id, officerLevel: 12, turnIdx: 0, actionCode: marker },
+            });
+            await prisma.nationTurnRevision.create({
+                data: { nationId: nation.id, officerLevel: 12, revision: 1 },
+            });
+            await prisma.diplomacyLetter.create({
+                data: {
+                    srcNationId: nation.id,
+                    destNationId: 0,
+                    state: 'PROPOSED',
+                    textBrief: marker,
+                    textDetail: marker,
+                    srcSignerId: general.id,
+                },
+            });
+            const auction = await prisma.auction.create({
+                data: {
+                    type: 'UNIQUE_ITEM',
+                    targetCode: marker,
+                    hostGeneralId: general.id,
+                    status: 'OPEN',
+                    closeAt: new Date('2033-01-01T00:00:00.000Z'),
+                },
+            });
+            await prisma.auctionBid.create({
+                data: {
+                    auctionId: auction.id,
+                    generalId: general.id,
+                    amount: 1,
+                    eventId: marker,
+                    eventAt: new Date('2033-01-01T00:00:00.000Z'),
+                },
+            });
+            const bettingId = 990_731;
+            await prisma.nationBetting.create({
+                data: {
+                    id: bettingId,
+                    name: marker,
+                    selectCount: 1,
+                    openYearMonth: 99901,
+                    closeYearMonth: 99902,
+                    candidates: [{ id: nation.id }],
+                },
+            });
+            await prisma.nationBet.create({
+                data: {
+                    bettingId,
+                    generalId: general.id,
+                    userId: marker,
+                    selection: [nation.id],
+                    selectionKey: String(nation.id),
+                    amount: 1,
+                },
+            });
+            const post = await prisma.boardPost.create({
+                data: {
+                    nationId: nation.id,
+                    authorGeneralId: general.id,
+                    authorName: marker,
+                    title: marker,
+                    contentHtml: marker,
+                },
+            });
+            await prisma.boardComment.create({
+                data: {
+                    postId: post.id,
+                    nationId: nation.id,
+                    authorGeneralId: general.id,
+                    authorName: marker,
+                    contentText: marker,
+                },
+            });
+            const poll = await prisma.votePoll.create({
+                data: {
+                    title: marker,
+                    options: [marker],
+                    revealMode: 'never',
+                    openerGeneralId: general.id,
+                    openerName: marker,
+                },
+            });
+            await prisma.vote.create({
+                data: { voteId: poll.id, generalId: general.id, nationId: nation.id, selection: [0] },
+            });
+            await prisma.voteComment.create({
+                data: {
+                    voteId: poll.id,
+                    generalId: general.id,
+                    nationId: nation.id,
+                    generalName: marker,
+                    nationName: marker,
+                    text: marker,
+                },
+            });
+            await prisma.logEntry.create({
+                data: { scope: 'SYSTEM', category: 'HISTORY', year: 999, month: 12, text: marker },
+            });
+
+            await prisma.errorLog.create({ data: { category: marker, message: marker } });
+            await prisma.inheritancePoint.create({ data: { userId: marker, key: marker, value: 1 } });
+            await prisma.inheritanceLog.create({
+                data: { userId: marker, serverId, year: 999, month: 12, text: marker },
+            });
+            await prisma.inheritanceResult.create({
+                data: { serverId, owner: marker, generalId: general.id, year: 999, month: 12, value: { marker } },
+            });
+            await prisma.inheritanceUserState.create({ data: { userId: marker, meta: { marker } } });
+            await prisma.gameHistory.create({
+                data: {
+                    serverId,
+                    date: new Date('2033-01-01T00:00:00.000Z'),
+                    season: 1,
+                    scenario: 1010,
+                    scenarioName: marker,
+                    env: { marker },
+                },
+            });
+            await prisma.oldNation.create({ data: { serverId, nation: 1, sourceId: 1, data: { marker } } });
+            await prisma.oldGeneral.create({
+                data: {
+                    serverId,
+                    generalNo: general.id,
+                    owner: marker,
+                    name: marker,
+                    lastYearMonth: 99912,
+                    turnTime: new Date('2033-01-01T00:00:00.000Z'),
+                    data: { marker },
+                },
+            });
+            await prisma.emperor.create({ data: { serverId, name: marker, history: { marker }, aux: { marker } } });
+            await prisma.yearbookHistory.create({
+                data: {
+                    profileName: marker,
+                    year: 999,
+                    month: 12,
+                    map: {},
+                    nations: {},
+                },
+            });
+            await prisma.legacyGameStorage.create({
+                data: { sourceId: 990_731, namespace: marker, key: marker, value: {}, scope: marker },
+            });
+            await prisma.hallOfFame.create({
+                data: {
+                    serverId,
+                    season: 1,
+                    scenario: 1010,
+                    generalNo: general.id,
+                    type: 'reset-boundary',
+                    value: 1,
+                },
+            });
+
+            await seedScenarioToDatabase({ scenarioId: 903, databaseUrl });
+
+            await expect(
+                Promise.all([
+                    prisma.inputEvent.count({ where: { requestId: marker } }),
+                    prisma.turnDaemonLease.count({ where: { profile: marker } }),
+                    prisma.npcSelectionToken.count({ where: { ownerUserId: marker } }),
+                    prisma.trafficPeriod.count({ where: { id: trafficPeriod.id } }),
+                    prisma.message.count({ where: { type: marker } }),
+                    prisma.nationTurn.count({ where: { actionCode: marker } }),
+                    prisma.diplomacyLetter.count({ where: { textBrief: marker } }),
+                    prisma.auction.count({ where: { targetCode: marker } }),
+                    prisma.nationBetting.count({ where: { id: bettingId } }),
+                    prisma.boardPost.count({ where: { title: marker } }),
+                    prisma.votePoll.count({ where: { title: marker } }),
+                    prisma.logEntry.count({ where: { text: marker } }),
+                ])
+            ).resolves.toEqual(Array.from({ length: 12 }, () => 0));
+            await expect(
+                Promise.all([
+                    prisma.errorLog.count({ where: { category: marker } }),
+                    prisma.inheritancePoint.count({ where: { userId: marker } }),
+                    prisma.inheritanceLog.count({ where: { userId: marker } }),
+                    prisma.inheritanceResult.count({ where: { owner: marker } }),
+                    prisma.inheritanceUserState.count({ where: { userId: marker } }),
+                    prisma.gameHistory.count({ where: { serverId } }),
+                    prisma.oldNation.count({ where: { serverId } }),
+                    prisma.oldGeneral.count({ where: { serverId } }),
+                    prisma.emperor.count({ where: { serverId } }),
+                    prisma.yearbookHistory.count({ where: { profileName: marker } }),
+                    prisma.legacyGameStorage.count({ where: { namespace: marker } }),
+                    prisma.hallOfFame.count({ where: { serverId } }),
+                ])
+            ).resolves.toEqual(Array.from({ length: 12 }, () => 1));
+        } finally {
+            await prisma.errorLog.deleteMany({ where: { category: marker } });
+            await prisma.inheritancePoint.deleteMany({ where: { userId: marker } });
+            await prisma.inheritanceLog.deleteMany({ where: { userId: marker } });
+            await prisma.inheritanceResult.deleteMany({ where: { owner: marker } });
+            await prisma.inheritanceUserState.deleteMany({ where: { userId: marker } });
+            await prisma.oldNation.deleteMany({ where: { serverId } });
+            await prisma.oldGeneral.deleteMany({ where: { serverId } });
+            await prisma.emperor.deleteMany({ where: { serverId } });
+            await prisma.gameHistory.deleteMany({ where: { serverId } });
+            await prisma.yearbookHistory.deleteMany({ where: { profileName: marker } });
+            await prisma.legacyGameStorage.deleteMany({ where: { namespace: marker } });
+            await prisma.hallOfFame.deleteMany({ where: { serverId } });
             await connector.disconnect();
         }
     });

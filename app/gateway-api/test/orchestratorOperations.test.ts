@@ -41,11 +41,14 @@ const createHarness = (
     failStart = false,
     failStop = false,
     processesPresent = true,
-    missingOnDelete = false
+    missingOnDelete = false,
+    workspaceManager?: GitWorkspaceManager,
+    startGate?: Promise<void>
 ) => {
     let nextOperation: GatewayOperationRecord | null = operation;
     const statuses: string[] = [];
     const completions: GatewayOperationStatus[] = [];
+    const completionFields: Array<{ resolvedCommitSha?: string | null; error?: string | null } | undefined> = [];
     const started: ProcessDefinition[] = [];
     const stopped: string[] = [];
     const deleted: string[] = [];
@@ -67,6 +70,7 @@ const createHarness = (
         updateWorkspaceUsage: async () => {},
         clearWorkspaceUsage: async () => {},
         listOperations: async () => [],
+        listActiveOperationProfileNames: async () => [profile.profileName],
         getOperation: async () => operation,
         createOperation: async () => operation,
         claimNextOperation: async () => {
@@ -74,8 +78,9 @@ const createHarness = (
             nextOperation = null;
             return result;
         },
-        completeOperation: async (_id, status) => {
+        completeOperation: async (_id, status, fields) => {
             completions.push(status);
+            completionFields.push(fields);
             return { ...operation, status };
         },
         requeueOperation: async () => ({ ...operation, status: 'QUEUED' }),
@@ -94,7 +99,8 @@ const createHarness = (
                   ]
                 : [],
         start: async (definition) => {
-            if (failStart) {
+            await startGate;
+            if (failStart && started.length === 2) {
                 throw new Error('pm2 unavailable');
             }
             started.push(definition);
@@ -121,10 +127,12 @@ const createHarness = (
         buildRunner: {
             run: async () => ({ ok: true, exitCode: 0, output: '' }),
         },
-        workspaceManager: new GitWorkspaceManager({
-            repoRoot: '/tmp/not-used',
-            worktreeRoot: '/tmp/not-used-worktrees',
-        }),
+        workspaceManager:
+            workspaceManager ??
+            new GitWorkspaceManager({
+                repoRoot: '/tmp/not-used',
+                worktreeRoot: '/tmp/not-used-worktrees',
+            }),
         processConfig: {
             workspaceRoot: '/srv/sammo',
             redisKeyPrefix: 'sammo:test',
@@ -137,10 +145,20 @@ const createHarness = (
         adminActionIntervalMs: 60_000,
     });
 
-    return { orchestrator, statuses, completions, started, stopped, deleted };
+    return { orchestrator, statuses, completions, completionFields, started, stopped, deleted };
 };
 
 describe('GatewayOrchestrator first-class operations', () => {
+    it('does not reconcile a profile while a durable operation is active', async () => {
+        const harness = createHarness(buildOperation('START'));
+
+        await harness.orchestrator.reconcileNow();
+
+        expect(harness.started).toEqual([]);
+        expect(harness.stopped).toEqual([]);
+        expect(harness.deleted).toEqual([]);
+    });
+
     it('starts every profile process and records success', async () => {
         const harness = createHarness(buildOperation('START'));
 
@@ -212,6 +230,11 @@ describe('GatewayOrchestrator first-class operations', () => {
         await harness.orchestrator.runOperationsNow();
 
         expect(harness.completions).toEqual(['FAILED']);
+        expect(harness.deleted).toEqual([
+            'sammo:che:2:auction-worker',
+            'sammo:che:2:turn-daemon',
+            'sammo:che:2:game-api',
+        ]);
     });
 
     it('attempts to stop every role before reporting a partial PM2 failure', async () => {
@@ -234,5 +257,61 @@ describe('GatewayOrchestrator first-class operations', () => {
             'sammo:che:2:tournament-worker',
         ]);
         expect(harness.completions).toEqual(['FAILED']);
+    });
+
+    it('records the resolved commit even when reset workspace preparation fails', async () => {
+        const resolvedCommitSha = 'abcdef0123456789abcdef0123456789abcdef01';
+        const resetOperation: GatewayOperationRecord = {
+            id: '33333333-3333-4333-8333-333333333333',
+            profileName: profile.profileName,
+            type: 'RESET',
+            status: 'RUNNING',
+            sourceMode: 'COMMIT',
+            sourceRef: 'requested-ref',
+            payload: { install: { scenarioId: 1010, turnTermMinutes: 60 } },
+            requestedBy: 'admin',
+            createdAt: '2026-07-31T00:00:00.000Z',
+            startedAt: '2026-07-31T00:00:00.000Z',
+            updatedAt: '2026-07-31T00:00:00.000Z',
+        };
+        const workspaceManager = {
+            resolveCommit: async () => resolvedCommitSha,
+            prepare: async () => {
+                throw new Error('injected workspace preparation failure');
+            },
+            remove: async () => {},
+        } as unknown as GitWorkspaceManager;
+        const harness = createHarness(resetOperation, false, false, true, false, workspaceManager);
+
+        await harness.orchestrator.runOperationsNow();
+
+        expect(harness.completions).toEqual(['FAILED']);
+        expect(harness.completionFields).toEqual([
+            {
+                resolvedCommitSha,
+                error: 'injected workspace preparation failure',
+            },
+        ]);
+    });
+
+    it('drains an in-flight operation before shutdown completes', async () => {
+        let releaseStart: (() => void) | undefined;
+        const startGate = new Promise<void>((resolve) => {
+            releaseStart = resolve;
+        });
+        const harness = createHarness(buildOperation('START'), false, false, true, false, undefined, startGate);
+        harness.orchestrator.start();
+        await new Promise<void>((resolve) => setImmediate(resolve));
+
+        let stopped = false;
+        const stopPromise = harness.orchestrator.stop().then(() => {
+            stopped = true;
+        });
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(stopped).toBe(false);
+
+        releaseStart?.();
+        await stopPromise;
+        expect(harness.completions).toEqual(['SUCCEEDED']);
     });
 });

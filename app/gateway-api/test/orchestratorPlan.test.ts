@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import path from 'node:path';
 
 import {
+    buildProfileMigrationCommand,
     buildProcessDefinitions,
     buildWorkspaceCommands,
     planProfileReconcile,
@@ -161,7 +162,24 @@ describe('buildWorkspaceCommands', () => {
             ['--filter', '@sammo-ts/logic', 'build'],
             ['--filter', '@sammo-ts/game-api', 'build'],
             ['--filter', '@sammo-ts/game-engine', 'build'],
+            ['--filter', '@sammo-ts/gateway-api', 'build'],
         ]);
         expect(commands.every(({ cwd }) => cwd === workspaceRoot)).toBe(true);
+    });
+
+    it('deploys the game schema migration after building the selected workspace', () => {
+        const workspaceRoot = '/srv/sammo/worktrees/0123456789abcdef';
+        const databaseUrl = 'postgresql://integration.invalid/sammo?schema=che';
+        const command = buildProfileMigrationCommand(workspaceRoot, databaseUrl, { NODE_ENV: 'production' });
+
+        expect(command).toEqual({
+            command: 'pnpm',
+            args: ['--filter', '@sammo-ts/infra', 'prisma:migrate:deploy:game'],
+            cwd: workspaceRoot,
+            env: {
+                NODE_ENV: 'production',
+                DATABASE_URL: databaseUrl,
+            },
+        });
     });
 });

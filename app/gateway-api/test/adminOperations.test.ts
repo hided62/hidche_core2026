@@ -32,6 +32,7 @@ const buildCaller = async (
     });
     const session = await sessions.createSession({ ...admin, roles: adminRoles });
     const createdInputs: GatewayOperationCreateInput[] = [];
+    const operationRecords = new Map<string, Awaited<ReturnType<GatewayProfileRepository['createOperation']>>>();
     const createdRuntimeActions: Array<Record<string, unknown>> = [];
     const flushes: Array<{ userId: string; reason?: string; iconRevision?: string }> = [];
     const profile = {
@@ -59,10 +60,12 @@ const buildCaller = async (
         updateWorkspaceUsage: async () => {},
         clearWorkspaceUsage: async () => {},
         listOperations: async () => [],
-        getOperation: async () => null,
+        getOperation: async (id) => operationRecords.get(id) ?? null,
         createOperation: async (input) => {
             createdInputs.push(input);
-            return createOperation(input);
+            const operation = await createOperation(input);
+            operationRecords.set(operation.id, operation);
+            return operation;
         },
         claimNextOperation: async () => null,
         completeOperation: async () => {
@@ -103,7 +106,11 @@ const buildCaller = async (
                 reconcileNow: async () => {},
                 runScheduleNow: async () => {},
                 runBuildQueueNow: async () => {},
-                runOperationsNow: async () => {},
+                runOperationsNow: async () => {
+                    for (const [id, operation] of operationRecords) {
+                        operationRecords.set(id, { ...operation, status: 'SUCCEEDED' });
+                    }
+                },
                 cleanupStaleWorkspaces: async () => ({ removed: [], skipped: [] }),
                 listRuntimeStates: async () => [],
             },
@@ -177,6 +184,83 @@ describe('admin operation API', () => {
                 action: 'STOP',
             })
         ).rejects.toMatchObject({ code: 'CONFLICT' });
+    });
+});
+
+describe('legacy profile install API', () => {
+    const install = {
+        scenarioId: 1010,
+        turnTermMinutes: 60,
+        sync: false,
+        fiction: 1,
+        extend: false,
+        blockGeneralCreate: 0,
+        npcMode: 0,
+        showImgLevel: 0,
+        tournamentTrig: false,
+        joinMode: 'full' as const,
+        gitRef: 'HEAD',
+    };
+
+    const buildResetOperation = (input: GatewayOperationCreateInput) => ({
+        id: '22222222-2222-4222-8222-222222222222',
+        profileName: input.profileName,
+        type: 'RESET' as const,
+        status: 'QUEUED' as const,
+        sourceMode: input.sourceMode,
+        sourceRef: input.sourceRef,
+        payload: input.payload ?? {},
+        requestedBy: input.requestedBy,
+        createdAt: '2026-07-31T00:00:00.000Z',
+        updatedAt: '2026-07-31T00:00:00.000Z',
+    });
+
+    it('queues profiles.install instead of seeding the live database directly', async () => {
+        const harness = await buildCaller(async (input) => buildResetOperation(input));
+
+        await expect(
+            harness.caller.admin.profiles.install({
+                profileName: 'che:2',
+                install,
+                reason: 'durable install',
+            })
+        ).resolves.toMatchObject({ ok: true, operationId: '22222222-2222-4222-8222-222222222222' });
+        expect(harness.createdInputs).toHaveLength(1);
+        expect(harness.createdInputs[0]).toMatchObject({
+            profileName: 'che:2',
+            type: 'RESET',
+            sourceMode: 'COMMIT',
+            reason: 'durable install',
+        });
+        expect(harness.createdInputs[0]?.payload).toMatchObject({
+            install: {
+                scenarioId: 1010,
+                adminUser: { id: harness.admin.id },
+            },
+        });
+    });
+
+    it('queues installNow through the same reset operation boundary', async () => {
+        const harness = await buildCaller(async (input) => buildResetOperation(input));
+
+        await expect(
+            harness.caller.admin.profiles.installNow({
+                profileName: 'che:2',
+                install,
+                reason: 'no direct seed',
+            })
+        ).resolves.toEqual({ ok: true, operationId: '22222222-2222-4222-8222-222222222222' });
+        expect(harness.createdInputs[0]).toMatchObject({
+            type: 'RESET',
+            sourceMode: 'COMMIT',
+            reason: 'no direct seed',
+            payload: {
+                install: {
+                    scenarioId: 1010,
+                    adminUser: { id: harness.admin.id },
+                },
+            },
+        });
     });
 });
 

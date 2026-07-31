@@ -254,7 +254,7 @@ const requestReset = async () => {
                 preopenAt: toIso(form.preopenAt),
             },
         });
-        message.value = form.scheduledAt ? '예약 초기화 작업을 등록했습니다.' : '초기화 작업을 시작했습니다.';
+        message.value = form.scheduledAt ? '예약 초기화 작업을 등록했습니다.' : '초기화 작업을 등록했습니다.';
         await loadState(true);
     } catch (error) {
         errorMessage.value = error instanceof Error ? error.message : '초기화 요청에 실패했습니다.';
@@ -668,6 +668,7 @@ onBeforeUnmount(() => {
                         <thead class="border-b border-zinc-700 text-xs text-zinc-500">
                             <tr>
                                 <th class="p-2">요청/예약</th>
+                                <th class="p-2">작업 ID</th>
                                 <th class="p-2">프로필</th>
                                 <th class="p-2">작업</th>
                                 <th class="p-2">상태</th>
@@ -690,6 +691,7 @@ onBeforeUnmount(() => {
                                         예약 {{ formatTime(operation.scheduledAt) }}
                                     </div>
                                 </td>
+                                <td class="max-w-48 break-all p-2 font-mono text-xs">{{ operation.id }}</td>
                                 <td class="p-2">{{ operation.profileName }}</td>
                                 <td class="p-2">{{ operation.type }}</td>
                                 <td class="p-2 font-semibold">{{ operation.status }}</td>
@@ -703,7 +705,13 @@ onBeforeUnmount(() => {
                                 </td>
                                 <td class="max-w-xs p-2 text-xs">
                                     {{ formatTime(operation.completedAt) }}
-                                    <div v-if="operation.error" class="mt-1 text-red-400">{{ operation.error }}</div>
+                                    <div
+                                        v-if="operation.error"
+                                        class="mt-1"
+                                        :class="operation.status === 'FAILED' ? 'text-red-400' : 'text-amber-300'"
+                                    >
+                                        {{ operation.error }}
+                                    </div>
                                 </td>
                                 <td class="p-2">
                                     <button
@@ -723,7 +731,7 @@ onBeforeUnmount(() => {
                                 </td>
                             </tr>
                             <tr v-if="operations.length === 0">
-                                <td colspan="9" class="p-6 text-center text-zinc-500">작업 이력이 없습니다.</td>
+                                <td colspan="10" class="p-6 text-center text-zinc-500">작업 이력이 없습니다.</td>
                             </tr>
                         </tbody>
                     </table>

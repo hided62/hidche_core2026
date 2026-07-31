@@ -1,5 +1,5 @@
 import { seedScenarioToDatabase, type ScenarioInstallOptions } from '@sammo-ts/game-engine';
-import { createGamePostgresConnector } from '@sammo-ts/infra';
+import type { GamePrisma } from '@sammo-ts/infra';
 import { asRecord } from '@sammo-ts/common';
 
 export interface AdminSeedUser {
@@ -64,87 +64,75 @@ const resolveAdminStats = (config: Record<string, unknown>) => {
     };
 };
 
-const resolveAdminName = async (
-    prisma: Awaited<ReturnType<typeof createGamePostgresConnector>>['prisma'],
-    adminUser: AdminSeedUser
-): Promise<string> => {
+const resolveAdminName = async (prisma: GamePrisma.TransactionClient, adminUser: AdminSeedUser): Promise<string> => {
     const base = (adminUser.displayName ?? adminUser.username ?? '').trim() || '관리자';
     const existing = await prisma.general.findFirst({ where: { name: base } });
     if (!existing) {
         return base;
     }
     const suffix = adminUser.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 4) || 'admin';
-    for (let i = 1; i <= 5; i += 1) {
+    for (let i = 1; ; i += 1) {
         const candidate = `${base}_${suffix}${i}`;
         const found = await prisma.general.findFirst({ where: { name: candidate } });
         if (!found) {
             return candidate;
         }
     }
-    return `${base}_${suffix}${Date.now().toString(36)}`;
 };
 
 // 초기 설치/통합 테스트에서 관리자 장수를 자동 생성한다.
-const ensureAdminGeneral = async (databaseUrl: string, adminUser: AdminSeedUser): Promise<void> => {
-    const connector = createGamePostgresConnector({ url: databaseUrl });
-    await connector.connect();
-    try {
-        const prisma = connector.prisma;
-        const existing = await prisma.general.findFirst({ where: { userId: adminUser.id } });
-        if (existing) {
-            return;
-        }
-
-        const worldState = await prisma.worldState.findFirst();
-        if (!worldState) {
-            return;
-        }
-
-        const cityRows = await prisma.city.findMany({
-            select: { id: true },
-            orderBy: { id: 'asc' },
-        });
-        const cityId =
-            cityRows.length > 0 ? cityRows[hashString(adminUser.id) % cityRows.length]!.id : 0;
-
-        const maxId = await prisma.general.aggregate({ _max: { id: true } });
-        const nextId = (maxId._max.id ?? 0) + 1;
-        const stats = resolveAdminStats(asRecord(worldState.config));
-        const name = await resolveAdminName(prisma, adminUser);
-        const meta = asRecord(worldState.meta);
-        const rawTurnTime = typeof meta.turntime === 'string' ? new Date(meta.turntime) : null;
-        const turnTime =
-            rawTurnTime && !Number.isNaN(rawTurnTime.getTime()) ? rawTurnTime : new Date();
-
-        await prisma.general.create({
-            data: {
-                id: nextId,
-                userId: adminUser.id,
-                name,
-                nationId: 0,
-                cityId,
-                troopId: 0,
-                npcState: 0,
-                leadership: stats.leadership,
-                strength: stats.strength,
-                intel: stats.intelligence,
-                personalCode: 'None',
-                specialCode: 'None',
-                special2Code: 'None',
-                turnTime,
-                meta: {
-                    createdBy: 'admin-seed',
-                    killturn: 24,
-                },
-            },
-        });
-    } finally {
-        await connector.disconnect();
+const ensureAdminGeneral = async (prisma: GamePrisma.TransactionClient, adminUser: AdminSeedUser): Promise<void> => {
+    const existing = await prisma.general.findFirst({ where: { userId: adminUser.id } });
+    if (existing) {
+        return;
     }
+
+    const worldState = await prisma.worldState.findFirst();
+    if (!worldState) {
+        throw new Error('Seeded world state is missing before admin general creation.');
+    }
+
+    const cityRows = await prisma.city.findMany({
+        select: { id: true },
+        orderBy: { id: 'asc' },
+    });
+    const cityId = cityRows.length > 0 ? cityRows[hashString(adminUser.id) % cityRows.length]!.id : 0;
+
+    const maxId = await prisma.general.aggregate({ _max: { id: true } });
+    const nextId = (maxId._max.id ?? 0) + 1;
+    const stats = resolveAdminStats(asRecord(worldState.config));
+    const name = await resolveAdminName(prisma, adminUser);
+    const meta = asRecord(worldState.meta);
+    const rawTurnTime = typeof meta.turntime === 'string' ? new Date(meta.turntime) : null;
+    const turnTime = rawTurnTime && !Number.isNaN(rawTurnTime.getTime()) ? rawTurnTime : new Date();
+
+    await prisma.general.create({
+        data: {
+            id: nextId,
+            userId: adminUser.id,
+            name,
+            nationId: 0,
+            cityId,
+            troopId: 0,
+            npcState: 0,
+            leadership: stats.leadership,
+            strength: stats.strength,
+            intel: stats.intelligence,
+            personalCode: 'None',
+            specialCode: 'None',
+            special2Code: 'None',
+            turnTime,
+            meta: {
+                createdBy: 'admin-seed',
+                killturn: 24,
+            },
+        },
+    });
 };
 
 // 시나리오 시드 후 관리자 장수를 포함한 초기 데이터를 준비한다.
 export const seedProfileDatabase = async (options: SeedProfileDatabaseOptions) => {
+    const adminUser = options.adminUser;
     const result = await seedScenarioToDatabase({
         scenarioId: options.scenarioId,
         databaseUrl: options.databaseUrl,
@@ -154,11 +142,8 @@ export const seedProfileDatabase = async (options: SeedProfileDatabaseOptions) =
         scenarioOptions: options.scenarioOptions,
         mapOptions: options.mapOptions,
         unitSetOptions: options.unitSetOptions,
+        onBeforeCommit: adminUser ? async (transaction) => ensureAdminGeneral(transaction, adminUser) : undefined,
     });
-
-    if (options.adminUser) {
-        await ensureAdminGeneral(options.databaseUrl, options.adminUser);
-    }
 
     return result;
 };

@@ -74,6 +74,10 @@ type AdminProfile = {
         tournamentRunning: boolean;
     };
     buildCommitSha?: string;
+    activeOperation?: {
+        id: string;
+        status: 'QUEUED' | 'RUNNING';
+    } | null;
     meta: Record<string, unknown>;
     runtimeActions: Array<{
         id: string;
@@ -238,7 +242,7 @@ type AdminClient = {
                     gitRef?: string;
                 };
                 reason?: string;
-            }) => Promise<{ ok: boolean; action?: unknown }>;
+            }) => Promise<{ ok: boolean; operationId: string; action?: unknown }>;
         };
         requestAction: {
             mutate: (input: {
@@ -306,6 +310,8 @@ const profileActionSubmitting = ref<Record<string, boolean>>({});
 const scenarioCatalogs = ref<Record<string, ScenarioCatalogState>>({});
 const profileInstalls = ref<Record<string, InstallFormState>>({});
 const profileInstallStatus = ref<Record<string, string>>({});
+const profileInstallSubmitting = ref<Record<string, boolean>>({});
+const profileInstallOperationId = ref<Record<string, string>>({});
 
 const runtimeActionPending = (profile: AdminProfile): boolean => {
     return profile.runtimeActions.some((action) => action.status === 'REQUESTED' || action.status === 'PARTIAL');
@@ -685,6 +691,9 @@ const loadScenariosForProfile = async (profileName: string) => {
     if (!install) {
         return;
     }
+    if (profileInstallSubmitting.value[profileName]) {
+        return;
+    }
     await loadScenarioCatalog(install.gitRef);
 };
 
@@ -817,8 +826,9 @@ const requestInstall = async (profileName: string) => {
         return;
     }
     try {
+        profileInstallSubmitting.value = { ...profileInstallSubmitting.value, [profileName]: true };
         const gitRef = normalizeGitRefInput(install.gitRef);
-        await adminClient.profiles.install.mutate({
+        const result = await adminClient.profiles.install.mutate({
             profileName,
             install: {
                 scenarioId: install.scenarioId,
@@ -840,14 +850,20 @@ const requestInstall = async (profileName: string) => {
         });
         profileInstallStatus.value = {
             ...profileInstallStatus.value,
-            [profileName]: openAt ? '설치 예약 완료' : '설치 요청 완료',
+            [profileName]: openAt ? '설치 작업을 예약했습니다.' : '설치 작업을 등록했습니다.',
+        };
+        profileInstallOperationId.value = {
+            ...profileInstallOperationId.value,
+            [profileName]: result.operationId,
         };
         await loadProfiles();
     } catch (error) {
         profileInstallStatus.value = {
             ...profileInstallStatus.value,
-            [profileName]: '설치 요청 실패',
+            [profileName]: error instanceof Error ? `설치 요청 실패: ${error.message}` : '설치 요청 실패',
         };
+    } finally {
+        profileInstallSubmitting.value = { ...profileInstallSubmitting.value, [profileName]: false };
     }
 };
 
@@ -1664,9 +1680,19 @@ onMounted(() => {
                             >
                                 <div class="flex items-center justify-between">
                                     <h4 class="text-sm font-semibold">설치/리셋</h4>
-                                    <span class="text-xs text-zinc-500">{{
-                                        profileInstallStatus[profile.profileName]
-                                    }}</span>
+                                    <div class="text-right text-xs text-zinc-500">
+                                        <div>{{ profileInstallStatus[profile.profileName] }}</div>
+                                        <RouterLink
+                                            v-if="profileInstallOperationId[profile.profileName]"
+                                            :to="{
+                                                path: '/admin/server-operations',
+                                                query: { operationId: profileInstallOperationId[profile.profileName] },
+                                            }"
+                                            class="block break-all text-amber-400 underline hover:text-amber-300"
+                                        >
+                                            작업 {{ profileInstallOperationId[profile.profileName] }} 상태 보기
+                                        </RouterLink>
+                                    </div>
                                 </div>
                                 <div class="grid lg:grid-cols-2 gap-4">
                                     <div class="space-y-3">
@@ -2064,10 +2090,20 @@ onMounted(() => {
                                         </div>
 
                                         <button
-                                            class="bg-emerald-600 hover:bg-emerald-500 text-black font-semibold px-4 py-2 rounded w-full"
+                                            class="bg-emerald-600 hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50 text-black font-semibold px-4 py-2 rounded w-full"
+                                            :disabled="
+                                                profileInstallSubmitting[profile.profileName] ||
+                                                Boolean(profile.activeOperation)
+                                            "
                                             @click="requestInstall(profile.profileName)"
                                         >
-                                            설치 적용
+                                            {{
+                                                profileInstallSubmitting[profile.profileName]
+                                                    ? '등록 중…'
+                                                    : profile.activeOperation
+                                                      ? '설치 작업 진행 중'
+                                                      : '설치 적용'
+                                            }}
                                         </button>
 
                                         <div
