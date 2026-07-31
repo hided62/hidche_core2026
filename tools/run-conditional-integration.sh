@@ -10,10 +10,15 @@ usage() {
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 workspace_root=$(CDPATH= cd -- "$script_dir/.." && pwd)
+registry_file="$script_dir/conditional-integration-registry.tsv"
 env_file=${1:-"$workspace_root/.env.ci"}
 
 if [ ! -f "$env_file" ]; then
     echo "missing integration environment file: $env_file" >&2
+    exit 66
+fi
+if [ ! -f "$registry_file" ]; then
+    echo "missing integration marker registry: $registry_file" >&2
     exit 66
 fi
 env_file=$(CDPATH= cd -- "$(dirname -- "$env_file")" && pwd)/$(basename -- "$env_file")
@@ -32,19 +37,45 @@ set +a
 : "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required in $env_file}"
 : "${REDIS_URL:?REDIS_URL is required in $env_file}"
 
-integration_schema=${CONDITIONAL_INTEGRATION_SCHEMA:-conditional_integration}
-scenario_schema=${SCENARIO_SEED_INTEGRATION_SCHEMA:-conditional_scenario_seed}
-npc_possession_schema=${NPC_POSSESSION_INTEGRATION_SCHEMA:-conditional_$(date +%s)_$$_npc_possession_integration}
-npc_possession_differential_schema=conditional_$(date +%s)_$$_npc_possession_differential
+node_tag=$(printf '%s' "${CI_NODE_INDEX:-local}" | tr -cd 'a-zA-Z0-9_' | tr 'A-Z' 'a-z' | cut -c1-8)
+run_id=$(date -u +%m%d%H%M%S)_$$_${node_tag}
+export CONDITIONAL_INTEGRATION_RUN_ID=$run_id
+integration_schema=${CONDITIONAL_INTEGRATION_SCHEMA:-ci_${run_id}_integration}
+scenario_schema=${SCENARIO_SEED_INTEGRATION_SCHEMA:-ci_${run_id}_scenario_seed}
+npc_possession_schema=${NPC_POSSESSION_INTEGRATION_SCHEMA:-ci_${run_id}_npc_possession_integration}
+create_general_schema=${CREATE_GENERAL_INTEGRATION_SCHEMA:-ci_${run_id}_create_general_integration}
+select_pool_schema=${SELECT_POOL_INTEGRATION_SCHEMA:-ci_${run_id}_select_pool_integration}
+immediate_action_schema=${IMMEDIATE_ACTION_INTEGRATION_SCHEMA:-ci_${run_id}_immediate_action_integration}
+gateway_runtime_schema=${GATEWAY_RUNTIME_INTEGRATION_SCHEMA:-ci_${run_id}_gateway_runtime_integration}
+npc_possession_differential_schema=${NPC_POSSESSION_DIFFERENTIAL_SCHEMA:-ci_${run_id}_npc_possession_differential}
+live_sortie_schema=${LIVE_SORTIE_PERSISTENCE_SCHEMA:-ci_${run_id}_live_sortie_persistence}
 
-for schema in "$integration_schema" "$scenario_schema" "$npc_possession_schema" "$npc_possession_differential_schema"; do
+for schema in \
+    "$integration_schema" \
+    "$scenario_schema" \
+    "$npc_possession_schema" \
+    "$create_general_schema" \
+    "$select_pool_schema" \
+    "$immediate_action_schema" \
+    "$gateway_runtime_schema" \
+    "$npc_possession_differential_schema" \
+    "$live_sortie_schema"; do
     case "$schema" in
         ''|[!a-z_]*|*[!a-z0-9_]*)
             echo "integration schema must be a lowercase PostgreSQL identifier: $schema" >&2
             exit 64
             ;;
     esac
+    if [ "${#schema}" -gt 63 ]; then
+        echo "integration schema exceeds PostgreSQL's 63-byte identifier limit: $schema" >&2
+        exit 64
+    fi
 done
+
+report_dir=$(mktemp -d)
+summary_file="$report_dir/summary.tsv"
+owned_schemas=
+active_process_group=
 
 build_database_url() {
     SCHEMA_NAME=$1 node --input-type=module -e '
@@ -72,28 +103,259 @@ build_database_url() {
     '
 }
 
+base_database_url=$(build_database_url public)
+
+create_owned_schema() {
+    schema=$1
+    SCHEMA_NAME=$schema DATABASE_URL=$base_database_url \
+        pnpm --filter @sammo-ts/infra exec node --input-type=module -e '
+            import pg from "pg";
+            const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+            await client.connect();
+            try {
+                await client.query(`CREATE SCHEMA "${process.env.SCHEMA_NAME}"`);
+            } finally {
+                await client.end();
+            }
+        '
+    owned_schemas="${owned_schemas}${schema}
+"
+}
+
+drop_owned_schemas() {
+    cleanup_failed=0
+    for schema in $owned_schemas; do
+        if ! SCHEMA_NAME=$schema DATABASE_URL=$base_database_url \
+            pnpm --filter @sammo-ts/infra exec node --input-type=module -e '
+                import pg from "pg";
+                const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+                await client.connect();
+                try {
+                    await client.query(`DROP SCHEMA IF EXISTS "${process.env.SCHEMA_NAME}" CASCADE`);
+                } finally {
+                    await client.end();
+                }
+            ' >/dev/null; then
+            cleanup_failed=1
+        fi
+    done
+    return "$cleanup_failed"
+}
+
+delete_owned_redis_keys() {
+    CONDITIONAL_INTEGRATION_RUN_ID=$run_id REDIS_URL=$REDIS_URL \
+        pnpm --filter @sammo-ts/infra exec node --input-type=module -e '
+            import { createClient } from "redis";
+            const client = createClient({ url: process.env.REDIS_URL });
+            const runId = process.env.CONDITIONAL_INTEGRATION_RUN_ID;
+            const patterns = [
+                `sammo:game:*:che:security-http-${runId}:*`,
+                `sammo:game:*:che:nation-html-${runId}:*`,
+            ];
+            await client.connect();
+            try {
+                for (const pattern of patterns) {
+                    for await (const key of client.scanIterator({ MATCH: pattern, COUNT: 100 })) {
+                        await client.del(key);
+                    }
+                }
+            } finally {
+                await client.quit();
+            }
+        ' >/dev/null
+}
+
+terminate_active_process_group() {
+    [ -n "$active_process_group" ] || return 0
+    kill -TERM "-$active_process_group" 2>/dev/null || true
+    wait "$active_process_group" 2>/dev/null || true
+    active_process_group=
+}
+
+print_summary() {
+    if [ ! -s "$summary_file" ]; then
+        echo "conditional integration summary: 0 passed files, 0 skipped files, 0 failed files"
+        return
+    fi
+    awk -F '\t' '
+        {
+            passed += $2;
+            skipped += $3;
+            failed += $4;
+        }
+        END {
+            printf "conditional integration summary: %d passed files, %d skipped files, %d failed files\n",
+                passed, skipped, failed;
+        }
+    ' "$summary_file"
+}
+
+handle_exit() {
+    exit_status=$?
+    trap - EXIT HUP INT TERM
+    terminate_active_process_group
+    if ! drop_owned_schemas && [ "$exit_status" -eq 0 ]; then
+        exit_status=1
+    fi
+    if ! delete_owned_redis_keys && [ "$exit_status" -eq 0 ]; then
+        exit_status=1
+    fi
+    print_summary
+    rm -rf "$report_dir"
+    exit "$exit_status"
+}
+
+trap handle_exit EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+validate_marker_registry() {
+    discovered_file="$report_dir/discovered-markers.txt"
+    registered_file="$report_dir/registered-markers.txt"
+    missing_file="$report_dir/unregistered-markers.txt"
+    stale_file="$report_dir/stale-markers.txt"
+
+    (
+        cd "$workspace_root"
+        rg -o --no-filename \
+            'process\.env\.[A-Z0-9_]+_DATABASE_URL' \
+            app/game-api/test \
+            app/game-engine/test \
+            tools/integration-tests/test \
+            -g '*.integration.test.ts' |
+            sed 's/process\.env\.//' |
+            sort -u
+    ) >"$discovered_file"
+    awk -F '\t' '!/^#/ && NF == 2 { print $1 }' "$registry_file" | sort -u >"$registered_file"
+
+    comm -23 "$discovered_file" "$registered_file" >"$missing_file"
+    if [ -s "$missing_file" ]; then
+        echo "unregistered conditional database marker(s):" >&2
+        sed 's/^/  /' "$missing_file" >&2
+        exit 65
+    fi
+
+    comm -13 "$discovered_file" "$registered_file" >"$stale_file"
+    if [ -s "$stale_file" ]; then
+        echo "stale conditional database marker(s):" >&2
+        sed 's/^/  /' "$stale_file" >&2
+        exit 65
+    fi
+}
+
+markers_for_mode() {
+    mode=$1
+    awk -F '\t' -v mode="$mode" '!/^#/ && $2 == mode { print $1 }' "$registry_file" |
+        paste -sd '|' -
+}
+
+record_vitest_result() {
+    label=$1
+    result_file=$2
+    counts=$(node --input-type=module -e '
+        import fs from "node:fs";
+        const result = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+        const files = Array.isArray(result.testResults) ? result.testResults : [];
+        const isSkipped = ({ assertionResults = [], status }) =>
+            status === "pending" ||
+            (assertionResults.length > 0 &&
+                assertionResults.every(({ status: assertionStatus }) =>
+                    assertionStatus === "pending" || assertionStatus === "todo"
+                ));
+        const skipped = files.filter(isSkipped).length;
+        const failed = files.filter(({ status }) => status === "failed").length;
+        const passed = files.length - skipped - failed;
+        process.stdout.write(`${passed}\t${skipped}\t${failed}`);
+    ' "$result_file")
+    printf '%s\t%s\n' "$label" "$counts" >>"$summary_file"
+    skipped=$(printf '%s' "$counts" | cut -f2)
+    if [ "$skipped" -ne 0 ]; then
+        echo "$label left $skipped integration test file(s) skipped" >&2
+        return 1
+    fi
+}
+
+run_vitest() {
+    package_dir=$1
+    label=$2
+    shift 2
+    result_file="$report_dir/$(printf '%s' "$label" | tr -cd 'a-zA-Z0-9_' | tr 'A-Z' 'a-z').json"
+
+    echo "running $label tests in $package_dir"
+    (
+        cd "$workspace_root/$package_dir"
+        exec setsid pnpm exec vitest run \
+            --no-file-parallelism \
+            --maxWorkers=1 \
+            --reporter=default \
+            --reporter=json \
+            --outputFile.json="$result_file" \
+            "$@"
+    ) &
+    active_process_group=$!
+    test_status=0
+    wait "$active_process_group" || test_status=$?
+    active_process_group=
+
+    result_status=0
+    if [ -f "$result_file" ]; then
+        record_vitest_result "$label" "$result_file" || result_status=$?
+    else
+        printf '%s\t0\t0\t1\n' "$label" >>"$summary_file"
+        result_status=1
+    fi
+    if [ "$test_status" -eq 0 ] && [ "$result_status" -ne 0 ]; then
+        test_status=$result_status
+    fi
+    return "$test_status"
+}
+
 run_marked_tests() {
     package_dir=$1
     marker=$2
     label=$3
-    test_files=$(cd "$workspace_root/$package_dir" && rg -l "$marker" test -g '*.test.ts' | sort)
+    test_files=$(cd "$workspace_root/$package_dir" && rg -l "$marker" test -g '*.integration.test.ts' | sort)
     if [ -z "$test_files" ]; then
         echo "no $label tests found under $package_dir" >&2
         exit 65
     fi
-    echo "running $label tests in $package_dir"
-    (
-        cd "$workspace_root/$package_dir"
-        printf '%s\n' "$test_files" |
-            xargs -r pnpm exec vitest run --no-file-parallelism --maxWorkers=1
-    )
+    # Integration test paths cannot contain whitespace in this repository.
+    # shellcheck disable=SC2086
+    run_vitest "$package_dir" "$label" $test_files
 }
 
+run_redis_only_tests() {
+    package_dir=app/game-api
+    database_marker=$1
+    test_files=$(
+        cd "$workspace_root/$package_dir"
+        redis_files=$(rg -l 'process\.env\.REDIS_URL' test -g '*.integration.test.ts' | sort)
+        # Files already selected through a database marker run once in that
+        # database group, where Redis is also available.
+        # shellcheck disable=SC2086
+        rg --files-without-match "$database_marker" $redis_files
+    )
+    if [ -z "$test_files" ]; then
+        echo "no Redis-only integration tests found under $package_dir" >&2
+        exit 65
+    fi
+    # shellcheck disable=SC2086
+    run_vitest "$package_dir" "game_api_redis" $test_files
+}
+
+export PATH
 cd "$workspace_root"
 pnpm install --frozen-lockfile
 pnpm --filter @sammo-ts/infra prisma:generate
 pnpm --filter @sammo-ts/common build
 pnpm --filter @sammo-ts/infra build
+
+validate_marker_registry
+
+create_owned_schema "$integration_schema"
+create_owned_schema "$npc_possession_schema"
+create_owned_schema "$scenario_schema"
 
 database_url=$(build_database_url "$integration_schema")
 export POSTGRES_SCHEMA=$integration_schema
@@ -106,24 +368,74 @@ export RESERVED_TURN_DATABASE_URL=$database_url
 
 pnpm --filter @sammo-ts/infra prisma:db:push:game
 
-database_markers='INPUT_EVENT_DATABASE_URL|GENERAL_LIFECYCLE_DATABASE_URL|TURN_DAEMON_LEASE_DATABASE_URL|RESERVED_TURN_DATABASE_URL'
-run_marked_tests app/game-api "$database_markers" "PostgreSQL"
-run_marked_tests app/game-engine "$database_markers" "PostgreSQL"
-run_marked_tests tools/integration-tests \
-    'TURN_DIFFERENTIAL_DATABASE_URL|INPUT_EVENT_DATABASE_URL' \
-    "PostgreSQL snapshot"
+core_database_markers=$(markers_for_mode core)
+run_marked_tests app/game-api "$core_database_markers" "game_api_postgresql"
+run_marked_tests app/game-engine "$core_database_markers" "game_engine_postgresql"
+run_marked_tests tools/integration-tests "$core_database_markers" "snapshot_postgresql"
+
+create_owned_schema "$create_general_schema"
+create_general_database_url=$(build_database_url "$create_general_schema")
+(
+    export POSTGRES_SCHEMA=$create_general_schema
+    export DATABASE_URL=$create_general_database_url
+    pnpm --filter @sammo-ts/infra prisma:db:push:game
+)
+export CREATE_GENERAL_DATABASE_URL=$create_general_database_url
+run_marked_tests app/game-api \
+    "$(markers_for_mode create_general)" \
+    "create_general_postgresql"
+
+create_owned_schema "$select_pool_schema"
+select_pool_database_url=$(build_database_url "$select_pool_schema")
+(
+    export POSTGRES_SCHEMA=$select_pool_schema
+    export DATABASE_URL=$select_pool_database_url
+    pnpm --filter @sammo-ts/infra prisma:db:push:game
+)
+export SELECT_POOL_DATABASE_URL=$select_pool_database_url
+run_marked_tests app/game-api \
+    "$(markers_for_mode select_pool)" \
+    "select_pool_api_postgresql"
+run_marked_tests app/game-engine \
+    "$(markers_for_mode select_pool)" \
+    "select_pool_engine_postgresql"
+
+create_owned_schema "$immediate_action_schema"
+immediate_action_database_url=$(build_database_url "$immediate_action_schema")
+(
+    export POSTGRES_SCHEMA=$immediate_action_schema
+    export DATABASE_URL=$immediate_action_database_url
+    pnpm --filter @sammo-ts/infra prisma:db:push:game
+)
+export IMMEDIATE_ACTION_DATABASE_URL=$immediate_action_database_url
+run_marked_tests app/game-engine \
+    "$(markers_for_mode immediate_action)" \
+    "immediate_action_postgresql"
+
+create_owned_schema "$gateway_runtime_schema"
+gateway_runtime_database_url=$(build_database_url "$gateway_runtime_schema")
+(
+    export POSTGRES_SCHEMA=$gateway_runtime_schema
+    export DATABASE_URL=$gateway_runtime_database_url
+    export GATEWAY_DATABASE_URL=$gateway_runtime_database_url
+    pnpm --filter @sammo-ts/infra prisma:db:push:gateway
+)
+export GATEWAY_RUNTIME_ACTION_DATABASE_URL=$gateway_runtime_database_url
+run_marked_tests app/game-engine \
+    "$(markers_for_mode gateway_runtime)" \
+    "gateway_runtime_postgresql"
 
 npc_possession_database_url=$(build_database_url "$npc_possession_schema")
 (
     export POSTGRES_SCHEMA=$npc_possession_schema
     export DATABASE_URL=$npc_possession_database_url
-    export NPC_POSSESSION_DATABASE_URL=$npc_possession_database_url
     pnpm --filter @sammo-ts/infra prisma:migrate:deploy:game
     pnpm --filter @sammo-ts/infra prisma:migrate:deploy:game
-    run_marked_tests app/game-api \
-        'NPC_POSSESSION_DATABASE_URL' \
-        "NPC possession PostgreSQL"
 )
+export NPC_POSSESSION_DATABASE_URL=$npc_possession_database_url
+run_marked_tests app/game-api \
+    "$(markers_for_mode npc_possession)" \
+    "npc_possession_postgresql"
 
 if [ "${TURN_DIFFERENTIAL_REFERENCE:-}" = "1" ]; then
     reference_workspace_root=${TURN_DIFFERENTIAL_WORKSPACE_ROOT:-"$workspace_root/.."}
@@ -161,64 +473,45 @@ if [ "${TURN_DIFFERENTIAL_REFERENCE:-}" = "1" ]; then
         echo "reference root/HWE databases are not bootstrapped" >&2
         exit 69
     fi
+
+    create_owned_schema "$npc_possession_differential_schema"
     npc_possession_differential_database_url=$(build_database_url "$npc_possession_differential_schema")
     (
-        cleanup_npc_possession_differential_schema() {
-            printf 'DROP SCHEMA IF EXISTS "%s" CASCADE;\n' "$npc_possession_differential_schema" |
-                DATABASE_URL=$npc_possession_differential_database_url \
-                    pnpm --filter @sammo-ts/infra exec prisma db execute --stdin >/dev/null
-        }
-        handle_npc_possession_differential_exit() {
-            exit_status=$?
-            trap - EXIT HUP INT TERM
-            if ! cleanup_npc_possession_differential_schema && [ "$exit_status" -eq 0 ]; then
-                exit_status=1
-            fi
-            exit "$exit_status"
-        }
-        trap handle_npc_possession_differential_exit EXIT
-        trap 'exit 129' HUP
-        trap 'exit 130' INT
-        trap 'exit 143' TERM
         export POSTGRES_SCHEMA=$npc_possession_differential_schema
         export DATABASE_URL=$npc_possession_differential_database_url
         export NPC_POSSESSION_DIFFERENTIAL_DATABASE_URL=$npc_possession_differential_database_url
-        export TURN_DIFFERENTIAL_WORKSPACE_ROOT=$reference_workspace_root
-        export TURN_DIFFERENTIAL_STACK_DIR=$reference_stack
         pnpm --filter @sammo-ts/infra prisma:db:push:game
-        cd "$workspace_root/tools/integration-tests"
-        pnpm exec vitest run --no-file-parallelism --maxWorkers=1 \
-            test/npcPossessionSelectionReference.integration.test.ts
     )
+    export NPC_POSSESSION_DIFFERENTIAL_DATABASE_URL=$npc_possession_differential_database_url
+    export TURN_DIFFERENTIAL_WORKSPACE_ROOT=$reference_workspace_root
+    export TURN_DIFFERENTIAL_STACK_DIR=$reference_stack
+    run_marked_tests tools/integration-tests \
+        "$(markers_for_mode reference_npc_possession)" \
+        "npc_possession_reference"
 
-    live_sortie_schema=${LIVE_SORTIE_PERSISTENCE_SCHEMA:-conditional_live_sortie_persistence}
-    case "$live_sortie_schema" in
-        ''|[!a-z_]*|*[!a-z0-9_]*)
-            echo "live sortie persistence schema must be a lowercase PostgreSQL identifier" >&2
-            exit 64
-            ;;
-    esac
+    create_owned_schema "$live_sortie_schema"
     live_sortie_database_url=$(build_database_url "$live_sortie_schema")
+    (
+        export POSTGRES_SCHEMA=$live_sortie_schema
+        export DATABASE_URL=$live_sortie_database_url
+        pnpm --filter @sammo-ts/infra prisma:db:push:game
+    )
     export POSTGRES_SCHEMA=$live_sortie_schema
     export DATABASE_URL=$live_sortie_database_url
     export LIVE_SORTIE_PERSISTENCE_DATABASE_URL=$live_sortie_database_url
-    pnpm --filter @sammo-ts/infra prisma:db:push:game
     run_marked_tests tools/integration-tests \
-        'LIVE_SORTIE_PERSISTENCE_DATABASE_URL' \
-        "live sortie PostgreSQL persistence"
+        "$(markers_for_mode reference_live_sortie)" \
+        "live_sortie_postgresql"
     export POSTGRES_SCHEMA=$integration_schema
     export DATABASE_URL=$database_url
 fi
 
-run_marked_tests app/game-api 'process\.env\.REDIS_URL' "Redis"
+run_redis_only_tests "$core_database_markers"
 
 scenario_database_url=$(build_database_url "$scenario_schema")
-(
-    export POSTGRES_SCHEMA=$scenario_schema
-    export DATABASE_URL=$scenario_database_url
-    pnpm --filter @sammo-ts/infra prisma:db:push:game
-    cd "$workspace_root/app/game-engine"
-    pnpm exec vitest run --no-file-parallelism --maxWorkers=1 test/scenarioSeeder.test.ts
-)
+export POSTGRES_SCHEMA=$scenario_schema
+export DATABASE_URL=$scenario_database_url
+pnpm --filter @sammo-ts/infra prisma:db:push:game
+run_vitest app/game-engine "scenario_seed_postgresql" test/scenarioSeeder.test.ts
 
 echo "conditional PostgreSQL and Redis integration tests passed"
