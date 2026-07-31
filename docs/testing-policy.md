@@ -59,6 +59,8 @@ pnpm check:legacy:nation
 
 ```sh
 pnpm test:e2e:frontend-legacy
+pnpm test:e2e:main-front-status-live
+pnpm test:e2e:main-records-live
 ```
 
 같은 Chromium, viewport, device scale, zoom, locale, font, image, 로그인과

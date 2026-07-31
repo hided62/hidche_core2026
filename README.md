@@ -104,6 +104,8 @@ ref 명령 계약과 실제 화면은 다음 명령으로 비교합니다.
 pnpm check:legacy:general
 pnpm check:legacy:nation
 pnpm test:e2e:frontend-legacy
+pnpm test:e2e:main-front-status-live
+pnpm test:e2e:main-records-live
 ```
 
 각 명령의 fixture, 서비스, 인증 요구사항은

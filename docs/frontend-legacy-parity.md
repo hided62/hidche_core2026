@@ -31,12 +31,25 @@ Run the suite from the core2026 repository root:
 pnpm test:e2e:frontend-legacy
 ```
 
+현재 PM2 검증 profile의 실제 PostgreSQL·Redis를 읽는 main 화면 전용 suite는
+다음 명령으로 별도 실행합니다. `sammo-verify-che-api` process가 제공하는 환경을
+read-only source로 사용하며, 일반 fixture suite에 묵시적으로 섞지 않습니다.
+
+```sh
+pnpm test:e2e:main-front-status-live
+pnpm test:e2e:main-records-live
+```
+
 When another worktree occupies the default ports, set
 `FRONTEND_PARITY_GATEWAY_PORT`, `FRONTEND_PARITY_GAME_PORT`, and
 `FRONTEND_PARITY_GAME_URL`. If the core2026 worktree is outside the workspace
 that owns `image/`, set `FRONTEND_PARITY_IMAGE_ROOT` to that ignored image
 checkout. `FRONTEND_PARITY_ARTIFACT_DIR` retains the tournament and betting
 screenshots.
+
+Main 화면 전용 suite의 frontend/API port가 사용 중이면
+`FRONTEND_PARITY_LIVE_FRONTEND_PORT`와 `FRONTEND_PARITY_LIVE_API_PORT`를
+지정합니다.
 
 Run the focused simulator fixture with:
 
