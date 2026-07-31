@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { cityLevelMap, formatOfficerLevelText, regionMap } from '../utils/nationFormat';
 import { getNpcColor } from '../utils/npcColor';
+import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import { trpc } from '../utils/trpc';
 
 type Result = Awaited<ReturnType<typeof trpc.world.getCurrentCity.query>>;
@@ -93,10 +94,7 @@ const defenceTrainText = (value: number | null) => {
     if (value >= 60) return '○';
     return '△';
 };
-const generalImage = (general: General) => {
-    const picture = general.picture ?? 'default.jpg';
-    return general.imageServer ? `${import.meta.env.BASE_URL}d_pic/${picture}` : `/image/icons/${picture}`;
-};
+const generalImage = (general: General): string => resolveGeneralIconUrl(general);
 </script>
 
 <template>
@@ -270,7 +268,13 @@ const generalImage = (general: General) => {
                         :data-general-wounded="general.injury"
                     >
                         <td class="icon-cell">
-                            <img class="general-icon" width="64" height="64" :src="generalImage(general)" />
+                            <img
+                                class="general-icon"
+                                width="64"
+                                height="64"
+                                :src="generalImage(general)"
+                                @error="useDefaultGeneralIcon"
+                            />
                         </td>
                         <td :style="{ color: getNpcColor(general.npcState) }">{{ general.name }}</td>
                         <td :class="{ wounded: general.injury !== 0 }">

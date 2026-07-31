@@ -2,6 +2,7 @@
 import { onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
+import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import { trpc } from '../utils/trpc';
 
 type RankEntry = {
@@ -47,10 +48,7 @@ const loading = ref(false);
 const errorMessage = ref('');
 const data = ref<BestGeneralPayload | null>(null);
 
-const imageUrl = (entry: { picture: string | null; imageServer: number }): string => {
-    const picture = entry.picture?.trim() || 'default.jpg';
-    return entry.imageServer ? `${import.meta.env.BASE_URL}d_pic/${picture}` : `/image/icons/${picture}`;
-};
+const imageUrl = (entry: { picture: string | null; imageServer: number }): string => resolveGeneralIconUrl(entry);
 
 const closePage = async (): Promise<void> => {
     if (window.opener) {
@@ -89,20 +87,10 @@ watch(viewMode, () => {
         </div>
 
         <div class="view-selector" role="group" aria-label="장수 유형">
-            <button
-                class="legacy-button"
-                type="button"
-                :aria-pressed="viewMode === 'user'"
-                @click="viewMode = 'user'"
-            >
+            <button class="legacy-button" type="button" :aria-pressed="viewMode === 'user'" @click="viewMode = 'user'">
                 유저 보기
             </button>
-            <button
-                class="legacy-button"
-                type="button"
-                :aria-pressed="viewMode === 'npc'"
-                @click="viewMode = 'npc'"
-            >
+            <button class="legacy-button" type="button" :aria-pressed="viewMode === 'npc'" @click="viewMode = 'npc'">
                 NPC 보기
             </button>
         </div>
@@ -117,7 +105,14 @@ watch(viewMode, () => {
                     <li v-for="(entry, rank) in section.entries" :key="`${section.title}:${entry.id}:${rank}`">
                         <div class="hall-rank legacy-bg2">{{ rank + 1 }}위</div>
                         <div class="hall-img">
-                            <img class="generalIcon" :src="imageUrl(entry)" width="64" height="64" :alt="entry.name" />
+                            <img
+                                class="generalIcon"
+                                :src="imageUrl(entry)"
+                                width="64"
+                                height="64"
+                                :alt="entry.name"
+                                @error="useDefaultGeneralIcon"
+                            />
                         </div>
                         <div class="hall-nation" :style="{ backgroundColor: entry.bgColor, color: entry.fgColor }">
                             {{ entry.nationName || '-' }}
@@ -134,11 +129,7 @@ watch(viewMode, () => {
             <article v-for="section in data.uniqueItems" :key="section.slot" class="rankView legacy-bg0">
                 <h2 class="rankType legacy-bg1">{{ section.title }}</h2>
                 <ul>
-                    <li
-                        v-for="(entry, index) in section.entries"
-                        :key="`${entry.itemKey}:${index}`"
-                        class="no-value"
-                    >
+                    <li v-for="(entry, index) in section.entries" :key="`${entry.itemKey}:${index}`" class="no-value">
                         <div class="hall-rank legacy-bg2 item-name" :title="entry.itemInfo">{{ entry.itemName }}</div>
                         <div class="hall-img">
                             <img
@@ -147,6 +138,7 @@ watch(viewMode, () => {
                                 width="64"
                                 height="64"
                                 :alt="entry.owner.name"
+                                @error="useDefaultGeneralIcon"
                             />
                         </div>
                         <div

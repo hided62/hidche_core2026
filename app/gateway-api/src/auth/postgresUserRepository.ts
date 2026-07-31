@@ -1,4 +1,4 @@
-import type { GatewayPrisma, GatewayPrismaClient } from '@sammo-ts/infra';
+import { GatewayPrisma, type GatewayPrismaClient } from '@sammo-ts/infra';
 
 import { createSimplePasswordHasher, type PasswordHasher } from './passwordHasher.js';
 import type { CreateUserInput, UserOAuthInfo, UserRecord, UserRepository, UserSanctions } from './userRepository.js';
@@ -44,6 +44,8 @@ const mapUser = (row: {
     picture: string;
     imageServer: number;
     iconUpdatedAt: Date | null;
+    iconRevision: Date | null;
+    profileIconResetAt: Date | null;
     thirdPartyUse: boolean;
     termsAcceptedAt: Date | null;
     privacyAcceptedAt: Date | null;
@@ -65,6 +67,8 @@ const mapUser = (row: {
     picture: row.picture,
     imageServer: row.imageServer,
     iconUpdatedAt: row.iconUpdatedAt?.toISOString(),
+    iconRevision: row.iconRevision?.toISOString(),
+    profileIconResetAt: row.profileIconResetAt?.toISOString(),
     thirdPartyUse: row.thirdPartyUse,
     termsAcceptedAt: row.termsAcceptedAt?.toISOString(),
     privacyAcceptedAt: row.privacyAcceptedAt?.toISOString(),
@@ -90,6 +94,15 @@ export const createPostgresUserRepository = (
                 },
             });
             return row ? mapUser(row) : null;
+        },
+        async findByIds(ids: string[]): Promise<UserRecord[]> {
+            if (ids.length === 0) {
+                return [];
+            }
+            const rows = await prisma.appUser.findMany({
+                where: { id: { in: ids } },
+            });
+            return rows.map(mapUser);
         },
         async findByUsername(username: string): Promise<UserRecord | null> {
             const row = await prisma.appUser.findUnique({
@@ -219,7 +232,79 @@ export const createPostgresUserRepository = (
                     picture,
                     imageServer,
                     iconUpdatedAt: updatedAt,
+                    iconRevision: updatedAt,
                 },
+            });
+        },
+        async updateIconForDay(
+            userId: string,
+            picture: string,
+            imageServer: number,
+            updatedAt: Date,
+            dayStart: Date,
+            consumeDailyQuota: boolean
+        ): Promise<string | null> {
+            const rows = await prisma.$queryRaw<Array<{ iconRevision: Date }>>(GatewayPrisma.sql`
+                UPDATE "app_user"
+                SET
+                    "picture" = ${picture},
+                    "image_server" = ${imageServer},
+                    "icon_updated_at" = CASE
+                        WHEN ${consumeDailyQuota} THEN ${updatedAt}
+                        ELSE "icon_updated_at"
+                    END,
+                    "icon_revision" = GREATEST(
+                        ${updatedAt},
+                        COALESCE("icon_revision", "icon_updated_at", "created_at") + INTERVAL '1 millisecond'
+                    )
+                WHERE "id" = ${userId}
+                  AND (
+                      "picture" = 'default.jpg'
+                      OR "icon_updated_at" IS NULL
+                      OR "icon_updated_at" < ${dayStart}
+                  )
+                RETURNING "icon_revision" AS "iconRevision"
+            `);
+            return rows[0]?.iconRevision.toISOString() ?? null;
+        },
+        async resetProfileIcon(userId: string, requestedAt: Date): Promise<string | null> {
+            return prisma.$transaction(async (tx) => {
+                const rows = await tx.$queryRaw<
+                    Array<{
+                        iconRevision: Date | null;
+                        iconUpdatedAt: Date | null;
+                        createdAt: Date;
+                        profileIconResetAt: Date | null;
+                    }>
+                >(GatewayPrisma.sql`
+                    SELECT
+                        "icon_revision" AS "iconRevision",
+                        "icon_updated_at" AS "iconUpdatedAt",
+                        "created_at" AS "createdAt",
+                        "profile_icon_reset_at" AS "profileIconResetAt"
+                    FROM "app_user"
+                    WHERE "id" = ${userId}
+                    FOR UPDATE
+                `);
+                const row = rows[0];
+                if (!row) {
+                    return null;
+                }
+                const previous = Math.max(
+                    row.createdAt.getTime(),
+                    row.iconUpdatedAt?.getTime() ?? 0,
+                    row.iconRevision?.getTime() ?? 0,
+                    row.profileIconResetAt?.getTime() ?? 0
+                );
+                const revision = new Date(Math.max(requestedAt.getTime(), previous + 1));
+                await tx.appUser.update({
+                    where: { id: userId },
+                    data: {
+                        iconRevision: revision,
+                        profileIconResetAt: revision,
+                    },
+                });
+                return revision.toISOString();
             });
         },
         async setThirdPartyUse(userId: string, allowed: boolean): Promise<void> {

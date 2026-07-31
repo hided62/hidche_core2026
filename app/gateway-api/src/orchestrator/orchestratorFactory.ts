@@ -40,6 +40,7 @@ export const createGatewayOrchestrator = (
             workspaceRoot,
             redisKeyPrefix: config.redisKeyPrefix,
             gameTokenSecret: config.gameTokenSecret,
+            gatewayInternalApiUrl: config.gatewayInternalApiUrl,
             baseEnv,
         },
         reconcileIntervalMs: config.orchestratorReconcileIntervalMs,

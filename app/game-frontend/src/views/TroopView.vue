@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 
+import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import { trpc } from '../utils/trpc';
 
 type TroopList = Awaited<ReturnType<typeof trpc.troop.getList.query>>;
@@ -159,10 +160,7 @@ const hideMemberPopup = () => {
     popupMember.value = null;
 };
 
-const iconPath = (troop: Troop): string => {
-    const picture = troop.leader?.picture || 'default.jpg';
-    return troop.leader?.imageServer ? `${import.meta.env.BASE_URL}d_pic/${picture}` : `/image/icons/${picture}`;
-};
+const iconPath = (troop: Troop): string => resolveGeneralIconUrl(troop.leader ?? {});
 
 const formatTurn = (turnTime: string | null): string => {
     if (!turnTime) {
@@ -212,6 +210,7 @@ onMounted(() => {
                         width="64"
                         :src="iconPath(troop)"
                         :alt="`${troop.leader?.name ?? '부대장'} 아이콘`"
+                        @error="useDefaultGeneralIcon"
                     />
                 </div>
                 <div class="troopLeaderName">{{ troop.leader?.name ?? '알 수 없음' }}</div>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import type { MessageType } from '@sammo-ts/logic';
+import { resolveMessageGeneralIconUrl, useDefaultGeneralIcon } from '../../utils/generalIcon';
 
 interface MessageTarget {
     generalId: number;
@@ -105,16 +106,7 @@ const isBright = (color: string): boolean => {
     return red * 0.299 + green * 0.587 + blue * 0.114 > 160;
 };
 
-const iconUrl = computed(() => {
-    const icon = props.message.src.icon?.trim();
-    if (!icon) {
-        return '/image/icons/default.jpg';
-    }
-    if (icon.startsWith('/') || /^https?:\/\//i.test(icon)) {
-        return icon;
-    }
-    return `${import.meta.env.BASE_URL}${icon.replace(/^\/+/, '')}`;
-});
+const iconUrl = computed(() => resolveMessageGeneralIconUrl(props.message.src.icon));
 
 const targetClass = (target: MessageTarget) => ({
     'msg-target': true,
@@ -155,7 +147,14 @@ onBeforeUnmount(() => {
         :data-id="message.id"
     >
         <div class="msg-icon">
-            <img class="general-icon" width="64" height="64" :src="iconUrl" :alt="message.src.generalName" />
+            <img
+                class="general-icon"
+                width="64"
+                height="64"
+                :src="iconUrl"
+                :alt="message.src.generalName"
+                @error="useDefaultGeneralIcon"
+            />
         </div>
         <div class="msg-body">
             <div class="msg-header">

@@ -1,5 +1,13 @@
 import { parseNumberWithFallback } from '@sammo-ts/common';
 
+const parseReconcileInterval = (value: string | undefined): number => {
+    const parsed = parseNumberWithFallback(value, 30_000, 'ACCOUNT_ICON_RESET_RECONCILE_INTERVAL_MS');
+    if (!Number.isSafeInteger(parsed) || parsed < 1_000) {
+        throw new Error('ACCOUNT_ICON_RESET_RECONCILE_INTERVAL_MS must be an integer of at least 1000.');
+    }
+    return parsed;
+};
+
 export interface GameApiConfig {
     host: string;
     port: number;
@@ -19,6 +27,8 @@ export interface GameApiConfig {
     auctionTimerRetentionSeconds: number;
     tournamentPollMs: number;
     gameTokenSecret: string;
+    gatewayInternalApiUrl: string;
+    accountIconResetReconcileIntervalMs: number;
     flushChannel: string;
 }
 
@@ -43,7 +53,11 @@ export const resolveGameApiConfigFromEnv = (env: NodeJS.ProcessEnv = process.env
         profile,
         scenario,
         profileName,
-        daemonRequestTimeoutMs: parseNumberWithFallback(env.DAEMON_REQUEST_TIMEOUT_MS, 5000, 'DAEMON_REQUEST_TIMEOUT_MS'),
+        daemonRequestTimeoutMs: parseNumberWithFallback(
+            env.DAEMON_REQUEST_TIMEOUT_MS,
+            5000,
+            'DAEMON_REQUEST_TIMEOUT_MS'
+        ),
         battleSimRequestTimeoutMs: parseNumberWithFallback(
             env.BATTLE_SIM_REQUEST_TIMEOUT_MS,
             8000,
@@ -54,27 +68,17 @@ export const resolveGameApiConfigFromEnv = (env: NodeJS.ProcessEnv = process.env
             60,
             'BATTLE_SIM_RESULT_TTL_SECONDS'
         ),
-        auctionTimerPollMs: parseNumberWithFallback(
-            env.AUCTION_TIMER_POLL_MS,
-            1000,
-            'AUCTION_TIMER_POLL_MS'
-        ),
-        auctionTimerResyncMs: parseNumberWithFallback(
-            env.AUCTION_TIMER_RESYNC_MS,
-            300000,
-            'AUCTION_TIMER_RESYNC_MS'
-        ),
+        auctionTimerPollMs: parseNumberWithFallback(env.AUCTION_TIMER_POLL_MS, 1000, 'AUCTION_TIMER_POLL_MS'),
+        auctionTimerResyncMs: parseNumberWithFallback(env.AUCTION_TIMER_RESYNC_MS, 300000, 'AUCTION_TIMER_RESYNC_MS'),
         auctionTimerRetentionSeconds: parseNumberWithFallback(
             env.AUCTION_TIMER_RETENTION_SECONDS,
             21600,
             'AUCTION_TIMER_RETENTION_SECONDS'
         ),
-        tournamentPollMs: parseNumberWithFallback(
-            env.TOURNAMENT_POLL_MS,
-            1000,
-            'TOURNAMENT_POLL_MS'
-        ),
+        tournamentPollMs: parseNumberWithFallback(env.TOURNAMENT_POLL_MS, 1000, 'TOURNAMENT_POLL_MS'),
         gameTokenSecret: secret,
+        gatewayInternalApiUrl: env.GATEWAY_INTERNAL_API_URL ?? 'http://127.0.0.1:13000',
+        accountIconResetReconcileIntervalMs: parseReconcileInterval(env.ACCOUNT_ICON_RESET_RECONCILE_INTERVAL_MS),
         flushChannel: `${gatewayPrefix}:flush`,
     };
 };

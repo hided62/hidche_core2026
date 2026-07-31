@@ -4,6 +4,8 @@ import { resolve } from 'node:path';
 import { expect, test, type Page, type Route } from '@playwright/test';
 
 const response = (data: unknown) => ({ result: { data } });
+const gameBasePath = (process.env.PLAYWRIGHT_GAME_BASE_PATH ?? 'che').replace(/^\/+|\/+$/gu, '');
+const gameProfile = process.env.PLAYWRIGHT_GAME_PROFILE ?? `${gameBasePath}:default`;
 const operationNames = (route: Route) =>
     decodeURIComponent(new URL(route.request().url()).pathname.split('/trpc/')[1] ?? '').split(',');
 
@@ -72,8 +74,8 @@ const generals = [
         id: 10,
         name: '조조',
         ownerName: null,
-        picture: 'default.jpg',
-        imageServer: 0,
+        picture: '계정 icon.png',
+        imageServer: 1,
         npcState: 0,
         age: 35,
         nationId: 1,
@@ -101,7 +103,7 @@ const generals = [
         id: 20,
         name: '유비',
         ownerName: '통일유저',
-        picture: 'default.jpg',
+        picture: '장수/유비 1.png',
         imageServer: 0,
         npcState: 0,
         age: 34,
@@ -145,11 +147,25 @@ const install = async (
     accessPages: string[] = []
 ) => {
     let generalDirectoryCalls = 0;
-    await page.addInitScript(() => {
+    await page.addInitScript((profile) => {
         localStorage.setItem('sammo-game-token', 'ga_directory');
-        localStorage.setItem('sammo-game-profile', 'che:default');
-    });
+        localStorage.setItem('sammo-game-profile', profile);
+    }, gameProfile);
     await page.route('**/image/general/**', (route) =>
+        route.fulfill({
+            status: 200,
+            contentType: 'image/svg+xml',
+            body: '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#777"/></svg>',
+        })
+    );
+    await page.route('**/gateway/api/user-icons/**', (route) =>
+        route.fulfill({
+            status: 200,
+            contentType: 'image/svg+xml',
+            body: '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#777"/></svg>',
+        })
+    );
+    await page.route('**/image/icons/**', (route) =>
         route.fulfill({
             status: 200,
             contentType: 'image/svg+xml',
@@ -159,7 +175,7 @@ const install = async (
     await page.route('**/image/game/**', (route) =>
         route.fulfill({ status: 200, contentType: 'image/jpeg', body: Buffer.from('') })
     );
-    await page.route('**/che/api/trpc/**', async (route) => {
+    await page.route(`**/${gameBasePath}/api/trpc/**`, async (route) => {
         const requestBody = route.request().postDataJSON() as
             Record<string, { json?: { page?: unknown }; page?: unknown }> | undefined;
         const results = operationNames(route).map((operation, operationIndex) => {
@@ -202,12 +218,12 @@ const install = async (
 };
 
 const installAccessBoundary = async (page: Page, accessPages: string[]) => {
-    await page.addInitScript(() => {
+    await page.addInitScript((profile) => {
         localStorage.setItem('sammo-game-token', 'ga_access_boundary');
-        localStorage.setItem('sammo-game-profile', 'che:default');
-    });
+        localStorage.setItem('sammo-game-profile', profile);
+    }, gameProfile);
     await page.route('**/image/**', (route) => route.abort('failed'));
-    await page.route('**/che/api/trpc/**', async (route) => {
+    await page.route(`**/${gameBasePath}/api/trpc/**`, async (route) => {
         const requestBody = route.request().postDataJSON() as
             Record<string, { json?: { page?: unknown }; page?: unknown }> | undefined;
         const results = operationNames(route).map((operation, operationIndex) => {
@@ -315,6 +331,7 @@ test('nation and general directories preserve the fixed legacy Chromium geometry
     expect(await header.evaluate((element) => getComputedStyle(element).backgroundImage)).toContain('back_green.jpg');
     const icon = page.locator('.general-icon').first();
     await expect(icon).toBeVisible();
+    await expect(icon).toHaveAttribute('src', '/gateway/api/user-icons/%EA%B3%84%EC%A0%95%20icon.png');
     expect(
         await icon.evaluate((element) => {
             const image = element as HTMLImageElement;
@@ -328,6 +345,11 @@ test('nation and general directories preserve the fixed legacy Chromium geometry
             };
         })
     ).toEqual({ width: 64, height: 64, naturalWidth: 64, naturalHeight: 64, objectFit: 'fill' });
+    const nestedLegacyIcon = page.locator('.general-icon').nth(1);
+    await expect(nestedLegacyIcon).toHaveAttribute('src', '/image/general/%EC%9E%A5%EC%88%98/%EC%9C%A0%EB%B9%84%201.png');
+    await expect
+        .poll(() => nestedLegacyIcon.evaluate((element) => (element as HTMLImageElement).naturalWidth))
+        .toBe(64);
 
     const artifactRoot = process.env.DIRECTORY_PARITY_ARTIFACT_DIR;
     if (artifactRoot) {
@@ -354,6 +376,23 @@ test('general directory submits the legacy sort selector and keeps wounded/bonus
     expect(await page.locator('#viewType').evaluate((element) => document.activeElement === element)).toBe(true);
 });
 
+test('a reused image element falls back for each newly broken account icon', async ({ page }) => {
+    await install(page);
+    await page.route('**/gateway/api/user-icons/**', (route) =>
+        route.fulfill({ status: 404, contentType: 'text/plain', body: 'missing' })
+    );
+    await page.goto('general-list');
+
+    const icon = page.locator('.general-icon').first();
+    await expect(icon).toHaveAttribute('src', /\/image\/icons\/default\.jpg$/);
+    await expect.poll(() => icon.evaluate((element) => (element as HTMLImageElement).naturalWidth)).toBe(64);
+    await icon.evaluate((element) => {
+        (element as HTMLImageElement).src = '/gateway/api/user-icons/second-missing.png';
+    });
+    await expect(icon).toHaveAttribute('src', /\/image\/icons\/default\.jpg$/);
+    await expect.poll(() => icon.evaluate((element) => (element as HTMLImageElement).naturalWidth)).toBe(64);
+});
+
 test('a failed resort retains the selected value and existing rows', async ({ page }) => {
     await install(page, 'error-after-load');
     await page.goto('general-list');
@@ -368,7 +407,7 @@ test('an authenticated account without a general is redirected away from both di
     await install(page, 'no-general');
     for (const path of ['nation-list', 'general-list']) {
         await page.goto(path);
-        await expect(page).toHaveURL(/\/che\/join$/);
+        await expect(page).toHaveURL(new RegExp(`/${gameBasePath}/join$`, 'u'));
     }
 });
 
@@ -388,7 +427,9 @@ test('route access belongs only to the eight Ref page boundaries', async ({ page
     for (const [path, pageName] of retained) {
         const before = accessPages.length;
         await page.goto(path);
+        await expect(page.locator('#app')).toHaveAttribute('data-v-app', '');
         await expect.poll(() => accessPages.length).toBe(before + 1);
+        await page.waitForLoadState('networkidle');
         expect(accessPages.at(-1)).toBe(pageName);
     }
 
@@ -415,7 +456,7 @@ test('route access belongs only to the eight Ref page boundaries', async ({ page
     for (const path of endpointOwned) {
         const before = accessPages.length;
         await page.goto(path);
-        await page.waitForTimeout(50);
+        await page.waitForLoadState('networkidle');
         expect(accessPages).toHaveLength(before);
     }
 });

@@ -11,10 +11,12 @@ import {
     accessEngineAuthedProcedure,
     accessEngineAuthedInputProcedure,
     authedProcedure,
+    engineAuthedProcedure,
     router,
 } from '../../trpc.js';
 import { ConflictingTurnDaemonCommandError } from '../../daemon/databaseTransport.js';
 import { resolveAccessWindows } from '../../services/generalAccess.js';
+import { adjustAccountIconForUser } from '../../services/accountIconSync.js';
 import { getMyGeneral } from '../shared/general.js';
 import { resolveNationNotice } from '../nation/shared.js';
 
@@ -169,6 +171,13 @@ const resolvePenalty = (penalty: unknown): Record<string, number> => {
 };
 
 export const generalRouter = router({
+    adjustIcon: engineAuthedProcedure.mutation(({ ctx }) => {
+        const userId = ctx.auth?.user.id;
+        if (!userId) {
+            throw new TRPCError({ code: 'UNAUTHORIZED' });
+        }
+        return adjustAccountIconForUser(ctx, userId);
+    }),
     me: authedProcedure.query(async ({ ctx }) => {
         const userId = ctx.auth?.user.id;
         if (!userId) {
@@ -326,12 +335,15 @@ export const generalRouter = router({
             availableAt: result.availableAt ?? null,
         };
     }),
-    dieOnPrestart: accessEngineAuthedInputProcedure(zImmediateActionInput)
-        .mutation(({ ctx, input }) => requestImmediateAction(ctx, input, 'dieOnPrestart')),
-    buildNationCandidate: accessEngineAuthedInputProcedure(zImmediateActionInput)
-        .mutation(({ ctx, input }) => requestImmediateAction(ctx, input, 'buildNationCandidate')),
-    instantRetreat: accessEngineAuthedInputProcedure(zImmediateActionInput)
-        .mutation(({ ctx, input }) => requestImmediateAction(ctx, input, 'instantRetreat')),
+    dieOnPrestart: accessEngineAuthedInputProcedure(zImmediateActionInput).mutation(({ ctx, input }) =>
+        requestImmediateAction(ctx, input, 'dieOnPrestart')
+    ),
+    buildNationCandidate: accessEngineAuthedInputProcedure(zImmediateActionInput).mutation(({ ctx, input }) =>
+        requestImmediateAction(ctx, input, 'buildNationCandidate')
+    ),
+    instantRetreat: accessEngineAuthedInputProcedure(zImmediateActionInput).mutation(({ ctx, input }) =>
+        requestImmediateAction(ctx, input, 'instantRetreat')
+    ),
     vacation: authedProcedure.mutation(async ({ ctx }) => {
         const general = await getMyGeneral(ctx);
         const result = await ctx.turnDaemon.requestCommand({

@@ -9,6 +9,14 @@ const integration = describe.skipIf(!databaseUrl);
 const profileName = 'runtime:consumer-integration';
 const actionId = '924f40ec-e9d2-432f-9867-e9fb3199f14a';
 
+const assertDedicatedSchema = (): void => {
+    const expected = process.env.GATEWAY_RUNTIME_INTEGRATION_SCHEMA;
+    const actual = databaseUrl ? new URL(databaseUrl).searchParams.get('schema') : null;
+    if (!expected || !expected.endsWith('_gateway_runtime_integration') || actual !== expected) {
+        throw new Error('Refusing to mutate a Gateway database outside the runner-owned integration schema.');
+    }
+};
+
 const waitForApplied = async (db: GatewayPrismaClient): Promise<void> => {
     const deadline = Date.now() + 4_000;
     while (Date.now() < deadline) {
@@ -27,11 +35,14 @@ const waitForApplied = async (db: GatewayPrismaClient): Promise<void> => {
 integration('gateway runtime action consumer', () => {
     let db: GatewayPrismaClient;
     let closeDb: (() => Promise<void>) | undefined;
+    let initialized = false;
 
     beforeAll(async () => {
+        assertDedicatedSchema();
         const connector = createGatewayPostgresConnector({ url: databaseUrl! });
         await connector.connect();
         db = connector.prisma;
+        initialized = true;
         closeDb = () => connector.disconnect();
         await db.gatewayProfile.upsert({
             where: { profileName },
@@ -48,8 +59,10 @@ integration('gateway runtime action consumer', () => {
     });
 
     afterAll(async () => {
-        await db.gatewayRuntimeAction.deleteMany({ where: { profileName } });
-        await db.gatewayProfile.deleteMany({ where: { profileName } });
+        if (initialized) {
+            await db.gatewayRuntimeAction.deleteMany({ where: { profileName } });
+            await db.gatewayProfile.deleteMany({ where: { profileName } });
+        }
         await closeDb?.();
     });
 

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type {
     DatabaseClient,
@@ -15,7 +15,7 @@ import { InMemoryTurnDaemonTransport } from '../src/daemon/inMemoryTransport.js'
 import { InMemoryFlushStore } from '../src/auth/flushStore.js';
 import { RedisAccessTokenStore } from '../src/auth/accessTokenStore.js';
 import { appRouter } from '../src/router.js';
-import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
+import { encryptGameSessionToken, type GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 
 const profile: GameProfile = {
     id: 'che',
@@ -114,6 +114,9 @@ const buildContext = (options?: {
     generalTurnWrites?: unknown[];
     nationTurnWrites?: unknown[];
     auth?: GameSessionTokenPayload | null;
+    currentAccountIcon?: unknown;
+    accountIconGet?: (userId: string) => Promise<unknown>;
+    accessTokenStore?: RedisAccessTokenStore;
     worldStateReads?: { count: number };
 }): GameApiContext => {
     const transport = options?.transport ?? new InMemoryTurnDaemonTransport();
@@ -227,10 +230,30 @@ const buildContext = (options?: {
         uploadDir: 'uploads',
         uploadPath: '/uploads',
         uploadPublicUrl: null,
-        redis: {} as unknown as RedisConnector['client'],
-        accessTokenStore,
+        redis: {
+            get: async () => null,
+        } as unknown as RedisConnector['client'],
+        accessTokenStore: options?.accessTokenStore ?? accessTokenStore,
         flushStore: new InMemoryFlushStore(),
         gameTokenSecret: 'test-secret',
+        accountIconSource: {
+            get: async (userId: string) => {
+                if (options?.accountIconGet) {
+                    return (await options.accountIconGet(userId)) as {
+                        revision: string;
+                        picture: string;
+                        imageServer: number;
+                    } | null;
+                }
+                return options?.currentAccountIcon === undefined
+                    ? null
+                    : (options.currentAccountIcon as {
+                          revision: string;
+                          picture: string;
+                          imageServer: number;
+                      });
+            },
+        },
     };
 };
 
@@ -278,6 +301,140 @@ describe('appRouter', () => {
         const caller = appRouter.createCaller(buildContext({ auth: buildAuth() }));
 
         await expect(caller.auth.status()).resolves.toEqual({ userId: 'user-1' });
+    });
+
+    it('keeps ordinary account icon changes on the explicitly selected servers', async () => {
+        const transport = new InMemoryTurnDaemonTransport();
+        const accountIconGet = vi.fn(async () => {
+            throw new Error('ordinary exchange must not read the icon source');
+        });
+        const accessTokenStore = {
+            markGatewayTokenUsed: vi.fn(async () => true),
+            create: vi.fn(async () => ({
+                accessToken: 'ga_access',
+                expiresAt: '2099-01-01T01:00:00.000Z',
+            })),
+        } as unknown as RedisAccessTokenStore;
+        const payload = buildAuth();
+        payload.issuedAt = '2099-01-01T00:00:00.000Z';
+        payload.expiresAt = '2099-01-01T01:00:00.000Z';
+        payload.user.iconUpdatedAt = '2099-01-01T00:00:00.000Z';
+        const caller = appRouter.createCaller(
+            buildContext({
+                auth: null,
+                transport,
+                accountIconGet,
+                accessTokenStore,
+            })
+        );
+
+        await expect(
+            caller.auth.exchangeGatewayToken({
+                gatewayToken: encryptGameSessionToken(payload, 'test-secret'),
+            })
+        ).resolves.toMatchObject({ accessToken: 'ga_access' });
+        expect(accountIconGet).not.toHaveBeenCalled();
+        expect(transport.commands).toHaveLength(0);
+    });
+
+    it('durably re-applies an administrator reset before consuming the one-time token', async () => {
+        const transport = new InMemoryTurnDaemonTransport();
+        const calls: string[] = [];
+        const revision = '2099-01-01T00:00:00.001Z';
+        const accessTokenStore = {
+            markGatewayTokenUsed: vi.fn(async () => {
+                calls.push('mark-used');
+                return true;
+            }),
+            create: vi.fn(async () => ({
+                accessToken: 'ga_access',
+                expiresAt: '2099-01-01T01:00:00.000Z',
+            })),
+        } as unknown as RedisAccessTokenStore;
+        const payload = buildAuth();
+        payload.issuedAt = '2099-01-01T00:00:00.000Z';
+        payload.expiresAt = '2099-01-01T01:00:00.000Z';
+        payload.user.iconUpdatedAt = revision;
+        payload.user.profileIconResetAt = revision;
+        const caller = appRouter.createCaller(
+            buildContext({
+                auth: null,
+                transport,
+                accessTokenStore,
+                accountIconGet: async () => {
+                    calls.push('projection');
+                    return {
+                        revision,
+                        picture: 'default.jpg',
+                        imageServer: 0,
+                    };
+                },
+            })
+        );
+
+        await caller.auth.exchangeGatewayToken({
+            gatewayToken: encryptGameSessionToken(payload, 'test-secret'),
+        });
+
+        expect(calls).toEqual(['projection', 'mark-used']);
+        expect(transport.commands.at(-1)?.command).toEqual({
+            type: 'adjustGeneralIcon',
+            requestId: `general:adjustIcon:${payload.user.id}:${revision}`,
+            userId: payload.user.id,
+            picture: 'default.jpg',
+            imageServer: 0,
+            iconRevision: revision,
+        });
+    });
+
+    it('applies the current Gateway database icon instead of stale token claims', async () => {
+        const transport = new InMemoryTurnDaemonTransport();
+        const currentAccountIcon = {
+            revision: '2026-07-31T09:00:00.000Z',
+            picture: 'latest.png',
+            imageServer: 1,
+        };
+        const auth = buildAuth();
+        auth.user.picture = 'stale.png';
+        auth.user.imageServer = 0;
+        auth.user.iconUpdatedAt = '2026-07-30T09:00:00.000Z';
+        const requestId = `general:adjustIcon:${auth.user.id}:${currentAccountIcon.revision}`;
+        transport.setCommandResult(requestId, {
+            type: 'adjustGeneralIcon',
+            ok: true,
+            generalId: 1,
+            updated: true,
+        });
+        const caller = appRouter.createCaller(
+            buildContext({
+                auth,
+                transport,
+                currentAccountIcon,
+            })
+        );
+
+        await expect(caller.general.adjustIcon()).resolves.toEqual({
+            ok: true,
+            generalId: 1,
+            updated: true,
+        });
+        expect(transport.commands.at(-1)?.command).toEqual({
+            type: 'adjustGeneralIcon',
+            requestId,
+            userId: auth.user.id,
+            picture: 'latest.png',
+            imageServer: 1,
+            iconRevision: currentAccountIcon.revision,
+        });
+    });
+
+    it('rejects icon adjustment without auth or a current Gateway account', async () => {
+        await expect(appRouter.createCaller(buildContext({ auth: null })).general.adjustIcon()).rejects.toMatchObject({
+            code: 'UNAUTHORIZED',
+        });
+        await expect(
+            appRouter.createCaller(buildContext({ auth: buildAuth() })).general.adjustIcon()
+        ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
     });
 
     it('rejects unauthenticated or game-blocked auth status checks', async () => {
@@ -354,6 +511,85 @@ describe('appRouter', () => {
             message: expect.stringContaining('카카오 인증'),
         });
         expect(worldStateReads.count).toBe(0);
+    });
+
+    it('does not require the Gateway icon source when creating a default-picture general', async () => {
+        const transport = new InMemoryTurnDaemonTransport();
+        const clientRequestId = '1b9afacd-d29b-456d-8ef3-a6be4b497e6e';
+        const requestId = `join-create:user-1:${clientRequestId}`;
+        transport.setCommandResult(requestId, {
+            type: 'joinCreateGeneral',
+            ok: true,
+            generalId: 41,
+        });
+        const accountIconGet = vi.fn(async () => {
+            throw new Error('default-picture join must not read the icon source');
+        });
+        const caller = appRouter.createCaller(
+            buildContext({
+                state: buildWorldState(),
+                transport,
+                accountIconGet,
+            })
+        );
+
+        await expect(
+            caller.join.createGeneral({
+                name: '기본전콘',
+                leadership: 55,
+                strength: 55,
+                intel: 55,
+                pic: false,
+                character: 'Random',
+                clientRequestId,
+            })
+        ).resolves.toEqual({ ok: true, generalId: 41 });
+        expect(accountIconGet).not.toHaveBeenCalled();
+        expect(transport.commands.at(-1)?.command).not.toHaveProperty('ownerIconRevision');
+    });
+
+    it('uses the authoritative projection instead of stale token claims for picture creation', async () => {
+        const transport = new InMemoryTurnDaemonTransport();
+        const clientRequestId = '824454da-d0ab-48d2-a7d5-e2e5aaf83ba4';
+        const requestId = `join-create:user-1:${clientRequestId}`;
+        const revision = '2026-07-31T09:00:00.001Z';
+        transport.setCommandResult(requestId, {
+            type: 'joinCreateGeneral',
+            ok: true,
+            generalId: 42,
+        });
+        const auth = buildAuth();
+        auth.user.picture = 'stale.png';
+        auth.user.imageServer = 0;
+        auth.user.iconUpdatedAt = '2026-07-30T09:00:00.000Z';
+        const caller = appRouter.createCaller(
+            buildContext({
+                state: buildWorldState(),
+                auth,
+                transport,
+                currentAccountIcon: {
+                    revision,
+                    picture: 'latest.png',
+                    imageServer: 1,
+                },
+            })
+        );
+
+        await caller.join.createGeneral({
+            name: '최신전콘',
+            leadership: 55,
+            strength: 55,
+            intel: 55,
+            pic: true,
+            character: 'Random',
+            clientRequestId,
+        });
+
+        expect(transport.commands.at(-1)?.command).toMatchObject({
+            ownerPicture: 'latest.png',
+            ownerImageServer: 1,
+            ownerIconRevision: revision,
+        });
     });
 
     it('queues turn daemon run commands', async () => {

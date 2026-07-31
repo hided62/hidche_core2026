@@ -5,7 +5,7 @@ import type {
     TurnDaemonCommandResult,
 } from '../lifecycle/types.js';
 import { GamePrisma, type DatabaseClient } from '@sammo-ts/infra';
-import { asRecord, JosaUtil, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
+import { asRecord, isCanonicalIsoTimestamp, JosaUtil, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 import {
     LogCategory,
     LogFormat,
@@ -133,7 +133,7 @@ interface CommandHandlerContext {
 
 const requireCommandDatabase = (ctx: CommandHandlerContext): DatabaseClient => {
     if (!ctx.commandDb) {
-        throw new Error('ENGINE mutation transaction is required for selection-pool commands.');
+        throw new Error('ENGINE mutation transaction is required for authenticated commands.');
     }
     return ctx.commandDb as unknown as DatabaseClient;
 };
@@ -149,7 +149,8 @@ const resolveCommandAcceptedAt = async (
                 | 'joinCreateGeneral'
                 | 'npcPossessGeneral'
                 | 'selectPoolCreate'
-                | 'selectPoolReselect';
+                | 'selectPoolReselect'
+                | 'adjustGeneralIcon';
         }
     >
 ): Promise<Date> => {
@@ -228,6 +229,9 @@ async function handleJoinCreateGeneral(
                     profileId: command.profileId,
                     ...(command.ownerPicture !== undefined ? { ownerPicture: command.ownerPicture } : {}),
                     ...(command.ownerImageServer !== undefined ? { ownerImageServer: command.ownerImageServer } : {}),
+                    ...(command.ownerIconRevision !== undefined
+                        ? { ownerIconRevision: command.ownerIconRevision }
+                        : {}),
                     ...(command.ownerCanUsePicture !== undefined
                         ? { ownerCanUsePicture: command.ownerCanUsePicture }
                         : {}),
@@ -700,6 +704,78 @@ async function handlePatchGeneral(
 
     world.updateGeneral(command.generalId, patch);
     return { type: 'patchGeneral', ok: true, generalId: command.generalId };
+}
+
+async function handleAdjustGeneralIcon(
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'adjustGeneralIcon' }>
+): Promise<TurnDaemonCommandResult> {
+    const db = requireCommandDatabase(ctx);
+    await resolveCommandAcceptedAt(db, command);
+    const general = ctx.world
+        .listGenerals()
+        .find((candidate) => candidate.userId === command.userId && candidate.npcState === 0);
+    if (!general) {
+        return {
+            type: 'adjustGeneralIcon',
+            ok: true,
+            generalId: null,
+            updated: false,
+        };
+    }
+
+    const currentRevision = general.meta.accountIconUpdatedAt;
+    if (currentRevision !== undefined) {
+        if (typeof currentRevision !== 'string' || !isCanonicalIsoTimestamp(currentRevision)) {
+            return {
+                type: 'adjustGeneralIcon',
+                ok: false,
+                code: 'PRECONDITION_FAILED',
+                reason: '장수의 계정 아이콘 revision이 올바르지 않습니다.',
+            };
+        }
+        const currentRevisionTime = new Date(currentRevision).getTime();
+        const nextRevisionTime = new Date(command.iconRevision).getTime();
+        if (nextRevisionTime < currentRevisionTime) {
+            return {
+                type: 'adjustGeneralIcon',
+                ok: false,
+                code: 'CONFLICT',
+                reason: '더 최신 계정 아이콘이 이미 적용되었습니다.',
+            };
+        }
+        if (nextRevisionTime === currentRevisionTime) {
+            if (general.picture === command.picture && general.imageServer === command.imageServer) {
+                return {
+                    type: 'adjustGeneralIcon',
+                    ok: true,
+                    generalId: general.id,
+                    updated: false,
+                };
+            }
+            return {
+                type: 'adjustGeneralIcon',
+                ok: false,
+                code: 'CONFLICT',
+                reason: '같은 revision에 다른 계정 아이콘이 요청되었습니다.',
+            };
+        }
+    }
+
+    ctx.world.updateGeneral(general.id, {
+        picture: command.picture,
+        imageServer: command.imageServer,
+        meta: {
+            ...general.meta,
+            accountIconUpdatedAt: command.iconRevision,
+        },
+    });
+    return {
+        type: 'adjustGeneralIcon',
+        ok: true,
+        generalId: general.id,
+        updated: true,
+    };
 }
 
 async function handleShiftSchedule(
@@ -2296,6 +2372,8 @@ export const createTurnDaemonCommandHandler = (options: {
             handleTournamentMatchResult(ctx, command as Extract<TurnDaemonCommand, { type: 'tournamentMatchResult' }>),
         patchGeneral: (command) =>
             handlePatchGeneral(ctx, command as Extract<TurnDaemonCommand, { type: 'patchGeneral' }>),
+        adjustGeneralIcon: (command) =>
+            handleAdjustGeneralIcon(ctx, command as Extract<TurnDaemonCommand, { type: 'adjustGeneralIcon' }>),
         joinCreateGeneral: (command) =>
             handleJoinCreateGeneral(ctx, command as Extract<TurnDaemonCommand, { type: 'joinCreateGeneral' }>),
         npcPossessGeneral: (command) =>

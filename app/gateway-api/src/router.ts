@@ -14,6 +14,7 @@ import { adminRouter } from './adminRouter.js';
 import { accountRouter } from './account/router.js';
 import { resolveLocalAccountProfilePolicy } from './auth/localAccountPolicy.js';
 import { openPassword, zDisplayName, zPasswordEnvelope, zRegistrationUsername } from './auth/registrationInput.js';
+import { resolveEffectiveAccountIcon } from './auth/accountIconProjection.js';
 
 const zUsername = z
     .string()
@@ -655,6 +656,7 @@ export const appRouter = router({
                     });
                 }
                 const now = new Date();
+                const accountIcon = resolveEffectiveAccountIcon(user);
                 const payload = {
                     version: 1,
                     profile: gameSession.profile,
@@ -665,8 +667,10 @@ export const appRouter = router({
                         id: user.id,
                         username: user.username,
                         displayName: user.displayName,
-                        picture: user.picture,
-                        imageServer: user.imageServer,
+                        picture: accountIcon.picture,
+                        imageServer: accountIcon.imageServer,
+                        iconUpdatedAt: accountIcon.revision,
+                        ...(user.profileIconResetAt ? { profileIconResetAt: user.profileIconResetAt } : {}),
                         canUseGeneralPicture: user.legacyGrade === undefined || user.legacyGrade >= 1,
                         roles: user.roles,
                         createdAt: user.createdAt,

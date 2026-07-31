@@ -73,6 +73,8 @@ model AppUser {
   picture             String    @default("default.jpg")
   imageServer         Int       @default(0) @map("image_server")
   iconUpdatedAt       DateTime? @map("icon_updated_at")
+  iconRevision        DateTime? @map("icon_revision")
+  profileIconResetAt  DateTime? @map("profile_icon_reset_at")
   thirdPartyUse       Boolean   @default(true) @map("third_party_use")
   termsAcceptedAt     DateTime? @map("terms_accepted_at")
   privacyAcceptedAt   DateTime? @map("privacy_accepted_at")

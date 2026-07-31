@@ -20,6 +20,7 @@ export interface GatewayProcessConfig {
     workspaceRoot: string;
     redisKeyPrefix: string;
     gameTokenSecret: string;
+    gatewayInternalApiUrl: string;
     baseEnv?: Record<string, string>;
 }
 
@@ -350,6 +351,7 @@ export const buildProcessDefinitions = (
         GAME_UPLOAD_PATH: `/${profile.profile}/api/uploads`,
         GATEWAY_REDIS_PREFIX: config.redisKeyPrefix,
         GAME_TOKEN_SECRET: config.gameTokenSecret,
+        GATEWAY_INTERNAL_API_URL: config.gatewayInternalApiUrl,
     };
     const daemonEnv = {
         ...baseEnv,

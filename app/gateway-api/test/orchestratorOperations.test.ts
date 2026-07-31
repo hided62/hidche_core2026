@@ -129,6 +129,7 @@ const createHarness = (
             workspaceRoot: '/srv/sammo',
             redisKeyPrefix: 'sammo:test',
             gameTokenSecret: 'test-secret',
+            gatewayInternalApiUrl: 'http://127.0.0.1:13000',
         },
         reconcileIntervalMs: 60_000,
         scheduleIntervalMs: 60_000,

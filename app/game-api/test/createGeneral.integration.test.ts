@@ -50,6 +50,7 @@ const buildAuth = (id: string, displayName: string, legacyMemberNo: number): Gam
         legacyMemberNo,
         picture: 'custom-owner.webp',
         imageServer: 2,
+        iconUpdatedAt: '2026-07-30T00:00:00.000Z',
         canUseGeneralPicture: true,
     },
     sanctions: {
@@ -92,6 +93,16 @@ integration('generic general creation through the durable turn daemon', () => {
             accessTokenStore: new RedisAccessTokenStore(redisClient, profile),
             flushStore: new InMemoryFlushStore(),
             gameTokenSecret: 'create-general-test-secret',
+            accountIconSource: {
+                get: async (accountId) =>
+                    accountId === auth.user.id && auth.user.iconUpdatedAt
+                        ? {
+                              revision: auth.user.iconUpdatedAt,
+                              picture: auth.user.picture ?? 'default.jpg',
+                              imageServer: auth.user.imageServer ?? 0,
+                          }
+                        : null,
+            },
         };
     };
 
@@ -273,6 +284,7 @@ integration('generic general creation through the durable turn daemon', () => {
             ownerName: '생성사용자',
             killturn: 6,
             inherit_spent_dyn: 4500,
+            accountIconUpdatedAt: '2026-07-30T00:00:00.000Z',
         });
         const createdAccess = await db.generalAccessLog.findUniqueOrThrow({ where: { generalId: created.id } });
         if (!createdAccess.lastRefresh) {

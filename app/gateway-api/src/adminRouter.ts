@@ -260,16 +260,17 @@ const zServerRestriction = z.object({
     notes: z.string().max(2000).nullable().optional(),
 });
 
-const zSanctionsPatch = z.object({
-    bannedUntil: z.string().datetime().nullable().optional(),
-    mutedUntil: z.string().datetime().nullable().optional(),
-    suspendedUntil: z.string().datetime().nullable().optional(),
-    warningCount: z.number().int().min(0).nullable().optional(),
-    flags: z.array(z.string().min(1)).nullable().optional(),
-    notes: z.string().max(2000).nullable().optional(),
-    profileIconResetAt: z.string().datetime().nullable().optional(),
-    serverRestrictions: z.record(z.string(), zServerRestriction.nullable()).nullable().optional(),
-});
+const zSanctionsPatch = z
+    .object({
+        bannedUntil: z.string().datetime().nullable().optional(),
+        mutedUntil: z.string().datetime().nullable().optional(),
+        suspendedUntil: z.string().datetime().nullable().optional(),
+        warningCount: z.number().int().min(0).nullable().optional(),
+        flags: z.array(z.string().min(1)).nullable().optional(),
+        notes: z.string().max(2000).nullable().optional(),
+        serverRestrictions: z.record(z.string(), zServerRestriction.nullable()).nullable().optional(),
+    })
+    .strict();
 
 const zLocalAccountInput = z.object({
     username: z.string().min(2).max(32),
@@ -332,8 +333,6 @@ const applySanctionsPatch = (current: UserSanctions, patch: SanctionsPatch): Use
     applyField('warningCount', patch.warningCount);
     applyField('flags', patch.flags);
     applyField('notes', patch.notes);
-    applyField('profileIconResetAt', patch.profileIconResetAt);
-
     if (patch.serverRestrictions !== undefined) {
         if (patch.serverRestrictions === null) {
             delete next.serverRestrictions;
@@ -495,6 +494,7 @@ export const adminRouter = router({
                 oauthType: user.oauthType,
                 oauthId: user.oauthId,
                 email: user.email,
+                profileIconResetAt: user.profileIconResetAt,
                 createdAt: user.createdAt,
             };
         }),
@@ -611,12 +611,22 @@ export const adminRouter = router({
                         message: 'User not found.',
                     });
                 }
-                const next = applySanctionsPatch(user.sanctions, {
-                    profileIconResetAt: new Date().toISOString(),
-                });
-                await ctx.users.updateSanctions(input.userId, next);
-                await ctx.flushPublisher.publishUserFlush(input.userId, 'admin-profile-icon-reset');
-                return { profileIconResetAt: next.profileIconResetAt };
+                const profileIconResetAt = await ctx.users.resetProfileIcon(input.userId, new Date());
+                if (!profileIconResetAt) {
+                    throw new TRPCError({
+                        code: 'NOT_FOUND',
+                        message: 'User not found.',
+                    });
+                }
+                let flushPublished = true;
+                try {
+                    await ctx.flushPublisher.publishUserFlush(input.userId, 'admin-profile-icon-reset', {
+                        iconRevision: profileIconResetAt,
+                    });
+                } catch {
+                    flushPublished = false;
+                }
+                return { profileIconResetAt, flushPublished };
             }),
         forceDelete: userAdminProcedure
             .input(

@@ -206,6 +206,14 @@ export type TurnDaemonCommand =
           };
       }
     | {
+          type: 'adjustGeneralIcon';
+          requestId?: string;
+          userId: string;
+          picture: string;
+          imageServer: number;
+          iconRevision: string;
+      }
+    | {
           type: 'joinCreateGeneral';
           requestId?: string;
           userId: string;
@@ -220,6 +228,7 @@ export type TurnDaemonCommand =
           profileId: string;
           ownerPicture?: string;
           ownerImageServer?: number;
+          ownerIconRevision?: string;
           ownerCanUsePicture?: boolean;
           ownerLegacyPenalty?: Record<string, unknown>;
           inheritSpecial?: string;
@@ -514,6 +523,18 @@ export type TurnDaemonCommandResult =
           type: 'patchGeneral';
           ok: false;
           generalId: number;
+          reason: string;
+      }
+    | {
+          type: 'adjustGeneralIcon';
+          ok: true;
+          generalId: number | null;
+          updated: boolean;
+      }
+    | {
+          type: 'adjustGeneralIcon';
+          ok: false;
+          code: 'CONFLICT' | 'PRECONDITION_FAILED';
           reason: string;
       }
     | {

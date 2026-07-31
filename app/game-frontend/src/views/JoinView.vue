@@ -8,6 +8,7 @@ import { useSessionStore } from '../stores/session';
 import { cityLevelMap, formatOfficerLevelText, regionMap } from '../utils/nationFormat';
 import { getNpcColor } from '../utils/npcColor';
 import { formatSeoulDateTime } from '../utils/legacyDateTime';
+import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 
 type JoinConfig = Awaited<ReturnType<typeof trpc.join.getConfig.query>>;
 type JoinInput = Parameters<typeof trpc.join.createGeneral.mutate>[0];
@@ -161,20 +162,8 @@ const isTrpcBusinessError = (value: unknown): boolean => {
     return Boolean(data && typeof data === 'object' && 'code' in data && typeof data.code === 'string');
 };
 
-const npcImageUrl = (candidate: { picture: string | null; imageServer: number }): string => {
-    const picture = candidate.picture ?? 'default.jpg';
-    const userIconBaseUrl = import.meta.env.VITE_GATEWAY_USER_ICON_BASE_URL ?? '/gateway/api/user-icons';
-    return candidate.imageServer
-        ? `${userIconBaseUrl.replace(/\/$/, '')}/${encodeURIComponent(picture)}`
-        : `/image/icons/${encodeURIComponent(picture)}`;
-};
-
-const useDefaultNpcImage = (event: Event): void => {
-    const image = event.currentTarget;
-    if (image instanceof HTMLImageElement && !image.src.endsWith('/image/icons/default.jpg')) {
-        image.src = '/image/icons/default.jpg';
-    }
-};
+const npcImageUrl = (candidate: { picture: string | null; imageServer: number }): string =>
+    resolveGeneralIconUrl(candidate);
 
 const npcReservation = ref<PossessReservation | null>(null);
 const npcLoading = ref(false);
@@ -806,7 +795,7 @@ onUnmounted(() => {
                                     :alt="`${npc.name} 얼굴`"
                                     width="64"
                                     height="64"
-                                    @error="useDefaultNpcImage"
+                                    @error="useDefaultGeneralIcon"
                                 />
                             </h4>
                             <p>
@@ -935,7 +924,7 @@ onUnmounted(() => {
                                         :alt="`${general.name} 얼굴`"
                                         width="64"
                                         height="64"
-                                        @error="useDefaultNpcImage"
+                                        @error="useDefaultGeneralIcon"
                                     />
                                 </td>
                                 <td

@@ -5,7 +5,8 @@ import { isAfter, isValid, parseISO } from 'date-fns';
 import { z } from 'zod';
 
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
-import { authedProcedure, procedure, router } from '../../trpc.js';
+import { authedProcedure, engineProcedure, router } from '../../trpc.js';
+import { enqueueProfileIconResetForUser } from '../../services/accountIconSync.js';
 
 const parseDate = (value: string): Date | null => {
     const parsed = parseISO(value);
@@ -21,11 +22,7 @@ const resolveTtlSeconds = (expiresAt: string): number => {
     return ttl > 0 ? ttl : 0;
 };
 
-const verifyGatewayToken = (
-    token: string,
-    profileName: string,
-    secret: string
-): GameSessionTokenPayload | null => {
+const verifyGatewayToken = (token: string, profileName: string, secret: string): GameSessionTokenPayload | null => {
     const payload = decryptGameSessionToken(token, secret);
     if (!payload) {
         return null;
@@ -52,14 +49,10 @@ export const authRouter = router({
         }
         return { userId };
     }),
-    exchangeGatewayToken: procedure
+    exchangeGatewayToken: engineProcedure
         .input(z.object({ gatewayToken: z.string().min(1) }))
         .mutation(async ({ ctx, input }) => {
-            const payload = verifyGatewayToken(
-                input.gatewayToken,
-                ctx.profile.name,
-                ctx.gameTokenSecret
-            );
+            const payload = verifyGatewayToken(input.gatewayToken, ctx.profile.name, ctx.gameTokenSecret);
             if (!payload) {
                 throw new TRPCError({
                     code: 'UNAUTHORIZED',
@@ -86,6 +79,12 @@ export const authRouter = router({
                     code: 'UNAUTHORIZED',
                     message: 'Gateway token expired.',
                 });
+            }
+
+            if (payload.user.profileIconResetAt && payload.user.profileIconResetAt === payload.user.iconUpdatedAt) {
+                // 일반 계정 아이콘 변경은 Ref처럼 사용자가 고른 서버에만 적용한다.
+                // 관리자 reset만 다음 인증 경계에서 durable하게 복구한다.
+                await enqueueProfileIconResetForUser(ctx, payload.user.id, payload.user.profileIconResetAt);
             }
 
             const used = await ctx.accessTokenStore.markGatewayTokenUsed(payload.sessionId, ttlSeconds);

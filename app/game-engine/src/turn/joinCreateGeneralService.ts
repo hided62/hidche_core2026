@@ -51,6 +51,7 @@ export interface JoinCreateGeneralInput {
     profileId: string;
     ownerPicture?: string;
     ownerImageServer?: number;
+    ownerIconRevision?: string;
     ownerCanUsePicture?: boolean;
     ownerLegacyPenalty?: Record<string, unknown>;
     inheritSpecial?: string;
@@ -700,6 +701,12 @@ export const createGeneralFromJoin = async (options: {
         input.ownerPicture !== 'default.jpg';
     const picture = canUseOwnerPicture ? input.ownerPicture! : 'default.jpg';
     const imageServer = canUseOwnerPicture ? Math.max(0, Math.floor(input.ownerImageServer ?? 0)) : 0;
+    const accountIconUpdatedAt =
+        input.ownerIconRevision &&
+        picture === input.ownerPicture &&
+        imageServer === Math.max(0, Math.floor(input.ownerImageServer ?? 0))
+            ? input.ownerIconRevision
+            : undefined;
     const nextInheritancePoint = currentInheritancePoint - inheritRequiredPoint;
     const restInheritanceBonus = await resolveRestInheritanceBonus(db, worldState, input.userId);
     const finalInheritancePoint = nextInheritancePoint + restInheritanceBonus;
@@ -781,6 +788,7 @@ export const createGeneralFromJoin = async (options: {
             newvote: 0,
             inherit_spent_dyn: inheritRequiredPoint,
             prestart_delete_after: prestartDeleteAfter.toISOString(),
+            ...(accountIconUpdatedAt ? { accountIconUpdatedAt } : {}),
         },
     };
     if (!world.addGeneral(general)) {

@@ -2,6 +2,7 @@ export interface GatewayUserFlushEvent {
     userId: string;
     flushedAt: string;
     reason?: string;
+    iconRevision?: string;
 }
 
 export interface FlushStore {
@@ -35,6 +36,9 @@ export class RedisGatewayFlushSubscriber {
     };
     private readonly channel: string;
     private readonly store: FlushStore;
+    private readonly onFlush?: (event: GatewayUserFlushEvent) => Promise<void> | void;
+    private readonly onFlushError?: (error: unknown, event: GatewayUserFlushEvent) => void;
+    private readonly pendingFlushes = new Set<Promise<void>>();
 
     constructor(
         client: {
@@ -42,11 +46,15 @@ export class RedisGatewayFlushSubscriber {
             unsubscribe: (channel: string) => Promise<void>;
         },
         channel: string,
-        store: FlushStore
+        store: FlushStore,
+        onFlush?: (event: GatewayUserFlushEvent) => Promise<void> | void,
+        onFlushError?: (error: unknown, event: GatewayUserFlushEvent) => void
     ) {
         this.client = client;
         this.channel = channel;
         this.store = store;
+        this.onFlush = onFlush;
+        this.onFlushError = onFlushError;
     }
 
     async start(): Promise<void> {
@@ -57,6 +65,23 @@ export class RedisGatewayFlushSubscriber {
                     return;
                 }
                 this.store.applyFlush(payload);
+                if (this.onFlush) {
+                    let flush: Promise<void>;
+                    try {
+                        flush = Promise.resolve(this.onFlush(payload));
+                    } catch (error) {
+                        this.onFlushError?.(error, payload);
+                        return;
+                    }
+                    const tracked = flush
+                        .catch((error: unknown) => {
+                            this.onFlushError?.(error, payload);
+                        })
+                        .finally(() => {
+                            this.pendingFlushes.delete(tracked);
+                        });
+                    this.pendingFlushes.add(tracked);
+                }
             } catch {
                 return;
             }
@@ -65,5 +90,6 @@ export class RedisGatewayFlushSubscriber {
 
     async stop(): Promise<void> {
         await this.client.unsubscribe(this.channel);
+        await Promise.all(this.pendingFlushes);
     }
 }
