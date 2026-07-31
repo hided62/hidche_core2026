@@ -16,7 +16,9 @@ const artifactRoot = process.env.FRONTEND_PARITY_ARTIFACT_DIR;
 const passwordPublicKey = generateKeyPairSync('rsa', {
     modulusLength: 2048,
     publicExponent: 0x10001,
-}).publicKey.export({ format: 'pem', type: 'spki' }).toString();
+})
+    .publicKey.export({ format: 'pem', type: 'spki' })
+    .toString();
 
 const response = (data: unknown) => ({ result: { data } });
 
@@ -154,9 +156,7 @@ const installGatewayFixture = async (page: Page): Promise<void> => {
                 return {
                     available: true,
                     normalizedValue:
-                        fieldInput?.field === 'username'
-                            ? fieldInput.value?.toLowerCase()
-                            : fieldInput?.value,
+                        fieldInput?.field === 'username' ? fieldInput.value?.toLowerCase() : fieldInput?.value,
                     message: '사용할 수 있습니다.',
                 };
             }
@@ -216,15 +216,31 @@ const installGatewayFixture = async (page: Page): Promise<void> => {
     });
 };
 
-const installHallFixture = async (page: Page): Promise<void> => {
+type HallFixtureCalls = {
+    options: number;
+    hallInputs: unknown[];
+};
+
+const installHallFixture = async (page: Page): Promise<HallFixtureCalls> => {
+    const calls: HallFixtureCalls = {
+        options: 0,
+        hallInputs: [],
+    };
     await installImages(page);
     await page.route('**/che/api/trpc/**', async (route) => {
-        await fulfillOperations(route, (operation) => {
-            if (operation === 'ranking.getHallOfFameOptions') return fixture.game.hallOptions;
-            if (operation === 'ranking.getHallOfFame') return fixture.game.hall;
+        await fulfillOperations(route, (operation, input) => {
+            if (operation === 'ranking.getHallOfFameOptions') {
+                calls.options += 1;
+                return fixture.game.hallOptions;
+            }
+            if (operation === 'ranking.getHallOfFame') {
+                calls.hallInputs.push(input);
+                return fixture.game.hall;
+            }
             throw new Error(`Unhandled hall fixture operation: ${operation}`);
         });
     });
+    return calls;
 };
 
 const installAuthenticatedGameFixture = async (page: Page): Promise<void> => {
@@ -730,8 +746,10 @@ test.describe('best general legacy parity', () => {
 });
 
 test.describe('hall of fame legacy parity', () => {
+    let hallCalls: HallFixtureCalls;
+
     test.beforeEach(async ({ page }) => {
-        await installHallFixture(page);
+        hallCalls = await installHallFixture(page);
     });
 
     for (const viewport of [
@@ -742,6 +760,9 @@ test.describe('hall of fame legacy parity', () => {
             await page.setViewportSize(viewport);
             await page.goto('http://127.0.0.1:15102/che/hall-of-fame');
             await expect(page.getByText('유비')).toBeVisible();
+            await expect.poll(() => hallCalls.options).toBe(1);
+            await expect.poll(() => hallCalls.hallInputs.length).toBe(1);
+            expect(hallCalls.hallInputs[0]).toEqual({ season: 1 });
             await expect(page.locator('.rankView')).toHaveCount(2);
             if (artifactRoot) {
                 await page.screenshot({
@@ -807,14 +828,19 @@ test.describe('hall of fame legacy parity', () => {
             await expect(scenario).toBeFocused();
             await scenario.selectOption('scenario:1:22');
             await expect(scenario).toHaveValue('scenario:1:22');
+            await expect.poll(() => hallCalls.hallInputs.length).toBe(2);
+            expect(hallCalls.hallInputs[1]).toEqual({ season: 1, scenario: 22 });
+            expect(hallCalls.options).toBe(1);
         });
     }
 
     test('keeps the selected scenario after a hall API error', async ({ page }) => {
         await page.goto('http://127.0.0.1:15102/che/hall-of-fame');
         await expect(page.getByText('유비')).toBeVisible();
+        let failedHallRequests = 0;
         await page.route('**/che/api/trpc/**', async (route) => {
             if (operationNames(route).includes('ranking.getHallOfFame')) {
+                failedHallRequests += 1;
                 await route.fulfill({
                     status: 500,
                     contentType: 'application/json',
@@ -829,6 +855,9 @@ test.describe('hall of fame legacy parity', () => {
         await expect(page.getByRole('alert')).toBeVisible();
         await expect(scenario).toHaveValue('scenario:1:22');
         await expect(page.getByText('유비')).toBeVisible();
+        await expect.poll(() => failedHallRequests).toBe(1);
+        await page.waitForTimeout(250);
+        expect(failedHallRequests).toBe(1);
     });
 });
 

@@ -2,11 +2,11 @@ import { TRPCError } from '@trpc/server';
 
 import { asRecord } from '@sammo-ts/common';
 
-import { authedProcedure } from '../../../trpc.js';
+import { accessAuthedProcedure } from '../../../trpc.js';
 import { getMyGeneral } from '../../shared/general.js';
 import { assertNationAccess, checkSecretMaxPermission, mapGeneralList, resolveChiefStatMin } from '../shared.js';
 
-export const getPersonnelInfo = authedProcedure.query(async ({ ctx }) => {
+export const getPersonnelInfo = accessAuthedProcedure.query(async ({ ctx }) => {
     const me = await getMyGeneral(ctx);
     assertNationAccess(me);
 

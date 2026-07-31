@@ -2,8 +2,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { type WorldStateRow, zWorldStateConfig, zWorldStateMeta } from '../../context.js';
-import { procedure, router } from '../../trpc.js';
-import { authedProcedure } from '../../trpc.js';
+import { accessAuthedProcedure, authedProcedure, procedure, router } from '../../trpc.js';
 import { asRecord, isRecord } from '@sammo-ts/common';
 import { loadWorldMap } from '../../maps/worldMap.js';
 import { loadMapLayout } from '../../maps/mapLayout.js';
@@ -71,7 +70,7 @@ const toWorldStateSnapshot = (row: WorldStateRow) => ({
 export const worldRouter = router({
     getNationDirectory,
     getGeneralDirectory,
-    getGlobalInfo: authedProcedure.query(async ({ ctx }) => {
+    getGlobalInfo: accessAuthedProcedure.query(async ({ ctx }) => {
         const me = await getMyGeneral(ctx);
         const [nations, cities, diplomacy, map] = await Promise.all([
             ctx.db.nation.findMany({ where: { level: { gt: 0 } } }),

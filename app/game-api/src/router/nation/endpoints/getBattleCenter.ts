@@ -2,11 +2,11 @@ import { TRPCError } from '@trpc/server';
 
 import { LogCategory } from '@sammo-ts/infra';
 
-import { authedProcedure } from '../../../trpc.js';
+import { accessAuthedProcedure } from '../../../trpc.js';
 import { getMyGeneral } from '../../shared/general.js';
 import { assertNationAccess, formatDateTime, resolveNationPermission } from '../shared.js';
 
-export const getBattleCenter = authedProcedure.query(async ({ ctx }) => {
+export const getBattleCenter = accessAuthedProcedure.query(async ({ ctx }) => {
     const me = await getMyGeneral(ctx);
     assertNationAccess(me);
 

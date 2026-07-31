@@ -5,7 +5,14 @@ import { LogCategory, LogScope } from '@sammo-ts/infra';
 import { asRecord } from '@sammo-ts/common';
 
 import type { GameApiContext } from '../../context.js';
-import { authedProcedure, engineAuthedProcedure, router } from '../../trpc.js';
+import {
+    accessAuthedProcedure,
+    accessAuthedInputProcedure,
+    accessEngineAuthedProcedure,
+    accessEngineAuthedInputProcedure,
+    authedProcedure,
+    router,
+} from '../../trpc.js';
 import { ConflictingTurnDaemonCommandError } from '../../daemon/databaseTransport.js';
 import { resolveAccessWindows } from '../../services/generalAccess.js';
 import { getMyGeneral } from '../shared/general.js';
@@ -283,7 +290,7 @@ export const generalRouter = router({
             penalties,
         };
     }),
-    ensureDieOnPrestartStatus: engineAuthedProcedure.mutation(async ({ ctx }) => {
+    ensureDieOnPrestartStatus: accessEngineAuthedProcedure.mutation(async ({ ctx }) => {
         const userId = ctx.auth?.user.id;
         if (!userId) {
             throw new TRPCError({ code: 'UNAUTHORIZED' });
@@ -319,14 +326,11 @@ export const generalRouter = router({
             availableAt: result.availableAt ?? null,
         };
     }),
-    dieOnPrestart: engineAuthedProcedure
-        .input(zImmediateActionInput)
+    dieOnPrestart: accessEngineAuthedInputProcedure(zImmediateActionInput)
         .mutation(({ ctx, input }) => requestImmediateAction(ctx, input, 'dieOnPrestart')),
-    buildNationCandidate: engineAuthedProcedure
-        .input(zImmediateActionInput)
+    buildNationCandidate: accessEngineAuthedInputProcedure(zImmediateActionInput)
         .mutation(({ ctx, input }) => requestImmediateAction(ctx, input, 'buildNationCandidate')),
-    instantRetreat: engineAuthedProcedure
-        .input(zImmediateActionInput)
+    instantRetreat: accessEngineAuthedInputProcedure(zImmediateActionInput)
         .mutation(({ ctx, input }) => requestImmediateAction(ctx, input, 'instantRetreat')),
     vacation: authedProcedure.mutation(async ({ ctx }) => {
         const general = await getMyGeneral(ctx);
@@ -342,7 +346,7 @@ export const generalRouter = router({
         }
         return { ok: true };
     }),
-    setMySetting: authedProcedure.input(zGeneralSettings).mutation(async ({ ctx, input }) => {
+    setMySetting: accessAuthedInputProcedure(zGeneralSettings).mutation(async ({ ctx, input }) => {
         const general = await getMyGeneral(ctx);
         const result = await ctx.turnDaemon.requestCommand({
             type: 'setMySetting',
@@ -459,7 +463,7 @@ export const generalRouter = router({
                 history: trimRecentRecords(history, input.lastWorldHistoryId),
             };
         }),
-    getFrontStatus: authedProcedure.query(async ({ ctx }) => {
+    getFrontStatus: accessAuthedProcedure.query(async ({ ctx }) => {
         const me = await getMyGeneral(ctx);
         const worldState = await ctx.db.worldState.findFirst({
             orderBy: { id: 'asc' },

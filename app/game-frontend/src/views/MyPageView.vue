@@ -187,7 +187,7 @@ const loadLog = async (type: LogType, beforeId?: number) => {
     }
 };
 
-const loadPage = async () => {
+const loadPage = async (resetImmediateActionIds = true) => {
     if (loading.value) return;
     loading.value = true;
     error.value = null;
@@ -206,7 +206,9 @@ const loadPage = async () => {
             Object.assign(form, general.settings);
         }
         await Promise.all(logTypes.map((type) => loadLog(type)));
-        resetImmediateActionRequestIds();
+        if (resetImmediateActionIds) {
+            resetImmediateActionRequestIds();
+        }
     } catch (cause) {
         error.value = errorText(cause);
     } finally {
@@ -224,13 +226,17 @@ const saveSettings = async () => {
     }
 };
 
-const confirmMutation = async (message: string, mutation: () => Promise<unknown>) => {
+const confirmMutation = async (message: string, mutation: () => Promise<unknown>, reloadAfterFailure = false) => {
     if (!confirm(message)) return;
     try {
         await mutation();
         await loadPage();
     } catch (cause) {
         alert(`실패했습니다: ${errorText(cause)}`);
+        if (reloadAfterFailure) {
+            const code = asRecord(asRecord(cause).data).code;
+            await loadPage(code !== 'TIMEOUT');
+        }
     }
 };
 
@@ -288,7 +294,7 @@ onMounted(() => {
             <span>내 정 보</span>
             <RouterLink class="legacy-button" to="/past-plays">지난 플레이</RouterLink>
             <RouterLink class="legacy-button" to="/">돌아가기</RouterLink>
-            <button class="legacy-button" type="button" @click="loadPage">새로고침</button>
+            <button class="legacy-button" type="button" @click="() => loadPage()">새로고침</button>
         </div>
 
         <div v-if="error" class="error-row">{{ error }}</div>
@@ -430,10 +436,13 @@ onMounted(() => {
                     <button
                         class="action-button"
                         @click="
-                            confirmMutation('거병 이후 장수를 삭제할 수 없게됩니다. 거병하시겠습니까?', () =>
-                                trpc.general.buildNationCandidate.mutate({
-                                    clientRequestId: immediateActionRequestIds.buildNationCandidate,
-                                })
+                            confirmMutation(
+                                '거병 이후 장수를 삭제할 수 없게됩니다. 거병하시겠습니까?',
+                                () =>
+                                    trpc.general.buildNationCandidate.mutate({
+                                        clientRequestId: immediateActionRequestIds.buildNationCandidate,
+                                    }),
+                                true
                             )
                         "
                     >
@@ -445,10 +454,13 @@ onMounted(() => {
                     <button
                         class="action-button"
                         @click="
-                            confirmMutation('아군 접경으로 이동할까요?', () =>
-                                trpc.general.instantRetreat.mutate({
-                                    clientRequestId: immediateActionRequestIds.instantRetreat,
-                                })
+                            confirmMutation(
+                                '아군 접경으로 이동할까요?',
+                                () =>
+                                    trpc.general.instantRetreat.mutate({
+                                        clientRequestId: immediateActionRequestIds.instantRetreat,
+                                    }),
+                                true
                             )
                         "
                     >

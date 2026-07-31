@@ -2,7 +2,7 @@ import { TRPCError } from '@trpc/server';
 import { GamePrisma } from '@sammo-ts/infra';
 import { z } from 'zod';
 
-import { authedProcedure, router } from '../../trpc.js';
+import { accessAuthedInputProcedure, authedProcedure, router } from '../../trpc.js';
 import { appendInheritanceLog, readInheritancePoint, setInheritancePoint } from '../../services/inheritance.js';
 import { getMyGeneral } from '../shared/general.js';
 
@@ -30,8 +30,7 @@ const loadWorldDate = async (db: Parameters<typeof getMyGeneral>[0]['db']) => {
 };
 
 export const bettingRouter = router({
-    getList: authedProcedure
-        .input(z.object({ req: z.literal('bettingNation').optional() }).optional())
+    getList: accessAuthedInputProcedure(z.object({ req: z.literal('bettingNation').optional() }).optional())
         .query(async ({ ctx, input }) => {
             requireUserId(ctx.auth);
             await getMyGeneral(ctx);

@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { TurnDaemonCommandResult } from '@sammo-ts/common';
 import { isValidTroopNameWidth, normalizeTroopName, resolveTroopSecretPermission } from '@sammo-ts/logic';
 
-import { authedProcedure, router } from '../../trpc.js';
+import { accessAuthedProcedure, authedProcedure, router } from '../../trpc.js';
 import { getMyGeneral } from '../shared/general.js';
 
 const troopNameSchema = z
@@ -33,7 +33,7 @@ const assertCommandResult = <T extends 'troopCreate' | 'troopJoin' | 'troopExit'
 };
 
 export const troopRouter = router({
-    getList: authedProcedure.query(async ({ ctx }) => {
+    getList: accessAuthedProcedure.query(async ({ ctx }) => {
         const me = await getMyGeneral(ctx);
         if (me.nationId <= 0) {
             throw new TRPCError({ code: 'PRECONDITION_FAILED', message: '국가에 소속되어 있지 않습니다.' });

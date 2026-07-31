@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { asRecord } from '@sammo-ts/common';
 import type { GamePrisma } from '@sammo-ts/infra';
 
-import { authedProcedure, router } from '../../trpc.js';
+import { accessAuthedInputProcedure, accessAuthedProcedure, router } from '../../trpc.js';
 import { getMyGeneral } from '../shared/general.js';
 import { assertNationAccess, resolveNationPermission } from '../nation/shared.js';
 
@@ -28,7 +28,7 @@ const mapLetterState = (state: string): 'PROPOSED' | 'ACTIVATED' | 'CANCELLED' |
 };
 
 export const diplomacyRouter = router({
-    getLetters: authedProcedure.query(async ({ ctx }) => {
+    getLetters: accessAuthedProcedure.query(async ({ ctx }) => {
         const me = await getMyGeneral(ctx);
         assertNationAccess(me);
 
@@ -98,8 +98,7 @@ export const diplomacyRouter = router({
             permission,
         };
     }),
-    sendLetter: authedProcedure
-        .input(
+    sendLetter: accessAuthedInputProcedure(
             z.object({
                 destNationId: z.number().int().positive(),
                 prevId: z.number().int().positive().nullable().optional(),
@@ -217,8 +216,7 @@ export const diplomacyRouter = router({
 
             return { id: created.id };
         }),
-    respondLetter: authedProcedure
-        .input(
+    respondLetter: accessAuthedInputProcedure(
             z.object({
                 letterId: z.number().int().positive(),
                 agree: z.boolean(),
@@ -288,8 +286,7 @@ export const diplomacyRouter = router({
 
             return { ok: true };
         }),
-    rollbackLetter: authedProcedure
-        .input(z.object({ letterId: z.number().int().positive() }))
+    rollbackLetter: accessAuthedInputProcedure(z.object({ letterId: z.number().int().positive() }))
         .mutation(async ({ ctx, input }) => {
             const me = await getMyGeneral(ctx);
             assertNationAccess(me);
@@ -324,8 +321,7 @@ export const diplomacyRouter = router({
 
             return { ok: true };
         }),
-    destroyLetter: authedProcedure
-        .input(z.object({ letterId: z.number().int().positive() }))
+    destroyLetter: accessAuthedInputProcedure(z.object({ letterId: z.number().int().positive() }))
         .mutation(async ({ ctx, input }) => {
             const me = await getMyGeneral(ctx);
             assertNationAccess(me);

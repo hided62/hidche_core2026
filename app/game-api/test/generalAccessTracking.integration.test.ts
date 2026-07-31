@@ -1,14 +1,58 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { TRPCError } from '@trpc/server';
+import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 import { createGamePostgresConnector, type GamePrismaClient } from '@sammo-ts/infra';
+import { z } from 'zod';
 
+import type { GameApiContext } from '../src/context.js';
+import { appRouter } from '../src/router.js';
 import { upsertGeneralAccess } from '../src/services/generalAccess.js';
+import { accessAuthedInputProcedure, router } from '../src/trpc.js';
 
 const databaseUrl = process.env.INPUT_EVENT_DATABASE_URL;
 const integration = describe.skipIf(!databaseUrl);
 const generalId = 9_980_071;
 const secondGeneralId = generalId + 1;
 const rollbackGeneralId = generalId + 2;
+const zeroWeightGeneralId = generalId + 3;
+const endpointGeneralId = generalId + 4;
+const endpointUserId = `access-endpoint-user-${endpointGeneralId}`;
 const scenarioCode = `traffic-period-${generalId}`;
+const endpointRequestPrefix = `access-endpoint-${endpointGeneralId}`;
+const yearbookProfile = `access-profile-${endpointGeneralId}`;
+
+const endpointAuth = (roles = ['user']): GameSessionTokenPayload => ({
+    version: 1,
+    profile: `${yearbookProfile}:default`,
+    issuedAt: '2026-07-26T00:00:00.000Z',
+    expiresAt: '2026-07-27T00:00:00.000Z',
+    sessionId: `access-session-${endpointGeneralId}`,
+    user: {
+        id: endpointUserId,
+        username: endpointUserId,
+        displayName: endpointUserId,
+        roles,
+    },
+    sanctions: {},
+});
+
+const endpointBoundaryRouter = router({
+    world: router({
+        getGeneralDirectory: accessAuthedInputProcedure(z.object({ accepted: z.literal(true) })).query(() => ({
+            ok: true,
+        })),
+    }),
+    general: router({
+        setMySetting: accessAuthedInputProcedure(z.object({ accepted: z.literal(true) })).mutation(() => ({
+            ok: true,
+        })),
+    }),
+    board: router({
+        writeArticle: accessAuthedInputProcedure(z.object({ accepted: z.literal(true) })).mutation(() => {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: 'business rejected' });
+        }),
+    }),
+});
 
 integration('general access tracking persistence', () => {
     let db: GamePrismaClient;
@@ -21,8 +65,13 @@ integration('general access tracking persistence', () => {
         db = connector.prisma;
         closeDb = () => connector.disconnect();
         await db.generalAccessLog.deleteMany({
-            where: { generalId: { in: [generalId, secondGeneralId, rollbackGeneralId] } },
+            where: {
+                generalId: {
+                    in: [generalId, secondGeneralId, rollbackGeneralId, zeroWeightGeneralId, endpointGeneralId],
+                },
+            },
         });
+        await db.inputEvent.deleteMany({ where: { requestId: { startsWith: endpointRequestPrefix } } });
         await db.worldState.deleteMany({ where: { scenarioCode } });
         const world = await db.worldState.create({
             data: {
@@ -35,12 +84,47 @@ integration('general access tracking persistence', () => {
             },
         });
         worldStateId = world.id;
+        await db.general.deleteMany({ where: { id: endpointGeneralId } });
+        await db.general.create({
+            data: {
+                id: endpointGeneralId,
+                userId: endpointUserId,
+                name: '접속경계',
+                turnTime: new Date('2026-07-26T03:00:00.000Z'),
+            },
+        });
+        await db.yearbookHistory.deleteMany({ where: { profileName: yearbookProfile } });
+        await db.yearbookHistory.create({
+            data: {
+                profileName: yearbookProfile,
+                sourceId: 1,
+                year: 184,
+                month: 12,
+                map: {
+                    year: 184,
+                    month: 12,
+                    startYear: 180,
+                    cityList: [],
+                    nationList: [],
+                },
+                nations: [],
+                globalHistory: ['기록'],
+                globalAction: ['행동'],
+            },
+        });
     });
 
     afterAll(async () => {
         await db.generalAccessLog.deleteMany({
-            where: { generalId: { in: [generalId, secondGeneralId, rollbackGeneralId] } },
+            where: {
+                generalId: {
+                    in: [generalId, secondGeneralId, rollbackGeneralId, zeroWeightGeneralId, endpointGeneralId],
+                },
+            },
         });
+        await db.inputEvent.deleteMany({ where: { requestId: { startsWith: endpointRequestPrefix } } });
+        await db.yearbookHistory.deleteMany({ where: { profileName: yearbookProfile } });
+        await db.general.deleteMany({ where: { id: endpointGeneralId } });
         await db.worldState.deleteMany({ where: { id: worldStateId } });
         await closeDb?.();
     });
@@ -231,6 +315,153 @@ integration('general access tracking persistence', () => {
             db.generalAccessLog.findUniqueOrThrow({ where: { generalId: rollbackGeneralId } })
         ).resolves.toMatchObject({
             refreshTotal: 2_147_483_647,
+        });
+    });
+
+    it('records weight zero membership and last refresh without changing counters', async () => {
+        const now = new Date('2026-07-26T03:40:00.000Z');
+        await upsertGeneralAccess(db, {
+            worldStateId,
+            year: 186,
+            month: 2,
+            tickSeconds: 600,
+            generalId: zeroWeightGeneralId,
+            userId: 'zero-weight-user',
+            now,
+            periodStartedAt: now,
+            scoreStartedAt: now,
+            weight: 0,
+        });
+
+        await expect(
+            db.generalAccessLog.findUniqueOrThrow({ where: { generalId: zeroWeightGeneralId } })
+        ).resolves.toMatchObject({
+            userId: 'zero-weight-user',
+            lastRefresh: now,
+            refresh: 0,
+            refreshTotal: 0,
+            refreshScore: 0,
+            refreshScoreTotal: 0,
+        });
+        await expect(
+            db.trafficPeriod.findUniqueOrThrow({
+                where: {
+                    worldStateId_year_month: {
+                        worldStateId,
+                        year: 186,
+                        month: 2,
+                    },
+                },
+                include: { generals: true },
+            })
+        ).resolves.toMatchObject({
+            refresh: 0,
+            online: 1,
+            generals: [
+                {
+                    generalId: zeroWeightGeneralId,
+                    userId: 'zero-weight-user',
+                    refresh: 0,
+                    lastRefresh: now,
+                },
+            ],
+        });
+    });
+
+    it('runs parser, access, business event, zero-weight, admin, and yearbook cache boundaries on PostgreSQL', async () => {
+        const context = {
+            auth: endpointAuth(),
+            db,
+            generalAccessTracking: true,
+            requestId: endpointRequestPrefix,
+            profile: {
+                id: `${yearbookProfile}:default`,
+                name: yearbookProfile,
+                scenario: 'default',
+            },
+        } as unknown as GameApiContext;
+        const boundaryCaller = endpointBoundaryRouter.createCaller(context);
+
+        await expect(boundaryCaller.world.getGeneralDirectory({ accepted: false as true })).rejects.toMatchObject({
+            code: 'BAD_REQUEST',
+        });
+        await expect(db.generalAccessLog.findUnique({ where: { generalId: endpointGeneralId } })).resolves.toBeNull();
+
+        await expect(boundaryCaller.world.getGeneralDirectory({ accepted: true })).resolves.toEqual({ ok: true });
+        await expect(
+            db.generalAccessLog.findUniqueOrThrow({ where: { generalId: endpointGeneralId } })
+        ).resolves.toMatchObject({
+            refresh: 2,
+            refreshTotal: 2,
+        });
+
+        await expect(boundaryCaller.general.setMySetting({ accepted: true })).resolves.toEqual({ ok: true });
+        await expect(
+            db.generalAccessLog.findUniqueOrThrow({ where: { generalId: endpointGeneralId } })
+        ).resolves.toMatchObject({
+            refresh: 2,
+            refreshTotal: 2,
+        });
+
+        await expect(boundaryCaller.board.writeArticle({ accepted: true })).rejects.toMatchObject({
+            code: 'BAD_REQUEST',
+            message: 'business rejected',
+        });
+        await expect(
+            db.generalAccessLog.findUniqueOrThrow({ where: { generalId: endpointGeneralId } })
+        ).resolves.toMatchObject({
+            refresh: 3,
+            refreshTotal: 3,
+        });
+
+        const adminCaller = endpointBoundaryRouter.createCaller({
+            ...context,
+            auth: endpointAuth(['admin']),
+        });
+        await expect(adminCaller.world.getGeneralDirectory({ accepted: true })).resolves.toEqual({ ok: true });
+        await expect(
+            db.generalAccessLog.findUniqueOrThrow({ where: { generalId: endpointGeneralId } })
+        ).resolves.toMatchObject({
+            refresh: 3,
+            refreshTotal: 3,
+        });
+
+        const yearbookCaller = appRouter.createCaller({
+            ...context,
+            requestId: `${endpointRequestPrefix}-yearbook`,
+        });
+        const first = await yearbookCaller.yearbook.getHistory({ year: 184, month: 12 });
+        expect(first.notModified).toBe(false);
+        await expect(
+            db.generalAccessLog.findUniqueOrThrow({ where: { generalId: endpointGeneralId } })
+        ).resolves.toMatchObject({
+            refresh: 4,
+            refreshTotal: 4,
+        });
+
+        const cached = await yearbookCaller.yearbook.getHistory({
+            year: 184,
+            month: 12,
+            hash: first.hash,
+        });
+        expect(cached).toEqual({ notModified: true, hash: first.hash });
+        await expect(
+            db.generalAccessLog.findUniqueOrThrow({ where: { generalId: endpointGeneralId } })
+        ).resolves.toMatchObject({
+            refresh: 4,
+            refreshTotal: 4,
+        });
+
+        await yearbookCaller.yearbook.getHistory({
+            year: 184,
+            month: 12,
+            hash: 'stale-hash',
+        });
+        await expect(
+            db.generalAccessLog.findUniqueOrThrow({ where: { generalId: endpointGeneralId } })
+        ).resolves.toMatchObject({
+            refresh: 5,
+            refreshTotal: 5,
         });
     });
 });

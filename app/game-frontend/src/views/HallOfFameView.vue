@@ -106,10 +106,7 @@ watch([selectedSeason, selectedScenario], () => {
     void loadHall();
 });
 
-onMounted(async () => {
-    await loadOptions();
-    await loadHall();
-});
+onMounted(loadOptions);
 </script>
 
 <template>

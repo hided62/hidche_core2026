@@ -86,9 +86,10 @@ const placeBet = async (targetId: number) => {
     try {
         await trpc.tournament.placeBet.mutate({ targetId, amount });
         message.value = '베팅이 등록되었습니다.';
-        await load();
     } catch (value) {
         message.value = errorText(value);
+    } finally {
+        await load();
     }
 };
 </script>

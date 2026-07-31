@@ -2,7 +2,7 @@ import { TRPCError } from '@trpc/server';
 
 import { asRecord } from '@sammo-ts/common';
 
-import { authedProcedure } from '../../../trpc.js';
+import { accessAuthedProcedure } from '../../../trpc.js';
 import { getMyGeneral } from '../../shared/general.js';
 import { assertNationAccess, resolveNationPermission } from '../shared.js';
 
@@ -25,7 +25,7 @@ const leadershipBonus = (officerLevel: number, nationLevel: number): number =>
 const defenceTrainText = (value: number): string =>
     value === 999 ? '×' : value >= 90 ? '☆' : value >= 80 ? '◎' : value >= 60 ? '○' : '△';
 
-export const getSecretGeneralList = authedProcedure.query(async ({ ctx }) => {
+export const getSecretGeneralList = accessAuthedProcedure.query(async ({ ctx }) => {
     const me = await getMyGeneral(ctx);
     assertNationAccess(me);
     const nation = await ctx.db.nation.findUnique({

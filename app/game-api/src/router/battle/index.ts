@@ -4,7 +4,13 @@ import { z } from 'zod';
 import { asRecord } from '@sammo-ts/common';
 import { getDexLevel } from '@sammo-ts/logic';
 
-import { authedProcedure, readOnlyAuthedProcedure, router } from '../../trpc.js';
+import {
+    accessAuthedInputProcedure,
+    accessReadOnlyAuthedInputProcedure,
+    authedProcedure,
+    readOnlyAuthedProcedure,
+    router,
+} from '../../trpc.js';
 import { buildBattleSimEnvironment, buildBattleSimJobPayload } from '../../battleSim/environment.js';
 import { zBattleSimJobId, zBattleSimRequest } from '../../battleSim/schema.js';
 import {
@@ -56,7 +62,7 @@ const resolveDexValue = (meta: Record<string, unknown>, key: string): number => 
 };
 
 export const battleRouter = router({
-    simulate: readOnlyAuthedProcedure.input(zBattleSimRequest).mutation(async ({ ctx, input }) => {
+    simulate: accessReadOnlyAuthedInputProcedure(zBattleSimRequest).mutation(async ({ ctx, input }) => {
         const worldState = await ctx.db.worldState.findFirst();
         if (!worldState) {
             throw new TRPCError({
@@ -169,8 +175,7 @@ export const battleRouter = router({
             generalsByNation,
         };
     }),
-    getGeneralDetail: authedProcedure
-        .input(
+    getGeneralDetail: accessAuthedInputProcedure(
             z.object({
                 generalId: z.number().int().positive(),
             })

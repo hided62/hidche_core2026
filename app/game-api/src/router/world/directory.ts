@@ -1,7 +1,7 @@
 import { asRecord } from '@sammo-ts/common';
 import { z } from 'zod';
 
-import { authedProcedure } from '../../trpc.js';
+import { accessAuthedInputProcedure, authedProcedure } from '../../trpc.js';
 import { loadTraitNames } from '../nation/shared.js';
 import { getMyGeneral } from '../shared/general.js';
 import { resolveSecretPermission } from '../shared/secretPermission.js';
@@ -204,8 +204,7 @@ export const getNationDirectory = authedProcedure.query(async ({ ctx }) => {
         });
 });
 
-export const getGeneralDirectory = authedProcedure
-    .input(z.object({ sort: zDirectorySort }).optional())
+export const getGeneralDirectory = accessAuthedInputProcedure(z.object({ sort: zDirectorySort }).optional())
     .query(async ({ ctx, input }) => {
         await getMyGeneral(ctx);
         const sort = input?.sort ?? 9;

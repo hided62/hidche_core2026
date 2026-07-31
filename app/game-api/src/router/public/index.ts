@@ -8,7 +8,7 @@ import { zWorldStateConfig, zWorldStateMeta } from '../../context.js';
 import { loadMapLayout } from '../../maps/mapLayout.js';
 import { loadPublicMap } from '../../maps/worldMap.js';
 import { accessPages, recordGeneralAccess } from '../../services/generalAccess.js';
-import { procedure, router, sessionActivityProcedure } from '../../trpc.js';
+import { accessInputProcedure, procedure, router, sessionActivityProcedure } from '../../trpc.js';
 import { loadTraitNames } from '../nation/shared.js';
 
 type WorldTrendSnapshot = {
@@ -477,8 +477,7 @@ export const publicRouter = router({
             intelligence: general.intel,
         }));
     }),
-    getNpcList: procedure
-        .input(
+    getNpcList: accessInputProcedure(
             z
                 .object({
                     sort: z.number().int().min(1).max(8).catch(1).optional(),

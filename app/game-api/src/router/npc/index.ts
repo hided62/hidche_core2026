@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { asRecord, isRecord } from '@sammo-ts/common';
 import { findCrewTypeById, getTechCost } from '@sammo-ts/logic/world/unitSet.js';
 
-import { authedProcedure, router } from '../../trpc.js';
+import { accessAuthedInputProcedure, authedProcedure, router } from '../../trpc.js';
 import { loadUnitSetDefinitionByName } from '../../battleSim/unitSetLoader.js';
 import type { GameApiContext } from '../../context.js';
 import { getMyGeneral } from '../shared/general.js';
@@ -537,7 +537,7 @@ export const npcRouter = router({
             permissionLevel,
         };
     }),
-    setNationPolicy: authedProcedure.input(z.record(z.string(), z.unknown())).mutation(async ({ ctx, input }) => {
+    setNationPolicy: accessAuthedInputProcedure(z.record(z.string(), z.unknown())).mutation(async ({ ctx, input }) => {
         const general = await getMyGeneral(ctx);
         if (general.nationId <= 0) {
             throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Nation membership required.' });
@@ -700,7 +700,7 @@ export const npcRouter = router({
 
         return { ok: true };
     }),
-    setNationPriority: authedProcedure.input(z.array(z.string())).mutation(async ({ ctx, input }) => {
+    setNationPriority: accessAuthedInputProcedure(z.array(z.string())).mutation(async ({ ctx, input }) => {
         const general = await getMyGeneral(ctx);
         if (general.nationId <= 0) {
             throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Nation membership required.' });
@@ -753,7 +753,7 @@ export const npcRouter = router({
 
         return { ok: true };
     }),
-    setGeneralPriority: authedProcedure.input(z.array(z.string())).mutation(async ({ ctx, input }) => {
+    setGeneralPriority: accessAuthedInputProcedure(z.array(z.string())).mutation(async ({ ctx, input }) => {
         const general = await getMyGeneral(ctx);
         if (general.nationId <= 0) {
             throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Nation membership required.' });

@@ -71,6 +71,7 @@ export type DatabaseClient = InfraDatabaseClient;
 
 export interface GameApiContext {
     requestId?: string;
+    generalAccessTracking?: boolean;
     db: DatabaseClient;
     redis: RedisConnector['client'];
     turnDaemon: TurnDaemonTransport;
@@ -102,6 +103,7 @@ export const createGameApiContext = (options: {
 }): GameApiContext => {
     return {
         requestId: options.requestId,
+        generalAccessTracking: true,
         db: options.db,
         redis: options.redis,
         turnDaemon: options.turnDaemon,

@@ -1,6 +1,6 @@
 import { TRPCError } from '@trpc/server';
 
-import { authedProcedure } from '../../../trpc.js';
+import { accessAuthedProcedure } from '../../../trpc.js';
 import { getMyGeneral } from '../../shared/general.js';
 import {
     assertNationAccess,
@@ -18,7 +18,7 @@ const experienceLevel = (experience: number): number =>
 const dedicationLevel = (dedication: number): number =>
     Math.max(0, Math.min(10, Math.ceil(Math.sqrt(dedication) / 10)));
 
-export const getGeneralList = authedProcedure.query(async ({ ctx }) => {
+export const getGeneralList = accessAuthedProcedure.query(async ({ ctx }) => {
     const general = await getMyGeneral(ctx);
     assertNationAccess(general);
 

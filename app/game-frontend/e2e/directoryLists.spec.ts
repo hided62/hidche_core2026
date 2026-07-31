@@ -161,9 +161,9 @@ const install = async (
     );
     await page.route('**/che/api/trpc/**', async (route) => {
         const requestBody = route.request().postDataJSON() as
-            | Record<string, { json?: { page?: unknown }; page?: unknown }>
-            | undefined;
+            Record<string, { json?: { page?: unknown }; page?: unknown }> | undefined;
         const results = operationNames(route).map((operation, operationIndex) => {
+            if (operation === 'auth.status') return response({ ok: true });
             if (operation === 'lobby.info') {
                 return response({ myGeneral: mode === 'no-general' ? null : { id: 1, name: '조회자' } });
             }
@@ -191,10 +191,35 @@ const install = async (
                     };
                 }
                 const sort = parseSort(route);
-                const rows = sort === 8 ? [...generals].sort((left, right) => left.killturn - right.killturn) : generals;
+                const rows =
+                    sort === 8 ? [...generals].sort((left, right) => left.killturn - right.killturn) : generals;
                 return response({ sort, generals: rows });
             }
             return { error: { message: `unhandled ${operation}`, data: { code: 'BAD_REQUEST' } } };
+        });
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(results) });
+    });
+};
+
+const installAccessBoundary = async (page: Page, accessPages: string[]) => {
+    await page.addInitScript(() => {
+        localStorage.setItem('sammo-game-token', 'ga_access_boundary');
+        localStorage.setItem('sammo-game-profile', 'che:default');
+    });
+    await page.route('**/image/**', (route) => route.abort('failed'));
+    await page.route('**/che/api/trpc/**', async (route) => {
+        const requestBody = route.request().postDataJSON() as
+            Record<string, { json?: { page?: unknown }; page?: unknown }> | undefined;
+        const results = operationNames(route).map((operation, operationIndex) => {
+            if (operation === 'auth.status') return response({ ok: true });
+            if (operation === 'lobby.info') return response({ myGeneral: { id: 1, name: '조회자' } });
+            if (operation === 'public.recordAccess') {
+                const payload = requestBody?.[String(operationIndex)];
+                const pageName = payload?.json?.page ?? payload?.page;
+                if (typeof pageName === 'string') accessPages.push(pageName);
+                return response({ recorded: true });
+            }
+            return response({});
         });
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(results) });
     });
@@ -283,7 +308,8 @@ test('nation and general directories preserve the fixed legacy Chromium geometry
             ).toBe(65);
         }
     }
-    await expect.poll(() => accessPages).toEqual(expect.arrayContaining(['nation-list', 'general-list']));
+    await expect.poll(() => accessPages).toContain('nation-list');
+    expect(accessPages).not.toContain('general-list');
 
     const header = page.locator('.general-table thead td').first();
     expect(await header.evaluate((element) => getComputedStyle(element).backgroundImage)).toContain('back_green.jpg');
@@ -343,5 +369,53 @@ test('an authenticated account without a general is redirected away from both di
     for (const path of ['nation-list', 'general-list']) {
         await page.goto(path);
         await expect(page).toHaveURL(/\/che\/join$/);
+    }
+});
+
+test('route access belongs only to the eight Ref page boundaries', async ({ page }) => {
+    const accessPages: string[] = [];
+    await installAccessBoundary(page, accessPages);
+    const retained = [
+        ['nation/info', 'nation-info'],
+        ['nation/cities', 'nation-cities'],
+        ['nation-list', 'nation-list'],
+        ['current-city', 'current-city'],
+        ['dynasty', 'dynasty'],
+        ['dynasty/1', 'dynasty'],
+        ['traffic', 'traffic'],
+        ['npc-control', 'npc-control'],
+    ] as const;
+    for (const [path, pageName] of retained) {
+        const before = accessPages.length;
+        await page.goto(path);
+        await expect.poll(() => accessPages.length).toBe(before + 1);
+        expect(accessPages.at(-1)).toBe(pageName);
+    }
+
+    const endpointOwned = [
+        './',
+        'global-info',
+        'general-list',
+        'diplomacy',
+        'nation/generals',
+        'nation/personnel',
+        'nation/finance',
+        'battle-center',
+        'board',
+        'board/secret',
+        'best-general',
+        'hall-of-fame',
+        'yearbook',
+        'nation-betting',
+        'npc-list',
+        'my-page',
+        'tournament',
+        'betting',
+    ];
+    for (const path of endpointOwned) {
+        const before = accessPages.length;
+        await page.goto(path);
+        await page.waitForTimeout(50);
+        expect(accessPages).toHaveLength(before);
     }
 });

@@ -26,12 +26,16 @@ type FixtureState = {
     instantRetreatEnabled?: boolean;
     instantRetreatAttempts?: number;
     instantRetreatInputs?: Array<Record<string, unknown>>;
+    buildNationCandidateEnabled?: boolean;
+    buildNationCandidateAttempts?: number;
+    buildNationCandidateInputs?: Array<Record<string, unknown>>;
     dieOnPrestartShow?: boolean;
     dieOnPrestartAvailableAt?: string;
     dieOnPrestartAttempts?: number;
     dieOnPrestartInputs?: Array<Record<string, unknown>>;
     generalMeQueries?: number;
     generalLogQueries?: number;
+    ensurePrestartQueries?: number;
     nationNoticeInput?: string;
     settingMutations: Array<Record<string, unknown>>;
     accessPages: string[];
@@ -47,7 +51,7 @@ const myGeneral = (state: FixtureState) => ({
         id: 7,
         name: '검증장수',
         npcState: 0,
-        nationId: 1,
+        nationId: state.buildNationCandidateEnabled ? 0 : 1,
         cityId: 1,
         troopId: 0,
         picture: null,
@@ -165,12 +169,14 @@ const install = async (page: Page, state: FixtureState) => {
                 state.generalMeQueries = (state.generalMeQueries ?? 0) + 1;
                 return response(myGeneral(state));
             }
-            if (operation === 'general.ensureDieOnPrestartStatus')
+            if (operation === 'general.ensureDieOnPrestartStatus') {
+                state.ensurePrestartQueries = (state.ensurePrestartQueries ?? 0) + 1;
                 return response({
                     show: state.dieOnPrestartShow ?? false,
                     available: false,
                     availableAt: state.dieOnPrestartAvailableAt ?? null,
                 });
+            }
             if (operation === 'general.getFrontStatus')
                 return response({
                     onlineUserCount: 1,
@@ -196,7 +202,9 @@ const install = async (page: Page, state: FixtureState) => {
                     },
                     meta: {
                         turntime: '2026-01-01T00:00:00.000Z',
-                        opentime: '2025-12-01T00:00:00.000Z',
+                        opentime: state.buildNationCandidateEnabled
+                            ? '2026-02-01T00:00:00.000Z'
+                            : '2025-12-01T00:00:00.000Z',
                         autorun_user: {},
                     },
                 });
@@ -251,6 +259,20 @@ const install = async (page: Page, state: FixtureState) => {
                 state.instantRetreatInputs?.push(jsonInput);
                 state.instantRetreatAttempts = (state.instantRetreatAttempts ?? 0) + 1;
                 if (state.instantRetreatAttempts === 1) {
+                    return {
+                        error: {
+                            message: '요청 처리 결과를 확인하지 못했습니다.',
+                            code: -32000,
+                            data: { code: 'TIMEOUT', httpStatus: 408, path: operation },
+                        },
+                    };
+                }
+                return response({ ok: true });
+            }
+            if (operation === 'general.buildNationCandidate') {
+                state.buildNationCandidateInputs?.push(jsonInput);
+                state.buildNationCandidateAttempts = (state.buildNationCandidateAttempts ?? 0) + 1;
+                if (state.buildNationCandidateAttempts === 1) {
                     return {
                         error: {
                             message: '요청 처리 결과를 확인하지 못했습니다.',
@@ -395,7 +417,8 @@ test('내 정보&설정 keeps the legacy 1000px/500px geometry and saves in plac
     await page.goto('my-page');
     await expect(page.locator('.title-row')).toContainText('내 정 보');
     await expect(page.locator('#set_my_setting')).toBeVisible();
-    await expect.poll(() => state.accessPages).toContain('my-page');
+    await expect.poll(() => state.generalMeQueries).toBeGreaterThan(0);
+    expect(state.accessPages).not.toContain('my-page');
     const noDefenceOption = page.locator('option[value="999"]');
     await expect(noDefenceOption).toHaveText('× [훈련 -3,사기 -6]');
     await expect(page.locator('#defence_train option')).toHaveText([
@@ -533,6 +556,7 @@ test('내 정보 즉시행동은 timeout 재시도 ID를 유지하고 성공 후
         instantRetreatInputs: [],
         generalMeQueries: 0,
         generalLogQueries: 0,
+        ensurePrestartQueries: 0,
         settingMutations: [],
         accessPages: [],
     };
@@ -547,18 +571,21 @@ test('내 정보 즉시행동은 timeout 재시도 ID를 유지하고 성공 후
     const instantRetreatButton = page.getByRole('button', { name: '접경 귀환' });
     await expect(instantRetreatButton).toBeVisible();
     await expect.poll(() => state.generalMeQueries).toBe(1);
+    await expect.poll(() => state.ensurePrestartQueries).toBe(1);
 
     await instantRetreatButton.click();
     await expect.poll(() => state.instantRetreatInputs?.length).toBe(1);
     await expect
         .poll(() => dialogs.some((message) => message.includes('요청 처리 결과를 확인하지 못했습니다.')))
         .toBe(true);
-    expect(state.generalMeQueries).toBe(1);
+    await expect.poll(() => state.generalMeQueries).toBe(2);
+    await expect.poll(() => state.ensurePrestartQueries).toBe(2);
 
     await instantRetreatButton.click();
     await expect.poll(() => state.instantRetreatInputs?.length).toBe(2);
-    await expect.poll(() => state.generalMeQueries).toBe(2);
-    await expect.poll(() => state.generalLogQueries).toBe(8);
+    await expect.poll(() => state.generalMeQueries).toBe(3);
+    await expect.poll(() => state.ensurePrestartQueries).toBe(3);
+    await expect.poll(() => state.generalLogQueries).toBe(12);
     await page.evaluate(() => new Promise<void>((resolveFrame) => requestAnimationFrame(() => resolveFrame())));
 
     await instantRetreatButton.click();
@@ -688,6 +715,40 @@ test('가오픈 장수 삭제는 레거시 표시와 확인을 보존하고 time
         sessionToken: 'gateway-session-token',
         pendingRequestId: null,
     });
+});
+
+test('사전 거병은 timeout reload 뒤 같은 ID를 재시도하고 성공 reload 뒤 새 ID를 만든다', async ({ page }) => {
+    const state: FixtureState = {
+        permission: 'head',
+        myset: 3,
+        buildNationCandidateEnabled: true,
+        buildNationCandidateAttempts: 0,
+        buildNationCandidateInputs: [],
+        ensurePrestartQueries: 0,
+        settingMutations: [],
+        accessPages: [],
+    };
+    page.on('dialog', (dialog) => dialog.accept());
+    await install(page, state);
+    await page.goto('my-page');
+
+    const build = page.getByRole('button', { name: '사전 거병' });
+    await expect(build).toBeVisible();
+    await expect.poll(() => state.ensurePrestartQueries).toBe(1);
+
+    await build.click();
+    await expect.poll(() => state.buildNationCandidateInputs?.length).toBe(1);
+    await expect.poll(() => state.ensurePrestartQueries).toBe(2);
+
+    await build.click();
+    await expect.poll(() => state.buildNationCandidateInputs?.length).toBe(2);
+    await expect.poll(() => state.ensurePrestartQueries).toBe(3);
+
+    await build.click();
+    await expect.poll(() => state.buildNationCandidateInputs?.length).toBe(3);
+    const requestIds = state.buildNationCandidateInputs?.map((input) => input.clientRequestId);
+    expect(requestIds?.[1]).toBe(requestIds?.[0]);
+    expect(requestIds?.[2]).not.toBe(requestIds?.[1]);
 });
 
 test('감찰부 keeps the selector interaction and shows the permission error path', async ({ page }) => {
