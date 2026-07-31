@@ -36,6 +36,7 @@ import { loadTurnCommandProfile } from './turnCommandProfile.js';
 import { loadTurnWorldFromDatabase } from './worldLoader.js';
 import { shouldUseAi } from './ai/generalAi.js';
 import { createUnificationHandler } from './unificationHandler.js';
+import { loadPendingUnificationAuctionCancellations } from './unificationAuctionCancellation.js';
 import { createAuctionFinalizer } from '../auction/finalizer.js';
 import { createAuctionBidder } from '../auction/bidder.js';
 import { createNeutralAuctionRegistrar } from '../auction/neutralRegistrar.js';
@@ -224,12 +225,6 @@ const createTurnDaemonRuntimeWithLease = async (
         snapshot.scenarioConfig.environment.scenarioEffect
     );
     const monthlyCommandEnv = buildCommandEnv(snapshot.scenarioConfig, snapshot.unitSet);
-    const unification = options.calendarHandler
-        ? null
-        : createUnificationHandler({
-              profileName: options.profileName ?? options.profile,
-              getWorld: () => worldRef,
-          });
     const incomeHandler = createIncomeHandler({
         getWorld: () => worldRef,
         scenarioConfig: snapshot.scenarioConfig,
@@ -404,6 +399,16 @@ const createTurnDaemonRuntimeWithLease = async (
         startYear: snapshot.scenarioMeta?.startYear ?? state.currentYear,
         actions: eventActions,
     });
+    const unification = options.calendarHandler
+        ? null
+        : createUnificationHandler({
+              profileName: options.profileName ?? options.profile,
+              getWorld: () => worldRef,
+              loadPendingUniqueAuctions: databaseFlushEnabled
+                  ? () => loadPendingUnificationAuctionCancellations(options.databaseUrl)
+                  : undefined,
+              dispatchUnitedEvents: (context) => monthlyEventHandler.dispatchTarget('united', context),
+          });
     const nationTurnMonthlyHandler = createNationTurnMonthlyHandler({
         getWorld: () => worldRef,
     });

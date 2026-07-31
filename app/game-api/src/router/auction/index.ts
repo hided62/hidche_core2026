@@ -6,7 +6,7 @@ import type { DatabaseClient, GameApiContext, GeneralRow } from '../../context.j
 import { buildAuctionTimerKeys } from '../../auction/keys.js';
 import { GamePrisma } from '@sammo-ts/infra';
 import { ItemLoader, isItemKey } from '@sammo-ts/logic';
-import { asRecord } from '@sammo-ts/common';
+import { asNumber, asRecord } from '@sammo-ts/common';
 import { buildAuctionAlias } from '@sammo-ts/logic';
 import { openAuctionWithDaemon } from '../../auction/open.js';
 
@@ -89,6 +89,14 @@ const ensureGeneral = async (db: DatabaseClient, userId: string): Promise<Genera
         });
     }
     return general;
+};
+
+const ensureAuctionSeasonActive = async (db: DatabaseClient): Promise<void> => {
+    const worldState = await db.worldState.findFirst({ select: { meta: true } });
+    const meta = asRecord(worldState?.meta);
+    if (asNumber(meta.isUnited, 0) !== 0 || asNumber(meta.isunited, 0) !== 0) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: '천하통일 후에는 경매를 이용할 수 없습니다.' });
+    }
 };
 
 const loadAuction = async (
@@ -323,16 +331,19 @@ export const auctionRouter = router({
     openBuyRice: authedProcedure.input(zOpenResourceInput).mutation(async ({ ctx, input }) => {
         const auth = requireAuth(ctx);
         const general = await ensureGeneral(ctx.db, auth.user.id);
+        await ensureAuctionSeasonActive(ctx.db);
         return openAuctionWithDaemon(ctx, general.id, { auctionType: 'BUY_RICE', ...input });
     }),
     openSellRice: authedProcedure.input(zOpenResourceInput).mutation(async ({ ctx, input }) => {
         const auth = requireAuth(ctx);
         const general = await ensureGeneral(ctx.db, auth.user.id);
+        await ensureAuctionSeasonActive(ctx.db);
         return openAuctionWithDaemon(ctx, general.id, { auctionType: 'SELL_RICE', ...input });
     }),
     openUnique: authedProcedure.input(zOpenUniqueInput).mutation(async ({ ctx, input }) => {
         const auth = requireAuth(ctx);
         const general = await ensureGeneral(ctx.db, auth.user.id);
+        await ensureAuctionSeasonActive(ctx.db);
         return openAuctionWithDaemon(ctx, general.id, {
             auctionType: 'UNIQUE_ITEM',
             itemKey: input.itemKey,
@@ -342,6 +353,7 @@ export const auctionRouter = router({
     bidBuyRice: authedProcedure.input(zBidInput).mutation(async ({ ctx, input }) => {
         const auth = requireAuth(ctx);
         const general = await ensureGeneral(ctx.db, auth.user.id);
+        await ensureAuctionSeasonActive(ctx.db);
         const auction = await loadAuction(ctx.db, input.auctionId);
         if (!auction || auction.type !== 'BUY_RICE') {
             throw new TRPCError({ code: 'NOT_FOUND', message: 'Auction not found.' });
@@ -413,6 +425,7 @@ export const auctionRouter = router({
     bidSellRice: authedProcedure.input(zBidInput).mutation(async ({ ctx, input }) => {
         const auth = requireAuth(ctx);
         const general = await ensureGeneral(ctx.db, auth.user.id);
+        await ensureAuctionSeasonActive(ctx.db);
         const auction = await loadAuction(ctx.db, input.auctionId);
         if (!auction || auction.type !== 'SELL_RICE') {
             throw new TRPCError({ code: 'NOT_FOUND', message: 'Auction not found.' });
@@ -484,6 +497,7 @@ export const auctionRouter = router({
     bidUnique: authedProcedure.input(zUniqueBidInput).mutation(async ({ ctx, input }) => {
         const auth = requireAuth(ctx);
         const general = await ensureGeneral(ctx.db, auth.user.id);
+        await ensureAuctionSeasonActive(ctx.db);
         const auction = await loadAuction(ctx.db, input.auctionId);
         if (!auction || auction.type !== 'UNIQUE_ITEM') {
             throw new TRPCError({ code: 'NOT_FOUND', message: 'Auction not found.' });

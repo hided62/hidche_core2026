@@ -33,6 +33,7 @@ interface AuctionBidRow {
     id: number;
     generalId: number;
     amount: number;
+    meta: unknown;
 }
 
 interface AuctionDetail {
@@ -47,6 +48,16 @@ const parseDetail = (detail: unknown): AuctionDetail => {
         return {};
     }
     return detail as AuctionDetail;
+};
+
+const toFiniteNumber = (value: unknown): number => {
+    const parsed = typeof value === 'string' ? Number(value) : value;
+    return typeof parsed === 'number' && Number.isFinite(parsed) ? parsed : 0;
+};
+
+const readRankTrackedAmount = (bid: AuctionBidRow | null): number => {
+    if (!bid?.meta || typeof bid.meta !== 'object' || Array.isArray(bid.meta)) return 0;
+    return Math.max(0, toFiniteNumber((bid.meta as Record<string, unknown>).inheritSpentTrackedAmount));
 };
 
 const extendCloseDate = (options: {
@@ -107,14 +118,14 @@ const loadHighestBid = async (
     const rows = await prisma.$queryRaw<AuctionBidRow[]>(
         isReverse
             ? GamePrisma.sql`
-                SELECT id, general_id as "generalId", amount
+                SELECT id, general_id as "generalId", amount, meta
                 FROM auction_bid
                 WHERE auction_id = ${auctionId}
                 ORDER BY amount ASC, id ASC
                 LIMIT 1
               `
             : GamePrisma.sql`
-                SELECT id, general_id as "generalId", amount
+                SELECT id, general_id as "generalId", amount, meta
                 FROM auction_bid
                 WHERE auction_id = ${auctionId}
                 ORDER BY amount DESC, id ASC
@@ -133,14 +144,14 @@ const loadMyPrevBid = async (
     const rows = await prisma.$queryRaw<AuctionBidRow[]>(
         isReverse
             ? GamePrisma.sql`
-                SELECT id, general_id as "generalId", amount
+                SELECT id, general_id as "generalId", amount, meta
                 FROM auction_bid
                 WHERE auction_id = ${auctionId} AND general_id = ${generalId}
                 ORDER BY amount ASC, id ASC
                 LIMIT 1
               `
             : GamePrisma.sql`
-                SELECT id, general_id as "generalId", amount
+                SELECT id, general_id as "generalId", amount, meta
                 FROM auction_bid
                 WHERE auction_id = ${auctionId} AND general_id = ${generalId}
                 ORDER BY amount DESC, id ASC
@@ -340,6 +351,8 @@ export const createAuctionBidder = async (options: {
 
             const eventId = randomUUID();
             const eventAt = now;
+            const rankTrackedAmount = auction.type === 'UNIQUE_ITEM' ? readRankTrackedAmount(myPrevBid) + morePoint : 0;
+            const previousRankTrackedAmount = readRankTrackedAmount(highestBid);
 
             try {
                 const persistBid = async (tx: GamePrisma.TransactionClient): Promise<void> => {
@@ -352,7 +365,12 @@ export const createAuctionBidder = async (options: {
                                 ${command.amount},
                                 ${eventId},
                                 ${eventAt},
-                                ${JSON.stringify({ tryExtendCloseDate: command.tryExtendCloseDate ?? true })}::jsonb
+                                ${JSON.stringify({
+                                    tryExtendCloseDate: command.tryExtendCloseDate ?? true,
+                                    ...(auction.type === 'UNIQUE_ITEM'
+                                        ? { inheritSpentTrackedAmount: rankTrackedAmount }
+                                        : {}),
+                                })}::jsonb
                             )
                         `
                     );
@@ -396,21 +414,42 @@ export const createAuctionBidder = async (options: {
                         if (deductedRows.length === 0) {
                             throw new Error('INSUFFICIENT_POINT');
                         }
+                        await tx.$executeRaw(
+                            GamePrisma.sql`
+                                INSERT INTO rank_data (nation_id, general_id, type, value)
+                                SELECT nation_id, id, 'inherit_spent_dyn', ${morePoint}
+                                FROM general
+                                WHERE id = ${command.generalId}
+                                ON CONFLICT (general_id, type)
+                                DO UPDATE SET
+                                    nation_id = EXCLUDED.nation_id,
+                                    value = rank_data.value + EXCLUDED.value
+                            `
+                        );
 
                         if (highestBid && highestBid.generalId !== command.generalId && !myPrevBid) {
                             const prevUserId = await resolveUserId(tx, highestBid.generalId);
-                            if (prevUserId) {
-                                await tx.$executeRaw(
-                                    GamePrisma.sql`
-                                        INSERT INTO inheritance_point (user_id, key, value, updated_at)
-                                        VALUES (${prevUserId}, 'previous', ${highestBid.amount}, ${eventAt})
-                                        ON CONFLICT (user_id, key)
-                                        DO UPDATE SET
-                                            value = inheritance_point.value + EXCLUDED.value,
-                                            updated_at = EXCLUDED.updated_at
-                                    `
-                                );
+                            if (!prevUserId) {
+                                throw new Error('USER_NOT_FOUND');
                             }
+                            await tx.$executeRaw(
+                                GamePrisma.sql`
+                                    INSERT INTO inheritance_point (user_id, key, value, updated_at)
+                                    VALUES (${prevUserId}, 'previous', ${highestBid.amount}, ${eventAt})
+                                    ON CONFLICT (user_id, key)
+                                    DO UPDATE SET
+                                        value = inheritance_point.value + EXCLUDED.value,
+                                        updated_at = EXCLUDED.updated_at
+                                `
+                            );
+                            await tx.$executeRaw(
+                                GamePrisma.sql`
+                                    UPDATE rank_data
+                                    SET value = GREATEST(0, value - ${previousRankTrackedAmount})
+                                    WHERE general_id = ${highestBid.generalId}
+                                      AND type = 'inherit_spent_dyn'
+                                `
+                            );
                         }
                     }
                 };
@@ -453,7 +492,36 @@ export const createAuctionBidder = async (options: {
                 };
             }
 
-            if (auction.type !== 'UNIQUE_ITEM') {
+            if (auction.type === 'UNIQUE_ITEM') {
+                world.updateGeneral(command.generalId, {
+                    inheritancePoints: {
+                        ...general.inheritancePoints,
+                        previous: toFiniteNumber(general.inheritancePoints?.previous) - morePoint,
+                    },
+                    meta: {
+                        ...general.meta,
+                        inherit_spent_dyn: toFiniteNumber(general.meta.inherit_spent_dyn) + morePoint,
+                    },
+                });
+                if (highestBid && highestBid.generalId !== command.generalId && !myPrevBid) {
+                    const prev = world.getGeneralById(highestBid.generalId);
+                    if (prev) {
+                        world.updateGeneral(prev.id, {
+                            inheritancePoints: {
+                                ...prev.inheritancePoints,
+                                previous: toFiniteNumber(prev.inheritancePoints?.previous) + highestBid.amount,
+                            },
+                            meta: {
+                                ...prev.meta,
+                                inherit_spent_dyn: Math.max(
+                                    0,
+                                    toFiniteNumber(prev.meta.inherit_spent_dyn) - previousRankTrackedAmount
+                                ),
+                            },
+                        });
+                    }
+                }
+            } else {
                 const resourceType = auction.type === 'BUY_RICE' ? 'gold' : 'rice';
                 world.updateGeneral(command.generalId, {
                     gold: resourceType === 'gold' ? general.gold - morePoint : general.gold,

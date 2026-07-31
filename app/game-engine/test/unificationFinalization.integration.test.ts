@@ -2,14 +2,20 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createGamePostgresConnector, type GamePrismaClient } from '@sammo-ts/infra';
 
+import { createAuctionBidder } from '../src/auction/bidder.js';
 import { createDatabaseTurnHooks } from '../src/turn/databaseHooks.js';
+import { composeCalendarHandlers } from '../src/turn/calendarHandlers.js';
+import { EngineStateManager } from '../src/turn/engineStateManager.js';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
+import { createMonthlyEventHandler, type MonthlyEventActionHandler } from '../src/turn/monthlyEventHandler.js';
+import { createMergeInheritPointRankHandler } from '../src/turn/monthlyUniqueInheritAction.js';
+import { loadPendingUnificationAuctionCancellations } from '../src/turn/unificationAuctionCancellation.js';
 import { createUnificationHandler } from '../src/turn/unificationHandler.js';
 import { loadTurnWorldFromDatabase } from '../src/turn/worldLoader.js';
 
 const databaseUrl = process.env.INPUT_EVENT_DATABASE_URL;
 const integration = describe.skipIf(!databaseUrl);
-const fixtureId = 992_001;
+const fixtureId = 8_901;
 const serverId = 'che_unification_atomicity_fixture';
 const profileName = 'che';
 const userId = 'unification-atomicity-user';
@@ -19,6 +25,9 @@ integration('unification finalization transaction', () => {
     let closeDb: (() => Promise<void>) | undefined;
 
     const cleanup = async (): Promise<void> => {
+        await db.message.deleteMany({ where: { mailbox: fixtureId } });
+        await db.auction.deleteMany({ where: { hostGeneralId: fixtureId } });
+        await db.event.deleteMany({ where: { id: fixtureId } });
         await db.unificationFinalization.deleteMany({ where: { serverId } });
         await db.yearbookHistory.deleteMany({ where: { profileName: serverId } });
         await db.emperor.deleteMany({ where: { serverId } });
@@ -120,14 +129,53 @@ integration('unification finalization transaction', () => {
                     rank_warnum: 4,
                     firenum: 2,
                     dex1: 100,
+                    max_belong: 4,
+                    betwin: 2,
+                    betgold: 1_000,
+                    betwingold: 500,
+                    inherit_earned_act: 5,
+                    inherit_spent_dyn: 30,
                 },
             },
         });
         await db.inheritancePoint.createMany({
             data: [
                 { userId, key: 'previous', value: 100 },
-                { userId, key: 'unifier', value: 7 },
+                { userId, key: 'tournament', value: 11 },
             ],
+        });
+        const futureCloseAt = new Date(Date.now() + 86_400_000);
+        const uniqueAuction = await db.auction.create({
+            data: {
+                type: 'UNIQUE_ITEM',
+                targetCode: 'che_서적_07_논어',
+                hostGeneralId: fixtureId,
+                hostName: '(상인)',
+                detail: { title: '논어 경매', isReverse: false },
+                status: 'OPEN',
+                closeAt: futureCloseAt,
+            },
+        });
+        const resourceAuction = await db.auction.create({
+            data: {
+                type: 'BUY_RICE',
+                targetCode: '100',
+                hostGeneralId: fixtureId,
+                hostName: '원자장수',
+                detail: { title: '쌀 구매 경매', amount: 100, isReverse: false },
+                status: 'OPEN',
+                closeAt: futureCloseAt,
+            },
+        });
+        await db.event.create({
+            data: {
+                id: fixtureId,
+                targetCode: 'united',
+                priority: 5_000,
+                condition: true,
+                action: [['MergeInheritPointRank']],
+                meta: { fixture: 'unification-atomicity' },
+            },
         });
         const worldRow = await db.worldState.create({
             data: {
@@ -160,14 +208,71 @@ integration('unification finalization transaction', () => {
             },
         });
 
+        const beforeBid = await loadTurnWorldFromDatabase({ databaseUrl: databaseUrl! });
+        const bidWorld = new InMemoryTurnWorld(beforeBid.state, beforeBid.snapshot, {
+            schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+        });
+        const bidder = await createAuctionBidder({ databaseUrl: databaseUrl!, world: bidWorld });
+        try {
+            await expect(
+                bidder.bid({
+                    type: 'auctionBid',
+                    auctionId: uniqueAuction.id,
+                    generalId: fixtureId,
+                    amount: 30,
+                    tryExtendCloseDate: false,
+                })
+            ).resolves.toMatchObject({ ok: true, auctionId: uniqueAuction.id });
+            await expect(
+                bidder.bid({
+                    type: 'auctionBid',
+                    auctionId: uniqueAuction.id,
+                    generalId: fixtureId,
+                    amount: 50,
+                    tryExtendCloseDate: false,
+                })
+            ).resolves.toMatchObject({ ok: true, auctionId: uniqueAuction.id });
+        } finally {
+            await bidder.close();
+        }
+        expect(
+            (await db.inheritancePoint.findUniqueOrThrow({ where: { userId_key: { userId, key: 'previous' } } })).value
+        ).toBe(50);
+        expect(
+            await db.rankData.findUniqueOrThrow({
+                where: { generalId_type: { generalId: fixtureId, type: 'inherit_spent_dyn' } },
+            })
+        ).toMatchObject({ value: 50 });
+        expect(
+            (await db.auctionBid.findMany({ where: { auctionId: uniqueAuction.id }, orderBy: { id: 'asc' } })).map(
+                (bid) => bid.meta
+            )
+        ).toEqual([
+            expect.objectContaining({ inheritSpentTrackedAmount: 30 }),
+            expect.objectContaining({ inheritSpentTrackedAmount: 50 }),
+        ]);
+
         const loaded = await loadTurnWorldFromDatabase({ databaseUrl: databaseUrl! });
         let world: InMemoryTurnWorld | null = null;
-        const unification = createUnificationHandler({ profileName, getWorld: () => world });
+        const actions = new Map<string, MonthlyEventActionHandler>();
+        actions.set('MergeInheritPointRank', createMergeInheritPointRankHandler({ getWorld: () => world }));
+        const events = createMonthlyEventHandler({ getWorld: () => world, startYear: 190, actions });
+        const unification = createUnificationHandler({
+            profileName,
+            getWorld: () => world,
+            loadPendingUniqueAuctions: () => loadPendingUnificationAuctionCancellations(databaseUrl!),
+            dispatchUnitedEvents: (context) => events.dispatchTarget('united', context),
+        });
         world = new InMemoryTurnWorld(loaded.state, loaded.snapshot, {
             schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
-            calendarHandler: unification.handler,
+            calendarHandler: composeCalendarHandlers(events, unification.handler),
         });
         const hooks = await createDatabaseTurnHooks(databaseUrl!, world, { profileName });
+        const stateManager = new EngineStateManager();
+        stateManager.register('world', {
+            capture: () => world!.captureState(),
+            restore: (captured) => world!.restoreState(captured),
+        });
         const runResult = {
             lastTurnTime: '0190-07-01T00:00:00.000Z',
             processedGenerals: 0,
@@ -176,12 +281,21 @@ integration('unification finalization transaction', () => {
             partial: false,
         };
         try {
-            await world.advanceMonth(new Date('0190-07-01T00:00:00.000Z'));
-            expect(world.getState().meta).toMatchObject({ isUnited: 2, isunited: 2, refreshLimit: 200 });
-            expect(world.peekDirtyState().pendingUnificationFinalizations).toHaveLength(1);
-            expect(world.peekDirtyState().pendingYearbookSnapshots).toHaveLength(1);
-
-            await expect(hooks.hooks.flushChanges?.(runResult)).rejects.toThrow();
+            const beforeFailedTurn = world.captureState();
+            await expect(
+                stateManager.transaction(async () => {
+                    await world!.advanceMonth(new Date('0190-07-01T00:00:00.000Z'));
+                    expect(world!.getState().meta).toMatchObject({ isUnited: 2, isunited: 2, refreshLimit: 200 });
+                    expect(world!.peekDirtyState().pendingUnificationFinalizations).toHaveLength(1);
+                    expect(world!.peekDirtyState().pendingYearbookSnapshots).toHaveLength(1);
+                    expect(world!.getGeneralById(fixtureId)).toMatchObject({
+                        inheritancePoints: { previous: 100, unifier: 2_000, tournament: 11 },
+                        meta: { inherit_earned_dyn: 2_155.1, inherit_earned: 2_160.1, inherit_spent: 0 },
+                    });
+                    await hooks.hooks.flushChanges?.(runResult);
+                })
+            ).rejects.toThrow();
+            expect(world.captureState()).toEqual(beforeFailedTurn);
 
             expect(await db.unificationFinalization.count({ where: { serverId } })).toBe(0);
             expect(await db.yearbookHistory.count({ where: { profileName: serverId } })).toBe(0);
@@ -192,8 +306,11 @@ integration('unification finalization transaction', () => {
             expect(
                 (await db.inheritancePoint.findUniqueOrThrow({ where: { userId_key: { userId, key: 'previous' } } }))
                     .value
-            ).toBe(100);
-            expect(world.peekDirtyState().pendingUnificationFinalizations).toHaveLength(1);
+            ).toBe(50);
+            expect((await db.auction.findUniqueOrThrow({ where: { id: uniqueAuction.id } })).status).toBe('OPEN');
+            expect((await db.auction.findUniqueOrThrow({ where: { id: resourceAuction.id } })).status).toBe('OPEN');
+            expect(await db.message.count({ where: { mailbox: fixtureId } })).toBe(0);
+            expect(world.peekDirtyState().pendingUnificationFinalizations).toHaveLength(0);
 
             await db.gameHistory.create({
                 data: {
@@ -204,13 +321,70 @@ integration('unification finalization transaction', () => {
                     scenarioName: '원자성 시나리오',
                 },
             });
-            await hooks.hooks.flushChanges?.(runResult);
+            await stateManager.transaction(async () => {
+                await world!.advanceMonth(new Date('0190-07-01T00:00:00.000Z'));
+                await hooks.hooks.flushChanges?.(runResult);
+            });
 
             expect(await db.unificationFinalization.count({ where: { serverId } })).toBe(1);
             expect(await db.inheritanceResult.count({ where: { serverId } })).toBe(1);
             expect(await db.oldGeneral.count({ where: { serverId } })).toBe(1);
             expect(await db.oldNation.count({ where: { serverId } })).toBe(2);
             expect(await db.emperor.count({ where: { serverId } })).toBe(1);
+            expect(
+                (await db.inheritancePoint.findUniqueOrThrow({ where: { userId_key: { userId, key: 'previous' } } }))
+                    .value
+            ).toBe(2_255);
+            expect(await db.inheritancePoint.count({ where: { userId, key: { not: 'previous' } } })).toBe(0);
+            expect(await db.inheritanceResult.findFirstOrThrow({ where: { serverId } })).toMatchObject({
+                value: expect.objectContaining({
+                    previous: 100,
+                    max_belong: 40,
+                    tournament: 11,
+                    betting: 5,
+                    unifier: 2_000,
+                    unifierBeforeAward: 0,
+                    unifierAward: 2_000,
+                    total: 2_255,
+                }),
+            });
+            expect(await db.auction.findUniqueOrThrow({ where: { id: uniqueAuction.id } })).toMatchObject({
+                status: 'CANCELED',
+                finishedAt: new Date('0190-07-01T00:00:00.000Z'),
+            });
+            expect((await db.auction.findUniqueOrThrow({ where: { id: resourceAuction.id } })).status).toBe('OPEN');
+            expect(await db.auctionBid.count({ where: { auctionId: uniqueAuction.id } })).toBe(2);
+            const cancellationMessage = await db.message.findFirstOrThrow({ where: { mailbox: fixtureId } });
+            expect(cancellationMessage).toMatchObject({
+                mailbox: fixtureId,
+                src: 0,
+                dest: fixtureId,
+                time: new Date('0190-07-01T00:00:00.000Z'),
+            });
+            expect(cancellationMessage.message).toMatchObject({
+                text: `${uniqueAuction.id}번 논어 경매가 취소되었습니다.`,
+            });
+            expect(await db.event.count({ where: { id: fixtureId } })).toBe(1);
+            expect(
+                await db.rankData.findUniqueOrThrow({
+                    where: { generalId_type: { generalId: fixtureId, type: 'inherit_spent' } },
+                })
+            ).toMatchObject({ value: 0 });
+            await expect(
+                db.rankData.findUniqueOrThrow({
+                    where: { generalId_type: { generalId: fixtureId, type: 'inherit_spent_dyn' } },
+                })
+            ).resolves.toMatchObject({ value: 0 });
+            await expect(
+                db.rankData.findUniqueOrThrow({
+                    where: { generalId_type: { generalId: fixtureId, type: 'inherit_earned_dyn' } },
+                })
+            ).resolves.toMatchObject({ value: 2_155 });
+            await expect(
+                db.rankData.findUniqueOrThrow({
+                    where: { generalId_type: { generalId: fixtureId, type: 'inherit_earned' } },
+                })
+            ).resolves.toMatchObject({ value: 2_160 });
             expect((await db.gameHistory.findUniqueOrThrow({ where: { serverId } })).winnerNation).toBe(fixtureId);
             const yearbook = await db.yearbookHistory.findUniqueOrThrow({
                 where: {
