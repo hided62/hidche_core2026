@@ -309,8 +309,7 @@ describe('appRouter', () => {
             throw new Error('ordinary exchange must not read the icon source');
         });
         const accessTokenStore = {
-            markGatewayTokenUsed: vi.fn(async () => true),
-            create: vi.fn(async () => ({
+            issueFromGateway: vi.fn(async () => ({
                 accessToken: 'ga_access',
                 expiresAt: '2099-01-01T01:00:00.000Z',
             })),
@@ -342,14 +341,13 @@ describe('appRouter', () => {
         const calls: string[] = [];
         const revision = '2099-01-01T00:00:00.001Z';
         const accessTokenStore = {
-            markGatewayTokenUsed: vi.fn(async () => {
+            issueFromGateway: vi.fn(async () => {
                 calls.push('mark-used');
-                return true;
+                return {
+                    accessToken: 'ga_access',
+                    expiresAt: '2099-01-01T01:00:00.000Z',
+                };
             }),
-            create: vi.fn(async () => ({
-                accessToken: 'ga_access',
-                expiresAt: '2099-01-01T01:00:00.000Z',
-            })),
         } as unknown as RedisAccessTokenStore;
         const payload = buildAuth();
         payload.issuedAt = '2099-01-01T00:00:00.000Z';

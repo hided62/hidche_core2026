@@ -7,6 +7,7 @@ interface RedisClientLike {
     get(key: string): Promise<string | null>;
     set(key: string, value: string, options?: { EX?: number; NX?: boolean }): Promise<string | null>;
     del?(key: string): Promise<number>;
+    eval?(script: string, options: { keys: string[]; arguments: string[] }): Promise<unknown>;
 }
 
 const ACCESS_TOKEN_PREFIX = 'ga_';
@@ -15,6 +16,15 @@ const buildAccessKey = (profileName: string, token: string): string => `sammo:ga
 
 const buildGatewayUsedKey = (profileName: string, sessionId: string): string =>
     `sammo:game:gateway-used:${profileName}:${sessionId}`;
+
+const ISSUE_FROM_GATEWAY_SCRIPT = `
+if redis.call('EXISTS', KEYS[1]) == 1 then
+    return 0
+end
+redis.call('SET', KEYS[2], ARGV[1], 'EX', ARGV[2])
+redis.call('SET', KEYS[1], '1', 'EX', ARGV[2])
+return 1
+`;
 
 const resolveTtlSeconds = (expiresAt: string): number => {
     const parsed = parseISO(expiresAt);
@@ -46,6 +56,32 @@ export class RedisAccessTokenStore {
         const accessToken = `${ACCESS_TOKEN_PREFIX}${randomUUID()}`;
         const key = buildAccessKey(this.profileName, accessToken);
         await this.client.set(key, JSON.stringify(payload), { EX: ttlSeconds });
+        return { accessToken, expiresAt: payload.expiresAt };
+    }
+
+    async issueFromGateway(
+        payload: GameSessionTokenPayload
+    ): Promise<{ accessToken: string; expiresAt: string } | null | 'ALREADY_USED'> {
+        const ttlSeconds = resolveTtlSeconds(payload.expiresAt);
+        if (ttlSeconds <= 0) {
+            return null;
+        }
+        if (!this.client.eval) {
+            throw new Error('Redis client does not support atomic gateway token exchange.');
+        }
+        const accessToken = `${ACCESS_TOKEN_PREFIX}${randomUUID()}`;
+        const accessKey = buildAccessKey(this.profileName, accessToken);
+        const usedKey = buildGatewayUsedKey(this.profileName, payload.sessionId);
+        const result = await this.client.eval(ISSUE_FROM_GATEWAY_SCRIPT, {
+            keys: [usedKey, accessKey],
+            arguments: [JSON.stringify(payload), String(ttlSeconds)],
+        });
+        if (Number(result) === 0) {
+            return 'ALREADY_USED';
+        }
+        if (Number(result) !== 1) {
+            throw new Error('Unexpected Redis result while issuing an access token.');
+        }
         return { accessToken, expiresAt: payload.expiresAt };
     }
 
@@ -82,14 +118,5 @@ export class RedisAccessTokenStore {
         }
         const key = buildAccessKey(this.profileName, accessToken);
         return (await this.client.del(key)) > 0;
-    }
-
-    async markGatewayTokenUsed(sessionId: string, ttlSeconds: number): Promise<boolean> {
-        if (ttlSeconds <= 0) {
-            return false;
-        }
-        const key = buildGatewayUsedKey(this.profileName, sessionId);
-        const result = await this.client.set(key, '1', { NX: true, EX: ttlSeconds });
-        return result === 'OK';
     }
 }

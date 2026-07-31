@@ -87,15 +87,13 @@ export const authRouter = router({
                 await enqueueProfileIconResetForUser(ctx, payload.user.id, payload.user.profileIconResetAt);
             }
 
-            const used = await ctx.accessTokenStore.markGatewayTokenUsed(payload.sessionId, ttlSeconds);
-            if (!used) {
+            const created = await ctx.accessTokenStore.issueFromGateway(payload);
+            if (created === 'ALREADY_USED') {
                 throw new TRPCError({
                     code: 'CONFLICT',
                     message: 'Gateway token already used.',
                 });
             }
-
-            const created = await ctx.accessTokenStore.create(payload);
             if (!created) {
                 throw new TRPCError({
                     code: 'INTERNAL_SERVER_ERROR',
