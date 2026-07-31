@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { asRecord } from '@sammo-ts/common';
 import type { GamePrisma } from '@sammo-ts/infra';
 
+import { purifyDiplomacyHtml } from '../../security/diplomacyHtml.js';
 import { accessAuthedInputProcedure, accessAuthedProcedure, router } from '../../trpc.js';
 import { getMyGeneral } from '../shared/general.js';
 import { assertNationAccess, resolveNationPermission } from '../nation/shared.js';
@@ -56,7 +57,8 @@ export const diplomacyRouter = router({
             const src = asRecord(aux.src);
             const dest = asRecord(aux.dest);
             const stateOpt = typeof aux.state_opt === 'string' ? aux.state_opt : null;
-            const detail = permission < 3 && letter.textDetail ? '(권한이 부족합니다)' : letter.textDetail;
+            const detail =
+                permission < 3 && letter.textDetail ? '(권한이 부족합니다)' : purifyDiplomacyHtml(letter.textDetail);
             const reason = asRecord(aux.reason);
 
             return {
@@ -80,7 +82,7 @@ export const diplomacyRouter = router({
                 prevId: letter.prevId,
                 state: mapLetterState(letter.state),
                 stateOpt,
-                brief: letter.textBrief,
+                brief: purifyDiplomacyHtml(letter.textBrief),
                 detail,
                 date: letter.date.toISOString(),
                 reason: {
@@ -207,8 +209,8 @@ export const diplomacyRouter = router({
                     destNationId: destNation.id,
                     prevId,
                     state: 'PROPOSED',
-                    textBrief: input.brief,
-                    textDetail: input.detail,
+                    textBrief: purifyDiplomacyHtml(input.brief),
+                    textDetail: purifyDiplomacyHtml(input.detail),
                     srcSignerId: me.id,
                     aux: aux as GamePrisma.InputJsonValue,
                 },
