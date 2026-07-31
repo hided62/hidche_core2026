@@ -61,11 +61,13 @@ const deleteProfileRedisKeys = async (): Promise<void> => {
     if (!redis) {
         return;
     }
-    for await (const key of redis.client.scanIterator({
+    for await (const keys of redis.client.scanIterator({
         MATCH: `sammo:game:*:${profileName}:*`,
         COUNT: 100,
     })) {
-        await redis.client.del(key);
+        if (keys.length > 0) {
+            await redis.client.del(keys);
+        }
     }
 };
 

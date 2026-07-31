@@ -155,8 +155,10 @@ delete_owned_redis_keys() {
             await client.connect();
             try {
                 for (const pattern of patterns) {
-                    for await (const key of client.scanIterator({ MATCH: pattern, COUNT: 100 })) {
-                        await client.del(key);
+                    for await (const keys of client.scanIterator({ MATCH: pattern, COUNT: 100 })) {
+                        if (keys.length > 0) {
+                            await client.del(keys);
+                        }
                     }
                 }
             } finally {
