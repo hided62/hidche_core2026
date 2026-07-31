@@ -10,6 +10,7 @@ import { createGameTrpc, type GameRouter } from '../utils/gameTrpc';
 import { trpc } from '../utils/trpc';
 import { formatLog } from '../utils/formatLog';
 import { sealPassword } from '../utils/passwordEnvelope';
+import { resolveServerSeasonStatus } from '../utils/serverSeasonStatus';
 
 type GatewayOutput = inferRouterOutputs<AppRouter>;
 type GameOutput = inferRouterOutputs<GameRouter>;
@@ -37,6 +38,7 @@ const dateText = computed(() => {
     }
     return `西紀 ${info.value.year}年 ${info.value.month}月`;
 });
+const seasonStatus = computed(() => (info.value ? resolveServerSeasonStatus(info.value) : null));
 
 const loadPublicStatus = async (): Promise<void> => {
     statusLoading.value = true;
@@ -153,9 +155,7 @@ const handlePasswordReset = async (): Promise<void> => {
                     <button class="login-button" type="submit" :disabled="loginLoading">
                         {{ loginLoading ? '로그인 중…' : '로그인' }}
                     </button>
-                    <button class="reset-button" type="button" @click="handlePasswordReset">
-                        비밀번호 초기화
-                    </button>
+                    <button class="reset-button" type="button" @click="handlePasswordReset">비밀번호 초기화</button>
                     <RouterLink class="signup-button" to="/signup">아이디로 회원가입</RouterLink>
                 </form>
                 <p v-if="loginError" class="login-error" role="alert">{{ loginError }}</p>
@@ -174,7 +174,10 @@ const handlePasswordReset = async (): Promise<void> => {
                 </div>
                 <ul v-if="info" class="status-summary">
                     <li>서버: {{ profile?.korName }} / 시나리오: {{ profile?.scenario }}</li>
-                    <li>유저 {{ info.userCnt }}명 · NPC {{ info.npcCnt }}명 · {{ info.nationCnt }}국 경쟁중</li>
+                    <li>
+                        유저 {{ info.userCnt }}명 · NPC {{ info.npcCnt }}명 ·
+                        <span class="season-status" :title="seasonStatus?.period">{{ seasonStatus?.label }}</span>
+                    </li>
                     <li>{{ info.turnTerm }}분 턴 서버</li>
                 </ul>
                 <div v-if="mapData?.history?.length" class="status-history">

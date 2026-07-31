@@ -8,6 +8,7 @@ import MapPreview from '../components/MapPreview.vue';
 import { trpc } from '../utils/trpc';
 import { createGameTrpc } from '../utils/gameTrpc';
 import type { GameRouter } from '../utils/gameTrpc';
+import { resolveServerSeasonStatus } from '../utils/serverSeasonStatus';
 
 type GatewayRouterOutput = inferRouterOutputs<AppRouter>;
 type GameRouterOutput = inferRouterOutputs<GameRouter>;
@@ -43,6 +44,7 @@ const userIconBaseUrl = import.meta.env.VITE_GATEWAY_USER_ICON_BASE_URL ?? '/gat
 
 const formatGraceEndsAt = (value: string | null | undefined): string =>
     value ? new Date(value).toLocaleString('ko-KR') : '';
+const serverSeasonStatus = (info: LobbyInfo) => resolveServerSeasonStatus(info);
 const encodeLegacyIconPath = (value: string): string =>
     value
         .split('/')
@@ -273,15 +275,18 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                     :style="{ color: profile.color }"
                                     class="text-lg font-bold cursor-help"
                                     :title="
-                                        profileDetails[profile.profileName]?.starttime
-                                            ? `시작일: ${profileDetails[profile.profileName]?.starttime}`
+                                        profileDetails[profile.profileName]
+                                            ? serverSeasonStatus(profileDetails[profile.profileName]!).period
                                             : ''
                                     "
                                 >
                                     {{ profile.korName }}섭
                                 </div>
-                                <div v-if="profileDetails[profile.profileName]" class="text-xs text-zinc-500 mt-1">
-                                    &lt;{{ profileDetails[profile.profileName]?.nationCnt }}국 경쟁중&gt;
+                                <div
+                                    v-if="profileDetails[profile.profileName]"
+                                    class="season-status mt-1 whitespace-nowrap text-xs text-zinc-500"
+                                >
+                                    {{ serverSeasonStatus(profileDetails[profile.profileName]!).label }}
                                 </div>
                                 <div
                                     v-if="

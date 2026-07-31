@@ -155,7 +155,7 @@ export const createRaiseInvaderHandler = (options: {
         }
         npcEachCount = Math.max(10, toInteger(npcEachCount));
 
-        world.updateWorldMeta({ isunited: 1 });
+        world.updateWorldMeta({ isunited: 1, isUnited: 1 });
         const totalGeneralCount = npcEachCount * invaderCities.length + world.listGenerals().length;
         const maxGeneralsPerMinute =
             options.maxGeneralsPerMinute ?? readNumber(world.getState().meta.maxGeneralsPerMinute, 1_000);
@@ -531,6 +531,7 @@ export const createInvaderEndingHandler = (options: {
         }
         world.updateWorldMeta({
             isunited: 3,
+            isUnited: 3,
             refreshLimit: readNumber(meta.refreshLimit) * 100,
         });
         world.removeEvent(environment.currentEventID);

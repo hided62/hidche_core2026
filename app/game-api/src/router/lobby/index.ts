@@ -52,7 +52,7 @@ export const lobbyRouter = router({
             opentime: worldState.meta.opentime ?? '',
             turntime: worldState.meta.turntime ?? '',
             otherTextInfo: worldState.meta.otherTextInfo ?? '',
-            isUnited: worldState.meta.isUnited ?? 0,
+            isUnited: worldState.meta.isunited ?? worldState.meta.isUnited ?? 0,
             selectionPoolEnabled: isSelectionPoolWorld(rawWorldState),
             npcPossessionEnabled: worldState.config.npcMode === 1,
             myGeneral,

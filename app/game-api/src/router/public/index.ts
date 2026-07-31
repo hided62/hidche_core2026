@@ -88,7 +88,7 @@ const loadWorldTrendSnapshot = async (ctx: GameApiContext): Promise<WorldTrendSn
         opentime: meta.opentime ?? '',
         turntime: meta.turntime ?? '',
         otherTextInfo: meta.otherTextInfo ?? '',
-        isUnited: meta.isUnited ?? 0,
+        isUnited: meta.isunited ?? meta.isUnited ?? 0,
     };
 };
 
