@@ -10,6 +10,8 @@ import {
 
 import { resolveGameApiConfigFromEnv } from '../config.js';
 import { DatabaseTurnDaemonTransport } from '../daemon/databaseTransport.js';
+import { createBestEffortResourceCloser } from '../services/bestEffortResourceCloser.js';
+import { createPollingWorkerControl, waitForWorkerPoll } from '../services/pollingWorkerLifecycle.js';
 import type { TurnDaemonTransport } from '../daemon/transport.js';
 import { buildTournamentKeys } from './keys.js';
 import { TournamentStore } from './store.js';
@@ -31,7 +33,6 @@ import {
     resolveGroupPair,
     resolveNextAt,
     seedNpcBets,
-    sleepMs,
     sortByRanking,
     type TournamentMatchOutcome,
     type TournamentPrismaClient,
@@ -590,7 +591,11 @@ export const processTournamentTick = async (options: {
     return processedState;
 };
 
-export const runTournamentWorker = async (): Promise<void> => {
+export interface TournamentWorkerOptions {
+    signal?: AbortSignal;
+}
+
+export const runTournamentWorker = async (options: TournamentWorkerOptions = {}): Promise<void> => {
     const config = resolveGameApiConfigFromEnv();
     const postgres = createGamePostgresConnector(resolvePostgresConfigFromEnv({ schema: config.profile }));
     const redis = createRedisConnector(resolveRedisConfigFromEnv());
@@ -600,61 +605,64 @@ export const runTournamentWorker = async (): Promise<void> => {
 
     const store = new TournamentStore(redis.client, buildTournamentKeys(config.profileName));
     const daemonTransport = new DatabaseTurnDaemonTransport(postgres.prisma, config.daemonRequestTimeoutMs);
+    const control = createPollingWorkerControl(options.signal);
+    const closeResources = createBestEffortResourceCloser([
+        { name: 'tournament-worker-redis', run: () => redis.disconnect() },
+        { name: 'tournament-worker-postgres', run: () => postgres.disconnect() },
+    ]);
 
-    const handleExit = async () => {
-        await redis.disconnect();
-        await postgres.disconnect();
-    };
-    process.on('SIGINT', handleExit);
-    process.on('SIGTERM', handleExit);
+    try {
+        while (!control.signal.aborted) {
+            const state = await store.getState();
+            if (!state || (!state.auto && !needsSettlement(state))) {
+                await waitForWorkerPoll(control.signal, config.tournamentPollMs);
+                continue;
+            }
 
-    while (true) {
-        const state = await store.getState();
-        if (!state || (!state.auto && !needsSettlement(state))) {
-            await sleepMs(config.tournamentPollMs);
-            continue;
-        }
+            const nextAt = new Date(state.nextAt).getTime();
+            const now = Date.now();
+            if (state.auto && Number.isFinite(nextAt) && nextAt > now) {
+                await waitForWorkerPoll(control.signal, Math.min(config.tournamentPollMs, nextAt - now));
+                continue;
+            }
 
-        const nextAt = new Date(state.nextAt).getTime();
-        const now = Date.now();
-        if (state.auto && Number.isFinite(nextAt) && nextAt > now) {
-            await sleepMs(Math.min(config.tournamentPollMs, nextAt - now));
-            continue;
-        }
-
-        try {
-            await processTournamentTick({
-                store,
-                prisma: postgres.prisma,
-                daemonTransport,
-            });
-        } catch (error) {
-            const message = error instanceof Error ? error.message : 'Unknown error';
-            const trace = error instanceof Error ? error.stack : undefined;
-            const now = new Date().toISOString();
-            await postgres.prisma.errorLog.create({
-                data: {
-                    category: 'TOURNAMENT',
-                    source: 'tournament-worker',
-                    message,
-                    trace,
-                    context: {
-                        stage: state.stage,
-                        phase: state.phase,
-                        bettingId: state.bettingId ?? null,
-                        nextAt: state.nextAt,
+            try {
+                await processTournamentTick({
+                    store,
+                    prisma: postgres.prisma,
+                    daemonTransport,
+                });
+            } catch (error) {
+                const message = error instanceof Error ? error.message : 'Unknown error';
+                const trace = error instanceof Error ? error.stack : undefined;
+                const failedAt = new Date().toISOString();
+                await postgres.prisma.errorLog.create({
+                    data: {
+                        category: 'TOURNAMENT',
+                        source: 'tournament-worker',
+                        message,
+                        trace,
+                        context: {
+                            stage: state.stage,
+                            phase: state.phase,
+                            bettingId: state.bettingId ?? null,
+                            nextAt: state.nextAt,
+                        },
                     },
-                },
-            });
-            const currentState = (await store.getState()) ?? state;
-            const nextState: TournamentState = {
-                ...currentState,
-                lastError: message,
-                lastErrorAt: now,
-            };
-            await store.setState(nextState);
-        }
+                });
+                const currentState = (await store.getState()) ?? state;
+                const nextState: TournamentState = {
+                    ...currentState,
+                    lastError: message,
+                    lastErrorAt: failedAt,
+                };
+                await store.setState(nextState);
+            }
 
-        await sleepMs(config.tournamentPollMs);
+            await waitForWorkerPoll(control.signal, config.tournamentPollMs);
+        }
+    } finally {
+        control.dispose();
+        await closeResources();
     }
 };
