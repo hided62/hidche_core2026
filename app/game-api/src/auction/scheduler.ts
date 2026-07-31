@@ -22,7 +22,11 @@ export const seedAuctionTimers = async (
     keys: AuctionTimerKeys
 ): Promise<number> => {
     const rows = await db.$queryRaw<AuctionTimerRow[]>(
-        GamePrisma.sql`SELECT id, close_at as "closeAt", status FROM auction WHERE status = 'OPEN'`
+        GamePrisma.sql`
+            SELECT id, close_at as "closeAt", status
+            FROM auction
+            WHERE status IN ('OPEN', 'FINALIZING')
+        `
     );
     if (!rows.length) {
         return 0;

@@ -8,8 +8,8 @@ import {
 } from '@sammo-ts/infra';
 
 import { resolveGameApiConfigFromEnv } from '../config.js';
-import { RedisTurnDaemonTransport } from '../daemon/redisTransport.js';
-import { buildTurnDaemonStreamKeys } from '../daemon/streamKeys.js';
+import { createBestEffortResourceCloser } from '../services/bestEffortResourceCloser.js';
+import { createPollingWorkerControl, waitForWorkerPoll } from '../services/pollingWorkerLifecycle.js';
 import { buildAuctionTimerKeys } from './keys.js';
 import { seedAuctionTimers } from './scheduler.js';
 
@@ -26,7 +26,37 @@ interface RedisTimerClient {
     zRemRangeByScore(key: string, min: number, max: number): Promise<number>;
 }
 
-const sleepMs = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+const AUCTION_FINALIZE_RECOVERY_LIMIT = 1;
+
+const buildAuctionFinalizeRequestId = (auctionId: number, closeAt: Date, retry = 0): string => {
+    const generation = closeAt.getTime();
+    const base = `auction:finalize:${auctionId}:${generation}`;
+    return retry > 0 ? `${base}:retry:${retry}` : base;
+};
+
+const isMatchingAuctionFinalizeEvent = (
+    event: { target: string; eventType: string; payload: unknown },
+    command: { type: 'auctionFinalize'; requestId: string; auctionId: number }
+): boolean => {
+    const payload = event.payload;
+    const payloadRecord =
+        payload !== null && typeof payload === 'object' && !Array.isArray(payload)
+            ? (payload as Record<string, unknown>)
+            : null;
+    return (
+        event.target === 'ENGINE' &&
+        event.eventType === command.type &&
+        payloadRecord?.type === command.type &&
+        payloadRecord.requestId === command.requestId &&
+        payloadRecord.auctionId === command.auctionId
+    );
+};
+
+const isSuccessfulAuctionFinalizeResult = (result: unknown, auctionId: number): boolean => {
+    if (result === null || typeof result !== 'object' || Array.isArray(result)) return false;
+    const resultRecord = result as Record<string, unknown>;
+    return resultRecord.type === 'auctionFinalize' && resultRecord.ok === true && resultRecord.auctionId === auctionId;
+};
 
 const popDueAuctionIds = async (
     redis: RedisTimerClient,
@@ -56,44 +86,90 @@ export const processDueAuctionId = async (options: {
     historyKey: string;
     id: string;
     nowMs: number;
-    sendCommand: (command: { type: 'auctionFinalize'; auctionId: number }) => Promise<unknown>;
 }): Promise<'FINALIZING' | 'RESCHEDULED' | 'IGNORED'> => {
-    const { db, redis, timerKey, historyKey, id, nowMs, sendCommand } = options;
+    const { db, redis, timerKey, historyKey, id, nowMs } = options;
     const auctionId = Number(id);
-    if (!Number.isFinite(auctionId)) {
+    if (!Number.isSafeInteger(auctionId) || auctionId < 1) {
         return 'IGNORED';
     }
     const now = new Date(nowMs);
-    const updated = await db.$executeRaw(
-        GamePrisma.sql`
-            UPDATE auction
-            SET status = 'FINALIZING',
-                finalizing_at = ${now},
-                updated_at = ${now}
-            WHERE id = ${auctionId}
-              AND status = 'OPEN'
-              AND close_at <= ${now}
-        `
-    );
+    const outcome = await db.$transaction(async (transaction) => {
+        const updated = await transaction.$executeRaw(
+            GamePrisma.sql`
+                UPDATE auction
+                SET status = 'FINALIZING',
+                    finalizing_at = ${now},
+                    updated_at = ${now}
+                WHERE id = ${auctionId}
+                  AND status = 'OPEN'
+                  AND close_at <= ${now}
+            `
+        );
 
-    if (updated > 0) {
+        const current = await transaction.auction.findUnique({
+            where: { id: auctionId },
+            select: { status: true, closeAt: true },
+        });
+        if (!current) {
+            if (updated > 0) {
+                throw new Error(`Auction disappeared after FINALIZING transition: ${auctionId}`);
+            }
+            return { status: 'IGNORED' as const };
+        }
+        if (current.status === 'OPEN') {
+            return { status: 'RESCHEDULED' as const, closeAt: current.closeAt };
+        }
+        if (current.status !== 'FINALIZING') {
+            return { status: 'IGNORED' as const };
+        }
+
+        for (let retry = 0; retry <= AUCTION_FINALIZE_RECOVERY_LIMIT; retry += 1) {
+            const requestId = buildAuctionFinalizeRequestId(auctionId, current.closeAt, retry);
+            const command = { type: 'auctionFinalize' as const, requestId, auctionId };
+            const existing = await transaction.inputEvent.findUnique({
+                where: { requestId },
+                select: { target: true, eventType: true, payload: true, status: true, result: true },
+            });
+            if (!existing) {
+                await transaction.inputEvent.create({
+                    data: {
+                        requestId,
+                        target: 'ENGINE',
+                        eventType: command.type,
+                        payload: command,
+                    },
+                });
+                return { status: 'FINALIZING' as const };
+            }
+            if (!isMatchingAuctionFinalizeEvent(existing, command)) {
+                throw new Error(`Conflicting durable auction finalization event: ${requestId}`);
+            }
+            if (existing.status === 'PENDING' || existing.status === 'PROCESSING') {
+                return { status: 'FINALIZING' as const };
+            }
+            if (existing.status === 'SUCCEEDED' && isSuccessfulAuctionFinalizeResult(existing.result, auctionId)) {
+                throw new Error(`Auction remained FINALIZING after successful durable event: ${requestId}`);
+            }
+        }
+        throw new Error(`Auction finalization recovery exhausted: ${auctionId}`);
+    });
+
+    if (outcome.status === 'FINALIZING') {
         await redis.zAdd(historyKey, [{ score: nowMs, value: id }]);
-        await sendCommand({ type: 'auctionFinalize', auctionId });
         return 'FINALIZING';
     }
-
-    const current = await db.auction.findFirst({
-        where: { id: auctionId, status: 'OPEN' },
-        select: { closeAt: true },
-    });
-    if (!current) {
-        return 'IGNORED';
+    if (outcome.status === 'RESCHEDULED') {
+        await redis.zAdd(timerKey, [{ score: outcome.closeAt.getTime(), value: String(auctionId) }]);
+        return 'RESCHEDULED';
     }
-    await redis.zAdd(timerKey, [{ score: current.closeAt.getTime(), value: String(auctionId) }]);
-    return 'RESCHEDULED';
+    return 'IGNORED';
 };
 
-export const runAuctionWorker = async (): Promise<void> => {
+export interface AuctionWorkerOptions {
+    signal?: AbortSignal;
+}
+
+export const runAuctionWorker = async (options: AuctionWorkerOptions = {}): Promise<void> => {
     const config = resolveGameApiConfigFromEnv();
     const postgres = createGamePostgresConnector(resolvePostgresConfigFromEnv({ schema: config.profile }));
     const redis = createRedisConnector(resolveRedisConfigFromEnv());
@@ -102,54 +178,68 @@ export const runAuctionWorker = async (): Promise<void> => {
     await redis.connect();
 
     const keys = buildAuctionTimerKeys(config.profileName);
-    const daemonTransport = new RedisTurnDaemonTransport(redis.client, {
-        keys: buildTurnDaemonStreamKeys(config.profileName),
-        requestTimeoutMs: config.daemonRequestTimeoutMs,
-    });
-
-    const handleExit = async () => {
-        await redis.disconnect();
-        await postgres.disconnect();
-    };
-    process.on('SIGINT', handleExit);
-    process.on('SIGTERM', handleExit);
+    const control = createPollingWorkerControl(options.signal);
+    const closeResources = createBestEffortResourceCloser([
+        { name: 'auction-worker-redis', run: () => redis.disconnect() },
+        { name: 'auction-worker-postgres', run: () => postgres.disconnect() },
+    ]);
 
     let nextResyncAt = Date.now();
 
-    while (true) {
-        const nowMs = Date.now();
-        const historyTrimBefore = nowMs - config.auctionTimerRetentionSeconds * 1000;
-        if (historyTrimBefore > 0) {
-            await redis.client.zRemRangeByScore(keys.historyKey, 0, historyTrimBefore);
-        }
-        if (nowMs >= nextResyncAt) {
-            await seedAuctionTimers(postgres.prisma, redis.client, keys);
-            nextResyncAt = nowMs + config.auctionTimerResyncMs;
-        }
-
-        const dueIds = await popDueAuctionIds(redis.client, keys.timerKey, nowMs, 100);
-        if (dueIds.length > 0) {
-            for (const id of dueIds) {
-                await processDueAuctionId({
-                    db: postgres.prisma,
-                    redis: redis.client,
-                    timerKey: keys.timerKey,
-                    historyKey: keys.historyKey,
-                    id,
-                    nowMs,
-                    sendCommand: (command) => daemonTransport.sendCommand(command),
-                });
+    try {
+        while (!control.signal.aborted) {
+            const nowMs = Date.now();
+            const historyTrimBefore = nowMs - config.auctionTimerRetentionSeconds * 1000;
+            if (historyTrimBefore > 0) {
+                await redis.client.zRemRangeByScore(keys.historyKey, 0, historyTrimBefore);
             }
-            continue;
-        }
+            if (nowMs >= nextResyncAt) {
+                await seedAuctionTimers(postgres.prisma, redis.client, keys);
+                nextResyncAt = nowMs + config.auctionTimerResyncMs;
+            }
 
-        const nextDueMs = await getNextDueMs(redis.client, keys.timerKey);
-        if (nextDueMs === null) {
-            await sleepMs(config.auctionTimerPollMs);
-            continue;
-        }
+            const dueIds = await popDueAuctionIds(redis.client, keys.timerKey, nowMs, 100);
+            if (dueIds.length > 0) {
+                for (const id of dueIds) {
+                    try {
+                        await processDueAuctionId({
+                            db: postgres.prisma,
+                            redis: redis.client,
+                            timerKey: keys.timerKey,
+                            historyKey: keys.historyKey,
+                            id,
+                            nowMs,
+                        });
+                    } catch (error) {
+                        const message = error instanceof Error ? error.message : 'Unknown auction worker error';
+                        const trace = error instanceof Error ? error.stack : undefined;
+                        try {
+                            await postgres.prisma.errorLog.create({
+                                data: {
+                                    category: 'AUCTION',
+                                    source: 'auction-worker',
+                                    message,
+                                    trace,
+                                    context: { auctionId: id },
+                                },
+                            });
+                        } catch (logError) {
+                            console.error('[auction-worker] failed to record auction error', logError);
+                        }
+                    }
+                }
+                continue;
+            }
 
-        const waitMs = Math.max(0, Math.min(config.auctionTimerPollMs, nextDueMs - Date.now()));
-        await sleepMs(waitMs);
+            const nextDueMs = await getNextDueMs(redis.client, keys.timerKey);
+            const waitMs =
+                nextDueMs === null
+                    ? config.auctionTimerPollMs
+                    : Math.max(0, Math.min(config.auctionTimerPollMs, nextDueMs - Date.now()));
+            await waitForWorkerPoll(control.signal, waitMs);
+        }
+    } finally {
+        control.dispose();
+        await closeResources();
     }
 };
