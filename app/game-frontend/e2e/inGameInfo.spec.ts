@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 
 const response = (data: unknown) => ({ result: { data } });
 const artifactRoot = process.env.CITY_PARITY_ARTIFACT_DIR;
+const gameBasePath = `/${(process.env.PLAYWRIGHT_GAME_BASE_PATH ?? 'che').replace(/^\/+|\/+$/g, '')}`;
+const gameProfile = process.env.PLAYWRIGHT_GAME_PROFILE ?? `${gameBasePath.slice(1)}:default`;
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const imageRoots = [
     ...(process.env.FRONTEND_PARITY_IMAGE_ROOT ? [resolve(process.env.FRONTEND_PARITY_IMAGE_ROOT)] : []),
@@ -110,11 +112,11 @@ const emptyMessages = {
     canRespondDiplomacy: false,
 };
 
-const install = async (page: Page, mode: 'member' | 'wanderer' | 'admin' = 'member') => {
-    await page.addInitScript(() => {
+const install = async (page: Page, mode: 'member' | 'wanderer' | 'admin' = 'member', trade: number | null = 100) => {
+    await page.addInitScript((profile) => {
         localStorage.setItem('sammo-game-token', 'ga_info');
-        localStorage.setItem('sammo-game-profile', 'che:default');
-    });
+        localStorage.setItem('sammo-game-profile', profile);
+    }, gameProfile);
     await page.route('**/image/**', async (route) => {
         const relativePath = decodeURIComponent(new URL(route.request().url()).pathname.split('/image/')[1] ?? '');
         await route.fulfill({
@@ -123,8 +125,9 @@ const install = async (page: Page, mode: 'member' | 'wanderer' | 'admin' = 'memb
             body: await readImage(relativePath),
         });
     });
-    await page.route('**/che/api/trpc/**', async (route) => {
+    await page.route(`**${gameBasePath}/api/trpc/**`, async (route) => {
         const results = operationNames(route).map((operation) => {
+            if (operation === 'auth.status') return response({ ok: true });
             if (operation === 'lobby.info') return response({ myGeneral: { id: 1, name: '장수' } });
             if (operation === 'join.getConfig') return response({});
             if (operation === 'general.me') return response(generalContext);
@@ -135,8 +138,7 @@ const install = async (page: Page, mode: 'member' | 'wanderer' | 'admin' = 'memb
             }
             if (operation === 'messages.getRecent') return response(emptyMessages);
             if (operation === 'messages.getContacts') return response({ nation: [] });
-            if (operation === 'general.getRecentRecords')
-                return response({ global: [], general: [], history: [] });
+            if (operation === 'general.getRecentRecords') return response({ global: [], general: [], history: [] });
             if (operation === 'general.getFrontStatus')
                 return response({
                     onlineUserCount: 1,
@@ -260,7 +262,7 @@ const install = async (page: Page, mode: 'member' | 'wanderer' | 'admin' = 'memb
                         security: mode === 'wanderer' ? null : 1000,
                         securityMax: 10000,
                         trust: mode === 'wanderer' ? null : 80,
-                        trade: 100,
+                        trade,
                         defence: mode === 'wanderer' ? null : 5000,
                         defenceMax: 11700,
                         wall: mode === 'wanderer' ? null : 5000,
@@ -442,6 +444,15 @@ test('current-city exposes own general details to a member and admin fixture', a
     }
 });
 
+test('current-city renders a missing merchant rate with the legacy dash and percent text', async ({ page }) => {
+    await install(page, 'member', null);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await go(page, 'current-city');
+
+    const tradeValue = page.locator('.stats th').filter({ hasText: /^시세$/ }).locator('xpath=following-sibling::td[1]');
+    await expect(tradeValue).toHaveText('- %');
+});
+
 test('a Chromium map click opens the clicked city route and keeps the legacy pointer interaction', async ({ page }) => {
     await install(page);
     await page.setViewportSize({ width: 1200, height: 900 });
@@ -451,6 +462,8 @@ test('a Chromium map click opens the clicked city route and keeps the legacy poi
     await cityLink.hover();
     await expect(cityLink).toHaveCSS('cursor', 'pointer');
     await cityLink.click();
-    await expect(page).toHaveURL(/\/che\/current-city\?cityId=1$/);
+    await expect(page).toHaveURL(
+        (url) => url.pathname === `${gameBasePath}/current-city` && url.searchParams.get('cityId') === '1'
+    );
     await expect(page.locator('.stats')).toContainText('업');
 });
