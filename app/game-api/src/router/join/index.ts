@@ -20,6 +20,7 @@ import {
     RejectedNpcPossessionCommandError,
 } from '../../daemon/databaseTransport.js';
 import { NpcPossessionError, reserveNpcPossessionCandidates } from '@sammo-ts/game-engine';
+import { resolveNationScoutMessage } from '../nation/shared.js';
 
 const resolveSelectionCommandResult = (
     result: Awaited<ReturnType<GameApiContext['turnDaemon']['requestCommand']>> | null,
@@ -302,7 +303,7 @@ export const joinRouter = router({
                 id: nation.id,
                 name: nation.name,
                 color: nation.color,
-                scoutMessage: typeof meta.infoText === 'string' ? meta.infoText : null,
+                scoutMessage: resolveNationScoutMessage(meta) || null,
             };
         });
 

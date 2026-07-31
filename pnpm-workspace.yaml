@@ -4,6 +4,7 @@ packages:
   - tools/*
 
 overrides:
+  postcss: 8.5.19
   typescript: 6.0.2
 
 allowBuilds:

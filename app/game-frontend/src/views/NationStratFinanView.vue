@@ -63,15 +63,21 @@ const resolveDiplomacyEnd = (term: number | null): string => {
 const formatDiplomacyTerm = (term: number | null): string => (term ? `${term}개월` : '-');
 const diplomacyInfo = (nation: NationEntry) => resolveDiplomacyInfo(nation.diplomacy.state);
 
-const mutation = async (action: () => Promise<unknown>, message: string, rollback?: () => void) => {
+const mutation = async <T,>(
+    action: () => Promise<T>,
+    message: string,
+    rollback?: () => void
+): Promise<T | undefined> => {
     error.value = null;
     status.value = null;
     try {
-        await action();
+        const result = await action();
         status.value = message;
+        return result;
     } catch (err) {
         rollback?.();
         error.value = resolveErrorMessage(err);
+        return undefined;
     }
 };
 
@@ -85,9 +91,13 @@ const rollbackNationMsg = () => {
     editingNationMsg.value = false;
 };
 const saveNationMsg = async () => {
-    await mutation(() => trpc.nation.setNotice.mutate({ msg: nationMsgDraft.value }), '국가 방침을 변경했습니다.');
-    if (!error.value) {
-        nationMsg.value = nationMsgDraft.value;
+    const result = await mutation(
+        () => trpc.nation.setNotice.mutate({ msg: nationMsgDraft.value }),
+        '국가 방침을 변경했습니다.'
+    );
+    if (result) {
+        nationMsg.value = result.msg;
+        nationMsgDraft.value = result.msg;
         editingNationMsg.value = false;
     }
 };
@@ -101,9 +111,13 @@ const rollbackScoutMsg = () => {
     editingScoutMsg.value = false;
 };
 const saveScoutMsg = async () => {
-    await mutation(() => trpc.nation.setScoutMsg.mutate({ msg: scoutMsgDraft.value }), '임관 권유문을 변경했습니다.');
-    if (!error.value) {
-        scoutMsg.value = scoutMsgDraft.value;
+    const result = await mutation(
+        () => trpc.nation.setScoutMsg.mutate({ msg: scoutMsgDraft.value }),
+        '임관 권유문을 변경했습니다.'
+    );
+    if (result) {
+        scoutMsg.value = result.msg;
+        scoutMsgDraft.value = result.msg;
         editingScoutMsg.value = false;
     }
 };

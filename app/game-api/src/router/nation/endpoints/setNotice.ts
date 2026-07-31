@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { asRecord } from '@sammo-ts/common';
 
+import { purifyNationHtml } from '../../../security/nationHtml.js';
 import { authedProcedure } from '../../../trpc.js';
 import { getMyGeneral } from '../../shared/general.js';
 import { assertNationAccess, assertNationEditable, updateNationMeta } from '../shared.js';
@@ -10,7 +11,7 @@ import { assertNationAccess, assertNationEditable, updateNationMeta } from '../s
 export const setNotice = authedProcedure
     .input(
         z.object({
-            msg: z.string().max(16384),
+            msg: z.string().min(1).max(16384),
         })
     )
     .mutation(async ({ ctx, input }) => {
@@ -25,13 +26,14 @@ export const setNotice = authedProcedure
         }
         assertNationEditable(me, nation.meta);
         const nationMeta = asRecord(nation.meta);
+        const msg = purifyNationHtml(input.msg);
         await updateNationMeta(
             ctx,
             me.nationId,
             {
-                notice: input.msg,
+                notice: msg,
             },
             nationMeta
         );
-        return { ok: true };
+        return { ok: true, msg };
     });

@@ -27,6 +27,7 @@ import {
 } from '@sammo-ts/logic';
 
 import type { GameApiContext, InputJsonValue, WorldStateRow } from '../../context.js';
+import { purifyNationHtml } from '../../security/nationHtml.js';
 import { resolveSecretPermission } from '../shared/secretPermission.js';
 
 export type PermissionKind = 'normal' | 'ambassador' | 'auditor';
@@ -268,10 +269,10 @@ export const resolveNationBlockScout = (meta: Record<string, unknown>): boolean 
     readMetaBool(meta, 'scout', readMetaBool(meta, 'blockScout', false));
 
 export const resolveNationNotice = (meta: Record<string, unknown>): string =>
-    typeof meta.notice === 'string' ? meta.notice : '';
+    purifyNationHtml(typeof meta.notice === 'string' ? meta.notice : '');
 
 export const resolveNationScoutMessage = (meta: Record<string, unknown>): string =>
-    typeof meta.infoText === 'string' ? meta.infoText : '';
+    purifyNationHtml(typeof meta.infoText === 'string' ? meta.infoText : '');
 
 export const resolveWarSettingRemain = (meta: Record<string, unknown>): number => {
     const legacy = readMetaNumber(meta, 'available_war_setting_cnt', -1);

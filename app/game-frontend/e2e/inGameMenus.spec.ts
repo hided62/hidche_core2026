@@ -32,6 +32,7 @@ type FixtureState = {
     dieOnPrestartInputs?: Array<Record<string, unknown>>;
     generalMeQueries?: number;
     generalLogQueries?: number;
+    nationNoticeInput?: string;
     settingMutations: Array<Record<string, unknown>>;
     accessPages: string[];
 };
@@ -170,6 +171,15 @@ const install = async (page: Page, state: FixtureState) => {
                     available: false,
                     availableAt: state.dieOnPrestartAvailableAt ?? null,
                 });
+            if (operation === 'general.getFrontStatus')
+                return response({
+                    onlineUserCount: 1,
+                    onlineNations: '【위】',
+                    onlineGenerals: '검증장수',
+                    nationNotice: state.nationNoticeInput ?? '',
+                    lastExecuted: '2026-01-01T00:00:00.000Z',
+                    latestVote: null,
+                });
             if (operation === 'world.getState')
                 return response({
                     currentYear: 185,
@@ -190,6 +200,36 @@ const install = async (page: Page, state: FixtureState) => {
                         autorun_user: {},
                     },
                 });
+            if (operation === 'world.getMapLayout')
+                return response({ mapName: 'che', cityList: [], regionMap: {}, levelMap: {} });
+            if (operation === 'world.getMap')
+                return response({
+                    year: 185,
+                    month: 1,
+                    startYear: 180,
+                    cityList: [],
+                    nationList: [],
+                    myCity: 1,
+                    myNation: 1,
+                });
+            if (operation === 'turns.getCommandTable') return response({ general: [], nation: [] });
+            if (operation === 'turns.reserved.getGeneral' || operation === 'turns.reserved.getNation')
+                return response({ turns: [], revision: 0 });
+            if (operation === 'messages.getRecent')
+                return response({
+                    private: [],
+                    national: [],
+                    public: [],
+                    diplomacy: [],
+                    sequence: -1,
+                    hasMore: { private: false, national: false, public: false, diplomacy: false },
+                    latestRead: { private: 0, national: 0, public: 0, diplomacy: 0 },
+                    canRespondDiplomacy: false,
+                });
+            if (operation === 'messages.getContacts') return response({ nation: [] });
+            if (operation === 'general.getRecentRecords') return response({ global: [], general: [], history: [] });
+            if (operation === 'board.getAccess') return response({ permission: 4, canMeeting: true, canSecret: true });
+            if (operation === 'tournament.getState') return response({ stage: 0 });
             if (operation === 'public.getTraffic')
                 return response({
                     history: [
@@ -272,6 +312,32 @@ const install = async (page: Page, state: FixtureState) => {
         });
     });
 };
+
+test('정화된 국가 방침은 실행 가능한 속성 없이 Chromium에 표시된다', async ({ page }) => {
+    const state: FixtureState = {
+        permission: 'head',
+        myset: 0,
+        nationNoticeInput: [
+            '<p data-flip="horizontal" style="color:#00ffff">안전한 방침</p>',
+            '<img src="/image/icons/default.jpg" />',
+            '<a>위험 링크</a>',
+        ].join(''),
+        settingMutations: [],
+        accessPages: [],
+    };
+    await install(page, state);
+
+    await page.goto('');
+
+    const notice = page.locator('.nation-notice-body');
+    await expect(notice).toContainText('안전한 방침');
+    await expect(notice.locator('[data-flip="horizontal"]')).toHaveCSS('color', 'rgb(0, 255, 255)');
+    await expect(notice.locator('script, svg, [onerror], [onload], [onclick]')).toHaveCount(0);
+    await expect(notice.locator('a', { hasText: '위험 링크' })).not.toHaveAttribute('href');
+    await expect
+        .poll(() => page.evaluate(() => (globalThis as typeof globalThis & { __nationXss?: number }).__nationXss))
+        .toBeUndefined();
+});
 
 test('접속량정보 keeps the legacy public 1016px chart geometry', async ({ page }) => {
     const state: FixtureState = { permission: 'member', myset: 0, settingMutations: [], accessPages: [] };
