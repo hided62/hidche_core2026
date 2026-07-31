@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { generateKeyPairSync } from 'node:crypto';
 
 import { canonicalFrontendFixture as fixture } from './fixtures/canonical';
+import { gameOrigin, gameUrl, gatewayUrl } from './testUrls.js';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const imageRoots = [
@@ -328,7 +329,7 @@ test.describe('gateway legacy parity', () => {
             const mapImage = page.waitForResponse((response) =>
                 response.url().endsWith('/image/game/map/che/bg_fall.jpg')
             );
-            await page.goto('http://127.0.0.1:15100/gateway/');
+            await page.goto(gatewayUrl());
             expect((await mapImage).ok()).toBe(true);
             await expect(page.locator('#login_card')).toBeVisible();
             await expect(page.locator('.map-preview-body')).toBeVisible();
@@ -381,7 +382,7 @@ test.describe('gateway legacy parity', () => {
     }
 
     test('submits the real login mutation and stores the session', async ({ page }) => {
-        await page.goto('http://127.0.0.1:15100/gateway/');
+        await page.goto(gatewayUrl());
         await page.locator('#username').fill('visual-user');
         await page.locator('#password').fill('visual-password');
         await page.locator('.login-button').click();
@@ -395,7 +396,7 @@ test.describe('gateway legacy parity', () => {
         await page.addInitScript((token) => {
             window.localStorage.setItem('sammo-session-token', token);
         }, fixture.gateway.sessionToken);
-        await page.goto('http://127.0.0.1:15100/gateway/account');
+        await page.goto(gatewayUrl('/account'));
         await expect(page.getByText('시각검증')).toBeVisible();
         if (artifactRoot) {
             await page.screenshot({
@@ -447,7 +448,7 @@ test.describe('gateway legacy parity', () => {
             }
             await route.fallback();
         });
-        await page.goto('http://127.0.0.1:15100/gateway/account');
+        await page.goto(gatewayUrl('/account'));
         await page.locator('#current-password').fill('wrong-password');
         await page.locator('#new-password').fill('next-password');
         await page.locator('#confirm-password').fill('next-password');
@@ -457,7 +458,7 @@ test.describe('gateway legacy parity', () => {
     });
 
     test('completes the OAuth registration page and stores the session', async ({ page }) => {
-        await page.goto('http://127.0.0.1:15100/gateway/oauth/callback?code=visual-code&state=visual-state');
+        await page.goto(gatewayUrl('/oauth/callback?code=visual-code&state=visual-state'));
         await expect(page.getByLabel('카카오 이메일')).toHaveValue('visual@example.test');
         await expect(page.getByRole('link', { name: '내용 확인' }).first()).toHaveAttribute(
             'href',
@@ -510,7 +511,7 @@ test.describe('gateway legacy parity', () => {
             }
             await route.fallback();
         });
-        await page.goto('http://127.0.0.1:15100/gateway/oauth/callback?code=visual-code&state=visual-state');
+        await page.goto(gatewayUrl('/oauth/callback?code=visual-code&state=visual-state'));
         await page.locator('#oauth-username').fill('duplicate-user');
         await page.locator('#oauth-password').fill('visual-password');
         await page.locator('#oauth-confirm').fill('visual-password');
@@ -528,7 +529,7 @@ test.describe('gateway legacy parity', () => {
     ]) {
         test(`renders the local signup form at ref-compatible geometry on ${viewport.name}`, async ({ page }) => {
             await page.setViewportSize(viewport);
-            await page.goto('http://127.0.0.1:15100/gateway/signup');
+            await page.goto(gatewayUrl('/signup'));
             await expect(page.getByRole('heading', { name: '회원가입' })).toBeVisible();
             await expect(page.locator('iframe[title="이용 약관"]')).toBeVisible();
             await expect(page.locator('iframe[title="개인정보 제공 및 이용 동의"]')).toBeVisible();
@@ -566,7 +567,7 @@ test.describe('gateway legacy parity', () => {
             }
             await route.fallback();
         });
-        await page.goto('http://127.0.0.1:15100/gateway/signup');
+        await page.goto(gatewayUrl('/signup'));
         await page.locator('#signup-username').fill('VISUAL-LOCAL');
         await page.locator('#signup-password').fill('visual-password');
         await page.locator('#signup-confirm-password').fill('visual-password');
@@ -618,7 +619,7 @@ test.describe('gateway legacy parity', () => {
             }
             await route.fallback();
         });
-        await page.goto('http://127.0.0.1:15100/gateway/signup');
+        await page.goto(gatewayUrl('/signup'));
         await page.locator('#signup-username').fill('duplicate-local');
         await page.locator('#signup-password').fill('visual-password');
         await page.locator('#signup-confirm-password').fill('visual-password');
@@ -646,7 +647,7 @@ test.describe('best general legacy parity', () => {
     ]) {
         test(`matches the ref fixed ranking grid on ${viewport.name}`, async ({ page }) => {
             await page.setViewportSize(viewport);
-            await page.goto('http://127.0.0.1:15102/che/best-general');
+            await page.goto(gameUrl('/best-general'));
             await expect(page.getByText('유비').first()).toBeVisible();
             await expect(page.locator('.rankView')).toHaveCount(3);
             if (artifactRoot) {
@@ -711,6 +712,24 @@ test.describe('best general legacy parity', () => {
             expect(geometry.image.naturalWidth).toBeGreaterThan(0);
 
             const npcButton = page.getByRole('button', { name: 'NPC 보기' });
+            const npcButtonBox = await npcButton.boundingBox();
+            expect(npcButtonBox).not.toBeNull();
+            await page.mouse.move(
+                npcButtonBox!.x + npcButtonBox!.width / 2,
+                npcButtonBox!.y + npcButtonBox!.height / 2
+            );
+            await page.mouse.down();
+            await expect(npcButton).toHaveCSS('background-color', 'rgb(107, 107, 107)');
+            if (artifactRoot) {
+                await npcButton.screenshot({
+                    path: resolve(artifactRoot, `best-general-active-${viewport.name}.png`),
+                    animations: 'disabled',
+                });
+            }
+            await page.mouse.up();
+            await npcButton.evaluate((element) => element.blur());
+            await page.mouse.move(0, 0);
+            await expect(npcButton).toHaveCSS('background-color', 'rgb(55, 90, 127)');
             await npcButton.hover();
             await expect(npcButton).toHaveCSS('background-color', 'rgb(107, 107, 107)');
             await npcButton.focus();
@@ -725,7 +744,7 @@ test.describe('best general legacy parity', () => {
     }
 
     test('keeps the current ranking and selected user type after an API error', async ({ page }) => {
-        await page.goto('http://127.0.0.1:15102/che/best-general');
+        await page.goto(gameUrl('/best-general'));
         await expect(page.getByText('유비').first()).toBeVisible();
         await page.route('**/che/api/trpc/**', async (route) => {
             if (operationNames(route).includes('ranking.getBestGeneral')) {
@@ -759,7 +778,7 @@ test.describe('hall of fame legacy parity', () => {
     ]) {
         test(`matches the ref fixed grid on ${viewport.name}`, async ({ page }) => {
             await page.setViewportSize(viewport);
-            await page.goto('http://127.0.0.1:15102/che/hall-of-fame');
+            await page.goto(gameUrl('/hall-of-fame'));
             await expect(page.getByText('유비')).toBeVisible();
             await expect.poll(() => hallCalls.options).toBe(1);
             await expect.poll(() => hallCalls.hallInputs.length).toBe(1);
@@ -836,7 +855,7 @@ test.describe('hall of fame legacy parity', () => {
     }
 
     test('keeps the selected scenario after a hall API error', async ({ page }) => {
-        await page.goto('http://127.0.0.1:15102/che/hall-of-fame');
+        await page.goto(gameUrl('/hall-of-fame'));
         await expect(page.getByText('유비')).toBeVisible();
         let failedHallRequests = 0;
         await page.route('**/che/api/trpc/**', async (route) => {
@@ -863,13 +882,13 @@ test.describe('hall of fame legacy parity', () => {
 });
 
 test('game login delegates to the gateway like the ref entry point', async ({ page }) => {
-    await page.goto('http://127.0.0.1:15102/che/login');
-    await expect(page).toHaveURL('http://127.0.0.1:15102/gateway/');
+    await page.goto(gameUrl('/login'));
+    await expect(page).toHaveURL(`${gameOrigin}/gateway/`);
 });
 
 test('canonical logged-in fixture passes the game route guard', async ({ page }) => {
     await installAuthenticatedGameFixture(page);
-    await page.goto('http://127.0.0.1:15102/che/troop');
+    await page.goto(gameUrl('/troop'));
     await expect(page).toHaveURL(/\/che\/troop$/);
     await expect(page.getByText('부대 편성')).toBeVisible();
 });
@@ -885,7 +904,7 @@ test.describe('yearbook legacy parity', () => {
     ]) {
         test(`renders the ref yearbook grid on ${viewport.name}`, async ({ page }) => {
             await page.setViewportSize(viewport);
-            await page.goto('http://127.0.0.1:15102/che/yearbook');
+            await page.goto(gameUrl('/yearbook'));
             await expect(page.getByText('한이 낙양을 지키고 있습니다.')).toBeVisible();
             if (artifactRoot) {
                 await page.screenshot({
@@ -939,7 +958,7 @@ test.describe('yearbook legacy parity', () => {
             }
             await route.fallback();
         });
-        await page.goto('http://127.0.0.1:15102/che/yearbook');
+        await page.goto(gameUrl('/yearbook'));
         await expect(page.getByRole('alert')).toBeVisible();
         await expect(page.getByLabel('연월 선택')).toBeVisible();
     });
@@ -956,7 +975,7 @@ test.describe('survey legacy parity', () => {
     ]) {
         test(`renders the ref vote tables on ${viewport.name}`, async ({ page }) => {
             await page.setViewportSize(viewport);
-            await page.goto('http://127.0.0.1:15102/che/survey');
+            await page.goto(gameUrl('/survey'));
             await expect(page.getByText('설문 조사(90금과 추첨으로 유니크템 증정!)')).toBeVisible();
             await expect(page.getByText('기병이 좋습니다.')).toBeVisible();
             await expect(page.locator('#vote-new-panel')).toHaveCount(0);
@@ -1015,7 +1034,7 @@ test.describe('survey legacy parity', () => {
     }
 
     test('submits a vote and comment through the real screen controls', async ({ page }) => {
-        await page.goto('http://127.0.0.1:15102/che/survey');
+        await page.goto(gameUrl('/survey'));
         await page.getByRole('button', { name: '투표', exact: true }).click();
         await expect(page.getByRole('status')).toHaveText('설문을 마쳤습니다.');
         await expect(page.getByText('결산', { exact: true })).toBeVisible();
@@ -1037,7 +1056,7 @@ test.describe('survey legacy parity', () => {
             }
             await route.fallback();
         });
-        await page.goto('http://127.0.0.1:15102/che/survey');
+        await page.goto(gameUrl('/survey'));
         const secondOption = page.locator('#v-vote-1');
         await secondOption.check();
         await page.getByRole('button', { name: '투표', exact: true }).click();

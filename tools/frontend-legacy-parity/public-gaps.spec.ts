@@ -2,6 +2,7 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gameUrl } from './testUrls.js';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const imageRoots = [resolve(repositoryRoot, '../image/game'), resolve(repositoryRoot, '../../image/game')];
@@ -204,7 +205,7 @@ const installNpcFixture = async (page: Page) => {
 test('nation betting matches the legacy desktop geometry and preserves a failed form', async ({ page }) => {
     await installBettingFixture(page);
     await page.setViewportSize({ width: 1280, height: 900 });
-    await page.goto('http://127.0.0.1:15102/che/nation-betting');
+    await page.goto(gameUrl('/nation-betting'));
     await expect(page.getByRole('button', { name: /천통국 예상/ })).toBeVisible();
     await page.getByRole('button', { name: /천통국 예상/ }).click();
     await expect(page.locator('.betting-candidate')).toHaveCount(6);
@@ -315,7 +316,7 @@ test('nation betting matches the legacy desktop geometry and preserves a failed 
 test('nation betting keeps the legacy 500px three-column mobile contract', async ({ page }) => {
     await installBettingFixture(page);
     await page.setViewportSize({ width: 500, height: 900 });
-    await page.goto('http://127.0.0.1:15102/che/nation-betting');
+    await page.goto(gameUrl('/nation-betting'));
     await page.getByRole('button', { name: /천통국 예상/ }).click();
     await expect(page.locator('.betting-candidate')).toHaveCount(6);
 
@@ -345,7 +346,7 @@ test('nation betting keeps the legacy 500px three-column mobile contract', async
 test('NPC list matches the legacy table geometry, sorting and error retention', async ({ page }) => {
     await installNpcFixture(page);
     await page.setViewportSize({ width: 1024, height: 800 });
-    await page.goto('http://127.0.0.1:15102/che/npc-list');
+    await page.goto(gameUrl('/npc-list'));
     await expect(page.locator('.npc-table tbody tr')).toHaveCount(2);
 
     const geometry = await page.locator('#npc-list-container').evaluate((container) => {

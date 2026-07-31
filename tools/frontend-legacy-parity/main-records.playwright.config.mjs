@@ -4,8 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig, devices } from '@playwright/test';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const frontendPort = 15112;
-const apiPort = 15113;
+const frontendPort = Number(process.env.FRONTEND_PARITY_LIVE_FRONTEND_PORT ?? 15112);
+const apiPort = Number(process.env.FRONTEND_PARITY_LIVE_API_PORT ?? 15113);
 
 export default defineConfig({
     testDir: '.',
@@ -15,7 +15,7 @@ export default defineConfig({
     timeout: 60_000,
     expect: { timeout: 10_000 },
     reporter: [['list']],
-    outputDir: resolve(repositoryRoot, 'test-results/main-records-live'),
+    outputDir: process.env.SAMMO_TEST_OUTPUT_DIR ?? resolve(repositoryRoot, 'test-results/main-records-live'),
     use: {
         ...devices['Desktop Chrome'],
         baseURL: `http://127.0.0.1:${frontendPort}/che/`,

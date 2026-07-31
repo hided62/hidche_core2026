@@ -4,6 +4,7 @@ import { dirname, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { canonicalFrontendFixture as fixture } from './fixtures/canonical';
+import { gameUrl, gatewayUrl } from './testUrls.js';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const imageRoots = [resolve(repositoryRoot, '../image'), resolve(repositoryRoot, '../../image')];
@@ -211,7 +212,7 @@ const installMainFixture = async (page: Page, failRecords = false) => {
 test('shows the representative cached map and cached history before login', async ({ page }) => {
     await installGatewayMapFixture(page);
     await page.setViewportSize({ width: 1280, height: 900 });
-    await page.goto('http://127.0.0.1:15100/gateway/');
+    await page.goto(gatewayUrl());
 
     await expect(page.locator('.map-preview-body')).toBeVisible();
     await expect(page.locator('.status-history')).toContainText('유비가 촉을 건국하였습니다.');
@@ -237,7 +238,7 @@ test('shows the representative cached map and cached history before login', asyn
 test('shows the current in-game map and all three recent record streams', async ({ page }) => {
     await installMainFixture(page);
     await page.setViewportSize({ width: 1440, height: 1000 });
-    await page.goto('http://127.0.0.1:15102/che/');
+    await page.goto(gameUrl());
 
     await expect(page.locator('.map-area')).toBeVisible();
     await expect(page.getByText('관우가 장수 동향을 남겼습니다.')).toBeVisible();
@@ -267,7 +268,7 @@ test('shows the current in-game map and all three recent record streams', async 
 test('keeps the current map visible when the recent record request fails', async ({ page }) => {
     await installMainFixture(page, true);
     await page.setViewportSize({ width: 1440, height: 1000 });
-    await page.goto('http://127.0.0.1:15102/che/');
+    await page.goto(gameUrl());
 
     await expect(page.locator('.map-area')).toBeVisible();
     await expect(page.getByRole('alert').first()).toContainText('동향 정보를 불러오지 못했습니다.');
@@ -277,7 +278,7 @@ test('keeps the current map visible when the recent record request fails', async
 test('shows map and trend tabs in the mobile in-game layout', async ({ page }) => {
     await installMainFixture(page);
     await page.setViewportSize({ width: 500, height: 900 });
-    await page.goto('http://127.0.0.1:15102/che/');
+    await page.goto(gameUrl());
 
     await expect(page.locator('.map-area')).toBeVisible();
     const mapGeometry = await page.locator('.map-area').evaluate((element) => {

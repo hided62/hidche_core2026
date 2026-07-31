@@ -4,8 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig, devices } from '@playwright/test';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const frontendPort = 15112;
-const apiPort = 15113;
+const frontendPort = Number(process.env.FRONTEND_PARITY_LIVE_FRONTEND_PORT ?? 15112);
+const apiPort = Number(process.env.FRONTEND_PARITY_LIVE_API_PORT ?? 15113);
 
 export default defineConfig({
     testDir: '.',
