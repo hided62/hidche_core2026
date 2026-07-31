@@ -259,6 +259,7 @@ const installAuthenticatedGameFixture = async (page: Page): Promise<void> => {
     );
     await page.route('**/che/api/trpc/**', async (route) => {
         await fulfillOperations(route, (operation) => {
+            if (operation === 'auth.status') return { userId: 'frontend-legacy-fixture-user' };
             if (operation === 'lobby.info') {
                 return { ...fixture.game.lobby, myGeneral: fixture.game.session.general };
             }

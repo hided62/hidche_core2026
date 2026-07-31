@@ -17,6 +17,7 @@ const profile: GameProfile = {
 };
 
 const archiveServerId = 'hwe_260725_archive';
+const currentServerId = 'che_260731_runtime';
 const archiveRows = [
     {
         id: 1,
@@ -44,6 +45,19 @@ const archiveRows = [
         hash: 'archive-2',
         createdAt: new Date('2026-07-25T01:00:00.000Z'),
     },
+    {
+        id: 3,
+        profileName: currentServerId,
+        sourceId: 0,
+        year: 219,
+        month: 12,
+        map: { year: 219, month: 12, startYear: 190, cityList: [], nationList: [] },
+        nations: [{ id: 1, name: '현재기수국', color: '#00FF00', level: 7, power: 1300, cities: ['낙양'] }],
+        globalHistory: ['저장된 현재 기수 과거 기록'],
+        globalAction: ['저장된 현재 기수 과거 행동'],
+        hash: 'current-archive',
+        createdAt: new Date('2026-07-31T00:00:00.000Z'),
+    },
 ];
 
 const authFor = (userId: string): GameSessionTokenPayload => ({
@@ -68,7 +82,7 @@ const buildContext = (auth: GameSessionTokenPayload | null, options: { hasGenera
                 options.hasGeneral === false ? null : { id: where.userId === 'owner-a' ? 1 : 2, userId: where.userId },
         },
         worldState: {
-            findFirst: async () => ({ currentYear: 220, currentMonth: 1 }),
+            findFirst: async () => ({ currentYear: 220, currentMonth: 1, meta: { serverId: currentServerId } }),
         },
         yearbookHistory: {
             findFirst: async (args: {
@@ -163,6 +177,42 @@ describe('historical yearbook access from dynasty', () => {
         await expect(caller.yearbook.getRange({ serverID: 'missing-server' })).rejects.toMatchObject({
             code: 'NOT_FOUND',
             message: '연감 범위를 찾을 수 없습니다.',
+        });
+    });
+
+    it('treats the canonical server ID and profile alias as the same live generation', async () => {
+        const caller = appRouter.createCaller(buildContext(authFor('owner-a')));
+
+        const [canonical, alias, omitted] = await Promise.all([
+            caller.yearbook.getRange({ serverID: currentServerId }),
+            caller.yearbook.getRange({ serverID: profile.name }),
+            caller.yearbook.getRange(),
+        ]);
+
+        expect(canonical).toEqual(alias);
+        expect(alias).toEqual(omitted);
+        expect(canonical).toEqual({
+            firstYearMonth: 219 * 12 + 11,
+            lastYearMonth: 219 * 12 + 11,
+            currentYearMonth: 220 * 12,
+        });
+    });
+
+    it('uses stored logs for a past month of the current generation', async () => {
+        const caller = appRouter.createCaller(buildContext(authFor('owner-a')));
+
+        const result = await caller.yearbook.getHistory({
+            serverID: currentServerId,
+            year: 219,
+            month: 12,
+        });
+
+        expect(result).toMatchObject({
+            notModified: false,
+            data: {
+                globalHistory: ['저장된 현재 기수 과거 기록'],
+                globalAction: ['저장된 현재 기수 과거 행동'],
+            },
         });
     });
 });
