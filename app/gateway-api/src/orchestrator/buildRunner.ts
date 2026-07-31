@@ -17,6 +17,11 @@ export interface BuildRunner {
     run(commands: BuildCommand[]): Promise<BuildResult>;
 }
 
+export const MAX_BUILD_OUTPUT_CHARS = 64 * 1024;
+
+const appendOutputTail = (current: string, chunk: unknown): string =>
+    `${current}${String(chunk)}`.slice(-MAX_BUILD_OUTPUT_CHARS);
+
 const runCommand = (command: BuildCommand): Promise<BuildResult> =>
     new Promise((resolve) => {
         const child = spawn(command.command, command.args, {
@@ -26,10 +31,17 @@ const runCommand = (command: BuildCommand): Promise<BuildResult> =>
         });
         let output = '';
         child.stdout.on('data', (chunk) => {
-            output += chunk.toString();
+            output = appendOutputTail(output, chunk);
         });
         child.stderr.on('data', (chunk) => {
-            output += chunk.toString();
+            output = appendOutputTail(output, chunk);
+        });
+        child.on('error', (error) => {
+            resolve({
+                ok: false,
+                exitCode: null,
+                output: appendOutputTail(output, error.message),
+            });
         });
         child.on('close', (code) => {
             resolve({
@@ -45,7 +57,7 @@ export class PnpmBuildRunner implements BuildRunner {
         let mergedOutput = '';
         for (const command of commands) {
             const result = await runCommand(command);
-            mergedOutput += result.output;
+            mergedOutput = appendOutputTail(mergedOutput, result.output);
             if (!result.ok) {
                 return {
                     ok: false,

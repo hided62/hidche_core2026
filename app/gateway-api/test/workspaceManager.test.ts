@@ -85,4 +85,65 @@ describe('GitWorkspaceManager source resolution', () => {
         await expect(manager.resolveCommit('BRANCH', '--upload-pack=bad')).rejects.toThrow('Invalid git ref');
         await expect(manager.resolveCommit('COMMIT', 'HEAD..main')).rejects.toThrow('Invalid git ref');
     });
+
+    it('reuses only a clean registered worktree at the requested commit', async () => {
+        const fixture = createRepositoryFixture();
+        const manager = new GitWorkspaceManager({
+            repoRoot: fixture.checkout,
+            worktreeRoot: fixture.worktrees,
+        });
+
+        const created = await manager.prepare(fixture.firstCommit);
+        expect(created.created).toBe(true);
+        const reused = await manager.prepare(fixture.firstCommit);
+        expect(reused).toMatchObject({ root: created.root, created: false });
+
+        fs.writeFileSync(path.join(created.root, 'untracked.txt'), 'dirty\n');
+        await expect(manager.prepare(fixture.firstCommit)).rejects.toThrow('uncommitted changes');
+    });
+
+    it('rejects an unregistered directory that occupies a commit workspace path', async () => {
+        const fixture = createRepositoryFixture();
+        const manager = new GitWorkspaceManager({
+            repoRoot: fixture.checkout,
+            worktreeRoot: fixture.worktrees,
+        });
+        const occupied = path.join(fixture.worktrees, fixture.firstCommit);
+        fs.mkdirSync(occupied, { recursive: true });
+
+        await expect(manager.prepare(fixture.firstCommit)).rejects.toThrow('not registered as a git worktree');
+    });
+
+    it('removes only registered direct commit workspaces and never the root or sibling prefixes', async () => {
+        const fixture = createRepositoryFixture();
+        const manager = new GitWorkspaceManager({
+            repoRoot: fixture.checkout,
+            worktreeRoot: fixture.worktrees,
+        });
+        const workspace = await manager.prepare(fixture.firstCommit);
+        const siblingPrefix = `${fixture.worktrees}-outside`;
+        fs.mkdirSync(siblingPrefix, { recursive: true });
+
+        await expect(manager.remove(fixture.worktrees)).rejects.toThrow('must be a child');
+        await expect(manager.remove(path.join(siblingPrefix, fixture.firstCommit))).rejects.toThrow('must be a child');
+        expect(fs.existsSync(siblingPrefix)).toBe(true);
+        await expect(manager.remove(workspace.root)).resolves.toBe(true);
+        expect(fs.existsSync(workspace.root)).toBe(false);
+    });
+
+    it('rejects deletion of unregistered and nested paths under the worktree root', async () => {
+        const fixture = createRepositoryFixture();
+        const manager = new GitWorkspaceManager({
+            repoRoot: fixture.checkout,
+            worktreeRoot: fixture.worktrees,
+        });
+        const unregistered = path.join(fixture.worktrees, fixture.firstCommit);
+        fs.mkdirSync(unregistered, { recursive: true });
+
+        await expect(manager.remove(unregistered)).rejects.toThrow('not registered as a git worktree');
+        await expect(manager.remove(path.join(unregistered, 'nested'))).rejects.toThrow(
+            'not a managed commit workspace'
+        );
+        expect(fs.existsSync(unregistered)).toBe(true);
+    });
 });
