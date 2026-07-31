@@ -96,6 +96,13 @@ const operationName = (route: Route): string => {
     const url = new URL(route.request().url());
     return decodeURIComponent(url.pathname.slice(url.pathname.lastIndexOf('/trpc/') + 6));
 };
+const responseHasOperation = (url: string, operation: string): boolean => {
+    const pathname = decodeURIComponent(new URL(url).pathname);
+    return pathname
+        .slice(pathname.lastIndexOf('/trpc/') + 6)
+        .split(',')
+        .includes(operation);
+};
 
 const fulfillJson = async (route: Route, body: unknown) => {
     await route.fulfill({
@@ -106,7 +113,7 @@ const fulfillJson = async (route: Route, body: unknown) => {
 };
 
 const gotoTroop = async (page: Page) => {
-    const lobbyResponse = page.waitForResponse((response) => response.url().includes('/trpc/lobby.info'));
+    const lobbyResponse = page.waitForResponse((response) => responseHasOperation(response.url(), 'lobby.info'));
     await page.goto('troop');
     await lobbyResponse;
 };
