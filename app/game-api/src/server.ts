@@ -196,6 +196,7 @@ export const createGameApiServer = async () => {
                     uploadPath: config.uploadPath,
                     uploadPublicUrl: config.uploadPublicUrl,
                     auth,
+                    ...(auth && token ? { accessToken: token } : {}),
                     accessTokenStore,
                     flushStore,
                     gameTokenSecret: config.gameTokenSecret,

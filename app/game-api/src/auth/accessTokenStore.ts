@@ -6,6 +6,7 @@ import { isValid, parseISO } from 'date-fns';
 interface RedisClientLike {
     get(key: string): Promise<string | null>;
     set(key: string, value: string, options?: { EX?: number; NX?: boolean }): Promise<string | null>;
+    del?(key: string): Promise<number>;
 }
 
 const ACCESS_TOKEN_PREFIX = 'ga_';
@@ -70,6 +71,17 @@ export class RedisAccessTokenStore {
         } catch {
             return null;
         }
+    }
+
+    async revoke(accessToken: string): Promise<boolean> {
+        if (!RedisAccessTokenStore.isAccessToken(accessToken)) {
+            return false;
+        }
+        if (!this.client.del) {
+            throw new Error('Redis client does not support access token revocation.');
+        }
+        const key = buildAccessKey(this.profileName, accessToken);
+        return (await this.client.del(key)) > 0;
     }
 
     async markGatewayTokenUsed(sessionId: string, ttlSeconds: number): Promise<boolean> {
