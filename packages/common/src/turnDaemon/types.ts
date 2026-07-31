@@ -227,6 +227,16 @@ export type TurnDaemonCommand =
           inheritBonusStat?: [number, number, number];
       }
     | {
+          type: 'npcPossessGeneral';
+          requestId?: string;
+          userId: string;
+          ownerDisplayName: string;
+          profileId: string;
+          ownerLegacyPenalty?: Record<string, unknown>;
+          generalId: number;
+          tokenNonce: number;
+      }
+    | {
           type: 'selectPoolCreate';
           requestId?: string;
           userId: string;
@@ -507,6 +517,17 @@ export type TurnDaemonCommandResult =
           type: 'joinCreateGeneral';
           ok: false;
           code: 'BAD_REQUEST' | 'FORBIDDEN' | 'PRECONDITION_FAILED' | 'CONFLICT' | 'INTERNAL_SERVER_ERROR';
+          reason: string;
+      }
+    | {
+          type: 'npcPossessGeneral';
+          ok: true;
+          generalId: number;
+      }
+    | {
+          type: 'npcPossessGeneral';
+          ok: false;
+          code: 'BAD_REQUEST' | 'NOT_FOUND' | 'PRECONDITION_FAILED' | 'CONFLICT' | 'INTERNAL_SERVER_ERROR';
           reason: string;
       }
     | {

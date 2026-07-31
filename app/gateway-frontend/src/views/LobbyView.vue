@@ -39,8 +39,7 @@ const canAccessAdmin = computed(
         ) ?? false
 );
 const needsKakaoVerification = computed(() => me.value !== null && !me.value.kakaoVerified);
-const userIconBaseUrl =
-    import.meta.env.VITE_GATEWAY_USER_ICON_BASE_URL ?? '/gateway/api/user-icons';
+const userIconBaseUrl = import.meta.env.VITE_GATEWAY_USER_ICON_BASE_URL ?? '/gateway/api/user-icons';
 
 const formatGraceEndsAt = (value: string | null | undefined): string =>
     value ? new Date(value).toLocaleString('ko-KR') : '';
@@ -91,9 +90,7 @@ onMounted(async () => {
                     console.error(`Failed to authenticate lobby game session for ${profile.profileName}`, error);
                 }
             }
-            const gameTrpc = gameToken
-                ? createGameTrpc(profile.profile, profile.apiPort, gameToken)
-                : publicGameTrpc;
+            const gameTrpc = gameToken ? createGameTrpc(profile.profile, profile.apiPort, gameToken) : publicGameTrpc;
             const [infoResult, layoutResult, mapResult] = await Promise.allSettled([
                 gameTrpc.lobby.info.query(),
                 gameTrpc.public.getMapLayout.query(),
@@ -225,8 +222,7 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                     <div>
                         <strong class="block text-amber-300">카카오 인증이 필요합니다.</strong>
                         <span class="text-sm">
-                            유예기간이 지나면 게임에 입장할 수 없습니다. che·kwe·twe는 인증 전 장수 생성도
-                            제한됩니다.
+                            유예기간이 지나면 게임에 입장할 수 없습니다. che·kwe·twe는 인증 전 장수 생성도 제한됩니다.
                         </span>
                     </div>
                     <button
@@ -337,11 +333,7 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                     class="w-12 h-12 mx-auto bg-zinc-800 rounded overflow-hidden border border-zinc-700"
                                 >
                                     <img
-                                        :src="
-                                            resolveGeneralPicture(
-                                                profileDetails[profile.profileName]!.myGeneral!
-                                            )
-                                        "
+                                        :src="resolveGeneralPicture(profileDetails[profile.profileName]!.myGeneral!)"
                                         class="w-full h-full object-cover"
                                         @error="handleGeneralPictureError"
                                     />
@@ -365,30 +357,52 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
                                     >
                                         입장
                                     </button>
-                                    <button
-                                        v-else
-                                        class="w-full bg-zinc-700 hover:bg-zinc-600 text-white py-1.5 rounded text-sm transition-colors"
-                                        :disabled="
-                                            entryLoading[profile.profileName] ||
-                                            profile.localAccountPolicy?.canCreateGeneral === false
+                                    <div
+                                        v-else-if="
+                                            profileDetails[profile.profileName]!.userCnt >=
+                                            profileDetails[profile.profileName]!.maxUserCnt
                                         "
-                                        @click="
-                                            handleEnter(
-                                                profile,
-                                                profileDetails[profile.profileName]?.selectionPoolEnabled
-                                                    ? '/select-general'
-                                                    : '/join'
-                                            )
-                                        "
+                                        class="text-zinc-500"
                                     >
-                                        {{
-                                            profile.localAccountPolicy?.canCreateGeneral === false
-                                                ? '인증 필요'
-                                                : profileDetails[profile.profileName]?.selectionPoolEnabled
-                                                  ? '장수선택'
-                                                  : '장수생성'
-                                        }}
-                                    </button>
+                                        - 장수 등록 마감 -
+                                    </div>
+                                    <div v-else class="grid gap-1">
+                                        <button
+                                            v-if="profileDetails[profile.profileName]?.selectionPoolEnabled"
+                                            class="w-full bg-zinc-700 hover:bg-zinc-600 text-white py-1.5 rounded text-sm transition-colors"
+                                            :disabled="entryLoading[profile.profileName]"
+                                            @click="handleEnter(profile, '/select-general')"
+                                        >
+                                            장수선택
+                                        </button>
+                                        <template v-else>
+                                            <button
+                                                class="w-full bg-zinc-700 hover:bg-zinc-600 text-white py-1.5 rounded text-sm transition-colors"
+                                                :disabled="
+                                                    entryLoading[profile.profileName] ||
+                                                    profile.localAccountPolicy?.canCreateGeneral === false
+                                                "
+                                                @click="handleEnter(profile, '/join')"
+                                            >
+                                                {{
+                                                    profile.localAccountPolicy?.canCreateGeneral === false
+                                                        ? '인증 필요'
+                                                        : '장수생성'
+                                                }}
+                                            </button>
+                                            <button
+                                                v-if="profileDetails[profile.profileName]?.npcPossessionEnabled"
+                                                class="w-full bg-zinc-700 hover:bg-zinc-600 text-white py-1.5 rounded text-sm transition-colors"
+                                                :disabled="
+                                                    entryLoading[profile.profileName] ||
+                                                    profile.localAccountPolicy?.canCreateGeneral === false
+                                                "
+                                                @click="handleEnter(profile, '/join?tab=possess')"
+                                            >
+                                                장수빙의
+                                            </button>
+                                        </template>
+                                    </div>
                                 </template>
                                 <template v-else-if="profile.status === 'STOPPED'">
                                     <span class="text-zinc-700">-</span>

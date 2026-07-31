@@ -18,12 +18,37 @@ const fulfillTrpc = async (route: Route, results: unknown[]): Promise<void> => {
     });
 };
 
-const installFixture = async (page: Page) => {
+type LobbyFixtureOptions = {
+    canCreateGeneral?: boolean;
+    myGeneral?: {
+        name: string;
+        picture: string;
+        imageServer: number;
+    } | null;
+    selectionPoolEnabled?: boolean;
+    npcPossessionEnabled?: boolean;
+    userCnt?: number;
+    maxUserCnt?: number;
+};
+
+const installFixture = async (page: Page, options: LobbyFixtureOptions = {}) => {
+    const {
+        canCreateGeneral = true,
+        myGeneral = {
+            name: '선택장수',
+            picture: 'account-hash.png',
+            imageServer: 1,
+        },
+        selectionPoolEnabled = true,
+        npcPossessionEnabled = false,
+        userCnt = 1,
+        maxUserCnt = 500,
+    } = options;
     const gameOperations: Array<{ operation: string; authorization: string | undefined }> = [];
     await page.addInitScript(() => {
         window.localStorage.setItem('sammo-session-token', 'gateway-lobby-session');
     });
-    await page.route('http://127.0.0.1:15130/api/trpc/**', async (route) => {
+    await page.route('**/gateway/api/trpc/**', async (route) => {
         const results = operationNames(route).map((operation) => {
             if (operation === 'me') {
                 return response({
@@ -57,7 +82,7 @@ const installFixture = async (page: Page) => {
                         color: '#ffffff',
                         localAccountPolicy: {
                             accessAllowed: true,
-                            canCreateGeneral: true,
+                            canCreateGeneral,
                             requiresKakaoVerification: false,
                             graceEndsAt: null,
                         },
@@ -90,8 +115,8 @@ const installFixture = async (page: Page) => {
                 return response({
                     year: 180,
                     month: 1,
-                    userCnt: 1,
-                    maxUserCnt: 500,
+                    userCnt,
+                    maxUserCnt,
                     npcCnt: 0,
                     nationCnt: 0,
                     turnTerm: 5,
@@ -101,12 +126,9 @@ const installFixture = async (page: Page) => {
                     turntime: '2026-07-30 00:05:00',
                     otherTextInfo: '',
                     isUnited: 0,
-                    selectionPoolEnabled: true,
-                    myGeneral: {
-                        name: '선택장수',
-                        picture: 'account-hash.png',
-                        imageServer: 1,
-                    },
+                    selectionPoolEnabled,
+                    npcPossessionEnabled,
+                    myGeneral,
                 });
             }
             if (operation === 'public.getMapLayout') {
@@ -132,9 +154,7 @@ const installFixture = async (page: Page) => {
     return gameOperations;
 };
 
-test('exchanges the gateway token before loading authenticated lobby general data', async ({
-    page,
-}) => {
+test('exchanges the gateway token before loading authenticated lobby general data', async ({ page }) => {
     const gameOperations = await installFixture(page);
 
     await page.goto('lobby');
@@ -142,10 +162,7 @@ test('exchanges the gateway token before loading authenticated lobby general dat
     await expect(row).toContainText('선택장수');
     await expect(row.getByRole('button', { name: '입장' })).toBeVisible();
     const portrait = row.locator('img');
-    await expect(portrait).toHaveAttribute(
-        'src',
-        '/gateway/api/user-icons/account-hash.png'
-    );
+    await expect(portrait).toHaveAttribute('src', '/gateway/api/user-icons/account-hash.png');
     await expect.poll(() => portrait.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(1);
 
     expect(gameOperations.find(({ operation }) => operation === 'auth.exchangeGatewayToken')).toEqual({
@@ -156,4 +173,60 @@ test('exchanges the gateway token before loading authenticated lobby general dat
         operation: 'lobby.info',
         authorization: 'Bearer ga_lobby-access-token',
     });
+});
+
+test('applies the signed general-acquisition policy to both create and possession actions', async ({ page }) => {
+    await installFixture(page, {
+        canCreateGeneral: false,
+        myGeneral: null,
+        selectionPoolEnabled: false,
+        npcPossessionEnabled: true,
+    });
+
+    await page.goto('lobby');
+    const row = page.locator('tbody tr').filter({ hasText: 'hwe섭' });
+    await expect(row.getByRole('button', { name: '인증 필요' })).toBeDisabled();
+    await expect(row.getByRole('button', { name: '장수빙의' })).toBeDisabled();
+});
+
+test('opens the mode-1 possession tab with a fresh gateway game token', async ({ page }) => {
+    await installFixture(page, {
+        myGeneral: null,
+        selectionPoolEnabled: false,
+        npcPossessionEnabled: true,
+    });
+    await page.route('**/hwe/join?**', async (route) => {
+        await route.fulfill({
+            status: 200,
+            contentType: 'text/html',
+            body: '<title>NPC possession target</title>',
+        });
+    });
+
+    await page.goto('lobby');
+    const row = page.locator('tbody tr').filter({ hasText: 'hwe섭' });
+    await expect(row.getByRole('button', { name: '장수빙의' })).toBeEnabled();
+    await row.getByRole('button', { name: '장수빙의' }).click();
+
+    await expect(page).toHaveURL(/\/hwe\/join\?/);
+    const target = new URL(page.url());
+    expect(target.searchParams.get('tab')).toBe('possess');
+    expect(target.searchParams.get('profile')).toBe('hwe:903');
+    expect(target.searchParams.get('gameToken')).toBe('encrypted-gateway-game-token');
+});
+
+test('shows registration closed instead of acquisition actions at the Ref capacity boundary', async ({ page }) => {
+    await installFixture(page, {
+        myGeneral: null,
+        selectionPoolEnabled: false,
+        npcPossessionEnabled: true,
+        userCnt: 300,
+        maxUserCnt: 300,
+    });
+
+    await page.goto('lobby');
+    const row = page.locator('tbody tr').filter({ hasText: 'hwe섭' });
+    await expect(row).toContainText('장수 등록 마감');
+    await expect(row.getByRole('button', { name: '장수생성' })).toHaveCount(0);
+    await expect(row.getByRole('button', { name: '장수빙의' })).toHaveCount(0);
 });

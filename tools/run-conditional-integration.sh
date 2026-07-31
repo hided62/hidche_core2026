@@ -34,8 +34,9 @@ set +a
 
 integration_schema=${CONDITIONAL_INTEGRATION_SCHEMA:-conditional_integration}
 scenario_schema=${SCENARIO_SEED_INTEGRATION_SCHEMA:-conditional_scenario_seed}
+npc_possession_schema=${NPC_POSSESSION_INTEGRATION_SCHEMA:-conditional_$(date +%s)_$$_npc_possession_integration}
 
-for schema in "$integration_schema" "$scenario_schema"; do
+for schema in "$integration_schema" "$scenario_schema" "$npc_possession_schema"; do
     case "$schema" in
         ''|[!a-z_]*|*[!a-z0-9_]*)
             echo "integration schema must be a lowercase PostgreSQL identifier: $schema" >&2
@@ -110,6 +111,18 @@ run_marked_tests app/game-engine "$database_markers" "PostgreSQL"
 run_marked_tests tools/integration-tests \
     'TURN_DIFFERENTIAL_DATABASE_URL|INPUT_EVENT_DATABASE_URL' \
     "PostgreSQL snapshot"
+
+npc_possession_database_url=$(build_database_url "$npc_possession_schema")
+(
+    export POSTGRES_SCHEMA=$npc_possession_schema
+    export DATABASE_URL=$npc_possession_database_url
+    export NPC_POSSESSION_DATABASE_URL=$npc_possession_database_url
+    pnpm --filter @sammo-ts/infra prisma:migrate:deploy:game
+    pnpm --filter @sammo-ts/infra prisma:migrate:deploy:game
+    run_marked_tests app/game-api \
+        'NPC_POSSESSION_DATABASE_URL' \
+        "NPC possession PostgreSQL"
+)
 
 if [ "${TURN_DIFFERENTIAL_REFERENCE:-}" = "1" ]; then
     live_sortie_schema=${LIVE_SORTIE_PERSISTENCE_SCHEMA:-conditional_live_sortie_persistence}

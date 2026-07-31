@@ -87,7 +87,7 @@ const fail = (code: JoinCreateGeneralErrorCode, message: string): never => {
 const normalizeJoinName = (value: string): string =>
     normalizeTroopName(value).replace(LEGACY_JOIN_REMOVED_CHARACTERS, '');
 
-const resolveLegacyPenalty = (
+export const resolveLegacyPenalty = (
     rawPenalty: Record<string, unknown> | undefined,
     profileId: string,
     acceptedAt: Date

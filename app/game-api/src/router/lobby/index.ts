@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 
 import { zWorldStateConfig, zWorldStateMeta } from '../../context.js';
-import { isSelectionPoolWorld } from '../../services/selectPool.js';
+import { isSelectionPoolWorld, resolveSelectionMaxGeneral } from '../../services/selectPool.js';
 import { procedure, router } from '../../trpc.js';
 
 export const lobbyRouter = router({
@@ -20,8 +20,8 @@ export const lobbyRouter = router({
             meta: zWorldStateMeta.parse(rawWorldState.meta),
         };
 
-        const userCnt = await ctx.db.general.count({ where: { npcState: 0 } });
-        const npcCnt = await ctx.db.general.count({ where: { npcState: { gt: 0 } } });
+        const userCnt = await ctx.db.general.count({ where: { npcState: { lt: 2 } } });
+        const npcCnt = await ctx.db.general.count({ where: { npcState: { gte: 2 } } });
         const nationCnt = await ctx.db.nation.count({ where: { level: { gt: 0 } } });
 
         let myGeneral = null;
@@ -43,7 +43,7 @@ export const lobbyRouter = router({
             year: worldState.currentYear,
             month: worldState.currentMonth,
             userCnt,
-            maxUserCnt: worldState.config.maxUserCnt ?? 500,
+            maxUserCnt: resolveSelectionMaxGeneral(rawWorldState),
             npcCnt,
             nationCnt,
             turnTerm: worldState.tickSeconds / 60,
@@ -54,6 +54,7 @@ export const lobbyRouter = router({
             otherTextInfo: worldState.meta.otherTextInfo ?? '',
             isUnited: worldState.meta.isUnited ?? 0,
             selectionPoolEnabled: isSelectionPoolWorld(rawWorldState),
+            npcPossessionEnabled: worldState.config.npcMode === 1,
             myGeneral,
         };
     }),

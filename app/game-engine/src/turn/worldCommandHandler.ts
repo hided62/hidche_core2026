@@ -51,6 +51,7 @@ import {
     SelectPoolError,
 } from './selectPoolService.js';
 import { createGeneralFromJoin, JoinCreateGeneralError } from './joinCreateGeneralService.js';
+import { NpcPossessionError, possessNpcGeneral } from './npcPossessionService.js';
 
 let itemRegistryPromise: Promise<Map<string, ItemModule>> | null = null;
 
@@ -138,20 +139,26 @@ const requireCommandDatabase = (ctx: CommandHandlerContext): DatabaseClient => {
 
 const resolveCommandAcceptedAt = async (
     db: DatabaseClient,
-    command: Extract<TurnDaemonCommand, { type: 'joinCreateGeneral' | 'selectPoolCreate' | 'selectPoolReselect' }>
+    command: Extract<
+        TurnDaemonCommand,
+        { type: 'joinCreateGeneral' | 'npcPossessGeneral' | 'selectPoolCreate' | 'selectPoolReselect' }
+    >
 ): Promise<Date> => {
     if (!command.requestId) {
         throw new Error(`${command.type} requestId is required.`);
     }
     const event = await db.inputEvent.findUnique({
         where: { requestId: command.requestId },
-        select: { createdAt: true, actorUserId: true },
+        select: { createdAt: true, actorUserId: true, target: true, eventType: true },
     });
     if (!event) {
         throw new Error(`ENGINE input event ${command.requestId} is missing.`);
     }
     if (event.actorUserId !== command.userId) {
         throw new Error(`ENGINE input event actor does not match ${command.type} user.`);
+    }
+    if (event.target !== 'ENGINE' || event.eventType !== command.type) {
+        throw new Error(`ENGINE input event type does not match ${command.type}.`);
     }
     return event.createdAt;
 };
@@ -232,6 +239,47 @@ async function handleJoinCreateGeneral(
         if (error instanceof JoinCreateGeneralError) {
             return {
                 type: 'joinCreateGeneral',
+                ok: false,
+                code: error.code,
+                reason: error.message,
+            };
+        }
+        throw error;
+    }
+}
+
+async function handleNpcPossessGeneral(
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'npcPossessGeneral' }>
+): Promise<TurnDaemonCommandResult> {
+    const db = requireCommandDatabase(ctx);
+    const worldState = await db.worldState.findUnique({
+        where: { id: ctx.world.getState().id },
+    });
+    if (!worldState) {
+        throw new Error('NPC possession world state is missing.');
+    }
+    const acceptedAt = await resolveCommandAcceptedAt(db, command);
+    try {
+        return {
+            type: 'npcPossessGeneral',
+            ...(await possessNpcGeneral({
+                db,
+                world: ctx.world,
+                worldState,
+                userId: command.userId,
+                ownerDisplayName: command.ownerDisplayName,
+                profileId: command.profileId,
+                ...(command.ownerLegacyPenalty !== undefined ? { ownerLegacyPenalty: command.ownerLegacyPenalty } : {}),
+                generalId: command.generalId,
+                tokenNonce: command.tokenNonce,
+                acceptedAt,
+            })),
+        };
+    } catch (error) {
+        if (error instanceof NpcPossessionError) {
+            return {
+                type: 'npcPossessGeneral',
                 ok: false,
                 code: error.code,
                 reason: error.message,
@@ -2131,6 +2179,8 @@ export const createTurnDaemonCommandHandler = (options: {
             handlePatchGeneral(ctx, command as Extract<TurnDaemonCommand, { type: 'patchGeneral' }>),
         joinCreateGeneral: (command) =>
             handleJoinCreateGeneral(ctx, command as Extract<TurnDaemonCommand, { type: 'joinCreateGeneral' }>),
+        npcPossessGeneral: (command) =>
+            handleNpcPossessGeneral(ctx, command as Extract<TurnDaemonCommand, { type: 'npcPossessGeneral' }>),
         selectPoolCreate: (command) =>
             handleSelectPoolCreate(ctx, command as Extract<TurnDaemonCommand, { type: 'selectPoolCreate' }>),
         selectPoolReselect: (command) =>

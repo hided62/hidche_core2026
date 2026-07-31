@@ -7,6 +7,7 @@ export interface DatabaseClient {
     worldState: GamePrisma.WorldStateDelegate;
     general: GamePrisma.GeneralDelegate;
     selectPoolEntry: GamePrisma.SelectPoolEntryDelegate;
+    npcSelectionToken: GamePrisma.NpcSelectionTokenDelegate;
     generalAccessLog: GamePrisma.GeneralAccessLogDelegate;
     trafficPeriod: GamePrisma.TrafficPeriodDelegate;
     trafficPeriodGeneral: GamePrisma.TrafficPeriodGeneralDelegate;
