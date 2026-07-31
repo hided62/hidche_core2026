@@ -724,6 +724,11 @@ const createTurnDaemonRuntimeWithLease = async (
     const resolvedControlQueue = options.controlQueue ?? databaseCommandQueue ?? controlQueue;
     const commandHandler = createTurnDaemonCommandHandler({
         world,
+        reservedTurns: reservedTurnStoreHandle?.store,
+        scenarioMeta: snapshot.scenarioMeta,
+        map: snapshot.map,
+        commandProfile,
+        getAdditionalOccupiedUniqueItemKeys: () => occupiedAuctionUniqueItemKeys,
         auctionFinalizer: auctionFinalizer ?? undefined,
         auctionBidder: auctionBidder ?? undefined,
         tournamentRewardFinalizer: tournamentRewardFinalizer ?? undefined,

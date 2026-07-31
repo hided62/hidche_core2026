@@ -23,7 +23,10 @@ import {
     resolveUniqueConfig,
     rollUniqueLottery,
     type ItemModule,
+    type MapDefinition,
+    type ScenarioMeta,
     type TriggerValue,
+    type TurnCommandProfile,
 } from '@sammo-ts/logic';
 import { simpleSerialize } from '@sammo-ts/logic/war/utils.js';
 import {
@@ -33,7 +36,9 @@ import {
     removeEquippedItem,
 } from '@sammo-ts/logic/items/index.js';
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
+import type { InMemoryReservedTurnStore } from './reservedTurnStore.js';
 import type { TurnGeneral } from './types.js';
+import { createImmediateGeneralActionExecutor, type ImmediateGeneralActionExecutor } from './reservedTurnHandler.js';
 import { openAuction } from '../auction/opener.js';
 import {
     hasScenarioStaticEventHandler,
@@ -121,6 +126,7 @@ interface CommandHandlerContext {
     auctionFinalizer?: AuctionFinalizer;
     auctionBidder?: AuctionBidder;
     tournamentRewardFinalizer?: TournamentRewardFinalizer;
+    getImmediateGeneralActionExecutor?: () => Promise<ImmediateGeneralActionExecutor>;
 }
 
 const requireCommandDatabase = (ctx: CommandHandlerContext): DatabaseClient => {
@@ -148,6 +154,30 @@ const resolveCommandAcceptedAt = async (
         throw new Error(`ENGINE input event actor does not match ${command.type} user.`);
     }
     return event.createdAt;
+};
+
+const assertImmediateGeneralActionActor = async (
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'buildNationCandidate' | 'instantRetreat' }>,
+    general: TurnGeneral
+): Promise<void> => {
+    if (general.userId !== command.userId) {
+        throw new Error(`${command.type} general owner does not match command user.`);
+    }
+    if (!command.requestId) {
+        return;
+    }
+    const db = requireCommandDatabase(ctx);
+    const event = await db.inputEvent.findUnique({
+        where: { requestId: command.requestId },
+        select: { actorUserId: true },
+    });
+    if (!event) {
+        throw new Error(`ENGINE input event ${command.requestId} is missing.`);
+    }
+    if (event.actorUserId !== command.userId) {
+        throw new Error(`ENGINE input event actor does not match ${command.type} user.`);
+    }
 };
 
 async function handleJoinCreateGeneral(
@@ -990,17 +1020,10 @@ async function handleBuildNationCandidate(
             type: 'buildNationCandidate',
             ok: false,
             generalId: command.generalId,
-            reason: '장수 정보를 찾을 수 없습니다.',
+            reason: '장수가 없습니다',
         };
     }
-    if (general.nationId !== 0) {
-        return {
-            type: 'buildNationCandidate',
-            ok: false,
-            generalId: command.generalId,
-            reason: '이미 국가에 소속되어 있습니다.',
-        };
-    }
+    await assertImmediateGeneralActionActor(ctx, command, general);
 
     const worldState = world.getState();
     const opentime = worldState.meta.opentime as string | undefined;
@@ -1009,11 +1032,43 @@ async function handleBuildNationCandidate(
             type: 'buildNationCandidate',
             ok: false,
             generalId: command.generalId,
-            reason: '가오픈 기간이 아닙니다.',
+            reason: '게임이 시작되었습니다.',
+        };
+    }
+    if (general.nationId !== 0) {
+        return {
+            type: 'buildNationCandidate',
+            ok: false,
+            generalId: command.generalId,
+            reason: '이미 국가에 소속되어있습니다.',
         };
     }
 
-    return { type: 'buildNationCandidate', ok: true, generalId: command.generalId };
+    if (!ctx.getImmediateGeneralActionExecutor) {
+        throw new Error('Immediate general action runtime is not configured.');
+    }
+    const hiddenSeed = asRecord(worldState.meta).hiddenSeed ?? asRecord(worldState.meta).seed ?? worldState.id;
+    const executor = await ctx.getImmediateGeneralActionExecutor();
+    const execution = await executor.execute({
+        actionKey: 'che_거병',
+        generalId: command.generalId,
+        rng: new RandUtil(
+            new LiteHashDRBG(
+                simpleSerialize(
+                    typeof hiddenSeed === 'string' || typeof hiddenSeed === 'number' ? hiddenSeed : String(hiddenSeed),
+                    'BuildNationCandidate',
+                    command.generalId
+                )
+            )
+        ),
+        refreshKillturn: true,
+    });
+    return {
+        type: 'buildNationCandidate',
+        ok: execution.ok,
+        generalId: command.generalId,
+        ...(execution.reason ? { reason: execution.reason } : {}),
+    };
 }
 
 async function handleInstantRetreat(
@@ -1021,16 +1076,6 @@ async function handleInstantRetreat(
     command: Extract<TurnDaemonCommand, { type: 'instantRetreat' }>
 ): Promise<TurnDaemonCommandResult> {
     const { world } = ctx;
-    const general = world.getGeneralById(command.generalId);
-    if (!general) {
-        return {
-            type: 'instantRetreat',
-            ok: false,
-            generalId: command.generalId,
-            reason: '장수 정보를 찾을 수 없습니다.',
-        };
-    }
-
     const config = world.getScenarioConfig();
     const availableInstantAction = config.const.availableInstantAction as Record<string, boolean> | undefined;
     if (!availableInstantAction?.instantRetreat) {
@@ -1038,11 +1083,48 @@ async function handleInstantRetreat(
             type: 'instantRetreat',
             ok: false,
             generalId: command.generalId,
-            reason: '즉시 귀환이 허용되지 않는 서버입니다.',
+            reason: '접경귀환을 사용할 수 없는 시나리오입니다.',
         };
     }
+    const general = world.getGeneralById(command.generalId);
+    if (!general) {
+        return {
+            type: 'instantRetreat',
+            ok: false,
+            generalId: command.generalId,
+            reason: '장수가 없습니다',
+        };
+    }
+    await assertImmediateGeneralActionActor(ctx, command, general);
 
-    return { type: 'instantRetreat', ok: true, generalId: command.generalId };
+    if (!ctx.getImmediateGeneralActionExecutor) {
+        throw new Error('Immediate general action runtime is not configured.');
+    }
+    const state = world.getState();
+    const hiddenSeed = asRecord(state.meta).hiddenSeed ?? asRecord(state.meta).seed ?? state.id;
+    const executor = await ctx.getImmediateGeneralActionExecutor();
+    const execution = await executor.execute({
+        actionKey: 'che_접경귀환',
+        generalId: command.generalId,
+        rng: new RandUtil(
+            new LiteHashDRBG(
+                simpleSerialize(
+                    typeof hiddenSeed === 'string' || typeof hiddenSeed === 'number' ? hiddenSeed : String(hiddenSeed),
+                    'InstantRetreat',
+                    command.generalId,
+                    state.currentYear,
+                    state.currentMonth,
+                    general.cityId
+                )
+            )
+        ),
+    });
+    return {
+        type: 'instantRetreat',
+        ok: execution.ok,
+        generalId: command.generalId,
+        ...(execution.reason ? { reason: execution.reason } : {}),
+    };
 }
 
 async function handleVacation(
@@ -1952,15 +2034,45 @@ async function handleVoteReward(
 
 export const createTurnDaemonCommandHandler = (options: {
     world: InMemoryTurnWorld;
+    reservedTurns?: InMemoryReservedTurnStore;
+    scenarioMeta?: ScenarioMeta;
+    map?: MapDefinition;
+    commandProfile?: TurnCommandProfile;
+    getAdditionalOccupiedUniqueItemKeys?: () => Iterable<string | null | undefined>;
     auctionFinalizer?: AuctionFinalizer;
     auctionBidder?: AuctionBidder;
     tournamentRewardFinalizer?: TournamentRewardFinalizer;
 }): TurnDaemonCommandHandler => {
+    let immediateGeneralActionExecutor: Promise<ImmediateGeneralActionExecutor> | null = null;
     const ctx: CommandHandlerContext = {
         world: options.world,
         auctionFinalizer: options.auctionFinalizer,
         auctionBidder: options.auctionBidder,
         tournamentRewardFinalizer: options.tournamentRewardFinalizer,
+        getImmediateGeneralActionExecutor: () => {
+            immediateGeneralActionExecutor ??= createImmediateGeneralActionExecutor({
+                world: options.world,
+                reservedTurns: options.reservedTurns,
+                scenarioMeta: options.scenarioMeta,
+                map: options.map,
+                commandProfile: options.commandProfile,
+                getAdditionalOccupiedUniqueItemKeys: async () => {
+                    if (ctx.commandDb) {
+                        const rows = await ctx.commandDb.auction.findMany({
+                            where: {
+                                type: 'UNIQUE_ITEM',
+                                status: { in: ['OPEN', 'FINALIZING'] },
+                                targetCode: { not: null },
+                            },
+                            select: { targetCode: true },
+                        });
+                        return rows.map((row) => row.targetCode);
+                    }
+                    return options.getAdditionalOccupiedUniqueItemKeys?.() ?? [];
+                },
+            });
+            return immediateGeneralActionExecutor;
+        },
     };
 
     type HandlerMap = Partial<

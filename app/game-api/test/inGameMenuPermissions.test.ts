@@ -230,6 +230,63 @@ describe('in-game my information ownership', () => {
             })
         );
     });
+
+    it.each([
+        ['buildNationCandidate', 'buildNationCandidate'],
+        ['instantRetreat', 'instantRetreat'],
+    ] as const)('dispatches %s only for the session-owned general', async (procedure, commandType) => {
+        const clientRequestId = '11111111-1111-4111-8111-111111111111';
+        const requestCommand = vi.fn(async () => ({
+            type: commandType,
+            ok: true,
+            generalId: 7,
+        }));
+        const fixture = createContext({ requestCommand });
+        const caller = appRouter.createCaller(fixture.context);
+
+        await expect(caller.general[procedure]({ clientRequestId })).resolves.toEqual({ ok: true });
+        expect(requestCommand).toHaveBeenCalledWith({
+            type: commandType,
+            requestId: `general:${commandType}:user-7:${clientRequestId}`,
+            userId: 'user-7',
+            generalId: 7,
+        });
+    });
+
+    it('returns the daemon compatibility failure without performing an API-side mutation', async () => {
+        const requestCommand = vi.fn(async () => ({
+            type: 'instantRetreat' as const,
+            ok: false,
+            generalId: 7,
+            reason: '가까운 아국 도시가 없습니다.',
+        }));
+        const fixture = createContext({ requestCommand });
+        const caller = appRouter.createCaller(fixture.context);
+
+        await expect(caller.general.instantRetreat()).rejects.toMatchObject({
+            code: 'BAD_REQUEST',
+            message: '가까운 아국 도시가 없습니다.',
+        });
+        expect(fixture.db.general.update).not.toHaveBeenCalled();
+    });
+
+    it('returns a retryable timeout while preserving the client request identity', async () => {
+        const requestCommand = vi.fn(async () => null);
+        const fixture = createContext({ requestCommand });
+        const caller = appRouter.createCaller(fixture.context);
+        const clientRequestId = '22222222-2222-4222-8222-222222222222';
+
+        await expect(caller.general.instantRetreat({ clientRequestId })).rejects.toMatchObject({
+            code: 'TIMEOUT',
+            message: expect.stringContaining('같은 요청으로 다시 시도'),
+        });
+        expect(requestCommand).toHaveBeenCalledWith({
+            type: 'instantRetreat',
+            requestId: `general:instantRetreat:user-7:${clientRequestId}`,
+            userId: 'user-7',
+            generalId: 7,
+        });
+    });
 });
 
 describe('battle-center general and user permissions', () => {

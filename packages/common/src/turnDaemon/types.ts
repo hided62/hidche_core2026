@@ -70,8 +70,8 @@ export type TurnDaemonCommand =
       }
     | { type: 'troopRename'; requestId?: string; generalId: number; troopId: number; troopName: string }
     | { type: 'dieOnPrestart'; requestId?: string; generalId: number }
-    | { type: 'buildNationCandidate'; requestId?: string; generalId: number }
-    | { type: 'instantRetreat'; requestId?: string; generalId: number }
+    | { type: 'buildNationCandidate'; requestId?: string; userId: string; generalId: number }
+    | { type: 'instantRetreat'; requestId?: string; userId: string; generalId: number }
     | { type: 'vacation'; requestId?: string; generalId: number }
     | {
           type: 'setMySetting';

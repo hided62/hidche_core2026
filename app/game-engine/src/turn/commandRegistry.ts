@@ -93,11 +93,13 @@ const zDieOnPrestart = z.object({
 
 const zBuildNationCandidate = z.object({
     type: z.literal('buildNationCandidate'),
+    userId: z.string().min(1),
     generalId: zFiniteNumber,
 });
 
 const zInstantRetreat = z.object({
     type: z.literal('instantRetreat'),
+    userId: z.string().min(1),
     generalId: zFiniteNumber,
 });
 

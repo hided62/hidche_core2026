@@ -23,6 +23,11 @@ type FixtureState = {
     permission: 'head' | 'member';
     myset: number;
     scenarioEffect?: string | null;
+    instantRetreatEnabled?: boolean;
+    instantRetreatAttempts?: number;
+    instantRetreatInputs?: Array<Record<string, unknown>>;
+    generalMeQueries?: number;
+    generalLogQueries?: number;
     settingMutations: Array<Record<string, unknown>>;
     accessPages: string[];
 };
@@ -149,7 +154,10 @@ const install = async (page: Page, state: FixtureState) => {
                 payload?.json ?? payload?.input?.json ?? (payload as Record<string, unknown> | undefined) ?? {};
             if (operation === 'lobby.info') return response({ myGeneral: { id: 7, name: '검증장수' } });
             if (operation === 'join.getConfig') return response({});
-            if (operation === 'general.me') return response(myGeneral(state));
+            if (operation === 'general.me') {
+                state.generalMeQueries = (state.generalMeQueries ?? 0) + 1;
+                return response(myGeneral(state));
+            }
             if (operation === 'world.getState')
                 return response({
                     currentYear: 185,
@@ -157,7 +165,11 @@ const install = async (page: Page, state: FixtureState) => {
                     tickSeconds: 600,
                     config: {
                         npcMode: 0,
-                        const: { availableInstantAction: {} },
+                        const: {
+                            availableInstantAction: {
+                                instantRetreat: state.instantRetreatEnabled ?? false,
+                            },
+                        },
                         environment: { scenarioEffect: state.scenarioEffect ?? null },
                     },
                     meta: {
@@ -179,8 +191,24 @@ const install = async (page: Page, state: FixtureState) => {
                         { generalId: 7, name: '검증장수', refresh: 240, refreshScoreTotal: 24 },
                     ],
                 });
-            if (operation === 'general.getMyLog')
+            if (operation === 'general.getMyLog') {
+                state.generalLogQueries = (state.generalLogQueries ?? 0) + 1;
                 return response({ type: 'generalAction', logs: [{ id: 1, text: '<Y>기록</>' }] });
+            }
+            if (operation === 'general.instantRetreat') {
+                state.instantRetreatInputs?.push(jsonInput);
+                state.instantRetreatAttempts = (state.instantRetreatAttempts ?? 0) + 1;
+                if (state.instantRetreatAttempts === 1) {
+                    return {
+                        error: {
+                            message: '요청 처리 결과를 확인하지 못했습니다.',
+                            code: -32000,
+                            data: { code: 'TIMEOUT', httpStatus: 408, path: operation },
+                        },
+                    };
+                }
+                return response({ ok: true });
+            }
             if (operation === 'general.setMySetting') {
                 state.settingMutations.push(jsonInput);
                 state.myset = Math.max(0, state.myset - 1);
@@ -402,6 +430,54 @@ test('내 정보&설정 keeps the legacy 1000px/500px geometry and saves in plac
         settingsWidth: 500,
     });
     await persistParityArtifact(page, 'core-my-page-mobile', mobile);
+});
+
+test('내 정보 즉시행동은 timeout 재시도 ID를 유지하고 성공 후 새 ID를 만든다', async ({ page }) => {
+    const state: FixtureState = {
+        permission: 'head',
+        myset: 3,
+        instantRetreatEnabled: true,
+        instantRetreatAttempts: 0,
+        instantRetreatInputs: [],
+        generalMeQueries: 0,
+        generalLogQueries: 0,
+        settingMutations: [],
+        accessPages: [],
+    };
+    const dialogs: string[] = [];
+    page.on('dialog', async (dialog) => {
+        dialogs.push(`${dialog.type()}:${dialog.message()}`);
+        await dialog.accept();
+    });
+    await install(page, state);
+    await page.goto('my-page');
+
+    const instantRetreatButton = page.getByRole('button', { name: '접경 귀환' });
+    await expect(instantRetreatButton).toBeVisible();
+    await expect.poll(() => state.generalMeQueries).toBe(1);
+
+    await instantRetreatButton.click();
+    await expect.poll(() => state.instantRetreatInputs?.length).toBe(1);
+    await expect
+        .poll(() => dialogs.some((message) => message.includes('요청 처리 결과를 확인하지 못했습니다.')))
+        .toBe(true);
+    expect(state.generalMeQueries).toBe(1);
+
+    await instantRetreatButton.click();
+    await expect.poll(() => state.instantRetreatInputs?.length).toBe(2);
+    await expect.poll(() => state.generalMeQueries).toBe(2);
+    await expect.poll(() => state.generalLogQueries).toBe(8);
+    await page.evaluate(() => new Promise<void>((resolveFrame) => requestAnimationFrame(() => resolveFrame())));
+
+    await instantRetreatButton.click();
+    await expect.poll(() => state.instantRetreatInputs?.length).toBe(3);
+
+    const requestIds = state.instantRetreatInputs?.map((input) => input.clientRequestId);
+    expect(requestIds?.[0]).toEqual(expect.stringMatching(/^[0-9a-f-]{36}$/i));
+    expect(requestIds?.[1]).toBe(requestIds?.[0]);
+    expect(requestIds?.[2]).toEqual(expect.stringMatching(/^[0-9a-f-]{36}$/i));
+    expect(requestIds?.[2]).not.toBe(requestIds?.[1]);
+    expect(state.instantRetreatInputs?.every((input) => !('generalId' in input))).toBe(true);
 });
 
 test('감찰부 keeps the selector interaction and shows the permission error path', async ({ page }) => {

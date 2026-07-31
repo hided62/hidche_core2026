@@ -4,7 +4,9 @@ import { z } from 'zod';
 import { LogCategory, LogScope } from '@sammo-ts/infra';
 import { asRecord } from '@sammo-ts/common';
 
-import { authedProcedure, router } from '../../trpc.js';
+import type { GameApiContext } from '../../context.js';
+import { authedProcedure, engineAuthedProcedure, router } from '../../trpc.js';
+import { ConflictingTurnDaemonCommandError } from '../../daemon/databaseTransport.js';
 import { resolveAccessWindows } from '../../services/generalAccess.js';
 import { getMyGeneral } from '../shared/general.js';
 import { resolveNationNotice } from '../nation/shared.js';
@@ -17,7 +19,72 @@ const zGeneralSettings = z.object({
 });
 
 const zGeneralLogType = z.enum(['generalHistory', 'battleDetail', 'battleResult', 'generalAction']);
+const zImmediateActionInput = z
+    .object({
+        clientRequestId: z.string().uuid().optional(),
+    })
+    .optional();
 const MAIN_RECORD_LIMIT = 15;
+
+const resolveImmediateActionRequestId = (
+    contextRequestId: string | undefined,
+    userId: string,
+    clientRequestId: string | undefined,
+    action: 'buildNationCandidate' | 'instantRetreat'
+): string | undefined => {
+    if (clientRequestId) {
+        return `general:${action}:${userId}:${clientRequestId}`;
+    }
+    return contextRequestId ? `${contextRequestId}:general.${action}` : undefined;
+};
+
+const requestImmediateAction = async (
+    ctx: GameApiContext,
+    input: { clientRequestId?: string } | undefined,
+    action: 'buildNationCandidate' | 'instantRetreat'
+): Promise<{ ok: true }> => {
+    const userId = ctx.auth?.user.id;
+    if (!userId) {
+        throw new TRPCError({ code: 'UNAUTHORIZED' });
+    }
+    const general = await getMyGeneral(ctx);
+    const requestId = resolveImmediateActionRequestId(ctx.requestId, userId, input?.clientRequestId, action);
+    try {
+        const result = await ctx.turnDaemon.requestCommand({
+            type: action,
+            ...(requestId ? { requestId } : {}),
+            userId,
+            generalId: general.id,
+        });
+        if (!result) {
+            throw new TRPCError({
+                code: 'TIMEOUT',
+                message: '요청은 접수됐지만 처리 결과를 아직 확인하지 못했습니다. 같은 요청으로 다시 시도해 주세요.',
+            });
+        }
+        if (result.type !== action) {
+            throw new TRPCError({
+                code: 'INTERNAL_SERVER_ERROR',
+                message: '턴 데몬이 올바르지 않은 즉시 행동 결과를 반환했습니다.',
+            });
+        }
+        if (!result.ok) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
+        }
+        return { ok: true };
+    } catch (error) {
+        if (
+            error instanceof ConflictingTurnDaemonCommandError ||
+            (error instanceof Error && error.name === 'ConflictingTurnDaemonCommandError')
+        ) {
+            throw new TRPCError({
+                code: 'CONFLICT',
+                message: '이미 접수된 즉시 행동 요청과 입력이 다릅니다. 새 요청 번호로 다시 시도해 주세요.',
+            });
+        }
+        throw error;
+    }
+};
 
 const trimRecentRecords = <Entry extends { id: number }>(entries: Entry[], cursor: number): Entry[] => {
     if (entries.length === 0) {
@@ -224,34 +291,12 @@ export const generalRouter = router({
         }
         return { ok: true };
     }),
-    buildNationCandidate: authedProcedure.mutation(async ({ ctx }) => {
-        const general = await getMyGeneral(ctx);
-        const result = await ctx.turnDaemon.requestCommand({
-            type: 'buildNationCandidate',
-            generalId: general.id,
-        });
-        if (!result || result.type !== 'buildNationCandidate') {
-            throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
-        }
-        if (!result.ok) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
-        }
-        return { ok: true };
-    }),
-    instantRetreat: authedProcedure.mutation(async ({ ctx }) => {
-        const general = await getMyGeneral(ctx);
-        const result = await ctx.turnDaemon.requestCommand({
-            type: 'instantRetreat',
-            generalId: general.id,
-        });
-        if (!result || result.type !== 'instantRetreat') {
-            throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
-        }
-        if (!result.ok) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
-        }
-        return { ok: true };
-    }),
+    buildNationCandidate: engineAuthedProcedure
+        .input(zImmediateActionInput)
+        .mutation(({ ctx, input }) => requestImmediateAction(ctx, input, 'buildNationCandidate')),
+    instantRetreat: engineAuthedProcedure
+        .input(zImmediateActionInput)
+        .mutation(({ ctx, input }) => requestImmediateAction(ctx, input, 'instantRetreat')),
     vacation: authedProcedure.mutation(async ({ ctx }) => {
         const general = await getMyGeneral(ctx);
         const result = await ctx.turnDaemon.requestCommand({

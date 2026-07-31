@@ -8,7 +8,6 @@ import { LogCategory, LogFormat, LogScope } from '@sammo-ts/logic/logging/types.
 import { JosaUtil } from '@sammo-ts/common';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
-import { searchDistance } from '@sammo-ts/logic/world/distance.js';
 import type { MapDefinition } from '@sammo-ts/logic/world/types.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 
@@ -23,9 +22,7 @@ type InclusiveRandomGenerator = GeneralActionResolveContext['rng'] & {
 
 const legacyChoiceIndex = (rng: GeneralActionResolveContext['rng'], length: number): number => {
     const inclusive = rng as InclusiveRandomGenerator;
-    return inclusive.nextIntInclusive
-        ? inclusive.nextIntInclusive(length - 1)
-        : rng.nextInt(0, length);
+    return inclusive.nextIntInclusive ? inclusive.nextIntInclusive(length - 1) : rng.nextInt(0, length);
 };
 
 export interface BorderReturnResolveContext<
@@ -66,25 +63,31 @@ export class ActionDefinition<
             return { effects: [] };
         }
 
-        const distanceByCity = searchDistance(map, general.cityId, 3);
-        const candidates = allCities
-            .filter((city) => city.nationId === nation.id && city.supplyState === 1)
-            .map((city) => ({ city, distance: distanceByCity[city.id] }))
-            .filter((entry) => typeof entry.distance === 'number' && Number.isFinite(entry.distance));
-
-        if (candidates.length === 0) {
-            context.addLog('3칸 이내에 아국 도시가 없습니다.', {
-                scope: LogScope.GENERAL,
-                category: LogCategory.ACTION,
-                format: LogFormat.MONTH,
+        const cityById = new Map(allCities.map((city) => [city.id, city]));
+        const mapCityById = new Map(map.cities.map((city) => [city.id, city]));
+        const visited = new Set([general.cityId]);
+        let frontier = [general.cityId];
+        let nearestCities: City[] = [];
+        for (let distance = 1; distance <= 3 && frontier.length > 0; distance += 1) {
+            const nextFrontier: number[] = [];
+            for (const cityId of frontier) {
+                for (const connectedCityId of mapCityById.get(cityId)?.connections ?? []) {
+                    if (visited.has(connectedCityId)) {
+                        continue;
+                    }
+                    visited.add(connectedCityId);
+                    nextFrontier.push(connectedCityId);
+                }
+            }
+            nearestCities = nextFrontier.flatMap((cityId) => {
+                const city = cityById.get(cityId);
+                return city?.nationId === nation.id && city.supplyState === 1 ? [city] : [];
             });
-            return { effects: [] };
+            if (nearestCities.length > 0) {
+                break;
+            }
+            frontier = nextFrontier;
         }
-
-        const minDistance = Math.min(...candidates.map((entry) => entry.distance as number));
-        const nearestCities = candidates
-            .filter((entry) => entry.distance === minDistance)
-            .map((entry) => entry.city);
 
         if (nearestCities.length === 0) {
             context.addLog('3칸 이내에 아국 도시가 없습니다.', {

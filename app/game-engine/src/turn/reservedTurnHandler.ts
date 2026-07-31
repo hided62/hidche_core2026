@@ -1892,3 +1892,259 @@ export const createReservedTurnHandler = async (options: {
         },
     };
 };
+
+export type ImmediateGeneralActionKey = 'che_거병' | 'che_접경귀환';
+
+export type ImmediateGeneralActionExecutor = {
+    execute(input: {
+        actionKey: ImmediateGeneralActionKey;
+        generalId: number;
+        rng: RandUtil;
+        refreshKillturn?: boolean;
+    }): Promise<{ ok: boolean; reason?: string }>;
+};
+
+/**
+ * Ref의 MyPage 즉시 행동은 예약 턴과 같은 command/action-module stack을
+ * 실행하지만 장수의 turnTime과 예약 큐는 진행시키지 않는다.
+ */
+export const createImmediateGeneralActionExecutor = async (options: {
+    world: InMemoryTurnWorld;
+    reservedTurns?: InMemoryReservedTurnStore;
+    scenarioMeta?: ScenarioMeta;
+    map?: MapDefinition;
+    commandProfile?: TurnCommandProfile;
+    getAdditionalOccupiedUniqueItemKeys?: () =>
+        Iterable<string | null | undefined> | Promise<Iterable<string | null | undefined>>;
+}): Promise<ImmediateGeneralActionExecutor> => {
+    const env = buildCommandEnv(options.world.getScenarioConfig(), options.world.getUnitSet());
+    const commandProfile = options.commandProfile ?? DEFAULT_TURN_COMMAND_PROFILE;
+    const { general: definitions } = await buildReservedTurnDefinitions({
+        env,
+        commandProfile,
+        defaultActionKey: DEFAULT_ACTION,
+    });
+    const generalModuleLoader = new GeneralTurnCommandLoader();
+    const contextBuilders = new Map<string, ActionContextBuilder>();
+    for (const actionKey of ['che_거병', 'che_접경귀환'] as const) {
+        if (!definitions.has(actionKey)) {
+            continue;
+        }
+        const module = await generalModuleLoader.load(actionKey);
+        contextBuilders.set(actionKey, module.actionContextBuilder ?? defaultActionContextBuilder);
+    }
+
+    const itemRegistry = createItemModuleRegistry(await loadItemModules([...ITEM_KEYS]));
+    const uniqueConfig = resolveUniqueConfig(asRecord(options.world.getScenarioConfig().const));
+    if (Object.keys(uniqueConfig.allItems).length === 0) {
+        uniqueConfig.allItems = buildLegacyDefaultUniqueItemPool(itemRegistry);
+    }
+
+    return {
+        async execute(input) {
+            const definition = definitions.get(input.actionKey);
+            if (!definition) {
+                return {
+                    ok: false,
+                    reason:
+                        input.actionKey === 'che_거병'
+                            ? '거병할 수 없는 모드입니다.'
+                            : '접경귀환을 사용할 수 없는 모드입니다.',
+                };
+            }
+
+            const general = options.world.getGeneralById(input.generalId);
+            if (!general) {
+                return { ok: false, reason: '장수 정보를 찾을 수 없습니다.' };
+            }
+            const city = options.world.getCityById(general.cityId) ?? undefined;
+            const nation = general.nationId > 0 ? options.world.getNationById(general.nationId) : null;
+            const args = definition.parseArgs({});
+            if (args === null) {
+                return { ok: false, reason: '인자가 올바르지 않습니다.' };
+            }
+
+            const state = options.world.getState();
+            const constraintEnv = {
+                ...resolveConstraintEnv(state, options.scenarioMeta, env),
+                ...(options.map ? { map: options.map } : {}),
+                ...(options.world.getUnitSet() ? { unitSet: options.world.getUnitSet() } : {}),
+                cities: options.world.listCities(),
+                nations: options.world.listNations(),
+            };
+            const constraintArgs = withCanonicalArgumentAliases(extractArgsRecord(args));
+            const constraintCtx = buildConstraintContext(general, city, nation, constraintArgs, constraintEnv);
+            const view = new WorldStateView(options.world, constraintEnv, constraintArgs, {
+                general,
+                city,
+                nation,
+            });
+            const constraintResult = evaluateConstraints(
+                definition.buildConstraints(constraintCtx, args),
+                constraintCtx,
+                view
+            );
+            if (constraintResult.kind !== 'allow') {
+                const reason =
+                    constraintResult.kind === 'deny' ? constraintResult.reason : '조건을 확인할 수 없습니다.';
+                const failureText =
+                    definition.formatConstraintFailure?.(reason, constraintCtx, args, view) ??
+                    `${reason} ${definition.name} 실패.`;
+                if (input.actionKey === 'che_접경귀환') {
+                    options.world.pushLog({
+                        ...createActionLog(failureText),
+                        generalId: general.id,
+                    });
+                }
+                return { ok: false, reason: failureText };
+            }
+
+            if (input.actionKey === 'che_거병' && !options.reservedTurns) {
+                throw new Error('Immediate uprising requires the reserved-turn store.');
+            }
+
+            const additionalOccupiedUniqueItemKeys = (await options.getAdditionalOccupiedUniqueItemKeys?.()) ?? [];
+            const seedBase = buildSeedBase(state);
+            const uniqueLottery = buildUniqueLotteryRunner({
+                world: state,
+                worldView: options.world,
+                scenarioMeta: options.scenarioMeta,
+                seedBase,
+                itemRegistry,
+                uniqueConfig,
+                getAdditionalOccupiedUniqueItemKeys: () => additionalOccupiedUniqueItemKeys,
+            });
+            const startYear = resolveStartYear(state, options.scenarioMeta);
+            const baseContext: ActionContextBase = {
+                general,
+                city,
+                nation,
+                worldView: {
+                    listGenerals: () => options.world.listGenerals(),
+                    listGeneralsByCity: (cityId) =>
+                        options.world.listGenerals().filter((candidate) => candidate.cityId === cityId),
+                    listNations: () => options.world.listNations(),
+                },
+                rng: input.rng,
+                time: {
+                    year: state.currentYear,
+                    month: state.currentMonth,
+                    startYear,
+                },
+                uniqueLottery,
+            };
+            const actionContext =
+                buildActionContext(
+                    input.actionKey,
+                    baseContext,
+                    {
+                        world: state,
+                        scenarioConfig: options.world.getScenarioConfig(),
+                        scenarioMeta: options.scenarioMeta,
+                        map: options.map,
+                        unitSet: options.world.getUnitSet(),
+                        worldRef: options.world,
+                        actionArgs: constraintArgs,
+                        createGeneralId: () => options.world.getNextGeneralId(),
+                        createNationId: () => options.world.getNextNationId(),
+                        seedBase,
+                    },
+                    contextBuilders
+                ) ?? baseContext;
+
+            const resolution = resolveGeneralAction(
+                definition,
+                actionContext,
+                {
+                    now: general.turnTime,
+                    schedule: {
+                        entries: [
+                            {
+                                startMinute: 0,
+                                tickMinutes: Math.max(1, Math.floor(state.tickSeconds / 60)),
+                            },
+                        ],
+                    },
+                },
+                args
+            );
+
+            if (input.actionKey === 'che_접경귀환' && (resolution.general as TurnGeneral).cityId === general.cityId) {
+                for (const log of resolution.logs) {
+                    options.world.pushLog(log);
+                }
+                return { ok: false, reason: '가까운 아국 도시가 없습니다.' };
+            }
+
+            const progressionLogs: LogEntryDraft[] = [];
+            let nextGeneral = resolution.general as TurnGeneral;
+            if (input.actionKey === 'che_거병') {
+                const activeActionAmount =
+                    (
+                        definition as GeneralActionDefinition & {
+                            getInheritanceActiveActionAmount?: (context: ActionContextBase, args: unknown) => number;
+                        }
+                    ).getInheritanceActiveActionAmount?.(actionContext, args) ?? 0;
+                const nextMeta = {
+                    ...nextGeneral.meta,
+                    inherit_active_action:
+                        readMetaNumber(asRecord(nextGeneral.meta), 'inherit_active_action', 0) + activeActionAmount,
+                    ...(input.refreshKillturn ? { killturn: readMetaNumber(asRecord(state.meta), 'killturn', 0) } : {}),
+                };
+                nextGeneral = applyLegacyGeneralProgression(
+                    {
+                        ...nextGeneral,
+                        meta: nextMeta,
+                        lastTurn: {
+                            command: definition.name,
+                            arg: extractArgsRecord(args),
+                        },
+                    },
+                    general,
+                    input.actionKey,
+                    env,
+                    progressionLogs
+                );
+            }
+
+            for (const createdNation of resolution.created?.nations ?? []) {
+                if (!options.world.addNation(createdNation)) {
+                    throw new Error(`Immediate action could not create nation ${createdNation.id}.`);
+                }
+                options.reservedTurns?.ensureNationTurns(createdNation.id, 12);
+                options.reservedTurns?.ensureNationTurns(createdNation.id, 11);
+            }
+            if (resolution.dirty?.city && resolution.city) {
+                options.world.updateCity(resolution.city.id, resolution.city);
+            }
+            if (resolution.dirty?.nation && resolution.nation) {
+                options.world.updateNation(resolution.nation.id, resolution.nation);
+            }
+            for (const patch of resolution.patches?.generals ?? []) {
+                options.world.updateGeneral(patch.id, patch.patch as Partial<TurnGeneral>);
+            }
+            for (const patch of resolution.patches?.cities ?? []) {
+                options.world.updateCity(patch.id, patch.patch);
+            }
+            for (const patch of resolution.patches?.nations ?? []) {
+                options.world.updateNation(patch.id, patch.patch);
+            }
+            for (const effect of resolution.effects) {
+                if (effect.type === 'diplomacy:patch') {
+                    options.world.applyDiplomacyPatch({
+                        srcNationId: effect.srcNationId,
+                        destNationId: effect.destNationId,
+                        patch: effect.patch,
+                    });
+                } else if (effect.type === 'message:add') {
+                    options.world.queueMessage(effect.draft);
+                }
+            }
+            for (const log of [...resolution.logs, ...progressionLogs]) {
+                options.world.pushLog(log);
+            }
+            options.world.updateGeneral(input.generalId, nextGeneral);
+            return { ok: true };
+        },
+    };
+};

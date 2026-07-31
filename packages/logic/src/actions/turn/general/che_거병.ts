@@ -30,6 +30,9 @@ export interface UprisingContext extends ActionContextBase {
 }
 
 const ACTION_NAME = '거병';
+const formatHourMinute = (date: Date): string =>
+    `${String(date.getUTCHours()).padStart(2, '0')}:${String(date.getUTCMinutes()).padStart(2, '0')}`;
+
 const truncateLegacyWidth = (value: string, maxWidth: number): string => {
     let result = '';
     let width = 0;
@@ -119,7 +122,7 @@ export class ActionDefinition<
 
         const cityName = context.city?.name ?? '??';
 
-        context.addLog(`거병에 성공하였습니다.`, {
+        context.addLog(`거병에 성공하였습니다. <1>${formatHourMinute(uprisingCtx.general.turnTime)}</>`, {
             category: LogCategory.ACTION,
             format: LogFormat.MONTH,
         });
@@ -128,15 +131,18 @@ export class ActionDefinition<
             category: LogCategory.SUMMARY,
             format: LogFormat.MONTH,
         });
-        context.addLog(
-            `<Y><b>【거병】</b></><D><b>${general.name}</b></>${josaYi} 세력을 결성하였습니다.`,
-            {
-                scope: LogScope.SYSTEM,
-                category: LogCategory.HISTORY,
-                format: LogFormat.YEAR_MONTH,
-            }
-        );
+        context.addLog(`<Y><b>【거병】</b></><D><b>${general.name}</b></>${josaYi} 세력을 결성하였습니다.`, {
+            scope: LogScope.SYSTEM,
+            category: LogCategory.HISTORY,
+            format: LogFormat.YEAR_MONTH,
+        });
         context.addLog(`<G><b>${cityName}</b></>에서 거병`, {
+            category: LogCategory.HISTORY,
+            format: LogFormat.YEAR_MONTH,
+        });
+        context.addLog(`<Y>${general.name}</>${josaYi} <G><b>${cityName}</b></>에서 거병`, {
+            scope: LogScope.NATION,
+            nationId: newNationId,
             category: LogCategory.HISTORY,
             format: LogFormat.YEAR_MONTH,
         });

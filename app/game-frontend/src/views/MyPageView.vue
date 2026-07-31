@@ -37,6 +37,15 @@ const screenMode = ref<ScreenMode>('auto');
 const customCss = ref('');
 const cssSaving = ref(false);
 let cssTimer: number | null = null;
+const immediateActionRequestIds = reactive({
+    buildNationCandidate: crypto.randomUUID(),
+    instantRetreat: crypto.randomUUID(),
+});
+
+const resetImmediateActionRequestIds = () => {
+    immediateActionRequestIds.buildNationCandidate = crypto.randomUUID();
+    immediateActionRequestIds.instantRetreat = crypto.randomUUID();
+};
 
 const form = reactive<SettingForm>({
     tnmt: 1,
@@ -181,6 +190,7 @@ const loadPage = async () => {
             Object.assign(form, general.settings);
         }
         await Promise.all(logTypes.map((type) => loadLog(type)));
+        resetImmediateActionRequestIds();
     } catch (cause) {
         error.value = errorText(cause);
     } finally {
@@ -391,7 +401,9 @@ onMounted(() => {
                         class="action-button"
                         @click="
                             confirmMutation('거병 이후 장수를 삭제할 수 없게됩니다. 거병하시겠습니까?', () =>
-                                trpc.general.buildNationCandidate.mutate()
+                                trpc.general.buildNationCandidate.mutate({
+                                    clientRequestId: immediateActionRequestIds.buildNationCandidate,
+                                })
                             )
                         "
                     >
@@ -403,20 +415,19 @@ onMounted(() => {
                     <button
                         class="action-button"
                         @click="
-                            confirmMutation('아군 접경으로 이동할까요?', () => trpc.general.instantRetreat.mutate())
+                            confirmMutation('아군 접경으로 이동할까요?', () =>
+                                trpc.general.instantRetreat.mutate({
+                                    clientRequestId: immediateActionRequestIds.instantRetreat,
+                                })
+                            )
                         "
                     >
                         접경 귀환
                     </button>
                 </div>
-                <div
-                    v-if="actionAvailability.selectOtherGeneral && selectionPoolStatus?.enabled"
-                    class="action-line"
-                >
+                <div v-if="actionAvailability.selectOtherGeneral && selectionPoolStatus?.enabled" class="action-line">
                     다른 장수 선택
-                    <template v-if="formatSelectionAvailableAt">
-                        ({{ formatSelectionAvailableAt }} 부터)
-                    </template>
+                    <template v-if="formatSelectionAvailableAt"> ({{ formatSelectionAvailableAt }} 부터) </template>
                     <br />
                     <RouterLink class="action-button select-general-link" to="/select-general">
                         다른 장수 선택
