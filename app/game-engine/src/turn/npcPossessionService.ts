@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto';
 
-import { asNumber, asRecord, JosaUtil, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
+import { asNumber, asRecord, JosaUtil, LiteHashDRBG, RandUtil, type RNG } from '@sammo-ts/common';
 import { GamePrisma, type DatabaseClient, type GamePrisma as GamePrismaTypes } from '@sammo-ts/infra';
 import {
     ActionLogger,
@@ -69,6 +69,11 @@ export interface NpcPossessionReservation {
     pickMoreFrom: string;
     pickMoreSeconds: number;
     candidates: NpcPossessionCandidate[];
+}
+
+export interface NpcPossessionSelectionObserver {
+    onRandomDraw?: (value: number) => void;
+    onCandidateDraw?: (selectedId: string) => void;
 }
 
 interface NpcSelectionTokenRow {
@@ -238,10 +243,11 @@ const buildCandidateSnapshot = async (
     };
 };
 
-const chooseCandidates = (
+export const chooseNpcPossessionCandidates = (
     candidates: NpcPossessionCandidate[],
     kept: Record<string, NpcPossessionCandidate>,
-    rng: RandUtil
+    rng: RandUtil,
+    onDraw?: (selectedId: string) => void
 ): Record<string, NpcPossessionCandidate> => {
     const picked = { ...kept };
     const weights = Object.fromEntries(
@@ -254,6 +260,7 @@ const chooseCandidates = (
     const pickLimit = Math.min(candidates.length, MAX_PICK_COUNT);
     while (Object.keys(picked).length < pickLimit) {
         const selectedId = String(rng.choiceUsingWeight(weights));
+        onDraw?.(selectedId);
         if (!Object.hasOwn(picked, selectedId)) {
             const candidate = byId.get(selectedId);
             if (!candidate) {
@@ -265,6 +272,21 @@ const chooseCandidates = (
     return picked;
 };
 
+class ObservedRandUtil extends RandUtil {
+    constructor(
+        rng: RNG,
+        private readonly onRandomDraw: (value: number) => void
+    ) {
+        super(rng);
+    }
+
+    public override nextFloat1(): number {
+        const value = super.nextFloat1();
+        this.onRandomDraw(value);
+        return value;
+    }
+}
+
 export const reserveNpcPossessionCandidates = async (options: {
     db: DatabaseClient;
     worldState: WorldStateRow;
@@ -273,6 +295,7 @@ export const reserveNpcPossessionCandidates = async (options: {
     refresh?: boolean;
     keepIds?: number[];
     now?: Date;
+    selectionObserver?: NpcPossessionSelectionObserver;
 }): Promise<NpcPossessionReservation> => {
     const { db, worldState, userId } = options;
     requireNpcPossessionWorld(worldState);
@@ -375,10 +398,13 @@ export const reserveNpcPossessionCandidates = async (options: {
     const candidates = await Promise.all(
         generalRows.map((row) => buildCandidateSnapshot(row, nations.get(row.nationId)))
     );
-    const rng = new RandUtil(
-        new LiteHashDRBG(buildNpcSelectionTokenSeed(readHiddenSeed(worldState), options.ownerIdentity, now))
+    const selectionRng = new LiteHashDRBG(
+        buildNpcSelectionTokenSeed(readHiddenSeed(worldState), options.ownerIdentity, now)
     );
-    const pickResult = chooseCandidates(candidates, kept, rng);
+    const rng = options.selectionObserver?.onRandomDraw
+        ? new ObservedRandUtil(selectionRng, options.selectionObserver.onRandomDraw)
+        : new RandUtil(selectionRng);
+    const pickResult = chooseNpcPossessionCandidates(candidates, kept, rng, options.selectionObserver?.onCandidateDraw);
     const turnTermMinutes = resolveTurnTermMinutes(worldState);
     const validUntil = new Date(now.getTime() + Math.max(VALID_SECONDS, turnTermMinutes * 40) * 1000);
     const refreshedPickMoreFrom = new Date(

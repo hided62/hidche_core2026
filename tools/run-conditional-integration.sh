@@ -35,8 +35,9 @@ set +a
 integration_schema=${CONDITIONAL_INTEGRATION_SCHEMA:-conditional_integration}
 scenario_schema=${SCENARIO_SEED_INTEGRATION_SCHEMA:-conditional_scenario_seed}
 npc_possession_schema=${NPC_POSSESSION_INTEGRATION_SCHEMA:-conditional_$(date +%s)_$$_npc_possession_integration}
+npc_possession_differential_schema=conditional_$(date +%s)_$$_npc_possession_differential
 
-for schema in "$integration_schema" "$scenario_schema" "$npc_possession_schema"; do
+for schema in "$integration_schema" "$scenario_schema" "$npc_possession_schema" "$npc_possession_differential_schema"; do
     case "$schema" in
         ''|[!a-z_]*|*[!a-z0-9_]*)
             echo "integration schema must be a lowercase PostgreSQL identifier: $schema" >&2
@@ -125,6 +126,71 @@ npc_possession_database_url=$(build_database_url "$npc_possession_schema")
 )
 
 if [ "${TURN_DIFFERENTIAL_REFERENCE:-}" = "1" ]; then
+    reference_workspace_root=${TURN_DIFFERENTIAL_WORKSPACE_ROOT:-"$workspace_root/.."}
+    reference_stack=${TURN_DIFFERENTIAL_STACK_DIR:-"$reference_workspace_root/docker_compose_files/reference"}
+    if [ ! -f "$reference_stack/compose.yml" ]; then
+        echo "reference compose file is missing; set TURN_DIFFERENTIAL_WORKSPACE_ROOT or TURN_DIFFERENTIAL_STACK_DIR" >&2
+        exit 69
+    fi
+    if [ ! -f "$reference_workspace_root/ref/sam/d_setting/RootDB.php" ] ||
+        [ ! -f "$reference_workspace_root/ref/sam/hwe/d_setting/DB.php" ]; then
+        echo "reference runtime database configuration is missing under $reference_workspace_root/ref/sam" >&2
+        exit 69
+    fi
+    if ! docker compose -f "$reference_stack/compose.yml" ps --status running --services | grep -qx db ||
+        ! docker compose -f "$reference_stack/compose.yml" exec -T db healthcheck.sh --connect --innodb_initialized \
+            >/dev/null 2>&1; then
+        echo "TURN_DIFFERENTIAL_REFERENCE=1 requires a healthy bootstrapped reference db stack" >&2
+        exit 69
+    fi
+    reference_tables=$(
+        docker compose -f "$reference_stack/compose.yml" exec -T db sh -c '
+            export MYSQL_PWD="$(cat /run/secrets/db_root_password)"
+            mariadb --batch --skip-column-names -u root -e "
+                SELECT COUNT(*) FROM information_schema.TABLES
+                WHERE TABLE_SCHEMA = '\''$MARIADB_DATABASE'\'' AND TABLE_NAME = '\''member'\'';
+                SELECT COUNT(*) FROM information_schema.TABLES
+                WHERE TABLE_SCHEMA = '\''$REF_HWE_DB_NAME'\'' AND TABLE_NAME IN ('\''general'\'', '\''select_npc_token'\'');
+            "
+        ' 2>/dev/null
+    ) || {
+        echo "failed to inspect reference database bootstrap state" >&2
+        exit 69
+    }
+    if [ "$reference_tables" != "$(printf '1\n2')" ]; then
+        echo "reference root/HWE databases are not bootstrapped" >&2
+        exit 69
+    fi
+    npc_possession_differential_database_url=$(build_database_url "$npc_possession_differential_schema")
+    (
+        cleanup_npc_possession_differential_schema() {
+            printf 'DROP SCHEMA IF EXISTS "%s" CASCADE;\n' "$npc_possession_differential_schema" |
+                DATABASE_URL=$npc_possession_differential_database_url \
+                    pnpm --filter @sammo-ts/infra exec prisma db execute --stdin >/dev/null
+        }
+        handle_npc_possession_differential_exit() {
+            exit_status=$?
+            trap - EXIT HUP INT TERM
+            if ! cleanup_npc_possession_differential_schema && [ "$exit_status" -eq 0 ]; then
+                exit_status=1
+            fi
+            exit "$exit_status"
+        }
+        trap handle_npc_possession_differential_exit EXIT
+        trap 'exit 129' HUP
+        trap 'exit 130' INT
+        trap 'exit 143' TERM
+        export POSTGRES_SCHEMA=$npc_possession_differential_schema
+        export DATABASE_URL=$npc_possession_differential_database_url
+        export NPC_POSSESSION_DIFFERENTIAL_DATABASE_URL=$npc_possession_differential_database_url
+        export TURN_DIFFERENTIAL_WORKSPACE_ROOT=$reference_workspace_root
+        export TURN_DIFFERENTIAL_STACK_DIR=$reference_stack
+        pnpm --filter @sammo-ts/infra prisma:db:push:game
+        cd "$workspace_root/tools/integration-tests"
+        pnpm exec vitest run --no-file-parallelism --maxWorkers=1 \
+            test/npcPossessionSelectionReference.integration.test.ts
+    )
+
     live_sortie_schema=${LIVE_SORTIE_PERSISTENCE_SCHEMA:-conditional_live_sortie_persistence}
     case "$live_sortie_schema" in
         ''|[!a-z_]*|*[!a-z0-9_]*)
