@@ -102,9 +102,10 @@ const join = async () => {
     try {
         await trpc.tournament.join.mutate();
         actionMessage.value = '참가 신청이 반영되었습니다.';
-        await load();
     } catch (value) {
         actionMessage.value = errorText(value);
+    } finally {
+        await load();
     }
 };
 

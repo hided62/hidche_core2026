@@ -5,7 +5,7 @@ import { promises as fs } from 'fs';
 import { randomUUID } from 'crypto';
 import sharp, { type WebpOptions } from 'sharp';
 
-import { authedProcedure, router } from '../../trpc.js';
+import { accessAuthedInputProcedure, authedProcedure, router } from '../../trpc.js';
 import { getMyGeneral } from '../shared/general.js';
 import { resolveSecretPermission } from '../shared/secretPermission.js';
 
@@ -107,7 +107,7 @@ export const boardRouter = router({
             canSecret: permission >= 2,
         };
     }),
-    getArticles: authedProcedure.input(z.object({ isSecret: z.boolean() })).query(async ({ ctx, input }) => {
+    getArticles: accessAuthedInputProcedure(z.object({ isSecret: z.boolean() })).query(async ({ ctx, input }) => {
         const { general, permission } = await getBoardActor(ctx);
         assertBoardAccess(permission, input.isSecret);
 
@@ -159,8 +159,7 @@ export const boardRouter = router({
             })),
         }));
     }),
-    writeArticle: authedProcedure
-        .input(
+    writeArticle: accessAuthedInputProcedure(
             z.object({
                 isSecret: z.boolean(),
                 title: z.string().trim().max(250),
@@ -189,8 +188,7 @@ export const boardRouter = router({
 
             return { id: post.id };
         }),
-    writeComment: authedProcedure
-        .input(
+    writeComment: accessAuthedInputProcedure(
             z.object({
                 postId: z.number().int().positive(),
                 content: z.string().trim().max(2000),

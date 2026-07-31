@@ -4,59 +4,86 @@ import { GamePrisma } from '@sammo-ts/infra';
 import type { GameApiContext } from '../context.js';
 
 export const accessPages = [
-    'front-info',
     'nation-info',
     'nation-cities',
-    'global-info',
     'nation-list',
-    'general-list',
     'current-city',
-    'diplomacy',
-    'nation-generals',
-    'nation-personnel',
-    'nation-finance',
-    'battle-center',
-    'board',
-    'best-general',
-    'hall-of-fame',
     'dynasty',
-    'yearbook',
-    'nation-betting',
     'traffic',
-    'npc-list',
-    'my-page',
     'npc-control',
-    'tournament',
-    'betting',
 ] as const;
 
 export type AccessPage = (typeof accessPages)[number];
 
 export const accessPageWeights: Record<AccessPage, number> = {
-    'front-info': 1,
     'nation-info': 1,
     'nation-cities': 1,
-    'global-info': 1,
     'nation-list': 2,
-    'general-list': 2,
     'current-city': 1,
-    diplomacy: 1,
-    'nation-generals': 1,
-    'nation-personnel': 1,
-    'nation-finance': 1,
-    'battle-center': 1,
-    board: 1,
-    'best-general': 1,
-    'hall-of-fame': 1,
     dynasty: 1,
-    yearbook: 1,
-    'nation-betting': 1,
     traffic: 1,
-    'npc-list': 2,
-    'my-page': 1,
     'npc-control': 1,
-    tournament: 1,
-    betting: 1,
+};
+
+export const generalAccessEndpointWeights = {
+    'world.getGeneralDirectory': 2,
+    'public.getNpcList': 2,
+    'ranking.getBestGeneral': 1,
+    'ranking.getHallOfFame': 1,
+    'tournament.getSnapshot': 1,
+    'nation.getSecretGeneralList': 1,
+    'nation.getPersonnelInfo': 1,
+    'nation.getGeneralList': 1,
+    'general.ensureDieOnPrestartStatus': 1,
+    'nation.getStratFinan': 1,
+    'board.getArticles': 1,
+    'diplomacy.getLetters': 2,
+    'battle.getGeneralDetail': 1,
+    'betting.getList': 1,
+    'general.getFrontStatus': 1,
+    'yearbook.getHistory': 1,
+    'world.getGlobalInfo': 1,
+    'nation.getBattleCenter': 1,
+    'nation.getChiefCenter': 1,
+    'troop.getList': 1,
+    'board.writeArticle': 1,
+    'board.writeComment': 1,
+    'diplomacy.sendLetter': 1,
+    'diplomacy.respondLetter': 1,
+    'diplomacy.rollbackLetter': 1,
+    'diplomacy.destroyLetter': 1,
+    'general.buildNationCandidate': 1,
+    'general.dieOnPrestart': 1,
+    'general.instantRetreat': 1,
+    'messages.send': 1,
+    'general.setMySetting': 0,
+    'npc.setNationPolicy': 0,
+    'npc.setNationPriority': 0,
+    'npc.setGeneralPriority': 0,
+    'battle.simulate': 0,
+} as const satisfies Record<string, 0 | 1 | 2>;
+
+export type GeneralAccessEndpoint = keyof typeof generalAccessEndpointWeights;
+
+export const resolveGeneralAccessEndpointWeight = (
+    path: string,
+    input: unknown,
+    currentProfileName: string
+): 0 | 1 | 2 | null | undefined => {
+    const weight = generalAccessEndpointWeights[path as GeneralAccessEndpoint];
+    if (weight === undefined) {
+        return undefined;
+    }
+    if (path === 'yearbook.getHistory') {
+        const requestedServer =
+            typeof input === 'object' && input !== null && 'serverID' in input
+                ? (input as { serverID?: unknown }).serverID
+                : undefined;
+        if (requestedServer !== undefined && requestedServer !== currentProfileName) {
+            return null;
+        }
+    }
+    return weight;
 };
 
 const adminRoles = new Set(['superuser', 'admin', 'admin.superuser']);
@@ -262,7 +289,16 @@ export const recordGeneralAccess = async (
     ctx: Pick<GameApiContext, 'auth' | 'db'>,
     page: AccessPage,
     now = new Date()
+): Promise<boolean> => recordGeneralAccessWeight(ctx, accessPageWeights[page], now);
+
+export const recordGeneralAccessWeight = async (
+    ctx: Pick<GameApiContext, 'auth' | 'db'>,
+    weight: number,
+    now = new Date()
 ): Promise<boolean> => {
+    if (!Number.isInteger(weight) || weight < 0) {
+        throw new RangeError('General access weight must be a non-negative integer.');
+    }
     const user = ctx.auth?.user;
     if (!user || user.roles.some((role) => adminRoles.has(role))) {
         return false;
@@ -296,7 +332,6 @@ export const recordGeneralAccess = async (
         return false;
     }
 
-    const weight = accessPageWeights[page];
     const { periodStartedAt, scoreStartedAt } = resolveAccessWindows(now, worldState.tickSeconds, meta);
 
     await upsertGeneralAccess(ctx.db, {

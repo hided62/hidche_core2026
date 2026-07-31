@@ -6,7 +6,7 @@ import type { ItemModule } from '@sammo-ts/logic/items/types.js';
 import { buildLegacyDefaultUniqueItemPool } from '@sammo-ts/logic/rewards/legacyUniqueItemPool.js';
 import { resolveUniqueConfig } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 
-import { authedProcedure, procedure, router } from '../../trpc.js';
+import { accessAuthedInputProcedure, accessInputProcedure, procedure, router } from '../../trpc.js';
 
 const DEFAULT_BG_COLOR = '#330000';
 const DEFAULT_FG_COLOR = '#ffffff';
@@ -81,8 +81,7 @@ const loadUniqueItems = () => {
 };
 
 export const rankingRouter = router({
-    getBestGeneral: authedProcedure
-        .input(
+    getBestGeneral: accessAuthedInputProcedure(
             z
                 .object({
                     view: z.enum(['user', 'npc']).optional(),
@@ -369,8 +368,7 @@ export const rankingRouter = router({
         }
         return Array.from(seasonMap.values());
     }),
-    getHallOfFame: procedure
-        .input(
+    getHallOfFame: accessInputProcedure(
             z.object({
                 season: z.number().int(),
                 scenario: z.number().int().optional(),

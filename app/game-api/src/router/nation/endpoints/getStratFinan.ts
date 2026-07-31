@@ -3,7 +3,7 @@ import { TRPCError } from '@trpc/server';
 import { asRecord } from '@sammo-ts/common';
 import { getGoldIncome, getOutcome, getRiceIncome, getWallIncome, getWarGoldIncome, type NationIncomeContext } from '@sammo-ts/logic';
 
-import { authedProcedure } from '../../../trpc.js';
+import { accessAuthedProcedure } from '../../../trpc.js';
 import { getMyGeneral } from '../../shared/general.js';
 import {
     assertNationAccess,
@@ -29,7 +29,7 @@ import {
     type NationStratRow,
 } from '../shared.js';
 
-export const getStratFinan = authedProcedure.query(async ({ ctx }) => {
+export const getStratFinan = accessAuthedProcedure.query(async ({ ctx }) => {
     const me = await getMyGeneral(ctx);
     assertNationAccess(me);
 

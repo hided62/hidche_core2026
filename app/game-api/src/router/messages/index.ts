@@ -4,7 +4,7 @@ import { asRecord } from '@sammo-ts/common';
 import type { UserSanctions } from '@sammo-ts/common/auth/gameToken';
 import { isMessageAccessBlocked } from '@sammo-ts/common/auth/sanctions';
 
-import { authedProcedure, router } from '../../trpc.js';
+import { accessAuthedInputProcedure, authedProcedure, router } from '../../trpc.js';
 import {
     MESSAGE_MAILBOX_NATIONAL_BASE,
     MESSAGE_MAILBOX_PUBLIC,
@@ -388,8 +388,7 @@ export const messagesRouter = router({
                 ...messageBuckets,
             };
         }),
-    send: authedProcedure
-        .input(
+    send: accessAuthedInputProcedure(
             z.object({
                 generalId: z.number().int().positive(),
                 mailbox: z.number().int(),

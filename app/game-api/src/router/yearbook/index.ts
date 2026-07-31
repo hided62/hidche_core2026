@@ -7,6 +7,10 @@ import { LogCategory, LogScope } from '@sammo-ts/infra';
 
 import type { GameApiContext } from '../../context.js';
 import { loadPublicMap, type BaseMapResult } from '../../maps/worldMap.js';
+import {
+    generalAccessEndpointWeights,
+    recordGeneralAccessWeight,
+} from '../../services/generalAccess.js';
 import { authedProcedure, router } from '../../trpc.js';
 import { getMyGeneral } from '../shared/general.js';
 
@@ -23,6 +27,13 @@ const joinYearMonth = (year: number, month: number): number => year * 12 + month
 const zServerId = z.string().trim().min(1).max(64);
 
 const computeHash = (payload: unknown): string => createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+
+const recordHistoryAccess = async (ctx: GameApiContext): Promise<void> => {
+    if (ctx.generalAccessTracking !== true) {
+        return;
+    }
+    await recordGeneralAccessWeight(ctx, generalAccessEndpointWeights['yearbook.getHistory']);
+};
 
 const parseTextArray = (value: unknown): string[] =>
     Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
@@ -257,6 +268,10 @@ export const yearbookRouter = router({
             }
             const targetProfileName = input.serverID ?? ctx.profile.name;
             const isCurrentProfile = targetProfileName === ctx.profile.name;
+            const shouldRecordAfterHashCheck = isCurrentProfile && Boolean(input.hash);
+            if (isCurrentProfile && !shouldRecordAfterHashCheck) {
+                await recordHistoryAccess(ctx);
+            }
 
             const isCurrent =
                 isCurrentProfile && worldState.currentYear === input.year && worldState.currentMonth === input.month;
@@ -279,6 +294,9 @@ export const yearbookRouter = router({
                 const hash = computeHash(data);
                 if (input.hash && input.hash === hash) {
                     return { notModified: true, hash };
+                }
+                if (shouldRecordAfterHashCheck) {
+                    await recordHistoryAccess(ctx);
                 }
                 return { notModified: false, hash, data };
             }
@@ -316,6 +334,9 @@ export const yearbookRouter = router({
             const hash = computeHash({ map, nations, globalHistory, globalAction });
             if (input.hash && input.hash === hash) {
                 return { notModified: true, hash };
+            }
+            if (shouldRecordAfterHashCheck) {
+                await recordHistoryAccess(ctx);
             }
             return { notModified: false, hash, data };
         }),

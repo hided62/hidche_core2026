@@ -1,8 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
+import { TRPCError } from '@trpc/server';
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
+import { z } from 'zod';
+import type { GameApiContext } from '../src/context.js';
 import type { DatabaseClient } from '../src/context.js';
 
-import { accessPageWeights, recordGeneralAccess, resolveAccessWindows } from '../src/services/generalAccess.js';
+import { accessAuthedInputProcedure, router } from '../src/trpc.js';
+import {
+    accessPageWeights,
+    generalAccessEndpointWeights,
+    recordGeneralAccess,
+    recordGeneralAccessWeight,
+    resolveGeneralAccessEndpointWeight,
+    resolveAccessWindows,
+} from '../src/services/generalAccess.js';
 
 const auth = (roles = ['user']): GameSessionTokenPayload => ({
     version: 1,
@@ -48,9 +59,56 @@ const buildDb = (meta: Record<string, unknown> = {}) => {
 };
 
 describe('general access tracking', () => {
-    it('uses the legacy weight two for both global directory pages', () => {
+    it('owns every migrated Ref call at one explicit server endpoint weight', () => {
+        expect(generalAccessEndpointWeights).toEqual({
+            'world.getGeneralDirectory': 2,
+            'public.getNpcList': 2,
+            'ranking.getBestGeneral': 1,
+            'ranking.getHallOfFame': 1,
+            'tournament.getSnapshot': 1,
+            'nation.getSecretGeneralList': 1,
+            'nation.getPersonnelInfo': 1,
+            'nation.getGeneralList': 1,
+            'general.ensureDieOnPrestartStatus': 1,
+            'nation.getStratFinan': 1,
+            'board.getArticles': 1,
+            'diplomacy.getLetters': 2,
+            'battle.getGeneralDetail': 1,
+            'betting.getList': 1,
+            'general.getFrontStatus': 1,
+            'yearbook.getHistory': 1,
+            'world.getGlobalInfo': 1,
+            'nation.getBattleCenter': 1,
+            'nation.getChiefCenter': 1,
+            'troop.getList': 1,
+            'board.writeArticle': 1,
+            'board.writeComment': 1,
+            'diplomacy.sendLetter': 1,
+            'diplomacy.respondLetter': 1,
+            'diplomacy.rollbackLetter': 1,
+            'diplomacy.destroyLetter': 1,
+            'general.buildNationCandidate': 1,
+            'general.dieOnPrestart': 1,
+            'general.instantRetreat': 1,
+            'messages.send': 1,
+            'general.setMySetting': 0,
+            'npc.setNationPolicy': 0,
+            'npc.setNationPriority': 0,
+            'npc.setGeneralPriority': 0,
+            'battle.simulate': 0,
+        });
+    });
+
+    it('counts only current-profile yearbook reads like Ref Global.GetHistory', () => {
+        expect(resolveGeneralAccessEndpointWeight('yearbook.getHistory', {}, 'che')).toBe(1);
+        expect(resolveGeneralAccessEndpointWeight('yearbook.getHistory', { serverID: 'che' }, 'che')).toBe(1);
+        expect(resolveGeneralAccessEndpointWeight('yearbook.getHistory', { serverID: 'hwe' }, 'che')).toBeNull();
+        expect(resolveGeneralAccessEndpointWeight('unknown.path', {}, 'che')).toBeUndefined();
+    });
+
+    it('keeps the legacy route weight while endpoint-owned directories use the server map', () => {
         expect(accessPageWeights['nation-list']).toBe(2);
-        expect(accessPageWeights['general-list']).toBe(2);
+        expect(generalAccessEndpointWeights['world.getGeneralDirectory']).toBe(2);
     });
 
     it('uses the latest processed game turn as the traffic period and score window', () => {
@@ -68,7 +126,7 @@ describe('general access tracking', () => {
         const { db, executeRaw, queryRaw, transaction, findGeneral } = buildDb();
         const now = new Date('2026-07-26T03:05:00.000Z');
 
-        await expect(recordGeneralAccess({ auth: auth(), db }, 'npc-list', now)).resolves.toBe(true);
+        await expect(recordGeneralAccess({ auth: auth(), db }, 'nation-list', now)).resolves.toBe(true);
         expect(findGeneral).toHaveBeenCalledWith({
             where: { userId: 'user-7' },
             orderBy: { id: 'asc' },
@@ -103,6 +161,120 @@ describe('general access tracking', () => {
         expect(accessStatement.values).toContain(2);
         expect(accessStatement.values).toContain(now);
         expect(accessStatement.values).toContainEqual(new Date('2026-07-26T03:00:00.000Z'));
+    });
+
+    it('accepts legacy weight zero to refresh timestamps without incrementing counters', async () => {
+        const { db, executeRaw, queryRaw, transaction } = buildDb();
+        const now = new Date('2026-07-26T03:06:00.000Z');
+
+        await expect(recordGeneralAccessWeight({ auth: auth(), db }, 0, now)).resolves.toBe(true);
+        expect(transaction).toHaveBeenCalledTimes(1);
+        expect((queryRaw.mock.calls[0]![0] as { values: unknown[] }).values).toContain(0);
+        expect((executeRaw.mock.calls[0]![0] as { values: unknown[] }).values).toContain(0);
+        expect((executeRaw.mock.calls[1]![0] as { values: unknown[] }).values).toContain(0);
+        expect((executeRaw.mock.calls[1]![0] as { values: unknown[] }).values).toContain(now);
+    });
+
+    it('rejects weights that cannot come from a server-owned Ref call boundary', async () => {
+        const fixture = buildDb();
+        await expect(recordGeneralAccessWeight({ auth: auth(), db: fixture.db }, -1)).rejects.toBeInstanceOf(
+            RangeError
+        );
+        await expect(recordGeneralAccessWeight({ auth: auth(), db: fixture.db }, 0.5)).rejects.toBeInstanceOf(
+            RangeError
+        );
+        expect(fixture.findGeneral).not.toHaveBeenCalled();
+    });
+
+    it('parses input, commits access, and only then opens the failing business event boundary', async () => {
+        const events: string[] = [];
+        let transactionCount = 0;
+        const transactionClient = {
+            $queryRaw: vi.fn(async () => [{ id: 41 }]),
+            $executeRaw: vi.fn(async () => 1),
+            inputEvent: {
+                update: vi.fn(async () => ({})),
+            },
+        };
+        const db = {
+            general: {
+                findFirst: vi.fn(async () => ({
+                    id: 7,
+                    userId: 'user-7',
+                })),
+            },
+            worldState: {
+                findFirst: vi.fn(async () => ({
+                    id: 3,
+                    currentYear: 185,
+                    currentMonth: 4,
+                    tickSeconds: 600,
+                    meta: {
+                        opentime: '2026-07-25T00:00:00.000Z',
+                        lastTurnTime: '2026-07-26T03:00:00.000Z',
+                    },
+                })),
+            },
+            inputEvent: {
+                create: vi.fn(async () => {
+                    events.push('input-event-create');
+                    return {};
+                }),
+                update: vi.fn(async () => {
+                    events.push('input-event-failed');
+                    return {};
+                }),
+                updateMany: vi.fn(async () => ({ count: 0 })),
+            },
+            $transaction: vi.fn(async (callback: (client: typeof transactionClient) => Promise<unknown>) => {
+                transactionCount += 1;
+                events.push(transactionCount === 1 ? 'access-transaction' : 'business-transaction');
+                return callback(transactionClient);
+            }),
+        };
+        const trackedRouter = router({
+            board: router({
+                writeArticle: accessAuthedInputProcedure(
+                    z.object({
+                        value: z.string().transform((value) => {
+                            events.push('input-parse');
+                            return value;
+                        }),
+                    })
+                ).mutation(() => {
+                    events.push('resolver');
+                    throw new TRPCError({ code: 'BAD_REQUEST', message: 'business rejected' });
+                }),
+            }),
+        });
+        const context = {
+            auth: auth(),
+            db,
+            generalAccessTracking: true,
+            requestId: 'access-boundary-test',
+            profile: { id: 'che:default', name: 'che' },
+        } as unknown as GameApiContext;
+
+        await expect(trackedRouter.createCaller(context).board.writeArticle({ value: 'ok' })).rejects.toMatchObject({
+            message: 'business rejected',
+        });
+        expect(events).toEqual([
+            'input-parse',
+            'access-transaction',
+            'input-event-create',
+            'business-transaction',
+            'resolver',
+            'input-event-failed',
+        ]);
+
+        events.length = 0;
+        transactionCount = 0;
+        await expect(
+            trackedRouter.createCaller(context).board.writeArticle({ value: 7 } as never)
+        ).rejects.toMatchObject({
+            code: 'BAD_REQUEST',
+        });
+        expect(events).toEqual([]);
     });
 
     it('does not write for anonymous/admin users, a future opening, or a finished world', async () => {

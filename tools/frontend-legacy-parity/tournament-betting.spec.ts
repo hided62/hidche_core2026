@@ -66,13 +66,35 @@ const bettingSummary = {
     myAmount: 50,
 };
 
+type FixtureState = {
+    betCalls: number;
+    joinCalls: number;
+    snapshotQueries: number;
+    summaryQueries: number;
+    rankingQueries: number;
+    accessCalls: number;
+    stage: number;
+    myGeneralId: number;
+};
+
+const fixtureByPage = new WeakMap<Page, FixtureState>();
+
 const installFixture = async (page: Page) => {
+    const state: FixtureState = {
+        betCalls: 0,
+        joinCalls: 0,
+        snapshotQueries: 0,
+        summaryQueries: 0,
+        rankingQueries: 0,
+        accessCalls: 0,
+        stage: snapshot.state.stage,
+        myGeneralId: 64,
+    };
+    fixtureByPage.set(page, state);
     await page.addInitScript(() => {
         window.localStorage.setItem('sammo-game-token', 'ga_tournament_visual');
         window.localStorage.setItem('sammo-game-profile', 'che:default');
     });
-    let betCalls = 0;
-    let joinCalls = 0;
     await page.route('**/image/game/**', (route) =>
         route.fulfill({
             status: 200,
@@ -82,16 +104,32 @@ const installFixture = async (page: Page) => {
     );
     await page.route('**/che/api/trpc/**', async (route) => {
         const results = operationNames(route).map((operation) => {
+            if (operation === 'auth.status') {
+                return response({ userId: 'tournament-user' });
+            }
             if (operation === 'lobby.info') {
-                return response({ myGeneral: { id: 64, name: '내장수' } });
+                return response({ myGeneral: { id: state.myGeneralId, name: '내장수' } });
             }
             if (operation === 'join.getConfig') return response({});
             if (operation === 'general.me') {
-                return response({ general: { id: 64, name: '내장수' }, nation: null, city: null });
+                return response({ general: { id: state.myGeneralId, name: '내장수' }, nation: null, city: null });
             }
-            if (operation === 'tournament.getSnapshot') return response(snapshot);
-            if (operation === 'tournament.getBettingSummary') return response(bettingSummary);
+            if (operation === 'tournament.getSnapshot') {
+                state.snapshotQueries += 1;
+                return response({
+                    ...snapshot,
+                    state: {
+                        ...snapshot.state,
+                        stage: state.stage,
+                    },
+                });
+            }
+            if (operation === 'tournament.getBettingSummary') {
+                state.summaryQueries += 1;
+                return response(bettingSummary);
+            }
             if (operation === 'tournament.getRankings') {
+                state.rankingQueries += 1;
                 return response(
                     [
                         ['tt', '전 력 전', '종합'],
@@ -123,16 +161,20 @@ const installFixture = async (page: Page) => {
             if (operation === 'tournament.getAdminStatus')
                 return errorResponse(operation, 'Admin permission is required.');
             if (operation === 'tournament.join') {
-                joinCalls += 1;
-                return joinCalls === 1
+                state.joinCalls += 1;
+                return state.joinCalls === 1
                     ? errorResponse(operation, '금이 부족합니다.')
                     : response({ ok: true, count: 64 });
             }
             if (operation === 'tournament.placeBet') {
-                betCalls += 1;
-                return betCalls === 1
+                state.betCalls += 1;
+                return state.betCalls === 1
                     ? errorResponse(operation, '500금까지만 베팅 가능합니다.')
                     : response({ ok: true });
+            }
+            if (operation === 'public.recordAccess') {
+                state.accessCalls += 1;
+                return response({ recorded: true });
             }
             return errorResponse(operation, `Unhandled fixture operation: ${operation}`);
         });
@@ -204,11 +246,33 @@ test('tournament keeps the fixed legacy canvas at a 1024px viewport', async ({ p
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeGreaterThanOrEqual(2000);
 });
 
+test('tournament reloads its snapshot after failed and successful joins without route access', async ({ page }) => {
+    const state = fixtureByPage.get(page)!;
+    state.stage = 1;
+    state.myGeneralId = 999;
+    await page.goto(`${gameUrl}/che/tournament`);
+    const join = page.getByRole('button', { name: '참가', exact: true });
+    await expect(join).toBeVisible();
+    await expect.poll(() => state.snapshotQueries).toBe(1);
+
+    await join.click();
+    await expect(page.getByRole('status')).toHaveText('금이 부족합니다.');
+    await expect.poll(() => state.snapshotQueries).toBe(2);
+
+    await join.click();
+    await expect(page.getByRole('status')).toHaveText('참가 신청이 반영되었습니다.');
+    await expect.poll(() => state.snapshotQueries).toBe(3);
+    expect(state.summaryQueries).toBe(3);
+    expect(state.accessCalls).toBe(0);
+});
+
 test('betting keeps the 1120px and 16 by 70px layout and retains a failed selection', async ({ page }) => {
+    const state = fixtureByPage.get(page)!;
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(`${gameUrl}/che/betting`);
     await expect(page.getByText('베 팅 장')).toBeVisible();
     await expect(page.locator('.names span')).toHaveCount(16);
+    await expect.poll(() => state.snapshotQueries).toBe(1);
 
     const geometry = await page.locator('#tournament-betting-container').evaluate((container) => {
         const rect = container.getBoundingClientRect();
@@ -251,7 +315,12 @@ test('betting keeps the 1120px and 16 by 70px layout and retains a failed select
     await bet.click();
     await expect(page.getByRole('status')).toHaveText('500금까지만 베팅 가능합니다.');
     await expect(select).toHaveValue('500');
+    await expect.poll(() => state.snapshotQueries).toBe(2);
 
     await bet.click();
     await expect(page.getByRole('status')).toHaveText('베팅이 등록되었습니다.');
+    await expect.poll(() => state.snapshotQueries).toBe(3);
+    expect(state.summaryQueries).toBe(3);
+    expect(state.rankingQueries).toBe(3);
+    expect(state.accessCalls).toBe(0);
 });

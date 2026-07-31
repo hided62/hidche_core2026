@@ -7,7 +7,7 @@ import type { TournamentState } from '../../tournament/types.js';
 
 import { TournamentStore } from '../../tournament/store.js';
 import { buildTournamentKeys } from '../../tournament/keys.js';
-import { authedProcedure, router } from '../../trpc.js';
+import { accessAuthedProcedure, authedProcedure, router } from '../../trpc.js';
 import { getMyGeneral } from '../shared/general.js';
 
 const hasAdminRole = (roles: string[], profileName: string): boolean => {
@@ -127,7 +127,7 @@ export const tournamentRouter = router({
         return store.getState();
     }),
     getAdminStatus: adminProcedure.query(async () => ({ ok: true })),
-    getSnapshot: authedProcedure.query(async ({ ctx }) => {
+    getSnapshot: accessAuthedProcedure.query(async ({ ctx }) => {
         await getMyGeneral(ctx);
         const store = new TournamentStore(ctx.redis, buildTournamentKeys(ctx.profile.name));
         const [state, participants, matches, bets] = await Promise.all([
