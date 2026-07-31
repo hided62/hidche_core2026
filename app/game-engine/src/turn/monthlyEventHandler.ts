@@ -209,12 +209,16 @@ const parseActions = (raw: unknown): Array<{ name: string; args: readonly unknow
     });
 };
 
+export interface ScenarioEventCalendarHandler extends TurnCalendarHandler {
+    dispatchTarget(targetCode: string, context: TurnCalendarContext): Promise<void>;
+}
+
 export const createMonthlyEventHandler = (options: {
     getWorld: () => InMemoryTurnWorld | null;
     startYear: number;
     actions?: MonthlyEventActionRegistry;
-}): TurnCalendarHandler => {
-    const dispatch = async (targetCode: 'pre_month' | 'month', context: TurnCalendarContext): Promise<void> => {
+}): ScenarioEventCalendarHandler => {
+    const dispatchTarget = async (targetCode: string, context: TurnCalendarContext): Promise<void> => {
         const world = options.getWorld();
         if (!world) {
             return;
@@ -249,7 +253,8 @@ export const createMonthlyEventHandler = (options: {
     };
 
     return {
-        beforeMonthChanged: (context) => dispatch('pre_month', context),
-        onMonthChanged: (context) => dispatch('month', context),
+        beforeMonthChanged: (context) => dispatchTarget('pre_month', context),
+        onMonthChanged: (context) => dispatchTarget('month', context),
+        dispatchTarget,
     };
 };

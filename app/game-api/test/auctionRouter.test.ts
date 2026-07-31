@@ -76,6 +76,8 @@ const buildContext = (options: {
     general?: GeneralRow | null;
     auctions?: Array<Record<string, unknown>>;
     queryRaw?: (query: GamePrisma.Sql) => Promise<unknown>;
+    isUnited?: number;
+    isunited?: number;
 }) => {
     const auth = options.auth === undefined ? buildAuth() : options.auth;
     const general = options.general === undefined ? buildGeneral() : options.general;
@@ -108,7 +110,7 @@ const buildContext = (options: {
                 allItems: { weapon: { che_무기_12_칠성검: 1 } },
             },
         },
-        meta: { hiddenSeed: 'auction-hidden-seed' },
+        meta: { hiddenSeed: 'auction-hidden-seed', isUnited: options.isUnited ?? 0, isunited: options.isunited ?? 0 },
         updatedAt: new Date('2026-07-26T00:00:00Z'),
     };
     const db = {
@@ -217,6 +219,28 @@ describe('auction router actor and permission boundaries', () => {
             startBidAmount: 500,
             finishBidAmount: 2000,
         });
+    });
+
+    it('rejects auction mutations after unification before sending a daemon command', async () => {
+        const fixture = buildContext({ isUnited: 0, isunited: 2 });
+        const caller = appRouter.createCaller(fixture.context);
+
+        await expect(
+            caller.auction.openBuyRice({
+                amount: 1000,
+                closeTurnCnt: 3,
+                startBidAmount: 500,
+                finishBidAmount: 2000,
+            })
+        ).rejects.toMatchObject({
+            code: 'BAD_REQUEST',
+            message: '천하통일 후에는 경매를 이용할 수 없습니다.',
+        });
+        await expect(caller.auction.bidUnique({ auctionId: 31, amount: 110 })).rejects.toMatchObject({
+            code: 'BAD_REQUEST',
+            message: '천하통일 후에는 경매를 이용할 수 없습니다.',
+        });
+        expect(fixture.requestCommand).not.toHaveBeenCalled();
     });
 
     it('redacts real unique-auction identities while preserving caller markers', async () => {

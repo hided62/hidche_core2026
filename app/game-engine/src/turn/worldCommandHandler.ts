@@ -1506,6 +1506,10 @@ async function handleAuctionOpen(
     ctx: CommandHandlerContext,
     command: Extract<TurnDaemonCommand, { type: 'auctionOpen' }>
 ): Promise<TurnDaemonCommandResult> {
+    const worldMeta = asRecord(ctx.world.getState().meta);
+    if (Number(worldMeta.isUnited ?? 0) !== 0 || Number(worldMeta.isunited ?? 0) !== 0) {
+        return { type: 'auctionOpen', ok: false, reason: '천하통일 후에는 경매를 이용할 수 없습니다.' };
+    }
     return openAuction(command, ctx.world, ctx.commandDb);
 }
 
@@ -1513,6 +1517,15 @@ async function handleAuctionBid(
     ctx: CommandHandlerContext,
     command: Extract<TurnDaemonCommand, { type: 'auctionBid' }>
 ): Promise<TurnDaemonCommandResult> {
+    const worldMeta = asRecord(ctx.world.getState().meta);
+    if (Number(worldMeta.isUnited ?? 0) !== 0 || Number(worldMeta.isunited ?? 0) !== 0) {
+        return {
+            type: 'auctionBid',
+            ok: false,
+            auctionId: command.auctionId,
+            reason: '천하통일 후에는 경매를 이용할 수 없습니다.',
+        };
+    }
     if (!ctx.auctionBidder) {
         return {
             type: 'auctionBid',

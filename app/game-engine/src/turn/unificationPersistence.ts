@@ -1,8 +1,10 @@
 import { asRecord, HALL_OF_FAME_TYPES, resolveLegacyTextColor, type HallOfFameType } from '@sammo-ts/common';
 import type { GamePrisma, InputJsonValue } from '@sammo-ts/infra';
-import { LogCategory, LogScope } from '@sammo-ts/logic';
+import { LogCategory, LogScope, sendMessage, type MessageDraft, type MessageRecordDraft } from '@sammo-ts/logic';
 
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
+import { ALL_MERGED_INHERITANCE_KEYS, computeActiveInheritancePoint } from './inheritancePointCalculation.js';
+import type { PendingUnificationAuctionCancellation, TurnGeneral } from './types.js';
 
 const UNIFIER_POINT = 2000;
 const asJson = (value: unknown): InputJsonValue => value as InputJsonValue;
@@ -15,6 +17,7 @@ export interface UnificationFinalizationInput {
     readonly year: number;
     readonly month: number;
     readonly completedAt: Date;
+    readonly auctionCancellations: readonly PendingUnificationAuctionCancellation[];
 }
 
 export interface UnificationFinalizationResult {
@@ -40,6 +43,17 @@ const ownerDisplayName = (meta: Record<string, unknown>): string | null => {
     }
     return null;
 };
+
+export const resolveStoredInheritancePoint = (
+    currentPoints: ReadonlyMap<string, number>,
+    general: Pick<TurnGeneral, 'inheritancePoints'>,
+    key: (typeof ALL_MERGED_INHERITANCE_KEYS)[number],
+    unifierAward: number
+): number =>
+    currentPoints.get(key) ??
+    (key === 'unifier'
+        ? Math.max(0, (general.inheritancePoints?.[key] ?? 0) - unifierAward)
+        : (general.inheritancePoints?.[key] ?? 0));
 
 const formatHistogram = (value: unknown): string =>
     Object.entries(asRecord(value))
@@ -88,6 +102,160 @@ const claimGeneration = async (
     return 'CLAIMED';
 };
 
+interface LockedUnificationAuctionRow {
+    auctionId: number;
+    status: 'OPEN' | 'FINALIZING';
+    closeAt: Date;
+    detail: unknown;
+}
+
+interface HighestUnificationBidRow {
+    bidId: number;
+    bidderGeneralId: number;
+    amount: number;
+    meta: unknown;
+}
+
+const insertMessage = async (transaction: GamePrisma.TransactionClient, draft: MessageRecordDraft): Promise<number> => {
+    const rows = await transaction.$queryRaw<Array<{ id: number }>>`
+        INSERT INTO message (mailbox, type, src, dest, time, valid_until, message)
+        VALUES (
+            ${draft.mailbox},
+            ${draft.msgType},
+            ${draft.srcId},
+            ${draft.destId},
+            ${draft.time},
+            ${draft.validUntil},
+            CAST(${JSON.stringify(draft.payload)} AS jsonb)
+        )
+        RETURNING id
+    `;
+    const id = rows[0]?.id;
+    if (!id) throw new Error('Failed to persist unification auction cancellation message.');
+    return id;
+};
+
+const cancelPendingUniqueAuctions = async (
+    transaction: GamePrisma.TransactionClient,
+    input: UnificationFinalizationInput,
+    world: InMemoryTurnWorld
+): Promise<void> => {
+    const lockedRows = await transaction.$queryRaw<LockedUnificationAuctionRow[]>`
+        SELECT
+            auction.id AS "auctionId",
+            auction.status,
+            auction.close_at AS "closeAt",
+            auction.detail
+        FROM auction
+        WHERE auction.type = 'UNIQUE_ITEM'
+          AND auction.status IN ('OPEN', 'FINALIZING')
+        ORDER BY auction.close_at ASC, auction.id ASC
+        FOR UPDATE OF auction
+    `;
+    if (lockedRows.length !== input.auctionCancellations.length) {
+        throw new Error(
+            `Unification auction set changed: planned=${input.auctionCancellations.length}, actual=${lockedRows.length}.`
+        );
+    }
+
+    for (const [index, row] of lockedRows.entries()) {
+        const planned = input.auctionCancellations[index]!;
+        const title = asRecord(row.detail).title;
+        if (
+            row.auctionId !== planned.auctionId ||
+            row.status !== planned.status ||
+            row.closeAt.getTime() !== planned.closeAt.getTime() ||
+            title !== planned.title
+        ) {
+            throw new Error(`Unification auction plan mismatch: ${planned.auctionId}.`);
+        }
+
+        const highestRows = await transaction.$queryRaw<HighestUnificationBidRow[]>`
+            SELECT id AS "bidId", general_id AS "bidderGeneralId", amount, meta
+            FROM auction_bid
+            WHERE auction_id = ${row.auctionId}
+            ORDER BY amount DESC, id ASC
+            LIMIT 1
+        `;
+        const highest = highestRows[0] ?? null;
+        const highestRankTrackedAmount = Math.max(
+            0,
+            readNumber(highest ? asRecord(highest.meta).inheritSpentTrackedAmount : 0)
+        );
+        if (
+            (highest?.bidId ?? null) !== planned.highestBidId ||
+            (highest?.bidderGeneralId ?? null) !== planned.bidderGeneralId ||
+            (highest?.amount ?? null) !== planned.amount ||
+            highestRankTrackedAmount !== planned.rankTrackedAmount
+        ) {
+            throw new Error(`Unification auction highest bid changed: ${planned.auctionId}.`);
+        }
+
+        if (highest) {
+            const bidder = world.getGeneralById(highest.bidderGeneralId);
+            const dbBidder = await transaction.general.findUnique({
+                where: { id: highest.bidderGeneralId },
+                select: { userId: true },
+            });
+            if (!bidder?.userId || bidder.userId !== dbBidder?.userId) {
+                throw new Error(`Unification auction refund owner is unavailable: ${planned.auctionId}.`);
+            }
+            await transaction.inheritancePoint.upsert({
+                where: { userId_key: { userId: bidder.userId, key: 'previous' } },
+                update: { value: { increment: highest.amount } },
+                create: { userId: bidder.userId, key: 'previous', value: highest.amount },
+            });
+            await transaction.rankData.upsert({
+                where: {
+                    generalId_type: { generalId: bidder.id, type: 'inherit_spent_dyn' },
+                },
+                update: {
+                    nationId: bidder.nationId,
+                    value: readNumber(bidder.meta.inherit_spent_dyn),
+                },
+                create: {
+                    generalId: bidder.id,
+                    nationId: bidder.nationId,
+                    type: 'inherit_spent_dyn',
+                    value: readNumber(bidder.meta.inherit_spent_dyn),
+                },
+            });
+
+            const nation = world.getNationById(bidder.nationId);
+            const message: MessageDraft = {
+                msgType: 'private',
+                src: {
+                    generalId: 0,
+                    generalName: '',
+                    nationId: 0,
+                    nationName: 'System',
+                    color: '#000000',
+                    icon: '',
+                },
+                dest: {
+                    generalId: bidder.id,
+                    generalName: bidder.name,
+                    nationId: bidder.nationId,
+                    nationName: nation?.name ?? '재야',
+                    color: nation?.color ?? '#000000',
+                    icon: bidder.picture ?? '',
+                },
+                text: `${planned.auctionId}번 ${planned.title}가 취소되었습니다.`,
+                time: input.completedAt,
+                validUntil: new Date('9999-12-31T00:00:00.000Z'),
+            };
+            await sendMessage({ insertMessage: (draft) => insertMessage(transaction, draft) }, message, {
+                sendDestOnly: true,
+            });
+        }
+
+        await transaction.auction.update({
+            where: { id: row.auctionId },
+            data: { status: 'CANCELED', finishedAt: input.completedAt },
+        });
+    }
+};
+
 export const persistUnificationFinalization = async (
     transaction: GamePrisma.TransactionClient,
     input: UnificationFinalizationInput,
@@ -127,6 +295,10 @@ export const persistUnificationFinalization = async (
     const nations = world.listNations();
     const eligibleGenerals = generals.filter((general) => general.userId && general.npcState < 2);
 
+    // Ref cancels and refunds every unfinished unique auction before it merges
+    // inheritance. Keep that order inside the generation transaction.
+    await cancelPendingUniqueAuctions(transaction, input, world);
+
     const pointRows = eligibleGenerals.length
         ? await transaction.inheritancePoint.findMany({
               where: { userId: { in: eligibleGenerals.map((general) => general.userId!) } },
@@ -142,24 +314,18 @@ export const persistUnificationFinalization = async (
 
     for (const general of eligibleGenerals) {
         const userId = general.userId!;
-        const generalMeta = asRecord(general.meta);
         const currentPoints = pointsByUser.get(userId) ?? new Map<string, number>();
         const previous = currentPoints.get('previous') ?? 0;
-        const livedMonth = readNumber(generalMeta.inherit_lived_month);
-        const maxDomestic = readNumber(generalMeta.max_domestic_critical);
-        const activeAction = readNumber(generalMeta.inherit_active_action);
-        const combat = readNumber(generalMeta.rank_warnum) * 5;
-        const sabotage = readNumber(generalMeta.firenum) * 20;
-        const dex =
-            Object.entries(generalMeta).reduce(
-                (sum, [key, value]) => (key.startsWith('dex') ? sum + readNumber(value) : sum),
-                0
-            ) * 0.001;
         const unifier = currentPoints.get('unifier') ?? 0;
         const unifierAward = general.nationId === input.winnerNationId && general.officerLevel > 4 ? UNIFIER_POINT : 0;
-        const total = Math.floor(
-            previous + livedMonth + maxDomestic + activeAction * 3 + combat + sabotage + dex + unifier + unifierAward
-        );
+        const mergedPoints = Object.fromEntries(
+            ALL_MERGED_INHERITANCE_KEYS.map((key) => {
+                const stored = resolveStoredInheritancePoint(currentPoints, general, key, unifierAward);
+                const effectiveStored = key === 'unifier' ? stored + unifierAward : stored;
+                return [key, computeActiveInheritancePoint(general, key, effectiveStored)];
+            })
+        ) as Record<(typeof ALL_MERGED_INHERITANCE_KEYS)[number], number>;
+        const total = Math.floor(previous + Object.values(mergedPoints).reduce((sum, value) => sum + value, 0));
 
         await transaction.inheritancePoint.upsert({
             where: { userId_key: { userId, key: 'previous' } },
@@ -176,13 +342,8 @@ export const persistUnificationFinalization = async (
                 month: input.month,
                 value: {
                     previous,
-                    lived_month: livedMonth,
-                    max_domestic_critical: maxDomestic,
-                    active_action: activeAction,
-                    combat,
-                    sabotage,
-                    dex,
-                    unifier,
+                    ...mergedPoints,
+                    unifierBeforeAward: unifier,
                     unifierAward,
                     total,
                     generationKey: input.generationKey,

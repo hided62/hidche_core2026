@@ -118,6 +118,18 @@ export interface PendingUnificationFinalization {
     year: number;
     month: number;
     completedAt: Date;
+    auctionCancellations: PendingUnificationAuctionCancellation[];
+}
+
+export interface PendingUnificationAuctionCancellation {
+    auctionId: number;
+    status: 'OPEN' | 'FINALIZING';
+    closeAt: Date;
+    title: string;
+    highestBidId: number | null;
+    bidderGeneralId: number | null;
+    amount: number | null;
+    rankTrackedAmount: number;
 }
 
 export interface TurnWorldSnapshot extends Omit<

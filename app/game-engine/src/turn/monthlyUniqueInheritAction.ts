@@ -13,26 +13,11 @@ import {
 import { simpleSerialize } from '@sammo-ts/logic/war/utils.js';
 
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
+import { ALL_MERGED_INHERITANCE_KEYS, computeActiveInheritancePoint } from './inheritancePointCalculation.js';
 import type { MonthlyEventActionHandler } from './monthlyEventHandler.js';
 import type { TurnGeneral } from './types.js';
 
 const LEGACY_ITEM_SLOTS: readonly ItemSlot[] = ['horse', 'weapon', 'book', 'item'];
-const DEX_LIMIT = 1_275_975;
-const STORED_INHERITANCE_KEYS = [
-    'lived_month',
-    'max_domestic_critical',
-    'active_action',
-    'unifier',
-    'tournament',
-] as const;
-const ALL_MERGED_INHERITANCE_KEYS = [
-    ...STORED_INHERITANCE_KEYS,
-    'max_belong',
-    'combat',
-    'sabotage',
-    'dex',
-    'betting',
-] as const;
 
 const readNumber = (source: Record<string, unknown>, key: string): number => {
     const value = source[key];
@@ -161,60 +146,6 @@ export const createLostUniqueItemHandler = (options: {
             month: environment.month,
         });
     };
-};
-
-const computeDexPoint = (general: TurnGeneral): number => {
-    let totalDexterity = 0;
-    for (let index = 1; index <= 5; index += 1) {
-        let dexterity = readNumber(general.meta, `dex${index}`);
-        if (dexterity > DEX_LIMIT) {
-            totalDexterity += (dexterity - DEX_LIMIT) / 3;
-            dexterity = DEX_LIMIT;
-        }
-        totalDexterity += dexterity;
-    }
-    return totalDexterity * 0.001;
-};
-
-const computeBettingPoint = (general: TurnGeneral): number => {
-    const wins = readNumber(general.meta, 'betwin');
-    const gold = readNumber(general.meta, 'betgold');
-    const wonGold = readNumber(general.meta, 'betwingold');
-    const winRate = wonGold / Math.max(1000, gold);
-    return wins * 10 * winRate ** 2;
-};
-
-const computeActiveInheritancePoint = (general: TurnGeneral, key: string): number => {
-    const stored = general.inheritancePoints?.[key] ?? 0;
-    switch (key) {
-        case 'lived_month': {
-            const value = readNumber(general.meta, 'inherit_lived_month');
-            return value !== 0 ? value : stored;
-        }
-        case 'max_domestic_critical': {
-            const value = readNumber(general.meta, 'max_domestic_critical');
-            return value !== 0 ? value : stored;
-        }
-        case 'active_action': {
-            const value = readNumber(general.meta, 'inherit_active_action');
-            return value !== 0 ? value * 3 : stored;
-        }
-        case 'unifier':
-        case 'tournament':
-            return stored;
-        case 'max_belong':
-            return Math.max(readNumber(general.meta, 'belong'), readNumber(general.meta, 'inherit_max_belong')) * 10;
-        case 'combat':
-            return readNumber(general.meta, 'rank_warnum') * 5;
-        case 'sabotage':
-            return readNumber(general.meta, 'firenum') * 20;
-        case 'dex':
-            return computeDexPoint(general);
-        case 'betting':
-            return computeBettingPoint(general);
-        default:
-            return stored;
-    }
 };
 
 export const createMergeInheritPointRankHandler = (options: {

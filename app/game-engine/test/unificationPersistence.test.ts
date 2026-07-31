@@ -4,7 +4,7 @@ import type { GamePrisma } from '@sammo-ts/infra';
 import type { City, Nation } from '@sammo-ts/logic';
 
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
-import { persistUnificationFinalization } from '../src/turn/unificationPersistence.js';
+import { persistUnificationFinalization, resolveStoredInheritancePoint } from '../src/turn/unificationPersistence.js';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 
 const buildWorld = (): InMemoryTurnWorld => {
@@ -135,12 +135,29 @@ const input = {
     year: 190,
     month: 7,
     completedAt: new Date('0190-07-01T00:00:00.000Z'),
+    auctionCancellations: [],
 } as const;
 
 describe('persistUnificationFinalization', () => {
+    it.each([
+        { label: 'missing row', rows: [], memoryValue: 2_000, expected: 0 },
+        { label: 'zero row', rows: [['unifier', 0] as const], memoryValue: 2_000, expected: 0 },
+        { label: 'positive row', rows: [['unifier', 7] as const], memoryValue: 2_007, expected: 7 },
+    ])('resolves the pre-award unifier value for $label', ({ rows, memoryValue, expected }) => {
+        expect(
+            resolveStoredInheritancePoint(
+                new Map<string, number>(rows),
+                { inheritancePoints: { unifier: memoryValue } },
+                'unifier',
+                2_000
+            )
+        ).toBe(expected);
+    });
+
     it('does not write when the transaction-scoped generation was already applied', async () => {
         const transaction = Object.assign({} as GamePrisma.TransactionClient, {
             $executeRaw: vi.fn().mockResolvedValue(1),
+            $queryRaw: vi.fn().mockResolvedValue([]),
             unificationFinalization: {
                 findUnique: vi.fn().mockResolvedValue({
                     generationKey: input.generationKey,
@@ -171,6 +188,7 @@ describe('persistUnificationFinalization', () => {
         const emperorCreate = vi.fn().mockResolvedValue({});
         const transaction = Object.assign({} as GamePrisma.TransactionClient, {
             $executeRaw: vi.fn().mockResolvedValue(1),
+            $queryRaw: vi.fn().mockResolvedValue([]),
             unificationFinalization: {
                 findUnique: vi.fn().mockResolvedValue(null),
                 create: vi.fn().mockResolvedValue({}),
