@@ -4,7 +4,11 @@ import type { GatewayPrismaClient } from '@sammo-ts/infra';
 
 import { InMemoryGatewaySessionService } from '../src/auth/inMemorySessionService.js';
 import { createInMemoryUserRepository } from '../src/auth/inMemoryUserRepository.js';
-import type { GatewayOperationCreateInput, GatewayProfileRepository } from '../src/orchestrator/profileRepository.js';
+import type {
+    GatewayOperationCreateInput,
+    GatewayProfileRecord,
+    GatewayProfileRepository,
+} from '../src/orchestrator/profileRepository.js';
 import { createGatewayApiContext } from '../src/context.js';
 import { InMemoryProfileStatusService } from '../src/lobby/profileStatusService.js';
 import { appRouter } from '../src/router.js';
@@ -17,6 +21,7 @@ const buildCaller = async (
         firstUserIsAdmin?: boolean;
         runtimeActionCreateError?: unknown;
         initialNotice?: string;
+        initialProfileStatus?: GatewayProfileRecord['status'];
     } = {}
 ) => {
     const users = createInMemoryUserRepository();
@@ -36,13 +41,15 @@ const buildCaller = async (
     const operationRecords = new Map<string, Awaited<ReturnType<GatewayProfileRepository['createOperation']>>>();
     const createdRuntimeActions: Array<Record<string, unknown>> = [];
     const flushes: Array<{ userId: string; reason?: string; iconRevision?: string }> = [];
+    const updatedStatuses: GatewayProfileRecord['status'][] = [];
+    let reconcileCount = 0;
     let storedNotice = options.initialNotice ?? '';
     const profile = {
         profileName: 'che:2',
         profile: 'che',
         scenario: '2',
         apiPort: 15003,
-        status: 'STOPPED' as const,
+        status: options.initialProfileStatus ?? ('STOPPED' as const),
         buildStatus: 'SUCCEEDED' as const,
         meta: {},
         createdAt: '2026-07-25T00:00:00.000Z',
@@ -53,7 +60,10 @@ const buildCaller = async (
         getProfile: async () => profile,
         upsertProfile: async () => profile,
         updateScenario: async () => profile,
-        updateStatus: async () => profile,
+        updateStatus: async (_profileName, status) => {
+            updatedStatuses.push(status);
+            return { ...profile, status };
+        },
         updateBuildStatus: async () => profile,
         updateMeta: async () => profile,
         listReservedToStart: async () => [],
@@ -105,7 +115,9 @@ const buildCaller = async (
             orchestrator: {
                 start: () => {},
                 stop: async () => {},
-                reconcileNow: async () => {},
+                reconcileNow: async () => {
+                    reconcileCount += 1;
+                },
                 runScheduleNow: async () => {},
                 runBuildQueueNow: async () => {},
                 runOperationsNow: async () => {
@@ -158,6 +170,8 @@ const buildCaller = async (
         users,
         admin,
         flushes,
+        updatedStatuses,
+        getReconcileCount: () => reconcileCount,
         getStoredNotice: () => storedNotice,
         setStoredNotice: (notice: string) => {
             storedNotice = notice;
@@ -334,6 +348,35 @@ describe('admin runtime clock action API', () => {
     const unusedCreateOperation: GatewayProfileRepository['createOperation'] = async () => {
         throw new Error('not used');
     };
+
+    it('resumes a paused profile through the same RUNNING reconciliation boundary', async () => {
+        const harness = await buildCaller(unusedCreateOperation, { initialProfileStatus: 'PAUSED' });
+
+        await expect(
+            harness.caller.admin.profiles.requestAction({
+                profileName: 'che:2',
+                action: 'RESUME',
+            })
+        ).resolves.toMatchObject({ ok: true });
+        expect(harness.updatedStatuses).toEqual(['RUNNING']);
+        expect(harness.getReconcileCount()).toBe(1);
+    });
+
+    it('rejects resume outside stopped and paused states without reconciliation', async () => {
+        const harness = await buildCaller(unusedCreateOperation, { initialProfileStatus: 'RUNNING' });
+
+        await expect(
+            harness.caller.admin.profiles.requestAction({
+                profileName: 'che:2',
+                action: 'RESUME',
+            })
+        ).rejects.toMatchObject({
+            code: 'BAD_REQUEST',
+            message: 'Resume is allowed only for STOPPED or PAUSED profiles.',
+        });
+        expect(harness.updatedStatuses).toEqual([]);
+        expect(harness.getReconcileCount()).toBe(0);
+    });
 
     it('creates a first-class clock action owned by the authenticated administrator', async () => {
         const harness = await buildCaller(unusedCreateOperation);

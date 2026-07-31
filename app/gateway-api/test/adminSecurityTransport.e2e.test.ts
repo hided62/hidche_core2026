@@ -159,6 +159,25 @@ const postTrpc = async (
 };
 
 describe('admin security over HTTP transport', () => {
+    it('does not expose the removed public user-flush mutation', async () => {
+        const harness = await createHarness();
+
+        const rejected = await postTrpc(harness.baseUrl, 'auth.flushUser', {
+            userId: harness.target.id,
+            reason: 'unauthenticated-flush-attempt',
+        });
+
+        expect(rejected.response.status).toBe(404);
+        expect(rejected.body).toMatchObject({
+            error: {
+                data: {
+                    code: 'NOT_FOUND',
+                },
+            },
+        });
+        expect(harness.flushes).toEqual([]);
+    });
+
     it('accepts an equal scoped role and rejects wildcard escalation without mutating roles', async () => {
         const harness = await createHarness();
 

@@ -692,17 +692,6 @@ export const appRouter = router({
                     issuedAt: payload.issuedAt,
                 };
             }),
-        flushUser: procedure
-            .input(
-                z.object({
-                    userId: z.string().min(1),
-                    reason: z.string().min(1).optional(),
-                })
-            )
-            .mutation(async ({ ctx, input }) => {
-                await ctx.flushPublisher.publishUserFlush(input.userId, input.reason);
-                return { ok: true };
-            }),
         validateGameSession: procedure
             .input(
                 z.object({

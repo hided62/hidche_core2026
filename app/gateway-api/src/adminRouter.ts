@@ -1256,10 +1256,10 @@ export const adminRouter = router({
                     canManageProfiles || hasScopedPermission(adminAuth, ROLE_SURVEY_OPEN, profile.profileName);
 
                 if (input.action === 'RESUME') {
-                    if (profile.status !== 'STOPPED') {
+                    if (profile.status !== 'STOPPED' && profile.status !== 'PAUSED') {
                         throw new TRPCError({
                             code: 'BAD_REQUEST',
-                            message: 'Resume is allowed only for STOPPED profiles.',
+                            message: 'Resume is allowed only for STOPPED or PAUSED profiles.',
                         });
                     }
                     if (!canResume) {
