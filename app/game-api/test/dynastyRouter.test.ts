@@ -69,17 +69,38 @@ const oldNation = {
         nation: 1,
         name: '촉',
         color: '#FF0000',
-        type: 'che_병가',
+        typeCode: 'che_병가',
         level: 7,
         tech: 4000,
-        power: 34434,
-        maxCrew: 120000,
-        maxCities: ['성도', '한중'],
+        power: 12_345,
+        aux: { maxPower: 34_434, maxCrew: 120_000, maxCities: ['성도', '한중'] },
         generals: [11, 12],
         history: ['<Y>유비</>가 황제로 즉위'],
         owner: 'not-returned',
     },
     date: new Date('2026-07-25T12:00:00.000Z'),
+};
+
+const deletedOldNation = {
+    id: 4,
+    serverId: emperor.serverId,
+    nation: 2,
+    data: {
+        nation: 2,
+        name: '위',
+        color: '#0000FF',
+        type: 'che_법가',
+        level: 5,
+        power: 8_000,
+        generals: [13],
+        history: [],
+        meta: {
+            tech: 3_000,
+            max_power: { maxPower: 20_000, maxCrew: 80_000, maxCities: ['허창'] },
+            privateNote: 'not-returned',
+        },
+    },
+    date: new Date('2026-07-24T12:00:00.000Z'),
 };
 
 const authFor = (userId: string, roles: string[] = []): GameSessionTokenPayload => ({
@@ -97,7 +118,10 @@ const authFor = (userId: string, roles: string[] = []): GameSessionTokenPayload 
     sanctions: {},
 });
 
-const buildContext = (auth: GameSessionTokenPayload | null): GameApiContext => {
+const buildContext = (
+    auth: GameSessionTokenPayload | null,
+    oldNations: Array<Record<string, unknown>> = [oldNation, deletedOldNation]
+): GameApiContext => {
     const db = {
         worldState: {
             findFirst: async () => ({ currentYear: 220, currentMonth: 1 }),
@@ -108,12 +132,13 @@ const buildContext = (auth: GameSessionTokenPayload | null): GameApiContext => {
         },
         oldNation: {
             findMany: async ({ where }: { where: { serverId: string } }) =>
-                where.serverId === emperor.serverId ? [oldNation] : [],
+                where.serverId === emperor.serverId ? oldNations : [],
         },
         oldGeneral: {
             findMany: async () => [
                 { generalNo: 11, name: '유비', lastYearMonth: 21504 },
                 { generalNo: 12, name: '제갈량', lastYearMonth: 21504 },
+                { generalNo: 13, name: '조조', lastYearMonth: 21003 },
             ],
         },
     };
@@ -204,21 +229,58 @@ describe('dynasty public read model', () => {
         );
         expect(result.nations).toEqual([
             expect.objectContaining({
+                archiveId: 3,
                 name: '촉',
                 type: 'che_병가',
                 typeName: '병가',
                 levelName: '황제',
                 maxPower: 34434,
+                maxCrew: 120000,
+                maxCities: ['성도', '한중'],
                 generalsFull: [
                     { generalNo: 11, name: '유비', lastYearMonth: 21504 },
                     { generalNo: 12, name: '제갈량', lastYearMonth: 21504 },
                 ],
+            }),
+            expect.objectContaining({
+                archiveId: 4,
+                name: '위',
+                type: 'che_법가',
+                typeName: '법가',
+                tech: 3000,
+                maxPower: 20000,
+                maxCrew: 80000,
+                maxCities: ['허창'],
+                generalsFull: [{ generalNo: 13, name: '조조', lastYearMonth: 21003 }],
             }),
         ]);
         expect(JSON.stringify(result)).not.toContain('privateNote');
         expect(JSON.stringify(result)).not.toContain('not-returned');
         expect(JSON.stringify(result)).not.toContain('"owner"');
         expect(JSON.stringify(result)).not.toContain('"data"');
+    });
+
+    it('reads legacy JSON-string aux values without exposing malformed archive internals', async () => {
+        const stringAuxNation = {
+            ...oldNation,
+            id: 5,
+            data: {
+                ...oldNation.data,
+                aux: JSON.stringify({ maxPower: 45_000, maxCrew: 130_000, maxCities: ['낙양'] }),
+                owner: 'not-returned',
+            },
+        };
+        const result = await appRouter
+            .createCaller(buildContext(null, [stringAuxNation]))
+            .dynasty.getDetail({ emperorId: emperor.id });
+
+        expect(result.nations[0]).toMatchObject({
+            archiveId: 5,
+            maxPower: 45_000,
+            maxCrew: 130_000,
+            maxCities: ['낙양'],
+        });
+        expect(JSON.stringify(result)).not.toContain('not-returned');
     });
 
     it('rejects invalid and missing record identifiers without querying another scope', async () => {

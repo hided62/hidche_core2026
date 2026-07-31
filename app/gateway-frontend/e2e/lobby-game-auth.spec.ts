@@ -1,6 +1,14 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { expect, test, type Page, type Route } from '@playwright/test';
 
 const response = (data: unknown) => ({ result: { data } });
+const artifactRoot = process.env.GATEWAY_STATUS_ARTIFACT_DIR;
+
+if (artifactRoot) {
+    mkdirSync(artifactRoot, { recursive: true });
+}
 
 const operationNames = (route: Route): string[] => {
     const url = new URL(route.request().url());
@@ -19,6 +27,7 @@ const fulfillTrpc = async (route: Route, results: unknown[]): Promise<void> => {
 };
 
 type LobbyFixtureOptions = {
+    authenticated?: boolean;
     canCreateGeneral?: boolean;
     myGeneral?: {
         name: string;
@@ -29,10 +38,16 @@ type LobbyFixtureOptions = {
     npcPossessionEnabled?: boolean;
     userCnt?: number;
     maxUserCnt?: number;
+    nationCnt?: number;
+    isUnited?: number;
+    starttime?: string;
+    opentime?: string;
+    turntime?: string;
 };
 
 const installFixture = async (page: Page, options: LobbyFixtureOptions = {}) => {
     const {
+        authenticated = true,
         canCreateGeneral = true,
         myGeneral = {
             name: '선택장수',
@@ -43,22 +58,33 @@ const installFixture = async (page: Page, options: LobbyFixtureOptions = {}) => 
         npcPossessionEnabled = false,
         userCnt = 1,
         maxUserCnt = 500,
+        nationCnt = 0,
+        isUnited = 0,
+        starttime = '2026-07-30 00:00:00',
+        opentime = '2026-07-30 00:00:00',
+        turntime = '2026-07-30 00:05:00',
     } = options;
     const gameOperations: Array<{ operation: string; authorization: string | undefined }> = [];
-    await page.addInitScript(() => {
-        window.localStorage.setItem('sammo-session-token', 'gateway-lobby-session');
-    });
+    if (authenticated) {
+        await page.addInitScript(() => {
+            window.localStorage.setItem('sammo-session-token', 'gateway-lobby-session');
+        });
+    }
     await page.route('**/gateway/api/trpc/**', async (route) => {
         const results = operationNames(route).map((operation) => {
             if (operation === 'me') {
-                return response({
-                    id: 'lobby-user',
-                    username: 'lobby-user',
-                    displayName: '로비사용자',
-                    roles: ['user'],
-                    kakaoVerified: true,
-                    createdAt: '2026-07-30T00:00:00.000Z',
-                });
+                return response(
+                    authenticated
+                        ? {
+                              id: 'lobby-user',
+                              username: 'lobby-user',
+                              displayName: '로비사용자',
+                              roles: ['user'],
+                              kakaoVerified: true,
+                              createdAt: '2026-07-30T00:00:00.000Z',
+                          }
+                        : null
+                );
             }
             if (operation === 'lobby.notice') {
                 return response('');
@@ -119,14 +145,14 @@ const installFixture = async (page: Page, options: LobbyFixtureOptions = {}) => 
                     userCnt,
                     maxUserCnt,
                     npcCnt: 0,
-                    nationCnt: 0,
+                    nationCnt,
                     turnTerm: 5,
                     fictionMode: '가상',
-                    starttime: '2026-07-30 00:00:00',
-                    opentime: '2026-07-30 00:00:00',
-                    turntime: '2026-07-30 00:05:00',
+                    starttime,
+                    opentime,
+                    turntime,
                     otherTextInfo: '',
-                    isUnited: 0,
+                    isUnited,
                     selectionPoolEnabled,
                     npcPossessionEnabled,
                     myGeneral,
@@ -230,4 +256,100 @@ test('shows registration closed instead of acquisition actions at the Ref capaci
     await expect(row).toContainText('장수 등록 마감');
     await expect(row.getByRole('button', { name: '장수생성' })).toHaveCount(0);
     await expect(row.getByRole('button', { name: '장수빙의' })).toHaveCount(0);
+});
+
+for (const season of [
+    {
+        name: 'competition',
+        isUnited: 0,
+        opentime: '2000-01-01 00:00:00',
+        label: '<4국 경쟁중>',
+        period: '2026-07-30 00:00:00 ~',
+    },
+    {
+        name: 'preopen',
+        isUnited: 0,
+        opentime: '2099-01-01 00:00:00',
+        label: '-가오픈 중-',
+        period: '2026-07-30 00:00:00 ~',
+    },
+    {
+        name: 'event running',
+        isUnited: 1,
+        opentime: '2099-01-01 00:00:00',
+        label: '§이벤트 진행중§',
+        period: '2026-07-30 00:00:00 ~',
+    },
+    {
+        name: 'united',
+        isUnited: 2,
+        opentime: '2099-01-01 00:00:00',
+        label: '§천하통일§',
+        period: '2026-07-30 00:00:00\n~ 2026-07-30 00:05:00',
+    },
+    {
+        name: 'event finished',
+        isUnited: 3,
+        opentime: '2099-01-01 00:00:00',
+        label: '§이벤트 종료§',
+        period: '2026-07-30 00:00:00\n~ 2026-07-30 00:05:00',
+    },
+] as const) {
+    test(`renders the Ref ${season.name} season status without changing entry actions`, async ({ page }) => {
+        await installFixture(page, {
+            isUnited: season.isUnited,
+            opentime: season.opentime,
+            nationCnt: 4,
+        });
+
+        await page.goto('lobby');
+        const row = page.locator('tbody tr').filter({ hasText: 'hwe섭' });
+        const status = row.getByText(season.label, { exact: true });
+        await expect(status).toBeVisible();
+        await expect(row.locator('td').first().locator('[title]')).toHaveAttribute('title', season.period);
+        await expect(row.getByRole('button', { name: '입장' })).toBeVisible();
+
+        if (artifactRoot) {
+            const [viewport, rowGeometry, statusGeometry] = await Promise.all([
+                page.evaluate(() => ({
+                    width: window.innerWidth,
+                    height: window.innerHeight,
+                    devicePixelRatio: window.devicePixelRatio,
+                })),
+                row.evaluate((element) => {
+                    const rect = element.getBoundingClientRect();
+                    return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+                }),
+                status.evaluate((element) => {
+                    const rect = element.getBoundingClientRect();
+                    const style = getComputedStyle(element);
+                    return {
+                        x: rect.x,
+                        y: rect.y,
+                        width: rect.width,
+                        height: rect.height,
+                        color: style.color,
+                        fontFamily: style.fontFamily,
+                        fontSize: style.fontSize,
+                        lineHeight: style.lineHeight,
+                        textAlign: style.textAlign,
+                    };
+                }),
+            ]);
+            const geometry = { viewport, row: rowGeometry, status: statusGeometry };
+            const slug = season.name.replaceAll(' ', '-');
+            writeFileSync(resolve(artifactRoot, `gateway-${slug}.json`), `${JSON.stringify(geometry, null, 2)}\n`);
+            await page.screenshot({ path: resolve(artifactRoot, `gateway-${slug}.png`), fullPage: true });
+        }
+    });
+}
+
+test('renders the same Ref season status on the public gateway page', async ({ page }) => {
+    await installFixture(page, { authenticated: false, isUnited: 3, nationCnt: 4 });
+
+    await page.goto('');
+    const status = page.locator('.season-status');
+    await expect(status).toHaveText('§이벤트 종료§');
+    await expect(status).toHaveAttribute('title', '2026-07-30 00:00:00\n~ 2026-07-30 00:05:00');
+    await expect(page.getByRole('button', { name: '현황 새로고침' })).toBeEnabled();
 });

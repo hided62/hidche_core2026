@@ -210,7 +210,7 @@ onMounted(loadDetail);
 
             <table
                 v-for="nation in data.nations"
-                :key="nation.nation"
+                :key="nation.archiveId"
                 class="legacy-table legacy-bg2 old-nation-table"
             >
                 <colgroup>

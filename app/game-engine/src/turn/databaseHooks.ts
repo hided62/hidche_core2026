@@ -35,6 +35,7 @@ import { calculateNationBettingRewards } from '../betting/nationBettingSettlemen
 import type { NationBettingCandidate, PendingNationBettingFinish, PendingNationBettingOpen } from './types.js';
 import { buildPersistedRankRows } from './rankData.js';
 import { persistUnificationFinalization } from './unificationPersistence.js';
+import { buildOldNationArchiveData } from './oldNationArchive.js';
 import { persistYearbookSnapshot } from './yearbookPersistence.js';
 
 export interface DatabaseTurnHooks {
@@ -696,40 +697,22 @@ export const createDatabaseTurnHooks = async (
                                 },
                             },
                             update: {
-                                data: {
-                                    nation: snapshot.nation.id,
-                                    name: snapshot.nation.name,
-                                    color: snapshot.nation.color,
-                                    type: snapshot.nation.typeCode,
-                                    level: snapshot.nation.level,
-                                    gold: snapshot.nation.gold,
-                                    rice: snapshot.nation.rice,
-                                    power: snapshot.nation.power,
-                                    capitalCityId: snapshot.nation.capitalCityId,
-                                    generals: snapshot.generalIds,
+                                data: buildOldNationArchiveData({
+                                    nation: snapshot.nation,
+                                    generalIds: snapshot.generalIds,
                                     history: historyMap.get(snapshot.nation.id) ?? [],
-                                    meta: snapshot.nation.meta ?? {},
-                                },
+                                }) as InputJsonValue,
                                 date: snapshot.removedAt,
                             },
                             create: {
                                 serverId,
                                 nation: snapshot.nation.id,
                                 sourceId: 0,
-                                data: {
-                                    nation: snapshot.nation.id,
-                                    name: snapshot.nation.name,
-                                    color: snapshot.nation.color,
-                                    type: snapshot.nation.typeCode,
-                                    level: snapshot.nation.level,
-                                    gold: snapshot.nation.gold,
-                                    rice: snapshot.nation.rice,
-                                    power: snapshot.nation.power,
-                                    capitalCityId: snapshot.nation.capitalCityId,
-                                    generals: snapshot.generalIds,
+                                data: buildOldNationArchiveData({
+                                    nation: snapshot.nation,
+                                    generalIds: snapshot.generalIds,
                                     history: historyMap.get(snapshot.nation.id) ?? [],
-                                    meta: snapshot.nation.meta ?? {},
-                                },
+                                }) as InputJsonValue,
                                 date: snapshot.removedAt,
                             },
                         })

@@ -255,6 +255,7 @@ describe('invader monthly actions', () => {
         ]);
         expect(harness.world.getState().meta).toMatchObject({
             isunited: 1,
+            isUnited: 1,
             block_change_scout: false,
             lastNationId: 10,
         });
@@ -363,7 +364,7 @@ describe('invader monthly actions', () => {
 
         await world.advanceMonth(new Date('0200-01-01T00:00:00.000Z'));
 
-        expect(world.getState().meta).toMatchObject({ isunited: 3, refreshLimit: 300 });
+        expect(world.getState().meta).toMatchObject({ isunited: 3, isUnited: 3, refreshLimit: 300 });
         expect(world.listEvents()).toHaveLength(0);
         expect(world.peekDirtyState().logs.map((log) => log.text)).toEqual([
             '<L><b>【이벤트】</b></>이민족을 모두 소탕했습니다!',

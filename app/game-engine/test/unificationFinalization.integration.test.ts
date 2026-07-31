@@ -330,6 +330,26 @@ integration('unification finalization transaction', () => {
             expect(await db.inheritanceResult.count({ where: { serverId } })).toBe(1);
             expect(await db.oldGeneral.count({ where: { serverId } })).toBe(1);
             expect(await db.oldNation.count({ where: { serverId } })).toBe(2);
+            expect(
+                (
+                    await db.oldNation.findUniqueOrThrow({
+                        where: {
+                            serverId_nation_sourceId: { serverId, nation: fixtureId, sourceId: 0 },
+                        },
+                    })
+                ).data
+            ).toMatchObject({
+                nation: fixtureId,
+                name: '원자통일국',
+                type: 'che_중립',
+                typeCode: 'che_중립',
+                tech: 123,
+                maxPower: 3_500,
+                maxCrew: 400,
+                maxCities: ['원자도시'],
+                aux: { maxPower: 3_500, maxCrew: 400, maxCities: ['원자도시'] },
+                generals: [fixtureId],
+            });
             expect(await db.emperor.count({ where: { serverId } })).toBe(1);
             expect(
                 (await db.inheritancePoint.findUniqueOrThrow({ where: { userId_key: { userId, key: 'previous' } } }))

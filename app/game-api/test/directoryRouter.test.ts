@@ -178,11 +178,13 @@ const globalGenerals = [
     }),
 ];
 
-const createContext = (options: {
-    auth?: GameSessionTokenPayload | null;
-    me?: GeneralRow | null;
-    isUnited?: number;
-} = {}): { context: GameApiContext; requestCommand: ReturnType<typeof vi.fn> } => {
+const createContext = (
+    options: {
+        auth?: GameSessionTokenPayload | null;
+        me?: GeneralRow | null;
+        isUnited?: number;
+    } = {}
+): { context: GameApiContext; requestCommand: ReturnType<typeof vi.fn> } => {
     const token = options.auth === undefined ? auth() : options.auth;
     const me = options.me === undefined ? actor({ userId: token?.user.id ?? 'user-1' }) : options.me;
     const requestCommand = vi.fn();
@@ -280,12 +282,7 @@ describe('legacy global nation/general directories', () => {
             ambassadorNames: ['군주', '외교관'],
             auditorCount: 1,
         });
-        expect(result[1]?.generals.map((general) => general.name)).toEqual([
-            '군주',
-            '외교관',
-            '제재외교관',
-            '조언자',
-        ]);
+        expect(result[1]?.generals.map((general) => general.name)).toEqual(['군주', '외교관', '제재외교관', '조언자']);
         expect(result[1]?.officers[0]).toMatchObject({
             officerLevel: 12,
             general: { id: 10, name: '군주' },
@@ -311,9 +308,9 @@ describe('legacy global nation/general directories', () => {
         expect(defaultResult.generals.find((general) => general.id === 10)?.ownerName).toBeNull();
     });
 
-    it('reveals only the legacy owner display name after unification', async () => {
+    it.each([1, 2, 3])('reveals only the legacy owner display name in united state %i', async (isUnited) => {
         const result = await appRouter
-            .createCaller(createContext({ isUnited: 1 }).context)
+            .createCaller(createContext({ isUnited }).context)
             .world.getGeneralDirectory({ sort: 1 });
         expect(result.generals.find((general) => general.id === 10)?.ownerName).toBe('통일유저');
         expect(JSON.stringify(result)).not.toContain('user-1');

@@ -45,6 +45,7 @@ export const zWorldStateMeta = z.object({
     turntime: z.string().optional(),
     otherTextInfo: z.string().optional(),
     isUnited: z.number().optional(),
+    isunited: z.number().optional(),
     autorun_user: z
         .object({
             limit_minutes: z.number().optional(),

@@ -443,7 +443,7 @@ integration('RaiseInvader database persistence', () => {
                 })
             ).toBe(3);
             expect(await db.worldState.findUniqueOrThrow({ where: { id: stateRow.id } })).toMatchObject({
-                meta: expect.objectContaining({ isunited: 1, block_change_scout: false }),
+                meta: expect.objectContaining({ isunited: 1, isUnited: 1, block_change_scout: false }),
             });
             if (referenceTrace) {
                 expect(referenceTrace.phases.afterRaise).toMatchObject({
@@ -451,6 +451,7 @@ integration('RaiseInvader database persistence', () => {
                     diplomacyCountsPerNation: [2],
                     diplomacyStates: ['1:24'],
                     isunited: 1,
+                    isUnited: 1,
                     blockChangeScout: false,
                 });
             }
@@ -539,7 +540,7 @@ integration('RaiseInvader database persistence', () => {
 
             expect(await db.event.findUnique({ where: { id: createdEventIds[1]! } })).toBeNull();
             expect(await db.worldState.findUniqueOrThrow({ where: { id: stateRow.id } })).toMatchObject({
-                meta: expect.objectContaining({ isunited: 3, refreshLimit: 300 }),
+                meta: expect.objectContaining({ isunited: 3, isUnited: 3, refreshLimit: 300 }),
             });
             expect(
                 await db.logEntry.findMany({
@@ -556,6 +557,7 @@ integration('RaiseInvader database persistence', () => {
                     result: 'Deleted',
                     endingEventPresent: false,
                     isunited: 3,
+                    isUnited: 3,
                     refreshLimit: 300,
                     logs: [
                         '<C>●</>200년 4월:<L><b>【이벤트】</b></>이민족을 모두 소탕했습니다!',

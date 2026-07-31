@@ -4,6 +4,7 @@ import { LogCategory, LogScope, sendMessage, type MessageDraft, type MessageReco
 
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
 import { ALL_MERGED_INHERITANCE_KEYS, computeActiveInheritancePoint } from './inheritancePointCalculation.js';
+import { buildOldNationArchiveData } from './oldNationArchive.js';
 import type { PendingUnificationAuctionCancellation, TurnGeneral } from './types.js';
 
 const UNIFIER_POINT = 2000;
@@ -490,16 +491,13 @@ export const persistUnificationFinalization = async (
     const totalMaxPop = cities.reduce((sum, city) => sum + city.populationMax, 0);
     const winnerMeta = asRecord(winner.meta);
     const winnerData = {
-        ...winner,
-        tech: readInteger(winnerMeta.tech),
-        aux: {
-            ...asRecord(winnerMeta.aux),
-            ...asRecord(winnerMeta.max_power),
-        },
+        ...buildOldNationArchiveData({
+            nation: winner,
+            generalIds: winnerGenerals.map((general) => general.id),
+            history: nationHistory,
+        }),
         msg: String(asRecord(winnerMeta.nationNotice).msg ?? winnerMeta.msg ?? ''),
         scout_msg: String(winnerMeta.scout_msg ?? ''),
-        generals: winnerGenerals.map((general) => general.id),
-        history: nationHistory,
         generationKey: input.generationKey,
     };
     await transaction.oldNation.upsert({

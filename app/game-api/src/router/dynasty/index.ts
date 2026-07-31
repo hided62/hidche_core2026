@@ -25,6 +25,50 @@ const parseDisplayArray = (value: unknown): Array<string | number> =>
           )
         : [];
 
+const parseArchiveRecord = (value: unknown): Record<string, unknown> => {
+    if (typeof value === 'string') {
+        try {
+            return asRecord(JSON.parse(value));
+        } catch {
+            return {};
+        }
+    }
+    return asRecord(value);
+};
+
+const firstFiniteNumber = (...values: unknown[]): number | null => {
+    for (const value of values) {
+        const parsed = typeof value === 'string' ? Number(value) : value;
+        if (typeof parsed === 'number' && Number.isFinite(parsed)) return parsed;
+    }
+    return null;
+};
+
+const firstDisplayArray = (...values: unknown[]): Array<string | number> => {
+    for (const value of values) {
+        const parsed = parseDisplayArray(value);
+        if (parsed.length > 0 || Array.isArray(value)) return parsed;
+    }
+    return [];
+};
+
+const normalizeOldNationData = (value: unknown) => {
+    const data = asRecord(value);
+    const aux = parseArchiveRecord(data.aux);
+    const meta = asRecord(data.meta);
+    const legacyMaxPower = asRecord(meta.max_power);
+    const typeCode = typeof data.type === 'string' ? data.type : typeof data.typeCode === 'string' ? data.typeCode : '';
+
+    return {
+        data,
+        typeCode,
+        tech: firstFiniteNumber(data.tech, meta.tech),
+        maxPower: firstFiniteNumber(data.maxPower, aux.maxPower, legacyMaxPower.maxPower, data.power),
+        maxCrew: firstFiniteNumber(data.maxCrew, aux.maxCrew, legacyMaxPower.maxCrew),
+        maxCities: firstDisplayArray(data.maxCities, aux.maxCities, legacyMaxPower.maxCities),
+    };
+};
+
 const formatNationType = (typeCode: string): string => {
     const separator = typeCode.indexOf('_');
     return separator < 0 ? typeCode : typeCode.slice(separator + 1);
@@ -94,31 +138,27 @@ export const dynastyRouter = router({
         const serverId = emperor.serverId ?? '';
         const oldNationRows = await ctx.db.oldNation.findMany({
             where: { serverId },
-            orderBy: { date: 'desc' },
+            orderBy: [{ date: 'desc' }, { id: 'desc' }],
         });
 
         const nationEntries = oldNationRows
             .map((row) => {
-                const data = asRecord(row.data);
+                const normalized = normalizeOldNationData(row.data);
+                const { data } = normalized;
                 const nationId = row.nation ?? (typeof data.nation === 'number' ? data.nation : 0);
-                const typeCode = typeof data.type === 'string' ? data.type : '';
                 return {
+                    archiveId: row.id,
                     nation: nationId,
                     isWinner: winnerNationId !== null && nationId === winnerNationId,
                     name: typeof data.name === 'string' ? data.name : nationId === 0 ? '재야' : '미상',
                     color: typeof data.color === 'string' ? data.color : '#000000',
-                    type: typeCode,
-                    typeName: formatNationType(typeCode),
+                    type: normalized.typeCode,
+                    typeName: formatNationType(normalized.typeCode),
                     level: typeof data.level === 'number' ? data.level : null,
-                    tech: typeof data.tech === 'number' ? data.tech : null,
-                    maxPower:
-                        typeof data.maxPower === 'number'
-                            ? data.maxPower
-                            : typeof data.power === 'number'
-                              ? data.power
-                              : null,
-                    maxCrew: typeof data.maxCrew === 'number' ? data.maxCrew : null,
-                    maxCities: parseDisplayArray(data.maxCities),
+                    tech: normalized.tech,
+                    maxPower: normalized.maxPower,
+                    maxCrew: normalized.maxCrew,
+                    maxCities: normalized.maxCities,
                     generals: parseNumberArray(data.generals),
                     history: parseTextArray(data.history),
                     date: row.date.toISOString(),
