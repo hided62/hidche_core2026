@@ -150,6 +150,7 @@ const installApi = async (page: Page, state: BoardFixture) => {
         const operations = operationNames(route);
         const results = operations.map((operation) => {
             state.requests.push(operation);
+            if (operation === 'auth.status') return response({ ok: true });
             if (operation === 'lobby.info') {
                 return response({
                     year: 197,
@@ -227,8 +228,7 @@ const installApi = async (page: Page, state: BoardFixture) => {
             if (operation === 'messages.getContacts') return response({ nation: [] });
             if (operation === 'turns.reserved.getGeneral') return response({ turns: [], revision: 0 });
             if (operation === 'turns.reserved.getNation') return response({ turns: [], revision: 0 });
-            if (operation === 'general.getRecentRecords')
-                return response({ global: [], general: [], history: [] });
+            if (operation === 'general.getRecentRecords') return response({ global: [], general: [], history: [] });
             if (operation === 'general.getFrontStatus')
                 return response({
                     onlineUserCount: 1,
@@ -443,9 +443,9 @@ test('denies direct secret-room rendering and disables its in-game menu for an o
 
     state.requests.length = 0;
     await page.goto('');
-    await expect(page.getByRole('link', { name: '회의실', exact: true })).toBeVisible();
-    await expect(page.locator('.game-shell__actions [aria-disabled="true"]').filter({ hasText: '기밀실' })).toBeVisible();
-    await expect(page.getByRole('link', { name: '기밀실', exact: true })).toHaveCount(0);
+    const nationMenu = page.locator('.main-nation-menu').first();
+    await expect(nationMenu.locator('[data-navigation-id="meeting"]')).toHaveAttribute('href', '/che/board');
+    await expect(nationMenu.locator('[data-navigation-id="secret-board"]')).toHaveAttribute('aria-disabled', 'true');
 });
 
 test('enables both in-game menu entries for a chief or delegated secret role', async ({ page }) => {
@@ -458,6 +458,10 @@ test('enables both in-game menu entries for a chief or delegated secret role', a
     };
     await installApi(page, state);
     await page.goto('');
-    await expect(page.getByRole('link', { name: '회의실', exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: '기밀실', exact: true })).toBeVisible();
+    const nationMenu = page.locator('.main-nation-menu').first();
+    await expect(nationMenu.locator('[data-navigation-id="meeting"]')).toHaveAttribute('href', '/che/board');
+    await expect(nationMenu.locator('[data-navigation-id="secret-board"]')).toHaveAttribute(
+        'href',
+        '/che/board/secret'
+    );
 });

@@ -120,6 +120,7 @@ const installFixture = async (page: Page, state: FixtureState): Promise<void> =>
         const body = rawBody && typeof rawBody === 'object' ? (rawBody as Record<string, unknown>) : {};
         const results = operations.map((operation, index) => {
             const input = findInput(body[String(index)] ?? body);
+            if (operation === 'auth.status') return response({ ok: true });
             if (operation === 'lobby.info') {
                 return response({
                     myGeneral: state.hasGeneral ? { id: 1, name: '빙의후보1' } : null,

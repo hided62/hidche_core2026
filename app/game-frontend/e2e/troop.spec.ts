@@ -5,9 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const imageRoots = [
-    ...(process.env.FRONTEND_PARITY_IMAGE_ROOT
-        ? [resolve(process.env.FRONTEND_PARITY_IMAGE_ROOT, 'game')]
-        : []),
+    ...(process.env.FRONTEND_PARITY_IMAGE_ROOT ? [resolve(process.env.FRONTEND_PARITY_IMAGE_ROOT, 'game')] : []),
     resolve(repositoryRoot, '../image/game'),
     resolve(repositoryRoot, '../../image/game'),
 ];
@@ -140,6 +138,7 @@ const installApiFixture = async (page: Page, state: FixtureState) => {
     await page.route('**/che/api/trpc/**', async (route) => {
         const operations = operationName(route).split(',');
         const results = operations.map((operation) => {
+            if (operation === 'auth.status') return response({ ok: true });
             if (operation === 'lobby.info') {
                 return response({ myGeneral: { id: state.me.id, name: '테스트 장수' } });
             }

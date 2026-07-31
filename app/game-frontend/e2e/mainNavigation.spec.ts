@@ -125,6 +125,7 @@ const installFixture = async (page: Page, state: NavigationFixture) => {
         const operations = operationNames(route);
         state.operations.push(...operations);
         const results = operations.map((operation) => {
+            if (operation === 'auth.status') return response({ ok: true });
             if (operation === 'lobby.info') {
                 return response({ myGeneral: { id: 7, name: '메뉴검증장수' }, year: 185, month: 1, turnTerm: 10 });
             }
