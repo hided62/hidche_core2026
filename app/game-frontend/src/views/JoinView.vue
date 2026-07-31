@@ -1,15 +1,23 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
-import { RouterLink, useRouter } from 'vue-router';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { RouterLink, useRoute, useRouter } from 'vue-router';
 import PanelCard from '../components/ui/PanelCard.vue';
 import SkeletonLines from '../components/ui/SkeletonLines.vue';
 import { trpc } from '../utils/trpc';
 import { useSessionStore } from '../stores/session';
-import { cityLevelMap, regionMap } from '../utils/nationFormat';
+import { cityLevelMap, formatOfficerLevelText, regionMap } from '../utils/nationFormat';
+import { getNpcColor } from '../utils/npcColor';
+import { formatSeoulDateTime } from '../utils/legacyDateTime';
 
 type JoinConfig = Awaited<ReturnType<typeof trpc.join.getConfig.query>>;
 type JoinInput = Parameters<typeof trpc.join.createGeneral.mutate>[0];
-type PossessCandidate = Awaited<ReturnType<typeof trpc.join.listPossessCandidates.query>>[0];
+type PossessReservation = Awaited<ReturnType<typeof trpc.join.listPossessCandidates.mutate>>;
+type PossessCandidate = PossessReservation['candidates'][number];
+type NpcGeneralList = Awaited<ReturnType<typeof trpc.public.getNpcList.query>>;
+type NpcGeneralRow = NpcGeneralList['generals'][number] & {
+    reservationState: 0 | 1 | 2;
+    keepCount: number | null;
+};
 type JoinForm = Omit<JoinInput, 'inheritBonusStat' | 'clientRequestId'> & {
     inheritBonusStat: [number, number, number];
 };
@@ -18,8 +26,15 @@ type PendingJoinAction = {
     input: JoinForm;
     clientRequestId: string;
 };
+type PendingPossessAction = {
+    ownerUserId: string;
+    generalId: number;
+    tokenNonce: number;
+    clientRequestId: string;
+};
 
 const router = useRouter();
+const route = useRoute();
 const session = useSessionStore();
 
 const loading = ref(true);
@@ -29,6 +44,7 @@ const submitting = ref(false);
 const joinConfig = ref<JoinConfig | null>(null);
 const activeTab = ref<'create' | 'possess'>('create');
 const pendingJoinStorageKey = 'sammo-join-create-pending-action';
+const pendingPossessStorageKey = 'sammo-npc-possess-pending-action';
 
 const form = ref<JoinForm>({
     name: '',
@@ -83,17 +99,147 @@ const clearPendingJoin = (pending: PendingJoinAction): void => {
     }
 };
 
+const readPendingPossess = (): PendingPossessAction | null => {
+    try {
+        const raw = window.sessionStorage.getItem(pendingPossessStorageKey);
+        if (!raw) return null;
+        const value = JSON.parse(raw) as Partial<PendingPossessAction>;
+        if (
+            typeof value.ownerUserId !== 'string' ||
+            typeof value.generalId !== 'number' ||
+            typeof value.tokenNonce !== 'number' ||
+            typeof value.clientRequestId !== 'string'
+        ) {
+            return null;
+        }
+        return value as PendingPossessAction;
+    } catch {
+        return null;
+    }
+};
+
+const getPendingPossess = (generalId: number, tokenNonce: number): PendingPossessAction => {
+    const ownerUserId = joinConfig.value?.user.id ?? '';
+    const current = pendingPossessAction.value ?? readPendingPossess();
+    if (
+        current &&
+        current.ownerUserId === ownerUserId &&
+        current.generalId === generalId &&
+        current.tokenNonce === tokenNonce
+    ) {
+        return current;
+    }
+    const pending: PendingPossessAction = {
+        ownerUserId,
+        generalId,
+        tokenNonce,
+        clientRequestId: crypto.randomUUID(),
+    };
+    window.sessionStorage.setItem(pendingPossessStorageKey, JSON.stringify(pending));
+    pendingPossessAction.value = pending;
+    return pending;
+};
+
+const clearPendingPossess = (pending: PendingPossessAction): void => {
+    if (readPendingPossess()?.clientRequestId === pending.clientRequestId) {
+        window.sessionStorage.removeItem(pendingPossessStorageKey);
+    }
+    if (pendingPossessAction.value?.clientRequestId === pending.clientRequestId) {
+        pendingPossessAction.value = null;
+    }
+};
+
 const isIndeterminateTimeout = (value: unknown): boolean => {
     if (!value || typeof value !== 'object' || !('data' in value)) return false;
     const data = value.data;
     return Boolean(data && typeof data === 'object' && 'code' in data && data.code === 'TIMEOUT');
 };
 
-const npcCandidates = ref<PossessCandidate[]>([]);
+const isTrpcBusinessError = (value: unknown): boolean => {
+    if (!value || typeof value !== 'object' || !('data' in value)) return false;
+    const data = value.data;
+    return Boolean(data && typeof data === 'object' && 'code' in data && typeof data.code === 'string');
+};
+
+const npcImageUrl = (candidate: { picture: string | null; imageServer: number }): string => {
+    const picture = candidate.picture ?? 'default.jpg';
+    const userIconBaseUrl = import.meta.env.VITE_GATEWAY_USER_ICON_BASE_URL ?? '/gateway/api/user-icons';
+    return candidate.imageServer
+        ? `${userIconBaseUrl.replace(/\/$/, '')}/${encodeURIComponent(picture)}`
+        : `/image/icons/${encodeURIComponent(picture)}`;
+};
+
+const useDefaultNpcImage = (event: Event): void => {
+    const image = event.currentTarget;
+    if (image instanceof HTMLImageElement && !image.src.endsWith('/image/icons/default.jpg')) {
+        image.src = '/image/icons/default.jpg';
+    }
+};
+
+const npcReservation = ref<PossessReservation | null>(null);
 const npcLoading = ref(false);
 const npcError = ref<string | null>(null);
-const npcOffset = ref(0);
-const npcLimit = 20;
+const keptNpcIds = ref<number[]>([]);
+const nowMs = ref(Date.now());
+const npcPickMoreAvailableAtMs = ref(0);
+const pendingPossessAction = ref<PendingPossessAction | null>(null);
+const npcGeneralList = ref<NpcGeneralList | null>(null);
+const npcGeneralListLoading = ref(false);
+const npcGeneralListError = ref('');
+const npcGeneralListVisibleCount = ref(50);
+let npcTimer: number | null = null;
+
+const npcCandidates = computed<PossessCandidate[]>(() => npcReservation.value?.candidates ?? []);
+const npcValidUntilMs = computed(() => {
+    const value = npcReservation.value?.validUntil;
+    return value ? new Date(value).getTime() : 0;
+});
+const npcExpired = computed(() => npcValidUntilMs.value > 0 && npcValidUntilMs.value < nowMs.value);
+const npcPickMoreSeconds = computed(() =>
+    Math.max(0, Math.ceil((npcPickMoreAvailableAtMs.value - nowMs.value) / 1000))
+);
+const hasPendingPossession = computed(
+    () => pendingPossessAction.value !== null && pendingPossessAction.value.ownerUserId === joinConfig.value?.user.id
+);
+const isPendingPossessCandidate = (candidate: PossessCandidate): boolean => {
+    const pending = pendingPossessAction.value;
+    return Boolean(
+        pending &&
+        pending.ownerUserId === joinConfig.value?.user.id &&
+        pending.generalId === candidate.id &&
+        pending.tokenNonce === npcReservation.value?.tokenNonce
+    );
+};
+const npcGeneralRows = computed<NpcGeneralRow[]>(() => {
+    const list = npcGeneralList.value;
+    if (!list) {
+        return [];
+    }
+    return list.generals
+        .map((general) => {
+            const keepCount = list.tokenKeepCounts[String(general.id)];
+            return {
+                ...general,
+                reservationState: general.npcState < 2 ? 2 : keepCount !== undefined ? 1 : 0,
+                keepCount: keepCount ?? null,
+            } as NpcGeneralRow;
+        })
+        .sort(
+            (left, right) =>
+                right.reservationState - left.reservationState ||
+                right.statTotal - left.statTotal ||
+                // Ref select_npc.ts has this asymmetric comparator. Keep it because the visible order is contractual.
+                right.leadership - left.statTotal ||
+                (left.name < right.name ? -1 : left.name > right.name ? 1 : 0)
+        );
+});
+const visibleNpcGeneralRows = computed(() => npcGeneralRows.value.slice(0, npcGeneralListVisibleCount.value));
+const npcValidColor = computed(() => {
+    const remaining = npcValidUntilMs.value - nowMs.value;
+    if (remaining > 30_000) return '#ffffff';
+    const channel = Math.max(0, Math.min(255, Math.round((remaining / 30_000) * 255)));
+    return `rgb(255, ${channel}, ${channel})`;
+});
 
 const statRules = computed(() => joinConfig.value?.rules.stat ?? null);
 const statTotal = computed(() => form.value.leadership + form.value.strength + form.value.intel);
@@ -256,6 +402,11 @@ const loadConfig = async () => {
             return;
         }
         joinConfig.value = config;
+        const storedPossession = readPendingPossess();
+        pendingPossessAction.value = storedPossession?.ownerUserId === config.user.id ? storedPossession : null;
+        if (route.query.tab === 'possess' && config.npcPossession.enabled && config.user.canCreateGeneral) {
+            activeTab.value = 'possess';
+        }
         const pending = readPendingJoin();
         if (pending?.ownerUserId === config.user.id) {
             form.value = pending.input;
@@ -270,21 +421,31 @@ const loadConfig = async () => {
     }
 };
 
-const loadNpcCandidates = async (reset = false) => {
+const loadNpcCandidates = async (refresh = false) => {
     npcLoading.value = true;
     npcError.value = null;
     try {
-        if (reset) {
-            npcOffset.value = 0;
-        }
-        const list = await trpc.join.listPossessCandidates.query({
-            limit: npcLimit,
-            offset: npcOffset.value,
+        const reservation = await trpc.join.listPossessCandidates.mutate({
+            refresh,
+            ...(refresh ? { keepIds: keptNpcIds.value } : {}),
         });
-        npcCandidates.value = reset ? list : [...npcCandidates.value, ...list];
-        npcOffset.value += list.length;
+        npcReservation.value = reservation;
+        keptNpcIds.value = [];
+        const receivedAt = Date.now();
+        nowMs.value = receivedAt;
+        npcPickMoreAvailableAtMs.value = receivedAt + reservation.pickMoreSeconds * 1000;
     } catch (err) {
         npcError.value = err instanceof Error ? err.message : 'npc_list_failed';
+        if (refresh) {
+            window.alert(npcError.value);
+            if (isTrpcBusinessError(err)) {
+                window.location.reload();
+            }
+        } else if (isTrpcBusinessError(err)) {
+            window.alert(npcError.value);
+        } else {
+            window.alert(`알 수 없는 에러: ${npcError.value}`);
+        }
     } finally {
         npcLoading.value = false;
     }
@@ -317,33 +478,95 @@ const submitJoin = async () => {
     }
 };
 
-const possessGeneral = async (generalId: number) => {
+const submitPossession = async (pending: PendingPossessAction) => {
     if (submitting.value) {
         return;
     }
     submitting.value = true;
     error.value = null;
     try {
-        await trpc.join.possessGeneral.mutate({ generalId });
+        await trpc.join.possessGeneral.mutate({
+            generalId: pending.generalId,
+            tokenNonce: pending.tokenNonce,
+            clientRequestId: pending.clientRequestId,
+        });
+        clearPendingPossess(pending);
+        window.alert('빙의에 성공했습니다.');
         await session.refreshGeneralStatus();
         if (session.hasGeneral) {
             await router.push({ name: 'home' });
         }
     } catch (err) {
+        if (!isIndeterminateTimeout(err)) {
+            clearPendingPossess(pending);
+        }
         error.value = err instanceof Error ? err.message : 'possess_failed';
+        if (isTrpcBusinessError(err) && !isIndeterminateTimeout(err)) {
+            window.alert(error.value);
+            window.location.reload();
+        } else if (!isIndeterminateTimeout(err)) {
+            window.alert(`알 수 없는 에러: ${error.value}`);
+        }
     } finally {
         submitting.value = false;
     }
 };
 
+const possessGeneral = async (candidate: PossessCandidate) => {
+    const reservation = npcReservation.value;
+    if (
+        submitting.value ||
+        !reservation ||
+        (hasPendingPossession.value && !isPendingPossessCandidate(candidate)) ||
+        !window.confirm(`빙의할까요? : ${candidate.name}`)
+    ) {
+        return;
+    }
+    await submitPossession(getPendingPossess(candidate.id, reservation.tokenNonce));
+};
+
+const retryPendingPossession = async () => {
+    const pending = pendingPossessAction.value;
+    if (!pending || pending.ownerUserId !== joinConfig.value?.user.id) {
+        return;
+    }
+    await submitPossession(pending);
+};
+
+const loadNpcGeneralList = async () => {
+    if (npcGeneralListLoading.value) {
+        return;
+    }
+    npcGeneralListLoading.value = true;
+    npcGeneralListError.value = '';
+    try {
+        npcGeneralList.value = await trpc.public.getNpcList.query({ sort: 1, includeAllWithToken: true });
+        npcGeneralListVisibleCount.value = 50;
+    } catch (err) {
+        npcGeneralListError.value = err instanceof Error ? err.message : 'npc_general_list_failed';
+        window.alert(`실패했습니다: ${npcGeneralListError.value}`);
+    } finally {
+        npcGeneralListLoading.value = false;
+    }
+};
+
 watch(activeTab, (value) => {
-    if (value === 'possess' && npcCandidates.value.length === 0) {
-        void loadNpcCandidates(true);
+    if (value === 'possess' && !npcReservation.value) {
+        void loadNpcCandidates(false);
     }
 });
 
 onMounted(() => {
+    npcTimer = window.setInterval(() => {
+        nowMs.value = Date.now();
+    }, 250);
     void loadConfig();
+});
+
+onUnmounted(() => {
+    if (npcTimer !== null) {
+        window.clearInterval(npcTimer);
+    }
 });
 </script>
 
@@ -357,8 +580,21 @@ onMounted(() => {
             <div class="join-tabs">
                 <RouterLink class="simulator-link" to="/past-plays">내 지난 플레이</RouterLink>
                 <RouterLink class="simulator-link" to="/battle-simulator">전투 시뮬레이터</RouterLink>
-                <button :class="{ active: activeTab === 'create' }" @click="activeTab = 'create'">장수 생성</button>
-                <button :class="{ active: activeTab === 'possess' }" @click="activeTab = 'possess'">NPC 빙의</button>
+                <button
+                    :class="{ active: activeTab === 'create' }"
+                    :disabled="joinConfig?.user.canCreateGeneral === false"
+                    @click="activeTab = 'create'"
+                >
+                    장수 생성
+                </button>
+                <button
+                    v-if="joinConfig?.npcPossession.enabled"
+                    :class="{ active: activeTab === 'possess' }"
+                    :disabled="joinConfig?.user.canCreateGeneral === false"
+                    @click="activeTab = 'possess'"
+                >
+                    NPC 빙의
+                </button>
             </div>
         </header>
 
@@ -543,36 +779,231 @@ onMounted(() => {
             </PanelCard>
         </section>
 
-        <section v-else class="join-grid">
-            <PanelCard title="빙의 가능한 NPC 목록" subtitle="NPC 타입2 장수를 선택해 빙의합니다.">
-                <template #actions>
-                    <button class="ghost" :disabled="npcLoading" @click="loadNpcCandidates(true)">목록 새로고침</button>
-                </template>
+        <section v-else class="npc-possession-section">
+            <PanelCard title="장수 빙의">
                 <div v-if="npcError" class="muted">{{ npcError }}</div>
                 <div v-if="npcLoading && npcCandidates.length === 0">
                     <SkeletonLines :lines="3" />
                 </div>
                 <div v-else-if="npcCandidates.length === 0" class="muted">빙의 가능한 NPC가 없습니다.</div>
-                <div v-else class="npc-list">
-                    <div v-for="npc in npcCandidates" :key="npc.id" class="npc-card">
-                        <div class="npc-header">
-                            <div class="npc-name">{{ npc.name }}</div>
-                            <div class="npc-nation" :style="{ color: npc.nation.color }">
-                                {{ npc.nation.name }}
-                            </div>
-                        </div>
-                        <div class="npc-meta">
-                            <div>통솔 {{ npc.stats.leadership }}</div>
-                            <div>무력 {{ npc.stats.strength }}</div>
-                            <div>지력 {{ npc.stats.intelligence }}</div>
-                            <div>나이 {{ npc.age }}</div>
-                            <div>도시 {{ npc.city?.name ?? '-' }}</div>
-                        </div>
-                        <button class="npc-action" :disabled="submitting" @click="possessGeneral(npc.id)">빙의</button>
+                <template v-else>
+                    <div class="npc-token-status">
+                        <span v-if="!npcExpired">
+                            (<span :style="{ color: npcValidColor }">{{
+                                npcReservation?.validUntil ? formatSeoulDateTime(npcReservation.validUntil) : ''
+                            }}</span
+                            >까지 유효)
+                        </span>
+                        <span v-else class="npc-token-expired">- 만료 -</span>
                     </div>
-                </div>
+                    <form class="npc-card-holder" @submit.prevent>
+                        <div v-for="npc in npcCandidates" :key="npc.id" class="npc-card">
+                            <h4 class="npc-card-name">{{ npc.name }}</h4>
+                            <h4>
+                                <img
+                                    class="npc-card-image"
+                                    :src="npcImageUrl(npc)"
+                                    :alt="`${npc.name} 얼굴`"
+                                    width="64"
+                                    height="64"
+                                    @error="useDefaultNpcImage"
+                                />
+                            </h4>
+                            <p>
+                                {{ npc.stats.leadership }} / {{ npc.stats.strength }} / {{ npc.stats.intelligence
+                                }}<br />
+                                <span :style="{ color: npc.nation.color }">{{ npc.nation.name }}</span
+                                ><br />
+                                <span class="npc-tooltip" tabindex="0">
+                                    {{ npc.personality.name }}
+                                    <span role="tooltip">{{ npc.personality.info }}</span>
+                                </span>
+                                <br />
+                                <span class="npc-tooltip" tabindex="0">
+                                    {{ npc.specialDomestic.name }}
+                                    <span role="tooltip">{{ npc.specialDomestic.info }}</span>
+                                </span>
+                                /
+                                <span class="npc-tooltip" tabindex="0">
+                                    {{ npc.specialWar.name }}
+                                    <span role="tooltip">{{ npc.specialWar.info }}</span>
+                                </span>
+                            </p>
+                            <button
+                                class="npc-action"
+                                type="button"
+                                :disabled="submitting || (hasPendingPossession && !isPendingPossessCandidate(npc))"
+                                @click="possessGeneral(npc)"
+                            >
+                                빙의하기
+                            </button>
+                            <label class="npc-keep">
+                                <input
+                                    v-model="keptNpcIds"
+                                    type="checkbox"
+                                    :value="npc.id"
+                                    :disabled="npc.keepCount <= 0"
+                                />
+                                보관({{ npc.keepCount }}회)
+                            </label>
+                        </div>
+                    </form>
+                </template>
                 <div class="npc-footer">
-                    <button class="ghost" :disabled="npcLoading" @click="loadNpcCandidates()">더 보기</button>
+                    <button
+                        id="btn-pick-more"
+                        class="ghost"
+                        type="button"
+                        :disabled="npcLoading || npcPickMoreSeconds > 0 || submitting || hasPendingPossession"
+                        @click="loadNpcCandidates(true)"
+                    >
+                        다른 장수 보기<span v-if="npcPickMoreSeconds > 0">({{ npcPickMoreSeconds }}초)</span>
+                    </button>
+                    <button
+                        v-if="hasPendingPossession"
+                        id="btn-retry-possession"
+                        class="ghost"
+                        type="button"
+                        :disabled="submitting"
+                        @click="retryPendingPossession"
+                    >
+                        접수 결과 다시 확인
+                    </button>
+                    <button
+                        id="btn-load-general-list"
+                        class="ghost npc-list-link"
+                        type="button"
+                        :disabled="npcGeneralListLoading"
+                        @click="loadNpcGeneralList"
+                    >
+                        {{ npcGeneralListLoading ? '불러오는 중...' : '장수 목록 보기' }}
+                    </button>
+                </div>
+
+                <div v-if="npcGeneralListError" class="npc-general-list-error" role="alert">
+                    {{ npcGeneralListError }}
+                </div>
+                <div v-if="npcGeneralList" class="npc-general-list-wrap">
+                    <table id="tb-general-list" class="npc-general-table">
+                        <colgroup>
+                            <col style="width: 64px" />
+                            <col style="width: 140px" />
+                            <col style="width: 40px" />
+                            <col style="width: 40px" />
+                            <col style="width: 80px" />
+                            <col style="width: 45px" />
+                            <col style="width: 140px" />
+                            <col style="width: 50px" />
+                            <col style="width: 50px" />
+                            <col style="width: 75px" />
+                            <col style="width: 60px" />
+                            <col style="width: 45px" />
+                            <col style="width: 45px" />
+                            <col style="width: 45px" />
+                            <col style="width: 45px" />
+                        </colgroup>
+                        <thead>
+                            <tr>
+                                <th>얼 굴</th>
+                                <th>이 름</th>
+                                <th>연령</th>
+                                <th>성격</th>
+                                <th>특기</th>
+                                <th>레 벨</th>
+                                <th>국 가</th>
+                                <th>명 성</th>
+                                <th>계 급</th>
+                                <th>관 직</th>
+                                <th>종능</th>
+                                <th>통솔</th>
+                                <th>무력</th>
+                                <th>지력</th>
+                                <th>삭턴</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr
+                                v-for="general in visibleNpcGeneralRows"
+                                :key="general.id"
+                                :data-general-id="general.id"
+                                :data-reservation-state="general.reservationState"
+                            >
+                                <td>
+                                    <img
+                                        class="npc-general-icon"
+                                        :src="npcImageUrl(general)"
+                                        :alt="`${general.name} 얼굴`"
+                                        width="64"
+                                        height="64"
+                                        @error="useDefaultNpcImage"
+                                    />
+                                </td>
+                                <td
+                                    class="npc-general-name"
+                                    :style="{
+                                        color:
+                                            general.reservationState === 1
+                                                ? 'violet'
+                                                : general.npcState > 0
+                                                  ? getNpcColor(general.npcState)
+                                                  : '',
+                                    }"
+                                >
+                                    {{ general.name }}
+                                    <template v-if="general.ownerName">
+                                        <br /><small>({{ general.ownerName }})</small>
+                                    </template>
+                                    <template v-if="general.reservationState === 1">
+                                        <br /><small>({{ general.keepCount }}회)</small>
+                                    </template>
+                                </td>
+                                <td>{{ general.age }}세</td>
+                                <td>
+                                    <span v-if="general.personality" class="npc-tooltip" tabindex="0">
+                                        {{ general.personality.name }}
+                                        <span role="tooltip">{{ general.personality.info }}</span>
+                                    </span>
+                                    <span v-else>-</span>
+                                </td>
+                                <td>
+                                    <span v-if="general.specialDomestic" class="npc-tooltip" tabindex="0">
+                                        {{ general.specialDomestic.name }}
+                                        <span role="tooltip">{{ general.specialDomestic.info }}</span>
+                                    </span>
+                                    <span v-else>-</span>
+                                    /
+                                    <span v-if="general.specialWar" class="npc-tooltip" tabindex="0">
+                                        {{ general.specialWar.name }}
+                                        <span role="tooltip">{{ general.specialWar.info }}</span>
+                                    </span>
+                                    <span v-else>-</span>
+                                </td>
+                                <td>Lv {{ general.level }}</td>
+                                <td>{{ general.nationName }}</td>
+                                <td>{{ general.experienceText }}</td>
+                                <td>{{ general.dedicationText }}</td>
+                                <td>{{ formatOfficerLevelText(general.officerLevel, general.nationLevel) }}</td>
+                                <td>{{ general.statTotal }}</td>
+                                <td>{{ general.leadership }}</td>
+                                <td>{{ general.strength }}</td>
+                                <td>{{ general.intelligence }}</td>
+                                <td>{{ general.killturn }}</td>
+                            </tr>
+                        </tbody>
+                        <tfoot v-if="visibleNpcGeneralRows.length < npcGeneralRows.length">
+                            <tr>
+                                <td colspan="15">
+                                    <button
+                                        id="btn-print-more-generals"
+                                        type="button"
+                                        @click="npcGeneralListVisibleCount += 50"
+                                    >
+                                        더 보기
+                                    </button>
+                                </td>
+                            </tr>
+                        </tfoot>
+                    </table>
                 </div>
             </PanelCard>
         </section>
@@ -779,47 +1210,178 @@ onMounted(() => {
     background: transparent;
 }
 
-.npc-list {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 10px;
+.npc-possession-section {
+    width: 1000px;
+    align-self: center;
+}
+
+.npc-token-status {
+    min-height: 22px;
+    text-align: center;
+    font-size: 0.75rem;
+}
+
+.npc-token-expired {
+    color: red;
+}
+
+.npc-card-holder {
+    text-align: center;
+    white-space: nowrap;
 }
 
 .npc-card {
-    border: 1px solid rgba(201, 164, 90, 0.3);
-    padding: 8px;
-    display: flex;
+    width: 125px;
+    display: inline-flex;
     flex-direction: column;
-    gap: 8px;
+    vertical-align: top;
+    white-space: normal;
 }
 
-.npc-header {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 6px;
+.npc-card h4,
+.npc-card p {
+    margin: 0;
 }
 
-.npc-name {
-    font-weight: 600;
+.npc-card-name {
+    min-height: 25px;
+    border: 1px solid rgba(201, 164, 90, 0.3);
+    font-size: 1rem;
+    line-height: 23px;
 }
 
-.npc-meta {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
-    gap: 4px;
-    font-size: 0.7rem;
-    color: rgba(232, 221, 196, 0.7);
+.npc-card-image {
+    width: 64px;
+    height: 64px;
+}
+
+.npc-card p {
+    min-height: 78px;
+    font-size: 0.75rem;
+    line-height: 1.3;
+}
+
+.npc-tooltip {
+    position: relative;
+    cursor: help;
+    text-decoration: underline dotted;
+}
+
+.npc-tooltip [role='tooltip'] {
+    display: none;
+    position: absolute;
+    z-index: 10;
+    left: 50%;
+    bottom: calc(100% + 4px);
+    width: 220px;
+    padding: 5px 7px;
+    transform: translateX(-50%);
+    border: 1px solid #888;
+    background: #202020;
+    color: #fff;
+    text-align: left;
+    word-break: keep-all;
+}
+
+.npc-tooltip:hover [role='tooltip'],
+.npc-tooltip:focus [role='tooltip'] {
+    display: block;
 }
 
 .npc-action {
+    width: 100%;
     border: 1px solid rgba(201, 164, 90, 0.4);
     padding: 4px 8px;
     font-size: 0.75rem;
 }
 
+.npc-keep {
+    display: block;
+    padding-left: 15px;
+    text-indent: -15px;
+    font-size: 0.75rem;
+}
+
+.npc-keep input {
+    width: 13px;
+    height: 13px;
+    padding: 0;
+    margin: 0;
+    vertical-align: bottom;
+    position: relative;
+    top: -1px;
+}
+
 .npc-footer {
     margin-top: 8px;
+    padding: 20px 0;
+    text-align: center;
+    display: flex;
+    justify-content: center;
+    gap: 2ch;
+}
+
+.npc-list-link {
+    display: inline-block;
+    border: 1px solid rgba(201, 164, 90, 0.4);
+    padding: 4px 8px;
+    color: inherit;
+    text-decoration: none;
+}
+
+.npc-general-list-error {
+    margin-bottom: 8px;
+    color: rgba(240, 150, 150, 0.9);
+    text-align: center;
+    font-size: 0.75rem;
+}
+
+.npc-general-list-wrap {
+    width: 970px;
+    margin: 0 auto 20px;
+    overflow-x: auto;
+}
+
+.npc-general-table {
+    width: 970px;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 12px;
+    word-break: break-all;
+}
+
+.npc-general-table th,
+.npc-general-table td {
+    border: 1px solid gray;
+    padding: 0;
+    text-align: center;
+}
+
+.npc-general-table th {
+    height: 24px;
+    background: rgba(201, 164, 90, 0.15);
+    font-weight: 600;
+}
+
+.npc-general-table tbody tr {
+    height: 65px;
+}
+
+.npc-general-icon {
+    display: block;
+    width: 64px;
+    height: 64px;
+    max-width: none;
+}
+
+.npc-general-name small {
+    font-size: 10px;
+}
+
+#btn-print-more-generals {
+    width: 100%;
+    min-height: 28px;
+    border: 0;
 }
 
 .muted {

@@ -31,7 +31,7 @@ export default defineConfig({
     },
     webServer: {
         command:
-            'VITE_APP_BASE_PATH=/gateway pnpm --filter @sammo-ts/gateway-frontend preview --host 127.0.0.1 --port 15130',
+            "VITE_APP_BASE_PATH=/gateway VITE_GAME_WEB_URL_TEMPLATE='/{profile}/' pnpm --filter @sammo-ts/gateway-frontend preview --host 127.0.0.1 --port 15130",
         cwd: repositoryRoot,
         url: 'http://127.0.0.1:15130/gateway/',
         reuseExistingServer: false,

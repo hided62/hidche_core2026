@@ -1,8 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
-import type { GamePrisma } from '@sammo-ts/infra';
+import { GamePrisma, type DatabaseClient } from '@sammo-ts/infra';
 
-import type { DatabaseClient } from '../context.js';
 import type { TurnDaemonTransport } from './transport.js';
 import type { TurnDaemonCommand, TurnDaemonCommandResult, TurnDaemonStatus } from './types.js';
 
@@ -39,6 +38,16 @@ export class FailedTurnDaemonCommandError extends Error {
     }
 }
 
+export class RejectedNpcPossessionCommandError extends Error {
+    constructor(
+        readonly code: 'PRECONDITION_FAILED',
+        message: string
+    ) {
+        super(message);
+        this.name = 'RejectedNpcPossessionCommandError';
+    }
+}
+
 export class DatabaseTurnDaemonTransport implements TurnDaemonTransport {
     constructor(
         private readonly db: DatabaseClient,
@@ -48,20 +57,63 @@ export class DatabaseTurnDaemonTransport implements TurnDaemonTransport {
     async sendCommand(command: TurnDaemonCommand): Promise<string> {
         const requestId = ('requestId' in command ? command.requestId : undefined) ?? randomUUID();
         const durableCommand = JSON.parse(JSON.stringify({ ...command, requestId })) as TurnDaemonCommand;
-        try {
-            await this.db.inputEvent.create({
-                data: {
-                    requestId,
-                    target: 'ENGINE',
-                    eventType: command.type,
-                    payload: asJson(durableCommand),
-                    actorUserId:
-                        'userId' in command && typeof command.userId === 'string'
-                            ? command.userId
-                            : null,
-                },
+        if (command.type === 'npcPossessGeneral') {
+            const existing = await this.db.inputEvent.findUnique({
+                where: { requestId },
+                select: { eventType: true, payload: true },
             });
+            if (existing) {
+                if (
+                    existing.eventType !== command.type ||
+                    stableJson(existing.payload) !== stableJson(durableCommand)
+                ) {
+                    throw new ConflictingTurnDaemonCommandError(requestId);
+                }
+                return requestId;
+            }
+        }
+        try {
+            if (command.type === 'npcPossessGeneral' && this.db.$transaction) {
+                const rejectionReason = await this.db.$transaction(async (transaction) => {
+                    await transaction.$executeRaw(
+                        GamePrisma.sql`SELECT pg_advisory_xact_lock(hashtextextended('npc-possession', 1))`
+                    );
+                    await transaction.$executeRaw(
+                        GamePrisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${`npc-possession:${command.userId}`}, 1))`
+                    );
+                    const acceptedAt = new Date(Math.floor(Date.now() / 1000) * 1000);
+                    const token = await transaction.npcSelectionToken.findFirst({
+                        where: {
+                            ownerUserId: command.userId,
+                            nonce: command.tokenNonce,
+                            validUntil: { gte: acceptedAt },
+                        },
+                        select: { pickResult: true },
+                    });
+                    if (!token) {
+                        return '유효한 장수 목록이 없습니다.';
+                    }
+                    if (
+                        !token.pickResult ||
+                        typeof token.pickResult !== 'object' ||
+                        Array.isArray(token.pickResult) ||
+                        !Object.hasOwn(token.pickResult, String(command.generalId))
+                    ) {
+                        return '선택한 장수가 목록에 없습니다.';
+                    }
+                    await this.createInputEvent(transaction, durableCommand, requestId, acceptedAt);
+                    return null;
+                });
+                if (rejectionReason) {
+                    throw new RejectedNpcPossessionCommandError('PRECONDITION_FAILED', rejectionReason);
+                }
+            } else {
+                await this.createInputEvent(this.db, durableCommand, requestId);
+            }
         } catch (error) {
+            if (error instanceof RejectedNpcPossessionCommandError) {
+                throw error;
+            }
             const isUniqueConflict =
                 typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002';
             if (!isUniqueConflict) {
@@ -76,6 +128,24 @@ export class DatabaseTurnDaemonTransport implements TurnDaemonTransport {
             }
         }
         return requestId;
+    }
+
+    private async createInputEvent(
+        db: DatabaseClient,
+        command: TurnDaemonCommand,
+        requestId: string,
+        createdAt?: Date
+    ): Promise<void> {
+        await db.inputEvent.create({
+            data: {
+                requestId,
+                target: 'ENGINE',
+                eventType: command.type,
+                payload: asJson(command),
+                actorUserId: 'userId' in command && typeof command.userId === 'string' ? command.userId : null,
+                ...(createdAt ? { createdAt } : {}),
+            },
+        });
     }
 
     async requestCommand(command: TurnDaemonCommand, timeoutMs?: number): Promise<TurnDaemonCommandResult | null> {

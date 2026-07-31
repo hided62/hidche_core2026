@@ -39,9 +39,7 @@ const resetScenario = async (page: Page, scenarioId: string, sourceCommit: strin
     const previousLatestOperation = await latestOperation.textContent();
     await page.getByTestId('request-reset').click();
     await expect(page.getByText('초기화 작업을 시작했습니다.')).toBeVisible();
-    await expect
-        .poll(() => latestOperation.textContent(), { timeout: 15_000 })
-        .not.toBe(previousLatestOperation);
+    await expect.poll(() => latestOperation.textContent(), { timeout: 15_000 }).not.toBe(previousLatestOperation);
     await expect(latestOperation).toContainText(sourceCommit, { timeout: 15_000 });
     await expect(latestOperation.locator('td').nth(3)).toHaveText('SUCCEEDED', {
         timeout: 300_000,
@@ -71,7 +69,9 @@ const resetScenario = async (page: Page, scenarioId: string, sourceCommit: strin
 
 type PossessCandidateBatch = Array<{
     result?: {
-        data?: Array<{ picture?: string | null }>;
+        data?: {
+            candidates?: Array<{ picture?: string | null }>;
+        };
     };
 }>;
 
@@ -99,11 +99,10 @@ const inspectScenarioIcons = async (
     await page.getByRole('button', { name: 'NPC 빙의' }).click();
     const payload = (await (await candidatesResponse).json()) as PossessCandidateBatch;
     const iconPaths = payload
-        .flatMap((entry) => entry.result?.data ?? [])
+        .flatMap((entry) => entry.result?.data?.candidates ?? [])
         .map((candidate) => candidate.picture)
         .filter(
-            (picture): picture is string =>
-                typeof picture === 'string' && picture.startsWith(`${expectedDirectory}/`)
+            (picture): picture is string => typeof picture === 'string' && picture.startsWith(`${expectedDirectory}/`)
         );
     expect(iconPaths.length).toBeGreaterThan(0);
 

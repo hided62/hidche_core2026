@@ -15,7 +15,11 @@ import {
 } from '@sammo-ts/logic';
 import { readInheritancePoint, resolveInheritConstants } from '../../services/inheritance.js';
 import { getSelectionPoolStatus, reserveSelectionPool, resolveSelectionMaxGeneral } from '../../services/selectPool.js';
-import { ConflictingTurnDaemonCommandError } from '../../daemon/databaseTransport.js';
+import {
+    ConflictingTurnDaemonCommandError,
+    RejectedNpcPossessionCommandError,
+} from '../../daemon/databaseTransport.js';
+import { NpcPossessionError, reserveNpcPossessionCandidates } from '@sammo-ts/game-engine';
 
 const resolveSelectionCommandResult = (
     result: Awaited<ReturnType<GameApiContext['turnDaemon']['requestCommand']>> | null,
@@ -109,6 +113,71 @@ const requestJoinCreateCommand = async (
             throw new TRPCError({
                 code: 'CONFLICT',
                 message: '이미 접수된 장수 생성 요청과 입력이 다릅니다. 새 요청 번호로 다시 시도해 주세요.',
+            });
+        }
+        throw error;
+    }
+};
+
+const resolveNpcPossessionCommandResult = (
+    result: Awaited<ReturnType<GameApiContext['turnDaemon']['requestCommand']>> | null
+): { ok: true; generalId: number } => {
+    if (!result) {
+        throw new TRPCError({
+            code: 'TIMEOUT',
+            message:
+                'NPC 빙의 요청은 접수됐지만 처리 결과를 아직 확인하지 못했습니다. 같은 요청으로 다시 시도해 주세요.',
+        });
+    }
+    if (result.type !== 'npcPossessGeneral') {
+        throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: '턴 데몬이 올바르지 않은 NPC 빙의 결과를 반환했습니다.',
+        });
+    }
+    if (!result.ok) {
+        throw new TRPCError({
+            code: result.code,
+            message: result.reason,
+        });
+    }
+    return { ok: true, generalId: result.generalId };
+};
+
+const resolveNpcPossessionRequestId = (
+    contextRequestId: string | undefined,
+    userId: string,
+    clientRequestId: string | undefined
+): string | undefined => {
+    if (clientRequestId) {
+        return `npc-possess:${userId}:${clientRequestId}`;
+    }
+    return contextRequestId ? `${contextRequestId}:join.possessGeneral` : undefined;
+};
+
+const requestNpcPossessionCommand = async (
+    ctx: GameApiContext,
+    command: Parameters<GameApiContext['turnDaemon']['requestCommand']>[0]
+) => {
+    try {
+        return await ctx.turnDaemon.requestCommand(command);
+    } catch (error) {
+        if (
+            error instanceof RejectedNpcPossessionCommandError ||
+            (error instanceof Error && error.name === 'RejectedNpcPossessionCommandError')
+        ) {
+            throw new TRPCError({
+                code: 'PRECONDITION_FAILED',
+                message: error.message,
+            });
+        }
+        if (
+            error instanceof ConflictingTurnDaemonCommandError ||
+            (error instanceof Error && error.name === 'ConflictingTurnDaemonCommandError')
+        ) {
+            throw new TRPCError({
+                code: 'CONFLICT',
+                message: '이미 접수된 NPC 빙의 요청과 입력이 다릅니다. 새 요청 번호로 다시 시도해 주세요.',
             });
         }
         throw error;
@@ -257,6 +326,7 @@ export const joinRouter = router({
             user: {
                 id: ctx.auth?.user.id ?? '',
                 displayName: ctx.auth?.user.displayName ?? '',
+                canCreateGeneral: ctx.auth?.identity?.canCreateGeneral !== false,
             },
             personalities: [{ key: 'Random', name: '???', info: '무작위 성격을 선택합니다.' }, ...personalities],
             warSpecials,
@@ -282,6 +352,9 @@ export const joinRouter = router({
                 availableSpecialWar: warSpecials,
             },
             selectionPool,
+            npcPossession: {
+                enabled: asNumber(config.npcMode ?? config.npcmode, 0) === 1,
+            },
         };
     }),
     getSelectionPool: authedProcedure.mutation(async ({ ctx }) => {
@@ -427,155 +500,77 @@ export const joinRouter = router({
     listPossessCandidates: authedProcedure
         .input(
             z.object({
-                limit: z.number().int().min(1).max(50).optional(),
-                offset: z.number().int().min(0).optional(),
-            })
-        )
-        .query(async ({ ctx, input }) => {
-            const limit = input.limit ?? 20;
-            const offset = input.offset ?? 0;
-
-            const candidates = await ctx.db.general.findMany({
-                where: {
-                    userId: null,
-                    npcState: { gte: 2 },
-                },
-                orderBy: { id: 'asc' },
-                skip: offset,
-                take: limit,
-                select: {
-                    id: true,
-                    name: true,
-                    npcState: true,
-                    nationId: true,
-                    cityId: true,
-                    leadership: true,
-                    strength: true,
-                    intel: true,
-                    age: true,
-                    officerLevel: true,
-                    personalCode: true,
-                    specialCode: true,
-                    special2Code: true,
-                    picture: true,
-                    imageServer: true,
-                },
-            });
-
-            const [nationRows, cityRows] = await Promise.all([
-                ctx.db.nation.findMany({ select: { id: true, name: true, color: true } }),
-                ctx.db.city.findMany({ select: { id: true, name: true } }),
-            ]);
-            const nationMap = new Map(nationRows.map((nation) => [nation.id, nation]));
-            const cityMap = new Map(cityRows.map((city) => [city.id, city]));
-
-            return candidates.map((candidate) => {
-                const nation = nationMap.get(candidate.nationId);
-                const city = cityMap.get(candidate.cityId);
-                return {
-                    id: candidate.id,
-                    name: candidate.name,
-                    npcState: candidate.npcState,
-                    nation: nation
-                        ? { id: nation.id, name: nation.name, color: nation.color }
-                        : { id: 0, name: '재야', color: '#666666' },
-                    city: city ? { id: city.id, name: city.name } : null,
-                    stats: {
-                        leadership: candidate.leadership,
-                        strength: candidate.strength,
-                        intelligence: candidate.intel,
-                    },
-                    age: candidate.age,
-                    officerLevel: candidate.officerLevel,
-                    personality: candidate.personalCode,
-                    special: candidate.specialCode,
-                    specialWar: candidate.special2Code,
-                    picture: candidate.picture,
-                    imageServer: candidate.imageServer,
-                };
-            });
-        }),
-    possessGeneral: authedProcedure
-        .input(
-            z.object({
-                generalId: z.number().int().positive(),
+                refresh: z.boolean().optional(),
+                keepIds: z.array(z.number().int().positive()).max(5).optional(),
             })
         )
         .mutation(async ({ ctx, input }) => {
-            const userId = ctx.auth?.user.id;
-            if (!userId) {
+            const auth = ctx.auth;
+            if (!auth) {
                 throw new TRPCError({ code: 'UNAUTHORIZED' });
             }
-            const existing = await ctx.db.general.findFirst({ where: { userId } });
-            if (existing) {
+            if (auth.identity?.canCreateGeneral === false) {
                 throw new TRPCError({
-                    code: 'PRECONDITION_FAILED',
-                    message: '이미 장수가 생성되어 있습니다.',
+                    code: 'FORBIDDEN',
+                    message: '이 서버에서는 카카오 인증을 완료해야 장수를 생성할 수 있습니다.',
                 });
             }
-
-            await ctx.db.$transaction!(async (db) => {
-                const [candidate, worldState] = await Promise.all([
-                    db.general.findUnique({
-                        where: { id: input.generalId },
-                        select: { npcState: true, meta: true },
-                    }),
-                    db.worldState.findFirst({
-                        select: { currentYear: true, currentMonth: true },
-                    }),
-                ]);
-                if (!candidate || candidate.npcState < 2 || !worldState) {
-                    throw new TRPCError({
-                        code: 'NOT_FOUND',
-                        message: '빙의 가능한 장수를 찾지 못했습니다.',
-                    });
-                }
-
-                const now = new Date();
-                const updated = await db.general.updateMany({
-                    where: {
-                        id: input.generalId,
-                        userId: null,
-                        npcState: candidate.npcState,
-                    },
-                    data: {
-                        userId,
-                        npcState: 1,
-                        meta: {
-                            ...asRecord(candidate.meta),
-                            npc_org: candidate.npcState,
-                            owner_name: ctx.auth?.user.displayName ?? '',
-                            pickYearMonth: worldState.currentYear * 12 + worldState.currentMonth - 1,
-                            killturn: 6,
-                            defence_train: 80,
-                        },
-                        updatedAt: now,
-                    },
+            const worldState = await ctx.db.worldState.findFirst();
+            if (!worldState) {
+                throw new TRPCError({
+                    code: 'PRECONDITION_FAILED',
+                    message: 'World state is not initialized.',
                 });
-                if (updated.count === 0) {
-                    throw new TRPCError({
-                        code: 'NOT_FOUND',
-                        message: '빙의 가능한 장수를 찾지 못했습니다.',
-                    });
-                }
-                await db.generalAccessLog.upsert({
-                    where: { generalId: input.generalId },
-                    update: {
-                        userId,
-                        lastRefresh: now,
-                        refresh: 0,
-                        refreshTotal: 0,
-                        refreshScore: 0,
-                        refreshScoreTotal: 0,
-                    },
-                    create: {
-                        generalId: input.generalId,
-                        userId,
-                        lastRefresh: now,
-                    },
+            }
+            try {
+                return await reserveNpcPossessionCandidates({
+                    db: ctx.db,
+                    worldState,
+                    userId: auth.user.id,
+                    ownerIdentity: auth.user.legacyMemberNo ?? auth.user.id,
+                    refresh: input.refresh,
+                    keepIds: input.keepIds,
                 });
+            } catch (error) {
+                if (error instanceof NpcPossessionError) {
+                    throw new TRPCError({ code: error.code, message: error.message });
+                }
+                throw error;
+            }
+        }),
+    possessGeneral: engineAuthedProcedure
+        .input(
+            z.object({
+                generalId: z.number().int().positive(),
+                tokenNonce: z.number().int().nonnegative(),
+                clientRequestId: z.string().uuid().optional(),
+            })
+        )
+        .mutation(async ({ ctx, input }) => {
+            const auth = ctx.auth;
+            if (!auth) {
+                throw new TRPCError({ code: 'UNAUTHORIZED' });
+            }
+            if (auth.identity?.canCreateGeneral === false) {
+                throw new TRPCError({
+                    code: 'FORBIDDEN',
+                    message: '이 서버에서는 카카오 인증을 완료해야 장수를 생성할 수 있습니다.',
+                });
+            }
+            const userId = auth.user.id;
+            const commandRequestId = resolveNpcPossessionRequestId(ctx.requestId, userId, input.clientRequestId);
+            const result = await requestNpcPossessionCommand(ctx, {
+                type: 'npcPossessGeneral',
+                ...(commandRequestId ? { requestId: commandRequestId } : {}),
+                userId,
+                ownerDisplayName: auth.user.displayName,
+                profileId: ctx.profile.id,
+                ...(auth.sanctions.legacyPenalty !== undefined
+                    ? { ownerLegacyPenalty: auth.sanctions.legacyPenalty }
+                    : {}),
+                generalId: input.generalId,
+                tokenNonce: input.tokenNonce,
             });
-
-            return { ok: true };
+            return resolveNpcPossessionCommandResult(result);
         }),
 });

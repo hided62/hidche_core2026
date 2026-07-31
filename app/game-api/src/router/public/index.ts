@@ -1,5 +1,5 @@
 import { TRPCError } from '@trpc/server';
-import { asRecord } from '@sammo-ts/common';
+import { asNumber, asRecord } from '@sammo-ts/common';
 import { LogCategory, LogScope } from '@sammo-ts/infra';
 import { z } from 'zod';
 
@@ -173,6 +173,33 @@ const readFiniteMetaNumber = (meta: Record<string, unknown>, key: string): numbe
     return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 };
 
+const resolveExperienceLevel = (experience: number, maxLevel: number): number => {
+    const level = experience < 1_000 ? Math.trunc(experience / 100) : Math.trunc(Math.sqrt(experience / 10));
+    return Math.max(0, Math.min(level, maxLevel));
+};
+
+const resolveHonorText = (experience: number): string => {
+    if (experience < 640) return '전무';
+    if (experience < 2_560) return '무명';
+    if (experience < 5_760) return '신동';
+    if (experience < 10_240) return '약간';
+    if (experience < 16_000) return '평범';
+    if (experience < 23_040) return '지역적';
+    if (experience < 31_360) return '전국적';
+    if (experience < 40_960) return '세계적';
+    if (experience < 45_000) return '유명';
+    if (experience < 51_840) return '명사';
+    if (experience < 55_000) return '호걸';
+    if (experience < 64_000) return '효웅';
+    if (experience < 77_440) return '영웅';
+    return '구세주';
+};
+
+const resolveDedicationText = (dedication: number, maxLevel: number): string => {
+    const level = Math.max(0, Math.min(Math.ceil(Math.sqrt(dedication) / 10), maxLevel));
+    return level === 0 ? '무품관' : `${maxLevel - level + 1}품관`;
+};
+
 const compareString = (left: string, right: string): number => {
     if (left === right) {
         return 0;
@@ -180,16 +207,21 @@ const compareString = (left: string, right: string): number => {
     return left < right ? -1 : 1;
 };
 
-const sortNpcList = <T extends {
-    name: string;
-    nationId: number;
-    statTotal: number;
-    leadership: number;
-    strength: number;
-    intelligence: number;
-    experience: number;
-    dedication: number;
-}>(rows: T[], sort: NpcListSort): T[] =>
+const sortNpcList = <
+    T extends {
+        name: string;
+        nationId: number;
+        statTotal: number;
+        leadership: number;
+        strength: number;
+        intelligence: number;
+        experience: number;
+        dedication: number;
+    },
+>(
+    rows: T[],
+    sort: NpcListSort
+): T[] =>
     rows.sort((left, right) => {
         switch (sort) {
             case 2:
@@ -450,18 +482,28 @@ export const publicRouter = router({
             z
                 .object({
                     sort: z.number().int().min(1).max(8).catch(1).optional(),
+                    includeAllWithToken: z.boolean().optional(),
                 })
                 .optional()
         )
         .query(async ({ ctx, input }) => {
             const sort = (input?.sort ?? 1) as NpcListSort;
-            const [generals, nations] = await Promise.all([
+            const includeAllWithToken = input?.includeAllWithToken === true;
+            if (includeAllWithToken && !ctx.auth) {
+                throw new TRPCError({ code: 'UNAUTHORIZED' });
+            }
+            const now = new Date(Math.floor(Date.now() / 1000) * 1000);
+            const [generals, nations, activeTokens, worldState] = await Promise.all([
                 ctx.db.general.findMany({
-                    where: { npcState: { gt: 0 } },
+                    ...(includeAllWithToken ? {} : { where: { npcState: { gt: 0 } } }),
                     select: {
                         id: true,
                         name: true,
+                        picture: true,
+                        imageServer: true,
                         npcState: true,
+                        age: true,
+                        officerLevel: true,
                         nationId: true,
                         leadership: true,
                         strength: true,
@@ -476,8 +518,19 @@ export const publicRouter = router({
                     orderBy: { id: 'asc' },
                 }),
                 ctx.db.nation.findMany({
-                    select: { id: true, name: true },
+                    select: { id: true, name: true, level: true },
                 }),
+                includeAllWithToken
+                    ? ctx.db.npcSelectionToken.findMany({
+                          where: { validUntil: { gte: now } },
+                          select: { pickResult: true },
+                      })
+                    : [],
+                includeAllWithToken
+                    ? ctx.db.worldState.findFirst({
+                          select: { config: true },
+                      })
+                    : null,
             ]);
 
             const personalityKeys = generals.map((general) => normalizeTraitKey(general.personalCode));
@@ -488,12 +541,21 @@ export const publicRouter = router({
                 loadTraitNames(domesticKeys, 'domestic'),
                 loadTraitNames(warKeys, 'war'),
             ]);
-            const nationMap = new Map(nations.map((nation) => [nation.id, nation.name]));
+            const nationMap = new Map(nations.map((nation) => [nation.id, nation]));
+            const worldConfig = asRecord(worldState?.config);
+            const worldConstants = asRecord(worldConfig.const);
+            const maxLevel = Math.max(0, Math.floor(asNumber(worldConstants.maxLevel, 255)));
+            const maxDedLevel = Math.max(0, Math.floor(asNumber(worldConstants.maxDedLevel, 30)));
 
-            // Legacy select_pool rows preceded possessed NPC rows before its stable-value sort.
-            const pool = generals.filter((general) => general.npcState >= 2);
-            const possessed = generals.filter((general) => general.npcState === 1);
-            const rows = [...pool, ...possessed].map((general) => {
+            // Legacy public NPC list put pool rows before possessed rows. The token-aware
+            // selection list instead consumes the raw id-ordered full list before its own comparator.
+            const sourceRows = includeAllWithToken
+                ? generals
+                : [
+                      ...generals.filter((general) => general.npcState >= 2),
+                      ...generals.filter((general) => general.npcState === 1),
+                  ];
+            const rows = sourceRows.map((general) => {
                 const meta = asRecord(general.meta);
                 const personalityKey = normalizeTraitKey(general.personalCode);
                 const domesticKey = normalizeTraitKey(general.specialCode);
@@ -510,11 +572,19 @@ export const publicRouter = router({
                 return {
                     id: general.id,
                     name: general.name,
+                    picture: general.picture,
+                    imageServer: general.imageServer,
                     npcState: general.npcState,
                     ownerName,
-                    level: readFiniteMetaNumber(meta, 'explevel'),
+                    age: general.age,
+                    level: includeAllWithToken
+                        ? resolveExperienceLevel(general.experience, maxLevel)
+                        : readFiniteMetaNumber(meta, 'explevel'),
+                    officerLevel: general.officerLevel,
+                    killturn: readFiniteMetaNumber(meta, 'killturn'),
                     nationId: general.nationId,
-                    nationName: nationMap.get(general.nationId) ?? '-',
+                    nationName: nationMap.get(general.nationId)?.name ?? '-',
+                    nationLevel: nationMap.get(general.nationId)?.level ?? 0,
                     personality: personalityKey
                         ? {
                               key: personalityKey,
@@ -541,13 +611,24 @@ export const publicRouter = router({
                     strength: general.strength,
                     intelligence: general.intel,
                     experience: general.experience,
+                    experienceText: resolveHonorText(general.experience),
                     dedication: general.dedication,
+                    dedicationText: resolveDedicationText(general.dedication, maxDedLevel),
                 };
             });
+            const tokenKeepCounts = Object.fromEntries(
+                activeTokens.flatMap((token) =>
+                    Object.entries(asRecord(token.pickResult)).flatMap(([generalId, value]) => {
+                        const keepCount = asNumber(asRecord(value).keepCount, Number.NaN);
+                        return Number.isFinite(keepCount) ? [[generalId, Math.max(0, Math.floor(keepCount))]] : [];
+                    })
+                )
+            );
 
             return {
                 sort,
-                generals: sortNpcList(rows, sort),
+                generals: includeAllWithToken ? rows : sortNpcList(rows, sort),
+                tokenKeepCounts,
             };
         }),
 });

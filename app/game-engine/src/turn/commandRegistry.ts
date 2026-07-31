@@ -270,6 +270,19 @@ const zJoinCreateGeneral = z
     })
     .strict();
 
+const zNpcPossessGeneral = z
+    .object({
+        type: z.literal('npcPossessGeneral'),
+        requestId: z.string().optional(),
+        userId: z.string().min(1),
+        ownerDisplayName: z.string(),
+        profileId: z.string().min(1),
+        ownerLegacyPenalty: zRecord.optional(),
+        generalId: z.number().int().positive(),
+        tokenNonce: z.number().int().nonnegative(),
+    })
+    .strict();
+
 const zSelectPoolCreate = z
     .object({
         type: z.literal('selectPoolCreate'),
@@ -546,6 +559,14 @@ const normalizeJoinCreateGeneral: CommandNormalizer<'joinCreateGeneral'> = (enve
     return { ...command, requestId: envelope.requestId };
 };
 
+const normalizeNpcPossessGeneral: CommandNormalizer<'npcPossessGeneral'> = (envelope) => {
+    const command = parseWith(zNpcPossessGeneral, envelope.command);
+    if (!command) {
+        return null;
+    }
+    return { ...command, requestId: envelope.requestId };
+};
+
 const normalizeSelectPoolCreate: CommandNormalizer<'selectPoolCreate'> = (envelope) => {
     const command = parseWith(zSelectPoolCreate, envelope.command);
     if (!command) {
@@ -626,6 +647,7 @@ const normalizers: CommandNormalizerMap = {
     tournamentMatchResult: normalizeTournamentMatchResult,
     patchGeneral: normalizePatchGeneral,
     joinCreateGeneral: normalizeJoinCreateGeneral,
+    npcPossessGeneral: normalizeNpcPossessGeneral,
     selectPoolCreate: normalizeSelectPoolCreate,
     selectPoolReselect: normalizeSelectPoolReselect,
     getStatus: normalizeGetStatus,
