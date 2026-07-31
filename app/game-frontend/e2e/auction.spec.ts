@@ -29,6 +29,13 @@ const operationNames = (route: Route): string[] => {
     const url = new URL(route.request().url());
     return decodeURIComponent(url.pathname.slice(url.pathname.lastIndexOf('/trpc/') + 6)).split(',');
 };
+const responseHasOperation = (url: string, operation: string): boolean => {
+    const pathname = decodeURIComponent(new URL(url).pathname);
+    return pathname
+        .slice(pathname.lastIndexOf('/trpc/') + 6)
+        .split(',')
+        .includes(operation);
+};
 
 const readReferenceImage = async (filename: string): Promise<Buffer> => {
     for (const imageRoot of imageRoots) {
@@ -232,7 +239,7 @@ const installFixture = async (page: Page, state: AuctionFixture) => {
 };
 
 const gotoAuction = async (page: Page, suffix = 'auction') => {
-    const lobbyResponse = page.waitForResponse((response) => response.url().includes('/trpc/lobby.info'));
+    const lobbyResponse = page.waitForResponse((response) => responseHasOperation(response.url(), 'lobby.info'));
     await page.goto(suffix);
     await lobbyResponse;
     await expect(page.locator('#container')).toBeVisible();
