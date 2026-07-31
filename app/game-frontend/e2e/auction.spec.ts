@@ -5,9 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const imageRoots = [
-    ...(process.env.FRONTEND_PARITY_IMAGE_ROOT
-        ? [resolve(process.env.FRONTEND_PARITY_IMAGE_ROOT, 'game')]
-        : []),
+    ...(process.env.FRONTEND_PARITY_IMAGE_ROOT ? [resolve(process.env.FRONTEND_PARITY_IMAGE_ROOT, 'game')] : []),
     resolve(repositoryRoot, '../image/game'),
     resolve(repositoryRoot, '../../image/game'),
 ];
@@ -195,6 +193,7 @@ const installFixture = async (page: Page, state: AuctionFixture) => {
     }
     await page.route('**/che/api/trpc/**', async (route) => {
         const results = operationNames(route).map((operation) => {
+            if (operation === 'auth.status') return response({ ok: true });
             if (operation === 'lobby.info') {
                 return response({ myGeneral: { id: 7, name: '유비' } });
             }

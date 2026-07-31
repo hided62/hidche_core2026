@@ -34,6 +34,7 @@ const install = async (page: Page, secretAllowed = true) => {
     });
     await page.route('**/che/api/trpc/**', async (route) => {
         const results = operations(route).map((operation) => {
+            if (operation === 'auth.status') return response({ ok: true });
             if (operation === 'lobby.info') return response({ myGeneral: { id: 1, name: '테스트장수' } });
             if (operation === 'join.getConfig') return response({});
             if (operation === 'nation.getGeneralList')

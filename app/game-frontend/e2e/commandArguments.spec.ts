@@ -31,60 +31,84 @@ const inputOptions = {
     items: { horse: [{ value: 'None', label: '판매/해제' }] },
 };
 const commandTable = {
-    general: [{
-        category: '군사',
-        values: [{
-            key: 'che_화계',
-            name: '화계',
-            reqArg: true,
-            possible: true,
-            status: 'needsInput',
-            inputFields: [{
-                key: 'destCityId',
-                label: '대상 도시',
-                kind: 'select',
-                required: true,
-                optionSource: 'cities',
-            }],
-        }],
-    }],
-    nation: [{
-        category: '인사',
-        values: [{
-            key: 'che_포상',
-            name: '포상',
-            reqArg: true,
-            possible: true,
-            status: 'needsInput',
-            inputFields: [
-                { key: 'isGold', label: '물자', kind: 'boolean', required: true },
-                { key: 'amount', label: '수량', kind: 'number', required: true, min: 0, step: 1 },
+    general: [
+        {
+            category: '군사',
+            values: [
                 {
-                    key: 'destGeneralId',
-                    label: '대상 장수',
-                    kind: 'select',
-                    required: true,
-                    optionSource: 'generals',
+                    key: 'che_화계',
+                    name: '화계',
+                    reqArg: true,
+                    possible: true,
+                    status: 'needsInput',
+                    inputFields: [
+                        {
+                            key: 'destCityId',
+                            label: '대상 도시',
+                            kind: 'select',
+                            required: true,
+                            optionSource: 'cities',
+                        },
+                    ],
                 },
             ],
-        }],
-    }],
+        },
+    ],
+    nation: [
+        {
+            category: '인사',
+            values: [
+                {
+                    key: 'che_포상',
+                    name: '포상',
+                    reqArg: true,
+                    possible: true,
+                    status: 'needsInput',
+                    inputFields: [
+                        { key: 'isGold', label: '물자', kind: 'boolean', required: true },
+                        { key: 'amount', label: '수량', kind: 'number', required: true, min: 0, step: 1 },
+                        {
+                            key: 'destGeneralId',
+                            label: '대상 장수',
+                            kind: 'select',
+                            required: true,
+                            optionSource: 'generals',
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
     inputOptions,
 };
 const generalContext = {
     general: {
-        id: 1, name: '장수', nationId: 1, cityId: 1, officerLevel: 5, npcState: 0, troopId: 0,
-        picture: null, imageServer: 0, stats: { leadership: 70, strength: 60, intelligence: 50 },
-        gold: 1000, rice: 1000, crew: 500, train: 90, atmos: 90, injury: 0, experience: 0,
-        dedication: 0, items: { horse: 'None', weapon: 'None', book: 'None', item: 'None' },
+        id: 1,
+        name: '장수',
+        nationId: 1,
+        cityId: 1,
+        officerLevel: 5,
+        npcState: 0,
+        troopId: 0,
+        picture: null,
+        imageServer: 0,
+        stats: { leadership: 70, strength: 60, intelligence: 50 },
+        gold: 1000,
+        rice: 1000,
+        crew: 500,
+        train: 90,
+        atmos: 90,
+        injury: 0,
+        experience: 0,
+        dedication: 0,
+        items: { horse: 'None', weapon: 'None', book: 'None', item: 'None' },
     },
     city: { id: 1, name: '업', level: 8, region: 1, population: 1000, populationMax: 2000 },
     nation: { id: 1, name: '아국', color: '#008000', level: 1 },
     settings: {},
     penalties: {},
 };
-const turns = (count: number) =>
-    Array.from({ length: count }, (_, index) => ({ index, action: '휴식', args: {} }));
+const turns = (count: number) => Array.from({ length: count }, (_, index) => ({ index, action: '휴식', args: {} }));
 const chiefCenter = {
     me: { id: 1, officerLevel: 5, nationId: 1 },
     nation: { id: 1, name: '아국', level: 1 },
@@ -114,28 +138,45 @@ const install = async (page: Page, rejectGeneral = false) => {
         const body = route.request().postDataJSON();
         const results = names.map((name) => {
             if (name === 'general.me') return response(generalContext);
-            if (name === 'world.getMapLayout') return response({
-                mapName: 'che',
-                cityList: [{ id: 1, name: '업', level: 8, region: 1, x: 100, y: 100, path: [] }],
-                regionMap: { 1: '하북' },
-                levelMap: { 8: '특' },
-            });
-            if (name === 'lobby.info') return response({
-                myGeneral: { id: 1, name: '장수' },
-                year: 200, month: 1, turnTerm: 10, userCnt: 1, maxUserCnt: 100, npcCnt: 0, nationCnt: 2,
-            });
+            if (name === 'world.getMapLayout')
+                return response({
+                    mapName: 'che',
+                    cityList: [{ id: 1, name: '업', level: 8, region: 1, x: 100, y: 100, path: [] }],
+                    regionMap: { 1: '하북' },
+                    levelMap: { 8: '특' },
+                });
+            if (name === 'auth.status') return response({ ok: true });
+            if (name === 'lobby.info')
+                return response({
+                    myGeneral: { id: 1, name: '장수' },
+                    year: 200,
+                    month: 1,
+                    turnTerm: 10,
+                    userCnt: 1,
+                    maxUserCnt: 100,
+                    npcCnt: 0,
+                    nationCnt: 2,
+                });
             if (name === 'join.getConfig') return response({});
-            if (name === 'world.getMap') return response({
-                result: true, version: 0, startYear: 180, year: 200, month: 1,
-                cityList: [[1, 8, 0, 1, 1, 1]], nationList: [[1, '아국', '#008000', 1]],
-                spyList: {}, shownByGeneralList: [], myCity: 1, myNation: 1,
-            });
+            if (name === 'world.getMap')
+                return response({
+                    result: true,
+                    version: 0,
+                    startYear: 180,
+                    year: 200,
+                    month: 1,
+                    cityList: [[1, 8, 0, 1, 1, 1]],
+                    nationList: [[1, '아국', '#008000', 1]],
+                    spyList: {},
+                    shownByGeneralList: [],
+                    myCity: 1,
+                    myNation: 1,
+                });
             if (name === 'turns.getCommandTable') return response(commandTable);
             if (name === 'nation.getChiefCenter') return response(chiefCenter);
             if (name === 'turns.reserved.getGeneral') return response({ turns: turns(30), revision: 0 });
             if (name === 'turns.reserved.getNation') return response({ turns: turns(12), revision: 0 });
-            if (name === 'general.getRecentRecords')
-                return response({ global: [], general: [], history: [] });
+            if (name === 'general.getRecentRecords') return response({ global: [], general: [], history: [] });
             if (name === 'general.getFrontStatus')
                 return response({
                     onlineUserCount: 1,
@@ -145,12 +186,17 @@ const install = async (page: Page, rejectGeneral = false) => {
                     lastExecuted: null,
                     latestVote: null,
                 });
-            if (name === 'messages.getRecent') return response({
-                private: [], national: [], public: [], diplomacy: [], sequence: -1,
-                hasMore: { private: false, national: false, public: false, diplomacy: false },
-                latestRead: { private: 0, diplomacy: 0 },
-                canRespondDiplomacy: false,
-            });
+            if (name === 'messages.getRecent')
+                return response({
+                    private: [],
+                    national: [],
+                    public: [],
+                    diplomacy: [],
+                    sequence: -1,
+                    hasMore: { private: false, national: false, public: false, diplomacy: false },
+                    latestRead: { private: 0, diplomacy: 0 },
+                    canRespondDiplomacy: false,
+                });
             if (name === 'messages.getContacts') return response({ nation: [] });
             if (name === 'board.getAccess') return response({ canMeeting: false, canSecret: false });
             if (name === 'tournament.getState') return response({ stage: 0 });
@@ -222,8 +268,12 @@ test('keeps the entered command visible and reports a server validation error', 
     await page.goto('/');
     await page.getByRole('button', { name: /화계/ }).click();
     await page.getByTestId('command-argument-form').locator('select').selectOption('2');
-    await page.locator('.reserved-section').filter({ hasText: '일반 예턴' })
-        .getByRole('button', { name: '배치' }).first().click();
+    await page
+        .locator('.reserved-section')
+        .filter({ hasText: '일반 예턴' })
+        .getByRole('button', { name: '배치' })
+        .first()
+        .click();
 
     await expect(page.getByRole('alert')).toContainText('대상 도시를 선택할 수 없습니다.');
     await expect(page.getByTestId('command-argument-form').locator('select')).toHaveValue('2');
@@ -275,7 +325,8 @@ test('keeps the shared main and chief shell geometry and interaction states', as
     expect(await mainAction.evaluate((element) => document.activeElement === element)).toBe(true);
 
     await page.setViewportSize({ width: 1200, height: 900 });
-    await page.goto('chief-center');
+    await page.locator('.main-nation-menu').first().locator('[data-navigation-id="chief-center"]').click();
+    await expect(page).toHaveURL(/\/che\/chief-center$/);
     await expect(page.getByRole('heading', { name: '사령부', exact: true })).toBeVisible();
     const chiefDesktop = await page.locator('.chief-page').evaluate((element) => ({
         width: element.getBoundingClientRect().width,

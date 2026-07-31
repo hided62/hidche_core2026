@@ -14,6 +14,7 @@ const installArchive = async (page: Page) => {
     });
     await page.route('**/che/api/trpc/**', async (route) => {
         const results = operationNames(route).map((operation) => {
+            if (operation === 'auth.status') return response({ ok: true });
             if (operation === 'lobby.info') return response({ myGeneral: null });
             if (operation === 'archive.myPastPlays') {
                 return response({

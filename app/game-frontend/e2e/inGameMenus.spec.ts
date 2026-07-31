@@ -163,6 +163,7 @@ const install = async (page: Page, state: FixtureState) => {
                 rawPayload && typeof rawPayload === 'object' ? (rawPayload as TrpcRequestPayload) : undefined;
             const jsonInput =
                 payload?.json ?? payload?.input?.json ?? (payload as Record<string, unknown> | undefined) ?? {};
+            if (operation === 'auth.status') return response({ ok: true });
             if (operation === 'lobby.info') return response({ myGeneral: { id: 7, name: '검증장수' } });
             if (operation === 'join.getConfig') return response({});
             if (operation === 'general.me') {
@@ -682,6 +683,7 @@ test('가오픈 장수 삭제는 레거시 표시와 확인을 보존하고 time
     expect(dialogs[0]).toBe('confirm:정말로 삭제하시겠습니까?');
     expect(state.dieOnPrestartInputs).toHaveLength(0);
 
+    const timeoutReload = page.waitForEvent('framenavigated', (frame) => frame === page.mainFrame());
     await deleteButton.click();
     await expect.poll(() => state.dieOnPrestartInputs?.length).toBe(1);
     await expect
@@ -691,6 +693,8 @@ test('가오픈 장수 삭제는 레거시 표시와 확인을 보존하고 time
             )
         )
         .toBe(true);
+    await timeoutReload;
+    await page.waitForLoadState('networkidle');
     await expect(deleteButton).toBeVisible();
     const pendingRequestId = await page.evaluate(() => sessionStorage.getItem('sam.pending.dieOnPrestart'));
     expect(pendingRequestId).toEqual(expect.stringMatching(/^[0-9a-f-]{36}$/i));

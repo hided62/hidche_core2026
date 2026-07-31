@@ -154,6 +154,7 @@ const installFixture = async (page: Page, state: FixtureState) => {
     await page.route('**/che/api/trpc/**', async (route) => {
         const operations = operationName(route).split(',');
         const results = operations.map((operation) => {
+            if (operation === 'auth.status') return response({ ok: true });
             if (operation === 'lobby.info') return response({ myGeneral: { id: 22, name: '정책담당' } });
             if (operation === 'join.getConfig') return response({});
             if (operation === 'npc.getPolicy') {
