@@ -22,6 +22,13 @@ schema 환경 변수를 지정한 경우에도 이미 존재하는 schema는 거
 HTTP transport fixture의 Redis key도 실행 ID를 profile namespace에 포함하고,
 runner 종료 시 그 실행 ID에 속한 key만 삭제합니다. 공유 Redis 전체에
 `FLUSHDB`나 `FLUSHALL`을 실행하지 않습니다.
+Battle simulator fixture도 실행 ID가 포함된 queue/result/notify namespace를
+사용합니다. 실행 중단 시 테스트의 `finally`가 실행되지 않아도 runner가 같은
+실행 ID의 key만 찾아 삭제합니다.
+Runner는 test process group에 종료 신호를 전달하고 기본 10초 안에 종료되지
+않으면 `SIGKILL`로 전환한 뒤 schema와 Redis cleanup을 계속합니다. 이 유예
+시간은 중단 경계 검증에서만 `CONDITIONAL_INTEGRATION_TERM_GRACE_SECONDS`
+(1~60초)로 줄일 수 있습니다.
 `SIGKILL`은 cleanup trap을 실행할 수 없으므로 자동 정리를 보장하지 않습니다.
 
 ## 준비
@@ -71,6 +78,9 @@ runtime role을 삭제하고 PID와 명령행 및 daemon 종료를 확인한 뒤
 환경 변수는 `tools/conditional-integration-registry.tsv`에서 명시적으로
 관리합니다. 새 `*_DATABASE_URL` gate가 registry에 없거나 registry 항목이
 더 이상 테스트에 존재하지 않으면 runner가 테스트 실행 전에 실패합니다.
+Registry는 marker 존재 여부뿐 아니라 중복, 형식과 지원 execution mode도
+검사합니다. 지원하지 않는 mode로 인해 test가 실행 group에서 빠지는 경우에도
+runner는 test 시작 전에 실패합니다.
 
 관리자 시간 조정의 PostgreSQL 경계는
 `runtimeClockShiftPersistence.integration.test.ts`, gateway action

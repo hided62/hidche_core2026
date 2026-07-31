@@ -40,6 +40,19 @@ set +a
 node_tag=$(printf '%s' "${CI_NODE_INDEX:-local}" | tr -cd 'a-zA-Z0-9_' | tr 'A-Z' 'a-z' | cut -c1-8)
 run_id=$(date -u +%m%d%H%M%S)_$$_${node_tag}
 export CONDITIONAL_INTEGRATION_RUN_ID=$run_id
+schema_ownership_token="sammo-conditional-integration:$run_id"
+supported_registry_modes="core create_general gateway_runtime immediate_action npc_possession reference_live_sortie reference_npc_possession select_pool"
+term_grace_seconds=${CONDITIONAL_INTEGRATION_TERM_GRACE_SECONDS:-10}
+case "$term_grace_seconds" in
+    ''|*[!0-9]*)
+        echo "CONDITIONAL_INTEGRATION_TERM_GRACE_SECONDS must be an integer from 1 to 60" >&2
+        exit 64
+        ;;
+esac
+if [ "$term_grace_seconds" -lt 1 ] || [ "$term_grace_seconds" -gt 60 ]; then
+    echo "CONDITIONAL_INTEGRATION_TERM_GRACE_SECONDS must be an integer from 1 to 60" >&2
+    exit 64
+fi
 integration_schema=${CONDITIONAL_INTEGRATION_SCHEMA:-ci_${run_id}_integration}
 scenario_schema=${SCENARIO_SEED_INTEGRATION_SCHEMA:-ci_${run_id}_scenario_seed}
 npc_possession_schema=${NPC_POSSESSION_INTEGRATION_SCHEMA:-ci_${run_id}_npc_possession_integration}
@@ -74,8 +87,9 @@ done
 
 report_dir=$(mktemp -d)
 summary_file="$report_dir/summary.tsv"
-owned_schemas=
+validated_registry_file="$report_dir/validated-registry.tsv"
 active_process_group=
+cleanup_resources_started=0
 
 build_database_url() {
     SCHEMA_NAME=$1 node --input-type=module -e '
@@ -107,39 +121,56 @@ base_database_url=$(build_database_url public)
 
 create_owned_schema() {
     schema=$1
-    SCHEMA_NAME=$schema DATABASE_URL=$base_database_url \
+    SCHEMA_NAME=$schema SCHEMA_OWNERSHIP_TOKEN=$schema_ownership_token \
+        DATABASE_URL=$base_database_url \
         pnpm --filter @sammo-ts/infra exec node --input-type=module -e '
             import pg from "pg";
             const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+            const quoteIdentifier = (value) => `"${value.replaceAll("\"", "\"\"")}"`;
+            const apostrophe = String.fromCharCode(39);
+            const quoteLiteral = (value) =>
+                `${apostrophe}${value.replaceAll(apostrophe, apostrophe.repeat(2))}${apostrophe}`;
             await client.connect();
             try {
-                await client.query(`CREATE SCHEMA "${process.env.SCHEMA_NAME}"`);
+                await client.query("BEGIN");
+                await client.query(`CREATE SCHEMA ${quoteIdentifier(process.env.SCHEMA_NAME)}`);
+                await client.query(
+                    `COMMENT ON SCHEMA ${quoteIdentifier(process.env.SCHEMA_NAME)} IS ${quoteLiteral(
+                        process.env.SCHEMA_OWNERSHIP_TOKEN
+                    )}`
+                );
+                await client.query("COMMIT");
+            } catch (error) {
+                await client.query("ROLLBACK");
+                throw error;
             } finally {
                 await client.end();
             }
         '
-    owned_schemas="${owned_schemas}${schema}
-"
 }
 
 drop_owned_schemas() {
-    cleanup_failed=0
-    for schema in $owned_schemas; do
-        if ! SCHEMA_NAME=$schema DATABASE_URL=$base_database_url \
-            pnpm --filter @sammo-ts/infra exec node --input-type=module -e '
-                import pg from "pg";
-                const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
-                await client.connect();
-                try {
-                    await client.query(`DROP SCHEMA IF EXISTS "${process.env.SCHEMA_NAME}" CASCADE`);
-                } finally {
-                    await client.end();
+    SCHEMA_OWNERSHIP_TOKEN=$schema_ownership_token DATABASE_URL=$base_database_url \
+        pnpm --filter @sammo-ts/infra exec node --input-type=module -e '
+            import pg from "pg";
+            const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+            const quoteIdentifier = (value) => `"${value.replaceAll("\"", "\"\"")}"`;
+            await client.connect();
+            try {
+                const result = await client.query(
+                    `SELECT nspname
+                     FROM pg_namespace
+                     WHERE obj_description(oid, $$pg_namespace$$) = $1
+                     ORDER BY nspname`,
+                    [process.env.SCHEMA_OWNERSHIP_TOKEN]
+                );
+                for (const { nspname } of result.rows) {
+                    await client.query(`DROP SCHEMA ${quoteIdentifier(nspname)} CASCADE`);
                 }
-            ' >/dev/null; then
-            cleanup_failed=1
-        fi
-    done
-    return "$cleanup_failed"
+            } finally {
+                await client.end();
+            }
+        ' >/dev/null
 }
 
 delete_owned_redis_keys() {
@@ -151,6 +182,7 @@ delete_owned_redis_keys() {
             const patterns = [
                 `sammo:game:*:che:security-http-${runId}:*`,
                 `sammo:game:*:che:nation-html-${runId}:*`,
+                `sammo:che:battle-sim-e2e-${runId}-*:battle-sim:*`,
             ];
             await client.connect();
             try {
@@ -169,8 +201,19 @@ delete_owned_redis_keys() {
 
 terminate_active_process_group() {
     [ -n "$active_process_group" ] || return 0
-    kill -TERM "-$active_process_group" 2>/dev/null || true
-    wait "$active_process_group" 2>/dev/null || true
+    process_group=$active_process_group
+    kill -TERM "-$process_group" 2>/dev/null || true
+    waited_seconds=0
+    while kill -0 "-$process_group" 2>/dev/null &&
+        [ "$waited_seconds" -lt "$term_grace_seconds" ]; do
+        sleep 1
+        waited_seconds=$((waited_seconds + 1))
+    done
+    if kill -0 "-$process_group" 2>/dev/null; then
+        echo "conditional integration process group did not stop after ${term_grace_seconds}s; sending SIGKILL" >&2
+        kill -KILL "-$process_group" 2>/dev/null || true
+    fi
+    wait "$process_group" 2>/dev/null || true
     active_process_group=
 }
 
@@ -196,11 +239,13 @@ handle_exit() {
     exit_status=$?
     trap - EXIT HUP INT TERM
     terminate_active_process_group
-    if ! drop_owned_schemas && [ "$exit_status" -eq 0 ]; then
-        exit_status=1
-    fi
-    if ! delete_owned_redis_keys && [ "$exit_status" -eq 0 ]; then
-        exit_status=1
+    if [ "$cleanup_resources_started" -eq 1 ]; then
+        if ! drop_owned_schemas && [ "$exit_status" -eq 0 ]; then
+            exit_status=1
+        fi
+        if ! delete_owned_redis_keys && [ "$exit_status" -eq 0 ]; then
+            exit_status=1
+        fi
     fi
     print_summary
     rm -rf "$report_dir"
@@ -215,6 +260,7 @@ trap 'exit 143' TERM
 validate_marker_registry() {
     discovered_file="$report_dir/discovered-markers.txt"
     registered_file="$report_dir/registered-markers.txt"
+    registry_errors_file="$report_dir/registry-errors.txt"
     missing_file="$report_dir/unregistered-markers.txt"
     stale_file="$report_dir/stale-markers.txt"
 
@@ -229,7 +275,44 @@ validate_marker_registry() {
             sed 's/process\.env\.//' |
             sort -u
     ) >"$discovered_file"
-    awk -F '\t' '!/^#/ && NF == 2 { print $1 }' "$registry_file" | sort -u >"$registered_file"
+    : >"$validated_registry_file"
+    awk -F '\t' -v supported_modes="$supported_registry_modes" \
+        -v validated_registry_file="$validated_registry_file" '
+        BEGIN {
+            split(supported_modes, mode_names, " ");
+            for (mode_index in mode_names) {
+                allowed_modes[mode_names[mode_index]] = 1;
+            }
+        }
+        /^#/ || /^[[:space:]]*$/ { next }
+        NF != 2 {
+            printf "line %d must contain exactly one tab-separated marker and mode\n", NR;
+            failed = 1;
+            next;
+        }
+        $1 !~ /^[A-Z][A-Z0-9_]*_DATABASE_URL$/ {
+            printf "line %d has invalid marker: %s\n", NR, $1;
+            failed = 1;
+        }
+        !($2 in allowed_modes) {
+            printf "line %d has unsupported execution mode: %s\n", NR, $2;
+            failed = 1;
+        }
+        seen[$1]++ {
+            printf "line %d duplicates marker: %s\n", NR, $1;
+            failed = 1;
+        }
+        {
+            print $1 "\t" $2 > validated_registry_file;
+        }
+        END { exit failed }
+    ' "$registry_file" >"$registry_errors_file" || {
+        echo "invalid conditional integration marker registry:" >&2
+        sed 's/^/  /' "$registry_errors_file" >&2
+        exit 65
+    }
+    sort -u "$validated_registry_file" -o "$validated_registry_file"
+    cut -f1 "$validated_registry_file" >"$registered_file"
 
     comm -23 "$discovered_file" "$registered_file" >"$missing_file"
     if [ -s "$missing_file" ]; then
@@ -248,7 +331,7 @@ validate_marker_registry() {
 
 markers_for_mode() {
     mode=$1
-    awk -F '\t' -v mode="$mode" '!/^#/ && $2 == mode { print $1 }' "$registry_file" |
+    awk -F '\t' -v mode="$mode" '$2 == mode { print $1 }' "$validated_registry_file" |
         paste -sd '|' -
 }
 
@@ -348,13 +431,14 @@ run_redis_only_tests() {
 
 export PATH
 cd "$workspace_root"
+validate_marker_registry
+
 pnpm install --frozen-lockfile
 pnpm --filter @sammo-ts/infra prisma:generate
 pnpm --filter @sammo-ts/common build
 pnpm --filter @sammo-ts/infra build
 
-validate_marker_registry
-
+cleanup_resources_started=1
 create_owned_schema "$integration_schema"
 create_owned_schema "$npc_possession_schema"
 create_owned_schema "$scenario_schema"
