@@ -44,6 +44,13 @@ DB partial unique index로 한 건만 허용합니다. Turn daemon은 자신의 
 Redis 단계가 실패하면 action은 `PARTIAL`과 backoff 상태로 남고 DB 시간은
 다시 이동하지 않습니다.
 
+Gateway API와 독립 orchestrator의 SIGINT·SIGTERM은
+`installGatewayShutdownController()`가 하나의 종료 Promise로 합칩니다.
+Gateway API는 Fastify `app.close()`를 통해 orchestrator task를 drain한 뒤
+Redis와 PostgreSQL을 닫습니다. 독립 orchestrator도 task drain 뒤 PostgreSQL을
+한 번만 닫습니다. 반복 signal, 종료 완료 뒤 재호출과 close 실패에서도 첫
+reason만 소유하고 등록한 signal listener를 해제합니다.
+
 ## Game API 실행
 
 `resolveGameApiConfigFromEnv()`가 `PROFILE`, `SCENARIO`,
