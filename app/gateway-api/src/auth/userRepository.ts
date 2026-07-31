@@ -11,6 +11,8 @@ export interface UserRecord {
     picture: string;
     imageServer: number;
     iconUpdatedAt?: string;
+    iconRevision?: string;
+    profileIconResetAt?: string;
     thirdPartyUse: boolean;
     termsAcceptedAt?: string;
     privacyAcceptedAt?: string;
@@ -42,7 +44,6 @@ export interface UserSanctions {
     warningCount?: number;
     flags?: string[];
     notes?: string;
-    profileIconResetAt?: string;
     serverRestrictions?: Record<string, UserServerRestriction>;
     legacyPenalty?: Record<string, unknown>;
 }
@@ -82,6 +83,7 @@ export interface CreateUserInput {
 
 export interface UserRepository {
     findById(id: string): Promise<UserRecord | null>;
+    findByIds(ids: string[]): Promise<UserRecord[]>;
     findByUsername(username: string): Promise<UserRecord | null>;
     findByDisplayName(displayName: string): Promise<UserRecord | null>;
     findByOauthId(type: 'KAKAO', oauthId: string): Promise<UserRecord | null>;
@@ -102,6 +104,15 @@ export interface UserRepository {
     updateRoles(userId: string, roles: string[]): Promise<void>;
     updateSanctions(userId: string, sanctions: UserSanctions): Promise<void>;
     updateIcon(userId: string, picture: string, imageServer: number, updatedAt: Date): Promise<void>;
+    updateIconForDay(
+        userId: string,
+        picture: string,
+        imageServer: number,
+        updatedAt: Date,
+        dayStart: Date,
+        consumeDailyQuota: boolean
+    ): Promise<string | null>;
+    resetProfileIcon(userId: string, requestedAt: Date): Promise<string | null>;
     setThirdPartyUse(userId: string, allowed: boolean): Promise<void>;
     scheduleDeletion(userId: string, deleteAfter: Date): Promise<void>;
     deleteUser(userId: string): Promise<void>;

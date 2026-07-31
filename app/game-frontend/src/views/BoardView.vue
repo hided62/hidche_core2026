@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
+import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import { trpc } from '../utils/trpc';
 
 type BoardArticle = Awaited<ReturnType<typeof trpc.board.getArticles.query>>[number];
@@ -37,10 +38,11 @@ const resizeTextArea = (element: HTMLTextAreaElement | null) => {
 
 const formatDate = (value: string): string => value.slice(5, 16).replace('T', ' ');
 
-const iconPath = (article: BoardArticle): string => {
-    const picture = article.authorPicture || 'default.jpg';
-    return article.authorImageServer ? `${import.meta.env.BASE_URL}d_pic/${picture}` : `/image/icons/${picture}`;
-};
+const iconPath = (article: BoardArticle): string =>
+    resolveGeneralIconUrl({
+        picture: article.authorPicture,
+        imageServer: article.authorImageServer,
+    });
 
 const refreshArticles = async () => {
     if (loading.value) {
@@ -177,6 +179,7 @@ onMounted(() => {
                                     height="64"
                                     :src="iconPath(article)"
                                     :alt="`${article.authorName} 아이콘`"
+                                    @error="useDefaultGeneralIcon"
                                 />
                             </div>
                             <div class="article-text">{{ article.content }}</div>

@@ -18,6 +18,10 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createSimp
             }
             return null;
         },
+        async findByIds(ids: string[]): Promise<UserRecord[]> {
+            const requested = new Set(ids);
+            return [...usersByName.values()].filter((user) => requested.has(user.id));
+        },
         async findByUsername(username: string): Promise<UserRecord | null> {
             return usersByName.get(username) ?? null;
         },
@@ -149,10 +153,61 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createSimp
                     user.picture = picture;
                     user.imageServer = imageServer;
                     user.iconUpdatedAt = updatedAt.toISOString();
+                    user.iconRevision = updatedAt.toISOString();
                     return;
                 }
             }
             throw new Error('User not found.');
+        },
+        async updateIconForDay(
+            userId: string,
+            picture: string,
+            imageServer: number,
+            updatedAt: Date,
+            dayStart: Date,
+            consumeDailyQuota: boolean
+        ): Promise<string | null> {
+            for (const user of usersByName.values()) {
+                if (user.id !== userId) {
+                    continue;
+                }
+                if (user.picture !== 'default.jpg' && user.iconUpdatedAt && new Date(user.iconUpdatedAt) >= dayStart) {
+                    return null;
+                }
+                const previousRevision = Math.max(
+                    new Date(user.createdAt).getTime(),
+                    user.iconUpdatedAt ? new Date(user.iconUpdatedAt).getTime() : 0,
+                    user.iconRevision ? new Date(user.iconRevision).getTime() : 0,
+                    user.profileIconResetAt ? new Date(user.profileIconResetAt).getTime() : 0
+                );
+                const revision = new Date(Math.max(updatedAt.getTime(), previousRevision + 1)).toISOString();
+                user.picture = picture;
+                user.imageServer = imageServer;
+                if (consumeDailyQuota) {
+                    user.iconUpdatedAt = updatedAt.toISOString();
+                }
+                user.iconRevision = revision;
+                return revision;
+            }
+            throw new Error('User not found.');
+        },
+        async resetProfileIcon(userId: string, requestedAt: Date): Promise<string | null> {
+            for (const user of usersByName.values()) {
+                if (user.id !== userId) {
+                    continue;
+                }
+                const previousRevision = Math.max(
+                    new Date(user.createdAt).getTime(),
+                    user.iconUpdatedAt ? new Date(user.iconUpdatedAt).getTime() : 0,
+                    user.iconRevision ? new Date(user.iconRevision).getTime() : 0,
+                    user.profileIconResetAt ? new Date(user.profileIconResetAt).getTime() : 0
+                );
+                const revision = new Date(Math.max(requestedAt.getTime(), previousRevision + 1)).toISOString();
+                user.iconRevision = revision;
+                user.profileIconResetAt = revision;
+                return revision;
+            }
+            return null;
         },
         async setThirdPartyUse(userId: string, allowed: boolean): Promise<void> {
             for (const user of usersByName.values()) {

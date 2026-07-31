@@ -5,6 +5,7 @@ import { formatLog } from '../utils/formatLog';
 import { formatSeoulDateTime } from '../utils/legacyDateTime';
 import { isDefenceTrainPenaltyWaivedByScenarioEffect } from '@sammo-ts/logic';
 import { useSessionStore } from '../stores/session';
+import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 
 const SCREEN_MODE_KEY = 'sam.screenMode';
 const CUSTOM_CSS_KEY = 'sam_customCSS';
@@ -307,10 +308,9 @@ onMounted(() => {
                 <div v-else class="general-table">
                     <div class="portrait-cell">
                         <img
-                            :src="
-                                data.general.picture ? `/image/game/${data.general.picture}` : '/image/game/default.jpg'
-                            "
+                            :src="resolveGeneralIconUrl(data.general, { legacyBaseUrl: '/image/game' })"
                             alt=""
+                            @error="useDefaultGeneralIcon"
                         />
                         <strong>{{ data.general.name }}</strong>
                     </div>

@@ -268,6 +268,7 @@ validate_marker_registry() {
         cd "$workspace_root"
         rg -o --no-filename \
             'process\.env\.[A-Z0-9_]+_DATABASE_URL' \
+            app/gateway-api/test \
             app/game-api/test \
             app/game-engine/test \
             tools/integration-tests/test \
@@ -453,6 +454,9 @@ pnpm --filter @sammo-ts/infra prisma:generate
 pnpm --filter @sammo-ts/common build
 pnpm --filter @sammo-ts/infra build
 
+GATEWAY_MIGRATION_TEST_DATABASE_URL=$base_database_url \
+    pnpm --filter @sammo-ts/infra verify:migration:account-icon
+
 cleanup_resources_started=1
 create_owned_schema "$integration_schema"
 create_owned_schema "$npc_possession_schema"
@@ -509,6 +513,9 @@ immediate_action_database_url=$(build_database_url "$immediate_action_schema")
     pnpm --filter @sammo-ts/infra prisma:db:push:game
 )
 export IMMEDIATE_ACTION_DATABASE_URL=$immediate_action_database_url
+run_marked_tests app/game-api \
+    "$(markers_for_mode immediate_action)" \
+    "immediate_action_api_postgresql"
 run_marked_tests app/game-engine \
     "$(markers_for_mode immediate_action)" \
     "immediate_action_postgresql"
@@ -522,6 +529,10 @@ gateway_runtime_database_url=$(build_database_url "$gateway_runtime_schema")
     pnpm --filter @sammo-ts/infra prisma:db:push:gateway
 )
 export GATEWAY_RUNTIME_ACTION_DATABASE_URL=$gateway_runtime_database_url
+export GATEWAY_RUNTIME_INTEGRATION_SCHEMA=$gateway_runtime_schema
+run_marked_tests app/gateway-api \
+    "$(markers_for_mode gateway_runtime)" \
+    "gateway_runtime_gateway_api_postgresql"
 run_marked_tests app/game-engine \
     "$(markers_for_mode gateway_runtime)" \
     "gateway_runtime_postgresql"

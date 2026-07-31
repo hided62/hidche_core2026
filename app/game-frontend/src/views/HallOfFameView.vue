@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
+import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import { trpc } from '../utils/trpc';
 
 type HallOption = {
@@ -59,10 +60,7 @@ const selection = computed({
     },
 });
 
-const imageUrl = (entry: HallEntry): string => {
-    const picture = entry.picture?.trim() || 'default.jpg';
-    return entry.imageServer ? `${import.meta.env.BASE_URL}d_pic/${picture}` : `/image/icons/${picture}`;
-};
+const imageUrl = (entry: HallEntry): string => resolveGeneralIconUrl(entry);
 
 const closePage = async (): Promise<void> => {
     if (window.opener) {
@@ -143,7 +141,14 @@ onMounted(loadOptions);
                     <li v-for="(entry, rank) in section.entries" :key="`${section.title}:${entry.generalId}:${rank}`">
                         <div class="hall-rank legacy-bg2">{{ rank + 1 }}위</div>
                         <div class="hall-img">
-                            <img class="generalIcon" :src="imageUrl(entry)" width="64" height="64" :alt="entry.name" />
+                            <img
+                                class="generalIcon"
+                                :src="imageUrl(entry)"
+                                width="64"
+                                height="64"
+                                :alt="entry.name"
+                                @error="useDefaultGeneralIcon"
+                            />
                         </div>
                         <div
                             v-if="entry.serverName"

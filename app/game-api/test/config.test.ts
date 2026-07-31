@@ -25,4 +25,22 @@ describe('resolveGameApiConfigFromEnv', () => {
 
         expect(config.profileName).toBe('hwe:2');
     });
+
+    it.each(['0', '-1', '1.5', '999', 'Infinity'])('rejects unsafe account icon reconcile interval %s', (value) => {
+        expect(() =>
+            resolveGameApiConfigFromEnv({
+                GAME_TOKEN_SECRET: 'test-secret',
+                ACCOUNT_ICON_RESET_RECONCILE_INTERVAL_MS: value,
+            })
+        ).toThrow('ACCOUNT_ICON_RESET_RECONCILE_INTERVAL_MS');
+    });
+
+    it('accepts a bounded integer account icon reconcile interval', () => {
+        expect(
+            resolveGameApiConfigFromEnv({
+                GAME_TOKEN_SECRET: 'test-secret',
+                ACCOUNT_ICON_RESET_RECONCILE_INTERVAL_MS: '1000',
+            }).accountIconResetReconcileIntervalMs
+        ).toBe(1000);
+    });
 });

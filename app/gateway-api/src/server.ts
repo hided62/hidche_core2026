@@ -24,6 +24,7 @@ import { RedisGatewaySessionService } from './auth/redisSessionService.js';
 import { createGatewayOrchestrator } from './orchestrator/orchestratorFactory.js';
 import { appRouter } from './router.js';
 import { RepositoryProfileStatusService } from './lobby/profileStatusService.js';
+import { registerAccountIconInternalRoute } from './auth/accountIconInternalRoute.js';
 
 export const createGatewayApiServer = async () => {
     const config = resolveGatewayApiConfigFromEnv();
@@ -77,6 +78,10 @@ export const createGatewayApiServer = async () => {
         root: path.resolve(process.cwd(), config.userIconDir),
         prefix: '/user-icons/',
         decorateReply: false,
+    });
+    registerAccountIconInternalRoute(app, {
+        users,
+        secret: config.gameTokenSecret,
     });
 
     await app.register(fastifyTRPCPlugin, {

@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 
 import { useSessionStore } from '../stores/session';
 import { formatSeoulDateTime } from '../utils/legacyDateTime';
+import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import { trpc } from '../utils/trpc';
 
 type JoinConfig = Awaited<ReturnType<typeof trpc.join.getConfig.query>>;
@@ -107,12 +108,7 @@ const clearPendingAction = (action: PendingSelectionAction): void => {
 const isIndeterminateTimeout = (value: unknown): boolean => {
     if (!value || typeof value !== 'object' || !('data' in value)) return false;
     const data = value.data;
-    return Boolean(
-        data &&
-            typeof data === 'object' &&
-            'code' in data &&
-            data.code === 'TIMEOUT'
-    );
+    return Boolean(data && typeof data === 'object' && 'code' in data && data.code === 'TIMEOUT');
 };
 
 const formatDateTime = (value: string | null | undefined): string => {
@@ -131,25 +127,14 @@ const shuffleNations = (source: Nation[]): Nation[] => {
     return shuffled;
 };
 
-const userIconBaseUrl =
-    import.meta.env.VITE_GATEWAY_USER_ICON_BASE_URL ?? '/gateway/api/user-icons';
-const imageUrl = (candidate: Candidate): string =>
-    candidate.imageServer
-        ? `${userIconBaseUrl.replace(/\/$/, '')}/${candidate.picture}`
-        : `/image/icons/${candidate.picture}`;
-const useFallbackImage = (event: Event): void => {
-    const image = event.currentTarget as HTMLImageElement;
-    if (image.dataset.fallbackApplied === 'true') return;
-    image.dataset.fallbackApplied = 'true';
-    image.src = '/image/icons/default.jpg';
-};
+const imageUrl = (candidate: Candidate): string => resolveGeneralIconUrl(candidate);
 
 const personalityName = (key: string | null): string | null => {
     if (!key) return null;
     return personalities.value.find((entry) => entry.key === key)?.name ?? key;
 };
 const personalityInfo = (key: string | null): string =>
-    key ? personalities.value.find((entry) => entry.key === key)?.info ?? '' : '';
+    key ? (personalities.value.find((entry) => entry.key === key)?.info ?? '') : '';
 
 const lightTextNationColors = new Set([
     '',
@@ -294,8 +279,10 @@ onBeforeUnmount(() => {
             <tbody>
                 <tr>
                     <td>
-                        현재 : {{ serverInfo.currentYear }}年 {{ serverInfo.currentMonth }}月
-                        (<span class="cyan">{{ serverInfo.tickMinutes }}분 턴</span> 서버)<br />
+                        현재 : {{ serverInfo.currentYear }}年 {{ serverInfo.currentMonth }}月 (<span class="cyan"
+                            >{{ serverInfo.tickMinutes }}분 턴</span
+                        >
+                        서버)<br />
                         등록 장수 : 유저 {{ serverInfo.userGeneralCount }} / {{ serverInfo.maxGeneral }} 명 +
                         <span class="cyan">NPC {{ serverInfo.npcGeneralCount }} 명</span>
                     </td>
@@ -319,7 +306,9 @@ onBeforeUnmount(() => {
                     }"
                 >
                     <td class="invitation-nation">{{ nation.name }}</td>
-                    <td><div class="invitation-message">{{ nation.scoutMessage ?? '-' }}</div></td>
+                    <td>
+                        <div class="invitation-message">{{ nation.scoutMessage ?? '-' }}</div>
+                    </td>
                 </tr>
             </tbody>
         </table>
@@ -337,11 +326,7 @@ onBeforeUnmount(() => {
                     <small v-else class="expired-text">- 만료 -</small>
                     <br />
                     <div class="card-holder">
-                        <article
-                            v-for="candidate in candidates"
-                            :key="candidate.uniqueName"
-                            class="general-card"
-                        >
+                        <article v-for="candidate in candidates" :key="candidate.uniqueName" class="general-card">
                             <h4 class="legacy-bg1 with-border">{{ candidate.generalName }}</h4>
                             <h4 class="portrait">
                                 <img
@@ -349,7 +334,7 @@ onBeforeUnmount(() => {
                                     :alt="candidate.generalName"
                                     width="64"
                                     height="64"
-                                    @error="useFallbackImage"
+                                    @error="useDefaultGeneralIcon"
                                 />
                             </h4>
                             <p>
@@ -398,7 +383,7 @@ onBeforeUnmount(() => {
                                 :alt="selectedCandidate.generalName"
                                 width="64"
                                 height="64"
-                                @error="useFallbackImage"
+                                @error="useDefaultGeneralIcon"
                             />
                         </h4>
                         <p>
@@ -486,12 +471,8 @@ onBeforeUnmount(() => {
             </div>
             <div class="footer-banner with-border">
                 <small>
-                    삼국지 모의전투 HiDCHe core2026 / KOEI의 이미지를 사용, 응용하였습니다 / 제작 :
-                    HideD /
-                    <a
-                        href="https://sam.hided.net/wiki/hidche/credit"
-                        target="_blank"
-                        rel="noopener noreferrer"
+                    삼국지 모의전투 HiDCHe core2026 / KOEI의 이미지를 사용, 응용하였습니다 / 제작 : HideD /
+                    <a href="https://sam.hided.net/wiki/hidche/credit" target="_blank" rel="noopener noreferrer"
                         >Credit</a
                     >
                 </small>

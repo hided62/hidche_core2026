@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 
+import { resolveGeneralIconBackgroundImage } from '../utils/generalIcon';
 import { trpc } from '../utils/trpc';
 import { cityLevelMap, formatOfficerLevelText, getNationChiefLevel, regionMap } from '../utils/nationFormat';
 
@@ -61,10 +62,7 @@ const chiefAssignments = computed(() => data.value?.chiefAssignments ?? {});
 const cityNameMap = computed(() => new Map((data.value?.cityAssignments ?? []).map((city) => [city.id, city.name])));
 const generalMap = computed(() => new Map((data.value?.generals ?? []).map((general) => [general.id, general])));
 
-const imageUrl = (general: GeneralEntry | undefined): string => {
-    const picture = general?.picture ?? 'default.jpg';
-    return general?.imageServer ? `${import.meta.env.BASE_URL}d_pic/${picture}` : `/image/icons/${picture}`;
-};
+const imageBackground = (general: GeneralEntry | undefined): string => resolveGeneralIconBackgroundImage(general ?? {});
 const officerLocked = (value: number, level: number): boolean => (value & (1 << level)) !== 0;
 const chiefLocked = (level: number): boolean => officerLocked(data.value?.nation.chiefSet ?? 0, level);
 const cityOfficerLocked = (city: PersonnelResponse['cityAssignments'][number], level: number): boolean =>
@@ -219,7 +217,7 @@ onMounted(() => void loadPersonnel());
                             <td class="green-cell role-cell">{{ formatOfficerLevelText(level, nationLevel) }}</td>
                             <td
                                 class="general-icon"
-                                :style="{ backgroundImage: `url('${imageUrl(chiefAssignments[level])}')` }"
+                                :style="{ backgroundImage: imageBackground(chiefAssignments[level]) }"
                             />
                             <td class="chief-name">
                                 {{ chiefAssignments[level]?.name ?? '-' }}({{

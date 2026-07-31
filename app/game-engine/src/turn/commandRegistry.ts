@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import type { TurnDaemonCommand, TurnDaemonCommandType, TurnDaemonCommandByType } from '@sammo-ts/common';
+import { isCanonicalIsoTimestamp } from '@sammo-ts/common';
 
 export type TurnDaemonCommandEnvelope = {
     requestId: string;
@@ -252,6 +253,17 @@ const zPatchGeneral = z.object({
     }),
 });
 
+const zAdjustGeneralIcon = z
+    .object({
+        type: z.literal('adjustGeneralIcon'),
+        requestId: z.string().min(1).optional(),
+        userId: z.string().min(1),
+        picture: z.string().min(1),
+        imageServer: z.number().int().nonnegative(),
+        iconRevision: z.string().refine(isCanonicalIsoTimestamp),
+    })
+    .strict();
+
 const zJoinCreateGeneral = z
     .object({
         type: z.literal('joinCreateGeneral'),
@@ -268,6 +280,7 @@ const zJoinCreateGeneral = z
         profileId: z.string().min(1),
         ownerPicture: z.string().optional(),
         ownerImageServer: zFiniteNumber.optional(),
+        ownerIconRevision: z.string().refine(isCanonicalIsoTimestamp).optional(),
         ownerCanUsePicture: z.boolean().optional(),
         ownerLegacyPenalty: zRecord.optional(),
         inheritSpecial: z.string().optional(),
@@ -566,6 +579,14 @@ const normalizePatchGeneral: CommandNormalizer<'patchGeneral'> = (envelope) => {
     return { ...command, requestId: envelope.requestId };
 };
 
+const normalizeAdjustGeneralIcon: CommandNormalizer<'adjustGeneralIcon'> = (envelope) => {
+    const command = parseWith(zAdjustGeneralIcon, envelope.command);
+    if (!command || (command.requestId !== undefined && command.requestId !== envelope.requestId)) {
+        return null;
+    }
+    return { ...command, requestId: envelope.requestId };
+};
+
 const normalizeJoinCreateGeneral: CommandNormalizer<'joinCreateGeneral'> = (envelope) => {
     const command = parseWith(zJoinCreateGeneral, envelope.command);
     if (!command) {
@@ -662,6 +683,7 @@ const normalizers: CommandNormalizerMap = {
     adjustGeneralMeta: normalizeAdjustGeneralMeta,
     tournamentMatchResult: normalizeTournamentMatchResult,
     patchGeneral: normalizePatchGeneral,
+    adjustGeneralIcon: normalizeAdjustGeneralIcon,
     joinCreateGeneral: normalizeJoinCreateGeneral,
     npcPossessGeneral: normalizeNpcPossessGeneral,
     selectPoolCreate: normalizeSelectPoolCreate,

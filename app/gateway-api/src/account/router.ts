@@ -10,6 +10,7 @@ import type { GatewayApiContext } from '../context.js';
 import { procedure, router } from '../trpc.js';
 import type { UserRecord, UserSanctions } from '../auth/userRepository.js';
 import { openPassword, zPasswordEnvelope } from '../auth/registrationInput.js';
+import { resolveEffectiveAccountIcon } from '../auth/accountIconProjection.js';
 
 const zSessionToken = z.string().min(1);
 const MAX_ICON_BYTES = 50 * 1024;
@@ -37,13 +38,15 @@ const decodeImage = (input: string): Buffer => {
     return buffer;
 };
 
-const sameUtcDate = (left: Date, right: Date): boolean =>
-    left.getUTCFullYear() === right.getUTCFullYear() &&
-    left.getUTCMonth() === right.getUTCMonth() &&
-    left.getUTCDate() === right.getUTCDate();
+const SEOUL_OFFSET_MS = 9 * 60 * 60 * 1000;
+
+export const kstDayStart = (value: Date): Date => {
+    const shifted = new Date(value.getTime() + SEOUL_OFFSET_MS);
+    return new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()) - SEOUL_OFFSET_MS);
+};
 
 const assertIconChangeAvailable = (user: UserRecord, now: Date): void => {
-    if (user.iconUpdatedAt && sameUtcDate(new Date(user.iconUpdatedAt), now)) {
+    if (user.picture !== 'default.jpg' && user.iconUpdatedAt && new Date(user.iconUpdatedAt) >= kstDayStart(now)) {
         throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: '아이콘은 하루에 한 번만 변경할 수 있습니다.' });
     }
 };
@@ -59,8 +62,34 @@ const hasActiveSanction = (sanctions: UserSanctions, now: Date): boolean => {
 };
 
 const buildIconUrl = (ctx: GatewayApiContext, user: UserRecord): string | null => {
-    if (user.imageServer !== 1 || user.picture === 'default.jpg') return null;
-    return `${ctx.userIconPublicUrl.replace(/\/$/, '')}/${encodeURIComponent(user.picture)}`;
+    const icon = resolveEffectiveAccountIcon(user);
+    if (icon.imageServer !== 1 || icon.picture === 'default.jpg') return null;
+    return `${ctx.userIconPublicUrl.replace(/\/$/, '')}/${encodeURIComponent(icon.picture)}`;
+};
+
+const listIconSyncProfiles = async (ctx: GatewayApiContext, userId: string) =>
+    (await ctx.profileStatus.listLobbyProfiles({ userId }))
+        .filter(
+            (profile) => (profile.status === 'RUNNING' || profile.status === 'PREOPEN') && profile.runtime.apiRunning
+        )
+        .map(({ profileName, profile, apiPort, korName }) => ({
+            profileName,
+            profile,
+            apiPort,
+            korName,
+        }));
+
+const publishIconFlush = async (
+    ctx: GatewayApiContext,
+    userId: string,
+    reason: 'account-icon-changed' | 'account-icon-deleted'
+): Promise<boolean> => {
+    try {
+        await ctx.flushPublisher.publishUserFlush(userId, reason);
+        return true;
+    } catch {
+        return false;
+    }
 };
 
 export const accountRouter = router({
@@ -136,6 +165,7 @@ export const accountRouter = router({
             const user = await requireSessionUser(ctx, input.sessionToken);
             const now = new Date();
             assertIconChangeAvailable(user, now);
+            const profiles = await listIconSyncProfiles(ctx, user.id);
             const buffer = decodeImage(input.imageData);
             const metadata = await sharp(buffer, { animated: true }).metadata();
             if (!metadata.format || !ALLOWED_ICON_FORMATS.has(metadata.format)) {
@@ -154,17 +184,56 @@ export const accountRouter = router({
             const filename = `${randomBytes(8).toString('hex')}.${extension}`;
             await fs.mkdir(ctx.userIconDir, { recursive: true });
             await fs.writeFile(path.join(ctx.userIconDir, filename), buffer, { flag: 'wx' });
-            await ctx.users.updateIcon(user.id, filename, 1, now);
+            let revision: string | null;
+            try {
+                revision = await ctx.users.updateIconForDay(user.id, filename, 1, now, kstDayStart(now), true);
+            } catch (error) {
+                await fs.rm(path.join(ctx.userIconDir, filename), { force: true });
+                throw error;
+            }
+            if (!revision) {
+                await fs.rm(path.join(ctx.userIconDir, filename), { force: true });
+                throw new TRPCError({
+                    code: 'TOO_MANY_REQUESTS',
+                    message: '아이콘은 하루에 한 번만 변경할 수 있습니다.',
+                });
+            }
+            const flushPublished = await publishIconFlush(ctx, user.id, 'account-icon-changed');
             return {
                 ok: true,
                 iconUrl: `${ctx.userIconPublicUrl.replace(/\/$/, '')}/${filename}`,
+                revision,
+                profiles,
+                flushPublished,
             };
         }),
     deleteIcon: procedure.input(z.object({ sessionToken: zSessionToken })).mutation(async ({ ctx, input }) => {
         const user = await requireSessionUser(ctx, input.sessionToken);
         const now = new Date();
         assertIconChangeAvailable(user, now);
-        await ctx.users.updateIcon(user.id, 'default.jpg', 0, now);
-        return { ok: true, iconUrl: null };
+        const profiles = await listIconSyncProfiles(ctx, user.id);
+        const revision = await ctx.users.updateIconForDay(user.id, 'default.jpg', 0, now, kstDayStart(now), false);
+        if (!revision) {
+            throw new TRPCError({
+                code: 'TOO_MANY_REQUESTS',
+                message: '아이콘은 하루에 한 번만 변경할 수 있습니다.',
+            });
+        }
+        const flushPublished = await publishIconFlush(ctx, user.id, 'account-icon-deleted');
+        return {
+            ok: true,
+            iconUrl: null,
+            revision,
+            profiles,
+            flushPublished,
+        };
+    }),
+    prepareIconSync: procedure.input(z.object({ sessionToken: zSessionToken })).query(async ({ ctx, input }) => {
+        const user = await requireSessionUser(ctx, input.sessionToken);
+        return {
+            iconUrl: buildIconUrl(ctx, user),
+            projection: resolveEffectiveAccountIcon(user),
+            profiles: await listIconSyncProfiles(ctx, user.id),
+        };
     }),
 });

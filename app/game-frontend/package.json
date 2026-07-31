@@ -7,6 +7,8 @@
         "dev": "vite",
         "build": "vue-tsc && vite build",
         "preview": "vite preview",
+        "test": "pnpm test:unit",
+        "test:unit": "node --test test/**/*.test.ts",
         "test:e2e:troop": "playwright test troop.spec.ts --config e2e/playwright.config.mjs",
         "test:e2e:nation-offices": "playwright test nationOffices.spec.ts --config e2e/playwright.config.mjs",
         "test:e2e:npc-policy": "playwright test npcPolicy.spec.ts --config e2e/playwright.config.mjs",
@@ -20,7 +22,6 @@
         "test:e2e:die-on-prestart-live": "pnpm --filter @sammo-ts/infra prisma:generate && pnpm --filter @sammo-ts/common build && pnpm --filter @sammo-ts/logic build && pnpm --filter @sammo-ts/infra build && pnpm --filter @sammo-ts/game-engine build && pnpm --filter @sammo-ts/game-api build && playwright test --config e2e/dieOnPrestart.live.playwright.config.mjs --tsconfig e2e/playwright.live.tsconfig.json",
         "lint": "eslint .",
         "lint:fix": "eslint . --fix",
-        "test": "node -e \"console.log('test not configured')\"",
         "typecheck": "vue-tsc --noEmit"
     },
     "dependencies": {

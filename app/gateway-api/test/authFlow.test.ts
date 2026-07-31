@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -16,14 +16,25 @@ import type { GatewayPrismaClient } from '@sammo-ts/infra';
 import { decryptGameSessionToken, type UserSanctions } from '@sammo-ts/common/auth/gameToken';
 import { createPasswordEnvelopeService } from '../src/auth/passwordEnvelope.js';
 
-const buildCaller = (options: { userIconDir?: string; localAccountGraceDays?: number } = {}) => {
+const buildCaller = (
+    options: {
+        userIconDir?: string;
+        localAccountGraceDays?: number;
+        flushError?: Error;
+        profileListError?: Error;
+    } = {}
+) => {
     const users = createInMemoryUserRepository();
     const sessions = new InMemoryGatewaySessionService({
         sessionTtlSeconds: 3600,
         gameSessionTtlSeconds: 600,
     });
     const flushPublisher = {
-        publishUserFlush: async () => {},
+        publishUserFlush: vi.fn(async () => {
+            if (options.flushError) {
+                throw options.flushError;
+            }
+        }),
     };
     const oauthSessions = new InMemoryOAuthSessionStore();
     const kakaoClient = {
@@ -139,6 +150,11 @@ const buildCaller = (options: { userIconDir?: string; localAccountGraceDays?: nu
             color: '#fff',
         }))
     );
+    if (options.profileListError) {
+        profileStatus.listLobbyProfiles = async () => {
+            throw options.profileListError;
+        };
+    }
     const passwordEnvelope = createPasswordEnvelopeService();
     const requestHeaders: Record<string, string> = {};
     const sealPassword = (password: string) => {
@@ -187,6 +203,7 @@ const buildCaller = (options: { userIconDir?: string; localAccountGraceDays?: nu
         oauthSessions,
         users,
         sessions,
+        flushPublisher,
         sealPassword,
         setSessionHeader: (sessionToken: string) => {
             requestHeaders['x-session-token'] = sessionToken;
@@ -576,6 +593,7 @@ describe('gateway auth flow', () => {
             roles: ['user', 'latest-role'],
             picture: 'latest-owner.webp',
             imageServer: 3,
+            iconUpdatedAt: '2026-07-30T12:00:00.000Z',
             canUseGeneralPicture: false,
         });
         expect(payload?.sanctions).toMatchObject({
@@ -668,7 +686,9 @@ describe('account self service', () => {
     it('validates and stores a legacy-sized account icon with a daily change limit', async () => {
         const iconDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sammo-account-icon-'));
         try {
-            const { caller, users, sessions } = buildCaller({ userIconDir: iconDir });
+            const { caller, users, sessions, flushPublisher } = buildCaller({
+                userIconDir: iconDir,
+            });
             const user = await users.createUser({
                 username: 'icon-self',
                 password: 'current-password',
@@ -692,11 +712,186 @@ describe('account self service', () => {
             const updated = await users.findById(user.id);
 
             expect(result.iconUrl).toMatch(/^http:\/\/localhost\/user-icons\/[a-f0-9]{16}\.png$/);
+            expect(result.profiles.map((profile) => profile.profileName)).toEqual(['che:default', 'hwe:default']);
             expect(updated?.imageServer).toBe(1);
+            expect(flushPublisher.publishUserFlush).toHaveBeenCalledWith(user.id, 'account-icon-changed');
             expect(await fs.stat(path.join(iconDir, updated?.picture ?? 'missing'))).toBeTruthy();
             await expect(caller.account.deleteIcon({ sessionToken: session.sessionToken })).rejects.toMatchObject({
                 code: 'TOO_MANY_REQUESTS',
             });
+        } finally {
+            await fs.rm(iconDir, { recursive: true, force: true });
+        }
+    });
+
+    it('atomically allows only one icon change per KST day and removes the losing file', async () => {
+        const iconDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sammo-account-icon-race-'));
+        try {
+            const { caller, users, sessions } = buildCaller({ userIconDir: iconDir });
+            const user = await users.createUser({
+                username: 'icon-race',
+                password: 'current-password',
+            });
+            const session = await sessions.createSession(user);
+            const png = await sharp({
+                create: {
+                    width: 64,
+                    height: 64,
+                    channels: 4,
+                    background: '#556677',
+                },
+            })
+                .png()
+                .toBuffer();
+            const attempts = await Promise.allSettled(
+                [1, 2].map(() =>
+                    caller.account.changeIcon({
+                        sessionToken: session.sessionToken,
+                        imageData: `data:image/png;base64,${png.toString('base64')}`,
+                    })
+                )
+            );
+
+            expect(attempts.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+            expect(attempts.filter(({ status }) => status === 'rejected')).toHaveLength(1);
+            expect(await fs.readdir(iconDir)).toHaveLength(1);
+        } finally {
+            await fs.rm(iconDir, { recursive: true, force: true });
+        }
+    });
+
+    it('flushes an account icon deletion with selectable running profiles', async () => {
+        const { caller, users, sessions, flushPublisher } = buildCaller();
+        const user = await users.createUser({
+            username: 'icon-delete',
+            password: 'current-password',
+        });
+        await users.updateIcon(user.id, 'old.png', 1, new Date('2026-07-30T12:00:00.000Z'));
+        const session = await sessions.createSession(user);
+
+        const result = await caller.account.deleteIcon({ sessionToken: session.sessionToken });
+        const updated = await users.findById(user.id);
+
+        expect(result).toMatchObject({
+            ok: true,
+            iconUrl: null,
+            profiles: [{ profileName: 'che:default' }, { profileName: 'hwe:default' }],
+        });
+        expect(updated).toMatchObject({ picture: 'default.jpg', imageServer: 0 });
+        expect(flushPublisher.publishUserFlush).toHaveBeenCalledWith(user.id, 'account-icon-deleted');
+    });
+
+    it('uses the Asia/Seoul day boundary and preserves Ref delete-to-upload behavior', async () => {
+        const iconDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sammo-account-icon-kst-'));
+        const png = await sharp({
+            create: {
+                width: 64,
+                height: 64,
+                channels: 4,
+                background: '#667788',
+            },
+        })
+            .png()
+            .toBuffer();
+        try {
+            vi.useFakeTimers();
+            vi.setSystemTime(new Date('2026-07-31T14:59:59.000Z'));
+            const { caller, users, sessions } = buildCaller({ userIconDir: iconDir });
+            const user = await users.createUser({
+                username: 'icon-kst',
+                password: 'current-password',
+            });
+            await users.updateIcon(user.id, 'old.png', 1, new Date('2026-07-31T00:00:00.000Z'));
+            const session = await sessions.createSession(user);
+
+            await expect(caller.account.deleteIcon({ sessionToken: session.sessionToken })).rejects.toMatchObject({
+                code: 'TOO_MANY_REQUESTS',
+            });
+
+            vi.setSystemTime(new Date('2026-07-31T15:00:00.000Z'));
+            const deleted = await caller.account.deleteIcon({ sessionToken: session.sessionToken });
+            expect(deleted.revision).toBe('2026-07-31T15:00:00.000Z');
+
+            const changed = await caller.account.changeIcon({
+                sessionToken: session.sessionToken,
+                imageData: `data:image/png;base64,${png.toString('base64')}`,
+            });
+            expect(new Date(changed.revision).getTime()).toBeGreaterThan(new Date(deleted.revision).getTime());
+            expect((await users.findById(user.id))?.picture).not.toBe('default.jpg');
+        } finally {
+            vi.useRealTimers();
+            await fs.rm(iconDir, { recursive: true, force: true });
+        }
+    });
+
+    it('does not commit an icon when profile discovery fails before mutation', async () => {
+        const iconDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sammo-account-icon-profile-failure-'));
+        try {
+            const { caller, users, sessions } = buildCaller({
+                userIconDir: iconDir,
+                profileListError: new Error('profile unavailable'),
+            });
+            const user = await users.createUser({
+                username: 'icon-profile-failure',
+                password: 'current-password',
+            });
+            const session = await sessions.createSession(user);
+            const png = await sharp({
+                create: { width: 64, height: 64, channels: 4, background: '#778899' },
+            })
+                .png()
+                .toBuffer();
+
+            await expect(
+                caller.account.changeIcon({
+                    sessionToken: session.sessionToken,
+                    imageData: `data:image/png;base64,${png.toString('base64')}`,
+                })
+            ).rejects.toThrow('profile unavailable');
+            expect(await fs.readdir(iconDir)).toEqual([]);
+            expect(await users.findById(user.id)).toMatchObject({
+                picture: 'default.jpg',
+                imageServer: 0,
+            });
+        } finally {
+            await fs.rm(iconDir, { recursive: true, force: true });
+        }
+    });
+
+    it('returns a recoverable success when flush publication fails after commit', async () => {
+        const iconDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sammo-account-icon-flush-failure-'));
+        try {
+            const { caller, users, sessions } = buildCaller({
+                userIconDir: iconDir,
+                flushError: new Error('redis unavailable'),
+            });
+            const user = await users.createUser({
+                username: 'icon-flush-failure',
+                password: 'current-password',
+            });
+            const session = await sessions.createSession(user);
+            const png = await sharp({
+                create: { width: 64, height: 64, channels: 4, background: '#8899aa' },
+            })
+                .png()
+                .toBuffer();
+
+            const changed = await caller.account.changeIcon({
+                sessionToken: session.sessionToken,
+                imageData: `data:image/png;base64,${png.toString('base64')}`,
+            });
+            expect(changed.flushPublished).toBe(false);
+            expect((await users.findById(user.id))?.picture).not.toBe('default.jpg');
+
+            await expect(caller.account.prepareIconSync({ sessionToken: session.sessionToken })).resolves.toMatchObject(
+                {
+                    projection: {
+                        revision: changed.revision,
+                        imageServer: 1,
+                    },
+                    profiles: [{ profileName: 'che:default' }, { profileName: 'hwe:default' }],
+                }
+            );
         } finally {
             await fs.rm(iconDir, { recursive: true, force: true });
         }

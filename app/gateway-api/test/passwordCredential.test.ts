@@ -49,9 +49,7 @@ describe('password credential compatibility', () => {
             password: 'current-password',
         });
         const userSalt = 'ref-user-salt';
-        const browserHash = createHash('sha512')
-            .update(`${globalSalt}current-password${globalSalt}`)
-            .digest('hex');
+        const browserHash = createHash('sha512').update(`${globalSalt}current-password${globalSalt}`).digest('hex');
         user.passwordSalt = userSalt;
         user.passwordHash = createHash('sha512').update(`${userSalt}${browserHash}${userSalt}`).digest('hex');
 

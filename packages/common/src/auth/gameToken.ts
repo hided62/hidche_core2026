@@ -1,5 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 
+import { isCanonicalIsoTimestamp } from './accountIconProjection.js';
+
 export interface UserSanctions {
     bannedUntil?: string;
     mutedUntil?: string;
@@ -7,7 +9,6 @@ export interface UserSanctions {
     warningCount?: number;
     flags?: string[];
     notes?: string;
-    profileIconResetAt?: string;
     serverRestrictions?: Record<string, UserServerRestriction>;
     legacyPenalty?: Record<string, unknown>;
 }
@@ -26,6 +27,8 @@ export interface GatewayUserInfo {
     roles: string[];
     picture?: string;
     imageServer?: number;
+    iconUpdatedAt?: string;
+    profileIconResetAt?: string;
     canUseGeneralPicture?: boolean;
     createdAt?: string;
     legacyMemberNo?: number;
@@ -90,6 +93,10 @@ export const parseGameSessionTokenPayload = (value: unknown): GameSessionTokenPa
         !Array.isArray(user.roles) ||
         (user.picture !== undefined && typeof user.picture !== 'string') ||
         (user.imageServer !== undefined && (!Number.isSafeInteger(user.imageServer) || user.imageServer < 0)) ||
+        (user.iconUpdatedAt !== undefined &&
+            (typeof user.iconUpdatedAt !== 'string' || !isCanonicalIsoTimestamp(user.iconUpdatedAt))) ||
+        (user.profileIconResetAt !== undefined &&
+            (typeof user.profileIconResetAt !== 'string' || !isCanonicalIsoTimestamp(user.profileIconResetAt))) ||
         (user.canUseGeneralPicture !== undefined && typeof user.canUseGeneralPicture !== 'boolean') ||
         (user.legacyMemberNo !== undefined && (!Number.isSafeInteger(user.legacyMemberNo) || user.legacyMemberNo <= 0))
     ) {

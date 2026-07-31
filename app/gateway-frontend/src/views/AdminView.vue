@@ -10,7 +10,6 @@ type AdminUserSanctions = {
     warningCount?: number;
     flags?: string[];
     notes?: string;
-    profileIconResetAt?: string;
     serverRestrictions?: Record<
         string,
         {
@@ -29,7 +28,6 @@ type AdminSanctionsPatch = {
     warningCount?: number | null;
     flags?: string[] | null;
     notes?: string | null;
-    profileIconResetAt?: string | null;
     serverRestrictions?: Record<
         string,
         {
@@ -50,6 +48,7 @@ type AdminUser = {
     oauthType: string;
     oauthId?: string;
     email?: string;
+    profileIconResetAt?: string;
     createdAt: string;
 };
 
@@ -188,7 +187,10 @@ type AdminClient = {
             }) => Promise<{ sanctions: AdminUserSanctions }>;
         };
         resetProfileIcon: {
-            mutate: (input: { userId: string }) => Promise<{ profileIconResetAt?: string }>;
+            mutate: (input: { userId: string }) => Promise<{
+                profileIconResetAt: string;
+                flushPublished: boolean;
+            }>;
         };
         forceDelete: {
             mutate: (input: { userId: string }) => Promise<{ ok: boolean }>;
@@ -971,12 +973,11 @@ const resetProfileIcon = async () => {
         });
         userResult.value = {
             ...userResult.value,
-            sanctions: {
-                ...userResult.value.sanctions,
-                profileIconResetAt: result.profileIconResetAt,
-            },
+            profileIconResetAt: result.profileIconResetAt,
         };
-        profileIconStatus.value = '아이콘 초기화 요청 완료';
+        profileIconStatus.value = result.flushPublished
+            ? '아이콘 초기화 요청 완료'
+            : '아이콘은 초기화됐지만 실행 중 서버 알림에 실패했습니다. 다시 요청해 주세요.';
     } catch (error) {
         profileIconStatus.value = '아이콘 초기화 실패';
     }

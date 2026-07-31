@@ -11,6 +11,7 @@ export interface GatewayApiConfig {
     sessionTtlSeconds: number;
     gameSessionTtlSeconds: number;
     gameTokenSecret: string;
+    gatewayInternalApiUrl: string;
     oauthSessionTtlSeconds: number;
     kakaoRestKey: string;
     kakaoAdminKey?: string;
@@ -36,6 +37,7 @@ export interface GatewayOrchestratorConfig {
     dbSchema: string;
     redisKeyPrefix: string;
     gameTokenSecret: string;
+    gatewayInternalApiUrl: string;
     orchestratorReconcileIntervalMs: number;
     orchestratorScheduleIntervalMs: number;
     orchestratorBuildIntervalMs: number;
@@ -64,9 +66,10 @@ export const resolveGatewayApiConfigFromEnv = (env: NodeJS.ProcessEnv = process.
     }
     const publicBaseUrl = env.GATEWAY_PUBLIC_URL ?? kakaoRedirectUri;
     const redisKeyPrefix = env.GATEWAY_REDIS_PREFIX ?? 'sammo:gateway';
+    const port = parseNumberWithFallback(env.GATEWAY_API_PORT, 13000, 'GATEWAY_API_PORT');
     return {
         host: env.GATEWAY_API_HOST ?? '0.0.0.0',
-        port: parseNumberWithFallback(env.GATEWAY_API_PORT, 13000, 'GATEWAY_API_PORT'),
+        port,
         trpcPath: env.GATEWAY_TRPC_PATH ?? env.TRPC_PATH ?? '/trpc',
         dbSchema: resolveSchemaName(env.GATEWAY_DB_SCHEMA),
         redisKeyPrefix,
@@ -78,6 +81,7 @@ export const resolveGatewayApiConfigFromEnv = (env: NodeJS.ProcessEnv = process.
             'GAME_SESSION_TTL_SECONDS'
         ),
         gameTokenSecret: secret,
+        gatewayInternalApiUrl: env.GATEWAY_INTERNAL_API_URL ?? `http://127.0.0.1:${port}`,
         oauthSessionTtlSeconds: parseNumberWithFallback(
             env.OAUTH_SESSION_TTL_SECONDS,
             10 * 60,
@@ -133,10 +137,12 @@ export const resolveGatewayOrchestratorConfigFromEnv = (
         throw new Error('GAME_TOKEN_SECRET is required for game server processes.');
     }
     const redisKeyPrefix = env.GATEWAY_REDIS_PREFIX ?? 'sammo:gateway';
+    const gatewayPort = parseNumberWithFallback(env.GATEWAY_API_PORT, 13000, 'GATEWAY_API_PORT');
     return {
         dbSchema: resolveSchemaName(env.GATEWAY_DB_SCHEMA),
         redisKeyPrefix,
         gameTokenSecret: secret,
+        gatewayInternalApiUrl: env.GATEWAY_INTERNAL_API_URL ?? `http://127.0.0.1:${gatewayPort}`,
         orchestratorReconcileIntervalMs: parseNumberWithFallback(
             env.GATEWAY_ORCHESTRATOR_RECONCILE_MS,
             15000,

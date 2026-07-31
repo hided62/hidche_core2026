@@ -220,7 +220,7 @@ test.describe('scenario 903 live selection pool', () => {
         ).toBe(true);
         expect(geometry.images.every((image) => image.objectFit === 'fill')).toBe(true);
         const fallbackImages = page.locator(
-            '.card-holder .portrait img[data-fallback-applied="true"]'
+            '.card-holder .portrait img[data-general-icon-fallback-source]'
         );
         await expect(fallbackImages).not.toHaveCount(0);
         expect(assetTracker.userIconRequests).toBe(await fallbackImages.count());
@@ -389,7 +389,7 @@ test.describe('scenario 903 live selection pool', () => {
 
         const candidateCards = page.locator('.card-holder > .general-card');
         const fallbackCard = candidateCards
-            .filter({ has: page.locator('img[data-fallback-applied="true"]') })
+            .filter({ has: page.locator('img[data-general-icon-fallback-source]') })
             .first();
         await expect(fallbackCard).toBeVisible();
         const initialName = await fallbackCard.locator('h4').first().textContent();
@@ -397,7 +397,7 @@ test.describe('scenario 903 live selection pool', () => {
         await fallbackCard.locator('.select-button').click();
         await expect(page.locator('.selected-card')).toHaveCount(1);
         await expect(
-            page.locator('.selected-card img[data-fallback-applied="true"]')
+            page.locator('.selected-card img[data-general-icon-fallback-source]')
         ).toBeVisible();
         expect(assetTracker.userIconRequests).toBeGreaterThan(userIconRequestsBeforePreview);
         await page.locator('.custom-form select').selectOption('che_안전');

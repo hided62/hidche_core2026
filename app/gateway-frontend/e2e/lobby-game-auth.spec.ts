@@ -100,7 +100,8 @@ const installFixture = async (page: Page, options: LobbyFixtureOptions = {}) => 
         });
         await fulfillTrpc(route, results);
     });
-    await page.route('http://localhost:15015/api/trpc/**', async (route) => {
+    await page.route('**/hwe/api/trpc/**', async (route) => {
+        expect(new URL(route.request().url()).pathname).toContain('/hwe/api/trpc/');
         const authorization = route.request().headers().authorization;
         const results = operationNames(route).map((operation) => {
             gameOperations.push({ operation, authorization });

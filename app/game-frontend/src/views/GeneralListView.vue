@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 
+import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import { formatOfficerLevelText } from '../utils/nationFormat';
 import { getNpcColor } from '../utils/npcColor';
 import { trpc } from '../utils/trpc';
@@ -45,10 +46,7 @@ const loadDirectory = async () => {
     }
 };
 
-const imageUrl = (general: General): string => {
-    const picture = general.picture ?? 'default.jpg';
-    return general.imageServer ? `${import.meta.env.BASE_URL}d_pic/${picture}` : `/image/general/${picture}`;
-};
+const imageUrl = (general: General): string => resolveGeneralIconUrl(general, { legacyBaseUrl: '/image/general' });
 const injuredStat = (value: number, injury: number): number => Math.trunc((value * (100 - injury)) / 100);
 
 onMounted(() => {
@@ -135,11 +133,20 @@ onMounted(() => {
                     :data-npc-type="general.npcState"
                 >
                     <td class="center">
-                        <img class="general-icon" width="64" height="64" :src="imageUrl(general)" alt="" />
+                        <img
+                            class="general-icon"
+                            width="64"
+                            height="64"
+                            :src="imageUrl(general)"
+                            alt=""
+                            @error="useDefaultGeneralIcon"
+                        />
                     </td>
                     <td class="center">
                         <span :style="{ color: getNpcColor(general.npcState) }">{{ general.name }}</span>
-                        <template v-if="general.ownerName"><br /><small>({{ general.ownerName }})</small></template>
+                        <template v-if="general.ownerName"
+                            ><br /><small>({{ general.ownerName }})</small></template
+                        >
                     </td>
                     <td class="center">{{ general.age }}세</td>
                     <td class="center">
@@ -156,9 +163,7 @@ onMounted(() => {
                     <td class="center">{{ formatOfficerLevelText(general.officerLevel, general.nationLevel) }}</td>
                     <td class="center">
                         <span :class="{ wounded: general.injury > 0 }">{{
-                            general.injury > 0
-                                ? injuredStat(general.leadership, general.injury)
-                                : general.leadership
+                            general.injury > 0 ? injuredStat(general.leadership, general.injury) : general.leadership
                         }}</span
                         ><span v-if="general.leadershipBonus > 0" class="leadership-bonus"
                             >+{{ general.leadershipBonus }}</span

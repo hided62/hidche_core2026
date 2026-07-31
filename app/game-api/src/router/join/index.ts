@@ -14,6 +14,7 @@ import {
     WAR_TRAIT_KEYS,
 } from '@sammo-ts/logic';
 import { readInheritancePoint, resolveInheritConstants } from '../../services/inheritance.js';
+import { loadAuthoritativeAccountIcon } from '../../services/accountIconSync.js';
 import { getSelectionPoolStatus, reserveSelectionPool, resolveSelectionMaxGeneral } from '../../services/selectPool.js';
 import {
     ConflictingTurnDaemonCommandError,
@@ -465,6 +466,7 @@ export const joinRouter = router({
                 });
             }
             const userId = auth.user.id;
+            const accountIcon = input.pic ? await loadAuthoritativeAccountIcon(ctx, userId) : null;
             const commandRequestId = resolveJoinCreateRequestId(ctx.requestId, userId, input.clientRequestId);
             const result = await requestJoinCreateCommand(ctx, {
                 type: 'joinCreateGeneral',
@@ -479,8 +481,13 @@ export const joinRouter = router({
                 pic: input.pic,
                 character: input.character,
                 profileId: ctx.profile.id,
-                ...(auth.user.picture !== undefined ? { ownerPicture: auth.user.picture } : {}),
-                ...(auth.user.imageServer !== undefined ? { ownerImageServer: auth.user.imageServer } : {}),
+                ...(accountIcon
+                    ? {
+                          ownerPicture: accountIcon.picture,
+                          ownerImageServer: accountIcon.imageServer,
+                          ownerIconRevision: accountIcon.revision,
+                      }
+                    : {}),
                 ...(auth.user.canUseGeneralPicture !== undefined
                     ? {
                           ownerCanUsePicture: auth.user.canUseGeneralPicture,

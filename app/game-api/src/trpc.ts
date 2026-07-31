@@ -107,6 +107,7 @@ export const accessAuthedProcedure: typeof procedure = t.procedure
 // 커밋하는 mutation에 사용한다. API input-event transaction으로 한 번 더
 // 감싸면 daemon이 아직 commit되지 않은 command를 볼 수 없어 교착된다.
 export const engineAuthedProcedure: typeof procedure = t.procedure.use(requireAuthMiddleware);
+export const engineProcedure: typeof procedure = t.procedure;
 export const accessEngineAuthedProcedure: typeof procedure = t.procedure
     .use(requireAuthMiddleware)
     .use(generalAccessEndpointMiddleware);

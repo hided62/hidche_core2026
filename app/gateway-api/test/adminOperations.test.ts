@@ -33,7 +33,7 @@ const buildCaller = async (
     const session = await sessions.createSession({ ...admin, roles: adminRoles });
     const createdInputs: GatewayOperationCreateInput[] = [];
     const createdRuntimeActions: Array<Record<string, unknown>> = [];
-    const flushes: Array<{ userId: string; reason?: string }> = [];
+    const flushes: Array<{ userId: string; reason?: string; iconRevision?: string }> = [];
     const profile = {
         profileName: 'che:2',
         profile: 'che',
@@ -79,8 +79,12 @@ const buildCaller = async (
             users,
             sessions,
             flushPublisher: {
-                publishUserFlush: async (userId, reason) => {
-                    flushes.push({ userId, reason });
+                publishUserFlush: async (userId, reason, metadata) => {
+                    flushes.push({
+                        userId,
+                        reason,
+                        ...(metadata?.iconRevision ? { iconRevision: metadata.iconRevision } : {}),
+                    });
                 },
             },
             gameTokenSecret: 'test-secret',
@@ -396,5 +400,38 @@ describe('admin role non-escalation', () => {
             { userId: target.id, reason: 'admin-sanctions-updated' },
             { userId: target.id, reason: 'admin-server-restriction' },
         ]);
+    });
+
+    it('keeps profile icon reset revisions monotonic and outside generic sanction patches', async () => {
+        const harness = await buildCaller(unusedCreateOperation);
+        const target = await harness.users.createUser({
+            username: 'icon-reset-target',
+            password: 'secretpass',
+            displayName: 'Icon Reset Target',
+        });
+        const frozenNow = new Date(target.createdAt);
+        await harness.users.updateIcon(target.id, 'custom.png', 1, frozenNow);
+        const first = await harness.users.resetProfileIcon(target.id, frozenNow);
+        const second = await harness.users.resetProfileIcon(target.id, frozenNow);
+
+        expect(new Date(first!).getTime()).toBe(new Date(target.createdAt).getTime() + 1);
+        expect(new Date(second!).getTime()).toBe(new Date(first!).getTime() + 1);
+        await expect(
+            harness.caller.admin.users.updateSanctions({
+                userId: target.id,
+                patch: {
+                    profileIconResetAt: null,
+                },
+            } as never)
+        ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+
+        const result = await harness.caller.admin.users.resetProfileIcon({ userId: target.id });
+        expect(new Date(result.profileIconResetAt).getTime()).toBeGreaterThan(new Date(second!).getTime());
+        expect((await harness.users.findById(target.id))?.profileIconResetAt).toBe(result.profileIconResetAt);
+        expect(harness.flushes.at(-1)).toEqual({
+            userId: target.id,
+            reason: 'admin-profile-icon-reset',
+            iconRevision: result.profileIconResetAt,
+        });
     });
 });

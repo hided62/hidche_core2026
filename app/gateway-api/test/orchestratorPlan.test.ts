@@ -102,6 +102,7 @@ describe('buildProcessDefinitions', () => {
         workspaceRoot: '/srv/sammo/main',
         redisKeyPrefix: 'sammo:gateway',
         gameTokenSecret: 'test-secret',
+        gatewayInternalApiUrl: 'http://127.0.0.1:13000',
     };
 
     it('runs a built profile from its commit worktree', () => {
@@ -114,6 +115,7 @@ describe('buildProcessDefinitions', () => {
             GAME_PROFILE_NAME: 'che:2',
             GAME_TRPC_PATH: '/che/api/trpc',
             GAME_API_EVENTS_PATH: '/che/api/events',
+            GATEWAY_INTERNAL_API_URL: 'http://127.0.0.1:13000',
             GAME_UPLOAD_PATH: '/che/api/uploads',
         });
         expect(definitions.daemon.cwd).toBe(path.join(buildWorkspace, 'app', 'game-engine'));

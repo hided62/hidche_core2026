@@ -22,6 +22,10 @@ import { buildBattleSimQueueKeys } from './battleSim/keys.js';
 import { RedisBattleSimTransport } from './battleSim/redisTransport.js';
 import { RedisRealtimeEventHub } from './realtime/eventHub.js';
 import { formatSseFrame } from './realtime/sse.js';
+import { GatewayHttpAccountIconSource } from './auth/accountIconSource.js';
+import { createAdminProfileIconResetFlushHandler } from './services/accountIconSync.js';
+import { AccountIconResetReconciler } from './services/accountIconResetReconciler.js';
+import { createBestEffortResourceCloser } from './services/bestEffortResourceCloser.js';
 
 const extractBearerToken = (value: string | string[] | undefined): string | null => {
     if (!value) {
@@ -59,13 +63,32 @@ const resolveAuthFromToken = async (
 
 export const createGameApiServer = async () => {
     const config = resolveGameApiConfigFromEnv();
+    const app = fastify({
+        logger: true,
+        routerOptions: {
+            maxParamLength: 2048,
+        },
+    });
     const postgres = createGamePostgresConnector(resolvePostgresConfigFromEnv({ schema: config.profile }));
     const redis = createRedisConnector(resolveRedisConfigFromEnv());
 
     await postgres.connect();
-    await redis.connect();
+    try {
+        await redis.connect();
+    } catch (error) {
+        await postgres.disconnect();
+        throw error;
+    }
+    const accountIconSource = new GatewayHttpAccountIconSource(config.gatewayInternalApiUrl, config.gameTokenSecret);
 
     const turnDaemon = new DatabaseTurnDaemonTransport(postgres.prisma, config.daemonRequestTimeoutMs);
+    const accountIconResetReconciler = new AccountIconResetReconciler(
+        postgres.prisma,
+        accountIconSource,
+        turnDaemon,
+        config.accountIconResetReconcileIntervalMs,
+        (error) => app.log.error({ err: error }, 'account icon reset reconciliation failed')
+    );
     const battleSim = new RedisBattleSimTransport(redis.client, {
         keys: buildBattleSimQueueKeys(config.profileName),
         requestTimeoutMs: config.battleSimRequestTimeoutMs,
@@ -73,21 +96,70 @@ export const createGameApiServer = async () => {
     });
     const flushStore = new InMemoryFlushStore();
     const flushSubscriberClient = redis.client.duplicate();
-    await flushSubscriberClient.connect();
-    const flushSubscriber = new RedisGatewayFlushSubscriber(flushSubscriberClient, config.flushChannel, flushStore);
-    await flushSubscriber.start();
+    try {
+        await flushSubscriberClient.connect();
+    } catch (error) {
+        await redis.disconnect();
+        await postgres.disconnect();
+        throw error;
+    }
+    const flushSubscriber = new RedisGatewayFlushSubscriber(
+        flushSubscriberClient,
+        config.flushChannel,
+        flushStore,
+        createAdminProfileIconResetFlushHandler(accountIconSource, turnDaemon),
+        (error, event) => {
+            app.log.error({ err: error, userId: event.userId, reason: event.reason }, 'gateway flush handler failed');
+        }
+    );
     const accessTokenStore = new RedisAccessTokenStore(redis.client, config.profileName);
     const realtimeSubscriberClient = redis.client.duplicate();
-    await realtimeSubscriberClient.connect();
+    try {
+        await realtimeSubscriberClient.connect();
+    } catch (error) {
+        await flushSubscriberClient.quit();
+        await redis.disconnect();
+        await postgres.disconnect();
+        throw error;
+    }
     const realtimeHub = new RedisRealtimeEventHub(realtimeSubscriberClient, buildGameEventChannel(config.profileName));
-    await realtimeHub.start();
-
-    const app = fastify({
-        logger: true,
-        routerOptions: {
-            maxParamLength: 2048,
+    let flushSubscriberStarted = false;
+    let realtimeHubStarted = false;
+    const closeResources = createBestEffortResourceCloser([
+        {
+            name: 'account-icon-reset-reconciler',
+            run: () => accountIconResetReconciler.stop(),
         },
-    });
+        {
+            name: 'gateway-flush-subscriber',
+            run: async () => {
+                if (flushSubscriberStarted) await flushSubscriber.stop();
+            },
+        },
+        {
+            name: 'gateway-flush-redis-client',
+            run: async () => {
+                await flushSubscriberClient.quit();
+            },
+        },
+        {
+            name: 'realtime-redis-client',
+            run: async () => {
+                if (realtimeHubStarted) await realtimeHub.stop();
+                else await realtimeSubscriberClient.quit();
+            },
+        },
+        {
+            name: 'redis',
+            run: () => redis.disconnect(),
+        },
+        {
+            name: 'postgres',
+            run: () => postgres.disconnect(),
+        },
+    ]);
+
+    app.addHook('onClose', closeResources);
 
     await app.register(cors, {
         origin: true,
@@ -127,6 +199,7 @@ export const createGameApiServer = async () => {
                     accessTokenStore,
                     flushStore,
                     gameTokenSecret: config.gameTokenSecret,
+                    accountIconSource,
                 });
             },
         },
@@ -198,15 +271,19 @@ export const createGameApiServer = async () => {
     app.get('/healthz', async () => ({
         ok: true,
         profile: config.profileName,
+        accountIconReconciliation: accountIconResetReconciler.getHealth(),
     }));
 
-    app.addHook('onClose', async () => {
-        await flushSubscriber.stop();
-        await flushSubscriberClient.quit();
-        await realtimeHub.stop();
-        await redis.disconnect();
-        await postgres.disconnect();
-    });
+    try {
+        await realtimeHub.start();
+        realtimeHubStarted = true;
+        await flushSubscriber.start();
+        flushSubscriberStarted = true;
+        accountIconResetReconciler.start();
+    } catch (error) {
+        await closeResources();
+        throw error;
+    }
 
     return {
         app,
@@ -216,8 +293,13 @@ export const createGameApiServer = async () => {
 
 export const runGameApiServer = async (): Promise<void> => {
     const { app, config } = await createGameApiServer();
-    await app.listen({
-        host: config.host,
-        port: config.port,
-    });
+    try {
+        await app.listen({
+            host: config.host,
+            port: config.port,
+        });
+    } catch (error) {
+        await app.close();
+        throw error;
+    }
 };

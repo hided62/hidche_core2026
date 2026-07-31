@@ -43,18 +43,27 @@ const userIconBaseUrl = import.meta.env.VITE_GATEWAY_USER_ICON_BASE_URL ?? '/gat
 
 const formatGraceEndsAt = (value: string | null | undefined): string =>
     value ? new Date(value).toLocaleString('ko-KR') : '';
+const encodeLegacyIconPath = (value: string): string =>
+    value
+        .split('/')
+        .map((segment) => {
+            if (segment === '.') return '%2E';
+            if (segment === '..') return '%2E%2E';
+            return encodeURIComponent(segment);
+        })
+        .join('/');
 const resolveGeneralPicture = (general: LobbyGeneral): string => {
     const picture = general.picture?.trim() || 'default.jpg';
     return general.imageServer
         ? `${userIconBaseUrl.replace(/\/$/, '')}/${encodeURIComponent(picture)}`
-        : `/image/icons/${encodeURIComponent(picture)}`;
+        : `/image/icons/${encodeLegacyIconPath(picture)}`;
 };
 const handleGeneralPictureError = (event: Event): void => {
     const image = event.currentTarget as HTMLImageElement;
-    if (image.dataset.fallbackApplied === 'true') {
+    if (image.dataset.generalIconFallbackSource === image.currentSrc) {
         return;
     }
-    image.dataset.fallbackApplied = 'true';
+    image.dataset.generalIconFallbackSource = image.currentSrc;
     image.src = '/image/icons/default.jpg';
 };
 
