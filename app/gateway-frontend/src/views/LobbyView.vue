@@ -217,11 +217,11 @@ const handleEnter = async (profile: LobbyProfile, targetPath: string) => {
 
 <template>
     <DefaultLayout>
-        <div class="max-w-5xl mx-auto py-8 px-4 space-y-8">
+        <div class="max-w-5xl mx-auto pt-24 pb-8 px-4 space-y-8">
             <!-- Notice -->
             <div v-if="notice" class="text-center">
                 <!-- eslint-disable-next-line vue/no-v-html -->
-                <span class="text-orange-500 text-3xl font-bold" v-html="notice"></span>
+                <span data-testid="gateway-notice" class="text-orange-500 text-3xl font-bold" v-html="notice"></span>
             </div>
 
             <section

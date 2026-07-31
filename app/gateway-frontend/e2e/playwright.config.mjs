@@ -14,6 +14,7 @@ export default defineConfig({
         'logout.spec.ts',
         'account-icon-sync.spec.ts',
         'legacy-log-html.spec.ts',
+        'gateway-notice-html.spec.ts',
     ],
     fullyParallel: false,
     workers: 1,
