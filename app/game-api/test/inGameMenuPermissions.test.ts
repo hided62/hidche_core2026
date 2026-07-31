@@ -78,6 +78,7 @@ const createContext = (options: {
     targets?: GeneralRow[];
     nationMeta?: Record<string, unknown>;
     requestCommand?: ReturnType<typeof vi.fn>;
+    accessToken?: string;
 }) => {
     const me = options.me === undefined ? buildGeneral() : options.me;
     const targets = options.targets ?? (me ? [me] : []);
@@ -121,6 +122,9 @@ const createContext = (options: {
         },
     };
     const redisClient = { get: async () => null, set: async () => null };
+    const accessTokenStore = new RedisAccessTokenStore(redisClient, 'che:default');
+    const revokeAccessToken = vi.fn(async (_accessToken: string): Promise<boolean> => true);
+    vi.spyOn(accessTokenStore, 'revoke').mockImplementation(revokeAccessToken);
     const context: GameApiContext = {
         db: db as unknown as DatabaseClient,
         redis: {} as RedisConnector['client'],
@@ -131,11 +135,12 @@ const createContext = (options: {
         uploadDir: 'uploads',
         uploadPath: '/uploads',
         uploadPublicUrl: null,
-        accessTokenStore: new RedisAccessTokenStore(redisClient, 'che:default'),
+        ...(options.accessToken ? { accessToken: options.accessToken } : {}),
+        accessTokenStore,
         flushStore: new InMemoryFlushStore(),
         gameTokenSecret: 'test-secret',
     };
-    return { context, db, requestCommand };
+    return { context, db, requestCommand, revokeAccessToken };
 };
 
 describe('in-game my information ownership', () => {
@@ -331,6 +336,23 @@ describe('in-game my information ownership', () => {
             userId: 'user-7',
             generalId: 7,
         });
+    });
+
+    it('revokes only the current game access token after a successful prestart deletion', async () => {
+        const requestCommand = vi.fn(async () => ({ type: 'dieOnPrestart', ok: true, generalId: 7 }));
+        const fixture = createContext({ requestCommand, accessToken: 'ga_current' });
+
+        await expect(appRouter.createCaller(fixture.context).general.dieOnPrestart()).resolves.toEqual({ ok: true });
+        expect(fixture.revokeAccessToken).toHaveBeenCalledOnce();
+        expect(fixture.revokeAccessToken).toHaveBeenCalledWith('ga_current');
+    });
+
+    it('keeps the current game access token after another successful immediate action', async () => {
+        const requestCommand = vi.fn(async () => ({ type: 'instantRetreat', ok: true, generalId: 7 }));
+        const fixture = createContext({ requestCommand, accessToken: 'ga_current' });
+
+        await expect(appRouter.createCaller(fixture.context).general.instantRetreat()).resolves.toEqual({ ok: true });
+        expect(fixture.revokeAccessToken).not.toHaveBeenCalled();
     });
 
     it('rejects deletion with the legacy no-general message before dispatching a daemon command', async () => {

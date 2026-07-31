@@ -83,6 +83,7 @@ export interface GameApiContext {
     uploadPath: string;
     uploadPublicUrl: string | null;
     auth: GameSessionTokenPayload | null;
+    accessToken?: string;
     accessTokenStore: RedisAccessTokenStore;
     flushStore: FlushStore;
     gameTokenSecret: string;
@@ -100,6 +101,7 @@ export const createGameApiContext = (options: {
     uploadPath: string;
     uploadPublicUrl: string | null;
     auth: GameSessionTokenPayload | null;
+    accessToken?: string;
     accessTokenStore: RedisAccessTokenStore;
     flushStore: FlushStore;
     gameTokenSecret: string;
@@ -117,6 +119,7 @@ export const createGameApiContext = (options: {
         uploadPath: options.uploadPath,
         uploadPublicUrl: options.uploadPublicUrl,
         auth: options.auth,
+        ...(options.accessToken ? { accessToken: options.accessToken } : {}),
         accessTokenStore: options.accessTokenStore,
         flushStore: options.flushStore,
         gameTokenSecret: options.gameTokenSecret,

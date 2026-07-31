@@ -86,6 +86,9 @@ const requestImmediateAction = async (
         if (!result.ok) {
             throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
         }
+        if (action === 'dieOnPrestart' && ctx.accessToken) {
+            await ctx.accessTokenStore.revoke(ctx.accessToken);
+        }
         return { ok: true };
     } catch (error) {
         if (
