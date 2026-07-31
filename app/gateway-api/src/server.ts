@@ -25,6 +25,7 @@ import { createGatewayOrchestrator } from './orchestrator/orchestratorFactory.js
 import { appRouter } from './router.js';
 import { RepositoryProfileStatusService } from './lobby/profileStatusService.js';
 import { registerAccountIconInternalRoute } from './auth/accountIconInternalRoute.js';
+import { installGatewayShutdownController } from './lifecycle/shutdownController.js';
 
 export const createGatewayApiServer = async () => {
     const config = resolveGatewayApiConfigFromEnv();
@@ -131,8 +132,23 @@ export const createGatewayApiServer = async () => {
 
 export const runGatewayApiServer = async (): Promise<void> => {
     const { app, config } = await createGatewayApiServer();
-    await app.listen({
-        host: config.host,
-        port: config.port,
+    const shutdown = installGatewayShutdownController({
+        close: () => app.close(),
+        onStopping: (reason) => app.log.info({ reason }, 'gateway API stopping'),
+        onError: (error, reason) => {
+            app.log.error({ err: error, reason }, 'gateway API shutdown failed');
+            process.exitCode = 1;
+        },
     });
+    app.addHook('onClose', async () => shutdown.dispose());
+    try {
+        await app.listen({
+            host: config.host,
+            port: config.port,
+        });
+    } catch (error) {
+        shutdown.dispose();
+        await app.close();
+        throw error;
+    }
 };

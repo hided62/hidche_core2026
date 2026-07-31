@@ -6,6 +6,7 @@ import {
 
 import { resolveGatewayOrchestratorConfigFromEnv } from '../config.js';
 import { createGatewayOrchestrator } from './orchestratorFactory.js';
+import { installGatewayShutdownController } from '../lifecycle/shutdownController.js';
 
 export const runGatewayOrchestrator = async (): Promise<void> => {
     const config = resolveGatewayOrchestratorConfigFromEnv();
@@ -14,15 +15,17 @@ export const runGatewayOrchestrator = async (): Promise<void> => {
 
     const { orchestrator } = createGatewayOrchestrator(postgres.prisma as GatewayPrismaClient, config, process.env);
 
-    const stop = async (reason: string): Promise<void> => {
-        console.info(`[gateway-orchestrator] stopping: ${reason}`);
-        await orchestrator.stop();
-        await postgres.disconnect();
-    };
-
-    process.on('SIGINT', () => void stop('SIGINT'));
-    process.on('SIGTERM', () => void stop('SIGTERM'));
-
     orchestrator.start();
+    installGatewayShutdownController({
+        close: async () => {
+            await orchestrator.stop();
+            await postgres.disconnect();
+        },
+        onStopping: (reason) => console.info(`[gateway-orchestrator] stopping: ${reason}`),
+        onError: (error, reason) => {
+            console.error(`[gateway-orchestrator] shutdown failed (${reason})`, error);
+            process.exitCode = 1;
+        },
+    });
     console.info('[gateway-orchestrator] started');
 };
