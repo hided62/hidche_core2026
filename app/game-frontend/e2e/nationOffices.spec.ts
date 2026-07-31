@@ -10,7 +10,18 @@ type FixtureState = {
     failPersonnelLoad?: boolean;
     rate: number;
     appointedGeneralId?: number;
+    noticeMutationInput?: string;
+    scoutMutationInput?: string;
 };
+
+type TrpcRequestPayload = {
+    json?: Record<string, unknown>;
+    input?: { json?: Record<string, unknown> };
+};
+
+const purifiedNoticeResponse =
+    '<p data-flip="horizontal" style="color:#00ffff">서버 정화 방침</p><img src="/image/icons/default.jpg" alt="default.jpg" />';
+const purifiedScoutResponse = '<strong>서버 정화 임관문</strong><a>위험 링크</a>';
 
 const artifactRoot = process.env.OFFICE_PARITY_ARTIFACT_DIR ? resolve(process.env.OFFICE_PARITY_ARTIFACT_DIR) : null;
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -190,7 +201,17 @@ const installFixture = async (page: Page, state: FixtureState) => {
     );
     await page.route('**/che/api/trpc/**', async (route) => {
         const operations = operationName(route).split(',');
-        const results = operations.map((operation) => {
+        const rawRequestBody: unknown = route.request().postData() ? route.request().postDataJSON() : {};
+        const requestBody =
+            rawRequestBody && typeof rawRequestBody === 'object' ? (rawRequestBody as Record<string, unknown>) : {};
+        const results = operations.map((operation, operationIndex) => {
+            const rawPayload =
+                requestBody[String(operationIndex)] ?? (operations.length === 1 ? requestBody : undefined);
+            const payload =
+                rawPayload && typeof rawPayload === 'object' ? (rawPayload as TrpcRequestPayload) : undefined;
+            const jsonInput =
+                payload?.json ?? payload?.input?.json ?? (payload as Record<string, unknown> | undefined) ?? {};
+            if (operation === 'auth.status') return response({ ok: true });
             if (operation === 'lobby.info') return response({ myGeneral: { id: 1, name: '조조' } });
             if (operation === 'join.getConfig') return response({});
             if (operation === 'nation.getPersonnelInfo') {
@@ -212,15 +233,15 @@ const installFixture = async (page: Page, state: FixtureState) => {
                 state.rate = 25;
                 return response({ ok: true });
             }
-            if (
-                [
-                    'nation.setNotice',
-                    'nation.setScoutMsg',
-                    'nation.setBill',
-                    'nation.setSecretLimit',
-                    'nation.setBlockScout',
-                ].includes(operation)
-            )
+            if (operation === 'nation.setNotice') {
+                state.noticeMutationInput = typeof jsonInput.msg === 'string' ? jsonInput.msg : undefined;
+                return response({ ok: true, msg: purifiedNoticeResponse });
+            }
+            if (operation === 'nation.setScoutMsg') {
+                state.scoutMutationInput = typeof jsonInput.msg === 'string' ? jsonInput.msg : undefined;
+                return response({ ok: true, msg: purifiedScoutResponse });
+            }
+            if (['nation.setBill', 'nation.setSecretLimit', 'nation.setBlockScout'].includes(operation))
                 return response({ ok: true });
             if (operation === 'nation.setBlockWar') return response({ availableCnt: 4 });
             return errorResponse(operation, `Unhandled fixture operation: ${operation}`);
@@ -425,4 +446,46 @@ test('finance enforces edit permissions and preserves the old value across an AP
     await expect(readOnly.getByRole('button', { name: '국가방침 수정' })).toHaveCount(0);
     await expect(readOnly.locator('.policy-cell').getByRole('button', { name: '변경' })).toHaveCount(0);
     await expect(readOnly.getByRole('checkbox', { name: '전쟁 금지' })).toBeDisabled();
+});
+
+test('finance adopts the server-purified notice and scout message before rendering the saved preview', async ({
+    page,
+}) => {
+    const state: FixtureState = { role: 'head', rate: 20 };
+    await installFixture(page, state);
+    await gotoOffice(page, 'nation/finance');
+
+    const dirtyNotice =
+        '<script>globalThis.__nationNoticeXss=1</script><img src=x onerror="globalThis.__nationNoticeXss=2"><p data-flip="horizontal" style="color:#00ffff">원문</p>';
+    await page.getByRole('button', { name: '국가방침 수정' }).click();
+    await page.getByRole('textbox', { name: '국가 방침' }).fill(dirtyNotice);
+    await page.locator('#notice-form').getByRole('button', { name: '저장' }).click();
+
+    const noticePreview = page.locator('#notice-form .message-preview');
+    await expect(noticePreview).toContainText('서버 정화 방침');
+    expect(state.noticeMutationInput).toBe(dirtyNotice);
+    await expect(noticePreview.locator('[data-flip="horizontal"]')).toHaveCSS('color', 'rgb(0, 255, 255)');
+    await expect(noticePreview.locator('script, svg, [onerror], [onload], [onclick]')).toHaveCount(0);
+    await expect
+        .poll(() =>
+            page.evaluate(() => (globalThis as typeof globalThis & { __nationNoticeXss?: number }).__nationNoticeXss)
+        )
+        .toBeUndefined();
+
+    const dirtyScout =
+        '<svg onload="globalThis.__nationScoutXss=1"></svg><a href="javascript:alert(1)" onclick="globalThis.__nationScoutXss=2">원문</a>';
+    await page.getByRole('button', { name: '임관 권유문 수정' }).click();
+    await page.getByRole('textbox', { name: '임관 권유' }).fill(dirtyScout);
+    await page.locator('#scout-message-form').getByRole('button', { name: '저장' }).click();
+
+    const scoutPreview = page.locator('#scout-message-form .message-preview');
+    await expect(scoutPreview).toContainText('서버 정화 임관문');
+    expect(state.scoutMutationInput).toBe(dirtyScout);
+    await expect(scoutPreview.locator('a', { hasText: '위험 링크' })).not.toHaveAttribute('href');
+    await expect(scoutPreview.locator('script, svg, [onerror], [onload], [onclick]')).toHaveCount(0);
+    await expect
+        .poll(() =>
+            page.evaluate(() => (globalThis as typeof globalThis & { __nationScoutXss?: number }).__nationScoutXss)
+        )
+        .toBeUndefined();
 });

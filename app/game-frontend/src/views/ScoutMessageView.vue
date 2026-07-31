@@ -117,8 +117,10 @@ const saveScoutMsg = async () => {
     if (!editable.value) return;
     errorMessage.value = null;
     try {
-        await trpc.nation.setScoutMsg.mutate({ msg: scoutMsg.value });
-        originalScoutMsg.value = scoutMsg.value;
+        const result = await trpc.nation.setScoutMsg.mutate({ msg: scoutMsg.value });
+        scoutMsg.value = result.msg;
+        originalScoutMsg.value = result.msg;
+        editor.value?.commands.setContent(result.msg || '');
         editing.value = false;
         editor.value?.setEditable(false);
     } catch (err) {

@@ -141,8 +141,10 @@ const saveNationMsg = async () => {
     if (!editable.value) return;
     errorMessage.value = null;
     try {
-        await trpc.nation.setNotice.mutate({ msg: nationMsg.value });
-        originalNationMsg.value = nationMsg.value;
+        const result = await trpc.nation.setNotice.mutate({ msg: nationMsg.value });
+        nationMsg.value = result.msg;
+        originalNationMsg.value = result.msg;
+        editor.value?.commands.setContent(result.msg || '');
         editingNationMsg.value = false;
         editor.value?.setEditable(false);
     } catch (err) {
