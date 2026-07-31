@@ -28,6 +28,7 @@ live reference page when its URL, user, and ignored password file are supplied.
 Run the suite from the core2026 repository root:
 
 ```sh
+pnpm typecheck:e2e:frontend-legacy
 pnpm test:e2e:frontend-legacy
 ```
 

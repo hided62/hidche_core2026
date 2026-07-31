@@ -58,6 +58,7 @@ pnpm check:legacy:nation
 ### Browser
 
 ```sh
+pnpm typecheck:e2e:frontend-legacy
 pnpm test:e2e:frontend-legacy
 pnpm test:e2e:main-front-status-live
 pnpm test:e2e:main-records-live

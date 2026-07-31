@@ -103,6 +103,7 @@ ref 명령 계약과 실제 화면은 다음 명령으로 비교합니다.
 ```sh
 pnpm check:legacy:general
 pnpm check:legacy:nation
+pnpm typecheck:e2e:frontend-legacy
 pnpm test:e2e:frontend-legacy
 pnpm test:e2e:main-front-status-live
 pnpm test:e2e:main-records-live
