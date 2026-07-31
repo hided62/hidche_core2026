@@ -19,7 +19,8 @@ import { createGameApiServer } from '../src/server.js';
 const databaseUrl = process.env.INPUT_EVENT_DATABASE_URL;
 const integration = describe.skipIf(!databaseUrl || !process.env.REDIS_URL);
 const profileId = process.env.POSTGRES_SCHEMA ?? 'conditional_integration';
-const profileName = `che:nation-html-${process.pid}`;
+const runId = process.env.CONDITIONAL_INTEGRATION_RUN_ID ?? String(process.pid);
+const profileName = `che:nation-html-${runId}`;
 const userId = `nation-html-user-${process.pid}`;
 const fixtureId = 900_000 + (process.pid % 50_000);
 const secret = 'nation-html-http-secret';
@@ -53,6 +54,20 @@ const restoreEnv = (): void => {
             delete process.env[key];
         } else {
             process.env[key] = value;
+        }
+    }
+};
+
+const deleteProfileRedisKeys = async (): Promise<void> => {
+    if (!redis) {
+        return;
+    }
+    for await (const keys of redis.client.scanIterator({
+        MATCH: `sammo:game:*:${profileName}:*`,
+        COUNT: 100,
+    })) {
+        if (keys.length > 0) {
+            await redis.client.del(keys);
         }
     }
 };
@@ -150,6 +165,7 @@ integration('nation HTML purification over HTTP transport', () => {
         await db?.nation.deleteMany({ where: { id: fixtureId } });
         await db?.worldState.deleteMany({ where: { id: fixtureId } });
         await disconnectDb?.();
+        await deleteProfileRedisKeys();
         await redis?.disconnect();
         if (uploadDir) {
             await fs.rm(uploadDir, { recursive: true, force: true });

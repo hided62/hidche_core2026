@@ -20,7 +20,8 @@ afterEach(() => {
 
 liveDescribe('battle simulator worker with live Redis', () => {
     it('consumes an isolated queue, produces a result, and stops cleanly', { timeout: 30_000 }, async () => {
-        const scenario = `battle-sim-e2e-${randomUUID()}`;
+        const namespace = process.env.CONDITIONAL_INTEGRATION_RUN_ID ?? randomUUID();
+        const scenario = `battle-sim-e2e-${namespace}-${randomUUID()}`;
         const profileName = `che:${scenario}`;
         const requesterUserId = 'worker-e2e-user';
         vi.stubEnv('PROFILE', 'che');

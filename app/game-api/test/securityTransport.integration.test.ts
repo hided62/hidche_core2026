@@ -19,7 +19,8 @@ import { createGameApiServer } from '../src/server.js';
 const databaseUrl = process.env.INPUT_EVENT_DATABASE_URL;
 const integration = describe.skipIf(!databaseUrl || !process.env.REDIS_HOST || !process.env.REDIS_PORT);
 const profileId = process.env.POSTGRES_SCHEMA ?? 'conditional_integration';
-const profileName = `che:security-http-${process.pid}`;
+const runId = process.env.CONDITIONAL_INTEGRATION_RUN_ID ?? String(process.pid);
+const profileName = `che:security-http-${runId}`;
 const userId = `security-http-user-${process.pid}`;
 const generalId = 990_001;
 const secret = 'security-http-e2e-secret';
@@ -52,6 +53,20 @@ const restoreEnv = (): void => {
             delete process.env[key];
         } else {
             process.env[key] = value;
+        }
+    }
+};
+
+const deleteProfileRedisKeys = async (): Promise<void> => {
+    if (!redis) {
+        return;
+    }
+    for await (const keys of redis.client.scanIterator({
+        MATCH: `sammo:game:*:${profileName}:*`,
+        COUNT: 100,
+    })) {
+        if (keys.length > 0) {
+            await redis.client.del(keys);
         }
     }
 };
@@ -144,6 +159,7 @@ integration('game API security over HTTP transport', () => {
         await server?.app.close();
         await db?.general.deleteMany({ where: { id: generalId } });
         await disconnectDb?.();
+        await deleteProfileRedisKeys();
         await redis?.disconnect();
         if (uploadDir) {
             await fs.rm(uploadDir, { recursive: true, force: true });
