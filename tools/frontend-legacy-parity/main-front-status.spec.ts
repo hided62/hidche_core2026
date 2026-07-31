@@ -190,6 +190,7 @@ const installMainFixture = async (
                     : response(liveStatus);
             }
             if (operation === 'general.getRecentRecords') return response({ global: [], general: [], history: [] });
+            if (operation === 'auth.status') return response({ userId: 'frontend-parity-user' });
             if (operation === 'lobby.info') {
                 return response({
                     year: 190,

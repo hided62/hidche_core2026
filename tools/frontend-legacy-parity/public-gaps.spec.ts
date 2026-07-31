@@ -115,6 +115,7 @@ const installBettingFixture = async (page: Page) => {
     let failBet = true;
     await page.route('**/che/api/trpc/**', async (route) => {
         const results = operationNames(route).map((operation) => {
+            if (operation === 'auth.status') return response({ userId: 'frontend-parity-user' });
             if (operation === 'lobby.info') {
                 return response({ myGeneral: { id: 1, name: '테스트 장수' } });
             }

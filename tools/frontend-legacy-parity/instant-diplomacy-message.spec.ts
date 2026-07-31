@@ -118,6 +118,7 @@ const installFixture = async (
         const operations = operationNames(route);
         const requestBody = route.request().postDataJSON();
         const results = operations.map((operation) => {
+            if (operation === 'auth.status') return response({ userId: 'frontend-parity-user' });
             if (operation === 'lobby.info') {
                 return response({ ...fixture.game.lobby, myGeneral: general });
             }

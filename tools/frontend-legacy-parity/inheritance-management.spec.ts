@@ -113,6 +113,7 @@ const installFixture = async (page: Page, options: { failBuff?: boolean } = {}) 
             return;
         }
         const result = names.map((name) => {
+            if (name === 'auth.status') return response({ userId: 'frontend-parity-user' });
             if (name === 'inherit.getStatus') return response(statusFixture);
             if (name === 'lobby.info') {
                 return response({

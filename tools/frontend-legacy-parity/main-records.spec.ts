@@ -242,6 +242,7 @@ test('renders all three real database record buckets with legacy computed geomet
                     ? trpcError(operation, '동향 정보를 불러오지 못했습니다.')
                     : trpcResponse(liveRecords);
             }
+            if (operation === 'auth.status') return trpcResponse({ userId: 'frontend-parity-user' });
             if (operation === 'lobby.info') {
                 return trpcResponse({
                     year: 190,

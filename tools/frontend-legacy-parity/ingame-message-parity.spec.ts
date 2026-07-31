@@ -192,6 +192,7 @@ const installFixture = async (
     await page.route('**/che/api/trpc/**', async (route) => {
         const body = route.request().postDataJSON();
         const results = operationNames(route).map((operation) => {
+            if (operation === 'auth.status') return response({ userId: 'frontend-parity-user' });
             if (operation === 'lobby.info') {
                 return response({ ...fixture.game.lobby, myGeneral: general });
             }
