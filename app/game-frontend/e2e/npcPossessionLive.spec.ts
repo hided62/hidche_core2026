@@ -61,6 +61,20 @@ test.describe('NPC possession through live PostgreSQL, Redis, API, daemon, and C
     let runtime: Awaited<ReturnType<typeof createTurnDaemonRuntime>> | undefined;
     let daemonLoop: Promise<void> | undefined;
 
+    const startDaemon = async (): Promise<void> => {
+        if (runtime) {
+            return;
+        }
+        runtime = await createTurnDaemonRuntime({
+            profile,
+            databaseUrl: databaseUrl!,
+            enableDatabaseFlush: true,
+            enableLeaseHeartbeat: false,
+            leaseOwnerId: 'npc-possession-live-daemon',
+        });
+        daemonLoop = runtime.lifecycle.start();
+    };
+
     test.beforeAll(async () => {
         const schema = new URL(databaseUrl!).searchParams.get('schema');
         const profileId = profile.split(':', 1)[0] ?? '';
@@ -120,14 +134,6 @@ test.describe('NPC possession through live PostgreSQL, Redis, API, daemon, and C
                 penalty: {},
             })),
         });
-        runtime = await createTurnDaemonRuntime({
-            profile,
-            databaseUrl: databaseUrl!,
-            enableDatabaseFlush: true,
-            enableLeaseHeartbeat: false,
-            leaseOwnerId: 'npc-possession-live-daemon',
-        });
-        daemonLoop = runtime.lifecycle.start();
     });
 
     test.afterAll(async () => {
@@ -139,11 +145,8 @@ test.describe('NPC possession through live PostgreSQL, Redis, API, daemon, and C
         await closeDb?.();
     });
 
-    test('replays one completed possession after the browser receives an indeterminate timeout', async ({
-        page,
-    }, testInfo) => {
+    test('retries one pending possession after the actual daemon transport timeout', async ({ page }, testInfo) => {
         const requestIds: string[] = [];
-        let injectTimeout = true;
         await installSession(page);
         await page.route('**/image/icons/**', async (route) => {
             await route.fulfill({
@@ -152,7 +155,10 @@ test.describe('NPC possession through live PostgreSQL, Redis, API, daemon, and C
                 body: '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#777"/></svg>',
             });
         });
-        await page.route('**/trpc/join.possessGeneral?batch=1', async (route) => {
+        page.on('request', (request) => {
+            if (!request.url().includes('/trpc/join.possessGeneral?batch=1')) {
+                return;
+            }
             const findClientRequestId = (value: unknown): string | undefined => {
                 if (!value || typeof value !== 'object') return undefined;
                 if ('clientRequestId' in value && typeof value.clientRequestId === 'string') {
@@ -164,34 +170,9 @@ test.describe('NPC possession through live PostgreSQL, Redis, API, daemon, and C
                 }
                 return undefined;
             };
-            const clientRequestId = findClientRequestId(route.request().postDataJSON());
+            const clientRequestId = findClientRequestId(request.postDataJSON());
             expect(clientRequestId).toMatch(/^[0-9a-f-]{36}$/);
             requestIds.push(clientRequestId!);
-            if (!injectTimeout) {
-                await route.continue();
-                return;
-            }
-            injectTimeout = false;
-            const accepted = await route.fetch();
-            expect(accepted.ok()).toBe(true);
-            await route.fulfill({
-                status: 200,
-                contentType: 'application/json',
-                body: JSON.stringify([
-                    {
-                        error: {
-                            message:
-                                'NPC 빙의 요청은 접수됐지만 처리 결과를 아직 확인하지 못했습니다. 같은 요청으로 다시 시도해 주세요.',
-                            code: -32008,
-                            data: {
-                                code: 'TIMEOUT',
-                                httpStatus: 408,
-                                path: 'join.possessGeneral',
-                            },
-                        },
-                    },
-                ]),
-            });
         });
 
         await page.setViewportSize({ width: 1024, height: 900 });
@@ -217,19 +198,33 @@ test.describe('NPC possession through live PostgreSQL, Redis, API, daemon, and C
         const possessButton = page.locator('.npc-action').first();
         await possessButton.click();
         await expect(page.locator('.join-error')).toContainText('같은 요청으로 다시 시도해 주세요.');
-        await expect.poll(() => db.general.count({ where: { userId } })).toBe(1);
+        expect(await db.general.count({ where: { userId } })).toBe(0);
         const pending = await page.evaluate(() => window.sessionStorage.getItem('sammo-npc-possess-pending-action'));
         expect(pending).toContain(requestIds[0]);
+        const eventRequestId = `npc-possess:${userId}:${requestIds[0]}`;
+        const pendingEvent = await db.inputEvent.findUniqueOrThrow({
+            where: { requestId: eventRequestId },
+        });
+        expect(pendingEvent).toMatchObject({
+            status: 'PENDING',
+            attempts: 0,
+            result: null,
+            error: null,
+            completedAt: null,
+        });
+        await expect(db.npcSelectionToken.findUnique({ where: { ownerUserId: userId } })).resolves.not.toBeNull();
 
+        await startDaemon();
         await possessButton.click();
         await expect(page).toHaveURL(/\/hwe\/$/);
         expect(requestIds).toHaveLength(2);
         expect(requestIds[1]).toBe(requestIds[0]);
         expect(await db.general.count({ where: { userId } })).toBe(1);
+        await expect(db.npcSelectionToken.findUnique({ where: { ownerUserId: userId } })).resolves.toBeNull();
         expect(await page.evaluate(() => window.sessionStorage.getItem('sammo-npc-possess-pending-action'))).toBeNull();
         expect(dialogs).toContain('빙의에 성공했습니다.');
-        const event = await db.inputEvent.findFirstOrThrow({
-            where: { actorUserId: userId, eventType: 'npcPossessGeneral' },
+        const event = await db.inputEvent.findUniqueOrThrow({
+            where: { requestId: eventRequestId },
         });
         expect(event).toMatchObject({ status: 'SUCCEEDED', attempts: 1 });
 
