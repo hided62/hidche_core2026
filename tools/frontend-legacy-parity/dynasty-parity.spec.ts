@@ -84,6 +84,7 @@ const detailPayload = {
     },
     nations: [
         {
+            archiveId: 3,
             nation: 1,
             isWinner: true,
             name: '백년01',
@@ -103,6 +104,25 @@ const detailPayload = {
                 { generalNo: 11, name: '오리온자리', lastYearMonth: 21504 },
                 { generalNo: 12, name: '료우기시키', lastYearMonth: 21504 },
             ],
+        },
+        {
+            archiveId: 4,
+            nation: 2,
+            isWinner: false,
+            name: '청해',
+            color: '#0000FF',
+            type: 'che_법가',
+            typeName: '법가',
+            level: 5,
+            levelName: '공',
+            tech: 3000,
+            maxPower: 20000,
+            maxCrew: 80000,
+            maxCities: ['허창'],
+            generals: [13],
+            history: ['<Y>조조</>가 나라를 세웠습니다.'],
+            date: '2026-07-24T12:00:00.000Z',
+            generalsFull: [{ generalNo: 13, name: '조조', lastYearMonth: 21003 }],
         },
     ],
 };
@@ -241,7 +261,15 @@ test('dynasty detail preserves the legacy fields, old-nation table and error flo
     await expect(page.getByText('건 안 칠 자')).toBeVisible();
     await expect(page.getByText('【 백년01 】')).toBeVisible();
     await expect(page.getByText('황제', { exact: true })).toBeVisible();
-    await expect(page.locator('.old-nation-table')).toHaveCount(1);
+    await expect(page.locator('.old-nation-table')).toHaveCount(2);
+    await expect(page.locator('.old-nation-table').nth(0)).toContainText('120000명');
+    await expect(page.locator('.old-nation-table').nth(0)).toContainText('34434');
+    await expect(page.locator('.old-nation-table').nth(0)).toContainText('낙양, 장안, 성도');
+    await expect(page.locator('.old-nation-table').nth(1)).toContainText('법가');
+    await expect(page.locator('.old-nation-table').nth(1)).toContainText('3000');
+    await expect(page.locator('.old-nation-table').nth(1)).toContainText('80000명');
+    await expect(page.locator('.old-nation-table').nth(1)).toContainText('20000');
+    await expect(page.locator('.old-nation-table').nth(1)).toContainText('허창');
 
     const geometry = await page.locator('#dynasty-detail-container').evaluate((container) => {
         const rect = container.getBoundingClientRect();
