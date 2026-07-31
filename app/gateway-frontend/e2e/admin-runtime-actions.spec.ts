@@ -33,18 +33,27 @@ const installFixture = async (
     page: Page,
     options: {
         deferRequest?: boolean;
+        deferInstall?: boolean;
         initialActions?: RuntimeAction[];
         afterRequestActions?: RuntimeAction[];
         pendingProfileReads?: number;
     } = {}
 ) => {
     let requested = false;
+    let installRequested = false;
+    let installActive = false;
     let postRequestProfileReads = 0;
     const requestBodies: unknown[] = [];
     let releaseRequest = (): void => {};
     const requestGate = options.deferRequest
         ? new Promise<void>((resolve) => {
               releaseRequest = resolve;
+          })
+        : Promise.resolve();
+    let releaseInstall = (): void => {};
+    const installGate = options.deferInstall
+        ? new Promise<void>((resolve) => {
+              releaseInstall = resolve;
           })
         : Promise.resolve();
     await page.addInitScript(() => {
@@ -57,6 +66,12 @@ const installFixture = async (
             requested = true;
             requestBodies.push(body);
             await requestGate;
+        }
+        if (operations.includes('admin.profiles.install')) {
+            installRequested = true;
+            requestBodies.push(body);
+            await installGate;
+            installActive = true;
         }
         const results = operations.map((operation) => {
             if (operation === 'me') {
@@ -75,7 +90,17 @@ const installFixture = async (
                 return response({ enabled: true });
             }
             if (operation === 'admin.profiles.listScenarios') {
-                return response([]);
+                return response([
+                    {
+                        id: 1010,
+                        title: '【테스트】황건의 난',
+                        year: 184,
+                        npcCount: 42,
+                        npcExCount: 0,
+                        npcNeutralCount: 0,
+                        nations: [],
+                    },
+                ]);
             }
             if (operation === 'admin.profiles.list') {
                 const keepPending = requested && postRequestProfileReads++ < (options.pendingProfileReads ?? 0);
@@ -83,11 +108,17 @@ const installFixture = async (
                     {
                         profileName: 'hwe:default',
                         profile: 'hwe',
-                        scenario: 'default',
+                        scenario: '1010',
                         apiPort: 15015,
                         status: 'RUNNING',
                         buildStatus: 'SUCCEEDED',
                         meta: {},
+                        activeOperation: installActive
+                            ? {
+                                  id: '77777777-7777-4777-8777-777777777777',
+                                  status: 'QUEUED',
+                              }
+                            : null,
                         runtime: {
                             profileName: 'hwe:default',
                             apiRunning: true,
@@ -123,6 +154,32 @@ const installFixture = async (
                     },
                 });
             }
+            if (operation === 'admin.profiles.install') {
+                return response({
+                    ok: true,
+                    operationId: '77777777-7777-4777-8777-777777777777',
+                });
+            }
+            if (operation === 'admin.operations.list') {
+                return response(
+                    installRequested
+                        ? [
+                              {
+                                  id: '77777777-7777-4777-8777-777777777777',
+                                  profileName: 'hwe:default',
+                                  type: 'RESET',
+                                  status: installActive ? 'QUEUED' : 'RUNNING',
+                                  sourceMode: 'COMMIT',
+                                  sourceRef: '0123456789abcdef0123456789abcdef01234567',
+                                  payload: {},
+                                  requestedBy: 'admin-user',
+                                  createdAt: '2026-07-30T02:00:00.000Z',
+                                  updatedAt: '2026-07-30T02:00:00.000Z',
+                              },
+                          ]
+                        : []
+                );
+            }
             throw new Error(`Unhandled tRPC operation: ${operation}`);
         });
         await route.fulfill({
@@ -131,7 +188,7 @@ const installFixture = async (
             body: JSON.stringify(results),
         });
     });
-    return { releaseRequest, requestBodies };
+    return { releaseRequest, releaseInstall, requestBodies };
 };
 
 test('reports clock-shift acceptance separately from actual application', async ({ page }) => {
@@ -214,4 +271,34 @@ test('renders an ignored terminal outcome without calling it applied', async ({ 
     expect(await ignored.evaluate((element) => getComputedStyle(element).color)).toBe('oklch(0.75 0.183 55.934)');
     await expect(page.getByText('지원하지 않는 요청')).toBeVisible();
     await expect(page.getByText(/적용됨|요청 완료/)).toHaveCount(0);
+});
+
+test('keeps profile installation disabled while its queued operation is active', async ({ page }, testInfo) => {
+    const fixture = await installFixture(page, { deferInstall: true });
+    page.on('dialog', (dialog) => dialog.accept());
+    await page.goto('admin');
+
+    const installButton = page.getByRole('button', { name: '설치 적용' });
+    const click = installButton.click();
+    await expect.poll(() => fixture.requestBodies.length).toBe(1);
+    await expect(page.getByRole('button', { name: '등록 중…' })).toBeDisabled();
+    fixture.releaseInstall();
+    await click;
+
+    const operationLink = page.getByRole('link', { name: /77777777-7777-4777-8777-777777777777 상태 보기/ });
+    await expect(operationLink).toBeVisible();
+    await expect(page.getByRole('button', { name: '설치 작업 진행 중' })).toBeDisabled();
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    const linkGeometry = await operationLink.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, viewportWidth: window.innerWidth };
+    });
+    expect(linkGeometry.left).toBeGreaterThanOrEqual(0);
+    expect(linkGeometry.right).toBeLessThanOrEqual(linkGeometry.viewportWidth);
+    await page.screenshot({ path: testInfo.outputPath('admin-install-active-mobile.png'), fullPage: true });
+
+    await operationLink.click();
+    await expect(page).toHaveURL(/\/gateway\/admin\/server-operations\?operationId=77777777/);
+    await expect(page.getByTestId('operations-table')).toContainText('77777777-7777-4777-8777-777777777777');
 });

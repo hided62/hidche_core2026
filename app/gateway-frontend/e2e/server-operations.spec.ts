@@ -10,6 +10,8 @@ type Operation = {
     sourceMode?: 'BRANCH' | 'COMMIT';
     sourceRef?: string;
     resolvedCommitSha?: string;
+    completedAt?: string;
+    error?: string;
     payload: Record<string, unknown>;
     requestedBy: string;
     createdAt: string;
@@ -127,6 +129,22 @@ const installFixture = async (page: Page, state: FixtureState) => {
                 state.operations = [operation];
                 return response(operation);
             }
+            if (name === 'admin.operations.retry') {
+                const operation: Operation = {
+                    id: '44444444-4444-4444-8444-444444444444',
+                    profileName: 'che:2',
+                    type: 'RESET',
+                    status: 'QUEUED',
+                    sourceMode: 'COMMIT',
+                    sourceRef: 'fedcba9876543210fedcba9876543210fedcba98',
+                    payload: { installOperationId: 'failed-generation' },
+                    requestedBy: 'admin',
+                    createdAt: '2026-07-25T04:00:00.000Z',
+                    updatedAt: '2026-07-25T04:00:00.000Z',
+                };
+                state.operations = [operation, ...state.operations];
+                return response(operation);
+            }
             throw new Error(`Unhandled tRPC operation: ${name}`);
         });
         await route.fulfill({
@@ -190,7 +208,7 @@ test('separates branch and commit semantics and submits a reset from the dedicat
     await page.getByTestId('request-reset').hover();
     await page.getByTestId('request-reset').click();
 
-    await expect(page.getByText('초기화 작업을 시작했습니다.')).toBeVisible();
+    await expect(page.getByText('초기화 작업을 등록했습니다.')).toBeVisible();
     await expect(page.getByTestId('operations-table')).toContainText('RESET');
     const resetRequest = state.requestBodies.find((entry) => entry.operation === 'admin.operations.requestReset');
     expect(JSON.stringify(resetRequest?.body)).toContain('"sourceMode":"COMMIT"');
@@ -231,4 +249,67 @@ test('starts and stops all runtime roles through the operation controls', async 
     const serializedRequests = state.requestBodies.map((entry) => JSON.stringify(entry.body)).join('\n');
     expect(serializedRequests).toContain('"action":"START"');
     expect(serializedRequests).toContain('"action":"STOP"');
+});
+
+test('renders a failed reset, retries it as a new operation, and reaches success', async ({ page }, testInfo) => {
+    const longError =
+        '선택한 커밋의 프로필 프로세스를 시작하지 못했습니다. 실패 원인을 확인한 뒤 동일 generation으로 재시도해 주세요.';
+    const state: FixtureState = {
+        operations: [
+            {
+                id: '55555555-5555-4555-8555-555555555555',
+                profileName: 'che:2',
+                type: 'RESET',
+                status: 'FAILED',
+                sourceMode: 'COMMIT',
+                sourceRef: 'fedcba9876543210fedcba9876543210fedcba98',
+                resolvedCommitSha: 'fedcba9876543210fedcba9876543210fedcba98',
+                payload: { installOperationId: 'failed-generation' },
+                requestedBy: 'admin',
+                completedAt: '2026-07-25T03:30:00.000Z',
+                error: longError,
+                createdAt: '2026-07-25T03:00:00.000Z',
+                updatedAt: '2026-07-25T03:30:00.000Z',
+            },
+        ],
+        runtimeRunning: false,
+        requestBodies: [],
+    };
+    await installFixture(page, state);
+    page.on('dialog', (dialog) => dialog.accept());
+
+    await page.goto('admin/server-operations');
+    await expect(page.getByText('FAILED', { exact: true })).toBeVisible();
+    await expect(page.getByRole('cell', { name: 'fedcba987654', exact: true })).toBeVisible();
+    const failure = page.getByText(longError);
+    await expect(failure).toBeVisible();
+    expect(await failure.evaluate((element) => getComputedStyle(element).color)).toBe('oklch(0.704 0.191 22.216)');
+
+    await page.getByRole('button', { name: '재시도' }).click();
+    await expect(page.getByText('재시도 작업을 등록했습니다.')).toBeVisible();
+    await expect(page.getByText('FAILED', { exact: true })).toBeVisible();
+    await expect(page.getByText('QUEUED', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('operations-table').locator('tbody tr')).toHaveCount(2);
+
+    state.operations[0] = {
+        ...state.operations[0]!,
+        status: 'SUCCEEDED',
+        resolvedCommitSha: 'fedcba9876543210fedcba9876543210fedcba98',
+        completedAt: '2026-07-25T04:05:00.000Z',
+        updatedAt: '2026-07-25T04:05:00.000Z',
+    };
+    state.runtimeRunning = true;
+    await page.getByTestId('refresh-operations').click();
+    await expect(page.getByText('SUCCEEDED', { exact: true })).toBeVisible();
+    await expect(page.getByText('RUNNING', { exact: true }).first()).toBeVisible();
+
+    await page.screenshot({ path: testInfo.outputPath('failed-retry-succeeded-desktop.png'), fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    const tableGeometry = await page.getByTestId('operations-table').evaluate((table) => {
+        const tableRect = table.getBoundingClientRect();
+        const scrollerRect = table.parentElement!.getBoundingClientRect();
+        return { tableWidth: tableRect.width, scrollerWidth: scrollerRect.width };
+    });
+    expect(tableGeometry.tableWidth).toBeGreaterThan(tableGeometry.scrollerWidth);
+    await page.screenshot({ path: testInfo.outputPath('failed-retry-succeeded-mobile.png'), fullPage: true });
 });
