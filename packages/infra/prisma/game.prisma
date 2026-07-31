@@ -416,6 +416,19 @@ model Emperor {
   @@map("emperior")
 }
 
+model UnificationFinalization {
+  generationKey String   @id @map("generation_key")
+  serverId      String   @unique @map("server_id")
+  profileName   String   @map("profile_name")
+  winnerNation  Int      @map("winner_nation")
+  year          Int
+  month         Int
+  completedAt   DateTime @map("completed_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("unification_finalization")
+}
+
 model Troop {
   troopLeaderId Int    @id @map("troop_leader")
   nationId      Int    @map("nation")

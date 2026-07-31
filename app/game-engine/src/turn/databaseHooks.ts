@@ -34,6 +34,8 @@ import type { DatabaseTurnDaemonLease } from '../lifecycle/databaseTurnDaemonLea
 import { calculateNationBettingRewards } from '../betting/nationBettingSettlement.js';
 import type { NationBettingCandidate, PendingNationBettingFinish, PendingNationBettingOpen } from './types.js';
 import { buildPersistedRankRows } from './rankData.js';
+import { persistUnificationFinalization } from './unificationPersistence.js';
+import { persistYearbookSnapshot } from './yearbookPersistence.js';
 
 export interface DatabaseTurnHooks {
     hooks: TurnDaemonHooks;
@@ -473,6 +475,7 @@ const buildNationUpdate = (
     chiefGeneralId: nation.chiefGeneralId,
     gold: nation.gold,
     rice: nation.rice,
+    tech: typeof nation.meta.tech === 'number' && Number.isFinite(nation.meta.tech) ? Math.trunc(nation.meta.tech) : 0,
     level: nation.level,
     typeCode: nation.typeCode,
     meta: asJson({
@@ -546,6 +549,7 @@ export const createDatabaseTurnHooks = async (
     databaseUrl: string,
     world: InMemoryTurnWorld,
     options?: {
+        profileName?: string;
         reservedTurns?: InMemoryReservedTurnStore;
         turnDaemonLease?: DatabaseTurnDaemonLease;
     }
@@ -584,6 +588,8 @@ export const createDatabaseTurnHooks = async (
             inheritancePointAdjustments,
             pendingNationBettingOpens,
             pendingNationBettingFinishes,
+            pendingYearbookSnapshots,
+            pendingUnificationFinalizations,
         } = changes;
         const reservedTurnChanges = options?.reservedTurns?.peekDirtyState();
 
@@ -951,6 +957,17 @@ export const createDatabaseTurnHooks = async (
                         data: payload,
                     });
                 }
+            }
+            for (const snapshot of pendingYearbookSnapshots) {
+                await persistYearbookSnapshot(prisma, snapshot);
+            }
+            for (const finalization of pendingUnificationFinalizations) {
+                if (options?.profileName && finalization.profileName !== options.profileName) {
+                    throw new Error(
+                        `Unification profile mismatch: pending=${finalization.profileName}, daemon=${options.profileName}.`
+                    );
+                }
+                await persistUnificationFinalization(prisma, finalization, world);
             }
             for (const message of messages) {
                 await sendMessage(

@@ -63,6 +63,27 @@ const parseYearbookNations = (value: unknown): YearbookNation[] => {
     return output;
 };
 
+const resolveArchiveTarget = (
+    worldMeta: unknown,
+    profileName: string,
+    requestedServerId?: string
+): { archiveKey: string; legacyAlias: string | null; isCurrentProfile: boolean } => {
+    const rawServerId = asRecord(worldMeta).serverId;
+    const canonicalServerId = typeof rawServerId === 'string' && rawServerId.trim() ? rawServerId.trim() : profileName;
+    const requested = requestedServerId ?? profileName;
+    const isCurrentProfile = requested === profileName || requested === canonicalServerId;
+    return {
+        archiveKey: isCurrentProfile ? canonicalServerId : requested,
+        legacyAlias: isCurrentProfile && canonicalServerId !== profileName ? profileName : null,
+        isCurrentProfile,
+    };
+};
+
+const normalizeArchivedLogs = (value: unknown, month: number): string[] => {
+    const logs = parseTextArray(value);
+    return logs.length ? logs : [`<C>●</>${month}월: 기록 없음`];
+};
+
 const buildNationSnapshot = async (ctx: GameApiContext) => {
     const [nationRows, cityRows, generalRows] = await Promise.all([
         ctx.db.nation.findMany({
@@ -220,22 +241,27 @@ export const yearbookRouter = router({
                     message: 'World state is not initialized.',
                 });
             }
-            const targetProfileName = input?.serverID ?? ctx.profile.name;
-            const isCurrentProfile = targetProfileName === ctx.profile.name;
+            const target = resolveArchiveTarget(worldState.meta, ctx.profile.name, input?.serverID);
 
-            const firstRow = await ctx.db.yearbookHistory.findFirst({
-                where: { profileName: targetProfileName },
-                select: { year: true, month: true },
-                orderBy: [{ year: 'asc' }, { month: 'asc' }],
-            });
+            const findRange = async (profileName: string) =>
+                Promise.all([
+                    ctx.db.yearbookHistory.findFirst({
+                        where: { profileName },
+                        select: { year: true, month: true },
+                        orderBy: [{ year: 'asc' as const }, { month: 'asc' as const }],
+                    }),
+                    ctx.db.yearbookHistory.findFirst({
+                        where: { profileName },
+                        select: { year: true, month: true },
+                        orderBy: [{ year: 'desc' as const }, { month: 'desc' as const }],
+                    }),
+                ]);
+            let [firstRow, lastRow] = await findRange(target.archiveKey);
+            if ((!firstRow || !lastRow) && target.legacyAlias) {
+                [firstRow, lastRow] = await findRange(target.legacyAlias);
+            }
 
-            const lastRow = await ctx.db.yearbookHistory.findFirst({
-                where: { profileName: targetProfileName },
-                select: { year: true, month: true },
-                orderBy: [{ year: 'desc' }, { month: 'desc' }],
-            });
-
-            if (!isCurrentProfile && (!firstRow || !lastRow)) {
+            if (!target.isCurrentProfile && (!firstRow || !lastRow)) {
                 throw new TRPCError({ code: 'NOT_FOUND', message: '연감 범위를 찾을 수 없습니다.' });
             }
 
@@ -243,7 +269,7 @@ export const yearbookRouter = router({
             const fallbackYearMonth = currentYearMonth - 1;
             const firstYearMonth = firstRow ? joinYearMonth(firstRow.year, firstRow.month) : fallbackYearMonth;
             const lastYearMonth = lastRow ? joinYearMonth(lastRow.year, lastRow.month) : fallbackYearMonth;
-            const selectedYearMonth = isCurrentProfile ? currentYearMonth : lastYearMonth;
+            const selectedYearMonth = target.isCurrentProfile ? currentYearMonth : lastYearMonth;
 
             return {
                 firstYearMonth,
@@ -266,15 +292,16 @@ export const yearbookRouter = router({
             if (!worldState) {
                 throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'World state is not initialized.' });
             }
-            const targetProfileName = input.serverID ?? ctx.profile.name;
-            const isCurrentProfile = targetProfileName === ctx.profile.name;
-            const shouldRecordAfterHashCheck = isCurrentProfile && Boolean(input.hash);
-            if (isCurrentProfile && !shouldRecordAfterHashCheck) {
+            const target = resolveArchiveTarget(worldState.meta, ctx.profile.name, input.serverID);
+            const shouldRecordAfterHashCheck = target.isCurrentProfile && Boolean(input.hash);
+            if (target.isCurrentProfile && !shouldRecordAfterHashCheck) {
                 await recordHistoryAccess(ctx);
             }
 
             const isCurrent =
-                isCurrentProfile && worldState.currentYear === input.year && worldState.currentMonth === input.month;
+                target.isCurrentProfile &&
+                worldState.currentYear === input.year &&
+                worldState.currentMonth === input.month;
 
             if (isCurrent) {
                 const { globalHistory, globalAction } = await buildLogs(ctx, input.year, input.month);
@@ -301,28 +328,23 @@ export const yearbookRouter = router({
                 return { notModified: false, hash, data };
             }
 
-            const row = await ctx.db.yearbookHistory.findFirst({
-                where: {
-                    profileName: targetProfileName,
-                    year: input.year,
-                    month: input.month,
-                },
-                orderBy: [{ sourceId: 'desc' }, { id: 'desc' }],
-            });
+            const findArchivedRow = (profileName: string) =>
+                ctx.db.yearbookHistory.findFirst({
+                    where: { profileName, year: input.year, month: input.month },
+                    orderBy: [{ sourceId: 'desc' as const }, { id: 'desc' as const }],
+                });
+            let row = await findArchivedRow(target.archiveKey);
+            if (!row && target.legacyAlias) {
+                row = await findArchivedRow(target.legacyAlias);
+            }
             if (!row) {
                 throw new TRPCError({ code: 'NOT_FOUND', message: '연감 데이터를 찾을 수 없습니다.' });
             }
 
             const map = asRecord(row.map) as BaseMapResult;
             const nations = parseYearbookNations(row.nations);
-            const archivedLogs =
-                isCurrentProfile && row.sourceId === 0
-                    ? await buildLogs(ctx, input.year, input.month)
-                    : {
-                          globalHistory: parseTextArray(row.globalHistory),
-                          globalAction: parseTextArray(row.globalAction),
-                      };
-            const { globalHistory, globalAction } = archivedLogs;
+            const globalHistory = normalizeArchivedLogs(row.globalHistory, input.month);
+            const globalAction = normalizeArchivedLogs(row.globalAction, input.month);
             const data = {
                 year: input.year,
                 month: input.month,

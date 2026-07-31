@@ -1,4 +1,4 @@
-import { asRecord, HALL_OF_FAME_TYPES, type HallOfFameType } from '@sammo-ts/common';
+import { asRecord, HALL_OF_FAME_TYPES, resolveLegacyTextColor, type HallOfFameType } from '@sammo-ts/common';
 import type { GamePrisma, InputJsonValue } from '@sammo-ts/infra';
 import { LogCategory, LogScope } from '@sammo-ts/logic';
 
@@ -205,13 +205,23 @@ const settleHall = async (
         name: event.before.name,
         nationName: nation?.name ?? '재야',
         bgColor: nation?.color ?? '#000000',
-        fgColor: nation?.color ?? '#000000',
+        fgColor: resolveLegacyTextColor(nation?.color ?? '#000000'),
         startTime: typeof worldMeta.starttime === 'string' ? worldMeta.starttime : null,
         unitedTime: new Date().toISOString(),
-        ownerName: event.before.userId ?? null,
+        ownerDisplayName:
+            typeof asRecord(event.before.meta).ownerDisplayName === 'string'
+                ? asRecord(event.before.meta).ownerDisplayName
+                : typeof asRecord(event.before.meta).owner_name === 'string'
+                  ? asRecord(event.before.meta).owner_name
+                  : typeof asRecord(event.before.meta).ownerName === 'string'
+                    ? asRecord(event.before.meta).ownerName
+                    : null,
+        picture: event.before.picture ?? null,
+        imgsvr: event.before.imageServer ?? 0,
         serverID: serverId,
         serverIdx: historyCount,
         scenarioName,
+        serverName: typeof worldMeta.serverName === 'string' ? worldMeta.serverName : '',
     };
 
     for (const type of HALL_OF_FAME_TYPES) {

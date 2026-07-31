@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { TurnCommandEnv } from '@sammo-ts/logic';
+import { LogCategory, LogScope, type TurnCommandEnv } from '@sammo-ts/logic';
 import { createGamePostgresConnector, type GamePrismaClient } from '@sammo-ts/infra';
 
 import { composeCalendarHandlers } from '../src/turn/calendarHandlers.js';
@@ -16,6 +16,8 @@ const generalIds = [991_201, 991_202];
 const cityIds = [991_201, 991_202, 991_203, 991_204, 991_205, 991_206, 991_207];
 const nationId = 991_201;
 const yearbookProfile = 'monthly-boundary-pre-persistence';
+const yearbookServerId = 'monthly-boundary-generation-20260731';
+const archivedLogTexts = ['월경계 과거 정세', '월경계 과거 행동'];
 
 integration('monthly pre-update persistence', () => {
     let db: GamePrismaClient;
@@ -32,7 +34,8 @@ integration('monthly pre-update persistence', () => {
         await db.city.deleteMany({ where: { id: { in: cityIds } } });
         await db.nation.deleteMany({ where: { id: nationId } });
         await db.worldState.deleteMany({ where: { scenarioCode: 'monthly-boundary-pre-persistence' } });
-        await db.yearbookHistory.deleteMany({ where: { profileName: yearbookProfile } });
+        await db.yearbookHistory.deleteMany({ where: { profileName: { in: [yearbookProfile, yearbookServerId] } } });
+        await db.logEntry.deleteMany({ where: { text: { in: archivedLogTexts } } });
     });
 
     afterAll(async () => {
@@ -42,7 +45,8 @@ integration('monthly pre-update persistence', () => {
         await db.city.deleteMany({ where: { id: { in: cityIds } } });
         await db.nation.deleteMany({ where: { id: nationId } });
         await db.worldState.deleteMany({ where: { scenarioCode: 'monthly-boundary-pre-persistence' } });
-        await db.yearbookHistory.deleteMany({ where: { profileName: yearbookProfile } });
+        await db.yearbookHistory.deleteMany({ where: { profileName: { in: [yearbookProfile, yearbookServerId] } } });
+        await db.logEntry.deleteMany({ where: { text: { in: archivedLogTexts } } });
         await closeDb?.();
     });
 
@@ -62,6 +66,24 @@ integration('monthly pre-update persistence', () => {
                     spy: { 1: 1, 2: 2 },
                 },
             },
+        });
+        await db.logEntry.createMany({
+            data: [
+                {
+                    scope: LogScope.SYSTEM,
+                    category: LogCategory.HISTORY,
+                    year: 200,
+                    month: 12,
+                    text: archivedLogTexts[0]!,
+                },
+                {
+                    scope: LogScope.SYSTEM,
+                    category: LogCategory.ACTION,
+                    year: 200,
+                    month: 12,
+                    text: archivedLogTexts[1]!,
+                },
+            ],
         });
         await db.city.createMany({
             data: cityIds.map((id, index) => ({
@@ -120,6 +142,7 @@ integration('monthly pre-update persistence', () => {
                     environment: { mapName: 'che', unitSet: 'che' },
                 },
                 meta: {
+                    serverId: yearbookServerId,
                     develcost: 18,
                     scenarioMeta: {
                         title: 'pre persistence',
@@ -149,7 +172,6 @@ integration('monthly pre-update persistence', () => {
         });
         const nations = createNationTurnMonthlyHandler({ getWorld: () => world });
         const yearbook = createYearbookHandler({
-            databaseUrl: databaseUrl!,
             profileName: yearbookProfile,
             getWorld: () => world,
         });
@@ -157,7 +179,7 @@ integration('monthly pre-update persistence', () => {
             schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
             calendarHandler: composeCalendarHandlers(yearbook.handler, boundary, nations),
         });
-        const hooks = await createDatabaseTurnHooks(databaseUrl!, world);
+        const hooks = await createDatabaseTurnHooks(databaseUrl!, world, { profileName: yearbookProfile });
         try {
             await world.advanceMonth(new Date('0201-01-01T00:00:00.000Z'));
             await hooks.hooks.flushChanges?.({
@@ -219,7 +241,7 @@ integration('monthly pre-update persistence', () => {
             const yearbookRow = await db.yearbookHistory.findUniqueOrThrow({
                 where: {
                     profileName_year_month_sourceId: {
-                        profileName: yearbookProfile,
+                        profileName: yearbookServerId,
                         year: 200,
                         month: 12,
                         sourceId: 0,
@@ -233,9 +255,11 @@ integration('monthly pre-update persistence', () => {
                 ])
             );
             expect(cityIds.map((id) => yearbookStates.get(id))).toEqual([31, 32, 33, 34, 41, 42, 43]);
+            expect(yearbookRow.globalHistory).toEqual([archivedLogTexts[0]]);
+            expect(yearbookRow.globalAction).toEqual([archivedLogTexts[1]]);
+            expect(await db.yearbookHistory.count({ where: { profileName: yearbookProfile } })).toBe(0);
         } finally {
             await hooks.close();
-            await yearbook.close();
         }
     });
 });

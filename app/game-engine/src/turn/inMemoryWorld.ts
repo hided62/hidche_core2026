@@ -15,6 +15,8 @@ import type {
     PendingNeutralAuction,
     PendingNationBettingFinish,
     PendingNationBettingOpen,
+    PendingUnificationFinalization,
+    PendingYearbookSnapshot,
     TurnDiplomacy,
     TurnEvent,
     TurnGeneral,
@@ -126,6 +128,8 @@ export interface TurnWorldChanges {
     inheritancePointAdjustments: Array<{ userId: string; key: string; amount: number }>;
     pendingNationBettingOpens: PendingNationBettingOpen[];
     pendingNationBettingFinishes: PendingNationBettingFinish[];
+    pendingYearbookSnapshots: PendingYearbookSnapshot[];
+    pendingUnificationFinalizations: PendingUnificationFinalization[];
 }
 
 export interface InMemoryTurnWorldStateSnapshot {
@@ -160,6 +164,8 @@ export interface InMemoryTurnWorldStateSnapshot {
     inheritancePointAdjustments: Array<{ userId: string; key: string; amount: number }>;
     pendingNationBettingOpens: PendingNationBettingOpen[];
     pendingNationBettingFinishes: PendingNationBettingFinish[];
+    pendingYearbookSnapshots: PendingYearbookSnapshot[];
+    pendingUnificationFinalizations: PendingUnificationFinalization[];
 }
 
 export interface InMemoryTurnWorldInspection {
@@ -346,6 +352,8 @@ export class InMemoryTurnWorld {
     private readonly inheritancePointAdjustments: Array<{ userId: string; key: string; amount: number }> = [];
     private readonly pendingNationBettingOpens: PendingNationBettingOpen[] = [];
     private readonly pendingNationBettingFinishes: PendingNationBettingFinish[] = [];
+    private readonly pendingYearbookSnapshots: PendingYearbookSnapshot[] = [];
+    private readonly pendingUnificationFinalizations: PendingUnificationFinalization[] = [];
     private readonly scenarioConfig: ScenarioConfig;
     private readonly unitSet?: UnitSetDefinition;
     private checkpoint?: TurnCheckpoint;
@@ -425,6 +433,8 @@ export class InMemoryTurnWorld {
             inheritancePointAdjustments: this.inheritancePointAdjustments,
             pendingNationBettingOpens: this.pendingNationBettingOpens,
             pendingNationBettingFinishes: this.pendingNationBettingFinishes,
+            pendingYearbookSnapshots: this.pendingYearbookSnapshots,
+            pendingUnificationFinalizations: this.pendingUnificationFinalizations,
         } satisfies InMemoryTurnWorldStateSnapshot);
     }
 
@@ -461,6 +471,8 @@ export class InMemoryTurnWorld {
         this.replaceArray(this.inheritancePointAdjustments, restored.inheritancePointAdjustments);
         this.replaceArray(this.pendingNationBettingOpens, restored.pendingNationBettingOpens);
         this.replaceArray(this.pendingNationBettingFinishes, restored.pendingNationBettingFinishes);
+        this.replaceArray(this.pendingYearbookSnapshots, restored.pendingYearbookSnapshots);
+        this.replaceArray(this.pendingUnificationFinalizations, restored.pendingUnificationFinalizations);
     }
 
     inspectState(): InMemoryTurnWorldInspection {
@@ -552,6 +564,14 @@ export class InMemoryTurnWorld {
             winnerNationIds: [...finish.winnerNationIds],
             turnTime: new Date(finish.turnTime.getTime()),
         });
+    }
+
+    queueYearbookSnapshot(snapshot: PendingYearbookSnapshot): void {
+        this.pendingYearbookSnapshots.push(structuredClone(snapshot));
+    }
+
+    queueUnificationFinalization(finalization: PendingUnificationFinalization): void {
+        this.pendingUnificationFinalizations.push(structuredClone(finalization));
     }
 
     getScenarioConfig(): ScenarioConfig {
@@ -1192,6 +1212,8 @@ export class InMemoryTurnWorld {
             winnerNationIds: [...entry.winnerNationIds],
             turnTime: new Date(entry.turnTime.getTime()),
         }));
+        const pendingYearbookSnapshots = structuredClone(this.pendingYearbookSnapshots);
+        const pendingUnificationFinalizations = structuredClone(this.pendingUnificationFinalizations);
 
         return {
             generals,
@@ -1216,6 +1238,8 @@ export class InMemoryTurnWorld {
             inheritancePointAdjustments,
             pendingNationBettingOpens,
             pendingNationBettingFinishes,
+            pendingYearbookSnapshots,
+            pendingUnificationFinalizations,
         };
     }
 
@@ -1246,6 +1270,8 @@ export class InMemoryTurnWorld {
         this.inheritancePointAdjustments.splice(0, changes.inheritancePointAdjustments.length);
         this.pendingNationBettingOpens.splice(0, changes.pendingNationBettingOpens.length);
         this.pendingNationBettingFinishes.splice(0, changes.pendingNationBettingFinishes.length);
+        this.pendingYearbookSnapshots.splice(0, changes.pendingYearbookSnapshots.length);
+        this.pendingUnificationFinalizations.splice(0, changes.pendingUnificationFinalizations.length);
     }
 
     consumeDirtyState(): TurnWorldChanges {

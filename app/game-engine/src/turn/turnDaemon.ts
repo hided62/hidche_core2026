@@ -227,7 +227,6 @@ const createTurnDaemonRuntimeWithLease = async (
     const unification = options.calendarHandler
         ? null
         : createUnificationHandler({
-              databaseUrl: options.databaseUrl,
               profileName: options.profileName ?? options.profile,
               getWorld: () => worldRef,
           });
@@ -459,7 +458,6 @@ const createTurnDaemonRuntimeWithLease = async (
         },
     });
     const yearbookHandler = createYearbookHandler({
-        databaseUrl: options.databaseUrl,
         profileName: options.profileName ?? options.profile,
         getWorld: () => worldRef,
     });
@@ -591,6 +589,7 @@ const createTurnDaemonRuntimeWithLease = async (
     }
     if (databaseFlushEnabled) {
         const dbHooks = await createDatabaseTurnHooks(options.databaseUrl, world, {
+            profileName: options.profileName ?? options.profile,
             reservedTurns: reservedTurnStoreHandle?.store,
             turnDaemonLease: turnDaemonLease ?? undefined,
         });
@@ -711,10 +710,6 @@ const createTurnDaemonRuntimeWithLease = async (
     close = async () => {
         await baseClose();
         await neutralAuctionRegistrar.close();
-        if (unification) {
-            await unification.close();
-        }
-        await yearbookHandler.close();
         if (redisConnector) {
             await redisConnector.disconnect();
         }
