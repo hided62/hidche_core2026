@@ -2,6 +2,7 @@ import type { TurnCheckpoint, TurnProcessor, TurnRunBudget, TurnRunResult } from
 import { getNextTickTime } from '../lifecycle/getNextTickTime.js';
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
 import type { TurnGeneral } from './types.js';
+import { asNumber, asRecord } from '@sammo-ts/common';
 
 export interface InMemoryTurnProcessorOptions {
     tickMinutes?: number;
@@ -22,6 +23,11 @@ const resolveTickMinutes = (world: InMemoryTurnWorld, override?: number): number
     }
     const tickSeconds = world.getState().tickSeconds;
     return Math.max(1, Math.round(tickSeconds / 60));
+};
+
+const isWorldUnited = (world: InMemoryTurnWorld): boolean => {
+    const meta = asRecord(world.getState().meta);
+    return asNumber(meta.isunited ?? meta.isUnited, 0) !== 0;
 };
 
 export class InMemoryTurnProcessor implements TurnProcessor {
@@ -91,13 +97,16 @@ export class InMemoryTurnProcessor implements TurnProcessor {
 
         if (!partial) {
             let nextTickTime = getNextTickTime(this.world.getState().lastTurnTime, this.tickMinutes);
-            while (nextTickTime.getTime() <= targetTime.getTime()) {
+            while (!isWorldUnited(this.world) && nextTickTime.getTime() <= targetTime.getTime()) {
                 if (processedTurns >= budget.catchUpCap || isBudgetExpired()) {
                     partial = true;
                     break;
                 }
                 await this.world.advanceMonth(nextTickTime);
                 processedTurns += 1;
+                if (isWorldUnited(this.world)) {
+                    break;
+                }
                 nextTickTime = getNextTickTime(this.world.getState().lastTurnTime, this.tickMinutes);
             }
         }

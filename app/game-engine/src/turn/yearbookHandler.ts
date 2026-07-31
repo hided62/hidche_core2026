@@ -1,6 +1,4 @@
-import { createHash } from 'crypto';
 import { asNumber, asRecord } from '@sammo-ts/common';
-import { createGamePostgresConnector } from '@sammo-ts/infra';
 
 import type { TurnCalendarHandler } from './inMemoryWorld.js';
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
@@ -27,6 +25,19 @@ type YearbookNation = {
     level: number;
     power: number;
     cities: string[];
+};
+
+type DynastyStatistics = {
+    maxNationCount: number;
+    maxNationName: string;
+    maxNationHist: Record<string, number>;
+    maxGeneralCount: number;
+    currentGeneralCount: number;
+    userGeneralCount: number;
+    npcGeneralCount: number;
+    personalHist: Record<string, number>;
+    specialHist: Record<string, number>;
+    special2Hist: Record<string, number>;
 };
 
 const readState = (meta: Record<string, unknown>): number => {
@@ -136,58 +147,92 @@ const buildNationSnapshot = (world: InMemoryTurnWorld): YearbookNation[] => {
     });
 };
 
-const buildHash = (map: YearbookMap, nations: YearbookNation[]): string =>
-    createHash('sha256').update(JSON.stringify({ map, nations })).digest('hex');
+const increment = (target: Record<string, number>, key: string): void => {
+    target[key] = (target[key] ?? 0) + 1;
+};
+
+const updateDynastyStatistics = (world: InMemoryTurnWorld): void => {
+    const state = world.getState();
+    const previous = asRecord(state.meta.dynastyStatistics);
+    const activeNations = world
+        .listNations()
+        .filter((nation) => nation.level > 0)
+        .sort((left, right) => right.power - left.power || left.id - right.id);
+    const generals = world.listGenerals();
+    const maxNationCount = Math.max(asNumber(previous.maxNationCount, 0), activeNations.length);
+    const replaceNationMaximum = activeNations.length > asNumber(previous.maxNationCount, 0);
+    const nationHist: Record<string, number> = {};
+    for (const nation of activeNations) increment(nationHist, nation.typeCode || 'neutral');
+
+    const personalHist: Record<string, number> = {};
+    const specialHist: Record<string, number> = {};
+    const special2Hist: Record<string, number> = {};
+    let userGeneralCount = 0;
+    let npcGeneralCount = 0;
+    for (const general of generals) {
+        increment(personalHist, general.role.personality || 'None');
+        increment(specialHist, general.role.specialDomestic || 'None');
+        increment(special2Hist, general.role.specialWar || 'None');
+        if (general.npcState < 2) userGeneralCount += 1;
+        else npcGeneralCount += 1;
+    }
+
+    const statistics: DynastyStatistics = {
+        maxNationCount,
+        maxNationName: replaceNationMaximum
+            ? activeNations.map((nation) => `${nation.name}(${nation.typeCode})`).join(', ')
+            : typeof previous.maxNationName === 'string'
+              ? previous.maxNationName
+              : '',
+        maxNationHist: replaceNationMaximum
+            ? nationHist
+            : Object.fromEntries(
+                  Object.entries(asRecord(previous.maxNationHist)).flatMap(([key, value]) =>
+                      typeof value === 'number' && Number.isFinite(value) ? [[key, value]] : []
+                  )
+              ),
+        maxGeneralCount: Math.max(asNumber(previous.maxGeneralCount, 0), generals.length),
+        currentGeneralCount: generals.length,
+        userGeneralCount,
+        npcGeneralCount,
+        personalHist,
+        specialHist,
+        special2Hist,
+    };
+    world.updateWorldMeta({ dynastyStatistics: statistics });
+};
+
+const resolveServerId = (world: InMemoryTurnWorld, fallback: string): string => {
+    const serverId = world.getState().meta.serverId;
+    return typeof serverId === 'string' && serverId.trim() ? serverId.trim() : fallback;
+};
+
+export const queueYearbookSnapshot = (
+    world: InMemoryTurnWorld,
+    profileName: string,
+    year: number,
+    month: number
+): void => {
+    world.queueYearbookSnapshot({
+        serverId: resolveServerId(world, profileName),
+        sourceId: 0,
+        year,
+        month,
+        map: buildMapSnapshot(world, year, month),
+        nations: buildNationSnapshot(world),
+    });
+};
 
 export const createYearbookHandler = (options: {
-    databaseUrl: string;
     profileName: string;
     getWorld: () => InMemoryTurnWorld | null;
-}): { handler: TurnCalendarHandler; close: () => Promise<void> } => {
-    const connector = createGamePostgresConnector({ url: options.databaseUrl });
-    const ready = connector.connect();
-
-    const handler: TurnCalendarHandler = {
-        beforeMonthChanged: async (context) => {
+}): { handler: TurnCalendarHandler } => ({
+    handler: {
+        beforeMonthChanged: (context) => {
             const world = options.getWorld();
-            if (!world) {
-                return;
-            }
-            await ready;
-            const map = buildMapSnapshot(world, context.previousYear, context.previousMonth);
-            const nations = buildNationSnapshot(world);
-            const hash = buildHash(map, nations);
-
-            await connector.prisma.yearbookHistory.upsert({
-                where: {
-                    profileName_year_month_sourceId: {
-                        profileName: options.profileName,
-                        year: context.previousYear,
-                        month: context.previousMonth,
-                        sourceId: 0,
-                    },
-                },
-                update: {
-                    map,
-                    nations,
-                    hash,
-                },
-                create: {
-                    profileName: options.profileName,
-                    sourceId: 0,
-                    year: context.previousYear,
-                    month: context.previousMonth,
-                    map,
-                    nations,
-                    hash,
-                },
-            });
+            if (!world) return;
+            updateDynastyStatistics(world);
+            queueYearbookSnapshot(world, options.profileName, context.previousYear, context.previousMonth);
         },
-    };
-
-    const close = async () => {
-        await connector.disconnect();
-    };
-
-    return { handler, close };
-};
+    },
+});

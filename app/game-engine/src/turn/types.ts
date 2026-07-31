@@ -101,6 +101,25 @@ export interface PendingNationBettingFinish {
     turnTime: Date;
 }
 
+export interface PendingYearbookSnapshot {
+    serverId: string;
+    sourceId: number;
+    year: number;
+    month: number;
+    map: unknown;
+    nations: unknown;
+}
+
+export interface PendingUnificationFinalization {
+    generationKey: string;
+    serverId: string;
+    profileName: string;
+    winnerNationId: number;
+    year: number;
+    month: number;
+    completedAt: Date;
+}
+
 export interface TurnWorldSnapshot extends Omit<
     WorldSnapshot,
     'generals' | 'cities' | 'nations' | 'troops' | 'diplomacy'

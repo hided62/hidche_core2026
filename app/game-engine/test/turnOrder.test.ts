@@ -161,4 +161,96 @@ describe('InMemoryTurnProcessor ordering', () => {
         expect(world.getNextGeneralId()).toBe(5);
         expect(world.getState().meta).toMatchObject({ lastGeneralId: 5 });
     });
+
+    it('stops catch-up immediately after a calendar handler finalizes unification', async () => {
+        const baseTime = new Date('0189-01-01T00:00:00Z');
+        const snapshot = {
+            generals: [],
+            cities: [
+                {
+                    id: 1,
+                    name: 'City_1',
+                    nationId: 1,
+                    level: 1,
+                    population: 1,
+                    populationMax: 1,
+                    agriculture: 1,
+                    agricultureMax: 1,
+                    commerce: 1,
+                    commerceMax: 1,
+                    security: 1,
+                    securityMax: 1,
+                    defence: 1,
+                    defenceMax: 1,
+                    wall: 1,
+                    wallMax: 1,
+                    supplyState: 1,
+                    frontState: 0,
+                    state: 0,
+                    meta: {},
+                },
+            ],
+            nations: [
+                {
+                    id: 1,
+                    name: 'TestNation',
+                    color: '#FF0000',
+                    capitalCityId: 1,
+                    chiefGeneralId: null,
+                    gold: 0,
+                    rice: 0,
+                    power: 0,
+                    level: 1,
+                    typeCode: 'che_def',
+                    meta: {},
+                },
+            ],
+            troops: [],
+            diplomacy: [],
+            events: [],
+            initialEvents: [],
+            map: {
+                id: 'test_map',
+                name: 'TestMap',
+                cities: [],
+                defaults: { trust: 50, trade: 100, supplyState: 1, frontState: 0 },
+            },
+            scenarioConfig: {
+                stat: { total: 300, min: 10, max: 100, npcTotal: 150, npcMax: 50, npcMin: 10, chiefMin: 70 },
+                iconPath: '',
+                map: {},
+                const: {},
+                environment: { mapName: 'test_map', unitSet: 'default' },
+            },
+        } as TurnWorldSnapshot;
+        const worldHolder: { current?: InMemoryTurnWorld } = {};
+        const world = new InMemoryTurnWorld(
+            {
+                id: 1,
+                currentYear: 189,
+                currentMonth: 1,
+                tickSeconds: 600,
+                lastTurnTime: baseTime,
+                meta: {},
+            },
+            snapshot,
+            {
+                schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] },
+                calendarHandler: {
+                    onMonthChanged: (): void => worldHolder.current?.updateWorldMeta({ isUnited: 2 }),
+                },
+            }
+        );
+        worldHolder.current = world;
+        const processor = new InMemoryTurnProcessor(world, { tickMinutes: 10 });
+
+        const result = await processor.run(addMinutes(baseTime, 50), {
+            budgetMs: 1_000,
+            maxGenerals: 10,
+            catchUpCap: 10,
+        });
+
+        expect(result.processedTurns).toBe(1);
+        expect(world.getState()).toMatchObject({ currentYear: 189, currentMonth: 2, meta: { isUnited: 2 } });
+    });
 });

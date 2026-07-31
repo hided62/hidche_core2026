@@ -310,6 +310,7 @@ export interface TurnEngineNationUpdateInput {
     chiefGeneralId: number | null;
     gold: number;
     rice: number;
+    tech: number;
     level: number;
     typeCode: string;
     meta: InputJsonValue;

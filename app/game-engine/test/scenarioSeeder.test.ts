@@ -739,13 +739,27 @@ describeDb('scenario database seed', () => {
                 },
             });
             await prisma.emperor.create({ data: { serverId, name: marker, history: { marker }, aux: { marker } } });
+            await prisma.unificationFinalization.create({
+                data: {
+                    generationKey: `unification:${serverId}`,
+                    serverId,
+                    profileName: marker,
+                    winnerNation: 1,
+                    year: 999,
+                    month: 12,
+                    completedAt: new Date('2033-01-01T00:00:00.000Z'),
+                },
+            });
             await prisma.yearbookHistory.create({
                 data: {
                     profileName: marker,
                     year: 999,
                     month: 12,
-                    map: {},
-                    nations: {},
+                    map: { marker },
+                    nations: [{ marker }],
+                    globalHistory: [`${marker}-history`],
+                    globalAction: [`${marker}-action`],
+                    hash: `${marker}-hash`,
                 },
             });
             await prisma.legacyGameStorage.create({
@@ -791,11 +805,30 @@ describeDb('scenario database seed', () => {
                     prisma.oldNation.count({ where: { serverId } }),
                     prisma.oldGeneral.count({ where: { serverId } }),
                     prisma.emperor.count({ where: { serverId } }),
+                    prisma.unificationFinalization.count({ where: { serverId } }),
                     prisma.yearbookHistory.count({ where: { profileName: marker } }),
                     prisma.legacyGameStorage.count({ where: { namespace: marker } }),
                     prisma.hallOfFame.count({ where: { serverId } }),
                 ])
-            ).resolves.toEqual(Array.from({ length: 12 }, () => 1));
+            ).resolves.toEqual(Array.from({ length: 13 }, () => 1));
+            await expect(
+                prisma.yearbookHistory.findUniqueOrThrow({
+                    where: {
+                        profileName_year_month_sourceId: {
+                            profileName: marker,
+                            year: 999,
+                            month: 12,
+                            sourceId: 0,
+                        },
+                    },
+                })
+            ).resolves.toMatchObject({
+                map: { marker },
+                nations: [{ marker }],
+                globalHistory: [`${marker}-history`],
+                globalAction: [`${marker}-action`],
+                hash: `${marker}-hash`,
+            });
         } finally {
             await prisma.errorLog.deleteMany({ where: { category: marker } });
             await prisma.inheritancePoint.deleteMany({ where: { userId: marker } });
@@ -805,6 +838,7 @@ describeDb('scenario database seed', () => {
             await prisma.oldNation.deleteMany({ where: { serverId } });
             await prisma.oldGeneral.deleteMany({ where: { serverId } });
             await prisma.emperor.deleteMany({ where: { serverId } });
+            await prisma.unificationFinalization.deleteMany({ where: { serverId } });
             await prisma.gameHistory.deleteMany({ where: { serverId } });
             await prisma.yearbookHistory.deleteMany({ where: { profileName: marker } });
             await prisma.legacyGameStorage.deleteMany({ where: { namespace: marker } });
