@@ -315,9 +315,7 @@ export class TurnDaemonLifecycle {
                     await this.commandResponder.publishCommandError(command.requestId, error);
                 } catch (reportError) {
                     const reportMessage =
-                        reportError instanceof Error
-                            ? reportError.message
-                            : 'Unknown command failure reporting error.';
+                        reportError instanceof Error ? reportError.message : 'Unknown command failure reporting error.';
                     this.status.lastError = `${this.status.lastError} (failure report: ${reportMessage})`;
                 }
             }
@@ -347,34 +345,29 @@ export class TurnDaemonLifecycle {
         const budget = pending.budget ?? this.options.defaultBudget;
         const checkpoint = this.status.checkpoint;
         let result: TurnRunResult;
+        let fallbackError = 'Unknown turn daemon error.';
 
         try {
-            const runProcessor = () => this.processor.run(targetTime, budget, checkpoint);
-            result = this.stateManager ? await this.stateManager.transaction(runProcessor) : await runProcessor();
+            const runAndFlush = async (): Promise<TurnRunResult> => {
+                const nextResult = await this.processor.run(targetTime, budget, checkpoint);
+                fallbackError = 'Unknown turn flush error.';
+                this.status.state = 'flushing';
+                await this.stateStore.saveLastTurnTime(new Date(nextResult.lastTurnTime));
+                await this.stateStore.saveCheckpoint(nextResult.checkpoint);
+                await this.hooks?.flushChanges?.(nextResult);
+                return nextResult;
+            };
+            result = this.stateManager ? await this.stateManager.transaction(runAndFlush) : await runAndFlush();
         } catch (error) {
             this.status.running = false;
             this.status.state = 'paused';
             this.status.paused = true;
             this.errorPaused = true;
-            this.status.lastError = error instanceof Error ? error.message : 'Unknown turn daemon error.';
+            this.status.lastError = error instanceof Error ? error.message : fallbackError;
             await this.hooks?.onRunError?.(error);
             return;
         } finally {
             this.status.running = false;
-        }
-
-        this.status.state = 'flushing';
-        try {
-            await this.stateStore.saveLastTurnTime(new Date(result.lastTurnTime));
-            await this.stateStore.saveCheckpoint(result.checkpoint);
-            await this.hooks?.flushChanges?.(result);
-        } catch (error) {
-            this.status.state = 'paused';
-            this.status.paused = true;
-            this.errorPaused = true;
-            this.status.lastError = error instanceof Error ? error.message : 'Unknown turn flush error.';
-            await this.hooks?.onRunError?.(error);
-            return;
         }
 
         await this.applyRunResult(result, startMs);

@@ -75,6 +75,211 @@ describe('TurnDaemonLifecycle', () => {
         await loop;
     });
 
+    it('restores processor and state-store mutations when scheduled flush fails', async () => {
+        const now = new Date('2026-01-01T00:10:00.000Z');
+        const previousCheckpoint = {
+            turnTime: '2026-01-01T00:00:00.000Z',
+            generalId: 7,
+            year: 203,
+            month: 1,
+        };
+        const nextCheckpoint = {
+            turnTime: now.toISOString(),
+            generalId: 8,
+            year: 203,
+            month: 2,
+        };
+        let engineState: {
+            value: string;
+            lastTurnTime: string;
+            checkpoint: TurnRunResult['checkpoint'];
+        } = {
+            value: 'before',
+            lastTurnTime: previousCheckpoint.turnTime,
+            checkpoint: previousCheckpoint,
+        };
+        const stateManager = new EngineStateManager();
+        stateManager.register('test', {
+            capture: () => structuredClone(engineState),
+            restore: (snapshot) => {
+                engineState = snapshot;
+            },
+        });
+        const published = vi.fn();
+        let resolveError: (() => void) | undefined;
+        const errorObserved = new Promise<void>((resolve) => {
+            resolveError = resolve;
+        });
+        const lifecycle = new TurnDaemonLifecycle(
+            {
+                clock: new ManualClock(now.getTime()),
+                controlQueue: new InMemoryControlQueue(),
+                getNextTickTime: () => new Date('2026-01-01T00:05:00.000Z'),
+                stateStore: {
+                    loadLastTurnTime: async () => new Date(engineState.lastTurnTime),
+                    loadNextGeneralTurnTime: async () => null,
+                    saveLastTurnTime: async (turnTime) => {
+                        engineState.lastTurnTime = turnTime.toISOString();
+                    },
+                    loadCheckpoint: async () => engineState.checkpoint,
+                    saveCheckpoint: async (checkpoint) => {
+                        engineState.checkpoint = checkpoint;
+                    },
+                },
+                processor: {
+                    run: async (): Promise<TurnRunResult> => {
+                        engineState.value = 'calculated';
+                        return {
+                            lastTurnTime: now.toISOString(),
+                            processedGenerals: 1,
+                            processedTurns: 1,
+                            durationMs: 0,
+                            partial: false,
+                            checkpoint: nextCheckpoint,
+                        };
+                    },
+                },
+                stateManager,
+                hooks: {
+                    flushChanges: async () => {
+                        expect(engineState).toMatchObject({
+                            value: 'calculated',
+                            lastTurnTime: now.toISOString(),
+                            checkpoint: nextCheckpoint,
+                        });
+                        throw new Error('scheduled flush failed');
+                    },
+                    publishEvents: published,
+                    onRunError: async () => {
+                        resolveError?.();
+                    },
+                },
+            },
+            {
+                profile: 'test',
+                defaultBudget: { budgetMs: 100, maxGenerals: 1, catchUpCap: 1 },
+            }
+        );
+
+        const loop = lifecycle.start();
+        await errorObserved;
+
+        expect(engineState).toEqual({
+            value: 'before',
+            lastTurnTime: previousCheckpoint.turnTime,
+            checkpoint: previousCheckpoint,
+        });
+        expect(stateManager.getRevision()).toBe(0);
+        expect(published).not.toHaveBeenCalled();
+        expect(lifecycle.getStatus()).toMatchObject({
+            state: 'paused',
+            paused: true,
+            lastError: 'scheduled flush failed',
+        });
+
+        await lifecycle.stop('done');
+        await loop;
+    });
+
+    it('keeps processor and state-store mutations after flush succeeds and publishes afterward', async () => {
+        const now = new Date('2026-01-01T00:10:00.000Z');
+        const previousCheckpoint = {
+            turnTime: '2026-01-01T00:00:00.000Z',
+            generalId: 7,
+            year: 203,
+            month: 1,
+        };
+        const nextCheckpoint = {
+            turnTime: now.toISOString(),
+            generalId: 8,
+            year: 203,
+            month: 2,
+        };
+        let engineState: {
+            value: string;
+            lastTurnTime: string;
+            checkpoint: TurnRunResult['checkpoint'];
+        } = {
+            value: 'before',
+            lastTurnTime: previousCheckpoint.turnTime,
+            checkpoint: previousCheckpoint,
+        };
+        const stateManager = new EngineStateManager();
+        stateManager.register('test', {
+            capture: () => structuredClone(engineState),
+            restore: (snapshot) => {
+                engineState = snapshot;
+            },
+        });
+        const callOrder: string[] = [];
+        let resolvePublished: (() => void) | undefined;
+        const published = new Promise<void>((resolve) => {
+            resolvePublished = resolve;
+        });
+        const lifecycle = new TurnDaemonLifecycle(
+            {
+                clock: new ManualClock(now.getTime()),
+                controlQueue: new InMemoryControlQueue(),
+                getNextTickTime: (lastTurnTime) => addMinutes(lastTurnTime, 10),
+                stateStore: {
+                    loadLastTurnTime: async () => new Date(engineState.lastTurnTime),
+                    loadNextGeneralTurnTime: async () => null,
+                    saveLastTurnTime: async (turnTime) => {
+                        callOrder.push('save-last-turn');
+                        engineState.lastTurnTime = turnTime.toISOString();
+                    },
+                    loadCheckpoint: async () => engineState.checkpoint,
+                    saveCheckpoint: async (checkpoint) => {
+                        callOrder.push('save-checkpoint');
+                        engineState.checkpoint = checkpoint;
+                    },
+                },
+                processor: {
+                    run: async (): Promise<TurnRunResult> => {
+                        callOrder.push('processor');
+                        engineState.value = 'calculated';
+                        return {
+                            lastTurnTime: now.toISOString(),
+                            processedGenerals: 1,
+                            processedTurns: 1,
+                            durationMs: 0,
+                            partial: false,
+                            checkpoint: nextCheckpoint,
+                        };
+                    },
+                },
+                stateManager,
+                hooks: {
+                    flushChanges: async () => {
+                        callOrder.push('flush');
+                    },
+                    publishEvents: async () => {
+                        callOrder.push('publish');
+                        resolvePublished?.();
+                    },
+                },
+            },
+            {
+                profile: 'test',
+                defaultBudget: { budgetMs: 100, maxGenerals: 1, catchUpCap: 1 },
+            }
+        );
+
+        const loop = lifecycle.start();
+        await published;
+
+        expect(engineState).toEqual({
+            value: 'calculated',
+            lastTurnTime: now.toISOString(),
+            checkpoint: nextCheckpoint,
+        });
+        expect(stateManager.getRevision()).toBe(1);
+        expect(callOrder).toEqual(['processor', 'save-last-turn', 'save-checkpoint', 'flush', 'publish']);
+
+        await lifecycle.stop('done');
+        await loop;
+    });
+
     it('runs scheduled turn based on queue front and checkpoint context', async () => {
         const turnTermMinutes = 10;
         const lastTurnTime = new Date(2026, 0, 2, 2, 0, 0, 0);
