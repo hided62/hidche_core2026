@@ -15,6 +15,7 @@ const gameApiUrl = `http://127.0.0.1:${apiPort}/trpc`;
 const databaseUrl = process.env.NPC_POSSESSION_LIVE_DATABASE_URL ?? '';
 const redisUrl = process.env.NPC_POSSESSION_LIVE_REDIS_URL ?? '';
 const gameSecret = process.env.NPC_POSSESSION_LIVE_GAME_SECRET ?? '';
+const daemonRequestTimeoutMs = Number(process.env.NPC_POSSESSION_LIVE_DAEMON_TIMEOUT_MS ?? '1000');
 const databaseSchema = databaseUrl ? new URL(databaseUrl).searchParams.get('schema') : null;
 
 if (databaseUrl && databaseSchema !== profileId) {
@@ -26,6 +27,9 @@ if (gameProfile !== expectedGameProfile) {
     throw new Error(
         `PLAYWRIGHT_GAME_PROFILE must match profile and scenario: ${gameProfile} != ${expectedGameProfile}`
     );
+}
+if (!Number.isSafeInteger(daemonRequestTimeoutMs) || daemonRequestTimeoutMs < 100 || daemonRequestTimeoutMs > 60_000) {
+    throw new Error('NPC_POSSESSION_LIVE_DAEMON_TIMEOUT_MS must be an integer from 100 to 60000');
 }
 
 export default defineConfig({
@@ -64,6 +68,7 @@ export default defineConfig({
                 PROFILE: profileId,
                 SCENARIO: scenario,
                 GAME_PROFILE_NAME: gameProfile,
+                DAEMON_REQUEST_TIMEOUT_MS: String(daemonRequestTimeoutMs),
             },
         },
         {
