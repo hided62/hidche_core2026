@@ -19,6 +19,7 @@ export default defineConfig({
         'inGameMenus.spec.ts',
         'nationOffices.spec.ts',
         'diplomacy.spec.ts',
+        'legacyLogHtml.spec.ts',
         'directoryLists.spec.ts',
         'pastPlays.spec.ts',
         'nationGeneralSecret.spec.ts',

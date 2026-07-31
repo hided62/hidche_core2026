@@ -181,7 +181,7 @@ const handlePasswordReset = async (): Promise<void> => {
                     <li>{{ info.turnTerm }}분 턴 서버</li>
                 </ul>
                 <div v-if="mapData?.history?.length" class="status-history">
-                    <!-- 레거시 색상 tag만 formatLog가 span으로 변환한다. -->
+                    <!-- 레거시 로그의 허용된 색상·강조·전투 구조만 안전한 HTML로 재구성한다. -->
                     <!-- eslint-disable-next-line vue/no-v-html -->
                     <div v-for="entry in mapData.history" :key="entry.id" v-html="formatLog(entry.text)" />
                 </div>
