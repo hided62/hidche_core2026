@@ -79,6 +79,7 @@ const createContext = (options: {
     nationMeta?: Record<string, unknown>;
     requestCommand?: ReturnType<typeof vi.fn>;
     accessToken?: string;
+    logs?: Array<{ id: number; text: string }>;
 }) => {
     const me = options.me === undefined ? buildGeneral() : options.me;
     const targets = options.targets ?? (me ? [me] : []);
@@ -118,7 +119,12 @@ const createContext = (options: {
         },
         logEntry: {
             groupBy: vi.fn(async () => []),
-            findMany: vi.fn(async () => [{ id: 1, text: '기록' }]),
+            findMany: vi.fn(async (query?: { where?: { id?: { lt?: number } }; take?: number }) => {
+                const source = options.logs ?? [{ id: 1, text: '기록' }];
+                const beforeId = query?.where?.id?.lt;
+                const filtered = beforeId ? source.filter((entry) => entry.id < beforeId) : source;
+                return query?.take ? filtered.slice(0, query.take) : filtered;
+            }),
         },
     };
     const redisClient = { get: async () => null, set: async () => null };
@@ -190,6 +196,19 @@ describe('in-game my information ownership', () => {
                 where: expect.objectContaining({ generalId: 7 }),
             })
         );
+    });
+
+    it('returns the complete personal history while preserving bounded action pages', async () => {
+        const logs = Array.from({ length: 61 }, (_, index) => ({ id: 61 - index, text: `기록-${61 - index}` }));
+        const fixture = createContext({ logs });
+        const caller = appRouter.createCaller(fixture.context);
+
+        await expect(caller.general.getMyLog({ type: 'generalHistory' })).resolves.toMatchObject({
+            logs,
+        });
+        await expect(caller.general.getMyLog({ type: 'generalAction' })).resolves.toMatchObject({
+            logs: logs.slice(0, 24),
+        });
     });
 
     it('returns the three legacy front-page record streams for the session-owned general', async () => {
@@ -435,5 +454,27 @@ describe('battle-center general and user permissions', () => {
                 .createCaller(chiefFixture.context)
                 .nation.getGeneralLog({ generalId: otherUser.id, type: 'generalAction' })
         ).resolves.toMatchObject({ generalId: otherUser.id });
+    });
+
+    it('returns all nation history and paginates action logs in legacy 30-row pages', async () => {
+        const logs = Array.from({ length: 61 }, (_, index) => ({ id: 61 - index, text: `기록-${61 - index}` }));
+        const fixture = createContext({
+            me: buildGeneral({ officerLevel: 5 }),
+            logs,
+        });
+        const caller = appRouter.createCaller(fixture.context);
+
+        await expect(caller.nation.getGeneralLog({ generalId: 7, type: 'generalHistory' })).resolves.toMatchObject({
+            logs,
+        });
+        await expect(caller.nation.getGeneralLog({ generalId: 7, type: 'generalAction' })).resolves.toMatchObject({
+            logs: logs.slice(0, 30),
+        });
+        await expect(
+            caller.nation.getGeneralLog({ generalId: 7, type: 'generalAction', beforeId: 32 })
+        ).resolves.toMatchObject({ logs: logs.slice(30, 60) });
+        await expect(
+            caller.nation.getGeneralLog({ generalId: 7, type: 'generalAction', beforeId: 2 })
+        ).resolves.toMatchObject({ logs: logs.slice(60) });
     });
 });

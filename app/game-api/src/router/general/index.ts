@@ -414,10 +414,10 @@ export const generalRouter = router({
                     generalId: me.id,
                     scope: LogScope.GENERAL,
                     category: categoryMap[input.type],
-                    ...(input.beforeId ? { id: { lt: input.beforeId } } : {}),
+                    ...(input.type !== 'generalHistory' && input.beforeId ? { id: { lt: input.beforeId } } : {}),
                 },
                 orderBy: { id: 'desc' },
-                take: 24,
+                ...(input.type === 'generalHistory' ? {} : { take: 24 }),
             });
 
             return {

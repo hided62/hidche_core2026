@@ -12,6 +12,7 @@ export const getGeneralLog = authedProcedure
         z.object({
             generalId: z.number().int().positive(),
             type: zGeneralLogType,
+            beforeId: z.number().int().positive().optional(),
         })
     )
     .query(async ({ ctx, input }) => {
@@ -43,12 +44,7 @@ export const getGeneralLog = authedProcedure
         if (target.nationId !== me.nationId) {
             throw new TRPCError({ code: 'FORBIDDEN', message: '같은 나라의 장수가 아닙니다.' });
         }
-        if (
-            input.type === 'generalAction' &&
-            target.npcState < 2 &&
-            target.id !== me.id &&
-            permissionLevel < 2
-        ) {
+        if (input.type === 'generalAction' && target.npcState < 2 && target.id !== me.id && permissionLevel < 2) {
             throw new TRPCError({
                 code: 'FORBIDDEN',
                 message: '권한이 부족합니다. 유저 장수의 개인 기록은 수뇌만 열람 가능합니다.',
@@ -67,9 +63,10 @@ export const getGeneralLog = authedProcedure
                 generalId: target.id,
                 scope: LogScope.GENERAL,
                 category: categoryMap[input.type],
+                ...(input.type !== 'generalHistory' && input.beforeId ? { id: { lt: input.beforeId } } : {}),
             },
             orderBy: { id: 'desc' },
-            take: 30,
+            ...(input.type === 'generalHistory' ? {} : { take: 30 }),
         });
 
         return {
