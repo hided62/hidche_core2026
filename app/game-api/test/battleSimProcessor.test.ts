@@ -333,6 +333,21 @@ describe('battle sim processor', () => {
         expect(() => processBattleSimJob(payload)).toThrow('Unknown scenario effect: event_Missing');
     });
 
+    it('escapes executable markup from simulator display names while preserving legacy log structure', () => {
+        const payload = buildPayload('battle');
+        payload.attackerGeneral.name = '<img src=x onerror="globalThis.__battleLogXss=1">';
+        payload.defenderGenerals[0]!.name = '<script>globalThis.__battleLogXss=2</script>';
+        payload.attackerNation.name = '<svg onload="globalThis.__battleLogXss=3">국가</svg>';
+
+        const result = processBattleSimJob(payload);
+        const html = JSON.stringify(result.lastWarLog);
+
+        expect(html).toContain('&lt;img src=x onerror=');
+        expect(html).toContain('&lt;script&gt;globalThis.__battleLogXss=2&lt;/script&gt;');
+        expect(html).toContain('<div class=\\"small_war_log\\">');
+        expect(html).not.toMatch(/<img|<script|<svg/i);
+    });
+
     it('runs the advance trigger when a progressed attacker meets the next fresh defender', () => {
         const payload = buildPayload('battle');
         payload.scenarioEffect = 'event_StrongAttacker';
@@ -346,7 +361,7 @@ describe('battle sim processor', () => {
 
         const result = processBattleSimJob(payload);
         expect(result.lastWarLog?.generalBattleDetailLog).toContain(
-            '적군의 전멸에 <font color=cyan>진격</font>이 이어집니다!'
+            '적군의 전멸에 <span style="color: cyan;">진격</span>이 이어집니다!'
         );
     });
 });

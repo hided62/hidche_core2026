@@ -13,6 +13,7 @@ export default defineConfig({
         'lobby-game-auth.spec.ts',
         'logout.spec.ts',
         'account-icon-sync.spec.ts',
+        'legacy-log-html.spec.ts',
     ],
     fullyParallel: false,
     workers: 1,
