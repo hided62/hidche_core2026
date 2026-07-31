@@ -298,6 +298,9 @@ validate_marker_registry() {
             printf "line %d has unsupported execution mode: %s\n", NR, $2;
             failed = 1;
         }
+        ($2 in allowed_modes) {
+            mode_counts[$2]++;
+        }
         seen[$1]++ {
             printf "line %d duplicates marker: %s\n", NR, $1;
             failed = 1;
@@ -305,7 +308,15 @@ validate_marker_registry() {
         {
             print $1 "\t" $2 > validated_registry_file;
         }
-        END { exit failed }
+        END {
+            for (mode_name in allowed_modes) {
+                if (!mode_counts[mode_name]) {
+                    printf "supported execution mode has no marker: %s\n", mode_name;
+                    failed = 1;
+                }
+            }
+            exit failed;
+        }
     ' "$registry_file" >"$registry_errors_file" || {
         echo "invalid conditional integration marker registry:" >&2
         sed 's/^/  /' "$registry_errors_file" >&2
@@ -400,6 +411,10 @@ run_marked_tests() {
     package_dir=$1
     marker=$2
     label=$3
+    if [ -z "$marker" ]; then
+        echo "no conditional database marker configured for $label" >&2
+        exit 65
+    fi
     test_files=$(cd "$workspace_root/$package_dir" && rg -l "$marker" test -g '*.integration.test.ts' | sort)
     if [ -z "$test_files" ]; then
         echo "no $label tests found under $package_dir" >&2

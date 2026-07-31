@@ -80,7 +80,9 @@ runtime role을 삭제하고 PID와 명령행 및 daemon 종료를 확인한 뒤
 더 이상 테스트에 존재하지 않으면 runner가 테스트 실행 전에 실패합니다.
 Registry는 marker 존재 여부뿐 아니라 중복, 형식과 지원 execution mode도
 검사합니다. 지원하지 않는 mode로 인해 test가 실행 group에서 빠지는 경우에도
-runner는 test 시작 전에 실패합니다.
+runner는 test 시작 전에 실패합니다. 지원 mode에 marker가 하나도 없거나
+실행 group의 marker 정규식이 비어도 전체 파일로 선택 범위를 넓히지 않고
+실패합니다.
 
 관리자 시간 조정의 PostgreSQL 경계는
 `runtimeClockShiftPersistence.integration.test.ts`, gateway action
