@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { dirname, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { canonicalFrontendFixture as fixture } from './fixtures/canonical';
+import { canonicalFrontendFixture as fixture } from './fixtures/canonical.js';
 import { gameUrl, gatewayUrl } from './testUrls.js';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');

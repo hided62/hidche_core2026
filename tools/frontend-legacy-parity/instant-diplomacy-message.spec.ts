@@ -2,7 +2,7 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-import { canonicalFrontendFixture as fixture } from './fixtures/canonical';
+import { canonicalFrontendFixture as fixture } from './fixtures/canonical.js';
 
 const artifactRoot = process.env.FRONTEND_PARITY_ARTIFACT_DIR;
 const gamePort = process.env.FRONTEND_PARITY_GAME_PORT ?? '15102';

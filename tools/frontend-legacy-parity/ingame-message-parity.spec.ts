@@ -1,6 +1,6 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 
-import { canonicalFrontendFixture as fixture } from './fixtures/canonical';
+import { canonicalFrontendFixture as fixture } from './fixtures/canonical.js';
 
 const gamePort = process.env.FRONTEND_PARITY_GAME_PORT ?? '15102';
 const response = (data: unknown) => ({ result: { data } });

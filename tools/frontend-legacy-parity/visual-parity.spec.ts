@@ -4,7 +4,7 @@ import { dirname, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generateKeyPairSync } from 'node:crypto';
 
-import { canonicalFrontendFixture as fixture } from './fixtures/canonical';
+import { canonicalFrontendFixture as fixture } from './fixtures/canonical.js';
 import { gameOrigin, gameUrl, gatewayUrl } from './testUrls.js';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -246,7 +246,16 @@ const installHallFixture = async (page: Page): Promise<HallFixtureCalls> => {
 
 const installAuthenticatedGameFixture = async (page: Page): Promise<void> => {
     let surveyVoted = false;
-    const surveyComments = fixture.game.surveyDetail.comments.map((comment) => ({ ...comment }));
+    const surveyComments: Array<{
+        id: number;
+        voteId: number;
+        generalId: number;
+        nationId: number;
+        generalName: string;
+        nationName: string;
+        text: string;
+        createdAt: string;
+    }> = fixture.game.surveyDetail.comments.map((comment) => ({ ...comment }));
     await installImages(page);
     await page.addInitScript(
         ({ gameToken, profile }) => {
