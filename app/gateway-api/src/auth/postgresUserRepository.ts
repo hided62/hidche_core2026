@@ -20,9 +20,13 @@ const readObject = <T extends object>(value: unknown, fallback: T): T => {
 const readLegacyMemberNo = (value: unknown): number | undefined => {
     const legacyData = readObject<Record<string, unknown>>(value, {});
     const memberNo = legacyData.memberNo;
-    return typeof memberNo === 'number' && Number.isSafeInteger(memberNo) && memberNo > 0
-        ? memberNo
-        : undefined;
+    return typeof memberNo === 'number' && Number.isSafeInteger(memberNo) && memberNo > 0 ? memberNo : undefined;
+};
+
+const readLegacyGrade = (value: unknown): number | undefined => {
+    const legacyData = readObject<Record<string, unknown>>(value, {});
+    const grade = legacyData.grade;
+    return typeof grade === 'number' && Number.isSafeInteger(grade) ? grade : undefined;
 };
 
 const mapUser = (row: {
@@ -71,6 +75,7 @@ const mapUser = (row: {
     passwordSalt: row.passwordSalt,
     createdAt: row.createdAt.toISOString(),
     legacyMemberNo: readLegacyMemberNo(row.legacyData),
+    legacyGrade: readLegacyGrade(row.legacyData),
 });
 
 export const createPostgresUserRepository = (

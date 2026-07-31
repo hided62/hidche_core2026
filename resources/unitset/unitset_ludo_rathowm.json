@@ -1,7 +1,7 @@
 {
     "id": "ludo_rathowm",
     "name": "ludo_rathowm",
-    "defaultCrewTypeId": 1100,
+    "defaultCrewTypeId": 217100,
     "armTypes": {
         "1": "보병",
         "2": "궁병",

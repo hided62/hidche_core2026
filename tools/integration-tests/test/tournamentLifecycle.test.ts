@@ -230,10 +230,7 @@ describe('actual tournament lifecycle', () => {
         for (const [username, displayName] of users) {
             const login = await gatewayClient.auth.login.mutate({
                 username,
-                credential: sealGatewayPassword(
-                    `${username}-pass`,
-                    await gatewayClient.auth.passwordKey.query()
-                ),
+                credential: sealGatewayPassword(`${username}-pass`, await gatewayClient.auth.passwordKey.query()),
             });
             const gatewayToken = await gatewayClient.auth.issueGameSession.mutate({
                 sessionToken: login.sessionToken,
@@ -252,6 +249,7 @@ describe('actual tournament lifecycle', () => {
                     strength: 55,
                     intel: 55,
                     character: 'Random',
+                    pic: true,
                 });
                 generalIds.set(username, created.generalId);
             }

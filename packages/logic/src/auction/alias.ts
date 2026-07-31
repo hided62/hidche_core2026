@@ -179,11 +179,14 @@ const readNameParts = (value: unknown, fallback: readonly string[]): string[] =>
     return result.length > 0 ? result : [...fallback];
 };
 
-export const buildAuctionAlias = (
-    generalId: number,
+export const buildAuctionAliasPool = (
     hiddenSeed: string | number,
     configConst: Record<string, unknown> = {}
-): string => {
+): string[] => {
+    const persistedPool = readNameParts(configConst.obfuscatedNamePool, []);
+    if (persistedPool.length > 0) {
+        return persistedPool;
+    }
     const firstNames = readNameParts(configConst.randGenFirstName, LEGACY_RANDOM_GENERAL_FIRST_NAMES);
     const middleNames = readNameParts(configConst.randGenMiddleName, ['']);
     const lastNames = readNameParts(configConst.randGenLastName, LEGACY_RANDOM_GENERAL_LAST_NAMES);
@@ -195,7 +198,15 @@ export const buildAuctionAlias = (
             }
         }
     }
-    const shuffled = new RandUtil(new LiteHashDRBG(simpleSerialize(hiddenSeed, 'obfuscatedNamePool'))).shuffle(pool);
+    return new RandUtil(new LiteHashDRBG(simpleSerialize(hiddenSeed, 'obfuscatedNamePool'))).shuffle(pool);
+};
+
+export const buildAuctionAlias = (
+    generalId: number,
+    hiddenSeed: string | number,
+    configConst: Record<string, unknown> = {}
+): string => {
+    const shuffled = buildAuctionAliasPool(hiddenSeed, configConst);
     const normalizedId = Math.max(0, Math.floor(generalId));
     const duplicateIndex = Math.floor(normalizedId / shuffled.length);
     const name = shuffled[normalizedId % shuffled.length] ?? `익명${normalizedId}`;

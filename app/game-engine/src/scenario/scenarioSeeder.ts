@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 
 import { createGamePostgresConnector, type InputJsonValue, type TurnEngineEventCreateManyInput } from '@sammo-ts/infra';
-import { asRecord } from '@sammo-ts/common';
+import { asNumber, asRecord } from '@sammo-ts/common';
 import {
     buildScenarioBootstrap,
     resolveScenarioGeneralDeathMonth,
@@ -233,7 +233,9 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
     const connector = createGamePostgresConnector({ url: options.databaseUrl });
     const now = options.now ?? new Date();
     const tickSeconds =
-        install?.turnTermMinutes !== undefined ? install.turnTermMinutes * 60 : options.tickSeconds ?? DEFAULT_TICK_SECONDS;
+        install?.turnTermMinutes !== undefined
+            ? install.turnTermMinutes * 60
+            : (options.tickSeconds ?? DEFAULT_TICK_SECONDS);
     const turnTermMinutes = Math.max(1, Math.round(tickSeconds / 60));
     const sync = install?.sync ?? false;
     const startState = resolveStartState(scenario.startYear ?? null, now, turnTermMinutes, sync);
@@ -241,10 +243,7 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
     const generalRice = options.defaultGeneralRice ?? DEFAULT_GENERAL_RICE;
 
     const scenarioConst = asRecord(seed.scenarioConfig.const);
-    if (
-        typeof scenarioConst.openingPartYear !== 'number' ||
-        Number.isNaN(scenarioConst.openingPartYear)
-    ) {
+    if (typeof scenarioConst.openingPartYear !== 'number' || Number.isNaN(scenarioConst.openingPartYear)) {
         scenarioConst.openingPartYear = DEFAULT_OPENING_PART_YEAR;
     }
     const scenarioConfig = {
@@ -268,6 +267,7 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
     const worldMeta: Record<string, unknown> = {
         scenarioId: options.scenarioId,
         scenarioMeta: seed.scenarioMeta,
+        genius: Math.max(0, Math.floor(asNumber(scenarioConst.defaultMaxGenius, 5))),
         starttime: formatDateTime(startState.startTime),
         turntime: formatDateTime(now),
         opentime: formatDateTime(now),
@@ -283,9 +283,7 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
 
     const integrationSeed = process.env[INTEGRATION_WORLD_SEED_ENV]?.trim();
     worldMeta.hiddenSeed =
-        integrationSeed && integrationSeed.length > 0
-            ? integrationSeed
-            : randomBytes(16).toString('hex');
+        integrationSeed && integrationSeed.length > 0 ? integrationSeed : randomBytes(16).toString('hex');
 
     if (install?.preopenAt) {
         worldMeta.preopenAt = formatDateTime(install.preopenAt);
@@ -484,8 +482,7 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
                                     : resolveScenarioGeneralDeathMonth({
                                           scenarioTitle: String(seed.scenarioMeta?.title ?? ''),
                                           startYear: seed.scenarioMeta?.startYear ?? null,
-                                          contextLabel:
-                                              typeof meta.source === 'string' ? meta.source : 'general',
+                                          contextLabel: typeof meta.source === 'string' ? meta.source : 'general',
                                           generalId: general.id,
                                           generalName: general.name,
                                           deathYear: general.deathYear,

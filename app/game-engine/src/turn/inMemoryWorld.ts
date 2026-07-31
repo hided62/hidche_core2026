@@ -1,4 +1,13 @@
-import type { City, LogEntryDraft, MessageDraft, Nation, ScenarioConfig, Troop, TurnSchedule } from '@sammo-ts/logic';
+import type {
+    City,
+    LogEntryDraft,
+    MessageDraft,
+    Nation,
+    ScenarioConfig,
+    Troop,
+    TurnSchedule,
+    UnitSetDefinition,
+} from '@sammo-ts/logic';
 import { getNextTurnAt } from '@sammo-ts/logic';
 
 import type { TurnCheckpoint } from '../lifecycle/types.js';
@@ -338,12 +347,14 @@ export class InMemoryTurnWorld {
     private readonly pendingNationBettingOpens: PendingNationBettingOpen[] = [];
     private readonly pendingNationBettingFinishes: PendingNationBettingFinish[] = [];
     private readonly scenarioConfig: ScenarioConfig;
+    private readonly unitSet?: UnitSetDefinition;
     private checkpoint?: TurnCheckpoint;
     private state: TurnWorldState;
 
     constructor(state: TurnWorldState, snapshot: TurnWorldSnapshot, options: InMemoryTurnWorldOptions) {
         this.state = { ...state };
         this.scenarioConfig = snapshot.scenarioConfig;
+        this.unitSet = snapshot.unitSet;
         this.schedule = options.schedule;
         this.generalTurnHandler =
             options.generalTurnHandler ??
@@ -545,6 +556,10 @@ export class InMemoryTurnWorld {
 
     getScenarioConfig(): ScenarioConfig {
         return this.scenarioConfig;
+    }
+
+    getUnitSet(): UnitSetDefinition | undefined {
+        return this.unitSet;
     }
 
     getGeneralById(id: number): TurnGeneral | null {

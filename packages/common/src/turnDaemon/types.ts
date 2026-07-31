@@ -205,6 +205,28 @@ export type TurnDaemonCommand =
           };
       }
     | {
+          type: 'joinCreateGeneral';
+          requestId?: string;
+          userId: string;
+          ownerDisplayName: string;
+          seedOwnerIdentity: string | number;
+          name: string;
+          leadership: number;
+          strength: number;
+          intel: number;
+          pic: boolean;
+          character: string;
+          profileId: string;
+          ownerPicture?: string;
+          ownerImageServer?: number;
+          ownerCanUsePicture?: boolean;
+          ownerLegacyPenalty?: Record<string, unknown>;
+          inheritSpecial?: string;
+          inheritTurntimeZone?: number;
+          inheritCity?: number;
+          inheritBonusStat?: [number, number, number];
+      }
+    | {
           type: 'selectPoolCreate';
           requestId?: string;
           userId: string;
@@ -474,6 +496,17 @@ export type TurnDaemonCommandResult =
           type: 'patchGeneral';
           ok: false;
           generalId: number;
+          reason: string;
+      }
+    | {
+          type: 'joinCreateGeneral';
+          ok: true;
+          generalId: number;
+      }
+    | {
+          type: 'joinCreateGeneral';
+          ok: false;
+          code: 'BAD_REQUEST' | 'FORBIDDEN' | 'PRECONDITION_FAILED' | 'CONFLICT' | 'INTERNAL_SERVER_ERROR';
           reason: string;
       }
     | {

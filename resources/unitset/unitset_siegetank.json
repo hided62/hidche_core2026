@@ -1,7 +1,7 @@
 {
     "id": "siegetank",
     "name": "siegetank",
-    "defaultCrewTypeId": 1100,
+    "defaultCrewTypeId": 1500,
     "armTypes": {
         "1": "보병",
         "2": "궁병",

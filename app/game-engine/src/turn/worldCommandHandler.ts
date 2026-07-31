@@ -45,6 +45,7 @@ import {
     reselectGeneralFromSelectionPool,
     SelectPoolError,
 } from './selectPoolService.js';
+import { createGeneralFromJoin, JoinCreateGeneralError } from './joinCreateGeneralService.js';
 
 let itemRegistryPromise: Promise<Map<string, ItemModule>> | null = null;
 
@@ -131,20 +132,84 @@ const requireCommandDatabase = (ctx: CommandHandlerContext): DatabaseClient => {
 
 const resolveCommandAcceptedAt = async (
     db: DatabaseClient,
-    command: Extract<TurnDaemonCommand, { type: 'selectPoolCreate' | 'selectPoolReselect' }>
+    command: Extract<TurnDaemonCommand, { type: 'joinCreateGeneral' | 'selectPoolCreate' | 'selectPoolReselect' }>
 ): Promise<Date> => {
     if (!command.requestId) {
         throw new Error(`${command.type} requestId is required.`);
     }
     const event = await db.inputEvent.findUnique({
         where: { requestId: command.requestId },
-        select: { createdAt: true },
+        select: { createdAt: true, actorUserId: true },
     });
     if (!event) {
         throw new Error(`ENGINE input event ${command.requestId} is missing.`);
     }
+    if (event.actorUserId !== command.userId) {
+        throw new Error(`ENGINE input event actor does not match ${command.type} user.`);
+    }
     return event.createdAt;
 };
+
+async function handleJoinCreateGeneral(
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'joinCreateGeneral' }>
+): Promise<TurnDaemonCommandResult> {
+    const db = requireCommandDatabase(ctx);
+    const worldState = await db.worldState.findUnique({
+        where: { id: ctx.world.getState().id },
+    });
+    if (!worldState) {
+        throw new Error('Join world state is missing.');
+    }
+    const acceptedAt = await resolveCommandAcceptedAt(db, command);
+    try {
+        return {
+            type: 'joinCreateGeneral',
+            ...(await createGeneralFromJoin({
+                db,
+                world: ctx.world,
+                worldState,
+                input: {
+                    userId: command.userId,
+                    ownerDisplayName: command.ownerDisplayName,
+                    seedOwnerIdentity: command.seedOwnerIdentity,
+                    name: command.name,
+                    leadership: command.leadership,
+                    strength: command.strength,
+                    intel: command.intel,
+                    pic: command.pic,
+                    character: command.character,
+                    profileId: command.profileId,
+                    ...(command.ownerPicture !== undefined ? { ownerPicture: command.ownerPicture } : {}),
+                    ...(command.ownerImageServer !== undefined ? { ownerImageServer: command.ownerImageServer } : {}),
+                    ...(command.ownerCanUsePicture !== undefined
+                        ? { ownerCanUsePicture: command.ownerCanUsePicture }
+                        : {}),
+                    ...(command.ownerLegacyPenalty !== undefined
+                        ? { ownerLegacyPenalty: command.ownerLegacyPenalty }
+                        : {}),
+                    ...(command.inheritSpecial !== undefined ? { inheritSpecial: command.inheritSpecial } : {}),
+                    ...(command.inheritTurntimeZone !== undefined
+                        ? { inheritTurntimeZone: command.inheritTurntimeZone }
+                        : {}),
+                    ...(command.inheritCity !== undefined ? { inheritCity: command.inheritCity } : {}),
+                    ...(command.inheritBonusStat !== undefined ? { inheritBonusStat: command.inheritBonusStat } : {}),
+                },
+                acceptedAt,
+            })),
+        };
+    } catch (error) {
+        if (error instanceof JoinCreateGeneralError) {
+            return {
+                type: 'joinCreateGeneral',
+                ok: false,
+                code: error.code,
+                reason: error.message,
+            };
+        }
+        throw error;
+    }
+}
 
 async function handleSelectPoolCreate(
     ctx: CommandHandlerContext,
@@ -1952,16 +2017,12 @@ export const createTurnDaemonCommandHandler = (options: {
             handleTournamentMatchResult(ctx, command as Extract<TurnDaemonCommand, { type: 'tournamentMatchResult' }>),
         patchGeneral: (command) =>
             handlePatchGeneral(ctx, command as Extract<TurnDaemonCommand, { type: 'patchGeneral' }>),
+        joinCreateGeneral: (command) =>
+            handleJoinCreateGeneral(ctx, command as Extract<TurnDaemonCommand, { type: 'joinCreateGeneral' }>),
         selectPoolCreate: (command) =>
-            handleSelectPoolCreate(
-                ctx,
-                command as Extract<TurnDaemonCommand, { type: 'selectPoolCreate' }>
-            ),
+            handleSelectPoolCreate(ctx, command as Extract<TurnDaemonCommand, { type: 'selectPoolCreate' }>),
         selectPoolReselect: (command) =>
-            handleSelectPoolReselect(
-                ctx,
-                command as Extract<TurnDaemonCommand, { type: 'selectPoolReselect' }>
-            ),
+            handleSelectPoolReselect(ctx, command as Extract<TurnDaemonCommand, { type: 'selectPoolReselect' }>),
         shiftSchedule: (command) =>
             handleShiftSchedule(ctx, command as Extract<TurnDaemonCommand, { type: 'shiftSchedule' }>),
     };

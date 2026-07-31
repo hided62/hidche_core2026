@@ -1,0 +1,14 @@
+{
+    "compilerOptions": {
+        "allowJs": true,
+        "esModuleInterop": true,
+        "module": "NodeNext",
+        "moduleResolution": "NodeNext",
+        "resolveJsonModule": true,
+        "skipLibCheck": true,
+        "strict": true,
+        "target": "ES2022",
+        "types": ["node", "@playwright/test"]
+    },
+    "include": ["./joinGeneralLive.spec.ts", "./joinGeneral.live.playwright.config.mjs"]
+}

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
+import { parseGameSessionTokenPayload, type GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
 import { isValid, parseISO } from 'date-fns';
 
 interface RedisClientLike {
@@ -10,48 +10,10 @@ interface RedisClientLike {
 
 const ACCESS_TOKEN_PREFIX = 'ga_';
 
-const buildAccessKey = (profileName: string, token: string): string =>
-    `sammo:game:access:${profileName}:${token}`;
+const buildAccessKey = (profileName: string, token: string): string => `sammo:game:access:${profileName}:${token}`;
 
 const buildGatewayUsedKey = (profileName: string, sessionId: string): string =>
     `sammo:game:gateway-used:${profileName}:${sessionId}`;
-
-const parsePayload = (value: unknown): GameSessionTokenPayload | null => {
-    if (!value || typeof value !== 'object') {
-        return null;
-    }
-    const payload = value as Partial<GameSessionTokenPayload>;
-    if (payload.version !== 1) {
-        return null;
-    }
-    if (typeof payload.profile !== 'string') {
-        return null;
-    }
-    if (typeof payload.issuedAt !== 'string' || typeof payload.expiresAt !== 'string') {
-        return null;
-    }
-    if (typeof payload.sessionId !== 'string') {
-        return null;
-    }
-    if (!payload.user || typeof payload.user !== 'object') {
-        return null;
-    }
-    const user = payload.user as Partial<GameSessionTokenPayload['user']>;
-    if (
-        typeof user.id !== 'string' ||
-        typeof user.username !== 'string' ||
-        typeof user.displayName !== 'string' ||
-        !Array.isArray(user.roles) ||
-        (user.legacyMemberNo !== undefined &&
-            (!Number.isSafeInteger(user.legacyMemberNo) || user.legacyMemberNo <= 0))
-    ) {
-        return null;
-    }
-    if (!payload.sanctions || typeof payload.sanctions !== 'object') {
-        return null;
-    }
-    return payload as GameSessionTokenPayload;
-};
 
 const resolveTtlSeconds = (expiresAt: string): number => {
     const parsed = parseISO(expiresAt);
@@ -96,7 +58,7 @@ export class RedisAccessTokenStore {
             return null;
         }
         try {
-            const payload = parsePayload(JSON.parse(raw));
+            const payload = parseGameSessionTokenPayload(JSON.parse(raw));
             if (!payload) {
                 return null;
             }

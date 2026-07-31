@@ -2,11 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { RANK_DATA_TYPES } from '@sammo-ts/common';
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
-import {
-    createTurnDaemonRuntime,
-    seedScenarioToDatabase,
-    type TurnDaemonRuntime,
-} from '@sammo-ts/game-engine';
+import { createTurnDaemonRuntime, seedScenarioToDatabase, type TurnDaemonRuntime } from '@sammo-ts/game-engine';
 import {
     createGamePostgresConnector,
     type GamePrisma,
@@ -29,7 +25,7 @@ const otherUserId = 'select-pool-integration-other-user';
 const foreignUserId = 'select-pool-integration-foreign-user';
 const failureUserId = 'select-pool-integration-failure-user';
 const profile = 'hwe:903';
-const schemaName = databaseUrl ? new URL(databaseUrl).searchParams.get('schema') ?? '' : '';
+const schemaName = databaseUrl ? (new URL(databaseUrl).searchParams.get('schema') ?? '') : '';
 
 const assertDedicatedDatabase = (rawUrl: string): void => {
     const schema = new URL(rawUrl).searchParams.get('schema');
@@ -97,10 +93,7 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
     let turnDaemon: TurnDaemonTransport;
     let worldStateId: number;
 
-    const buildContext = (
-        requestId: string,
-        actorAuth: GameSessionTokenPayload = auth
-    ): GameApiContext => {
+    const buildContext = (requestId: string, actorAuth: GameSessionTokenPayload = auth): GameApiContext => {
         const redisClient = {
             get: async () => null,
             set: async () => null,
@@ -257,12 +250,8 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
             select: { nationId: true, type: true, value: true },
         });
         expect(initialRankRows).toHaveLength(RANK_DATA_TYPES.length);
-        expect(initialRankRows.map(({ type }) => type).sort()).toEqual(
-            [...RANK_DATA_TYPES].sort()
-        );
-        expect(initialRankRows.every(({ nationId, value }) => nationId === 0 && value === 0)).toBe(
-            true
-        );
+        expect(initialRankRows.map(({ type }) => type).sort()).toEqual([...RANK_DATA_TYPES].sort());
+        expect(initialRankRows.every(({ nationId, value }) => nationId === 0 && value === 0)).toBe(true);
         expect(await db.selectPoolEntry.count({ where: { generalId: initial.id } })).toBe(1);
         expect(await db.selectPoolEntry.count({ where: { ownerUserId: userId } })).toBe(0);
         expect(
@@ -293,9 +282,7 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
         const reselection = await appRouter
             .createCaller(buildContext('select-pool-reserve-reselection'))
             .join.getSelectionPool();
-        const target = reselection.candidates.find(
-            (candidate) => candidate.generalName !== initial.name
-        )!;
+        const target = reselection.candidates.find((candidate) => candidate.generalName !== initial.name)!;
         await expect(
             appRouter
                 .createCaller(buildContext('select-pool-reselect'))
@@ -328,9 +315,11 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
             },
         });
         expect(await db.selectPoolEntry.count({ where: { generalId: initial.id } })).toBe(1);
-        expect(
-            await db.selectPoolEntry.findUniqueOrThrow({ where: { uniqueName: target.uniqueName } })
-        ).toMatchObject({ generalId: initial.id, ownerUserId: null, reservedUntil: null });
+        expect(await db.selectPoolEntry.findUniqueOrThrow({ where: { uniqueName: target.uniqueName } })).toMatchObject({
+            generalId: initial.id,
+            ownerUserId: null,
+            reservedUntil: null,
+        });
         expect(
             await db.logEntry.count({
                 where: { meta: { path: ['ownerUserId'], equals: userId } },
@@ -345,9 +334,7 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
                 patch: { meta: { postReselectionFlush: 1 } },
             })
         ).resolves.toMatchObject({ type: 'patchGeneral', ok: true });
-        await expect(
-            db.general.findUniqueOrThrow({ where: { id: initial.id } })
-        ).resolves.toMatchObject({
+        await expect(db.general.findUniqueOrThrow({ where: { id: initial.id } })).resolves.toMatchObject({
             name: target.generalName,
             leadership: target.leadership,
             strength: target.strength,
@@ -376,23 +363,19 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
             .createCaller(buildContext('select-pool-full-reselection-reserve'))
             .join.getSelectionPool();
         await expect(
-            appRouter
-                .createCaller(buildContext('select-pool-full-reselection'))
-                .join.reselectPoolGeneral({
-                    uniqueName: fullReselection.candidates[0]!.uniqueName,
-                })
+            appRouter.createCaller(buildContext('select-pool-full-reselection')).join.reselectPoolGeneral({
+                uniqueName: fullReselection.candidates[0]!.uniqueName,
+            })
         ).resolves.toEqual({ ok: true, generalId: initial.id });
 
         const otherReservation = await appRouter
             .createCaller(buildContext('select-pool-full-new-user-reserve', otherAuth))
             .join.getSelectionPool();
         await expect(
-            appRouter
-                .createCaller(buildContext('select-pool-full-new-user-create', otherAuth))
-                .join.selectPoolGeneral({
-                    uniqueName: otherReservation.candidates[0]!.uniqueName,
-                    personality: 'che_안전',
-                })
+            appRouter.createCaller(buildContext('select-pool-full-new-user-create', otherAuth)).join.selectPoolGeneral({
+                uniqueName: otherReservation.candidates[0]!.uniqueName,
+                personality: 'che_안전',
+            })
         ).rejects.toMatchObject({ message: '더 이상 등록 할 수 없습니다.' });
         expect(await db.general.count({ where: { userId: otherUserId } })).toBe(0);
         await db.worldState.update({
@@ -408,12 +391,10 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
         const candidate = reservation.candidates[0]!;
 
         await expect(
-            appRouter
-                .createCaller(buildContext('select-pool-foreign-token', foreignAuth))
-                .join.selectPoolGeneral({
-                    uniqueName: candidate.uniqueName,
-                    personality: 'che_안전',
-                })
+            appRouter.createCaller(buildContext('select-pool-foreign-token', foreignAuth)).join.selectPoolGeneral({
+                uniqueName: candidate.uniqueName,
+                personality: 'che_안전',
+            })
         ).rejects.toMatchObject({ message: '유효한 장수 목록이 없습니다.' });
         expect(await db.general.count({ where: { userId: foreignUserId } })).toBe(0);
 
@@ -422,25 +403,22 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
             data: { reservedUntil: new Date(Date.now() - 60_000) },
         });
         await expect(
-            appRouter
-                .createCaller(buildContext('select-pool-expired-token', otherAuth))
-                .join.selectPoolGeneral({
-                    uniqueName: candidate.uniqueName,
-                    personality: 'che_안전',
-                })
+            appRouter.createCaller(buildContext('select-pool-expired-token', otherAuth)).join.selectPoolGeneral({
+                uniqueName: candidate.uniqueName,
+                personality: 'che_안전',
+            })
         ).rejects.toMatchObject({ message: '유효한 장수 목록이 없습니다.' });
         expect(await db.general.count({ where: { userId: otherUserId } })).toBe(0);
 
         await expect(
-            appRouter
-                .createCaller(buildContext('select-pool-generic-bypass', otherAuth))
-                .join.createGeneral({
-                    name: '우회장수',
-                    leadership: 55,
-                    strength: 55,
-                    intel: 55,
-                    character: 'che_안전',
-                })
+            appRouter.createCaller(buildContext('select-pool-generic-bypass', otherAuth)).join.createGeneral({
+                name: '우회장수',
+                leadership: 55,
+                strength: 55,
+                intel: 55,
+                pic: false,
+                character: 'che_안전',
+            })
         ).rejects.toMatchObject({ message: '장수 선택 목록에서 장수를 골라 주세요.' });
 
         const input = {
@@ -453,24 +431,19 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
         });
         const runtimeAllocatorBefore = runtime!.world.getState().meta.lastGeneralId;
         const persistedAllocatorBefore = (
-            (await db.worldState.findUniqueOrThrow({ where: { id: worldStateId } }))
-                .meta as Record<string, unknown>
+            (await db.worldState.findUniqueOrThrow({ where: { id: worldStateId } })).meta as Record<string, unknown>
         ).lastGeneralId;
         await expect(
-            appRouter
-                .createCaller(buildContext('select-pool-invalid-personality', otherAuth))
-                .join.selectPoolGeneral({
-                    ...input,
-                    personality: 'not-a-personality',
-                    clientRequestId: '11111111-1111-4111-8111-111111111111',
-                })
+            appRouter.createCaller(buildContext('select-pool-invalid-personality', otherAuth)).join.selectPoolGeneral({
+                ...input,
+                personality: 'not-a-personality',
+                clientRequestId: '11111111-1111-4111-8111-111111111111',
+            })
         ).rejects.toMatchObject({ message: '올바르지 않은 성격입니다.' });
         expect(runtime!.world.getState().meta.lastGeneralId).toBe(runtimeAllocatorBefore);
         expect(
-            (
-                (await db.worldState.findUniqueOrThrow({ where: { id: worldStateId } }))
-                    .meta as Record<string, unknown>
-            ).lastGeneralId
+            ((await db.worldState.findUniqueOrThrow({ where: { id: worldStateId } })).meta as Record<string, unknown>)
+                .lastGeneralId
         ).toBe(persistedAllocatorBefore);
         expect(await db.general.count({ where: { userId: otherUserId } })).toBe(0);
 
@@ -534,21 +507,15 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
 
         try {
             await expect(
-                appRouter
-                    .createCaller(buildContext('select-pool-failure-http', failureAuth))
-                    .join.selectPoolGeneral({
-                        uniqueName: candidate.uniqueName,
-                        personality: 'che_안전',
-                        clientRequestId: requestUuid,
-                    })
+                appRouter.createCaller(buildContext('select-pool-failure-http', failureAuth)).join.selectPoolGeneral({
+                    uniqueName: candidate.uniqueName,
+                    personality: 'che_안전',
+                    clientRequestId: requestUuid,
+                })
             ).resolves.toMatchObject({ ok: true, generalId: expect.any(Number) });
         } finally {
-            await db.$executeRawUnsafe(
-                `DROP TRIGGER IF EXISTS "${triggerName}" ON "${schemaName}"."log_entry"`
-            );
-            await db.$executeRawUnsafe(
-                `DROP FUNCTION IF EXISTS "${schemaName}"."${functionName}"()`
-            );
+            await db.$executeRawUnsafe(`DROP TRIGGER IF EXISTS "${triggerName}" ON "${schemaName}"."log_entry"`);
+            await db.$executeRawUnsafe(`DROP FUNCTION IF EXISTS "${schemaName}"."${functionName}"()`);
         }
 
         const created = await db.general.findFirstOrThrow({ where: { userId: failureUserId } });
@@ -560,9 +527,7 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
         expect(await db.general.count({ where: { userId: failureUserId } })).toBe(1);
         expect(await db.generalTurn.count({ where: { generalId: created.id } })).toBe(30);
         expect(await db.generalTurnRevision.count({ where: { generalId: created.id } })).toBe(1);
-        expect(await db.rankData.count({ where: { generalId: created.id } })).toBe(
-            RANK_DATA_TYPES.length
-        );
+        expect(await db.rankData.count({ where: { generalId: created.id } })).toBe(RANK_DATA_TYPES.length);
         expect(await db.generalAccessLog.count({ where: { generalId: created.id } })).toBe(1);
         expect(await db.selectPoolEntry.count({ where: { generalId: created.id } })).toBe(1);
         expect(
@@ -570,9 +535,7 @@ integration('scenario 903 select pool through the durable turn daemon', () => {
                 where: { meta: { path: ['ownerUserId'], equals: failureUserId } },
             })
         ).toBe(2);
-        await expect(
-            db.inputEvent.findUniqueOrThrow({ where: { requestId } })
-        ).resolves.toMatchObject({
+        await expect(db.inputEvent.findUniqueOrThrow({ where: { requestId } })).resolves.toMatchObject({
             status: 'SUCCEEDED',
             attempts: 2,
             actorUserId: failureUserId,

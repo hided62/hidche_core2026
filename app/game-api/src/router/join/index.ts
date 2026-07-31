@@ -1,36 +1,24 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
-import { randomBytes } from 'node:crypto';
 
-import type { DatabaseClient, GameApiContext, WorldStateRow } from '../../context.js';
+import type { GameApiContext, WorldStateRow } from '../../context.js';
 import { authedProcedure, engineAuthedProcedure, router } from '../../trpc.js';
-import { asNumber, asRecord, asStringArray, LiteHashDRBG } from '@sammo-ts/common';
+import { asNumber, asRecord, asStringArray } from '@sammo-ts/common';
 import {
-    isPersonalityTraitKey,
     isWarTraitKey,
+    JOIN_PERSONALITY_TRAIT_KEYS,
     loadPersonalityTraitModules,
     loadWarTraitModules,
     PersonalityTraitLoader,
-    PERSONALITY_TRAIT_KEYS,
     WarTraitLoader,
     WAR_TRAIT_KEYS,
 } from '@sammo-ts/logic';
-import {
-    appendInheritanceLog,
-    readInheritancePoint,
-    resolveInheritConstants,
-    setInheritancePoint,
-} from '../../services/inheritance.js';
-import {
-    getSelectionPoolStatus,
-    reserveSelectionPool,
-    resolveSelectionMaxGeneral,
-} from '../../services/selectPool.js';
+import { readInheritancePoint, resolveInheritConstants } from '../../services/inheritance.js';
+import { getSelectionPoolStatus, reserveSelectionPool, resolveSelectionMaxGeneral } from '../../services/selectPool.js';
+import { ConflictingTurnDaemonCommandError } from '../../daemon/databaseTransport.js';
 
 const resolveSelectionCommandResult = (
-    result:
-        | Awaited<ReturnType<GameApiContext['turnDaemon']['requestCommand']>>
-        | null,
+    result: Awaited<ReturnType<GameApiContext['turnDaemon']['requestCommand']>> | null,
     expectedType: 'selectPoolCreate' | 'selectPoolReselect'
 ): { ok: true; generalId: number } => {
     if (!result) {
@@ -67,11 +55,64 @@ const resolveSelectionRequestId = (
     if (!contextRequestId) {
         return undefined;
     }
-    const path =
-        operation === 'create'
-            ? 'join.selectPoolGeneral'
-            : 'join.reselectPoolGeneral';
+    const path = operation === 'create' ? 'join.selectPoolGeneral' : 'join.reselectPoolGeneral';
     return `${contextRequestId}:${path}`;
+};
+
+const resolveJoinCreateCommandResult = (
+    result: Awaited<ReturnType<GameApiContext['turnDaemon']['requestCommand']>> | null
+): { ok: true; generalId: number } => {
+    if (!result) {
+        throw new TRPCError({
+            code: 'TIMEOUT',
+            message:
+                '장수 생성 요청은 접수됐지만 처리 결과를 아직 확인하지 못했습니다. 같은 요청으로 다시 시도해 주세요.',
+        });
+    }
+    if (result.type !== 'joinCreateGeneral') {
+        throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: '턴 데몬이 올바르지 않은 장수 생성 결과를 반환했습니다.',
+        });
+    }
+    if (!result.ok) {
+        throw new TRPCError({
+            code: result.code,
+            message: result.reason,
+        });
+    }
+    return { ok: true, generalId: result.generalId };
+};
+
+const resolveJoinCreateRequestId = (
+    contextRequestId: string | undefined,
+    userId: string,
+    clientRequestId: string | undefined
+): string | undefined => {
+    if (clientRequestId) {
+        return `join-create:${userId}:${clientRequestId}`;
+    }
+    return contextRequestId ? `${contextRequestId}:join.createGeneral` : undefined;
+};
+
+const requestJoinCreateCommand = async (
+    ctx: GameApiContext,
+    command: Parameters<GameApiContext['turnDaemon']['requestCommand']>[0]
+) => {
+    try {
+        return await ctx.turnDaemon.requestCommand(command);
+    } catch (error) {
+        if (
+            error instanceof ConflictingTurnDaemonCommandError ||
+            (error instanceof Error && error.name === 'ConflictingTurnDaemonCommandError')
+        ) {
+            throw new TRPCError({
+                code: 'CONFLICT',
+                message: '이미 접수된 장수 생성 요청과 입력이 다릅니다. 새 요청 번호로 다시 시도해 주세요.',
+            });
+        }
+        throw error;
+    }
 };
 
 const DEFAULT_JOIN_STAT = {
@@ -82,12 +123,8 @@ const DEFAULT_JOIN_STAT = {
     bonusMax: 5,
 };
 
-const buildSpecialityAge = (
-    retirementYear: number,
-    age: number,
-    relativeYear: number,
-    divisor: number
-): number => Math.max(Math.round((retirementYear - age) / divisor - relativeYear / 2), 3) + age;
+const buildSpecialityAge = (retirementYear: number, age: number, relativeYear: number, divisor: number): number =>
+    Math.max(Math.round((retirementYear - age) / divisor - relativeYear / 2), 3) + age;
 
 export const resolveJoinSpecialityAges = (options: {
     retirementYear: number;
@@ -116,90 +153,30 @@ const resolveJoinStat = (worldState: WorldStateRow) => {
     };
 };
 
-const resolveJoinPolicy = (worldState: WorldStateRow) => {
-    const config = asRecord(worldState.config);
-    const joinMode = typeof config.joinMode === 'string' ? config.joinMode : 'full';
-    const blockGeneralCreate =
-        typeof config.blockGeneralCreate === 'number' && Number.isFinite(config.blockGeneralCreate)
-            ? Math.floor(config.blockGeneralCreate)
-            : 0;
-    return { joinMode, blockGeneralCreate };
-};
-
-
-const hashString = (value: string): number => {
-    let hash = 0;
-    for (let i = 0; i < value.length; i += 1) {
-        hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
-    }
-    return hash;
-};
-
-const pickFromList = (values: string[], seed: string): string | null => {
-    if (!values.length) {
-        return null;
-    }
-    const index = hashString(seed) % values.length;
-    return values[index] ?? null;
-};
-
-const buildTurnTimeZones = (tickMinutes: number): string[] => {
+const buildTurnTimeZones = (tickSeconds: number): string[] => {
     const zones: string[] = [];
+    const legacyZoneSeconds = Math.max(1, Math.floor(tickSeconds / 60));
     for (let i = 0; i < 60; i += 1) {
-        const totalMinutes = i * tickMinutes;
-        const hour = Math.floor(totalMinutes / 60) % 24;
-        const minute = totalMinutes % 60;
-        zones.push(`${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`);
+        const startSeconds = i * legacyZoneSeconds;
+        const endSeconds = startSeconds + legacyZoneSeconds - 1;
+        const format = (totalSeconds: number, fraction: string): string =>
+            `${String(Math.floor(totalSeconds / 60)).padStart(2, '0')}:${String(totalSeconds % 60).padStart(
+                2,
+                '0'
+            )}.${fraction}`;
+        zones.push(`${format(startSeconds, '000')} ~ ${format(endSeconds, '999')}`);
     }
     return zones;
 };
 
-const alignToTurnBase = (time: Date, tickMinutes: number): Date => {
-    const base = new Date(time.getFullYear(), time.getMonth(), time.getDate() - 1, 1, 0, 0, 0);
-    const elapsedMinutes = Math.floor((time.getTime() - base.getTime()) / 60000);
-    const alignedMinutes = elapsedMinutes - (elapsedMinutes % tickMinutes);
-    return new Date(base.getTime() + alignedMinutes * 60000);
-};
-
-const nextRangeInt = (rng: LiteHashDRBG, minInclusive: number, maxInclusive: number): number => {
-    if (maxInclusive <= minInclusive) {
-        return minInclusive;
-    }
-    return minInclusive + rng.nextInt(maxInclusive - minInclusive);
-};
-
-const pickWeightedIndex = (rng: LiteHashDRBG, weights: number[]): number => {
-    const total = weights.reduce((acc, value) => acc + value, 0);
-    if (total <= 0) {
-        return 0;
-    }
-    let cursor = rng.nextFloat1() * total;
-    for (let i = 0; i < weights.length; i += 1) {
-        cursor -= weights[i] ?? 0;
-        if (cursor <= 0) {
-            return i;
-        }
-    }
-    return weights.length - 1;
-};
-
-const buildRandomBonus = (rng: LiteHashDRBG, baseStats: [number, number, number]): [number, number, number] => {
-    const count = rng.nextInt(2) + 3;
-    const bonus: [number, number, number] = [0, 0, 0];
-    for (let i = 0; i < count; i += 1) {
-        const index = pickWeightedIndex(rng, baseStats);
-        bonus[index] += 1;
-    }
-    return bonus;
-};
-
 let cachedPersonalityOptions: Array<{ key: string; name: string; info: string }> | null = null;
+const zJoinPersonality = z.enum(['Random', ...JOIN_PERSONALITY_TRAIT_KEYS]);
 
 const loadPersonalityOptions = async () => {
     if (cachedPersonalityOptions) {
         return cachedPersonalityOptions;
     }
-    const modules = await loadPersonalityTraitModules([...PERSONALITY_TRAIT_KEYS], new PersonalityTraitLoader());
+    const modules = await loadPersonalityTraitModules([...JOIN_PERSONALITY_TRAIT_KEYS], new PersonalityTraitLoader());
     cachedPersonalityOptions = modules.map((trait) => ({
         key: trait.key,
         name: trait.name,
@@ -233,8 +210,7 @@ export const joinRouter = router({
         const availableSpecialWar = asStringArray(configConst.availableSpecialWar);
         const warKeys = availableSpecialWar.length > 0 ? availableSpecialWar : [...WAR_TRAIT_KEYS];
 
-        const [personalities, warSpecials, nationRows, userGeneralCount, npcGeneralCount] =
-            await Promise.all([
+        const [personalities, warSpecials, nationRows, userGeneralCount, npcGeneralCount] = await Promise.all([
             loadPersonalityOptions(),
             loadWarOptions(warKeys),
             ctx.db.nation.findMany({
@@ -265,40 +241,24 @@ export const joinRouter = router({
         const inheritTotalPoint = ctx.auth?.user.id
             ? await readInheritancePoint(ctx.db, ctx.auth.user.id, 'previous')
             : 0;
-        const selectionPool = await getSelectionPoolStatus(
-            ctx.db,
-            worldState,
-            ctx.auth?.user.id ?? ''
-        );
+        const selectionPool = await getSelectionPoolStatus(ctx.db, worldState, ctx.auth?.user.id ?? '');
         const tickMinutes = Math.max(1, Math.round(worldState.tickSeconds / 60));
         const maxGeneral = resolveSelectionMaxGeneral(worldState);
-        const inheritCitiesRaw = await ctx.db.city.findMany({
-            where: { level: { in: [5, 6] }, nationId: 0 },
+        const inheritCities = await ctx.db.city.findMany({
             select: { id: true, name: true, level: true, region: true },
             orderBy: { id: 'asc' },
         });
-        const inheritCities =
-            inheritCitiesRaw.length > 0
-                ? inheritCitiesRaw
-                : await ctx.db.city.findMany({
-                      where: { level: { in: [5, 6] } },
-                      select: { id: true, name: true, level: true, region: true },
-                      orderBy: { id: 'asc' },
-                  });
 
         return {
             rules: {
                 stat: resolveJoinStat(worldState),
-                allowCustomName: true,
+                allowCustomName: (Math.floor(asNumber(config.blockGeneralCreate, 0)) & 2) === 0,
             },
             user: {
                 id: ctx.auth?.user.id ?? '',
                 displayName: ctx.auth?.user.displayName ?? '',
             },
-            personalities: [
-                { key: 'Random', name: '???', info: '무작위 성격을 선택합니다.' },
-                ...personalities,
-            ],
+            personalities: [{ key: 'Random', name: '???', info: '무작위 성격을 선택합니다.' }, ...personalities],
             warSpecials,
             nations,
             serverInfo: {
@@ -318,7 +278,7 @@ export const joinRouter = router({
                     inheritBornStatPoint: inheritConst.inheritBornStatPoint,
                 },
                 availableCities: inheritCities,
-                turnTimeZones: buildTurnTimeZones(tickMinutes),
+                turnTimeZones: buildTurnTimeZones(worldState.tickSeconds),
                 availableSpecialWar: warSpecials,
             },
             selectionPool,
@@ -363,12 +323,7 @@ export const joinRouter = router({
                     message: '이 서버에서는 카카오 인증을 완료해야 장수를 생성할 수 있습니다.',
                 });
             }
-            const commandRequestId = resolveSelectionRequestId(
-                ctx.requestId,
-                userId,
-                input.clientRequestId,
-                'create'
-            );
+            const commandRequestId = resolveSelectionRequestId(ctx.requestId, userId, input.clientRequestId, 'create');
             const result = await ctx.turnDaemon.requestCommand({
                 type: 'selectPoolCreate',
                 ...(commandRequestId ? { requestId: commandRequestId } : {}),
@@ -408,15 +363,16 @@ export const joinRouter = router({
             });
             return resolveSelectionCommandResult(result, 'selectPoolReselect');
         }),
-    createGeneral: authedProcedure
+    createGeneral: engineAuthedProcedure
         .input(
             z.object({
                 name: z.string().min(1).max(18),
                 leadership: z.number().int(),
                 strength: z.number().int(),
                 intel: z.number().int(),
-                pic: z.boolean().optional(),
-                character: z.string(),
+                pic: z.boolean(),
+                character: zJoinPersonality,
+                clientRequestId: z.string().uuid().optional(),
                 inheritSpecial: z.string().optional(),
                 inheritTurntimeZone: z.number().int().optional(),
                 inheritCity: z.number().int().optional(),
@@ -424,337 +380,49 @@ export const joinRouter = router({
             })
         )
         .mutation(async ({ ctx, input }) => {
-            const userId = ctx.auth?.user.id;
-            if (!userId) {
+            const auth = ctx.auth;
+            if (!auth) {
                 throw new TRPCError({ code: 'UNAUTHORIZED' });
             }
-            if (ctx.auth?.identity?.canCreateGeneral === false) {
+            if (auth.identity?.canCreateGeneral === false) {
                 throw new TRPCError({
                     code: 'FORBIDDEN',
                     message: '이 서버에서는 카카오 인증을 완료해야 장수를 생성할 수 있습니다.',
                 });
             }
-
-            const worldState = await ctx.db.worldState.findFirst();
-            if (!worldState) {
-                throw new TRPCError({
-                    code: 'PRECONDITION_FAILED',
-                    message: 'World state is not initialized.',
-                });
-            }
-            const selectionPool = await getSelectionPoolStatus(ctx.db, worldState, userId);
-            if (selectionPool.enabled) {
-                throw new TRPCError({
-                    code: 'PRECONDITION_FAILED',
-                    message: '장수 선택 목록에서 장수를 골라 주세요.',
-                });
-            }
-
-            const joinPolicy = resolveJoinPolicy(worldState);
-            if (joinPolicy.blockGeneralCreate === 1) {
-                throw new TRPCError({
-                    code: 'FORBIDDEN',
-                    message: '장수 생성이 제한된 서버입니다.',
-                });
-            }
-
-            const inheritConst = resolveInheritConstants(worldState);
-            const configConst = asRecord(asRecord(worldState.config).const);
-            const availableSpecialWar = asStringArray(configConst.availableSpecialWar);
-            const inheritBonus = input.inheritBonusStat ?? null;
-            if (inheritBonus) {
-                const bonusSum = inheritBonus.reduce((acc, value) => acc + value, 0);
-                if (inheritBonus.some((value) => value < 0)) {
-                    throw new TRPCError({
-                        code: 'BAD_REQUEST',
-                        message: '보너스 능력치가 음수입니다. 다시 가입해주세요!',
-                    });
-                }
-                if (bonusSum !== 0 && (bonusSum < 3 || bonusSum > 5)) {
-                    throw new TRPCError({
-                        code: 'BAD_REQUEST',
-                        message: '보너스 능력치 합이 잘못 지정되었습니다. 다시 가입해주세요!',
-                    });
-                }
-            }
-            if (input.inheritSpecial !== undefined) {
-                if (!isWarTraitKey(input.inheritSpecial)) {
-                    throw new TRPCError({
-                        code: 'BAD_REQUEST',
-                        message: '전투 특기가 잘못 지정되었습니다.',
-                    });
-                }
-                if (availableSpecialWar.length > 0 && !availableSpecialWar.includes(input.inheritSpecial)) {
-                    throw new TRPCError({
-                        code: 'BAD_REQUEST',
-                        message: '허용되지 않은 전투 특기입니다.',
-                    });
-                }
-            }
-            if (input.inheritTurntimeZone !== undefined) {
-                if (input.inheritTurntimeZone < 0 || input.inheritTurntimeZone > 59) {
-                    throw new TRPCError({
-                        code: 'BAD_REQUEST',
-                        message: '턴 시간 지정 범위가 올바르지 않습니다.',
-                    });
-                }
-            }
-
-            const statRule = resolveJoinStat(worldState);
-            const statTotal = input.leadership + input.strength + input.intel;
-
-            if (
-                input.leadership < statRule.min ||
-                input.strength < statRule.min ||
-                input.intel < statRule.min ||
-                input.leadership > statRule.max ||
-                input.strength > statRule.max ||
-                input.intel > statRule.max
-            ) {
-                throw new TRPCError({
-                    code: 'BAD_REQUEST',
-                    message: '능력치 범위를 벗어났습니다.',
-                });
-            }
-
-            if (statTotal > statRule.total) {
-                throw new TRPCError({
-                    code: 'BAD_REQUEST',
-                    message: `능력치 합이 ${statRule.total}을 초과했습니다.`,
-                });
-            }
-
-            const personalityOptions = await loadPersonalityOptions();
-            const personalityKeys = personalityOptions.map((trait) => trait.key);
-            const resolveGeneralName = async (): Promise<string> => {
-                if (joinPolicy.blockGeneralCreate !== 2) {
-                    return input.name;
-                }
-                for (let attempt = 0; attempt < 5; attempt += 1) {
-                    const candidate = randomBytes(5).toString('hex');
-                    const exists = await ctx.db.general.findFirst({ where: { name: candidate } });
-                    if (!exists) {
-                        return candidate;
-                    }
-                }
-                throw new TRPCError({
-                    code: 'INTERNAL_SERVER_ERROR',
-                    message: '랜덤 장수명 생성에 실패했습니다.',
-                });
-            };
-
-            const generalName = await resolveGeneralName();
-            const chosenPersonality =
-                input.character === 'Random'
-                    ? pickFromList(personalityKeys, `${userId}:${generalName}`) ?? 'None'
-                    : isPersonalityTraitKey(input.character)
-                      ? input.character
-                      : 'None';
-
-            const createGeneral = async (db: DatabaseClient) => {
-                const existing = await db.general.findFirst({ where: { userId } });
-                if (existing) {
-                    throw new TRPCError({
-                        code: 'PRECONDITION_FAILED',
-                        message: '이미 장수가 생성되어 있습니다.',
-                    });
-                }
-                const nameExists = await db.general.findFirst({ where: { name: generalName } });
-                if (nameExists) {
-                    throw new TRPCError({
-                        code: 'CONFLICT',
-                        message: '이미 존재하는 장수명입니다.',
-                    });
-                }
-
-                const maxId = await db.general.aggregate({ _max: { id: true } });
-                const nextId = (maxId._max.id ?? 0) + 1;
-                const cityList = await db.city.findMany({
-                    select: { id: true, level: true, nationId: true, name: true },
-                    orderBy: { id: 'asc' },
-                });
-                if (!cityList.length) {
-                    throw new TRPCError({
-                        code: 'PRECONDITION_FAILED',
-                        message: '도시 정보를 찾을 수 없습니다.',
-                    });
-                }
-                const neutralCities = cityList.filter((city) => city.level >= 5 && city.level <= 6 && city.nationId === 0);
-                const candidateCities =
-                    neutralCities.length > 0 ? neutralCities : cityList.filter((city) => city.level >= 5 && city.level <= 6);
-                if (!candidateCities.length) {
-                    throw new TRPCError({
-                        code: 'PRECONDITION_FAILED',
-                        message: '생성 가능한 도시가 없습니다.',
-                    });
-                }
-
-                let inheritRequiredPoint = 0;
-                if (input.inheritCity !== undefined) {
-                    inheritRequiredPoint += inheritConst.inheritBornCityPoint;
-                }
-                if (input.inheritSpecial !== undefined) {
-                    inheritRequiredPoint += inheritConst.inheritBornSpecialPoint;
-                }
-                if (input.inheritTurntimeZone !== undefined) {
-                    inheritRequiredPoint += inheritConst.inheritBornTurntimePoint;
-                }
-                if (inheritBonus && inheritBonus.reduce((acc, value) => acc + value, 0) > 0) {
-                    inheritRequiredPoint += inheritConst.inheritBornStatPoint;
-                }
-
-                const currentPoint = await readInheritancePoint(db, userId, 'previous');
-                if (currentPoint < inheritRequiredPoint) {
-                    throw new TRPCError({
-                        code: 'BAD_REQUEST',
-                        message: '유산 포인트가 부족합니다.',
-                    });
-                }
-
-                const hiddenSeed = String(asRecord(worldState.meta).hiddenSeed ?? 'inherit');
-                const rng = new LiteHashDRBG(`${hiddenSeed}:MakeGeneral:${userId}:${generalName}`);
-
-                const bonusStatSum = inheritBonus ? inheritBonus.reduce((acc, value) => acc + value, 0) : 0;
-                const randomBonus =
-                    !inheritBonus || bonusStatSum === 0
-                        ? buildRandomBonus(
-                              rng,
-                              [input.leadership, input.strength, input.intel]
-                          )
-                        : (inheritBonus as [number, number, number]);
-
-                const finalLeadership = input.leadership + randomBonus[0];
-                const finalStrength = input.strength + randomBonus[1];
-                const finalIntel = input.intel + randomBonus[2];
-                const age = 20 + (randomBonus[0] + randomBonus[1] + randomBonus[2]) * 2 - nextRangeInt(rng, 0, 1);
-
-                const selectedCity =
-                    typeof input.inheritCity === 'number'
-                        ? candidateCities.find((city) => city.id === input.inheritCity)
-                        : null;
-                if (input.inheritCity !== undefined && !selectedCity) {
-                    throw new TRPCError({
-                        code: 'BAD_REQUEST',
-                        message: '지정한 도시를 찾을 수 없습니다.',
-                    });
-                }
-
-                const cityIndex = nextRangeInt(rng, 0, candidateCities.length - 1);
-                const cityId = (selectedCity ?? candidateCities[cityIndex] ?? candidateCities[0]).id;
-
-                const defaultSpecialDomestic =
-                    typeof configConst.defaultSpecialDomestic === 'string' ? configConst.defaultSpecialDomestic : 'None';
-                const defaultSpecialWar =
-                    typeof configConst.defaultSpecialWar === 'string' ? configConst.defaultSpecialWar : 'None';
-                const retirementYear =
-                    typeof configConst.retirementYear === 'number' && Number.isFinite(configConst.retirementYear)
-                        ? configConst.retirementYear
-                        : 80;
-                const worldMeta = asRecord(worldState.meta);
-                const scenarioMeta = asRecord(worldMeta.scenarioMeta);
-                const startYear =
-                    typeof scenarioMeta.startYear === 'number' && Number.isFinite(scenarioMeta.startYear)
-                        ? scenarioMeta.startYear
-                        : worldState.currentYear;
-                const relativeYear = Math.max(
-                    worldState.currentYear - startYear,
-                    0
-                );
-                const scenarioId = Number(worldMeta.scenarioId ?? worldState.scenarioCode);
-                const specialityAges = resolveJoinSpecialityAges({
-                    retirementYear,
-                    age,
-                    relativeYear,
-                    scenarioId,
-                });
-
-                const specialWar =
-                    input.inheritSpecial && isWarTraitKey(input.inheritSpecial) ? input.inheritSpecial : defaultSpecialWar;
-
-                const tickMinutes = Math.max(1, Math.round(worldState.tickSeconds / 60));
-                const baseTime = alignToTurnBase(new Date(), tickMinutes);
-                let turnTime = new Date(baseTime.getTime() + rng.nextFloat1() * tickMinutes * 60000);
-                if (input.inheritTurntimeZone !== undefined) {
-                    const offsetMinutes = input.inheritTurntimeZone * tickMinutes + rng.nextFloat1() * tickMinutes;
-                    turnTime = new Date(baseTime.getTime() + offsetMinutes * 60000);
-                }
-                if (turnTime.getTime() <= Date.now()) {
-                    turnTime = new Date(turnTime.getTime() + tickMinutes * 60000);
-                }
-
-                const logEntries: string[] = [];
-                if (input.inheritSpecial && isWarTraitKey(input.inheritSpecial)) {
-                    const [special] = await loadWarOptions([input.inheritSpecial]);
-                    const specialName = special?.name ?? input.inheritSpecial;
-                    logEntries.push(`${specialName} 전투 특기를 가진 천재 생성`);
-                }
-                if (input.inheritCity !== undefined && selectedCity) {
-                    logEntries.push(`${selectedCity.name}에 장수 생성`);
-                }
-                if (inheritBonus && inheritBonus.reduce((acc, value) => acc + value, 0) > 0) {
-                    logEntries.push(
-                        `${inheritBonus[0]}, ${inheritBonus[1]}, ${inheritBonus[2]} 보너스 능력치로 생성`
-                    );
-                }
-                if (input.inheritTurntimeZone !== undefined) {
-                    const zones = buildTurnTimeZones(tickMinutes);
-                    const zoneLabel = zones[input.inheritTurntimeZone];
-                    if (zoneLabel) {
-                        logEntries.push(`턴 시간 ${zoneLabel} 로 지정`);
-                    }
-                }
-
-                const general = await db.general.create({
-                    data: {
-                        id: nextId,
-                        userId,
-                        name: generalName,
-                        nationId: 0,
-                        cityId,
-                        troopId: 0,
-                        npcState: 0,
-                        leadership: finalLeadership,
-                        strength: finalStrength,
-                        intel: finalIntel,
-                        personalCode: chosenPersonality ?? 'None',
-                        specialCode: defaultSpecialDomestic,
-                        special2Code: specialWar,
-                        turnTime,
-                        age,
-                        startAge: age,
-                        meta: {
-                            createdBy: 'join',
-                            ownerName: ctx.auth?.user.displayName ?? '',
-                            killturn: 24,
-                            specage: specialityAges.domestic,
-                            specage2: specialityAges.war,
-                        },
-                    },
-                });
-                await db.generalAccessLog.upsert({
-                    where: { generalId: general.id },
-                    update: {
-                        userId,
-                        lastRefresh: new Date(),
-                    },
-                    create: {
-                        generalId: general.id,
-                        userId,
-                        lastRefresh: new Date(),
-                    },
-                });
-
-                if (inheritRequiredPoint > 0) {
-                    await setInheritancePoint(db, userId, 'previous', currentPoint - inheritRequiredPoint);
-                }
-                for (const entry of logEntries) {
-                    await appendInheritanceLog(db, userId, worldState.currentYear, worldState.currentMonth, entry);
-                }
-
-                return { ok: true, generalId: general.id };
-            };
-
-            return ctx.db.$transaction ? ctx.db.$transaction(createGeneral) : createGeneral(ctx.db);
+            const userId = auth.user.id;
+            const commandRequestId = resolveJoinCreateRequestId(ctx.requestId, userId, input.clientRequestId);
+            const result = await requestJoinCreateCommand(ctx, {
+                type: 'joinCreateGeneral',
+                ...(commandRequestId ? { requestId: commandRequestId } : {}),
+                userId,
+                ownerDisplayName: auth.user.displayName,
+                seedOwnerIdentity: auth.user.legacyMemberNo ?? userId,
+                name: input.name,
+                leadership: input.leadership,
+                strength: input.strength,
+                intel: input.intel,
+                pic: input.pic,
+                character: input.character,
+                profileId: ctx.profile.id,
+                ...(auth.user.picture !== undefined ? { ownerPicture: auth.user.picture } : {}),
+                ...(auth.user.imageServer !== undefined ? { ownerImageServer: auth.user.imageServer } : {}),
+                ...(auth.user.canUseGeneralPicture !== undefined
+                    ? {
+                          ownerCanUsePicture: auth.user.canUseGeneralPicture,
+                      }
+                    : {}),
+                ...(auth.sanctions.legacyPenalty !== undefined
+                    ? {
+                          ownerLegacyPenalty: auth.sanctions.legacyPenalty,
+                      }
+                    : {}),
+                ...(input.inheritSpecial !== undefined ? { inheritSpecial: input.inheritSpecial } : {}),
+                ...(input.inheritTurntimeZone !== undefined ? { inheritTurntimeZone: input.inheritTurntimeZone } : {}),
+                ...(input.inheritCity !== undefined ? { inheritCity: input.inheritCity } : {}),
+                ...(input.inheritBonusStat !== undefined ? { inheritBonusStat: input.inheritBonusStat } : {}),
+            });
+            return resolveJoinCreateCommandResult(result);
         }),
     listPossessCandidates: authedProcedure
         .input(

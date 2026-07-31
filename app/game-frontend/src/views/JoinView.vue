@@ -10,7 +10,14 @@ import { cityLevelMap, regionMap } from '../utils/nationFormat';
 type JoinConfig = Awaited<ReturnType<typeof trpc.join.getConfig.query>>;
 type JoinInput = Parameters<typeof trpc.join.createGeneral.mutate>[0];
 type PossessCandidate = Awaited<ReturnType<typeof trpc.join.listPossessCandidates.query>>[0];
-type JoinForm = Omit<JoinInput, 'inheritBonusStat'> & { inheritBonusStat: [number, number, number] };
+type JoinForm = Omit<JoinInput, 'inheritBonusStat' | 'clientRequestId'> & {
+    inheritBonusStat: [number, number, number];
+};
+type PendingJoinAction = {
+    ownerUserId: string;
+    input: JoinForm;
+    clientRequestId: string;
+};
 
 const router = useRouter();
 const session = useSessionStore();
@@ -21,6 +28,7 @@ const submitting = ref(false);
 
 const joinConfig = ref<JoinConfig | null>(null);
 const activeTab = ref<'create' | 'possess'>('create');
+const pendingJoinStorageKey = 'sammo-join-create-pending-action';
 
 const form = ref<JoinForm>({
     name: '',
@@ -31,6 +39,55 @@ const form = ref<JoinForm>({
     pic: true,
     inheritBonusStat: [0, 0, 0],
 });
+
+const readPendingJoin = (): PendingJoinAction | null => {
+    try {
+        const raw = window.sessionStorage.getItem(pendingJoinStorageKey);
+        if (!raw) return null;
+        const value = JSON.parse(raw) as Partial<PendingJoinAction>;
+        if (
+            !value.input ||
+            typeof value.input !== 'object' ||
+            typeof value.ownerUserId !== 'string' ||
+            typeof value.clientRequestId !== 'string'
+        ) {
+            return null;
+        }
+        return value as PendingJoinAction;
+    } catch {
+        return null;
+    }
+};
+
+const cloneJoinInput = (): JoinForm => JSON.parse(JSON.stringify(form.value)) as JoinForm;
+
+const getPendingJoin = (): PendingJoinAction => {
+    const input = cloneJoinInput();
+    const current = readPendingJoin();
+    const ownerUserId = joinConfig.value?.user.id ?? '';
+    if (current && current.ownerUserId === ownerUserId && JSON.stringify(current.input) === JSON.stringify(input)) {
+        return current;
+    }
+    const pending: PendingJoinAction = {
+        ownerUserId,
+        input,
+        clientRequestId: crypto.randomUUID(),
+    };
+    window.sessionStorage.setItem(pendingJoinStorageKey, JSON.stringify(pending));
+    return pending;
+};
+
+const clearPendingJoin = (pending: PendingJoinAction): void => {
+    if (readPendingJoin()?.clientRequestId === pending.clientRequestId) {
+        window.sessionStorage.removeItem(pendingJoinStorageKey);
+    }
+};
+
+const isIndeterminateTimeout = (value: unknown): boolean => {
+    if (!value || typeof value !== 'object' || !('data' in value)) return false;
+    const data = value.data;
+    return Boolean(data && typeof data === 'object' && 'code' in data && data.code === 'TIMEOUT');
+};
 
 const npcCandidates = ref<PossessCandidate[]>([]);
 const npcLoading = ref(false);
@@ -199,8 +256,13 @@ const loadConfig = async () => {
             return;
         }
         joinConfig.value = config;
-        form.value.name = config.user.displayName || '';
-        applyBalancedStats();
+        const pending = readPendingJoin();
+        if (pending?.ownerUserId === config.user.id) {
+            form.value = pending.input;
+        } else {
+            form.value.name = config.rules.allowCustomName ? config.user.displayName || '' : '무작위';
+            applyBalancedStats();
+        }
     } catch (err) {
         error.value = err instanceof Error ? err.message : 'join_config_failed';
     } finally {
@@ -234,13 +296,21 @@ const submitJoin = async () => {
     }
     submitting.value = true;
     error.value = null;
+    const pending = getPendingJoin();
     try {
-        await trpc.join.createGeneral.mutate(form.value);
+        await trpc.join.createGeneral.mutate({
+            ...pending.input,
+            clientRequestId: pending.clientRequestId,
+        });
+        clearPendingJoin(pending);
         await session.refreshGeneralStatus();
         if (session.hasGeneral) {
             await router.push({ name: 'home' });
         }
     } catch (err) {
+        if (!isIndeterminateTimeout(err)) {
+            clearPendingJoin(pending);
+        }
         error.value = err instanceof Error ? err.message : 'join_failed';
     } finally {
         submitting.value = false;
@@ -315,7 +385,13 @@ onMounted(() => {
                 <div class="form-grid">
                     <label class="form-field">
                         <span>장수명</span>
-                        <input v-model="form.name" type="text" class="form-input" />
+                        <input
+                            v-if="joinConfig?.rules.allowCustomName"
+                            v-model="form.name"
+                            type="text"
+                            class="form-input"
+                        />
+                        <span v-else>무작위</span>
                     </label>
                     <label class="form-field">
                         <span>성격</span>

@@ -329,6 +329,7 @@ describe('auction integration flow', () => {
                 strength: 55,
                 intel: 55,
                 character: 'Random',
+                pic: true,
             });
             userSessions.push({
                 username: user.username,

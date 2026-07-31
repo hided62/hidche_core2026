@@ -16,6 +16,11 @@ export const PERSONALITY_TRAIT_KEYS = [
 
 export type PersonalityTraitKey = (typeof PERSONALITY_TRAIT_KEYS)[number];
 
+// Ref GameConst::$availablePersonality에는 은둔이 포함되지 않는다.
+export const JOIN_PERSONALITY_TRAIT_KEYS = PERSONALITY_TRAIT_KEYS.filter(
+    (key): key is Exclude<PersonalityTraitKey, 'che_은둔'> => key !== 'che_은둔'
+);
+
 export type PersonalityTraitModule = TraitModule;
 
 export type PersonalityTraitImporter = () => Promise<TraitModuleExport>;

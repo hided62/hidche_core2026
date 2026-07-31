@@ -302,7 +302,13 @@ const buildPersistedGeneralMeta = (
 const buildInitialRankRows = (
     general: ReturnType<InMemoryTurnWorld['consumeDirtyState']>['generals'][number]
 ): Array<{ generalId: number; nationId: number; type: string; value: number }> =>
-    buildPersistedRankRows(general).map((row) => ({ ...row, nationId: 0, value: 0 }));
+    buildPersistedRankRows(general).map((row) => ({
+        ...row,
+        nationId: 0,
+        // Ref Join은 전체 rank_data를 0으로 만든 직후 장수 생성에 사용한
+        // 유산 포인트만 inherit_spent_dyn에 반영한다.
+        value: row.type === 'inherit_spent_dyn' ? row.value : 0,
+    }));
 
 const RANK_DATA_UPSERT_BATCH_SIZE = 1_000;
 
@@ -362,6 +368,7 @@ const buildGeneralUpdate = (
     specialCode: toCode(general.role.specialDomestic),
     special2Code: toCode(general.role.specialWar),
     lastTurn: asJson(general.lastTurn ?? { command: '휴식' }),
+    penalty: asJson(general.penalty ?? {}),
     meta: buildPersistedGeneralMeta(general),
     turnTime: general.turnTime,
     recentWarTime: general.recentWarTime ?? null,
@@ -405,6 +412,7 @@ const buildGeneralCreate = (
     specialCode: toCode(general.role.specialDomestic),
     special2Code: toCode(general.role.specialWar),
     lastTurn: asJson(general.lastTurn ?? { command: '휴식' }),
+    penalty: asJson(general.penalty ?? {}),
     meta: buildPersistedGeneralMeta(general),
     turnTime: general.turnTime,
     recentWarTime: general.recentWarTime ?? null,

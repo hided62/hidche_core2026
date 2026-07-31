@@ -79,7 +79,8 @@ const buildCaller = (options: { userIconDir?: string; localAccountGraceDays?: nu
     ];
     const profiles = {
         listProfiles: async () => profileRows,
-        getProfile: async (profileName: string) => profileRows.find((profile) => profile.profileName === profileName) ?? null,
+        getProfile: async (profileName: string) =>
+            profileRows.find((profile) => profile.profileName === profileName) ?? null,
         upsertProfile: async () => {
             throw new Error('not used');
         },
@@ -544,6 +545,49 @@ describe('gateway auth flow', () => {
         expect(validated?.user).not.toHaveProperty('legacyMemberNo');
     });
 
+    it('issues each game token from the latest user roles, sanctions, and icon', async () => {
+        const { caller, users, sessions } = buildCaller();
+        const user = await users.createUser({
+            username: 'fresh-game-identity',
+            password: 'secretpass',
+        });
+        user.legacyGrade = 0;
+        const session = await sessions.createSession(user);
+
+        await users.updateRoles(user.id, ['user', 'latest-role']);
+        await users.updateSanctions(user.id, {
+            warningCount: 2,
+            legacyPenalty: {
+                any: {
+                    chat: { expire: 4_102_444_800, value: 1 },
+                },
+            },
+        });
+        await users.updateIcon(user.id, 'latest-owner.webp', 3, new Date('2026-07-30T12:00:00.000Z'));
+
+        const issued = await caller.auth.issueGameSession({
+            sessionToken: session.sessionToken,
+            profile: 'che:default',
+        });
+        const payload = decryptGameSessionToken(issued.gameToken, 'test-secret');
+
+        expect(payload?.user).toMatchObject({
+            id: user.id,
+            roles: ['user', 'latest-role'],
+            picture: 'latest-owner.webp',
+            imageServer: 3,
+            canUseGeneralPicture: false,
+        });
+        expect(payload?.sanctions).toMatchObject({
+            warningCount: 2,
+            legacyPenalty: {
+                any: {
+                    chat: { expire: 4_102_444_800, value: 1 },
+                },
+            },
+        });
+    });
+
     it('revokes the gateway session and every linked game session on logout', async () => {
         const { caller, users, sessions } = buildCaller();
         const user = await users.createUser({
@@ -573,10 +617,10 @@ describe('account self service', () => {
         const session = await sessions.createSession(user);
 
         await expect(
-                caller.account.changePassword({
-                    sessionToken: session.sessionToken,
-                    currentCredential: sealPassword('wrong-password'),
-                    newCredential: sealPassword('next-password'),
+            caller.account.changePassword({
+                sessionToken: session.sessionToken,
+                currentCredential: sealPassword('wrong-password'),
+                newCredential: sealPassword('next-password'),
             })
         ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
 

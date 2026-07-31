@@ -13,12 +13,7 @@ import type { UserOAuthInfo } from './auth/userRepository.js';
 import { adminRouter } from './adminRouter.js';
 import { accountRouter } from './account/router.js';
 import { resolveLocalAccountProfilePolicy } from './auth/localAccountPolicy.js';
-import {
-    openPassword,
-    zDisplayName,
-    zPasswordEnvelope,
-    zRegistrationUsername,
-} from './auth/registrationInput.js';
+import { openPassword, zDisplayName, zPasswordEnvelope, zRegistrationUsername } from './auth/registrationInput.js';
 
 const zUsername = z
     .string()
@@ -667,14 +662,17 @@ export const appRouter = router({
                     expiresAt: addSeconds(now, ctx.gameSessionTtlSeconds).toISOString(),
                     sessionId: gameSession.gameToken,
                     user: {
-                        id: gameSession.userId,
-                        username: gameSession.username,
-                        displayName: gameSession.displayName,
-                        roles: gameSession.roles,
-                        createdAt: gameSession.createdAt,
-                        legacyMemberNo: gameSession.legacyMemberNo,
+                        id: user.id,
+                        username: user.username,
+                        displayName: user.displayName,
+                        picture: user.picture,
+                        imageServer: user.imageServer,
+                        canUseGeneralPicture: user.legacyGrade === undefined || user.legacyGrade >= 1,
+                        roles: user.roles,
+                        createdAt: user.createdAt,
+                        legacyMemberNo: user.legacyMemberNo,
                     },
-                    sanctions: gameSession.sanctions,
+                    sanctions: user.sanctions,
                     identity: {
                         kakaoVerified: localAccountPolicy.kakaoVerified,
                         canCreateGeneral: localAccountPolicy.canCreateGeneral,

@@ -23,6 +23,7 @@ export * from './turn/engineStateManager.js';
 export * from './turn/inMemoryStateStore.js';
 export * from './turn/inMemoryTurnProcessor.js';
 export * from './turn/databaseHooks.js';
+export * from './turn/joinCreateGeneralService.js';
 export * from './turn/selectPoolService.js';
 export * from './turn/turnDaemon.js';
 export * from './turn/cli.js';

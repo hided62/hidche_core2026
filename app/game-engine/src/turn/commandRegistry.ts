@@ -243,6 +243,31 @@ const zPatchGeneral = z.object({
     }),
 });
 
+const zJoinCreateGeneral = z
+    .object({
+        type: z.literal('joinCreateGeneral'),
+        requestId: z.string().optional(),
+        userId: z.string().min(1),
+        ownerDisplayName: z.string(),
+        seedOwnerIdentity: z.union([z.string().min(1), zFiniteNumber]),
+        name: z.string().min(1).max(18),
+        leadership: zFiniteNumber,
+        strength: zFiniteNumber,
+        intel: zFiniteNumber,
+        pic: z.boolean(),
+        character: z.string().min(1),
+        profileId: z.string().min(1),
+        ownerPicture: z.string().optional(),
+        ownerImageServer: zFiniteNumber.optional(),
+        ownerCanUsePicture: z.boolean().optional(),
+        ownerLegacyPenalty: zRecord.optional(),
+        inheritSpecial: z.string().optional(),
+        inheritTurntimeZone: zFiniteNumber.optional(),
+        inheritCity: zFiniteNumber.optional(),
+        inheritBonusStat: z.tuple([zFiniteNumber, zFiniteNumber, zFiniteNumber]).optional(),
+    })
+    .strict();
+
 const zSelectPoolCreate = z
     .object({
         type: z.literal('selectPoolCreate'),
@@ -295,7 +320,12 @@ const zShutdown = z.object({
 const zShiftSchedule = z.object({
     type: z.literal('shiftSchedule'),
     actionId: z.string().uuid(),
-    deltaMinutes: z.number().int().min(-1440).max(1440).refine((value) => value !== 0),
+    deltaMinutes: z
+        .number()
+        .int()
+        .min(-1440)
+        .max(1440)
+        .refine((value) => value !== 0),
 });
 
 const normalizeAuctionFinalize: CommandNormalizer<'auctionFinalize'> = (envelope) => {
@@ -506,6 +536,14 @@ const normalizePatchGeneral: CommandNormalizer<'patchGeneral'> = (envelope) => {
     return { ...command, requestId: envelope.requestId };
 };
 
+const normalizeJoinCreateGeneral: CommandNormalizer<'joinCreateGeneral'> = (envelope) => {
+    const command = parseWith(zJoinCreateGeneral, envelope.command);
+    if (!command) {
+        return null;
+    }
+    return { ...command, requestId: envelope.requestId };
+};
+
 const normalizeSelectPoolCreate: CommandNormalizer<'selectPoolCreate'> = (envelope) => {
     const command = parseWith(zSelectPoolCreate, envelope.command);
     if (!command) {
@@ -585,6 +623,7 @@ const normalizers: CommandNormalizerMap = {
     adjustGeneralMeta: normalizeAdjustGeneralMeta,
     tournamentMatchResult: normalizeTournamentMatchResult,
     patchGeneral: normalizePatchGeneral,
+    joinCreateGeneral: normalizeJoinCreateGeneral,
     selectPoolCreate: normalizeSelectPoolCreate,
     selectPoolReselect: normalizeSelectPoolReselect,
     getStatus: normalizeGetStatus,

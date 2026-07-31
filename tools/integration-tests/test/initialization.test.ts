@@ -322,6 +322,7 @@ describe('integration initialization flow', () => {
                 strength: 55,
                 intel: 55,
                 character: 'Random',
+                pic: true,
             });
             const generalInfo = await userGameClient.general.me.query();
             if (!generalInfo?.general) {

@@ -204,6 +204,7 @@ export interface TurnEngineGeneralUpdateInput {
     specialCode: string;
     special2Code: string;
     lastTurn: InputJsonValue;
+    penalty: InputJsonValue;
     meta: InputJsonValue;
     turnTime: Date;
     recentWarTime: Date | null;

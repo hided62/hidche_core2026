@@ -21,6 +21,7 @@ export interface UserRecord {
     passwordSalt: string;
     createdAt: string;
     legacyMemberNo?: number;
+    legacyGrade?: number;
 }
 
 export interface PublicUser {
@@ -43,6 +44,7 @@ export interface UserSanctions {
     notes?: string;
     profileIconResetAt?: string;
     serverRestrictions?: Record<string, UserServerRestriction>;
+    legacyPenalty?: Record<string, unknown>;
 }
 
 export interface UserServerRestriction {

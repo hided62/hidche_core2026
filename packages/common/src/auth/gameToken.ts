@@ -9,6 +9,7 @@ export interface UserSanctions {
     notes?: string;
     profileIconResetAt?: string;
     serverRestrictions?: Record<string, UserServerRestriction>;
+    legacyPenalty?: Record<string, unknown>;
 }
 
 export interface UserServerRestriction {
@@ -23,6 +24,9 @@ export interface GatewayUserInfo {
     username: string;
     displayName: string;
     roles: string[];
+    picture?: string;
+    imageServer?: number;
+    canUseGeneralPicture?: boolean;
     createdAt?: string;
     legacyMemberNo?: number;
 }
@@ -58,7 +62,7 @@ export const encryptGameSessionToken = (payload: GameSessionTokenPayload, secret
     return `${toBase64Url(iv)}.${toBase64Url(ciphertext)}.${toBase64Url(tag)}`;
 };
 
-const parsePayload = (value: unknown): GameSessionTokenPayload | null => {
+export const parseGameSessionTokenPayload = (value: unknown): GameSessionTokenPayload | null => {
     if (!value || typeof value !== 'object') {
         return null;
     }
@@ -84,8 +88,10 @@ const parsePayload = (value: unknown): GameSessionTokenPayload | null => {
         typeof user.username !== 'string' ||
         typeof user.displayName !== 'string' ||
         !Array.isArray(user.roles) ||
-        (user.legacyMemberNo !== undefined &&
-            (!Number.isSafeInteger(user.legacyMemberNo) || user.legacyMemberNo <= 0))
+        (user.picture !== undefined && typeof user.picture !== 'string') ||
+        (user.imageServer !== undefined && (!Number.isSafeInteger(user.imageServer) || user.imageServer < 0)) ||
+        (user.canUseGeneralPicture !== undefined && typeof user.canUseGeneralPicture !== 'boolean') ||
+        (user.legacyMemberNo !== undefined && (!Number.isSafeInteger(user.legacyMemberNo) || user.legacyMemberNo <= 0))
     ) {
         return null;
     }
@@ -123,7 +129,7 @@ export const decryptGameSessionToken = (token: string, secret: string): GameSess
         const decipher = createDecipheriv('aes-256-gcm', key, iv);
         decipher.setAuthTag(tag);
         const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
-        return parsePayload(JSON.parse(plaintext));
+        return parseGameSessionTokenPayload(JSON.parse(plaintext));
     } catch {
         return null;
     }

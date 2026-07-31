@@ -639,6 +639,7 @@ describe('pm2 orchestrator e2e', () => {
             strength: 55,
             intel: 55,
             character: 'Random',
+            pic: true,
         });
         expect(createdGeneral.generalId).toBeGreaterThan(0);
 

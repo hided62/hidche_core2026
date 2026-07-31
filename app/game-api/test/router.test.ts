@@ -281,9 +281,9 @@ describe('appRouter', () => {
     });
 
     it('rejects unauthenticated or game-blocked auth status checks', async () => {
-        await expect(
-            appRouter.createCaller(buildContext({ auth: null })).auth.status()
-        ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+        await expect(appRouter.createCaller(buildContext({ auth: null })).auth.status()).rejects.toMatchObject({
+            code: 'UNAUTHORIZED',
+        });
         await expect(
             appRouter
                 .createCaller(
@@ -346,6 +346,7 @@ describe('appRouter', () => {
                 leadership: 55,
                 strength: 55,
                 intel: 55,
+                pic: false,
                 character: 'Random',
             })
         ).rejects.toMatchObject({
