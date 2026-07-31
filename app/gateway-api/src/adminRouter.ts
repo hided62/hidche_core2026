@@ -1332,11 +1332,6 @@ export const adminRouter = router({
                     SHUTDOWN: 'DISABLED',
                 } as const;
                 const mappedStatus = statusMap[input.action as keyof typeof statusMap];
-                if (mappedStatus) {
-                    await ctx.profiles.updateStatus(input.profileName, mappedStatus);
-                    await ctx.orchestrator.reconcileNow();
-                }
-
                 const meta = readMetaObject(profile.meta);
                 const actionLog = Array.isArray(meta.adminActions)
                     ? meta.adminActions.filter((entry) => entry && typeof entry === 'object')
@@ -1354,6 +1349,23 @@ export const adminRouter = router({
                     adminActions: [...actionLog, actionRecord],
                 };
                 await ctx.profiles.updateMeta(input.profileName, nextMeta);
+                if (mappedStatus) {
+                    await ctx.profiles.updateStatus(input.profileName, mappedStatus);
+                    await ctx.orchestrator.reconcileNow();
+                    const appliedActionRecord = {
+                        ...actionRecord,
+                        status: 'APPLIED',
+                        handledAt: new Date().toISOString(),
+                        handler: 'gateway-api',
+                        detail: `profile status reconciled as ${mappedStatus}`,
+                    };
+                    await ctx.profiles.updateMeta(input.profileName, {
+                        ...nextMeta,
+                        adminActions: [...actionLog, appliedActionRecord],
+                        adminActionsUpdatedAt: appliedActionRecord.handledAt,
+                    });
+                    return { ok: true, action: appliedActionRecord };
+                }
                 return { ok: true, action: actionRecord };
             }),
         requestBuild: profileAdminProcedure

@@ -42,6 +42,7 @@ const buildCaller = async (
     const createdRuntimeActions: Array<Record<string, unknown>> = [];
     const flushes: Array<{ userId: string; reason?: string; iconRevision?: string }> = [];
     const updatedStatuses: GatewayProfileRecord['status'][] = [];
+    const updatedMetas: Record<string, unknown>[] = [];
     let reconcileCount = 0;
     let storedNotice = options.initialNotice ?? '';
     const profile = {
@@ -65,7 +66,10 @@ const buildCaller = async (
             return { ...profile, status };
         },
         updateBuildStatus: async () => profile,
-        updateMeta: async () => profile,
+        updateMeta: async (_profileName, meta) => {
+            updatedMetas.push(meta);
+            return profile;
+        },
         listReservedToStart: async () => [],
         findQueuedBuild: async () => null,
         updateLastError: async () => {},
@@ -171,6 +175,7 @@ const buildCaller = async (
         admin,
         flushes,
         updatedStatuses,
+        updatedMetas,
         getReconcileCount: () => reconcileCount,
         getStoredNotice: () => storedNotice,
         setStoredNotice: (notice: string) => {
@@ -360,6 +365,47 @@ describe('admin runtime clock action API', () => {
         ).resolves.toMatchObject({ ok: true });
         expect(harness.updatedStatuses).toEqual(['RUNNING']);
         expect(harness.getReconcileCount()).toBe(1);
+        expect(harness.updatedMetas).toHaveLength(2);
+        expect(harness.updatedMetas.at(-1)).toMatchObject({
+            adminActions: [
+                {
+                    action: 'RESUME',
+                    status: 'APPLIED',
+                    handler: 'gateway-api',
+                    detail: 'profile status reconciled as RUNNING',
+                },
+            ],
+        });
+    });
+
+    it.each([
+        ['STOP', 'STOPPED'],
+        ['SHUTDOWN', 'DISABLED'],
+    ] as const)('records %s as terminal only after runtime reconciliation', async (action, expectedStatus) => {
+        const harness = await buildCaller(unusedCreateOperation, { initialProfileStatus: 'RUNNING' });
+
+        const result = await harness.caller.admin.profiles.requestAction({
+            profileName: 'che:2',
+            action,
+        });
+
+        expect(harness.updatedStatuses).toEqual([expectedStatus]);
+        expect(harness.getReconcileCount()).toBe(1);
+        expect(harness.updatedMetas).toHaveLength(2);
+        expect(harness.updatedMetas[0]).toMatchObject({
+            adminActions: [{ action, status: 'REQUESTED' }],
+        });
+        expect(harness.updatedMetas[1]).toMatchObject({
+            adminActions: [
+                {
+                    action,
+                    status: 'APPLIED',
+                    handler: 'gateway-api',
+                    detail: `profile status reconciled as ${expectedStatus}`,
+                },
+            ],
+        });
+        expect(result.action).toMatchObject({ action, status: 'APPLIED', handledAt: expect.any(String) });
     });
 
     it('rejects resume outside stopped and paused states without reconciliation', async () => {
