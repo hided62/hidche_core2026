@@ -274,6 +274,14 @@ integration('generic general creation through the durable turn daemon', () => {
             killturn: 6,
             inherit_spent_dyn: 4500,
         });
+        const createdAccess = await db.generalAccessLog.findUniqueOrThrow({ where: { generalId: created.id } });
+        if (!createdAccess.lastRefresh) {
+            throw new Error('created general must have an initial access timestamp');
+        }
+        expect(
+            new Date((created.meta as Record<string, unknown>).prestart_delete_after as string).getTime() -
+                createdAccess.lastRefresh.getTime()
+        ).toBe(2 * 5 * 60 * 1_000);
         expect(runtime!.world.getGeneralById(created.id)).toMatchObject({
             id: created.id,
             userId,

@@ -20,6 +20,7 @@ import type { WarTraitKey } from '@sammo-ts/logic';
 
 import type { DatabaseClient, GamePrisma as GamePrismaTypes } from '@sammo-ts/infra';
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
+import { buildPrestartDeleteAfter } from './prestartDeletion.js';
 import type { TurnGeneral } from './types.js';
 
 type WorldStateRow = GamePrismaTypes.WorldStateGetPayload<Record<string, never>>;
@@ -702,6 +703,7 @@ export const createGeneralFromJoin = async (options: {
     const nextInheritancePoint = currentInheritancePoint - inheritRequiredPoint;
     const restInheritanceBonus = await resolveRestInheritanceBonus(db, worldState, input.userId);
     const finalInheritancePoint = nextInheritancePoint + restInheritanceBonus;
+    const prestartDeleteAfter = buildPrestartDeleteAfter(acceptedAt, worldState.tickSeconds, config);
     const general: TurnGeneral = {
         id: generalId,
         userId: input.userId,
@@ -778,6 +780,7 @@ export const createGeneralFromJoin = async (options: {
             tournament: 0,
             newvote: 0,
             inherit_spent_dyn: inheritRequiredPoint,
+            prestart_delete_after: prestartDeleteAfter.toISOString(),
         },
     };
     if (!world.addGeneral(general)) {

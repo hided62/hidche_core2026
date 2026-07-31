@@ -99,6 +99,10 @@ export const useSessionStore = defineStore('session', {
             this.setGameToken(null);
             this.status = 'public';
         },
+        leaveGame() {
+            this.setGameToken(null);
+            this.status = this.sessionToken ? 'authed' : 'public';
+        },
         async refreshGeneralStatus() {
             if (!this.gameToken) {
                 this.status = this.sessionToken ? 'authed' : 'public';

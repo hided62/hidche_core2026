@@ -88,6 +88,13 @@ const zTroopRename = z.object({
 
 const zDieOnPrestart = z.object({
     type: z.literal('dieOnPrestart'),
+    userId: z.string().min(1),
+    generalId: zFiniteNumber,
+});
+
+const zEnsureDieOnPrestartStatus = z.object({
+    type: z.literal('ensureDieOnPrestartStatus'),
+    userId: z.string().min(1),
     generalId: zFiniteNumber,
 });
 
@@ -415,6 +422,14 @@ const normalizeDieOnPrestart: CommandNormalizer<'dieOnPrestart'> = (envelope) =>
     return { ...command, requestId: envelope.requestId };
 };
 
+const normalizeEnsureDieOnPrestartStatus: CommandNormalizer<'ensureDieOnPrestartStatus'> = (envelope) => {
+    const command = parseWith(zEnsureDieOnPrestartStatus, envelope.command);
+    if (!command) {
+        return null;
+    }
+    return { ...command, requestId: envelope.requestId };
+};
+
 const normalizeBuildNationCandidate: CommandNormalizer<'buildNationCandidate'> = (envelope) => {
     const command = parseWith(zBuildNationCandidate, envelope.command);
     if (!command) {
@@ -629,6 +644,7 @@ const normalizers: CommandNormalizerMap = {
     troopKick: normalizeTroopKick,
     troopRename: normalizeTroopRename,
     dieOnPrestart: normalizeDieOnPrestart,
+    ensureDieOnPrestartStatus: normalizeEnsureDieOnPrestartStatus,
     buildNationCandidate: normalizeBuildNationCandidate,
     instantRetreat: normalizeInstantRetreat,
     vacation: normalizeVacation,

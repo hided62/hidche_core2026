@@ -26,6 +26,10 @@ type FixtureState = {
     instantRetreatEnabled?: boolean;
     instantRetreatAttempts?: number;
     instantRetreatInputs?: Array<Record<string, unknown>>;
+    dieOnPrestartShow?: boolean;
+    dieOnPrestartAvailableAt?: string;
+    dieOnPrestartAttempts?: number;
+    dieOnPrestartInputs?: Array<Record<string, unknown>>;
     generalMeQueries?: number;
     generalLogQueries?: number;
     settingMutations: Array<Record<string, unknown>>;
@@ -125,8 +129,10 @@ const battleCenter = (state: FixtureState) => ({
 
 const install = async (page: Page, state: FixtureState) => {
     await page.addInitScript(() => {
-        localStorage.setItem('sammo-game-token', 'ga_menu-token');
-        localStorage.setItem('sammo-game-profile', 'che:default');
+        if (location.pathname.startsWith('/che/')) {
+            localStorage.setItem('sammo-game-token', 'ga_menu-token');
+            localStorage.setItem('sammo-game-profile', 'che:default');
+        }
     });
     await page.route('**/image/game/**', async (route) => {
         const filename = basename(new URL(route.request().url()).pathname);
@@ -158,6 +164,12 @@ const install = async (page: Page, state: FixtureState) => {
                 state.generalMeQueries = (state.generalMeQueries ?? 0) + 1;
                 return response(myGeneral(state));
             }
+            if (operation === 'general.ensureDieOnPrestartStatus')
+                return response({
+                    show: state.dieOnPrestartShow ?? false,
+                    available: false,
+                    availableAt: state.dieOnPrestartAvailableAt ?? null,
+                });
             if (operation === 'world.getState')
                 return response({
                     currentYear: 185,
@@ -202,6 +214,20 @@ const install = async (page: Page, state: FixtureState) => {
                     return {
                         error: {
                             message: '요청 처리 결과를 확인하지 못했습니다.',
+                            code: -32000,
+                            data: { code: 'TIMEOUT', httpStatus: 408, path: operation },
+                        },
+                    };
+                }
+                return response({ ok: true });
+            }
+            if (operation === 'general.dieOnPrestart') {
+                state.dieOnPrestartInputs?.push(jsonInput);
+                state.dieOnPrestartAttempts = (state.dieOnPrestartAttempts ?? 0) + 1;
+                if (state.dieOnPrestartAttempts === 1) {
+                    return {
+                        error: {
+                            message: '요청은 접수됐지만 처리 결과를 아직 확인하지 못했습니다.',
                             code: -32000,
                             data: { code: 'TIMEOUT', httpStatus: 408, path: operation },
                         },
@@ -478,6 +504,124 @@ test('내 정보 즉시행동은 timeout 재시도 ID를 유지하고 성공 후
     expect(requestIds?.[2]).toEqual(expect.stringMatching(/^[0-9a-f-]{36}$/i));
     expect(requestIds?.[2]).not.toBe(requestIds?.[1]);
     expect(state.instantRetreatInputs?.every((input) => !('generalId' in input))).toBe(true);
+});
+
+test('가오픈 장수 삭제는 레거시 표시와 확인을 보존하고 timeout을 같은 ID로 재시도한다', async ({ page }) => {
+    const state: FixtureState = {
+        permission: 'head',
+        myset: 3,
+        dieOnPrestartShow: true,
+        dieOnPrestartAvailableAt: '2026-01-01T00:20:00.000Z',
+        dieOnPrestartAttempts: 0,
+        dieOnPrestartInputs: [],
+        settingMutations: [],
+        accessPages: [],
+    };
+    const dialogs: string[] = [];
+    let confirmCount = 0;
+    page.on('dialog', async (dialog) => {
+        dialogs.push(`${dialog.type()}:${dialog.message()}`);
+        if (dialog.type() === 'confirm') {
+            confirmCount += 1;
+            if (confirmCount === 1) {
+                await dialog.dismiss();
+                return;
+            }
+        }
+        await dialog.accept();
+    });
+    await install(page, state);
+    await page.addInitScript(() => {
+        localStorage.setItem('sammo-session-token', 'gateway-session-token');
+    });
+    await page.route(/^http:\/\/127\.0\.0\.1:\d+\/api\/trpc\/me(?:\?|$)/u, async (route) => {
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify(
+                response({
+                    id: 'gateway-user',
+                    username: 'gateway-user',
+                    displayName: '게이트웨이 사용자',
+                })
+            ),
+        });
+    });
+    await page.route('**/gateway/**', async (route) => {
+        await route.fulfill({
+            status: 200,
+            contentType: 'text/html',
+            body: '<!doctype html><html><body>gateway</body></html>',
+        });
+    });
+    await page.setViewportSize({ width: 1000, height: 900 });
+    await page.goto('my-page');
+
+    const actionLine = page.locator('.action-line').filter({ hasText: '가오픈 기간 내 장수 삭제' });
+    const deleteButton = actionLine.getByRole('button', { name: '장수 삭제' });
+    await expect(actionLine).toContainText('가오픈 기간 내 장수 삭제 (2026-01-01 09:20:00 부터)');
+    await expect(deleteButton).toBeVisible();
+    await expect(deleteButton).toBeEnabled();
+    const geometry = await deleteButton.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+            width: rect.width,
+            height: rect.height,
+            fontSize: style.fontSize,
+            color: style.color,
+            backgroundColor: style.backgroundColor,
+            cursor: style.cursor,
+        };
+    });
+    expect(geometry).toEqual({
+        width: 160,
+        height: 30,
+        fontSize: '14px',
+        color: 'rgb(255, 255, 255)',
+        backgroundColor: 'rgb(34, 85, 0)',
+        cursor: 'pointer',
+    });
+    await persistParityArtifact(page, 'core-my-page-die-on-prestart', geometry);
+
+    await deleteButton.click();
+    await expect.poll(() => confirmCount).toBe(1);
+    expect(dialogs[0]).toBe('confirm:정말로 삭제하시겠습니까?');
+    expect(state.dieOnPrestartInputs).toHaveLength(0);
+
+    await deleteButton.click();
+    await expect.poll(() => state.dieOnPrestartInputs?.length).toBe(1);
+    await expect
+        .poll(() =>
+            dialogs.some((message) =>
+                message.includes('alert:실패했습니다: 요청은 접수됐지만 처리 결과를 아직 확인하지 못했습니다.')
+            )
+        )
+        .toBe(true);
+    await expect(deleteButton).toBeVisible();
+    const pendingRequestId = await page.evaluate(() => sessionStorage.getItem('sam.pending.dieOnPrestart'));
+    expect(pendingRequestId).toEqual(expect.stringMatching(/^[0-9a-f-]{36}$/i));
+
+    await deleteButton.click();
+    await expect.poll(() => state.dieOnPrestartInputs?.length).toBe(2);
+    await page.waitForURL(/\/gateway\/$/u);
+    await expect(page.locator('body')).toHaveText('gateway');
+
+    const requestIds = state.dieOnPrestartInputs?.map((input) => input.clientRequestId);
+    expect(requestIds).toEqual([pendingRequestId, pendingRequestId]);
+    expect(state.dieOnPrestartInputs?.every((input) => !('generalId' in input) && !('userId' in input))).toBe(true);
+    const storage = await page.evaluate(() => ({
+        gameToken: localStorage.getItem('sammo-game-token'),
+        gameProfile: localStorage.getItem('sammo-game-profile'),
+        sessionToken: localStorage.getItem('sammo-session-token'),
+        pendingRequestId: sessionStorage.getItem('sam.pending.dieOnPrestart'),
+    }));
+    expect(storage).toEqual({
+        gameToken: null,
+        gameProfile: 'che:default',
+        sessionToken: 'gateway-session-token',
+        pendingRequestId: null,
+    });
 });
 
 test('감찰부 keeps the selector interaction and shows the permission error path', async ({ page }) => {

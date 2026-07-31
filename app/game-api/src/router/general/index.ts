@@ -30,7 +30,7 @@ const resolveImmediateActionRequestId = (
     contextRequestId: string | undefined,
     userId: string,
     clientRequestId: string | undefined,
-    action: 'buildNationCandidate' | 'instantRetreat'
+    action: 'buildNationCandidate' | 'dieOnPrestart' | 'instantRetreat'
 ): string | undefined => {
     if (clientRequestId) {
         return `general:${action}:${userId}:${clientRequestId}`;
@@ -41,13 +41,19 @@ const resolveImmediateActionRequestId = (
 const requestImmediateAction = async (
     ctx: GameApiContext,
     input: { clientRequestId?: string } | undefined,
-    action: 'buildNationCandidate' | 'instantRetreat'
+    action: 'buildNationCandidate' | 'dieOnPrestart' | 'instantRetreat'
 ): Promise<{ ok: true }> => {
     const userId = ctx.auth?.user.id;
     if (!userId) {
         throw new TRPCError({ code: 'UNAUTHORIZED' });
     }
-    const general = await getMyGeneral(ctx);
+    const general =
+        action === 'dieOnPrestart'
+            ? await ctx.db.general.findFirst({ where: { userId, npcState: 0 } })
+            : await getMyGeneral(ctx);
+    if (!general) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: '장수가 없습니다' });
+    }
     const requestId = resolveImmediateActionRequestId(ctx.requestId, userId, input?.clientRequestId, action);
     try {
         const result = await ctx.turnDaemon.requestCommand({
@@ -277,20 +283,45 @@ export const generalRouter = router({
             penalties,
         };
     }),
-    dieOnPrestart: authedProcedure.mutation(async ({ ctx }) => {
-        const general = await getMyGeneral(ctx);
+    ensureDieOnPrestartStatus: engineAuthedProcedure.mutation(async ({ ctx }) => {
+        const userId = ctx.auth?.user.id;
+        if (!userId) {
+            throw new TRPCError({ code: 'UNAUTHORIZED' });
+        }
+        const general = await ctx.db.general.findFirst({
+            where: { userId, npcState: 0 },
+            select: { id: true },
+        });
+        if (!general) {
+            return { show: false, available: false, availableAt: null };
+        }
         const result = await ctx.turnDaemon.requestCommand({
-            type: 'dieOnPrestart',
+            type: 'ensureDieOnPrestartStatus',
+            ...(ctx.requestId ? { requestId: `${ctx.requestId}:general.ensureDieOnPrestartStatus` } : {}),
+            userId,
             generalId: general.id,
         });
-        if (!result || result.type !== 'dieOnPrestart') {
-            throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Unexpected response' });
+        if (!result) {
+            throw new TRPCError({
+                code: 'TIMEOUT',
+                message: '삭제 가능 시각을 아직 확인하지 못했습니다. 다시 시도해 주세요.',
+            });
         }
-        if (!result.ok) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: result.reason });
+        if (result.type !== 'ensureDieOnPrestartStatus') {
+            throw new TRPCError({
+                code: 'INTERNAL_SERVER_ERROR',
+                message: '턴 데몬이 올바르지 않은 삭제 상태를 반환했습니다.',
+            });
         }
-        return { ok: true };
+        return {
+            show: result.show,
+            available: result.available,
+            availableAt: result.availableAt ?? null,
+        };
     }),
+    dieOnPrestart: engineAuthedProcedure
+        .input(zImmediateActionInput)
+        .mutation(({ ctx, input }) => requestImmediateAction(ctx, input, 'dieOnPrestart')),
     buildNationCandidate: engineAuthedProcedure
         .input(zImmediateActionInput)
         .mutation(({ ctx, input }) => requestImmediateAction(ctx, input, 'buildNationCandidate')),

@@ -52,6 +52,7 @@ import {
 } from './selectPoolService.js';
 import { createGeneralFromJoin, JoinCreateGeneralError } from './joinCreateGeneralService.js';
 import { NpcPossessionError, possessNpcGeneral } from './npcPossessionService.js';
+import { buildPrestartDeleteAfter, formatPrestartDeleteAfter, readPrestartDeleteAfter } from './prestartDeletion.js';
 
 let itemRegistryPromise: Promise<Map<string, ItemModule>> | null = null;
 
@@ -141,7 +142,15 @@ const resolveCommandAcceptedAt = async (
     db: DatabaseClient,
     command: Extract<
         TurnDaemonCommand,
-        { type: 'joinCreateGeneral' | 'npcPossessGeneral' | 'selectPoolCreate' | 'selectPoolReselect' }
+        {
+            type:
+                | 'dieOnPrestart'
+                | 'ensureDieOnPrestartStatus'
+                | 'joinCreateGeneral'
+                | 'npcPossessGeneral'
+                | 'selectPoolCreate'
+                | 'selectPoolReselect';
+        }
     >
 ): Promise<Date> => {
     if (!command.requestId) {
@@ -1029,31 +1038,136 @@ async function handleTroopRename(
     };
 }
 
+const ensurePrestartDeleteAfter = async (
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'dieOnPrestart' | 'ensureDieOnPrestartStatus' }>,
+    general: TurnGeneral,
+    acceptedAt: Date
+): Promise<Date> => {
+    const current = readPrestartDeleteAfter(asRecord(general.meta));
+    if (current) {
+        return current;
+    }
+    const db = requireCommandDatabase(ctx);
+    const access = await db.generalAccessLog.findUnique({
+        where: { generalId: general.id },
+        select: { lastRefresh: true },
+    });
+    const deleteAfter = buildPrestartDeleteAfter(
+        access?.lastRefresh ?? acceptedAt,
+        ctx.world.getState().tickSeconds,
+        asRecord(ctx.world.getScenarioConfig())
+    );
+    const updated = ctx.world.updateGeneral(general.id, {
+        meta: {
+            ...general.meta,
+            prestart_delete_after: deleteAfter.toISOString(),
+        },
+    });
+    if (!updated) {
+        throw new Error(`${command.type} general disappeared while fixing the pre-start deletion time.`);
+    }
+    return deleteAfter;
+};
+
+async function handleEnsureDieOnPrestartStatus(
+    ctx: CommandHandlerContext,
+    command: Extract<TurnDaemonCommand, { type: 'ensureDieOnPrestartStatus' }>
+): Promise<TurnDaemonCommandResult> {
+    const general = ctx.world.getGeneralById(command.generalId);
+    if (!general || general.npcState !== 0 || general.userId !== command.userId) {
+        return {
+            type: 'ensureDieOnPrestartStatus',
+            generalId: command.generalId,
+            show: false,
+            available: false,
+        };
+    }
+    const db = requireCommandDatabase(ctx);
+    const acceptedAt = await resolveCommandAcceptedAt(db, command);
+    const worldState = ctx.world.getState();
+    const opentime = typeof worldState.meta.opentime === 'string' ? worldState.meta.opentime : null;
+    if ((opentime && worldState.lastTurnTime.getTime() > new Date(opentime).getTime()) || general.nationId !== 0) {
+        return {
+            type: 'ensureDieOnPrestartStatus',
+            generalId: command.generalId,
+            show: false,
+            available: false,
+        };
+    }
+    const availableAt = await ensurePrestartDeleteAfter(ctx, command, general, acceptedAt);
+    return {
+        type: 'ensureDieOnPrestartStatus',
+        generalId: command.generalId,
+        show: true,
+        available: availableAt.getTime() <= acceptedAt.getTime(),
+        availableAt: availableAt.toISOString(),
+    };
+}
+
 async function handleDieOnPrestart(
     ctx: CommandHandlerContext,
     command: Extract<TurnDaemonCommand, { type: 'dieOnPrestart' }>
 ): Promise<TurnDaemonCommandResult> {
     const { world } = ctx;
+    const db = requireCommandDatabase(ctx);
     const general = world.getGeneralById(command.generalId);
-    if (!general) {
+    if (!general || general.npcState !== 0 || general.userId !== command.userId) {
         return {
             type: 'dieOnPrestart',
             ok: false,
             generalId: command.generalId,
-            reason: '장수 정보를 찾을 수 없습니다.',
+            reason: '장수가 없습니다',
         };
     }
+    const acceptedAt = await resolveCommandAcceptedAt(db, command);
     const worldState = world.getState();
     const opentime = worldState.meta.opentime as string | undefined;
     if (opentime && new Date(worldState.lastTurnTime) > new Date(opentime)) {
-        return { type: 'dieOnPrestart', ok: false, generalId: command.generalId, reason: '가오픈 기간이 아닙니다.' };
+        return {
+            type: 'dieOnPrestart',
+            ok: false,
+            generalId: command.generalId,
+            reason: '게임이 시작되었습니다.',
+        };
     }
 
-    if (general.npcState !== 0 || general.nationId !== 0) {
-        return { type: 'dieOnPrestart', ok: false, generalId: command.generalId, reason: '삭제할 수 없는 상태입니다.' };
+    if (general.nationId !== 0) {
+        return {
+            type: 'dieOnPrestart',
+            ok: false,
+            generalId: command.generalId,
+            reason: '이미 국가에 소속되어있습니다.',
+        };
     }
 
-    world.removeGeneral(command.generalId);
+    const deleteAfter = await ensurePrestartDeleteAfter(ctx, command, general, acceptedAt);
+    if (deleteAfter.getTime() > acceptedAt.getTime()) {
+        return {
+            type: 'dieOnPrestart',
+            ok: false,
+            generalId: command.generalId,
+            reason: `아직 삭제할 수 없습니다. ${formatPrestartDeleteAfter(deleteAfter)} 부터 가능합니다.`,
+        };
+    }
+
+    if (general.troopId === general.id) {
+        for (const member of world.listGenerals()) {
+            if (member.troopId === general.id) {
+                world.updateGeneral(member.id, { troopId: 0 });
+            }
+        }
+        world.removeTroop(general.id);
+    }
+    const josaYi = JosaUtil.pick(general.name, '이');
+    world.pushLog({
+        scope: LogScope.SYSTEM,
+        category: LogCategory.SUMMARY,
+        format: LogFormat.MONTH,
+        text: `<Y>${general.name}</>${josaYi} 홀연히 모습을 <R>감추었습니다</>`,
+        meta: {},
+    });
+    world.deleteGeneralWithLifecycle(command.generalId, worldState.currentYear, worldState.currentMonth);
     return { type: 'dieOnPrestart', ok: true, generalId: command.generalId };
 }
 
@@ -2135,6 +2249,11 @@ export const createTurnDaemonCommandHandler = (options: {
         troopKick: (command) => handleTroopKick(ctx, command as Extract<TurnDaemonCommand, { type: 'troopKick' }>),
         troopRename: (command) =>
             handleTroopRename(ctx, command as Extract<TurnDaemonCommand, { type: 'troopRename' }>),
+        ensureDieOnPrestartStatus: (command) =>
+            handleEnsureDieOnPrestartStatus(
+                ctx,
+                command as Extract<TurnDaemonCommand, { type: 'ensureDieOnPrestartStatus' }>
+            ),
         dieOnPrestart: (command) =>
             handleDieOnPrestart(ctx, command as Extract<TurnDaemonCommand, { type: 'dieOnPrestart' }>),
         buildNationCandidate: (command) =>

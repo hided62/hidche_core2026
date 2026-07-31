@@ -10,12 +10,8 @@ import type { TurnGeneral } from '../src/turn/types.js';
 const databaseUrl = process.env.GENERAL_LIFECYCLE_DATABASE_URL;
 const integration = describe.skipIf(!databaseUrl);
 const generalIds = [990_001, 990_002, 990_003];
-const userIds = [
-    'integration-lifecycle-dead',
-    'integration-lifecycle-retired',
-    'integration-lifecycle-possessed',
-];
-const serverId = 'integration-lifecycle';
+const userIds = ['integration-lifecycle-dead', 'integration-lifecycle-retired', 'integration-lifecycle-possessed'];
+const serverId = 'lifecycle-int';
 
 const makeGeneral = (id: number, userId: string, patch: Partial<TurnGeneral> = {}): TurnGeneral => ({
     id,
@@ -57,10 +53,7 @@ const makeGeneral = (id: number, userId: string, patch: Partial<TurnGeneral> = {
     ...patch,
 });
 
-const event = (
-    general: TurnGeneral,
-    outcome: GeneralLifecycleEvent['outcome']
-): GeneralLifecycleEvent => ({
+const event = (general: TurnGeneral, outcome: GeneralLifecycleEvent['outcome']): GeneralLifecycleEvent => ({
     generalId: general.id,
     outcome,
     before: general,
@@ -153,12 +146,24 @@ integration('general turn lifecycle persistence', () => {
         const archived = await db.oldGeneral.findUniqueOrThrow({
             where: { by_no: { serverId, generalNo: general.id } },
         });
-        expect(asRecord(archived.data).history).toEqual(['<Y>●</>둘째 기록', '<C>●</>첫 기록']);
+        const archivedData = asRecord(archived.data);
+        expect(archivedData.history).toEqual(['<Y>●</>둘째 기록', '<C>●</>첫 기록']);
+        expect(asRecord(archivedData.meta)).not.toHaveProperty('inheritRandomUnique');
+        expect(asRecord(archivedData.meta)).not.toHaveProperty('inheritSpecificSpecialWar');
         expect(
             await db.inheritancePoint.findUnique({
                 where: { userId_key: { userId: general.userId!, key: 'previous' } },
             })
         ).toMatchObject({ value: 3_147 });
+        expect(
+            (
+                await db.inheritanceLog.findMany({
+                    where: { userId: general.userId! },
+                    orderBy: { id: 'asc' },
+                    select: { text: true },
+                })
+            ).map(({ text }) => text)
+        ).toEqual(['사망으로 랜덤 유니크 구입 3000 포인트 반환', '사망 정산: 3,147 포인트']);
     });
 
     it('resets access/ranks and records pre-rebirth hall and inheritance values', async () => {
@@ -185,8 +190,9 @@ integration('general turn lifecycle persistence', () => {
         expect(await db.generalAccessLog.findUnique({ where: { generalId: general.id } })).toMatchObject({
             refreshScore: 0,
         });
-        expect(await db.rankData.findUnique({ where: { generalId_type: { generalId: general.id, type: 'warnum' } } }))
-            .toMatchObject({ value: 0 });
+        expect(
+            await db.rankData.findUnique({ where: { generalId_type: { generalId: general.id, type: 'warnum' } } })
+        ).toMatchObject({ value: 0 });
         expect(
             await db.hallOfFame.findUnique({
                 where: {
@@ -220,12 +226,7 @@ integration('general turn lifecycle persistence', () => {
         });
 
         await db.$transaction((tx) =>
-            persistGeneralLifecycleEvents(
-                tx,
-                [event(general, 'deleted')],
-                { serverId, startYear: 180 },
-                {}
-            )
+            persistGeneralLifecycleEvents(tx, [event(general, 'deleted')], { serverId, startYear: 180 }, {})
         );
 
         expect(

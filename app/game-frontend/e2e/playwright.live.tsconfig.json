@@ -14,6 +14,8 @@
         "./joinGeneralLive.spec.ts",
         "./joinGeneral.live.playwright.config.mjs",
         "./npcPossessionLive.spec.ts",
-        "./npcPossession.live.playwright.config.mjs"
+        "./npcPossession.live.playwright.config.mjs",
+        "./dieOnPrestartLive.spec.ts",
+        "./dieOnPrestart.live.playwright.config.mjs"
     ]
 }

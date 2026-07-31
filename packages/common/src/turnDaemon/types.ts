@@ -69,7 +69,8 @@ export type TurnDaemonCommand =
           targetGeneralId: number;
       }
     | { type: 'troopRename'; requestId?: string; generalId: number; troopId: number; troopName: string }
-    | { type: 'dieOnPrestart'; requestId?: string; generalId: number }
+    | { type: 'ensureDieOnPrestartStatus'; requestId?: string; userId: string; generalId: number }
+    | { type: 'dieOnPrestart'; requestId?: string; userId: string; generalId: number }
     | { type: 'buildNationCandidate'; requestId?: string; userId: string; generalId: number }
     | { type: 'instantRetreat'; requestId?: string; userId: string; generalId: number }
     | { type: 'vacation'; requestId?: string; generalId: number }
@@ -372,6 +373,13 @@ export type TurnDaemonCommandResult =
           generalId: number;
           troopId: number;
           reason: string;
+      }
+    | {
+          type: 'ensureDieOnPrestartStatus';
+          generalId: number;
+          show: boolean;
+          available: boolean;
+          availableAt?: string;
       }
     | { type: 'dieOnPrestart'; ok: boolean; generalId: number; reason?: string }
     | { type: 'buildNationCandidate'; ok: boolean; generalId: number; reason?: string }

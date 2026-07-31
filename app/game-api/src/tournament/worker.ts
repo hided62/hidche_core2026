@@ -475,8 +475,9 @@ export const settleTournamentOutcome = async (options: {
         if (result.type !== expectedType) {
             throw new Error(`${expectedType} 명령에 잘못된 응답(${result.type})을 받았습니다.`);
         }
-        if (!result.ok) {
-            throw new Error(`${expectedType} 명령이 실패했습니다: ${result.reason}`);
+        if (!('ok' in result) || !result.ok) {
+            const reason = 'reason' in result ? result.reason : '성공 여부가 없는 응답';
+            throw new Error(`${expectedType} 명령이 실패했습니다: ${reason}`);
         }
     };
 

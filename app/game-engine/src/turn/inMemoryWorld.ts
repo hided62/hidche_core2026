@@ -699,6 +699,21 @@ export class InMemoryTurnWorld {
         return true;
     }
 
+    deleteGeneralWithLifecycle(id: number, year: number, month: number): boolean {
+        const general = this.generals.get(id);
+        if (!general) {
+            return false;
+        }
+        this.lifecycleEvents.push({
+            generalId: id,
+            outcome: 'deleted',
+            before: structuredClone(general),
+            year,
+            month,
+        });
+        return this.removeGeneral(id);
+    }
+
     updateCity(id: number, patch: Partial<City>): City | null {
         const target = this.cities.get(id);
         if (!target) {

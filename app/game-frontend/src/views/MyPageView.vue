@@ -4,14 +4,17 @@ import { trpc } from '../utils/trpc';
 import { formatLog } from '../utils/formatLog';
 import { formatSeoulDateTime } from '../utils/legacyDateTime';
 import { isDefenceTrainPenaltyWaivedByScenarioEffect } from '@sammo-ts/logic';
+import { useSessionStore } from '../stores/session';
 
 const SCREEN_MODE_KEY = 'sam.screenMode';
 const CUSTOM_CSS_KEY = 'sam_customCSS';
+const PENDING_DIE_ON_PRESTART_KEY = 'sam.pending.dieOnPrestart';
 type ScreenMode = 'auto' | '500px' | '1000px';
 type LogType = 'generalHistory' | 'battleDetail' | 'battleResult' | 'generalAction';
 type ItemSlotKey = 'horse' | 'weapon' | 'book' | 'item';
 type MyGeneralResponse = Awaited<ReturnType<typeof trpc.general.me.query>>;
 type SelectionPoolStatus = Awaited<ReturnType<typeof trpc.join.getConfig.query>>['selectionPool'];
+type DieOnPrestartStatus = Awaited<ReturnType<typeof trpc.general.ensureDieOnPrestartStatus.mutate>>;
 
 type WorldSnapshot = {
     currentYear: number;
@@ -31,13 +34,20 @@ type SettingForm = {
 const data = ref<MyGeneralResponse | null>(null);
 const world = ref<WorldSnapshot>(null);
 const selectionPoolStatus = ref<SelectionPoolStatus | null>(null);
+const dieOnPrestartStatus = ref<DieOnPrestartStatus | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
 const screenMode = ref<ScreenMode>('auto');
 const customCss = ref('');
 const cssSaving = ref(false);
+const session = useSessionStore();
 let cssTimer: number | null = null;
+const readPendingDieOnPrestartId = (): string => {
+    const stored = window.sessionStorage.getItem(PENDING_DIE_ON_PRESTART_KEY);
+    return stored && /^[0-9a-f-]{36}$/iu.test(stored) ? stored : crypto.randomUUID();
+};
 const immediateActionRequestIds = reactive({
+    dieOnPrestart: readPendingDieOnPrestartId(),
     buildNationCandidate: crypto.randomUUID(),
     instantRetreat: crypto.randomUUID(),
 });
@@ -136,11 +146,15 @@ const actionAvailability = computed(() => {
     const preopen = Boolean(turnTime && openTime && turnTime.getTime() <= openTime.getTime());
     const npcMode = numberValue(config.npcMode ?? config.npcmode, 0);
     return {
-        dieOnPrestart: Boolean(preopen && general?.npcState === 0 && general.nationId === 0),
+        dieOnPrestart: Boolean(dieOnPrestartStatus.value?.show),
         buildNationCandidate: Boolean(preopen && general?.nationId === 0),
         instantRetreat: Boolean(availableInstantAction.instantRetreat),
         selectOtherGeneral: Boolean(npcMode === 2 && general?.npcState === 0),
     };
+});
+const formatDieOnPrestartAvailableAt = computed(() => {
+    const value = dieOnPrestartStatus.value?.availableAt;
+    return value ? formatSeoulDateTime(value) : '';
 });
 const formatSelectionAvailableAt = computed(() => {
     const value = selectionPoolStatus.value?.nextChangeAt;
@@ -178,14 +192,16 @@ const loadPage = async () => {
     loading.value = true;
     error.value = null;
     try {
-        const [general, state, joinConfig] = await Promise.all([
+        const [general, state, joinConfig, prestartStatus] = await Promise.all([
             trpc.general.me.query(),
             trpc.world.getState.query() as Promise<WorldSnapshot>,
             trpc.join.getConfig.query(),
+            trpc.general.ensureDieOnPrestartStatus.mutate(),
         ]);
         data.value = general;
         world.value = state;
         selectionPoolStatus.value = joinConfig.selectionPool;
+        dieOnPrestartStatus.value = prestartStatus;
         if (general) {
             Object.assign(form, general.settings);
         }
@@ -215,6 +231,25 @@ const confirmMutation = async (message: string, mutation: () => Promise<unknown>
         await loadPage();
     } catch (cause) {
         alert(`실패했습니다: ${errorText(cause)}`);
+    }
+};
+
+const dieOnPrestart = async () => {
+    if (!confirm('정말로 삭제하시겠습니까?')) return;
+    const clientRequestId = immediateActionRequestIds.dieOnPrestart;
+    window.sessionStorage.setItem(PENDING_DIE_ON_PRESTART_KEY, clientRequestId);
+    try {
+        await trpc.general.dieOnPrestart.mutate({ clientRequestId });
+        window.sessionStorage.removeItem(PENDING_DIE_ON_PRESTART_KEY);
+        session.leaveGame();
+        window.location.replace(import.meta.env.VITE_GATEWAY_WEB_URL?.trim() || '/gateway/');
+    } catch (cause) {
+        const code = asRecord(asRecord(cause).data).code;
+        if (code !== 'TIMEOUT') {
+            window.sessionStorage.removeItem(PENDING_DIE_ON_PRESTART_KEY);
+        }
+        alert(`실패했습니다: ${errorText(cause)}`);
+        window.location.reload();
     }
 };
 
@@ -387,13 +422,8 @@ onMounted(() => {
                     </button>
                 </div>
                 <div v-if="actionAvailability.dieOnPrestart" class="action-line">
-                    가오픈 기간 내 장수 삭제<br />
-                    <button
-                        class="action-button"
-                        @click="confirmMutation('정말로 삭제하시겠습니까?', () => trpc.general.dieOnPrestart.mutate())"
-                    >
-                        장수 삭제
-                    </button>
+                    가오픈 기간 내 장수 삭제 ({{ formatDieOnPrestartAvailableAt }} 부터)<br />
+                    <button class="action-button" @click="dieOnPrestart">장수 삭제</button>
                 </div>
                 <div v-if="actionAvailability.buildNationCandidate" class="action-line">
                     서버 개시 이전 거병(2턴부터 건국 가능)<br />

@@ -74,13 +74,13 @@ const settleInheritance = async (
     const ranks = new Map(rankRows.map((row) => [row.type, row.value]));
     const rank = (key: string): number => ranks.get(key) ?? readNumber(meta, `rank_${key}`);
     const previous = points.get('previous') ?? 0;
-    const refund =
-        (meta.inheritRandomUnique
-            ? readWorldNumber(configConst, 'inheritItemRandomPoint', 3000)
-            : 0) +
-        (meta.inheritSpecificSpecialWar
-            ? readWorldNumber(configConst, 'inheritSpecificSpecialPoint', 4000)
-            : 0);
+    const randomUniqueRefund = meta.inheritRandomUnique
+        ? readWorldNumber(configConst, 'inheritItemRandomPoint', 3000)
+        : 0;
+    const specificSpecialRefund = meta.inheritSpecificSpecialWar
+        ? readWorldNumber(configConst, 'inheritSpecificSpecialPoint', 4000)
+        : 0;
+    const refund = randomUniqueRefund + specificSpecialRefund;
     const lived = readNumber(meta, 'inherit_lived_month');
     const maxBelong = readNumber(meta, 'inherit_max_belong') * 10;
     const maxDomestic = readNumber(meta, 'max_domestic_critical');
@@ -129,6 +129,19 @@ const settleInheritance = async (
             }),
         },
     });
+    for (const text of [
+        ...(randomUniqueRefund > 0 ? [`사망으로 랜덤 유니크 구입 ${randomUniqueRefund} 포인트 반환`] : []),
+        ...(specificSpecialRefund > 0 ? [`사망으로 전투 특기 지정 ${specificSpecialRefund} 포인트 반환`] : []),
+    ]) {
+        await prisma.inheritanceLog.create({
+            data: {
+                userId,
+                year: event.year,
+                month: event.month,
+                text,
+            },
+        });
+    }
     await prisma.inheritanceLog.create({
         data: {
             userId,
@@ -139,8 +152,7 @@ const settleInheritance = async (
     });
 };
 
-const computeRate = (numerator: number, denominator: number): number =>
-    denominator > 0 ? numerator / denominator : 0;
+const computeRate = (numerator: number, denominator: number): number => (denominator > 0 ? numerator / denominator : 0);
 
 const settleHall = async (
     prisma: GamePrisma.TransactionClient,
@@ -186,7 +198,9 @@ const settleHall = async (
     const season = readWorldNumber(worldMeta, 'season', 1);
     const scenario = readWorldNumber(worldMeta, 'scenarioId', 0);
     const scenarioName =
-        typeof asRecord(worldMeta.scenarioMeta).title === 'string' ? String(asRecord(worldMeta.scenarioMeta).title) : '';
+        typeof asRecord(worldMeta.scenarioMeta).title === 'string'
+            ? String(asRecord(worldMeta.scenarioMeta).title)
+            : '';
     const aux = {
         name: event.before.name,
         nationName: nation?.name ?? '재야',
@@ -270,8 +284,12 @@ const archiveDeletedGeneral = async (
         orderBy: { id: 'desc' },
         select: { text: true },
     });
+    const archivedMeta = { ...asRecord(event.before.meta) };
+    delete archivedMeta.inheritRandomUnique;
+    delete archivedMeta.inheritSpecificSpecialWar;
     const data = {
         ...event.before,
+        meta: archivedMeta,
         turnTime: event.before.turnTime.toISOString(),
         recentWarTime: event.before.recentWarTime?.toISOString() ?? null,
         history: history.map((entry) => entry.text),

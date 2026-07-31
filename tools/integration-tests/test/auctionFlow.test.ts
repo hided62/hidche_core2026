@@ -506,7 +506,7 @@ describe('auction integration flow', () => {
             `
         );
         const result = await transport.requestCommand({ type: 'auctionFinalize', auctionId: auction.id }, 30_000);
-        expect(result?.ok).toBe(true);
+        expect(result).toMatchObject({ type: 'auctionFinalize', ok: true });
 
         const finished = await prisma.auction.findUnique({
             where: { id: auction.id },
@@ -652,7 +652,7 @@ describe('auction integration flow', () => {
             `
         );
         const result = await transport.requestCommand({ type: 'auctionFinalize', auctionId: auction.id }, 30_000);
-        expect(result?.ok).toBe(false);
+        expect(result).toMatchObject({ type: 'auctionFinalize', ok: false });
 
         const reopened = await prisma.auction.findUnique({
             where: { id: auction.id },
@@ -794,7 +794,7 @@ describe('auction integration flow', () => {
             `
         );
         const result = await transport.requestCommand({ type: 'auctionFinalize', auctionId: auction.id }, 30_000);
-        expect(result?.ok).toBe(true);
+        expect(result).toMatchObject({ type: 'auctionFinalize', ok: true });
 
         const winner = await prisma.general.findUnique({
             where: { id: bidderB.generalId },

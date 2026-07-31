@@ -1,12 +1,6 @@
 import { z } from 'zod';
 
-import {
-    asNumber,
-    asRecord,
-    JosaUtil,
-    LiteHashDRBG,
-    RandUtil,
-} from '@sammo-ts/common';
+import { asNumber, asRecord, JosaUtil, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 import { GamePrisma, LogCategory, LogScope } from '@sammo-ts/infra';
 import {
     EventDomesticTraitLoader,
@@ -18,15 +12,12 @@ import {
 
 import type { DatabaseClient, GamePrisma as GamePrismaTypes } from '@sammo-ts/infra';
 import type { InMemoryTurnWorld } from './inMemoryWorld.js';
+import { buildPrestartDeleteAfter } from './prestartDeletion.js';
 import type { TurnGeneral } from './types.js';
 
 type WorldStateRow = GamePrismaTypes.WorldStateGetPayload<Record<string, never>>;
 
-export type SelectPoolErrorCode =
-    | 'BAD_REQUEST'
-    | 'PRECONDITION_FAILED'
-    | 'CONFLICT'
-    | 'INTERNAL_SERVER_ERROR';
+export type SelectPoolErrorCode = 'BAD_REQUEST' | 'PRECONDITION_FAILED' | 'CONFLICT' | 'INTERNAL_SERVER_ERROR';
 
 export class SelectPoolError extends Error {
     constructor(
@@ -98,10 +89,7 @@ export interface SelectPoolReservationDto {
     candidates: SelectPoolCandidateDto[];
 }
 
-const fail = (
-    code: SelectPoolErrorCode,
-    message: string
-): never => {
+const fail = (code: SelectPoolErrorCode, message: string): never => {
     throw new SelectPoolError(code, message);
 };
 
@@ -135,12 +123,7 @@ export const resolveSelectionMaxGeneral = (worldState: WorldStateRow): number =>
     return Math.max(
         0,
         Math.floor(
-            asNumber(
-                config.maxGeneral ??
-                    configConst.defaultMaxGeneral ??
-                    configConst.maxGeneral,
-                DEFAULT_MAX_GENERAL
-            )
+            asNumber(config.maxGeneral ?? configConst.defaultMaxGeneral ?? configConst.maxGeneral, DEFAULT_MAX_GENERAL)
         )
     );
 };
@@ -174,9 +157,7 @@ const candidateWeight = (candidate: SelectPoolCandidateInfo): number =>
 
 const eventDomesticTraitLoader = new EventDomesticTraitLoader();
 
-const toCandidateDto = async (
-    candidate: SelectPoolCandidateInfo
-): Promise<SelectPoolCandidateDto> => {
+const toCandidateDto = async (candidate: SelectPoolCandidateInfo): Promise<SelectPoolCandidateDto> => {
     const trait = isEventDomesticTraitKey(candidate.specialDomestic)
         ? await eventDomesticTraitLoader.load(candidate.specialDomestic)
         : null;
@@ -187,8 +168,7 @@ const toCandidateDto = async (
         strength: candidate.strength,
         intel: candidate.intel,
         specialDomestic: candidate.specialDomestic,
-        specialDomesticName:
-            trait?.name ?? candidate.specialDomestic.replace(/^che_event_/, ''),
+        specialDomesticName: trait?.name ?? candidate.specialDomestic.replace(/^che_event_/, ''),
         specialDomesticInfo: trait?.info ?? '',
         specialWar: candidate.specialWar ?? null,
         ego: candidate.ego ?? null,
@@ -204,18 +184,12 @@ const toReservationDto = (
 ): Promise<SelectPoolReservationDto> => {
     const validUntil = rows[0]?.reservedUntil;
     if (!validUntil) {
-        throw new SelectPoolError(
-            'INTERNAL_SERVER_ERROR',
-            '장수 선택 후보의 유효기간이 없습니다.'
-        );
+        throw new SelectPoolError('INTERNAL_SERVER_ERROR', '장수 선택 후보의 유효기간이 없습니다.');
     }
     const expiresAt = validUntil;
     const sorted = rows
         .map((row) => ({ id: row.id, info: parseCandidate(row) }))
-        .sort(
-            (left, right) =>
-                candidateWeight(left.info) - candidateWeight(right.info) || left.id - right.id
-        );
+        .sort((left, right) => candidateWeight(left.info) - candidateWeight(right.info) || left.id - right.id);
     return Promise.all(sorted.map((entry) => toCandidateDto(entry.info))).then((candidates) => ({
         poolName: SUPPORTED_POOL,
         hasGeneral,
@@ -229,16 +203,11 @@ const formatLegacySeedTime = (value: Date): string => {
     const koreaTime = new Date(value.getTime() + LEGACY_TIMEZONE_OFFSET_MS);
     return `${koreaTime.getUTCFullYear()}-${pad(koreaTime.getUTCMonth() + 1)}-${pad(
         koreaTime.getUTCDate()
-    )} ${pad(koreaTime.getUTCHours())}:${pad(koreaTime.getUTCMinutes())}:${pad(
-        koreaTime.getUTCSeconds()
-    )}`;
+    )} ${pad(koreaTime.getUTCHours())}:${pad(koreaTime.getUTCMinutes())}:${pad(koreaTime.getUTCSeconds())}`;
 };
 
-export const buildSelectPoolSeed = (
-    hiddenSeed: string | number,
-    ownerIdentity: string | number,
-    now: Date
-): string => simpleSerialize(hiddenSeed, 'selectPool', ownerIdentity, formatLegacySeedTime(now));
+export const buildSelectPoolSeed = (hiddenSeed: string | number, ownerIdentity: string | number, now: Date): string =>
+    simpleSerialize(hiddenSeed, 'selectPool', ownerIdentity, formatLegacySeedTime(now));
 
 export const claimWeightedSelectionCandidates = async <T extends { id: number }>(options: {
     weighted: [T, number][];
@@ -365,13 +334,7 @@ export const reserveSelectionPool = async (options: {
     }
 
     const rng = new RandUtil(
-        new LiteHashDRBG(
-            buildSelectPoolSeed(
-                getWorldHiddenSeed(worldState),
-                options.seedOwnerIdentity ?? userId,
-                now
-            )
-        )
+        new LiteHashDRBG(buildSelectPoolSeed(getWorldHiddenSeed(worldState), options.seedOwnerIdentity ?? userId, now))
     );
     const weighted = available.map((row) => [row, candidateWeight(parseCandidate(row))] as [SelectPoolRow, number]);
     const reservedUntil = new Date(
@@ -398,10 +361,10 @@ export const reserveSelectionPool = async (options: {
         },
     });
     const reserved = selected.map((candidate) => ({
-            ...candidate,
-            ownerUserId: userId,
-            reservedUntil,
-        }));
+        ...candidate,
+        ownerUserId: userId,
+        reservedUntil,
+    }));
     if (reserved.length !== RESERVATION_COUNT) {
         fail('CONFLICT', '장수 선택 후보를 예약하지 못했습니다. 다시 시도해 주세요.');
     }
@@ -413,10 +376,7 @@ const lockSelectionMutationTables = async (db: DatabaseClient): Promise<void> =>
     await db.$executeRaw(GamePrisma.sql`LOCK TABLE "select_pool" IN SHARE ROW EXCLUSIVE MODE`);
 };
 
-const assertGeneralIdSnapshotMatches = async (
-    db: DatabaseClient,
-    world: InMemoryTurnWorld
-): Promise<void> => {
+const assertGeneralIdSnapshotMatches = async (db: DatabaseClient, world: InMemoryTurnWorld): Promise<void> => {
     const persistedIds = (
         await db.general.findMany({
             select: { id: true },
@@ -427,13 +387,8 @@ const assertGeneralIdSnapshotMatches = async (
         .listGenerals()
         .map(({ id }) => id)
         .sort((left, right) => left - right);
-    if (
-        persistedIds.length !== runtimeIds.length ||
-        persistedIds.some((id, index) => id !== runtimeIds[index])
-    ) {
-        throw new Error(
-            'DB와 턴 데몬의 장수 번호 목록이 일치하지 않아 장수를 생성할 수 없습니다.'
-        );
+    if (persistedIds.length !== runtimeIds.length || persistedIds.some((id, index) => id !== runtimeIds[index])) {
+        throw new Error('DB와 턴 데몬의 장수 번호 목록이 일치하지 않아 장수를 생성할 수 없습니다.');
     }
 };
 
@@ -468,12 +423,7 @@ const resolveRandomPersonality = (
 ): string =>
     new RandUtil(
         new LiteHashDRBG(
-            simpleSerialize(
-                getWorldHiddenSeed(worldState),
-                'selectPickedGeneralPersonality',
-                ownerIdentity,
-                uniqueName
-            )
+            simpleSerialize(getWorldHiddenSeed(worldState), 'selectPickedGeneralPersonality', ownerIdentity, uniqueName)
         )
     ).choice([...PERSONALITY_TRAIT_KEYS]);
 
@@ -495,19 +445,10 @@ const resolveSelectedPersonality = (
     return requested;
 };
 
-const resolvePoolRng = (
-    worldState: WorldStateRow,
-    ownerIdentity: string | number,
-    uniqueName: string
-): RandUtil =>
+const resolvePoolRng = (worldState: WorldStateRow, ownerIdentity: string | number, uniqueName: string): RandUtil =>
     new RandUtil(
         new LiteHashDRBG(
-            simpleSerialize(
-                getWorldHiddenSeed(worldState),
-                'selectPickedGeneral',
-                ownerIdentity,
-                uniqueName
-            )
+            simpleSerialize(getWorldHiddenSeed(worldState), 'selectPickedGeneral', ownerIdentity, uniqueName)
         )
     );
 
@@ -612,16 +553,12 @@ export const createGeneralFromSelectionPool = async (options: {
     const nextChangeAt = new Date(
         now.getTime() + resolveTurnTermMinutes(worldState) * RESELECTION_TURN_MULTIPLIER * 60_000
     );
+    const prestartDeleteAfter = buildPrestartDeleteAfter(now, worldState.tickSeconds, config);
     const showImgLevel = asNumber(config.showImgLevel, 0);
     const picture = showImgLevel >= 3 ? info.picture : 'default.jpg';
     const defaultSpecialWar =
         typeof configConst.defaultSpecialWar === 'string' ? configConst.defaultSpecialWar : 'None';
-    const personality = resolveSelectedPersonality(
-        worldState,
-        seedOwnerIdentity,
-        uniqueName,
-        options.personality
-    );
+    const personality = resolveSelectedPersonality(worldState, seedOwnerIdentity, uniqueName, options.personality);
     // 모든 사용자 입력과 DB 선조건을 검증한 뒤에만 allocator를 변경한다.
     // SelectPoolError는 정상 command 결과로 commit되므로 이보다 먼저
     // getNextGeneralId()를 호출하면 실패한 요청도 lastGeneralId를 소비한다.
@@ -692,6 +629,7 @@ export const createGeneralFromSelectionPool = async (options: {
             dex5: info.dex[4],
             next_change: nextChangeAt.toISOString(),
             nextChangeAt: nextChangeAt.toISOString(),
+            prestart_delete_after: prestartDeleteAfter.toISOString(),
             npc_org: 0,
         },
     };
@@ -884,6 +822,6 @@ export const getSelectionPoolStatus = async (
         poolName,
         allowOptions: resolvePoolAllowOptions(worldState),
         hasGeneral: Boolean(general),
-        nextChangeAt: general ? readNextChangeAt(general.meta)?.toISOString() ?? null : null,
+        nextChangeAt: general ? (readNextChangeAt(general.meta)?.toISOString() ?? null) : null,
     };
 };

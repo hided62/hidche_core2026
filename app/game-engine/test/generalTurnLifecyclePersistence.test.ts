@@ -37,7 +37,11 @@ const archivedGeneral = (): TurnGeneral => ({
     deadYear: 240,
     affinity: 50,
     triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
-    meta: { killturn: 0 },
+    meta: {
+        killturn: 0,
+        inheritRandomUnique: true,
+        inheritSpecificSpecialWar: true,
+    },
     turnTime: new Date('0200-01-01T00:00:00.000Z'),
 });
 
@@ -79,6 +83,7 @@ describe('general lifecycle archive history', () => {
                 create: expect.objectContaining({
                     data: expect.objectContaining({
                         history: ['<Y>●</>둘째 기록', '<C>●</>첫 기록'],
+                        meta: { killturn: 0 },
                     }),
                 }),
             })

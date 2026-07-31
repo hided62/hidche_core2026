@@ -74,15 +74,15 @@ const auth: GameSessionTokenPayload = {
 };
 
 const createContext = (options: {
-    me?: GeneralRow;
+    me?: GeneralRow | null;
     targets?: GeneralRow[];
     nationMeta?: Record<string, unknown>;
     requestCommand?: ReturnType<typeof vi.fn>;
 }) => {
-    const me = options.me ?? buildGeneral();
-    const targets = options.targets ?? [me];
+    const me = options.me === undefined ? buildGeneral() : options.me;
+    const targets = options.targets ?? (me ? [me] : []);
     const requestCommand =
-        options.requestCommand ?? vi.fn(async () => ({ type: 'setMySetting', ok: true, generalId: me.id }));
+        options.requestCommand ?? vi.fn(async () => ({ type: 'setMySetting', ok: true, generalId: me?.id ?? 0 }));
     const generalFindUnique = vi.fn(
         async ({ where }: { where: { id: number } }) => targets.find((general) => general.id === where.id) ?? null
     );
@@ -90,7 +90,7 @@ const createContext = (options: {
         general: {
             findFirst: vi.fn(async () => me),
             findUnique: generalFindUnique,
-            findMany: vi.fn(async () => targets.filter((general) => general.nationId === me.nationId)),
+            findMany: vi.fn(async () => targets.filter((general) => general.nationId === (me?.nationId ?? 0))),
             update: vi.fn(),
         },
         city: { findUnique: vi.fn(async () => null) },
@@ -232,6 +232,7 @@ describe('in-game my information ownership', () => {
     });
 
     it.each([
+        ['dieOnPrestart', 'dieOnPrestart'],
         ['buildNationCandidate', 'buildNationCandidate'],
         ['instantRetreat', 'instantRetreat'],
     ] as const)('dispatches %s only for the session-owned general', async (procedure, commandType) => {
@@ -250,6 +251,32 @@ describe('in-game my information ownership', () => {
             requestId: `general:${commandType}:user-7:${clientRequestId}`,
             userId: 'user-7',
             generalId: 7,
+        });
+    });
+
+    it('gets the server-owned pre-start deletion status without accepting a general id', async () => {
+        const requestCommand = vi.fn(async () => ({
+            type: 'ensureDieOnPrestartStatus' as const,
+            generalId: 7,
+            show: true,
+            available: false,
+            availableAt: '2026-01-01T00:20:00.000Z',
+        }));
+        const fixture = createContext({ requestCommand });
+
+        await expect(appRouter.createCaller(fixture.context).general.ensureDieOnPrestartStatus()).resolves.toEqual({
+            show: true,
+            available: false,
+            availableAt: '2026-01-01T00:20:00.000Z',
+        });
+        expect(requestCommand).toHaveBeenCalledWith({
+            type: 'ensureDieOnPrestartStatus',
+            userId: 'user-7',
+            generalId: 7,
+        });
+        expect(fixture.db.general.findFirst).toHaveBeenCalledWith({
+            where: { userId: 'user-7', npcState: 0 },
+            select: { id: true },
         });
     });
 
@@ -286,6 +313,38 @@ describe('in-game my information ownership', () => {
             userId: 'user-7',
             generalId: 7,
         });
+    });
+
+    it('keeps the die-on-prestart request identity when its destructive result times out', async () => {
+        const requestCommand = vi.fn(async () => null);
+        const fixture = createContext({ requestCommand });
+        const caller = appRouter.createCaller(fixture.context);
+        const clientRequestId = '33333333-3333-4333-8333-333333333333';
+
+        await expect(caller.general.dieOnPrestart({ clientRequestId })).rejects.toMatchObject({
+            code: 'TIMEOUT',
+            message: expect.stringContaining('같은 요청으로 다시 시도'),
+        });
+        expect(requestCommand).toHaveBeenCalledWith({
+            type: 'dieOnPrestart',
+            requestId: `general:dieOnPrestart:user-7:${clientRequestId}`,
+            userId: 'user-7',
+            generalId: 7,
+        });
+    });
+
+    it('rejects deletion with the legacy no-general message before dispatching a daemon command', async () => {
+        const requestCommand = vi.fn();
+        const fixture = createContext({ me: null, requestCommand });
+
+        await expect(appRouter.createCaller(fixture.context).general.dieOnPrestart()).rejects.toMatchObject({
+            code: 'NOT_FOUND',
+            message: '장수가 없습니다',
+        });
+        expect(fixture.db.general.findFirst).toHaveBeenCalledWith({
+            where: { userId: 'user-7', npcState: 0 },
+        });
+        expect(requestCommand).not.toHaveBeenCalled();
     });
 });
 
