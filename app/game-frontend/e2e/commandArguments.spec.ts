@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { gameProfile, gameTrpcRoute } from './gameTestPaths.js';
 
 const response = (data: unknown) => ({ result: { data } });
 const errorResponse = (path: string, message: string) => ({
@@ -128,12 +129,12 @@ const chiefCenter = {
 
 const install = async (page: Page, rejectGeneral = false) => {
     const requests: unknown[] = [];
-    await page.addInitScript(() => {
+    await page.addInitScript((profile) => {
         localStorage.setItem('sammo-game-token', 'ga_commands');
-        localStorage.setItem('sammo-game-profile', 'che:default');
-    });
+        localStorage.setItem('sammo-game-profile', profile);
+    }, gameProfile);
     await page.route('**/image/**', (route) => route.fulfill({ status: 404, body: '' }));
-    await page.route('**/che/api/trpc/**', async (route) => {
+    await page.route(gameTrpcRoute, async (route) => {
         const names = operations(route);
         const body = route.request().postDataJSON();
         const results = names.map((name) => {

@@ -2,6 +2,7 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gamePath, gameProfile, gameTrpcRoute } from './gameTestPaths.js';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const imageRoots = [
@@ -142,11 +143,11 @@ const emptyMessages = {
 
 const installApi = async (page: Page, state: BoardFixture) => {
     await installImages(page);
-    await page.addInitScript(() => {
+    await page.addInitScript((profile) => {
         window.localStorage.setItem('sammo-game-token', 'ga_board_playwright');
-        window.localStorage.setItem('sammo-game-profile', 'che:default');
-    });
-    await page.route('**/che/api/trpc/**', async (route) => {
+        window.localStorage.setItem('sammo-game-profile', profile);
+    }, gameProfile);
+    await page.route(gameTrpcRoute, async (route) => {
         const operations = operationNames(route);
         const results = operations.map((operation) => {
             state.requests.push(operation);
@@ -444,7 +445,7 @@ test('denies direct secret-room rendering and disables its in-game menu for an o
     state.requests.length = 0;
     await page.goto('');
     const nationMenu = page.locator('.main-nation-menu').first();
-    await expect(nationMenu.locator('[data-navigation-id="meeting"]')).toHaveAttribute('href', '/che/board');
+    await expect(nationMenu.locator('[data-navigation-id="meeting"]')).toHaveAttribute('href', gamePath('/board'));
     await expect(nationMenu.locator('[data-navigation-id="secret-board"]')).toHaveAttribute('aria-disabled', 'true');
 });
 
@@ -459,9 +460,9 @@ test('enables both in-game menu entries for a chief or delegated secret role', a
     await installApi(page, state);
     await page.goto('');
     const nationMenu = page.locator('.main-nation-menu').first();
-    await expect(nationMenu.locator('[data-navigation-id="meeting"]')).toHaveAttribute('href', '/che/board');
+    await expect(nationMenu.locator('[data-navigation-id="meeting"]')).toHaveAttribute('href', gamePath('/board'));
     await expect(nationMenu.locator('[data-navigation-id="secret-board"]')).toHaveAttribute(
         'href',
-        '/che/board/secret'
+        gamePath('/board/secret')
     );
 });

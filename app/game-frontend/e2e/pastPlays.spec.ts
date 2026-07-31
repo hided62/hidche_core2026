@@ -2,17 +2,18 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { gamePath, gameProfile, gameTrpcRoute } from './gameTestPaths.js';
 
 const response = (data: unknown) => ({ result: { data } });
 const operationNames = (route: Route) =>
     decodeURIComponent(new URL(route.request().url()).pathname.split('/trpc/')[1] ?? '').split(',');
 
 const installArchive = async (page: Page) => {
-    await page.addInitScript(() => {
+    await page.addInitScript((profile) => {
         localStorage.setItem('sammo-game-token', 'ga_archive');
-        localStorage.setItem('sammo-game-profile', 'che:default');
-    });
-    await page.route('**/che/api/trpc/**', async (route) => {
+        localStorage.setItem('sammo-game-profile', profile);
+    }, gameProfile);
+    await page.route(gameTrpcRoute, async (route) => {
         const results = operationNames(route).map((operation) => {
             if (operation === 'auth.status') return response({ ok: true });
             if (operation === 'lobby.info') return response({ myGeneral: null });
@@ -77,7 +78,7 @@ test('past plays is available without a current general and preserves desktop in
     await expect(page.getByRole('heading', { name: '내 지난 플레이 보기' })).toBeVisible();
     await expect(page.getByText('천하쟁패 · 51기')).toBeVisible();
     await expect(page.locator('.general-name')).toHaveText('관우');
-    await expect(page.getByRole('link', { name: '이 기수 국가 정보' })).toHaveAttribute('href', '/che/dynasty/7');
+    await expect(page.getByRole('link', { name: '이 기수 국가 정보' })).toHaveAttribute('href', gamePath('/dynasty/7'));
     const historyToggle = page.locator('.history-toggle');
     await expect(historyToggle).toHaveText('보기 (2)');
     await historyToggle.click();

@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { gameProfile, gameTrpcRoute } from './gameTestPaths.js';
 
 const response = (data: unknown) => ({ result: { data } });
 const operations = (route: Route) =>
@@ -28,11 +29,11 @@ const general = {
     permission: 'normal',
 };
 const install = async (page: Page, secretAllowed = true) => {
-    await page.addInitScript(() => {
+    await page.addInitScript((profile) => {
         localStorage.setItem('sammo-game-token', 'ga_general');
-        localStorage.setItem('sammo-game-profile', 'che:default');
-    });
-    await page.route('**/che/api/trpc/**', async (route) => {
+        localStorage.setItem('sammo-game-profile', profile);
+    }, gameProfile);
+    await page.route(gameTrpcRoute, async (route) => {
         const results = operations(route).map((operation) => {
             if (operation === 'auth.status') return response({ ok: true });
             if (operation === 'lobby.info') return response({ myGeneral: { id: 1, name: '테스트장수' } });
@@ -143,7 +144,7 @@ test('secret office renders summary, turns, and the forbidden error flow', async
     await expect(page.locator('#secret-general-list')).toContainText('1 : 징병');
     expect(await page.locator('.secret-page').evaluate((el) => el.getBoundingClientRect().width)).toBe(1000);
 
-    await page.unroute('**/che/api/trpc/**');
+    await page.unroute(gameTrpcRoute);
     await install(page, false);
     await page.goto('nation/secret');
     await expect(page.getByRole('alert')).toContainText('권한이 부족합니다.');

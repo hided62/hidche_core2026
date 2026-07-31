@@ -2,6 +2,7 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 import { mkdir, readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gameProfile, gameTrpcRoute } from './gameTestPaths.js';
 
 type Role = 'leader' | 'head' | 'member';
 type FixtureState = {
@@ -186,10 +187,10 @@ const financeFixture = (state: FixtureState) => ({
 });
 
 const installFixture = async (page: Page, state: FixtureState) => {
-    await page.addInitScript(() => {
+    await page.addInitScript((profile) => {
         localStorage.setItem('sammo-game-token', 'ga_office_playwright');
-        localStorage.setItem('sammo-game-profile', 'che:default');
-    });
+        localStorage.setItem('sammo-game-profile', profile);
+    }, gameProfile);
     for (const filename of ['back_walnut.jpg', 'back_green.jpg', 'back_blue.jpg']) {
         await page.route(`**/image/game/${filename}`, async (route) =>
             route.fulfill({
@@ -206,7 +207,7 @@ const installFixture = async (page: Page, state: FixtureState) => {
             body: await referenceAsset('icons/default.jpg'),
         })
     );
-    await page.route('**/che/api/trpc/**', async (route) => {
+    await page.route(gameTrpcRoute, async (route) => {
         const operations = operationName(route).split(',');
         const rawRequestBody: unknown = route.request().postData() ? route.request().postDataJSON() : {};
         const requestBody =

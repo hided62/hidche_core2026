@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { gameBasePath, gameProfile, gameTrpcRoute } from './gameTestPaths.js';
 
 const response = (data: unknown) => ({ result: { data } });
 const parityArtifactDir = process.env.MENU_PARITY_ARTIFACT_DIR;
@@ -133,12 +134,15 @@ const battleCenter = (state: FixtureState) => ({
 });
 
 const install = async (page: Page, state: FixtureState) => {
-    await page.addInitScript(() => {
-        if (location.pathname.startsWith('/che/')) {
-            localStorage.setItem('sammo-game-token', 'ga_menu-token');
-            localStorage.setItem('sammo-game-profile', 'che:default');
-        }
-    });
+    await page.addInitScript(
+        ({ basePath, profile }) => {
+            if (location.pathname.startsWith(`${basePath}/`)) {
+                localStorage.setItem('sammo-game-token', 'ga_menu-token');
+                localStorage.setItem('sammo-game-profile', profile);
+            }
+        },
+        { basePath: gameBasePath, profile: gameProfile }
+    );
     await page.route('**/image/game/**', async (route) => {
         const filename = basename(new URL(route.request().url()).pathname);
         if (legacyImageRoot && ['back_walnut.jpg', 'back_green.jpg', 'back_blue.jpg'].includes(filename)) {
@@ -151,7 +155,7 @@ const install = async (page: Page, state: FixtureState) => {
         }
         await route.fulfill({ status: 200, contentType: 'image/jpeg', body: Buffer.from('') });
     });
-    await page.route('**/che/api/trpc/**', async (route) => {
+    await page.route(gameTrpcRoute, async (route) => {
         const operations = operationNames(route);
         const rawRequestBody: unknown = route.request().postData() ? route.request().postDataJSON() : {};
         const requestBody =

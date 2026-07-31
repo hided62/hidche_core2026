@@ -1,7 +1,8 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { gameBasePath, gameProfile } from './gameTestPaths.js';
 
 const response = (data: unknown) => ({ result: { data } });
-const basePath = `/${(process.env.PLAYWRIGHT_GAME_BASE_PATH ?? 'che').replace(/^\/+|\/+$/g, '')}`;
+const basePath = gameBasePath;
 const operationNames = (route: Route) =>
     decodeURIComponent(new URL(route.request().url()).pathname.split('/trpc/')[1] ?? '').split(',');
 
@@ -94,10 +95,10 @@ const findInput = (value: unknown): Record<string, unknown> => {
 };
 
 const installFixture = async (page: Page, state: FixtureState): Promise<void> => {
-    await page.addInitScript(() => {
+    await page.addInitScript((profile) => {
         localStorage.setItem('sammo-game-token', 'ga_npc_possession');
-        localStorage.setItem('sammo-game-profile', 'che:default');
-    });
+        localStorage.setItem('sammo-game-profile', profile);
+    }, gameProfile);
     await page.route('**/image/**', async (route) => {
         await route.fulfill({
             status: 200,

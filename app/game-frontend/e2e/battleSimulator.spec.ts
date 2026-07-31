@@ -2,6 +2,7 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gameProfile, gameTrpcRoute } from './gameTestPaths.js';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const imageRoots = [
@@ -181,17 +182,15 @@ const installImages = async (page: Page) => {
 
 const installApi = async (page: Page, fixture: Fixture) => {
     await installImages(page);
-    await page.addInitScript(() => {
+    await page.addInitScript((profile) => {
         window.localStorage.setItem('sammo-game-token', 'ga_battle_sim_playwright');
-        window.localStorage.setItem('sammo-game-profile', 'che:default');
-    });
-    await page.route('**/che/api/trpc/**', async (route) => {
+        window.localStorage.setItem('sammo-game-profile', profile);
+    }, gameProfile);
+    await page.route(gameTrpcRoute, async (route) => {
         const operations = operationNames(route);
         const rawRequestBody: unknown = route.request().postData() ? route.request().postDataJSON() : {};
         const requestBody =
-            rawRequestBody && typeof rawRequestBody === 'object'
-                ? (rawRequestBody as Record<string, unknown>)
-                : {};
+            rawRequestBody && typeof rawRequestBody === 'object' ? (rawRequestBody as Record<string, unknown>) : {};
         const results = operations.map((operation, operationIndex) => {
             fixture.requests.push(operation);
             if (operation === 'auth.status') return response({ userId: 'battle-sim-user' });
@@ -223,9 +222,7 @@ const installApi = async (page: Page, fixture: Fixture) => {
                               input?: { json?: unknown };
                           })
                         : undefined;
-                fixture.simulationPayloads.push(
-                    payload?.json ?? payload?.input?.json ?? rawPayload
-                );
+                fixture.simulationPayloads.push(payload?.json ?? payload?.input?.json ?? rawPayload);
                 if (fixture.failNextSimulation) {
                     fixture.failNextSimulation = false;
                     return errorResponse(operation, '시뮬레이터 입력 오류');

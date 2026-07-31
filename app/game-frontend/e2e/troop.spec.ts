@@ -2,6 +2,7 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gameProfile, gameTrpcRoute } from './gameTestPaths.js';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const imageRoots = [
@@ -119,10 +120,10 @@ const gotoTroop = async (page: Page) => {
 };
 
 const installApiFixture = async (page: Page, state: FixtureState) => {
-    await page.addInitScript(() => {
+    await page.addInitScript((profile) => {
         window.localStorage.setItem('sammo-game-token', 'ga_playwright');
-        window.localStorage.setItem('sammo-game-profile', 'che:default');
-    });
+        window.localStorage.setItem('sammo-game-profile', profile);
+    }, gameProfile);
     for (const filename of ['back_walnut.jpg', 'back_green.jpg']) {
         await page.route(`**/image/game/${filename}`, async (route) => {
             await route.fulfill({
@@ -142,7 +143,7 @@ const installApiFixture = async (page: Page, state: FixtureState) => {
             ),
         });
     });
-    await page.route('**/che/api/trpc/**', async (route) => {
+    await page.route(gameTrpcRoute, async (route) => {
         const operations = operationName(route).split(',');
         const results = operations.map((operation) => {
             if (operation === 'auth.status') return response({ ok: true });
