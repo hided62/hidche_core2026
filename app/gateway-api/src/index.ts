@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 import { runGatewayApiServer } from './server.js';
 import { runGatewayOrchestrator } from './orchestrator/orchestratorServer.js';
+import { runProfileSeedCli } from './orchestrator/profileSeedCli.js';
 
 export * from './config.js';
 export * from './context.js';
@@ -35,9 +36,15 @@ const isMain = (): boolean => {
 
 if (isMain()) {
     const role = process.env.GATEWAY_ROLE ?? 'api';
-    const run = role === 'orchestrator' ? runGatewayOrchestrator : runGatewayApiServer;
+    const run =
+        role === 'orchestrator'
+            ? runGatewayOrchestrator
+            : role === 'profile-seed'
+              ? runProfileSeedCli
+              : runGatewayApiServer;
     run().catch((error) => {
-        const prefix = role === 'orchestrator' ? 'gateway-orchestrator' : 'gateway-api';
+        const prefix =
+            role === 'orchestrator' ? 'gateway-orchestrator' : role === 'profile-seed' ? 'profile-seed' : 'gateway-api';
         console.error(`[${prefix}] failed to start`, error);
         process.exitCode = 1;
     });

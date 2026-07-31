@@ -1,5 +1,7 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
 import { type ScenarioInstallOptions } from '@sammo-ts/game-engine';
 import { createGamePostgresConnector, resolvePostgresConfigFromEnv } from '@sammo-ts/infra';
@@ -8,13 +10,14 @@ import { isRecord } from '@sammo-ts/common';
 import type { BuildCommand, BuildRunner } from './buildRunner.js';
 import type { ProcessManager } from './processManager.js';
 import type {
+    GatewayClaimedProfileUpdate,
     GatewayOperationRecord,
     GatewayProfileRecord,
     GatewayProfileRepository,
     GatewayProfileStatus,
 } from './profileRepository.js';
 import type { GitWorkspaceManager } from './workspaceManager.js';
-import { seedProfileDatabase, type AdminSeedUser } from './seedProfileDatabase.js';
+import type { AdminSeedUser } from './seedProfileDatabase.js';
 
 export interface GatewayProcessConfig {
     workspaceRoot: string;
@@ -102,6 +105,7 @@ interface GatewayAdminActionRecord {
     handledAt?: string | null;
     handler?: string | null;
     detail?: string | null;
+    installOperationId?: string;
     install?: {
         scenarioId?: number;
         turnTermMinutes?: number;
@@ -133,13 +137,20 @@ interface GatewayAdminActionResult {
     detail?: string;
 }
 
+const OPERATION_LEASE_DURATION_MS = 10 * 60_000;
+const OPERATION_HEARTBEAT_INTERVAL_MS = 60_000;
+
+class OperationLeaseLostError extends Error {}
+
 const normalizeMeta = (value: unknown): Record<string, unknown> => (isRecord(value) ? value : {});
 
-const buildServerId = (profileName: string, now: Date): string => {
+const buildServerId = (profileName: string, now: Date, installOperationId?: string): string => {
     const year = String(now.getFullYear()).slice(-2);
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const day = String(now.getDate()).padStart(2, '0');
-    const suffix = randomBytes(2).toString('hex');
+    const suffix = installOperationId
+        ? createHash('sha256').update(installOperationId).digest('hex').slice(0, 16)
+        : randomBytes(2).toString('hex');
     return `${profileName}_${year}${month}${day}_${suffix}`;
 };
 
@@ -276,6 +287,7 @@ const parseInstallOptions = (
         joinMode: joinMode === 'full' || joinMode === 'onlyRandom' ? joinMode : undefined,
         autorunUser: autorunUser ?? null,
         preopenAt: preopenAt ?? null,
+        installOperationId: action.installOperationId,
     };
 
     return {
@@ -424,6 +436,7 @@ export const buildWorkspaceCommands = (
         ['@sammo-ts/logic', 'build'],
         ['@sammo-ts/game-api', 'build'],
         ['@sammo-ts/game-engine', 'build'],
+        ['@sammo-ts/gateway-api', 'build'],
     ];
     for (const [filter, script] of buildSteps) {
         commands.push({
@@ -435,6 +448,17 @@ export const buildWorkspaceCommands = (
     }
     return commands;
 };
+
+export const buildProfileMigrationCommand = (
+    workspaceRoot: string,
+    profileDatabaseUrl: string,
+    env?: Record<string, string>
+): BuildCommand => ({
+    command: 'pnpm',
+    args: ['--filter', '@sammo-ts/infra', 'prisma:migrate:deploy:game'],
+    cwd: workspaceRoot,
+    env: { ...(env ?? {}), DATABASE_URL: profileDatabaseUrl },
+});
 
 const mapRuntimeStates = (profileNames: string[], processNames: Map<string, boolean>): ProfileRuntimeSnapshot[] =>
     profileNames.map((profileName) => {
@@ -474,6 +498,10 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     private adminActionInFlight = false;
     private operationInFlight = false;
     private readonly resetInFlight = new Set<string>();
+    private readonly operationLeaseOwner = randomUUID();
+    private readonly inFlightTasks = new Set<Promise<unknown>>();
+    private stopping = false;
+    private stopPromise?: Promise<void>;
 
     constructor(options: GatewayOrchestratorOptions) {
         this.repository = options.repository;
@@ -489,19 +517,29 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     }
 
     start(): void {
-        void this.reconcileNow();
-        void this.runOperationsNow();
-        void this.runAdminActionsNow();
-        this.reconcileTimer = setInterval(() => void this.reconcileNow(), this.reconcileIntervalMs);
-        this.scheduleTimer = setInterval(() => void this.runScheduleNow(), this.scheduleIntervalMs);
-        this.buildTimer = setInterval(() => void this.runBuildQueueNow(), this.buildIntervalMs);
+        this.stopping = false;
+        this.trackTask(this.reconcileNow());
+        this.trackTask(this.runOperationsNow());
+        this.trackTask(this.runAdminActionsNow());
+        this.reconcileTimer = setInterval(() => this.trackTask(this.reconcileNow()), this.reconcileIntervalMs);
+        this.scheduleTimer = setInterval(() => this.trackTask(this.runScheduleNow()), this.scheduleIntervalMs);
+        this.buildTimer = setInterval(() => this.trackTask(this.runBuildQueueNow()), this.buildIntervalMs);
         this.adminActionTimer = setInterval(() => {
-            void this.runOperationsNow();
-            void this.runAdminActionsNow();
+            this.trackTask(this.runOperationsNow());
+            this.trackTask(this.runAdminActionsNow());
         }, this.adminActionIntervalMs);
     }
 
     async stop(): Promise<void> {
+        if (this.stopPromise) {
+            return this.stopPromise;
+        }
+        this.stopPromise = this.stopAndDrain();
+        return this.stopPromise;
+    }
+
+    private async stopAndDrain(): Promise<void> {
+        this.stopping = true;
         if (this.reconcileTimer) {
             clearInterval(this.reconcileTimer);
         }
@@ -514,6 +552,16 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         if (this.adminActionTimer) {
             clearInterval(this.adminActionTimer);
         }
+        await Promise.allSettled([...this.inFlightTasks]);
+    }
+
+    private trackTask(task: Promise<unknown>): void {
+        this.inFlightTasks.add(task);
+        void task
+            .catch((error) => {
+                console.error('[gateway-orchestrator] scheduled task failed', error);
+            })
+            .finally(() => this.inFlightTasks.delete(task));
     }
 
     async listRuntimeStates(profileNames: string[]): Promise<ProfileRuntimeSnapshot[]> {
@@ -522,7 +570,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     }
 
     async reconcileNow(): Promise<void> {
-        if (this.reconcileInFlight) {
+        if (this.stopping || this.reconcileInFlight) {
             return;
         }
         this.reconcileInFlight = true;
@@ -531,8 +579,14 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             if (!profiles.length) {
                 return;
             }
+            const activeOperationProfiles = new Set(
+                (await this.repository.listActiveOperationProfileNames?.(this.now())) ?? []
+            );
             const processStates = await this.loadProcessStatusMap();
             for (const profile of profiles) {
+                if (this.resetInFlight.has(profile.profileName) || activeOperationProfiles.has(profile.profileName)) {
+                    continue;
+                }
                 const runtime = mapRuntimeStates([profile.profileName], processStates)[0];
                 const plan = planProfileReconcile(profile.status, runtime);
                 if (plan.shouldStart) {
@@ -547,7 +601,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     }
 
     async runScheduleNow(): Promise<void> {
-        if (this.scheduleInFlight) {
+        if (this.stopping || this.scheduleInFlight) {
             return;
         }
         this.scheduleInFlight = true;
@@ -593,7 +647,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     }
 
     async runBuildQueueNow(): Promise<void> {
-        if (this.buildInFlight) {
+        if (this.stopping || this.buildInFlight) {
             return;
         }
         this.buildInFlight = true;
@@ -614,9 +668,14 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 startedAt,
                 error: null,
             });
-            const result = await this.runBuildCommands(queued.profileName, queued.buildCommitSha);
+            const { result, workspace } = await this.runBuildCommands(queued.buildCommitSha);
             const completedAt = this.now().toISOString();
             if (result.ok) {
+                await this.repository.updateWorkspaceUsage(
+                    queued.profileName,
+                    workspace.root,
+                    this.now().toISOString()
+                );
                 await this.repository.updateBuildStatus(queued.profileName, 'SUCCEEDED', {
                     completedAt,
                     error: null,
@@ -650,84 +709,222 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     }
 
     async runOperationsNow(): Promise<void> {
-        if (this.operationInFlight || this.buildInFlight) {
+        if (this.stopping || this.operationInFlight || this.buildInFlight) {
             return;
         }
         this.operationInFlight = true;
         try {
-            const operation = await this.repository.claimNextOperation(this.now());
+            const operation = await this.repository.claimNextOperation(this.now(), {
+                ownerId: this.operationLeaseOwner,
+                durationMs: OPERATION_LEASE_DURATION_MS,
+            });
             if (!operation) {
                 return;
             }
-            await this.handleOperation(operation);
+            const heartbeatTimer = this.repository.renewOperationLease
+                ? setInterval(() => {
+                      void this.repository
+                          .renewOperationLease?.(
+                              operation.id,
+                              this.operationLeaseOwner,
+                              this.now(),
+                              OPERATION_LEASE_DURATION_MS
+                          )
+                          .catch((error) => {
+                              console.error('[gateway-orchestrator] operation heartbeat failed', error);
+                          });
+                  }, OPERATION_HEARTBEAT_INTERVAL_MS)
+                : undefined;
+            try {
+                await this.handleOperation(operation);
+            } finally {
+                if (heartbeatTimer) {
+                    clearInterval(heartbeatTimer);
+                }
+            }
         } finally {
             this.operationInFlight = false;
         }
     }
 
-    private async handleOperation(operation: GatewayOperationRecord): Promise<void> {
-        const profile = await this.repository.getProfile(operation.profileName);
-        if (!profile) {
-            await this.repository.completeOperation(operation.id, 'FAILED', {
-                error: 'Profile not found.',
-            });
+    private async assertOperationLease(operationId: string): Promise<void> {
+        if (!this.repository.renewOperationLease) {
             return;
         }
+        const renewed = await this.repository.renewOperationLease(
+            operationId,
+            this.operationLeaseOwner,
+            this.now(),
+            OPERATION_LEASE_DURATION_MS
+        );
+        if (!renewed) {
+            throw new OperationLeaseLostError(`Operation lease lost: ${operationId}`);
+        }
+    }
+
+    private async handleOperation(operation: GatewayOperationRecord): Promise<void> {
+        const assertLease = () => this.assertOperationLease(operation.id);
+        const profile = await this.repository.getProfile(operation.profileName);
+        if (!profile) {
+            await this.repository.completeOperation(
+                operation.id,
+                'FAILED',
+                {
+                    error: 'Profile not found.',
+                },
+                this.operationLeaseOwner
+            );
+            return;
+        }
+        const updateOperationProfile = async (
+            patch: GatewayClaimedProfileUpdate,
+            fallback: () => Promise<GatewayProfileRecord | null>
+        ): Promise<GatewayProfileRecord | null> => {
+            if (this.repository.updateProfileForOperation) {
+                const updated = await this.repository.updateProfileForOperation(
+                    operation.id,
+                    this.operationLeaseOwner,
+                    profile.profileName,
+                    patch
+                );
+                if (!updated) {
+                    throw new OperationLeaseLostError(`Operation lease lost while updating profile: ${operation.id}`);
+                }
+                return updated;
+            }
+            await assertLease();
+            return fallback();
+        };
+        let resolvedCommitSha: string | undefined;
         try {
             if (operation.type === 'START') {
-                const updated = await this.repository.updateStatus(profile.profileName, 'RUNNING', {
-                    preopenAt: null,
-                    openAt: null,
-                    scheduledStartAt: null,
-                });
-                const started = await this.startProfile(updated ?? profile);
+                const updated = await updateOperationProfile(
+                    {
+                        status: 'RUNNING',
+                        preopenAt: null,
+                        openAt: null,
+                        scheduledStartAt: null,
+                    },
+                    () =>
+                        this.repository.updateStatus(profile.profileName, 'RUNNING', {
+                            preopenAt: null,
+                            openAt: null,
+                            scheduledStartAt: null,
+                        })
+                );
+                const started = await this.startProfile(updated ?? profile, assertLease);
                 if (!started) {
+                    await updateOperationProfile({ status: 'STOPPED' }, () =>
+                        this.repository.updateStatus(profile.profileName, 'STOPPED')
+                    );
                     throw new Error('Failed to start profile processes.');
                 }
-                await this.repository.completeOperation(operation.id, 'SUCCEEDED', { error: null });
+                await updateOperationProfile({ lastError: null }, async () => {
+                    await this.repository.updateLastError(profile.profileName, null);
+                    return this.repository.getProfile(profile.profileName);
+                });
+                await this.repository.completeOperation(
+                    operation.id,
+                    'SUCCEEDED',
+                    { error: null },
+                    this.operationLeaseOwner
+                );
                 return;
             }
             if (operation.type === 'STOP') {
-                await this.repository.updateStatus(profile.profileName, 'STOPPED');
-                await this.stopProfile(profile);
-                await this.repository.completeOperation(operation.id, 'SUCCEEDED', { error: null });
+                await updateOperationProfile({ status: 'STOPPED' }, () =>
+                    this.repository.updateStatus(profile.profileName, 'STOPPED')
+                );
+                await this.stopProfile(profile, assertLease);
+                await this.repository.completeOperation(
+                    operation.id,
+                    'SUCCEEDED',
+                    { error: null },
+                    this.operationLeaseOwner
+                );
                 return;
             }
 
             if (!operation.sourceMode || !operation.sourceRef) {
                 throw new Error('Reset source mode and ref are required.');
             }
-            const commitSha = await this.workspaceManager.resolveCommit(operation.sourceMode, operation.sourceRef);
+            const commitSha =
+                operation.resolvedCommitSha ??
+                (await this.workspaceManager.resolveCommit(operation.sourceMode, operation.sourceRef));
+            resolvedCommitSha = commitSha;
+            if (!operation.resolvedCommitSha && this.repository.pinOperationResolvedCommit) {
+                const pinned = await this.repository.pinOperationResolvedCommit(
+                    operation.id,
+                    this.operationLeaseOwner,
+                    commitSha
+                );
+                if (!pinned) {
+                    throw new OperationLeaseLostError(`Operation lease lost while pinning commit: ${operation.id}`);
+                }
+            }
+            await assertLease();
             const payload = normalizeMeta(operation.payload);
             const install = isRecord(payload.install) ? payload.install : {};
+            const installOperationId =
+                typeof payload.installOperationId === 'string' ? payload.installOperationId : operation.id;
             const resetAction: GatewayAdminActionRecord = {
                 action: operation.scheduledAt ? 'RESET_SCHEDULED' : 'RESET_NOW',
                 requestedAt: operation.createdAt,
                 scheduledAt: operation.scheduledAt ?? null,
                 reason: operation.reason ?? null,
+                installOperationId,
                 install,
             };
-            const result = await this.handleResetAction(profile, resetAction, commitSha);
+            const result = await this.handleResetAction(profile, resetAction, commitSha, assertLease, operation.id);
             if (result.status === 'REQUESTED') {
                 const retryAt = new Date(this.now().getTime() + this.adminActionIntervalMs).toISOString();
-                await this.repository.requeueOperation(operation.id, result.detail, retryAt);
+                await this.repository.requeueOperation(operation.id, result.detail, retryAt, this.operationLeaseOwner);
                 return;
             }
             if (result.status !== 'APPLIED') {
                 throw new Error(result.detail ?? 'Reset failed.');
             }
-            await this.repository.completeOperation(operation.id, 'SUCCEEDED', {
-                resolvedCommitSha: commitSha,
-                error: null,
-            });
+            await this.repository.completeOperation(
+                operation.id,
+                'SUCCEEDED',
+                {
+                    resolvedCommitSha: commitSha,
+                    error: null,
+                },
+                this.operationLeaseOwner
+            );
         } catch (error) {
+            if (
+                error instanceof OperationLeaseLostError ||
+                (error instanceof Error && error.message.startsWith('Operation lease lost before'))
+            ) {
+                return;
+            }
             const detail = error instanceof Error ? error.message : String(error);
-            await this.repository.completeOperation(operation.id, 'FAILED', { error: detail });
+            try {
+                await this.repository.completeOperation(
+                    operation.id,
+                    'FAILED',
+                    {
+                        ...(resolvedCommitSha ? { resolvedCommitSha } : {}),
+                        error: detail,
+                    },
+                    this.operationLeaseOwner
+                );
+            } catch (completionError) {
+                if (
+                    completionError instanceof Error &&
+                    completionError.message.startsWith('Operation lease lost before')
+                ) {
+                    return;
+                }
+                throw completionError;
+            }
         }
     }
 
     private async runAdminActionsNow(): Promise<void> {
-        if (this.adminActionInFlight) {
+        if (this.stopping || this.adminActionInFlight) {
             return;
         }
         this.adminActionInFlight = true;
@@ -811,7 +1008,9 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     private async handleResetAction(
         profile: GatewayProfileRecord,
         action: GatewayAdminActionRecord,
-        commitShaOverride?: string
+        commitShaOverride?: string,
+        assertLease?: () => Promise<void>,
+        operationId?: string
     ): Promise<GatewayAdminActionResult> {
         // 리셋 요청을 빌드+재기동 흐름으로 처리한다.
         if (this.resetInFlight.has(profile.profileName)) {
@@ -839,6 +1038,26 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         }
         this.buildInFlight = true;
         this.resetInFlight.add(profile.profileName);
+        let releasePrepared = false;
+        const updateClaimedProfile = async (
+            patch: GatewayClaimedProfileUpdate,
+            fallback: () => Promise<GatewayProfileRecord | null>
+        ): Promise<GatewayProfileRecord | null> => {
+            if (operationId && this.repository.updateProfileForOperation) {
+                const updated = await this.repository.updateProfileForOperation(
+                    operationId,
+                    this.operationLeaseOwner,
+                    profile.profileName,
+                    patch
+                );
+                if (!updated) {
+                    throw new OperationLeaseLostError(`Operation lease lost while updating profile: ${operationId}`);
+                }
+                return updated;
+            }
+            await assertLease?.();
+            return fallback();
+        };
         try {
             const {
                 installOptions,
@@ -849,86 +1068,178 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             } = parseInstallOptions(action);
             const tickOverride =
                 installOptions?.turnTermMinutes !== undefined ? installOptions.turnTermMinutes * 60 : undefined;
-            const seedInfo = await this.resolveResetSeedInfo(profile, {
-                scenarioId: installScenarioId,
-                tickSeconds: tickOverride,
-            });
-            if (!seedInfo.scenarioId) {
+            const scenarioId = installScenarioId ?? parseScenarioId(profile.scenario);
+            if (!scenarioId) {
                 return { status: 'FAILED', detail: 'scenarioId is missing' };
             }
+            const profileDatabaseUrl = this.resolveProfileDatabaseUrl(profile);
+            const seedTime =
+                openAt ??
+                (action.scheduledAt && action.action === 'RESET_SCHEDULED'
+                    ? new Date(action.scheduledAt)
+                    : (parseDateTime(action.requestedAt) ?? this.now()));
+            const startedAt = this.now().toISOString();
+            await updateClaimedProfile(
+                {
+                    buildStatus: 'RUNNING',
+                    buildRequestedAt: startedAt,
+                    buildStartedAt: startedAt,
+                    buildError: null,
+                    buildCommitSha: commitSha,
+                },
+                () =>
+                    this.repository.updateBuildStatus(profile.profileName, 'RUNNING', {
+                        requestedAt: startedAt,
+                        startedAt,
+                        error: null,
+                        commitSha,
+                    })
+            );
+            const { result, workspace } = await this.runBuildCommands(commitSha);
+            await assertLease?.();
+            if (!result.ok) {
+                const completedAt = this.now().toISOString();
+                await updateClaimedProfile(
+                    {
+                        buildStatus: 'FAILED',
+                        buildCompletedAt: completedAt,
+                        buildError: result.output.slice(-4000),
+                    },
+                    () =>
+                        this.repository.updateBuildStatus(profile.profileName, 'FAILED', {
+                            completedAt,
+                            error: result.output.slice(-4000),
+                        })
+                );
+                return { status: 'FAILED', detail: 'selected workspace build failed' };
+            }
+            await this.assertProfileSeedCli(workspace.root);
+            const seedInfo = await this.resolveResetSeedInfo(
+                profile,
+                {
+                    scenarioId,
+                    tickSeconds: tickOverride,
+                },
+                profileDatabaseUrl
+            );
             const profileMeta = normalizeMeta(profile.meta);
             const nextSeasonIdx = readMetaNumber(profileMeta, 'nextSeasonIdx');
             const baseSeason = readMetaNumber(normalizeMeta(seedInfo.meta), 'season');
             const season = nextSeasonIdx ?? baseSeason ?? 1;
-            const seedTime =
-                openAt ??
-                (action.scheduledAt && action.action === 'RESET_SCHEDULED' ? new Date(action.scheduledAt) : this.now());
-            const startedAt = this.now().toISOString();
-            let activeProfile = profile;
-            if (installScenarioId !== null && String(installScenarioId) !== profile.scenario) {
-                const updated = await this.repository.updateScenario(profile.profileName, String(installScenarioId));
-                if (updated) {
-                    activeProfile = updated;
-                }
+            await updateClaimedProfile({ status: 'STOPPED' }, () =>
+                this.repository.updateStatus(profile.profileName, 'STOPPED')
+            );
+            await this.stopProfile(profile, assertLease);
+            await assertLease?.();
+            const migrationResult = await this.runProfileMigration(workspace.root, profileDatabaseUrl);
+            await assertLease?.();
+            if (!migrationResult.ok) {
+                const completedAt = this.now().toISOString();
+                await updateClaimedProfile(
+                    {
+                        buildStatus: 'FAILED',
+                        buildCompletedAt: completedAt,
+                        buildError: migrationResult.output.slice(-4000),
+                    },
+                    () =>
+                        this.repository.updateBuildStatus(profile.profileName, 'FAILED', {
+                            completedAt,
+                            error: migrationResult.output.slice(-4000),
+                        })
+                );
+                return { status: 'FAILED', detail: 'profile database migration failed' };
             }
-            await this.repository.updateStatus(profile.profileName, 'STOPPED');
-            await this.stopProfile(activeProfile);
-            await this.repository.updateBuildStatus(profile.profileName, 'RUNNING', {
-                requestedAt: startedAt,
-                startedAt,
-                error: null,
-                commitSha,
-            });
-            const result = await this.runBuildCommands(profile.profileName, commitSha);
-            const completedAt = this.now().toISOString();
-            if (!result.ok) {
-                await this.repository.updateBuildStatus(profile.profileName, 'FAILED', {
-                    completedAt,
-                    error: result.output.slice(-4000),
-                });
-                return { status: 'FAILED', detail: 'build failed' };
-            }
-            const workspace = await this.workspaceManager.prepare(commitSha);
-            const resourceRoot = path.join(workspace.root, 'resources');
-            const serverId = buildServerId(profile.profileName, seedTime);
-            await seedProfileDatabase({
+            const serverId = buildServerId(profile.profileName, seedTime, installOptions?.installOperationId);
+            const seedResult = await this.runSelectedProfileSeed({
+                workspaceRoot: workspace.root,
                 databaseUrl: seedInfo.databaseUrl,
-                scenarioId: seedInfo.scenarioId,
+                scenarioId,
                 tickSeconds: seedInfo.tickSeconds,
                 now: seedTime,
                 installOptions: {
                     ...(installOptions ?? {}),
                     season,
                     serverId,
+                    installCommitSha: commitSha,
                 },
-                scenarioOptions: { scenarioRoot: path.join(resourceRoot, 'scenario') },
-                mapOptions: { mapRoot: path.join(resourceRoot, 'map') },
-                unitSetOptions: { unitSetRoot: path.join(resourceRoot, 'unitset') },
                 adminUser,
             });
-            await this.repository.updateBuildStatus(profile.profileName, 'SUCCEEDED', {
-                completedAt,
-                error: null,
-            });
+            await assertLease?.();
+            if (!seedResult.ok) {
+                throw new Error(`Selected profile seed failed: ${seedResult.output.slice(-4000)}`);
+            }
+            const completedAt = this.now().toISOString();
             const now = this.now();
             const shouldPreopen = openAt ? openAt.getTime() > now.getTime() : false;
-            await this.repository.updateStatus(profile.profileName, shouldPreopen ? 'PREOPEN' : 'RUNNING', {
-                preopenAt: preopenAt ? preopenAt.toISOString() : openAt ? openAt.toISOString() : null,
-                openAt: openAt ? openAt.toISOString() : null,
-                scheduledStartAt: action.scheduledAt ?? null,
-            });
-            const builtProfile = (await this.repository.getProfile(profile.profileName)) ?? activeProfile;
-            const started = await this.startProfile(builtProfile);
+            const desiredStatus = shouldPreopen ? 'PREOPEN' : 'RUNNING';
+            const publishedProfile = await updateClaimedProfile(
+                {
+                    scenario: String(scenarioId),
+                    status: desiredStatus,
+                    buildStatus: 'SUCCEEDED',
+                    buildWorkspace: workspace.root,
+                    buildLastUsedAt: completedAt,
+                    buildCompletedAt: completedAt,
+                    buildError: null,
+                    preopenAt: preopenAt ? preopenAt.toISOString() : openAt ? openAt.toISOString() : null,
+                    openAt: openAt ? openAt.toISOString() : null,
+                    scheduledStartAt: action.scheduledAt ?? null,
+                },
+                async () => {
+                    await this.repository.updateWorkspaceUsage(profile.profileName, workspace.root, completedAt);
+                    await this.repository.updateBuildStatus(profile.profileName, 'SUCCEEDED', {
+                        completedAt,
+                        error: null,
+                    });
+                    if (String(scenarioId) !== profile.scenario) {
+                        await this.repository.updateScenario(profile.profileName, String(scenarioId));
+                    }
+                    return this.repository.updateStatus(profile.profileName, desiredStatus, {
+                        preopenAt: preopenAt ? preopenAt.toISOString() : openAt ? openAt.toISOString() : null,
+                        openAt: openAt ? openAt.toISOString() : null,
+                        scheduledStartAt: action.scheduledAt ?? null,
+                    });
+                }
+            );
+            releasePrepared = true;
+            const builtProfile = publishedProfile ?? {
+                ...profile,
+                scenario: String(scenarioId),
+                status: desiredStatus,
+                buildWorkspace: workspace.root,
+            };
+            const started = await this.startProfile(builtProfile, assertLease);
             if (!started) {
+                await updateClaimedProfile({ status: 'STOPPED', lastError: 'Failed to start profile processes.' }, () =>
+                    this.repository.updateStatus(profile.profileName, 'STOPPED')
+                );
                 return { status: 'FAILED', detail: 'reset completed but profile processes failed to start' };
             }
+            await updateClaimedProfile({ lastError: null }, async () => {
+                await this.repository.updateLastError(profile.profileName, null);
+                return this.repository.getProfile(profile.profileName);
+            });
             return { status: 'APPLIED', detail: 'reset completed via rebuild' };
         } catch (error) {
+            if (error instanceof OperationLeaseLostError) {
+                throw error;
+            }
             const detail = error instanceof Error ? error.message : String(error);
-            await this.repository.updateBuildStatus(profile.profileName, 'FAILED', {
-                completedAt: this.now().toISOString(),
-                error: detail,
-            });
+            if (!releasePrepared) {
+                const completedAt = this.now().toISOString();
+                await updateClaimedProfile(
+                    {
+                        buildStatus: 'FAILED',
+                        buildCompletedAt: completedAt,
+                        buildError: detail,
+                    },
+                    () =>
+                        this.repository.updateBuildStatus(profile.profileName, 'FAILED', {
+                            completedAt,
+                            error: detail,
+                        })
+                );
+            }
             return { status: 'FAILED', detail };
         } finally {
             this.buildInFlight = false;
@@ -938,17 +1249,15 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
 
     private async resolveResetSeedInfo(
         profile: GatewayProfileRecord,
-        overrides?: { scenarioId?: number | null; tickSeconds?: number }
+        overrides?: { scenarioId?: number | null; tickSeconds?: number },
+        databaseUrlOverride?: string
     ): Promise<{
         databaseUrl: string;
         scenarioId: number | null;
         tickSeconds?: number;
         meta: Record<string, unknown>;
     }> {
-        const databaseUrl = resolvePostgresConfigFromEnv({
-            env: this.processConfig.baseEnv ?? process.env,
-            schema: profile.profile,
-        }).url;
+        const databaseUrl = databaseUrlOverride ?? this.resolveProfileDatabaseUrl(profile);
         let scenarioId = overrides?.scenarioId ?? parseScenarioId(profile.scenario);
         let tickSeconds: number | undefined = overrides?.tickSeconds;
         let meta: Record<string, unknown> = {};
@@ -980,15 +1289,84 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         return { databaseUrl, scenarioId, tickSeconds, meta };
     }
 
-    private async runBuildCommands(
-        profileName: string,
-        commitSha: string
-    ): Promise<Awaited<ReturnType<BuildRunner['run']>>> {
+    private async runBuildCommands(commitSha: string): Promise<{
+        result: Awaited<ReturnType<BuildRunner['run']>>;
+        workspace: Awaited<ReturnType<GitWorkspaceManager['prepare']>>;
+    }> {
         const workspace = await this.workspaceManager.prepare(commitSha);
-        const lastUsedAt = this.now().toISOString();
-        await this.repository.updateWorkspaceUsage(profileName, workspace.root, lastUsedAt);
         const commands = buildWorkspaceCommands(workspace.root, workspace.needsInstall, this.processConfig.baseEnv);
-        return this.buildRunner.run(commands);
+        return { result: await this.buildRunner.run(commands), workspace };
+    }
+
+    private async assertProfileSeedCli(workspaceRoot: string): Promise<void> {
+        const sourcePath = path.join(workspaceRoot, 'app', 'gateway-api', 'src', 'orchestrator', 'profileSeedCli.ts');
+        try {
+            await fs.access(sourcePath);
+        } catch {
+            throw new Error(`Selected commit does not provide the profile seed CLI: ${sourcePath}`);
+        }
+    }
+
+    private async runProfileMigration(
+        workspaceRoot: string,
+        profileDatabaseUrl: string
+    ): Promise<Awaited<ReturnType<BuildRunner['run']>>> {
+        return this.buildRunner.run([
+            buildProfileMigrationCommand(workspaceRoot, profileDatabaseUrl, this.processConfig.baseEnv),
+        ]);
+    }
+
+    private async runSelectedProfileSeed(options: {
+        workspaceRoot: string;
+        databaseUrl: string;
+        scenarioId: number;
+        tickSeconds?: number;
+        now: Date;
+        installOptions?: ScenarioInstallOptions;
+        adminUser?: AdminSeedUser | null;
+    }): Promise<Awaited<ReturnType<BuildRunner['run']>>> {
+        const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'sammo-profile-seed-'));
+        const requestFile = path.join(tempDirectory, 'request.json');
+        try {
+            await fs.writeFile(
+                requestFile,
+                JSON.stringify({
+                    scenarioId: options.scenarioId,
+                    tickSeconds: options.tickSeconds,
+                    now: options.now.toISOString(),
+                    installOptions: options.installOptions
+                        ? {
+                              ...options.installOptions,
+                              preopenAt: options.installOptions.preopenAt?.toISOString() ?? null,
+                          }
+                        : undefined,
+                    adminUser: options.adminUser,
+                }),
+                { encoding: 'utf8', mode: 0o600 }
+            );
+            return await this.buildRunner.run([
+                {
+                    command: process.execPath,
+                    args: [path.join(options.workspaceRoot, 'app', 'gateway-api', 'dist', 'index.js')],
+                    cwd: options.workspaceRoot,
+                    env: {
+                        ...(this.processConfig.baseEnv ?? {}),
+                        DATABASE_URL: options.databaseUrl,
+                        GATEWAY_ROLE: 'profile-seed',
+                        PROFILE_SEED_REQUEST_FILE: requestFile,
+                    },
+                },
+            ]);
+        } finally {
+            await fs.rm(tempDirectory, { recursive: true, force: true });
+        }
+    }
+
+    private resolveProfileDatabaseUrl(profile: GatewayProfileRecord): string {
+        return resolvePostgresConfigFromEnv({
+            env: this.processConfig.baseEnv ?? process.env,
+            schema: profile.profile,
+        }).url;
     }
 
     async cleanupStaleWorkspaces(): Promise<{ removed: string[]; skipped: string[] }> {
@@ -1070,42 +1448,72 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         return cutoff;
     }
 
-    private async startProfile(profile: GatewayProfileRecord): Promise<boolean> {
+    private async startProfile(profile: GatewayProfileRecord, assertLease?: () => Promise<void>): Promise<boolean> {
         const definitions = buildProcessDefinitions(profile, this.processConfig);
+        const orderedDefinitions = [
+            definitions.api,
+            definitions.daemon,
+            definitions.auction,
+            definitions.battleSim,
+            definitions.tournament,
+        ];
+        const attemptedNames: string[] = [];
         try {
-            await this.processManager.start(definitions.api);
-            await this.processManager.start(definitions.daemon);
-            await this.processManager.start(definitions.auction);
-            await this.processManager.start(definitions.battleSim);
-            await this.processManager.start(definitions.tournament);
-            await this.repository.updateLastError(profile.profileName, null);
+            for (const definition of orderedDefinitions) {
+                await assertLease?.();
+                attemptedNames.push(definition.name);
+                await this.processManager.start(definition);
+                await assertLease?.();
+            }
+            if (!assertLease) {
+                await this.repository.updateLastError(profile.profileName, null);
+            }
             return true;
         } catch (error) {
-            await this.repository.updateLastError(
-                profile.profileName,
-                error instanceof Error ? error.message : 'Failed to start processes.'
-            );
+            if (error instanceof OperationLeaseLostError) {
+                throw error;
+            }
+            await assertLease?.();
+            for (const name of attemptedNames.reverse()) {
+                await assertLease?.();
+                try {
+                    await this.processManager.delete(name);
+                } catch {
+                    // Preserve the original start failure. Reconciliation can retry cleanup.
+                }
+                await assertLease?.();
+            }
+            if (!assertLease) {
+                await this.repository.updateLastError(
+                    profile.profileName,
+                    error instanceof Error ? error.message : 'Failed to start processes.'
+                );
+            }
             return false;
         }
     }
 
-    private async stopProfile(profile: GatewayProfileRecord): Promise<void> {
+    private async stopProfile(profile: GatewayProfileRecord, assertLease?: () => Promise<void>): Promise<void> {
         const apiName = buildProcessName(profile.profileName, 'api');
         const daemonName = buildProcessName(profile.profileName, 'daemon');
         const auctionName = buildProcessName(profile.profileName, 'auction');
         const battleSimName = buildProcessName(profile.profileName, 'battle-sim');
         const tournamentName = buildProcessName(profile.profileName, 'tournament');
+        await assertLease?.();
         const existingNames = new Set((await this.processManager.list()).map((process) => process.name));
+        await assertLease?.();
         const failures: string[] = [];
         for (const name of [apiName, daemonName, auctionName, battleSimName, tournamentName]) {
             if (!existingNames.has(name)) {
                 continue;
             }
+            await assertLease?.();
             try {
                 await this.processManager.stop(name);
             } catch {
                 // Deleting the definition below also terminates a process that raced with stop.
             }
+            await assertLease?.();
             try {
                 await this.processManager.delete(name);
             } catch (error) {
@@ -1113,6 +1521,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                     failures.push(`${name}: ${error instanceof Error ? error.message : String(error)}`);
                 }
             }
+            await assertLease?.();
         }
         if (failures.length > 0) {
             throw new Error(`Failed to stop profile processes: ${failures.join('; ')}`);

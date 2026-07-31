@@ -38,6 +38,10 @@ export interface GatewayOperationRecord {
     startedAt?: string;
     completedAt?: string;
     error?: string;
+    leaseOwner?: string;
+    leaseUntil?: string;
+    heartbeatAt?: string;
+    attempts?: number;
     createdAt: string;
     updatedAt: string;
 }
@@ -88,6 +92,23 @@ export interface GatewayProfileUpsertInput {
     meta?: GatewayPrisma.JsonObject;
 }
 
+export interface GatewayClaimedProfileUpdate {
+    scenario?: string;
+    status?: GatewayProfileStatus;
+    buildStatus?: GatewayBuildStatus;
+    buildCommitSha?: string | null;
+    buildWorkspace?: string | null;
+    buildLastUsedAt?: string | null;
+    preopenAt?: string | null;
+    openAt?: string | null;
+    scheduledStartAt?: string | null;
+    buildRequestedAt?: string | null;
+    buildStartedAt?: string | null;
+    buildCompletedAt?: string | null;
+    buildError?: string | null;
+    lastError?: string | null;
+}
+
 export interface GatewayProfileRepository {
     listProfiles(): Promise<GatewayProfileRecord[]>;
     getProfile(profileName: string): Promise<GatewayProfileRecord | null>;
@@ -122,20 +143,58 @@ export interface GatewayProfileRepository {
     updateWorkspaceUsage(profileName: string, workspace: string, lastUsedAt: string): Promise<void>;
     clearWorkspaceUsage(profileNames: string[]): Promise<void>;
     listOperations(options?: { profileName?: string; limit?: number }): Promise<GatewayOperationRecord[]>;
+    listActiveOperationProfileNames?(now: Date): Promise<string[]>;
     getOperation(id: string): Promise<GatewayOperationRecord | null>;
     createOperation(input: GatewayOperationCreateInput): Promise<GatewayOperationRecord>;
-    claimNextOperation(now: Date): Promise<GatewayOperationRecord | null>;
+    claimNextOperation(
+        now: Date,
+        lease?: { ownerId: string; durationMs: number }
+    ): Promise<GatewayOperationRecord | null>;
+    renewOperationLease?(id: string, ownerId: string, now: Date, durationMs: number): Promise<boolean>;
+    pinOperationResolvedCommit?(id: string, ownerId: string, resolvedCommitSha: string): Promise<boolean>;
+    updateProfileForOperation?(
+        id: string,
+        ownerId: string,
+        profileName: string,
+        patch: GatewayClaimedProfileUpdate
+    ): Promise<GatewayProfileRecord | null>;
     completeOperation(
         id: string,
         status: Extract<GatewayOperationStatus, 'SUCCEEDED' | 'FAILED'>,
-        fields?: { resolvedCommitSha?: string | null; error?: string | null }
+        fields: { resolvedCommitSha?: string | null; error?: string | null } | undefined,
+        leaseOwner: string
     ): Promise<GatewayOperationRecord>;
-    requeueOperation(id: string, detail?: string, retryAt?: string): Promise<GatewayOperationRecord>;
+    requeueOperation(
+        id: string,
+        detail: string | undefined,
+        retryAt: string | undefined,
+        leaseOwner: string
+    ): Promise<GatewayOperationRecord>;
     cancelOperation(id: string): Promise<boolean>;
     retryOperation(id: string, requestedBy: string): Promise<GatewayOperationRecord | null>;
 }
 
 const toIso = (value: Date | null): string | undefined => (value ? value.toISOString() : undefined);
+
+export const buildRetryOperationPayload = (
+    previousPayload: GatewayPrisma.JsonObject,
+    previousOperationId: string
+): GatewayPrisma.JsonObject => ({
+    ...previousPayload,
+    installOperationId:
+        typeof previousPayload.installOperationId === 'string'
+            ? previousPayload.installOperationId
+            : previousOperationId,
+});
+
+export const buildRetryOperationSource = (previous: {
+    sourceMode: GatewaySourceMode | null;
+    sourceRef: string | null;
+    resolvedCommitSha: string | null;
+}): { sourceMode: GatewaySourceMode | null; sourceRef: string | null } =>
+    previous.resolvedCommitSha
+        ? { sourceMode: 'COMMIT', sourceRef: previous.resolvedCommitSha }
+        : { sourceMode: previous.sourceMode, sourceRef: previous.sourceRef };
 
 type GatewayProfileRow = {
     profileName: string;
@@ -175,6 +234,10 @@ type GatewayOperationRow = {
     startedAt: Date | null;
     completedAt: Date | null;
     error: string | null;
+    leaseOwner: string | null;
+    leaseUntil: Date | null;
+    heartbeatAt: Date | null;
+    attempts: number;
     createdAt: Date;
     updatedAt: Date;
 };
@@ -219,6 +282,10 @@ const mapOperation = (row: GatewayOperationRow): GatewayOperationRecord => ({
     startedAt: toIso(row.startedAt),
     completedAt: toIso(row.completedAt),
     error: row.error ?? undefined,
+    leaseOwner: row.leaseOwner ?? undefined,
+    leaseUntil: toIso(row.leaseUntil),
+    heartbeatAt: toIso(row.heartbeatAt),
+    attempts: row.attempts,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
 });
@@ -424,6 +491,22 @@ export const createGatewayProfileRepository = (prisma: GatewayPrismaClient): Gat
         });
         return rows.map(mapOperation);
     },
+    async listActiveOperationProfileNames(now: Date): Promise<string[]> {
+        const rows = await prisma.gatewayOperation.findMany({
+            where: {
+                OR: [
+                    { status: 'RUNNING' },
+                    {
+                        status: 'QUEUED',
+                        OR: [{ scheduledAt: null }, { scheduledAt: { lte: now } }],
+                    },
+                ],
+            },
+            select: { profileName: true },
+            distinct: ['profileName'],
+        });
+        return rows.map(({ profileName }) => profileName);
+    },
     async getOperation(id: string): Promise<GatewayOperationRecord | null> {
         const row = await prisma.gatewayOperation.findUnique({ where: { id } });
         return row ? mapOperation(row) : null;
@@ -443,21 +526,55 @@ export const createGatewayProfileRepository = (prisma: GatewayPrismaClient): Gat
         });
         return mapOperation(row);
     },
-    async claimNextOperation(now: Date): Promise<GatewayOperationRecord | null> {
+    async claimNextOperation(
+        now: Date,
+        lease?: { ownerId: string; durationMs: number }
+    ): Promise<GatewayOperationRecord | null> {
         const row = await prisma.$transaction(async (tx) => {
-            const candidate = await tx.gatewayOperation.findFirst({
-                where: {
-                    status: 'QUEUED',
-                    OR: [{ scheduledAt: null }, { scheduledAt: { lte: now } }],
-                },
+            await tx.$queryRaw<Array<{ lock_result: string }>>`
+                SELECT pg_advisory_xact_lock(hashtextextended('gateway_operation_claim', 0))::text AS lock_result
+            `;
+            const staleBefore = lease ? new Date(now.getTime() - lease.durationMs) : now;
+            const running = await tx.gatewayOperation.findFirst({
+                where: { status: 'RUNNING' },
                 orderBy: { createdAt: 'asc' },
             });
+            const runningIsStale = Boolean(
+                lease &&
+                running &&
+                ((running.leaseUntil && running.leaseUntil < now) ||
+                    (!running.leaseUntil && running.startedAt && running.startedAt <= staleBefore))
+            );
+            if (running && !runningIsStale) {
+                return null;
+            }
+            const candidate =
+                running ??
+                (await tx.gatewayOperation.findFirst({
+                    where: {
+                        status: 'QUEUED',
+                        OR: [{ scheduledAt: null }, { scheduledAt: { lte: now } }],
+                    },
+                    orderBy: { createdAt: 'asc' },
+                }));
             if (!candidate) {
                 return null;
             }
             const claimed = await tx.gatewayOperation.updateMany({
-                where: { id: candidate.id, status: 'QUEUED' },
-                data: { status: 'RUNNING', startedAt: now, error: null },
+                where:
+                    candidate.status === 'QUEUED'
+                        ? { id: candidate.id, status: 'QUEUED' }
+                        : { id: candidate.id, status: 'RUNNING', leaseUntil: candidate.leaseUntil },
+                data: {
+                    status: 'RUNNING',
+                    startedAt: candidate.startedAt ?? now,
+                    completedAt: null,
+                    error: null,
+                    leaseOwner: lease?.ownerId,
+                    leaseUntil: lease ? new Date(now.getTime() + lease.durationMs) : undefined,
+                    heartbeatAt: lease ? now : undefined,
+                    attempts: { increment: 1 },
+                },
             });
             if (claimed.count !== 1) {
                 return null;
@@ -466,33 +583,117 @@ export const createGatewayProfileRepository = (prisma: GatewayPrismaClient): Gat
         });
         return row ? mapOperation(row) : null;
     },
+    async renewOperationLease(id: string, ownerId: string, now: Date, durationMs: number): Promise<boolean> {
+        const renewed = await prisma.gatewayOperation.updateMany({
+            where: { id, status: 'RUNNING', leaseOwner: ownerId },
+            data: {
+                leaseUntil: new Date(now.getTime() + durationMs),
+                heartbeatAt: now,
+            },
+        });
+        return renewed.count === 1;
+    },
+    async pinOperationResolvedCommit(id: string, ownerId: string, resolvedCommitSha: string): Promise<boolean> {
+        const pinned = await prisma.gatewayOperation.updateMany({
+            where: {
+                id,
+                status: 'RUNNING',
+                leaseOwner: ownerId,
+                OR: [{ resolvedCommitSha: null }, { resolvedCommitSha }],
+            },
+            data: { resolvedCommitSha },
+        });
+        return pinned.count === 1;
+    },
+    async updateProfileForOperation(
+        id: string,
+        ownerId: string,
+        profileName: string,
+        patch: GatewayClaimedProfileUpdate
+    ): Promise<GatewayProfileRecord | null> {
+        const row = await prisma.$transaction(async (tx) => {
+            const owned = await tx.$queryRaw<Array<{ id: string }>>`
+                SELECT "id"
+                FROM "gateway_operation"
+                WHERE "id" = ${id}
+                  AND "profile_name" = ${profileName}
+                  AND "status" = 'RUNNING'
+                  AND "lease_owner" = ${ownerId}
+                FOR UPDATE
+            `;
+            if (owned.length !== 1) {
+                return null;
+            }
+            const toDate = (value: string | null | undefined): Date | null | undefined =>
+                value === undefined ? undefined : value === null ? null : new Date(value);
+            return tx.gatewayProfile.update({
+                where: { profileName },
+                data: {
+                    scenario: patch.scenario,
+                    status: patch.status,
+                    buildStatus: patch.buildStatus,
+                    buildCommitSha: patch.buildCommitSha,
+                    buildWorkspace: patch.buildWorkspace,
+                    buildLastUsedAt: toDate(patch.buildLastUsedAt),
+                    preopenAt: toDate(patch.preopenAt),
+                    openAt: toDate(patch.openAt),
+                    scheduledStartAt: toDate(patch.scheduledStartAt),
+                    buildRequestedAt: toDate(patch.buildRequestedAt),
+                    buildStartedAt: toDate(patch.buildStartedAt),
+                    buildCompletedAt: toDate(patch.buildCompletedAt),
+                    buildError: patch.buildError,
+                    lastError: patch.lastError,
+                },
+            });
+        });
+        return row ? mapProfile(row) : null;
+    },
     async completeOperation(
         id: string,
         status: Extract<GatewayOperationStatus, 'SUCCEEDED' | 'FAILED'>,
-        fields?: { resolvedCommitSha?: string | null; error?: string | null }
+        fields: { resolvedCommitSha?: string | null; error?: string | null } | undefined,
+        leaseOwner: string
     ): Promise<GatewayOperationRecord> {
-        const row = await prisma.gatewayOperation.update({
-            where: { id },
+        const updated = await prisma.gatewayOperation.updateMany({
+            where: { id, status: 'RUNNING', leaseOwner },
             data: {
                 status,
                 completedAt: new Date(),
-                resolvedCommitSha:
-                    fields?.resolvedCommitSha === undefined ? undefined : fields.resolvedCommitSha,
+                resolvedCommitSha: fields?.resolvedCommitSha === undefined ? undefined : fields.resolvedCommitSha,
                 error: fields?.error === undefined ? undefined : fields.error,
+                leaseOwner: null,
+                leaseUntil: null,
+                heartbeatAt: null,
             },
         });
+        if (updated.count !== 1) {
+            throw new Error(`Operation lease lost before completion: ${id}`);
+        }
+        const row = await prisma.gatewayOperation.findUniqueOrThrow({ where: { id } });
         return mapOperation(row);
     },
-    async requeueOperation(id: string, detail?: string, retryAt?: string): Promise<GatewayOperationRecord> {
-        const row = await prisma.gatewayOperation.update({
-            where: { id },
+    async requeueOperation(
+        id: string,
+        detail: string | undefined,
+        retryAt: string | undefined,
+        leaseOwner: string
+    ): Promise<GatewayOperationRecord> {
+        const updated = await prisma.gatewayOperation.updateMany({
+            where: { id, status: 'RUNNING', leaseOwner },
             data: {
                 status: 'QUEUED',
                 startedAt: null,
                 error: detail,
                 scheduledAt: retryAt ? new Date(retryAt) : undefined,
+                leaseOwner: null,
+                leaseUntil: null,
+                heartbeatAt: null,
             },
         });
+        if (updated.count !== 1) {
+            throw new Error(`Operation lease lost before requeue: ${id}`);
+        }
+        const row = await prisma.gatewayOperation.findUniqueOrThrow({ where: { id } });
         return mapOperation(row);
     },
     async cancelOperation(id: string): Promise<boolean> {
@@ -508,13 +709,15 @@ export const createGatewayProfileRepository = (prisma: GatewayPrismaClient): Gat
             if (!previous || (previous.status !== 'FAILED' && previous.status !== 'CANCELLED')) {
                 return null;
             }
+            const previousPayload = previous.payload as GatewayPrisma.JsonObject;
+            const retrySource = buildRetryOperationSource(previous);
             return tx.gatewayOperation.create({
                 data: {
                     profileName: previous.profileName,
                     type: previous.type,
-                    sourceMode: previous.sourceMode,
-                    sourceRef: previous.sourceRef,
-                    payload: previous.payload as GatewayPrisma.JsonObject,
+                    sourceMode: retrySource.sourceMode,
+                    sourceRef: retrySource.sourceRef,
+                    payload: buildRetryOperationPayload(previousPayload, previous.id),
                     reason: previous.reason,
                     requestedBy,
                     scheduledAt: null,

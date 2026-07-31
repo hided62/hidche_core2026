@@ -1,10 +1,9 @@
 import { randomBytes } from 'node:crypto';
-import path from 'node:path';
 
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { createGamePostgresConnector, resolvePostgresConfigFromEnv, type GatewayPrisma } from '@sammo-ts/infra';
+import type { GatewayPrisma } from '@sammo-ts/infra';
 
 import { procedure, router } from './trpc.js';
 import { listScenarioPreviews, resolveGitBranchCommitSha, resolveGitCommitSha } from './scenario/scenarioCatalog.js';
@@ -13,7 +12,6 @@ import { toPublicUser } from './auth/userRepository.js';
 import type { AdminAuthContext } from './adminAuth.js';
 import type { GatewayApiContext } from './context.js';
 import { GATEWAY_BUILD_STATUSES, GATEWAY_PROFILE_STATUSES } from './orchestrator/profileRepository.js';
-import { seedProfileDatabase } from './orchestrator/seedProfileDatabase.js';
 
 const zProfileStatus = z.enum(GATEWAY_PROFILE_STATUSES);
 const zBuildStatus = z.enum(GATEWAY_BUILD_STATUSES);
@@ -369,34 +367,12 @@ const applySanctionsPatch = (current: UserSanctions, patch: SanctionsPatch): Use
 
 const buildAdminPassword = (): string => randomBytes(6).toString('hex');
 
-const buildServerId = (profileName: string, now: Date): string => {
-    const year = String(now.getFullYear()).slice(-2);
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const suffix = randomBytes(2).toString('hex');
-    return `${profileName}_${year}${month}${day}_${suffix}`;
-};
-
 // 프로필 메타를 안전하게 읽고, 패치를 병합한다.
 const readMetaObject = (value: unknown): Record<string, unknown> => {
     if (!value || typeof value !== 'object') {
         return {};
     }
     return value as Record<string, unknown>;
-};
-
-const readMetaNumber = (meta: Record<string, unknown>, key: string): number | null => {
-    const raw = meta[key];
-    if (typeof raw === 'number' && Number.isFinite(raw)) {
-        return Math.floor(raw);
-    }
-    if (typeof raw === 'string') {
-        const parsed = Number(raw);
-        if (Number.isFinite(parsed)) {
-            return Math.floor(parsed);
-        }
-    }
-    return null;
 };
 
 const applyMetaPatch = (
@@ -870,12 +846,23 @@ export const adminRouter = router({
     profiles: router({
         list: adminProcedure.query(async ({ ctx }) => {
             const profiles = await ctx.profiles.listProfiles();
-            const runtimeActions = await ctx.prisma.gatewayRuntimeAction.findMany({
-                where: {
-                    profileName: { in: profiles.map((profile) => profile.profileName) },
-                },
-                orderBy: { createdAt: 'desc' },
-            });
+            const profileNames = profiles.map((profile) => profile.profileName);
+            const [runtimeActions, activeOperations] = await Promise.all([
+                ctx.prisma.gatewayRuntimeAction.findMany({
+                    where: { profileName: { in: profileNames } },
+                    orderBy: { createdAt: 'desc' },
+                }),
+                ctx.prisma.gatewayOperation.findMany({
+                    where: {
+                        profileName: { in: profileNames },
+                        status: { in: ['QUEUED', 'RUNNING'] },
+                    },
+                    select: { id: true, profileName: true, status: true },
+                }),
+            ]);
+            const activeOperationByProfile = new Map(
+                activeOperations.map((operation) => [operation.profileName, operation])
+            );
             const runtimeActionsByProfile = new Map<string, typeof runtimeActions>();
             for (const action of runtimeActions) {
                 const bucket = runtimeActionsByProfile.get(action.profileName) ?? [];
@@ -891,6 +878,7 @@ export const adminRouter = router({
             return profiles.map((profile) => ({
                 ...profile,
                 runtimeActions: runtimeActionsByProfile.get(profile.profileName) ?? [],
+                activeOperation: activeOperationByProfile.get(profile.profileName) ?? null,
                 runtime: runtimeMap.get(profile.profileName) ?? {
                     profileName: profile.profileName,
                     apiRunning: false,
@@ -1073,40 +1061,24 @@ export const adminRouter = router({
                     }
                 }
 
-                const scenarioValue = String(input.install.scenarioId);
-                if (profile.scenario !== scenarioValue) {
-                    try {
-                        await ctx.profiles.updateScenario(profile.profileName, scenarioValue);
-                    } catch (error) {
-                        throw new TRPCError({
-                            code: 'CONFLICT',
-                            message: 'Scenario update failed due to duplication.',
-                        });
-                    }
-                }
-
                 const gitRef = input.install.gitRef?.trim();
-                if (gitRef) {
-                    let resolvedCommitSha: string;
-                    try {
-                        resolvedCommitSha = await resolveGitCommitSha(gitRef);
-                    } catch (error) {
-                        throw new TRPCError({
-                            code: 'BAD_REQUEST',
-                            message: 'git ref is invalid or unavailable.',
-                        });
+                const requestedRef = gitRef || profile.buildCommitSha || 'HEAD';
+                let resolvedCommitSha: string;
+                try {
+                    resolvedCommitSha = await resolveGitCommitSha(requestedRef);
+                    const scenarios = await listScenarioPreviews({ gitRef: resolvedCommitSha });
+                    if (!scenarios.some((scenario) => scenario.id === input.install.scenarioId)) {
+                        throw new Error('Scenario not found at source.');
                     }
-                    await ctx.profiles.updateBuildStatus(profile.profileName, profile.buildStatus, {
-                        commitSha: resolvedCommitSha,
+                } catch {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: 'git ref is invalid or does not contain the scenario.',
                     });
                 }
 
                 const scheduledAt = openAt ? (preopenAt ?? openAt).toISOString() : null;
                 const action = scheduledAt ? 'RESET_SCHEDULED' : 'RESET_NOW';
-                const meta = readMetaObject(profile.meta);
-                const actionLog = Array.isArray(meta.adminActions)
-                    ? meta.adminActions.filter((entry) => entry && typeof entry === 'object')
-                    : [];
                 const actionRecord = {
                     action,
                     requestedAt: now.toISOString(),
@@ -1117,7 +1089,7 @@ export const adminRouter = router({
                         ...input.install,
                         openAt: input.install.openAt ?? null,
                         preopenAt: input.install.preopenAt ?? null,
-                        gitRef: gitRef ?? null,
+                        gitRef: resolvedCommitSha,
                         autorunUser: autorunUser
                             ? {
                                   limitMinutes: autorunUser.limitMinutes,
@@ -1131,31 +1103,27 @@ export const adminRouter = router({
                         },
                     },
                 };
-
-                const nextMeta = {
-                    ...meta,
-                    adminActions: [...actionLog, actionRecord],
-                    install: actionRecord.install,
-                    installUpdatedAt: now.toISOString(),
-                };
-
-                await ctx.profiles.updateMeta(input.profileName, nextMeta);
-
-                if (openAt) {
-                    await ctx.profiles.updateStatus(profile.profileName, profile.status, {
-                        preopenAt: preopenAt ? preopenAt.toISOString() : openAt.toISOString(),
-                        openAt: openAt.toISOString(),
-                        scheduledStartAt: scheduledAt,
+                try {
+                    const operation = await ctx.profiles.createOperation({
+                        profileName: input.profileName,
+                        type: 'RESET',
+                        sourceMode: 'COMMIT',
+                        sourceRef: resolvedCommitSha,
+                        payload: { install: actionRecord.install } as GatewayPrisma.JsonObject,
+                        reason: input.reason,
+                        requestedBy: adminAuth.user.id,
+                        scheduledAt: scheduledAt ?? undefined,
                     });
-                } else {
-                    await ctx.profiles.updateStatus(profile.profileName, profile.status, {
-                        preopenAt: null,
-                        openAt: null,
-                        scheduledStartAt: null,
+                    return { ok: true, operationId: operation.id, action: actionRecord };
+                } catch (error) {
+                    if (!isUniqueConstraintError(error)) {
+                        throw error;
+                    }
+                    throw new TRPCError({
+                        code: 'CONFLICT',
+                        message: 'This profile already has a queued or running operation.',
                     });
                 }
-
-                return { ok: true, action: actionRecord };
             }),
         installNow: profileAdminProcedure
             .input(
@@ -1175,82 +1143,69 @@ export const adminRouter = router({
                     });
                 }
 
-                const scenarioValue = String(input.install.scenarioId);
-                let updatedProfile = profile;
-                if (profile.scenario !== scenarioValue) {
-                    const updated = await ctx.profiles.updateScenario(profile.profileName, scenarioValue);
-                    if (updated) {
-                        updatedProfile = updated;
-                    }
-                }
-
-                const databaseUrl = resolvePostgresConfigFromEnv({
-                    env: process.env,
-                    schema: updatedProfile.profile,
-                }).url;
-                const resourcesRoot = path.resolve(process.cwd(), 'resources');
-                const profileMeta = readMetaObject(updatedProfile.meta);
-                const nextSeasonIdx = readMetaNumber(profileMeta, 'nextSeasonIdx');
-                let baseSeason: number | null = null;
-                const connector = createGamePostgresConnector({ url: databaseUrl });
+                const requestedRef = input.install.gitRef?.trim() || profile.buildCommitSha || 'HEAD';
+                let resolvedCommitSha: string;
                 try {
-                    await connector.connect();
-                    const row = await connector.prisma.worldState.findFirst({
-                        select: { meta: true },
-                    });
-                    if (row) {
-                        baseSeason = readMetaNumber(readMetaObject(row.meta), 'season');
+                    resolvedCommitSha = await resolveGitCommitSha(requestedRef);
+                    const scenarios = await listScenarioPreviews({ gitRef: resolvedCommitSha });
+                    if (!scenarios.some((scenario) => scenario.id === input.install.scenarioId)) {
+                        throw new Error('Scenario not found at source.');
                     }
-                } finally {
-                    await connector.disconnect();
+                } catch {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: 'git ref is invalid or does not contain the scenario.',
+                    });
                 }
-                const season = nextSeasonIdx ?? baseSeason ?? 1;
 
-                const seedNow = new Date();
-                const serverId = buildServerId(updatedProfile.profileName, seedNow);
-                await seedProfileDatabase({
-                    databaseUrl,
-                    scenarioId: input.install.scenarioId,
-                    tickSeconds: input.install.turnTermMinutes * 60,
-                    now: seedNow,
-                    installOptions: {
-                        turnTermMinutes: input.install.turnTermMinutes,
-                        sync: input.install.sync,
-                        fiction: input.install.fiction,
-                        extend: input.install.extend,
-                        blockGeneralCreate: input.install.blockGeneralCreate,
-                        npcMode: input.install.npcMode,
-                        showImgLevel: input.install.showImgLevel,
-                        tournamentTrig: input.install.tournamentTrig,
-                        joinMode: input.install.joinMode,
-                        season,
-                        serverId,
-                        autorunUser: input.install.autorunUser
-                            ? {
-                                  limitMinutes: input.install.autorunUser.limitMinutes,
-                                  options: Object.fromEntries(
-                                      input.install.autorunUser.options.map((option) => [option, true])
-                                  ),
-                              }
-                            : null,
-                    },
-                    scenarioOptions: { scenarioRoot: path.join(resourcesRoot, 'scenario') },
-                    mapOptions: { mapRoot: path.join(resourcesRoot, 'map') },
-                    unitSetOptions: { unitSetRoot: path.join(resourcesRoot, 'unitset') },
-                    adminUser: {
-                        id: adminAuth.user.id,
-                        username: adminAuth.user.username,
-                        displayName: adminAuth.user.displayName,
-                    },
-                });
-
-                await ctx.profiles.updateStatus(updatedProfile.profileName, 'RUNNING', {
-                    preopenAt: null,
-                    openAt: null,
-                    scheduledStartAt: null,
-                });
-
-                return { ok: true };
+                try {
+                    const operation = await ctx.profiles.createOperation({
+                        profileName: input.profileName,
+                        type: 'RESET',
+                        sourceMode: 'COMMIT',
+                        sourceRef: resolvedCommitSha,
+                        payload: {
+                            install: {
+                                ...input.install,
+                                gitRef: resolvedCommitSha,
+                                adminUser: {
+                                    id: adminAuth.user.id,
+                                    username: adminAuth.user.username,
+                                    displayName: adminAuth.user.displayName,
+                                },
+                            },
+                        } as GatewayPrisma.JsonObject,
+                        reason: input.reason,
+                        requestedBy: adminAuth.user.id,
+                    });
+                    const deadline = Date.now() + 10 * 60_000;
+                    while (Date.now() < deadline) {
+                        await ctx.orchestrator.runOperationsNow();
+                        const current = await ctx.profiles.getOperation(operation.id);
+                        if (current?.status === 'SUCCEEDED') {
+                            return { ok: true, operationId: operation.id };
+                        }
+                        if (current?.status === 'FAILED' || current?.status === 'CANCELLED') {
+                            throw new TRPCError({
+                                code: 'INTERNAL_SERVER_ERROR',
+                                message: current.error ?? 'Profile install operation failed.',
+                            });
+                        }
+                        await new Promise<void>((resolve) => setTimeout(resolve, 250));
+                    }
+                    throw new TRPCError({
+                        code: 'TIMEOUT',
+                        message: 'Profile install operation did not complete in time.',
+                    });
+                } catch (error) {
+                    if (!isUniqueConstraintError(error)) {
+                        throw error;
+                    }
+                    throw new TRPCError({
+                        code: 'CONFLICT',
+                        message: 'This profile already has a queued or running operation.',
+                    });
+                }
             }),
         requestAction: adminProcedure
             .input(
