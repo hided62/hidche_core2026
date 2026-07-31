@@ -4,7 +4,6 @@ import type { InMemoryTurnWorld } from './inMemoryWorld.js';
 export class InMemoryTurnStateStore implements TurnStateStore {
     // 인메모리 월드의 턴 상태를 TurnDaemonLifecycle에 제공한다.
     private readonly world: InMemoryTurnWorld;
-    private checkpoint?: TurnCheckpoint;
 
     constructor(world: InMemoryTurnWorld) {
         this.world = world;
@@ -15,7 +14,7 @@ export class InMemoryTurnStateStore implements TurnStateStore {
     }
 
     async loadNextGeneralTurnTime(): Promise<Date | null> {
-        return this.world.getNextGeneralTurnTime(this.checkpoint);
+        return this.world.getNextGeneralTurnTime(this.world.getCheckpoint());
     }
 
     async saveLastTurnTime(turnTime: Date): Promise<void> {
@@ -23,11 +22,10 @@ export class InMemoryTurnStateStore implements TurnStateStore {
     }
 
     async loadCheckpoint(): Promise<TurnCheckpoint | undefined> {
-        return this.checkpoint;
+        return this.world.getCheckpoint();
     }
 
     async saveCheckpoint(checkpoint?: TurnCheckpoint): Promise<void> {
-        this.checkpoint = checkpoint;
         this.world.setCheckpoint(checkpoint);
     }
 }

@@ -38,7 +38,7 @@ request
   -> lease owner claim
   -> in-memory world mutation
   -> EngineStateManager transaction flush
-  -> event 결과와 checkpoint commit
+  -> PostgreSQL event 결과 commit과 in-memory world checkpoint 확정
   -> SSE/realtime
 ```
 
@@ -57,10 +57,14 @@ request
 4. action module과 command handler가 state patch, log, message를 만듭니다.
 5. world에 patch를 적용하고 dirty entity를 기록합니다.
 6. 월 경계를 지났으면 scenario event action을 정해진 순서로 실행합니다.
-7. transaction에서 dirty state, turn queue, log, event와 checkpoint를 flush합니다.
+7. PostgreSQL transaction에서 dirty state, turn queue, log와 event를 flush하고,
+   같은 `EngineStateManager` 경계에서 world checkpoint를 확정합니다.
 
 Transaction 실패 시 `EngineStateManager`가 in-memory snapshot을 복원합니다.
 Lease를 잃은 process는 fencing 검사에서 commit하지 못합니다.
+`InMemoryTurnStateStore`는 checkpoint를 별도로 복제하지 않고 rollback 대상인
+`InMemoryTurnWorld`에서 읽습니다. 따라서 flush 실패 뒤 다음 run도 복원된
+checkpoint에서 시작합니다.
 
 ## 저장 위치
 
@@ -70,12 +74,15 @@ Lease를 잃은 process는 fencing 검사에서 commit하지 못합니다.
 | 예약 명령과 revision                | `GeneralTurn*`, `NationTurn*`        |
 | 내구성 입력                         | `InputEvent`                         |
 | daemon 소유권                       | `TurnDaemonLease`                    |
-| checkpoint와 calendar meta          | `WorldState`                         |
+| calendar meta                       | `WorldState`                         |
+| 부분 run checkpoint                 | `InMemoryTurnWorld` snapshot         |
 | 사용자 출력                         | `LogEntry`, message·board 관련 model |
 | fan-out                             | Redis/SSE                            |
 
 Redis notification 실패는 이미 commit된 PostgreSQL mutation을 되돌리지
 않습니다. 재연결 client는 DB 조회로 상태를 복구합니다.
+부분 run checkpoint 자체는 DB row가 아닙니다. 재시작 시에는 이미 commit된
+`General.turnTime`과 `WorldState` calendar가 처리 완료 범위를 결정합니다.
 
 ## RNG
 
