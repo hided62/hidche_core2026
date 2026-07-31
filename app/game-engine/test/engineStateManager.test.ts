@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { EngineStateManager } from '../src/turn/engineStateManager.js';
+import { InMemoryTurnStateStore } from '../src/turn/inMemoryStateStore.js';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import { InMemoryReservedTurnStore } from '../src/turn/reservedTurnStore.js';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
@@ -179,6 +180,46 @@ describe('EngineStateManager', () => {
         expect(manager.inspect()).toEqual(before);
         expect(world.peekDirtyState().logs).toEqual([]);
         expect(world.listEvents()).toEqual([]);
+    });
+
+    it('restores the concrete state-store checkpoint when a flush transaction fails', async () => {
+        const world = buildWorld();
+        const stateStore = new InMemoryTurnStateStore(world);
+        const previousCheckpoint = {
+            turnTime: '0189-01-01T00:00:00.000Z',
+            generalId: 1,
+            year: 189,
+            month: 1,
+        };
+        const nextCheckpoint = {
+            turnTime: '0189-01-01T00:10:00.000Z',
+            generalId: 2,
+            year: 189,
+            month: 1,
+        };
+        await stateStore.saveCheckpoint(previousCheckpoint);
+
+        const manager = new EngineStateManager();
+        manager.register('world', {
+            capture: () => world.captureState(),
+            restore: (snapshot) => world.restoreState(snapshot),
+        });
+
+        await expect(
+            manager.transaction(async () => {
+                await stateStore.saveCheckpoint(nextCheckpoint);
+                throw new Error('injected flush failure');
+            })
+        ).rejects.toThrow('injected flush failure');
+
+        expect(await stateStore.loadCheckpoint()).toEqual(previousCheckpoint);
+        expect(world.getCheckpoint()).toEqual(previousCheckpoint);
+        expect(manager.getRevision()).toBe(0);
+
+        await manager.transaction(() => stateStore.saveCheckpoint(nextCheckpoint));
+        expect(await stateStore.loadCheckpoint()).toEqual(nextCheckpoint);
+        expect(world.getCheckpoint()).toEqual(nextCheckpoint);
+        expect(manager.getRevision()).toBe(1);
     });
 
     it('creates reusable test savepoints without sharing mutable inspection data', async () => {

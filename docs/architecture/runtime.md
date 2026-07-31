@@ -38,7 +38,8 @@ artifact를 만들며 `Pm2ProcessManager`가 profile process를 조정합니다.
 `GatewayRuntimeAction`으로 접수합니다. Profile별 `REQUESTED`/`PARTIAL`은
 DB partial unique index로 한 건만 허용합니다. Turn daemon은 자신의 lease를
 확인한 뒤 action ID로 결정적인 `InputEvent`를 만들고, world·전 장수·OPEN
-경매·checkpoint를 같은 PostgreSQL transaction에서 이동합니다. Commit 뒤
+경매는 같은 PostgreSQL transaction에서, checkpoint는 이를 감싼 동일
+`EngineStateManager` snapshot 경계에서 이동합니다. Commit 뒤
 경매 timer와 활성 토너먼트 시각을 Redis에 idempotent하게 투영합니다.
 Redis 단계가 실패하면 action은 `PARTIAL`과 backoff 상태로 남고 DB 시간은
 다시 이동하지 않습니다.
@@ -89,13 +90,15 @@ lease/fencing 확인
   -> EngineStateManager transaction
        -> world/general/nation/city/turn/log flush
        -> input_event result/status 갱신
-       -> checkpoint 갱신
+       -> in-memory world checkpoint 갱신
   -> commit
   -> realtime 알림
 ```
 
 Transaction 실패 시 in-memory snapshot을 복원하고 event는 재시도 가능한 실패
 상태로 남깁니다. Lease 소유권을 잃은 daemon은 flush를 확정하지 않습니다.
+Checkpoint의 단일 소유자는 `InMemoryTurnWorld`이며 state store는 이를
+위임 조회합니다. 별도 checkpoint 복사본이 snapshot보다 앞서 나가지 않습니다.
 
 예약 턴은 revision/CAS와 lease를 사용합니다. API의 편집과 daemon의 실행이
 경합해도 오래된 revision이 새 queue를 덮어쓰지 않게 합니다.
