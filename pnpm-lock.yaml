@@ -282,6 +282,9 @@ importers:
       redis:
         specifier: ^5.10.0
         version: 5.10.0
+      sanitize-html:
+        specifier: 2.17.6
+        version: 2.17.6
       sharp:
         specifier: ^0.34.4
         version: 0.34.5
@@ -289,6 +292,9 @@ importers:
         specifier: ^4.3.5
         version: 4.3.5
     devDependencies:
+      '@types/sanitize-html':
+        specifier: 2.16.1
+        version: 2.16.1
       tsdown:
         specifier: ^0.18.4
         version: 0.18.4(@emnapi/core@1.11.2)(@emnapi/runtime@1.11.2)(synckit@0.11.13)(typescript@6.0.2)(vue-tsc@3.2.2(typescript@6.0.2))

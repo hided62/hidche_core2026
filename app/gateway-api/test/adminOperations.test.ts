@@ -16,6 +16,7 @@ const buildCaller = async (
         adminRoles?: string[];
         firstUserIsAdmin?: boolean;
         runtimeActionCreateError?: unknown;
+        initialNotice?: string;
     } = {}
 ) => {
     const users = createInMemoryUserRepository();
@@ -35,6 +36,7 @@ const buildCaller = async (
     const operationRecords = new Map<string, Awaited<ReturnType<GatewayProfileRepository['createOperation']>>>();
     const createdRuntimeActions: Array<Record<string, unknown>> = [];
     const flushes: Array<{ userId: string; reason?: string; iconRevision?: string }> = [];
+    let storedNotice = options.initialNotice ?? '';
     const profile = {
         profileName: 'che:2',
         profile: 'che',
@@ -139,11 +141,75 @@ const buildCaller = async (
                         };
                     },
                 },
+                systemSetting: {
+                    findUnique: async () => ({ id: 1, notice: storedNotice }),
+                    upsert: async ({ create, update }: { create: { notice: string }; update: { notice: string } }) => {
+                        storedNotice = update.notice ?? create.notice;
+                        return { id: 1, notice: storedNotice };
+                    },
+                },
             } as unknown as GatewayPrismaClient,
         })
     );
-    return { caller, createdInputs, createdRuntimeActions, users, admin, flushes };
+    return {
+        caller,
+        createdInputs,
+        createdRuntimeActions,
+        users,
+        admin,
+        flushes,
+        getStoredNotice: () => storedNotice,
+        setStoredNotice: (notice: string) => {
+            storedNotice = notice;
+        },
+    };
 };
+
+describe('gateway notice API', () => {
+    const dirtyNotice =
+        '<b>점검</b><br><script>globalThis.__noticeXss=1</script>' +
+        '<img src=x onerror="globalThis.__noticeXss=2">' +
+        '<a href="javascript:globalThis.__noticeXss=3">링크</a>';
+
+    it('purifies notices before persistence and returns the canonical value', async () => {
+        const harness = await buildCaller(async () => {
+            throw new Error('not used');
+        });
+
+        const result = await harness.caller.admin.system.setNotice({ notice: dirtyNotice });
+
+        expect(result.notice).toBe('<b>점검</b><br /><a>링크</a>');
+        expect(harness.getStoredNotice()).toBe(result.notice);
+        await expect(harness.caller.admin.system.getNotice()).resolves.toEqual(result);
+        await expect(harness.caller.lobby.notice()).resolves.toBe(result.notice);
+    });
+
+    it('purifies pre-existing rows again on public and admin reads', async () => {
+        const harness = await buildCaller(async () => {
+            throw new Error('not used');
+        });
+        harness.setStoredNotice(dirtyNotice);
+
+        await expect(harness.caller.lobby.notice()).resolves.toBe('<b>점검</b><br /><a>링크</a>');
+        await expect(harness.caller.admin.system.getNotice()).resolves.toEqual({
+            notice: '<b>점검</b><br /><a>링크</a>',
+        });
+        expect(harness.getStoredNotice()).toBe(dirtyNotice);
+    });
+
+    it('keeps notice writes behind the dedicated admin role', async () => {
+        const harness = await buildCaller(
+            async () => {
+                throw new Error('not used');
+            },
+            { adminRoles: [], firstUserIsAdmin: false }
+        );
+
+        await expect(harness.caller.admin.system.setNotice({ notice: '<b>공지</b>' })).rejects.toMatchObject({
+            code: 'FORBIDDEN',
+        });
+    });
+});
 
 describe('admin operation API', () => {
     it('queues a start operation with the authenticated requester', async () => {

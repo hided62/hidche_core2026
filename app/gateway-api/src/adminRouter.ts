@@ -12,6 +12,7 @@ import { toPublicUser } from './auth/userRepository.js';
 import type { AdminAuthContext } from './adminAuth.js';
 import type { GatewayApiContext } from './context.js';
 import { GATEWAY_BUILD_STATUSES, GATEWAY_PROFILE_STATUSES } from './orchestrator/profileRepository.js';
+import { purifyGatewayNoticeHtml } from './security/gatewayNoticeHtml.js';
 
 const zProfileStatus = z.enum(GATEWAY_PROFILE_STATUSES);
 const zBuildStatus = z.enum(GATEWAY_BUILD_STATUSES);
@@ -399,7 +400,7 @@ export const adminRouter = router({
             const setting = await ctx.prisma.systemSetting.findUnique({
                 where: { id: 1 },
             });
-            return { notice: setting?.notice ?? '' };
+            return { notice: purifyGatewayNoticeHtml(setting?.notice) };
         }),
         setNotice: noticeAdminProcedure
             .input(
@@ -408,17 +409,18 @@ export const adminRouter = router({
                 })
             )
             .mutation(async ({ ctx, input }) => {
+                const notice = purifyGatewayNoticeHtml(input.notice);
                 const setting = await ctx.prisma.systemSetting.upsert({
                     where: { id: 1 },
                     create: {
                         id: 1,
-                        notice: input.notice,
+                        notice,
                     },
                     update: {
-                        notice: input.notice,
+                        notice,
                     },
                 });
-                return { notice: setting.notice };
+                return { notice: purifyGatewayNoticeHtml(setting.notice) };
             }),
     }),
     users: router({

@@ -15,6 +15,7 @@ import { accountRouter } from './account/router.js';
 import { resolveLocalAccountProfilePolicy } from './auth/localAccountPolicy.js';
 import { openPassword, zDisplayName, zPasswordEnvelope, zRegistrationUsername } from './auth/registrationInput.js';
 import { resolveEffectiveAccountIcon } from './auth/accountIconProjection.js';
+import { purifyGatewayNoticeHtml } from './security/gatewayNoticeHtml.js';
 
 const zUsername = z
     .string()
@@ -51,7 +52,7 @@ export const appRouter = router({
             const setting = await ctx.prisma.systemSetting.findUnique({
                 where: { id: 1 },
             });
-            return setting?.notice ?? '';
+            return purifyGatewayNoticeHtml(setting?.notice);
         }),
         profiles: procedure
             .input(
