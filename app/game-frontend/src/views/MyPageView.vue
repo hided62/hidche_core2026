@@ -36,6 +36,8 @@ const data = ref<MyGeneralResponse | null>(null);
 const world = ref<WorldSnapshot>(null);
 const selectionPoolStatus = ref<SelectionPoolStatus | null>(null);
 const dieOnPrestartStatus = ref<DieOnPrestartStatus | null>(null);
+const dieOnPrestartStatusLoading = ref(false);
+const dieOnPrestartStatusError = ref<string | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
 const screenMode = ref<ScreenMode>('auto');
@@ -190,21 +192,34 @@ const loadLog = async (type: LogType, beforeId?: number) => {
     }
 };
 
+const loadDieOnPrestartStatus = async () => {
+    if (dieOnPrestartStatusLoading.value) return;
+    dieOnPrestartStatusLoading.value = true;
+    dieOnPrestartStatusError.value = null;
+    try {
+        dieOnPrestartStatus.value = await trpc.general.ensureDieOnPrestartStatus.mutate();
+    } catch (cause) {
+        dieOnPrestartStatus.value = null;
+        dieOnPrestartStatusError.value = errorText(cause);
+    } finally {
+        dieOnPrestartStatusLoading.value = false;
+    }
+};
+
 const loadPage = async (resetImmediateActionIds = true) => {
     if (loading.value) return;
     loading.value = true;
     error.value = null;
+    void loadDieOnPrestartStatus();
     try {
-        const [general, state, joinConfig, prestartStatus] = await Promise.all([
+        const [general, state, joinConfig] = await Promise.all([
             trpc.general.me.query(),
             trpc.world.getState.query() as Promise<WorldSnapshot>,
             trpc.join.getConfig.query(),
-            trpc.general.ensureDieOnPrestartStatus.mutate(),
         ]);
         data.value = general;
         world.value = state;
         selectionPoolStatus.value = joinConfig.selectionPool;
-        dieOnPrestartStatus.value = prestartStatus;
         if (general) {
             Object.assign(form, general.settings);
             selectedIconId.value =
@@ -469,6 +484,19 @@ onMounted(() => {
                 <div v-if="actionAvailability.dieOnPrestart" class="action-line">
                     가오픈 기간 내 장수 삭제 ({{ formatDieOnPrestartAvailableAt }} 부터)<br />
                     <button class="action-button" @click="dieOnPrestart">장수 삭제</button>
+                </div>
+                <div v-else-if="dieOnPrestartStatusError" class="action-line prestart-status-error">
+                    가오픈 기간 내 장수 삭제 상태를 확인하지 못했습니다.<br />
+                    <span class="hint">{{ dieOnPrestartStatusError }}</span><br />
+                    <button class="action-button" type="button" disabled>장수 삭제</button>
+                    <button
+                        class="action-button"
+                        type="button"
+                        :disabled="dieOnPrestartStatusLoading"
+                        @click="loadDieOnPrestartStatus"
+                    >
+                        {{ dieOnPrestartStatusLoading ? '확인 중' : '상태 재확인' }}
+                    </button>
                 </div>
                 <div v-if="actionAvailability.buildNationCandidate" class="action-line">
                     서버 개시 이전 거병(2턴부터 건국 가능)<br />

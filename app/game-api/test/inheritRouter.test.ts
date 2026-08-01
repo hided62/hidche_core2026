@@ -95,6 +95,7 @@ const buildContext = (options: {
     general?: GeneralRow | null;
     target?: GeneralRow | null;
     inheritancePoint?: number;
+    inheritanceLogs?: Array<{ id: number; year: number; month: number; text: string; createdAt: Date }>;
 }) => {
     const auth = options.auth === undefined ? buildAuth() : options.auth;
     const general = options.general === undefined ? buildGeneral() : options.general;
@@ -110,6 +111,7 @@ const buildContext = (options: {
     const pointUpsert = vi.fn(async () => ({}));
     const logCreate = vi.fn(async () => ({}));
     const findMany = vi.fn(async () => (target ? [{ id: target.id, name: target.name }] : []));
+    const inheritanceLogFindMany = vi.fn(async () => options.inheritanceLogs ?? []);
     const db = {
         $queryRaw: vi.fn(async () => [{ value: options.inheritancePoint ?? 10_000 }]),
         worldState: {
@@ -129,7 +131,7 @@ const buildContext = (options: {
         },
         inheritanceLog: {
             create: logCreate,
-            findMany: vi.fn(async () => []),
+            findMany: inheritanceLogFindMany,
         },
         inheritanceUserState: {
             findUnique: vi.fn(async () => null),
@@ -157,7 +159,7 @@ const buildContext = (options: {
         flushStore: new InMemoryFlushStore(),
         gameTokenSecret: 'test-secret',
     };
-    return { context, requestCommand, pointUpsert, logCreate, findMany };
+    return { context, requestCommand, pointUpsert, logCreate, findMany, inheritanceLogFindMany };
 };
 
 describe('inherit router actor and permission boundaries', () => {
@@ -187,6 +189,45 @@ describe('inherit router actor and permission boundaries', () => {
             select: { id: true, name: true },
             orderBy: { id: 'asc' },
         });
+    });
+
+    it('loads the first inheritance-log page without an out-of-range integer cursor', async () => {
+        const createdAt = new Date('2026-07-26T00:00:00Z');
+        const fixture = buildContext({
+            inheritanceLogs: [{ id: 2_147_483_647, year: 200, month: 4, text: '경계 로그', createdAt }],
+        });
+
+        await expect(appRouter.createCaller(fixture.context).inherit.getLogs({})).resolves.toEqual([
+            { id: 2_147_483_647, year: 200, month: 4, text: '경계 로그', createdAt },
+        ]);
+        expect(fixture.inheritanceLogFindMany).toHaveBeenCalledWith({
+            where: { userId: 'user-1' },
+            orderBy: { id: 'desc' },
+            take: 30,
+            select: { id: true, year: true, month: true, text: true, createdAt: true },
+        });
+    });
+
+    it('uses a bounded cursor for following and empty inheritance-log pages', async () => {
+        const fixture = buildContext({ inheritanceLogs: [] });
+        const caller = appRouter.createCaller(fixture.context);
+
+        await expect(caller.inherit.getLogs({ lastId: 2_147_483_647 })).resolves.toEqual([]);
+        expect(fixture.inheritanceLogFindMany).toHaveBeenCalledWith({
+            where: { userId: 'user-1', id: { lt: 2_147_483_647 } },
+            orderBy: { id: 'desc' },
+            take: 30,
+            select: { id: true, year: true, month: true, text: true, createdAt: true },
+        });
+    });
+
+    it.each([0, -1, 1.5, 2_147_483_648])('rejects an invalid inheritance-log cursor: %s', async (lastId) => {
+        const fixture = buildContext({});
+
+        await expect(appRouter.createCaller(fixture.context).inherit.getLogs({ lastId })).rejects.toMatchObject({
+            code: 'BAD_REQUEST',
+        });
+        expect(fixture.inheritanceLogFindMany).not.toHaveBeenCalled();
     });
 
     it('does not dispatch or charge when the authenticated user owns no general', async () => {

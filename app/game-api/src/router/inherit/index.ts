@@ -48,6 +48,8 @@ const BUFF_LABELS: Record<InheritBuffType, string> = {
     warMagicTrialProbOppose: '상대 전투계략 시도 확률 감소',
 };
 
+const POSTGRES_INTEGER_MAX = 2_147_483_647;
+
 const parseBuffRecord = (raw: unknown): Record<string, number> => {
     if (typeof raw === 'string') {
         const parsed = parseJson<Record<string, number>>(raw);
@@ -319,7 +321,7 @@ export const inheritRouter = router({
     getLogs: authedProcedure
         .input(
             z.object({
-                lastId: z.number().int().optional(),
+                lastId: z.number().int().min(1).max(POSTGRES_INTEGER_MAX).optional(),
             })
         )
         .query(async ({ ctx, input }) => {
@@ -327,11 +329,10 @@ export const inheritRouter = router({
             if (!userId) {
                 throw new TRPCError({ code: 'UNAUTHORIZED' });
             }
-            const lastId = input.lastId ?? Number.MAX_SAFE_INTEGER;
             const logs = await ctx.db.inheritanceLog.findMany({
                 where: {
                     userId,
-                    id: { lt: lastId },
+                    ...(input.lastId === undefined ? {} : { id: { lt: input.lastId } }),
                 },
                 orderBy: { id: 'desc' },
                 take: 30,

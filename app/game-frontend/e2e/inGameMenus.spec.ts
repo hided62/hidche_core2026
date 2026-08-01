@@ -37,6 +37,7 @@ type FixtureState = {
     generalMeQueries?: number;
     generalLogQueries?: number;
     ensurePrestartQueries?: number;
+    ensurePrestartFailure?: 'TIMEOUT' | 'INTERNAL_SERVER_ERROR';
     nationNoticeInput?: string;
     settingMutations: Array<Record<string, unknown>>;
     accessPages: string[];
@@ -188,6 +189,22 @@ const install = async (page: Page, state: FixtureState) => {
             }
             if (operation === 'general.ensureDieOnPrestartStatus') {
                 state.ensurePrestartQueries = (state.ensurePrestartQueries ?? 0) + 1;
+                if (state.ensurePrestartFailure) {
+                    const isTimeout = state.ensurePrestartFailure === 'TIMEOUT';
+                    return {
+                        error: {
+                            message: isTimeout
+                                ? '요청 처리 결과를 확인하지 못했습니다.'
+                                : '엔진 transaction을 시작하지 못했습니다.',
+                            code: -32000,
+                            data: {
+                                code: state.ensurePrestartFailure,
+                                httpStatus: isTimeout ? 408 : 500,
+                                path: operation,
+                            },
+                        },
+                    };
+                }
                 return response({
                     show: state.dieOnPrestartShow ?? false,
                     available: false,
@@ -567,6 +584,35 @@ test('내 정보&설정 keeps the legacy 1000px/500px geometry and saves in plac
     });
     await persistParityArtifact(page, 'core-my-page-mobile', mobile);
 });
+
+for (const [label, failure] of [
+    ['daemon timeout', 'TIMEOUT'],
+    ['engine transaction 오류', 'INTERNAL_SERVER_ERROR'],
+] as const) {
+    test(`내 정보 기본 출력은 ${label}에도 표시되고 사전 삭제 동작만 비활성화된다`, async ({ page }) => {
+        const state: FixtureState = {
+            permission: 'head',
+            myset: 3,
+            ensurePrestartFailure: failure,
+            settingMutations: [],
+            accessPages: [],
+        };
+        await install(page, state);
+        await page.setViewportSize({ width: 1000, height: 900 });
+        await page.goto('my-page');
+
+        await expect(page.locator('.general-table')).toContainText('검증장수');
+        await expect(page.locator('#set_my_setting')).toBeVisible();
+        await expect(page.locator('.log-panel').first()).toContainText('기록');
+        await expect(page.locator('.error-row')).toHaveCount(0);
+
+        const statusError = page.locator('.prestart-status-error');
+        await expect(statusError).toBeVisible();
+        await expect(statusError.getByRole('button', { name: '장수 삭제' })).toBeDisabled();
+        await expect(statusError.getByRole('button', { name: '상태 재확인' })).toBeEnabled();
+        await expect.poll(() => state.ensurePrestartQueries).toBe(1);
+    });
+}
 
 test('내 정보에서 사람 장수의 등록 전콘을 골라 변경한다', async ({ page }) => {
     const iconId = '3f804277-584f-4f44-b39c-9ecf40d1ed31';
