@@ -7,6 +7,8 @@ import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
 import Underline from '@tiptap/extension-underline';
 import { trpc } from '../utils/trpc';
+import { resolveGeneralIconUrl } from '../utils/generalIcon';
+import { formatSeoulDateTime } from '../utils/legacyDateTime';
 
 type DiplomacyResponse = Awaited<ReturnType<typeof trpc.diplomacy.getLetters.query>>;
 type DiplomacyLetter = DiplomacyResponse['letters'][number];
@@ -191,13 +193,44 @@ const destroyLetter = async (letterId: number) => {
 
 const prevOptions = computed(() => data.value?.letters.filter((letter) => letter.state !== 'CANCELLED') ?? []);
 
-const formatDate = (value: string) => new Date(value).toLocaleString('ko-KR');
+const formatDate = (value: string) => formatSeoulDateTime(value);
 
 const stateLabelMap: Record<DiplomacyLetter['state'], string> = {
-    PROPOSED: '제안',
-    ACTIVATED: '승인',
-    CANCELLED: '종료',
-    REPLACED: '대체',
+    PROPOSED: '제안됨',
+    ACTIVATED: '승인됨',
+    CANCELLED: '거부됨',
+    REPLACED: '대체됨',
+};
+
+const stateOptionLabelMap: Record<string, string> = {
+    try_destroy_src: '송신측의 파기 요청',
+    try_destroy_dest: '수신측의 파기 요청',
+};
+
+const targetNation = (letter: DiplomacyLetter) =>
+    letter.src.nationId === data.value?.myNationId ? letter.dest : letter.src;
+
+const isBrightColor = (color: string): boolean => {
+    const normalized = color.trim().replace(/^#/u, '');
+    if (!/^[0-9a-f]{6}$/iu.test(normalized)) return false;
+    const red = Number.parseInt(normalized.slice(0, 2), 16);
+    const green = Number.parseInt(normalized.slice(2, 4), 16);
+    const blue = Number.parseInt(normalized.slice(4, 6), 16);
+    return red * 0.299 + green * 0.587 + blue * 0.114 > 170;
+};
+
+const nationStyle = (color: string) => ({
+    backgroundColor: color || '#315f86',
+    color: isBrightColor(color) ? '#000' : '#fff',
+});
+
+const signerIcon = (signer: DiplomacyLetter['src'] | DiplomacyLetter['dest']): string | null => {
+    if (signer.generalIcon) return signer.generalIcon;
+    if (!signer.generalPicture) return null;
+    return resolveGeneralIconUrl(
+        { picture: signer.generalPicture, imageServer: signer.generalImageServer },
+        { legacyBaseUrl: '/image/general' }
+    );
 };
 
 const toggleHistory = (letterId: number) => {
@@ -233,43 +266,41 @@ onBeforeUnmount(() => {
 <template>
     <div class="diplomacy-view">
         <header class="page-header">
-            <div>
-                <h1>외교부</h1>
-                <p class="subtitle">외교 문서를 작성하고 버전 기록을 확인합니다.</p>
-            </div>
-            <div class="header-actions">
-                <button type="button" class="ghost" @click="loadLetters">수동 갱신</button>
-            </div>
+            <span>외 교 부</span>
+            <RouterLink class="legacy-button" to="/">돌아가기</RouterLink>
         </header>
 
         <p v-if="errorMessage" class="error-text">{{ errorMessage }}</p>
 
-        <section class="panel" v-if="editable">
+        <section v-if="editable" id="new-letter" class="panel new-letter">
             <div class="panel-header">
                 <h2>새 외교 문서 작성</h2>
             </div>
-            <div class="form-grid">
-                <label>
-                    이전 문서
+            <label class="document-row select-row">
+                <span class="row-label">이전 문서</span>
+                <span class="row-content">
                     <select v-model.number="selectedPrevId" @change="applyPrevLetter">
-                        <option :value="null">없음</option>
+                        <option :value="null">-새 문서-</option>
                         <option v-for="letter in prevOptions" :key="letter.id" :value="letter.id">
-                            #{{ letter.id }} {{ letter.src.nationName }} ↔ {{ letter.dest.nationName }}
+                            #{{ letter.id }} &lt;{{ targetNation(letter).nationName }}&gt;
                         </option>
                     </select>
-                </label>
-                <label>
-                    대상 국가
+                </span>
+            </label>
+            <label class="document-row select-row">
+                <span class="row-label">대상 국가</span>
+                <span class="row-content">
                     <select v-model.number="selectedDestNationId">
                         <option v-for="nation in data?.nations ?? []" :key="nation.id" :value="nation.id">
                             {{ nation.name }}
                         </option>
                     </select>
-                </label>
-            </div>
-            <div class="editor-group">
-                <div class="editor-label">내용(국가 내 공개)</div>
-                <div class="editor-toolbar">
+                </span>
+            </label>
+            <div class="document-row editor-row">
+                <div class="row-label">내용(국가 내 공개)</div>
+                <div class="row-content editor-content">
+                    <div class="editor-toolbar">
                     <button
                         type="button"
                         @click="briefEditor?.chain().focus().toggleBold().run()"
@@ -306,12 +337,14 @@ onBeforeUnmount(() => {
                     >
                         이미지 업로드
                     </button>
+                    </div>
+                    <EditorContent v-if="briefEditor" :editor="briefEditor" />
                 </div>
-                <EditorContent v-if="briefEditor" :editor="briefEditor" />
             </div>
-            <div class="editor-group">
-                <div class="editor-label">내용(외교권자 전용)</div>
-                <div class="editor-toolbar">
+            <div class="document-row editor-row">
+                <div class="row-label">내용(외교권자 전용)</div>
+                <div class="row-content editor-content">
+                    <div class="editor-toolbar">
                     <button
                         type="button"
                         @click="detailEditor?.chain().focus().toggleBold().run()"
@@ -348,11 +381,15 @@ onBeforeUnmount(() => {
                     >
                         이미지 업로드
                     </button>
+                    </div>
+                    <EditorContent v-if="detailEditor" :editor="detailEditor" />
                 </div>
-                <EditorContent v-if="detailEditor" :editor="detailEditor" />
             </div>
-            <div class="submit-row">
-                <button type="button" class="primary" @click="sendLetter">전송</button>
+            <div class="document-row action-row">
+                <div class="row-label">동작</div>
+                <div class="row-content">
+                    <button type="button" @click="sendLetter">전송</button>
+                </div>
             </div>
             <input ref="fileInputRef" type="file" accept="image/*" class="hidden" @change="onSelectImage" />
         </section>
@@ -363,27 +400,42 @@ onBeforeUnmount(() => {
 
         <section class="letter-list">
             <article v-for="letter in data?.letters ?? []" :key="letter.id" class="letter-card">
-                <header class="letter-header">
-                    <h3>#{{ letter.id }} {{ letter.src.nationName }} ↔ {{ letter.dest.nationName }}</h3>
-                    <div class="letter-meta">
-                        <span class="state-badge" :data-state="letter.state">{{ stateLabelMap[letter.state] }}</span>
-                        <span>{{ formatDate(letter.date) }}</span>
-                    </div>
+                <header class="letter-header" :style="nationStyle(targetNation(letter).nationColor)">
+                    <h3>{{ targetNation(letter).nationName }}국과의 외교 문서</h3>
+                    <time>{{ formatDate(letter.date) }}</time>
                 </header>
                 <div class="letter-body">
-                    <div class="letter-section">
-                        <h4>내용(국가 내 공개)</h4>
-                        <div class="letter-text" v-html="letter.brief" />
+                    <div class="document-row compact-row">
+                        <div class="row-label">문서 번호</div>
+                        <div class="row-content">#{{ letter.id }}</div>
                     </div>
-                    <div class="letter-section">
-                        <h4>내용(외교권자 전용)</h4>
-                        <div class="letter-text" v-html="letter.detail" />
+                    <div class="document-row compact-row">
+                        <div class="row-label">이전 문서</div>
+                        <div class="row-content">
+                            <button v-if="letter.prevId" type="button" class="text-button" @click="toggleHistory(letter.id)">
+                                #{{ letter.prevId }}
+                            </button>
+                            <span v-else>신규</span>
+                        </div>
                     </div>
-                    <div v-if="letter.prevId" class="letter-history">
-                        <button type="button" class="ghost" @click="toggleHistory(letter.id)">
-                            이전 문서 {{ historyOpen[letter.id] ? '접기' : '보기' }}
-                        </button>
-                        <div v-if="historyOpen[letter.id]" class="history-panel">
+                    <div class="document-row compact-row">
+                        <div class="row-label">상태</div>
+                        <div class="row-content">
+                            {{ stateLabelMap[letter.state] }}
+                            <span v-if="letter.stateOpt">({{ stateOptionLabelMap[letter.stateOpt] ?? letter.stateOpt }})</span>
+                        </div>
+                    </div>
+                    <div class="document-row text-row">
+                        <div class="row-label">내용(국가 내 공개)</div>
+                        <div class="row-content letter-text" v-html="letter.brief" />
+                    </div>
+                    <div class="document-row text-row">
+                        <div class="row-label">내용(외교권자 전용)</div>
+                        <div class="row-content letter-text" v-html="letter.detail" />
+                    </div>
+                    <div v-if="letter.prevId && historyOpen[letter.id]" class="document-row history-row">
+                        <div class="row-label">이전 문서 내용</div>
+                        <div class="row-content history-panel">
                             <template v-if="getPrevLetter(letter)">
                                 <p>
                                     #{{ getPrevLetter(letter)?.id }} {{ getPrevLetter(letter)?.src.nationName }} ↔
@@ -394,234 +446,284 @@ onBeforeUnmount(() => {
                             <p v-else class="hint">이전 문서를 찾을 수 없습니다.</p>
                         </div>
                     </div>
+                    <div class="document-row signer-row">
+                        <div class="row-label">서명인</div>
+                        <div class="row-content signer-plate">
+                            <div class="signer-card">
+                                <div class="signer-image">
+                                    <img v-if="signerIcon(letter.src)" :src="signerIcon(letter.src)!" width="64" height="64" alt="" />
+                                </div>
+                                <div :style="nationStyle(letter.src.nationColor)">{{ letter.src.nationName }}</div>
+                                <div :style="nationStyle(letter.src.nationColor)">{{ letter.src.generalName ?? ' ' }}</div>
+                            </div>
+                            <div class="signer-card">
+                                <div class="signer-image">
+                                    <img v-if="signerIcon(letter.dest)" :src="signerIcon(letter.dest)!" width="64" height="64" alt="" />
+                                </div>
+                                <div :style="nationStyle(letter.dest.nationColor)">{{ letter.dest.nationName }}</div>
+                                <div :style="nationStyle(letter.dest.nationColor)">{{ letter.dest.generalName ?? ' ' }}</div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <footer class="letter-actions">
-                    <button v-if="canRespond(letter)" type="button" @click="respondLetter(letter.id, true)">
-                        승인
-                    </button>
-                    <button v-if="canRespond(letter)" type="button" @click="respondLetter(letter.id, false, '거부')">
-                        거부
-                    </button>
-                    <button v-if="canRollback(letter)" type="button" @click="rollbackLetter(letter.id)">회수</button>
-                    <button v-if="canDestroy(letter)" type="button" @click="destroyLetter(letter.id)">파기</button>
-                    <button
-                        v-if="canRenew(letter)"
-                        type="button"
-                        @click="
-                            selectedPrevId = letter.id;
-                            applyPrevLetter();
-                        "
-                    >
-                        추가 문서 작성
-                    </button>
+                <footer class="document-row letter-actions">
+                    <div class="row-label">동작</div>
+                    <div class="row-content">
+                        <button v-if="canRespond(letter)" type="button" @click="respondLetter(letter.id, true)">승인</button>
+                        <button v-if="canRespond(letter)" type="button" @click="respondLetter(letter.id, false, '거부')">거부</button>
+                        <button v-if="canRollback(letter)" type="button" @click="rollbackLetter(letter.id)">회수</button>
+                        <button v-if="canDestroy(letter)" type="button" @click="destroyLetter(letter.id)">파기</button>
+                        <button
+                            v-if="canRenew(letter)"
+                            type="button"
+                            @click="
+                                selectedPrevId = letter.id;
+                                applyPrevLetter();
+                            "
+                        >
+                            추가 문서 작성
+                        </button>
+                    </div>
                 </footer>
             </article>
         </section>
 
         <div v-if="loading" class="loading">불러오는 중...</div>
+        <footer class="page-footer">
+            <RouterLink class="legacy-button" to="/">돌아가기</RouterLink>
+        </footer>
     </div>
 </template>
 
 <style scoped>
 .diplomacy-view {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    padding: 24px;
-    background: #0f1118;
-    color: #e6e8ef;
+    width: 1000px;
+    min-width: 1000px;
+    margin: 0 auto;
+    padding: 0;
+    background-color: #111;
+    background-image: var(--sammo-texture-walnut);
+    color: #fff;
     min-height: 100vh;
+    overflow-x: clip;
+    font-family: var(--sammo-font-sans);
+    font-size: 14px;
+    line-height: 1.3;
 }
 
 .page-header {
+    min-height: 54px;
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 12px;
+    align-content: flex-start;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    border: 1px solid #666;
 }
 
-.subtitle {
-    color: #9aa3b8;
-    margin: 4px 0 0;
+.page-header > span {
+    flex-basis: 100%;
+    height: 18px;
 }
 
-.header-actions {
-    display: flex;
-    gap: 10px;
-}
-
-.ghost {
-    padding: 6px 12px;
-    border-radius: 8px;
-    border: 1px solid #2b2f3f;
-    background: #141826;
-    color: #c7d0e0;
+.legacy-button {
+    min-height: 34px;
+    padding: 5px 10px;
+    border: 1px solid #2d5d7f;
+    border-radius: 4px;
+    background: #315f86;
+    color: #fff;
+    font-weight: 700;
     text-decoration: none;
-    cursor: pointer;
 }
 
 .panel {
-    background: #181b26;
-    border-radius: 12px;
-    padding: 16px;
-    border: 1px solid #23283a;
+    width: 1000px;
+    margin: 10px auto;
+    border: 1px solid #666;
+    background-image: var(--sammo-texture-walnut);
 }
 
 .panel-header {
-    margin-bottom: 12px;
+    height: 18px;
+    text-align: center;
 }
 
-.form-grid {
+.panel-header h2 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.document-row {
     display: grid;
-    gap: 12px;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    margin-bottom: 12px;
+    grid-template-columns: 200px 800px;
+    min-height: 18px;
 }
 
-.form-grid select {
-    width: 100%;
-    padding: 6px 10px;
-    border-radius: 6px;
-    border: 1px solid #2b2f3f;
-    background: #0f1118;
-    color: #f5f6fa;
+.row-label {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #14241b;
+    background-image: var(--sammo-texture-green);
+    font-weight: 700;
+    text-align: center;
 }
 
-.editor-group {
-    margin-bottom: 16px;
+.row-content {
+    min-width: 0;
+    text-align: left;
 }
 
-.editor-label {
-    margin-bottom: 6px;
-    font-weight: 600;
+.select-row .row-content,
+.action-row .row-content,
+.compact-row .row-content,
+.letter-actions .row-content {
+    text-align: center;
+}
+
+.select-row select {
+    width: 300px;
+    min-height: 34px;
+    border: 1px solid #aaa;
+    border-radius: 4px;
+    background: #505050;
+    color: #fff;
+    text-align: center;
+}
+
+.editor-content {
+    position: relative;
+    min-height: 54px;
 }
 
 .editor-toolbar {
+    position: absolute;
+    z-index: 2;
+    top: 2px;
+    right: 4px;
     display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-bottom: 8px;
+    gap: 2px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms linear;
 }
 
-.editor-toolbar button {
-    padding: 6px 10px;
-    border-radius: 6px;
-    border: 1px solid #2b2f3f;
-    background: #1e2232;
-    color: #d8dff0;
+.editor-content:focus-within .editor-toolbar {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.editor-toolbar button,
+.diplomacy-view button {
+    border: 1px solid #aaa;
+    border-radius: 0;
+    background: #666;
+    color: #fff;
+    font: inherit;
     cursor: pointer;
 }
 
 .editor-toolbar button.active {
-    background: #3b425c;
+    background: #315f86;
 }
 
-.letter-editor {
-    min-height: 160px;
-    padding: 12px;
-    border-radius: 10px;
-    border: 1px solid #2b2f3f;
-    background: #0f1118;
-    color: #f5f6fa;
+.editor-content :deep(.letter-editor) {
+    min-height: 54px;
+    padding: 2px 4px;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: #fff;
 }
 
-.letter-editor :deep(img) {
+.editor-content :deep(.letter-editor img),
+.letter-text :deep(img) {
     max-width: 100%;
     height: auto;
-    border-radius: 6px;
-}
-
-.submit-row {
-    display: flex;
-    justify-content: flex-end;
-}
-
-.primary {
-    padding: 8px 18px;
-    border-radius: 8px;
-    border: none;
-    background: #3b82f6;
-    color: #fff;
-    cursor: pointer;
-}
-
-.letter-list {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
 }
 
 .letter-card {
-    background: #161a24;
-    border-radius: 12px;
-    padding: 16px;
-    border: 1px solid #202638;
+    width: 1000px;
+    margin: 10px auto;
+    border: 1px solid #666;
+    background-image: var(--sammo-texture-walnut);
 }
 
 .letter-header {
+    position: relative;
+    min-height: 38px;
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    gap: 12px;
+    justify-content: center;
 }
 
-.letter-meta {
-    display: flex;
-    gap: 8px;
-    color: #9aa3b8;
-    font-size: 12px;
+.letter-header h3 {
+    margin: 0;
+    font-size: 28px;
+    font-weight: 400;
 }
 
-.state-badge {
-    padding: 2px 6px;
-    border-radius: 999px;
-    font-weight: 600;
-    text-transform: uppercase;
-    background: #2b3348;
-    color: #e6e8ef;
-}
-
-.state-badge[data-state='PROPOSED'] {
-    background: #1d4ed8;
-}
-
-.state-badge[data-state='ACTIVATED'] {
-    background: #16a34a;
-}
-
-.state-badge[data-state='REPLACED'] {
-    background: #6b7280;
-}
-
-.state-badge[data-state='CANCELLED'] {
-    background: #b91c1c;
-}
-
-.letter-section {
-    margin-top: 12px;
+.letter-header time {
+    position: absolute;
+    right: 10px;
+    bottom: 3px;
+    font-size: 14px;
 }
 
 .letter-text {
-    padding: 8px 0;
-    line-height: 1.6;
+    min-height: 18px;
+    padding: 0;
+    line-height: 1.3;
 }
 
-.letter-history {
-    margin-top: 10px;
+.letter-text :deep(p) {
+    margin: 0;
 }
 
 .history-panel {
-    margin-top: 8px;
-    padding: 8px;
-    border-radius: 8px;
-    background: #11131a;
+    padding: 4px;
 }
 
-.letter-actions {
-    margin-top: 12px;
+.text-button {
+    padding: 0;
+    border: 0 !important;
+    background: transparent !important;
+    color: #9cf !important;
+    text-decoration: underline;
+}
+
+.signer-plate {
     display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
+    justify-content: center;
+    gap: 20px;
+    padding: 4px 0;
+}
+
+.signer-card {
+    width: 110px;
+    border: 1px solid #888;
+    text-align: center;
+}
+
+.signer-image {
+    height: 64px;
+    background: #fff;
+}
+
+.signer-card > div + div {
+    min-height: 18px;
+    border-top: 1px solid #888;
+}
+
+.letter-actions .row-content {
+    padding: 2px 0;
+}
+
+.page-footer {
+    min-height: 74px;
+    border: 1px solid #666;
+    padding-top: 0;
 }
 
 .hidden {
@@ -634,9 +736,17 @@ onBeforeUnmount(() => {
 
 .error-text {
     color: #f87171;
+    border: 1px solid #a33;
+    padding: 4px;
 }
 
 .loading {
     color: #9aa3b8;
+}
+
+@media (max-width: 1000px) {
+    .diplomacy-view {
+        margin: 0;
+    }
 }
 </style>

@@ -211,7 +211,7 @@ const waitForMain = async (page: Page) => {
     await expect(page.getByRole('heading', { name: '전장 현황' })).toBeVisible();
     await expect(page.locator('.main-global-menu').first()).toBeVisible();
     await expect(page.locator('.main-nation-menu')).toBeVisible();
-    await expect(page.locator('[data-navigation-id="npc-list"]')).toHaveCount(4);
+    await expect(page.locator('[data-navigation-id="npc-list"]')).toHaveCount(3);
 };
 
 const gridColumnCount = async (page: Page, selector: string) =>
@@ -331,7 +331,7 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     await persistArtifact(page, `${basePath.slice(1)}-desktop-1200`);
 });
 
-test('the 939/940 boundary and 500px bottom bar match the ref responsive contract', async ({ page }) => {
+test('the 939/940 boundary switches to the Ref-style 500px single document', async ({ page }) => {
     const state: NavigationFixture = {
         officerLevel: 5,
         permission: 2,
@@ -353,72 +353,33 @@ test('the 939/940 boundary and 500px bottom bar match the ref responsive contrac
     await expect(page.locator('.layout-mobile')).toBeVisible();
     expect(await gridColumnCount(page, '.main-global-menu')).toBe(4);
     expect(await gridColumnCount(page, '.main-nation-menu')).toBe(5);
-    await expect(page.locator('.main-mobile-bottom')).toBeVisible();
+    await expect(page.locator('.main-mobile-bottom')).toHaveCount(0);
 
     await page.setViewportSize({ width: 500, height: 900 });
-    const bottomGeometry = await page.locator('.main-mobile-bottom').evaluate((element) => {
+    const documentGeometry = await page.locator('.main-page').evaluate((element) => {
         const rect = element.getBoundingClientRect();
         return {
             x: rect.x,
             width: rect.width,
             height: rect.height,
-            bottom: innerHeight - rect.bottom,
-            buttons: [...element.children].map((child) => child.getBoundingClientRect().width),
-            position: getComputedStyle(element).position,
-            zIndex: getComputedStyle(element).zIndex,
+            scrollWidth: document.documentElement.scrollWidth,
         };
     });
-    expect(bottomGeometry).toEqual({
+    expect(documentGeometry).toMatchObject({
         x: 0,
         width: 500,
-        height: 45,
-        bottom: 0,
-        buttons: [125, 125, 125, 125],
-        position: 'fixed',
-        zIndex: '99',
+        scrollWidth: 500,
     });
-
-    const externalTrigger = page.locator('[data-bottom-menu="global"]');
-    await externalTrigger.focus();
-    await externalTrigger.press('Enter');
-    await expect(externalTrigger).toHaveAttribute('aria-expanded', 'true');
-    const popupStyle = await page.locator('#mobile-global-menu').evaluate((element) => {
-        const style = getComputedStyle(element);
-        return {
-            columns: style.columnCount,
-            overflowY: style.overflowY,
-            maxHeight: style.maxHeight,
-            bottom: style.bottom,
-        };
-    });
-    expect(popupStyle.columns).toBe('3');
-    expect(popupStyle.overflowY).toBe('auto');
-    expect(popupStyle.maxHeight).toBe('850px');
-    expect(popupStyle.bottom).toBe('47px');
-    const globalPopup = page.locator('#mobile-global-menu');
-    await expect(globalPopup.getByText('게시판', { exact: true })).toHaveCount(1);
-    await expect(globalPopup.getByText('공식 오픈 톡', { exact: true })).toHaveCount(1);
-    await expect(globalPopup.getByText('게임정보', { exact: true })).toHaveCount(1);
-    await expect(globalPopup.getByText('기타 정보', { exact: true })).toHaveCount(1);
-    await persistArtifact(page, `${basePath.slice(1)}-mobile-global-open-500`);
-    await page.keyboard.press('Escape');
-    await expect(externalTrigger).toBeFocused();
-
-    await page.locator('[data-bottom-menu="nation"]').click();
-    const nationPopup = page.locator('#mobile-nation-menu');
-    await expect(nationPopup.getByText('금/쌀 경매장', { exact: true })).toHaveCount(1);
-    await expect(nationPopup.getByText('유니크 경매장', { exact: true })).toHaveCount(1);
-    await page.keyboard.press('Escape');
-
-    await page.locator('[data-bottom-menu="quick"]').click();
-    const quickPopup = page.locator('#mobile-quick-menu');
-    for (const heading of ['국가 정보', '동향 정보', '메시지']) {
-        await expect(quickPopup.locator('.bottom-heading').getByText(heading, { exact: true })).toHaveCount(1);
+    expect(documentGeometry.height).toBeGreaterThan(900);
+    for (const selector of [
+        '[data-main-target="commands"]',
+        '[data-main-target="general"]',
+        '[data-main-target="map"]',
+        '[data-main-target="world-history"]',
+        '.mobile-message-panel',
+    ]) {
+        await expect(page.locator(selector)).toBeVisible();
     }
-    await expect(quickPopup.locator('.bottom-heading')).toHaveCount(3);
-    await expect(quickPopup.locator('.bottom-divider')).toHaveCount(3);
-    await persistArtifact(page, `${basePath.slice(1)}-mobile-quick-open-500`);
-    await page.keyboard.press('Escape');
     await persistArtifact(page, `${basePath.slice(1)}-mobile-500`);
 });
 
@@ -459,9 +420,7 @@ test('nation menu presentation follows the server-derived permission matrix', as
     );
 });
 
-test('mobile quick navigation changes tabs before scrolling, refreshes once, and preserves tokens on lobby return', async ({
-    page,
-}) => {
+test('mobile single document refreshes once and preserves tokens on lobby return', async ({ page }) => {
     const state: NavigationFixture = {
         officerLevel: 5,
         permission: 2,
@@ -475,35 +434,26 @@ test('mobile quick navigation changes tabs before scrolling, refreshes once, and
     await page.setViewportSize({ width: 500, height: 900 });
     await waitForMain(page);
 
-    const cases = [
-        ['policy', 'map', '[data-main-target="policy"]'],
-        ['commands', 'commands', '[data-main-target="commands"]'],
-        ['nation', 'status', '[data-main-target="nation"]'],
-        ['general', 'status', '[data-main-target="general"]'],
-        ['city', 'status', '[data-main-target="city"]'],
-        ['map', 'map', '[data-main-target="map"]'],
-        ['global-records', 'world', '[data-main-target="global-records"]'],
-        ['general-records', 'world', '[data-main-target="general-records"]'],
-        ['world-history', 'world', '[data-main-target="world-history"]'],
-        ['public-message', 'messages', '[data-message-type="public"]'],
-        ['national-message', 'messages', '[data-message-type="national"]'],
-        ['private-message', 'messages', '[data-message-type="private"]'],
-        ['diplomacy-message', 'messages', '[data-message-type="diplomacy"]'],
-    ] as const;
-
-    for (const [id, tab, selector] of cases) {
-        await page.locator('[data-bottom-menu="quick"]').click();
-        await page.locator(`[data-quick-id="${id}"]`).click();
-        await expect(page.locator('.mobile-tabs button.active')).toHaveText(
-            { map: '지도', commands: '명령', status: '상태', world: '동향', messages: '메시지' }[tab]
-        );
+    for (const selector of [
+        '[data-main-target="policy"]',
+        '[data-main-target="commands"]',
+        '[data-main-target="nation"]',
+        '[data-main-target="general"]',
+        '[data-main-target="city"]',
+        '[data-main-target="map"]',
+        '[data-main-target="global-records"]',
+        '[data-main-target="general-records"]',
+        '[data-main-target="world-history"]',
+        '[data-message-type="public"]',
+        '[data-message-type="national"]',
+        '[data-message-type="private"]',
+        '[data-message-type="diplomacy"]',
+    ]) {
         await expect(page.locator(selector)).toBeVisible();
-        const targetTop = await page.locator(selector).evaluate((element) => element.getBoundingClientRect().top);
-        expect(targetTop).toBeLessThan(855);
     }
 
     const callsBeforeRefresh = state.generalMeCalls;
-    await page.locator('[data-bottom-menu="refresh"]').click();
+    await page.getByRole('button', { name: '갱 신' }).click();
     await expect.poll(() => state.generalMeCalls).toBeGreaterThan(callsBeforeRefresh);
 
     await page.evaluate(() => {
@@ -512,8 +462,7 @@ test('mobile quick navigation changes tabs before scrolling, refreshes once, and
     await page.route('**/gateway/', async (route) => {
         await route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>gateway</title>' });
     });
-    await page.locator('[data-bottom-menu="quick"]').click();
-    await Promise.all([page.waitForURL('**/gateway/'), page.getByRole('menuitem', { name: '로비로' }).click()]);
+    await Promise.all([page.waitForURL('**/gateway/'), page.getByRole('button', { name: '로비로' }).click()]);
     expect(
         await page.evaluate(() => ({
             session: localStorage.getItem('sammo-session-token'),

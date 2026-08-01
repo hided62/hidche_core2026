@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onUnmounted, ref, watch } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useMediaQuery } from '@vueuse/core';
 import PanelCard from '../components/ui/PanelCard.vue';
@@ -15,8 +15,6 @@ import RecordPanel from '../components/main/RecordPanel.vue';
 import MainFrontStatus from '../components/main/MainFrontStatus.vue';
 import MainGlobalMenu from '../components/main/MainGlobalMenu.vue';
 import MainNationMenu from '../components/main/MainNationMenu.vue';
-import MainMobileBottomBar from '../components/main/MainMobileBottomBar.vue';
-import type { QuickNavigationItem } from '../components/main/mainNavigation';
 import { formatLog } from '../utils/formatLog';
 import { useSessionStore } from '../stores/session';
 import { useMainDashboardStore } from '../stores/mainDashboard';
@@ -26,17 +24,6 @@ const session = useSessionStore();
 const dashboard = useMainDashboardStore();
 const isMobile = useMediaQuery('(max-width: 939.98px)');
 
-const mobileTabs = [
-    { key: 'map', label: '지도' },
-    { key: 'commands', label: '명령' },
-    { key: 'status', label: '상태' },
-    { key: 'world', label: '동향' },
-    { key: 'messages', label: '메시지' },
-] as const;
-
-type MobileTabKey = (typeof mobileTabs)[number]['key'];
-
-const mobileTab = ref<MobileTabKey>('map');
 const tournamentStage = ref(0);
 const npcMode = ref(0);
 
@@ -123,13 +110,6 @@ const moveLobby = () => {
     window.location.replace(import.meta.env.VITE_GATEWAY_WEB_URL?.trim() || '/gateway/');
 };
 
-const quickNavigate = async (item: QuickNavigationItem) => {
-    mobileTab.value = item.tab;
-    await nextTick();
-    await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-    document.querySelector<HTMLElement>(item.selector)?.scrollIntoView({ behavior: 'auto', block: 'start' });
-};
-
 watch(
     () => [session.isReady, session.hasGeneral],
     ([ready, hasGeneral]) => {
@@ -186,27 +166,7 @@ watch(
         </aside>
 
         <section v-if="isMobile" class="layout-mobile">
-            <div class="mobile-tabs">
-                <button
-                    v-for="tab in mobileTabs"
-                    :key="tab.key"
-                    :class="{ active: mobileTab === tab.key }"
-                    @click="mobileTab = tab.key"
-                >
-                    {{ tab.label }}
-                </button>
-            </div>
-
-            <div v-if="mobileTab === 'map'" class="mobile-panel">
-                <PanelCard title="지도" data-main-target="map">
-                    <MapViewer :map-data="worldMap" :map-layout="mapLayout" :loading="loading" />
-                </PanelCard>
-                <PanelCard title="선택 도시">
-                    <SelectedCityPanel :city="selectedCity" :loading="loading" />
-                </PanelCard>
-            </div>
-
-            <div v-if="mobileTab === 'commands'" class="mobile-panel">
+            <div class="mobile-panel">
                 <PanelCard title="명령 목록" subtitle="예턴/명령 배치 영역" data-main-target="commands">
                     <CommandListPanel
                         :command-table="commandTable"
@@ -223,7 +183,7 @@ watch(
                 </PanelCard>
             </div>
 
-            <div v-if="mobileTab === 'status'" class="mobile-panel">
+            <div class="mobile-panel">
                 <PanelCard title="장수 스탯" data-main-target="general">
                     <GeneralBasicCard :general="general" :loading="loading" />
                 </PanelCard>
@@ -235,7 +195,16 @@ watch(
                 </PanelCard>
             </div>
 
-            <div v-if="mobileTab === 'world'" class="mobile-panel record-zone-mobile">
+            <div class="mobile-panel">
+                <PanelCard title="지도" data-main-target="map">
+                    <MapViewer :map-data="worldMap" :map-layout="mapLayout" :loading="loading" />
+                </PanelCard>
+                <PanelCard title="선택 도시">
+                    <SelectedCityPanel :city="selectedCity" :loading="loading" />
+                </PanelCard>
+            </div>
+
+            <div class="mobile-panel record-zone-mobile">
                 <RecordPanel title="장수 동향" data-main-target="global-records">
                     <SkeletonLines v-if="loading" :lines="4" />
                     <div v-else-if="recordsError" class="record-error" role="alert">{{ recordsError }}</div>
@@ -287,7 +256,7 @@ watch(
                 :vote-active="voteActive"
             />
 
-            <div v-if="mobileTab === 'messages'" class="mobile-panel">
+            <div class="mobile-panel">
                 <MessagePanel
                     class="mobile-message-panel"
                     :messages="messages"
@@ -425,15 +394,6 @@ watch(
             :vote-active="voteActive"
         />
 
-        <MainMobileBottomBar
-            :access="nationAccess"
-            :tournament-stage="tournamentStage"
-            :nation-color="nationColor"
-            :npc-mode="npcMode"
-            @refresh="loadMainData"
-            @lobby="moveLobby"
-            @quick="quickNavigate"
-        />
     </main>
 </template>
 
@@ -443,6 +403,17 @@ button {
     background: none;
     border: none;
     color: inherit;
+}
+
+.main-page {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 500px;
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 0;
+    gap: 10px;
+    overflow-x: hidden;
 }
 
 .toggle.active {
@@ -518,8 +489,8 @@ button {
 
 .layout-desktop {
     display: grid;
-    grid-template-columns: minmax(320px, 1.4fr) minmax(320px, 1fr);
-    gap: 16px;
+    grid-template-columns: minmax(0, 2.35fr) minmax(0, 1fr);
+    gap: 10px;
 }
 
 .stack {
@@ -541,8 +512,7 @@ button {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0;
-    width: calc(100% + 48px);
-    margin-left: -24px;
+    width: 100%;
 }
 
 .world-history-panel {
@@ -567,38 +537,19 @@ button {
 }
 
 .record-zone-mobile {
-    width: 100vw;
-    margin-left: -24px;
+    width: 500px;
     gap: 0;
 }
 
 .mobile-message-panel {
-    width: 100vw;
+    width: 500px;
     min-width: 0;
-    margin-left: -24px;
 }
 
 .layout-mobile {
     display: flex;
     flex-direction: column;
     gap: 16px;
-}
-
-.mobile-tabs {
-    display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 6px;
-}
-
-.mobile-tabs button {
-    padding: 6px 4px;
-    border: 1px solid rgba(201, 164, 90, 0.4);
-    font-size: 0.75rem;
-    cursor: pointer;
-}
-
-.mobile-tabs button.active {
-    background: rgba(201, 164, 90, 0.2);
 }
 
 .mobile-panel {
@@ -617,16 +568,12 @@ button {
 
 @media (max-width: 939.98px) {
     .main-page {
-        padding-bottom: 61px;
-    }
-
-    .desktop-action-controls {
-        display: none;
+        width: 500px;
     }
 
     .survey-notice {
         z-index: 90;
-        bottom: 61px;
+        bottom: 16px;
     }
 }
 </style>

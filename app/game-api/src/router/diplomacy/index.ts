@@ -47,10 +47,23 @@ export const diplomacyRouter = router({
         });
 
         const nations = await ctx.db.nation.findMany({
-            where: { id: { not: me.nationId } },
             select: { id: true, name: true, color: true, level: true },
             orderBy: { id: 'asc' },
         });
+
+        const signerIds = [
+            ...new Set(
+                letters.flatMap((letter) =>
+                    letter.destSignerId === null ? [letter.srcSignerId] : [letter.srcSignerId, letter.destSignerId]
+                )
+            ),
+        ];
+        const signers = await ctx.db.general.findMany({
+            where: { id: { in: signerIds } },
+            select: { id: true, name: true, picture: true, imageServer: true },
+        });
+        const nationById = new Map(nations.map((nation) => [nation.id, nation]));
+        const signerById = new Map(signers.map((general) => [general.id, general]));
 
         const result = letters.map((letter) => {
             const aux = asRecord(letter.aux);
@@ -60,24 +73,32 @@ export const diplomacyRouter = router({
             const detail =
                 permission < 3 && letter.textDetail ? '(권한이 부족합니다)' : purifyDiplomacyHtml(letter.textDetail);
             const reason = asRecord(aux.reason);
+            const srcNation = nationById.get(letter.srcNationId);
+            const destNation = nationById.get(letter.destNationId);
+            const srcSigner = signerById.get(letter.srcSignerId);
+            const destSigner = letter.destSignerId === null ? undefined : signerById.get(letter.destSignerId);
 
             return {
                 id: letter.id,
                 src: {
                     nationId: letter.srcNationId,
-                    nationName: typeof src.nationName === 'string' ? src.nationName : '',
-                    nationColor: typeof src.nationColor === 'string' ? src.nationColor : '',
-                    generalId: typeof src.generalId === 'number' ? src.generalId : null,
-                    generalName: typeof src.generalName === 'string' ? src.generalName : null,
+                    nationName: typeof src.nationName === 'string' ? src.nationName : (srcNation?.name ?? ''),
+                    nationColor: typeof src.nationColor === 'string' ? src.nationColor : (srcNation?.color ?? ''),
+                    generalId: typeof src.generalId === 'number' ? src.generalId : letter.srcSignerId,
+                    generalName: typeof src.generalName === 'string' ? src.generalName : (srcSigner?.name ?? null),
                     generalIcon: typeof src.generalIcon === 'string' ? src.generalIcon : null,
+                    generalPicture: srcSigner?.picture ?? null,
+                    generalImageServer: srcSigner?.imageServer ?? 0,
                 },
                 dest: {
                     nationId: letter.destNationId,
-                    nationName: typeof dest.nationName === 'string' ? dest.nationName : '',
-                    nationColor: typeof dest.nationColor === 'string' ? dest.nationColor : '',
-                    generalId: typeof dest.generalId === 'number' ? dest.generalId : null,
-                    generalName: typeof dest.generalName === 'string' ? dest.generalName : null,
+                    nationName: typeof dest.nationName === 'string' ? dest.nationName : (destNation?.name ?? ''),
+                    nationColor: typeof dest.nationColor === 'string' ? dest.nationColor : (destNation?.color ?? ''),
+                    generalId: typeof dest.generalId === 'number' ? dest.generalId : letter.destSignerId,
+                    generalName: typeof dest.generalName === 'string' ? dest.generalName : (destSigner?.name ?? null),
                     generalIcon: typeof dest.generalIcon === 'string' ? dest.generalIcon : null,
+                    generalPicture: destSigner?.picture ?? null,
+                    generalImageServer: destSigner?.imageServer ?? 0,
                 },
                 prevId: letter.prevId,
                 state: mapLetterState(letter.state),
@@ -95,7 +116,7 @@ export const diplomacyRouter = router({
 
         return {
             letters: result,
-            nations,
+            nations: nations.filter((nation) => nation.id !== me.nationId),
             myNationId: me.nationId,
             permission,
         };

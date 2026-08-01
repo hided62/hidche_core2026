@@ -78,32 +78,33 @@ const storedLetter = {
     textBrief: '<p>공개</p><img src=x onerror="globalThis.__briefXss=1"><script>alert(1)</script>',
     textDetail: '<strong>기밀</strong><a href="javascript:alert(2)" onclick="alert(3)">링크</a>',
     date: new Date('2026-07-31T00:00:00.000Z'),
+    srcSignerId: 1,
+    destSignerId: 2,
     aux: {
         src: { nationName: '위', nationColor: '#0000ff', generalId: 1, generalName: '외교담당' },
         dest: { nationName: '촉', nationColor: '#ff0000' },
     },
 };
 
-const buildContext = (officerLevel = 12) => {
+const buildContext = (officerLevel = 12, letter: Record<string, unknown> = storedLetter) => {
     const create = vi.fn(async () => ({ id: 9 }));
     const db = {
         general: {
             findFirst: vi.fn(async () => buildGeneral(officerLevel)),
+            findMany: vi.fn(async () => [
+                { id: 1, name: '현재 송신자', picture: 'src.jpg', imageServer: 0 },
+                { id: 2, name: '현재 수신자', picture: 'dest.jpg', imageServer: 0 },
+            ]),
         },
         nation: {
             findUnique: vi.fn(async () => ({ meta: {} })),
-            findMany: vi.fn(async ({ where }: { where: { id?: { in?: number[]; not?: number } } }) => {
-                if (where.id?.in) {
-                    return [
-                        { id: 1, name: '위', color: '#0000ff' },
-                        { id: 2, name: '촉', color: '#ff0000' },
-                    ];
-                }
-                return [{ id: 2, name: '촉', color: '#ff0000', level: 5 }];
-            }),
+            findMany: vi.fn(async () => [
+                { id: 1, name: '위', color: '#0000ff', level: 5 },
+                { id: 2, name: '촉', color: '#ff0000', level: 5 },
+            ]),
         },
         diplomacyLetter: {
-            findMany: vi.fn(async () => [storedLetter]),
+            findMany: vi.fn(async () => [letter]),
             findFirst: vi.fn(async () => null),
             create,
         },
@@ -161,6 +162,29 @@ describe('diplomacy HTML API boundary', () => {
         expect(redacted.permission).toBe(2);
         expect(redacted.letters[0]?.brief).toBe('<p>공개</p><img src="x" />');
         expect(redacted.letters[0]?.detail).toBe('(권한이 부족합니다)');
+    });
+
+    it('reconstructs imported letters whose snapshot metadata is empty', async () => {
+        const imported = { ...storedLetter, aux: {} };
+        const result = await buildContext(12, imported).caller.diplomacy.getLetters();
+
+        expect(result.nations).toEqual([{ id: 2, name: '촉', color: '#ff0000', level: 5 }]);
+        expect(result.letters[0]).toMatchObject({
+            src: {
+                nationName: '위',
+                nationColor: '#0000ff',
+                generalId: 1,
+                generalName: '현재 송신자',
+                generalPicture: 'src.jpg',
+            },
+            dest: {
+                nationName: '촉',
+                nationColor: '#ff0000',
+                generalId: 2,
+                generalName: '현재 수신자',
+                generalPicture: 'dest.jpg',
+            },
+        });
     });
 
     it('rejects direct send mutations below the Ref diplomacy permission without writing', async () => {

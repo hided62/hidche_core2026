@@ -307,9 +307,9 @@ test('keeps the shared main and chief shell geometry and interaction states', as
     });
     expect(mainGeometry).toEqual({
         width: 1000,
-        padding: '24px',
-        gap: '16px',
-        headerWidth: 952,
+        padding: '0px',
+        gap: '10px',
+        headerWidth: 1000,
         headerGap: '12px',
         headerBorder: '1px',
         headerPadding: '12px',
@@ -334,7 +334,7 @@ test('keeps the shared main and chief shell geometry and interaction states', as
         padding: getComputedStyle(element).padding,
         headerWidth: element.querySelector<HTMLElement>('.game-shell__header')!.getBoundingClientRect().width,
     }));
-    expect(chiefDesktop).toEqual({ width: 1200, padding: '24px', headerWidth: 1152 });
+    expect(chiefDesktop).toEqual({ width: 1000, padding: '0px', headerWidth: 1000 });
 
     await page.setViewportSize({ width: 500, height: 900 });
     const chiefMobile = await page.locator('.chief-page').evaluate((element) => ({
@@ -342,5 +342,5 @@ test('keeps the shared main and chief shell geometry and interaction states', as
         padding: getComputedStyle(element).padding,
         headerWidth: element.querySelector<HTMLElement>('.game-shell__header')!.getBoundingClientRect().width,
     }));
-    expect(chiefMobile).toEqual({ width: 500, padding: '16px', headerWidth: 468 });
+    expect(chiefMobile).toEqual({ width: 500, padding: '0px', headerWidth: 500 });
 });

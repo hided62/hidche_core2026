@@ -308,6 +308,10 @@ const chiefViews = computed(() => {
     }));
 });
 
+const overviewChiefViews = computed(() =>
+    chiefViews.value.filter((chief) => chief.officerLevel !== selectedChief.value?.officerLevel)
+);
+
 const selectedChiefRows = computed(() => {
     if (!selectedChief.value) {
         return [] as TurnRow[];
@@ -409,18 +413,6 @@ const shiftTurns = async (amount: number) => {
         </section>
 
         <section v-else-if="data && isMobile" class="layout-mobile">
-            <PanelCard title="선택 사령부" subtitle="터치하여 사령턴 확인">
-                <ChiefTurnCard
-                    v-if="selectedChief"
-                    :officer-level-text="formatOfficerLevelText(selectedChief.officerLevel, data.nation.level)"
-                    :name="selectedChief.name"
-                    :npc-state="selectedChief.npcState"
-                    :rows="selectedChiefRows"
-                    :is-me="selectedChief.officerLevel === data.me.officerLevel"
-                />
-                <div v-else class="muted">선택된 사령이 없습니다.</div>
-            </PanelCard>
-
             <PanelCard v-if="isEditingAllowed" title="사령부 편집" subtitle="선택 명령을 배치하세요">
                 <CommandSelectForm
                     :command-table="chiefCommandTable"
@@ -470,7 +462,7 @@ const shiftTurns = async (amount: number) => {
             <PanelCard title="전체 사령부" subtitle="8자리 전체 보기">
                 <div class="chief-overview">
                     <ChiefTurnCard
-                        v-for="chief in chiefViews"
+                        v-for="chief in overviewChiefViews"
                         :key="chief.officerLevel"
                         :officer-level-text="chief.officerLevelText"
                         :name="chief.name"
@@ -560,14 +552,14 @@ const shiftTurns = async (amount: number) => {
 <style scoped>
 .layout-desktop {
     display: grid;
-    grid-template-columns: minmax(0, 2.2fr) minmax(280px, 1fr);
-    gap: 16px;
+    grid-template-columns: minmax(0, 3fr) minmax(240px, 1fr);
+    gap: 0;
 }
 
 .chief-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0;
 }
 
 .chief-side {
@@ -579,12 +571,13 @@ const shiftTurns = async (amount: number) => {
 .layout-mobile {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 0;
 }
 
 .chief-overview {
     display: grid;
-    gap: 12px;
+    grid-template-columns: repeat(4, 125px);
+    gap: 0;
 }
 
 .command-selected {
@@ -681,11 +674,55 @@ const shiftTurns = async (amount: number) => {
 
 @media (max-width: 1024px) {
     .chief-page {
-        padding: 16px;
+        box-sizing: border-box;
+        width: 500px;
+        min-width: 500px;
+        padding: 0;
+        gap: 0;
     }
 
     .chief-overview {
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(4, 125px);
+    }
+
+    .turn-list {
+        gap: 0;
+        margin-top: 4px;
+    }
+
+    .turn-item {
+        min-height: 24px;
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: 2px;
+        padding: 0 4px;
+    }
+
+    .turn-info {
+        flex: 1;
+        flex-wrap: nowrap;
+        gap: 5px;
+    }
+
+    .turn-buttons {
+        gap: 2px;
+    }
+
+    .turn-buttons button {
+        min-height: 20px;
+        padding: 1px 5px;
+    }
+}
+
+@media (min-width: 1024.01px) {
+    .chief-page {
+        box-sizing: border-box;
+        width: 1000px;
+        max-width: 1000px;
+        min-width: 1000px;
+        margin: 0 auto;
+        padding: 0;
+        gap: 0;
     }
 }
 </style>

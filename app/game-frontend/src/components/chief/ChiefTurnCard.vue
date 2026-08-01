@@ -60,12 +60,14 @@ const handleClick = () => {
 
 <style scoped>
 .chief-card {
-    border: 1px solid rgba(201, 164, 90, 0.3);
-    background: rgba(12, 12, 12, 0.7);
-    padding: 10px;
+    min-width: 0;
+    border: 1px solid #666;
+    background-color: #071638;
+    background-image: var(--sammo-texture-blue);
+    padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 0;
 }
 
 .chief-card.clickable {
@@ -84,7 +86,7 @@ const handleClick = () => {
 }
 
 .chief-card.compact {
-    padding: 8px;
+    padding: 0;
     font-size: 0.75rem;
 }
 
@@ -92,13 +94,18 @@ const handleClick = () => {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 6px;
+    min-height: 28px;
+    gap: 2px;
+    padding: 1px 4px;
+    background-color: #143b28;
+    background-image: var(--sammo-texture-green);
 }
 
 .chief-title {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    min-width: 0;
+    gap: 0;
 }
 
 .chief-level {
@@ -107,35 +114,58 @@ const handleClick = () => {
 }
 
 .chief-name {
-    font-size: 0.95rem;
+    overflow: hidden;
+    font-size: 0.8rem;
     font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .chief-me {
     font-size: 0.65rem;
     padding: 2px 6px;
-    border-radius: 999px;
+    border-radius: 0;
     background: rgba(201, 164, 90, 0.2);
     color: rgba(232, 221, 196, 0.8);
 }
 
 .chief-rows {
     display: grid;
-    gap: 4px;
+    gap: 0;
 }
 
 .chief-row {
     display: grid;
-    grid-template-columns: 36px 56px 1fr;
-    gap: 6px;
-    padding: 4px 6px;
-    border: 1px solid rgba(201, 164, 90, 0.15);
+    grid-template-columns: 24px 48px minmax(0, 1fr);
+    min-height: 22px;
+    gap: 2px;
+    align-items: center;
+    padding: 0 3px;
+    border: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
     font-size: 0.75rem;
 }
 
 .chief-card.compact .chief-row {
-    grid-template-columns: 28px 48px 1fr;
-    font-size: 0.7rem;
+    grid-template-columns: 18px 36px minmax(0, 1fr);
+    box-sizing: border-box;
+    height: 13px;
+    min-height: 0;
+    padding: 0 2px;
+    font-size: 0.55rem;
+    line-height: 11px;
+}
+
+.chief-card.compact .chief-header {
+    box-sizing: border-box;
+    height: 20px;
+    min-height: 0;
+    font-size: 0.65rem;
+}
+
+.chief-card.compact .chief-level,
+.chief-card.compact .chief-name {
+    font-size: 0.6rem;
 }
 
 .chief-row.rest {

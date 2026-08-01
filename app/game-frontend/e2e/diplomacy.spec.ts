@@ -102,7 +102,8 @@ for (const viewport of [
         await expect(card.locator('li')).toHaveText('서버 정화 기밀문');
         await expect(card.getByRole('link', { name: '자료' })).toHaveAttribute('href', 'https://example.com');
         await expect(card.getByRole('link', { name: '자료' })).toHaveAttribute('rel', 'noopener noreferrer nofollow');
-        await expect(card.locator('script, svg, math, [onerror], [onclick], [style]')).toHaveCount(0);
+        await expect(card.locator('.letter-text script, .letter-text svg, .letter-text math')).toHaveCount(0);
+        await expect(card.locator('.letter-text [onerror], .letter-text [onclick], .letter-text [style]')).toHaveCount(0);
         expect(await page.evaluate(() => (globalThis as Record<string, unknown>).__diplomacyXss)).toBeUndefined();
 
         const geometry = await card.evaluate((element) => {
@@ -112,6 +113,9 @@ for (const viewport of [
             const style = getComputedStyle(text);
             return {
                 card: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+                documentWidth: document.documentElement.scrollWidth,
+                labelWidth: element.querySelector<HTMLElement>('.row-label')?.getBoundingClientRect().width,
+                headerFontSize: getComputedStyle(element.querySelector('h3')!).fontSize,
                 text: {
                     x: textRect.x,
                     y: textRect.y,
@@ -122,8 +126,11 @@ for (const viewport of [
                 },
             };
         });
-        expect(geometry.card.width).toBeGreaterThan(0);
-        expect(geometry.text.width).toBeGreaterThan(0);
+        expect(geometry.card.width).toBe(1000);
+        expect(geometry.documentWidth).toBe(viewport.name === 'mobile' ? 1000 : viewport.width);
+        expect(geometry.labelWidth).toBe(200);
+        expect(geometry.headerFontSize).toBe('28px');
+        expect(geometry.text.width).toBe(800);
 
         if (artifactRoot) {
             await mkdir(artifactRoot, { recursive: true });
@@ -134,10 +141,10 @@ for (const viewport of [
             );
         }
 
-        const refresh = page.getByRole('button', { name: '수동 갱신' });
-        await refresh.focus();
-        await expect(refresh).toBeFocused();
-        await refresh.hover();
+        const send = page.getByRole('button', { name: '전송' });
+        await send.focus();
+        await expect(send).toBeFocused();
+        await send.hover();
         await screenshot(page, `diplomacy-html-${basePath.slice(1)}-${viewport.name}.png`);
     });
 }
