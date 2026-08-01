@@ -6,6 +6,8 @@
 | -------------------- | -------------------------------------------------------- | ------------------------------------------- |
 | gateway API          | `app/gateway-api/src/server.ts`                          | 계정, session, profile, admin operation     |
 | gateway orchestrator | `app/gateway-api/src/orchestrator/orchestratorServer.ts` | DB queue, build, PM2 reconciliation         |
+| release controller   | `app/release-controller/src/index.ts`                    | Gateway 전체 릴리스와 controller CLI 전환   |
+| game frontend        | Vite preview                                             | profile별 commit frontend artifact          |
 | game API             | `app/game-api/src/server.ts`                             | profile tRPC, SSE, worker transport         |
 | turn daemon          | `app/game-engine/src/turn/cli.ts`                        | schedule, command, 월간 lifecycle, DB flush |
 | battle worker        | `app/game-api/src/battleSim/worker.ts`                   | 격리된 전투 시뮬레이션                      |
@@ -26,6 +28,7 @@ Gateway API는 다음 저장 경계를 사용합니다.
 - `AppUser`, `SystemSetting`: 계정과 정책
 - `GatewayProfile`: profile, scenario, port, 상태와 build 결과
 - `GatewayOperation`: build/reset/open/close 등 실행 요청과 결과
+- `GatewayReleaseOperation`, `GatewayReleaseState`: Gateway 전체 릴리스 queue와 현재·이전 commit
 - `GatewayRuntimeAction`: profile별 시간 가속·연기 요청, 부분 적용과 최종 결과
 - Redis: gateway session, OAuth 임시 상태, flush channel
 
@@ -33,6 +36,15 @@ Orchestrator는 `GatewayOperation`을 claim하고 source ref를 commit으로
 해결합니다. `WorkspaceManager`가 commit별 worktree를 준비하고 build runner가
 artifact를 만들며 `Pm2ProcessManager`가 profile process를 조정합니다.
 재시작 시 DB 상태와 process 상태를 reconciliation합니다.
+
+Profile `DEPLOY` operation은 현재 game schema와 시즌 데이터를 유지한 채 선택
+commit의 game API, engine과 profile 전용 frontend artifact를 빌드합니다. 기존
+프로세스를 멈춘 뒤 `prisma migrate deploy`만 실행하고 seed는 호출하지 않습니다.
+새 API·frontend와 모든 worker가 PM2 `online`이고 HTTP readiness가 성공해야
+build commit을 게시합니다. 실패하면 이전 worktree 프로세스를 다시 시작합니다.
+`RESET` operation은 같은 build 경계를 사용한 뒤 현재 시즌 테이블을 seed로
+교체합니다. Seeder의 reset 목록에는 `hall`, `ng_games`, `yearbook_history`,
+과거 장수·국가와 상속·진단 자료가 포함되지 않습니다.
 
 시간 가속·연기는 일반 profile meta log가 아니라 UUID가 있는
 `GatewayRuntimeAction`으로 접수합니다. Profile별 `REQUESTED`/`PARTIAL`은
@@ -136,6 +148,15 @@ event catalog, in-memory state, dirty marking, flush와 reload 검증까지
 Gateway operation은 source commit, worktree, build artifact와 process를
 연결합니다. `tools/build-scripts/build-server.mjs`는 profile resource 복사만
 담당합니다.
+
+Gateway API·frontend·orchestrator 자신을 Gateway orchestrator가 교체하면
+작업 중인 실행자가 사라질 수 있습니다. 따라서 `app/release-controller`가
+별도 PM2 process로 `GatewayReleaseOperation`을 claim합니다. 선택 worktree의
+`release-manifest.json`에서 controller protocol, component와 gateway/game
+migration head를 확인하고 build와 gateway migration을 마친 뒤 Gateway 세
+process를 전환합니다. HTTP와 PM2 readiness 실패 시 이전 Gateway worktree를
+복구하고 성공한 경우에만 `GatewayReleaseState`의 현재·이전 commit을 바꿉니다.
+Controller 자체 갱신은 별도 CLI process의 `self-upgrade` 명령이 수행합니다.
 
 외부 공개 경로는 `/gateway/`, `/che/`, `/hwe/`입니다. frontend base,
 tRPC, SSE, upload와 direct navigation은 해당 prefix를 유지합니다.

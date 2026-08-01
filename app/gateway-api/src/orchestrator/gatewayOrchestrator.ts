@@ -18,6 +18,7 @@ import type {
 } from './profileRepository.js';
 import type { GitWorkspaceManager } from './workspaceManager.js';
 import type { AdminSeedUser } from './seedProfileDatabase.js';
+import { assertReleaseComponents, readReleaseManifest } from './releaseManifest.js';
 
 export interface GatewayProcessConfig {
     workspaceRoot: string;
@@ -37,10 +38,13 @@ export interface GatewayOrchestratorOptions {
     scheduleIntervalMs: number;
     buildIntervalMs: number;
     adminActionIntervalMs: number;
+    profileReadinessTimeoutMs?: number;
     now?: () => Date;
+    fetchImpl?: typeof fetch;
 }
 
 export interface ProfileRuntimeState {
+    frontendRunning: boolean;
     apiRunning: boolean;
     daemonRunning: boolean;
     auctionRunning: boolean;
@@ -73,6 +77,7 @@ export const planProfileReconcile = (
     if (status === 'RUNNING' || status === 'PREOPEN' || status === 'PAUSED' || status === 'COMPLETED') {
         return {
             shouldStart: !(
+                runtime.frontendRunning &&
                 runtime.apiRunning &&
                 runtime.daemonRunning &&
                 runtime.auctionRunning &&
@@ -85,6 +90,7 @@ export const planProfileReconcile = (
     return {
         shouldStart: false,
         shouldStop:
+            runtime.frontendRunning ||
             runtime.apiRunning ||
             runtime.daemonRunning ||
             runtime.auctionRunning ||
@@ -301,18 +307,20 @@ const parseInstallOptions = (
 
 const buildProcessName = (
     profileName: string,
-    role: 'api' | 'daemon' | 'auction' | 'battle-sim' | 'tournament'
+    role: 'frontend' | 'api' | 'daemon' | 'auction' | 'battle-sim' | 'tournament'
 ): string =>
     `sammo:${profileName}:${
-        role === 'api'
-            ? 'game-api'
-            : role === 'daemon'
-              ? 'turn-daemon'
-              : role === 'auction'
-                ? 'auction-worker'
-                : role === 'battle-sim'
-                  ? 'battle-sim-worker'
-                  : 'tournament-worker'
+        role === 'frontend'
+            ? 'game-frontend'
+            : role === 'api'
+              ? 'game-api'
+              : role === 'daemon'
+                ? 'turn-daemon'
+                : role === 'auction'
+                  ? 'auction-worker'
+                  : role === 'battle-sim'
+                    ? 'battle-sim-worker'
+                    : 'tournament-worker'
     }`;
 
 const isMissingProcessError = (error: unknown): boolean =>
@@ -335,6 +343,7 @@ export const buildProcessDefinitions = (
     profile: GatewayProfileRecord,
     config: GatewayProcessConfig
 ): {
+    frontend: { name: string; script: string; cwd: string; args: string[]; env: Record<string, string> };
     api: { name: string; script: string; cwd: string; env: Record<string, string> };
     daemon: { name: string; script: string; cwd: string; env: Record<string, string> };
     auction: { name: string; script: string; cwd: string; env: Record<string, string> };
@@ -342,12 +351,16 @@ export const buildProcessDefinitions = (
     tournament: { name: string; script: string; cwd: string; env: Record<string, string> };
 } => {
     const baseEnv = { ...(config.baseEnv ?? {}) };
+    const frontendName = buildProcessName(profile.profileName, 'frontend');
     const apiName = buildProcessName(profile.profileName, 'api');
     const daemonName = buildProcessName(profile.profileName, 'daemon');
     const auctionName = buildProcessName(profile.profileName, 'auction');
     const battleSimName = buildProcessName(profile.profileName, 'battle-sim');
     const tournamentName = buildProcessName(profile.profileName, 'tournament');
     const runtimeWorkspace = profile.buildWorkspace ?? config.workspaceRoot;
+    const frontendCwd = path.join(runtimeWorkspace, 'app', 'game-frontend');
+    const frontendOutDir = buildProfileFrontendOutDir(runtimeWorkspace, profile.profileName);
+    const frontendScript = path.join(runtimeWorkspace, 'node_modules', 'vite', 'bin', 'vite.js');
     const apiCwd = path.join(runtimeWorkspace, 'app', 'game-api');
     const daemonCwd = path.join(runtimeWorkspace, 'app', 'game-engine');
     const apiScript = path.join(apiCwd, 'dist', 'index.js');
@@ -373,6 +386,13 @@ export const buildProcessDefinitions = (
         TURN_PROFILE_NAME: profile.profileName,
     };
     return {
+        frontend: {
+            name: frontendName,
+            script: frontendScript,
+            cwd: frontendCwd,
+            args: ['preview', '--host', '0.0.0.0', '--port', String(profile.apiPort - 1), '--outDir', frontendOutDir],
+            env: baseEnv,
+        },
         api: {
             name: apiName,
             script: apiScript,
@@ -415,6 +435,39 @@ export const buildProcessDefinitions = (
     };
 };
 
+const sanitizeArtifactName = (value: string): string => value.replace(/[^0-9A-Za-z._-]+/g, '_');
+
+export const buildProfileFrontendOutDir = (workspaceRoot: string, profileName: string): string =>
+    path.join(workspaceRoot, '.release-dist', sanitizeArtifactName(profileName), 'game-frontend');
+
+export const buildProfileFrontendCommands = (
+    workspaceRoot: string,
+    profile: Pick<GatewayProfileRecord, 'profileName' | 'profile' | 'apiPort'>,
+    env?: Record<string, string>
+): BuildCommand[] => {
+    const buildEnv = {
+        ...(env ?? {}),
+        VITE_APP_BASE_PATH: `/${profile.profile}`,
+        VITE_GAME_API_URL: `/${profile.profile}/api/trpc`,
+        VITE_GAME_SSE_URL: `/${profile.profile}/api/events`,
+    };
+    const outDir = buildProfileFrontendOutDir(workspaceRoot, profile.profileName);
+    return [
+        {
+            command: 'pnpm',
+            args: ['--filter', '@sammo-ts/game-frontend', 'exec', 'vue-tsc', '--noEmit'],
+            cwd: workspaceRoot,
+            env: buildEnv,
+        },
+        {
+            command: 'pnpm',
+            args: ['--filter', '@sammo-ts/game-frontend', 'exec', 'vite', 'build', '--outDir', outDir],
+            cwd: workspaceRoot,
+            env: buildEnv,
+        },
+    ];
+};
+
 export const buildWorkspaceCommands = (
     workspaceRoot: string,
     needsInstall: boolean,
@@ -424,7 +477,7 @@ export const buildWorkspaceCommands = (
     if (needsInstall) {
         commands.push({
             command: 'pnpm',
-            args: ['install'],
+            args: ['install', '--frozen-lockfile'],
             cwd: workspaceRoot,
             env,
         });
@@ -462,6 +515,7 @@ export const buildProfileMigrationCommand = (
 
 const mapRuntimeStates = (profileNames: string[], processNames: Map<string, boolean>): ProfileRuntimeSnapshot[] =>
     profileNames.map((profileName) => {
+        const frontendName = buildProcessName(profileName, 'frontend');
         const apiName = buildProcessName(profileName, 'api');
         const daemonName = buildProcessName(profileName, 'daemon');
         const auctionName = buildProcessName(profileName, 'auction');
@@ -469,6 +523,7 @@ const mapRuntimeStates = (profileNames: string[], processNames: Map<string, bool
         const tournamentName = buildProcessName(profileName, 'tournament');
         return {
             profileName,
+            frontendRunning: processNames.get(frontendName) ?? false,
             apiRunning: processNames.get(apiName) ?? false,
             daemonRunning: processNames.get(daemonName) ?? false,
             auctionRunning: processNames.get(auctionName) ?? false,
@@ -487,7 +542,9 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     private readonly scheduleIntervalMs: number;
     private readonly buildIntervalMs: number;
     private readonly adminActionIntervalMs: number;
+    private readonly profileReadinessTimeoutMs: number;
     private readonly now: () => Date;
+    private readonly fetchImpl: typeof fetch;
     private reconcileTimer?: NodeJS.Timeout;
     private scheduleTimer?: NodeJS.Timeout;
     private buildTimer?: NodeJS.Timeout;
@@ -513,7 +570,9 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         this.scheduleIntervalMs = options.scheduleIntervalMs;
         this.buildIntervalMs = options.buildIntervalMs;
         this.adminActionIntervalMs = options.adminActionIntervalMs;
+        this.profileReadinessTimeoutMs = options.profileReadinessTimeoutMs ?? 30_000;
         this.now = options.now ?? (() => new Date());
+        this.fetchImpl = options.fetchImpl ?? fetch;
     }
 
     start(): void {
@@ -668,7 +727,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 startedAt,
                 error: null,
             });
-            const { result, workspace } = await this.runBuildCommands(queued.buildCommitSha);
+            const { result, workspace } = await this.runBuildCommands(queued.buildCommitSha, queued);
             const completedAt = this.now().toISOString();
             if (result.ok) {
                 await this.repository.updateWorkspaceUsage(
@@ -863,6 +922,19 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 }
             }
             await assertLease();
+            if (operation.type === 'DEPLOY') {
+                const result = await this.handleProfileDeploy(profile, commitSha, assertLease, operation.id);
+                if (!result.ok) {
+                    throw new Error(result.detail);
+                }
+                await this.repository.completeOperation(
+                    operation.id,
+                    'SUCCEEDED',
+                    { resolvedCommitSha: commitSha, error: null },
+                    this.operationLeaseOwner
+                );
+                return;
+            }
             const payload = normalizeMeta(operation.payload);
             const install = isRecord(payload.install) ? payload.install : {};
             const installOperationId =
@@ -920,6 +992,149 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                 }
                 throw completionError;
             }
+        }
+    }
+
+    private async handleProfileDeploy(
+        profile: GatewayProfileRecord,
+        commitSha: string,
+        assertLease: () => Promise<void>,
+        operationId: string
+    ): Promise<{ ok: true } | { ok: false; detail: string }> {
+        if (this.buildInFlight) {
+            return { ok: false, detail: 'build already in progress' };
+        }
+        this.buildInFlight = true;
+        const shouldRun = ['RUNNING', 'PREOPEN', 'PAUSED', 'COMPLETED'].includes(profile.status);
+        const updateClaimedProfile = async (patch: GatewayClaimedProfileUpdate): Promise<GatewayProfileRecord> => {
+            if (!this.repository.updateProfileForOperation) {
+                throw new Error('Profile deploy requires lease-fenced profile updates.');
+            }
+            const updated = await this.repository.updateProfileForOperation(
+                operationId,
+                this.operationLeaseOwner,
+                profile.profileName,
+                patch
+            );
+            if (!updated) {
+                throw new OperationLeaseLostError(`Operation lease lost while deploying profile: ${operationId}`);
+            }
+            return updated;
+        };
+        let oldRuntimeStopped = false;
+        try {
+            const startedAt = this.now().toISOString();
+            await updateClaimedProfile({
+                buildStatus: 'RUNNING',
+                buildRequestedAt: startedAt,
+                buildStartedAt: startedAt,
+                buildError: null,
+            });
+            const workspace = await this.workspaceManager.prepare(commitSha);
+            const manifest = await readReleaseManifest(workspace.root);
+            assertReleaseComponents(manifest, ['game-api', 'game-engine', 'game-frontend']);
+            const commands = [
+                ...buildWorkspaceCommands(workspace.root, workspace.needsInstall, this.processConfig.baseEnv),
+                ...buildProfileFrontendCommands(workspace.root, profile, this.processConfig.baseEnv),
+            ];
+            const result = await this.buildRunner.run(commands);
+            await assertLease();
+            if (!result.ok) {
+                const detail = result.output.slice(-4000) || 'selected workspace build failed';
+                await updateClaimedProfile({
+                    buildStatus: 'FAILED',
+                    buildCompletedAt: this.now().toISOString(),
+                    buildError: detail,
+                });
+                return { ok: false, detail };
+            }
+
+            await this.stopProfile(profile, assertLease);
+            oldRuntimeStopped = true;
+            const profileDatabaseUrl = this.resolveProfileDatabaseUrl(profile);
+            const migration = await this.runProfileMigration(workspace.root, profileDatabaseUrl);
+            await assertLease();
+            if (!migration.ok) {
+                const detail = migration.output.slice(-4000) || 'profile database migration failed';
+                if (shouldRun) {
+                    await this.startProfile(profile, assertLease);
+                    oldRuntimeStopped = false;
+                }
+                await updateClaimedProfile({
+                    buildStatus: 'FAILED',
+                    buildCompletedAt: this.now().toISOString(),
+                    buildError: detail,
+                });
+                return { ok: false, detail };
+            }
+
+            const completedAt = this.now().toISOString();
+            const candidate: GatewayProfileRecord = {
+                ...profile,
+                buildStatus: 'SUCCEEDED',
+                buildCommitSha: commitSha,
+                buildWorkspace: workspace.root,
+                buildLastUsedAt: completedAt,
+                buildCompletedAt: completedAt,
+                buildError: undefined,
+            };
+            if (shouldRun) {
+                const started = await this.startProfile(candidate, assertLease);
+                const ready = started && (await this.waitForProfileReadiness(candidate, assertLease));
+                if (!ready) {
+                    if (started) {
+                        await this.stopProfile(candidate, assertLease);
+                    }
+                    const rollbackStarted =
+                        (await this.startProfile(profile, assertLease)) &&
+                        (await this.waitForProfileReadiness(profile, assertLease));
+                    oldRuntimeStopped = !rollbackStarted;
+                    const detail = rollbackStarted
+                        ? 'new profile release failed readiness; previous runtime restored'
+                        : 'new profile release failed and previous runtime could not be restored';
+                    await updateClaimedProfile({
+                        buildStatus: 'FAILED',
+                        buildCompletedAt: completedAt,
+                        buildError: detail,
+                        lastError: detail,
+                        status: rollbackStarted ? profile.status : 'STOPPED',
+                    });
+                    return { ok: false, detail };
+                }
+            }
+            await assertLease();
+            await updateClaimedProfile({
+                buildStatus: 'SUCCEEDED',
+                buildCommitSha: commitSha,
+                buildWorkspace: workspace.root,
+                buildLastUsedAt: completedAt,
+                buildCompletedAt: completedAt,
+                buildError: null,
+                lastError: null,
+            });
+            oldRuntimeStopped = false;
+            return { ok: true };
+        } catch (error) {
+            if (error instanceof OperationLeaseLostError) {
+                throw error;
+            }
+            const detail = error instanceof Error ? error.message : String(error);
+            if (oldRuntimeStopped && shouldRun) {
+                try {
+                    await this.startProfile(profile, assertLease);
+                } catch {
+                    // The original error remains authoritative; reconciliation records the stopped runtime.
+                }
+            }
+            await updateClaimedProfile({
+                buildStatus: 'FAILED',
+                buildCompletedAt: this.now().toISOString(),
+                buildError: detail,
+                lastError: detail,
+            });
+            return { ok: false, detail };
+        } finally {
+            this.buildInFlight = false;
         }
     }
 
@@ -1095,7 +1310,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
                         commitSha,
                     })
             );
-            const { result, workspace } = await this.runBuildCommands(commitSha);
+            const { result, workspace } = await this.runBuildCommands(commitSha, profile);
             await assertLease?.();
             if (!result.ok) {
                 const completedAt = this.now().toISOString();
@@ -1289,12 +1504,18 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         return { databaseUrl, scenarioId, tickSeconds, meta };
     }
 
-    private async runBuildCommands(commitSha: string): Promise<{
+    private async runBuildCommands(
+        commitSha: string,
+        profile?: GatewayProfileRecord
+    ): Promise<{
         result: Awaited<ReturnType<BuildRunner['run']>>;
         workspace: Awaited<ReturnType<GitWorkspaceManager['prepare']>>;
     }> {
         const workspace = await this.workspaceManager.prepare(commitSha);
-        const commands = buildWorkspaceCommands(workspace.root, workspace.needsInstall, this.processConfig.baseEnv);
+        const commands = [
+            ...buildWorkspaceCommands(workspace.root, workspace.needsInstall, this.processConfig.baseEnv),
+            ...(profile ? buildProfileFrontendCommands(workspace.root, profile, this.processConfig.baseEnv) : []),
+        ];
         return { result: await this.buildRunner.run(commands), workspace };
     }
 
@@ -1403,6 +1624,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         for (const [workspace, entry] of workspaceMap.entries()) {
             const profileProcessNames = new Set(
                 entry.profileNames.flatMap((profileName) => [
+                    buildProcessName(profileName, 'frontend'),
                     buildProcessName(profileName, 'api'),
                     buildProcessName(profileName, 'daemon'),
                     buildProcessName(profileName, 'auction'),
@@ -1451,6 +1673,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     private async startProfile(profile: GatewayProfileRecord, assertLease?: () => Promise<void>): Promise<boolean> {
         const definitions = buildProcessDefinitions(profile, this.processConfig);
         const orderedDefinitions = [
+            definitions.frontend,
             definitions.api,
             definitions.daemon,
             definitions.auction,
@@ -1493,7 +1716,41 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         }
     }
 
+    private async waitForProfileReadiness(
+        profile: GatewayProfileRecord,
+        assertLease?: () => Promise<void>
+    ): Promise<boolean> {
+        const deadline = Date.now() + this.profileReadinessTimeoutMs;
+        const definitions = buildProcessDefinitions(profile, this.processConfig);
+        const expectedNames = Object.values(definitions).map((definition) => definition.name);
+        const apiUrl = `http://127.0.0.1:${profile.apiPort}/healthz`;
+        const frontendUrl = `http://127.0.0.1:${profile.apiPort - 1}/${profile.profile}/`;
+        while (Date.now() < deadline) {
+            await assertLease?.();
+            try {
+                const [api, frontend, processes] = await Promise.all([
+                    this.fetchImpl(apiUrl),
+                    this.fetchImpl(frontendUrl),
+                    this.processManager.list(),
+                ]);
+                const online = new Set(
+                    processes
+                        .filter((process) => process.status.toLowerCase() === 'online')
+                        .map((process) => process.name)
+                );
+                if (api.ok && frontend.ok && expectedNames.every((name) => online.has(name))) {
+                    return true;
+                }
+            } catch {
+                // Retry until the bounded deadline.
+            }
+            await new Promise<void>((resolve) => setTimeout(resolve, 500));
+        }
+        return false;
+    }
+
     private async stopProfile(profile: GatewayProfileRecord, assertLease?: () => Promise<void>): Promise<void> {
+        const frontendName = buildProcessName(profile.profileName, 'frontend');
         const apiName = buildProcessName(profile.profileName, 'api');
         const daemonName = buildProcessName(profile.profileName, 'daemon');
         const auctionName = buildProcessName(profile.profileName, 'auction');
@@ -1503,7 +1760,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         const existingNames = new Set((await this.processManager.list()).map((process) => process.name));
         await assertLease?.();
         const failures: string[] = [];
-        for (const name of [apiName, daemonName, auctionName, battleSimName, tournamentName]) {
+        for (const name of [frontendName, apiName, daemonName, auctionName, battleSimName, tournamentName]) {
             if (!existingNames.has(name)) {
                 continue;
             }

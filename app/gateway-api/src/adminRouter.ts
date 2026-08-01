@@ -39,6 +39,7 @@ const ROLE_SUPERUSER = 'superuser';
 const ROLE_ADMIN_USERS = 'admin.users.manage';
 const ROLE_ADMIN_USERS_CREATE = 'admin.users.create';
 const ROLE_ADMIN_PROFILES = 'admin.profiles.manage';
+const ROLE_ADMIN_RELEASES = 'admin.releases.manage';
 const ROLE_ADMIN_NOTICE = 'admin.notice.manage';
 const ROLE_RESET_SCHEDULE = 'admin.reset.schedule';
 const ROLE_RESUME_WHEN_STOPPED = 'admin.resume.when-stopped';
@@ -239,6 +240,12 @@ const userCreateProcedure = adminProcedure.use(({ ctx, next }) => {
 const profileAdminProcedure = adminProcedure.use(({ ctx, next }) => {
     const adminAuth = requireAdminAuth(ctx);
     assertPermission(adminAuth, ROLE_ADMIN_PROFILES);
+    return next();
+});
+
+const releaseAdminProcedure = adminProcedure.use(({ ctx, next }) => {
+    const adminAuth = requireAdminAuth(ctx);
+    assertPermission(adminAuth, ROLE_ADMIN_RELEASES);
     return next();
 });
 
@@ -766,6 +773,60 @@ export const adminRouter = router({
                     });
                 }
             }),
+        requestDeploy: adminProcedure
+            .input(
+                z.object({
+                    profileName: z.string().min(1),
+                    sourceMode: zSourceMode,
+                    sourceRef: z.string().min(1).max(128),
+                    reason: z.string().max(200).optional(),
+                })
+            )
+            .mutation(async ({ ctx, input }) => {
+                const adminAuth = requireAdminAuth(ctx);
+                assertPermission(adminAuth, ROLE_ADMIN_PROFILES, input.profileName);
+                const profile = await ctx.profiles.getProfile(input.profileName);
+                if (!profile) {
+                    throw new TRPCError({ code: 'NOT_FOUND', message: 'Profile not found.' });
+                }
+                let sourceRef = input.sourceRef.trim();
+                try {
+                    const resolved =
+                        input.sourceMode === 'BRANCH'
+                            ? await resolveGitBranchCommitSha(sourceRef)
+                            : await resolveGitCommitSha(sourceRef);
+                    if (input.sourceMode === 'COMMIT') {
+                        sourceRef = resolved;
+                    }
+                    const scenarios = await listScenarioPreviews({ gitRef: resolved });
+                    if (!scenarios.some((scenario) => String(scenario.id) === profile.scenario)) {
+                        throw new Error('Current scenario is not available at source.');
+                    }
+                } catch {
+                    throw new TRPCError({
+                        code: 'BAD_REQUEST',
+                        message: 'Source is invalid or does not contain the current scenario.',
+                    });
+                }
+                try {
+                    return await ctx.profiles.createOperation({
+                        profileName: input.profileName,
+                        type: 'DEPLOY',
+                        sourceMode: input.sourceMode,
+                        sourceRef,
+                        reason: input.reason,
+                        requestedBy: adminAuth.user.id,
+                    });
+                } catch (error) {
+                    if (!isUniqueConstraintError(error)) {
+                        throw error;
+                    }
+                    throw new TRPCError({
+                        code: 'CONFLICT',
+                        message: 'This profile already has a queued or running operation.',
+                    });
+                }
+            }),
         requestRuntime: adminProcedure
             .input(
                 z.object({
@@ -845,6 +906,103 @@ export const adminRouter = router({
             }
         }),
     }),
+    releases: router({
+        gatewayState: releaseAdminProcedure.query(({ ctx }) => ctx.releases.getState()),
+        list: releaseAdminProcedure
+            .input(z.object({ limit: z.number().int().min(1).max(200).optional() }).optional())
+            .query(({ ctx, input }) => ctx.releases.listOperations(input?.limit)),
+        requestGatewayDeploy: releaseAdminProcedure
+            .input(
+                z.object({
+                    sourceMode: zSourceMode,
+                    sourceRef: z.string().min(1).max(128),
+                    reason: z.string().max(200).optional(),
+                })
+            )
+            .mutation(async ({ ctx, input }) => {
+                const adminAuth = requireAdminAuth(ctx);
+                let sourceRef = input.sourceRef.trim();
+                try {
+                    const resolved =
+                        input.sourceMode === 'BRANCH'
+                            ? await resolveGitBranchCommitSha(sourceRef)
+                            : await resolveGitCommitSha(sourceRef);
+                    if (input.sourceMode === 'COMMIT') {
+                        sourceRef = resolved;
+                    }
+                } catch {
+                    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Gateway release source is invalid.' });
+                }
+                try {
+                    return await ctx.releases.createOperation({
+                        type: 'DEPLOY',
+                        sourceMode: input.sourceMode,
+                        sourceRef,
+                        reason: input.reason,
+                        requestedBy: adminAuth.user.id,
+                    });
+                } catch (error) {
+                    if (!isUniqueConstraintError(error)) {
+                        throw error;
+                    }
+                    throw new TRPCError({ code: 'CONFLICT', message: 'A gateway release is already active.' });
+                }
+            }),
+        requestGatewayRollback: releaseAdminProcedure
+            .input(z.object({ reason: z.string().max(200).optional() }).optional())
+            .mutation(async ({ ctx, input }) => {
+                const adminAuth = requireAdminAuth(ctx);
+                const state = await ctx.releases.getState();
+                if (!state.previousCommitSha || !state.previousWorkspace) {
+                    throw new TRPCError({ code: 'BAD_REQUEST', message: 'No previous gateway release is available.' });
+                }
+                try {
+                    return await ctx.releases.createOperation({
+                        type: 'ROLLBACK',
+                        sourceMode: 'COMMIT',
+                        sourceRef: state.previousCommitSha,
+                        payload: {
+                            expectedWorkspace: state.previousWorkspace,
+                            replacedCommitSha: state.activeCommitSha ?? null,
+                        },
+                        reason: input?.reason,
+                        requestedBy: adminAuth.user.id,
+                    });
+                } catch (error) {
+                    if (!isUniqueConstraintError(error)) {
+                        throw error;
+                    }
+                    throw new TRPCError({ code: 'CONFLICT', message: 'A gateway release is already active.' });
+                }
+            }),
+        cancel: releaseAdminProcedure.input(z.object({ id: z.string().uuid() })).mutation(async ({ ctx, input }) => {
+            if (!(await ctx.releases.cancelOperation(input.id))) {
+                throw new TRPCError({ code: 'CONFLICT', message: 'Only queued releases can be cancelled.' });
+            }
+            return { ok: true };
+        }),
+        retry: releaseAdminProcedure.input(z.object({ id: z.string().uuid() })).mutation(async ({ ctx, input }) => {
+            const adminAuth = requireAdminAuth(ctx);
+            try {
+                const operation = await ctx.releases.retryOperation(input.id, adminAuth.user.id);
+                if (!operation) {
+                    throw new TRPCError({
+                        code: 'CONFLICT',
+                        message: 'Only failed or cancelled releases can be retried.',
+                    });
+                }
+                return operation;
+            } catch (error) {
+                if (error instanceof TRPCError) {
+                    throw error;
+                }
+                if (!isUniqueConstraintError(error)) {
+                    throw error;
+                }
+                throw new TRPCError({ code: 'CONFLICT', message: 'A gateway release is already active.' });
+            }
+        }),
+    }),
     profiles: router({
         list: adminProcedure.query(async ({ ctx }) => {
             const profiles = await ctx.profiles.listProfiles();
@@ -883,6 +1041,7 @@ export const adminRouter = router({
                 activeOperation: activeOperationByProfile.get(profile.profileName) ?? null,
                 runtime: runtimeMap.get(profile.profileName) ?? {
                     profileName: profile.profileName,
+                    frontendRunning: false,
                     apiRunning: false,
                     daemonRunning: false,
                     auctionRunning: false,

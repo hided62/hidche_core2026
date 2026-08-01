@@ -4,6 +4,10 @@ import type { UserRepository } from './auth/userRepository.js';
 import type { KakaoOAuthClient } from './auth/kakaoClient.js';
 import type { OAuthSessionStore } from './auth/oauthSessionStore.js';
 import type { GatewayProfileRepository } from './orchestrator/profileRepository.js';
+import {
+    createGatewayReleaseRepository,
+    type GatewayReleaseRepository,
+} from './orchestrator/gatewayReleaseRepository.js';
 import type { GatewayOrchestratorHandle } from './orchestrator/gatewayOrchestrator.js';
 import type { GatewayProfileStatusService } from './lobby/profileStatusService.js';
 import type { GatewayPrismaClient } from '@sammo-ts/infra';
@@ -26,6 +30,7 @@ export interface GatewayApiContext {
     localAccountGraceDays: number;
     passwordEnvelope: PasswordEnvelopeService;
     profiles: GatewayProfileRepository;
+    releases: GatewayReleaseRepository;
     orchestrator: GatewayOrchestratorHandle;
     profileStatus: GatewayProfileStatusService;
     requestHeaders: Record<string, string | string[] | undefined>;
@@ -49,6 +54,7 @@ export const createGatewayApiContext = (options: {
     localAccountGraceDays: number;
     passwordEnvelope: PasswordEnvelopeService;
     profiles: GatewayProfileRepository;
+    releases?: GatewayReleaseRepository;
     orchestrator: GatewayOrchestratorHandle;
     profileStatus: GatewayProfileStatusService;
     requestHeaders?: Record<string, string | string[] | undefined>;
@@ -69,6 +75,7 @@ export const createGatewayApiContext = (options: {
     localAccountGraceDays: options.localAccountGraceDays,
     passwordEnvelope: options.passwordEnvelope,
     profiles: options.profiles,
+    releases: options.releases ?? createGatewayReleaseRepository(options.prisma),
     orchestrator: options.orchestrator,
     profileStatus: options.profileStatus,
     requestHeaders: options.requestHeaders ?? {},

@@ -10,6 +10,7 @@
 | ------------------------------ | -------------------------------------------------------------- |
 | `app/gateway-frontend`         | 가입, 로그인, 로비, 계정, 관리자 UI                            |
 | `app/gateway-api`              | 계정·세션, profile 정책, operation queue, PM2 orchestration    |
+| `app/release-controller`       | Gateway 전체 릴리스와 controller CLI self-upgrade              |
 | `app/game-frontend`            | profile별 게임 SPA와 ref 호환 화면                             |
 | `app/game-api`                 | tRPC, SSE, 인증, 조회·입력 API, 비동기 worker                  |
 | `app/game-engine`              | turn daemon, AI, 월간 lifecycle, in-memory world와 DB flush    |
@@ -34,6 +35,8 @@ Gateway는 계정과 profile 운영을 소유합니다. `gateway-api`가 gateway
 PostgreSQL과 Redis session을 사용하며, game session token을 발급합니다.
 관리 operation은 `GatewayProfile`과 `GatewayOperation`에 저장되고
 orchestrator가 commit별 worktree와 PM2 process를 조정합니다.
+Gateway 자체 릴리스는 Gateway 프로세스 밖의 `release-controller`가 별도
+`GatewayReleaseOperation` queue를 처리합니다.
 
 각 game profile은 별도 PostgreSQL schema를 사용합니다. `game-api`는 인증된
 요청을 검증하고 직접 처리할 mutation 또는 daemon 입력을
@@ -163,3 +166,11 @@ direct-navigation URL을 사용합니다. `/image/*`는 외부 Caddy가 소유�
 `build:server`는 profile resource를 `dist/<profile>`에 복사하는 도구입니다.
 완전한 API·daemon·frontend 배포 bundle은 gateway orchestrator의
 commit-worktree build 경로에서 구성합니다.
+
+관리자 화면의 `DB 유지 배포`는 profile의 game migration만 적용하고 현재
+게임 DB를 seed하지 않습니다. `DB 초기화 배포`는 현재 시즌 테이블을 새
+시나리오로 교체하지만 `hall`, `ng_games`, 연감, 과거 장수·국가와 상속 자료는
+보존합니다. Gateway API·frontend·orchestrator는 외부 release-controller가
+함께 전환합니다. 설치와 CLI self-upgrade 절차는
+[`app/release-controller/README.md`](app/release-controller/README.md)를 확인해
+주세요.

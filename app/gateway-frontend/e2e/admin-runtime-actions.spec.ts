@@ -121,6 +121,7 @@ const installFixture = async (
                             : null,
                         runtime: {
                             profileName: 'hwe:default',
+                            frontendRunning: true,
                             apiRunning: true,
                             daemonRunning: true,
                             auctionRunning: true,
@@ -179,6 +180,12 @@ const installFixture = async (
                           ]
                         : []
                 );
+            }
+            if (operation === 'admin.releases.gatewayState') {
+                return response({ id: 'gateway', updatedAt: '2026-08-01T00:00:00.000Z' });
+            }
+            if (operation === 'admin.releases.list') {
+                return response([]);
             }
             throw new Error(`Unhandled tRPC operation: ${operation}`);
         });

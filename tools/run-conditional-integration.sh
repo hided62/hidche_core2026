@@ -470,6 +470,8 @@ export GENERAL_LIFECYCLE_DATABASE_URL=$database_url
 export TURN_DAEMON_LEASE_DATABASE_URL=$database_url
 export TURN_DIFFERENTIAL_DATABASE_URL=$database_url
 export RESERVED_TURN_DATABASE_URL=$database_url
+export PROFILE_SEED_CLI_DATABASE_URL=$database_url
+export PROFILE_SEED_DATABASE_URL=$database_url
 
 pnpm --filter @sammo-ts/infra prisma:db:push:game
 
@@ -526,9 +528,12 @@ gateway_runtime_database_url=$(build_database_url "$gateway_runtime_schema")
     export POSTGRES_SCHEMA=$gateway_runtime_schema
     export DATABASE_URL=$gateway_runtime_database_url
     export GATEWAY_DATABASE_URL=$gateway_runtime_database_url
-    pnpm --filter @sammo-ts/infra prisma:db:push:gateway
+    pnpm --filter @sammo-ts/infra prisma:migrate:deploy:gateway
+    pnpm --filter @sammo-ts/infra prisma:migrate:deploy:gateway
 )
 export GATEWAY_RUNTIME_ACTION_DATABASE_URL=$gateway_runtime_database_url
+export GATEWAY_OPERATION_DATABASE_URL=$gateway_runtime_database_url
+export GATEWAY_RELEASE_DATABASE_URL=$gateway_runtime_database_url
 export GATEWAY_RUNTIME_INTEGRATION_SCHEMA=$gateway_runtime_schema
 run_marked_tests app/gateway-api \
     "$(markers_for_mode gateway_runtime)" \

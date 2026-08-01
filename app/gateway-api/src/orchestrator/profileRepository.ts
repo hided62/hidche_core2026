@@ -14,7 +14,7 @@ export type GatewayProfileStatus = (typeof GATEWAY_PROFILE_STATUSES)[number];
 export const GATEWAY_BUILD_STATUSES = ['IDLE', 'QUEUED', 'RUNNING', 'FAILED', 'SUCCEEDED'] as const;
 export type GatewayBuildStatus = (typeof GATEWAY_BUILD_STATUSES)[number];
 
-export const GATEWAY_OPERATION_TYPES = ['RESET', 'START', 'STOP'] as const;
+export const GATEWAY_OPERATION_TYPES = ['RESET', 'DEPLOY', 'START', 'STOP'] as const;
 export type GatewayOperationType = (typeof GATEWAY_OPERATION_TYPES)[number];
 
 export const GATEWAY_OPERATION_STATUSES = ['QUEUED', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELLED'] as const;
