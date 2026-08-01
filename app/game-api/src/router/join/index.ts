@@ -329,6 +329,8 @@ export const joinRouter = router({
                 id: ctx.auth?.user.id ?? '',
                 displayName: ctx.auth?.user.displayName ?? '',
                 canCreateGeneral: ctx.auth?.identity?.canCreateGeneral !== false,
+                icons: ctx.auth?.user.canUseGeneralPicture === false ? [] : (ctx.auth?.user.icons ?? []),
+                preferredPicture: ctx.auth?.user.picture ?? 'default.jpg',
             },
             personalities: [{ key: 'Random', name: '???', info: '무작위 성격을 선택합니다.' }, ...personalities],
             warSpecials,
@@ -383,6 +385,7 @@ export const joinRouter = router({
             z.object({
                 uniqueName: z.string().min(1).max(20),
                 personality: z.string().min(1),
+                iconId: z.string().uuid().optional(),
                 clientRequestId: z.string().uuid().optional(),
             })
         )
@@ -392,6 +395,10 @@ export const joinRouter = router({
                 throw new TRPCError({ code: 'UNAUTHORIZED' });
             }
             const userId = auth.user.id;
+            const selectedIcon = input.iconId ? auth.user.icons?.find((icon) => icon.id === input.iconId) : undefined;
+            if (input.iconId && (!selectedIcon || auth.user.canUseGeneralPicture === false)) {
+                throw new TRPCError({ code: 'FORBIDDEN', message: '사용 가능한 내 전용 아이콘이 아닙니다.' });
+            }
             if (auth.identity?.canCreateGeneral === false) {
                 throw new TRPCError({
                     code: 'FORBIDDEN',
@@ -407,6 +414,13 @@ export const joinRouter = router({
                 uniqueName: input.uniqueName,
                 personality: input.personality,
                 seedOwnerIdentity: auth.user.legacyMemberNo ?? userId,
+                ...(selectedIcon
+                    ? {
+                          ownerPicture: selectedIcon.picture,
+                          ownerImageServer: selectedIcon.imageServer,
+                          ownerIconRevision: auth.user.iconUpdatedAt ?? selectedIcon.createdAt,
+                      }
+                    : {}),
             });
             return resolveSelectionCommandResult(result, 'selectPoolCreate');
         }),
@@ -446,6 +460,7 @@ export const joinRouter = router({
                 strength: z.number().int(),
                 intel: z.number().int(),
                 pic: z.boolean(),
+                iconId: z.string().uuid().optional(),
                 character: zJoinPersonality,
                 clientRequestId: z.string().uuid().optional(),
                 inheritSpecial: z.string().optional(),
@@ -466,7 +481,19 @@ export const joinRouter = router({
                 });
             }
             const userId = auth.user.id;
-            const accountIcon = input.pic ? await loadAuthoritativeAccountIcon(ctx, userId) : null;
+            const selectedIcon = input.iconId ? auth.user.icons?.find((icon) => icon.id === input.iconId) : undefined;
+            if (input.iconId && (!selectedIcon || auth.user.canUseGeneralPicture === false)) {
+                throw new TRPCError({ code: 'FORBIDDEN', message: '사용 가능한 내 전용 아이콘이 아닙니다.' });
+            }
+            const accountIcon = input.pic
+                ? selectedIcon
+                    ? {
+                          picture: selectedIcon.picture,
+                          imageServer: selectedIcon.imageServer,
+                          revision: auth.user.iconUpdatedAt ?? selectedIcon.createdAt,
+                      }
+                    : await loadAuthoritativeAccountIcon(ctx, userId)
+                : null;
             const commandRequestId = resolveJoinCreateRequestId(ctx.requestId, userId, input.clientRequestId);
             const result = await requestJoinCreateCommand(ctx, {
                 type: 'joinCreateGeneral',

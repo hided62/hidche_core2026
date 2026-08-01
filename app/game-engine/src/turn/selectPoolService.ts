@@ -515,6 +515,9 @@ export const createGeneralFromSelectionPool = async (options: {
     personality: string;
     now?: Date;
     seedOwnerIdentity?: string | number;
+    ownerPicture?: string;
+    ownerImageServer?: number;
+    ownerIconRevision?: string;
 }): Promise<{ ok: true; generalId: number }> => {
     const { db, world, worldState, userId, ownerDisplayName, uniqueName } = options;
     requirePoolWorld(worldState);
@@ -555,7 +558,10 @@ export const createGeneralFromSelectionPool = async (options: {
     );
     const prestartDeleteAfter = buildPrestartDeleteAfter(now, worldState.tickSeconds, config);
     const showImgLevel = asNumber(config.showImgLevel, 0);
-    const picture = showImgLevel >= 3 ? info.picture : 'default.jpg';
+    const useOwnerPicture =
+        showImgLevel >= 1 && typeof options.ownerPicture === 'string' && options.ownerPicture !== 'default.jpg';
+    const picture = useOwnerPicture ? options.ownerPicture! : showImgLevel >= 3 ? info.picture : 'default.jpg';
+    const imageServer = useOwnerPicture ? (options.ownerImageServer ?? 1) : info.imgsvr;
     const defaultSpecialWar =
         typeof configConst.defaultSpecialWar === 'string' ? configConst.defaultSpecialWar : 'None';
     const personality = resolveSelectedPersonality(worldState, seedOwnerIdentity, uniqueName, options.personality);
@@ -576,7 +582,7 @@ export const createGeneralFromSelectionPool = async (options: {
         bornYear: worldState.currentYear - age,
         deadYear: worldState.currentYear + 60,
         picture,
-        imageServer: info.imgsvr,
+        imageServer,
         stats: {
             leadership: info.leadership,
             strength: info.strength,
@@ -630,6 +636,9 @@ export const createGeneralFromSelectionPool = async (options: {
             next_change: nextChangeAt.toISOString(),
             nextChangeAt: nextChangeAt.toISOString(),
             prestart_delete_after: prestartDeleteAfter.toISOString(),
+            ...(useOwnerPicture && options.ownerIconRevision
+                ? { accountIconUpdatedAt: options.ownerIconRevision }
+                : {}),
             npc_org: 0,
         },
     };

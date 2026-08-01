@@ -13,6 +13,7 @@ export interface UserRecord {
     iconUpdatedAt?: string;
     iconRevision?: string;
     profileIconResetAt?: string;
+    iconRetiredAt?: string;
     thirdPartyUse: boolean;
     termsAcceptedAt?: string;
     privacyAcceptedAt?: string;
@@ -25,6 +26,22 @@ export interface UserRecord {
     legacyMemberNo?: number;
     legacyGrade?: number;
 }
+
+export interface UserIconRecord {
+    id: string;
+    userId: string;
+    picture: string;
+    imageServer: number;
+    createdAt: string;
+    retiredAt?: string;
+}
+
+export type AddUserIconResult =
+    { ok: true; icon: UserIconRecord; revision: string } | { ok: false; reason: 'COOLDOWN' | 'LIMIT' | 'NOT_FOUND' };
+
+export type RetireUserIconResult =
+    | { ok: true; icon: UserIconRecord; revision: string; preferredChanged: boolean }
+    | { ok: false; reason: 'COOLDOWN' | 'NOT_FOUND' | 'ALREADY_RETIRED' };
 
 export interface PublicUser {
     id: string;
@@ -110,8 +127,20 @@ export interface UserRepository {
         imageServer: number,
         updatedAt: Date,
         dayStart: Date,
-        consumeDailyQuota: boolean
+        consumeDailyQuota: boolean,
+        allowCutoffEquality?: boolean
     ): Promise<string | null>;
+    listIcons(userId: string, includeRetired?: boolean): Promise<UserIconRecord[]>;
+    addIconForWindow(
+        userId: string,
+        picture: string,
+        imageServer: number,
+        now: Date,
+        uploadCutoff: Date,
+        maxActive: number
+    ): Promise<AddUserIconResult>;
+    setPreferredIcon(userId: string, iconId: string, now: Date): Promise<string | null>;
+    retireIconForWindow(userId: string, iconId: string, now: Date, retireCutoff: Date): Promise<RetireUserIconResult>;
     resetProfileIcon(userId: string, requestedAt: Date): Promise<string | null>;
     setThirdPartyUse(userId: string, allowed: boolean): Promise<void>;
     scheduleDeletion(userId: string, deleteAfter: Date): Promise<void>;

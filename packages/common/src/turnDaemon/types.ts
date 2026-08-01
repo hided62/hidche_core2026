@@ -212,6 +212,7 @@ export type TurnDaemonCommand =
           picture: string;
           imageServer: number;
           iconRevision: string;
+          enforceCooldown?: boolean;
       }
     | {
           type: 'joinCreateGeneral';
@@ -254,6 +255,9 @@ export type TurnDaemonCommand =
           uniqueName: string;
           personality: string;
           seedOwnerIdentity: string | number;
+          ownerPicture?: string;
+          ownerImageServer?: number;
+          ownerIconRevision?: string;
       }
     | {
           type: 'selectPoolReselect';
@@ -534,8 +538,9 @@ export type TurnDaemonCommandResult =
     | {
           type: 'adjustGeneralIcon';
           ok: false;
-          code: 'CONFLICT' | 'PRECONDITION_FAILED';
+          code: 'CONFLICT' | 'PRECONDITION_FAILED' | 'TOO_MANY_REQUESTS';
           reason: string;
+          availableAt?: string;
       }
     | {
           type: 'joinCreateGeneral';

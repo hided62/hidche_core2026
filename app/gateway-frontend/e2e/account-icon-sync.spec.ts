@@ -62,6 +62,8 @@ const activeProfiles = [
 
 const installFixture = async (page: Page, options: FixtureOptions = {}) => {
     let deleteIconCount = 0;
+    let preferredIconCount = 0;
+    let retireIconCount = 0;
     let hweAdjustCount = 0;
     const operations = new Map<string, string[]>([
         ['che:903', []],
@@ -83,6 +85,28 @@ const installFixture = async (page: Page, options: FixtureOptions = {}) => {
                     oauthType: 'NONE',
                     createdAt: '2026-07-30T00:00:00.000Z',
                     iconUrl: '/gateway/api/user-icons/old.png',
+                    icons: [
+                        {
+                            id: '3f804277-584f-4f44-b39c-9ecf40d1ed31',
+                            picture: 'old.png',
+                            imageServer: 1,
+                            createdAt: '2026-07-30T00:00:00.000Z',
+                            retiredAt: null,
+                            url: '/gateway/api/user-icons/old.png',
+                        },
+                        {
+                            id: '9bc328b0-3fc8-44ec-a845-287e438e8edf',
+                            picture: 'second.png',
+                            imageServer: 1,
+                            createdAt: '2026-07-31T00:00:00.000Z',
+                            retiredAt: null,
+                            url: '/gateway/api/user-icons/second.png',
+                        },
+                    ],
+                    preferredPicture: 'old.png',
+                    maxActiveIcons: 5,
+                    nextUploadAt: null,
+                    nextRetireAt: null,
                     thirdPartyUse: false,
                     deleteAfter: null,
                 });
@@ -93,6 +117,20 @@ const installFixture = async (page: Page, options: FixtureOptions = {}) => {
                     iconUrl: '/gateway/api/user-icons/new.png',
                     revision: '2026-07-31T09:00:00.001Z',
                     profiles: activeProfiles,
+                    flushPublished: true,
+                });
+            }
+            if (operation === 'account.setPreferredIcon') {
+                preferredIconCount += 1;
+                return response({ ok: true, revision: '2026-08-01T00:00:00.001Z', flushPublished: true });
+            }
+            if (operation === 'account.retireIcon') {
+                retireIconCount += 1;
+                return response({
+                    ok: true,
+                    revision: '2026-08-01T00:00:00.002Z',
+                    preferredChanged: false,
+                    iconUrl: '/gateway/api/user-icons/old.png',
                     flushPublished: true,
                 });
             }
@@ -182,8 +220,27 @@ const installFixture = async (page: Page, options: FixtureOptions = {}) => {
     return {
         operations,
         deleteIconCount: () => deleteIconCount,
+        preferredIconCount: () => preferredIconCount,
+        retireIconCount: () => retireIconCount,
     };
 };
+
+test('chooses a preferred library icon and retires an icon only after confirmation', async ({ page }) => {
+    const fixture = await installFixture(page);
+    await page.goto('account');
+    await expect(page.locator('.account-icon-card')).toHaveCount(2);
+    await expect(page.getByText('2 / 5개')).toBeVisible();
+
+    await page.getByRole('button', { name: '대표로 설정' }).click();
+    await expect.poll(fixture.preferredIconCount).toBe(1);
+
+    page.once('dialog', async (dialog) => {
+        expect(dialog.message()).toContain('과거 기록의 이미지는 보존됩니다');
+        await dialog.accept();
+    });
+    await page.getByRole('button', { name: '목록에서 내리기' }).first().click();
+    await expect.poll(fixture.retireIconCount).toBe(1);
+});
 
 const uploadIcon = async (page: Page): Promise<void> => {
     await page.locator('input[type="file"]').setInputFiles({

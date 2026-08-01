@@ -15,6 +15,7 @@ type PendingSelectionAction = {
     operation: 'create' | 'reselect';
     uniqueName: string;
     personality?: string;
+    iconId?: string;
     clientRequestId: string;
 };
 
@@ -26,6 +27,7 @@ const reservation = ref<Reservation | null>(null);
 const selectedUniqueName = ref<string | null>(null);
 const nations = ref<Nation[]>([]);
 const personality = ref('Random');
+const selectedIconId = ref('');
 const loading = ref(true);
 const submitting = ref(false);
 const error = ref('');
@@ -66,7 +68,8 @@ const readPendingAction = (): PendingSelectionAction | null => {
         if (
             (value.operation !== 'create' && value.operation !== 'reselect') ||
             typeof value.uniqueName !== 'string' ||
-            typeof value.clientRequestId !== 'string'
+            typeof value.clientRequestId !== 'string' ||
+            (value.iconId !== undefined && typeof value.iconId !== 'string')
         ) {
             return null;
         }
@@ -79,13 +82,15 @@ const readPendingAction = (): PendingSelectionAction | null => {
 const getPendingAction = (
     operation: PendingSelectionAction['operation'],
     uniqueName: string,
-    requestedPersonality?: string
+    requestedPersonality?: string,
+    requestedIconId?: string
 ): PendingSelectionAction => {
     const current = readPendingAction();
     if (
         current?.operation === operation &&
         current.uniqueName === uniqueName &&
-        current.personality === requestedPersonality
+        current.personality === requestedPersonality &&
+        current.iconId === requestedIconId
     ) {
         return current;
     }
@@ -93,6 +98,7 @@ const getPendingAction = (
         operation,
         uniqueName,
         ...(requestedPersonality ? { personality: requestedPersonality } : {}),
+        ...(requestedIconId ? { iconId: requestedIconId } : {}),
         clientRequestId: crypto.randomUUID(),
     };
     window.sessionStorage.setItem(pendingActionStorageKey, JSON.stringify(next));
@@ -200,11 +206,12 @@ const createGeneral = async (): Promise<void> => {
         return;
     }
     submitting.value = true;
-    const pending = getPendingAction('create', candidate.uniqueName, personality.value);
+    const pending = getPendingAction('create', candidate.uniqueName, personality.value, selectedIconId.value);
     try {
         await trpc.join.selectPoolGeneral.mutate({
             uniqueName: candidate.uniqueName,
             personality: personality.value,
+            ...(selectedIconId.value ? { iconId: selectedIconId.value } : {}),
             clientRequestId: pending.clientRequestId,
         });
         clearPendingAction(pending);
@@ -430,6 +437,24 @@ onBeforeUnmount(() => {
                                     <span>
                                         {{ personalities.find((entry) => entry.key === personality)?.info ?? '' }}
                                     </span>
+                                </td>
+                            </tr>
+                            <tr v-if="config?.user.icons.length">
+                                <th class="legacy-bg1">전콘 선택</th>
+                                <td class="pool-icon-choice">
+                                    <label>
+                                        <input v-model="selectedIconId" type="radio" value="" /> 선택한 장수 전콘
+                                    </label>
+                                    <label v-for="icon in config.user.icons" :key="icon.id">
+                                        <input v-model="selectedIconId" type="radio" :value="icon.id" />
+                                        <img
+                                            :src="resolveGeneralIconUrl(icon)"
+                                            width="64"
+                                            height="64"
+                                            alt="내 전용 아이콘"
+                                            @error="useDefaultGeneralIcon"
+                                        />
+                                    </label>
                                 </td>
                             </tr>
                             <tr>

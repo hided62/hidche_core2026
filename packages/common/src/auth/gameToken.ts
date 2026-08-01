@@ -32,6 +32,14 @@ export interface GatewayUserInfo {
     canUseGeneralPicture?: boolean;
     createdAt?: string;
     legacyMemberNo?: number;
+    icons?: GatewayUserIconInfo[];
+}
+
+export interface GatewayUserIconInfo {
+    id: string;
+    picture: string;
+    imageServer: number;
+    createdAt: string;
 }
 
 export interface GameSessionTokenPayload {
@@ -98,6 +106,20 @@ export const parseGameSessionTokenPayload = (value: unknown): GameSessionTokenPa
         (user.profileIconResetAt !== undefined &&
             (typeof user.profileIconResetAt !== 'string' || !isCanonicalIsoTimestamp(user.profileIconResetAt))) ||
         (user.canUseGeneralPicture !== undefined && typeof user.canUseGeneralPicture !== 'boolean') ||
+        (user.icons !== undefined &&
+            (!Array.isArray(user.icons) ||
+                user.icons.length > 5 ||
+                user.icons.some(
+                    (icon) =>
+                        !icon ||
+                        typeof icon !== 'object' ||
+                        typeof icon.id !== 'string' ||
+                        typeof icon.picture !== 'string' ||
+                        !Number.isSafeInteger(icon.imageServer) ||
+                        icon.imageServer < 0 ||
+                        typeof icon.createdAt !== 'string' ||
+                        !isCanonicalIsoTimestamp(icon.createdAt)
+                ))) ||
         (user.legacyMemberNo !== undefined && (!Number.isSafeInteger(user.legacyMemberNo) || user.legacyMemberNo <= 0))
     ) {
         return null;

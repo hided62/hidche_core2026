@@ -43,6 +43,7 @@ const error = ref<string | null>(null);
 const submitting = ref(false);
 
 const joinConfig = ref<JoinConfig | null>(null);
+const accountIcons = computed(() => joinConfig.value?.user.icons ?? []);
 const activeTab = ref<'create' | 'possess'>('create');
 const pendingJoinStorageKey = 'sammo-join-create-pending-action';
 const pendingPossessStorageKey = 'sammo-npc-possess-pending-action';
@@ -54,6 +55,7 @@ const form = ref<JoinForm>({
     intel: 0,
     character: 'Random',
     pic: true,
+    iconId: undefined,
     inheritBonusStat: [0, 0, 0],
 });
 
@@ -401,6 +403,7 @@ const loadConfig = async () => {
             form.value = pending.input;
         } else {
             form.value.name = config.rules.allowCustomName ? config.user.displayName || '' : '무작위';
+            form.value.iconId = config.user.icons.find((icon) => icon.picture === config.user.preferredPicture)?.id;
             applyBalancedStats();
         }
     } catch (err) {
@@ -642,6 +645,23 @@ onUnmounted(() => {
                         <span>지력</span>
                         <input v-model.number="form.intel" type="number" class="form-input" />
                     </label>
+                </div>
+
+                <div v-if="accountIcons.length" class="icon-choice">
+                    <div class="bonus-title">전용 아이콘 선택</div>
+                    <label class="icon-option"> <input v-model="form.pic" type="checkbox" /> 전용 아이콘 사용 </label>
+                    <div v-if="form.pic" class="icon-list" role="radiogroup" aria-label="전용 아이콘 선택">
+                        <label v-for="icon in accountIcons" :key="icon.id" class="icon-card">
+                            <input v-model="form.iconId" type="radio" :value="icon.id" />
+                            <img
+                                :src="resolveGeneralIconUrl({ picture: icon.picture, imageServer: icon.imageServer })"
+                                width="64"
+                                height="64"
+                                alt=""
+                                @error="useDefaultGeneralIcon"
+                            />
+                        </label>
+                    </div>
                 </div>
 
                 <div class="stat-actions">
@@ -1380,5 +1400,18 @@ onUnmounted(() => {
 
 .ghost {
     background: transparent;
+}
+
+.icon-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+.icon-card {
+    display: flex;
+    align-items: center;
+    gap: 3px;
 }
 </style>

@@ -14,6 +14,9 @@ import { resolveEffectiveAccountIcon } from '../auth/accountIconProjection.js';
 
 const zSessionToken = z.string().min(1);
 const MAX_ICON_BYTES = 50 * 1024;
+const MAX_ACTIVE_ICONS = 5;
+const ICON_UPLOAD_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+const ICON_RETIRE_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 const ALLOWED_ICON_FORMATS = new Set(['avif', 'webp', 'jpeg', 'png', 'gif']);
 
 const requireSessionUser = async (ctx: GatewayApiContext, sessionToken: string): Promise<UserRecord> => {
@@ -46,8 +49,12 @@ export const kstDayStart = (value: Date): Date => {
 };
 
 const assertIconChangeAvailable = (user: UserRecord, now: Date): void => {
-    if (user.picture !== 'default.jpg' && user.iconUpdatedAt && new Date(user.iconUpdatedAt) >= kstDayStart(now)) {
-        throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: '아이콘은 하루에 한 번만 변경할 수 있습니다.' });
+    if (
+        user.picture !== 'default.jpg' &&
+        user.iconUpdatedAt &&
+        new Date(user.iconUpdatedAt).getTime() > now.getTime() - ICON_UPLOAD_COOLDOWN_MS
+    ) {
+        throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: '아이콘 업로드는 24시간에 한 번만 가능합니다.' });
     }
 };
 
@@ -66,6 +73,18 @@ const buildIconUrl = (ctx: GatewayApiContext, user: UserRecord): string | null =
     if (icon.imageServer !== 1 || icon.picture === 'default.jpg') return null;
     return `${ctx.userIconPublicUrl.replace(/\/$/, '')}/${encodeURIComponent(icon.picture)}`;
 };
+
+const buildLibraryIcon = (
+    ctx: GatewayApiContext,
+    icon: Awaited<ReturnType<GatewayApiContext['users']['listIcons']>>[number]
+) => ({
+    id: icon.id,
+    picture: icon.picture,
+    imageServer: icon.imageServer,
+    createdAt: icon.createdAt,
+    retiredAt: icon.retiredAt ?? null,
+    url: `${ctx.userIconPublicUrl.replace(/\/$/, '')}/${encodeURIComponent(icon.picture)}`,
+});
 
 const listIconSyncProfiles = async (ctx: GatewayApiContext, userId: string) =>
     (await ctx.profileStatus.listLobbyProfiles({ userId }))
@@ -95,6 +114,7 @@ const publishIconFlush = async (
 export const accountRouter = router({
     get: procedure.input(z.object({ sessionToken: zSessionToken })).query(async ({ ctx, input }) => {
         const user = await requireSessionUser(ctx, input.sessionToken);
+        const icons = await ctx.users.listIcons(user.id);
         return {
             id: user.id,
             username: user.username,
@@ -103,6 +123,15 @@ export const accountRouter = router({
             oauthType: user.oauthType,
             createdAt: user.createdAt,
             iconUrl: buildIconUrl(ctx, user),
+            icons: icons.map((icon) => buildLibraryIcon(ctx, icon)),
+            preferredPicture: resolveEffectiveAccountIcon(user).picture,
+            maxActiveIcons: MAX_ACTIVE_ICONS,
+            nextUploadAt: user.iconUpdatedAt
+                ? new Date(new Date(user.iconUpdatedAt).getTime() + ICON_UPLOAD_COOLDOWN_MS).toISOString()
+                : null,
+            nextRetireAt: user.iconRetiredAt
+                ? new Date(new Date(user.iconRetiredAt).getTime() + ICON_RETIRE_COOLDOWN_MS).toISOString()
+                : null,
             thirdPartyUse: user.thirdPartyUse,
             deleteAfter: user.deleteAfter ?? null,
         };
@@ -184,26 +213,83 @@ export const accountRouter = router({
             const filename = `${randomBytes(8).toString('hex')}.${extension}`;
             await fs.mkdir(ctx.userIconDir, { recursive: true });
             await fs.writeFile(path.join(ctx.userIconDir, filename), buffer, { flag: 'wx' });
-            let revision: string | null;
+            let stored;
             try {
-                revision = await ctx.users.updateIconForDay(user.id, filename, 1, now, kstDayStart(now), true);
+                stored = await ctx.users.addIconForWindow(
+                    user.id,
+                    filename,
+                    1,
+                    now,
+                    new Date(now.getTime() - ICON_UPLOAD_COOLDOWN_MS),
+                    MAX_ACTIVE_ICONS
+                );
             } catch (error) {
                 await fs.rm(path.join(ctx.userIconDir, filename), { force: true });
                 throw error;
             }
-            if (!revision) {
+            if (!stored.ok) {
                 await fs.rm(path.join(ctx.userIconDir, filename), { force: true });
+                if (stored.reason === 'LIMIT') {
+                    throw new TRPCError({
+                        code: 'PRECONDITION_FAILED',
+                        message: '전용 아이콘은 최대 5개까지 등록할 수 있습니다.',
+                    });
+                }
                 throw new TRPCError({
                     code: 'TOO_MANY_REQUESTS',
-                    message: '아이콘은 하루에 한 번만 변경할 수 있습니다.',
+                    message: '아이콘 업로드는 24시간에 한 번만 가능합니다.',
                 });
             }
             const flushPublished = await publishIconFlush(ctx, user.id, 'account-icon-changed');
             return {
                 ok: true,
                 iconUrl: `${ctx.userIconPublicUrl.replace(/\/$/, '')}/${filename}`,
-                revision,
+                revision: stored.revision,
+                icon: buildLibraryIcon(ctx, stored.icon),
                 profiles,
+                flushPublished,
+            };
+        }),
+    setPreferredIcon: procedure
+        .input(z.object({ sessionToken: zSessionToken, iconId: z.string().uuid() }))
+        .mutation(async ({ ctx, input }) => {
+            const user = await requireSessionUser(ctx, input.sessionToken);
+            const revision = await ctx.users.setPreferredIcon(user.id, input.iconId, new Date());
+            if (!revision) {
+                throw new TRPCError({ code: 'NOT_FOUND', message: '사용 가능한 내 전용 아이콘이 아닙니다.' });
+            }
+            const updated = await ctx.users.findById(user.id);
+            if (!updated) throw new TRPCError({ code: 'NOT_FOUND' });
+            const flushPublished = await publishIconFlush(ctx, user.id, 'account-icon-changed');
+            return { ok: true, revision, iconUrl: buildIconUrl(ctx, updated), flushPublished };
+        }),
+    retireIcon: procedure
+        .input(z.object({ sessionToken: zSessionToken, iconId: z.string().uuid() }))
+        .mutation(async ({ ctx, input }) => {
+            const user = await requireSessionUser(ctx, input.sessionToken);
+            const now = new Date();
+            const result = await ctx.users.retireIconForWindow(
+                user.id,
+                input.iconId,
+                now,
+                new Date(now.getTime() - ICON_RETIRE_COOLDOWN_MS)
+            );
+            if (!result.ok) {
+                if (result.reason === 'COOLDOWN') {
+                    throw new TRPCError({
+                        code: 'TOO_MANY_REQUESTS',
+                        message: '전용 아이콘은 7일에 한 번만 목록에서 내릴 수 있습니다.',
+                    });
+                }
+                throw new TRPCError({ code: 'NOT_FOUND', message: '사용 가능한 내 전용 아이콘이 아닙니다.' });
+            }
+            const updated = await ctx.users.findById(user.id);
+            const flushPublished = await publishIconFlush(ctx, user.id, 'account-icon-changed');
+            return {
+                ok: true,
+                revision: result.revision,
+                preferredChanged: result.preferredChanged,
+                iconUrl: updated ? buildIconUrl(ctx, updated) : null,
                 flushPublished,
             };
         }),
@@ -212,11 +298,19 @@ export const accountRouter = router({
         const now = new Date();
         assertIconChangeAvailable(user, now);
         const profiles = await listIconSyncProfiles(ctx, user.id);
-        const revision = await ctx.users.updateIconForDay(user.id, 'default.jpg', 0, now, kstDayStart(now), false);
+        const revision = await ctx.users.updateIconForDay(
+            user.id,
+            'default.jpg',
+            0,
+            now,
+            new Date(now.getTime() - ICON_UPLOAD_COOLDOWN_MS),
+            false,
+            true
+        );
         if (!revision) {
             throw new TRPCError({
                 code: 'TOO_MANY_REQUESTS',
-                message: '아이콘은 하루에 한 번만 변경할 수 있습니다.',
+                message: '아이콘 변경은 24시간에 한 번만 가능합니다.',
             });
         }
         const flushPublished = await publishIconFlush(ctx, user.id, 'account-icon-deleted');

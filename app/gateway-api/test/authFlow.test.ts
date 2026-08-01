@@ -781,7 +781,7 @@ describe('account self service', () => {
         expect(flushPublisher.publishUserFlush).toHaveBeenCalledWith(user.id, 'account-icon-deleted');
     });
 
-    it('uses the Asia/Seoul day boundary and preserves Ref delete-to-upload behavior', async () => {
+    it('uses a rolling 24-hour upload window and preserves delete-to-upload behavior', async () => {
         const iconDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sammo-account-icon-kst-'));
         const png = await sharp({
             create: {
@@ -809,11 +809,17 @@ describe('account self service', () => {
             });
 
             vi.setSystemTime(new Date('2026-07-31T15:00:00.000Z'));
-            const deleted = await caller.account.deleteIcon({ sessionToken: session.sessionToken });
-            expect(deleted.revision).toBe('2026-07-31T15:00:00.000Z');
+            await expect(caller.account.deleteIcon({ sessionToken: session.sessionToken })).rejects.toMatchObject({
+                code: 'TOO_MANY_REQUESTS',
+            });
+
+            vi.setSystemTime(new Date('2026-08-01T00:00:00.000Z'));
+            const nextSession = await sessions.createSession(user);
+            const deleted = await caller.account.deleteIcon({ sessionToken: nextSession.sessionToken });
+            expect(deleted.revision).toBe('2026-08-01T00:00:00.000Z');
 
             const changed = await caller.account.changeIcon({
-                sessionToken: session.sessionToken,
+                sessionToken: nextSession.sessionToken,
                 imageData: `data:image/png;base64,${png.toString('base64')}`,
             });
             expect(new Date(changed.revision).getTime()).toBeGreaterThan(new Date(deleted.revision).getTime());

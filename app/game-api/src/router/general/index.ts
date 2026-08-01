@@ -174,13 +174,33 @@ const resolvePenalty = (penalty: unknown): Record<string, number> => {
 };
 
 export const generalRouter = router({
-    adjustIcon: engineAuthedProcedure.mutation(({ ctx }) => {
-        const userId = ctx.auth?.user.id;
-        if (!userId) {
-            throw new TRPCError({ code: 'UNAUTHORIZED' });
-        }
-        return adjustAccountIconForUser(ctx, userId);
-    }),
+    adjustIcon: engineAuthedProcedure
+        .input(
+            z.object({ iconId: z.string().uuid().optional(), clientRequestId: z.string().uuid().optional() }).optional()
+        )
+        .mutation(({ ctx, input }) => {
+            const userId = ctx.auth?.user.id;
+            if (!userId) {
+                throw new TRPCError({ code: 'UNAUTHORIZED' });
+            }
+            const selected = input?.iconId ? ctx.auth?.user.icons?.find((icon) => icon.id === input.iconId) : undefined;
+            if (input?.iconId && (!selected || ctx.auth?.user.canUseGeneralPicture === false)) {
+                throw new TRPCError({ code: 'FORBIDDEN', message: '사용 가능한 내 전용 아이콘이 아닙니다.' });
+            }
+            return adjustAccountIconForUser(
+                ctx,
+                userId,
+                selected
+                    ? {
+                          picture: selected.picture,
+                          imageServer: selected.imageServer,
+                          revision: ctx.auth?.user.iconUpdatedAt ?? selected.createdAt,
+                      }
+                    : undefined,
+                true,
+                input?.clientRequestId ?? ctx.requestId
+            );
+        }),
     me: authedProcedure.query(async ({ ctx }) => {
         const userId = ctx.auth?.user.id;
         if (!userId) {
@@ -296,6 +316,12 @@ export const generalRouter = router({
                     item: normalizeItemCode(general.itemCode),
                 },
             },
+            iconChoices: ctx.auth?.user.canUseGeneralPicture === false ? [] : (ctx.auth?.user.icons ?? []),
+            canChangeIcon: general.npcState === 0 && ctx.auth?.user.canUseGeneralPicture !== false,
+            iconChangeAvailableAt:
+                typeof metaRecord.generalIconChangedAt === 'string'
+                    ? new Date(new Date(metaRecord.generalIconChangedAt).getTime() + 24 * 60 * 60 * 1000).toISOString()
+                    : null,
             city,
             nation,
             settings,

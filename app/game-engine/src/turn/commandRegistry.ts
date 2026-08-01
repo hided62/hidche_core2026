@@ -261,6 +261,7 @@ const zAdjustGeneralIcon = z
         picture: z.string().min(1),
         imageServer: z.number().int().nonnegative(),
         iconRevision: z.string().refine(isCanonicalIsoTimestamp),
+        enforceCooldown: z.boolean().optional(),
     })
     .strict();
 
@@ -312,6 +313,9 @@ const zSelectPoolCreate = z
         uniqueName: z.string().min(1).max(20),
         personality: z.string().min(1),
         seedOwnerIdentity: z.union([z.string().min(1), zFiniteNumber]),
+        ownerPicture: z.string().optional(),
+        ownerImageServer: z.number().int().nonnegative().optional(),
+        ownerIconRevision: z.string().refine(isCanonicalIsoTimestamp).optional(),
     })
     .strict();
 

@@ -1,13 +1,23 @@
 import { randomUUID } from 'node:crypto';
 
 import { createSimplePasswordHasher, type PasswordHasher } from './passwordHasher.js';
-import type { CreateUserInput, UserRecord, UserRepository } from './userRepository.js';
+import type { CreateUserInput, UserIconRecord, UserRecord, UserRepository } from './userRepository.js';
 
 // 유저 데이터 저장소를 메모리로 대체한 임시 구현.
 export const createInMemoryUserRepository = (hasher: PasswordHasher = createSimplePasswordHasher()): UserRepository => {
     const usersByName = new Map<string, UserRecord>();
     const usersByOauthId = new Map<string, UserRecord>();
     const usersByEmail = new Map<string, UserRecord>();
+    const iconsById = new Map<string, UserIconRecord>();
+
+    const nextRevision = (user: UserRecord, now: Date): string =>
+        new Date(
+            Math.max(
+                now.getTime(),
+                new Date(user.createdAt).getTime() + 1,
+                (user.iconRevision ? new Date(user.iconRevision).getTime() : 0) + 1
+            )
+        ).toISOString();
 
     return {
         async findById(id: string): Promise<UserRecord | null> {
@@ -165,14 +175,18 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createSimp
             imageServer: number,
             updatedAt: Date,
             dayStart: Date,
-            consumeDailyQuota: boolean
+            consumeDailyQuota: boolean,
+            allowCutoffEquality = false
         ): Promise<string | null> {
             for (const user of usersByName.values()) {
                 if (user.id !== userId) {
                     continue;
                 }
-                if (user.picture !== 'default.jpg' && user.iconUpdatedAt && new Date(user.iconUpdatedAt) >= dayStart) {
-                    return null;
+                if (user.picture !== 'default.jpg' && user.iconUpdatedAt) {
+                    const previousUpdate = new Date(user.iconUpdatedAt);
+                    if (allowCutoffEquality ? previousUpdate > dayStart : previousUpdate >= dayStart) {
+                        return null;
+                    }
                 }
                 const previousRevision = Math.max(
                     new Date(user.createdAt).getTime(),
@@ -190,6 +204,67 @@ export const createInMemoryUserRepository = (hasher: PasswordHasher = createSimp
                 return revision;
             }
             throw new Error('User not found.');
+        },
+        async listIcons(userId: string, includeRetired = false): Promise<UserIconRecord[]> {
+            return [...iconsById.values()]
+                .filter((icon) => icon.userId === userId && (includeRetired || !icon.retiredAt))
+                .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+        },
+        async addIconForWindow(userId, picture, imageServer, now, uploadCutoff, maxActive) {
+            const user = [...usersByName.values()].find((candidate) => candidate.id === userId);
+            if (!user) return { ok: false, reason: 'NOT_FOUND' };
+            if (user.iconUpdatedAt && new Date(user.iconUpdatedAt) > uploadCutoff) {
+                return { ok: false, reason: 'COOLDOWN' };
+            }
+            const active = [...iconsById.values()].filter((icon) => icon.userId === userId && !icon.retiredAt);
+            if (active.length >= maxActive) return { ok: false, reason: 'LIMIT' };
+            const revision = nextRevision(user, now);
+            const icon: UserIconRecord = {
+                id: randomUUID(),
+                userId,
+                picture,
+                imageServer,
+                createdAt: now.toISOString(),
+            };
+            iconsById.set(icon.id, icon);
+            user.picture = picture;
+            user.imageServer = imageServer;
+            user.iconUpdatedAt = now.toISOString();
+            user.iconRevision = revision;
+            return { ok: true, icon, revision };
+        },
+        async setPreferredIcon(userId, iconId, now) {
+            const user = [...usersByName.values()].find((candidate) => candidate.id === userId);
+            const icon = iconsById.get(iconId);
+            if (!user || !icon || icon.userId !== userId || icon.retiredAt) return null;
+            const revision = nextRevision(user, now);
+            user.picture = icon.picture;
+            user.imageServer = icon.imageServer;
+            user.iconRevision = revision;
+            return revision;
+        },
+        async retireIconForWindow(userId, iconId, now, retireCutoff) {
+            const user = [...usersByName.values()].find((candidate) => candidate.id === userId);
+            if (!user) return { ok: false, reason: 'NOT_FOUND' };
+            if (user.iconRetiredAt && new Date(user.iconRetiredAt) > retireCutoff) {
+                return { ok: false, reason: 'COOLDOWN' };
+            }
+            const icon = iconsById.get(iconId);
+            if (!icon || icon.userId !== userId) return { ok: false, reason: 'NOT_FOUND' };
+            if (icon.retiredAt) return { ok: false, reason: 'ALREADY_RETIRED' };
+            icon.retiredAt = now.toISOString();
+            const preferredChanged = user.picture === icon.picture;
+            if (preferredChanged) {
+                const fallback = [...iconsById.values()]
+                    .filter((candidate) => candidate.userId === userId && !candidate.retiredAt)
+                    .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))[0];
+                user.picture = fallback?.picture ?? 'default.jpg';
+                user.imageServer = fallback?.imageServer ?? 0;
+            }
+            const revision = nextRevision(user, now);
+            user.iconRevision = revision;
+            user.iconRetiredAt = now.toISOString();
+            return { ok: true, icon, revision, preferredChanged };
         },
         async resetProfileIcon(userId: string, requestedAt: Date): Promise<string | null> {
             for (const user of usersByName.values()) {

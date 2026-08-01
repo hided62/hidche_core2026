@@ -326,6 +326,9 @@ async function handleSelectPoolCreate(
                 uniqueName: command.uniqueName,
                 personality: command.personality,
                 seedOwnerIdentity: command.seedOwnerIdentity,
+                ...(command.ownerPicture ? { ownerPicture: command.ownerPicture } : {}),
+                ...(command.ownerImageServer !== undefined ? { ownerImageServer: command.ownerImageServer } : {}),
+                ...(command.ownerIconRevision ? { ownerIconRevision: command.ownerIconRevision } : {}),
                 now: acceptedAt,
             })),
         };
@@ -711,7 +714,7 @@ async function handleAdjustGeneralIcon(
     command: Extract<TurnDaemonCommand, { type: 'adjustGeneralIcon' }>
 ): Promise<TurnDaemonCommandResult> {
     const db = requireCommandDatabase(ctx);
-    await resolveCommandAcceptedAt(db, command);
+    const acceptedAt = await resolveCommandAcceptedAt(db, command);
     const general = ctx.world
         .listGenerals()
         .find((candidate) => candidate.userId === command.userId && candidate.npcState === 0);
@@ -721,6 +724,44 @@ async function handleAdjustGeneralIcon(
             ok: true,
             generalId: null,
             updated: false,
+        };
+    }
+
+    if (command.enforceCooldown) {
+        if (general.picture === command.picture && general.imageServer === command.imageServer) {
+            return {
+                type: 'adjustGeneralIcon',
+                ok: true,
+                generalId: general.id,
+                updated: false,
+            };
+        }
+        const changedAt = general.meta.generalIconChangedAt;
+        if (typeof changedAt === 'string' && isCanonicalIsoTimestamp(changedAt)) {
+            const availableAt = new Date(new Date(changedAt).getTime() + 24 * 60 * 60 * 1000);
+            if (availableAt.getTime() > acceptedAt.getTime()) {
+                return {
+                    type: 'adjustGeneralIcon',
+                    ok: false,
+                    code: 'TOO_MANY_REQUESTS',
+                    reason: `${availableAt.toISOString()}부터 전용 아이콘을 다시 바꿀 수 있습니다.`,
+                    availableAt: availableAt.toISOString(),
+                };
+            }
+        }
+        ctx.world.updateGeneral(general.id, {
+            picture: command.picture,
+            imageServer: command.imageServer,
+            meta: {
+                ...general.meta,
+                generalIconChangedAt: acceptedAt.toISOString(),
+            },
+        });
+        return {
+            type: 'adjustGeneralIcon',
+            ok: true,
+            generalId: general.id,
+            updated: true,
         };
     }
 

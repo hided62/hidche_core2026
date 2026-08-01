@@ -40,6 +40,10 @@ type FixtureState = {
     nationNoticeInput?: string;
     settingMutations: Array<Record<string, unknown>>;
     accessPages: string[];
+    iconChoices?: Array<{ id: string; picture: string; imageServer: number; createdAt: string }>;
+    adjustIconInputs?: Array<Record<string, unknown>>;
+    joinConfig?: Record<string, unknown>;
+    createGeneralInputs?: Array<Record<string, unknown>>;
 };
 
 type TrpcRequestPayload = {
@@ -79,6 +83,9 @@ const myGeneral = (state: FixtureState) => ({
         myset: state.myset,
     },
     penalties: {},
+    iconChoices: state.iconChoices ?? [],
+    canChangeIcon: true,
+    iconChangeAvailableAt: null,
 });
 
 const battleCenter = (state: FixtureState) => ({
@@ -168,8 +175,13 @@ const install = async (page: Page, state: FixtureState) => {
             const jsonInput =
                 payload?.json ?? payload?.input?.json ?? (payload as Record<string, unknown> | undefined) ?? {};
             if (operation === 'auth.status') return response({ ok: true });
-            if (operation === 'lobby.info') return response({ myGeneral: { id: 7, name: '검증장수' } });
-            if (operation === 'join.getConfig') return response({});
+            if (operation === 'lobby.info')
+                return response({ myGeneral: state.joinConfig ? null : { id: 7, name: '검증장수' } });
+            if (operation === 'join.getConfig') return response(state.joinConfig ?? {});
+            if (operation === 'join.createGeneral') {
+                state.createGeneralInputs?.push(jsonInput);
+                return response({ generalId: 9 });
+            }
             if (operation === 'general.me') {
                 state.generalMeQueries = (state.generalMeQueries ?? 0) + 1;
                 return response(myGeneral(state));
@@ -306,6 +318,10 @@ const install = async (page: Page, state: FixtureState) => {
                 state.settingMutations.push(jsonInput);
                 state.myset = Math.max(0, state.myset - 1);
                 return response({ ok: true });
+            }
+            if (operation === 'general.adjustIcon') {
+                state.adjustIconInputs?.push(jsonInput);
+                return response({ ok: true, generalId: 7, updated: true });
             }
             if (operation === 'public.recordAccess') {
                 const pageName = typeof jsonInput.page === 'string' ? jsonInput.page : null;
@@ -550,6 +566,87 @@ test('내 정보&설정 keeps the legacy 1000px/500px geometry and saves in plac
         settingsWidth: 500,
     });
     await persistParityArtifact(page, 'core-my-page-mobile', mobile);
+});
+
+test('내 정보에서 사람 장수의 등록 전콘을 골라 변경한다', async ({ page }) => {
+    const iconId = '3f804277-584f-4f44-b39c-9ecf40d1ed31';
+    const state: FixtureState = {
+        permission: 'member',
+        myset: 1,
+        settingMutations: [],
+        accessPages: [],
+        iconChoices: [
+            {
+                id: iconId,
+                picture: 'mine.png',
+                imageServer: 1,
+                createdAt: '2026-08-01T00:00:00.000Z',
+            },
+        ],
+        adjustIconInputs: [],
+    };
+    await install(page, state);
+    await page.goto('my-page');
+    await expect(page.getByText('전용 아이콘 변경 (24시간에 1회)')).toBeVisible();
+    await page.locator('.general-icon-choice input').check();
+    page.once('dialog', async (dialog) => dialog.accept());
+    await page.getByRole('button', { name: '아이콘 변경' }).click();
+    await expect.poll(() => state.adjustIconInputs?.length ?? 0).toBe(1);
+    expect(state.adjustIconInputs?.[0]).toMatchObject({ iconId });
+    expect(state.adjustIconInputs?.[0]?.clientRequestId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    );
+});
+
+test('장수 생성에서 등록 전콘을 골라 생성 요청에 전달한다', async ({ page }) => {
+    const firstIconId = '3f804277-584f-4f44-b39c-9ecf40d1ed31';
+    const secondIconId = 'f6af46a2-809a-481d-b66d-0f7bbb706780';
+    const state: FixtureState = {
+        permission: 'member',
+        myset: 1,
+        settingMutations: [],
+        accessPages: [],
+        createGeneralInputs: [],
+        joinConfig: {
+            rules: { stat: { total: 150, min: 30, max: 70 }, allowCustomName: true },
+            user: {
+                id: 'user-1',
+                displayName: '생성장수',
+                canCreateGeneral: true,
+                preferredPicture: 'first.png',
+                icons: [
+                    {
+                        id: firstIconId,
+                        picture: 'first.png',
+                        imageServer: 1,
+                        createdAt: '2026-07-31T00:00:00.000Z',
+                    },
+                    {
+                        id: secondIconId,
+                        picture: 'second.png',
+                        imageServer: 1,
+                        createdAt: '2026-08-01T00:00:00.000Z',
+                    },
+                ],
+            },
+            personalities: [{ key: 'Random', name: '???', info: '무작위 성격' }],
+            nations: [],
+            selectionPool: { enabled: false },
+            npcPossession: { enabled: false },
+            inherit: null,
+        },
+    };
+    await install(page, state);
+    await page.goto('join');
+
+    const choices = page.getByRole('radiogroup', { name: '전용 아이콘 선택' }).getByRole('radio');
+    await expect(choices).toHaveCount(2);
+    await expect(choices.nth(0)).toBeChecked();
+    await choices.nth(1).check();
+    await page.getByRole('button', { name: '장수 생성', exact: true }).last().click();
+
+    await expect.poll(() => state.createGeneralInputs?.length ?? 0).toBe(1);
+    expect(state.createGeneralInputs?.[0]).toMatchObject({ pic: true, iconId: secondIconId });
 });
 
 test('내 정보 즉시행동은 timeout 재시도 ID를 유지하고 성공 후 새 ID를 만든다', async ({ page }) => {

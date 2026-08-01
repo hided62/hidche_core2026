@@ -154,4 +154,48 @@ integration('account icon daily PostgreSQL CAS', () => {
             sanctions: { warningCount: 1 },
         });
     });
+
+    it('serializes the five-slot library and preserves retired rows', async () => {
+        const users = createPostgresUserRepository(db);
+        const start = new Date('2026-08-03T00:00:00.000Z');
+        await db.userIcon.deleteMany({ where: { userId } });
+        await db.appUser.update({
+            where: { id: userId },
+            data: { picture: 'default.jpg', imageServer: 0, iconUpdatedAt: null, iconRetiredAt: null },
+        });
+
+        for (let index = 0; index < 5; index += 1) {
+            const now = new Date(start.getTime() + index * 86_400_000);
+            await expect(
+                users.addIconForWindow(
+                    userId,
+                    `postgres-library-${index}.png`,
+                    1,
+                    now,
+                    new Date(now.getTime() - 86_400_000),
+                    5
+                )
+            ).resolves.toMatchObject({ ok: true });
+        }
+        await expect(
+            users.addIconForWindow(
+                userId,
+                'postgres-library-sixth.png',
+                1,
+                new Date(start.getTime() + 5 * 86_400_000),
+                new Date(start.getTime() + 4 * 86_400_000),
+                5
+            )
+        ).resolves.toEqual({ ok: false, reason: 'LIMIT' });
+
+        const icons = await users.listIcons(userId);
+        const retiredAt = new Date(start.getTime() + 6 * 86_400_000);
+        await expect(
+            users.retireIconForWindow(userId, icons[0]!.id, retiredAt, new Date(retiredAt.getTime() - 7 * 86_400_000))
+        ).resolves.toMatchObject({ ok: true });
+        await expect(users.listIcons(userId)).resolves.toHaveLength(4);
+        await expect(users.listIcons(userId, true)).resolves.toContainEqual(
+            expect.objectContaining({ picture: 'postgres-library-0.png', retiredAt: retiredAt.toISOString() })
+        );
+    });
 });

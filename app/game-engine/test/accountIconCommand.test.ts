@@ -88,11 +88,11 @@ const buildWorld = (generals: TurnGeneral[]) => {
     return new InMemoryTurnWorld(state, snapshot, { schedule });
 };
 
-const buildCommandDb = (actorUserId = 'user-1') =>
+const buildCommandDb = (actorUserId = 'user-1', acceptedAt = new Date('2026-07-31T09:00:00.000Z')) =>
     ({
         inputEvent: {
             findUnique: vi.fn(async () => ({
-                createdAt: new Date('2026-07-31T09:00:00.000Z'),
+                createdAt: acceptedAt,
                 actorUserId,
                 target: 'ENGINE',
                 eventType: 'adjustGeneralIcon',
@@ -107,6 +107,7 @@ const command = (
         picture: string;
         imageServer: number;
         iconRevision: string;
+        enforceCooldown: boolean;
     }> = {}
 ) => ({
     type: 'adjustGeneralIcon' as const,
@@ -195,5 +196,27 @@ describe('adjustGeneralIcon ENGINE command', () => {
             'actor does not match'
         );
         expect(actorWorld.getGeneralById(1)).toMatchObject({ picture: 'old.jpg', imageServer: 0 });
+    });
+
+    it('allows human in-game changes only after a rolling 24-hour window', async () => {
+        const changedAt = '2026-07-31T08:00:00.000Z';
+        const world = buildWorld([buildGeneral({ meta: { killturn: 24, generalIconChangedAt: changedAt } })]);
+        const handler = createTurnDaemonCommandHandler({ world });
+        const manual = command({ enforceCooldown: true });
+
+        await expect(handler.handle(manual, { db: buildCommandDb() })).resolves.toMatchObject({
+            ok: false,
+            code: 'TOO_MANY_REQUESTS',
+            availableAt: '2026-08-01T08:00:00.000Z',
+        });
+        expect(world.getGeneralById(1)).toMatchObject({ picture: 'old.jpg' });
+
+        await expect(
+            handler.handle(manual, { db: buildCommandDb('user-1', new Date('2026-08-01T08:00:00.000Z')) })
+        ).resolves.toMatchObject({ ok: true, updated: true });
+        expect(world.getGeneralById(1)).toMatchObject({
+            picture: 'new.png',
+            meta: { generalIconChangedAt: '2026-08-01T08:00:00.000Z' },
+        });
     });
 });

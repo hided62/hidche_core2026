@@ -1,7 +1,14 @@
 import { GatewayPrisma, type GatewayPrismaClient } from '@sammo-ts/infra';
 
 import { createSimplePasswordHasher, type PasswordHasher } from './passwordHasher.js';
-import type { CreateUserInput, UserOAuthInfo, UserRecord, UserRepository, UserSanctions } from './userRepository.js';
+import type {
+    CreateUserInput,
+    UserIconRecord,
+    UserOAuthInfo,
+    UserRecord,
+    UserRepository,
+    UserSanctions,
+} from './userRepository.js';
 
 const readStringArray = (value: unknown): string[] => {
     if (!Array.isArray(value)) {
@@ -46,6 +53,7 @@ const mapUser = (row: {
     iconUpdatedAt: Date | null;
     iconRevision: Date | null;
     profileIconResetAt: Date | null;
+    iconRetiredAt: Date | null;
     thirdPartyUse: boolean;
     termsAcceptedAt: Date | null;
     privacyAcceptedAt: Date | null;
@@ -69,6 +77,7 @@ const mapUser = (row: {
     iconUpdatedAt: row.iconUpdatedAt?.toISOString(),
     iconRevision: row.iconRevision?.toISOString(),
     profileIconResetAt: row.profileIconResetAt?.toISOString(),
+    iconRetiredAt: row.iconRetiredAt?.toISOString(),
     thirdPartyUse: row.thirdPartyUse,
     termsAcceptedAt: row.termsAcceptedAt?.toISOString(),
     privacyAcceptedAt: row.privacyAcceptedAt?.toISOString(),
@@ -80,6 +89,22 @@ const mapUser = (row: {
     createdAt: row.createdAt.toISOString(),
     legacyMemberNo: readLegacyMemberNo(row.legacyData),
     legacyGrade: readLegacyGrade(row.legacyData),
+});
+
+const mapIcon = (row: {
+    id: string;
+    userId: string;
+    picture: string;
+    imageServer: number;
+    createdAt: Date;
+    retiredAt: Date | null;
+}): UserIconRecord => ({
+    id: row.id,
+    userId: row.userId,
+    picture: row.picture,
+    imageServer: row.imageServer,
+    createdAt: row.createdAt.toISOString(),
+    retiredAt: row.retiredAt?.toISOString(),
 });
 
 export const createPostgresUserRepository = (
@@ -242,7 +267,8 @@ export const createPostgresUserRepository = (
             imageServer: number,
             updatedAt: Date,
             dayStart: Date,
-            consumeDailyQuota: boolean
+            consumeDailyQuota: boolean,
+            allowCutoffEquality = false
         ): Promise<string | null> {
             const rows = await prisma.$queryRaw<Array<{ iconRevision: Date }>>(GatewayPrisma.sql`
                 UPDATE "app_user"
@@ -262,10 +288,118 @@ export const createPostgresUserRepository = (
                       "picture" = 'default.jpg'
                       OR "icon_updated_at" IS NULL
                       OR "icon_updated_at" < ${dayStart}
+                      OR (${allowCutoffEquality} AND "icon_updated_at" = ${dayStart})
                   )
                 RETURNING "icon_revision" AS "iconRevision"
             `);
             return rows[0]?.iconRevision.toISOString() ?? null;
+        },
+        async listIcons(userId: string, includeRetired = false): Promise<UserIconRecord[]> {
+            const rows = await prisma.userIcon.findMany({
+                where: { userId, ...(includeRetired ? {} : { retiredAt: null }) },
+                orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+            });
+            return rows.map(mapIcon);
+        },
+        async addIconForWindow(userId, picture, imageServer, now, uploadCutoff, maxActive) {
+            return prisma.$transaction(async (tx) => {
+                const users = await tx.$queryRaw<
+                    Array<{ createdAt: Date; iconUpdatedAt: Date | null; iconRevision: Date | null }>
+                >(GatewayPrisma.sql`
+                    SELECT "created_at" AS "createdAt", "icon_updated_at" AS "iconUpdatedAt",
+                           "icon_revision" AS "iconRevision"
+                    FROM "app_user" WHERE "id" = ${userId} FOR UPDATE
+                `);
+                const user = users[0];
+                if (!user) return { ok: false as const, reason: 'NOT_FOUND' as const };
+                if (user.iconUpdatedAt && user.iconUpdatedAt > uploadCutoff) {
+                    return { ok: false as const, reason: 'COOLDOWN' as const };
+                }
+                const activeCount = await tx.userIcon.count({ where: { userId, retiredAt: null } });
+                if (activeCount >= maxActive) return { ok: false as const, reason: 'LIMIT' as const };
+                const revision = new Date(
+                    Math.max(now.getTime(), user.iconRevision?.getTime() ?? 0, user.createdAt.getTime()) +
+                        (now.getTime() <= (user.iconRevision?.getTime() ?? 0) ? 1 : 0)
+                );
+                const icon = await tx.userIcon.create({ data: { userId, picture, imageServer, createdAt: now } });
+                await tx.appUser.update({
+                    where: { id: userId },
+                    data: { picture, imageServer, iconUpdatedAt: now, iconRevision: revision },
+                });
+                return { ok: true as const, icon: mapIcon(icon), revision: revision.toISOString() };
+            });
+        },
+        async setPreferredIcon(userId, iconId, now) {
+            return prisma.$transaction(async (tx) => {
+                const users = await tx.$queryRaw<Array<{ createdAt: Date; iconRevision: Date | null }>>(
+                    GatewayPrisma.sql`SELECT "created_at" AS "createdAt", "icon_revision" AS "iconRevision"
+                                      FROM "app_user" WHERE "id" = ${userId} FOR UPDATE`
+                );
+                const user = users[0];
+                if (!user) return null;
+                const icon = await tx.userIcon.findFirst({ where: { id: iconId, userId, retiredAt: null } });
+                if (!icon) return null;
+                const previous = Math.max(user.createdAt.getTime(), user.iconRevision?.getTime() ?? 0);
+                const revision = new Date(Math.max(now.getTime(), previous + 1));
+                await tx.appUser.update({
+                    where: { id: userId },
+                    data: { picture: icon.picture, imageServer: icon.imageServer, iconRevision: revision },
+                });
+                return revision.toISOString();
+            });
+        },
+        async retireIconForWindow(userId, iconId, now, retireCutoff) {
+            return prisma.$transaction(async (tx) => {
+                const users = await tx.$queryRaw<
+                    Array<{
+                        picture: string;
+                        createdAt: Date;
+                        iconRevision: Date | null;
+                        iconRetiredAt: Date | null;
+                    }>
+                >(GatewayPrisma.sql`
+                    SELECT "picture", "created_at" AS "createdAt", "icon_revision" AS "iconRevision",
+                           "icon_retired_at" AS "iconRetiredAt"
+                    FROM "app_user" WHERE "id" = ${userId} FOR UPDATE
+                `);
+                const user = users[0];
+                if (!user) return { ok: false as const, reason: 'NOT_FOUND' as const };
+                if (user.iconRetiredAt && user.iconRetiredAt > retireCutoff) {
+                    return { ok: false as const, reason: 'COOLDOWN' as const };
+                }
+                const icon = await tx.userIcon.findFirst({ where: { id: iconId, userId } });
+                if (!icon) return { ok: false as const, reason: 'NOT_FOUND' as const };
+                if (icon.retiredAt) return { ok: false as const, reason: 'ALREADY_RETIRED' as const };
+                const retired = await tx.userIcon.update({ where: { id: icon.id }, data: { retiredAt: now } });
+                const preferredChanged = user.picture === icon.picture;
+                const fallback = preferredChanged
+                    ? await tx.userIcon.findFirst({
+                          where: { userId, retiredAt: null, id: { not: icon.id } },
+                          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+                      })
+                    : null;
+                const previous = Math.max(user.createdAt.getTime(), user.iconRevision?.getTime() ?? 0);
+                const revision = new Date(Math.max(now.getTime(), previous + 1));
+                await tx.appUser.update({
+                    where: { id: userId },
+                    data: {
+                        iconRetiredAt: now,
+                        iconRevision: revision,
+                        ...(preferredChanged
+                            ? {
+                                  picture: fallback?.picture ?? 'default.jpg',
+                                  imageServer: fallback?.imageServer ?? 0,
+                              }
+                            : {}),
+                    },
+                });
+                return {
+                    ok: true as const,
+                    icon: mapIcon(retired),
+                    revision: revision.toISOString(),
+                    preferredChanged,
+                };
+            });
         },
         async resetProfileIcon(userId: string, requestedAt: Date): Promise<string | null> {
             return prisma.$transaction(async (tx) => {

@@ -658,6 +658,7 @@ export const appRouter = router({
                 }
                 const now = new Date();
                 const accountIcon = resolveEffectiveAccountIcon(user);
+                const accountIcons = await ctx.users.listIcons(user.id);
                 const payload = {
                     version: 1,
                     profile: gameSession.profile,
@@ -676,6 +677,12 @@ export const appRouter = router({
                         roles: user.roles,
                         createdAt: user.createdAt,
                         legacyMemberNo: user.legacyMemberNo,
+                        icons: accountIcons.map((icon) => ({
+                            id: icon.id,
+                            picture: icon.picture,
+                            imageServer: icon.imageServer,
+                            createdAt: icon.createdAt,
+                        })),
                     },
                     sanctions: user.sanctions,
                     identity: {

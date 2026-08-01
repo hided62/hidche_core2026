@@ -423,6 +423,38 @@ describe('appRouter', () => {
             picture: 'latest.png',
             imageServer: 1,
             iconRevision: currentAccountIcon.revision,
+            enforceCooldown: true,
+        });
+    });
+
+    it('uses a fresh client request id when selecting a registered in-game icon', async () => {
+        const transport = new InMemoryTurnDaemonTransport();
+        const clientRequestId = 'b24454da-d0ab-48d2-a7d5-e2e5aaf83ba4';
+        const requestId = `general:adjustIcon:user-1:manual:${clientRequestId}`;
+        transport.setCommandResult(requestId, {
+            type: 'adjustGeneralIcon',
+            ok: true,
+            generalId: 1,
+            updated: true,
+        });
+        const auth = buildAuth();
+        auth.user.icons = [
+            {
+                id: '3f804277-584f-4f44-b39c-9ecf40d1ed31',
+                picture: 'manual.png',
+                imageServer: 1,
+                createdAt: '2026-07-30T09:00:00.000Z',
+            },
+        ];
+        const caller = appRouter.createCaller(buildContext({ auth, transport }));
+
+        await caller.general.adjustIcon({ iconId: auth.user.icons[0]!.id, clientRequestId });
+
+        expect(transport.commands.at(-1)?.command).toMatchObject({
+            requestId,
+            picture: 'manual.png',
+            imageServer: 1,
+            enforceCooldown: true,
         });
     });
 
@@ -588,6 +620,74 @@ describe('appRouter', () => {
             ownerImageServer: 1,
             ownerIconRevision: revision,
         });
+    });
+
+    it('creates a general with the selected authenticated icon and rejects another icon id', async () => {
+        const transport = new InMemoryTurnDaemonTransport();
+        const clientRequestId = '924454da-d0ab-48d2-a7d5-e2e5aaf83ba4';
+        transport.setCommandResult(`join-create:user-1:${clientRequestId}`, {
+            type: 'joinCreateGeneral',
+            ok: true,
+            generalId: 43,
+        });
+        const auth = buildAuth();
+        auth.user.iconUpdatedAt = '2026-08-01T09:00:00.000Z';
+        auth.user.icons = [
+            {
+                id: '3f804277-584f-4f44-b39c-9ecf40d1ed31',
+                picture: 'selected.png',
+                imageServer: 1,
+                createdAt: '2026-07-30T09:00:00.000Z',
+            },
+        ];
+        const caller = appRouter.createCaller(buildContext({ state: buildWorldState(), auth, transport }));
+
+        await caller.join.createGeneral({
+            name: '선택전콘',
+            leadership: 55,
+            strength: 55,
+            intel: 55,
+            pic: true,
+            iconId: auth.user.icons[0]!.id,
+            character: 'Random',
+            clientRequestId,
+        });
+        expect(transport.commands.at(-1)?.command).toMatchObject({
+            ownerPicture: 'selected.png',
+            ownerImageServer: 1,
+            ownerIconRevision: auth.user.iconUpdatedAt,
+        });
+
+        const poolRequestId = 'a24454da-d0ab-48d2-a7d5-e2e5aaf83ba4';
+        transport.setCommandResult(`select-pool:user-1:${poolRequestId}:create`, {
+            type: 'selectPoolCreate',
+            ok: true,
+            generalId: 44,
+        });
+        await caller.join.selectPoolGeneral({
+            uniqueName: '선택풀장수',
+            personality: 'Random',
+            iconId: auth.user.icons[0]!.id,
+            clientRequestId: poolRequestId,
+        });
+        expect(transport.commands.at(-1)?.command).toMatchObject({
+            type: 'selectPoolCreate',
+            ownerPicture: 'selected.png',
+            ownerImageServer: 1,
+            ownerIconRevision: auth.user.iconUpdatedAt,
+        });
+
+        await expect(
+            caller.join.createGeneral({
+                name: '타인전콘',
+                leadership: 55,
+                strength: 55,
+                intel: 55,
+                pic: true,
+                iconId: 'f6af46a2-809a-481d-b66d-0f7bbb706780',
+                character: 'Random',
+            })
+        ).rejects.toMatchObject({ code: 'FORBIDDEN' });
     });
 
     it('queues turn daemon run commands', async () => {

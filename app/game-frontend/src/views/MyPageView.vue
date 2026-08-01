@@ -40,6 +40,7 @@ const loading = ref(false);
 const error = ref<string | null>(null);
 const screenMode = ref<ScreenMode>('auto');
 const customCss = ref('');
+const selectedIconId = ref('');
 const cssSaving = ref(false);
 const session = useSessionStore();
 let cssTimer: number | null = null;
@@ -132,6 +133,7 @@ const items = computed<Array<{ key: ItemSlotKey; name: string; code: string | nu
     { key: 'book', name: '서적', code: data.value?.general.items.book ?? null },
     { key: 'item', name: '도구', code: data.value?.general.items.item ?? null },
 ]);
+const iconChoices = computed(() => data.value?.iconChoices ?? []);
 
 const autorunUser = computed(() => asRecord(world.value?.meta.autorun_user));
 const showAutoNationTurn = computed(() => Boolean(asRecord(autorunUser.value.options).chief));
@@ -205,6 +207,10 @@ const loadPage = async (resetImmediateActionIds = true) => {
         dieOnPrestartStatus.value = prestartStatus;
         if (general) {
             Object.assign(form, general.settings);
+            selectedIconId.value =
+                iconChoices.value.find((icon) => icon.picture === general.general.picture)?.id ??
+                iconChoices.value[0]?.id ??
+                '';
         }
         await Promise.all(logTypes.map((type) => loadLog(type)));
         if (resetImmediateActionIds) {
@@ -214,6 +220,20 @@ const loadPage = async (resetImmediateActionIds = true) => {
         error.value = errorText(cause);
     } finally {
         loading.value = false;
+    }
+};
+
+const changeGeneralIcon = async () => {
+    if (!selectedIconId.value) return;
+    if (!confirm('선택한 전용 아이콘으로 바꿀까요? 변경 후 24시간 동안 다시 바꿀 수 없습니다.')) return;
+    try {
+        await trpc.general.adjustIcon.mutate({
+            iconId: selectedIconId.value,
+            clientRequestId: crypto.randomUUID(),
+        });
+        await loadPage();
+    } catch (cause) {
+        alert(`실패했습니다: ${errorText(cause)}`);
     }
 };
 
@@ -426,6 +446,25 @@ onMounted(() => {
                     >
                         휴가 신청
                     </button>
+                </div>
+                <div v-if="data?.canChangeIcon && iconChoices.length" class="action-line general-icon-action">
+                    전용 아이콘 변경 (24시간에 1회)<br />
+                    <span v-if="data.iconChangeAvailableAt" class="hint">
+                        다음 변경 가능: {{ formatSeoulDateTime(data.iconChangeAvailableAt) }}
+                    </span>
+                    <div class="general-icon-list" role="radiogroup" aria-label="장수 전용 아이콘 선택">
+                        <label v-for="icon in iconChoices" :key="icon.id" class="general-icon-choice">
+                            <input v-model="selectedIconId" type="radio" :value="icon.id" />
+                            <img
+                                :src="resolveGeneralIconUrl(icon)"
+                                width="64"
+                                height="64"
+                                alt=""
+                                @error="useDefaultGeneralIcon"
+                            />
+                        </label>
+                    </div>
+                    <button class="action-button" type="button" @click="changeGeneralIcon">아이콘 변경</button>
                 </div>
                 <div v-if="actionAvailability.dieOnPrestart" class="action-line">
                     가오픈 기간 내 장수 삭제 ({{ formatDieOnPrestartAvailableAt }} 부터)<br />
@@ -758,6 +797,18 @@ dt {
     width: 100%;
     min-height: 32px;
     margin-top: 8px;
+}
+.general-icon-list {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    margin: 6px 0;
+}
+.general-icon-choice {
+    display: flex;
+    align-items: center;
+    gap: 2px;
 }
 @media (max-width: 991px) {
     .legacy-page {

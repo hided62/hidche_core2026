@@ -303,7 +303,33 @@ const changeIcon = async (event?: Event): Promise<void> => {
         successMessage.value = result.flushPublished
             ? '전용 아이콘을 변경했습니다.'
             : '전용 아이콘을 변경했습니다. 로그인 갱신 알림은 지연될 수 있습니다.';
+        await loadAccount();
         openIconServerModal(result.profiles, returnFocus);
+    });
+};
+
+const setPreferredIcon = async (iconId: string): Promise<void> => {
+    await runAction(async () => {
+        const token = sessionToken();
+        if (!token) throw new Error('로그인이 필요합니다.');
+        await trpc.account.setPreferredIcon.mutate({ sessionToken: token, iconId });
+        successMessage.value = '대표 전용 아이콘을 변경했습니다.';
+        await loadAccount();
+    });
+};
+
+const retireIcon = async (iconId: string): Promise<void> => {
+    if (
+        !window.confirm('목록에서 내린 아이콘은 다시 선택할 수 없습니다. 과거 기록의 이미지는 보존됩니다. 계속할까요?')
+    ) {
+        return;
+    }
+    await runAction(async () => {
+        const token = sessionToken();
+        if (!token) throw new Error('로그인이 필요합니다.');
+        await trpc.account.retireIcon.mutate({ sessionToken: token, iconId });
+        successMessage.value = '전용 아이콘을 목록에서 내렸습니다. 기존 URL과 과거 기록은 보존됩니다.';
+        await loadAccount();
     });
 };
 
@@ -495,6 +521,41 @@ onBeforeUnmount(() => {
                             >
                                 아이콘 제거
                             </button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th class="legacy-bg1">전콘<br />목록</th>
+                        <td colspan="5">
+                            <div class="account-icon-library">
+                                <div v-for="icon in account.icons" :key="icon.id" class="account-icon-card">
+                                    <img :src="icon.url" width="64" height="64" alt="전용 아이콘" />
+                                    <span v-if="icon.picture === account.preferredPicture" class="preferred-label"
+                                        >대표</span
+                                    >
+                                    <button
+                                        v-else
+                                        class="skin-button compact"
+                                        type="button"
+                                        :disabled="busy"
+                                        @click="setPreferredIcon(icon.id)"
+                                    >
+                                        대표로 설정
+                                    </button>
+                                    <button
+                                        class="skin-button compact"
+                                        type="button"
+                                        :disabled="busy"
+                                        @click="retireIcon(icon.id)"
+                                    >
+                                        목록에서 내리기
+                                    </button>
+                                </div>
+                                <span v-if="account.icons.length === 0">등록한 전용 아이콘이 없습니다.</span>
+                            </div>
+                            <p class="icon-policy">
+                                {{ account.icons.length }} / {{ account.maxActiveIcons }}개 · 업로드는 24시간에 1회 ·
+                                목록에서 내리기는 7일에 1회
+                            </p>
                         </td>
                     </tr>
                 </tbody>
@@ -1041,6 +1102,29 @@ onBeforeUnmount(() => {
 .icon-server-dismiss:focus,
 .icon-server-option input:focus {
     outline: 0;
+}
+
+.account-icon-library {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px;
+}
+
+.account-icon-card {
+    display: grid;
+    width: 104px;
+    justify-items: center;
+    gap: 4px;
+}
+
+.preferred-label {
+    color: #ffbf00;
+    font-weight: 700;
+}
+
+.icon-policy {
+    margin: 0 8px 8px;
 }
 
 @media (max-width: 600px) {
