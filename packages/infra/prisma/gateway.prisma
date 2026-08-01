@@ -33,8 +33,14 @@ enum GatewayBuildStatus {
 
 enum GatewayOperationType {
   RESET
+  DEPLOY
   START
   STOP
+}
+
+enum GatewayReleaseOperationType {
+  DEPLOY
+  ROLLBACK
 }
 
 enum GatewayOperationStatus {
@@ -217,6 +223,46 @@ model GatewayOperation {
   @@index([status, leaseUntil, createdAt])
   @@index([profileName, createdAt])
   @@map("gateway_operation")
+}
+
+model GatewayReleaseState {
+  id                    String   @id @default("gateway")
+  activeCommitSha       String?  @map("active_commit_sha")
+  activeWorkspace       String?  @map("active_workspace")
+  previousCommitSha     String?  @map("previous_commit_sha")
+  previousWorkspace     String?  @map("previous_workspace")
+  lastSuccessfulAt      DateTime? @map("last_successful_at")
+  lastError             String?  @map("last_error")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@map("gateway_release_state")
+}
+
+model GatewayReleaseOperation {
+  /// A partial unique index in the gateway migration chain permits only one
+  /// QUEUED or RUNNING control-plane release at a time.
+  id                String                      @id @default(uuid())
+  type              GatewayReleaseOperationType
+  status            GatewayOperationStatus      @default(QUEUED)
+  sourceMode        GatewaySourceMode?           @map("source_mode")
+  sourceRef         String?                      @map("source_ref")
+  resolvedCommitSha String?                      @map("resolved_commit_sha")
+  payload           Json                        @default(dbgenerated("'{}'::jsonb"))
+  reason            String?
+  requestedBy       String                      @map("requested_by")
+  startedAt         DateTime?                   @map("started_at")
+  completedAt       DateTime?                   @map("completed_at")
+  error             String?
+  leaseOwner        String?                     @map("lease_owner")
+  leaseUntil        DateTime?                   @map("lease_until")
+  heartbeatAt       DateTime?                   @map("heartbeat_at")
+  attempts          Int                         @default(0)
+  createdAt         DateTime                    @default(now()) @map("created_at")
+  updatedAt         DateTime                    @updatedAt @map("updated_at")
+
+  @@index([status, leaseUntil, createdAt])
+  @@index([createdAt])
+  @@map("gateway_release_operation")
 }
 
 model SystemSetting {

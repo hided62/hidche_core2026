@@ -1,0 +1,28 @@
+{
+    "name": "@sammo-ts/release-controller",
+    "private": true,
+    "version": "0.0.0",
+    "type": "module",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "scripts": {
+        "build": "tsdown -c ../../tsdown.config.ts -F @sammo-ts/release-controller",
+        "start": "node dist/index.js daemon",
+        "run-once": "node dist/index.js run-once",
+        "status": "node dist/index.js status",
+        "self-upgrade": "node dist/index.js self-upgrade",
+        "lint": "eslint .",
+        "lint:fix": "eslint . --fix",
+        "test": "vitest run --config vitest.config.ts",
+        "typecheck": "tsc -b"
+    },
+    "dependencies": {
+        "@sammo-ts/gateway-api": "workspace:*",
+        "@sammo-ts/infra": "workspace:*"
+    },
+    "devDependencies": {
+        "tsdown": "^0.22.14",
+        "vite-tsconfig-paths": "^6.0.3",
+        "vitest": "^4.0.16"
+    }
+}

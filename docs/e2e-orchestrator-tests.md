@@ -10,6 +10,9 @@ commit worktree, build와 PM2 process를 조정합니다. 검증은 다음 경�
   process plan 계산
 - `orchestratorOperations.test.ts`: operation claim, 상태 전이와 오류
 - `adminOperations.test.ts`: 관리자 API와 operation 생성
+- `profileDeployOperation.test.ts`: DB 보존 배포에서 migration은 실행하고 seed는 실행하지 않는 계약
+- `gatewayReleaseRepository.integration.test.ts`: release lease, 단일 active queue와 publish fencing
+- `app/release-controller/test/releaseController.test.ts`: Gateway 세 역할 전환·복구와 controller self-upgrade
 - `workspaceManager.test.ts`: source commit과 worktree
 - `app/gateway-frontend/e2e/server-operations.spec.ts`: 관리자 화면
 - `app/gateway-frontend/e2e/hwe-lifecycle.spec.ts`: reset/build/seed/PM2와
@@ -80,6 +83,7 @@ HTTPS·host·firewall 검증을 구분합니다.
 - operation의 requested/running/succeeded 또는 failed 상태
 - resolved commit과 build workspace
 - `sammo:<profileName>:game-api`, `sammo:<profileName>:turn-daemon` process
+- `sammo:<profileName>:game-frontend`와 API·daemon·worker 전체 process
 - game API와 daemon의 profile name 일치
 - 관리자 capability와 일반 사용자 거부
 - 두 사용자의 서로 분리된 session·장수 소유권

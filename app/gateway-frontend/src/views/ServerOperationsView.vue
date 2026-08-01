@@ -17,6 +17,7 @@ type Profile = {
     buildError?: string;
     lastError?: string;
     runtime: {
+        frontendRunning: boolean;
         apiRunning: boolean;
         daemonRunning: boolean;
         auctionRunning: boolean;
@@ -35,7 +36,7 @@ type Scenario = {
 type Operation = {
     id: string;
     profileName: string;
-    type: 'RESET' | 'START' | 'STOP';
+    type: 'RESET' | 'DEPLOY' | 'START' | 'STOP';
     status: 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED';
     sourceMode?: 'BRANCH' | 'COMMIT';
     sourceRef?: string;
@@ -49,9 +50,35 @@ type Operation = {
     createdAt: string;
 };
 
+type GatewayReleaseState = {
+    activeCommitSha?: string;
+    activeWorkspace?: string;
+    previousCommitSha?: string;
+    previousWorkspace?: string;
+    lastSuccessfulAt?: string;
+    lastError?: string;
+};
+
+type GatewayReleaseOperation = {
+    id: string;
+    type: 'DEPLOY' | 'ROLLBACK';
+    status: 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED';
+    sourceMode?: 'BRANCH' | 'COMMIT';
+    sourceRef?: string;
+    resolvedCommitSha?: string;
+    requestedBy: string;
+    reason?: string;
+    error?: string;
+    createdAt: string;
+    completedAt?: string;
+};
+
 const profiles = ref<Profile[]>([]);
 const scenarios = ref<Scenario[]>([]);
 const operations = ref<Operation[]>([]);
+const gatewayReleaseState = ref<GatewayReleaseState | null>(null);
+const gatewayReleaseOperations = ref<GatewayReleaseOperation[]>([]);
+const gatewayReleaseAvailable = ref(false);
 const selectedProfileName = ref('');
 const loading = ref(false);
 const catalogLoading = ref(false);
@@ -84,6 +111,11 @@ const form = reactive({
     openAt: '',
     preopenAt: '',
     scheduledAt: '',
+    reason: '',
+});
+const gatewayForm = reactive({
+    sourceMode: 'BRANCH' as 'BRANCH' | 'COMMIT',
+    sourceRef: 'main',
     reason: '',
 });
 
@@ -135,6 +167,17 @@ const loadState = async (quiet = false) => {
         const operationResult = await adminClient.operations.list.query({ limit: 100 });
         profiles.value = profileResult as Profile[];
         operations.value = operationResult as Operation[];
+        try {
+            const [state, releaseOperations] = await Promise.all([
+                adminClient.releases.gatewayState.query(),
+                adminClient.releases.list.query({ limit: 30 }),
+            ]);
+            gatewayReleaseState.value = state as GatewayReleaseState;
+            gatewayReleaseOperations.value = releaseOperations as GatewayReleaseOperation[];
+            gatewayReleaseAvailable.value = true;
+        } catch {
+            gatewayReleaseAvailable.value = false;
+        }
         if (!selectedProfileName.value && profiles.value.length > 0) {
             selectedProfileName.value = profiles.value[0].profileName;
         }
@@ -143,6 +186,78 @@ const loadState = async (quiet = false) => {
     } finally {
         loading.value = false;
         stateRequestInFlight = false;
+    }
+};
+
+const requestDeploy = async () => {
+    clearStatus();
+    if (!selectedProfile.value || activeOperation.value || !form.sourceRef.trim()) {
+        return;
+    }
+    if (
+        !window.confirm(
+            `${selectedProfile.value.profileName}의 인게임 DB를 유지하고 ${form.sourceRef.trim()} 버전으로 배포하시겠습니까?`
+        )
+    ) {
+        return;
+    }
+    submitting.value = true;
+    try {
+        await adminClient.operations.requestDeploy.mutate({
+            profileName: selectedProfile.value.profileName,
+            sourceMode: form.sourceMode,
+            sourceRef: form.sourceRef.trim(),
+            reason: form.reason.trim() || undefined,
+        });
+        message.value = 'DB 보존 배포 작업을 등록했습니다.';
+        await loadState(true);
+    } catch (error) {
+        errorMessage.value = error instanceof Error ? error.message : 'DB 보존 배포 요청에 실패했습니다.';
+    } finally {
+        submitting.value = false;
+    }
+};
+
+const requestGatewayDeploy = async () => {
+    clearStatus();
+    if (!gatewayForm.sourceRef.trim()) return;
+    if (!window.confirm(`Gateway 전체를 ${gatewayForm.sourceRef.trim()} 버전으로 전환하시겠습니까?`)) return;
+    submitting.value = true;
+    try {
+        await adminClient.releases.requestGatewayDeploy.mutate({
+            sourceMode: gatewayForm.sourceMode,
+            sourceRef: gatewayForm.sourceRef.trim(),
+            reason: gatewayForm.reason.trim() || undefined,
+        });
+        message.value = 'Gateway 배포 작업을 등록했습니다. 외부 release-controller가 처리합니다.';
+        await loadState(true);
+    } catch (error) {
+        errorMessage.value = error instanceof Error ? error.message : 'Gateway 배포 요청에 실패했습니다.';
+    } finally {
+        submitting.value = false;
+    }
+};
+
+const requestGatewayRollback = async () => {
+    clearStatus();
+    if (!gatewayReleaseState.value?.previousCommitSha) return;
+    if (
+        !window.confirm(
+            `Gateway를 이전 버전 ${shortSha(gatewayReleaseState.value.previousCommitSha)}로 되돌리시겠습니까?`
+        )
+    )
+        return;
+    submitting.value = true;
+    try {
+        await adminClient.releases.requestGatewayRollback.mutate({
+            reason: gatewayForm.reason.trim() || undefined,
+        });
+        message.value = 'Gateway rollback 작업을 등록했습니다.';
+        await loadState(true);
+    } catch (error) {
+        errorMessage.value = error instanceof Error ? error.message : 'Gateway rollback 요청에 실패했습니다.';
+    } finally {
+        submitting.value = false;
     }
 };
 
@@ -372,6 +487,14 @@ onBeforeUnmount(() => {
                             <div class="mt-1 font-semibold">{{ selectedProfile.buildStatus }}</div>
                         </div>
                         <div class="rounded bg-zinc-950 p-3">
+                            <div class="text-xs text-zinc-500">Game frontend</div>
+                            <div
+                                :class="selectedProfile.runtime.frontendRunning ? 'text-emerald-400' : 'text-zinc-500'"
+                            >
+                                {{ selectedProfile.runtime.frontendRunning ? 'RUNNING' : 'STOPPED' }}
+                            </div>
+                        </div>
+                        <div class="rounded bg-zinc-950 p-3">
                             <div class="text-xs text-zinc-500">Game API</div>
                             <div :class="selectedProfile.runtime.apiRunning ? 'text-emerald-400' : 'text-zinc-500'">
                                 {{ selectedProfile.runtime.apiRunning ? 'RUNNING' : 'STOPPED' }}
@@ -446,7 +569,7 @@ onBeforeUnmount(() => {
                     @submit.prevent="requestReset"
                 >
                     <div class="flex items-center justify-between">
-                        <h3 class="text-lg font-semibold">시나리오 초기화</h3>
+                        <h3 class="text-lg font-semibold">프로필 배포 · 시나리오 초기화</h3>
                         <span
                             v-if="activeOperation"
                             class="rounded-full bg-amber-500/15 px-3 py-1 text-xs text-amber-300"
@@ -647,15 +770,127 @@ onBeforeUnmount(() => {
                         class="w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-white"
                         placeholder="작업 사유 또는 운영 메모"
                     />
-                    <button
-                        type="submit"
-                        class="w-full rounded bg-amber-500 px-4 py-3 font-bold text-black hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-40"
-                        :disabled="submitting || Boolean(activeOperation) || !form.scenarioId"
-                        data-testid="request-reset"
-                    >
-                        {{ form.scheduledAt ? '초기화 예약' : '초기화 시작' }}
-                    </button>
+                    <div class="grid gap-3 md:grid-cols-2">
+                        <button
+                            type="button"
+                            class="rounded bg-sky-700 px-4 py-3 font-bold text-white hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-40"
+                            :disabled="submitting || Boolean(activeOperation) || !form.sourceRef.trim()"
+                            data-testid="request-deploy"
+                            @click="requestDeploy"
+                        >
+                            DB 유지 배포
+                        </button>
+                        <button
+                            type="submit"
+                            class="rounded bg-amber-500 px-4 py-3 font-bold text-black hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-40"
+                            :disabled="submitting || Boolean(activeOperation) || !form.scenarioId"
+                            data-testid="request-reset"
+                        >
+                            {{ form.scheduledAt ? 'DB 초기화 예약' : 'DB 초기화 배포' }}
+                        </button>
+                    </div>
                 </form>
+            </section>
+
+            <section
+                v-if="gatewayReleaseAvailable"
+                class="rounded-lg border border-violet-800/70 bg-zinc-900 p-5 space-y-4"
+                data-testid="gateway-release-panel"
+            >
+                <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                    <div>
+                        <h3 class="text-lg font-semibold">Gateway 릴리스</h3>
+                        <p class="text-xs text-zinc-400">
+                            외부 release-controller가 Gateway API·frontend·orchestrator를 전환합니다.
+                        </p>
+                    </div>
+                    <div class="text-xs text-zinc-400">
+                        현재
+                        <span class="font-mono text-zinc-200">{{
+                            shortSha(gatewayReleaseState?.activeCommitSha)
+                        }}</span>
+                        · 이전
+                        <span class="font-mono text-zinc-200">{{
+                            shortSha(gatewayReleaseState?.previousCommitSha)
+                        }}</span>
+                    </div>
+                </div>
+                <div class="grid gap-3 md:grid-cols-[auto_1fr_1fr]">
+                    <select
+                        v-model="gatewayForm.sourceMode"
+                        class="rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm"
+                    >
+                        <option value="BRANCH">브랜치</option>
+                        <option value="COMMIT">커밋</option>
+                    </select>
+                    <input
+                        v-model="gatewayForm.sourceRef"
+                        class="rounded border border-zinc-700 bg-zinc-950 px-3 py-2 font-mono text-sm"
+                        placeholder="main 또는 full commit SHA"
+                        data-testid="gateway-source-ref"
+                    />
+                    <input
+                        v-model="gatewayForm.reason"
+                        class="rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm"
+                        placeholder="배포 사유"
+                    />
+                </div>
+                <div class="grid gap-3 md:grid-cols-2">
+                    <button
+                        class="rounded bg-violet-700 px-4 py-2 font-semibold hover:bg-violet-600 disabled:opacity-40"
+                        :disabled="
+                            submitting ||
+                            gatewayReleaseOperations.some((item) => ['QUEUED', 'RUNNING'].includes(item.status))
+                        "
+                        data-testid="request-gateway-deploy"
+                        @click="requestGatewayDeploy"
+                    >
+                        Gateway 배포
+                    </button>
+                    <button
+                        class="rounded border border-violet-700 px-4 py-2 font-semibold hover:bg-violet-950 disabled:opacity-40"
+                        :disabled="
+                            submitting ||
+                            !gatewayReleaseState?.previousCommitSha ||
+                            gatewayReleaseOperations.some((item) => ['QUEUED', 'RUNNING'].includes(item.status))
+                        "
+                        data-testid="request-gateway-rollback"
+                        @click="requestGatewayRollback"
+                    >
+                        이전 Gateway로 rollback
+                    </button>
+                </div>
+                <div v-if="gatewayReleaseState?.lastError" class="text-sm text-red-300">
+                    {{ gatewayReleaseState.lastError }}
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full min-w-[760px] text-left text-xs" data-testid="gateway-release-table">
+                        <thead class="border-b border-zinc-700 text-zinc-500">
+                            <tr>
+                                <th class="p-2">시각</th>
+                                <th class="p-2">작업</th>
+                                <th class="p-2">상태</th>
+                                <th class="p-2">소스</th>
+                                <th class="p-2">해석 커밋</th>
+                                <th class="p-2">오류</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr
+                                v-for="operation in gatewayReleaseOperations"
+                                :key="operation.id"
+                                class="border-b border-zinc-800"
+                            >
+                                <td class="p-2">{{ formatTime(operation.createdAt) }}</td>
+                                <td class="p-2">{{ operation.type }}</td>
+                                <td class="p-2">{{ operation.status }}</td>
+                                <td class="p-2 font-mono">{{ operation.sourceRef }}</td>
+                                <td class="p-2 font-mono">{{ shortSha(operation.resolvedCommitSha) }}</td>
+                                <td class="max-w-xs p-2 text-red-300">{{ operation.error }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </section>
 
             <section class="rounded-lg border border-zinc-800 bg-zinc-900 p-5">

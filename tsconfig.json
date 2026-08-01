@@ -9,6 +9,7 @@
         { "path": "./app/game-engine" },
         { "path": "./app/game-frontend" },
         { "path": "./app/gateway-api" },
+        { "path": "./app/release-controller" },
         { "path": "./app/gateway-frontend" }
     ]
 }

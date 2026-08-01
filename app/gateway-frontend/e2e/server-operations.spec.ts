@@ -5,7 +5,7 @@ type OperationStatus = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLE
 type Operation = {
     id: string;
     profileName: string;
-    type: 'RESET' | 'START' | 'STOP';
+    type: 'RESET' | 'DEPLOY' | 'START' | 'STOP';
     status: OperationStatus;
     sourceMode?: 'BRANCH' | 'COMMIT';
     sourceRef?: string;
@@ -20,6 +20,17 @@ type Operation = {
 
 type FixtureState = {
     operations: Operation[];
+    gatewayOperations: Array<{
+        id: string;
+        type: 'DEPLOY' | 'ROLLBACK';
+        status: OperationStatus;
+        sourceMode?: 'BRANCH' | 'COMMIT';
+        sourceRef?: string;
+        payload: Record<string, unknown>;
+        requestedBy: string;
+        createdAt: string;
+        updatedAt: string;
+    }>;
     runtimeRunning: boolean;
     requestBodies: Array<{ operation: string; body: unknown }>;
 };
@@ -38,6 +49,7 @@ const profile = (runtimeRunning: boolean) => ({
     updatedAt: '2026-07-25T00:00:00.000Z',
     runtime: {
         profileName: 'che:2',
+        frontendRunning: runtimeRunning,
         apiRunning: runtimeRunning,
         daemonRunning: runtimeRunning,
         auctionRunning: runtimeRunning,
@@ -90,6 +102,19 @@ const installFixture = async (page: Page, state: FixtureState) => {
             if (name === 'admin.operations.list') {
                 return response(state.operations);
             }
+            if (name === 'admin.releases.gatewayState') {
+                return response({
+                    id: 'gateway',
+                    activeCommitSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                    activeWorkspace: '/srv/sammo/current',
+                    previousCommitSha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+                    previousWorkspace: '/srv/sammo/previous',
+                    updatedAt: '2026-08-01T00:00:00.000Z',
+                });
+            }
+            if (name === 'admin.releases.list') {
+                return response(state.gatewayOperations);
+            }
             if (name === 'admin.profiles.listScenarios') {
                 return response(scenarios);
             }
@@ -108,6 +133,37 @@ const installFixture = async (page: Page, state: FixtureState) => {
                 };
                 state.operations = [operation];
                 return response(operation);
+            }
+            if (name === 'admin.operations.requestDeploy') {
+                const operation: Operation = {
+                    id: '66666666-6666-4666-8666-666666666666',
+                    profileName: 'che:2',
+                    type: 'DEPLOY',
+                    status: 'QUEUED',
+                    sourceMode: 'BRANCH',
+                    sourceRef: 'main',
+                    payload: {},
+                    requestedBy: 'admin',
+                    createdAt: '2026-08-01T01:00:00.000Z',
+                    updatedAt: '2026-08-01T01:00:00.000Z',
+                };
+                state.operations = [operation];
+                return response(operation);
+            }
+            if (name === 'admin.releases.requestGatewayDeploy' || name === 'admin.releases.requestGatewayRollback') {
+                const releaseOperation = {
+                    id: '77777777-7777-4777-8777-777777777777',
+                    type: name.endsWith('Rollback') ? ('ROLLBACK' as const) : ('DEPLOY' as const),
+                    status: 'QUEUED' as const,
+                    sourceMode: 'BRANCH' as const,
+                    sourceRef: 'main',
+                    payload: {},
+                    requestedBy: 'admin',
+                    createdAt: '2026-08-01T02:00:00.000Z',
+                    updatedAt: '2026-08-01T02:00:00.000Z',
+                };
+                state.gatewayOperations = [releaseOperation];
+                return response(releaseOperation);
             }
             if (name === 'admin.operations.requestRuntime') {
                 const serialized = JSON.stringify(body);
@@ -158,7 +214,7 @@ const installFixture = async (page: Page, state: FixtureState) => {
 test('separates branch and commit semantics and submits a reset from the dedicated page', async ({
     page,
 }, testInfo) => {
-    const state: FixtureState = { operations: [], runtimeRunning: false, requestBodies: [] };
+    const state: FixtureState = { operations: [], gatewayOperations: [], runtimeRunning: false, requestBodies: [] };
     await installFixture(page, state);
     page.on('dialog', (dialog) => dialog.accept());
 
@@ -233,7 +289,7 @@ test('separates branch and commit semantics and submits a reset from the dedicat
 });
 
 test('starts and stops all runtime roles through the operation controls', async ({ page }) => {
-    const state: FixtureState = { operations: [], runtimeRunning: false, requestBodies: [] };
+    const state: FixtureState = { operations: [], gatewayOperations: [], runtimeRunning: false, requestBodies: [] };
     await installFixture(page, state);
     page.on('dialog', (dialog) => dialog.accept());
 
@@ -249,6 +305,46 @@ test('starts and stops all runtime roles through the operation controls', async 
     const serializedRequests = state.requestBodies.map((entry) => JSON.stringify(entry.body)).join('\n');
     expect(serializedRequests).toContain('"action":"START"');
     expect(serializedRequests).toContain('"action":"STOP"');
+});
+
+test('separates DB-preserving profile deployment from DB reset', async ({ page }) => {
+    const state: FixtureState = { operations: [], gatewayOperations: [], runtimeRunning: true, requestBodies: [] };
+    await installFixture(page, state);
+    page.on('dialog', (dialog) => dialog.accept());
+
+    await page.goto('admin/server-operations');
+    await expect(page.getByText('Game frontend')).toBeVisible();
+    await page.getByTestId('request-deploy').click();
+
+    await expect(page.getByText('DB 보존 배포 작업을 등록했습니다.')).toBeVisible();
+    await expect(page.getByTestId('operations-table')).toContainText('DEPLOY');
+    expect(state.requestBodies.some((entry) => entry.operation === 'admin.operations.requestDeploy')).toBe(true);
+    expect(state.requestBodies.some((entry) => entry.operation === 'admin.operations.requestReset')).toBe(false);
+});
+
+test('controls gateway deployment and rollback through the external controller queue', async ({ page }, testInfo) => {
+    const state: FixtureState = { operations: [], gatewayOperations: [], runtimeRunning: true, requestBodies: [] };
+    await installFixture(page, state);
+    page.on('dialog', (dialog) => dialog.accept());
+
+    await page.goto('admin/server-operations');
+    const panel = page.getByTestId('gateway-release-panel');
+    await expect(panel).toBeVisible();
+    await expect(panel).toContainText('aaaaaaaaaaaa');
+    await expect(panel).toContainText('bbbbbbbbbbbb');
+    await page.getByTestId('gateway-source-ref').fill('release/2026-08');
+    await page.getByTestId('request-gateway-deploy').click();
+
+    await expect(page.getByText(/Gateway 배포 작업을 등록했습니다/)).toBeVisible();
+    await expect(page.getByTestId('gateway-release-table')).toContainText('DEPLOY');
+    expect(state.requestBodies.some((entry) => entry.operation === 'admin.releases.requestGatewayDeploy')).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath('gateway-release-desktop.png'), fullPage: true });
+
+    state.gatewayOperations = [];
+    await page.getByTestId('refresh-operations').click();
+    await page.getByTestId('request-gateway-rollback').click();
+    await expect(page.getByText('Gateway rollback 작업을 등록했습니다.')).toBeVisible();
+    expect(state.requestBodies.some((entry) => entry.operation === 'admin.releases.requestGatewayRollback')).toBe(true);
 });
 
 test('renders a failed reset, retries it as a new operation, and reaches success', async ({ page }, testInfo) => {
@@ -272,6 +368,7 @@ test('renders a failed reset, retries it as a new operation, and reaches success
                 updatedAt: '2026-07-25T03:30:00.000Z',
             },
         ],
+        gatewayOperations: [],
         runtimeRunning: false,
         requestBodies: [],
     };

@@ -28,6 +28,7 @@ describe('planProfileReconcile', () => {
     it('starts missing processes for running profiles', () => {
         expect(
             planProfileReconcile('RUNNING', {
+                frontendRunning: true,
                 apiRunning: true,
                 daemonRunning: false,
                 auctionRunning: true,
@@ -40,6 +41,7 @@ describe('planProfileReconcile', () => {
     it('starts processes for preopen profiles', () => {
         expect(
             planProfileReconcile('PREOPEN', {
+                frontendRunning: false,
                 apiRunning: false,
                 daemonRunning: false,
                 auctionRunning: false,
@@ -52,6 +54,7 @@ describe('planProfileReconcile', () => {
     it('does nothing when running profile is healthy', () => {
         expect(
             planProfileReconcile('RUNNING', {
+                frontendRunning: true,
                 apiRunning: true,
                 daemonRunning: true,
                 auctionRunning: true,
@@ -64,6 +67,7 @@ describe('planProfileReconcile', () => {
     it('restarts a running profile when only the auction worker is missing', () => {
         expect(
             planProfileReconcile('RUNNING', {
+                frontendRunning: true,
                 apiRunning: true,
                 daemonRunning: true,
                 auctionRunning: false,
@@ -76,6 +80,7 @@ describe('planProfileReconcile', () => {
     it('stops processes for non-running profiles', () => {
         expect(
             planProfileReconcile('STOPPED', {
+                frontendRunning: false,
                 apiRunning: false,
                 daemonRunning: true,
                 auctionRunning: false,
@@ -88,6 +93,7 @@ describe('planProfileReconcile', () => {
     it('keeps reserved profiles off', () => {
         expect(
             planProfileReconcile('RESERVED', {
+                frontendRunning: false,
                 apiRunning: false,
                 daemonRunning: false,
                 auctionRunning: false,
@@ -110,6 +116,19 @@ describe('buildProcessDefinitions', () => {
         const buildWorkspace = '/srv/sammo/worktrees/0123456789abcdef';
         const definitions = buildProcessDefinitions(buildProfile(buildWorkspace), processConfig);
 
+        expect(definitions.frontend).toMatchObject({
+            cwd: path.join(buildWorkspace, 'app', 'game-frontend'),
+            script: path.join(buildWorkspace, 'node_modules', 'vite', 'bin', 'vite.js'),
+            args: [
+                'preview',
+                '--host',
+                '0.0.0.0',
+                '--port',
+                '15002',
+                '--outDir',
+                path.join(buildWorkspace, '.release-dist', 'che_2', 'game-frontend'),
+            ],
+        });
         expect(definitions.api.cwd).toBe(path.join(buildWorkspace, 'app', 'game-api'));
         expect(definitions.api.script).toBe(path.join(buildWorkspace, 'app', 'game-api', 'dist', 'index.js'));
         expect(definitions.api.env).toMatchObject({
@@ -141,6 +160,7 @@ describe('buildProcessDefinitions', () => {
     it('keeps main as the runtime for profiles without a commit worktree', () => {
         const definitions = buildProcessDefinitions(buildProfile(), processConfig);
 
+        expect(definitions.frontend.cwd).toBe(path.join(processConfig.workspaceRoot, 'app', 'game-frontend'));
         expect(definitions.api.cwd).toBe(path.join(processConfig.workspaceRoot, 'app', 'game-api'));
         expect(definitions.daemon.cwd).toBe(path.join(processConfig.workspaceRoot, 'app', 'game-engine'));
         expect(definitions.auction.cwd).toBe(path.join(processConfig.workspaceRoot, 'app', 'game-api'));
@@ -155,7 +175,7 @@ describe('buildWorkspaceCommands', () => {
         const commands = buildWorkspaceCommands(workspaceRoot, true);
 
         expect(commands.map(({ args }) => args)).toEqual([
-            ['install'],
+            ['install', '--frozen-lockfile'],
             ['--filter', '@sammo-ts/common', 'build'],
             ['--filter', '@sammo-ts/infra', 'prisma:generate'],
             ['--filter', '@sammo-ts/infra', 'build'],

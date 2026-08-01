@@ -29,9 +29,13 @@ const installGatewayFixture = async (page: Page, roles: string[]) => {
                 operation === 'lobby.profiles' ||
                 operation === 'admin.profiles.list' ||
                 operation === 'admin.profiles.listScenarios' ||
-                operation === 'admin.operations.list'
+                operation === 'admin.operations.list' ||
+                operation === 'admin.releases.list'
             ) {
                 return response([]);
+            }
+            if (operation === 'admin.releases.gatewayState') {
+                return response({ id: 'gateway', updatedAt: '2026-08-01T00:00:00.000Z' });
             }
             if (operation === 'admin.users.getLocalAccountStatus') {
                 return response({ enabled: true });

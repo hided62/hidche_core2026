@@ -9,6 +9,11 @@ import type {
     GatewayProfileRecord,
     GatewayProfileRepository,
 } from '../src/orchestrator/profileRepository.js';
+import type {
+    GatewayReleaseOperationCreateInput,
+    GatewayReleaseOperationRecord,
+    GatewayReleaseRepository,
+} from '../src/orchestrator/gatewayReleaseRepository.js';
 import { createGatewayApiContext } from '../src/context.js';
 import { InMemoryProfileStatusService } from '../src/lobby/profileStatusService.js';
 import { appRouter } from '../src/router.js';
@@ -22,6 +27,7 @@ const buildCaller = async (
         runtimeActionCreateError?: unknown;
         initialNotice?: string;
         initialProfileStatus?: GatewayProfileRecord['status'];
+        profileScenario?: string;
     } = {}
 ) => {
     const users = createInMemoryUserRepository();
@@ -38,6 +44,7 @@ const buildCaller = async (
     });
     const session = await sessions.createSession({ ...admin, roles: adminRoles });
     const createdInputs: GatewayOperationCreateInput[] = [];
+    const createdReleaseInputs: GatewayReleaseOperationCreateInput[] = [];
     const operationRecords = new Map<string, Awaited<ReturnType<GatewayProfileRepository['createOperation']>>>();
     const createdRuntimeActions: Array<Record<string, unknown>> = [];
     const flushes: Array<{ userId: string; reason?: string; iconRevision?: string }> = [];
@@ -48,7 +55,7 @@ const buildCaller = async (
     const profile = {
         profileName: 'che:2',
         profile: 'che',
-        scenario: '2',
+        scenario: options.profileScenario ?? '2',
         apiPort: 15003,
         status: options.initialProfileStatus ?? ('STOPPED' as const),
         buildStatus: 'SUCCEEDED' as const,
@@ -93,6 +100,46 @@ const buildCaller = async (
         cancelOperation: async () => false,
         retryOperation: async () => null,
     };
+    const releases: GatewayReleaseRepository = {
+        getState: async () => ({
+            id: 'gateway',
+            activeCommitSha: '1111111111111111111111111111111111111111',
+            activeWorkspace: '/srv/sammo/current',
+            previousCommitSha: '2222222222222222222222222222222222222222',
+            previousWorkspace: '/srv/sammo/previous',
+            updatedAt: '2026-08-01T00:00:00.000Z',
+        }),
+        listOperations: async () => [],
+        getOperation: async () => null,
+        createOperation: async (input) => {
+            createdReleaseInputs.push(input);
+            return {
+                id: '44444444-4444-4444-8444-444444444444',
+                type: input.type,
+                status: 'QUEUED',
+                sourceMode: input.sourceMode,
+                sourceRef: input.sourceRef,
+                payload: input.payload ?? {},
+                reason: input.reason,
+                requestedBy: input.requestedBy,
+                attempts: 0,
+                createdAt: '2026-08-01T00:00:00.000Z',
+                updatedAt: '2026-08-01T00:00:00.000Z',
+            } satisfies GatewayReleaseOperationRecord;
+        },
+        claimNextOperation: async () => null,
+        renewOperationLease: async () => false,
+        pinOperationResolvedCommit: async () => false,
+        completeOperation: async () => {
+            throw new Error('not used');
+        },
+        publishRelease: async () => {
+            throw new Error('not used');
+        },
+        recordStateError: async () => {},
+        cancelOperation: async () => false,
+        retryOperation: async () => null,
+    };
     const caller = appRouter.createCaller(
         createGatewayApiContext({
             users,
@@ -116,6 +163,7 @@ const buildCaller = async (
             localAccountGraceDays: 7,
             passwordEnvelope: createPasswordEnvelopeService(),
             profiles,
+            releases,
             orchestrator: {
                 start: () => {},
                 stop: async () => {},
@@ -170,6 +218,7 @@ const buildCaller = async (
     return {
         caller,
         createdInputs,
+        createdReleaseInputs,
         createdRuntimeActions,
         users,
         admin,
@@ -269,6 +318,86 @@ describe('admin operation API', () => {
                 action: 'STOP',
             })
         ).rejects.toMatchObject({ code: 'CONFLICT' });
+    });
+
+    it('queues a DB-preserving profile deployment without reset payload', async () => {
+        const harness = await buildCaller(
+            async (input) => ({
+                id: '33333333-3333-4333-8333-333333333333',
+                profileName: input.profileName,
+                type: 'DEPLOY',
+                status: 'QUEUED',
+                sourceMode: input.sourceMode,
+                sourceRef: input.sourceRef,
+                payload: {},
+                requestedBy: input.requestedBy,
+                createdAt: '2026-08-01T00:00:00.000Z',
+                updatedAt: '2026-08-01T00:00:00.000Z',
+            }),
+            { profileScenario: '1010' }
+        );
+
+        await harness.caller.admin.operations.requestDeploy({
+            profileName: 'che:2',
+            sourceMode: 'COMMIT',
+            sourceRef: 'HEAD',
+            reason: 'preserve live season',
+        });
+
+        expect(harness.createdInputs[0]).toMatchObject({
+            profileName: 'che:2',
+            type: 'DEPLOY',
+            sourceMode: 'COMMIT',
+            reason: 'preserve live season',
+        });
+        expect(harness.createdInputs[0]).not.toHaveProperty('payload');
+    });
+});
+
+describe('gateway release API', () => {
+    it('queues a gateway deployment for the external release controller', async () => {
+        const harness = await buildCaller(async () => {
+            throw new Error('not used');
+        });
+
+        await harness.caller.admin.releases.requestGatewayDeploy({
+            sourceMode: 'COMMIT',
+            sourceRef: 'HEAD',
+            reason: 'gateway rollout',
+        });
+
+        expect(harness.createdReleaseInputs[0]).toMatchObject({
+            type: 'DEPLOY',
+            sourceMode: 'COMMIT',
+            reason: 'gateway rollout',
+            requestedBy: harness.admin.id,
+        });
+        expect(harness.createdReleaseInputs[0]?.sourceRef).toMatch(/^[0-9a-f]{40}$/u);
+    });
+
+    it('queues rollback to the previously published gateway commit', async () => {
+        const harness = await buildCaller(async () => {
+            throw new Error('not used');
+        });
+
+        await harness.caller.admin.releases.requestGatewayRollback({ reason: 'readiness regression' });
+
+        expect(harness.createdReleaseInputs[0]).toMatchObject({
+            type: 'ROLLBACK',
+            sourceMode: 'COMMIT',
+            sourceRef: '2222222222222222222222222222222222222222',
+        });
+    });
+
+    it('requires the global release permission even for profile-scoped administrators', async () => {
+        const harness = await buildCaller(
+            async () => {
+                throw new Error('not used');
+            },
+            { adminRoles: ['admin.profiles.manage:che:2'], firstUserIsAdmin: false }
+        );
+
+        await expect(harness.caller.admin.releases.gatewayState()).rejects.toMatchObject({ code: 'FORBIDDEN' });
     });
 });
 
