@@ -323,10 +323,9 @@ onMounted(() => {
 <style scoped>
 .legacy-troop-page {
     position: relative;
-    min-height: 100vh;
     margin: 0 auto;
     color: #fff;
-    background: #000;
+    background: transparent;
     font-family: Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic';
     font-size: 14px;
     line-height: 1.5;
@@ -625,7 +624,7 @@ onMounted(() => {
 
 @media (max-width: 500px) {
     .legacy-troop-page {
-        width: 500px;
+        width: 511px;
     }
 
     #generalPopup {

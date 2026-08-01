@@ -208,7 +208,7 @@ onMounted(() => {
 
 .legacy-bg1 {
     background-color: #423226;
-    background-image: url('/image/game/back_sandal.jpg');
+    background-image: var(--sammo-texture-blue);
 }
 
 .legacy-bg2 {

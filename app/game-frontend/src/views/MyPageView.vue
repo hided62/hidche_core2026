@@ -343,7 +343,7 @@ onMounted(() => {
                 <div v-else class="general-table">
                     <div class="portrait-cell">
                         <img
-                            :src="resolveGeneralIconUrl(data.general, { legacyBaseUrl: '/image/game' })"
+                            :src="resolveGeneralIconUrl(data.general)"
                             alt=""
                             @error="useDefaultGeneralIcon"
                         />

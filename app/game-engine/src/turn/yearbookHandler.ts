@@ -24,6 +24,7 @@ type YearbookNation = {
     color: string;
     level: number;
     power: number;
+    generalCount: number;
     cities: string[];
 };
 
@@ -110,9 +111,18 @@ const buildNationSnapshot = (world: InMemoryTurnWorld): YearbookNation[] => {
         cityNamesByNation.set(city.nationId, cityNames);
     }
 
-    const generalStatsByNation = new Map<number, { goldRice: number; statPower: number; expDed: number }>();
+    const generalStatsByNation = new Map<
+        number,
+        { goldRice: number; statPower: number; expDed: number; generalCount: number }
+    >();
     for (const general of generals) {
-        const entry = generalStatsByNation.get(general.nationId) ?? { goldRice: 0, statPower: 0, expDed: 0 };
+        const entry = generalStatsByNation.get(general.nationId) ?? {
+            goldRice: 0,
+            statPower: 0,
+            expDed: 0,
+            generalCount: 0,
+        };
+        entry.generalCount += 1;
         entry.goldRice += general.gold + general.rice;
         const leadership = general.stats.leadership;
         const strength = general.stats.strength;
@@ -125,7 +135,12 @@ const buildNationSnapshot = (world: InMemoryTurnWorld): YearbookNation[] => {
     }
 
     return nations.map((nation) => {
-        const generalStats = generalStatsByNation.get(nation.id) ?? { goldRice: 0, statPower: 0, expDed: 0 };
+        const generalStats = generalStatsByNation.get(nation.id) ?? {
+            goldRice: 0,
+            statPower: 0,
+            expDed: 0,
+            generalCount: 0,
+        };
         const cityStats = cityStatsByNation.get(nation.id) ?? { popSum: 0, valueSum: 0, maxSum: 0 };
         const resource = Math.round(((nation.gold ?? 0) + (nation.rice ?? 0) + generalStats.goldRice) / 100);
         const tech = asNumber(asRecord(nation.meta).tech, 0);
@@ -142,6 +157,7 @@ const buildNationSnapshot = (world: InMemoryTurnWorld): YearbookNation[] => {
             color: nation.color,
             level: nation.level,
             power,
+            generalCount: generalStats.generalCount,
             cities: cityNamesByNation.get(nation.id) ?? [],
         };
     });

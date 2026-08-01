@@ -366,7 +366,7 @@ onMounted(() => {
                 <!-- eslint-disable vue/no-v-html -->
                 <div v-for="log in overview?.recentLogs ?? []" :key="log.id" v-html="formatLog(log.text)" />
                 <!-- eslint-enable vue/no-v-html -->
-                <div v-if="(overview?.recentLogs.length ?? 0) === 0" class="empty-row">경매 기록이 없습니다.</div>
+                <div v-if="(overview?.recentLogs.length ?? 0) === 0" class="sr-only">경매 기록이 없습니다.</div>
             </div>
         </section>
 
@@ -648,7 +648,7 @@ input:focus-visible {
     outline-offset: -2px;
 }
 .open-form {
-    min-height: 76px;
+    min-height: 58px;
     display: grid;
     grid-template-columns: 1fr 2fr 1fr 2fr 2fr 1fr;
     align-items: end;

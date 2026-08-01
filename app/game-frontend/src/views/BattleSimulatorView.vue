@@ -442,7 +442,9 @@ const buildGeneralPayload = (
         nation: nationId,
         turntime: timestamp,
         personal: general.personal,
-        special: general.special,
+        // Ref does not expose the domestic speciality in this form. Battle requests
+        // always use the scenario's default domestic speciality instead.
+        special: options.value?.eventDomesticTraits[0]?.key ?? general.special,
         special2: general.special2,
         crew: general.crew,
         crewtype: general.crewtype,
@@ -949,7 +951,16 @@ const generalGroups = computed(() => {
 
 const summaryRows = computed(() => {
     if (!battleResult.value) {
-        return [];
+        return [
+            { label: '전투 일시', value: '' },
+            { label: '전투 횟수', value: '' },
+            { label: '전투 페이즈', value: '' },
+            { label: '준 피해', value: '0 (0 ~ 0)' },
+            { label: '받은 피해', value: '0 (0 ~ 0)' },
+            { label: '출병자 군량 소모', value: '' },
+            { label: '수비자 군량 소모', value: '' },
+            { label: '공격자 스킬', value: '' },
+        ];
     }
     return [
         { label: '전투 일시', value: battleResult.value.datetime ?? '-' },
@@ -981,7 +992,7 @@ const summaryRows = computed(() => {
 
 const defenderSkillRows = computed(() => {
     if (!battleResult.value?.defendersSkills) {
-        return [];
+        return defenders.value.map((_, idx) => ({ label: `수비자${idx + 1} 스킬`, value: '' }));
     }
     return battleResult.value.defendersSkills.map((skills, idx) => ({
         label: `수비자${idx + 1} 스킬`,
@@ -994,100 +1005,63 @@ const shouldShowUI = computed(() => !loading.value && !!options.value);
 
 <template>
     <main class="battle-simulator">
-        <header class="battle-header">
-            <div>
-                <h1>전투 시뮬레이터</h1>
-                <p>시드와 환경을 고정해 전투 결과를 재현합니다.</p>
-            </div>
-            <div class="header-actions">
-                <button
-                    class="primary"
-                    type="button"
-                    :disabled="isSimulating || !options"
-                    @click="runSimulation('battle')"
-                >
-                    전투
-                </button>
-                <button class="ghost" type="button" @click="saveBattle">모두 저장</button>
-                <input ref="battleFileInput" type="file" accept=".json" hidden @change="handleBattleFileChange" />
-                <button class="ghost" type="button" @click="triggerBattleLoad">모두 불러오기</button>
-            </div>
-        </header>
-
-        <section class="independence-notice" aria-label="시뮬레이터 데이터 안내">
-            <div>
-                <strong>게임 상태와 분리된 모의 계산</strong>
-                <p>
-                    현재 연도·국가·도시는 시작값으로만 읽으며, 아래 편집과 전투 결과는 턴·DB·장수 상태를 변경하지
-                    않습니다.
-                </p>
-            </div>
-            <div class="notice-actions">
-                <button class="ghost" type="button" :disabled="!options" @click="applyGameEnvironment">
-                    현재 게임 환경 적용
-                </button>
-                <button class="ghost" type="button" :disabled="!options" @click="applyIndependentEnvironment">
-                    독립 기본값
-                </button>
-                <button
-                    class="ghost"
-                    type="button"
-                    :disabled="!hasGameGeneral || !attackerGeneral"
-                    @click="applyMyGeneralToAttacker"
-                >
-                    내 장수를 출병자로
-                </button>
-            </div>
-        </section>
-
         <div v-if="error" class="error">{{ error }}</div>
         <div v-if="statusMessage" class="status">{{ statusMessage }}</div>
 
-        <PanelCard title="전역 설정" subtitle="전투 시점과 난수 설정">
-            <template #actions>
-                <button
-                    class="ghost"
-                    type="button"
-                    :disabled="isSimulating || !options"
-                    @click="runSimulation('reorder')"
-                >
-                    수비 순서대로 정렬
-                </button>
-                <button class="ghost" type="button" :disabled="!options" @click="addDefender()">수비자 추가</button>
-            </template>
+        <PanelCard data-parity-id="world-settings" title="전역 설정">
             <div v-if="loading">
                 <SkeletonLines :lines="3" />
             </div>
             <div v-else-if="options" class="settings-grid">
-                <label class="field">
-                    <span>시나리오 시작 연도</span>
+                <label class="field unit-after">
                     <input type="number" :value="options.world.startYear" disabled />
+                    <span>년 시작</span>
                 </label>
-                <label class="field">
-                    <span>연도</span>
-                    <input v-model.number="year" type="number" :min="options.world.startYear" />
+                <label class="field unit-after">
+                    <input
+                        v-model.number="year"
+                        aria-label="연도"
+                        data-parity-id="year"
+                        type="number"
+                        :min="options.world.startYear"
+                    />
+                    <span>년</span>
                 </label>
-                <label class="field">
+                <label class="field unit-after month-field">
+                    <input v-model.number="month" aria-label="월" type="number" min="1" max="12" />
                     <span>월</span>
-                    <input v-model.number="month" type="number" min="1" max="12" />
                 </label>
-                <label class="field">
+                <label class="field seed-field">
                     <span>시드</span>
-                    <input v-model="seed" type="text" placeholder="빈값이면 랜덤" />
+                    <input v-model="seed" data-parity-id="seed" type="text" />
                 </label>
-                <label class="field">
+                <label class="field repeat-field">
                     <span>반복 횟수</span>
-                    <select v-model.number="repeatCnt">
+                    <select v-model.number="repeatCnt" data-parity-id="repeat-count">
                         <option :value="1">1회 (로그 표기)</option>
                         <option :value="1000">1000회 (요약 표기)</option>
                     </select>
                 </label>
+                <div class="header-actions">
+                    <button
+                        class="primary"
+                        data-parity-id="battle-button"
+                        type="button"
+                        :disabled="isSimulating || !options"
+                        @click="runSimulation('battle')"
+                    >
+                        전투
+                    </button>
+                    <button class="ghost save-action" type="button" @click="saveBattle">모두 저장</button>
+                    <input ref="battleFileInput" type="file" accept=".json" hidden @change="handleBattleFileChange" />
+                    <button class="ghost load-action" type="button" @click="triggerBattleLoad">모두 불러오기</button>
+                </div>
             </div>
         </PanelCard>
 
         <div v-if="shouldShowUI" class="battle-grid">
             <div class="column">
-                <PanelCard title="출병국 설정">
+                <PanelCard data-parity-id="attacker-nation" title="출병국 설정">
                     <div class="form-row">
                         <label class="field">
                             <span>국가 성향</span>
@@ -1101,16 +1075,17 @@ const shouldShowUI = computed(() => !loading.value && !!options.value);
                             <span>기술</span>
                             <input v-model.number="attackerNation.tech" type="number" min="0" max="12" />
                         </label>
+                        <span class="grade-label">등급</span>
+                    </div>
+                    <div class="form-row">
                         <label class="field">
-                            <span>등급</span>
+                            <span>국가 규모</span>
                             <select v-model.number="attackerNation.level">
                                 <option v-for="level in options!.nationLevels" :key="level.level" :value="level.level">
                                     {{ level.name }}
                                 </option>
                             </select>
                         </label>
-                    </div>
-                    <div class="form-row">
                         <label class="field">
                             <span>도시 규모</span>
                             <select v-model.number="attackerCity.level">
@@ -1132,6 +1107,7 @@ const shouldShowUI = computed(() => !loading.value && !!options.value);
                 <BattleGeneralCard
                     v-if="attackerGeneral"
                     v-model:general="attackerGeneral"
+                    data-parity-id="attacker-general"
                     :options="options!"
                     mode="attacker"
                     title="출병자 설정"
@@ -1143,7 +1119,7 @@ const shouldShowUI = computed(() => !loading.value && !!options.value);
             </div>
 
             <div class="column">
-                <PanelCard title="수비국 설정">
+                <PanelCard data-parity-id="defender-nation" title="수비국 설정">
                     <div class="form-row">
                         <label class="field">
                             <span>국가 성향</span>
@@ -1157,16 +1133,17 @@ const shouldShowUI = computed(() => !loading.value && !!options.value);
                             <span>기술</span>
                             <input v-model.number="defenderNation.tech" type="number" min="0" max="12" />
                         </label>
+                        <span class="grade-label">등급</span>
+                    </div>
+                    <div class="form-row">
                         <label class="field">
-                            <span>등급</span>
+                            <span>국가 규모</span>
                             <select v-model.number="defenderNation.level">
                                 <option v-for="level in options!.nationLevels" :key="level.level" :value="level.level">
                                     {{ level.name }}
                                 </option>
                             </select>
                         </label>
-                    </div>
-                    <div class="form-row">
                         <label class="field">
                             <span>도시 규모</span>
                             <select v-model.number="defenderCity.level">
@@ -1196,13 +1173,30 @@ const shouldShowUI = computed(() => !loading.value && !!options.value);
                 </PanelCard>
 
                 <div class="defender-list">
+                    <div class="defender-toolbar">
+                        <strong>수비자 설정</strong>
+                        <div>
+                            <button
+                                class="ghost"
+                                type="button"
+                                :disabled="isSimulating || !options"
+                                @click="runSimulation('reorder')"
+                            >
+                                수비 순서대로 정렬
+                            </button>
+                            <button class="ghost add-action" type="button" :disabled="!options" @click="addDefender()">
+                                추가
+                            </button>
+                        </div>
+                    </div>
                     <BattleGeneralCard
                         v-for="(defender, index) in defenders"
                         :key="defender.id"
                         v-model:general="defenders[index]"
+                        :data-parity-id="index === 0 ? 'defender-general' : `defender-general-${index + 1}`"
                         :options="options!"
                         mode="defender"
-                        :title="`수비자 설정 ${index + 1}`"
+                        title="수비자 설정"
                         :can-import-server="hasGameGeneral"
                         @import="openImportModal(defender)"
                         @save="saveGeneral(defender)"
@@ -1214,9 +1208,9 @@ const shouldShowUI = computed(() => !loading.value && !!options.value);
             </div>
         </div>
 
-        <PanelCard title="전투 요약">
+        <PanelCard class="battle-summary-card" title="전투 요약">
             <table class="summary-table">
-                <tbody>
+                <tbody data-parity-id="battle-summary">
                     <tr v-for="row in summaryRows" :key="row.label">
                         <th>{{ row.label }}</th>
                         <td>{{ row.value }}</td>
@@ -1231,12 +1225,44 @@ const shouldShowUI = computed(() => !loading.value && !!options.value);
 
         <div class="log-grid">
             <PanelCard title="마지막 전투 로그">
-                <div class="log-body" v-html="battleResult?.lastWarLog?.generalBattleResultLog ?? ''" />
+                <div
+                    class="log-body"
+                    data-parity-id="battle-log"
+                    v-html="battleResult?.lastWarLog?.generalBattleResultLog ?? ''"
+                />
             </PanelCard>
             <PanelCard title="마지막 전투 상세 로그">
-                <div class="log-body" v-html="battleResult?.lastWarLog?.generalBattleDetailLog ?? ''" />
+                <div
+                    class="log-body"
+                    data-parity-id="battle-detail-log"
+                    v-html="battleResult?.lastWarLog?.generalBattleDetailLog ?? ''"
+                />
             </PanelCard>
         </div>
+
+        <details class="independence-notice" aria-label="시뮬레이터 데이터 안내">
+            <summary>환경</summary>
+            <p>
+                현재 연도·국가·도시는 시작값으로만 읽으며, 아래 편집과 전투 결과는 턴·DB·장수 상태를 변경하지
+                않습니다.
+            </p>
+            <div class="notice-actions">
+                <button class="ghost" type="button" :disabled="!options" @click="applyGameEnvironment">
+                    현재 게임 환경 적용
+                </button>
+                <button class="ghost" type="button" :disabled="!options" @click="applyIndependentEnvironment">
+                    독립 기본값
+                </button>
+                <button
+                    class="ghost"
+                    type="button"
+                    :disabled="!hasGameGeneral || !attackerGeneral"
+                    @click="applyMyGeneralToAttacker"
+                >
+                    내 장수를 출병자로
+                </button>
+            </div>
+        </details>
 
         <div v-if="importOpen" class="modal-backdrop">
             <div class="modal">
@@ -1276,59 +1302,56 @@ const shouldShowUI = computed(() => !loading.value && !!options.value);
 .battle-simulator {
     display: flex;
     flex-direction: column;
-    gap: 18px;
+    gap: 14px;
     width: min(100%, 1000px);
     margin: 0 auto;
-    padding-bottom: 30px;
-    background:
-        radial-gradient(circle at top left, rgba(201, 164, 90, 0.15), transparent 45%),
-        radial-gradient(circle at bottom right, rgba(120, 140, 110, 0.15), transparent 40%);
+    padding-bottom: 0;
+    line-height: 18.2px;
+    position: relative;
 }
 
-.battle-header {
-    display: flex;
-    justify-content: space-between;
-    gap: 16px;
-    flex-wrap: wrap;
+.battle-simulator :deep(.panel-card) {
+    border-color: rgba(0, 0, 0, 0.18);
+    border-radius: 5px;
+    background: #303030;
+    background-image: none;
+    overflow: hidden;
 }
 
-.battle-header h1 {
-    font-size: 1.2rem;
-    margin: 0;
+.battle-simulator :deep(.panel-header) {
+    min-height: 32px;
+    border-bottom: 0;
+    padding: 6px 14px;
+    background: #444;
+    background-image: none;
 }
 
-.battle-header p {
-    margin: 6px 0 0;
-    font-size: 0.85rem;
-    color: rgba(232, 221, 196, 0.7);
+.battle-simulator :deep(.panel-body) {
+    padding: 14px;
+    line-height: 18.2px;
 }
 
 .header-actions {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 7px;
+    margin-left: 14px;
 }
 
 .independence-notice {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 14px;
-    padding: 10px 12px;
-    border: 1px solid rgba(112, 170, 141, 0.45);
-    background: rgba(18, 52, 40, 0.35);
-}
-
-.independence-notice strong {
-    color: #bfe2cd;
-    font-size: 0.85rem;
+    position: absolute;
+    top: 5px;
+    right: 8px;
+    z-index: 5;
+    padding: 2px 6px;
+    background: #444;
+    color: #aaa;
+    font-size: 11px;
 }
 
 .independence-notice p {
-    margin: 4px 0 0;
-    color: rgba(221, 239, 228, 0.75);
-    font-size: 0.75rem;
+    margin: 6px 0;
 }
 
 .notice-actions {
@@ -1347,18 +1370,41 @@ button {
 
 .primary,
 .ghost {
-    border: 1px solid rgba(201, 164, 90, 0.4);
-    padding: 6px 12px;
-    font-size: 0.8rem;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    padding: 5.25px 10.5px;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 21px;
     cursor: pointer;
+    transition: color 0.15s ease-in-out, background-color 0.15s ease-in-out, border-color 0.15s ease-in-out,
+        box-shadow 0.15s ease-in-out;
 }
 
 .primary {
-    background: rgba(201, 164, 90, 0.2);
+    background: #e74c3c;
+}
+
+.primary:active {
+    background: #c0392b;
+}
+
+.header-actions .primary,
+.header-actions .ghost {
+    min-height: 35.5px;
 }
 
 .ghost {
-    background: rgba(16, 16, 16, 0.6);
+    background: #3498db;
+}
+
+.load-action {
+    background: #2c5d8f;
+}
+
+.add-action {
+    background: #10b981;
 }
 
 button:disabled {
@@ -1376,46 +1422,126 @@ button:disabled {
     font-size: 0.85rem;
 }
 
-.settings-grid,
-.form-row {
+.settings-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 10px;
+    grid-template-columns: 126px 99px 106px 166px 216px minmax(0, 1fr);
+    gap: 0;
+    margin-top: 1.1875px;
 }
 
 .field {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    color: #ddd;
+    font-size: 14px;
+}
+
+.unit-after {
+    grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.field span {
     display: flex;
-    flex-direction: column;
-    gap: 4px;
-    font-size: 0.75rem;
-    color: rgba(232, 221, 196, 0.75);
+    align-items: center;
+    padding: 5.25px 10.5px;
+    border: 1px solid #111;
+    background: #444;
+    white-space: nowrap;
 }
 
 .field input,
 .field select {
-    background: rgba(6, 6, 6, 0.7);
-    border: 1px solid rgba(201, 164, 90, 0.35);
-    color: #e8ddc4;
-    padding: 4px 6px;
-    font-size: 0.8rem;
+    min-width: 0;
+    border: 1px solid #000;
+    background: #ddd;
+    color: #303030;
+    padding: 5.25px 10.5px;
+    font-size: 14px;
+    line-height: 21px;
+    box-shadow: inset 0 2px 0 rgba(0, 0, 0, 0.075);
+    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+.repeat-field select {
+    padding-right: 31.5px;
+    background-image: url("data:image/svg+xml,%3csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3e%3cpath fill=%27none%27 stroke=%27%23303030%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 stroke-width=%272%27 d=%27m2 5 6 6 6-6%27/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 10.5px center;
+    background-size: 16px 12px;
+    box-shadow: none;
+    appearance: none;
+}
+
+.field input:focus,
+.field select:focus {
+    border-color: #9badbf;
+    outline: 0;
 }
 
 .battle-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-    gap: 16px;
+    gap: 20px;
+}
+
+.battle-grid .form-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0;
+}
+
+.battle-grid :deep(.panel-body) > .form-row:first-child {
+    grid-template-columns: 3fr 1fr auto;
+}
+
+.battle-grid [data-parity-id='defender-nation'] :deep(.panel-body) > .form-row:last-child {
+    margin-top: -7px;
+}
+
+.battle-grid :deep(.panel-body) {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding-block: 24px;
+}
+
+.grade-label {
+    display: flex;
+    align-items: center;
+    padding: 5px 10px;
+    border: 1px solid #111;
+    background: #444;
+    color: #ddd;
+    font-size: 14px;
+    white-space: nowrap;
 }
 
 .column {
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 8px;
 }
 
 .defender-list {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 8px;
+}
+
+.defender-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 38px;
+    padding: 6px 14px;
+    border-radius: 5px;
+    background: #444;
+    font-size: 14px;
+}
+
+.defender-toolbar > div {
+    display: flex;
+    gap: 7px;
 }
 
 .summary-table {
@@ -1425,25 +1551,35 @@ button:disabled {
 
 .summary-table th,
 .summary-table td {
-    padding: 6px 8px;
+    padding: 7px 8px;
     border-bottom: 1px solid rgba(201, 164, 90, 0.2);
     text-align: left;
 }
 
 .summary-table th {
     width: 18ch;
-    color: rgba(232, 221, 196, 0.7);
+    color: #fff;
     font-weight: 600;
+}
+
+.battle-summary-card :deep(.panel-body) {
+    padding: 0;
+}
+
+.battle-summary-card {
+    margin-top: -6px;
 }
 
 .log-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
     gap: 12px;
+    margin-top: 15px;
+    margin-bottom: 14px;
 }
 
 .log-body {
-    min-height: 120px;
+    min-height: 0;
     line-height: 1.5;
     font-size: 0.85rem;
 }
@@ -1501,14 +1637,44 @@ button:disabled {
     padding: 6px;
 }
 @media (max-width: 720px) {
-    .battle-header {
-        flex-direction: column;
-        align-items: flex-start;
+    .battle-simulator {
+        margin-right: 11px;
     }
 
-    .independence-notice {
+    .battle-grid {
+        gap: 7px;
+    }
+
+    .settings-grid {
+        grid-template-columns: 175px 149px 134px;
+    }
+
+    .seed-field {
+        grid-column: 1 / 3;
+        grid-row: 2;
+        width: 208px;
+    }
+
+    .seed-field span {
+        padding-right: 17px;
+    }
+
+    .repeat-field {
+        grid-column: 2 / 4;
+        grid-row: 2;
+        width: 249px;
+        margin-left: 33.5px;
+    }
+
+    .header-actions {
+        grid-column: 1 / -1;
+        margin-left: 0;
+    }
+
+    .defender-toolbar {
         align-items: flex-start;
         flex-direction: column;
+        gap: 7px;
     }
 }
 </style>

@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import { trpc } from '../utils/trpc';
 
 type Result = Awaited<ReturnType<typeof trpc.nation.getNationInfo.query>>;
 const data = ref<Result | null>(null);
+const router = useRouter();
 const error = ref('');
 const number = (value: number) => value.toLocaleString('ko-KR');
 const diff = (value: number) => `${value > 0 ? '+' : ''}${number(value)}`;
@@ -24,7 +26,7 @@ onMounted(async () => {
         <table class="legacy-table title-table legacy-bg0">
             <tbody>
                 <tr>
-                    <td>세 력 정 보<br /><RouterLink to="/">돌아가기</RouterLink></td>
+                    <td>세 력 정 보<br /><button type="button" @click="router.push('/')">돌아가기</button></td>
                 </tr>
             </tbody>
         </table>
@@ -104,7 +106,10 @@ onMounted(async () => {
         <table class="legacy-table footer-table legacy-bg0">
             <tbody>
                 <tr>
-                    <td><RouterLink to="/">돌아가기</RouterLink></td>
+                    <td><button type="button" @click="router.push('/')">돌아가기</button></td>
+                </tr>
+                <tr>
+                    <td class="credit">삼국지 모의전투 PHP HiDCHe / KOEI의 이미지를 사용했습니다 / 제작: Hide.D</td>
                 </tr>
             </tbody>
         </table>
@@ -129,7 +134,7 @@ onMounted(async () => {
 }
 .title-table,
 .footer-table {
-    text-align: center;
+    text-align: left;
 }
 .title-table {
     margin-bottom: 14px;
@@ -158,20 +163,18 @@ onMounted(async () => {
 .history {
     text-align: left !important;
 }
+.title-table button,
+.footer-table button {
+    border: 0;
+    border-radius: 3px;
+    padding: 8px 12px;
+    background: #345c85;
+    color: #fff;
+    cursor: pointer;
+}
+.credit { padding: 0 !important; }
 .error {
     color: #ff7373;
     text-align: center;
-}
-@media (max-width: 700px) {
-    .legacy-info-page {
-        width: 500px;
-    }
-    .info-table {
-        font-size: 12px;
-    }
-    .info-table td,
-    .info-table th {
-        padding: 3px;
-    }
 }
 </style>

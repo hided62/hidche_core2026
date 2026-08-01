@@ -102,7 +102,7 @@ const resolveStateClass = (state: number): CityStateClass => {
     return 'wrong';
 };
 
-const assetBaseUrl = computed(() => import.meta.env.VITE_GAME_ASSET_URL ?? '');
+const assetBaseUrl = computed(() => import.meta.env.VITE_GAME_ASSET_URL?.trim() || '/image/game');
 const resolveAsset = (path: string) => buildAssetUrl(assetBaseUrl.value, path);
 
 const nationById = computed(() => {
@@ -282,10 +282,7 @@ const selectCity = (cityId: number) => {
             <div class="map-title">{{ mapSummary }}</div>
             <div class="map-controls">
                 <button class="map-toggle" :class="{ active: showCityName }" @click="mapStore.toggleCityName">
-                    도시명
-                </button>
-                <button class="map-toggle" :class="{ active: detailMode }" @click="mapStore.toggleDetailMode">
-                    상세
+                    도시명 표기 {{ showCityName ? '끄기' : '켜기' }}
                 </button>
             </div>
         </div>
@@ -342,16 +339,19 @@ const selectCity = (cityId: number) => {
 
 <style scoped>
 .map-viewer {
+    position: relative;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 0;
 }
 
 .map-top {
     display: flex;
+    height: 20px;
     align-items: center;
-    justify-content: space-between;
-    gap: 12px;
+    justify-content: center;
+    background: #111;
+    line-height: 20px;
 }
 
 .map-title {
@@ -360,14 +360,21 @@ const selectCity = (cityId: number) => {
 }
 
 .map-controls {
+    position: absolute;
+    z-index: 4;
+    right: 4px;
+    bottom: 4px;
     display: flex;
-    gap: 6px;
 }
 
 .map-toggle {
-    border: 1px solid rgba(201, 164, 90, 0.4);
-    padding: 4px 8px;
-    font-size: 0.75rem;
+    border: 1px solid #6c757d;
+    border-radius: 2px;
+    padding: 3px 7px;
+    background: #345c85;
+    color: #fff;
+    font-size: 11px;
+    line-height: 18px;
     cursor: pointer;
 }
 
@@ -378,13 +385,14 @@ const selectCity = (cityId: number) => {
 .map-body {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 0;
     overflow-x: auto;
 }
 
 .map-area {
     position: relative;
-    border: 1px dashed rgba(201, 164, 90, 0.4);
+    box-sizing: border-box;
+    border: 0;
     background: #0b0b0b;
     overflow: hidden;
     max-width: 100%;

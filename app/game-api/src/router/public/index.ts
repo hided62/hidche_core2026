@@ -492,9 +492,26 @@ export const publicRouter = router({
                 throw new TRPCError({ code: 'UNAUTHORIZED' });
             }
             const now = new Date(Math.floor(Date.now() / 1000) * 1000);
+            const poolGeneralIds = includeAllWithToken
+                ? []
+                : (
+                      await ctx.db.selectPoolEntry.findMany({
+                          where: { generalId: { not: null } },
+                          select: { generalId: true },
+                      })
+                  ).flatMap(({ generalId }) => (generalId === null ? [] : [generalId]));
             const [generals, nations, activeTokens, worldState] = await Promise.all([
                 ctx.db.general.findMany({
-                    ...(includeAllWithToken ? {} : { where: { npcState: { gt: 0 } } }),
+                    ...(includeAllWithToken
+                        ? {}
+                        : {
+                              where: {
+                                  OR: [
+                                      { npcState: 1 },
+                                      { npcState: 0, id: { in: poolGeneralIds } },
+                                  ],
+                              },
+                          }),
                     select: {
                         id: true,
                         name: true,
@@ -546,12 +563,13 @@ export const publicRouter = router({
             const maxLevel = Math.max(0, Math.floor(asNumber(worldConstants.maxLevel, 255)));
             const maxDedLevel = Math.max(0, Math.floor(asNumber(worldConstants.maxDedLevel, 30)));
 
-            // Legacy public NPC list put pool rows before possessed rows. The token-aware
+            // Legacy a_npcList.php shows select_pool humans first and possessed npc=1 rows.
+            // Unpossessed npc=2 candidates belong only to the token-aware selection screen.
             // selection list instead consumes the raw id-ordered full list before its own comparator.
             const sourceRows = includeAllWithToken
                 ? generals
                 : [
-                      ...generals.filter((general) => general.npcState >= 2),
+                      ...generals.filter((general) => general.npcState === 0),
                       ...generals.filter((general) => general.npcState === 1),
                   ];
             const rows = sourceRows.map((general) => {

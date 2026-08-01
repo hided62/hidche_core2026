@@ -10,7 +10,7 @@ interface MapViewerState {
 export const useMapViewerStore = defineStore('mapViewer', {
     state: (): MapViewerState => ({
         showCityName: true,
-        detailMode: false,
+        detailMode: true,
         hoveredCityId: null,
         selectedCityId: null,
     }),

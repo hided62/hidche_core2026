@@ -182,8 +182,8 @@ select {
     width: 120px;
 }
 .list {
-    width: 1030px;
-    margin-left: -15px;
+    width: 1000px;
+    margin-left: 0;
     border-collapse: separate;
 }
 .list tbody tr {

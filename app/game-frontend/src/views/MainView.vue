@@ -10,7 +10,6 @@ import GeneralBasicCard from '../components/main/GeneralBasicCard.vue';
 import CityBasicCard from '../components/main/CityBasicCard.vue';
 import NationBasicCard from '../components/main/NationBasicCard.vue';
 import MessagePanel from '../components/main/MessagePanel.vue';
-import SelectedCityPanel from '../components/main/SelectedCityPanel.vue';
 import RecordPanel from '../components/main/RecordPanel.vue';
 import MainFrontStatus from '../components/main/MainFrontStatus.vue';
 import MainGlobalMenu from '../components/main/MainGlobalMenu.vue';
@@ -33,6 +32,7 @@ const {
     recordsError,
     frontStatusError,
     realtimeEnabled,
+    lobbyInfo,
     general,
     city,
     nation,
@@ -144,7 +144,16 @@ watch(
             </div>
         </header>
 
-        <MainNationMenu :access="nationAccess" :tournament-stage="tournamentStage" :nation-color="nationColor" />
+        <section v-if="lobbyInfo" class="legacy-game-info" aria-label="게임 진행 정보">
+            <span>현재: {{ lobbyInfo.year }}년 {{ lobbyInfo.month }}월</span>
+            <span>턴: {{ lobbyInfo.turnTerm }}분</span>
+            <span>등록 장수: {{ lobbyInfo.userCnt }} / {{ lobbyInfo.maxUserCnt }}</span>
+            <span>NPC: {{ lobbyInfo.npcCnt }}</span>
+            <span>국가: {{ lobbyInfo.nationCnt }}</span>
+            <span>사실/가상: {{ lobbyInfo.fictionMode }}</span>
+            <span>최근 턴: {{ lobbyInfo.turntime || '-' }}</span>
+            <span>{{ lobbyInfo.otherTextInfo || '진행 정보 없음' }}</span>
+        </section>
 
         <div v-if="error" class="game-feedback game-feedback--error" role="alert">{{ error }}</div>
         <div v-if="frontStatusError" class="front-status-error" role="alert">{{ frontStatusError }}</div>
@@ -184,23 +193,29 @@ watch(
             </div>
 
             <div class="mobile-panel">
+                <MainNationMenu
+                    class="nation-menu-middle"
+                    :access="nationAccess"
+                    :tournament-stage="tournamentStage"
+                    :nation-color="nationColor"
+                />
+            </div>
+
+            <div class="mobile-panel">
+                <PanelCard title="국가 정보" data-main-target="nation">
+                    <NationBasicCard :nation="nation" :loading="loading" />
+                </PanelCard>
                 <PanelCard title="장수 스탯" data-main-target="general">
                     <GeneralBasicCard :general="general" :loading="loading" />
                 </PanelCard>
                 <PanelCard title="도시 정보" data-main-target="city">
                     <CityBasicCard :city="city" :loading="loading" />
                 </PanelCard>
-                <PanelCard title="국가 정보" data-main-target="nation">
-                    <NationBasicCard :nation="nation" :loading="loading" />
-                </PanelCard>
             </div>
 
             <div class="mobile-panel">
                 <PanelCard title="지도" data-main-target="map">
                     <MapViewer :map-data="worldMap" :map-layout="mapLayout" :loading="loading" />
-                </PanelCard>
-                <PanelCard title="선택 도시">
-                    <SelectedCityPanel :city="selectedCity" :loading="loading" />
                 </PanelCard>
             </div>
 
@@ -281,40 +296,38 @@ watch(
         </section>
 
         <section v-else class="layout-desktop">
-            <div class="stack">
-                <PanelCard title="지도" subtitle="실시간 지도 + 도시 상황" data-main-target="map">
-                    <MapViewer :map-data="worldMap" :map-layout="mapLayout" :loading="loading" />
-                </PanelCard>
-                <PanelCard title="선택 도시">
-                    <SelectedCityPanel :city="selectedCity" :loading="loading" />
-                </PanelCard>
-            </div>
-
-            <div class="stack">
-                <PanelCard title="명령 목록" subtitle="예턴/명령 배치 영역" data-main-target="commands">
-                    <CommandListPanel
-                        :command-table="commandTable"
-                        :loading="loading"
-                        :selected-city="selectedCity"
-                        :reserved-general-turns="reservedGeneralTurns"
-                        :reserved-nation-turns="reservedNationTurns"
-                        :general="general"
-                        @set-general-turn="reserveGeneralTurn"
-                        @shift-general-turns="shiftGeneralTurns"
-                        @set-nation-turn="reserveNationTurn"
-                        @shift-nation-turns="shiftNationTurns"
-                    />
-                </PanelCard>
-                <PanelCard title="장수 스탯" data-main-target="general">
-                    <GeneralBasicCard :general="general" :loading="loading" />
-                </PanelCard>
-                <PanelCard title="도시 정보" data-main-target="city">
-                    <CityBasicCard :city="city" :loading="loading" />
-                </PanelCard>
-                <PanelCard title="국가 정보" data-main-target="nation">
-                    <NationBasicCard :nation="nation" :loading="loading" />
-                </PanelCard>
-            </div>
+            <PanelCard title="지도" subtitle="실시간 지도 + 도시 상황" data-main-target="map">
+                <MapViewer :map-data="worldMap" :map-layout="mapLayout" :loading="loading" />
+            </PanelCard>
+            <PanelCard title="명령 목록" subtitle="예턴/명령 배치 영역" data-main-target="commands">
+                <CommandListPanel
+                    :command-table="commandTable"
+                    :loading="loading"
+                    :selected-city="selectedCity"
+                    :reserved-general-turns="reservedGeneralTurns"
+                    :reserved-nation-turns="reservedNationTurns"
+                    :general="general"
+                    @set-general-turn="reserveGeneralTurn"
+                    @shift-general-turns="shiftGeneralTurns"
+                    @set-nation-turn="reserveNationTurn"
+                    @shift-nation-turns="shiftNationTurns"
+                />
+            </PanelCard>
+            <PanelCard title="도시 정보" data-main-target="city">
+                <CityBasicCard :city="city" :loading="loading" />
+            </PanelCard>
+            <PanelCard title="국가 정보" data-main-target="nation">
+                <NationBasicCard :nation="nation" :loading="loading" />
+            </PanelCard>
+            <PanelCard title="장수 스탯" data-main-target="general">
+                <GeneralBasicCard :general="general" :loading="loading" />
+            </PanelCard>
+            <MainNationMenu
+                class="nation-menu-middle"
+                :access="nationAccess"
+                :tournament-stage="tournamentStage"
+                :nation-color="nationColor"
+            />
             <section class="record-zone">
                 <RecordPanel title="장수 동향" data-main-target="global-records">
                     <SkeletonLines v-if="loading" :lines="4" />
@@ -414,6 +427,8 @@ button {
     padding: 0;
     gap: 10px;
     overflow-x: hidden;
+    background-color: transparent;
+    background-image: var(--sammo-texture-walnut);
 }
 
 .toggle.active {
@@ -434,6 +449,26 @@ button {
 .front-status-error {
     color: #ff8a80;
     font-size: 0.85rem;
+}
+
+.legacy-game-info {
+    display: grid;
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    box-sizing: border-box;
+    height: 18px;
+    overflow: hidden;
+    border-top: 1px solid #666;
+    background: #302016 var(--sammo-texture-walnut);
+    color: #fff;
+    font-size: 12px;
+    line-height: 17px;
+    text-align: center;
+}
+
+.legacy-game-info > span {
+    overflow: hidden;
+    border-right: 1px solid #666;
+    white-space: nowrap;
 }
 
 .warning {
@@ -489,14 +524,77 @@ button {
 
 .layout-desktop {
     display: grid;
-    grid-template-columns: minmax(0, 2.35fr) minmax(0, 1fr);
-    gap: 10px;
+    grid-template-columns: repeat(10, minmax(0, 1fr));
+    gap: 0;
+    align-items: start;
 }
 
-.stack {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
+.layout-desktop > [data-main-target='map'] {
+    grid-column: 1 / 8;
+    grid-row: 1;
+    height: 520px;
+    overflow: hidden;
+}
+
+.layout-desktop > [data-main-target='commands'] {
+    grid-column: 8 / 11;
+    grid-row: 1;
+    height: 589px;
+    width: 290px;
+    margin-left: 10px;
+    overflow-y: auto;
+}
+
+.layout-desktop > [data-main-target='city'] {
+    grid-column: 1 / 8;
+    grid-row: 1;
+    min-height: 125px;
+    margin-top: 520px;
+}
+
+.layout-desktop > [data-main-target='nation'] {
+    grid-column: 1 / 6;
+    grid-row: 1;
+    min-height: 193px;
+    margin-top: 645px;
+}
+
+.layout-desktop > [data-main-target='general'] {
+    grid-column: 6 / 11;
+    grid-row: 1;
+    min-height: 193px;
+    margin-top: 645px;
+}
+
+.layout-desktop > [data-main-target],
+.layout-mobile [data-main-target] {
+    border: none;
+    background-color: transparent;
+    background-image: none;
+}
+
+.layout-desktop > [data-main-target='commands'],
+.layout-mobile [data-main-target='commands'] {
+    background-color: #222;
+}
+
+.nation-menu-middle {
+    grid-column: 1 / -1;
+}
+
+[data-main-target='map'] :deep(.panel-header),
+[data-main-target='map'] :deep(.map-meta),
+[data-main-target='map'] :deep(.map-footnote) {
+    display: none;
+}
+
+[data-main-target='map'] :deep(.panel-body) {
+    padding: 0;
+}
+
+[data-main-target='map'] :deep(.map-viewer),
+[data-main-target='map'] :deep(.map-body) {
+    gap: 0;
 }
 
 .desktop-message-panel {
@@ -549,13 +647,59 @@ button {
 .layout-mobile {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 4px;
 }
 
 .mobile-panel {
     display: flex;
     flex-direction: column;
+    width: 500px;
     gap: 12px;
+}
+
+.mobile-panel.record-zone-mobile {
+    gap: 0;
+}
+
+.layout-mobile > .mobile-panel:nth-of-type(3) {
+    gap: 0;
+}
+
+.layout-mobile [data-main-target='commands'] {
+    height: 586px;
+    overflow-y: auto;
+}
+
+.layout-mobile [data-main-target='nation'],
+.layout-mobile [data-main-target='general'] {
+    min-height: 193px;
+}
+
+.layout-mobile [data-main-target='city'] {
+    min-height: 147px;
+}
+
+.layout-mobile [data-main-target='map'] {
+    height: 377px;
+    overflow: hidden;
+}
+
+.layout-mobile .record-zone-mobile {
+    margin-top: 31px;
+}
+
+.desktop-action-controls .game-shell__action {
+    border: 1px solid transparent;
+    background: #006b36;
+    color: #fff;
+}
+
+.desktop-action-controls .game-shell__action:hover {
+    background: #00582c;
+}
+
+.desktop-action-controls .game-shell__action:active {
+    background: #005128;
 }
 
 .placeholder {
@@ -568,12 +712,33 @@ button {
 
 @media (max-width: 939.98px) {
     .main-page {
-        width: 500px;
+        width: 502px;
+        min-height: 3688px;
+    }
+
+    .legacy-game-info {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        height: 156px;
+        line-height: 40px;
+    }
+
+    .legacy-game-info > span {
+        border-bottom: 1px solid #666;
     }
 
     .survey-notice {
         z-index: 90;
         bottom: 16px;
+    }
+
+    .layout-mobile [data-main-target='world-history'] {
+        min-height: 380px;
+    }
+}
+
+@media (min-width: 940px) {
+    .main-page {
+        min-height: 2706px;
     }
 }
 </style>

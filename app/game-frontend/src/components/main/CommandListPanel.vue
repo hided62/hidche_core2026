@@ -165,33 +165,36 @@ const canNationReserve = () =>
                 <span v-else>선택된 도시 없음</span>
             </div>
         </div>
-        <CommandSelectForm
-            :command-table="props.commandTable"
-            :loading="props.loading"
-            :active-category="activeCategory"
-            @update:active-category="activeCategory = $event"
-            @select="handleSelect"
-        />
-        <div class="command-selected">
-            <div class="label">선택 명령</div>
-            <div v-if="selectedCommand" class="value">
-                <div class="name">{{ selectedCommand.name }}</div>
-                <div class="meta">
-                    <span>{{ selectedCommand.status === 'available' ? '가능' : '제한' }}</span>
-                    <span v-if="selectedCommand.reqArg">추가 입력 필요</span>
+        <details class="command-editor">
+            <summary>고급 모드로</summary>
+            <CommandSelectForm
+                :command-table="props.commandTable"
+                :loading="props.loading"
+                :active-category="activeCategory"
+                @update:active-category="activeCategory = $event"
+                @select="handleSelect"
+            />
+            <div class="command-selected">
+                <div class="label">선택 명령</div>
+                <div v-if="selectedCommand" class="value">
+                    <div class="name">{{ selectedCommand.name }}</div>
+                    <div class="meta">
+                        <span>{{ selectedCommand.status === 'available' ? '가능' : '제한' }}</span>
+                        <span v-if="selectedCommand.reqArg">추가 입력 필요</span>
+                    </div>
                 </div>
+                <div v-else class="value muted">명령을 선택하세요.</div>
             </div>
-            <div v-else class="value muted">명령을 선택하세요.</div>
-        </div>
-        <CommandArgumentForm
-            v-if="selectedCommand?.reqArg && props.commandTable"
-            :command-key="selectedCommand.key"
-            :fields="selectedCommand.inputFields"
-            :options="props.commandTable.inputOptions"
-            @update:args="commandArgs = $event"
-            @update:valid="commandArgsValid = $event"
-        />
-        <div class="reserved-section">
+            <CommandArgumentForm
+                v-if="selectedCommand?.reqArg && props.commandTable"
+                :command-key="selectedCommand.key"
+                :fields="selectedCommand.inputFields"
+                :options="props.commandTable.inputOptions"
+                @update:args="commandArgs = $event"
+                @update:valid="commandArgsValid = $event"
+            />
+        </details>
+        <div class="reserved-section general-reserved">
             <div class="reserved-header">
                 <span>일반 예턴</span>
                 <div class="reserved-actions">
@@ -213,9 +216,10 @@ const canNationReserve = () =>
                 </div>
             </div>
         </div>
-        <div class="reserved-section">
+        <details class="reserved-section nation-reserved">
+            <summary>국가 예턴</summary>
             <div class="reserved-header">
-                <span>국가 예턴</span>
+                <span>국가 예턴 편집</span>
                 <div class="reserved-actions">
                     <button :disabled="!canNationReserve()" @click="emit('shift-nation-turns', -1)">앞당김</button>
                     <button :disabled="!canNationReserve()" @click="emit('shift-nation-turns', 1)">밀기</button>
@@ -235,7 +239,7 @@ const canNationReserve = () =>
                     </div>
                 </div>
             </div>
-        </div>
+        </details>
     </div>
 </template>
 
@@ -243,7 +247,16 @@ const canNationReserve = () =>
 .command-panel {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 4px;
+}
+
+.command-editor > summary {
+    min-height: 28px;
+    padding: 4px 8px;
+    background: #444;
+    color: #fff;
+    cursor: pointer;
+    text-align: center;
 }
 
 .command-selection {
@@ -281,7 +294,7 @@ const canNationReserve = () =>
 .reserved-section {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 0;
 }
 
 .reserved-header {
@@ -306,14 +319,22 @@ const canNationReserve = () =>
 .reserved-list {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    max-height: 240px;
+    gap: 0;
+    max-height: 420px;
     overflow-y: auto;
+}
+
+.nation-reserved > summary {
+    min-height: 28px;
+    padding: 4px 8px;
+    background: #444;
+    cursor: pointer;
 }
 
 .reserved-item {
     border: 1px solid rgba(201, 164, 90, 0.2);
-    padding: 6px;
+    min-height: 30px;
+    padding: 2px 4px;
     display: grid;
     grid-template-columns: 50px 1fr auto;
     gap: 6px;

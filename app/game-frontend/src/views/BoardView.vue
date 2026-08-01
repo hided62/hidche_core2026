@@ -528,4 +528,15 @@ onMounted(() => {
         grid-template-columns: 83.3333% 16.6667%;
     }
 }
+
+@media (max-width: 500px) {
+    .article-body {
+        flex-wrap: wrap;
+    }
+
+    .article-text {
+        flex-basis: 100%;
+        white-space: pre-wrap;
+    }
+}
 </style>

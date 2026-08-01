@@ -331,7 +331,7 @@ test('desktop menus preserve ref columns, prefix-safe routes, and controlled dro
     await persistArtifact(page, `${basePath.slice(1)}-desktop-1200`);
 });
 
-test('the 939/940 boundary switches to the Ref-style 500px single document', async ({ page }) => {
+test('the 939/940 boundary switches to the Ref-style 502px single document', async ({ page }) => {
     const state: NavigationFixture = {
         officerLevel: 5,
         permission: 2,
@@ -367,8 +367,8 @@ test('the 939/940 boundary switches to the Ref-style 500px single document', asy
     });
     expect(documentGeometry).toMatchObject({
         x: 0,
-        width: 500,
-        scrollWidth: 500,
+        width: 502,
+        scrollWidth: 502,
     });
     expect(documentGeometry.height).toBeGreaterThan(900);
     for (const selector of [

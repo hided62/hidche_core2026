@@ -630,6 +630,10 @@ onMounted(() => {
     margin-top: 1em;
 }
 
+.betting-list > .section-title {
+    text-align: left;
+}
+
 .betting-item {
     display: block;
     width: auto;

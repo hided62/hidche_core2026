@@ -122,13 +122,6 @@ const selectedGeneral = computed(() => {
     return list.find((general) => general.id === selectedGeneralId.value) ?? null;
 });
 
-const statusLine = computed(() => {
-    if (!data.value) {
-        return '감찰부 정보를 불러오는 중';
-    }
-    return `${data.value.currentYear}년 ${data.value.currentMonth}월 · 턴 ${data.value.turnTermMinutes}분`;
-});
-
 const formatGeneralLabel = (general: GeneralEntry): string => {
     const name = general.officerLevel > 4 ? `*${general.name}*` : general.name;
     const time = general.turnTime ? general.turnTime.slice(-5) : '--:--';
@@ -229,16 +222,10 @@ onMounted(() => {
 
 <template>
     <main class="ref-shell battle-page">
-        <header class="ref-shell__topbar">
-            <div>
-                <h1 class="ref-shell__title">감찰부</h1>
-                <p class="ref-shell__subtitle">{{ statusLine }}</p>
-            </div>
-            <div class="ref-shell__actions">
-                <RouterLink class="ref-shell__control" to="/">메인</RouterLink>
-                <RouterLink class="ref-shell__control" to="/nation/finance">내무부</RouterLink>
-                <button class="ref-shell__control" @click="loadBattleCenter">새로고침</button>
-            </div>
+        <header class="battle-top legacy-bg0">
+            <RouterLink class="battle-nav" to="/">창 닫기</RouterLink>
+            <button class="battle-nav" @click="loadBattleCenter">갱신</button>
+            <h1>감찰부</h1><div></div><div></div>
         </header>
 
         <div v-if="error" class="ref-feedback ref-feedback--error" role="alert">{{ error }}</div>
@@ -398,7 +385,7 @@ onMounted(() => {
     border: 1px solid #666;
     padding: 0;
     background: #111;
-    min-height: 180px;
+    min-height: 0;
 }
 
 .log-title {
@@ -478,5 +465,44 @@ onMounted(() => {
     .log-grid {
         grid-template-columns: 1fr;
     }
+}
+
+.battle-page {
+    box-sizing: border-box;
+    width: 1000px;
+    min-height: 0;
+    margin: 0 auto;
+    padding: 0;
+    gap: 0;
+}
+.battle-top {
+    height: 32px;
+    display: grid;
+    grid-template-columns: 90px 90px 1fr 90px 90px;
+}
+.battle-top h1 {
+    margin: 0;
+    font-size: 24px;
+    font-weight: 400;
+    line-height: 32px;
+    text-align: center;
+}
+.battle-nav {
+    box-sizing: border-box;
+    height: 32px;
+    margin-right: 2px;
+    border: 0;
+    border-radius: 3px;
+    display: grid;
+    place-items: center;
+    background: #00582c;
+    color: #fff;
+    font: inherit;
+    font-weight: 700;
+    text-decoration: none;
+}
+@media (max-width: 991px) {
+    .battle-page { width: 500px; }
+    .battle-top { grid-template-columns: 89px 89px 1fr 0 0; }
 }
 </style>

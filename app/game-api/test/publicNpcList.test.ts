@@ -65,9 +65,9 @@ const buildContext = (auth: GameSessionTokenPayload | null = null): GameApiConte
             age: 44,
             officerLevel: 12,
             nationId: 1,
-            leadership: 80,
-            strength: 70,
-            intel: 85,
+            leadership: 90,
+            strength: 95,
+            intel: 75,
             experience: 16_000,
             dedication: 10_000,
             personalCode: 'None',
@@ -78,13 +78,20 @@ const buildContext = (auth: GameSessionTokenPayload | null = null): GameApiConte
     ];
     const db = {
         general: {
-            findMany: async (args: { where?: { npcState: { gt: number } } }) => {
+            findMany: async (args: {
+                where?: { OR: [{ npcState: number }, { npcState: number; id: { in: number[] } }] };
+            }) => {
                 if (args.where) {
-                    expect(args.where).toEqual({ npcState: { gt: 0 } });
-                    return generalRows.filter((general) => general.npcState > 0);
+                    expect(args.where).toEqual({
+                        OR: [{ npcState: 1 }, { npcState: 0, id: { in: [30] } }],
+                    });
+                    return generalRows.filter((general) => general.npcState === 1 || general.id === 30);
                 }
                 return generalRows;
             },
+        },
+        selectPoolEntry: {
+            findMany: async () => [{ generalId: 30 }],
         },
         nation: {
             findMany: async () => [{ id: 1, name: '촉', level: 5 }],
@@ -165,32 +172,7 @@ describe('public.getNpcList', () => {
                 dedication: 700,
                 dedicationText: '28품관',
             },
-            {
-                id: 20,
-                name: '조운',
-                picture: '20.jpg',
-                imageServer: 1,
-                npcState: 2,
-                ownerName: '',
-                age: 35,
-                level: 5,
-                officerLevel: 0,
-                killturn: 0,
-                nationId: 0,
-                nationName: '-',
-                nationLevel: 0,
-                personality: null,
-                specialDomestic: null,
-                specialWar: null,
-                statTotal: 260,
-                leadership: 90,
-                strength: 95,
-                intelligence: 75,
-                experience: 900,
-                experienceText: '무명',
-                dedication: 600,
-                dedicationText: '28품관',
-            },
+            expect.objectContaining({ id: 30, name: '유비', npcState: 0, ownerName: '' }),
         ]);
         expect(result.tokenKeepCounts).toEqual({});
         expect(JSON.stringify(result)).not.toContain('노출 금지');
@@ -237,7 +219,7 @@ describe('public.getNpcList', () => {
     it('keeps pool rows before possessed NPCs when the selected value is tied', async () => {
         const result = await appRouter.createCaller(buildContext()).public.getNpcList({ sort: 3 });
 
-        expect(result.generals.map((general) => general.id)).toEqual([20, 10]);
+        expect(result.generals.map((general) => general.id)).toEqual([30, 10]);
     });
 
     it('falls an invalid legacy sort value back to name order', async () => {
@@ -245,6 +227,6 @@ describe('public.getNpcList', () => {
         const result = await caller.public.getNpcList({ sort: 99 } as unknown as { sort: 1 });
 
         expect(result.sort).toBe(1);
-        expect(result.generals.map((general) => general.name)).toEqual(['관우', '조운']);
+        expect(result.generals.map((general) => general.name)).toEqual(['관우', '유비']);
     });
 });

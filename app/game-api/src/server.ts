@@ -218,6 +218,13 @@ export const createGameApiServer = async () => {
         }
 
         reply.hijack();
+        const requestOrigin = request.headers.origin;
+        if (typeof requestOrigin === 'string' && requestOrigin.length > 0) {
+            // Hijacked SSE responses bypass Fastify's normal CORS response hook.
+            reply.raw.setHeader('Access-Control-Allow-Origin', requestOrigin);
+            reply.raw.setHeader('Access-Control-Allow-Credentials', 'true');
+            reply.raw.setHeader('Vary', 'Origin');
+        }
         reply.raw.setHeader('Content-Type', 'text/event-stream');
         reply.raw.setHeader('Cache-Control', 'no-cache');
         reply.raw.setHeader('Connection', 'keep-alive');

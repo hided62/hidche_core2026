@@ -207,21 +207,6 @@ const officerLevelOptions = [
                     <input v-model.number="general.atmos" type="number" min="40" :max="options.config.maxAtmosByWar" />
                 </label>
                 <label class="field">
-                    <span>내정특기</span>
-                    <select v-model="general.special">
-                        <option :value="null">-</option>
-                        <option
-                            v-for="trait in options.eventDomesticTraits"
-                            :key="trait.key"
-                            :value="trait.key"
-                        >
-                            {{ trait.name }}
-                        </option>
-                    </select>
-                </label>
-            </div>
-            <div class="form-row">
-                <label class="field">
                     <span>전특</span>
                     <select v-model="general.special2">
                         <option :value="null">-</option>
@@ -343,55 +328,68 @@ const officerLevelOptions = [
 
 <style scoped>
 .general-card {
-    border: 1px solid rgba(201, 164, 90, 0.4);
-    background: rgba(10, 10, 10, 0.75);
-    padding: 12px;
+    border: 1px solid rgba(0, 0, 0, 0.18);
+    border-radius: 5px;
+    background: #303030;
+    padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 0;
+    overflow: hidden;
 }
 
 .general-header {
     display: flex;
+    align-items: center;
     justify-content: space-between;
-    gap: 12px;
+    gap: 8px;
     flex-wrap: wrap;
-    border-bottom: 1px solid rgba(201, 164, 90, 0.3);
-    padding-bottom: 8px;
+    min-height: 38px;
+    padding: 6px 14px;
+    background: #444;
 }
 
 .general-title {
     font-weight: 600;
-    font-size: 0.95rem;
+    font-size: 14px;
 }
 
 .general-subtitle {
-    font-size: 0.7rem;
-    color: rgba(232, 221, 196, 0.6);
+    display: none;
 }
 
 .general-actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 7px;
 }
 
 .action {
-    border: 1px solid rgba(201, 164, 90, 0.4);
-    background: rgba(16, 16, 16, 0.7);
-    color: inherit;
-    padding: 4px 10px;
-    font-size: 0.75rem;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: #3498db;
+    color: #fff;
+    padding: 4px 9px;
+    font-size: 12px;
+    font-weight: 700;
     cursor: pointer;
 }
 
+.action:first-child {
+    background: #10b981;
+}
+
+.action:nth-of-type(3) {
+    background: #2c5d8f;
+}
+
 .action.ghost {
-    background: rgba(30, 30, 30, 0.7);
+    background: #f59e0b;
 }
 
 .action.danger {
-    border-color: rgba(233, 94, 94, 0.6);
-    color: #f0b6b6;
+    background: #e74c3c;
+    color: #fff;
 }
 
 .action:disabled {
@@ -403,39 +401,65 @@ const officerLevelOptions = [
     display: flex;
     flex-direction: column;
     gap: 8px;
+    margin: 8px 14px 0;
+}
+
+.form-block:last-child {
+    margin-bottom: 12px;
 }
 
 .form-row {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-    gap: 8px;
+    gap: 0;
 }
 
 .field {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    color: #ddd;
+    font-size: 12px;
+}
+
+.field span {
     display: flex;
-    flex-direction: column;
-    gap: 4px;
-    font-size: 0.75rem;
-    color: rgba(232, 221, 196, 0.75);
+    align-items: center;
+    padding: 6px 10px;
+    border: 1px solid #111;
+    background: #444;
+    white-space: nowrap;
 }
 
 .field input,
 .field select {
-    background: rgba(6, 6, 6, 0.7);
-    border: 1px solid rgba(201, 164, 90, 0.35);
-    color: #e8ddc4;
-    padding: 4px 6px;
-    font-size: 0.8rem;
+    min-width: 0;
+    border: 1px solid #111;
+    background: #ddd;
+    color: #303030;
+    padding: 6px 10px;
+    font-size: 14px;
+    line-height: 21px;
+    box-shadow: inset 0 2px 0 rgba(0, 0, 0, 0.075);
+}
+
+.field input:focus,
+.field select:focus {
+    border-color: #3f464d;
+    outline: 0;
 }
 
 .buff-title {
-    font-size: 0.8rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: rgba(201, 164, 90, 0.9);
+    display: none;
 }
 
 .buff-row {
     grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+@media (max-width: 720px) {
+    .general-header {
+        align-items: flex-start;
+        flex-direction: column;
+    }
 }
 </style>

@@ -255,7 +255,7 @@ const installApi = async (page: Page, fixture: Fixture) => {
 
 const gotoSimulator = async (page: Page) => {
     await page.goto('battle-simulator');
-    await expect(page.getByRole('heading', { name: '전투 시뮬레이터' })).toBeVisible();
+    await expect(page.getByText('전역 설정')).toBeVisible();
     await expect(page.getByLabel('시뮬레이터 데이터 안내')).toBeVisible();
     await expect(page.getByText('출병자 설정')).toBeVisible();
 };
@@ -274,8 +274,8 @@ test('operates independent/game presets, imports my general, and renders battle 
 
     const notice = page.getByLabel('시뮬레이터 데이터 안내');
     const noticeRect = await notice.boundingBox();
-    expect(noticeRect?.width).toBeGreaterThan(900);
-    expect(await notice.evaluate((element) => getComputedStyle(element).display)).toBe('flex');
+    expect(noticeRect?.width).toBeLessThan(100);
+    await notice.locator('summary').click();
 
     await page.getByRole('button', { name: '독립 기본값' }).click();
     await expect(page.getByLabel('연도', { exact: true })).toHaveValue('190');
@@ -288,10 +288,7 @@ test('operates independent/game presets, imports my general, and renders battle 
     await page.getByRole('button', { name: '내 장수를 출병자로' }).click();
     await expect(page.getByLabel('이름').first()).toHaveValue('유비');
     await expect(page.getByLabel('병사').first()).toHaveValue('4321');
-    const attackerDomesticTrait = page.getByLabel('내정특기').first();
-    await attackerDomesticTrait.selectOption('che_event_신산');
-    await expect(attackerDomesticTrait).toHaveValue('che_event_신산');
-
+    await notice.locator('summary').click();
     const battleButton = page.getByRole('button', { name: '전투', exact: true });
     await battleButton.hover();
     expect(await battleButton.evaluate((element) => getComputedStyle(element).cursor)).toBe('pointer');
@@ -315,15 +312,10 @@ test('operates independent/game presets, imports my general, and renders battle 
         objType: string;
         data: { attackerGeneral: { special?: string | null } };
     };
-    expect(exportedBattle).toMatchObject({
-        objType: 'battle',
-        data: { attackerGeneral: { special: 'che_event_신산' } },
-    });
+    expect(exportedBattle).toMatchObject({ objType: 'battle' });
+    expect(exportedBattle).not.toHaveProperty('data.attackerGeneral.special');
 
-    await attackerDomesticTrait.selectOption({ label: '-' });
-    await expect(attackerDomesticTrait).toHaveValue('-');
     await page.locator('.header-actions input[type="file"]').setInputFiles(downloadPath!);
-    await expect(attackerDomesticTrait).toHaveValue('che_event_신산');
 
     await battleButton.click();
     await expect.poll(() => fixture.simulationPayloads.length).toBe(2);
@@ -353,6 +345,7 @@ test('keeps simulation available without a game general and preserves input afte
     await gotoSimulator(page);
 
     await expect(page).toHaveURL(/battle-simulator/);
+    await page.getByLabel('시뮬레이터 데이터 안내').locator('summary').click();
     await expect(page.getByRole('button', { name: '내 장수를 출병자로' })).toBeDisabled();
     await expect(page.getByRole('button', { name: '서버에서 가져오기' }).first()).toBeDisabled();
 
@@ -366,7 +359,7 @@ test('keeps simulation available without a game general and preserves input afte
     await expect(page.getByText('시뮬레이터 입력 오류')).toHaveCount(0);
 
     const notice = page.getByLabel('시뮬레이터 데이터 안내');
-    expect(await notice.evaluate((element) => getComputedStyle(element).flexDirection)).toBe('column');
+    expect(await notice.evaluate((element) => getComputedStyle(element).position)).toBe('absolute');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
     if (artifactRoot) {

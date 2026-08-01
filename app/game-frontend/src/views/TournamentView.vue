@@ -264,7 +264,7 @@ const start = async () => {
 
 <style scoped>
 .legacy-page {
-    width: 2000px;
+    width: 2009px;
     min-height: 100vh;
     margin: 0 auto;
     color: #fff;

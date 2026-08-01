@@ -34,6 +34,8 @@ const load = async () => {
     }
 };
 
+const closeWindow = () => window.close();
+
 onMounted(() => {
     void load();
 });
@@ -46,7 +48,7 @@ onMounted(() => {
                 <tr>
                     <td>
                         빙 의 일 람<br />
-                        <RouterLink class="legacy-close" to="/">돌아가기</RouterLink>
+                        <button class="legacy-close" type="button" @click="closeWindow">창닫기</button>
                     </td>
                 </tr>
                 <tr>
@@ -63,7 +65,7 @@ onMounted(() => {
                                 <option :value="7">명성</option>
                                 <option :value="8">계급</option>
                             </select>
-                            <button type="submit" :disabled="loading">정렬하기</button>
+                            <input type="submit" value="정렬하기" :disabled="loading" />
                         </form>
                     </td>
                 </tr>
@@ -143,7 +145,7 @@ onMounted(() => {
         <table class="legacy-table footer-table legacy-bg0">
             <tbody>
                 <tr>
-                    <td><RouterLink class="legacy-close" to="/">돌아가기</RouterLink></td>
+                    <td><button class="legacy-close" type="button" @click="closeWindow">창닫기</button></td>
                 </tr>
                 <tr>
                     <td class="banner">SAMMO · Legacy compatible NPC list</td>
@@ -181,6 +183,10 @@ onMounted(() => {
     word-break: break-all;
 }
 
+.legacy-bg0 {
+    background-color: transparent;
+}
+
 .title-table td {
     min-height: 20px;
 }
@@ -194,7 +200,7 @@ onMounted(() => {
 }
 
 .sort-form select,
-.sort-form button {
+.sort-form input[type='submit'] {
     height: 23px;
     font: inherit;
 }
@@ -204,7 +210,10 @@ onMounted(() => {
     color: #303030;
 }
 
-.sort-form button {
+.sort-form input[type='submit'] {
+    border: 2px outset #fff;
+    background: #6b6b6b;
+    color: #fff;
     cursor: pointer;
 }
 
@@ -213,12 +222,12 @@ onMounted(() => {
 }
 
 .npc-table th {
-    height: 20px;
+    height: 21px;
     font-weight: 400;
 }
 
 .npc-table td {
-    height: 20px;
+    height: 21px;
 }
 
 .col-name,
@@ -279,7 +288,19 @@ onMounted(() => {
 }
 
 .legacy-close {
+    display: inline-grid;
+    min-height: 35.5px;
+    box-sizing: border-box;
+    align-items: center;
+    border: 1px solid #0d6efd;
+    border-radius: 5.25px;
+    padding: 5.25px 10.5px;
+    background: #345c85;
     color: #fff;
+    font-weight: 700;
+    line-height: 21px;
+    text-decoration: none;
+    cursor: pointer;
 }
 
 .legacy-close:hover,
@@ -290,7 +311,7 @@ onMounted(() => {
 
 .legacy-close:focus-visible,
 .sort-form select:focus-visible,
-.sort-form button:focus-visible {
+.sort-form input[type='submit']:focus-visible {
     outline: 2px solid #f39c12;
     outline-offset: 1px;
 }
@@ -301,6 +322,10 @@ onMounted(() => {
 
 .footer-table td {
     height: 21px;
+}
+
+.footer-table tr:first-child td {
+    height: 36px;
 }
 
 .banner {

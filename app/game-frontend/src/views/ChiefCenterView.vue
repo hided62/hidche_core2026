@@ -2,11 +2,8 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useMediaQuery } from '@vueuse/core';
 import { addMinutes, format } from 'date-fns';
-import PanelCard from '../components/ui/PanelCard.vue';
 import SkeletonLines from '../components/ui/SkeletonLines.vue';
 import ChiefTurnCard from '../components/chief/ChiefTurnCard.vue';
-import CommandArgumentForm from '../components/main/CommandArgumentForm.vue';
-import CommandSelectForm from '../components/main/CommandSelectForm.vue';
 import { trpc } from '../utils/trpc';
 import { formatOfficerLevelText } from '../utils/nationFormat';
 
@@ -113,10 +110,6 @@ const data = ref<ChiefCenterResponse | null>(null);
 const commandTable = ref<CommandTable | null>(null);
 
 const selectedChiefLevel = ref<number | null>(null);
-const activeCategory = ref('');
-const selectedCommandKey = ref<string | null>(null);
-const commandArgs = ref<Record<string, unknown>>({});
-const commandArgsValid = ref(false);
 
 const isMobile = useMediaQuery('(max-width: 1024px)');
 
@@ -188,13 +181,6 @@ watch(
     }
 );
 
-const statusLine = computed(() => {
-    if (!data.value) {
-        return '사령부 정보를 불러오는 중';
-    }
-    return `${data.value.currentYear}년 ${data.value.currentMonth}월 · 턴 ${data.value.turnTermMinutes}분`;
-});
-
 const commandLabelMap = computed(() => {
     const map = new Map<string, string>();
     if (!commandTable.value) {
@@ -211,47 +197,6 @@ const commandLabelMap = computed(() => {
         }
     }
     return map;
-});
-
-const chiefCommandTable = computed(() => {
-    if (!commandTable.value) {
-        return null;
-    }
-    return {
-        general: [],
-        nation: commandTable.value.nation,
-    };
-});
-
-const selectedCommand = computed<CommandAvailability | null>(() => {
-    if (!commandTable.value || !selectedCommandKey.value) {
-        return null;
-    }
-    for (const group of commandTable.value.nation) {
-        const match = group.values.find((entry) => entry.key === selectedCommandKey.value);
-        if (match) {
-            return match;
-        }
-    }
-    return null;
-});
-
-watch(selectedCommand, (command) => {
-    commandArgs.value = {};
-    commandArgsValid.value = Boolean(command && !command.reqArg);
-});
-
-const canReserveSelected = computed(() => {
-    if (!selectedCommand.value) {
-        return false;
-    }
-    if (!selectedCommand.value.possible) {
-        return false;
-    }
-    if (!['available', 'needsInput'].includes(selectedCommand.value.status)) {
-        return false;
-    }
-    return commandArgsValid.value;
 });
 
 const selectedChief = computed<ChiefEntry | null>(() => {
@@ -308,10 +253,6 @@ const chiefViews = computed(() => {
     }));
 });
 
-const overviewChiefViews = computed(() =>
-    chiefViews.value.filter((chief) => chief.officerLevel !== selectedChief.value?.officerLevel)
-);
-
 const selectedChiefRows = computed(() => {
     if (!selectedChief.value) {
         return [] as TurnRow[];
@@ -330,28 +271,6 @@ const updateMyTurns = (turns: ChiefEntry['turns'], revision: number) => {
     }
     entry.turns = turns;
     entry.revision = revision;
-};
-
-const reserveTurn = async (turnIndex: number) => {
-    if (!data.value || !selectedCommand.value || !isEditingAllowed.value) {
-        return;
-    }
-    if (!canReserveSelected.value) {
-        return;
-    }
-    try {
-        const result = await trpc.turns.reserved.setNation.mutate({
-            generalId: data.value.me.id,
-            turnIndex,
-            action: selectedCommand.value.key,
-            args: commandArgs.value,
-            expectedRevision: selectedChief.value?.revision ?? 0,
-        });
-        updateMyTurns(result.turns, result.revision);
-    } catch (err) {
-        await loadChiefCenter();
-        error.value = resolveErrorMessage(err);
-    }
 };
 
 const clearTurn = async (turnIndex: number) => {
@@ -392,90 +311,41 @@ const shiftTurns = async (amount: number) => {
 </script>
 
 <template>
-    <main class="game-shell chief-page">
-        <header class="game-shell__header">
-            <div>
-                <h1 class="game-shell__title">사령부</h1>
-                <p class="game-shell__subtitle">{{ statusLine }}</p>
-            </div>
-            <div class="game-shell__actions">
-                <RouterLink class="game-shell__action" to="/">메인</RouterLink>
-                <button class="game-shell__action" @click="loadChiefCenter">새로고침</button>
-            </div>
+    <main class="chief-page">
+        <header class="chief-top legacy-bg0">
+            <RouterLink class="chief-nav" to="/">돌아가기</RouterLink>
+            <button class="chief-nav" @click="loadChiefCenter">갱신</button>
+            <h1>사령부</h1>
+            <div></div><div></div>
         </header>
 
         <div v-if="error" class="game-feedback game-feedback--error" role="alert">{{ error }}</div>
 
-        <section v-if="loading && !data" class="loading-panel">
-            <PanelCard title="사령부 로딩">
-                <SkeletonLines :lines="5" />
-            </PanelCard>
-        </section>
+        <section v-if="loading && !data" class="loading-panel"><SkeletonLines :lines="5" /></section>
 
         <section v-else-if="data && isMobile" class="layout-mobile">
-            <PanelCard v-if="isEditingAllowed" title="사령부 편집" subtitle="선택 명령을 배치하세요">
-                <CommandSelectForm
-                    :command-table="chiefCommandTable"
-                    :loading="commandLoading || loading"
-                    :active-category="activeCategory"
-                    @update:active-category="activeCategory = $event"
-                    @select="selectedCommandKey = $event"
-                />
-                <div class="command-selected">
-                    <div class="label">선택 명령</div>
-                    <div v-if="selectedCommand" class="value">
-                        <div class="name">{{ selectedCommand.name }}</div>
-                        <div class="meta">
-                            <span>{{ selectedCommand.status === 'available' ? '가능' : '제한' }}</span>
-                            <span v-if="selectedCommand.reqArg">추가 입력 필요</span>
-                        </div>
-                    </div>
-                    <div v-else class="value muted">명령을 선택하세요.</div>
-                </div>
-                <CommandArgumentForm
-                    v-if="selectedCommand?.reqArg && commandTable"
-                    :command-key="selectedCommand.key"
-                    :fields="selectedCommand.inputFields"
-                    :options="commandTable.inputOptions"
-                    @update:args="commandArgs = $event"
-                    @update:valid="commandArgsValid = $event"
-                />
-                <div class="turn-actions">
-                    <button @click="shiftTurns(-1)">앞당김</button>
-                    <button @click="shiftTurns(1)">미루기</button>
-                </div>
-                <div class="turn-list">
-                    <div v-for="row in selectedChiefRows" :key="row.index" class="turn-item">
-                        <div class="turn-info">
-                            <span class="turn-index">#{{ row.index + 1 }}</span>
-                            <span class="turn-time">{{ row.time }}</span>
-                            <span class="turn-action">{{ row.action }}</span>
-                        </div>
-                        <div class="turn-buttons">
-                            <button :disabled="!canReserveSelected" @click="reserveTurn(row.index)">배치</button>
-                            <button class="ghost" @click="clearTurn(row.index)">휴식</button>
-                        </div>
+            <div class="mobile-editor">
+                <aside class="mobile-controls legacy-bg1">
+                    <strong>{{ selectedChief?.name ?? '-' }}</strong>
+                    <span>{{ selectedChief ? formatOfficerLevelText(selectedChief.officerLevel, data.nation.level) : '-' }}</span>
+                    <time>{{ selectedChiefRows[0]?.time ?? '--:--' }}</time>
+                    <button>고급 모드</button><button>반복⌄</button>
+                    <button @click="shiftTurns(-1)">당기기⌄</button><button @click="shiftTurns(1)">미루기⌄</button>
+                </aside>
+                <div class="mobile-turns">
+                    <div v-for="row in selectedChiefRows" :key="row.index" class="mobile-turn-row">
+                        <time>{{ row.time }}</time><strong>{{ row.action }}</strong>
+                        <button :disabled="!isEditingAllowed" @click="clearTurn(row.index)">✎</button>
                     </div>
                 </div>
-            </PanelCard>
-
-            <PanelCard title="전체 사령부" subtitle="8자리 전체 보기">
-                <div class="chief-overview">
-                    <ChiefTurnCard
-                        v-for="chief in overviewChiefViews"
-                        :key="chief.officerLevel"
-                        :officer-level-text="chief.officerLevelText"
-                        :name="chief.name"
-                        :npc-state="chief.npcState"
-                        :rows="chief.rows"
-                        :compact="true"
-                        :selected="chief.officerLevel === selectedChief?.officerLevel"
-                        :is-me="chief.officerLevel === data.me.officerLevel"
-                        :clickable="true"
-                        @select="selectedChiefLevel = chief.officerLevel"
-                    />
-                </div>
-            </PanelCard>
+            </div>
+            <div class="chief-overview">
+                <ChiefTurnCard v-for="chief in chiefViews" :key="chief.officerLevel"
+                    :officer-level-text="chief.officerLevelText" :name="chief.name" :npc-state="chief.npcState"
+                    :rows="chief.rows" :compact="true" :selected="chief.officerLevel === selectedChief?.officerLevel"
+                    :is-me="chief.officerLevel === data.me.officerLevel" :clickable="true"
+                    @select="selectedChiefLevel = chief.officerLevel" />
+            </div>
         </section>
 
         <section v-else-if="data" class="layout-desktop">
@@ -493,59 +363,11 @@ const shiftTurns = async (amount: number) => {
                     @select="selectedChiefLevel = chief.officerLevel"
                 />
             </div>
-            <div class="chief-side">
-                <PanelCard title="사령부 편집" subtitle="선택 명령을 배치하세요">
-                    <div v-if="!isEditingAllowed" class="muted">사령부 편집은 본인 관직에서만 가능합니다.</div>
-                    <div v-else>
-                        <CommandSelectForm
-                            :command-table="chiefCommandTable"
-                            :loading="commandLoading || loading"
-                            :active-category="activeCategory"
-                            @update:active-category="activeCategory = $event"
-                            @select="selectedCommandKey = $event"
-                        />
-                        <div class="command-selected">
-                            <div class="label">선택 명령</div>
-                            <div v-if="selectedCommand" class="value">
-                                <div class="name">{{ selectedCommand.name }}</div>
-                                <div class="meta">
-                                    <span>{{ selectedCommand.status === 'available' ? '가능' : '제한' }}</span>
-                                    <span v-if="selectedCommand.reqArg">추가 입력 필요</span>
-                                </div>
-                            </div>
-                            <div v-else class="value muted">명령을 선택하세요.</div>
-                        </div>
-                        <CommandArgumentForm
-                            v-if="selectedCommand?.reqArg && commandTable"
-                            :command-key="selectedCommand.key"
-                            :fields="selectedCommand.inputFields"
-                            :options="commandTable.inputOptions"
-                            @update:args="commandArgs = $event"
-                            @update:valid="commandArgsValid = $event"
-                        />
-                        <div class="turn-actions">
-                            <button @click="shiftTurns(-1)">앞당김</button>
-                            <button @click="shiftTurns(1)">미루기</button>
-                        </div>
-                        <div class="turn-list">
-                            <div v-for="row in selectedChiefRows" :key="row.index" class="turn-item">
-                                <div class="turn-info">
-                                    <span class="turn-index">#{{ row.index + 1 }}</span>
-                                    <span class="turn-time">{{ row.time }}</span>
-                                    <span class="turn-action">{{ row.action }}</span>
-                                </div>
-                                <div class="turn-buttons">
-                                    <button :disabled="!canReserveSelected" @click="reserveTurn(row.index)">
-                                        배치
-                                    </button>
-                                    <button class="ghost" @click="clearTurn(row.index)">휴식</button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </PanelCard>
+            <div v-if="isEditingAllowed" class="desktop-actions legacy-bg0">
+                <button @click="shiftTurns(-1)">당기기</button><button @click="shiftTurns(1)">미루기</button>
             </div>
         </section>
+        <footer class="chief-footer legacy-bg0"><RouterLink class="chief-nav" to="/">돌아가기</RouterLink></footer>
     </main>
 </template>
 
@@ -724,5 +546,100 @@ const shiftTurns = async (amount: number) => {
         padding: 0;
         gap: 0;
     }
+}
+
+.chief-page {
+    margin: 0 auto;
+    color: #fff;
+    font: 14px/21px var(--sammo-font-sans);
+}
+.chief-top {
+    height: 32px;
+    display: grid;
+    grid-template-columns: 90px 90px 1fr 90px 90px;
+}
+.chief-top h1 {
+    margin: 0;
+    font-size: 24px;
+    font-weight: 400;
+    line-height: 32px;
+    text-align: center;
+}
+.chief-nav {
+    box-sizing: border-box;
+    height: 32px;
+    margin-right: 2px;
+    border: 0;
+    border-radius: 3px;
+    display: grid;
+    place-items: center;
+    background: #00582c;
+    color: #fff;
+    font: inherit;
+    font-weight: 700;
+    text-decoration: none;
+    cursor: pointer;
+}
+.layout-desktop { display: block; }
+.chief-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+}
+.chief-grid :deep(.chief-header) { height: 24px; min-height: 24px; }
+.chief-grid :deep(.chief-row) { box-sizing: border-box; min-height: 30px; }
+.chief-grid :deep(.chief-card) { border-color: transparent; box-shadow: none; }
+.desktop-actions { padding: 2px 24px; }
+.desktop-actions button,
+.mobile-controls button {
+    min-height: 35px;
+    border: 0;
+    border-radius: 4px;
+    background: #444;
+    color: #fff;
+    font-weight: 700;
+}
+.chief-footer { min-height: 56px; padding-top: 20px; }
+.chief-footer .chief-nav { width: 70px; }
+.mobile-editor {
+    height: 371px;
+    display: grid;
+    grid-template-columns: 109px 1fr;
+    background: #000;
+}
+.mobile-controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-content: start;
+    text-align: center;
+}
+.mobile-controls strong,
+.mobile-controls span,
+.mobile-controls time { grid-column: 1 / -1; min-height: 30px; line-height: 30px; }
+.mobile-controls time { border-radius: 5px; background: #345c85; }
+.mobile-controls button { grid-column: 1 / -1; margin-top: 5px; }
+.mobile-turns { display: grid; grid-template-rows: repeat(12, 30px); padding-top: 10px; }
+.mobile-turn-row {
+    display: grid;
+    grid-template-columns: 74px 1fr 53px;
+    align-items: center;
+    background: #071638;
+    text-align: center;
+}
+.mobile-turn-row:nth-child(even) { background: #0d214e; }
+.mobile-turn-row button { height: 30px; border: 0; background: #3d3d3d; color: #fff; }
+.chief-overview {
+    width: 445px;
+    margin-top: 56px;
+    display: grid;
+    grid-template-columns: repeat(4, 111.25px);
+}
+.chief-overview :deep(.chief-card) { border-color: transparent; box-shadow: none; }
+.chief-overview :deep(.chief-row) { height: 12px; line-height: 10px; }
+.chief-overview :deep(.chief-header) { height: 28px; }
+
+@media (max-width: 1024px) {
+    .chief-page { width: 500px; min-width: 500px; }
+    .chief-top { grid-template-columns: 89px 89px 1fr 0 0; }
+    .chief-overview { grid-template-columns: repeat(4, 111.25px); }
 }
 </style>

@@ -718,19 +718,19 @@ onMounted(() => {
 <style scoped>
 .top-back-bar {
     width: min(100%, 1000px);
-    min-height: 38px;
+    min-height: 32px;
     margin: 0 auto;
     border: 1px solid #888;
     display: grid;
     grid-template-columns: 100px 1fr 100px;
     align-items: center;
     text-align: center;
-    padding: 3px 6px;
+    padding: 0 6px;
     box-sizing: border-box;
 }
 
 .top-button {
-    padding: 4px 8px;
+    padding: 2px 8px;
     text-decoration: none;
 }
 
@@ -744,7 +744,7 @@ onMounted(() => {
     padding: 0 8px 10px;
     color: #fff;
     font:
-        14px/1.3 Pretendard,
+        14px/21px Pretendard,
         'Apple SD Gothic Neo',
         'Noto Sans KR',
         'Malgun Gothic',
@@ -775,7 +775,7 @@ onMounted(() => {
 
 .inherit-item,
 .shop-item {
-    padding: 8px 16px;
+    padding: 6px 8px;
     box-sizing: border-box;
     min-width: 0;
 }
@@ -784,7 +784,7 @@ onMounted(() => {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(100px, 1fr);
     align-items: start;
-    gap: 6px;
+    gap: 3px;
 }
 
 .inherit-item label {
@@ -801,20 +801,20 @@ onMounted(() => {
     border-radius: 4px;
     background: #212529;
     color: #fff;
-    padding: 6px 8px;
+    padding: 4px 6px;
     box-sizing: border-box;
 }
 
 .inherit-item small,
 .shop-item small {
     grid-column: 1 / -1;
-    min-height: 34px;
+    min-height: 0;
     text-align: right;
     color: #aeb2b6;
 }
 
 .inherit-item small {
-    min-height: 36px;
+    min-height: 0;
 }
 
 .divider {
@@ -839,8 +839,8 @@ onMounted(() => {
     display: grid;
     grid-template-columns: 1fr 1fr;
     align-items: center;
-    gap: 8px;
-    min-height: 36px;
+    gap: 6px;
+    min-height: 31px;
 }
 
 .control-row > label,
@@ -851,7 +851,7 @@ onMounted(() => {
 .shop-item {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 3px;
 }
 
 .shop-item .buy-button {
@@ -860,11 +860,11 @@ onMounted(() => {
 }
 
 .simple-item small {
-    min-height: 55px;
+    min-height: 0;
 }
 
 .buff-item small {
-    min-height: 72px;
+    min-height: 0;
 }
 
 .dual-buttons {
@@ -971,8 +971,8 @@ a:focus-visible {
 
     .inherit-item,
     .shop-item {
-        padding-left: 16px;
-        padding-right: 16px;
+        padding-left: 8px;
+        padding-right: 8px;
     }
 
     .log-row {

@@ -20,6 +20,7 @@ type YearbookNation = {
     color: string;
     level: number;
     power: number;
+    generalCount: number;
     cities: string[];
 };
 
@@ -52,13 +53,19 @@ const parseYearbookNations = (value: unknown): YearbookNation[] => {
         const color = typeof item.color === 'string' ? item.color : null;
         const level = typeof item.level === 'number' ? item.level : null;
         const power = typeof item.power === 'number' ? item.power : null;
+        const generalCount =
+            typeof item.generalCount === 'number'
+                ? item.generalCount
+                : typeof item.gennum === 'number'
+                  ? item.gennum
+                  : 0;
         const cities = Array.isArray(item.cities)
             ? item.cities.filter((city): city is string => typeof city === 'string')
             : null;
         if (id === null || name === null || color === null || level === null || power === null || !cities) {
             continue;
         }
-        output.push({ id, name, color, level, power, cities });
+        output.push({ id, name, color, level, power, generalCount, cities });
     }
     return output;
 };
@@ -155,9 +162,18 @@ const buildNationSnapshot = async (ctx: GameApiContext) => {
         cityNamesByNation.set(city.nationId, cityNames);
     }
 
-    const generalStatsByNation = new Map<number, { goldRice: number; statPower: number; expDed: number }>();
+    const generalStatsByNation = new Map<
+        number,
+        { goldRice: number; statPower: number; expDed: number; generalCount: number }
+    >();
     for (const general of generalRows) {
-        const entry = generalStatsByNation.get(general.nationId) ?? { goldRice: 0, statPower: 0, expDed: 0 };
+        const entry = generalStatsByNation.get(general.nationId) ?? {
+            goldRice: 0,
+            statPower: 0,
+            expDed: 0,
+            generalCount: 0,
+        };
+        entry.generalCount += 1;
         entry.goldRice += general.gold + general.rice;
         const leadership = general.leadership;
         const strength = general.strength;
@@ -170,7 +186,12 @@ const buildNationSnapshot = async (ctx: GameApiContext) => {
     }
 
     return nationRows.map<YearbookNation>((nation) => {
-        const generalStats = generalStatsByNation.get(nation.id) ?? { goldRice: 0, statPower: 0, expDed: 0 };
+        const generalStats = generalStatsByNation.get(nation.id) ?? {
+            goldRice: 0,
+            statPower: 0,
+            expDed: 0,
+            generalCount: 0,
+        };
         const cityStats = cityStatsByNation.get(nation.id) ?? { popSum: 0, valueSum: 0, maxSum: 0 };
         const resource = Math.round(((nation.gold ?? 0) + (nation.rice ?? 0) + generalStats.goldRice) / 100);
         const tech = nation.tech ?? 0;
@@ -187,6 +208,7 @@ const buildNationSnapshot = async (ctx: GameApiContext) => {
             color: nation.color,
             level: nation.level,
             power,
+            generalCount: generalStats.generalCount,
             cities: cityNamesByNation.get(nation.id) ?? [],
         };
     });

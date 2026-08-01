@@ -1,32 +1,22 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import { formatOfficerLevelText } from '../utils/nationFormat';
+import { resolveGeneralIconUrl } from '../utils/generalIcon';
 import { trpc } from '../utils/trpc';
 
 type Result = Awaited<ReturnType<typeof trpc.nation.getGeneralList.query>>;
 type General = Result['generals'][number];
 type Sort = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15;
 const data = ref<Result | null>(null);
+const router = useRouter();
 const error = ref('');
 const loading = ref(false);
 const sort = ref<Sort>(1);
-const options = [
-    '관직',
-    '계급',
-    '명성',
-    '통솔',
-    '무력',
-    '지력',
-    '자금',
-    '군량',
-    '병사',
-    '벌점',
-    '성격',
-    '내특',
-    '전특',
-    '사관',
-    'NPC',
-];
+const viewMenuOpen = ref(false);
+const columnMenuOpen = ref(false);
+const nameFilter = ref('');
+const officerFilter = ref('');
 const visibleCrew = (general: General): number | null => ('crew' in general ? general.crew : null);
 const load = async () => {
     loading.value = true;
@@ -40,8 +30,17 @@ const load = async () => {
     }
 };
 const generals = computed(() =>
-    [...(data.value?.generals ?? [])].sort((a, b) => {
-        if (sort.value === 1) return b.officerLevel - a.officerLevel || a.id - b.id;
+    [...(data.value?.generals ?? [])]
+        .filter(
+            (general) =>
+                general.name.includes(nameFilter.value.trim()) &&
+                formatOfficerLevelText(general.officerLevel, data.value?.nation.level).includes(
+                    officerFilter.value.trim()
+                )
+        )
+        .sort((a, b) => {
+        if (sort.value === 1)
+            return a.npcState - b.npcState || b.officerLevel - a.officerLevel || a.id - b.id;
         if (sort.value === 2) return b.dedicationLevel - a.dedicationLevel || a.id - b.id;
         if (sort.value === 3) return b.experienceLevel - a.experienceLevel || a.id - b.id;
         if (sort.value === 4) return b.stats.leadership - a.stats.leadership || a.id - b.id;
@@ -57,154 +56,233 @@ const generals = computed(() =>
         if (sort.value === 14) return b.belong - a.belong || a.id - b.id;
         if (sort.value === 15) return b.npcState - a.npcState || a.id - b.id;
         return a.id - b.id;
-    })
+        })
 );
 const special = (general: General) => `${general.specialDomestic?.name ?? '-'} / ${general.specialWar?.name ?? '-'}`;
+const rank = (general: General) => (general.dedicationLevel ? `${11 - general.dedicationLevel}품관` : '무품관');
+const iconUrl = (general: General) => resolveGeneralIconUrl(general);
 onMounted(load);
 </script>
 
 <template>
     <main class="general-page legacy-bg0">
-        <header>
+        <header class="top-bar">
+            <span class="left-actions">
+                <button class="top-button nation-button" @click="router.push('/')">돌아가기</button>
+                <button class="top-button nation-button" :disabled="loading" @click="load">갱신</button>
+            </span>
             <strong>세력 장수</strong>
-            <span
-                ><RouterLink to="/">돌아가기</RouterLink>
-                <button :disabled="loading" @click="load">새로고침</button></span
-            >
+            <span class="right-actions">
+                <span class="dropdown">
+                    <button class="top-button mode-button" @click="viewMenuOpen = !viewMenuOpen">보기 모드⌄</button>
+                    <span v-if="viewMenuOpen" class="dropdown-menu">
+                        <button @click="sort = 1; viewMenuOpen = false">기본</button>
+                        <button @click="sort = 4; viewMenuOpen = false">전투</button>
+                    </span>
+                </span>
+                <span class="dropdown">
+                    <button class="top-button columns-button" @click="columnMenuOpen = !columnMenuOpen">열 선택⌄</button>
+                    <span v-if="columnMenuOpen" class="dropdown-menu column-menu">
+                        <label v-for="label in ['아이콘', '장수명', '관직', '명성/계급', '능력치', '자금', '특성']" :key="label">
+                            <input type="checkbox" checked /> {{ label }}
+                        </label>
+                    </span>
+                </span>
+            </span>
         </header>
-        <section class="sort">
-            정렬순서 :
-            <select v-model.number="sort" aria-label="세력 장수 정렬">
-                <option v-for="(label, index) in options" :key="label" :value="index + 1">{{ label }}</option>
-            </select>
-            <button>정렬하기</button>
-            <small v-if="data">열람 등급 {{ data.viewer.permission }}</small>
-        </section>
         <p v-if="error" class="state error" role="alert">{{ error }}</p>
         <p v-else-if="loading" class="state">불러오는 중...</p>
-        <div v-else class="scroll">
+        <div v-else class="grid-shell">
             <table id="nation-general-list">
+                <colgroup>
+                    <col v-for="(width, index) in [80, 126, 70, 70, 60, 60, 60, 60, 70, 70, 80, 100, 94]" :key="index" :style="{ width: `${width}px` }" />
+                </colgroup>
                 <thead>
+                    <tr class="group-head">
+                        <th colspan="2"></th>
+                        <th></th>
+                        <th>명성/계급　‹</th>
+                        <th colspan="3">능력치　‹</th>
+                        <th colspan="2">자금　‹</th>
+                        <th colspan="2">특성　›</th>
+                        <th>연도　›</th>
+                        <th>기타　‹</th>
+                    </tr>
                     <tr>
-                        <th>이 름</th>
-                        <th>관 직</th>
-                        <th>통무지</th>
-                        <th>명성/계급</th>
-                        <th>자금</th>
-                        <th>군량</th>
-                        <th>도시</th>
-                        <th>부대</th>
-                        <th>병사</th>
-                        <th>성격</th>
-                        <th>특기</th>
-                        <th>사관</th>
-                        <th>벌점</th>
+                        <th>아이콘</th><th>장수명</th><th>관직</th><th>계급</th><th>명성</th>
+                        <th>통솔</th><th>무력</th><th>지력</th><th>금</th><th>쌀</th>
+                        <th>요약</th><th>요약</th><th>벌점 ↓</th>
+                    </tr>
+                    <tr class="filter-head">
+                        <th></th>
+                        <th><input v-model="nameFilter" aria-label="장수명 필터" /><span>▽</span></th>
+                        <th><input v-model="officerFilter" aria-label="관직 필터" /><span>▽</span></th>
+                        <th><input aria-label="계급 필터" /><span>▽</span></th>
+                        <th><input aria-label="명성 필터" /><span>▽</span></th>
+                        <th><input aria-label="통솔 필터" /><span>▽</span></th>
+                        <th><input aria-label="무력 필터" /><span>▽</span></th>
+                        <th><input aria-label="지력 필터" /><span>▽</span></th>
+                        <th><input aria-label="금 필터" /><span>▽</span></th>
+                        <th><input aria-label="쌀 필터" /><span>▽</span></th>
+                        <th></th><th></th><th><input aria-label="벌점 필터" /><span>▽</span></th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr v-for="general in generals" :key="general.id">
-                        <td :class="`npc-${general.npcState}`">{{ general.name }}</td>
+                        <td class="icon-cell"><img :src="iconUrl(general)" alt="" /></td>
+                        <td :class="`name-cell npc-${general.npcState}`">{{ general.name }}</td>
                         <td>{{ formatOfficerLevelText(general.officerLevel, data?.nation.level) }}</td>
-                        <td>
-                            {{ general.stats.leadership }}∥{{ general.stats.strength }}∥{{ general.stats.intelligence }}
-                        </td>
-                        <td>
-                            Lv {{ general.experienceLevel }}<br />{{
-                                general.dedicationLevel ? `${11 - general.dedicationLevel}품관` : '무품관'
-                            }}
-                        </td>
-                        <td>{{ general.gold.toLocaleString() }}</td>
-                        <td>{{ general.rice.toLocaleString() }}</td>
-                        <td>{{ general.cityName ?? '?' }}</td>
-                        <td>{{ general.troopName ?? '?' }}</td>
-                        <td>{{ visibleCrew(general)?.toLocaleString() ?? '?' }}</td>
-                        <td :title="general.personality?.info ?? ''">{{ general.personality?.name ?? '-' }}</td>
-                        <td
-                            :title="
-                                [general.specialDomestic?.info, general.specialWar?.info].filter(Boolean).join('\n')
-                            "
-                        >
-                            {{ special(general) }}
-                        </td>
-                        <td>{{ general.belong }}</td>
-                        <td>{{ general.refreshScoreTotal }}</td>
+                        <td>{{ rank(general) }}<br />({{ (general.dedicationLevel * 200).toLocaleString() }})</td>
+                        <td>Lv {{ general.experienceLevel }}<br />({{ general.personality?.name ?? '-' }})</td>
+                        <td>{{ general.stats.leadership }}</td><td>{{ general.stats.strength }}</td><td>{{ general.stats.intelligence }}</td>
+                        <td>{{ general.gold.toLocaleString() }} 금</td><td>{{ general.rice.toLocaleString() }} 쌀</td>
+                        <td :title="general.personality?.info ?? ''">{{ general.personality?.name ?? '-' }}<br />{{ general.specialDomestic?.name ?? '-' }}</td>
+                        <td :title="[general.specialDomestic?.info, general.specialWar?.info].filter(Boolean).join('\n')">{{ special(general) }}</td>
+                        <td>{{ general.refreshScoreTotal }}점<br />({{ general.belong ? '자주' : '안함' }})</td>
                     </tr>
                 </tbody>
             </table>
         </div>
-        <footer><RouterLink to="/">돌아가기</RouterLink></footer>
     </main>
 </template>
 
 <style scoped>
 .general-page {
-    width: 1000px;
-    min-height: 100vh;
-    margin: 8px auto 0;
-    font:
-        16px 'Times New Roman',
-        serif;
+    width: 100%;
+    min-width: 500px;
+    max-width: 1000px;
+    height: 100vh;
+    margin: 0 auto;
+    overflow: hidden;
+    font: 14px/21px var(--sammo-font-sans);
     color: #fff;
+    background-color: transparent;
 }
-header,
-.sort,
-footer,
 .state {
-    position: relative;
-    border: 1px solid #777;
-    padding: 4px;
     text-align: center;
 }
-header {
-    min-height: 39px;
+.top-bar {
+    position: relative;
+    height: 32px;
     display: flex;
     align-items: center;
     justify-content: center;
+    background-color: transparent;
+    background-image: var(--sammo-texture-walnut);
+    border-bottom: 1px solid #42484a;
+    font-size: 14px;
 }
-header span {
+.top-bar strong { font-size: 22px; font-weight: 400; }
+.left-actions,
+.right-actions {
     position: absolute;
-    right: 6px;
+    top: 0;
+    display: flex;
+    height: 32px;
 }
-button,
-select {
-    border: 1px solid #888;
-    border-radius: 2px;
-    background: #222;
+.left-actions { left: 0; }
+.right-actions { right: 0; }
+.top-button {
+    display: inline-flex;
+    height: 32px;
+    align-items: center;
+    border: 0;
+    border-right: 1px solid #151515;
+    border-radius: 3px;
     color: #fff;
-    padding: 1px 6px;
+    width: 89px;
+    justify-content: center;
+    padding: 0;
+    font-weight: 700;
+    font-size: 14px;
+    text-decoration: none;
+    cursor: pointer;
 }
-.sort small {
-    float: right;
-    margin-right: 6px;
-    color: #ccc;
+.nation-button { background: #006c48; }
+.nation-button:hover { background: #00855a; }
+.mode-button { background: #375a7f; }
+.mode-button, .columns-button { width: 90px; }
+.columns-button { background: #3297cf; }
+.columns-button:hover { filter: brightness(1.12); }
+.dropdown { position: relative; }
+.dropdown-menu {
+    position: absolute;
+    z-index: 5;
+    top: 32px;
+    right: 0;
+    width: 150px;
+    padding: 4px;
+    background: #252a2c;
+    border: 1px solid #596164;
 }
-.scroll {
-    width: 1030px;
-    margin-left: -15px;
-    min-height: calc(100vh - 112px);
+.dropdown-menu button,
+.dropdown-menu label {
+    display: block;
+    width: 100%;
+    padding: 5px;
+    border: 0;
+    color: #fff;
+    background: transparent;
+    text-align: left;
+}
+.grid-shell {
+    width: 100%;
+    height: calc(100vh - 32px);
     overflow: auto;
+    border: 1px solid #424242;
+    background: #2d3436;
+    color: #f5f5f5;
+    cursor: default;
 }
 table {
-    width: 1030px;
-    min-width: 1030px;
-    border-collapse: separate;
+    width: 1000px;
+    min-width: 1000px;
+    border-collapse: collapse;
     table-layout: fixed;
+    background: #293033;
+    font-size: 14px;
+    line-height: normal;
+    color: #f5f5f5;
+    cursor: default;
 }
 th,
 td {
-    border: 1px solid #777;
-    padding: 3px;
+    border-right: 1px solid #40484b;
+    border-bottom: 1px solid #4a5255;
+    padding: 0 4px;
     text-align: center;
-    overflow-wrap: anywhere;
+    overflow: hidden;
 }
 th {
-    height: 30px;
-    background: #14241b var(--sammo-texture-green);
+    height: 32px;
+    background: #191b1c;
+    color: #bdc5cf;
     font-weight: 400;
+    white-space: nowrap;
 }
+.group-head th { height: 32px; border-bottom-color: #303537; }
+.filter-head th { height: 32px; padding: 3px 4px; }
+.filter-head input {
+    width: calc(100% - 15px);
+    height: 20px;
+    border: 1px solid #aab3b7;
+    background: #252a2c;
+    color: #fff;
+}
+.filter-head span { margin-left: 4px; color: #a5b5bf; }
 tbody tr {
-    height: 66px;
-    background: rgb(0 0 0 / 18%);
+    height: 68px;
+    background: #293033;
+}
+tbody tr:hover { background: #343c3f; }
+td { white-space: nowrap; }
+.icon-cell { padding: 0 4px; text-align: left; }
+.icon-cell img { width: 64px; height: 64px; object-fit: cover; vertical-align: middle; }
+.name-cell { text-align: left; color: cyan; }
+th:nth-child(9), td:nth-child(9), th:nth-child(10), td:nth-child(10) { text-align: right; }
+.state { margin: 40px; }
+.npc-0 {
+    color: #f5f5f5;
 }
 .npc-1 {
     color: cyan;
@@ -220,7 +298,7 @@ tbody tr {
 }
 @media (max-width: 1000px) {
     .general-page {
-        margin: 8px 0 0;
+        margin: 0;
     }
 }
 </style>
