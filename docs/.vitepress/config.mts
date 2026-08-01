@@ -13,6 +13,7 @@ export default defineConfig({
             { text: '개발자', link: '/developer/' },
             { text: '플레이어', link: '/user/' },
             { text: '아키텍처', link: '/architecture/overview' },
+            { text: '릴리스 운영', link: '/release-operations' },
         ],
         sidebar: {
             '/developer/': [
@@ -22,6 +23,7 @@ export default defineConfig({
                         { text: '시작하기', link: '/developer/' },
                         { text: '아키텍처 개요', link: '/architecture/overview' },
                         { text: '런타임 아키텍처', link: '/architecture/runtime' },
+                        { text: '릴리스 운영 매뉴얼', link: '/release-operations' },
                         { text: '요청·턴·저장 흐름', link: '/developer/request-turn-persistence' },
                         { text: '도메인 로직과 핵심 클래스', link: '/developer/domain-and-classes' },
                         { text: '파일 지도와 변경 절차', link: '/developer/code-map' },

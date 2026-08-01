@@ -138,6 +138,7 @@ pnpm docs:preview
 - [플레이어 가이드](docs/user/index.md)
 - [아키텍처 개요](docs/architecture/overview.md)
 - [런타임 아키텍처](docs/architecture/runtime.md)
+- [릴리스 운영 매뉴얼](docs/release-operations.md)
 - [차등 검증](docs/architecture/turn-state-differential-testing.md)
 - [Caddy prefix 계약](docs/e2e-caddy-routing.md)
 - [레거시 DB 이관](docs/legacy-db-migration.md)

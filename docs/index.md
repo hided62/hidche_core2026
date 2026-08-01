@@ -12,6 +12,9 @@ hero:
         - theme: alt
           text: 플레이어 가이드
           link: /user/
+        - theme: alt
+          text: 릴리스 운영
+          link: /release-operations
 
 features:
     - title: 시스템 구조
@@ -27,7 +30,8 @@ features:
 개발자는 [개발자 핸드북](./developer/index.md)과
 [아키텍처 개요](./architecture/overview.md)에서 시작해 주세요. 플레이어는
 [시간과 턴](./user/time-and-turns.md)과
-[커맨드 목록](./user/command-catalog.generated.md)을 확인해 주세요.
+[커맨드 목록](./user/command-catalog.generated.md)을 확인해 주세요. Profile과
+Gateway 배포는 [릴리스 운영 매뉴얼](./release-operations.md)을 따라 주세요.
 
 세부 문서는 다음 책임으로 나뉩니다.
 

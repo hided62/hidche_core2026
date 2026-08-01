@@ -2,15 +2,16 @@
 
 ## 읽기 순서
 
-| 작업                  | 문서                                                            | 코드 시작점                   |
-| --------------------- | --------------------------------------------------------------- | ----------------------------- |
-| 전체 구조             | [아키텍처 개요](../architecture/overview.md)                    | `app/`, `packages/`, `tools/` |
-| process·worker·daemon | [런타임 아키텍처](../architecture/runtime.md)                   | app server와 CLI              |
-| 파일 위치             | [파일 지도](./code-map.md)                                      | router, handler, schema       |
-| 명령·전투·효과        | [도메인과 조립](./domain-and-classes.md)                        | `packages/logic`              |
-| mutation·flush        | [요청·턴·저장](./request-turn-persistence.md)                   | game API, game engine         |
-| action module         | [행동 모듈 프로토콜](../architecture/action-module-protocol.md) | `actionModules/`              |
-| ref 비교              | [차등 검증](../architecture/turn-state-differential-testing.md) | `tools/integration-tests`     |
+| 작업                  | 문서                                                            | 코드 시작점                    |
+| --------------------- | --------------------------------------------------------------- | ------------------------------ |
+| 전체 구조             | [아키텍처 개요](../architecture/overview.md)                    | `app/`, `packages/`, `tools/`  |
+| process·worker·daemon | [런타임 아키텍처](../architecture/runtime.md)                   | app server와 CLI               |
+| profile·Gateway 배포  | [릴리스 운영 매뉴얼](../release-operations.md)                  | Admin GUI와 release-controller |
+| 파일 위치             | [파일 지도](./code-map.md)                                      | router, handler, schema        |
+| 명령·전투·효과        | [도메인과 조립](./domain-and-classes.md)                        | `packages/logic`               |
+| mutation·flush        | [요청·턴·저장](./request-turn-persistence.md)                   | game API, game engine          |
+| action module         | [행동 모듈 프로토콜](../architecture/action-module-protocol.md) | `actionModules/`               |
+| ref 비교              | [차등 검증](../architecture/turn-state-differential-testing.md) | `tools/integration-tests`      |
 
 ## 경계
 

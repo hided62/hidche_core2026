@@ -1,0 +1,165 @@
+# 릴리스 운영 매뉴얼
+
+이 문서는 Core2026의 profile 서버와 Gateway를 Git commit 단위로 배포하고
+되돌리는 현재 운영 경계를 설명합니다. Profile은 Gateway orchestrator가,
+Gateway 전체는 별도 release-controller가 처리합니다.
+
+## 구성과 권한
+
+| 대상                              | 요청 경로           | 실행자                  | 영속 상태                                        |
+| --------------------------------- | ------------------- | ----------------------- | ------------------------------------------------ |
+| `che`, `hwe` 등 profile           | Gateway 관리자 화면 | Gateway orchestrator    | `GatewayOperation`, `GatewayProfile`             |
+| Gateway API·frontend·orchestrator | Gateway 관리자 화면 | 외부 release-controller | `GatewayReleaseOperation`, `GatewayReleaseState` |
+| release-controller 자체           | 별도 CLI process    | self-upgrade CLI        | PM2 `sammo:release-controller`                   |
+
+관리자 화면은 `/gateway/admin/server-operations`입니다. Profile 작업에는 해당
+profile의 `admin.profiles.manage` 권한이 필요합니다. Gateway 전체 릴리스에는
+profile 범위 권한과 별개인 전역 `admin.releases.manage` 권한이 필요합니다.
+일반 사용자와 권한이 없는 관리자는 Gateway 릴리스 영역을 사용할 수 없습니다.
+
+운영 전에 다음을 확인해 주세요.
+
+- 대상 branch 또는 전체 commit SHA가 Core2026 저장소에 존재합니다.
+- 대상 commit의 `release-manifest.json`에 필요한 component와 현재 migration
+  head가 들어 있습니다.
+- Gateway PostgreSQL, profile PostgreSQL, Redis와 PM2가 준비되어 있습니다.
+- controller가 `GATEWAY_DATABASE_URL`, `GATEWAY_DB_SCHEMA`, workspace와
+  worktree 경로를 올바르게 읽습니다.
+- migration 이후 이전 애플리케이션으로 돌아갈 때 schema 하위 호환성이
+  유지됩니다.
+
+## Profile 배포
+
+관리자 화면에서 profile과 branch 또는 commit을 선택합니다. Branch는 worker가
+작업을 claim할 때 commit으로 해석하며, commit 입력은 전체 SHA로 고정됩니다.
+같은 profile에는 `QUEUED` 또는 `RUNNING` 작업을 동시에 하나만 둘 수 있습니다.
+
+### DB 유지 배포
+
+`DB 유지 배포`는 현재 시즌을 계속 운영하면서 코드를 교체할 때 사용합니다.
+
+1. 대상 commit의 game frontend, API, engine과 worker artifact를 빌드합니다.
+2. 기존 profile PM2 process를 정지합니다.
+3. profile game schema에 `prisma migrate deploy`를 실행합니다.
+4. Scenario seed를 실행하지 않고 frontend, API, daemon과 worker를 시작합니다.
+5. HTTP와 모든 PM2 role의 readiness가 확인된 뒤 build commit을 게시합니다.
+
+이 모드는 현재 scenario, status와 인게임 DB를 유지합니다. Migration이
+데이터를 변환할 수 있으므로 대상 migration의 운영 데이터 영향은 배포 전에
+별도로 검토해 주세요.
+
+### DB 초기화 배포
+
+`DB 초기화 배포`는 새 시즌이나 새 scenario로 현 시즌 데이터를 교체할 때
+사용합니다. Source와 scenario를 먼저 불러온 뒤 turn 간격, 가오픈·정식 오픈,
+NPC와 자동 진행 설정을 확인하고 요청해 주세요.
+
+이 모드는 build와 migration 후 scenario seeder를 실행합니다. 현 시즌의 장수,
+국가, 도시, command queue와 시장·경매 등은 새 scenario 기준으로 교체됩니다.
+다음 장기보존 자료는 reset 범위 밖에 있으므로 기수를 넘어 유지됩니다.
+
+- `hall`, `ng_games` 명예의 전당과 게임 이력
+- 연감과 과거 장수·국가 기록
+- 왕조·상속 자료
+- legacy storage와 진단·오류 기록
+
+초기화 작업은 되돌릴 수 있는 앱 rollback과 다릅니다. 운영 DB backup과 새
+scenario 설정을 확인한 뒤 실행해 주세요.
+
+### Profile 실패와 재시도
+
+Build는 현재 runtime을 멈추기 전에 수행합니다. Migration 또는 새 process
+readiness가 실패하면 작업은 `FAILED`가 되며 orchestrator는 이전 worktree의
+process 복구를 시도합니다. 관리자 화면의 오류와 PM2 process 상태를 확인한
+뒤 원인을 해결하고 실패한 작업을 재시도해 주세요. 재시도는 처음 고정된 commit을
+사용합니다.
+
+## Gateway 전체 배포
+
+Gateway는 자기 process를 직접 교체하지 않습니다. 관리자 화면에서 `Gateway
+배포`를 요청하면 외부 `sammo:release-controller`가 다음 순서로 처리합니다.
+
+1. Source ref를 commit SHA로 고정하고 commit worktree를 준비합니다.
+2. Release manifest의 protocol, component와 migration head를 검증합니다.
+3. Gateway API와 frontend를 빌드하고 gateway migration을 적용합니다.
+4. `sammo:gateway-api`, `sammo:gateway-frontend`,
+   `sammo:gateway-orchestrator`를 새 worktree definition으로 전환합니다.
+5. Gateway API `/healthz`, `/gateway/`와 세 PM2 process의 `online` 상태를
+   확인합니다.
+6. 모두 준비된 경우에만 현재·이전 commit과 workspace를 게시합니다.
+
+Gateway 전체에는 활성 릴리스 작업을 동시에 하나만 둘 수 있습니다. 화면의
+릴리스 이력에서 요청 source, 고정 commit, 상태와 오류를 확인할 수 있습니다.
+
+### Gateway rollback
+
+`이전 Gateway로 rollback`은 `GatewayReleaseState`에 기록된 바로 이전 commit을
+다시 배포합니다. 새 Gateway의 readiness가 실패하면 controller는 이전 세
+process definition을 복구합니다.
+
+Prisma migration은 역방향으로 적용하지 않습니다. 따라서 rollback 대상 앱이
+이미 적용된 새 gateway schema를 읽을 수 있어야 합니다. Schema 호환성이
+확인되지 않은 릴리스는 GUI rollback에 의존하지 말고 backup·restore를 포함한
+별도 복구 절차를 준비해 주세요.
+
+## Release-controller CLI
+
+CLI는 repository 루트에서 Git에 포함되지 않은 안전한 환경 변수 또는 secret
+주입 상태로 실행합니다. 실제 database URL이나 credential을 명령행, 로그 또는
+문서에 남기지 말아 주세요.
+
+현재 릴리스 상태와 최근 작업을 확인합니다.
+
+```sh
+pnpm --filter @sammo-ts/release-controller status
+```
+
+대기 중인 Gateway 작업을 한 건만 처리하고 종료합니다.
+
+```sh
+pnpm --filter @sammo-ts/release-controller run-once
+```
+
+운영 daemon은 `app/release-controller/dist/index.js daemon`을
+`sammo:release-controller` PM2 process로 실행합니다. 상세한 최초 설치와 환경
+변수는 저장소의 `app/release-controller/README.md`를 확인해 주세요.
+
+### Controller self-upgrade
+
+Self-upgrade는 실행 중인 controller daemon과 다른 shell/CLI process에서
+실행해 주세요. 대상 worktree를 준비하고 build와 gateway migration을 마친 뒤
+controller PM2 definition만 전환합니다.
+
+```sh
+pnpm --filter @sammo-ts/release-controller build
+pnpm --filter @sammo-ts/release-controller self-upgrade -- BRANCH main
+# 또는
+pnpm --filter @sammo-ts/release-controller self-upgrade -- COMMIT <full-sha>
+```
+
+새 controller가 제한 시간 안에 `online`이 되지 않으면 이전 definition을
+복구합니다. Self-upgrade 중에도 migration downgrade는 수행하지 않습니다.
+
+## 운영 확인 목록
+
+배포 전:
+
+- Source commit과 `release-manifest.json`을 확인합니다.
+- DB backup, migration 영향과 rollback schema 호환성을 확인합니다.
+- 대상 profile과 Gateway의 현재 commit·workspace를 기록합니다.
+- controller, PostgreSQL, Redis와 PM2 상태를 확인합니다.
+
+배포 후:
+
+- 작업이 `SUCCEEDED`이고 고정 commit이 요청한 commit과 같은지 확인합니다.
+- PM2의 cwd와 script가 게시된 worktree를 가리키는지 확인합니다.
+- `/gateway/` 또는 대상 profile prefix에 직접 접속하고 새로고침합니다.
+- API health, tRPC, SSE와 정적 자산 경로를 확인합니다.
+- DB 유지 배포에서는 현재 season/scenario와 핵심 게임 상태가 유지됐는지
+  확인합니다.
+- DB 초기화 배포에서는 새 시즌 상태와 명예의 전당·연감 등 장기보존 자료를
+  함께 확인합니다.
+
+Local unit, 격리 DB integration과 fixture Chromium 통과는 운영 PM2, 외부
+Caddy/HTTPS, 방화벽과 실제 운영 DB 전환을 증명하지 않습니다. 운영 배포에서는
+위 확인 목록을 실제 서비스 경로에서 다시 수행해 주세요.
