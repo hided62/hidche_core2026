@@ -22,6 +22,7 @@ import { createPasswordHasher } from './auth/passwordHasher.js';
 import { createPasswordEnvelopeService } from './auth/passwordEnvelope.js';
 import { RedisGatewaySessionService } from './auth/redisSessionService.js';
 import { createGatewayOrchestrator } from './orchestrator/orchestratorFactory.js';
+import { createGatewayReleaseRepository } from './orchestrator/gatewayReleaseRepository.js';
 import { appRouter } from './router.js';
 import { RepositoryProfileStatusService } from './lobby/profileStatusService.js';
 import { registerAccountIconInternalRoute } from './auth/accountIconInternalRoute.js';
@@ -64,6 +65,7 @@ export const createGatewayApiServer = async () => {
         config,
         process.env
     );
+    const releases = createGatewayReleaseRepository(postgres.prisma as GatewayPrismaClient);
     const profileStatus = new RepositoryProfileStatusService(profiles, orchestrator);
 
     const app = fastify({
@@ -106,6 +108,7 @@ export const createGatewayApiServer = async () => {
                     localAccountGraceDays: config.localAccountGraceDays,
                     passwordEnvelope,
                     profiles,
+                    releases,
                     orchestrator,
                     profileStatus,
                     requestHeaders: req.headers,
