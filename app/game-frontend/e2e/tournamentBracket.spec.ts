@@ -1,0 +1,201 @@
+import { expect, test, type Page, type Route } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { gameProfile, gameTrpcRoute } from './gameTestPaths.js';
+
+const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
+const imageRoots = [
+    ...(process.env.FRONTEND_PARITY_IMAGE_ROOT ? [resolve(process.env.FRONTEND_PARITY_IMAGE_ROOT, 'game')] : []),
+    resolve(repositoryRoot, '../image/game'),
+    resolve(repositoryRoot, '../../image/game'),
+];
+const names = [
+    '관우',
+    '장료',
+    '조운',
+    '하후돈',
+    '손책',
+    '태사자',
+    '마초',
+    '황충',
+    '여포',
+    '전위',
+    '감녕',
+    '문추',
+    '안량',
+    '허저',
+    '주태',
+    '방덕',
+];
+const participants = names.map((name, index) => ({
+    id: index + 1,
+    name,
+    leadership: 80,
+    strength: 80,
+    intel: 80,
+    level: 10,
+    groupId: 10 + (index % 8),
+    groupNo: Math.floor(index / 8),
+    win: 3 - (index % 2),
+    draw: index % 2,
+    lose: 0,
+    gl: 12 - index,
+    finalRank: Math.floor(index / 8) + 1,
+}));
+const matches = [
+    ...Array.from({ length: 8 }, (_, index) => ({
+        id: index + 1,
+        stage: 7,
+        roundIndex: index,
+        attackerId: index * 2 + 1,
+        defenderId: index * 2 + 2,
+        winnerId: index * 2 + 1,
+    })),
+    ...Array.from({ length: 4 }, (_, index) => ({
+        id: index + 9,
+        stage: 8,
+        roundIndex: index,
+        attackerId: index * 4 + 1,
+        defenderId: index * 4 + 3,
+        winnerId: index * 4 + 1,
+    })),
+    ...Array.from({ length: 2 }, (_, index) => ({
+        id: index + 13,
+        stage: 9,
+        roundIndex: index,
+        attackerId: index * 8 + 1,
+        defenderId: index * 8 + 5,
+        winnerId: index * 8 + 1,
+    })),
+    { id: 15, stage: 10, roundIndex: 0, attackerId: 1, defenderId: 9, winnerId: 1 },
+];
+
+const response = (data: unknown) => ({ result: { data } });
+const operationNames = (route: Route): string[] => {
+    const url = new URL(route.request().url());
+    return decodeURIComponent(url.pathname.slice(url.pathname.lastIndexOf('/trpc/') + 6)).split(',');
+};
+
+const readReferenceImage = async (filename: string): Promise<Buffer> => {
+    for (const imageRoot of imageRoots) {
+        try {
+            return await readFile(resolve(imageRoot, filename));
+        } catch {
+            // Worktrees can be nested at different depths.
+        }
+    }
+    throw new Error(`Reference image not found: ${filename}`);
+};
+
+const installFixture = async (page: Page) => {
+    await page.addInitScript((profile) => {
+        window.localStorage.setItem('sammo-game-token', 'ga_tournament_bracket_playwright');
+        window.localStorage.setItem('sammo-game-profile', profile);
+    }, gameProfile);
+    for (const filename of ['back_walnut.jpg', 'back_green.jpg', 'back_blue.jpg']) {
+        await page.route(`**/image/game/${filename}`, async (route) => {
+            await route.fulfill({ status: 200, contentType: 'image/jpeg', body: await readReferenceImage(filename) });
+        });
+    }
+    await page.route(gameTrpcRoute, async (route) => {
+        const results = operationNames(route).map((operation) => {
+            if (operation === 'auth.status') return response({ ok: true });
+            if (operation === 'lobby.info') return response({ myGeneral: { id: 1, name: names[0] } });
+            if (operation === 'join.getConfig') return response({});
+            if (operation === 'general.me') return response({ general: { id: 1, name: names[0] } });
+            if (operation === 'tournament.getAdminStatus') return response({ ok: false });
+            if (operation === 'tournament.getSnapshot') {
+                return response({
+                    state: {
+                        stage: 0,
+                        phase: 0,
+                        type: 0,
+                        auto: false,
+                        openYear: 184,
+                        openMonth: 1,
+                        termSeconds: 60,
+                        nextAt: '2026-08-02T00:00:00.000Z',
+                        winnerId: 1,
+                    },
+                    participants,
+                    matches,
+                    betCount: 16,
+                });
+            }
+            if (operation === 'tournament.getBettingSummary') {
+                return response({
+                    totals: Object.fromEntries(participants.map((participant, index) => [participant.id, 100 + index * 10])),
+                    myTotals: {},
+                    totalAmount: 2800,
+                    myAmount: 0,
+                });
+            }
+            return response(null);
+        });
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(results) });
+    });
+};
+
+const openTournament = async (page: Page) => {
+    await installFixture(page);
+    await page.goto('tournament');
+    await expect(page.getByLabel('토너먼트 대진표')).toBeVisible();
+};
+
+test('desktop bracket connects every real general slot to the next round', async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1365, height: 900 });
+    await openTournament(page);
+
+    await expect(page.locator('.bracket-canvas .bracket-name[data-general-id]')).toHaveCount(31);
+    await expect(page.locator('.bracket-canvas .connector-segment')).toHaveCount(15);
+    await expect(page.locator('.bracket-canvas .bracket-name.advanced', { hasText: '관우' })).toHaveCount(5);
+
+    const geometry = await page.locator('.bracket-canvas').evaluate((canvas) => {
+        const firstConnector = canvas.querySelector<HTMLElement>('.connector-segment')!.getBoundingClientRect();
+        const champion = canvas.querySelector<HTMLElement>('.bracket-champion .bracket-name')!.getBoundingClientRect();
+        const finalists = [...canvas.querySelectorAll<HTMLElement>('.bracket-round:nth-of-type(3) .bracket-name')].map(
+            (element) => element.getBoundingClientRect()
+        );
+        return {
+            canvasWidth: canvas.getBoundingClientRect().width,
+            connectorCenter: firstConnector.x + firstConnector.width / 2,
+            championCenter: champion.x + champion.width / 2,
+            finalistCenters: finalists.map((rect) => rect.x + rect.width / 2),
+            connectorQuarters: [firstConnector.x + firstConnector.width / 4, firstConnector.x + (firstConnector.width * 3) / 4],
+        };
+    });
+    expect(geometry.canvasWidth).toBe(2000);
+    expect(Math.abs(geometry.connectorCenter - geometry.championCenter)).toBeLessThan(1);
+    expect(geometry.finalistCenters).toHaveLength(2);
+    expect(Math.abs(geometry.finalistCenters[0]! - geometry.connectorQuarters[0]!)).toBeLessThan(1);
+    expect(Math.abs(geometry.finalistCenters[1]! - geometry.connectorQuarters[1]!)).toBeLessThan(1);
+
+    await page.screenshot({ path: testInfo.outputPath('tournament-bracket-desktop.webp'), fullPage: true });
+});
+
+test('mobile bracket shows every round and general within the handheld width', async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await openTournament(page);
+
+    const bracket = page.locator('.mobile-bracket');
+    await expect(bracket).toBeVisible();
+    await expect(bracket.locator('.mobile-bracket-name')).toHaveCount(31);
+    await expect(bracket.locator('.mobile-bracket-name', { hasText: '방덕' })).toBeVisible();
+    await expect(bracket.locator('.mobile-bracket-name', { hasText: '관우' })).toHaveCount(5);
+    const bounds = await bracket.evaluate((element) => {
+        const names = [...element.querySelectorAll<HTMLElement>('.mobile-bracket-name')].map((name) =>
+            name.getBoundingClientRect()
+        );
+        const own = element.getBoundingClientRect();
+        return {
+            width: own.width,
+            minX: Math.min(...names.map((rect) => rect.left - own.left)),
+            maxX: Math.max(...names.map((rect) => rect.right - own.left)),
+        };
+    });
+    expect(bounds.width).toBe(390);
+    expect(bounds.minX).toBeGreaterThanOrEqual(0);
+    expect(bounds.maxX).toBeLessThanOrEqual(390);
+    await page.screenshot({ path: testInfo.outputPath('tournament-bracket-mobile.webp'), fullPage: true });
+});

@@ -219,6 +219,7 @@ const install = async (page: Page, mode: 'member' | 'wanderer' | 'admin' = 'memb
                             capitalCityId: 1,
                             level: 1,
                             power: 1234,
+                            generalCount: 2,
                             cities: ['업'],
                         },
                         {
@@ -228,6 +229,7 @@ const install = async (page: Page, mode: 'member' | 'wanderer' | 'admin' = 'memb
                             capitalCityId: 2,
                             level: 1,
                             power: 1000,
+                            generalCount: 1,
                             cities: ['허창'],
                         },
                     ],
@@ -347,6 +349,69 @@ test('four legacy menu pages keep the 1000px desktop table contract', async ({ p
                 .first()
                 .evaluate((el) => getComputedStyle(el).borderCollapse)
         ).toBe(borderCollapse);
+    }
+});
+
+test('global-info renders the ref nation summary columns beside the map', async ({ page }) => {
+    await install(page);
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await go(page, 'global-info');
+
+    const summary = page.locator('.simple-nation-list');
+    await expect(summary).toBeVisible();
+    await expect(summary.locator('thead')).toContainText('국명');
+    await expect(summary.locator('thead')).toContainText('국력');
+    await expect(summary.locator('thead')).toContainText('장수');
+    await expect(summary.locator('thead')).toContainText('속령');
+    await expect(summary.locator('tbody tr').first()).toHaveText(/아국\s*1,234\s*2\s*1/u);
+    await expect(summary.locator('tbody tr').first().locator('td').last()).toHaveAttribute('title', '업');
+
+    const geometry = await summary.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const headings = Array.from(element.querySelectorAll('th')).map((heading) => heading.getBoundingClientRect().width);
+        return { x: rect.x, width: rect.width, headings };
+    });
+    expect(geometry).toMatchObject({ x: 800, width: 300 });
+    expect(geometry.headings[0]).toBeCloseTo((300 * 44) / 97, 0);
+    expect(geometry.headings[1]).toBeCloseTo((300 * 23) / 97, 0);
+    expect(geometry.headings[2]).toBeCloseTo((300 * 15) / 97, 0);
+    expect(geometry.headings[3]).toBeCloseTo((300 * 15) / 97, 0);
+
+    if (artifactRoot) {
+        await mkdir(artifactRoot, { recursive: true });
+        await writeFile(
+            resolve(artifactRoot, 'core-global-info-computed-dom.json'),
+            `${JSON.stringify(
+                {
+                    geometry,
+                    headings: await summary.locator('th').allTextContents(),
+                    rows: await summary.locator('tbody tr').allTextContents(),
+                    cityTitles: await summary.locator('tbody td:last-child').evaluateAll((cells) =>
+                        cells.map((cell) => cell.getAttribute('title'))
+                    ),
+                },
+                null,
+                2
+            )}\n`,
+            'utf8'
+        );
+        await page.screenshot({ path: resolve(artifactRoot, 'core-global-info-desktop.png'), fullPage: true });
+    }
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    const mobileGeometry = await page.locator('.map-grid').evaluate((element) => {
+        const map = element.querySelector('.map-viewer')?.getBoundingClientRect();
+        const summary = element.querySelector('.simple-nation-list')?.getBoundingClientRect();
+        return {
+            map: map ? { y: map.y, width: map.width, bottom: map.bottom } : null,
+            summary: summary ? { y: summary.y, width: summary.width } : null,
+        };
+    });
+    expect(mobileGeometry.map?.width).toBe(500);
+    expect(mobileGeometry.summary?.width).toBe(500);
+    expect(mobileGeometry.summary?.y).toBe(mobileGeometry.map?.bottom);
+    if (artifactRoot) {
+        await page.screenshot({ path: resolve(artifactRoot, 'core-global-info-mobile.png'), fullPage: true });
     }
 });
 

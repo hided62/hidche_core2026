@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @import './styles/tokens.css';
+@import './styles/legacy-controls.css';
 @import './styles/game-shell.css';
 @import './styles/ref-shell.css';
 
@@ -43,34 +44,4 @@ textarea {
 .legacy-bg2 {
     background-color: #172a52;
     background-image: var(--sammo-texture-blue);
-}
-
-.legacy-button {
-    display: inline-block;
-    border: 1px solid #12195b;
-    border-radius: 3px;
-    background: #141c65;
-    color: #fff;
-    padding: 5px 10px;
-    font-weight: 700;
-    line-height: 1.5;
-    cursor: pointer;
-}
-
-.legacy-button:hover,
-.legacy-button:focus,
-.legacy-button:active {
-    border-color: #0f154c;
-    background: #101651;
-    color: #fff;
-}
-
-.legacy-button:focus-visible {
-    outline: 2px solid #f39c12;
-    outline-offset: 1px;
-}
-
-.legacy-button:disabled {
-    cursor: default;
-    opacity: 0.65;
 }

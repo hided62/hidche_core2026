@@ -177,8 +177,15 @@ onMounted(() => {
 <template>
     <main id="container" class="legacy-troop-page">
         <header class="topBackBar bg0">
-            <RouterLink class="btn legacyNavButton backLink" to="/">돌아가기</RouterLink>
-            <button class="btn legacyNavButton reloadButton" type="button" :disabled="loading" @click="refresh">
+            <RouterLink class="legacy-button legacy-button--navigation legacyNavButton backLink" to="/"
+                >돌아가기</RouterLink
+            >
+            <button
+                class="legacy-button legacy-button--navigation legacyNavButton reloadButton"
+                type="button"
+                :disabled="loading"
+                @click="refresh"
+            >
                 갱신
             </button>
             <h2>부대 편성</h2>
@@ -242,25 +249,33 @@ onMounted(() => {
 
                 <div class="troopAction">
                     <div v-if="dialogKind === null || dialogTroopId !== troop.id" class="actionButtons">
-                        <button v-if="data.me.troopId === 0" class="btn btn-primary" @click="joinTroop(troop)">
+                        <button
+                            v-if="data.me.troopId === 0"
+                            class="legacy-button legacy-button--primary"
+                            @click="joinTroop(troop)"
+                        >
                             부대 탑승
                         </button>
                         <button
                             v-if="data.me.troopId === troop.id"
-                            class="btn"
-                            :class="data.me.id === data.me.troopId ? 'btn-danger' : 'btn-primary'"
+                            class="legacy-button"
+                            :class="data.me.id === data.me.troopId ? 'legacy-button--danger' : 'legacy-button--primary'"
                             @click="exitTroop(troop)"
                         >
                             {{ data.me.id === data.me.troopId ? '부대 해산' : '부대 탈퇴' }}
                         </button>
                         <button
                             v-if="data.me.troopId === troop.id && data.me.id === data.me.troopId"
-                            class="btn btn-secondary"
+                            class="legacy-button legacy-button--secondary"
                             @click="openKick(troop)"
                         >
                             부대원 추방...
                         </button>
-                        <button v-if="data.permission >= 4" class="btn btn-info" @click="openRename(troop)">
+                        <button
+                            v-if="data.permission >= 4"
+                            class="legacy-button legacy-button--info"
+                            @click="openRename(troop)"
+                        >
                             부대명 변경...
                         </button>
                     </div>
@@ -270,10 +285,12 @@ onMounted(() => {
                             <input v-model.trim="editName" class="formControl" type="text" aria-label="새 부대명" />
                         </div>
                         <div class="subBtnCancel">
-                            <button class="btn btn-secondary" @click="closeDialog">취소</button>
+                            <button class="legacy-button legacy-button--secondary" @click="closeDialog">취소</button>
                         </div>
                         <div class="subBtnOK">
-                            <button class="btn btn-primary" @click="renameTroop(troop)">변경</button>
+                            <button class="legacy-button legacy-button--primary" @click="renameTroop(troop)">
+                                변경
+                            </button>
                         </div>
                     </div>
                     <div v-else class="subDialog kickDialog">
@@ -290,10 +307,12 @@ onMounted(() => {
                             </select>
                         </div>
                         <div class="subBtnCancel">
-                            <button class="btn btn-secondary" @click="closeDialog">취소</button>
+                            <button class="legacy-button legacy-button--secondary" @click="closeDialog">취소</button>
                         </div>
                         <div class="subBtnOK">
-                            <button class="btn btn-primary" @click="kickMember(troop)">추방</button>
+                            <button class="legacy-button legacy-button--primary" @click="kickMember(troop)">
+                                추방
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -305,12 +324,16 @@ onMounted(() => {
             <div v-if="data.me.troopId === 0" class="makeNewTroop">
                 <div class="makeTitle bg1 center">부대 창설</div>
                 <input v-model.trim="createName" class="formControl troopNameField" type="text" aria-label="부대명" />
-                <button class="btn btn-secondary createButton" @click="makeTroop">부대 창설</button>
+                <button class="legacy-button legacy-button--secondary createButton" @click="makeTroop">
+                    부대 창설
+                </button>
             </div>
         </div>
 
         <footer class="bottomBar bg0">
-            <RouterLink class="btn legacyNavButton backLink" to="/">돌아가기</RouterLink>
+            <RouterLink class="legacy-button legacy-button--navigation legacyNavButton backLink" to="/"
+                >돌아가기</RouterLink
+            >
             <div></div>
         </footer>
         <div v-if="popupMember" id="generalPopup" :style="{ top: `${popupTop}px` }" role="tooltip">
@@ -359,14 +382,11 @@ onMounted(() => {
     text-align: center;
 }
 
-.btn.legacyNavButton {
+.legacyNavButton {
     height: 32px;
+    min-height: 32px;
     margin-right: 2px;
-    border-color: #004f28;
-    color: #fff;
-    background: #00582c;
     font-weight: 600;
-    text-decoration: none;
 }
 
 .notice {
@@ -490,51 +510,6 @@ onMounted(() => {
     grid-row: 1/3;
 }
 
-.btn {
-    min-height: 31px;
-    padding: 0.2em 0.75em;
-    border: 1px solid #777;
-    border-radius: 4px;
-    color: #eee;
-    background: #555;
-    font: inherit;
-    cursor: pointer;
-}
-
-.btn:hover {
-    filter: brightness(1.15);
-}
-
-.btn:focus-visible {
-    outline: 2px solid #8ab4f8;
-    outline-offset: -2px;
-}
-
-.btn:active {
-    transform: translateY(1px);
-}
-
-.btn-primary {
-    border-color: #0d6efd;
-    background: #0d6efd;
-}
-
-.btn-danger {
-    border-color: #dc3545;
-    background: #dc3545;
-}
-
-.btn-info {
-    border-color: #0dcaf0;
-    color: #111;
-    background: #0dcaf0;
-}
-
-.btn-secondary {
-    border-color: #6c757d;
-    background: #6c757d;
-}
-
 .formControl {
     width: 100%;
     min-height: 31px;
@@ -561,6 +536,9 @@ onMounted(() => {
 .bottomBar .legacyNavButton {
     width: 70px;
     margin: 0;
+    padding-right: 5px;
+    padding-left: 5px;
+    white-space: nowrap;
 }
 
 @media (min-width: 501px) {
@@ -624,7 +602,7 @@ onMounted(() => {
 
 @media (max-width: 500px) {
     .legacy-troop-page {
-        width: 511px;
+        width: 500px;
     }
 
     #generalPopup {
