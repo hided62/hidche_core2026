@@ -75,6 +75,30 @@ excluded. In particular, `general`, `city`, `nation`, their turn queues,
 `ng_betting`, `reserved_open`, `select_pool`, `select_npc_token` and `plock`
 must not be used to reconstruct a running season.
 
+### Current-season comparison fixture
+
+The archive exclusion above remains the production migration contract. The
+same CLI also provides a separately guarded `current-season-fixture` command for
+an isolated Ref/Core comparison database only. It requires a Core template and
+Ref source that already match the explicitly supplied scenario/year/month, and
+an apply requires `--replace-current-season --apply` together.
+
+Within one target transaction it truncates season-owned tables and imports the
+Ref world clock, dynamic city fields, nations, generals, command queues,
+diplomacy matrix, troops, ranks, messages, access log, events, betting, auctions,
+yearbook, current storage audit rows and general/world logs. Static Core city
+geometry and connection metadata remain from the cloned template. Legacy
+message payload targets are renamed from `id`/`nation_id` to
+`generalId`/`nationId` so the typed Core API can read them.
+
+The command refuses an active turn-daemon lease. It intentionally omits process
+locks, reservations and selection tokens, Redis-owned tournament state,
+`statistic` aggregate text and `ng_diplomacy` letters; the result reports each
+unsupported category. Owner binding for a browser-capture account is explicit
+through `CURRENT_SEASON_CAPTURE_USER_ID` and
+`CURRENT_SEASON_CAPTURE_SOURCE_OWNER`. This mode must not be used for a live
+season or as a substitute for the long-lived archive cutover procedure.
+
 ## Archived play read model
 
 `/past-plays` is an authenticated, read-only projection. The server derives the

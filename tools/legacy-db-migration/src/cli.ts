@@ -8,8 +8,9 @@ import { createMariaPool, createPostgresPool } from './db.js';
 import { migrateGame } from './game.js';
 import { migrateGateway } from './gateway.js';
 import { hashPasswordForReset } from './password.js';
+import { migrateCurrentSeasonFixture } from './currentSeason.js';
 
-type Command = 'gateway' | 'game' | 'reset-password';
+type Command = 'gateway' | 'game' | 'current-season-fixture' | 'reset-password';
 
 interface CliOptions {
     command: Command;
@@ -17,11 +18,18 @@ interface CliOptions {
     profile?: string;
     loginId?: string;
     passwordFile?: string;
+    expectedScenario?: number;
+    expectedYear?: number;
+    expectedMonth?: number;
+    replaceCurrentSeason: boolean;
 }
 
 const usage = `Usage:
   pnpm --filter @sammo-ts/legacy-db-migration migrate gateway [--apply]
   pnpm --filter @sammo-ts/legacy-db-migration migrate game --profile <profile> [--apply]
+  pnpm --filter @sammo-ts/legacy-db-migration migrate current-season-fixture --profile <profile> \
+    --expected-scenario <id> --expected-year <year> --expected-month <month> \
+    [--replace-current-season --apply]
   pnpm --filter @sammo-ts/legacy-db-migration migrate reset-password --login-id <id> --password-file <path> --apply
 
 Environment:
@@ -35,14 +43,23 @@ credentials are not exposed in the process list.`;
 
 const parseArguments = (argv: readonly string[]): CliOptions => {
     const command = argv[0];
-    if (command !== 'gateway' && command !== 'game' && command !== 'reset-password') {
+    if (
+        command !== 'gateway' &&
+        command !== 'game' &&
+        command !== 'current-season-fixture' &&
+        command !== 'reset-password'
+    ) {
         throw new Error(usage);
     }
-    const options: CliOptions = { command, apply: false };
+    const options: CliOptions = { command, apply: false, replaceCurrentSeason: false };
     for (let index = 1; index < argv.length; index += 1) {
         const argument = argv[index];
         if (argument === '--apply') {
             options.apply = true;
+            continue;
+        }
+        if (argument === '--replace-current-season') {
+            options.replaceCurrentSeason = true;
             continue;
         }
         const next = argv[index + 1];
@@ -55,6 +72,12 @@ const parseArguments = (argv: readonly string[]): CliOptions => {
             options.loginId = next;
         } else if (argument === '--password-file') {
             options.passwordFile = next;
+        } else if (argument === '--expected-scenario') {
+            options.expectedScenario = Number(next);
+        } else if (argument === '--expected-year') {
+            options.expectedYear = Number(next);
+        } else if (argument === '--expected-month') {
+            options.expectedMonth = Number(next);
         } else {
             throw new Error(`Unknown argument: ${argument}\n\n${usage}`);
         }
@@ -131,11 +154,41 @@ const run = async (): Promise<void> => {
     }
 
     if (!options.profile || !/^[a-z][a-z0-9_-]{1,31}$/.test(options.profile)) {
-        throw new Error(`game requires a safe --profile value\n\n${usage}`);
+        throw new Error(`${options.command} requires a safe --profile value\n\n${usage}`);
     }
     const source = createMariaPool(requireEnvironment('LEGACY_GAME_DATABASE_URL'));
-    const target = options.apply ? createPostgresPool(requireEnvironment('GAME_DATABASE_URL')) : null;
+    const target =
+        options.apply || options.command === 'current-season-fixture'
+            ? createPostgresPool(requireEnvironment('GAME_DATABASE_URL'))
+            : null;
     try {
+        if (options.command === 'current-season-fixture') {
+            if (
+                !Number.isSafeInteger(options.expectedScenario) ||
+                !Number.isSafeInteger(options.expectedYear) ||
+                !Number.isSafeInteger(options.expectedMonth) ||
+                options.expectedMonth! < 1 ||
+                options.expectedMonth! > 12
+            ) {
+                throw new Error(
+                    `current-season-fixture requires valid expected scenario/year/month values\n\n${usage}`
+                );
+            }
+            if (options.apply && !options.replaceCurrentSeason) {
+                throw new Error('current-season-fixture --apply also requires --replace-current-season');
+            }
+            const summary = await migrateCurrentSeasonFixture(source, target!, {
+                apply: options.apply,
+                profile: options.profile,
+                expectedScenario: options.expectedScenario!,
+                expectedYear: options.expectedYear!,
+                expectedMonth: options.expectedMonth!,
+                captureUserId: process.env.CURRENT_SEASON_CAPTURE_USER_ID?.trim() || null,
+                captureSourceOwner: Number(process.env.CURRENT_SEASON_CAPTURE_SOURCE_OWNER ?? 0),
+            });
+            console.log(JSON.stringify(summary, null, 2));
+            return;
+        }
         const summary = await migrateGame(source, target, options.apply, options.profile);
         console.log(JSON.stringify(summary, null, 2));
     } finally {
