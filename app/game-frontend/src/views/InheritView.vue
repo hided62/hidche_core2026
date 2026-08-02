@@ -427,9 +427,16 @@ onMounted(() => {
 
 <template>
     <header class="top-back-bar legacy-bg0">
-        <RouterLink class="top-button legacy-button" to="/">돌아가기</RouterLink>
+        <RouterLink class="top-button legacy-button legacy-button--navigation" to="/">돌아가기</RouterLink>
         <strong>유산 관리</strong>
-        <button class="top-button legacy-button" type="button" :disabled="loading" @click="loadStatus">갱신</button>
+        <button
+            class="top-button legacy-button legacy-button--navigation"
+            type="button"
+            :disabled="loading"
+            @click="loadStatus"
+        >
+            갱신
+        </button>
     </header>
 
     <main id="container" class="inherit-page legacy-bg0">
@@ -490,7 +497,7 @@ onMounted(() => {
                             ></small
                         >
                         <button
-                            class="legacy-button buy-button"
+                            class="legacy-button legacy-button--primary buy-button"
                             :disabled="isUnited || actionBusy"
                             @click="reserveSpecialWar"
                         >
@@ -524,7 +531,7 @@ onMounted(() => {
                             }}</small
                         >
                         <button
-                            class="legacy-button buy-button"
+                            class="legacy-button legacy-button--primary buy-button"
                             :disabled="isUnited || actionBusy"
                             @click="openUniqueAuction"
                         >
@@ -539,7 +546,11 @@ onMounted(() => {
                     <article class="shop-item simple-item">
                         <div class="control-row">
                             <span>랜덤 턴 초기화</span
-                            ><button class="legacy-button" :disabled="isUnited || actionBusy" @click="resetTurnTime">
+                            ><button
+                                class="legacy-button legacy-button--primary"
+                                :disabled="isUnited || actionBusy"
+                                @click="resetTurnTime"
+                            >
                                 구입
                             </button>
                         </div>
@@ -552,7 +563,11 @@ onMounted(() => {
                     <article class="shop-item simple-item">
                         <div class="control-row">
                             <span>랜덤 유니크 획득</span
-                            ><button class="legacy-button" :disabled="isUnited || actionBusy" @click="buyRandomUnique">
+                            ><button
+                                class="legacy-button legacy-button--primary"
+                                :disabled="isUnited || actionBusy"
+                                @click="buyRandomUnique"
+                            >
                                 구입
                             </button>
                         </div>
@@ -565,7 +580,11 @@ onMounted(() => {
                     <article class="shop-item simple-item">
                         <div class="control-row">
                             <span>즉시 전투 특기 초기화</span
-                            ><button class="legacy-button" :disabled="isUnited || actionBusy" @click="resetSpecialWar">
+                            ><button
+                                class="legacy-button legacy-button--primary"
+                                :disabled="isUnited || actionBusy"
+                                @click="resetSpecialWar"
+                            >
                                 구입
                             </button>
                         </div>
@@ -596,14 +615,14 @@ onMounted(() => {
                         >
                         <div class="dual-buttons">
                             <button
-                                class="legacy-button secondary"
+                                class="legacy-button legacy-button--secondary"
                                 :disabled="actionBusy"
                                 @click="buffTargets[key] = status.buffLevels[key] ?? 0"
                             >
                                 리셋
                             </button>
                             <button
-                                class="legacy-button"
+                                class="legacy-button legacy-button--primary"
                                 :disabled="isUnited || actionBusy"
                                 @click="buyHiddenBuff(key)"
                             >
@@ -635,7 +654,11 @@ onMounted(() => {
                                 >필요 포인트: {{ status.inheritConst.inheritCheckOwnerPoint }}</b
                             ></small
                         >
-                        <button class="legacy-button buy-button" :disabled="isUnited || actionBusy" @click="checkOwner">
+                        <button
+                            class="legacy-button legacy-button--primary buy-button"
+                            :disabled="isUnited || actionBusy"
+                            @click="checkOwner"
+                        >
                             소유자 찾기
                         </button>
                         <p v-if="ownerResult" class="owner-result">
@@ -689,7 +712,7 @@ onMounted(() => {
                             ><br /><span v-if="resetStatErrors.length">{{ resetStatErrors[0] }}</span></small
                         >
                         <button
-                            class="legacy-button buy-button"
+                            class="legacy-button legacy-button--primary buy-button"
                             :disabled="isUnited || actionBusy || resetStatErrors.length > 0"
                             @click="resetStats"
                         >
@@ -707,7 +730,11 @@ onMounted(() => {
                     <small>[{{ new Date(entry.createdAt).toLocaleString('ko-KR') }}]</small>
                     <span>{{ entry.text }}</span>
                 </div>
-                <button class="legacy-button more-button" :disabled="logLoading || logEnd" @click="loadLogs()">
+                <button
+                    class="legacy-button legacy-button--secondary more-button"
+                    :disabled="logLoading || logEnd"
+                    @click="loadLogs()"
+                >
                     더 가져오기
                 </button>
             </section>
@@ -870,11 +897,6 @@ onMounted(() => {
 .dual-buttons {
     display: grid;
     grid-template-columns: 1fr 1fr;
-}
-
-.legacy-button.secondary {
-    border-color: #51585e;
-    background: #5c636a;
 }
 
 .bottom-actions .shop-item:first-child {

@@ -248,7 +248,7 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
         blockGeneralCreate: install?.blockGeneralCreate,
         npcMode: install?.npcMode,
         showImgLevel: install?.showImgLevel,
-        tournamentTrig: install?.tournamentTrig,
+        tournamentTrig: install?.tournamentTrig ?? true,
         extendedGeneral: includeExtendedGeneral,
         turnTermMinutes: install?.turnTermMinutes,
         syncTurnTime: install?.sync,

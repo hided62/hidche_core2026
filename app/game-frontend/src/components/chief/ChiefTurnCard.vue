@@ -18,6 +18,7 @@ const props = defineProps<{
     compact?: boolean;
     isMe?: boolean;
     clickable?: boolean;
+    turnTimeLabel?: string;
 }>();
 
 const emit = defineEmits<{
@@ -40,13 +41,26 @@ const handleClick = () => {
         @click="handleClick"
     >
         <header class="chief-header">
-            <div class="chief-title">
-                <span class="chief-level">{{ props.officerLevelText }}</span>
-                <span class="chief-name" :style="{ color: nameColor }">
-                    {{ props.name ?? '-' }}
-                </span>
-            </div>
-            <span v-if="props.isMe" class="chief-me">ME</span>
+            <template v-if="props.compact">
+                <span
+                    class="compact-name"
+                    :style="{ color: nameColor, textDecoration: props.isMe ? 'underline' : undefined }"
+                    >{{ props.name ?? '-' }}</span
+                >
+                <span class="compact-meta"
+                    ><span>{{ props.officerLevelText }}</span
+                    ><time>{{ props.turnTimeLabel ?? '--:--' }}</time></span
+                >
+            </template>
+            <template v-else>
+                <div class="chief-title">
+                    <span class="chief-level">{{ props.officerLevelText }}</span>
+                    <span class="chief-name" :style="{ color: nameColor }">
+                        {{ props.name ?? '-' }}
+                    </span>
+                </div>
+                <span v-if="props.isMe" class="chief-me">ME</span>
+            </template>
         </header>
         <div class="chief-rows">
             <div v-for="row in props.rows" :key="row.index" class="chief-row" :class="{ rest: row.isRest }">
@@ -72,7 +86,9 @@ const handleClick = () => {
 
 .chief-card.clickable {
     cursor: pointer;
-    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    transition:
+        border-color 0.2s ease,
+        box-shadow 0.2s ease;
 }
 
 .chief-card.clickable:hover {
@@ -161,6 +177,28 @@ const handleClick = () => {
     height: 20px;
     min-height: 0;
     font-size: 0.65rem;
+}
+
+.compact-name,
+.compact-meta {
+    display: grid;
+    place-items: center;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+}
+.compact-meta {
+    grid-template-columns: 1fr 1fr;
+}
+.chief-card.compact .chief-header {
+    height: 72px;
+    grid-template-rows: 36px 36px;
+    display: grid;
+    padding: 0;
+}
+.chief-card.compact .chief-row {
+    height: 46px;
+    line-height: 46px;
 }
 
 .chief-card.compact .chief-level,

@@ -4,6 +4,7 @@ import { useMediaQuery } from '@vueuse/core';
 import { addMinutes, format } from 'date-fns';
 import SkeletonLines from '../components/ui/SkeletonLines.vue';
 import ChiefTurnCard from '../components/chief/ChiefTurnCard.vue';
+import ChiefCommandEditor from '../components/chief/ChiefCommandEditor.vue';
 import { trpc } from '../utils/trpc';
 import { formatOfficerLevelText } from '../utils/nationFormat';
 
@@ -260,7 +261,7 @@ const selectedChiefRows = computed(() => {
     return buildTurnRows(selectedChief.value);
 });
 
-const updateMyTurns = (turns: ChiefEntry['turns'], revision: number) => {
+const updateMyTurns = (turns: Array<{ index: number; action: string; args?: unknown }>, revision: number) => {
     if (!data.value) {
         return;
     }
@@ -269,27 +270,8 @@ const updateMyTurns = (turns: ChiefEntry['turns'], revision: number) => {
     if (!entry) {
         return;
     }
-    entry.turns = turns;
+    entry.turns = turns.map((turn) => ({ ...turn, args: turn.args ?? {} }));
     entry.revision = revision;
-};
-
-const clearTurn = async (turnIndex: number) => {
-    if (!data.value || !isEditingAllowed.value) {
-        return;
-    }
-    try {
-        const result = await trpc.turns.reserved.setNation.mutate({
-            generalId: data.value.me.id,
-            turnIndex,
-            action: '휴식',
-            args: {},
-            expectedRevision: selectedChief.value?.revision ?? 0,
-        });
-        updateMyTurns(result.turns, result.revision);
-    } catch (err) {
-        await loadChiefCenter();
-        error.value = resolveErrorMessage(err);
-    }
 };
 
 const shiftTurns = async (amount: number) => {
@@ -308,6 +290,38 @@ const shiftTurns = async (amount: number) => {
         error.value = resolveErrorMessage(err);
     }
 };
+
+const reserveTurn = async (payload: { index: number; action: string; args: Record<string, unknown> }) => {
+    if (!data.value || !isEditingAllowed.value) return;
+    try {
+        const result = await trpc.turns.reserved.setNation.mutate({
+            generalId: data.value.me.id,
+            turnIndex: payload.index,
+            action: payload.action,
+            args: payload.args,
+            expectedRevision: selectedChief.value?.revision ?? 0,
+        });
+        updateMyTurns(result.turns, result.revision);
+    } catch (err) {
+        await loadChiefCenter();
+        error.value = resolveErrorMessage(err);
+    }
+};
+
+const repeatTurns = async (amount: number) => {
+    if (!data.value || !isEditingAllowed.value) return;
+    try {
+        const result = await trpc.turns.reserved.repeatNation.mutate({
+            generalId: data.value.me.id,
+            amount,
+            expectedRevision: selectedChief.value?.revision ?? 0,
+        });
+        updateMyTurns(result.turns, result.revision);
+    } catch (err) {
+        await loadChiefCenter();
+        error.value = resolveErrorMessage(err);
+    }
+};
 </script>
 
 <template>
@@ -316,7 +330,8 @@ const shiftTurns = async (amount: number) => {
             <RouterLink class="chief-nav" to="/">돌아가기</RouterLink>
             <button class="chief-nav" @click="loadChiefCenter">갱신</button>
             <h1>사령부</h1>
-            <div></div><div></div>
+            <div></div>
+            <div></div>
         </header>
 
         <div v-if="error" class="game-feedback game-feedback--error" role="alert">{{ error }}</div>
@@ -324,47 +339,80 @@ const shiftTurns = async (amount: number) => {
         <section v-if="loading && !data" class="loading-panel"><SkeletonLines :lines="5" /></section>
 
         <section v-else-if="data && isMobile" class="layout-mobile">
-            <div class="mobile-editor">
-                <aside class="mobile-controls legacy-bg1">
-                    <strong>{{ selectedChief?.name ?? '-' }}</strong>
-                    <span>{{ selectedChief ? formatOfficerLevelText(selectedChief.officerLevel, data.nation.level) : '-' }}</span>
-                    <time>{{ selectedChiefRows[0]?.time ?? '--:--' }}</time>
-                    <button>고급 모드</button><button>반복⌄</button>
-                    <button @click="shiftTurns(-1)">당기기⌄</button><button @click="shiftTurns(1)">미루기⌄</button>
-                </aside>
-                <div class="mobile-turns">
-                    <div v-for="row in selectedChiefRows" :key="row.index" class="mobile-turn-row">
-                        <time>{{ row.time }}</time><strong>{{ row.action }}</strong>
-                        <button :disabled="!isEditingAllowed" @click="clearTurn(row.index)">✎</button>
-                    </div>
-                </div>
+            <ChiefCommandEditor
+                v-if="isEditingAllowed && selectedChief"
+                :officer-level-text="formatOfficerLevelText(selectedChief.officerLevel, data.nation.level)"
+                :name="selectedChief.name"
+                :npc-state="selectedChief.npcState"
+                :rows="selectedChiefRows"
+                :command-table="commandTable"
+                :loading="commandLoading"
+                :mobile="true"
+                @reserve="reserveTurn"
+                @shift="shiftTurns"
+                @repeat="repeatTurns"
+            />
+            <div v-else-if="selectedChief" class="mobile-readonly">
+                <ChiefTurnCard
+                    :officer-level-text="formatOfficerLevelText(selectedChief.officerLevel, data.nation.level)"
+                    :name="selectedChief.name"
+                    :npc-state="selectedChief.npcState"
+                    :rows="selectedChiefRows"
+                />
             </div>
-            <div class="chief-overview">
-                <ChiefTurnCard v-for="chief in chiefViews" :key="chief.officerLevel"
-                    :officer-level-text="chief.officerLevelText" :name="chief.name" :npc-state="chief.npcState"
-                    :rows="chief.rows" :compact="true" :selected="chief.officerLevel === selectedChief?.officerLevel"
-                    :is-me="chief.officerLevel === data.me.officerLevel" :clickable="true"
-                    @select="selectedChiefLevel = chief.officerLevel" />
+            <div class="chief-overview-frame">
+                <div class="chief-overview">
+                    <ChiefTurnCard
+                        v-for="chief in chiefViews"
+                        :key="chief.officerLevel"
+                        :officer-level-text="chief.officerLevelText"
+                        :name="chief.name"
+                        :npc-state="chief.npcState"
+                        :rows="chief.rows"
+                        :compact="true"
+                        :selected="chief.officerLevel === selectedChief?.officerLevel"
+                        :is-me="chief.officerLevel === data.me.officerLevel"
+                        :clickable="true"
+                        :turn-time-label="chief.rows[0]?.time"
+                        @select="selectedChiefLevel = chief.officerLevel"
+                    />
+                </div>
             </div>
         </section>
 
         <section v-else-if="data" class="layout-desktop">
-            <div class="chief-grid">
-                <ChiefTurnCard
-                    v-for="chief in chiefViews"
-                    :key="chief.officerLevel"
-                    :officer-level-text="chief.officerLevelText"
-                    :name="chief.name"
-                    :npc-state="chief.npcState"
-                    :rows="chief.rows"
-                    :selected="chief.officerLevel === selectedChief?.officerLevel"
-                    :is-me="chief.officerLevel === data.me.officerLevel"
-                    :clickable="true"
-                    @select="selectedChiefLevel = chief.officerLevel"
-                />
-            </div>
-            <div v-if="isEditingAllowed" class="desktop-actions legacy-bg0">
-                <button @click="shiftTurns(-1)">당기기</button><button @click="shiftTurns(1)">미루기</button>
+            <div
+                v-for="(rowChiefs, rowIndex) in [chiefViews.slice(0, 4), chiefViews.slice(4, 8)]"
+                :key="rowIndex"
+                class="chief-grid-row"
+            >
+                <div class="turn-index-gutter legacy-bg0">
+                    <span></span><span v-for="idx in data.maxTurns" :key="idx">{{ idx }}</span>
+                </div>
+                <template v-for="chief in rowChiefs" :key="chief.officerLevel">
+                    <ChiefCommandEditor
+                        v-if="chief.officerLevel === data.me.officerLevel && data.me.officerLevel >= 5"
+                        :officer-level-text="chief.officerLevelText"
+                        :name="chief.name"
+                        :npc-state="chief.npcState"
+                        :rows="chief.rows"
+                        :command-table="commandTable"
+                        :loading="commandLoading"
+                        @reserve="reserveTurn"
+                        @shift="shiftTurns"
+                        @repeat="repeatTurns"
+                    />
+                    <ChiefTurnCard
+                        v-else
+                        :officer-level-text="chief.officerLevelText"
+                        :name="chief.name"
+                        :npc-state="chief.npcState"
+                        :rows="chief.rows"
+                    />
+                </template>
+                <div class="turn-index-gutter legacy-bg0">
+                    <span></span><span v-for="idx in data.maxTurns" :key="idx">{{ idx }}</span>
+                </div>
             </div>
         </section>
         <footer class="chief-footer legacy-bg0"><RouterLink class="chief-nav" to="/">돌아가기</RouterLink></footer>
@@ -580,66 +628,165 @@ const shiftTurns = async (amount: number) => {
     text-decoration: none;
     cursor: pointer;
 }
-.layout-desktop { display: block; }
-.chief-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
+.layout-desktop {
+    display: block;
 }
-.chief-grid :deep(.chief-header) { height: 24px; min-height: 24px; }
-.chief-grid :deep(.chief-row) { box-sizing: border-box; min-height: 30px; }
-.chief-grid :deep(.chief-card) { border-color: transparent; box-shadow: none; }
-.desktop-actions { padding: 2px 24px; }
-.desktop-actions button,
-.mobile-controls button {
-    min-height: 35px;
-    border: 0;
-    border-radius: 4px;
-    background: #444;
-    color: #fff;
-    font-weight: 700;
+.chief-footer {
+    min-height: 56px;
+    padding-top: 20px;
 }
-.chief-footer { min-height: 56px; padding-top: 20px; }
-.chief-footer .chief-nav { width: 70px; }
-.mobile-editor {
-    height: 371px;
-    display: grid;
-    grid-template-columns: 109px 1fr;
-    background: #000;
+.chief-footer .chief-nav {
+    width: 70px;
 }
-.mobile-controls {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    align-content: start;
-    text-align: center;
-}
-.mobile-controls strong,
-.mobile-controls span,
-.mobile-controls time { grid-column: 1 / -1; min-height: 30px; line-height: 30px; }
-.mobile-controls time { border-radius: 5px; background: #345c85; }
-.mobile-controls button { grid-column: 1 / -1; margin-top: 5px; }
-.mobile-turns { display: grid; grid-template-rows: repeat(12, 30px); padding-top: 10px; }
-.mobile-turn-row {
-    display: grid;
-    grid-template-columns: 74px 1fr 53px;
-    align-items: center;
-    background: #071638;
-    text-align: center;
-}
-.mobile-turn-row:nth-child(even) { background: #0d214e; }
-.mobile-turn-row button { height: 30px; border: 0; background: #3d3d3d; color: #fff; }
-.chief-overview {
-    width: 445px;
-    margin-top: 56px;
-    display: grid;
-    grid-template-columns: repeat(4, 111.25px);
-}
-.chief-overview :deep(.chief-card) { border-color: transparent; box-shadow: none; }
-.chief-overview :deep(.chief-row) { height: 12px; line-height: 10px; }
-.chief-overview :deep(.chief-header) { height: 28px; }
 
 @media (max-width: 1024px) {
-    .chief-page { width: 500px; min-width: 500px; }
-    .chief-top { grid-template-columns: 89px 89px 1fr 0 0; }
-    .chief-overview { grid-template-columns: repeat(4, 111.25px); }
+    .chief-page {
+        width: 500px;
+        min-width: 500px;
+    }
+    .chief-top {
+        grid-template-columns: 89px 89px 1fr 0 0;
+    }
+}
+
+/* Ref PageChiefCenter의 24 + 4×238 + 24 행렬과 500px 축소 overview 계약입니다. */
+.layout-desktop {
+    display: block;
+}
+.chief-grid-row {
+    display: grid;
+    grid-template-columns: 24px repeat(4, 238px) 24px;
+    align-items: start;
+}
+.turn-index-gutter {
+    display: grid;
+    grid-template-rows: 24px repeat(12, 30px);
+    text-align: center;
+}
+.turn-index-gutter span {
+    display: grid;
+    place-items: center;
+}
+.chief-grid-row :deep(.chief-card) {
+    border: 0;
+    box-shadow: none;
+}
+.chief-grid-row :deep(.chief-header) {
+    box-sizing: border-box;
+    height: 24px;
+    min-height: 24px;
+    justify-content: center;
+    padding: 0;
+}
+.chief-grid-row :deep(.chief-title) {
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+}
+.chief-grid-row :deep(.chief-level),
+.chief-grid-row :deep(.chief-name) {
+    font-size: 14px;
+    font-weight: 400;
+    color: inherit;
+}
+.chief-grid-row :deep(.chief-level)::after {
+    content: ':';
+}
+.chief-grid-row :deep(.chief-row) {
+    box-sizing: border-box;
+    min-height: 30px;
+    height: 30px;
+    grid-template-columns: 55px minmax(0, 1fr);
+    gap: 0;
+    padding: 0;
+    border: 0;
+    font-size: 14px;
+    text-align: center;
+}
+.chief-grid-row :deep(.row-index) {
+    display: none;
+}
+.chief-grid-row :deep(.row-time),
+.chief-grid-row :deep(.row-action) {
+    height: 30px;
+    display: grid;
+    place-items: center;
+}
+.chief-grid-row :deep(.row-time) {
+    background: #000;
+}
+.chief-grid-row :deep(.chief-row:nth-child(odd) .row-action) {
+    background-color: rgba(18, 41, 93, 0.88);
+}
+.chief-grid-row :deep(.chief-row:nth-child(even) .row-action) {
+    background-color: rgba(7, 22, 56, 0.88);
+}
+
+.layout-mobile {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+.chief-overview-frame {
+    width: 500px;
+    height: 320px;
+    margin-top: 56px;
+    overflow: hidden;
+}
+.chief-overview {
+    width: 890px;
+    height: 1248px;
+    margin-top: 0;
+    display: grid;
+    grid-template-columns: repeat(4, 222.5px);
+    transform: scale(0.5);
+    transform-origin: left top;
+}
+.chief-overview :deep(.chief-card) {
+    width: 222.5px;
+    height: 624px;
+    border: 0;
+    border-left: 1px solid #fff;
+    box-shadow: none;
+    box-sizing: border-box;
+}
+.chief-overview :deep(.row-index) {
+    display: none;
+}
+.chief-overview :deep(.chief-row) {
+    grid-template-columns: 74px minmax(0, 1fr);
+    padding: 0;
+    gap: 0;
+    text-align: center;
+    font-size: 20px;
+}
+.chief-overview :deep(.row-time),
+.chief-overview :deep(.row-action) {
+    display: grid;
+    place-items: center;
+}
+.mobile-readonly {
+    width: 308px;
+    min-height: 394px;
+    margin: 10px auto 16px;
+}
+.mobile-readonly :deep(.chief-header) {
+    height: 24px;
+    min-height: 24px;
+}
+.mobile-readonly :deep(.chief-row) {
+    height: 30px;
+    grid-template-columns: 55px 1fr;
+    padding: 0;
+}
+.mobile-readonly :deep(.row-index) {
+    display: none;
+}
+
+@media (max-width: 1024px) {
+    .chief-overview {
+        grid-template-columns: repeat(4, 222.5px);
+    }
 }
 </style>

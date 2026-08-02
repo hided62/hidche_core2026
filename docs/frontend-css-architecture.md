@@ -22,6 +22,39 @@ loads the following layers:
 4. Scoped SFC styles: page-specific grids, fixed table dimensions, selectors,
    and state styling. These remain closest to the DOM contract they implement.
 
+`styles/legacy-controls.css` is the shared control layer between tokens and the
+two shell layers. It owns only control geometry and state rules that are proven
+identical in the Ref Bootstrap/Lumen family. A page still owns control width,
+grid placement, and any visual family that is not Bootstrap/Lumen.
+
+## Button composition
+
+Choose the Ref visual family before choosing a semantic color. Buttons from
+different historical families are not made identical merely because they have
+the same label.
+
+| Ref family                   | Core composition                           | Use                                                                                    |
+| ---------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------- |
+| Bootstrap/Lumen primary      | `.legacy-button.legacy-button--primary`    | commit, purchase, submit, or another affirmative mutation                              |
+| Bootstrap/Lumen secondary    | `.legacy-button.legacy-button--secondary`  | reset, cancel, neutral toggle, or load-more                                            |
+| Bootstrap/Lumen danger       | `.legacy-button.legacy-button--danger`     | destructive action only when Ref uses `variant="danger"`                               |
+| Bootstrap/Lumen info         | `.legacy-button.legacy-button--info`       | informational or edit action only when Ref uses `variant="info"`                       |
+| `btn-sammo-base2` navigation | `.legacy-button.legacy-button--navigation` | page back/close and paired reload controls                                             |
+| page-specific/native control | feature-namespaced scoped class            | only when Ref computed geometry or interaction differs from the Bootstrap/Lumen family |
+
+The base class supplies accessible link/button normalization and the historical
+`base1` fallback used by already measured screens. New Bootstrap/Lumen controls
+must add an explicit semantic modifier; do not infer a mutation role from a
+label such as `구입` in page CSS. A disabled control keeps its semantic color
+and uses the shared opacity/cursor state. Hover and active use the Ref Lumen
+bottom-border movement rather than an unrelated brightness filter.
+
+Only layout belongs in the SFC: width, grid column, margins required by the
+page, and breakpoint-specific placement. Color, border, font weight,
+hover/focus/active, and disabled presentation belong in
+`legacy-controls.css` when the Ref family is shared. Generic `.btn`, `button`,
+or `.primary` rules must not be promoted globally.
+
 ## Class naming
 
 - `.game-shell`, `.game-shell__header`, `.game-shell__actions`: flexible

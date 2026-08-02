@@ -25,6 +25,7 @@ const props = defineProps<{
     commandTable: CommandTable | null;
     loading: boolean;
     activeCategory?: string;
+    scope?: 'all' | 'general' | 'nation';
 }>();
 
 const emit = defineEmits<{
@@ -48,6 +49,10 @@ const categories = computed(() => {
         category: group.category,
         groupType: 'nation' as const,
     }));
+    if (props.scope === 'general') return general;
+    if (props.scope === 'nation') {
+        return nation.map((entry) => ({ ...entry, label: entry.category === '국가' ? '기타' : entry.category }));
+    }
     return [...general, ...nation];
 });
 
@@ -58,7 +63,10 @@ const selectedGroup = computed(() => {
     }
     const [scope, ...categoryParts] = selectedCategory.value.split(':');
     const category = categoryParts.join(':');
-    return props.commandTable[scope === 'nation' ? 'nation' : 'general'].find((group) => group.category === category) ?? null;
+    return (
+        props.commandTable[scope === 'nation' ? 'nation' : 'general'].find((group) => group.category === category) ??
+        null
+    );
 });
 
 watch(
@@ -109,9 +117,7 @@ const statusLabel = (command: CommandAvailability) => {
         <div v-if="props.loading">
             <SkeletonLines :lines="4" />
         </div>
-        <div v-else-if="!props.commandTable" class="empty">
-            명령 목록을 불러오지 못했습니다.
-        </div>
+        <div v-else-if="!props.commandTable" class="empty">명령 목록을 불러오지 못했습니다.</div>
         <div v-else>
             <div class="category-list">
                 <button

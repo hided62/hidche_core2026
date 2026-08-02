@@ -1014,6 +1014,12 @@ test.describe('survey legacy parity', () => {
                         fontSize: getComputedStyle(title).fontSize,
                         backgroundImage: getComputedStyle(title).backgroundImage,
                     },
+                    voteButton: {
+                        backgroundColor: getComputedStyle(document.querySelector<HTMLElement>('.vote-submit')!)
+                            .backgroundColor,
+                        borderBottomWidth: getComputedStyle(document.querySelector<HTMLElement>('.vote-submit')!)
+                            .borderBottomWidth,
+                    },
                 };
             });
 
@@ -1027,6 +1033,10 @@ test.describe('survey legacy parity', () => {
             expect(geometry.title.height).toBeCloseTo(37.8, 0);
             expect(geometry.title.fontSize).toBe('25.2px');
             expect(geometry.title.backgroundImage).toContain('back_blue.jpg');
+            expect(geometry.voteButton).toEqual({
+                backgroundColor: 'rgb(68, 68, 68)',
+                borderBottomWidth: '4px',
+            });
 
             const secondOption = page.locator('#v-vote-1');
             await secondOption.check();
@@ -1035,9 +1045,9 @@ test.describe('survey legacy parity', () => {
             await expect(secondOption).toBeFocused();
 
             const voteButton = page.getByRole('button', { name: '투표', exact: true });
-            const beforeHover = await voteButton.evaluate((element) => getComputedStyle(element).filter);
+            const beforeHover = await voteButton.evaluate((element) => getComputedStyle(element).borderBottomWidth);
             await voteButton.hover();
-            const afterHover = await voteButton.evaluate((element) => getComputedStyle(element).filter);
+            const afterHover = await voteButton.evaluate((element) => getComputedStyle(element).borderBottomWidth);
             expect(afterHover).not.toBe(beforeHover);
         });
     }

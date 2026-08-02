@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
+import { RANK_DATA_TYPES, rankDataMetaKey } from '@sammo-ts/common';
 import type { LogEntryDraft, TurnSchedule, UnitSetDefinition } from '@sammo-ts/logic';
 import { DIPLOMACY_STATE, LogCategory, LogFormat, LogScope } from '@sammo-ts/logic';
 import type { InMemoryTurnWorld, TurnCalendarHandler } from '../src/turn/inMemoryWorld.js';
@@ -153,6 +154,7 @@ const dumpWorldStatus = (world: InMemoryTurnWorld, label: string) => {
 describe('NPC 건국/통일 장기 시뮬레이션', () => {
     it('건국, 선포, 출병, 점령과 장기 국가 감소가 안정적으로 진행되어야 한다', async () => {
         const memoryProfileEnabled = process.env.NPC_UNIFICATION_MEMORY_PROFILE === '1';
+        const rankingAuditEnabled = process.env.NPC_RANKING_AUDIT === '1';
         const profileStartedAtMs = performance.now();
         const cities = buildLargeTestCities().map(maxCityStats);
         for (const city of cities) {
@@ -206,7 +208,8 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
         };
 
         const generals: TurnGeneral[] = [];
-        for (let i = 0; i < 300; i += 1) {
+        const initialGeneralCount = rankingAuditEnabled ? 150 : 300;
+        for (let i = 0; i < initialGeneralCount; i += 1) {
             const cityId = cities[i % cities.length]!.id;
             const stats =
                 i % 2 === 0
@@ -580,6 +583,7 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
                 }
 
                 if (
+                    (rankingAuditEnabled && sortieCount >= 50) ||
                     world.getState().currentYear > 260 ||
                     (world.getState().currentYear === 260 && world.getState().currentMonth >= 1)
                 ) {
@@ -595,10 +599,84 @@ describe('NPC 건국/통일 장기 시뮬레이션', () => {
                 expect(meta.isUnited).toBe(2);
                 expect(hasUnificationLog).toBe(true);
             } else {
-                expect(prevNationCount).toBeLessThan(foundedNationCount);
+                if (!rankingAuditEnabled) {
+                    expect(prevNationCount).toBeLessThan(foundedNationCount);
+                }
                 expect(meta.isUnited ?? 0).toBe(0);
             }
             expect(sortieCount).toBeGreaterThan(0);
+
+            if (rankingAuditEnabled) {
+                const rankingAudit = RANK_DATA_TYPES.map((type) => {
+                    const entries = world
+                        .listGenerals()
+                        .map((general) => {
+                            const rawValue =
+                                type === 'experience'
+                                    ? general.experience
+                                    : type === 'dedication'
+                                      ? general.dedication
+                                      : general.meta[rankDataMetaKey(type)];
+                            const value = typeof rawValue === 'number' && Number.isFinite(rawValue) ? rawValue : 0;
+                            return { generalId: general.id, name: general.name, value };
+                        })
+                        .filter((entry) => entry.value > 0)
+                        .sort((lhs, rhs) => rhs.value - lhs.value || lhs.generalId - rhs.generalId)
+                        .slice(0, 10);
+                    return { type, entries };
+                });
+                const byType = new Map(rankingAudit.map((entry) => [entry.type, entry.entries]));
+                expect(byType.get('firenum')).toHaveLength(0);
+                for (const type of [
+                    'experience',
+                    'dedication',
+                    'warnum',
+                    'killnum',
+                    'deathnum',
+                    'killcrew',
+                    'deathcrew',
+                    'killcrew_person',
+                    'deathcrew_person',
+                    'dex1',
+                    'dex2',
+                    'dex3',
+                    'dex4',
+                    'dex5',
+                ] as const) {
+                    expect(byType.get(type), type).toHaveLength(10);
+                }
+                const reportPath = resolve(
+                    process.env.NPC_RANKING_AUDIT_REPORT_PATH ?? 'test-results/npc-ranking-audit.json'
+                );
+                mkdirSync(dirname(reportPath), { recursive: true });
+                writeFileSync(
+                    reportPath,
+                    `${JSON.stringify(
+                        {
+                            year: world.getState().currentYear,
+                            month: world.getState().currentMonth,
+                            initialGeneralCount,
+                            finalGeneralCount: world.listGenerals().length,
+                            declarationCount,
+                            sortieCount,
+                            rankingAudit,
+                        },
+                        null,
+                        2
+                    )}\n`,
+                    'utf8'
+                );
+                console.log(
+                    `[NPC_RANKING_AUDIT]${JSON.stringify({
+                        reportPath,
+                        year: world.getState().currentYear,
+                        month: world.getState().currentMonth,
+                        declarationCount,
+                        sortieCount,
+                        topTenTypes: Array.from(byType.values()).filter((entries) => entries.length === 10).length,
+                    })}`
+                );
+            }
 
             if (memoryProfiler) {
                 expect(typeof globalThis.gc).toBe('function');
