@@ -422,7 +422,7 @@ onMounted(() => {
 }
 
 .makeNewTroop {
-    width: 250px;
+    width: 240px;
     display: grid;
     grid-template-columns: 2fr 1fr;
     border: 1px solid gray;
@@ -432,6 +432,7 @@ onMounted(() => {
     grid-column: 1/3;
     padding: 0.15em;
     font-size: 1.2em;
+    line-height: 1.2;
 }
 
 .troopDiffCityMemeber {
@@ -522,6 +523,11 @@ onMounted(() => {
     font: inherit;
 }
 
+.makeNewTroop .formControl {
+    color: #111;
+    background: #ddd;
+}
+
 .subForm,
 .subBtnCancel,
 .subBtnOK {
@@ -529,7 +535,7 @@ onMounted(() => {
 }
 
 .bottomBar {
-    margin-top: 16px;
+    margin-top: 0;
     padding-top: 20px;
 }
 
@@ -648,7 +654,7 @@ onMounted(() => {
     }
 
     .makeNewTroop {
-        width: 250px;
+        width: 240px;
     }
 }
 </style>

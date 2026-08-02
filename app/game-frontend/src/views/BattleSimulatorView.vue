@@ -1387,7 +1387,7 @@ button {
 }
 
 .primary:active {
-    background: #c0392b;
+    background: #b93d30;
 }
 
 .header-actions .primary,

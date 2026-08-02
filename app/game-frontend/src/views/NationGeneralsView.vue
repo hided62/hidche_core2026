@@ -101,12 +101,12 @@ onMounted(load);
                     <tr class="group-head">
                         <th colspan="2"></th>
                         <th></th>
-                        <th>명성/계급　‹</th>
-                        <th colspan="3">능력치　‹</th>
-                        <th colspan="2">자금　‹</th>
-                        <th colspan="2">특성　›</th>
-                        <th>연도　›</th>
-                        <th>기타　‹</th>
+                        <th>명성/계급&#x3000;‹</th>
+                        <th colspan="3">능력치&#x3000;‹</th>
+                        <th colspan="2">자금&#x3000;‹</th>
+                        <th colspan="2">특성&#x3000;›</th>
+                        <th>연도&#x3000;›</th>
+                        <th>기타&#x3000;‹</th>
                     </tr>
                     <tr>
                         <th>아이콘</th><th>장수명</th><th>관직</th><th>계급</th><th>명성</th>
@@ -278,14 +278,14 @@ tbody tr:hover { background: #343c3f; }
 td { white-space: nowrap; }
 .icon-cell { padding: 0 4px; text-align: left; }
 .icon-cell img { width: 64px; height: 64px; object-fit: cover; vertical-align: middle; }
-.name-cell { text-align: left; color: cyan; }
+.name-cell { text-align: left; color: skyblue; }
 th:nth-child(9), td:nth-child(9), th:nth-child(10), td:nth-child(10) { text-align: right; }
 .state { margin: 40px; }
 .npc-0 {
     color: #f5f5f5;
 }
 .npc-1 {
-    color: cyan;
+    color: skyblue;
 }
 .npc-2,
 .npc-3,

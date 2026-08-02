@@ -40,7 +40,7 @@ const buffLabels: Record<BuffKey, string> = {
 
 const pointLabels: Record<string, string> = {
     previous: '보유',
-    lived_month: '생존 턴',
+    lived_month: '생존',
     max_domestic_critical: '최대 연속 내정 성공',
     active_action: '능동 행동 수',
     combat: '전투 횟수',
@@ -60,8 +60,8 @@ const pointOrder = [
     'active_action',
     'combat',
     'sabotage',
-    'dex',
     'unifier',
+    'dex',
     'tournament',
     'betting',
 ] as const;
@@ -71,7 +71,7 @@ const pointHelp: Record<string, string> = {
     lived_month: '살아남은 기간입니다. (1개월 단위)',
     max_belong: '가장 오래 임관했던 국가의 연도입니다.',
     max_domestic_critical: '성공한 내정 중 최대 연속값입니다.',
-    active_action: '장수 동향에 본인의 이름이 직접 나타난 수입니다. 일부 사령턴은 제외됩니다.',
+    active_action: '장수 동향에 본인의 이름이 직접 나타난 수입니다.일부 사령턴은 제외됩니다.',
     combat: '전투 횟수입니다.',
     sabotage: '계략 성공 횟수입니다.',
     unifier: '천통에 기여한 포인트입니다. 각 국의 군주, 천통 수뇌, 천통 군주가 받습니다.',
@@ -745,18 +745,20 @@ onMounted(() => {
 <style scoped>
 .top-back-bar {
     width: min(100%, 1000px);
-    min-height: 32px;
+    height: 32px;
     margin: 0 auto;
     border: 1px solid #888;
     display: grid;
-    grid-template-columns: 100px 1fr 100px;
+    grid-template-columns: 88px 1fr 88px;
     align-items: center;
     text-align: center;
-    padding: 0 6px;
+    padding: 0;
     box-sizing: border-box;
 }
 
 .top-button {
+    height: 32px;
+    min-height: 32px;
     padding: 2px 8px;
     text-decoration: none;
 }
@@ -765,10 +767,10 @@ onMounted(() => {
     width: min(100%, 1000px);
     margin: 0 auto;
     border: 1px solid #888;
-    border-top: 0;
     overflow: hidden;
     box-sizing: border-box;
-    padding: 0 8px 10px;
+    position: relative;
+    padding: 0 7px;
     color: #fff;
     font:
         14px/21px Pretendard,
@@ -776,6 +778,10 @@ onMounted(() => {
         'Noto Sans KR',
         'Malgun Gothic',
         sans-serif;
+}
+
+.inherit-page.legacy-bg0 {
+    background-color: transparent;
 }
 
 .notice,
@@ -954,10 +960,9 @@ onMounted(() => {
     margin-top: 6px;
 }
 
-button:focus-visible,
 input:focus-visible,
 select:focus-visible,
-a:focus-visible {
+a:not(.legacy-button):focus-visible {
     outline: 2px solid #f39c12;
     outline-offset: 1px;
 }
