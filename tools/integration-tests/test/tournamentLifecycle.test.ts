@@ -258,6 +258,25 @@ describe('actual tournament lifecycle', () => {
             await resetTournamentRedis.disconnect();
         }
 
+        const gameDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'che' }).url;
+        const gatewayDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'public' }).url;
+        gameConnector = createGamePostgresConnector({ url: gameDatabaseUrl });
+        await gameConnector.connect();
+        redisConnector = createRedisConnector(resolveRedisConfigFromEnv());
+        await redisConnector.connect();
+        store = new TournamentStore(redisConnector.client, buildTournamentKeys('che:908'));
+        transport = new DatabaseTurnDaemonTransport(gameConnector.prisma, 30_000);
+        turnDaemon = await createTurnDaemonRuntime({
+            profile: 'che',
+            profileName: 'che:908',
+            databaseUrl: gameDatabaseUrl,
+            gatewayDatabaseUrl,
+            redisUrl: resolveRedisConfigFromEnv().url,
+        });
+        turnDaemonLoop = turnDaemon.lifecycle.start();
+        const status = await transport.requestStatus(10_000);
+        expect(status).not.toBeNull();
+
         for (const [username, displayName] of users) {
             const login = await gatewayClient.auth.login.mutate({
                 username,
@@ -286,10 +305,6 @@ describe('actual tournament lifecycle', () => {
             }
         }
 
-        const gameDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'che' }).url;
-        const gatewayDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'public' }).url;
-        gameConnector = createGamePostgresConnector({ url: gameDatabaseUrl });
-        await gameConnector.connect();
         await gameConnector.prisma.general.updateMany({
             where: { id: { in: [...generalIds.values()] } },
             data: { gold: 10_000 },
@@ -327,19 +342,6 @@ describe('actual tournament lifecycle', () => {
             })),
         });
 
-        redisConnector = createRedisConnector(resolveRedisConfigFromEnv());
-        await redisConnector.connect();
-        store = new TournamentStore(redisConnector.client, buildTournamentKeys('che:908'));
-        transport = new DatabaseTurnDaemonTransport(gameConnector.prisma, 30_000);
-
-        turnDaemon = await createTurnDaemonRuntime({
-            profile: 'che',
-            profileName: 'che:908',
-            databaseUrl: gameDatabaseUrl,
-            gatewayDatabaseUrl,
-            redisUrl: resolveRedisConfigFromEnv().url,
-        });
-
         for (let attempt = 0; attempt < 36; attempt += 1) {
             const current = turnDaemon.world.getState().lastTurnTime;
             const next = new Date(current.getTime());
@@ -350,10 +352,6 @@ describe('actual tournament lifecycle', () => {
             }
         }
         expect(await store.getState()).toMatchObject({ stage: 1, auto: true });
-
-        turnDaemonLoop = turnDaemon.lifecycle.start();
-        const status = await transport.requestStatus(10_000);
-        expect(status).not.toBeNull();
     }, 120_000);
 
     afterAll(async () => {
