@@ -104,21 +104,90 @@ const truncateSchema = async (schema: string): Promise<void> => {
     }
 };
 
+const hasMigrationHistory = async (schema: string): Promise<boolean> => {
+    const connector = createGatewayPostgresConnector({
+        url: resolvePostgresConfigFromEnv({ schema: 'public' }).url,
+    });
+    await connector.connect();
+    try {
+        const rows = (await connector.prisma.$queryRawUnsafe(
+            `SELECT EXISTS (
+                SELECT 1 FROM pg_tables
+                WHERE schemaname = '${schema}' AND tablename = '_prisma_migrations'
+            ) AS present`
+        )) as Array<{ present: boolean }>;
+        return rows[0]?.present === true;
+    } finally {
+        await connector.disconnect();
+    }
+};
+
+const baselineMigrations = async (
+    directory: 'gateway-migrations' | 'migrations',
+    schemaFile: 'gateway.prisma' | 'game.prisma',
+    env: NodeJS.ProcessEnv
+): Promise<void> => {
+    const migrations = (
+        await fs.readdir(path.join(workspaceRoot, 'packages', 'infra', 'prisma', directory), {
+            withFileTypes: true,
+        })
+    )
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort();
+    for (const migration of migrations) {
+        await execCommand(
+            'pnpm',
+            [
+                '--dir',
+                'packages/infra',
+                'exec',
+                'prisma',
+                'migrate',
+                'resolve',
+                '--applied',
+                migration,
+                '--schema',
+                `prisma/${schemaFile}`,
+                '--config',
+                schemaFile === 'gateway.prisma' ? 'prisma.gateway.config.ts' : 'prisma.config.ts',
+            ],
+            env
+        );
+    }
+};
+
 const resetServices = async (): Promise<void> => {
     await ensureSchema('public');
     await ensureSchema('che');
     const gatewayDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'public' }).url;
     const gameDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'che' }).url;
-    await execCommand('pnpm', ['--filter', '@sammo-ts/infra', 'prisma:migrate:deploy:gateway'], {
+    const gatewayHasHistory = await hasMigrationHistory('public');
+    const gameHasHistory = await hasMigrationHistory('che');
+    await execCommand('pnpm', ['--filter', '@sammo-ts/infra', 'prisma:db:push:gateway', '--accept-data-loss'], {
         ...process.env,
         POSTGRES_SCHEMA: 'public',
         GATEWAY_DATABASE_URL: gatewayDatabaseUrl,
     });
-    await execCommand('pnpm', ['--filter', '@sammo-ts/infra', 'prisma:migrate:deploy:game'], {
+    await execCommand('pnpm', ['--filter', '@sammo-ts/infra', 'prisma:db:push:game', '--accept-data-loss'], {
         ...process.env,
         POSTGRES_SCHEMA: 'che',
         DATABASE_URL: gameDatabaseUrl,
     });
+    if (!gatewayHasHistory) {
+        await baselineMigrations('gateway-migrations', 'gateway.prisma', {
+            ...process.env,
+            POSTGRES_SCHEMA: 'public',
+            GATEWAY_DATABASE_URL: gatewayDatabaseUrl,
+        });
+    }
+    if (!gameHasHistory) {
+        await baselineMigrations('migrations', 'game.prisma', {
+            ...process.env,
+            POSTGRES_SCHEMA: 'che',
+            DATABASE_URL: gameDatabaseUrl,
+        });
+    }
     await truncateSchema('public');
     await truncateSchema('che');
 
