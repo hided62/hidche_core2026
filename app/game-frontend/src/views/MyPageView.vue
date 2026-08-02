@@ -603,7 +603,7 @@ onMounted(() => {
     margin: 0 auto;
     padding: 0;
     color: #fff;
-    background-color: #111;
+    background-color: transparent;
     background-image: var(--sammo-texture-walnut);
     font-family: var(--sammo-font-sans);
     font-size: 14px;

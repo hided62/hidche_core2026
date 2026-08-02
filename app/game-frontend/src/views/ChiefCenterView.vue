@@ -362,20 +362,22 @@ const repeatTurns = async (amount: number) => {
             </div>
             <div class="chief-overview-frame">
                 <div class="chief-overview">
-                    <ChiefTurnCard
-                        v-for="chief in chiefViews"
-                        :key="chief.officerLevel"
-                        :officer-level-text="chief.officerLevelText"
-                        :name="chief.name"
-                        :npc-state="chief.npcState"
-                        :rows="chief.rows"
-                        :compact="true"
-                        :selected="chief.officerLevel === selectedChief?.officerLevel"
-                        :is-me="chief.officerLevel === data.me.officerLevel"
-                        :clickable="true"
-                        :turn-time-label="chief.rows[0]?.time"
-                        @select="selectedChiefLevel = chief.officerLevel"
-                    />
+                    <template v-for="chief in chiefViews" :key="chief.officerLevel">
+                        <ChiefTurnCard
+                            v-if="chief.name"
+                            :officer-level-text="chief.officerLevelText"
+                            :name="chief.name"
+                            :npc-state="chief.npcState"
+                            :rows="chief.rows"
+                            :compact="true"
+                            :selected="chief.officerLevel === selectedChief?.officerLevel"
+                            :is-me="chief.officerLevel === data.me.officerLevel"
+                            :clickable="true"
+                            :turn-time-label="chief.rows[0]?.time"
+                            @select="selectedChiefLevel = chief.officerLevel"
+                        />
+                        <div v-else class="empty-chief-slot" aria-hidden="true"></div>
+                    </template>
                 </div>
             </div>
         </section>
@@ -403,12 +405,13 @@ const repeatTurns = async (amount: number) => {
                         @repeat="repeatTurns"
                     />
                     <ChiefTurnCard
-                        v-else
+                        v-else-if="chief.name"
                         :officer-level-text="chief.officerLevelText"
                         :name="chief.name"
                         :npc-state="chief.npcState"
                         :rows="chief.rows"
                     />
+                    <div v-else class="empty-chief-slot" aria-hidden="true"></div>
                 </template>
                 <div class="turn-index-gutter legacy-bg0">
                     <span></span><span v-for="idx in data.maxTurns" :key="idx">{{ idx }}</span>
@@ -605,6 +608,7 @@ const repeatTurns = async (amount: number) => {
     height: 32px;
     display: grid;
     grid-template-columns: 90px 90px 1fr 90px 90px;
+    background-color: transparent;
 }
 .chief-top h1 {
     margin: 0;
@@ -730,22 +734,21 @@ const repeatTurns = async (amount: number) => {
 }
 .chief-overview-frame {
     width: 500px;
-    height: 320px;
-    margin-top: 56px;
+    height: 310px;
+    margin-top: 32px;
     overflow: hidden;
 }
 .chief-overview {
-    width: 890px;
-    height: 1248px;
+    width: 445px;
+    height: 310px;
     margin-top: 0;
     display: grid;
-    grid-template-columns: repeat(4, 222.5px);
-    transform: scale(0.5);
-    transform-origin: left top;
+    grid-template-columns: repeat(4, 111.25px);
+    grid-auto-rows: 155px;
 }
 .chief-overview :deep(.chief-card) {
-    width: 222.5px;
-    height: 624px;
+    width: 111.25px;
+    height: 155px;
     border: 0;
     border-left: 1px solid #fff;
     box-shadow: none;
@@ -755,11 +758,14 @@ const repeatTurns = async (amount: number) => {
     display: none;
 }
 .chief-overview :deep(.chief-row) {
-    grid-template-columns: 74px minmax(0, 1fr);
+    grid-template-columns: 38px minmax(0, 1fr);
+    height: 11.25px;
+    min-height: 0;
     padding: 0;
     gap: 0;
     text-align: center;
-    font-size: 20px;
+    font-size: 0.55rem;
+    line-height: 11.25px;
 }
 .chief-overview :deep(.row-time),
 .chief-overview :deep(.row-action) {
@@ -786,7 +792,20 @@ const repeatTurns = async (amount: number) => {
 
 @media (max-width: 1024px) {
     .chief-overview {
-        grid-template-columns: repeat(4, 222.5px);
+        grid-template-columns: repeat(4, 111.25px);
     }
+}
+
+.empty-chief-slot {
+    min-width: 0;
+    background-color: #071638;
+    background-image: var(--sammo-texture-blue);
+}
+.chief-grid-row > .empty-chief-slot {
+    height: 384px;
+}
+.chief-overview > .empty-chief-slot {
+    width: 111.25px;
+    height: 155px;
 }
 </style>

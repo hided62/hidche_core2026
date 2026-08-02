@@ -12,6 +12,11 @@
     text-align: center;
     text-decoration: none;
     cursor: pointer;
+    transition:
+        color 0.15s ease-in-out,
+        background-color 0.15s ease-in-out,
+        border-color 0.15s ease-in-out,
+        box-shadow 0.15s ease-in-out;
 }
 
 .legacy-button:hover,
@@ -23,8 +28,8 @@
 }
 
 .legacy-button:focus-visible {
-    outline: 2px solid var(--sammo-color-accent);
-    outline-offset: 1px;
+    outline: 0;
+    box-shadow: 0 0 0 0.25rem rgb(85 115 146 / 50%);
 }
 
 .legacy-button:disabled,
@@ -103,6 +108,10 @@
     border-bottom-width: 2px;
     background: var(--legacy-button-bg);
     box-shadow: none;
+}
+
+.legacy-button.legacy-button--primary:not(:disabled):active {
+    background: #2d4967;
 }
 
 .legacy-button:is(

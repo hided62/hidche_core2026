@@ -24,6 +24,12 @@ body {
     line-height: 1.3;
 }
 
+body:has(.battle-page),
+body:has(.chief-page),
+body:has(.global-page) {
+    line-height: 1.5;
+}
+
 button,
 input,
 select,

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import { trpc } from '../utils/trpc';
@@ -8,8 +8,10 @@ import { trpc } from '../utils/trpc';
 type BoardArticle = Awaited<ReturnType<typeof trpc.board.getArticles.query>>[number];
 
 const route = useRoute();
+const router = useRouter();
 const isSecretBoard = computed(() => route.name === 'board-secret');
 const title = computed(() => (isSecretBoard.value ? '기밀실' : '회의실'));
+const closeBoard = () => router.push('/');
 
 const loading = ref(false);
 const accessChecked = ref(false);
@@ -118,9 +120,10 @@ onMounted(() => {
 </script>
 
 <template>
-    <main id="container" class="legacy-board-page">
+    <div v-if="accessChecked && !canAccess" class="legacy-raw-access-error" role="alert">{{ errorMessage }}</div>
+    <main v-else id="container" class="legacy-board-page">
         <header class="top-back-bar bg0">
-            <RouterLink class="legacy-button back-button" to="/">돌아가기</RouterLink>
+            <button class="legacy-button back-button" type="button" @click="closeBoard">돌아가기</button>
             <div></div>
             <h1>{{ title }}</h1>
             <div></div>
@@ -128,9 +131,7 @@ onMounted(() => {
         </header>
 
         <div v-if="loading && !accessChecked" class="board-state bg0">불러오는 중...</div>
-        <div v-else-if="!canAccess" class="board-state access-error" role="alert">{{ errorMessage }}</div>
-
-        <template v-else>
+        <template v-else-if="canAccess">
             <section id="newArticle" class="bg0">
                 <div class="new-article-header bg2 center">새 게시물 작성</div>
                 <div class="form-row">
@@ -224,18 +225,31 @@ onMounted(() => {
             </section>
 
             <footer class="bottom-bar bg0">
-                <RouterLink class="legacy-button back-button" to="/">돌아가기</RouterLink>
+                <button class="legacy-button back-button" type="button" @click="closeBoard">돌아가기</button>
             </footer>
         </template>
     </main>
 </template>
 
 <style scoped>
+.legacy-raw-access-error {
+    position: fixed;
+    z-index: 1000;
+    inset: 0;
+    box-sizing: border-box;
+    min-width: 100vw;
+    min-height: 100vh;
+    padding: 8px;
+    color: #000;
+    background: #fff;
+    font: 16px/normal 'Times New Roman', serif;
+}
+
 .legacy-board-page {
     width: 500px;
     margin: 0 auto;
     color: #fff;
-    background: #000;
+    background: transparent;
     font-family: var(--sammo-font-sans);
     font-size: 14px;
     line-height: 1.3;
@@ -394,6 +408,13 @@ onMounted(() => {
     min-height: 35.5px;
     margin-right: 10.5px;
     margin-left: 10.5px;
+    transition: none;
+}
+
+.article-submit-row .legacy-button:hover,
+.article-submit-row .legacy-button:focus,
+.article-submit-row .legacy-button:active {
+    border-color: transparent;
 }
 
 .article-frame {

@@ -455,6 +455,10 @@ onMounted(() => {
     overflow-x: hidden;
 }
 
+.nation-betting-page.legacy-bg0 {
+    background-color: transparent;
+}
+
 .legacy-top-bar {
     width: 100%;
     height: 32px;
@@ -473,7 +477,7 @@ onMounted(() => {
 .legacy-nav-button,
 .betting-form button {
     height: 32px;
-    border: 1px solid #004f28;
+    border: 0;
     background: #00582c;
     color: #fff;
     font-weight: 600;

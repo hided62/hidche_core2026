@@ -482,6 +482,9 @@ onMounted(() => {
     font-size: 14px;
     line-height: 21px;
 }
+.legacy-auction-page.bg0 {
+    background-color: transparent;
+}
 .bg0 {
     background-color: #302016;
     background-image: var(--sammo-texture-walnut);
@@ -565,8 +568,8 @@ onMounted(() => {
 }
 .tab-button:hover,
 .tab-button:focus {
-    border-color: #353535;
-    background: #393939;
+    border-color: #3d3d3d;
+    background: #444;
 }
 .section-title,
 .subsection-title,
@@ -575,6 +578,9 @@ onMounted(() => {
     min-height: 18px;
     font: inherit;
     font-weight: 400;
+}
+.unique-detail .section-title {
+    background-color: transparent;
 }
 .resource-kind.buy-rice {
     color: #000;
@@ -605,7 +611,7 @@ onMounted(() => {
 .clickable-row:hover,
 .clickable-row:focus-visible,
 .clickable-row.selected {
-    background-color: rgb(255 255 255 / 12%);
+    background-color: rgb(255 255 255 / 30%);
     outline: 0;
 }
 .no-bid {
