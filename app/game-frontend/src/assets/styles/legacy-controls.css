@@ -1,0 +1,117 @@
+.legacy-button {
+    display: inline-block;
+    box-sizing: border-box;
+    border: 1px solid var(--sammo-button-base1-border);
+    border-radius: 3px;
+    padding: 5px 10px;
+    background: var(--sammo-button-base1-bg);
+    color: #fff;
+    font: inherit;
+    font-weight: 700;
+    line-height: 1.5;
+    text-align: center;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.legacy-button:hover,
+.legacy-button:focus,
+.legacy-button:active {
+    border-color: var(--sammo-button-base1-hover-border);
+    background: var(--sammo-button-base1-hover-bg);
+    color: #fff;
+}
+
+.legacy-button:focus-visible {
+    outline: 2px solid var(--sammo-color-accent);
+    outline-offset: 1px;
+}
+
+.legacy-button:disabled,
+.legacy-button[aria-disabled='true'] {
+    cursor: default;
+    opacity: 0.65;
+}
+
+/*
+ * Ref Bootstrap 5.2 + Lumen button family. The modifier describes the legacy
+ * semantic role; width and placement remain in the owning scoped component.
+ */
+.legacy-button:is(
+    .legacy-button--primary,
+    .legacy-button--secondary,
+    .legacy-button--danger,
+    .legacy-button--info,
+    .legacy-button--navigation
+) {
+    --legacy-button-bg: var(--sammo-button-primary-bg);
+    --legacy-button-border: var(--sammo-button-primary-border);
+    min-height: 35.5px;
+    margin-top: 0;
+    border-color: var(--legacy-button-border);
+    border-style: solid;
+    border-width: 0 1px 4px;
+    border-radius: 5.25px;
+    padding: 5.25px 10.5px;
+    background: var(--legacy-button-bg);
+    color: #fff;
+    line-height: 21px;
+}
+
+.legacy-button.legacy-button--secondary {
+    --legacy-button-bg: var(--sammo-button-secondary-bg);
+    --legacy-button-border: var(--sammo-button-secondary-border);
+}
+
+.legacy-button.legacy-button--danger {
+    --legacy-button-bg: var(--sammo-button-danger-bg);
+    --legacy-button-border: var(--sammo-button-danger-border);
+}
+
+.legacy-button.legacy-button--info {
+    --legacy-button-bg: var(--sammo-button-info-bg);
+    --legacy-button-border: var(--sammo-button-info-border);
+}
+
+.legacy-button.legacy-button--navigation {
+    --legacy-button-bg: var(--sammo-button-navigation-bg);
+    --legacy-button-border: var(--sammo-button-navigation-border);
+}
+
+.legacy-button:is(
+        .legacy-button--primary,
+        .legacy-button--secondary,
+        .legacy-button--danger,
+        .legacy-button--info,
+        .legacy-button--navigation
+    ):not(:disabled, [aria-disabled='true']):hover {
+    margin-top: 1px;
+    border-color: var(--legacy-button-border);
+    border-bottom-width: 3px;
+    background: var(--legacy-button-bg);
+}
+
+.legacy-button:is(
+        .legacy-button--primary,
+        .legacy-button--secondary,
+        .legacy-button--danger,
+        .legacy-button--info,
+        .legacy-button--navigation
+    ):not(:disabled, [aria-disabled='true']):active {
+    margin-top: 2px;
+    border-color: var(--legacy-button-border);
+    border-bottom-width: 2px;
+    background: var(--legacy-button-bg);
+    box-shadow: none;
+}
+
+.legacy-button:is(
+        .legacy-button--primary,
+        .legacy-button--secondary,
+        .legacy-button--danger,
+        .legacy-button--info,
+        .legacy-button--navigation
+    ):focus {
+    border-color: var(--legacy-button-border);
+    background: var(--legacy-button-bg);
+}

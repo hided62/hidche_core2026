@@ -167,6 +167,8 @@ test.describe('inheritance management legacy parity', () => {
             const container = getComputedStyle(document.querySelector<HTMLElement>('#container')!);
             const title = getComputedStyle(document.querySelector<HTMLElement>('.section-title')!);
             const button = getComputedStyle(document.querySelector<HTMLElement>('.buy-button')!);
+            const navigation = getComputedStyle(document.querySelector<HTMLElement>('.top-button')!);
+            const secondary = getComputedStyle(document.querySelector<HTMLElement>('.dual-buttons button')!);
             return {
                 container: rect('#container'),
                 firstPoint: rect('#inherit_sum'),
@@ -175,6 +177,9 @@ test.describe('inheritance management legacy parity', () => {
                 backgroundImage: container.backgroundImage,
                 titleBackgroundImage: title.backgroundImage,
                 buttonBackground: button.backgroundColor,
+                buttonBorderBottomWidth: button.borderBottomWidth,
+                navigationBackground: navigation.backgroundColor,
+                secondaryBackground: secondary.backgroundColor,
             };
         });
 
@@ -185,14 +190,42 @@ test.describe('inheritance management legacy parity', () => {
         expect(desktop.fontSize).toBe('14px');
         expect(desktop.backgroundImage).toContain('back_walnut.jpg');
         expect(desktop.titleBackgroundImage).toContain('back_green.jpg');
+        expect(desktop.buttonBackground).toBe('rgb(55, 90, 127)');
+        expect(desktop.buttonBorderBottomWidth).toBe('4px');
+        expect(desktop.navigationBackground).toBe('rgb(0, 88, 44)');
+        expect(desktop.secondaryBackground).toBe('rgb(68, 68, 68)');
 
         const buyButton = page.locator('.buy-button').first();
-        const beforeHover = await buyButton.evaluate((element) => getComputedStyle(element).backgroundColor);
+        const beforeHover = await buyButton.evaluate((element) => {
+            const style = getComputedStyle(element);
+            return { background: style.backgroundColor, borderBottomWidth: style.borderBottomWidth };
+        });
         await buyButton.hover();
-        const afterHover = await buyButton.evaluate((element) => getComputedStyle(element).backgroundColor);
-        expect(afterHover).not.toBe(beforeHover);
+        const afterHover = await buyButton.evaluate((element) => {
+            const style = getComputedStyle(element);
+            return { background: style.backgroundColor, borderBottomWidth: style.borderBottomWidth };
+        });
+        expect(afterHover.background).toBe(beforeHover.background);
+        expect(afterHover.borderBottomWidth).toBe('3px');
+
+        await buyButton.hover({ position: { x: 70, y: 20 } });
+        await page.mouse.down();
+        await expect
+            .poll(() => buyButton.evaluate((element) => getComputedStyle(element).borderBottomWidth))
+            .toBe('2px');
+        await page.mouse.up();
+
         await buyButton.focus();
         await expect(buyButton).toBeFocused();
+        await page.keyboard.press('Tab');
+        await page.keyboard.press('Shift+Tab');
+        await expect(buyButton).toBeFocused();
+        await expect.poll(() => buyButton.evaluate((element) => getComputedStyle(element).outlineStyle)).toBe('solid');
+
+        await buyButton.evaluate((element) => element.setAttribute('disabled', ''));
+        await expect.poll(() => buyButton.evaluate((element) => getComputedStyle(element).opacity)).toBe('0.65');
+        await buyButton.evaluate((element) => element.removeAttribute('disabled'));
+        await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
 
         if (artifactRoot) {
             await page.screenshot({ path: resolve(artifactRoot, 'inherit-core-desktop.png'), fullPage: true });
@@ -214,6 +247,10 @@ test.describe('inheritance management legacy parity', () => {
         expect(mobile.containerWidth).toBe(500);
         expect(mobile.firstWidth).toBeCloseTo(482, 0);
         expect(mobile.stacked).toBe(true);
+
+        if (artifactRoot) {
+            await page.screenshot({ path: resolve(artifactRoot, 'inherit-core-mobile.png'), fullPage: true });
+        }
     });
 
     test('submits a legacy buff purchase and refreshes status and logs', async ({ page }) => {
