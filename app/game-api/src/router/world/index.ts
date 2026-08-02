@@ -82,15 +82,22 @@ export const worldRouter = router({
             throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'World state is not initialized.' });
         }
         const nationRows = nations
-            .map((nation) => ({
-                id: nation.id,
-                name: nation.name,
-                color: nation.color,
-                capitalCityId: nation.capitalCityId ?? 0,
-                level: nation.level,
-                power: typeof asRecord(nation.meta).power === 'number' ? Number(asRecord(nation.meta).power) : 0,
-                cities: cities.filter((city) => city.nationId === nation.id).map((city) => city.name),
-            }))
+            .map((nation) => {
+                const meta = asRecord(nation.meta);
+                return {
+                    id: nation.id,
+                    name: nation.name,
+                    color: nation.color,
+                    capitalCityId: nation.capitalCityId ?? 0,
+                    level: nation.level,
+                    power: typeof meta.power === 'number' && Number.isFinite(meta.power) ? meta.power : 0,
+                    generalCount:
+                        typeof meta.gennum === 'number' && Number.isFinite(meta.gennum)
+                            ? Math.max(0, Math.trunc(meta.gennum))
+                            : 0,
+                    cities: cities.filter((city) => city.nationId === nation.id).map((city) => city.name),
+                };
+            })
             .sort((left, right) => right.power - left.power || left.id - right.id);
         const matrix: Record<number, Record<number, number>> = {};
         for (const nation of nationRows) {
