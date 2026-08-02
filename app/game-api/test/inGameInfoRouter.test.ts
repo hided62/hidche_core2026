@@ -106,6 +106,7 @@ const context = (
             findFirst: vi.fn(async ({ where }: { where: { userId: string } }) =>
                 where.userId === me.userId ? me : null
             ),
+            findUnique: vi.fn(async ({ where }: { where: { id: number } }) => (where.id === me.id ? me : null)),
             findMany: vi.fn(async (args: { where?: Record<string, unknown>; select?: Record<string, boolean> }) => {
                 if (args.where?.nationId === 1 && args.select?.cityId)
                     return [
@@ -128,14 +129,52 @@ const context = (
                 meta: options.nationMeta ?? {},
             })),
             findMany: vi.fn(async () => [
-                { id: 1, name: '아국', color: '#008000', level: 1, capitalCityId: 1, meta: { power: 100 } },
-                { id: 2, name: '적국', color: '#800000', level: 1, capitalCityId: 2, meta: { power: 90 } },
+                {
+                    id: 1,
+                    name: '아국',
+                    color: '#008000',
+                    level: 1,
+                    capitalCityId: 1,
+                    meta: { power: 100, gennum: 4 },
+                },
+                {
+                    id: 2,
+                    name: '적국',
+                    color: '#800000',
+                    level: 1,
+                    capitalCityId: 2,
+                    meta: { power: 90, gennum: 3 },
+                },
             ]),
         },
         city: { findMany: vi.fn(async () => cities) },
-        worldState: { findFirst: vi.fn(async () => ({ meta: { turntime: '2026-01-01' } })) },
+        worldState: {
+            findFirst: vi.fn(async () => ({
+                currentYear: 200,
+                currentMonth: 1,
+                config: { startYear: 180 },
+                meta: { turntime: '2026-01-01' },
+            })),
+        },
         generalTurn: { findMany: vi.fn(async () => []) },
         diplomacy: { findMany: vi.fn(async () => []) },
+        $queryRaw: vi
+            .fn()
+            .mockResolvedValueOnce(
+                cities.map((item) => ({
+                    id: item.id,
+                    level: item.level,
+                    nationId: item.nationId,
+                    region: item.region,
+                    supplyState: item.supplyState,
+                    meta: item.meta,
+                }))
+            )
+            .mockResolvedValueOnce([
+                { id: 1, name: '아국', color: '#008000', capitalCityId: 1, meta: {} },
+                { id: 2, name: '적국', color: '#800000', capitalCityId: 2, meta: {} },
+            ])
+            .mockResolvedValueOnce([{ cityId: me.cityId }]),
     };
     const redis = { get: vi.fn(async () => null), set: vi.fn(async () => null) } as unknown as RedisConnector['client'];
     const accessTokenStore = new RedisAccessTokenStore(redis, 'che:default');
@@ -156,6 +195,15 @@ const context = (
 };
 
 describe('in-game information permissions', () => {
+    it('returns the ref nation summary fields in descending power order', async () => {
+        const result = await appRouter.createCaller(context()).world.getGlobalInfo();
+
+        expect(result.nations).toEqual([
+            expect.objectContaining({ id: 1, name: '아국', power: 100, generalCount: 4, cities: ['도시1', '도시80'] }),
+            expect.objectContaining({ id: 2, name: '적국', power: 90, generalCount: 3, cities: ['도시2', '도시3'] }),
+        ]);
+    });
+
     it('does not expose nation-only pages to a wandering general', async () => {
         const caller = appRouter.createCaller(context({ me: general({ nationId: 0, officerLevel: 0 }) }));
         await expect(caller.nation.getNationInfo()).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
