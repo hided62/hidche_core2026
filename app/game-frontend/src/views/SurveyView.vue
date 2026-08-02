@@ -213,8 +213,13 @@ onMounted(() => {
 <template>
     <main id="container" class="pageVote bg0">
         <header class="back_bar bg0">
-            <RouterLink class="btn btn-sammo-base2 back_btn" to="/">창 닫기</RouterLink>
-            <button class="btn btn-sammo-base2 reload_btn" type="button" :disabled="loading" @click="reloadVote">
+            <RouterLink class="legacy-button legacy-button--navigation back_btn" to="/">창 닫기</RouterLink>
+            <button
+                class="legacy-button legacy-button--navigation reload_btn"
+                type="button"
+                :disabled="loading"
+                @click="reloadVote"
+            >
                 갱신
             </button>
             <h2 class="title"></h2>
@@ -305,7 +310,9 @@ onMounted(() => {
                     <template v-if="canVote">
                         <td class="text-center">투표</td>
                         <td colspan="2">
-                            <button class="btn btn-primary vote-submit" @click="submitVote">투표</button>
+                            <button class="legacy-button legacy-button--secondary vote-submit" @click="submitVote">
+                                투표
+                            </button>
                         </td>
                     </template>
                     <td v-else colspan="3" class="text-center">결산</td>
@@ -348,7 +355,11 @@ onMounted(() => {
                 <tfoot>
                     <tr>
                         <td></td>
-                        <td><button class="btn btn-primary comment-submit" type="submit">댓글 달기</button></td>
+                        <td>
+                            <button class="legacy-button legacy-button--secondary comment-submit" type="submit">
+                                댓글 달기
+                            </button>
+                        </td>
                         <td colspan="2">
                             <input v-model="myComment" class="form-control" maxlength="200" aria-label="댓글" />
                         </td>
@@ -395,13 +406,15 @@ onMounted(() => {
                     </div>
                 </div>
                 <div class="admin-submit">
-                    <button class="btn btn-primary" type="button" @click="submitNewVote">제출</button>
+                    <button class="legacy-button legacy-button--secondary" type="button" @click="submitNewVote">
+                        제출
+                    </button>
                 </div>
             </template>
         </div>
 
         <footer class="bottom_bar bg0">
-            <RouterLink class="btn btn-sammo-base2 back_btn" to="/">창 닫기</RouterLink>
+            <RouterLink class="legacy-button legacy-button--navigation back_btn" to="/">창 닫기</RouterLink>
         </footer>
     </main>
 </template>
@@ -438,52 +451,17 @@ onMounted(() => {
     margin: 0;
 }
 
-.btn {
-    min-height: 35.5px;
-    padding: 5.25px 10.5px;
-    border: 1px solid transparent;
-    border-radius: 5.25px;
-    color: #fff;
-    font: inherit;
-    cursor: pointer;
-}
-
-.btn:hover {
-    filter: brightness(1.15);
-}
-
-.btn:focus-visible {
-    outline: 2px solid #8ab4f8;
-    outline-offset: -2px;
-}
-
-.btn:active {
-    transform: translateY(1px);
-}
-
-.btn:disabled {
-    opacity: 0.65;
-    cursor: default;
-}
-
-.btn-sammo-base2 {
+.back_btn,
+.reload_btn {
     height: 32px;
     min-height: 32px;
     margin-right: 2px;
-    border-color: #004f28;
-    background: #00582c;
     font-weight: 600;
-    text-align: center;
-    text-decoration: none;
 }
 
-.back_bar .btn-sammo-base2 {
+.back_bar .back_btn,
+.back_bar .reload_btn {
     width: 88px;
-}
-
-.btn-primary {
-    border-color: #0d6efd;
-    background: #0d6efd;
 }
 
 #vote-title {

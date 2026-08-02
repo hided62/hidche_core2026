@@ -4,7 +4,12 @@ import path from 'node:path';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
 import { type ScenarioInstallOptions } from '@sammo-ts/game-engine';
-import { createGamePostgresConnector, resolvePostgresConfigFromEnv } from '@sammo-ts/infra';
+import {
+    createGamePostgresConnector,
+    createRedisConnector,
+    resolvePostgresConfigFromEnv,
+    resolveRedisConfigFromEnv,
+} from '@sammo-ts/infra';
 import { isRecord } from '@sammo-ts/common';
 
 import type { BuildCommand, BuildRunner } from './buildRunner.js';
@@ -41,6 +46,7 @@ export interface GatewayOrchestratorOptions {
     profileReadinessTimeoutMs?: number;
     now?: () => Date;
     fetchImpl?: typeof fetch;
+    clearTournamentRuntimeState?: (profileName: string) => Promise<void>;
 }
 
 export interface ProfileRuntimeState {
@@ -149,6 +155,18 @@ const OPERATION_HEARTBEAT_INTERVAL_MS = 60_000;
 class OperationLeaseLostError extends Error {}
 
 const normalizeMeta = (value: unknown): Record<string, unknown> => (isRecord(value) ? value : {});
+
+export const buildTournamentRuntimeKeys = (profileName: string): string[] => [
+    `sammo:${profileName}:tournament:state`,
+    `sammo:${profileName}:tournament:participants`,
+    `sammo:${profileName}:tournament:matches`,
+    `sammo:${profileName}:tournament:betting`,
+];
+
+export const clearTournamentRuntimeKeys = async (
+    redis: { del(keys: string[]): Promise<number> },
+    profileName: string
+): Promise<number> => redis.del(buildTournamentRuntimeKeys(profileName));
 
 const buildServerId = (profileName: string, now: Date, installOperationId?: string): string => {
     const year = String(now.getFullYear()).slice(-2);
@@ -545,6 +563,7 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
     private readonly profileReadinessTimeoutMs: number;
     private readonly now: () => Date;
     private readonly fetchImpl: typeof fetch;
+    private readonly clearTournamentRuntimeState: (profileName: string) => Promise<void>;
     private reconcileTimer?: NodeJS.Timeout;
     private scheduleTimer?: NodeJS.Timeout;
     private buildTimer?: NodeJS.Timeout;
@@ -573,6 +592,9 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
         this.profileReadinessTimeoutMs = options.profileReadinessTimeoutMs ?? 30_000;
         this.now = options.now ?? (() => new Date());
         this.fetchImpl = options.fetchImpl ?? fetch;
+        this.clearTournamentRuntimeState =
+            options.clearTournamentRuntimeState ??
+            ((profileName) => this.clearTournamentRuntimeStateFromRedis(profileName));
     }
 
     start(): void {
@@ -1383,6 +1405,8 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             if (!seedResult.ok) {
                 throw new Error(`Selected profile seed failed: ${seedResult.output.slice(-4000)}`);
             }
+            await this.clearTournamentRuntimeState(profile.profileName);
+            await assertLease?.();
             const completedAt = this.now().toISOString();
             const now = this.now();
             const shouldPreopen = openAt ? openAt.getTime() > now.getTime() : false;
@@ -1588,6 +1612,18 @@ export class GatewayOrchestrator implements GatewayOrchestratorHandle {
             env: this.processConfig.baseEnv ?? process.env,
             schema: profile.profile,
         }).url;
+    }
+
+    private async clearTournamentRuntimeStateFromRedis(profileName: string): Promise<void> {
+        const connector = createRedisConnector(
+            resolveRedisConfigFromEnv(this.processConfig.baseEnv ?? process.env)
+        );
+        await connector.connect();
+        try {
+            await clearTournamentRuntimeKeys(connector.client, profileName);
+        } finally {
+            await connector.disconnect();
+        }
     }
 
     async cleanupStaleWorkspaces(): Promise<{ removed: string[]; skipped: string[] }> {

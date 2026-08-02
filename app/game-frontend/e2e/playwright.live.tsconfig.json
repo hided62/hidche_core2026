@@ -16,6 +16,8 @@
         "./npcPossessionLive.spec.ts",
         "./npcPossession.live.playwright.config.mjs",
         "./dieOnPrestartLive.spec.ts",
-        "./dieOnPrestart.live.playwright.config.mjs"
+        "./dieOnPrestart.live.playwright.config.mjs",
+        "./chiefCenterLive.spec.ts",
+        "./chiefCenter.live.playwright.config.mjs"
     ]
 }

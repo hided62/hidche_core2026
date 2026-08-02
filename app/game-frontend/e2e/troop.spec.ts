@@ -259,13 +259,14 @@ test('renders the legacy desktop grid with matching computed geometry and states
     });
 
     const kickButton = page.getByRole('button', { name: '부대원 추방...' }).first();
+    expect(await kickButton.evaluate((button) => getComputedStyle(button).backgroundColor)).toBe('rgb(68, 68, 68)');
     await kickButton.hover();
     const hoverStyle = await kickButton.evaluate((button) => ({
         cursor: getComputedStyle(button).cursor,
-        filter: getComputedStyle(button).filter,
+        borderBottomWidth: getComputedStyle(button).borderBottomWidth,
     }));
     expect(hoverStyle.cursor).toBe('pointer');
-    expect(hoverStyle.filter).not.toBe('none');
+    expect(hoverStyle.borderBottomWidth).toBe('3px');
 
     await page.locator('.troopMember').nth(1).hover();
     await expect(page.getByRole('tooltip')).toContainText('조운');

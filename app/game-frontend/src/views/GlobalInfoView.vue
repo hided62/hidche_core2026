@@ -11,6 +11,18 @@ const error = ref('');
 const state = (value: number) => ({ 0: '★', 1: '▲', 2: '', 7: '@' })[value] ?? 'ㆍ';
 const stateClass = (value: number) => `state-${value}`;
 const nationMap = computed(() => new Map(data.value?.nations.map((nation) => [nation.id, nation]) ?? []));
+const isBrightColor = (color: string): boolean => {
+    const normalized = color.trim().replace(/^#/u, '');
+    if (!/^[0-9a-f]{6}$/iu.test(normalized)) return false;
+    const red = Number.parseInt(normalized.slice(0, 2), 16);
+    const green = Number.parseInt(normalized.slice(2, 4), 16);
+    const blue = Number.parseInt(normalized.slice(4, 6), 16);
+    return red * 0.299 + green * 0.587 + blue * 0.114 > 170;
+};
+const nationNameStyle = (color: string) => ({
+    backgroundColor: color,
+    color: isBrightColor(color) ? '#000' : '#fff',
+});
 onMounted(async () => {
     try {
         [data.value, layout.value] = await Promise.all([
@@ -96,10 +108,29 @@ onMounted(async () => {
             <div class="map-grid">
                 <MapViewer :map-data="data.map" :map-layout="layout" :loading="false" />
                 <div class="nation-list">
-                    <div v-for="nation in data.nations" :key="nation.id">
-                        <b :style="{ color: nation.color }">【{{ nation.name }}】</b> {{ nation.power.toLocaleString()
-                        }}<br /><small>{{ nation.cities.join(', ') }}</small>
-                    </div>
+                    <table class="simple-nation-list">
+                        <thead>
+                            <tr>
+                                <th class="nation-name-column">국명</th>
+                                <th class="nation-power-column">국력</th>
+                                <th class="nation-count-column">장수</th>
+                                <th class="nation-count-column">속령</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="nation in data.nations" :key="nation.id">
+                                <td><span :style="nationNameStyle(nation.color)">{{ nation.name }}</span></td>
+                                <td>{{ nation.power.toLocaleString() }}</td>
+                                <td>{{ nation.generalCount.toLocaleString() }}</td>
+                                <td
+                                    :title="nation.cities.join(', ')"
+                                    :aria-label="`속령 ${nation.cities.length}개: ${nation.cities.join(', ')}`"
+                                >
+                                    {{ nation.cities.length.toLocaleString() }}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </section>
@@ -218,9 +249,38 @@ onMounted(async () => {
     display: grid;
     grid-template-columns: 700px 300px;
 }
-.nation-list > div {
-    padding: 6px;
-    border-bottom: 1px solid #666;
+.simple-nation-list {
+    width: 100%;
+    border-collapse: collapse;
+}
+.simple-nation-list thead {
+    background-color: #ccc;
+    color: #000;
+    text-align: center;
+}
+.simple-nation-list th {
+    border: 0;
+    border-left: 1px solid gray;
+    padding: 2px 6px;
+    font-weight: 700;
+}
+.simple-nation-list td {
+    border: 0;
+    border-left: 1px solid gray;
+    padding: 1px 6px;
+    text-align: right;
+}
+.simple-nation-list td:first-child {
+    text-align: left;
+}
+.nation-name-column {
+    width: 44%;
+}
+.nation-power-column {
+    width: 23%;
+}
+.nation-count-column {
+    width: 15%;
 }
 .footer {
     margin-top: 20px;
