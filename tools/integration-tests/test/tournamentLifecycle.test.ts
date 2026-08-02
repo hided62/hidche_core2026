@@ -169,6 +169,7 @@ describe('actual tournament lifecycle', () => {
 
         gatewayServer = await createGatewayApiServer();
         await gatewayServer.app.listen({ host: gatewayServer.config.host, port: gatewayServer.config.port });
+        process.env.GATEWAY_INTERNAL_API_URL = `http://127.0.0.1:${gatewayServer.config.port}`;
         gameServer = await createGameApiServer();
         await gameServer.app.listen({ host: gameServer.config.host, port: gameServer.config.port });
 
