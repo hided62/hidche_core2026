@@ -15,6 +15,7 @@
         "test:e2e:board": "playwright test board.spec.ts --config e2e/playwright.config.mjs",
         "test:e2e:directories": "playwright test directoryLists.spec.ts --config e2e/playwright.config.mjs",
         "test:e2e:auction": "playwright test auction.spec.ts --config e2e/playwright.config.mjs",
+        "test:e2e:tournament-bracket": "playwright test tournamentBracket.spec.ts --config e2e/playwright.config.mjs",
         "test:e2e:battle-simulator": "playwright test battleSimulator.spec.ts --config e2e/playwright.config.mjs",
         "test:e2e:join-live": "playwright test --config e2e/joinGeneral.live.playwright.config.mjs --tsconfig e2e/playwright.live.tsconfig.json",
         "test:e2e:npc-possession": "playwright test npcPossession.spec.ts --config e2e/playwright.config.mjs",
