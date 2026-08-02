@@ -107,13 +107,17 @@ const truncateSchema = async (schema: string): Promise<void> => {
 const resetServices = async (): Promise<void> => {
     await ensureSchema('public');
     await ensureSchema('che');
-    await execCommand('pnpm', ['--filter', '@sammo-ts/infra', 'prisma:db:push:gateway', '--accept-data-loss'], {
+    const gatewayDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'public' }).url;
+    const gameDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'che' }).url;
+    await execCommand('pnpm', ['--filter', '@sammo-ts/infra', 'prisma:migrate:deploy:gateway'], {
         ...process.env,
         POSTGRES_SCHEMA: 'public',
+        GATEWAY_DATABASE_URL: gatewayDatabaseUrl,
     });
-    await execCommand('pnpm', ['--filter', '@sammo-ts/infra', 'prisma:db:push:game', '--accept-data-loss'], {
+    await execCommand('pnpm', ['--filter', '@sammo-ts/infra', 'prisma:migrate:deploy:game'], {
         ...process.env,
         POSTGRES_SCHEMA: 'che',
+        DATABASE_URL: gameDatabaseUrl,
     });
     await truncateSchema('public');
     await truncateSchema('che');
@@ -210,6 +214,19 @@ describe('actual tournament lifecycle', () => {
                 localAccountGeneralCreationGraceDays: 7,
             },
         });
+        const staleTournamentRedis = createRedisConnector(resolveRedisConfigFromEnv());
+        await staleTournamentRedis.connect();
+        const staleTournamentKeys = buildTournamentKeys('che:908');
+        try {
+            await staleTournamentRedis.client.mSet({
+                [staleTournamentKeys.stateKey]: JSON.stringify({ stage: 6, auto: true }),
+                [staleTournamentKeys.participantsKey]: '[{"id":99999}]',
+                [staleTournamentKeys.matchesKey]: '[{"id":99999}]',
+                [staleTournamentKeys.bettingKey]: '[{"generalId":99999}]',
+            });
+        } finally {
+            await staleTournamentRedis.disconnect();
+        }
         await gatewayClient.admin.profiles.installNow.mutate({
             profileName: 'che:908',
             install: {
@@ -226,6 +243,21 @@ describe('actual tournament lifecycle', () => {
                 autorunUser: null,
             },
         });
+
+        const resetTournamentRedis = createRedisConnector(resolveRedisConfigFromEnv());
+        await resetTournamentRedis.connect();
+        try {
+            expect(
+                await resetTournamentRedis.client.mGet([
+                    staleTournamentKeys.stateKey,
+                    staleTournamentKeys.participantsKey,
+                    staleTournamentKeys.matchesKey,
+                    staleTournamentKeys.bettingKey,
+                ])
+            ).toEqual([null, null, null, null]);
+        } finally {
+            await resetTournamentRedis.disconnect();
+        }
 
         for (const [username, displayName] of users) {
             const login = await gatewayClient.auth.login.mutate({
