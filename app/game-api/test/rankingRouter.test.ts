@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { GameSessionTokenPayload } from '@sammo-ts/common/auth/gameToken';
+import { RANK_DATA_TYPES } from '@sammo-ts/common';
 import type { RedisConnector } from '@sammo-ts/infra';
 
 import { RedisAccessTokenStore } from '../src/auth/accessTokenStore.js';
@@ -32,7 +33,24 @@ const auth: GameSessionTokenPayload = {
     sanctions: {},
 };
 
-const generalRows = [
+interface RankingGeneralRow {
+    id: number;
+    name: string;
+    nationId: number;
+    userId: string | null;
+    npcState: number;
+    picture: string | null;
+    imageServer: number;
+    meta: Record<string, string | number>;
+    experience: number;
+    dedication: number;
+    horseCode: string;
+    weaponCode: string;
+    bookCode: string;
+    itemCode: string;
+}
+
+const generalRows: RankingGeneralRow[] = [
     {
         id: 1,
         name: '유비',
@@ -81,13 +99,16 @@ const generalRows = [
         bookCode: 'None',
         itemCode: 'None',
     },
-] as const;
+];
 
 const buildContext = (options?: {
     authenticated?: boolean;
     isUnited?: boolean;
     includeOwnerDisplayName?: boolean;
+    generals?: RankingGeneralRow[];
+    rankRows?: Array<{ generalId: number; type: string; value: number }>;
 }): GameApiContext => {
+    const selectedGeneralRows = options?.generals ?? generalRows;
     const db = {
         worldState: {
             findFirst: async () => ({
@@ -112,21 +133,22 @@ const buildContext = (options?: {
         },
         general: {
             findMany: async (args: { where: { npcState: { lt?: number; gte?: number } } }) =>
-                generalRows.filter((general) =>
+                selectedGeneralRows.filter((general) =>
                     args.where.npcState.gte !== undefined
                         ? general.npcState >= args.where.npcState.gte
                         : general.npcState < (args.where.npcState.lt ?? Number.POSITIVE_INFINITY)
                 ),
         },
         rankData: {
-            findMany: async () => [
-                { generalId: 1, type: 'firenum', value: 10 },
-                { generalId: 2, type: 'firenum', value: 20 },
-                { generalId: 3, type: 'firenum', value: 30 },
-                { generalId: 1, type: 'dex1', value: 999 },
-                { generalId: 2, type: 'dex1', value: 999 },
-                { generalId: 3, type: 'dex1', value: 999 },
-            ],
+            findMany: async () =>
+                options?.rankRows ?? [
+                    { generalId: 1, type: 'firenum', value: 10 },
+                    { generalId: 2, type: 'firenum', value: 20 },
+                    { generalId: 3, type: 'firenum', value: 30 },
+                    { generalId: 1, type: 'dex1', value: 999 },
+                    { generalId: 2, type: 'dex1', value: 999 },
+                    { generalId: 3, type: 'dex1', value: 999 },
+                ],
         },
         auction: {
             findMany: async () => [{ targetCode: 'che_명마_15_적토마' }],
@@ -235,6 +257,58 @@ describe('ranking.getBestGeneral', () => {
             bgColor: '#006400',
             fgColor: '#000000',
         });
+    });
+
+    it('returns positions one through ten for every populated ranking section', async () => {
+        const generals = Array.from({ length: 12 }, (_, index) => {
+            const id = index + 1;
+            const value = id * 1_000;
+            return {
+                id,
+                name: `상위${id}`,
+                nationId: 1,
+                userId: `top-${id}`,
+                npcState: 0,
+                picture: null,
+                imageServer: 0,
+                meta: { dex1: value, dex2: value, dex3: value, dex4: value, dex5: value },
+                experience: value,
+                dedication: value,
+                horseCode: 'None',
+                weaponCode: 'None',
+                bookCode: 'None',
+                itemCode: 'None',
+            };
+        });
+        const rankRows = generals.flatMap((general) =>
+            RANK_DATA_TYPES.filter(
+                (type) => type !== 'experience' && type !== 'dedication' && !type.startsWith('dex')
+            ).map((type) => ({
+                generalId: general.id,
+                type,
+                value:
+                    type === 'warnum' || type === 'deathcrew' || type === 'deathcrew_person'
+                        ? 1_000
+                        : type === 'ttd' || type === 'ttl' || type === 'tld' || type === 'tll' ||
+                            type === 'tsd' || type === 'tsl' || type === 'tid' || type === 'til' ||
+                            type === 'betgold'
+                          ? 1_000
+                          : general.id * 1_000,
+            }))
+        );
+        const result = await appRouter
+            .createCaller(buildContext({ isUnited: true, generals, rankRows }))
+            .ranking.getBestGeneral({ view: 'user' });
+
+        expect(result.sections).toHaveLength(26);
+        for (const section of result.sections) {
+            expect(section.entries, section.title).toHaveLength(10);
+            expect(new Set(section.entries.map((entry) => entry.id)).size, section.title).toBe(10);
+            expect(section.entries.every((entry) => entry.value > 0), section.title).toBe(true);
+        }
+        expect(result.sections.find((section) => section.title === '계 략 성 공')?.entries.map((entry) => entry.id)).toEqual([
+            12, 11, 10, 9, 8, 7, 6, 5, 4, 3,
+        ]);
     });
 
     it('matches PHP number_format rounding and the legacy fixed color table', () => {
