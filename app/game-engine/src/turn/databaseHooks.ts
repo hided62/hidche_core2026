@@ -553,6 +553,7 @@ export const createDatabaseTurnHooks = async (
         profileName?: string;
         reservedTurns?: InMemoryReservedTurnStore;
         turnDaemonLease?: DatabaseTurnDaemonLease;
+        transactionTimeoutMs?: number;
     }
 ): Promise<DatabaseTurnHooks> => {
     // 턴 처리 결과를 DB에 반영하는 훅을 만든다.
@@ -999,7 +1000,10 @@ export const createDatabaseTurnHooks = async (
         if (transaction) {
             await persist(transaction);
         } else {
-            await prisma.$transaction(persist);
+            await prisma.$transaction(
+                persist,
+                options?.transactionTimeoutMs ? { timeout: options.transactionTimeoutMs } : undefined
+            );
         }
 
         return () => {
@@ -1020,11 +1024,14 @@ export const createDatabaseTurnHooks = async (
             acknowledge();
         },
         executeCommand: async (requestId, execute) => {
-            const committed = await prisma.$transaction(async (transaction) => {
-                const result = await execute({ db: transaction });
-                const acknowledge = await persistChanges(transaction, { requestId, result });
-                return { result, acknowledge };
-            });
+            const committed = await prisma.$transaction(
+                async (transaction) => {
+                    const result = await execute({ db: transaction });
+                    const acknowledge = await persistChanges(transaction, { requestId, result });
+                    return { result, acknowledge };
+                },
+                options?.transactionTimeoutMs ? { timeout: options.transactionTimeoutMs } : undefined
+            );
             committed.acknowledge();
             return committed.result;
         },

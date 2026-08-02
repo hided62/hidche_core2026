@@ -102,6 +102,13 @@ export interface TurnDaemonRuntimeOptions {
     leaseDurationMs?: number;
     leaseOwnerId?: string;
     enableLeaseHeartbeat?: boolean;
+    /**
+     * Isolated, single-process fixture acceleration only. Reserved turns are
+     * loaded once and no concurrent API writer may touch this database.
+     */
+    exclusiveFastForward?: boolean;
+    databaseTransactionTimeoutMs?: number;
+    onActionResolved?: NonNullable<Parameters<typeof createReservedTurnHandler>[0]['onActionResolved']>;
 }
 
 export interface TurnDaemonRuntime {
@@ -179,6 +186,9 @@ const createTurnDaemonRuntimeWithLease = async (
     databaseFlushEnabled: boolean,
     turnDaemonLease: DatabaseTurnDaemonLease | null
 ): Promise<TurnDaemonRuntime> => {
+    if (options.exclusiveFastForward && options.profileName) {
+        throw new Error('exclusiveFastForward cannot be used with a gateway-managed profile.');
+    }
     // DB에서 월드를 읽고 턴 데몬을 구동할 런타임을 만든다.
     const { state, snapshot } = await loadTurnWorldFromDatabase({
         databaseUrl: options.databaseUrl,
@@ -499,6 +509,7 @@ const createTurnDaemonRuntimeWithLease = async (
                 commandProfile,
                 commandEnv: monthlyCommandEnv,
                 getAdditionalOccupiedUniqueItemKeys: () => occupiedAuctionUniqueItemKeys,
+                onActionResolved: options.onActionResolved,
             })),
         calendarHandler: calendarHandler ?? undefined,
         autoAdvanceDiplomacyMonth: false,
@@ -538,10 +549,20 @@ const createTurnDaemonRuntimeWithLease = async (
     });
 
     const stateStore = new InMemoryTurnStateStore(world);
+    let fastForwardPreparedMonth = '';
     const processor = new InMemoryTurnProcessor(world, {
         tickMinutes,
         beforeExecuteGeneral: reservedTurnStoreHandle
             ? async (general) => {
+                  if (options.exclusiveFastForward) {
+                      const state = world.getState();
+                      const monthKey = `${state.currentYear}-${state.currentMonth}`;
+                      if (fastForwardPreparedMonth !== monthKey) {
+                          await refreshOccupiedAuctionUniqueItemKeys();
+                          fastForwardPreparedMonth = monthKey;
+                      }
+                      return;
+                  }
                   const promises: Promise<unknown>[] = [];
                   promises.push(
                       reservedTurnStoreHandle.store.prepareTurnsForExecution(
@@ -597,6 +618,7 @@ const createTurnDaemonRuntimeWithLease = async (
             profileName: options.profileName ?? options.profile,
             reservedTurns: reservedTurnStoreHandle?.store,
             turnDaemonLease: turnDaemonLease ?? undefined,
+            transactionTimeoutMs: options.databaseTransactionTimeoutMs,
         });
         auctionBidder = await createAuctionBidder({
             databaseUrl: options.databaseUrl,
