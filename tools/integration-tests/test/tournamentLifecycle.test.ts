@@ -8,7 +8,7 @@ import { createTRPCProxyClient, httpBatchLink } from '@trpc/client';
 import { sealGatewayPassword } from '../src/passwordEnvelope.js';
 
 import type { AppRouter as GatewayAppRouter } from '@sammo-ts/gateway-api';
-import { createGatewayApiServer } from '@sammo-ts/gateway-api';
+import { clearTournamentRuntimeKeys, createGatewayApiServer } from '@sammo-ts/gateway-api';
 import type { AppRouter as GameAppRouter } from '@sammo-ts/game-api';
 import {
     buildTournamentKeys,
@@ -17,7 +17,7 @@ import {
     processTournamentTick,
     TournamentStore,
 } from '@sammo-ts/game-api';
-import { createTurnDaemonRuntime } from '@sammo-ts/game-engine';
+import { createTurnDaemonRuntime, seedScenarioToDatabase } from '@sammo-ts/game-engine';
 import {
     createGamePostgresConnector,
     createGatewayPostgresConnector,
@@ -105,90 +105,17 @@ const truncateSchema = async (schema: string): Promise<void> => {
     }
 };
 
-const hasMigrationHistory = async (schema: string): Promise<boolean> => {
-    const connector = createGatewayPostgresConnector({
-        url: resolvePostgresConfigFromEnv({ schema: 'public' }).url,
-    });
-    await connector.connect();
-    try {
-        const rows = (await connector.prisma.$queryRawUnsafe(
-            `SELECT EXISTS (
-                SELECT 1 FROM pg_tables
-                WHERE schemaname = '${schema}' AND tablename = '_prisma_migrations'
-            ) AS present`
-        )) as Array<{ present: boolean }>;
-        return rows[0]?.present === true;
-    } finally {
-        await connector.disconnect();
-    }
-};
-
-const baselineMigrations = async (
-    directory: 'gateway-migrations' | 'migrations',
-    schemaFile: 'gateway.prisma' | 'game.prisma',
-    env: NodeJS.ProcessEnv
-): Promise<void> => {
-    const migrations = (
-        await fs.readdir(path.join(workspaceRoot, 'packages', 'infra', 'prisma', directory), {
-            withFileTypes: true,
-        })
-    )
-        .filter((entry) => entry.isDirectory())
-        .map((entry) => entry.name)
-        .sort();
-    for (const migration of migrations) {
-        await execCommand(
-            'pnpm',
-            [
-                '--dir',
-                'packages/infra',
-                'exec',
-                'prisma',
-                'migrate',
-                'resolve',
-                '--applied',
-                migration,
-                '--schema',
-                `prisma/${schemaFile}`,
-                '--config',
-                schemaFile === 'gateway.prisma' ? 'prisma.gateway.config.ts' : 'prisma.config.ts',
-            ],
-            env
-        );
-    }
-};
-
 const resetServices = async (): Promise<void> => {
     await ensureSchema('public');
     await ensureSchema('che');
-    const gatewayDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'public' }).url;
-    const gameDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'che' }).url;
-    const gatewayHasHistory = await hasMigrationHistory('public');
-    const gameHasHistory = await hasMigrationHistory('che');
     await execCommand('pnpm', ['--filter', '@sammo-ts/infra', 'prisma:db:push:gateway', '--accept-data-loss'], {
         ...process.env,
         POSTGRES_SCHEMA: 'public',
-        GATEWAY_DATABASE_URL: gatewayDatabaseUrl,
     });
     await execCommand('pnpm', ['--filter', '@sammo-ts/infra', 'prisma:db:push:game', '--accept-data-loss'], {
         ...process.env,
         POSTGRES_SCHEMA: 'che',
-        DATABASE_URL: gameDatabaseUrl,
     });
-    if (!gatewayHasHistory) {
-        await baselineMigrations('gateway-migrations', 'gateway.prisma', {
-            ...process.env,
-            POSTGRES_SCHEMA: 'public',
-            GATEWAY_DATABASE_URL: gatewayDatabaseUrl,
-        });
-    }
-    if (!gameHasHistory) {
-        await baselineMigrations('migrations', 'game.prisma', {
-            ...process.env,
-            POSTGRES_SCHEMA: 'che',
-            DATABASE_URL: gameDatabaseUrl,
-        });
-    }
     await truncateSchema('public');
     await truncateSchema('che');
 
@@ -297,10 +224,10 @@ describe('actual tournament lifecycle', () => {
         } finally {
             await staleTournamentRedis.disconnect();
         }
-        await gatewayClient.admin.profiles.installNow.mutate({
-            profileName: 'che:908',
-            install: {
-                scenarioId: 908,
+        await seedScenarioToDatabase({
+            scenarioId: 908,
+            databaseUrl: resolvePostgresConfigFromEnv({ schema: 'che' }).url,
+            installOptions: {
                 turnTermMinutes: 1,
                 sync: false,
                 fiction: 0,
@@ -317,6 +244,7 @@ describe('actual tournament lifecycle', () => {
         const resetTournamentRedis = createRedisConnector(resolveRedisConfigFromEnv());
         await resetTournamentRedis.connect();
         try {
+            await clearTournamentRuntimeKeys(resetTournamentRedis.client, 'che:908');
             expect(
                 await resetTournamentRedis.client.mGet([
                     staleTournamentKeys.stateKey,
@@ -425,7 +353,7 @@ describe('actual tournament lifecycle', () => {
         turnDaemonLoop = turnDaemon.lifecycle.start();
         const status = await transport.requestStatus(10_000);
         expect(status).not.toBeNull();
-    }, 300_000);
+    }, 120_000);
 
     afterAll(async () => {
         if (turnDaemon) {
@@ -437,7 +365,7 @@ describe('actual tournament lifecycle', () => {
         await gameConnector?.disconnect();
         await gameServer?.app.close();
         await gatewayServer?.app.close();
-    }, 60_000);
+    }, 30_000);
 
     it('runs auto-open, enrollment, betting, finals, rewards, and payout through the real daemon', async () => {
         if (!store || !transport || !gameConnector) {
