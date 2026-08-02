@@ -142,6 +142,114 @@ describe('scenario bootstrap', () => {
         expect(result.snapshot.scenarioMeta?.title).toBe('Test Scenario');
     });
 
+    it('places generals without an explicit city in a deterministic valid city', () => {
+        const scenario: ScenarioDefinition = {
+            title: 'Random placement',
+            startYear: 200,
+            life: null,
+            fiction: null,
+            history: [],
+            config: {
+                stat: { total: 100, min: 10, max: 70, npcTotal: 80, npcMax: 60, npcMin: 5, chiefMin: 50 },
+                iconPath: '.',
+                map: {},
+                const: {},
+                environment: { mapName: 'test-map', unitSet: 'test-unit' },
+            },
+            nations: [
+                {
+                    id: 1,
+                    name: 'TestNation',
+                    color: '#123456',
+                    gold: 5000,
+                    rice: 3000,
+                    infoText: null,
+                    tech: 100,
+                    type: 'Test',
+                    level: 3,
+                    cities: ['Alpha'],
+                },
+            ],
+            diplomacy: [],
+            generals: [
+                {
+                    affinity: 10,
+                    name: 'NationGeneral',
+                    picture: null,
+                    nation: 1,
+                    city: null,
+                    leadership: 50,
+                    strength: 50,
+                    intelligence: 50,
+                    officerLevel: 1,
+                    birthYear: 180,
+                    deathYear: 240,
+                    personality: null,
+                    special: '',
+                    text: '',
+                },
+                {
+                    affinity: 20,
+                    name: 'NeutralGeneral',
+                    picture: null,
+                    nation: null,
+                    city: null,
+                    leadership: 50,
+                    strength: 50,
+                    intelligence: 50,
+                    officerLevel: 0,
+                    birthYear: 180,
+                    deathYear: 240,
+                    personality: null,
+                    special: '',
+                    text: '',
+                },
+            ],
+            generalsEx: [],
+            generalsNeutral: [],
+            cities: [],
+            events: [],
+            initialEvents: [],
+            ignoreDefaultEvents: false,
+        };
+        const map: MapDefinition = {
+            id: 'test-map',
+            name: 'test-map',
+            cities: [
+                {
+                    id: 1,
+                    name: 'Alpha',
+                    level: 5,
+                    region: 1,
+                    position: { x: 0, y: 0 },
+                    connections: [2],
+                    max: { population: 1, agriculture: 1, commerce: 1, security: 1, defence: 1, wall: 1 },
+                    initial: { population: 1, agriculture: 1, commerce: 1, security: 1, defence: 1, wall: 1 },
+                },
+                {
+                    id: 2,
+                    name: 'Beta',
+                    level: 5,
+                    region: 1,
+                    position: { x: 1, y: 0 },
+                    connections: [1],
+                    max: { population: 1, agriculture: 1, commerce: 1, security: 1, defence: 1, wall: 1 },
+                    initial: { population: 1, agriculture: 1, commerce: 1, security: 1, defence: 1, wall: 1 },
+                },
+            ],
+        };
+
+        const first = buildScenarioBootstrap({ scenario, map, options: { hiddenSeed: 'placement-seed' } });
+        const second = buildScenarioBootstrap({ scenario, map, options: { hiddenSeed: 'placement-seed' } });
+
+        expect(first.seed.generals.map((general) => general.cityId)).toEqual(
+            second.seed.generals.map((general) => general.cityId)
+        );
+        expect(first.seed.generals[0]?.cityId).toBe(1);
+        expect([1, 2]).toContain(first.seed.generals[1]?.cityId);
+        expect(first.seed.generals.every((general) => general.cityId > 0)).toBe(true);
+    });
+
     it('defers future generals into birth-year registration events and omits expired rows', () => {
         const general = (
             name: string,
@@ -192,11 +300,7 @@ describe('scenario bootstrap', () => {
                 },
             ],
             diplomacy: [],
-            generals: [
-                general('현재', 180, 240),
-                general('미래1', 190, 250, 'TestNation'),
-                general('만료', 170, 200),
-            ],
+            generals: [general('현재', 180, 240), general('미래1', 190, 250, 'TestNation'), general('만료', 170, 200)],
             generalsEx: [general('미래확장', 190, 260)],
             generalsNeutral: [general('미래재야', 191, 260, 0)],
             cities: [],

@@ -205,6 +205,9 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
     const generalPoolEntries = targetGeneralPool
         ? await loadGeneralPoolEntries(targetGeneralPool, options.generalPoolOptions)
         : [];
+    const integrationSeed = process.env[INTEGRATION_WORLD_SEED_ENV]?.trim();
+    const hiddenSeed =
+        integrationSeed && integrationSeed.length > 0 ? integrationSeed : randomBytes(16).toString('hex');
 
     const { seed, warnings } = buildScenarioBootstrap({
         scenario: scenarioDefinition,
@@ -212,6 +215,7 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
         unitSet,
         options: {
             includeNeutralNationInSeed: options.includeNeutralNationInSeed ?? true,
+            hiddenSeed,
         },
     });
     seed.cities = applyInitialChangeCityEvents(seed.cities, seed.initialEvents);
@@ -273,9 +277,7 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
         worldMeta.installCommitSha = install.installCommitSha.trim();
     }
 
-    const integrationSeed = process.env[INTEGRATION_WORLD_SEED_ENV]?.trim();
-    worldMeta.hiddenSeed =
-        integrationSeed && integrationSeed.length > 0 ? integrationSeed : randomBytes(16).toString('hex');
+    worldMeta.hiddenSeed = hiddenSeed;
 
     if (install?.preopenAt) {
         worldMeta.preopenAt = formatDateTime(install.preopenAt);

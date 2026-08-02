@@ -31,6 +31,12 @@ export interface ScenarioBootstrapOptions {
     defaultCrewTypeId?: number;
     nationTypePrefix?: string;
     mapDefaults?: Partial<MapDefaults>;
+    /**
+     * Legacy scenario installation uses the world's hidden seed while resolving
+     * generals whose city is omitted. Keep this input explicit so bootstrap
+     * remains deterministic in tests and reset operations.
+     */
+    hiddenSeed?: string | number;
 }
 
 export type ScenarioBootstrapWarningCode =
@@ -208,11 +214,7 @@ const resolveGeneralBootstrapDisposition = (
     return 'active';
 };
 
-const buildDelayedGeneralAction = (
-    general: ScenarioGeneral,
-    nationId: number,
-    npcType: 2 | 6
-): unknown[] => {
+const buildDelayedGeneralAction = (general: ScenarioGeneral, nationId: number, npcType: 2 | 6): unknown[] => {
     const common = [
         general.affinity ?? 0,
         general.name,
@@ -309,6 +311,9 @@ const buildGeneralSeeds = (
     nationNameToId: Map<string, number>,
     warnings: ScenarioBootstrapWarning[],
     defaultCrewTypeId: number,
+    mapCities: MapDefinition['cities'],
+    nationCityIds: Map<number, number[]>,
+    placementRng: RandUtil,
     options?: ScenarioBootstrapOptions
 ): {
     seeds: GeneralSeed[];
@@ -330,7 +335,14 @@ const buildGeneralSeeds = (
         nextId += 1;
 
         const nationId = resolveNationId(row.nation, nationNameToId, warnings, row.name);
-        const cityId = resolveCityId(row.city, cityByName, warnings, row.name);
+        let cityId = resolveCityId(row.city, cityByName, warnings, row.name);
+        if (row.city === null) {
+            const ownedCityIds = nationId > 0 ? (nationCityIds.get(nationId) ?? []) : [];
+            const candidateCityIds = ownedCityIds.length > 0 ? ownedCityIds : mapCities.map((city) => city.id);
+            if (candidateCityIds.length > 0) {
+                cityId = placementRng.choice(candidateCityIds);
+            }
+        }
         const birthYear = resolveBirthYear(row.birthYear, scenario.startYear);
         const deathYear = resolveDeathYear(row.deathYear, birthYear, scenario.startYear);
         const deathMonth = resolveScenarioGeneralDeathMonth({
@@ -620,6 +632,9 @@ export const buildScenarioBootstrap = (input: ScenarioBootstrapInput): ScenarioB
     }
 
     const mapDefaults = resolveMapDefaults(map, options);
+    const placementRng = new RandUtil(
+        new LiteHashDRBG(simpleSerialize(options?.hiddenSeed ?? scenario.title, 'InitScenarioGeneralCities'))
+    );
     const defaultCrewTypeId = unitSet?.defaultCrewTypeId ?? options?.defaultCrewTypeId ?? DEFAULT_CREWTYPE_ID;
     const seedCities: CitySeed[] = [];
     const domainCities: City[] = [];
@@ -733,6 +748,9 @@ export const buildScenarioBootstrap = (input: ScenarioBootstrapInput): ScenarioB
         nationNameToId,
         warnings,
         defaultCrewTypeId,
+        map.cities,
+        nationCityIds,
+        placementRng,
         options
     );
     allGeneralSeeds.push(...generalResult.seeds);
@@ -749,6 +767,9 @@ export const buildScenarioBootstrap = (input: ScenarioBootstrapInput): ScenarioB
         nationNameToId,
         warnings,
         defaultCrewTypeId,
+        map.cities,
+        nationCityIds,
+        placementRng,
         options
     );
     allGeneralSeeds.push(...generalExResult.seeds);
@@ -765,20 +786,21 @@ export const buildScenarioBootstrap = (input: ScenarioBootstrapInput): ScenarioB
         nationNameToId,
         warnings,
         defaultCrewTypeId,
+        map.cities,
+        nationCityIds,
+        placementRng,
         options
     );
     allGeneralSeeds.push(...generalNeutralResult.seeds);
     allGenerals.push(...generalNeutralResult.generals);
 
-    const delayedGeneralEvents = Array.from(delayedActionsByBirthYear.entries()).map(
-        ([birthYear, actions]) => [
-            'Month',
-            1_000,
-            ['Date', '>=', birthYear + ADULT_GENERAL_AGE, 1],
-            ...actions,
-            ['DeleteEvent'],
-        ]
-    );
+    const delayedGeneralEvents = Array.from(delayedActionsByBirthYear.entries()).map(([birthYear, actions]) => [
+        'Month',
+        1_000,
+        ['Date', '>=', birthYear + ADULT_GENERAL_AGE, 1],
+        ...actions,
+        ['DeleteEvent'],
+    ]);
     const events = [...scenario.events, ...delayedGeneralEvents];
 
     const seed: WorldSeedPayload = {
