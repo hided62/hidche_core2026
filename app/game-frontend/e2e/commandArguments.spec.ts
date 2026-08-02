@@ -211,6 +211,7 @@ const install = async (page: Page, rejectGeneral = false) => {
                 requests.push(body);
                 return response({
                     ok: true,
+                    revision: 1,
                     turns: [{ index: 0, action: 'che_포상', args: { isGold: false, amount: 300, destGeneralId: 2 } }],
                 });
             }
@@ -281,7 +282,7 @@ test('keeps the entered command visible and reports a server validation error', 
 });
 
 test('keeps the shared main and chief shell geometry and interaction states', async ({ page }) => {
-    await install(page);
+    const requests = await install(page);
     await page.setViewportSize({ width: 1000, height: 900 });
     await page.goto('/');
     await expect(page.getByRole('heading', { name: '전장 현황' })).toBeVisible();
@@ -329,10 +330,23 @@ test('keeps the shared main and chief shell geometry and interaction states', as
     await page.locator('.main-nation-menu').first().locator('[data-navigation-id="chief-center"]').click();
     await expect(page).toHaveURL(/\/che\/chief-center$/);
     await expect(page.getByRole('heading', { name: '사령부', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: '1턴 명령 입력', exact: true }).click();
+    await expect(page.getByTestId('chief-command-picker')).toBeVisible();
+    await page.getByTestId('chief-command-picker').getByRole('button', { name: /포상/ }).click();
+    const chiefArgumentForm = page.getByTestId('chief-command-picker').getByTestId('command-argument-form');
+    await chiefArgumentForm.getByRole('button', { name: '쌀' }).click();
+    await chiefArgumentForm.locator('input[type=number]').fill('300');
+    await chiefArgumentForm.locator('select').selectOption('2');
+    await page.getByTestId('chief-command-picker').getByRole('button', { name: '입력', exact: true }).click();
+    await expect(page.getByTestId('chief-command-editor').locator('.editor-turn-row strong').first()).toHaveText(
+        '포상'
+    );
+    expect(JSON.stringify(requests)).toContain('"action":"che_포상"');
+    expect(JSON.stringify(requests)).toContain('"destGeneralId":2');
     const chiefDesktop = await page.locator('.chief-page').evaluate((element) => ({
         width: element.getBoundingClientRect().width,
         padding: getComputedStyle(element).padding,
-        headerWidth: element.querySelector<HTMLElement>('.game-shell__header')!.getBoundingClientRect().width,
+        headerWidth: element.querySelector<HTMLElement>('.chief-top')!.getBoundingClientRect().width,
     }));
     expect(chiefDesktop).toEqual({ width: 1000, padding: '0px', headerWidth: 1000 });
 
@@ -340,7 +354,7 @@ test('keeps the shared main and chief shell geometry and interaction states', as
     const chiefMobile = await page.locator('.chief-page').evaluate((element) => ({
         width: element.getBoundingClientRect().width,
         padding: getComputedStyle(element).padding,
-        headerWidth: element.querySelector<HTMLElement>('.game-shell__header')!.getBoundingClientRect().width,
+        headerWidth: element.querySelector<HTMLElement>('.chief-top')!.getBoundingClientRect().width,
     }));
     expect(chiefMobile).toEqual({ width: 500, padding: '0px', headerWidth: 500 });
 });
