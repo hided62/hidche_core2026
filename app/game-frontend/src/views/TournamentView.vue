@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
+import TournamentBracket from '../components/tournament/TournamentBracket.vue';
 import { trpc } from '../utils/trpc';
 
 type Snapshot = Awaited<ReturnType<typeof trpc.tournament.getSnapshot.query>>;
@@ -60,27 +61,8 @@ const matchesAt = (stage: number) =>
         .filter((match) => match.stage === stage)
         .sort((a, b) => a.roundIndex - b.roundIndex);
 const nameOf = (id?: number) => (id ? (participantsById.value.get(id)?.name ?? `#${id}`) : '-');
-const roundNames = (stage: number, count: number) => {
-    const matches = matchesAt(stage);
-    const ids = matches.flatMap((match) => [match.attackerId, match.defenderId]);
-    return Array.from({ length: count }, (_, index) => nameOf(ids[index]));
-};
-const champion = computed(() => {
-    const winner = snapshot.value?.state?.winnerId ?? matchesAt(10)[0]?.winnerId;
-    return nameOf(winner);
-});
-const finalists = computed(() => roundNames(10, 2));
-const semiFinalists = computed(() => roundNames(9, 4));
-const quarterFinalists = computed(() => roundNames(8, 8));
-const top16 = computed(() => roundNames(7, 16));
 const totalBet = computed(() => betting.value?.totalAmount ?? 0);
-const odds = (id?: number) => {
-    if (!id) return '0';
-    const totals = betting.value?.totals as Record<number, number> | undefined;
-    const amount = totals?.[id] ?? 0;
-    if (!amount) return '∞';
-    return (totalBet.value / amount).toFixed(2);
-};
+const betTotals = computed(() => betting.value?.totals as Record<number, number> | undefined);
 const isParticipant = computed(() =>
     (snapshot.value?.participants ?? []).some((participant) => participant.id === myGeneralId.value)
 );
@@ -172,33 +154,14 @@ const start = async () => {
         </section>
         <section class="section-title bg2">16강 승자전</section>
 
-        <section class="bracket bg0" aria-label="토너먼트 대진표">
-            <div class="round champion">
-                <span>{{ champion }}</span>
-            </div>
-            <div class="connector">┻</div>
-            <div class="round final">
-                <span v-for="(name, index) in finalists" :key="index">{{ name }}</span>
-            </div>
-            <div class="connector">┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┻━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓</div>
-            <div class="round semi">
-                <span v-for="(name, index) in semiFinalists" :key="index">{{ name }}</span>
-            </div>
-            <div class="connector">┏━━━━━━━━━━┻━━━━━━━━━━┓&emsp;┏━━━━━━━━━━┻━━━━━━━━━━┓</div>
-            <div class="round quarter">
-                <span v-for="(name, index) in quarterFinalists" :key="index">{{ name }}</span>
-            </div>
-            <div class="connector">┏━━━━┻━━━━┓&emsp;┏━━━━┻━━━━┓&emsp;┏━━━━┻━━━━┓&emsp;┏━━━━┻━━━━┓</div>
-            <div class="round top16">
-                <span v-for="(name, index) in top16" :key="index">{{ name }}</span>
-            </div>
-            <div class="round odds">
-                <span v-for="(matchName, index) in top16" :key="index" :data-candidate="matchName">
-                    {{ odds(matchesAt(7).flatMap((match) => [match.attackerId, match.defenderId])[index]) }}
-                </span>
-            </div>
-            <p>배당률이 낮을수록 베팅된 금액이 많고 유저들이 우승후보로 많이 선택한 장수입니다.</p>
-        </section>
+        <TournamentBracket
+            class="bg0"
+            :participants="snapshot?.participants ?? []"
+            :matches="snapshot?.matches ?? []"
+            :winner-id="snapshot?.state?.winnerId"
+            :bet-totals="betTotals"
+            :total-bet="totalBet"
+        />
 
         <section v-if="currentMatch" class="fight bg0">
             <h2>{{ nameOf(currentMatch.attackerId) }} vs {{ nameOf(currentMatch.defenderId) }}</h2>
@@ -352,42 +315,6 @@ button:focus-visible {
     padding: 5px;
     color: magenta;
     font-size: 24px;
-}
-.bracket {
-    padding: 10px 0;
-}
-.round {
-    display: grid;
-    align-items: center;
-    min-height: 24px;
-}
-.champion {
-    grid-template-columns: 1fr;
-}
-.final {
-    grid-template-columns: repeat(2, 1fr);
-}
-.semi {
-    grid-template-columns: repeat(4, 1fr);
-}
-.quarter {
-    grid-template-columns: repeat(8, 1fr);
-}
-.top16,
-.odds {
-    grid-template-columns: repeat(16, 125px);
-}
-.connector {
-    min-height: 24px;
-    white-space: pre;
-    color: #fff;
-}
-.odds {
-    color: skyblue;
-}
-.bracket p {
-    color: skyblue;
-    font-size: 18px;
 }
 .fight {
     padding: 8px;
