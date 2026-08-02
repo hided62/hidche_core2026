@@ -103,6 +103,7 @@ describeDb('scenario database seed', () => {
         await connector.connect();
         try {
             const prisma = connector.prisma as unknown as ScenarioSeederPrismaClient;
+            const worldState = await prisma.worldState.findFirst();
             const [nationCount, cityCount, generalCount, diplomacyCount, eventCount] = await Promise.all([
                 prisma.nation.count(),
                 prisma.city.count(),
@@ -116,6 +117,7 @@ describeDb('scenario database seed', () => {
             expect(generalCount).toBe(seed.generals.length);
             expect(diplomacyCount).toBe(seed.nations.length * Math.max(0, seed.nations.length - 1));
             expect(eventCount).toBe(seed.events.length);
+            expect(worldState?.config).toMatchObject({ tournamentTrig: true });
             expect(generalCount).toBeGreaterThan(0);
             const seededGeneral = await prisma.general.findFirst();
             expect(seededGeneral?.startAge).toBe(seededGeneral?.age);
@@ -201,7 +203,7 @@ describeDb('scenario database seed', () => {
                 blockGeneralCreate: 2,
                 npcMode: 0,
                 showImgLevel: 3,
-                tournamentTrig: true,
+                tournamentTrig: false,
                 joinMode: 'full',
                 autorunUser: {
                     limitMinutes: 60,
@@ -234,6 +236,7 @@ describeDb('scenario database seed', () => {
             const config = (worldState.config ?? {}) as Record<string, unknown>;
             expect(config.extendedGeneral).toBe(false);
             expect(config.joinMode).toBe('full');
+            expect(config.tournamentTrig).toBe(false);
 
             const meta = (worldState.meta ?? {}) as Record<string, unknown>;
             const autorun = (meta.autorun_user ?? {}) as Record<string, unknown>;

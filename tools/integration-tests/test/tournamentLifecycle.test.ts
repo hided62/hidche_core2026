@@ -8,7 +8,7 @@ import { createTRPCProxyClient, httpBatchLink } from '@trpc/client';
 import { sealGatewayPassword } from '../src/passwordEnvelope.js';
 
 import type { AppRouter as GatewayAppRouter } from '@sammo-ts/gateway-api';
-import { createGatewayApiServer } from '@sammo-ts/gateway-api';
+import { clearTournamentRuntimeKeys, createGatewayApiServer } from '@sammo-ts/gateway-api';
 import type { AppRouter as GameAppRouter } from '@sammo-ts/game-api';
 import {
     buildTournamentKeys,
@@ -17,7 +17,7 @@ import {
     processTournamentTick,
     TournamentStore,
 } from '@sammo-ts/game-api';
-import { createTurnDaemonRuntime } from '@sammo-ts/game-engine';
+import { createTurnDaemonRuntime, seedScenarioToDatabase } from '@sammo-ts/game-engine';
 import {
     createGamePostgresConnector,
     createGatewayPostgresConnector,
@@ -92,7 +92,8 @@ const truncateSchema = async (schema: string): Promise<void> => {
     await connector.connect();
     try {
         const rows = (await connector.prisma.$queryRawUnsafe(
-            `SELECT tablename FROM pg_tables WHERE schemaname = '${schema}'`
+            `SELECT tablename FROM pg_tables
+             WHERE schemaname = '${schema}' AND tablename <> '_prisma_migrations'`
         )) as Array<{ tablename: string }>;
         if (rows.length === 0) {
             return;
@@ -168,6 +169,7 @@ describe('actual tournament lifecycle', () => {
 
         gatewayServer = await createGatewayApiServer();
         await gatewayServer.app.listen({ host: gatewayServer.config.host, port: gatewayServer.config.port });
+        process.env.GATEWAY_INTERNAL_API_URL = `http://127.0.0.1:${gatewayServer.config.port}`;
         gameServer = await createGameApiServer();
         await gameServer.app.listen({ host: gameServer.config.host, port: gameServer.config.port });
 
@@ -210,10 +212,23 @@ describe('actual tournament lifecycle', () => {
                 localAccountGeneralCreationGraceDays: 7,
             },
         });
-        await gatewayClient.admin.profiles.installNow.mutate({
-            profileName: 'che:908',
-            install: {
-                scenarioId: 908,
+        const staleTournamentRedis = createRedisConnector(resolveRedisConfigFromEnv());
+        await staleTournamentRedis.connect();
+        const staleTournamentKeys = buildTournamentKeys('che:908');
+        try {
+            await staleTournamentRedis.client.mSet({
+                [staleTournamentKeys.stateKey]: JSON.stringify({ stage: 6, auto: true }),
+                [staleTournamentKeys.participantsKey]: '[{"id":99999}]',
+                [staleTournamentKeys.matchesKey]: '[{"id":99999}]',
+                [staleTournamentKeys.bettingKey]: '[{"generalId":99999}]',
+            });
+        } finally {
+            await staleTournamentRedis.disconnect();
+        }
+        await seedScenarioToDatabase({
+            scenarioId: 908,
+            databaseUrl: resolvePostgresConfigFromEnv({ schema: 'che' }).url,
+            installOptions: {
                 turnTermMinutes: 1,
                 sync: false,
                 fiction: 0,
@@ -226,6 +241,41 @@ describe('actual tournament lifecycle', () => {
                 autorunUser: null,
             },
         });
+
+        const resetTournamentRedis = createRedisConnector(resolveRedisConfigFromEnv());
+        await resetTournamentRedis.connect();
+        try {
+            await clearTournamentRuntimeKeys(resetTournamentRedis.client, 'che:908');
+            expect(
+                await resetTournamentRedis.client.mGet([
+                    staleTournamentKeys.stateKey,
+                    staleTournamentKeys.participantsKey,
+                    staleTournamentKeys.matchesKey,
+                    staleTournamentKeys.bettingKey,
+                ])
+            ).toEqual([null, null, null, null]);
+        } finally {
+            await resetTournamentRedis.disconnect();
+        }
+
+        const gameDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'che' }).url;
+        const gatewayDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'public' }).url;
+        gameConnector = createGamePostgresConnector({ url: gameDatabaseUrl });
+        await gameConnector.connect();
+        redisConnector = createRedisConnector(resolveRedisConfigFromEnv());
+        await redisConnector.connect();
+        store = new TournamentStore(redisConnector.client, buildTournamentKeys('che:908'));
+        transport = new DatabaseTurnDaemonTransport(gameConnector.prisma, 30_000);
+        turnDaemon = await createTurnDaemonRuntime({
+            profile: 'che',
+            profileName: 'che:908',
+            databaseUrl: gameDatabaseUrl,
+            gatewayDatabaseUrl,
+            redisUrl: resolveRedisConfigFromEnv().url,
+        });
+        turnDaemonLoop = turnDaemon.lifecycle.start();
+        const status = await transport.requestStatus(10_000);
+        expect(status).not.toBeNull();
 
         for (const [username, displayName] of users) {
             const login = await gatewayClient.auth.login.mutate({
@@ -255,10 +305,6 @@ describe('actual tournament lifecycle', () => {
             }
         }
 
-        const gameDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'che' }).url;
-        const gatewayDatabaseUrl = resolvePostgresConfigFromEnv({ schema: 'public' }).url;
-        gameConnector = createGamePostgresConnector({ url: gameDatabaseUrl });
-        await gameConnector.connect();
         await gameConnector.prisma.general.updateMany({
             where: { id: { in: [...generalIds.values()] } },
             data: { gold: 10_000 },
@@ -296,19 +342,6 @@ describe('actual tournament lifecycle', () => {
             })),
         });
 
-        redisConnector = createRedisConnector(resolveRedisConfigFromEnv());
-        await redisConnector.connect();
-        store = new TournamentStore(redisConnector.client, buildTournamentKeys('che:908'));
-        transport = new DatabaseTurnDaemonTransport(gameConnector.prisma, 30_000);
-
-        turnDaemon = await createTurnDaemonRuntime({
-            profile: 'che',
-            profileName: 'che:908',
-            databaseUrl: gameDatabaseUrl,
-            gatewayDatabaseUrl,
-            redisUrl: resolveRedisConfigFromEnv().url,
-        });
-
         for (let attempt = 0; attempt < 36; attempt += 1) {
             const current = turnDaemon.world.getState().lastTurnTime;
             const next = new Date(current.getTime());
@@ -319,10 +352,6 @@ describe('actual tournament lifecycle', () => {
             }
         }
         expect(await store.getState()).toMatchObject({ stage: 1, auto: true });
-
-        turnDaemonLoop = turnDaemon.lifecycle.start();
-        const status = await transport.requestStatus(10_000);
-        expect(status).not.toBeNull();
     }, 120_000);
 
     afterAll(async () => {
