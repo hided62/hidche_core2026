@@ -37,6 +37,46 @@ LEGACY_GAME_DATABASE_URL=... pnpm --filter @sammo-ts/legacy-db-migration migrate
 After reviewing the JSON counts and excluded-table reasons, add
 `GATEWAY_DATABASE_URL` or `GAME_DATABASE_URL` and repeat with `--apply`.
 
+### Isolated current-season comparison fixture
+
+`current-season-fixture` is separate from the long-lived archive migration. It
+replaces the running-season tables of an isolated Core test schema with a Ref
+MariaDB season so both implementations can be compared from the same persisted
+world. Never run it against a production or shared development schema.
+
+Start from a cloned Core database whose scenario, year and month already match
+the Ref source. Dry-run verifies that contract and reports the planned counts:
+
+```sh
+LEGACY_GAME_DATABASE_URL=... GAME_DATABASE_URL=... \
+  pnpm --filter @sammo-ts/legacy-db-migration migrate current-season-fixture \
+  --profile hwe --expected-scenario 2601 --expected-year 186 --expected-month 1
+```
+
+Applying requires both destructive flags so an ordinary archive command cannot
+replace a running season accidentally:
+
+```sh
+LEGACY_GAME_DATABASE_URL=... GAME_DATABASE_URL=... \
+  pnpm --filter @sammo-ts/legacy-db-migration migrate current-season-fixture \
+  --profile hwe --expected-scenario 2601 --expected-year 186 --expected-month 1 \
+  --replace-current-season --apply
+```
+
+The importer preserves the Core template's static city geometry and connection
+metadata, then imports Ref cities, nations, generals, queues, diplomacy, troops,
+ranks, messages, logs, events, markets, yearbook rows, current storage values and
+world clock in one PostgreSQL transaction. Ref message target keys are converted
+to the typed Core message payload. `CURRENT_SEASON_CAPTURE_USER_ID` may bind one
+Ref owner selected by `CURRENT_SEASON_CAPTURE_SOURCE_OWNER` to an existing Core
+test account; other positive owners receive deterministic legacy UUIDs.
+
+Process locks, selection tokens, Redis-owned tournament brackets, legacy annual
+aggregate text and diplomatic-letter workflow are deliberately excluded and are
+listed in the JSON result. This fixture is evidence for persisted-state and GUI
+comparison, not proof that the two engines consume RNG identically after the
+next turn.
+
 Kakao members retain their OAuth ID, email, and OAuth metadata.
 `kakao_verified_at` and `kakao_grace_started_at` are set to the migration time.
 Legacy password hashes and salts are retained and upgraded to Argon2id after
