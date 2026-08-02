@@ -5,6 +5,7 @@ import type { TurnSchedule } from '@sammo-ts/logic';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 import { createTurnDaemonCommandHandler } from '../src/turn/worldCommandHandler.js';
+import { buildPersistedRankRows } from '../src/turn/rankData.js';
 
 const schedule: TurnSchedule = { entries: [{ startMinute: 0, tickMinutes: 10 }] };
 
@@ -114,6 +115,46 @@ describe('tournament world commands', () => {
             meta: { betwin: 3, betwingold: 600 },
         });
         expect(world.getGeneralById(1)?.meta).not.toHaveProperty('rank_betwin');
+    });
+
+    it('records all four tournament types and NPC betting for at least ten generals', async () => {
+        const generals = Array.from({ length: 12 }, (_, index) => buildGeneral(index + 1));
+        const world = buildWorld(generals);
+        const handler = createTurnDaemonCommandHandler({ world });
+
+        for (const tournamentType of [0, 1, 2, 3] as const) {
+            for (const general of generals) {
+                const result = await handler.handle({
+                    type: 'tournamentMatchResult',
+                    tournamentType,
+                    attackerId: general.id,
+                    defenderId: (general.id % generals.length) + 1,
+                    result: 'attacker',
+                });
+                expect(result).toMatchObject({ ok: true });
+            }
+        }
+        await handler.handle({
+            type: 'adjustGeneralMeta',
+            reason: 'tournamentNpcBet',
+            adjustments: generals.map((general) => ({
+                generalId: general.id,
+                metaDelta: { betgold: 1_000 },
+            })),
+        });
+        await handler.handle({
+            type: 'tournamentBettingPayout',
+            bettingId: 1,
+            payouts: generals.map((general) => ({ generalId: general.id, amount: 2_000 })),
+        });
+
+        for (const type of ['ttw', 'tlw', 'tsw', 'tiw', 'betgold', 'betwin', 'betwingold'] as const) {
+            const positiveRows = world
+                .listGenerals()
+                .flatMap(buildPersistedRankRows)
+                .filter((row) => row.type === type && row.value > 0);
+            expect(positiveRows, type).toHaveLength(12);
+        }
     });
 
     it('enforces a command-specific minimum remaining gold atomically', async () => {

@@ -176,13 +176,14 @@ const runTournamentToCompletion = async (options: {
     store: TournamentStore;
     prisma: ReturnType<typeof createPrismaMock>;
     baseSeed: string;
+    daemonTransport?: TurnDaemonTransport;
 }): Promise<TournamentState> => {
     let state = await options.store.getState();
     if (!state) {
         throw new Error('토너먼트 상태가 없습니다.');
     }
 
-    const daemonTransport = createNoopDaemonTransport();
+    const daemonTransport = options.daemonTransport ?? createNoopDaemonTransport();
 
     for (let i = 0; i < 2000; i += 1) {
         if (state.stage === 0) {
@@ -198,7 +199,7 @@ const runTournamentToCompletion = async (options: {
             continue;
         }
         if (state.stage >= 7 && state.stage <= 10) {
-            state = await applyBattle(options.store, state, options.baseSeed);
+            state = await applyBattle(options.store, state, options.baseSeed, daemonTransport);
             continue;
         }
         break;
@@ -268,6 +269,61 @@ describe('tournament worker (in-memory)', () => {
             winnerId: 15,
             lastEnergy: { attacker: -90, defender: -92 },
         });
+    });
+
+    it('runs all four tournament types and emits enough rank and NPC-betting commands for a top ten', async () => {
+        for (const type of [
+            TournamentType.TOTAL,
+            TournamentType.LEADERSHIP,
+            TournamentType.STRENGTH,
+            TournamentType.INTEL,
+        ]) {
+            const redis = new MemoryRedis();
+            const store = new TournamentStore(redis, buildTournamentKeys(`ranking-audit-${type}`));
+            const participants = createParticipants(16, 16, 32);
+            await store.setParticipants(participants);
+            await store.setState(createTournamentState({ stage: 1, type }));
+            const npcBetting = participants.slice(0, 12).map((entry) => ({
+                ...entry,
+                meta: {},
+                npcState: 2,
+                gold: 10_000,
+            }));
+            const commands: TurnDaemonCommand[] = [];
+            const transport: TurnDaemonTransport = {
+                sendCommand: async (command) => {
+                    commands.push(command);
+                    return 'ok';
+                },
+                requestCommand: async () => null,
+                requestStatus: async () => null,
+            };
+
+            await runTournamentToCompletion({
+                store,
+                prisma: createPrismaMock({ baseSeed: `ranking-audit-${type}`, npcBetting, currentYear: 10 }),
+                baseSeed: `ranking-audit-${type}`,
+                daemonTransport: transport,
+            });
+
+            const matchCommands = commands.filter((command) => command.type === 'tournamentMatchResult');
+            const rankedGeneralIds = new Set(
+                matchCommands.flatMap((command) =>
+                    command.type === 'tournamentMatchResult' ? [command.attackerId, command.defenderId] : []
+                )
+            );
+            expect(matchCommands.length).toBeGreaterThan(50);
+            expect(rankedGeneralIds.size).toBeGreaterThanOrEqual(10);
+            expect(commands).toContainEqual(
+                expect.objectContaining({
+                    type: 'adjustGeneralMeta',
+                    reason: 'tournamentNpcBet',
+                    adjustments: expect.arrayContaining([
+                        expect.objectContaining({ metaDelta: { betgold: expect.any(Number) } }),
+                    ]),
+                })
+            );
+        }
     });
 
     it('우승 결과에 따라 베팅 정산 명령이 생성된다', async () => {
