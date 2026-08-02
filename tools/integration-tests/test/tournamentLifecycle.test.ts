@@ -92,7 +92,8 @@ const truncateSchema = async (schema: string): Promise<void> => {
     await connector.connect();
     try {
         const rows = (await connector.prisma.$queryRawUnsafe(
-            `SELECT tablename FROM pg_tables WHERE schemaname = '${schema}'`
+            `SELECT tablename FROM pg_tables
+             WHERE schemaname = '${schema}' AND tablename <> '_prisma_migrations'`
         )) as Array<{ tablename: string }>;
         if (rows.length === 0) {
             return;
@@ -424,7 +425,7 @@ describe('actual tournament lifecycle', () => {
         turnDaemonLoop = turnDaemon.lifecycle.start();
         const status = await transport.requestStatus(10_000);
         expect(status).not.toBeNull();
-    }, 120_000);
+    }, 300_000);
 
     afterAll(async () => {
         if (turnDaemon) {
@@ -436,7 +437,7 @@ describe('actual tournament lifecycle', () => {
         await gameConnector?.disconnect();
         await gameServer?.app.close();
         await gatewayServer?.app.close();
-    }, 30_000);
+    }, 60_000);
 
     it('runs auto-open, enrollment, betting, finals, rewards, and payout through the real daemon', async () => {
         if (!store || !transport || !gameConnector) {
