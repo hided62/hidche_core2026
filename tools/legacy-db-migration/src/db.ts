@@ -26,12 +26,20 @@ const quoteIdentifier = (value: string): string => {
 
 export const createMariaPool = (uri: string): MariaPool => mariadb.createPool(uri);
 
-export const createPostgresPool = (connectionString: string): pg.Pool =>
-    new pg.Pool({
-        connectionString,
+export const createPostgresPool = (connectionString: string): pg.Pool => {
+    const url = new URL(connectionString);
+    const schema = url.searchParams.get('schema');
+    if (schema && !IDENTIFIER.test(schema)) {
+        throw new Error(`Unsafe PostgreSQL schema: ${schema}`);
+    }
+    url.searchParams.delete('schema');
+    return new pg.Pool({
+        connectionString: url.toString(),
         max: 2,
         application_name: 'sammo-legacy-db-migration',
+        ...(schema ? { options: `-c search_path=${schema}` } : {}),
     });
+};
 
 const isSourceRow = (value: unknown): value is SourceRow =>
     value !== null && !Array.isArray(value) && typeof value === 'object';
