@@ -69,6 +69,8 @@ export const createProcessWarIncomeHandler = (options: {
         for (const city of cities) {
             const dead = asNumber(city.meta.dead, 0);
             world.updateCity(city.id, {
+                // MariaDB rounds the SQL expression when assigning it to
+                // Ref's integer pop column (including an exact .5 result).
                 population: Math.round(city.population + dead * 0.2),
                 meta: {
                     ...city.meta,

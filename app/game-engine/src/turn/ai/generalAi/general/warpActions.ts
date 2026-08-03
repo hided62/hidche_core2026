@@ -1,5 +1,5 @@
 import type { GeneralAI } from '../core.js';
-import { asRecord, readRequiredMetaNumber } from '../../aiUtils.js';
+import { asRecord, readMetaNumber, readRequiredMetaNumber } from '../../aiUtils.js';
 import { t통솔장 } from './helpers.js';
 
 export const do후방워프 = (ai: GeneralAI) => {
@@ -20,11 +20,13 @@ export const do후방워프 = (ai: GeneralAI) => {
         return null;
     }
 
-    let minRecruitPop = ai.general.stats.leadership * 100 + ai.aiConst.minAvailableRecruitPop;
+    // Ref uses getLeadership(false): item/officer bonuses included, injury ignored.
+    const fullLeadership = readMetaNumber(asRecord(ai.general.meta), 'fullLeadership', ai.general.stats.leadership);
+    let minRecruitPop = fullLeadership * 100 + ai.aiConst.minAvailableRecruitPop;
     if (!ai.generalPolicy.can('한계징병')) {
         minRecruitPop = Math.max(
             minRecruitPop,
-            ai.general.stats.leadership * 100 + ai.nationPolicy.minNpcRecruitCityPopulation
+            fullLeadership * 100 + ai.nationPolicy.minNpcRecruitCityPopulation
         );
     }
 
@@ -80,6 +82,12 @@ export const do후방워프 = (ai: GeneralAI) => {
     }
     if (Object.keys(recruitable).length === 0) {
         return null;
+    }
+
+    if ((process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []).includes(String(ai.general.id))) {
+        process.stdout.write(
+            `AI_WARP_TRACE ${JSON.stringify({ generalId: ai.general.id, kind: 'rear', fullLeadership, minRecruitPop, recruitable })}\n`
+        );
     }
 
     return ai.buildGeneralCandidate(
@@ -158,7 +166,6 @@ export const do내정워프 = (ai: GeneralAI) => {
     }
 
     ai.categorizeNationCities();
-    ai.categorizeNationGeneral();
     const candidateCities: Record<number, number> = {};
     for (const candidate of Object.values(ai.supplyCities)) {
         if (candidate.id === city.id) {

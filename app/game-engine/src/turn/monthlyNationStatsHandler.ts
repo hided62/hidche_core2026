@@ -7,6 +7,11 @@ import type { InMemoryTurnWorld, TurnCalendarHandler } from './inMemoryWorld.js'
 const MAX_AVAILABLE_WAR_SETTING_COUNT = 10;
 const MONTHLY_AVAILABLE_WAR_SETTING_INCREMENT = 2;
 
+export const roundLegacyNationPowerValue = (value: number): number => {
+    const stabilized = Number(value.toPrecision(15));
+    return stabilized >= 0 ? Math.floor(stabilized + 0.5) : Math.ceil(stabilized - 0.5);
+};
+
 const readNumber = (value: unknown, fallback = 0): number => {
     if (typeof value === 'number' && Number.isFinite(value)) {
         return value;
@@ -32,15 +37,16 @@ const calculateNationPower = (
 ): {
     power: number;
     totalCrew: number;
+    trace: Record<string, number>;
 } => {
     const nation = world.getNationById(nationId);
     if (!nation) {
-        return { power: 0, totalCrew: 0 };
+        return { power: 0, totalCrew: 0, trace: {} };
     }
     const generals = world.listGenerals().filter((general) => general.nationId === nationId);
     const suppliedCities = world.listCities().filter((city) => city.nationId === nationId && city.supplyState === 1);
     const generalResources = generals.reduce((sum, general) => sum + general.gold + general.rice, 0);
-    const resourcePower = Math.round((nation.gold + nation.rice + generalResources) / 100);
+    const resourcePower = roundLegacyNationPowerValue((nation.gold + nation.rice + generalResources) / 100);
     const techPower = readNumber(asRecord(nation.meta).tech);
 
     let cityPower = 0;
@@ -62,7 +68,7 @@ const calculateNationPower = (
                 city.defenceMax,
             0
         );
-        cityPower = maximum > 0 ? Math.round((population * current) / maximum / 100) : 0;
+        cityPower = maximum > 0 ? roundLegacyNationPowerValue((population * current) / maximum / 100) : 0;
     }
 
     let generalPower = 0;
@@ -90,16 +96,29 @@ const calculateNationPower = (
         totalCrew += general.crew;
     }
 
-    const power = Math.round(
+    const power = roundLegacyNationPowerValue(
         (resourcePower +
             techPower +
             cityPower +
             generalPower +
-            Math.round(dexterityPower / 1000) +
-            Math.round(experiencePower / 100)) /
+            roundLegacyNationPowerValue(dexterityPower / 1000) +
+            roundLegacyNationPowerValue(experiencePower / 100)) /
             10
     );
-    return { power, totalCrew };
+    return {
+        power,
+        totalCrew,
+        trace: {
+            resourcePower,
+            techPower,
+            cityPower,
+            generalPower,
+            dexterityPowerRaw: dexterityPower / 1000,
+            dexterityPower: roundLegacyNationPowerValue(dexterityPower / 1000),
+            experiencePowerRaw: experiencePower / 100,
+            experiencePower: roundLegacyNationPowerValue(experiencePower / 100),
+        },
+    };
 };
 
 const updateNationPower = (world: InMemoryTurnWorld, rng: RandUtil): number => {
@@ -110,10 +129,25 @@ const updateNationPower = (world: InMemoryTurnWorld, rng: RandUtil): number => {
         citiesByNation.set(city.nationId, names);
     }
 
-    const nations = world.listNations().sort((left, right) => left.id - right.id);
+    // Core keeps an internal nation 0 record, while Ref's nation table/query
+    // starts at 1. It must not consume a monthly RNG draw or receive power.
+    const nations = world
+        .listNations()
+        .filter((nation) => nation.id > 0)
+        .sort((left, right) => left.id - right.id);
     for (const nation of nations) {
         const calculated = calculateNationPower(world, nation.id);
-        const power = Math.round(calculated.power * rng.nextRange(0.95, 1.05));
+        const multiplier = rng.nextRange(0.95, 1.05);
+        const power = roundLegacyNationPowerValue(calculated.power * multiplier);
+        const traceIds = (process.env.SEED_PARITY_TRACE_NATION_POWER_IDS ?? '')
+            .split(',')
+            .map((value) => Number(value.trim()))
+            .filter(Number.isFinite);
+        if (traceIds.includes(nation.id)) {
+            process.stdout.write(
+                `NATION_POWER_TRACE ${JSON.stringify({ nationId: nation.id, ...calculated.trace, basePower: calculated.power, multiplier, power })}\n`
+            );
+        }
         const meta = asRecord(nation.meta);
         const previousMax = asRecord(meta.max_power);
         const previousCities = Array.isArray(previousMax.maxCities)

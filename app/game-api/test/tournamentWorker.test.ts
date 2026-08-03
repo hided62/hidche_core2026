@@ -12,7 +12,7 @@ import type {
     TournamentState,
 } from '../src/tournament/types.js';
 import { applyBattle, applyPreBattleStage, settleTournamentOutcome } from '../src/tournament/worker.js';
-import { buildBettingPayouts } from '../src/tournament/workerHelpers.js';
+import { buildBettingPayouts, resolveBettingCloseAt, resolveNextAt } from '../src/tournament/workerHelpers.js';
 import type { TurnDaemonTransport } from '../src/daemon/transport.js';
 
 class MemoryRedis {
@@ -209,6 +209,18 @@ const runTournamentToCompletion = async (options: {
 };
 
 const delayTick = async (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+describe('tournament worker schedule compatibility', () => {
+    it('catches up from the stored schedule instead of discarding elapsed legacy phases', () => {
+        const state = createTournamentState({
+            termSeconds: 600,
+            nextAt: '2026-08-02T10:00:00.000Z',
+        });
+
+        expect(resolveNextAt(state)).toBe('2026-08-02T10:10:00.000Z');
+        expect(resolveBettingCloseAt(state)).toBe('2026-08-02T11:00:00.000Z');
+    });
+});
 
 describe('tournament worker (in-memory)', () => {
     it('당첨자가 없으면 레거시와 같이 베팅금을 지급하거나 환불하지 않는다', () => {

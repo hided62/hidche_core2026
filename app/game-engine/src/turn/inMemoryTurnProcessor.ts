@@ -57,7 +57,18 @@ export class InMemoryTurnProcessor implements TurnProcessor {
         let generalPartial = false;
         let nextCheckpoint: TurnCheckpoint | undefined = undefined;
 
-        const dueGenerals = this.world.listDueGenerals(targetTime, checkpoint);
+        const previousLastTurnTime = this.world.getState().lastTurnTime;
+        const firstTickTime = getNextTickTime(previousLastTurnTime, this.tickMinutes);
+        // Ref processes `turntime < monthlyBoundary` before the monthly turn. A
+        // general exactly on the boundary therefore runs only after that month
+        // has advanced, on the daemon's following pass.
+        const useStrictGeneralCutoff =
+            firstTickTime.getTime() === targetTime.getTime() || targetTime.getTime() <= previousLastTurnTime.getTime();
+        const generalCutoff =
+            useStrictGeneralCutoff
+                ? new Date(targetTime.getTime() - 1)
+                : targetTime;
+        const dueGenerals = this.world.listDueGenerals(generalCutoff, checkpoint);
         for (const general of dueGenerals) {
             if (processedGenerals >= budget.maxGenerals || isBudgetExpired()) {
                 partial = true;

@@ -249,6 +249,12 @@ export const createUpdateNationLevelHandler = (options: {
         const hiddenSeed = resolveHiddenSeed(world);
 
         for (const nation of world.listNations().sort((left, right) => left.id - right.id)) {
+            // Legacy persists only founded nations in `nation`; Core also keeps
+            // an id=0 sentinel so neutral cities can retain a Nation reference.
+            // The sentinel must never participate in title promotion.
+            if (nation.id <= 0) {
+                continue;
+            }
             const cityCount = cityCounts.get(nation.id) ?? 0;
             let newLevel = 0;
             for (let level = 0; level < NATION_LEVEL_CITY_COUNTS.length; level += 1) {

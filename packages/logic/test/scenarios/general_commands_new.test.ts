@@ -3,7 +3,10 @@ import { MINIMAL_MAP } from '../fixtures/minimalMap.js';
 import { InMemoryWorld, TestGameRunner } from '../testEnv.js';
 import type { City, General, Nation } from '../../src/domain/entities.js';
 import type { WorldSnapshot } from '../../src/world/types.js';
-import { commandSpec as procureSpec } from '../../src/actions/turn/general/che_물자조달.js';
+import {
+    commandSpec as procureSpec,
+    roundLegacyAccumulatedInteger,
+} from '../../src/actions/turn/general/che_물자조달.js';
 import { commandSpec as donateSpec } from '../../src/actions/turn/general/che_헌납.js';
 import { commandSpec as moveSpec } from '../../src/actions/turn/general/che_이동.js';
 import { commandSpec as wanderSpec } from '../../src/actions/turn/general/che_방랑.js';
@@ -24,8 +27,65 @@ import {
     loadItemModules,
 } from '../../src/items/index.js';
 import { createRefOrderedActionStack } from '../../src/actionModules/bundle.js';
+import type { GeneralActionModule } from '../../src/actionModules/general.js';
+import {
+    normalizeLegacyGeneratedDex,
+    resolveLegacySpecialityAge,
+} from '../../src/actions/turn/general/che_인재탐색.js';
+import {
+    addLegacyStoredTech,
+    readLegacyStoredTech,
+    toLegacyStoredTech,
+} from '../../src/actions/turn/general/che_기술연구.js';
+import {
+    readLegacyCityTrust,
+    storeLegacyCityTrust,
+} from '../../src/actions/turn/general/legacyCityTrust.js';
+import { roundLegacyRecruitCost } from '../../src/actions/turn/general/che_징병.js';
 
 describe('General Commands New Scenario', () => {
+    it('truncates generated NPC dex like GeneralBuilder integer arguments', () => {
+        expect(normalizeLegacyGeneratedDex([36.5, 7.9, 7.1, 7.99, 0.75])).toEqual([36, 7, 7, 7, 0]);
+    });
+
+    it('rounds the accumulated procurement experience like a MariaDB INT assignment', () => {
+        const delta = (45 * 0.7) / 3;
+        expect(delta).toBe(10.499999999999998);
+        expect(Math.round(delta)).toBe(10);
+        expect(roundLegacyAccumulatedInteger(4554, delta)).toBe(4565);
+    });
+
+    it('persists generated NPC speciality ages from the legacy creation date', () => {
+        expect(resolveLegacySpecialityAge(80, 22, 12)).toBe(27);
+        expect(resolveLegacySpecialityAge(80, 22, 6)).toBe(32);
+        expect(resolveLegacySpecialityAge(80, 24, 12)).toBe(29);
+    });
+
+    it('stores technology as binary32 without per-update decimal quantization', () => {
+        const value = 433.51797;
+        expect(toLegacyStoredTech(value)).toBe(Math.fround(value));
+        expect(toLegacyStoredTech(value)).not.toBe(Number(Math.fround(value).toPrecision(6)));
+        expect(readLegacyStoredTech(624.0966796875)).toBe(624.097);
+        expect(addLegacyStoredTech(624.0966796875, 22.9)).toBe(Math.fround(624.097 + 22.9));
+    });
+
+    it('separates MariaDB FLOAT trust storage from its six-digit PHP read value', () => {
+        const stored = storeLegacyCityTrust(88.306755);
+
+        expect(stored).toBe(Math.fround(88.306755));
+        expect(stored).not.toBe(readLegacyCityTrust(stored));
+        expect(readLegacyCityTrust(stored)).toBe(88.3068);
+        expect(readLegacyCityTrust(storeLegacyCityTrust(readLegacyCityTrust(stored) + 10))).toBe(98.3068);
+    });
+
+    it('rounds recruitment cost across the PHP half boundary', () => {
+        const cavalryCost = (11 * 1.15 * 7000) / 100;
+
+        expect(cavalryCost).toBe(885.4999999999999);
+        expect(Math.round(cavalryCost)).toBe(885);
+        expect(roundLegacyRecruitCost(cavalryCost)).toBe(886);
+    });
+
     // 1. Setup Environment
     const systemEnv: TurnCommandEnv = {
         develCost: 100,
@@ -168,7 +228,26 @@ describe('General Commands New Scenario', () => {
         const runner = new TestGameRunner(world, 200, 1);
 
         // 1. Procure
-        const procureDef = procureSpec.createDefinition(systemEnv);
+        const procureDef = procureSpec.createDefinition({
+            ...systemEnv,
+            generalActionModules: (() => {
+                const noOp = {};
+                return createRefOrderedActionStack({
+                    nation: noOp,
+                    officer: noOp,
+                    domestic: noOp,
+                    war: noOp,
+                    personality: {
+                        eventHandlers: {},
+                        onCalcStat: (_context, statName, value) => (statName === 'experience' ? value * 1.1 : value),
+                    } satisfies GeneralActionModule,
+                    crewType: null,
+                    inheritance: noOp,
+                    scenario: null,
+                    items: [],
+                });
+            })(),
+        });
         await runner.runTurn([
             {
                 generalId: 1,
@@ -191,8 +270,12 @@ describe('General Commands New Scenario', () => {
         ]);
 
         const n1_after_procure = world.getNation(1)!;
+        const g1_after_procure = world.getGeneral(1)!;
         // Nation gains gold
         expect(n1_after_procure.gold).toBeGreaterThan(10000);
+        // Ref's addExperience/addDedication route rewards through onCalcStat.
+        expect(g1_after_procure.experience).toBe(183);
+        expect(g1_after_procure.dedication).toBe(208);
 
         // 2. Donate
         const donateDef = donateSpec.createDefinition(systemEnv);

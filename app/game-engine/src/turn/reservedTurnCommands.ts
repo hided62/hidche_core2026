@@ -129,7 +129,7 @@ export const buildCommandEnv = (config: ScenarioConfig, unitSet?: UnitSetDefinit
         ]),
         initialNationGenLimit: resolveNumber(constValues, ['initialNationGenLimit'], DEFAULT_INITIAL_NATION_GEN_LIMIT),
         maxTechLevel: resolveNumber(constValues, ['maxTechLevel'], DEFAULT_MAX_TECH_LEVEL),
-        maxStatLevel: resolveNumber(constValues, ['maxLevel'], 255),
+        maxStatLevel: resolveNumber(constValues, ['maxLevel'], config.stat.max),
         maxDedicationLevel: resolveNumber(constValues, ['maxDedLevel'], 30),
         statUpgradeLimit: resolveNumber(constValues, ['upgradeLimit'], 30),
         techLevelIncYear: resolveNumber(constValues, ['techLevelIncYear'], 5),

@@ -23,19 +23,16 @@ import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js'
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { resolveInitYearMonth } from '@sammo-ts/logic/actions/turn/actionContextHelpers.js';
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
+import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import { parseArgsWithSchema } from '../parseArgs.js';
 import { JosaUtil } from '@sammo-ts/common';
-import {
-    FOUNDING_ARGS_SCHEMA,
-    getNationTypeDisplayName,
-    NATION_COLORS,
-    type FoundingArgs,
-} from './foundingShared.js';
+import { FOUNDING_ARGS_SCHEMA, getNationTypeDisplayName, NATION_COLORS, type FoundingArgs } from './foundingShared.js';
 
 const ACTION_NAME = '건국';
-interface FoundingResolveContext<TriggerState extends GeneralTriggerState = GeneralTriggerState>
-    extends GeneralActionResolveContext<TriggerState> {
+interface FoundingResolveContext<
+    TriggerState extends GeneralTriggerState = GeneralTriggerState,
+> extends GeneralActionResolveContext<TriggerState> {
     currentYearMonth?: number;
     initYearMonth?: number;
 }
@@ -45,6 +42,12 @@ export class ActionDefinition<
 > implements GeneralActionDefinition<TriggerState, FoundingArgs> {
     public readonly key = 'che_건국';
     public readonly name = ACTION_NAME;
+    private readonly pipeline: GeneralActionPipeline<TriggerState>;
+
+    constructor(env: TurnCommandEnv) {
+        this.pipeline = new GeneralActionPipeline(env.generalActionModules ?? []);
+    }
+
     getInheritanceActiveActionAmount(): number {
         return 1;
     }
@@ -74,10 +77,7 @@ export class ActionDefinition<
         ];
     }
 
-    resolve(
-        context: FoundingResolveContext<TriggerState>,
-        args: FoundingArgs
-    ): GeneralActionOutcome<TriggerState> {
+    resolve(context: FoundingResolveContext<TriggerState>, args: FoundingArgs): GeneralActionOutcome<TriggerState> {
         const general = context.general;
         const nation = context.nation!;
         const cityId = general.cityId!;
@@ -119,14 +119,11 @@ export class ActionDefinition<
             scope: LogScope.GENERAL,
             format: LogFormat.YEAR_MONTH,
         });
-        context.addLog(
-            `<Y>${general.name}</>${josaGeneralYi} <D><b>${args.nationName}</b></>${josaNationUl} 건국`,
-            {
-                category: LogCategory.HISTORY,
-                scope: LogScope.NATION,
-                format: LogFormat.YEAR_MONTH,
-            }
-        );
+        context.addLog(`<Y>${general.name}</>${josaGeneralYi} <D><b>${args.nationName}</b></>${josaNationUl} 건국`, {
+            category: LogCategory.HISTORY,
+            scope: LogScope.NATION,
+            format: LogFormat.YEAR_MONTH,
+        });
 
         tryApplyUniqueLottery(context, {
             acquireType: '건국',
@@ -157,8 +154,8 @@ export class ActionDefinition<
                 cityId
             ),
             createGeneralPatchEffect<TriggerState>({
-                experience: (general.experience || 0) + 1000,
-                dedication: (general.dedication || 0) + 1000,
+                experience: (general.experience || 0) + this.pipeline.onCalcStat(context, 'experience', 1000),
+                dedication: (general.dedication || 0) + this.pipeline.onCalcStat(context, 'dedication', 1000),
             }),
         ];
 
@@ -186,5 +183,5 @@ export const commandSpec: GeneralTurnCommandSpec = {
         colorType: 'number',
     },
     argsSchema: FOUNDING_ARGS_SCHEMA,
-    createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
+    createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env),
 };

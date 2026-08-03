@@ -233,6 +233,43 @@ describe('crew type catalog', () => {
 
         expect(computeBattleOrder(defender, attacker)).toBe(10000);
     });
+
+    it('uses live injured and full action-adjusted stats for defender order', () => {
+        const footman = crewType(1100, 1, '보병');
+        const rng = new RandUtil(new ConstantRNG(0));
+        const attacker = buildGeneralUnit(rng, buildGeneral(1, footman.id), footman, true);
+        const defenderGeneral = { ...buildGeneral(2, footman.id), injury: 50 };
+        const defender = buildGeneralUnit(
+            rng,
+            defenderGeneral,
+            footman,
+            false,
+            new WarActionPipeline([
+                {
+                    onCalcStat: (_context, statName, value) =>
+                        statName === 'leadership' && typeof value === 'number' ? value + 40 : value,
+                },
+            ])
+        );
+
+        expect(computeBattleOrder(defender, attacker)).toBe(260);
+    });
+
+    it('excludes defenders below the legacy defence training threshold', () => {
+        const footman = crewType(1100, 1, '보병');
+        const rng = new RandUtil(new ConstantRNG(0));
+        const attacker = buildGeneralUnit(rng, buildGeneral(1, footman.id), footman, true);
+        const baseDefender = buildGeneral(2, footman.id);
+        const defenderGeneral = {
+            ...baseDefender,
+            train: 79,
+            atmos: 80,
+            meta: { ...baseDefender.meta, defence_train: 80 },
+        };
+        const defender = buildGeneralUnit(rng, defenderGeneral, footman, false);
+
+        expect(computeBattleOrder(defender, attacker)).toBe(0);
+    });
 });
 
 describe('crew type war triggers', () => {

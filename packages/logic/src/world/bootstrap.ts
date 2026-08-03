@@ -8,6 +8,11 @@ import type {
     TriggerValue,
 } from '@sammo-ts/logic/domain/entities.js';
 import type { ScenarioDefinition, ScenarioGeneral } from '@sammo-ts/logic/scenario/types.js';
+import {
+    isDomesticTraitKey,
+    isEventDomesticTraitKey,
+    isWarTraitKey,
+} from '@sammo-ts/logic/actionModules/traits/index.js';
 import type {
     CitySeed,
     GeneralSeed,
@@ -37,6 +42,9 @@ export interface ScenarioBootstrapOptions {
      * remains deterministic in tests and reset operations.
      */
     hiddenSeed?: string | number;
+    initialYear?: number;
+    initialMonth?: number;
+    turnTermMinutes?: number;
 }
 
 export type ScenarioBootstrapWarningCode =
@@ -72,10 +80,69 @@ const DEFAULT_GENERAL_GOLD = 1000;
 const DEFAULT_GENERAL_RICE = 1000;
 const DEFAULT_CREWTYPE_ID = 1100;
 const DEFAULT_GENERAL_KILLTURN = 24;
+const DEFAULT_AVAILABLE_PERSONALITIES = [
+    'che_안전',
+    'che_유지',
+    'che_재간',
+    'che_출세',
+    'che_할거',
+    'che_정복',
+    'che_패권',
+    'che_의협',
+    'che_대의',
+    'che_왕좌',
+];
 const DEFAULT_CITY_TRUST = 50;
 const DEFAULT_CITY_TRADE = 100;
 const DEFAULT_CITY_SUPPLY_STATE = 1;
 const DEFAULT_CITY_FRONT_STATE = 0;
+
+const canonicalizeDomesticTrait = (raw: string | null | undefined): string | null => {
+    if (!raw || raw === 'None') {
+        return null;
+    }
+    if (isDomesticTraitKey(raw) || isEventDomesticTraitKey(raw)) {
+        return raw;
+    }
+    const domesticKey = `che_${raw}`;
+    if (isDomesticTraitKey(domesticKey)) {
+        return domesticKey;
+    }
+    const eventKey = `che_event_${raw}`;
+    if (isEventDomesticTraitKey(eventKey)) {
+        return eventKey;
+    }
+    return null;
+};
+
+const canonicalizeWarTrait = (raw: string | null | undefined): string | null => {
+    if (!raw || raw === 'None') {
+        return null;
+    }
+    if (isWarTraitKey(raw)) {
+        return raw;
+    }
+    const warKey = `che_${raw}`;
+    return isWarTraitKey(warKey) ? warKey : null;
+};
+
+// Scenario rows expose one legacy speciality column. GeneralBuilder tries the
+// domestic catalogue first, then the war catalogue, and persists the resolved
+// class code. Preserve unknown values in the domestic slot so custom scenario
+// packs retain their prior data even when their module is not installed here.
+const resolveScenarioTraits = (
+    special: string | null,
+    explicitWar: string | null | undefined
+): { specialDomestic: string | null; specialWar: string | null } => {
+    const domestic = canonicalizeDomesticTrait(special);
+    const inferredWar = domestic === null ? canonicalizeWarTrait(special) : null;
+    const retainedDomestic = special && special !== 'None' ? special : null;
+    const retainedWar = explicitWar && explicitWar !== 'None' ? explicitWar : null;
+    return {
+        specialDomestic: domestic ?? (inferredWar === null ? retainedDomestic : null),
+        specialWar: canonicalizeWarTrait(explicitWar) ?? inferredWar ?? retainedWar,
+    };
+};
 
 const createScenarioMeta = (scenario: ScenarioDefinition): ScenarioMeta => ({
     title: scenario.title,
@@ -92,6 +159,82 @@ const createEmptyTriggerState = (): GeneralTriggerState => ({
     modifiers: {},
     meta: {},
 });
+
+// GameConstBase::$defaultInitialEvents / $defaultEvents. Ref prepends these
+// rows to every scenario unless ignoreDefaultEvents is enabled; scenario JSON
+// only contains its additional rows.
+const LEGACY_DEFAULT_INITIAL_EVENTS: unknown[] = [
+    [true, ['NoticeToHistoryLog', '<S>2년간 거병 및 건국이 가능합니다.</>', 6]],
+];
+
+const LEGACY_DEFAULT_EVENTS: unknown[] = [
+    ['pre_month', 9_000, true, ['UpdateCitySupply'], ['ProcessWarIncome']],
+    [
+        'month',
+        9_000,
+        ['Date', '==', null, 1],
+        ['MergeInheritPointRank'],
+        ['ProcessSemiAnnual', 'gold'],
+        ['ProcessIncome', 'gold'],
+        ['ResetOfficerLock'],
+        ['RaiseDisaster'],
+        ['RandomizeCityTradeRate'],
+        ['NewYear'],
+        ['AssignGeneralSpeciality'],
+    ],
+    ['month', 9_000, ['Date', '==', null, 4], ['ResetOfficerLock'], ['RaiseDisaster']],
+    [
+        'month',
+        9_000,
+        ['Date', '==', null, 7],
+        ['MergeInheritPointRank'],
+        ['ProcessSemiAnnual', 'rice'],
+        ['ProcessIncome', 'rice'],
+        ['ResetOfficerLock'],
+        ['RaiseDisaster'],
+        ['RandomizeCityTradeRate'],
+    ],
+    ['month', 9_000, ['Date', '==', null, 10], ['ResetOfficerLock'], ['RaiseDisaster']],
+    [
+        'month',
+        2_000,
+        ['DateRelative', '==', 1, 1],
+        ['NoticeToHistoryLog', '<S>2년 뒤 출병 제한이 풀립니다.</>', 6],
+        ['DeleteEvent'],
+    ],
+    [
+        'month',
+        2_000,
+        ['DateRelative', '==', 2, 1],
+        ['NoticeToHistoryLog', '<S>1년 뒤 출병 제한이 풀립니다.</>', 6],
+        ['DeleteEvent'],
+    ],
+    [
+        'month',
+        2_000,
+        ['DateRelative', '==', 2, 7],
+        ['NoticeToHistoryLog', '<S>6개월 뒤 출병 제한이 풀립니다. 병력을 준비해주세요.</>', 6],
+        ['DeleteEvent'],
+    ],
+    [
+        'month',
+        2_000,
+        ['DateRelative', '==', 3, 1],
+        ['NoticeToHistoryLog', '<S>출병 제한이 풀렸습니다.</>', 6],
+        ['DeleteEvent'],
+    ],
+    [
+        'month',
+        2_000,
+        ['DateRelative', '==', 4, 1],
+        ['NoticeToHistoryLog', '<S>이제부터 하야, 망명시 패널티가 적용됩니다.</>', 6],
+        ['AddGlobalBetray', 1, 0],
+        ['AddGlobalBetray', 1, 1],
+        ['DeleteEvent'],
+    ],
+    ['month', 1_000, true, ['UpdateNationLevel'], ['ProvideNPCTroopLeader']],
+    ['united', 5_000, true, ['MergeInheritPointRank']],
+];
 
 const addTriggerMeta = (
     meta: Record<string, TriggerValue>,
@@ -193,6 +336,13 @@ const resolveAge = (startYear: number | null, birthYear: number): number => {
 
 const buildSpecialityAge = (retirementYear: number, age: number, divisor: number): number =>
     Math.max(Math.round((retirementYear - age) / divisor), 3) + age;
+
+const resolveBootstrapSpecialityAge = (
+    scenarioStartYear: number | null,
+    birthYear: number,
+    retirementYear: number,
+    divisor: number
+): number => buildSpecialityAge(retirementYear, resolveAge(scenarioStartYear, birthYear), divisor);
 
 const ADULT_GENERAL_AGE = 14;
 
@@ -313,7 +463,8 @@ const buildGeneralSeeds = (
     defaultCrewTypeId: number,
     mapCities: MapDefinition['cities'],
     nationCityIds: Map<number, number[]>,
-    placementRng: RandUtil,
+    installRng: RandUtil,
+    initializedValues: Map<ScenarioGeneral, { affinity: number; personality: string }>,
     options?: ScenarioBootstrapOptions
 ): {
     seeds: GeneralSeed[];
@@ -340,47 +491,49 @@ const buildGeneralSeeds = (
             const ownedCityIds = nationId > 0 ? (nationCityIds.get(nationId) ?? []) : [];
             const candidateCityIds = ownedCityIds.length > 0 ? ownedCityIds : mapCities.map((city) => city.id);
             if (candidateCityIds.length > 0) {
-                cityId = placementRng.choice(candidateCityIds);
+                cityId = installRng.choice(candidateCityIds);
             }
         }
         const birthYear = resolveBirthYear(row.birthYear, scenario.startYear);
         const deathYear = resolveDeathYear(row.deathYear, birthYear, scenario.startYear);
-        const deathMonth = resolveScenarioGeneralDeathMonth({
-            scenarioTitle: scenario.title,
-            startYear: scenario.startYear,
-            contextLabel,
-            generalId: id,
-            generalName: row.name,
-            deathYear,
-        });
+        const turnTermMinutes = Math.max(1, Math.floor(options?.turnTermMinutes ?? 60));
+        const initialTurnOffsetMicros =
+            installRng.nextRangeInt(0, turnTermMinutes * 60 - 1) * 1_000_000 + installRng.nextRangeInt(0, 999_999);
+        const deathMonth = installRng.nextRangeInt(1, 12);
         const officerLevel = resolveOfficerLevel(row.officerLevel, nationId);
-        const age = resolveAge(scenario.startYear, birthYear);
+        const initialYear = options?.initialYear ?? scenario.startYear;
+        const initialMonth = options?.initialMonth ?? 1;
+        const age = resolveAge(initialYear, birthYear);
+        const initialized = initializedValues.get(row);
+        if (!initialized) {
+            throw new Error(`Missing legacy initialization values for general ${row.name}.`);
+        }
         const stats = {
             leadership: row.leadership,
             strength: row.strength,
             intelligence: row.intelligence,
         };
+        const { specialDomestic, specialWar } = resolveScenarioTraits(row.special, row.specialWar);
 
         const seedMeta: Record<string, unknown> = {
             source: contextLabel,
             deathMonth,
-            specage: buildSpecialityAge(retirementYear, age, 12),
-            specage2: buildSpecialityAge(retirementYear, age, 6),
+            initialTurnOffsetMicros,
+            // Ref's GeneralBuilder derives speciality ages from the scenario
+            // opening year even when installation stores a pre-opening age.
+            specage: resolveBootstrapSpecialityAge(scenario.startYear, birthYear, retirementYear, 12),
+            specage2: resolveBootstrapSpecialityAge(scenario.startYear, birthYear, retirementYear, 6),
         };
-        if (row.affinity !== null) {
-            seedMeta.affinity = row.affinity;
-        }
-        if (row.personality !== null) {
-            seedMeta.personality = row.personality;
-        }
-        if (row.special !== null) {
-            seedMeta.special = row.special;
+        seedMeta.affinity = initialized.affinity;
+        seedMeta.personality = initialized.personality;
+        if (specialDomestic !== null) {
+            seedMeta.special = specialDomestic;
         }
         if (row.picture !== null) {
             seedMeta.picture = row.picture;
         }
-        if (row.specialWar !== null && row.specialWar !== undefined) {
-            seedMeta.specialWar = row.specialWar;
+        if (specialWar !== null) {
+            seedMeta.specialWar = specialWar;
         }
         if (row.horse !== null && row.horse !== undefined) {
             seedMeta.horse = row.horse;
@@ -407,10 +560,10 @@ const buildGeneralSeeds = (
             officerLevel,
             birthYear,
             deathYear,
-            affinity: row.affinity,
-            personality: row.personality,
-            special: row.special,
-            specialWar: row.specialWar ?? null,
+            affinity: initialized.affinity,
+            personality: initialized.personality,
+            special: specialDomestic,
+            specialWar,
             horse: row.horse ?? null,
             weapon: row.weapon ?? null,
             book: row.book ?? null,
@@ -419,14 +572,16 @@ const buildGeneralSeeds = (
             npcType,
             text: row.text,
             crewTypeId: defaultCrewTypeId,
+            experience: age * 100,
+            dedication: age * 100,
             meta: seedMeta,
         };
         seeds.push(seed);
 
         const generalMeta: GeneralMeta = {
             killturn: resolveKillturnFromDeathYear(
-                scenario.startYear,
-                1,
+                initialYear,
+                initialMonth,
                 deathYear,
                 deathMonth,
                 DEFAULT_GENERAL_KILLTURN
@@ -434,14 +589,14 @@ const buildGeneralSeeds = (
             deathMonth,
             npcType,
             crewTypeId: defaultCrewTypeId,
-            specage: buildSpecialityAge(retirementYear, age, 12),
-            specage2: buildSpecialityAge(retirementYear, age, 6),
+            specage: resolveBootstrapSpecialityAge(scenario.startYear, birthYear, retirementYear, 12),
+            specage2: resolveBootstrapSpecialityAge(scenario.startYear, birthYear, retirementYear, 6),
         };
-        addTriggerMeta(generalMeta, 'affinity', row.affinity);
-        addTriggerMeta(generalMeta, 'personality', row.personality ?? undefined);
-        addTriggerMeta(generalMeta, 'special', row.special ?? undefined);
+        addTriggerMeta(generalMeta, 'affinity', initialized.affinity);
+        addTriggerMeta(generalMeta, 'personality', initialized.personality);
+        addTriggerMeta(generalMeta, 'special', specialDomestic ?? undefined);
         addTriggerMeta(generalMeta, 'picture', row.picture ?? undefined);
-        addTriggerMeta(generalMeta, 'specialWar', row.specialWar ?? undefined);
+        addTriggerMeta(generalMeta, 'specialWar', specialWar ?? undefined);
         addTriggerMeta(generalMeta, 'horse', row.horse ?? undefined);
         addTriggerMeta(generalMeta, 'weapon', row.weapon ?? undefined);
         addTriggerMeta(generalMeta, 'book', row.book ?? undefined);
@@ -456,13 +611,13 @@ const buildGeneralSeeds = (
             cityId,
             troopId: 0,
             stats,
-            experience: 0,
-            dedication: 0,
+            experience: age * 100,
+            dedication: age * 100,
             officerLevel,
             role: {
-                personality: row.personality,
-                specialDomestic: row.special,
-                specialWar: row.specialWar ?? null,
+                personality: initialized.personality,
+                specialDomestic,
+                specialWar,
                 items: {
                     horse: row.horse ?? null,
                     weapon: row.weapon ?? null,
@@ -632,8 +787,8 @@ export const buildScenarioBootstrap = (input: ScenarioBootstrapInput): ScenarioB
     }
 
     const mapDefaults = resolveMapDefaults(map, options);
-    const placementRng = new RandUtil(
-        new LiteHashDRBG(simpleSerialize(options?.hiddenSeed ?? scenario.title, 'InitScenarioGeneralCities'))
+    const installRng = new RandUtil(
+        new LiteHashDRBG(simpleSerialize(options?.hiddenSeed ?? scenario.title, 'InitScenario'))
     );
     const defaultCrewTypeId = unitSet?.defaultCrewTypeId ?? options?.defaultCrewTypeId ?? DEFAULT_CREWTYPE_ID;
     const seedCities: CitySeed[] = [];
@@ -714,6 +869,19 @@ export const buildScenarioBootstrap = (input: ScenarioBootstrapInput): ScenarioB
     const allGeneralSeeds: GeneralSeed[] = [];
     const allGenerals: General[] = [];
     const delayedActionsByBirthYear = new Map<number, unknown[][]>();
+    const initializedValues = new Map<ScenarioGeneral, { affinity: number; personality: string }>();
+    const rawAvailablePersonalities = scenario.config.const.availablePersonality;
+    const availablePersonalities = Array.isArray(rawAvailablePersonalities)
+        ? rawAvailablePersonalities.filter((value): value is string => typeof value === 'string')
+        : DEFAULT_AVAILABLE_PERSONALITIES;
+    const personalityPool =
+        availablePersonalities.length > 0 ? availablePersonalities : DEFAULT_AVAILABLE_PERSONALITIES;
+    for (const row of [...scenario.generals, ...scenario.generalsEx, ...scenario.generalsNeutral]) {
+        const affinity = row.affinity !== null && row.affinity > 0 ? row.affinity : installRng.nextRangeInt(1, 150);
+        const rawPersonality = row.personality ?? installRng.choice(personalityPool);
+        const personality = rawPersonality.includes('_') ? rawPersonality : `che_${rawPersonality}`;
+        initializedValues.set(row, { affinity, personality });
+    }
 
     const partitionGenerals = (rows: ScenarioGeneral[], npcType: 2 | 6): ScenarioGeneral[] => {
         const active: ScenarioGeneral[] = [];
@@ -750,7 +918,8 @@ export const buildScenarioBootstrap = (input: ScenarioBootstrapInput): ScenarioB
         defaultCrewTypeId,
         map.cities,
         nationCityIds,
-        placementRng,
+        installRng,
+        initializedValues,
         options
     );
     allGeneralSeeds.push(...generalResult.seeds);
@@ -769,7 +938,8 @@ export const buildScenarioBootstrap = (input: ScenarioBootstrapInput): ScenarioB
         defaultCrewTypeId,
         map.cities,
         nationCityIds,
-        placementRng,
+        installRng,
+        initializedValues,
         options
     );
     allGeneralSeeds.push(...generalExResult.seeds);
@@ -788,7 +958,8 @@ export const buildScenarioBootstrap = (input: ScenarioBootstrapInput): ScenarioB
         defaultCrewTypeId,
         map.cities,
         nationCityIds,
-        placementRng,
+        installRng,
+        initializedValues,
         options
     );
     allGeneralSeeds.push(...generalNeutralResult.seeds);
@@ -801,7 +972,9 @@ export const buildScenarioBootstrap = (input: ScenarioBootstrapInput): ScenarioB
         ...actions,
         ['DeleteEvent'],
     ]);
-    const events = [...scenario.events, ...delayedGeneralEvents];
+    const defaultEvents = scenario.ignoreDefaultEvents ? [] : LEGACY_DEFAULT_EVENTS;
+    const defaultInitialEvents = scenario.ignoreDefaultEvents ? [] : LEGACY_DEFAULT_INITIAL_EVENTS;
+    const events = [...defaultEvents, ...scenario.events, ...delayedGeneralEvents];
 
     const seed: WorldSeedPayload = {
         scenarioConfig: scenario.config,
@@ -814,7 +987,7 @@ export const buildScenarioBootstrap = (input: ScenarioBootstrapInput): ScenarioB
         troops: [],
         diplomacy: scenario.diplomacy,
         events,
-        initialEvents: scenario.initialEvents,
+        initialEvents: [...defaultInitialEvents, ...scenario.initialEvents],
     };
 
     const snapshot: WorldSnapshot = {
@@ -828,7 +1001,7 @@ export const buildScenarioBootstrap = (input: ScenarioBootstrapInput): ScenarioB
         troops: [],
         diplomacy: scenario.diplomacy,
         events,
-        initialEvents: scenario.initialEvents,
+        initialEvents: [...defaultInitialEvents, ...scenario.initialEvents],
     };
 
     return { snapshot, seed, warnings };

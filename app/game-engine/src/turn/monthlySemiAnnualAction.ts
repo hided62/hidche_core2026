@@ -7,7 +7,12 @@ import { resolveAppliedNationRate } from './nationTaxRate.js';
 
 type SemiAnnualResource = 'gold' | 'rice';
 
-const roundLegacyIntegerColumn = (value: number): number => Math.round(value);
+const roundLegacyIntegerColumn = (value: number): number => {
+    // MariaDB evaluates the decimal rate expression before ROUND(). Binary
+    // arithmetic can instead produce values such as 2029.4999999999998.
+    const stabilized = Number(value.toPrecision(15));
+    return stabilized >= 0 ? Math.floor(stabilized + 0.5) : Math.ceil(stabilized - 0.5);
+};
 
 const parseResource = (args: readonly unknown[]): SemiAnnualResource => {
     const resource = args[0];
@@ -23,6 +28,8 @@ const resolveBasePopulationIncrease = (world: InMemoryTurnWorld): number => {
 };
 
 const decayDomesticValue = (value: number): number => roundLegacyIntegerColumn(value * 0.99);
+
+export const storeLegacySemiAnnualTrust = (value: number): number => Math.fround(Math.max(0, Math.min(100, value)));
 
 const applyResourceMaintenance = (value: number, ratios: readonly [number, number][]): number => {
     if (value <= 1_000) {
@@ -81,6 +88,9 @@ export const createProcessSemiAnnualHandler = (options: {
 
         const basePopulationIncrease = resolveBasePopulationIncrease(world);
         for (const nation of world.listNations()) {
+            if (nation.id <= 0) {
+                continue;
+            }
             const rate = resolveAppliedNationRate(nation.meta);
             let populationRatio = (30 - rate) / 200;
             const trait = options.nationTraits?.get(nation.typeCode);
@@ -115,7 +125,10 @@ export const createProcessSemiAnnualHandler = (options: {
                     wall: roundLegacyIntegerColumn(Math.min(city.wallMax, city.wall * (1 + genericRatio))),
                     meta: {
                         ...city.meta,
-                        trust: Math.max(0, Math.min(100, trust + trustDiff)),
+                        // Ref's UPDATE persists trust to a MariaDB FLOAT before
+                        // the next monthly action reads it. Core stores this
+                        // field in JSON, so emulate that binary32 boundary here.
+                        trust: storeLegacySemiAnnualTrust(trust + trustDiff),
                     },
                 });
             }
@@ -124,6 +137,14 @@ export const createProcessSemiAnnualHandler = (options: {
         for (const general of world.listGenerals()) {
             const current = general[resource];
             const next = applyResourceMaintenance(current, [[10_000, 0.97]]);
+            if (
+                process.env.SEED_PARITY_MONTHLY_RESOURCE_TRACE === '1' &&
+                (process.env.AI_TRACE_GENERAL_IDS ?? '').split(',').includes(String(general.id))
+            ) {
+                process.stdout.write(
+                    `MONTHLY_RESOURCE_CORE ${JSON.stringify({ action: 'ProcessSemiAnnual', resource, generalId: general.id, current, next })}\n`
+                );
+            }
             if (next !== current) {
                 world.updateGeneral(general.id, { [resource]: next });
             }

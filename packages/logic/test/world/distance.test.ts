@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getCityDistance, searchDistance } from '@sammo-ts/logic/world/distance.js';
+import { getCityDistance, searchDistance, searchDistanceEntries } from '@sammo-ts/logic/world/distance.js';
 import type { MapDefinition } from '@sammo-ts/logic/world/types.js';
 
 describe('World Distance', () => {
@@ -68,6 +68,23 @@ describe('World Distance', () => {
         it('should not include unreachable cities', () => {
             const result = searchDistance(mockMap, 1, 10);
             expect(result).not.to.have.property('8');
+        });
+
+        it('preserves legacy BFS visit order independently of numeric object-key ordering', () => {
+            const orderMap: MapDefinition = {
+                id: 'order-map',
+                name: 'Order Map',
+                cities: [
+                    { id: 1, connections: [10, 2] },
+                    { id: 10, connections: [1] },
+                    { id: 2, connections: [1] },
+                ] as any[],
+            };
+            expect(searchDistanceEntries(orderMap, 1, 1)).toEqual([
+                [1, 0],
+                [10, 1],
+                [2, 1],
+            ]);
         });
     });
 });

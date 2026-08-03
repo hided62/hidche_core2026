@@ -72,6 +72,38 @@ describe('scenario bootstrap', () => {
                     special: 'Special',
                     text: 'Test line',
                 },
+                {
+                    affinity: 11,
+                    name: 'MedicalGeneral',
+                    picture: null,
+                    nation: 1,
+                    city: 'Alpha',
+                    leadership: 40,
+                    strength: 40,
+                    intelligence: 70,
+                    officerLevel: 1,
+                    birthYear: 180,
+                    deathYear: 240,
+                    personality: '출세',
+                    special: '의술',
+                    text: null,
+                },
+                {
+                    affinity: 12,
+                    name: 'ChargeGeneral',
+                    picture: null,
+                    nation: 1,
+                    city: 'Alpha',
+                    leadership: 70,
+                    strength: 60,
+                    intelligence: 20,
+                    officerLevel: 1,
+                    birthYear: 180,
+                    deathYear: 240,
+                    personality: '패권',
+                    special: '돌격',
+                    text: null,
+                },
             ],
             generalsEx: [],
             generalsNeutral: [],
@@ -129,17 +161,49 @@ describe('scenario bootstrap', () => {
         expect(result.snapshot.generals[0]?.crewTypeId).toBe(1200);
         expect(result.snapshot.generals[0]?.role.specialDomestic).toBe('Special');
         expect(result.snapshot.generals[0]?.role.specialWar).toBeNull();
+        expect(result.snapshot.generals[1]?.role).toMatchObject({
+            personality: 'che_출세',
+            specialDomestic: 'che_event_의술',
+            specialWar: null,
+        });
+        expect(result.seed.generals[1]).toMatchObject({
+            special: 'che_event_의술',
+            specialWar: null,
+        });
+        expect(result.snapshot.generals[2]?.role).toMatchObject({
+            personality: 'che_패권',
+            specialDomestic: 'che_event_돌격',
+            specialWar: null,
+        });
         expect(result.snapshot.generals[0]?.meta).toMatchObject({ specage: 25, specage2: 30 });
         expect(result.seed.generals[0]?.meta).toMatchObject({
             deathMonth: expect.any(Number),
             specage: 25,
             specage2: 30,
         });
+        const preOpening = buildScenarioBootstrap({
+            scenario,
+            map,
+            unitSet,
+            options: { initialYear: scenario.startYear! - 1 },
+        });
+        expect(preOpening.snapshot.generals[0]).toMatchObject({
+            age: 19,
+            meta: { specage: 25, specage2: 30 },
+        });
+        expect(preOpening.seed.generals[0]?.meta).toMatchObject({ specage: 25, specage2: 30 });
         expect(buildScenarioBootstrap({ scenario, map, unitSet }).snapshot.generals[0]?.meta).toEqual(
             result.snapshot.generals[0]?.meta
         );
         expect(result.seed.generals[0]?.npcType).toBe(2);
         expect(result.snapshot.scenarioMeta?.title).toBe('Test Scenario');
+        expect(result.seed.events[0]).toEqual(['pre_month', 9_000, true, ['UpdateCitySupply'], ['ProcessWarIncome']]);
+        expect(result.seed.events.flat(3)).toContain('ProcessSemiAnnual');
+        expect(result.seed.events.flat(3)).toContain('NewYear');
+        expect(result.seed.initialEvents[0]).toEqual([
+            true,
+            ['NoticeToHistoryLog', '<S>2년간 거병 및 건국이 가능합니다.</>', 6],
+        ]);
     });
 
     it('places generals without an explicit city in a deterministic valid city', () => {
@@ -210,7 +274,7 @@ describe('scenario bootstrap', () => {
             cities: [],
             events: [],
             initialEvents: [],
-            ignoreDefaultEvents: false,
+            ignoreDefaultEvents: true,
         };
         const map: MapDefinition = {
             id: 'test-map',
@@ -248,6 +312,36 @@ describe('scenario bootstrap', () => {
         expect(first.seed.generals[0]?.cityId).toBe(1);
         expect([1, 2]).toContain(first.seed.generals[1]?.cityId);
         expect(first.seed.generals.every((general) => general.cityId > 0)).toBe(true);
+        expect(
+            first.seed.generals.map((general) => ({
+                cityId: general.cityId,
+                affinity: general.affinity,
+                personality: general.personality,
+                experience: general.experience,
+                dedication: general.dedication,
+                deathMonth: general.meta.deathMonth,
+                initialTurnOffsetMicros: general.meta.initialTurnOffsetMicros,
+            }))
+        ).toEqual([
+            {
+                cityId: 1,
+                affinity: 10,
+                personality: 'che_안전',
+                experience: 2_000,
+                dedication: 2_000,
+                deathMonth: 12,
+                initialTurnOffsetMicros: 2_161_529_667,
+            },
+            {
+                cityId: 2,
+                affinity: 20,
+                personality: 'che_재간',
+                experience: 2_000,
+                dedication: 2_000,
+                deathMonth: 7,
+                initialTurnOffsetMicros: 3_203_248_275,
+            },
+        ]);
     });
 
     it('defers future generals into birth-year registration events and omits expired rows', () => {
@@ -306,7 +400,7 @@ describe('scenario bootstrap', () => {
             cities: [],
             events: [['Month', 500, ['Date', '>=', 200, 1], ['Existing']]],
             initialEvents: [],
-            ignoreDefaultEvents: false,
+            ignoreDefaultEvents: true,
         };
         const map: MapDefinition = {
             id: 'test-map',

@@ -30,6 +30,8 @@ import {
     isCrewTypeAvailable,
 } from '@sammo-ts/logic/world/unitSet.js';
 import { parseArgsWithSchema } from '../parseArgs.js';
+import { readLegacyCityTrust, storeLegacyCityTrust } from './legacyCityTrust.js';
+import { applyLegacyInjury, finalizeLegacyStat } from './legacyGeneralStat.js';
 
 export interface RecruitEnvironment {
     costOffset?: number;
@@ -57,6 +59,13 @@ const DEFAULT_ATMOS = 40;
 const DEFAULT_MIN_POP = 30000;
 const DEFAULT_TRUST = 50;
 const MIN_CREW = 100;
+
+// PHP round() compensates for the small binary drift around a half boundary.
+// Ref then converts the result to int through Util::round().
+export const roundLegacyRecruitCost = (value: number): number => {
+    const corrected = value + Math.sign(value) * Number.EPSILON * Math.max(1, Math.abs(value));
+    return corrected < 0 ? Math.ceil(corrected - 0.5) : Math.floor(corrected + 0.5);
+};
 
 export const ARGS_SCHEMA = z.preprocess(
     (raw) => {
@@ -113,10 +122,6 @@ const readCityTrust = (city: City, fallback: number): number => {
     const trust = meta?.trust;
     return typeof trust === 'number' ? trust : fallback;
 };
-
-// 레거시 city.trust는 MariaDB FLOAT이며 다음 명령에서 6자리 유효숫자로
-// 재조회된다. 메모리 상태도 같은 persistence 경계로 정규화한다.
-const toLegacyStoredTrust = (value: number): number => Number(value.toPrecision(6));
 
 const addMetaNumber = (meta: GeneralMeta, key: string, delta: number): GeneralMeta => {
     const current = typeof meta[key] === 'number' ? (meta[key] as number) : 0;
@@ -223,8 +228,9 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
     }
 
     resolveLeadership(context: RecruitCalcContext<TriggerState>): number {
-        const base = context.general.stats.leadership;
-        return Math.round(this.pipeline.onCalcStat(context, 'leadership', base));
+        const general = context.general;
+        const base = applyLegacyInjury(general.stats.leadership, general.injury);
+        return finalizeLegacyStat(this.pipeline.onCalcStat(context, 'leadership', base));
     }
 
     resolveCrewPlan(
@@ -268,7 +274,7 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
             crewType ? { armType: crewType.armType } : undefined
         );
         return {
-            gold: Math.round(adjustedGold * costOffset),
+            gold: roundLegacyRecruitCost(adjustedGold * costOffset),
             rice: Math.round(adjustedRice),
             applied: plan.applied,
             requested: plan.requested,
@@ -300,6 +306,14 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
     getRecruitPopulation(context: RecruitCalcContext<TriggerState>, amount: number): number {
         const base = this.pipeline.onCalcDomestic(context, '징집인구', 'score', amount);
         return Math.round(base);
+    }
+
+    getStatGain(
+        context: RecruitCalcContext<TriggerState>,
+        statName: 'experience' | 'dedication',
+        amount: number
+    ): number {
+        return this.pipeline.onCalcStat(context, statName, amount);
     }
 
     getDexGain(
@@ -374,9 +388,9 @@ export class ActionResolver<
         const costOffset = this.env.costOffset ?? DEFAULT_COST_OFFSET;
         const recruitPop = this.command.getRecruitPopulation(context, appliedCrew);
         const nextPopulation = Math.max(city.population - recruitPop, 0);
-        const baseTrust = readCityTrust(city, this.env.defaultTrust ?? DEFAULT_TRUST);
+        const baseTrust = readLegacyCityTrust(readCityTrust(city, this.env.defaultTrust ?? DEFAULT_TRUST));
         const trustLoss = city.population > 0 ? (recruitPop / city.population / costOffset) * 100 : 0;
-        const nextTrust = toLegacyStoredTrust(Math.max(baseTrust - trustLoss, 0));
+        const nextTrust = storeLegacyCityTrust(Math.max(baseTrust - trustLoss, 0));
 
         const actionName = this.env.actionName ?? ACTION_NAME;
         const [nextCrewTypeId, nextCrew, nextTrain, nextAtmos] =
@@ -405,8 +419,13 @@ export class ActionResolver<
 
         const nextGold = Math.max(0, general.gold - plan.gold);
         const nextRice = Math.max(0, general.rice - plan.rice);
-        const expGain = Math.round(appliedCrew / 100);
-        const dedGain = Math.round(appliedCrew / 100);
+        // Ref rounds the raw crew-based reward first and then routes both
+        // General::addExperience()/addDedication() through onCalcStat(). This
+        // is observable for every successful recruit once seasonal rice pay
+        // lets NPCs afford the command (personality fame modifiers are +/-10%).
+        const baseStatGain = Math.round(appliedCrew / 100);
+        const expGain = this.command.getStatGain(context, 'experience', baseStatGain);
+        const dedGain = this.command.getStatGain(context, 'dedication', baseStatGain);
         const dexGain = this.command.getDexGain(context, crewType.armType, appliedCrew);
 
         // 직접 수정 (Immer Draft)
@@ -425,6 +444,12 @@ export class ActionResolver<
         general.experience += expGain;
         general.dedication += dedGain;
         general.meta = addMetaNumber(general.meta, 'leadership_exp', 1);
+        // Ref persists the selected arm category in General.aux. GeneralAI
+        // reuses it for the next recruitment instead of drawing a new category.
+        general.meta = {
+            ...general.meta,
+            armType: crewType.armType,
+        };
         if (dexGain) {
             general.meta = addMetaNumber(general.meta, dexGain.key, dexGain.amount);
         }

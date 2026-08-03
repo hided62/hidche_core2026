@@ -85,6 +85,21 @@ export const parseYearMonth = (value: number): [number, number] => {
     return [year, month];
 };
 
+export const withCanonicalArgumentAliases = (args: Record<string, unknown>): Record<string, unknown> => {
+    const normalized = { ...args };
+    for (const [legacyKey, canonicalKey] of [
+        ['destCityID', 'destCityId'],
+        ['destNationID', 'destNationId'],
+        ['destGeneralID', 'destGeneralId'],
+        ['destTroopID', 'destTroopId'],
+    ] as const) {
+        if (normalized[canonicalKey] === undefined && normalized[legacyKey] !== undefined) {
+            normalized[canonicalKey] = normalized[legacyKey];
+        }
+    }
+    return normalized;
+};
+
 export const calcCityDevRatio = (city: City): number => {
     const total = city.agriculture + city.commerce + city.security + city.defence + city.wall;
     const max = city.agricultureMax + city.commerceMax + city.securityMax + city.defenceMax + city.wallMax;

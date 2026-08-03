@@ -120,7 +120,7 @@ describeDb('scenario database seed', () => {
             expect(worldState?.config).toMatchObject({ tournamentTrig: true });
             expect(generalCount).toBeGreaterThan(0);
             const seededGeneral = await prisma.general.findFirst();
-            expect(seededGeneral?.startAge).toBe(seededGeneral?.age);
+            expect(seededGeneral?.startAge).toBe(20);
             expect(seededGeneral?.meta).toEqual(
                 expect.objectContaining({
                     specage: expect.any(Number),
@@ -239,6 +239,7 @@ describeDb('scenario database seed', () => {
             expect(config.tournamentTrig).toBe(false);
 
             const meta = (worldState.meta ?? {}) as Record<string, unknown>;
+            expect(meta.develcost).toBe((worldState.currentYear - (scenario.startYear ?? worldState.currentYear) + 10) * 2);
             const autorun = (meta.autorun_user ?? {}) as Record<string, unknown>;
             const autorunOptions = (autorun.options ?? {}) as Record<string, unknown>;
             expect(autorunOptions.develop).toBe(true);

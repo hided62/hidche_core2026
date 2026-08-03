@@ -140,7 +140,9 @@ describe('monthly event pipeline', () => {
             [
                 'Trace',
                 (args, environment) => {
-                    trace.push(`${String(args[0])}:${environment.year}-${environment.month}`);
+                    trace.push(
+                        `${String(args[0])}:${environment.year}-${environment.month}:${environment.turnTime.toISOString()}`
+                    );
                 },
             ],
         ]);
@@ -176,7 +178,11 @@ describe('monthly event pipeline', () => {
 
         await world.advanceMonth(new Date('0190-01-01T00:00:00.000Z'));
 
-        expect(trace).toEqual(['pre:189-12', 'month-high:190-1', 'month-low:190-1']);
+        expect(trace).toEqual([
+            'pre:189-12:0189-12-31T23:50:00.000Z',
+            'month-high:190-1:0189-12-31T23:50:00.000Z',
+            'month-low:190-1:0189-12-31T23:50:00.000Z',
+        ]);
     });
 
     it('supports logic conditions and persists DeleteEvent through dirty state', async () => {
@@ -236,7 +242,7 @@ describe('monthly event pipeline', () => {
                 },
             ],
             actions,
-            [buildCity(1, 1), buildCity(2, 4), buildCity(3, 5), buildCity(4, 6), buildCity(5, 7), buildCity(6, 8)]
+            [buildCity(6, 8), buildCity(1, 1), buildCity(2, 4), buildCity(3, 5), buildCity(4, 6), buildCity(5, 7)]
         );
         actions.set(
             'RandomizeCityTradeRate',
@@ -254,12 +260,12 @@ describe('monthly event pipeline', () => {
                 marker: city.meta.marker,
             }))
         ).toEqual([
+            { id: 6, trade: 102, marker: 6 },
             { id: 1, trade: null, marker: 1 },
             { id: 2, trade: null, marker: 2 },
             { id: 3, trade: 101, marker: 3 },
             { id: 4, trade: 100, marker: 4 },
             { id: 5, trade: 105, marker: 5 },
-            { id: 6, trade: 102, marker: 6 },
         ]);
         expect(world.peekDirtyState().cities.map((city) => city.id)).toEqual([1, 2, 3, 4, 5, 6]);
     });
@@ -386,7 +392,7 @@ describe('monthly event pipeline', () => {
             wall: 81,
             meta: { trade: 100, marker: 1 },
         });
-        expect(damagedCity?.meta.trust).toBeCloseTo(79.6);
+        expect(damagedCity?.meta.trust).toBe(Math.fround(79.6));
         expect(world.getGeneralById(1)).toMatchObject({ injury: 0, crew: 99, atmos: 50, train: 51 });
         expect(world.getGeneralById(2)).toMatchObject({ injury: 7, crew: 97, atmos: 49, train: 50 });
         expect(world.getGeneralById(3)).toMatchObject({ injury: 80, crew: 97, atmos: 49, train: 50 });

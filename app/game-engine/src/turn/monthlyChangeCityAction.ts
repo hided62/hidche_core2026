@@ -241,6 +241,11 @@ export const applyInitialChangeCityEvents = <T extends CitySeed>(
             throw new Error('Only unconditional initial events are supported.');
         }
         for (const rawAction of rawEvent.slice(1)) {
+            if (Array.isArray(rawAction) && rawAction[0] === 'NoticeToHistoryLog') {
+                // Initial history logging is handled by the install history
+                // boundary; it has no city-state effect here.
+                continue;
+            }
             if (!Array.isArray(rawAction) || rawAction[0] !== 'ChangeCity') {
                 throw new Error('Only ChangeCity initial actions are supported.');
             }

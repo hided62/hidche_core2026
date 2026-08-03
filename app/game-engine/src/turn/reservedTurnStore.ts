@@ -460,6 +460,20 @@ export class InMemoryReservedTurnStore {
         this.dirtyGeneralIds.add(generalId);
     }
 
+    setGeneralTurn(generalId: number, turnIdx: number, entry: ReservedTurnEntry): void {
+        if (turnIdx < 0 || turnIdx >= this.maxGeneralTurns) {
+            return;
+        }
+        const turns = this.getGeneralTurns(generalId).slice();
+        turns[turnIdx] = {
+            action: normalizeAction(entry.action),
+            args: normalizeArgs(entry.args),
+        };
+        this.generalTurns.set(generalId, turns);
+        this.pendingGeneralInitializationIds.delete(generalId);
+        this.dirtyGeneralIds.add(generalId);
+    }
+
     ensureNationTurns(nationId: number, officerLevel: number): void {
         const key = buildNationKey(nationId, officerLevel);
         this.getNationTurns(nationId, officerLevel);

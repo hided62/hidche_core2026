@@ -322,7 +322,7 @@ export class WarUnitGeneral<
         }
 
         const atmosMultiplier = this.isAttacker() ? 1.1 : 1.05;
-        this.general.atmos = clamp(Math.round(this.general.atmos * atmosMultiplier), 0, this.config.maxAtmosByWar);
+        this.general.atmos = clamp(this.general.atmos * atmosMultiplier, 0, this.config.maxAtmosByWar);
 
         this.addStatExp(1);
     }
@@ -384,7 +384,10 @@ export class WarUnitGeneral<
             nextExp *= 0.9;
         }
         const adjustedExp = this.actionPipeline.onCalcStat(this.getActionContext(), 'addDex', nextExp, { armType });
-        this.general.meta[key] = base + adjustedExp;
+        // PHP interpolates floats into MeekroDB SQL with precision=14 before
+        // MariaDB rounds the integer dex column. Normalize this accumulated
+        // battle value at the same boundary (for example ...499999999996 -> .5).
+        this.general.meta[key] = Number((base + adjustedExp).toPrecision(14));
     }
 
     public calcRiceConsumption(damage: number): number {
@@ -529,5 +532,31 @@ export class WarUnitGeneral<
         this.general.rice = round(this.general.rice);
         this.general.experience = round(this.general.experience);
         this.general.dedication = round(this.general.dedication);
+
+        // Ref WarUnitGeneral::finishBattle() runs General::checkStatChange()
+        // before persisting the participant. A battle can therefore consume
+        // one accumulated stat-exp threshold even though che_출병 itself does
+        // not have the generic command progression tail.
+        const limit = this.config.statUpgradeLimit ?? 30;
+        const maxStat = this.config.maxGeneralStat ?? 255;
+        const entries = [
+            ['leadership', META_LEADERSHIP_EXP, '통솔'],
+            ['strength', META_STRENGTH_EXP, '무력'],
+            ['intelligence', META_INTEL_EXP, '지력'],
+        ] as const;
+        for (const [statKey, expKey, label] of entries) {
+            const statExp = getMetaNumber(this.general.meta, expKey);
+            if (statExp < 0) {
+                this.general.meta[expKey] = statExp + limit;
+                this.general.stats[statKey] -= 1;
+                this.logger.pushGeneralActionLog(`<R>${label}</>이 <C>1</> 떨어졌습니다!`, LogFormat.PLAIN);
+            } else if (statExp >= limit) {
+                if (this.general.stats[statKey] < maxStat) {
+                    this.general.stats[statKey] += 1;
+                    this.logger.pushGeneralActionLog(`<S>${label}</>이 <C>1</> 올랐습니다!`, LogFormat.PLAIN);
+                }
+                this.general.meta[expKey] = statExp - limit;
+            }
+        }
     }
 }

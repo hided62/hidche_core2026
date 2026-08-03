@@ -44,7 +44,9 @@ const safeJsonParse = <T>(raw: string | null): T | null => {
 
 const resolveTermSeconds = (tickSeconds: number): number => {
     const turnMinutes = Math.max(1, Math.round(tickSeconds / 60));
-    return Math.min(120, Math.max(5, turnMinutes)) * 60;
+    // Ref calcTournamentTerm() receives the turn length in minutes but returns
+    // that clamped numeric value as tournament seconds.
+    return Math.min(120, Math.max(5, turnMinutes));
 };
 
 const readPattern = (world: InMemoryTurnWorld, config: Record<string, unknown>): number[] => {
@@ -56,17 +58,6 @@ const readPattern = (world: InMemoryTurnWorld, config: Record<string, unknown>):
         (value): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 3
     );
 };
-
-const shuffledDefaultPattern = (
-    hiddenSeed: string | number,
-    previousYear: number,
-    previousMonth: number
-): number[] =>
-    new RandUtil(
-        new LiteHashDRBG(
-            simpleSerialize(hiddenSeed, 'monthly', previousYear, previousMonth, 'tournamentPattern')
-        )
-    ).shuffle([0, 0, 1, 2, 3]);
 
 export const createTournamentAutoStartHandler = (options: {
     profileName: string;
@@ -114,10 +105,9 @@ export const createTournamentAutoStartHandler = (options: {
             }
 
             const pattern = readPattern(world, config);
-            const resolvedPattern =
-                pattern.length > 0
-                    ? pattern
-                    : shuffledDefaultPattern(hiddenSeed, context.previousYear, context.previousMonth);
+            // The deterministic Ref comparison branch replaces PHP's global
+            // shuffle() with this same already-advanced monthly RNG.
+            const resolvedPattern = pattern.length > 0 ? pattern : rng.shuffle([0, 0, 1, 2, 3]);
             const type = resolvedPattern.pop() ?? 0;
             world.updateWorldMeta({ tournamentPattern: resolvedPattern });
             const now = options.now?.() ?? new Date();
@@ -133,8 +123,14 @@ export const createTournamentAutoStartHandler = (options: {
                 openYear: context.currentYear,
                 openMonth: context.currentMonth,
                 termSeconds,
-                nextAt: new Date(now.getTime() + termSeconds * 1_000).toISOString(),
-                bettingId: undefined,
+                // Ref startTournament() passes calcTournamentTerm()'s seconds
+                // value to DateInterval's minute field. Preserve that historical
+                // initial enrollment delay; later tournament phases use seconds.
+                nextAt: new Date(now.getTime() + termSeconds * 60_000).toISOString(),
+                bettingId:
+                    typeof previousState?.bettingId === 'number' && Number.isFinite(previousState.bettingId)
+                        ? previousState.bettingId + 1
+                        : 1,
                 bettingCloseAt: undefined,
                 winnerId: undefined,
                 bettingSettled: false,

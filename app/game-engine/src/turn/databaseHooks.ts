@@ -474,9 +474,11 @@ const buildNationUpdate = (
     color: nation.color,
     capitalCityId: nation.capitalCityId,
     chiefGeneralId: nation.chiefGeneralId,
-    gold: nation.gold,
-    rice: nation.rice,
-    tech: typeof nation.meta.tech === 'number' && Number.isFinite(nation.meta.tech) ? Math.trunc(nation.meta.tech) : 0,
+    gold: toLegacyDatabaseInt(nation.gold),
+    rice: toLegacyDatabaseInt(nation.rice),
+    // Ref persists nation.tech as FLOAT. Domestic research commonly produces
+    // tenths, and truncating here changes the following month's state/power.
+    tech: typeof nation.meta.tech === 'number' && Number.isFinite(nation.meta.tech) ? nation.meta.tech : 0,
     level: nation.level,
     typeCode: nation.typeCode,
     meta: asJson({
@@ -755,11 +757,11 @@ export const createDatabaseTurnHooks = async (
                         color: nation.color,
                         capitalCityId: nation.capitalCityId,
                         chiefGeneralId: nation.chiefGeneralId,
-                        gold: nation.gold,
-                        rice: nation.rice,
+                        gold: toLegacyDatabaseInt(nation.gold),
+                        rice: toLegacyDatabaseInt(nation.rice),
                         tech:
                             typeof nation.meta.tech === 'number' && Number.isFinite(nation.meta.tech)
-                                ? Math.trunc(nation.meta.tech)
+                                ? nation.meta.tech
                                 : 0,
                         level: nation.level,
                         typeCode: nation.typeCode,

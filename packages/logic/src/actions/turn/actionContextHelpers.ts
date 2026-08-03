@@ -158,6 +158,8 @@ const DEFAULT_AFTER_CONFIG = {
     techLevelIncYear: 5,
     initialAllowedTechLevel: 1,
     defaultCityWall: 1000,
+    baseGold: 0,
+    baseRice: 2000,
 };
 
 const resolveNumber = (record: Record<string, unknown>, keys: string[], fallback: number): number => {
@@ -205,6 +207,8 @@ export const buildWarConfig = (scenarioConfig: ScenarioConfig, unitSet: UnitSetD
         maxAtmosByCommand: resolveNumber(constValues, ['maxAtmosByCommand'], DEFAULT_WAR_CONFIG.maxAtmosByCommand),
         maxTrainByWar: resolveNumber(constValues, ['maxTrainByWar'], DEFAULT_WAR_CONFIG.maxTrainByWar),
         maxAtmosByWar: resolveNumber(constValues, ['maxAtmosByWar'], DEFAULT_WAR_CONFIG.maxAtmosByWar),
+        maxGeneralStat: resolveNumber(constValues, ['maxLevel'], 255),
+        statUpgradeLimit: resolveNumber(constValues, ['upgradeLimit'], 30),
         castleCrewTypeId,
         armTypes: {
             footman: 1,
@@ -233,9 +237,11 @@ export const buildWarAftermathConfig = (
         ),
         maxTechLevel: resolveNumber(constValues, ['maxTechLevel'], 0),
         defaultCityWall: resolveNumber(constValues, ['defaultCityWall'], DEFAULT_AFTER_CONFIG.defaultCityWall),
-        baseGold: resolveNumber(constValues, ['baseGold', 'basegold'], 0),
-        baseRice: resolveNumber(constValues, ['baseRice', 'baserice'], 0),
+        baseGold: resolveNumber(constValues, ['baseGold', 'basegold'], DEFAULT_AFTER_CONFIG.baseGold),
+        baseRice: resolveNumber(constValues, ['baseRice', 'baserice'], DEFAULT_AFTER_CONFIG.baseRice),
         castleCrewTypeId,
+        joinMode: 'full',
+        joinRuinedNpcProbability: resolveNumber(constValues, ['joinRuinedNPCProp'], 0.1),
     };
 };
 

@@ -50,7 +50,7 @@ const buildCity = (id: number, nationId = 1, level = 4): City => ({
     meta: {},
 });
 
-const buildNation = (level: number): Nation => ({
+const buildNation = (level: number, patch: Partial<Nation> = {}): Nation => ({
     id: 1,
     name: '위',
     color: '#000000',
@@ -62,6 +62,7 @@ const buildNation = (level: number): Nation => ({
     level,
     typeCode: 'che_중립',
     meta: { marker: 1 },
+    ...patch,
 });
 
 const buildGeneral = (id: number, patch: Partial<TurnGeneral> = {}): TurnGeneral => ({
@@ -113,6 +114,7 @@ const buildHarness = async (
         itemModules?: ItemModule[];
         configConst?: Record<string, unknown>;
         additionalOccupiedCounts?: Map<string, number>;
+        neutralCityCount?: number;
     } = {}
 ) => {
     const state: TurnWorldState = {
@@ -143,8 +145,27 @@ const buildHarness = async (
             defaults: { trust: 50, trade: 100, supplyState: 1, frontState: 0 },
         },
         generals: [buildGeneral(1), buildGeneral(2, { meta: { killturn: 850, belong: 30 } })],
-        cities: Array.from({ length: cityCount }, (_, index) => buildCity(index + 1)),
-        nations: [buildNation(nationLevel)],
+        cities: [
+            ...Array.from({ length: cityCount }, (_, index) => buildCity(index + 1)),
+            ...Array.from({ length: options.neutralCityCount ?? 0 }, (_, index) =>
+                buildCity(cityCount + index + 1, 0)
+            ),
+        ],
+        nations: [
+            ...(options.neutralCityCount
+                ? [
+                      buildNation(0, {
+                          id: 0,
+                          name: '재야',
+                          capitalCityId: null,
+                          chiefGeneralId: null,
+                          gold: 0,
+                          rice: 0,
+                      }),
+                  ]
+                : []),
+            buildNation(nationLevel),
+        ],
         troops: [],
         diplomacy: [],
         events: [event],
@@ -233,6 +254,15 @@ describe('UpdateNationLevel monthly action', () => {
         expect(world.getNationById(1)).toMatchObject({ level: 3, gold: 10_000, rice: 20_000 });
         expect(reservedTurns.peekDirtyState().nationInitializationKeys).toEqual([]);
         expect(world.peekDirtyState().inheritancePointAdjustments).toEqual([]);
+        expect(world.peekDirtyState().logs).toEqual([]);
+    });
+
+    it('never promotes the Core-only neutral nation sentinel from neutral cities', async () => {
+        const { world, handler } = await buildHarness(0, 0, { neutralCityCount: 21 });
+
+        await handler([], { year: 193, month: 2, startyear: 190, currentEventID: 1, turnTime: new Date() }, event);
+
+        expect(world.getNationById(0)).toMatchObject({ level: 0, gold: 0, rice: 0 });
         expect(world.peekDirtyState().logs).toEqual([]);
     });
 

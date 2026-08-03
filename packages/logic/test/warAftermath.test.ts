@@ -170,11 +170,47 @@ describe('war aftermath', () => {
             },
         });
 
-        expect(attackerNation.meta.tech).toBe(1000.6);
-        expect(defenderNation.meta.tech).toBe(1000.9);
+        expect(attackerNation.meta.tech).toBe(Math.fround(1000.6));
+        expect(defenderNation.meta.tech).toBe(Math.fround(1000.9));
         expect(outcome.diplomacyDeltas).toHaveLength(2);
         expect(attackerCity.meta.dead).toBe(60);
         expect(defenderCity.meta.dead).toBe(90);
+    });
+
+    it('truncates each city casualty split before accumulating it', () => {
+        const attackerNation = buildNation(1);
+        const defenderNation = buildNation(2);
+        const attackerCity = buildCity(1, 1);
+        const defenderCity = buildCity(2, 2);
+        attackerCity.meta.dead = 10;
+        defenderCity.meta.dead = 20;
+        const attacker = buildGeneral(1, 1, 1);
+
+        resolveWarAftermath({
+            battle: {
+                attacker,
+                defenders: [],
+                defenderCity,
+                logs: [],
+                conquered: false,
+                reports: [
+                    { id: attacker.id, type: 'general', name: attacker.name, isAttacker: true, killed: 101, dead: 52 },
+                ],
+            },
+            attackerNation,
+            defenderNation,
+            attackerCity,
+            defenderCity,
+            nations: [attackerNation, defenderNation],
+            cities: [attackerCity, defenderCity],
+            generals: [attacker],
+            unitSet: buildUnitSet(),
+            config: buildConfig(),
+            time: { year: 200, month: 1, startYear: 180 },
+        });
+
+        expect(attackerCity.meta.dead).toBe(71);
+        expect(defenderCity.meta.dead).toBe(111);
     });
 
     it('logs emergency relocation when a surviving nation loses its capital', () => {
@@ -305,6 +341,62 @@ describe('war aftermath', () => {
                 '<D><b>Nation2</b></> 정복으로 금<C>2,600</> 쌀<C>3,600</>을 획득했습니다.',
             ])
         );
+    });
+
+    it('matches ruined-nation lord ordering and NPC appointment draws', () => {
+        const attackerNation = buildNation(1);
+        const defenderNation = buildNation(2);
+        defenderNation.chiefGeneralId = 10;
+        const attackerCity = buildCity(1, 1);
+        const defenderCity = buildCity(2, 2);
+        const attacker = buildGeneral(1, 1, 1);
+        const lord = buildGeneral(10, 2, 2);
+        const npc = buildGeneral(2, 2, 2);
+        npc.npcState = 2;
+
+        const rangeDraws = [0.2, 0.21, 0.4, 0.41];
+        const nextBool = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true).mockReturnValueOnce(false);
+        const rng = {
+            nextRange: vi.fn(() => rangeDraws.shift()!),
+            nextBool,
+            nextRangeInt: vi.fn(() => 6),
+        } as unknown as RandUtil;
+
+        const outcome = resolveWarAftermath({
+            battle: {
+                attacker,
+                defenders: [],
+                defenderCity,
+                logs: [],
+                conquered: true,
+                reports: [],
+            },
+            attackerNation,
+            defenderNation,
+            attackerCity,
+            defenderCity,
+            nations: [attackerNation, defenderNation],
+            cities: [attackerCity, defenderCity],
+            // The caller order deliberately puts the lord first.
+            generals: [attacker, lord, npc],
+            unitSet: buildUnitSet(),
+            config: {
+                ...buildConfig(),
+                joinMode: 'full',
+                joinRuinedNpcProbability: 0.1,
+            },
+            time: { year: 186, month: 1, startYear: 179 },
+            rng,
+        });
+
+        expect(npc.gold).toBe(800);
+        expect(npc.rice).toBe(790);
+        expect(lord.gold).toBe(600);
+        expect(lord.rice).toBe(590);
+        expect(nextBool.mock.calls.map(([probability]) => probability)).toEqual([0.5, 0.1, 0.5]);
+        expect(outcome.conquest?.ruinedNpcJoinPlans).toEqual([
+            { generalId: npc.id, destNationId: attackerNation.id, joinTurn: 6 },
+        ]);
     });
 
     it('dispatches city conquest to every stationed defender before collapse RNG', () => {

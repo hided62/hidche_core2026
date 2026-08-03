@@ -58,6 +58,7 @@ export interface InvestmentConfig {
     useCityTrust?: boolean;
     scaleSuccessByTrust?: boolean;
     roundCriticalScore?: boolean;
+    costMultiplier?: number;
 }
 
 export interface InvestmentEnvironment {
@@ -181,7 +182,7 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
         gold: number;
         rice: number;
     } {
-        const baseGold = this.env.develCost;
+        const baseGold = this.env.develCost * (this.config.costMultiplier ?? 1);
         const gold = Math.round(this.pipeline.onCalcDomestic(context, this.config.actionKey, 'cost', baseGold));
         return { gold, rice: 0 };
     }
@@ -300,8 +301,8 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
             appliedFrontDebuff = true;
         }
 
-        const exp = rewardScore * 0.7;
-        const dedication = rewardScore;
+        const exp = this.pipeline.onCalcStat(context, 'experience', rewardScore * 0.7);
+        const dedication = this.pipeline.onCalcStat(context, 'dedication', rewardScore);
 
         return {
             pick,

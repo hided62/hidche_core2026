@@ -25,6 +25,8 @@ interface ProcureContext<
 const ACTION_NAME = '물자조달';
 const ACTION_KEY = 'che_물자조달';
 
+export const roundLegacyAccumulatedInteger = (current: number, delta: number): number => Math.round(current + delta);
+
 export class ActionResolver<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionResolver<TriggerState, ProcureArgs> {
@@ -96,13 +98,17 @@ export class ActionResolver<
         score = Math.round(score);
 
         // 6. Calculate Exp/Dedication
-        const exp = (score * 0.7) / 3;
-        const ded = (score * 1.0) / 3;
+        const exp = this.pipeline.onCalcStat(context, 'experience', (score * 0.7) / 3);
+        const ded = this.pipeline.onCalcStat(context, 'dedication', (score * 1.0) / 3);
 
         // 7. Update General
-        // 레거시는 부동소수점 증가분을 INT column에 저장할 때 반올림한다.
-        const nextExp = general.experience + Math.round(exp);
-        const nextDed = general.dedication + Math.round(ded);
+        // Ref adds the floating delta to the current value first and MariaDB
+        // rounds the accumulated value when it writes the INT column. Rounding
+        // the delta separately changes cancellation cases such as
+        // 4554 + (45 * 0.7 / 3): the delta is 10.499999999999998, while the
+        // accumulated binary value is exactly 4564.5 and persists as 4565.
+        const nextExp = roundLegacyAccumulatedInteger(general.experience, exp);
+        const nextDed = roundLegacyAccumulatedInteger(general.dedication, ded);
 
         let appliedScore = score;
         if (context.city && [1, 3].includes(context.city.frontState)) {

@@ -134,6 +134,7 @@ export const createRaiseDisasterHandler = (options: {
             const securityRatio = clamp(city.security / city.securityMax / 0.8, 0, 1);
             const affectRatio = isGood ? 1.01 + securityRatio * 0.04 : 0.8 + securityRatio * 0.15;
             const trust = typeof city.meta.trust === 'number' ? city.meta.trust : 0;
+            const storedTrust = Math.fround(isGood ? Math.min(trust * affectRatio, 100) : trust * affectRatio);
             world.updateCity(city.id, {
                 state: picked.stateCode,
                 population: roundLegacyIntegerColumn(
@@ -158,9 +159,25 @@ export const createRaiseDisasterHandler = (options: {
                 ),
                 meta: {
                     ...city.meta,
-                    trust: isGood ? Math.min(trust * affectRatio, 100) : trust * affectRatio,
+                    // Ref assigns the SQL expression to a MariaDB FLOAT
+                    // column at each disaster event boundary.
+                    trust: storedTrust,
                 },
             });
+            if ((process.env.CORE_AI_TRACE_CITY_IDS?.split(',') ?? []).includes(String(city.id))) {
+                process.stdout.write(
+                    `MONTHLY_FLOAT_TRACE ${JSON.stringify({
+                        engine: 'core',
+                        cityId: city.id,
+                        year: environment.year,
+                        month: environment.month,
+                        isGood,
+                        inputTrust: trust,
+                        affectRatio,
+                        storedTrust,
+                    })}\n`
+                );
+            }
 
             if (isGood) {
                 continue;

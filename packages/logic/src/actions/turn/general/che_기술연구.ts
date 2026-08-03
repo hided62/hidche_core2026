@@ -27,6 +27,11 @@ import {
 } from './che_상업투자.js';
 import { JosaUtil } from '@sammo-ts/common';
 import { clamp } from 'es-toolkit';
+import {
+    addLegacyStoredFloat,
+    readLegacyStoredFloat,
+    toLegacyStoredFloat,
+} from '@sammo-ts/logic/compat/legacyFloat.js';
 
 export interface TechResearchArgs {}
 
@@ -55,7 +60,17 @@ const readTech = (nation: Nation): number => {
 };
 
 // 레거시 nation.tech는 MariaDB FLOAT이며 다음 명령 재조회 시 6자리 유효숫자로 양자화된다.
-const toLegacyStoredTech = (value: number): number => Number(Math.fround(value).toPrecision(6));
+// Ref stores tech in a MariaDB FLOAT column. FLOAT applies binary32
+// quantization on write; its six-significant-digit text rendering happens
+// only when the value is read, not on every update.
+export const toLegacyStoredTech = toLegacyStoredFloat;
+
+// mysqli renders a MariaDB FLOAT with six significant decimal digits before
+// PHP performs the next command's arithmetic. Model that read boundary, then
+// model the binary32 write boundary separately.
+export const readLegacyStoredTech = readLegacyStoredFloat;
+
+export const addLegacyStoredTech = addLegacyStoredFloat;
 
 export class ActionDefinition<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -107,10 +122,21 @@ export class ActionDefinition<
             techScore /= 4;
         }
 
+        const generalCount = Math.max(context.nationGeneralCount, this.env.initialNationGenLimit);
+        if (
+            (process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []).includes(String(context.general.id)) ||
+            (process.env.CORE_AI_TRACE_NATION_IDS?.split(',') ?? []).includes(String(context.nation.id))
+        ) {
+            process.stdout.write(
+                `AI_ACTION_PATCH_TRACE ${JSON.stringify({ engine: 'core-tech', generalId: context.general.id, nationId: context.nation.id, currentTech, techScore, nationGeneralCount: context.nationGeneralCount, generalCount, delta: techScore / generalCount })}\n`
+            );
+        }
+
         context.nation.meta = {
             ...context.nation.meta,
-            tech: toLegacyStoredTech(
-                currentTech + techScore / Math.max(context.nationGeneralCount, this.env.initialNationGenLimit)
+            tech: addLegacyStoredTech(
+                currentTech,
+                techScore / generalCount
             ),
         };
         context.general.gold = Math.max(0, context.general.gold - result.costGold);

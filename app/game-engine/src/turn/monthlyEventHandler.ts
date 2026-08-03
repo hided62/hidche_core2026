@@ -86,7 +86,9 @@ export const createRandomizeCityTradeRateHandler = (options: {
             )
         );
 
-        for (const city of world.listCities()) {
+        // Ref's `SELECT city, level FROM city` walks the primary city key.
+        // Make RNG consumption independent from PostgreSQL snapshot/insertion order.
+        for (const city of world.listCities().sort((left, right) => left.id - right.id)) {
             const probability = CITY_TRADE_PROBABILITY_BY_LEVEL[city.level];
             if (probability === undefined) {
                 throw new Error(`Unsupported city level for RandomizeCityTradeRate: ${city.level} (cityId=${city.id})`);
@@ -226,6 +228,11 @@ export const createMonthlyEventHandler = (options: {
         const year = targetCode === 'pre_month' ? context.previousYear : context.currentYear;
         const month = targetCode === 'pre_month' ? context.previousMonth : context.currentMonth;
         const remainingNationCount = world.listNations().filter((nation) => nation.id > 0).length;
+        // Ref does not write game_env.turntime until every event and
+        // postUpdateMonthly step has completed. Event actions therefore see
+        // the previous monthly boundary even after turnDate() has advanced
+        // year/month. Generated general turn times depend on this distinction.
+        const legacyTurnTime = new Date(context.turnTime.getTime() - world.getState().tickSeconds * 1_000);
 
         for (const event of world.listEvents(targetCode)) {
             const environment: MonthlyEventEnvironment = {
@@ -233,7 +240,7 @@ export const createMonthlyEventHandler = (options: {
                 month,
                 startyear: options.startYear,
                 currentEventID: event.id,
-                turnTime: context.turnTime,
+                turnTime: legacyTurnTime,
             };
             if (!evaluateCondition(event.condition, environment, remainingNationCount)) {
                 continue;

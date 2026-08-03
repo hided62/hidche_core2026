@@ -2,9 +2,40 @@ import type { GeneralAI } from '../core.js';
 import { findCrewTypeById, getTechCost } from '@sammo-ts/logic/world/unitSet.js';
 import type { TurnGeneral } from '../../../types.js';
 import { asRecord, readMetaNumber, readRequiredMetaNumber } from '../../aiUtils.js';
-import { buildAwardCandidate, buildSeizureCandidate, pickWeightedCandidate } from './helpers.js';
+import { buildAwardCandidate, buildSeizureCandidate } from './helpers.js';
 
 type ResourceName = 'gold' | 'rice';
+type ResourceCandidate = [{ destGeneralId: number; amount: number; isGold: boolean }, number];
+
+const pickResourceCandidate = (
+    ai: GeneralAI,
+    action: 'award' | 'seizure',
+    candidates: ResourceCandidate[],
+    reason: string
+) => {
+    if (candidates.length === 0) {
+        return null;
+    }
+    // Ref chooses the raw argument tuple first and only then checks the
+    // command's full constraints.  The draw is therefore observable even
+    // when the selected command is rejected.  Building/filtering every
+    // command before the draw shifts the shared nation/general AI stream.
+    const selected = ai.rng.choiceUsingWeightPair(candidates);
+    if ((process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []).includes(String(ai.general.id))) {
+        process.stdout.write(
+            `AI_REWARD_SELECTION_TRACE ${JSON.stringify({
+                engine: 'core',
+                actor: ai.general.id,
+                reason,
+                candidates,
+                selected,
+            })}\n`
+        );
+    }
+    return action === 'award'
+        ? buildAwardCandidate(ai, selected.destGeneralId, selected.amount, selected.isGold, reason)
+        : buildSeizureCandidate(ai, selected.destGeneralId, selected.amount, selected.isGold, reason);
+};
 
 const clampLegacy = (value: number, min: number | null, max: number | null): number => {
     if (min !== null && max !== null && max < min) {
@@ -13,13 +44,30 @@ const clampLegacy = (value: number, min: number | null, max: number | null): num
     return Math.max(min ?? -Infinity, Math.min(max ?? Infinity, value));
 };
 
-const getFullLeadership = (general: TurnGeneral): number =>
-    readMetaNumber(asRecord(general.meta), 'fullLeadership', general.stats.leadership);
+const getFullLeadership = (ai: GeneralAI, general: TurnGeneral): number => {
+    const nationLevel = ai.nation?.level ?? 0;
+    const officerBonus = general.officerLevel === 12 ? nationLevel * 2 : general.officerLevel >= 5 ? nationLevel : 0;
+    const maxStat = ai.commandEnv.maxStatLevel ?? ai.scenarioConfig.stat.max;
+    return Math.max(0, Math.min(general.stats.leadership + officerBonus, maxStat));
+};
 
-const getCrewGoldCost = (ai: GeneralAI, general: TurnGeneral, multiplier: number): number => {
+const getCrewGoldCost = (
+    ai: GeneralAI,
+    general: TurnGeneral,
+    baseMultiplier: number,
+    finalMultiplier = 1
+): number => {
     const crewType = findCrewTypeById(ai.unitSet, general.crewTypeId ?? ai.commandEnv.defaultCrewTypeId);
     const tech = readMetaNumber(asRecord(ai.nation?.meta), 'tech', 0);
-    return (crewType?.cost ?? 0) * getTechCost(tech) * getFullLeadership(general) * multiplier;
+    // Ref evaluates costWithTech() first, including its `/ 100`, and then
+    // applies `* 100 * baseMultiplier * finalMultiplier` from GeneralAI.
+    // Keeping that operation order is observable at exact resource boundaries
+    // (for example 3036 versus 3036.0000000000005).
+    return (
+        ((((crewType?.cost ?? 0) * getTechCost(tech) * getFullLeadership(ai, general)) / 100) * 100 *
+            baseMultiplier) *
+        finalMultiplier
+    );
 };
 
 const sortedByResource = (generals: Record<number, TurnGeneral>, resource: ResourceName, descending = false) =>
@@ -35,7 +83,7 @@ export const do유저장긴급포상 = (ai: GeneralAI) => {
     if (!nation) {
         return null;
     }
-    const candidates: Array<[ReturnType<GeneralAI['buildNationCandidate']>, number]> = [];
+    const candidates: ResourceCandidate[] = [];
     const resourceMap: Array<[ResourceName, number]> = [
         ['gold', ai.nationPolicy.reqHumanWarUrgentGold],
         ['rice', ai.nationPolicy.reqHumanWarUrgentRice],
@@ -50,7 +98,7 @@ export const do유저장긴급포상 = (ai: GeneralAI) => {
             if (!canUseGeneral(general)) {
                 continue;
             }
-            let required = getCrewGoldCost(ai, general, 3 * 1.1);
+            let required = getCrewGoldCost(ai, general, 3, 1.1);
             if (ai.world.currentYear > ai.startYear + 3) {
                 required = Math.max(required, minimum);
             }
@@ -64,14 +112,11 @@ export const do유저장긴급포상 = (ai: GeneralAI) => {
                 continue;
             }
             amount = clampLegacy(amount, 100, ai.maxResourceActionAmount);
-            candidates.push([
-                buildAwardCandidate(ai, general.id, amount, resKey === 'gold', '유저장긴급포상'),
-                generals.length - index,
-            ]);
+            candidates.push([{ destGeneralId: general.id, amount, isGold: resKey === 'gold' }, generals.length - index]);
         }
     }
 
-    return pickWeightedCandidate(ai, candidates);
+    return pickResourceCandidate(ai, 'award', candidates, '유저장긴급포상');
 };
 
 export const do유저장포상 = (ai: GeneralAI) => {
@@ -79,7 +124,7 @@ export const do유저장포상 = (ai: GeneralAI) => {
     if (!nation) {
         return null;
     }
-    const candidates: Array<[ReturnType<GeneralAI['buildNationCandidate']>, number]> = [];
+    const candidates: ResourceCandidate[] = [];
     const resourceMap: Array<[ResourceName, number, number, number]> = [
         [
             'gold',
@@ -109,7 +154,7 @@ export const do유저장포상 = (ai: GeneralAI) => {
             }
             let enough: number;
             if (ai.userWarGenerals[general.id]) {
-                let required = getCrewGoldCost(ai, general, 6 * 1.1);
+                let required = getCrewGoldCost(ai, general, 6, 1.1);
                 if (ai.world.currentYear > ai.startYear + 3) {
                     required = Math.max(required, warMinimum);
                 }
@@ -126,14 +171,11 @@ export const do유저장포상 = (ai: GeneralAI) => {
                 continue;
             }
             amount = clampLegacy(amount, 100, ai.maxResourceActionAmount);
-            candidates.push([
-                buildAwardCandidate(ai, general.id, amount, resKey === 'gold', '유저장포상'),
-                generals.length - index,
-            ]);
+            candidates.push([{ destGeneralId: general.id, amount, isGold: resKey === 'gold' }, generals.length - index]);
         }
     }
 
-    return pickWeightedCandidate(ai, candidates);
+    return pickResourceCandidate(ai, 'award', candidates, '유저장포상');
 };
 
 export const doNPC긴급포상 = (ai: GeneralAI) => {
@@ -141,7 +183,7 @@ export const doNPC긴급포상 = (ai: GeneralAI) => {
     if (!nation) {
         return null;
     }
-    const candidates: Array<[ReturnType<GeneralAI['buildNationCandidate']>, number]> = [];
+    const candidates: ResourceCandidate[] = [];
     const resourceMap: Array<[ResourceName, number, number]> = [
         ['gold', ai.nationPolicy.reqNationGold, ai.nationPolicy.reqNpcWarGold / 2],
         ['rice', ai.nationPolicy.reqNationRice, ai.nationPolicy.reqNpcWarRice / 2],
@@ -173,14 +215,11 @@ export const doNPC긴급포상 = (ai: GeneralAI) => {
                 continue;
             }
             amount = clampLegacy(amount, 100, ai.maxResourceActionAmount);
-            candidates.push([
-                buildAwardCandidate(ai, general.id, amount, resKey === 'gold', 'NPC긴급포상'),
-                generals.length - index,
-            ]);
+            candidates.push([{ destGeneralId: general.id, amount, isGold: resKey === 'gold' }, generals.length - index]);
         }
     }
 
-    return pickWeightedCandidate(ai, candidates);
+    return pickResourceCandidate(ai, 'award', candidates, 'NPC긴급포상');
 };
 
 export const doNPC포상 = (ai: GeneralAI) => {
@@ -188,7 +227,7 @@ export const doNPC포상 = (ai: GeneralAI) => {
     if (!nation) {
         return null;
     }
-    const candidates: Array<[ReturnType<GeneralAI['buildNationCandidate']>, number]> = [];
+    const candidates: ResourceCandidate[] = [];
     const resourceMap: Array<[ResourceName, number, number, number]> = [
         ['gold', ai.nationPolicy.reqNationGold, ai.nationPolicy.reqNpcWarGold, ai.nationPolicy.reqNpcDevelGold],
         ['rice', ai.nationPolicy.reqNationRice, ai.nationPolicy.reqNpcWarRice, ai.nationPolicy.reqNpcDevelRice],
@@ -208,7 +247,7 @@ export const doNPC포상 = (ai: GeneralAI) => {
             if (!canUseGeneral(general)) {
                 continue;
             }
-            let required = getCrewGoldCost(ai, general, 3 * 1.1);
+            let required = getCrewGoldCost(ai, general, 3, 1.1);
             if (ai.world.currentYear > ai.startYear + 5) {
                 required = Math.max(required, warMinimum);
             }
@@ -222,10 +261,23 @@ export const doNPC포상 = (ai: GeneralAI) => {
                 continue;
             }
             amount = clampLegacy(amount, 100, ai.maxResourceActionAmount);
-            candidates.push([
-                buildAwardCandidate(ai, general.id, amount, resKey === 'gold', 'NPC포상'),
-                weightBase - index,
-            ]);
+            if ((process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []).includes(String(ai.general.id))) {
+                process.stdout.write(
+                    `AI_REWARD_TRACE ${JSON.stringify({
+                        engine: 'core',
+                        actor: ai.general.id,
+                        target: general.id,
+                        resource: resKey,
+                        nationResource: nation[resKey],
+                        targetResource: general[resKey],
+                        required,
+                        enough,
+                        maxResourceActionAmount: ai.maxResourceActionAmount,
+                        amount,
+                    })}\n`
+                );
+            }
+            candidates.push([{ destGeneralId: general.id, amount, isGold: resKey === 'gold' }, weightBase - index]);
         }
         for (const [index, general] of civilGenerals.entries()) {
             if (general[resKey] >= civilMinimum) {
@@ -239,14 +291,11 @@ export const doNPC포상 = (ai: GeneralAI) => {
                 continue;
             }
             amount = clampLegacy(amount, 100, ai.maxResourceActionAmount);
-            candidates.push([
-                buildAwardCandidate(ai, general.id, amount, resKey === 'gold', 'NPC포상'),
-                weightBase - index,
-            ]);
+            candidates.push([{ destGeneralId: general.id, amount, isGold: resKey === 'gold' }, weightBase - index]);
         }
     }
 
-    return pickWeightedCandidate(ai, candidates);
+    return pickResourceCandidate(ai, 'award', candidates, 'NPC포상');
 };
 
 export const doNPC몰수 = (ai: GeneralAI) => {
@@ -254,7 +303,7 @@ export const doNPC몰수 = (ai: GeneralAI) => {
     if (!nation) {
         return null;
     }
-    const candidates: Array<[ReturnType<GeneralAI['buildNationCandidate']>, number]> = [];
+    const candidates: ResourceCandidate[] = [];
     const resourceMap: Array<[ResourceName, number, number, number]> = [
         ['gold', ai.nationPolicy.reqNationGold, ai.nationPolicy.reqNpcWarGold, ai.nationPolicy.reqNpcDevelGold],
         ['rice', ai.nationPolicy.reqNationRice, ai.nationPolicy.reqNpcWarRice, ai.nationPolicy.reqNpcDevelRice],
@@ -269,7 +318,7 @@ export const doNPC몰수 = (ai: GeneralAI) => {
             if (amount < ai.nationPolicy.minimumResourceActionAmount) {
                 break;
             }
-            candidates.push([buildSeizureCandidate(ai, general.id, amount, resKey === 'gold', 'NPC몰수'), amount]);
+            candidates.push([{ destGeneralId: general.id, amount, isGold: resKey === 'gold' }, amount]);
         }
 
         const nationDelta = nationMinimum * 1.5 - nation[resKey];
@@ -294,9 +343,9 @@ export const doNPC몰수 = (ai: GeneralAI) => {
                 break;
             }
             amount = clampLegacy(amount, 100, ai.maxResourceActionAmount);
-            candidates.push([buildSeizureCandidate(ai, general.id, amount, resKey === 'gold', 'NPC몰수'), amount]);
+            candidates.push([{ destGeneralId: general.id, amount, isGold: resKey === 'gold' }, amount]);
         }
     }
 
-    return pickWeightedCandidate(ai, candidates);
+    return pickResourceCandidate(ai, 'seizure', candidates, 'NPC몰수');
 };

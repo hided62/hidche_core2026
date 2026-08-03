@@ -18,6 +18,7 @@ import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js'
 import type { ActionContextBuilder, ActionContextBase } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
+import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js';
 import { getLegacyStringWidth } from '@sammo-ts/logic/troop/management.js';
 
 export interface UprisingArgs {}
@@ -30,8 +31,12 @@ export interface UprisingContext extends ActionContextBase {
 }
 
 const ACTION_NAME = '거병';
-const formatHourMinute = (date: Date): string =>
-    `${String(date.getUTCHours()).padStart(2, '0')}:${String(date.getUTCMinutes()).padStart(2, '0')}`;
+const formatHourMinute = (date: unknown): string => {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+        return '00:00';
+    }
+    return `${String(date.getUTCHours()).padStart(2, '0')}:${String(date.getUTCMinutes()).padStart(2, '0')}`;
+};
 
 const truncateLegacyWidth = (value: string, maxWidth: number): string => {
     let result = '';
@@ -52,6 +57,11 @@ export class ActionDefinition<
 > implements GeneralActionDefinition<TriggerState, UprisingArgs> {
     public readonly key = 'che_거병';
     public readonly name = ACTION_NAME;
+    private readonly pipeline: GeneralActionPipeline<TriggerState>;
+
+    constructor(env: TurnCommandEnv) {
+        this.pipeline = new GeneralActionPipeline(env.generalActionModules ?? []);
+    }
     getInheritanceActiveActionAmount(): number {
         return 1;
     }
@@ -89,15 +99,6 @@ export class ActionDefinition<
             nationName = '㉥' + nationName;
         }
 
-        const npcNationPolicy =
-            general.npcState >= 2
-                ? {
-                      values: {
-                          minNPCRecruitCityPopulation: 0,
-                      },
-                  }
-                : undefined;
-
         const newNation: Nation = {
             id: newNationId,
             name: nationName,
@@ -116,7 +117,6 @@ export class ActionDefinition<
                 surlimit: 72,
                 secretlimit: uprisingCtx.scenarioId >= 1000 ? 1 : 3,
                 gennum: 1,
-                ...(npcNationPolicy ? { npc_nation_policy: npcNationPolicy } : {}),
             },
         };
 
@@ -158,8 +158,8 @@ export class ActionDefinition<
             createGeneralPatchEffect<TriggerState>({
                 nationId: newNationId,
                 officerLevel: 12,
-                experience: (general.experience || 0) + 100,
-                dedication: (general.dedication || 0) + 100,
+                experience: (general.experience || 0) + this.pipeline.onCalcStat(context, 'experience', 100),
+                dedication: (general.dedication || 0) + this.pipeline.onCalcStat(context, 'dedication', 100),
                 meta: {
                     ...general.meta,
                     belong: 1,
@@ -200,5 +200,5 @@ export const commandSpec: GeneralTurnCommandSpec = {
     category: '전략',
     reqArg: false,
 
-    createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
+    createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env),
 };

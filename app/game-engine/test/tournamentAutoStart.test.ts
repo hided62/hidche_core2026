@@ -83,7 +83,7 @@ describe('monthly tournament auto start', () => {
             auto: true,
             openYear: 193,
             openMonth: 2,
-            termSeconds: 600,
+            termSeconds: 10,
             nextAt: '2026-07-25T00:10:00.000Z',
         });
         expect(world.getState().meta.tournamentPattern).toEqual([0, 1, 2]);
@@ -218,8 +218,8 @@ describe('monthly tournament auto start', () => {
             const second = await run();
             expect(second).toEqual(first);
             expect(first).toEqual({
-                tournamentState: expect.objectContaining({ type: 1 }),
-                remainingPattern: [2, 0, 0, 3],
+                tournamentState: expect.objectContaining({ type: 0, bettingId: 1 }),
+                remainingPattern: [1, 3, 2, 0],
             });
         } finally {
             random.mockRestore();

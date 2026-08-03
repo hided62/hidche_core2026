@@ -16,6 +16,7 @@ import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/action
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js';
+import { applyLegacyInjury, finalizeLegacyStat } from './legacyGeneralStat.js';
 
 const ACTION_NAME = '맹훈련';
 const ACTION_KEY = 'cr_맹훈련';
@@ -71,7 +72,9 @@ export class ActionDefinition<
         const maxTrain = this.env.maxTrainByCommand > 0 ? this.env.maxTrainByCommand : 100;
         const maxAtmos = this.env.maxAtmosByCommand > 0 ? this.env.maxAtmosByCommand : 100;
 
-        const leadership = this.pipeline.onCalcStat(context, 'leadership', general.stats.leadership);
+        const leadership = finalizeLegacyStat(
+            this.pipeline.onCalcStat(context, 'leadership', applyLegacyInjury(general.stats.leadership, general.injury))
+        );
         const score = Math.round((leadership * 100 * trainDelta * 2) / (Math.max(general.crew, 1) * 3));
         const scoreText = score.toLocaleString('en-US');
 

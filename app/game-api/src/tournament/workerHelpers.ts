@@ -37,12 +37,17 @@ export const nextStage = (stage: number): number => {
     }
 };
 
+const resolveScheduledBaseMs = (state: TournamentState): number => {
+    const scheduled = new Date(state.nextAt).getTime();
+    return Number.isFinite(scheduled) ? scheduled : Date.now();
+};
+
 export const resolveNextAt = (state: TournamentState): string =>
-    new Date(Date.now() + Math.max(1, state.termSeconds) * 1000).toISOString();
+    new Date(resolveScheduledBaseMs(state) + Math.max(1, state.termSeconds) * 1000).toISOString();
 
 export const resolveBettingCloseAt = (state: TournamentState): string => {
     const bettingTermMs = Math.min(state.termSeconds * 60, 3600) * 1000;
-    return new Date(Date.now() + Math.max(1000, bettingTermMs)).toISOString();
+    return new Date(resolveScheduledBaseMs(state) + Math.max(1000, bettingTermMs)).toISOString();
 };
 
 export const resolveStatValue = (

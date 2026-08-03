@@ -191,6 +191,10 @@ describe('Blank Start Scenario', () => {
         const newNation = world.getNation(newNationId)!;
         expect(newNation.chiefGeneralId).toBe(gen0.id);
         expect(newNation.level).toBe(0); // Wandering Nation
+        // Ref che_거병 does not install a nation-specific NPC policy. Leaving
+        // this key absent preserves AutorunNationPolicy's 50,000 population
+        // floor instead of silently overriding it with zero.
+        expect(newNation.meta).not.toHaveProperty('npc_nation_policy');
 
         // --- Step 2: Gen 1 performs Appointment ---
         // Before appointment, Gen 0 should FAIL Founding because general count = 1

@@ -5,6 +5,7 @@ import type { GeneralActionOutcome, GeneralActionResolveContext } from '@sammo-t
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
+import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js';
 
 export interface RecoveryArgs {}
 
@@ -21,9 +22,11 @@ export class ActionDefinition<
     public readonly key = 'che_요양';
     public readonly name = ACTION_NAME;
     private readonly env: RecoveryEnvironment;
+    private readonly pipeline: GeneralActionPipeline<TriggerState>;
 
-    constructor(env: RecoveryEnvironment = {}) {
+    constructor(env: RecoveryEnvironment & Partial<Pick<TurnCommandEnv, 'generalActionModules'>> = {}) {
         this.env = env;
+        this.pipeline = new GeneralActionPipeline(env.generalActionModules ?? []);
     }
 
     parseArgs(_raw: unknown): RecoveryArgs | null {
@@ -46,8 +49,8 @@ export class ActionDefinition<
         // 직접 수정 (Immer Draft)
         general.injury = nextInjury;
         general.gold = Math.max(0, general.gold - costGold);
-        general.experience += 10;
-        general.dedication += 7;
+        general.experience += this.pipeline.onCalcStat(context, 'experience', 10);
+        general.dedication += this.pipeline.onCalcStat(context, 'dedication', 7);
 
         context.addLog(`건강 회복을 위해 요양합니다.`);
 
@@ -63,5 +66,5 @@ export const commandSpec: GeneralTurnCommandSpec = {
     category: '개인',
     reqArg: false,
 
-    createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
+    createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env),
 };

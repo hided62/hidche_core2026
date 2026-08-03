@@ -13,6 +13,8 @@ import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js'
 import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
+import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js';
+import { applyLegacyInjury, finalizeLegacyStat } from './legacyGeneralStat.js';
 
 export interface TrainingArgs {}
 
@@ -21,6 +23,7 @@ export interface TrainingEnvironment {
     maxTrainByCommand?: number;
     costGold?: number;
     unitSet?: TurnCommandEnv['unitSet'];
+    generalActionModules?: TurnCommandEnv['generalActionModules'];
 }
 
 const ACTION_NAME = '훈련';
@@ -32,9 +35,11 @@ export class ActionDefinition<
     public readonly key = 'che_훈련';
     public readonly name = ACTION_NAME;
     private readonly env: TrainingEnvironment;
+    private readonly pipeline: GeneralActionPipeline<TriggerState>;
 
     constructor(env: TrainingEnvironment = {}) {
         this.env = env;
+        this.pipeline = new GeneralActionPipeline(env.generalActionModules ?? []);
     }
 
     parseArgs(_raw: unknown): TrainingArgs | null {
@@ -70,10 +75,13 @@ export class ActionDefinition<
                 ? this.env.maxTrainByCommand
                 : DEFAULT_MAX_TRAIN;
         const trainDelta = this.env.trainDelta && this.env.trainDelta > 0 ? this.env.trainDelta : 0;
+        const leadership = finalizeLegacyStat(
+            this.pipeline.onCalcStat(context, 'leadership', applyLegacyInjury(general.stats.leadership, general.injury))
+        );
         const score = Math.max(
             0,
             Math.min(
-                Math.round((general.stats.leadership * 100 * trainDelta) / Math.max(general.crew, 1)),
+                Math.round((leadership * 100 * trainDelta) / Math.max(general.crew, 1)),
                 maxTrain - general.train
             )
         );
@@ -81,15 +89,23 @@ export class ActionDefinition<
 
         general.train += score;
         general.gold = Math.max(0, general.gold - costGold);
-        general.experience += 100;
-        general.dedication += 70;
+        general.experience += this.pipeline.onCalcStat(context, 'experience', 100);
+        general.dedication += this.pipeline.onCalcStat(context, 'dedication', 70);
         const leadershipExp = typeof general.meta.leadership_exp === 'number' ? general.meta.leadership_exp : 0;
         general.meta.leadership_exp = leadershipExp + 1;
         const crewType = this.env.unitSet?.crewTypes?.find((entry) => entry.id === general.crewTypeId);
         if (crewType) {
-            const dexKey = `dex${crewType.armType}`;
+            const armType = crewType.armType === 0 ? 5 : crewType.armType;
+            if (armType < 0) {
+                context.addLog(`훈련치가 <C>${score.toLocaleString()}</> 상승했습니다.`);
+                tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
+                return { effects: [] };
+            }
+            const dexKey = `dex${armType}`;
             const dex = typeof general.meta[dexKey] === 'number' ? general.meta[dexKey] : 0;
-            general.meta[dexKey] = dex + score;
+            const typeMultiplier = armType === 4 || armType === 5 ? 0.9 : 1;
+            general.meta[dexKey] =
+                dex + this.pipeline.onCalcStat(context, 'addDex', score * typeMultiplier, { armType });
         }
 
         context.addLog(`훈련치가 <C>${score.toLocaleString()}</> 상승했습니다.`);
@@ -112,5 +128,6 @@ export const commandSpec: GeneralTurnCommandSpec = {
             trainDelta: env.trainDelta,
             maxTrainByCommand: env.maxTrainByCommand,
             unitSet: env.unitSet,
+            generalActionModules: env.generalActionModules,
         }),
 };

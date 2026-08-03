@@ -17,10 +17,12 @@ import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js'
 import type { GeneralTurnCommandSpec } from './index.js';
 import { parseArgsWithSchema } from '../parseArgs.js';
 import { normalizeResourceActionAmount } from '../resourceAmount.js';
+import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js';
 
 export interface TradeEnvironment {
     exchangeFee?: number;
     maxResourceActionAmount?: number;
+    generalActionModules?: TurnCommandEnv['generalActionModules'];
 }
 
 const ACTION_NAME = '군량매매';
@@ -37,9 +39,11 @@ export class ActionDefinition<
     public readonly key = 'che_군량매매';
     public readonly name = ACTION_NAME;
     private readonly env: TradeEnvironment;
+    private readonly pipeline: GeneralActionPipeline<TriggerState>;
 
     constructor(env: TradeEnvironment = {}) {
         this.env = env;
+        this.pipeline = new GeneralActionPipeline(env.generalActionModules ?? []);
     }
 
     parseArgs(raw: unknown): TradeArgs | null {
@@ -126,8 +130,8 @@ export class ActionDefinition<
         }
 
         // 경험치 및 명성 증가
-        general.experience += 30;
-        general.dedication += 50;
+        general.experience += this.pipeline.onCalcStat(context, 'experience', 30);
+        general.dedication += this.pipeline.onCalcStat(context, 'dedication', 50);
         const weightedStats = [
             ['leadership_exp', general.stats.leadership],
             ['strength_exp', general.stats.strength],
@@ -167,5 +171,6 @@ export const commandSpec: GeneralTurnCommandSpec = {
     createDefinition: (env: TurnCommandEnv) =>
         new ActionDefinition({
             maxResourceActionAmount: env.maxResourceActionAmount,
+            generalActionModules: env.generalActionModules,
         }),
 };

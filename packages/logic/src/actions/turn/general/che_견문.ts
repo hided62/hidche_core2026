@@ -7,6 +7,7 @@ import { defaultActionContextBuilder } from '@sammo-ts/logic/actions/turn/action
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
 import { increaseMetaNumber } from '@sammo-ts/logic/war/utils.js';
+import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js';
 
 export interface SightseeingArgs {}
 
@@ -172,6 +173,11 @@ export class ActionDefinition<
 > implements GeneralActionDefinition<TriggerState, SightseeingArgs> {
     public readonly key = 'che_견문';
     public readonly name = ACTION_NAME;
+    private readonly pipeline: GeneralActionPipeline<TriggerState>;
+
+    public constructor(env: TurnCommandEnv) {
+        this.pipeline = new GeneralActionPipeline(env.generalActionModules ?? []);
+    }
 
     parseArgs(_raw: unknown): SightseeingArgs | null {
         void _raw;
@@ -231,7 +237,7 @@ export class ActionDefinition<
             general.injury = Math.min(80, general.injury + delta);
         }
 
-        general.experience += exp;
+        general.experience += this.pipeline.onCalcStat(context, 'experience', exp);
 
         context.addLog(message);
         tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
@@ -248,5 +254,5 @@ export const commandSpec: GeneralTurnCommandSpec = {
     category: '개인',
     reqArg: false,
 
-    createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
+    createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env),
 };

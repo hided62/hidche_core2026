@@ -1,5 +1,6 @@
 import type { GeneralAI } from '../../core.js';
-import { buildAssignmentCandidate, pickFrontCityWeight, pickRandomCityId, resolveCityPopRatio, selectRecruitableCity } from '../helpers.js';
+import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js';
+import { buildAssignmentCandidate, pickFrontCityWeight, pickRandomCityId, resolveCityPopRatio } from '../helpers.js';
 
 export const doNPC후방발령 = (ai: GeneralAI) => {
     if (!ai.nation || !ai.nation.capitalCityId) {
@@ -12,6 +13,26 @@ export const doNPC후방발령 = (ai: GeneralAI) => {
         return null;
     }
 
+    const actionPipeline = new GeneralActionPipeline(ai.commandEnv.generalActionModules ?? []);
+    const actionContext = (general: GeneralAI['general']) => ({
+        general,
+        nation: ai.nation,
+        ...(ai.worldRef
+            ? {
+                  worldView: {
+                      listGenerals: () => ai.worldRef!.listGenerals(),
+                      listGeneralsByCity: (cityId: number) =>
+                          ai.worldRef!.listGenerals().filter((candidate) => candidate.cityId === cityId),
+                      listNations: () => ai.worldRef!.listNations(),
+                  },
+              }
+            : {}),
+        time: {
+            year: ai.world.currentYear,
+            month: ai.world.currentMonth,
+            startYear: ai.startYear,
+        },
+    });
     const candidates = Object.values(ai.npcWarGenerals).filter((general) => {
         if (general.id === ai.general.id) {
             return false;
@@ -29,16 +50,56 @@ export const doNPC후방발령 = (ai: GeneralAI) => {
         if (general.crew >= ai.nationPolicy.minWarCrew) {
             return false;
         }
+        if (actionPipeline.onCalcDomestic(actionContext(general), '징집인구', 'score', 100) <= 1) {
+            return false;
+        }
         return true;
     });
 
     if (candidates.length === 0) {
         return null;
     }
+    if (Object.keys(ai.supplyCities).length === 1) {
+        return null;
+    }
 
     const picked = ai.rng.choice(candidates);
-    const minPop = picked.stats.leadership * 100 + ai.aiConst.minAvailableRecruitPop;
-    const destCityCandidates = selectRecruitableCity(ai, minPop);
+    const fullLeadership = actionPipeline.onCalcStat(
+        actionContext(picked),
+        'leadership',
+        picked.stats.leadership
+    ) as number;
+    const minPop = Math.max(
+        fullLeadership * 100 + ai.aiConst.minAvailableRecruitPop,
+        fullLeadership * 100 + ai.nationPolicy.minNpcRecruitCityPopulation
+    );
+    const destCityCandidates: Record<number, number> = {};
+    for (const city of Object.values(ai.backupCities)) {
+        const ratio = resolveCityPopRatio(city);
+        if (
+            city.id !== ai.city?.id &&
+            city.population >= ai.nationPolicy.minNpcRecruitCityPopulation &&
+            city.population >= minPop &&
+            ratio >= ai.nationPolicy.safeRecruitCityPopulationRatio
+        ) {
+            destCityCandidates[city.id] = ratio;
+        }
+    }
+    if (Object.keys(destCityCandidates).length === 0) {
+        for (const city of Object.values(ai.supplyCities)) {
+            const ratio = resolveCityPopRatio(city);
+            if (
+                city.id !== ai.city?.id &&
+                city.population >= ai.nationPolicy.minNpcRecruitCityPopulation &&
+                city.population > minPop &&
+                ratio >= ai.nationPolicy.safeRecruitCityPopulationRatio
+            ) {
+                // Ref contains a non-assigning `pop_ratio / 2` expression for
+                // front cities, so the persisted behavior keeps this weight.
+                destCityCandidates[city.id] = ratio;
+            }
+        }
+    }
     if (Object.keys(destCityCandidates).length === 0) {
         return null;
     }
@@ -102,12 +163,14 @@ export const doNPC전방발령 = (ai: GeneralAI) => {
         return null;
     }
 
+    // Ref consumes the general draw before the weighted front-city draw.
+    // Reversing these two calls keeps the seed but assigns a different person.
+    const destGeneral = ai.rng.choice(candidates);
     const cityCandidates = pickFrontCityWeight(ai);
     const destCityId = Number(ai.rng.choiceUsingWeight(cityCandidates));
     if (!Number.isFinite(destCityId)) {
         return null;
     }
-    const destGeneral = ai.rng.choice(candidates);
     return buildAssignmentCandidate(ai, destGeneral.id, destCityId, 'NPC전방발령');
 };
 

@@ -21,6 +21,9 @@ import type { InMemoryTurnWorld, TurnCalendarHandler, TurnCalendarContext } from
 import { resolveAppliedNationRate } from './nationTaxRate.js';
 import type { TurnGeneral } from './types.js';
 
+const DEFAULT_BASE_GOLD = 0;
+const DEFAULT_BASE_RICE = 2_000;
+
 const resolveNumber = (source: Record<string, unknown>, keys: string[], fallback: number): number => {
     for (const key of keys) {
         const value = source[key];
@@ -97,8 +100,6 @@ const pushLogs = (world: InMemoryTurnWorld, logs: ReturnType<ActionLogger['flush
     }
 };
 
-const roundResource = (value: number): number => Math.round(value);
-
 const applyIncomeOutcome = (
     current: number,
     income: number,
@@ -144,7 +145,11 @@ const processIncomeForNation = (
             : getRiceIncome(incomeContext, nationCities, officerCounts, nation.capitalCityId ?? 0, nation.level) +
               getWallIncome(incomeContext, nationCities, officerCounts, nation.capitalCityId ?? 0, nation.level);
 
-    const incomeValue = roundResource(income);
+    // Ref calculates the payout ratio from the pre-persistence income value.
+    // Half-unit income (for example 943.5) is therefore not rounded before
+    // salaries are distributed, even though the integer nation column is
+    // rounded when the final state is flushed to MariaDB.
+    const incomeValue = income;
     const originOutcome = getOutcome(100, nationGenerals);
     const bill = resolveNationBill(nation);
     const outcome = Math.round((bill / 100) * originOutcome);
@@ -167,6 +172,14 @@ const processIncomeForNation = (
         type === 'gold' ? `이번 수입은 금 <C>${incomeText}</>입니다.` : `이번 수입은 쌀 <C>${incomeText}</>입니다.`;
     for (const general of nationGenerals) {
         const pay = Math.round(getBill(general.dedication) * ratio);
+        if (
+            process.env.SEED_PARITY_MONTHLY_RESOURCE_TRACE === '1' &&
+            (process.env.AI_TRACE_GENERAL_IDS ?? '').split(',').includes(String(general.id))
+        ) {
+            process.stdout.write(
+                `MONTHLY_RESOURCE_CORE ${JSON.stringify({ action: 'ProcessIncome', type, generalId: general.id, current: general[type], pay, ratio, originOutcome })}\n`
+            );
+        }
         if (type === 'gold') {
             world.updateGeneral(general.id, { gold: general.gold + pay });
         } else {
@@ -197,8 +210,8 @@ export const createIncomeHandler = (options: {
     nationTraits: Map<string, NationTraitModule>;
 }): IncomeHandler => {
     const constValues = asRecord(options.scenarioConfig.const);
-    const baseGold = resolveNumber(constValues, ['baseGold', 'basegold'], 0);
-    const baseRice = resolveNumber(constValues, ['baseRice', 'baserice'], 0);
+    const baseGold = resolveNumber(constValues, ['baseGold', 'basegold'], DEFAULT_BASE_GOLD);
+    const baseRice = resolveNumber(constValues, ['baseRice', 'baserice'], DEFAULT_BASE_RICE);
 
     const runResource = (type: 'gold' | 'rice'): void => {
         const world = options.getWorld();
@@ -217,6 +230,9 @@ export const createIncomeHandler = (options: {
         }
 
         for (const nation of nations) {
+            if (nation.id <= 0) {
+                continue;
+            }
             const nationGenerals = byNation.get(nation.id) ?? [];
             const officerCounts = buildOfficerCountMap(nationGenerals);
             processIncomeForNation(

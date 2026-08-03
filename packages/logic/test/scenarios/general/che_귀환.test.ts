@@ -6,6 +6,8 @@ import type { MapDefinition } from '../../../src/world/types.js';
 import type { TurnCommandEnv } from '../../../src/actions/turn/commandEnv.js';
 import type { ConstraintContext, RequirementKey, StateView } from '../../../src/constraints/types.js';
 import { evaluateActionConstraints } from '../../../src/constraints/evaluate.js';
+import { createRefOrderedActionStack } from '../../../src/actionModules/bundle.js';
+import type { GeneralActionModule } from '../../../src/actionModules/general.js';
 
 const MOCK_SCENARIO_BASE = {
     title: 'Test',
@@ -146,7 +148,7 @@ function createViewState(world: InMemoryWorld, year: number = 200, env: TurnComm
 }
 
 describe('che_귀환', () => {
-    it('should return to capital if normal officer', async () => {
+    it('should return to capital and apply legacy experience modifiers', async () => {
         const bootstrapResult = buildScenarioBootstrap({
             scenario: MOCK_SCENARIO_BASE,
             map: LINEAR_MAP,
@@ -203,7 +205,23 @@ describe('che_귀환', () => {
                 generalId: general.id,
                 commandKey: 'che_귀환',
                 resolver: (await import('../../../src/actions/turn/general/che_귀환.js')).commandSpec.createDefinition(
-                    {} as any
+                    {
+                        ...systemEnv,
+                        generalActionModules: createRefOrderedActionStack<GeneralActionModule>({
+                            nation: {
+                                onCalcStat: (_context, statName, value) =>
+                                    statName === 'experience' && typeof value === 'number' ? value * 1.1 : value,
+                            },
+                            officer: {},
+                            domestic: {},
+                            war: {},
+                            personality: {},
+                            crewType: null,
+                            inheritance: {},
+                            scenario: null,
+                            items: [],
+                        }),
+                    }
                 ),
                 args: {},
             },
@@ -211,7 +229,7 @@ describe('che_귀환', () => {
 
         const updated = world.getGeneral(general.id);
         expect(updated?.cityId).toBe(101); // Capital
-        expect(updated?.experience).toBe(70);
+        expect(updated?.experience).toBe(77);
         expect(updated?.dedication).toBe(100);
         expect(updated?.meta.leadership_exp).toBe(1);
 

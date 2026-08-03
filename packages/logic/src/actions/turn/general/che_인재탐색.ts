@@ -51,11 +51,14 @@ export interface TalentScoutResolveContext<
 > extends GeneralActionResolveContext<TriggerState> {
     currentYear: number;
     currentMonth: number;
+    retirementYear: number;
     worldSummary: TalentScoutWorldSummary;
     generalPool?: TalentScoutCandidate[];
     cityPool?: City[];
+    existingGeneralNames: string[];
     createGeneralId: () => number;
     turnTermMinutes: number;
+    turnTimeBase: Date;
 }
 
 export interface TalentScoutEnvironment {
@@ -96,6 +99,17 @@ const DEFAULT_MIN_AGE = 20;
 const DEFAULT_MAX_AGE = 25;
 const DEFAULT_DEATH_MIN = 10;
 const DEFAULT_DEATH_MAX = 50;
+
+export const normalizeLegacyGeneratedDex = (
+    values: readonly [number, number, number, number, number]
+): [number, number, number, number, number] =>
+    values.map((value) => Math.trunc(value)) as [number, number, number, number, number];
+
+export const resolveLegacySpecialityAge = (
+    retirementYear: number,
+    age: number,
+    divisor: number
+): number => Math.round((retirementYear - age) / divisor) + age;
 
 const addMetaValue = (
     meta: Record<string, TriggerValue>,
@@ -181,6 +195,32 @@ const legacyChoiceIndex = (rng: RandomGenerator, length: number): number => {
 const legacyChoice = <T>(rng: RandomGenerator, values: readonly T[]): T =>
     values[legacyChoiceIndex(rng, values.length)]!;
 
+const NPC_NAME_PREFIXES = ['', 'ⓝ', 'ⓝ', 'ⓜ', 'ⓖ', '㉥', 'ⓤ', 'ⓞ'] as const;
+const NPC_STATE_NAME_PREFIXES: Readonly<Record<number, string>> = {
+    0: '',
+    1: 'ⓝ',
+    2: 'ⓝ',
+    3: 'ⓜ',
+    4: 'ⓖ',
+    5: '㉥',
+    6: 'ⓤ',
+    9: 'ⓞ',
+};
+const STORED_NAME_PREFIXES = new Set(Object.values(NPC_STATE_NAME_PREFIXES).filter(Boolean));
+
+const restoreLegacyStoredName = (general: Pick<General, 'name' | 'npcState'>): string => {
+    if (STORED_NAME_PREFIXES.has(general.name[0] ?? '')) {
+        return general.name;
+    }
+    return `${NPC_STATE_NAME_PREFIXES[general.npcState] ?? ''}${general.name}`;
+};
+
+const countLegacyNameDuplicates = (names: readonly string[], candidate: string): number =>
+    NPC_NAME_PREFIXES.reduce(
+        (total, prefix) => total + names.filter((name) => name.startsWith(`${prefix}${candidate}`)).length,
+        0
+    );
+
 const resolveCandidate = (
     context: TalentScoutResolveContext,
     rng: RandomGenerator,
@@ -261,6 +301,14 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
         );
         return this.pipeline.onCalcDomestic(context, ACTION_KEY, 'probability', base);
     }
+
+    adjustExperience(context: TalentScoutResolveContext<TriggerState>, value: number): number {
+        return this.pipeline.onCalcStat(context, 'experience', value);
+    }
+
+    adjustDedication(context: TalentScoutResolveContext<TriggerState>, value: number): number {
+        return this.pipeline.onCalcStat(context, 'dedication', value);
+    }
 }
 
 // 인재탐색 실행 결과를 계산한다.
@@ -297,8 +345,8 @@ export class ActionResolver<
         // 직접 수정 (Immer Draft)
         general.gold = nextGold;
         general.rice = nextRice;
-        general.experience += expGain;
-        general.dedication += dedGain;
+        general.experience += this.command.adjustExperience(context, expGain);
+        general.dedication += this.command.adjustDedication(context, dedGain);
 
         if (!found) {
             const statKey = pickStatExpKey(context.rng, general);
@@ -328,10 +376,23 @@ export class ActionResolver<
         const firstNames = this.env.randomGeneralFirstNames ?? ['가'];
         const middleNames = this.env.randomGeneralMiddleNames ?? [''];
         const lastNames = this.env.randomGeneralLastNames ?? ['가'];
-        const generatedName = `${legacyChoice(context.rng, firstNames)}${legacyChoice(
-            context.rng,
-            middleNames
-        )}${legacyChoice(context.rng, lastNames)}`;
+        let generatedName: string;
+        let duplicateLoopCount = 0;
+        while (true) {
+            generatedName = `${legacyChoice(context.rng, firstNames)}${legacyChoice(
+                context.rng,
+                middleNames
+            )}${legacyChoice(context.rng, lastNames)}`;
+            const duplicateCount = countLegacyNameDuplicates(context.existingGeneralNames, generatedName);
+            if (duplicateCount === 0) {
+                break;
+            }
+            if (duplicateLoopCount >= 99 || duplicateCount < 2) {
+                generatedName += duplicateCount + 1;
+                break;
+            }
+            duplicateLoopCount += 1;
+        }
         const newGeneralId = context.createGeneralId();
         const resolvedCandidate: TalentScoutCandidate = candidate ?? { name: generatedName };
         const affinity = randomRangeInt(context.rng, 1, 150);
@@ -369,6 +430,10 @@ export class ActionResolver<
         } else {
             dex = [dexTotal / 4, dexTotal / 4, dexTotal / 4, dexTotal / 4, averageDex[4]];
         }
+        // Ref passes the averages into GeneralBuilder::setDex(int ...), so PHP
+        // truncates every component before persistence. Core's common integer
+        // normalizer rounds instead, which changes exact half-point cases.
+        dex = normalizeLegacyGeneratedDex(dex);
         const personality =
             resolvedCandidate.personality ?? legacyChoice(context.rng, this.env.availablePersonalities ?? ['che_안전']);
         const name = this.env.decorateName
@@ -377,6 +442,9 @@ export class ActionResolver<
         const cityId = resolveSpawnCityId(context, context.rng, this.env);
         const turnSecond = randomRangeInt(context.rng, 0, context.turnTermMinutes * 60 - 1);
         const turnFraction = randomRangeInt(context.rng, 0, 999_999);
+        const turnTime = new Date(
+            context.turnTimeBase.getTime() + turnSecond * 1_000 + Math.floor(turnFraction / 1_000)
+        );
         const killturn =
             (deathYear - context.currentYear) * 12 + randomRangeInt(context.rng, 0, 11) + context.currentMonth - 1;
         const meta: GeneralMeta = {
@@ -386,6 +454,16 @@ export class ActionResolver<
             affinity,
             birthYear,
             deathYear,
+            specage: resolveLegacySpecialityAge(
+                context.retirementYear,
+                age,
+                12
+            ),
+            specage2: resolveLegacySpecialityAge(
+                context.retirementYear,
+                age,
+                6
+            ),
             dex1: dex[0],
             dex2: dex[1],
             dex3: dex[2],
@@ -397,27 +475,33 @@ export class ActionResolver<
         addMetaValue(meta, 'picture', resolvedCandidate.picture ?? null);
         addMetaValue(meta, 'text', resolvedCandidate.text ?? null);
 
-        const newGeneral = buildRecruitmentGeneral<TriggerState>({
-            id: newGeneralId,
-            name,
-            nationId: 0,
-            cityId,
-            stats,
-            officerLevel: 0,
-            age,
-            npcState: NPC_TYPE,
-            gold: this.env.defaultNpcGold,
-            rice: this.env.defaultNpcRice,
-            experience: age * 100,
-            dedication: age * 100,
-            crewTypeId: this.env.defaultCrewTypeId,
-            role: {
-                personality,
-                specialDomestic: null,
-                specialWar: null,
-            },
-            meta,
-        });
+        const newGeneral = {
+            ...buildRecruitmentGeneral<TriggerState>({
+                id: newGeneralId,
+                name,
+                nationId: 0,
+                cityId,
+                stats,
+                officerLevel: 0,
+                age,
+                npcState: NPC_TYPE,
+                gold: this.env.defaultNpcGold,
+                rice: this.env.defaultNpcRice,
+                experience: age * 100,
+                dedication: age * 100,
+                crewTypeId: this.env.defaultCrewTypeId,
+                role: {
+                    personality,
+                    specialDomestic: null,
+                    specialWar: null,
+                },
+                meta,
+            }),
+            turnTime,
+            bornYear: birthYear,
+            deadYear: deathYear,
+            affinity,
+        };
 
         const recruitVerb = '발견';
         const nameRa = JosaUtil.pick(name, '라');
@@ -495,6 +579,10 @@ export const actionContextBuilder: ActionContextBuilder = (base, options) => ({
     ...base,
     currentYear: options.world.currentYear,
     currentMonth: options.world.currentMonth,
+    retirementYear:
+        typeof options.scenarioConfig.const.retirementYear === 'number'
+            ? options.scenarioConfig.const.retirementYear
+            : 80,
     worldSummary: {
         ...buildWorldSummary(options.worldRef),
         averageDex: (() => {
@@ -511,9 +599,18 @@ export const actionContextBuilder: ActionContextBuilder = (base, options) => ({
             ) as [number, number, number, number, number];
         })(),
     },
-    cityPool: options.worldRef?.listCities() ?? [],
+    // Legacy CityHelper::getAllCities() is consumed in primary-key order.
+    cityPool: [...(options.worldRef?.listCities() ?? [])].sort((left, right) => left.id - right.id),
+    // Core keeps the initial scenario's display prefix separate from `name`,
+    // while Ref persists it in `general.name`. Reconstruct it before executing
+    // AbsGeneralPool::checkDuplicatedCnt semantics; the duplicated ⓝ prefix in
+    // GeneralBuilder::$prefixList intentionally counts NPC matches twice.
+    existingGeneralNames: options.worldRef?.listGenerals().map(restoreLegacyStoredName) ?? [],
     createGeneralId: options.createGeneralId,
     turnTermMinutes: Math.max(1, Math.round(options.world.tickSeconds / 60)),
+    // GeneralBuilder::build() derives a new NPC turn from gameStor.turntime,
+    // not from the scout's own reserved-turn timestamp.
+    turnTimeBase: options.world.lastTurnTime ?? base.general.turnTime,
 });
 
 export const commandSpec: GeneralTurnCommandSpec = {

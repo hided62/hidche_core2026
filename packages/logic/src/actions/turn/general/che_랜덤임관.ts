@@ -15,6 +15,8 @@ import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js'
 import type { GeneralTurnCommandSpec } from './index.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { resolveStartYear } from '@sammo-ts/logic/actions/turn/actionContextHelpers.js';
+import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js';
+import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 
 export interface RandomAppointmentArgs {}
 
@@ -36,6 +38,8 @@ export interface RandomAppointmentResolveContext<
 }
 
 const ACTION_NAME = '무작위 국가로 임관';
+const LEGACY_INITIAL_NATION_GEN_LIMIT = 10;
+const LEGACY_DEFAULT_MAX_GENERAL = 500;
 
 const TALK_LIST = [
     '어쩌다 보니',
@@ -138,6 +142,11 @@ export class ActionDefinition<
 > {
     public readonly key = 'che_랜덤임관';
     public readonly name = ACTION_NAME;
+    private readonly pipeline: GeneralActionPipeline<TriggerState>;
+
+    constructor(env: TurnCommandEnv) {
+        this.pipeline = new GeneralActionPipeline(env.generalActionModules ?? []);
+    }
     getInheritanceActiveActionAmount(): number {
         return 1;
     }
@@ -236,7 +245,7 @@ export class ActionDefinition<
                 nationId: destNation.id,
                 officerLevel: 1,
                 cityId: destCityId,
-                experience: general.experience + expGain,
+                experience: general.experience + this.pipeline.onCalcStat(context, 'experience', expGain),
                 meta,
             }),
             createNationPatchEffect(
@@ -294,8 +303,16 @@ export const actionContextBuilder: ActionContextBuilder = (base, options) => {
 
     const constValues = asRecord(options.scenarioConfig.const);
     const worldMeta = asRecord(options.world.meta);
-    const initialNationGenLimit = resolveNumber(constValues, ['initialNationGenLimit'], 0);
-    const defaultMaxGeneral = resolveNumber(constValues, ['defaultMaxGeneral', 'maxGeneral'], 0);
+    const initialNationGenLimit = resolveNumber(
+        constValues,
+        ['initialNationGenLimit'],
+        LEGACY_INITIAL_NATION_GEN_LIMIT
+    );
+    const defaultMaxGeneral = resolveNumber(
+        constValues,
+        ['defaultMaxGeneral', 'maxGeneral'],
+        LEGACY_DEFAULT_MAX_GENERAL
+    );
     const genLimit = relYear < 3 && initialNationGenLimit > 0 ? initialNationGenLimit : defaultMaxGeneral;
 
     const generals = worldRef.listGenerals();
@@ -314,7 +331,11 @@ export const actionContextBuilder: ActionContextBuilder = (base, options) => {
         }
     }
 
-    const nations = worldRef.listNations();
+    // Ref's GROUP BY result is observed in ascending nation id order. The
+    // weighted draw is order-sensitive, while newly founded Core nations can
+    // remain in action/creation order, so make the legacy candidate order
+    // explicit before consuming the command RNG.
+    const nations = [...worldRef.listNations()].sort((left, right) => left.id - right.id);
     const candidateNations: Array<CandidateNation> = [];
 
     for (const nation of nations) {
@@ -373,5 +394,5 @@ export const commandSpec: GeneralTurnCommandSpec = {
     key: 'che_랜덤임관',
     category: '전략',
     reqArg: false,
-    createDefinition: () => new ActionDefinition(),
+    createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env),
 };

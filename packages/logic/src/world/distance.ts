@@ -27,16 +27,20 @@ export const getCityDistance = (map: MapDefinition, startCityId: number, endCity
     return Infinity;
 };
 
-export const searchDistance = (map: MapDefinition, startCityId: number, range: number): Record<number, number> => {
-    const result: Record<number, number> = {};
+export const searchDistanceEntries = (
+    map: MapDefinition,
+    startCityId: number,
+    range: number
+): Array<[cityId: number, distance: number]> => {
+    const result: Array<[number, number]> = [];
     const visited = new Set<number>();
     const queue: [number, number][] = [[startCityId, 0]];
 
     visited.add(startCityId);
-    result[startCityId] = 0;
 
     while (queue.length > 0) {
         const [currentId, dist] = queue.shift()!;
+        result.push([currentId, dist]);
 
         if (dist >= range) continue;
 
@@ -47,7 +51,6 @@ export const searchDistance = (map: MapDefinition, startCityId: number, range: n
             if (!visited.has(neighborId)) {
                 visited.add(neighborId);
                 const newDist = dist + 1;
-                result[neighborId] = newDist;
                 queue.push([neighborId, newDist]);
             }
         }
@@ -55,3 +58,6 @@ export const searchDistance = (map: MapDefinition, startCityId: number, range: n
 
     return result;
 };
+
+export const searchDistance = (map: MapDefinition, startCityId: number, range: number): Record<number, number> =>
+    Object.fromEntries(searchDistanceEntries(map, startCityId, range));

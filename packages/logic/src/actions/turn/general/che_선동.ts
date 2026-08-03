@@ -20,6 +20,7 @@ import type {
 import { createGeneralPatchEffect, createCityPatchEffect } from '@sammo-ts/logic/actions/engine.js';
 import { LogCategory, LogFormat } from '@sammo-ts/logic/logging/types.js';
 import { z } from 'zod';
+import { readLegacyCityTrust, storeLegacyCityTrust } from './legacyCityTrust.js';
 import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js';
 import type { ActionContextBase, ActionContextOptions } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import type { GeneralTurnCommandSpec } from './index.js';
@@ -45,10 +46,6 @@ const ARGS_SCHEMA = z.object({
     destCityId: z.number(),
 });
 export type AgitateArgs = z.infer<typeof ARGS_SCHEMA>;
-
-// 레거시 city.trust는 MariaDB FLOAT이며 다음 명령에서 6자리 유효숫자로
-// 재조회된다. 메모리 상태도 같은 persistence 경계로 정규화한다.
-const toLegacyStoredTrust = (value: number): number => Number(value.toPrecision(6));
 
 export class ActionResolver<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -98,8 +95,9 @@ export class ActionResolver<
         }
         general.meta.firenum = (typeof general.meta.firenum === 'number' ? general.meta.firenum : 0) + 1;
         const newSecu = Math.max(0, destCity.security - result.agriDamage);
-        const currentTrust = typeof destCity.meta.trust === 'number' ? destCity.meta.trust : 50;
-        const newTrust = toLegacyStoredTrust(Math.max(0, currentTrust - result.commDamage));
+        const currentTrust =
+            typeof destCity.meta.trust === 'number' ? readLegacyCityTrust(destCity.meta.trust) : 50;
+        const newTrust = storeLegacyCityTrust(Math.max(0, currentTrust - result.commDamage));
 
         // Log
         const commandName = ACTION_NAME;

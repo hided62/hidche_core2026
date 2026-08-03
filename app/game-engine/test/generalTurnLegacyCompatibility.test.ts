@@ -152,6 +152,49 @@ const makeState = (): TurnWorldState => ({
 });
 
 describe('legacy general-turn execution contract', () => {
+    it('quantizes integer general columns at each in-memory DB mutation boundary', async () => {
+        const harness = await createTurnTestHarness({
+            snapshot: makeSnapshot(makeGeneral()),
+            state: makeState(),
+            schedule,
+            map,
+        });
+
+        harness.world.updateGeneral(1, {
+            experience: 10.5,
+            dedication: 20.49,
+            gold: 1_000.5,
+            rice: 1_000.49,
+            meta: { killturn: 24, dex4: 100.5, intel_exp: 29.5 },
+        });
+
+        expect(harness.world.getGeneralById(1)).toMatchObject({
+            experience: 11,
+            dedication: 20,
+            gold: 1_001,
+            rice: 1_000,
+            meta: { killturn: 24, dex4: 101, intel_exp: 30 },
+        });
+    });
+
+    it('applies inherited domestic stat progression after farming', async () => {
+        const general = makeGeneral({ meta: { killturn: 24, intel_exp: 29 } });
+        const harness = await createTurnTestHarness({
+            snapshot: makeSnapshot(general),
+            state: makeState(),
+            schedule,
+            map,
+        });
+        harness.reservedTurnStore.getGeneralTurns(1)[0] = { action: 'che_농지개간', args: {} };
+
+        await harness.runOneTick();
+
+        expect(harness.world.getGeneralById(1)).toMatchObject({
+            stats: { leadership: 80, strength: 70, intelligence: 61 },
+            meta: { intel_exp: 0 },
+        });
+    });
+
     it('runs injury recovery and troop rice consumption before the reserved command', async () => {
         const general = makeGeneral({ injury: 25, crew: 200, rice: 1 });
         const harness = await createTurnTestHarness({

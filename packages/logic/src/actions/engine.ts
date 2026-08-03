@@ -107,6 +107,11 @@ export interface GeneralActionOutcome<TriggerState extends GeneralTriggerState =
     effects: GeneralActionEffect<TriggerState>[];
     completed?: boolean;
     deletedTroopIds?: number[];
+    reservedGeneralTurnPlans?: Array<{
+        generalId: number;
+        joinTurn: number;
+        destNationId: number;
+    }>;
     alternative?: {
         commandKey: string;
         args: unknown;
@@ -148,6 +153,11 @@ export interface GeneralActionResolution {
         args: unknown;
     };
     deletedTroopIds?: number[];
+    reservedGeneralTurnPlans?: Array<{
+        generalId: number;
+        joinTurn: number;
+        destNationId: number;
+    }>;
 }
 
 export const createGeneralPatchEffect = <TriggerState extends GeneralTriggerState = GeneralTriggerState>(
@@ -391,6 +401,9 @@ export const resolveGeneralAction = <TriggerState extends GeneralTriggerState = 
         effects: pendingEffects,
         ...(outcome?.alternative ? { alternative: outcome.alternative } : {}),
         ...(outcome?.deletedTroopIds?.length ? { deletedTroopIds: outcome.deletedTroopIds } : {}),
+        ...(outcome?.reservedGeneralTurnPlans?.length
+            ? { reservedGeneralTurnPlans: outcome.reservedGeneralTurnPlans }
+            : {}),
     };
     if (nextWorld.city) {
         resolution.city = nextWorld.city as City;

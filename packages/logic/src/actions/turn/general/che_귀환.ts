@@ -22,6 +22,7 @@ import type { TurnCommandEnv } from '@sammo-ts/logic/actions/turn/commandEnv.js'
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
 import type { GeneralTurnCommandSpec } from './index.js';
+import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js';
 
 export interface ReturnArgs {}
 
@@ -41,6 +42,11 @@ export class ActionResolver<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionResolver<TriggerState, ReturnArgs> {
     readonly key = ACTION_KEY;
+    private readonly pipeline: GeneralActionPipeline<TriggerState>;
+
+    constructor(generalActionModules?: TurnCommandEnv['generalActionModules']) {
+        this.pipeline = new GeneralActionPipeline(generalActionModules ?? []);
+    }
 
     resolve(context: ReturnResolveContext<TriggerState>, _args: ReturnArgs): GeneralActionOutcome<TriggerState> {
         const general = context.general;
@@ -116,8 +122,8 @@ export class ActionResolver<
             // We can just use standard MONTH format for now.
         });
 
-        const exp = 70;
-        const ded = 100;
+        const exp = this.pipeline.onCalcStat(context, 'experience', 70);
+        const ded = this.pipeline.onCalcStat(context, 'dedication', 100);
 
         tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
 
@@ -159,8 +165,8 @@ export class ActionDefinition<
     public readonly name = ACTION_NAME;
     private readonly resolver: ActionResolver<TriggerState>;
 
-    constructor() {
-        this.resolver = new ActionResolver();
+    constructor(env: Pick<TurnCommandEnv, 'generalActionModules'> = {}) {
+        this.resolver = new ActionResolver(env.generalActionModules);
     }
 
     parseArgs(_raw: unknown): ReturnArgs | null {
@@ -192,5 +198,5 @@ export const commandSpec: GeneralTurnCommandSpec = {
     category: '군사',
     reqArg: false,
 
-    createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
+    createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env),
 };

@@ -22,6 +22,7 @@ import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js'
 import type { GeneralTurnCommandSpec } from './index.js';
 import { parseArgsWithSchema } from '../parseArgs.js';
 import { normalizeResourceActionAmount } from '../resourceAmount.js';
+import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js';
 
 const ACTION_NAME = '헌납';
 const ACTION_KEY = 'che_헌납';
@@ -35,6 +36,8 @@ export class ActionResolver<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionResolver<TriggerState, DonateArgs> {
     readonly key = ACTION_KEY;
+
+    constructor(private readonly pipeline: GeneralActionPipeline<TriggerState> = new GeneralActionPipeline([])) {}
 
     resolve(context: GeneralActionResolveContext<TriggerState>, args: DonateArgs): GeneralActionOutcome<TriggerState> {
         const general = context.general;
@@ -51,8 +54,8 @@ export class ActionResolver<
 
         const realAmount = Math.max(0, Math.min(amount, currentRes));
 
-        const exp = 70;
-        const ded = 100;
+        const exp = this.pipeline.onCalcStat(context, 'experience', 70);
+        const ded = this.pipeline.onCalcStat(context, 'dedication', 100);
 
         const amountText = realAmount.toLocaleString();
         context.addLog(`${resName} <C>${amountText}</>을 헌납했습니다.`, {
@@ -98,7 +101,9 @@ export class ActionDefinition<
     private readonly resolver: ActionResolver<TriggerState>;
 
     constructor(private readonly env: TurnCommandEnv) {
-        this.resolver = new ActionResolver();
+        this.resolver = new ActionResolver<TriggerState>(
+            new GeneralActionPipeline<TriggerState>(env.generalActionModules ?? [])
+        );
     }
 
     parseArgs(raw: unknown): DonateArgs | null {

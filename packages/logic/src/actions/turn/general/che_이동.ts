@@ -24,6 +24,7 @@ import type { GeneralTurnCommandSpec } from './index.js';
 import type { MapDefinition } from '@sammo-ts/logic/world/types.js';
 import { parseArgsWithSchema } from '../parseArgs.js';
 import { formatDestCityConstraintFailure } from '../constraintFailure.js';
+import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js';
 
 export interface MoveResolveContext<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
@@ -44,6 +45,11 @@ export class ActionResolver<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionResolver<TriggerState, MoveArgs> {
     readonly key = ACTION_KEY;
+    private readonly pipeline: GeneralActionPipeline<TriggerState>;
+
+    constructor(env: TurnCommandEnv) {
+        this.pipeline = new GeneralActionPipeline(env.generalActionModules ?? []);
+    }
 
     resolve(context: MoveResolveContext<TriggerState>, args: MoveArgs): GeneralActionOutcome<TriggerState> {
         const general = context.general;
@@ -89,7 +95,7 @@ export class ActionResolver<
             if (isSelf) {
                 nextGold = Math.max(0, nextGold - cost);
                 nextAtmos = Math.max(20, nextAtmos - 5);
-                nextExp += 50;
+                nextExp += this.pipeline.onCalcStat(context, 'experience', 50);
                 nextLeadershipExp += 1;
             }
 
@@ -123,8 +129,8 @@ export class ActionDefinition<
     public readonly name = ACTION_NAME;
     private readonly resolver: ActionResolver<TriggerState>;
 
-    constructor() {
-        this.resolver = new ActionResolver();
+    constructor(env: TurnCommandEnv) {
+        this.resolver = new ActionResolver(env);
     }
 
     parseArgs(raw: unknown): MoveArgs | null {
@@ -171,7 +177,10 @@ export const actionContextBuilder: ActionContextBuilder = (base, options) => {
     return {
         ...base,
         map: options.map,
-        develCost: options.scenarioConfig.const.develCost as number | undefined,
+        develCost:
+            typeof options.world.meta?.develcost === 'number'
+                ? options.world.meta.develcost
+                : (options.scenarioConfig.const.develCost as number | undefined),
         moveGenerals: options.worldRef?.listGenerals() ?? [],
     };
 };
@@ -182,5 +191,5 @@ export const commandSpec: GeneralTurnCommandSpec = {
     reqArg: true,
     availabilityArgs: { destCityId: 0 },
     argsSchema: ARGS_SCHEMA,
-    createDefinition: (_env: TurnCommandEnv) => new ActionDefinition(),
+    createDefinition: (env: TurnCommandEnv) => new ActionDefinition(env),
 };

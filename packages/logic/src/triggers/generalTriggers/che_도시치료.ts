@@ -18,7 +18,12 @@ const resolveCityGenerals = <TriggerState extends GeneralTriggerState>(
     const list = worldView.listGeneralsByCity
         ? worldView.listGeneralsByCity(general.cityId)
         : worldView.listGenerals().filter((candidate) => candidate.cityId === general.cityId);
-    return list.filter((candidate) => candidate.id !== general.id);
+    // Ref reads patients from the primary-key-backed `general` table. Make
+    // that observed order explicit so the 50% draws stay attached to the
+    // same general even when Core's in-memory insertion order differs.
+    return list
+        .filter((candidate) => candidate.id !== general.id)
+        .sort((left, right) => left.id - right.id);
 };
 
 // 의술 특기의 도시 치료 트리거.

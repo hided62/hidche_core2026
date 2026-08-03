@@ -50,8 +50,11 @@ const findReport = (reports: WarUnitReport[], predicate: (report: WarUnitReport)
 
 const getDeadCounter = (city: City): number => getMetaNumber(city.meta, META_DEAD, 0);
 
-const setDeadCounter = (city: City, value: number): void => {
-    city.meta[META_DEAD] = round(value);
+const increaseDeadCounter = (city: City, delta: number): void => {
+    // Ref binds each `dead + %i` increment as an integer before MariaDB adds
+    // it. Truncate each 40/60 percent split independently; rounding the
+    // accumulated counter changes monthly recovery and war income.
+    city.meta[META_DEAD] = getDeadCounter(city) + Math.trunc(delta);
 };
 
 const isSupplyCity = (city: City): boolean => {
@@ -122,11 +125,16 @@ const applyNationTechGain = <TriggerState extends GeneralTriggerState>(
     }
 
     const divisor = Math.max(config.initialNationGenLimit, total);
-    const tech = getMetaNumber(nation.meta, 'tech', 0) + gain / divisor;
-    // Legacy MySQL FLOAT values are read back at the command boundary with
-    // two-decimal precision. Preserve fractional accumulation without
-    // converting the gain to an integer.
-    nation.meta.tech = Math.round(tech * 100) / 100;
+    const currentTech = getMetaNumber(nation.meta, 'tech', 0);
+    const delta = gain / divisor;
+    // Ref executes `tech + delta` inside MariaDB for battle gains, so the
+    // arithmetic starts from the stored binary32 value without a PHP text read.
+    nation.meta.tech = Math.fround(currentTech + delta);
+    if ((process.env.CORE_WAR_TECH_TRACE_NATION_IDS?.split(',') ?? []).includes(String(nation.id))) {
+        process.stdout.write(
+            `WAR_TECH_TRACE ${JSON.stringify({ engine: 'core', nationId: nation.id, side: context.side, currentTech, baseGain, gain, total, effective, divisor, delta, storedTech: nation.meta.tech, attackerGeneralId: context.attackerReport.id })}\n`
+        );
+    }
 };
 
 const resolveConquerNation = (city: City, attackerNationId: number, nations: Nation[]): number => {
@@ -247,10 +255,22 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
 
     let collapseRewardGold = 0;
     let collapseRewardRice = 0;
+    const ruinedNpcJoinPlans: ConquerCityOutcome<TriggerState>['ruinedNpcJoinPlans'] = [];
 
     // 국가 붕괴 시 자원 손실과 포상 정산.
     if (nationCollapsed && defenderNation) {
-        const defenderGenerals = generals.filter((general) => general.nationId === defenderNationId);
+        const defenderGenerals = generals
+            .filter((general) => general.nationId === defenderNationId)
+            .sort((lhs, rhs) => {
+                // deleteNation() reads the non-lord rows in primary-key order,
+                // then appends the lord object to the returned PHP array.
+                const lhsIsLord = lhs.id === defenderNation.chiefGeneralId;
+                const rhsIsLord = rhs.id === defenderNation.chiefGeneralId;
+                if (lhsIsLord !== rhsIsLord) {
+                    return lhsIsLord ? 1 : -1;
+                }
+                return lhs.id - rhs.id;
+            });
         let totalGoldLoss = 0;
         let totalRiceLoss = 0;
 
@@ -290,6 +310,21 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
             );
             pushLoggers([generalLogger], logs);
             affectedGenerals.add(general);
+
+            if (config.joinMode !== 'onlyRandom') {
+                // Ref attempts to build/send a scout message after every loss.
+                // Message availability does not affect this draw.
+                rng.nextBool(0.5);
+
+                const eligibleNpc = general.npcState >= 2 && general.npcState <= 8 && general.npcState !== 5;
+                if (eligibleNpc && rng.nextBool(config.joinRuinedNpcProbability ?? 0.1)) {
+                    ruinedNpcJoinPlans.push({
+                        generalId: general.id,
+                        destNationId: attackerNation.id,
+                        joinTurn: rng.nextRangeInt(0, 12),
+                    });
+                }
+            }
         }
 
         collapseRewardGold = Math.floor((Math.max(0, defenderNation.gold - config.baseGold) + totalGoldLoss) / 2);
@@ -426,6 +461,7 @@ const resolveConquerCity = <TriggerState extends GeneralTriggerState>(
         nations: Array.from(affectedNations),
         cities: Array.from(affectedCities),
         generals: Array.from(affectedGenerals),
+        ruinedNpcJoinPlans,
     };
 };
 
@@ -447,10 +483,8 @@ export const resolveWarAftermath = <TriggerState extends GeneralTriggerState = G
 
     // 전투 사망자 누적: 공격/수비 도시로 분배.
     if (totalDead > 0) {
-        const attackerCityDead = getDeadCounter(input.attackerCity) + totalDead * 0.4;
-        const defenderCityDead = getDeadCounter(input.defenderCity) + totalDead * 0.6;
-        setDeadCounter(input.attackerCity, attackerCityDead);
-        setDeadCounter(input.defenderCity, defenderCityDead);
+        increaseDeadCounter(input.attackerCity, totalDead * 0.4);
+        increaseDeadCounter(input.defenderCity, totalDead * 0.6);
         affectedCities.add(input.attackerCity);
         affectedCities.add(input.defenderCity);
     }

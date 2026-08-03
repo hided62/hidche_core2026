@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import type { City, General, Nation } from '@sammo-ts/logic';
+import { createRefOrderedActionStack } from '@sammo-ts/logic/actionModules/bundle.js';
 
 import type { GeneralAI } from '../src/turn/ai/generalAi.js';
+import { resolveLegacyAiStats } from '../src/turn/ai/generalAi/core.js';
+import { withCanonicalArgumentAliases } from '../src/turn/ai/aiUtils.js';
 import { do일반내정, do전쟁내정 } from '../src/turn/ai/generalAi/general/devActions.js';
 import { do금쌀구매 } from '../src/turn/ai/generalAi/general/economyActions.js';
-import { do국가선택, do중립 } from '../src/turn/ai/generalAi/general/politicsActions.js';
+import { do거병, do건국, do국가선택, do중립 } from '../src/turn/ai/generalAi/general/politicsActions.js';
 import { do징병 } from '../src/turn/ai/generalAi/general/recruitActions.js';
 import { do전투준비, do출병 } from '../src/turn/ai/generalAi/general/warActions.js';
-import { do전방워프, do집합, do후방워프 } from '../src/turn/ai/generalAi/general/warpActions.js';
-import { doNPC몰수, do유저장포상 } from '../src/turn/ai/generalAi/nation/rewards.js';
+import { do내정워프, do전방워프, do집합, do후방워프 } from '../src/turn/ai/generalAi/general/warpActions.js';
+import { doNPC몰수, doNPC포상, do유저장포상 } from '../src/turn/ai/generalAi/nation/rewards.js';
+import { doNPC전방발령, doNPC후방발령 } from '../src/turn/ai/generalAi/nation/assignments/npcAssignments.js';
 
 type Candidate = {
     action: string;
@@ -74,7 +78,24 @@ const makeRng = (bools: boolean[] = [], choices: unknown[] = []): ScriptedRng =>
     };
 };
 
-const baseGeneral = (): General => ({
+const singleActionModuleStack = (
+    module: NonNullable<GeneralAI['commandEnv']['generalActionModules']>[number]
+): NonNullable<GeneralAI['commandEnv']['generalActionModules']> => {
+    const noOp = {};
+    return createRefOrderedActionStack({
+        nation: noOp,
+        officer: noOp,
+        domestic: noOp,
+        war: noOp,
+        personality: module,
+        crewType: null,
+        inheritance: noOp,
+        scenario: null,
+        items: [],
+    });
+};
+
+const baseGeneral = (): General & { turnTime: Date } => ({
     id: 1,
     name: '가상장수',
     nationId: 1,
@@ -99,6 +120,7 @@ const baseGeneral = (): General => ({
     atmos: 0,
     age: 30,
     npcState: 2,
+    turnTime: new Date('0190-01-01T00:00:00Z'),
     triggerState: { flags: {}, counters: {}, modifiers: {}, meta: {} },
     meta: { killturn: 100, fullLeadership: 70 },
 });
@@ -155,6 +177,7 @@ const makeAi = (
         nations?: Nation[];
         generals?: General[];
         disabledPolicyActions?: string[];
+        generalActionModules?: NonNullable<GeneralAI['commandEnv']['generalActionModules']>;
     } = {}
 ): GeneralAI => {
     const general = {
@@ -278,6 +301,7 @@ const makeAi = (
             maxTechLevel: 10,
             techLevelIncYear: 5,
             initialAllowedTechLevel: 1,
+            generalActionModules: overrides.generalActionModules ?? [],
         },
         aiConst: {
             baseGold: 1000,
@@ -352,6 +376,109 @@ const makeAi = (
  * selection and RNG-sensitive gates, not TypeScript implementation details.
  */
 describe('legacy NPC AI final-decision parity', () => {
+    it('normalizes legacy uppercase destination IDs before AI constraint checks', () => {
+        expect(
+            withCanonicalArgumentAliases({
+                destGeneralID: 2,
+                destCityID: 3,
+                destNationID: 4,
+                destTroopID: 5,
+            })
+        ).toMatchObject({
+            destGeneralId: 2,
+            destCityId: 3,
+            destNationId: 4,
+            destTroopId: 5,
+        });
+    });
+
+    it('applies the legacy nation-level leadership bonus for officers', () => {
+        const ruler = { ...baseGeneral(), officerLevel: 12, injury: 0 };
+        const nation = { ...baseNation(), level: 1 };
+
+        expect(resolveLegacyAiStats(ruler, nation, 255)).toMatchObject({
+            fullLeadership: 72,
+            effectiveLeadership: 72,
+        });
+        expect(resolveLegacyAiStats({ ...ruler, officerLevel: 5 }, nation, 255)).toMatchObject({
+            fullLeadership: 71,
+            effectiveLeadership: 71,
+        });
+        expect(resolveLegacyAiStats({ ...ruler, officerLevel: 1 }, nation, 255)).toMatchObject({
+            fullLeadership: 70,
+            effectiveLeadership: 70,
+        });
+    });
+    it.each([
+        ['Core scenario name', '강유'],
+        ['Ref stored name', 'ⓝ강유'],
+    ])('uses the full ruler name and Ref nation-type/color RNG order: %s', (_label, name) => {
+        const rng = makeRng([], ['che_음양가', 19]);
+        const ai = makeAi({ general: { name }, rng });
+        ai.aiConst.availableNationTypes = ['che_도적', 'che_음양가'];
+
+        expect(do건국(ai)).toMatchObject({
+            action: 'che_건국',
+            args: { nationName: '㉿강유', nationType: 'che_음양가', colorType: 19 },
+        });
+    });
+
+    it('counts a wandering-nation ruler on a neutral city as occupying the uprising radius', () => {
+        const rng = makeRng([false, true]);
+        const currentCity = { ...baseCity(), id: 1, nationId: 0, level: 1 };
+        const rulerCity = { ...baseCity(), id: 2, nationId: 0, level: 5 };
+        const ruler = { ...baseGeneral(), id: 2, nationId: 9, cityId: 2, officerLevel: 12 };
+        const ai = {
+            general: { ...baseGeneral(), nationId: 0, cityId: 1, npcState: 2, meta: {} },
+            city: currentCity,
+            map: {
+                id: 'test',
+                name: 'test',
+                defaults: {},
+                cities: [
+                    {
+                        id: 1,
+                        name: '현재',
+                        level: 1,
+                        region: 1,
+                        position: { x: 0, y: 0 },
+                        connections: [2],
+                        max: {},
+                        initial: {},
+                    },
+                    {
+                        id: 2,
+                        name: '군주',
+                        level: 5,
+                        region: 1,
+                        position: { x: 1, y: 0 },
+                        connections: [1],
+                        max: {},
+                        initial: {},
+                    },
+                ],
+            },
+            worldRef: {
+                listCities: () => [currentCity, rulerCity],
+                listGenerals: () => [ruler],
+                getCityById: (id: number) => (id === 1 ? currentCity : id === 2 ? rulerCity : null),
+            },
+            generalPolicy: { can: (name: string) => name === '건국' },
+            rng,
+            aiConst: { defaultStatNpcMax: 100, chiefStatMin: 70 },
+            world: { currentYear: 179, meta: { initYear: 179 } },
+            startYear: 179,
+            buildGeneralCandidate: (action: string, args: Record<string, unknown>, reason: string) => ({
+                action,
+                args,
+                reason,
+            }),
+        } as unknown as GeneralAI;
+
+        expect(do거병(ai)).toBeNull();
+        expect(rng.bools).toEqual([true]);
+    });
+
     it.each([
         [0, 0],
         [0, 2],
@@ -385,6 +512,30 @@ describe('legacy NPC AI final-decision parity', () => {
             expect(do징병(ai)?.action ?? null).toBe(expected);
         }
     );
+
+    it('applies legacy personality cost modifiers before halving recruit crew', () => {
+        const ai = makeAi({
+            dipState: 2,
+            general: {
+                gold: 1_000,
+                rice: 10_000,
+                meta: { killturn: 100, fullLeadership: 70, rank_killcrew: 0, rank_deathcrew: 1 },
+            },
+            generalActionModules: singleActionModuleStack(
+                {
+                    eventHandlers: {},
+                    onCalcDomestic: (_context, turnType, varType, value) =>
+                        turnType === '징병' && varType === 'cost' ? value * 1.2 : value,
+                }
+            ),
+            rng: makeRng([], [0, 0]),
+        });
+
+        expect(do징병(ai)).toMatchObject({
+            action: 'che_징병',
+            args: { crewType: 1, amount: 3_500 },
+        });
+    });
 
     it.each([
         [0, 0],
@@ -433,6 +584,68 @@ describe('legacy NPC AI final-decision parity', () => {
         expect(agriculture[1]).toBe(420);
     });
 
+    it('coerces fractional nation tech to an integer before the legacy modulo', () => {
+        const rng = makeRng([false], [0]);
+        const ai = makeAi({
+            dipState: 1,
+            genType: 6,
+            general: {
+                stats: { leadership: 73, strength: 44, intelligence: 98 },
+                meta: {
+                    killturn: 100,
+                    effectiveLeadership: 73,
+                    effectiveStrength: 69,
+                    effectiveIntelligence: 109,
+                },
+            },
+            city: {
+                population: 75_098,
+                populationMax: 108_500,
+            },
+            nation: { meta: { tech: 564.87353515625 } },
+            year: 185,
+            rng,
+        });
+
+        do전쟁내정(ai);
+        const weights = rng.weightedPairs.at(-1)!;
+        const technology = weights.find(([candidate]) => (candidate as Candidate).action === 'che_기술연구')!;
+        expect(technology[1]).toBeCloseTo(109 / (565 / 3000), 12);
+    });
+
+    it('uses injury-adjusted legacy stats when weighting domestic choices', () => {
+        const rng = makeRng([], [2]);
+        const ai = makeAi({
+            genType: 5,
+            general: {
+                stats: { leadership: 68, strength: 71, intelligence: 40 },
+                meta: {
+                    killturn: 100,
+                    effectiveLeadership: 68,
+                    effectiveStrength: 81,
+                    effectiveIntelligence: 58,
+                },
+            },
+            city: {
+                population: 100_000,
+                populationMax: 293_700,
+                defence: 2000,
+                defenceMax: 5900,
+                wall: 2000,
+                wallMax: 6300,
+                security: 1000,
+                securityMax: 4000,
+                meta: { trust: 50, trade: 100 },
+            },
+            rng,
+        });
+
+        expect(do일반내정(ai)?.action).toBe('che_수비강화');
+        const weights = rng.weightedPairs.at(-1)!;
+        const defence = weights.find(([candidate]) => (candidate as Candidate).action === 'che_수비강화')!;
+        expect(defence[1]).toBeCloseTo(238.95);
+    });
+
     it.each([
         [1500, 400, null],
         [10_000, 1000, 'che_군량매매'],
@@ -441,6 +654,48 @@ describe('legacy NPC AI final-decision parity', () => {
     ])('matches legacy gold/rice trade decisions (gold=%i, rice=%i)', (gold, rice, expected) => {
         const ai = makeAi({ general: { gold, rice } });
         expect(do금쌀구매(ai)?.action ?? null).toBe(expected);
+    });
+
+    it('uses the global command cap rather than the nation-specific reward cap for trade', () => {
+        const ai = makeAi({ general: { gold: 355, rice: 3177 } });
+        ai.maxResourceActionAmount = 1200;
+
+        // 명령 parser가 이 원시 수량을 Ref처럼 백 단위 1400으로 반올림한다.
+        expect(do금쌀구매(ai)?.args).toEqual({ buyRice: false, amount: 1411 });
+    });
+
+    it('uses full leadership and the unit rice price for the trade reserve estimate', () => {
+        const ai = makeAi({
+            general: {
+                gold: 4000,
+                rice: 2000,
+                stats: { leadership: 10, strength: 70, intelligence: 70 },
+                meta: { killturn: 100, fullLeadership: 70 },
+            },
+        });
+        const crewType = ai.unitSet?.crewTypes?.[0];
+        if (!crewType) throw new Error('missing test crew type');
+        crewType.cost = 9;
+        crewType.rice = 20;
+
+        expect(do금쌀구매(ai)?.action).toBe('che_군량매매');
+    });
+
+    it('applies domestic action cost modifiers to the trade recruit reserve estimate', () => {
+        const ai = makeAi({
+            general: { gold: 900, rice: 100 },
+            generalActionModules: singleActionModuleStack({
+                eventHandlers: {},
+                onCalcDomestic: (_context, turnType, varType, value) =>
+                    turnType === '징병' && varType === 'cost' ? value * 2 : value,
+            }),
+        });
+        const crewType = ai.unitSet?.crewTypes?.[0];
+        if (!crewType) throw new Error('missing test crew type');
+        crewType.cost = 9;
+        crewType.rice = 9;
+
+        expect(do금쌀구매(ai)).toBeNull();
     });
 
     it('randomly chooses between supply and search when national resources are sufficient', () => {
@@ -476,6 +731,16 @@ describe('legacy NPC AI final-decision parity', () => {
             general: { nationId: 0 },
             year: 181,
             nations: [],
+            rng: makeRng([true]),
+        });
+        expect(do국가선택(ai)).toBeNull();
+    });
+
+    it('does not count the Core-only neutral nation as a legacy nation', () => {
+        const ai = makeAi({
+            general: { nationId: 0 },
+            year: 181,
+            nations: [{ ...baseNation(), id: 0, name: '재야' }],
             rng: makeRng([true]),
         });
         expect(do국가선택(ai)).toBeNull();
@@ -519,6 +784,32 @@ describe('legacy NPC AI final-decision parity', () => {
         expect(do후방워프(ai)).toBeNull();
     });
 
+    it('uses full leadership for the legacy rear-warp recruitment floor', () => {
+        const ai = makeAi({
+            dipState: 4,
+            general: {
+                crew: 0,
+                stats: { leadership: 10, strength: 70, intelligence: 70 },
+                meta: { killturn: 100, fullLeadership: 100 },
+            },
+            city: { population: 10_000 },
+        });
+        ai.categorizeNationCities = () => {
+            const candidate = {
+                ...baseCity(),
+                id: 2,
+                population: 35_000,
+                populationMax: 50_000,
+                dev: 0.7,
+                important: 0,
+            };
+            ai.backupCities = { 2: candidate };
+            ai.supplyCities = { 2: candidate };
+        };
+
+        expect(do후방워프(ai)).toBeNull();
+    });
+
     it('categorizes generals before weighting a front-line warp destination', () => {
         const ai = makeAi({
             dipState: 4,
@@ -537,6 +828,32 @@ describe('legacy NPC AI final-decision parity', () => {
         expect(categorizedGenerals).toBe(true);
     });
 
+    it('keeps the legacy empty city-general counts when weighting a domestic warp', () => {
+        const ai = makeAi({ rng: makeRng([false, true]) });
+        ai.categorizeNationCities = () => {
+            ai.supplyCities = {
+                1: { ...baseCity(), dev: 1, important: 0, generals: {} },
+                2: {
+                    ...baseCity(),
+                    id: 2,
+                    agriculture: 1000,
+                    commerce: 1000,
+                    security: 1000,
+                    defence: 1000,
+                    wall: 1000,
+                    dev: 0.1,
+                    important: 0,
+                    generals: {},
+                },
+            };
+        };
+        ai.categorizeNationGeneral = () => {
+            throw new Error('Ref does not categorize generals in do내정워프');
+        };
+
+        expect(do내정워프(ai)?.action).toBe('che_NPC능동');
+    });
+
     it('awards a resource-poor civil user general like the legacy nation AI', () => {
         const ai = makeAi();
         const civilGeneral = {
@@ -551,6 +868,116 @@ describe('legacy NPC AI final-decision parity', () => {
         ai.userGenerals = { 2: civilGeneral };
         ai.userWarGenerals = {};
         expect(do유저장포상(ai)?.action).toBe('che_포상');
+    });
+
+    it('consumes the legacy reward draw before a selected command fails constraints', () => {
+        const rng = makeRng();
+        const ai = makeAi({ rng, blockedActions: ['che_포상'] });
+        const civilGeneral = {
+            ...baseGeneral(),
+            id: 2,
+            npcState: 0,
+            gold: 0,
+            rice: 20_000,
+            meta: { killturn: 100, fullLeadership: 70 },
+            turnTime: new Date('0190-01-01T00:00:00Z'),
+        };
+        ai.userGenerals = { 2: civilGeneral };
+        ai.userWarGenerals = {};
+
+        expect(do유저장포상(ai)).toBeNull();
+        expect(rng.weightedPairs).toHaveLength(1);
+    });
+
+    it('keeps Ref multiplication order at an exact NPC reward resource boundary', () => {
+        const rng = makeRng();
+        const ai = makeAi({
+            year: 185,
+            startYear: 180,
+            nation: { rice: 12_088, meta: { tech: 1_011.416320800781 } },
+            rng,
+        });
+        ai.nationPolicy.reqNationRice = 10_000;
+        ai.nationPolicy.reqNpcWarRice = 4_000;
+        ai.maxResourceActionAmount = 2_400;
+        const candidate = (id: number, leadership: number, rice: number) => ({
+            ...baseGeneral(),
+            id,
+            stats: { ...baseGeneral().stats, leadership },
+            rice,
+            crewTypeId: 1,
+            meta: { killturn: 100, fullLeadership: leadership },
+        });
+        ai.npcWarGenerals = {
+            180: candidate(180, 88, 3_005),
+            743: candidate(743, 80, 3_036),
+        };
+        ai.npcCivilGenerals = {};
+
+        expect(doNPC포상(ai)).toMatchObject({
+            action: 'che_포상',
+            args: { destGeneralId: 180, isGold: false },
+        });
+        expect(rng.weightedPairs[0]?.[0]?.[0]).toMatchObject({ destGeneralId: 180 });
+        expect(rng.weightedPairs[0]).toHaveLength(1);
+    });
+
+    it('excludes no-population recruitment specialists before NPC rear assignment draws RNG', () => {
+        const rng = makeRng([], [0, 0]);
+        const specialist = {
+            ...baseGeneral(),
+            id: 2,
+            cityId: 2,
+            crew: 0,
+            role: { ...baseGeneral().role, specialWar: 'che_징병' },
+            turnTime: new Date('0190-01-01T00:00:00Z'),
+        };
+        const ai = makeAi({
+            dipState: 4,
+            rng,
+            generals: [baseGeneral(), specialist],
+            generalActionModules: singleActionModuleStack(
+                {
+                    eventHandlers: {},
+                    onCalcDomestic: (context, turnType, varType, value) =>
+                        context.general.id === 2 && turnType === '징집인구' && varType === 'score' ? 0 : value,
+                }
+            ),
+        });
+        ai.frontCities = { 1: { ...baseCity(), frontState: 3, dev: 1, important: 1 } };
+        ai.supplyCities = {
+            2: {
+                ...baseCity(),
+                id: 2,
+                population: 40_000,
+                populationMax: 100_000,
+                dev: 1,
+                important: 1,
+            },
+            3: { ...baseCity(), id: 3, population: 100_000, dev: 1, important: 1 },
+        };
+        ai.backupCities = { 3: ai.supplyCities[3]! };
+        ai.npcWarGenerals = { 2: specialist };
+
+        expect(doNPC후방발령(ai)).toBeNull();
+        expect(rng.choices).toEqual([0, 0]);
+    });
+
+    it('draws the NPC front-assignment general before the weighted destination city', () => {
+        const rng = makeRng([], [1, 20]);
+        const first = { ...baseGeneral(), id: 2, crew: 3000, train: 100, atmos: 100 };
+        const second = { ...baseGeneral(), id: 3, crew: 3000, train: 100, atmos: 100 };
+        const ai = makeAi({ dipState: 4, rng });
+        ai.npcWarGenerals = { 2: first, 3: second };
+        ai.nationCities = { 1: { ...baseCity(), dev: 1, important: 1 } };
+        ai.frontCities = {
+            20: { ...baseCity(), id: 20, frontState: 2, dev: 1, important: 1 },
+        };
+
+        expect(doNPC전방발령(ai)).toMatchObject({
+            action: 'che_발령',
+            args: { destGeneralId: 3, destCityId: 20 },
+        });
     });
 
     it('seizes a small war-NPC surplus while the treasury is below 1.5x reserve', () => {

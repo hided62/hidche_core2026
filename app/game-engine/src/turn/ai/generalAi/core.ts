@@ -13,6 +13,7 @@ import type { ConstraintContext } from '@sammo-ts/logic';
 import { LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 import { simpleSerialize } from '@sammo-ts/logic/war/utils.js';
 import { resolveStartYear, resolveTurnTermMinutes } from '@sammo-ts/logic/actions/turn/actionContextHelpers.js';
+import { NATION_TRAIT_KEYS } from '@sammo-ts/logic/actionModules/traits/nation/index.js';
 
 import type { ReservedTurnEntry } from '../../reservedTurnStore.js';
 import type { TurnGeneral, TurnWorldState } from '../../types.js';
@@ -26,6 +27,7 @@ import {
     readRequiredMetaNumber,
     roundTo,
     valueFit,
+    withCanonicalArgumentAliases,
 } from '../aiUtils.js';
 import { searchAllDistanceByNationList } from '../distance.js';
 import { generalActionHandlers } from '../generalAiGeneralActions.js';
@@ -48,10 +50,36 @@ const d징병 = 2;
 const d직전 = 3;
 const d전쟁 = 4;
 
+export const resolveLegacyAiStats = (
+    general: Pick<TurnGeneral, 'injury' | 'officerLevel' | 'stats'>,
+    nation: Nation | null | undefined,
+    maxStatLevel: number
+) => {
+    const maxLevel = Math.max(1, maxStatLevel);
+    const clampStat = (value: number): number => Math.max(0, Math.min(value, maxLevel));
+    const injuryRatio = (100 - Math.max(0, Math.min(general.injury, 100))) / 100;
+    const nationLevel = nation?.level ?? 0;
+    const leadershipBonus = general.officerLevel === 12 ? nationLevel * 2 : general.officerLevel >= 5 ? nationLevel : 0;
+    const leadershipWithBonus = (value: number): number => clampStat(clampStat(value) + leadershipBonus);
+
+    const injuredLeadership = general.stats.leadership * injuryRatio;
+    const injuredStrength = general.stats.strength * injuryRatio;
+    const injuredIntelligence = general.stats.intelligence * injuryRatio;
+
+    return {
+        fullLeadership: leadershipWithBonus(general.stats.leadership),
+        fullStrength: clampStat(general.stats.strength + Math.round(general.stats.intelligence / 4)),
+        fullIntelligence: clampStat(general.stats.intelligence + Math.round(general.stats.strength / 4)),
+        effectiveLeadership: Math.trunc(leadershipWithBonus(injuredLeadership)),
+        effectiveStrength: Math.trunc(clampStat(injuredStrength + Math.round(injuredIntelligence / 4))),
+        effectiveIntelligence: Math.trunc(clampStat(injuredIntelligence + Math.round(injuredStrength / 4))),
+    };
+};
+
 export class GeneralAI {
-    public readonly general: TurnGeneral;
-    public readonly city?: City;
-    public readonly nation?: Nation | null;
+    public general: TurnGeneral;
+    public city?: City;
+    public nation?: Nation | null;
     public readonly world: TurnWorldState;
     public readonly worldRef: AiWorldView | null;
     public readonly map?: MapDefinition;
@@ -125,11 +153,15 @@ export class GeneralAI {
     private devRate: Record<string, number> | null = null;
     private categorizedCities = false;
     private categorizedGenerals = false;
+    private promotionPatches: Array<{ generalId: number; officerLevel: number; officerCity: number }> = [];
+    private promotionNationMeta: Record<string, unknown> | null = null;
+    private readonly initialGeneralMeta: Record<string, unknown>;
 
     private readonly reservedTurnProvider: AiReservedTurnProvider;
 
     constructor(options: GeneralAIOptions) {
         this.general = { ...options.general, meta: { ...options.general.meta } };
+        this.initialGeneralMeta = { ...options.general.meta };
         this.city = options.city;
         const nation =
             options.nation ??
@@ -160,7 +192,51 @@ export class GeneralAI {
             this.world.currentMonth,
             this.general.id
         );
-        this.rng = new RandUtil(LiteHashDRBG.build(seed));
+        if ((process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []).includes(String(this.general.id))) {
+            process.stdout.write(
+                `AI_GENERAL_SEED_TRACE ${JSON.stringify({
+                    generalId: this.general.id,
+                    year: this.world.currentYear,
+                    month: this.world.currentMonth,
+                    seedHex: Buffer.from(seed).toString('hex'),
+                })}\n`
+            );
+        }
+        const baseRng = new RandUtil(LiteHashDRBG.build(seed));
+        const traceRng = (process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []).includes(String(this.general.id));
+        let traceSequence = 0;
+        this.rng = traceRng
+            ? new Proxy(baseRng, {
+                  get: (target, property, receiver) => {
+                      const value = Reflect.get(target, property, receiver);
+                      if (typeof value !== 'function') return value;
+                      return (...args: unknown[]) => {
+                          const result = Reflect.apply(value, receiver, args);
+                          if (
+                              ['nextFloat1', 'nextRangeInt', 'nextInt', 'nextBit', 'nextBool', 'choice', 'choiceUsingWeight', 'choiceUsingWeightPair'].includes(
+                                  String(property)
+                              )
+                          ) {
+                              process.stdout.write(
+                                  `AI_RNG_TRACE ${JSON.stringify({
+                                      generalId: this.general.id,
+                                      sequence: traceSequence++,
+                                      method: String(property),
+                                      caller: new Error().stack?.split('\n')[2]?.trim() ?? null,
+                                      result:
+                                          result === null || ['string', 'number', 'boolean'].includes(typeof result)
+                                              ? result
+                                              : Array.isArray(result)
+                                                ? `[array:${result.length}]`
+                                                : '[object]',
+                                  })}\n`
+                              );
+                          }
+                          return result;
+                      };
+                  },
+              })
+            : baseRng;
 
         const constValues = asRecord(this.scenarioConfig.const);
         this.aiConst = {
@@ -176,7 +252,7 @@ export class GeneralAI {
             npcMessageFreqByDay: readNumber(constValues.npcMessageFreqByDay, 0),
             availableNationTypes: Array.isArray(constValues.availableNationType)
                 ? constValues.availableNationType.filter((value) => typeof value === 'string')
-                : [],
+                : NATION_TRAIT_KEYS.filter((value) => value !== 'che_중립'),
         };
 
         const generalPolicy = new AutorunGeneralPolicy(
@@ -223,6 +299,14 @@ export class GeneralAI {
         this.categorizeNationCities();
         this.categorizeNationGeneral();
 
+        if (this.general.npcState >= 2 && [3, 6, 9, 12].includes(this.world.currentMonth)) {
+            if (this.general.officerLevel === 12) {
+                this.chooseNpcPromotion();
+            } else {
+                this.chooseNonLordPromotion();
+            }
+        }
+
         if (reservedTurn.action !== ACTION_REST) {
             const reservedCandidate = this.buildNationCandidate(reservedTurn.action, reservedTurn.args, 'reserved');
             if (reservedCandidate) {
@@ -243,11 +327,54 @@ export class GeneralAI {
             }
             const result = handler(this);
             if (result) {
+                // Ref refreshes the cached AI state after these selected nation
+                // commands, before choosing the general command with the same
+                // RNG. The refresh includes another mixed-general type draw.
+                if (
+                    ['유저장긴급포상', 'NPC긴급포상', '선전포고', '천도'].includes(
+                        actionName
+                    )
+                ) {
+                    this.reqUpdateInstance = true;
+                }
                 return result;
             }
         }
 
         return this.buildNationCandidate(ACTION_REST, {}, 'neutral');
+    }
+
+    consumePromotionPatches(): {
+        generals: Array<{ generalId: number; officerLevel: number; officerCity: number }>;
+        nationMeta: Record<string, unknown> | null;
+    } {
+        const result = {
+            generals: this.promotionPatches,
+            nationMeta: this.promotionNationMeta,
+        };
+        this.promotionPatches = [];
+        this.promotionNationMeta = null;
+        return result;
+    }
+
+    consumePersistentGeneralMetaPatch(): { set: Record<string, unknown>; unset: string[] } {
+        const transientKeys = new Set([
+            'fullLeadership',
+            'fullStrength',
+            'fullIntelligence',
+            'effectiveLeadership',
+            'effectiveStrength',
+            'effectiveIntelligence',
+        ]);
+        const set: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(this.general.meta)) {
+            if (transientKeys.has(key) || Object.is(this.initialGeneralMeta[key], value)) continue;
+            set[key] = value;
+        }
+        const unset = Object.keys(this.initialGeneralMeta).filter(
+            (key) => !transientKeys.has(key) && !Object.prototype.hasOwnProperty.call(this.general.meta, key)
+        );
+        return { set, unset };
     }
 
     chooseGeneralTurn(reservedTurn: ReservedTurnEntry): AiCommandCandidate | null {
@@ -256,7 +383,8 @@ export class GeneralAI {
             return null;
         }
 
-        const npcMessage = asRecord(this.general.meta).npcmsg;
+        const generalMeta = asRecord(this.general.meta);
+        const npcMessage = generalMeta.npcmsg ?? generalMeta.text;
         if (npcMessage && this.rng.nextBool((this.aiConst.npcMessageFreqByDay * this.turnTermMinutes) / (60 * 24))) {
             // 메시지 영속화는 turn handler가 담당한다. 여기서는 레거시와 같은 RNG 소비를 보존한다.
         }
@@ -336,7 +464,13 @@ export class GeneralAI {
         }
 
         for (const actionName of this.generalPolicy.priority) {
-            if (!this.generalPolicy.can(actionName)) {
+            const allowed = this.generalPolicy.can(actionName);
+            if (!allowed) {
+                if ((process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []).includes(String(this.general.id))) {
+                    process.stdout.write(
+                        `AI_GENERAL_PRIORITY_TRACE ${JSON.stringify({ generalId: this.general.id, actionName, allowed, result: null })}\n`
+                    );
+                }
                 continue;
             }
             const handler = generalActionHandlers[actionName];
@@ -344,6 +478,11 @@ export class GeneralAI {
                 continue;
             }
             const result = handler(this);
+            if ((process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []).includes(String(this.general.id))) {
+                process.stdout.write(
+                    `AI_GENERAL_PRIORITY_TRACE ${JSON.stringify({ generalId: this.general.id, actionName, allowed, result })}\n`
+                );
+            }
             if (result) {
                 return result;
             }
@@ -354,7 +493,6 @@ export class GeneralAI {
     }
 
     getDebugState(): GeneralAiDebugState {
-        this.updateInstance();
         this.categorizeNationCities();
         const yearMonth = joinYearMonth(this.world.currentYear, this.world.currentMonth);
         const startYearMonth = joinYearMonth(this.startYear + 2, 5);
@@ -626,10 +764,35 @@ export class GeneralAI {
         }
         this.reqUpdateInstance = false;
 
-        const nation = this.nation;
-        if (!nation) {
-            return;
+        const refreshedGeneral = this.worldRef?.getGeneralById(this.general.id);
+        if (refreshedGeneral) {
+            this.general = { ...refreshedGeneral, meta: { ...refreshedGeneral.meta } };
         }
+        const refreshedCity = this.worldRef?.getCityById(this.general.cityId);
+        if (refreshedCity) {
+            this.city = refreshedCity;
+        }
+        const refreshedNation =
+            this.general.nationId > 0 ? (this.worldRef?.getNationById(this.general.nationId) ?? null) : null;
+        if (refreshedNation !== undefined) {
+            this.nation = refreshedNation ? { ...refreshedNation, meta: { ...refreshedNation.meta } } : refreshedNation;
+        }
+
+        const nation =
+            this.nation ??
+            ({
+                id: 0,
+                name: '재야',
+                color: '#000000',
+                capitalCityId: null,
+                chiefGeneralId: null,
+                gold: 0,
+                rice: 0,
+                power: 0,
+                level: 0,
+                typeCode: 'neutral',
+                meta: {},
+            } satisfies Nation);
 
         const baseDevelCost = this.commandEnv.develCost * 12;
         const nationMeta = asRecord(nation.meta);
@@ -654,6 +817,7 @@ export class GeneralAI {
         }
 
         this.calcDiplomacyState();
+        this.refreshLegacyFullStats();
         this.genType = this.calcGenType();
 
         void baseDevelCost;
@@ -671,16 +835,17 @@ export class GeneralAI {
         if (parsedArgs === null) {
             return null;
         }
+        const constraintArgs = withCanonicalArgumentAliases(parsedArgs as Record<string, unknown>);
         const constraintEnv = this.buildConstraintEnv();
         const ctx: ConstraintContext = {
             actorId: this.general.id,
             cityId: this.city?.id,
             nationId: this.general.nationId,
-            args: parsedArgs as Record<string, unknown>,
+            args: constraintArgs,
             env: constraintEnv,
             mode: 'full',
         };
-        const view = new WorldStateView(this.worldRef, constraintEnv, parsedArgs as Record<string, unknown>, {
+        const view = new WorldStateView(this.worldRef, constraintEnv, constraintArgs, {
             general: this.general,
             city: this.city,
             nation: this.nation ?? null,
@@ -688,6 +853,11 @@ export class GeneralAI {
         const constraints = definition.buildConstraints(ctx, parsedArgs as never);
         const result = evaluateConstraints(constraints, ctx, view);
         if (result.kind !== 'allow') {
+            if ((process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []).includes(String(this.general.id))) {
+                process.stdout.write(
+                    `AI_GENERAL_CONSTRAINT_TRACE ${JSON.stringify({ generalId: this.general.id, action, args: parsedArgs, result })}\n`
+                );
+            }
             return null;
         }
         return {
@@ -708,9 +878,10 @@ export class GeneralAI {
     }
 
     private calcGenType(): number {
-        const leadership = this.general.stats.leadership;
-        const strength = Math.max(this.general.stats.strength, 1);
-        const intel = Math.max(this.general.stats.intelligence, 1);
+        const meta = asRecord(this.general.meta);
+        const leadership = readMetaNumber(meta, 'fullLeadership', this.general.stats.leadership);
+        const strength = Math.max(readMetaNumber(meta, 'fullStrength', this.general.stats.strength), 1);
+        const intel = Math.max(readMetaNumber(meta, 'fullIntelligence', this.general.stats.intelligence), 1);
         let genType: number;
 
         if (strength >= intel) {
@@ -734,6 +905,153 @@ export class GeneralAI {
         }
 
         return genType;
+    }
+
+    private refreshLegacyFullStats(): void {
+        const stats = resolveLegacyAiStats(
+            this.general,
+            this.nation,
+            this.commandEnv.maxStatLevel ?? this.scenarioConfig.stat.max
+        );
+        this.general.meta = {
+            ...this.general.meta,
+            ...stats,
+        };
+    }
+
+    private chooseNpcPromotion(): void {
+        if (!this.nation || !this.worldRef) {
+            return;
+        }
+        const minChiefLevel = this.nation.level >= 6 ? 5 : this.nation.level >= 4 ? 7 : this.nation.level >= 2 ? 9 : 11;
+        let chiefSet = readMetaNumber(asRecord(this.nation.meta), 'chief_set', 0);
+        const generals = this.worldRef
+            .listGenerals()
+            .filter((candidate) => candidate.nationId === this.nation!.id)
+            .sort((left, right) => {
+                const leftScore = left.stats.leadership * 2 + left.stats.strength + left.stats.intelligence;
+                const rightScore = right.stats.leadership * 2 + right.stats.strength + right.stats.intelligence;
+                // Ref's nation query returns primary-key order and uasort keeps
+                // that order when the raw-stat score ties.
+                return rightScore - leftScore || left.id - right.id;
+            });
+        const effectiveOfficerLevel = new Map(generals.map((candidate) => [candidate.id, candidate.officerLevel]));
+
+        for (let chiefLevel = 11; chiefLevel >= minChiefLevel; chiefLevel -= 1) {
+            if ((chiefSet & (1 << chiefLevel)) !== 0 || this.general.officerLevel === chiefLevel) {
+                continue;
+            }
+            const oldChief = generals.find((candidate) => candidate.officerLevel === chiefLevel);
+            if (oldChief) {
+                const newChiefProbability = this.rng.nextBool(0.1) ? 1 : 0;
+                // GeneralAI.php performs a second nextBool(0) call on the
+                // rejection path. Preserve that consumption for the shared
+                // nation/general AI RNG stream.
+                if (newChiefProbability < 1 && !this.rng.nextBool(newChiefProbability)) {
+                    continue;
+                }
+            }
+            const nextChief = generals.find((candidate) => {
+                if ((effectiveOfficerLevel.get(candidate.id) ?? candidate.officerLevel) > 4 || candidate.npcState < 2) {
+                    return false;
+                }
+                const killturn = readRequiredMetaNumber(
+                    asRecord(candidate.meta),
+                    'killturn',
+                    `generalId=${candidate.id}`
+                );
+                if (killturn < 36) {
+                    return false;
+                }
+                if (chiefLevel !== 11 && chiefLevel % 2 === 0 && candidate.stats.strength < this.aiConst.chiefStatMin) {
+                    return false;
+                }
+                if (
+                    chiefLevel !== 11 &&
+                    chiefLevel % 2 === 1 &&
+                    candidate.stats.intelligence < this.aiConst.chiefStatMin
+                ) {
+                    return false;
+                }
+                return true;
+            });
+            if (!nextChief) {
+                continue;
+            }
+            if (oldChief) {
+                this.promotionPatches.push({ generalId: oldChief.id, officerLevel: 1, officerCity: 0 });
+            }
+            this.promotionPatches.push({ generalId: nextChief.id, officerLevel: chiefLevel, officerCity: 0 });
+            if (process.env.CORE_AI_TRACE_SEQUENCE === '1') {
+                process.stdout.write(
+                    `AI_PROMOTION_TRACE ${JSON.stringify({ engine: 'core', mode: 'lord', actor: this.general.id, chiefLevel, picked: nextChief.id })}\n`
+                );
+            }
+            effectiveOfficerLevel.set(nextChief.id, chiefLevel);
+            chiefSet |= 1 << chiefLevel;
+        }
+
+        if (this.promotionPatches.length > 0) {
+            this.promotionNationMeta = { ...this.nation.meta, chief_set: chiefSet };
+        }
+    }
+
+    private chooseNonLordPromotion(): void {
+        if (!this.nation) {
+            return;
+        }
+        const minChiefLevel = this.nation.level >= 6 ? 5 : this.nation.level >= 4 ? 7 : this.nation.level >= 2 ? 9 : 11;
+        let chiefSet = readMetaNumber(asRecord(this.nation.meta), 'chief_set', 0);
+        const pools = [this.npcWarGenerals, this.npcCivilGenerals, this.userWarGenerals, this.userCivilGenerals];
+
+        for (let chiefLevel = minChiefLevel; chiefLevel <= 12; chiefLevel += 1) {
+            if (
+                (chiefSet & (1 << chiefLevel)) !== 0 ||
+                this.chiefGenerals[chiefLevel] ||
+                this.general.officerLevel === chiefLevel
+            ) {
+                continue;
+            }
+
+            let picked: TurnGeneral | null = null;
+            for (let trial = 0; trial < 5; trial += 1) {
+                const pool = pools.find((candidatePool) => Object.keys(candidatePool).length > 0);
+                if (!pool) {
+                    break;
+                }
+                const candidate = this.rng.choice(Object.values(pool));
+                if (candidate.officerLevel !== 1) {
+                    continue;
+                }
+                if (
+                    chiefLevel !== 11 &&
+                    ((chiefLevel % 2 === 0 && candidate.stats.strength < this.aiConst.chiefStatMin) ||
+                        (chiefLevel % 2 === 1 && candidate.stats.intelligence < this.aiConst.chiefStatMin))
+                ) {
+                    continue;
+                }
+                picked = candidate;
+                break;
+            }
+            if (!picked) {
+                continue;
+            }
+
+            picked.officerLevel = chiefLevel;
+            picked.meta = { ...picked.meta, officer_city: 0 };
+            this.promotionPatches.push({ generalId: picked.id, officerLevel: chiefLevel, officerCity: 0 });
+            if (process.env.CORE_AI_TRACE_SEQUENCE === '1') {
+                process.stdout.write(
+                    `AI_PROMOTION_TRACE ${JSON.stringify({ engine: 'core', mode: 'non-lord', actor: this.general.id, chiefLevel, picked: picked.id })}\n`
+                );
+            }
+            this.chiefGenerals[chiefLevel] = picked;
+            chiefSet |= 1 << chiefLevel;
+        }
+
+        if (this.promotionPatches.length > 0) {
+            this.promotionNationMeta = { ...this.nation.meta, chief_set: chiefSet };
+        }
     }
 
     private calcDiplomacyState(): void {
@@ -815,6 +1133,11 @@ export class GeneralAI {
         }
 
         // legacy GeneralAI.php 기준: 평화/선포 상태에서 병력 보유 여부로 d징병 전환하지 않음.
+        if ((process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []).includes(String(this.general.id))) {
+            process.stdout.write(
+                `AI_DIPLOMACY_TRACE ${JSON.stringify({ generalId: this.general.id, warTargets, dipState: this.dipState })}\n`
+            );
+        }
     }
 
     private calcRecentWarTurn(general: TurnGeneral): number {

@@ -20,6 +20,7 @@ import { createGatewayProfileGate } from './gatewayProfileGate.js';
 import { composeCalendarHandlers } from './calendarHandlers.js';
 import { createIncomeHandler } from './incomeHandler.js';
 import { createNationTurnMonthlyHandler } from './nationTurnMonthlyHandler.js';
+import { calculateNpcNationFinance } from './npcTaxHandler.js';
 import { createMonthlyBoundaryPreHandler } from './monthlyBoundaryPreHandler.js';
 import { createMonthlyWanderHandler } from './monthlyWanderHandler.js';
 import {
@@ -471,6 +472,10 @@ const createTurnDaemonRuntimeWithLease = async (
         onTournamentRollConsumed: (consumed) => {
             monthlyTournamentRollConsumed = consumed;
         },
+        // Deterministic/manual runtimes must schedule the tournament from the
+        // same clock that advances the game world. Production still falls
+        // back to the system clock.
+        now: () => new Date(options.clock?.nowMs() ?? Date.now()),
     });
     const yearbookHandler = createYearbookHandler({
         profileName: options.profileName ?? options.profile,
@@ -508,6 +513,13 @@ const createTurnDaemonRuntimeWithLease = async (
                 getWorld: () => worldRef,
                 commandProfile,
                 commandEnv: monthlyCommandEnv,
+                calculateNpcNationFinance: (financeWorld, nation, currentMonth) =>
+                    calculateNpcNationFinance(financeWorld, nation, currentMonth, {
+                        commandEnv: monthlyCommandEnv,
+                        scenarioConfig: snapshot.scenarioConfig,
+                        unitSet: snapshot.unitSet,
+                        nationTraits: nationTraitMap,
+                    }),
                 getAdditionalOccupiedUniqueItemKeys: () => occupiedAuctionUniqueItemKeys,
                 onActionResolved: options.onActionResolved,
             })),

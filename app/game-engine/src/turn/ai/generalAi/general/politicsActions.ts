@@ -1,4 +1,4 @@
-import { searchDistance } from '@sammo-ts/logic/world/distance.js';
+import { searchDistance, searchDistanceEntries } from '@sammo-ts/logic/world/distance.js';
 
 import type { GeneralAI } from '../core.js';
 import { asRecord, readMetaNumber, valueFit } from '../../aiUtils.js';
@@ -23,7 +23,8 @@ export const do국가선택 = (ai: GeneralAI) => {
             return null;
         }
         if (ai.world.currentYear < ai.startYear + 3) {
-            const nations = ai.worldRef.listNations();
+            // Ref queries the nation table, which has no synthetic neutral row.
+            const nations = ai.worldRef.listNations().filter((nation) => nation.id > 0);
             const nationCount = nations.length;
             const notFullNationCount = nations.filter((nation) => {
                 const count = ai.worldRef!.listGenerals().filter((general) => general.nationId === nation.id).length;
@@ -104,18 +105,16 @@ export const do거병 = (ai: GeneralAI) => {
             .map((c) => c.id)
     );
     for (const general of ai.worldRef.listGenerals()) {
-        if (general.officerLevel === 12 && general.nationId === 0) {
+        // Ref joins through city and checks city.nation=0. A ruler of a newly
+        // raised wandering nation therefore still occupies its neutral city.
+        if (general.officerLevel === 12 && ai.worldRef.getCityById(general.cityId)?.nationId === 0) {
             occupied.add(general.cityId);
         }
     }
 
     let availableNearCity = false;
-    const nearby = searchDistance(ai.map, ai.general.cityId, 3);
-    for (const [targetCityId, dist] of Object.entries(nearby)) {
-        const cityId = Number(targetCityId);
-        if (!Number.isFinite(cityId)) {
-            continue;
-        }
+    const nearby = searchDistanceEntries(ai.map, ai.general.cityId, 3);
+    for (const [cityId, dist] of nearby) {
         if (occupied.has(cityId)) {
             continue;
         }
@@ -159,7 +158,10 @@ export const do건국 = (ai: GeneralAI) => {
             ? (ai.rng.choice(ai.aiConst.availableNationTypes) as string)
             : 'che_도적';
     const colorType = ai.rng.nextRangeInt(0, 32);
-    const nationName = `㉿${Array.from(ai.general.name).slice(1).join('')}`;
+    // Ref stores the NPC display prefix in general.name and removes it here.
+    // Core's installed scenario rows keep the prefix in npcState instead.
+    const characters = Array.from(ai.general.name);
+    const nationName = `㉿${characters[0] === 'ⓝ' ? characters.slice(1).join('') : ai.general.name}`;
 
     const result = ai.buildGeneralCandidate('che_건국', { nationName, nationType, colorType }, '건국');
     if (result) {
@@ -198,13 +200,13 @@ export const do방랑군이동 = (ai: GeneralAI) => {
     if (!city || !ai.map || !ai.worldRef) {
         return null;
     }
-    const lordCities = ai.worldRef
-        .listGenerals()
-        .filter((general) => general.officerLevel === 12 && general.nationId === 0)
-        .map((general) => general.cityId);
-    if (lordCities.filter((cityId) => cityId === city.id).length <= 1 && [5, 6].includes(city.level)) {
+    const rulers = ai.worldRef.listGenerals().filter((general) => general.officerLevel === 12);
+    if (rulers.filter((general) => general.cityId === city.id).length <= 1 && [5, 6].includes(city.level)) {
         return null;
     }
+    const lordCities = rulers
+        .filter((general) => ai.worldRef!.getCityById(general.cityId)?.nationId === 0)
+        .map((general) => general.cityId);
 
     const occupied = new Set(
         ai.worldRef
@@ -222,11 +224,10 @@ export const do방랑군이동 = (ai: GeneralAI) => {
     }
 
     if (movingTargetCityId === null) {
-        const nearby = searchDistance(ai.map, city.id, 4);
+        const nearby = searchDistanceEntries(ai.map, city.id, 4);
         const candidates: Array<[number, number]> = [];
-        for (const [cityIdRaw, dist] of Object.entries(nearby)) {
-            const cityId = Number(cityIdRaw);
-            if (!Number.isFinite(cityId) || occupied.has(cityId)) {
+        for (const [cityId, dist] of nearby) {
+            if (occupied.has(cityId)) {
                 continue;
             }
             const target = ai.worldRef.getCityById(cityId);

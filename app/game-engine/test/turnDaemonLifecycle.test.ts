@@ -280,12 +280,11 @@ describe('TurnDaemonLifecycle', () => {
         await loop;
     });
 
-    it('runs scheduled turn based on queue front and checkpoint context', async () => {
+    it('catches up through the observed clock with queue and checkpoint context', async () => {
         const turnTermMinutes = 10;
         const lastTurnTime = new Date(2026, 0, 2, 2, 0, 0, 0);
         const generalTurnQueue = [addMinutes(lastTurnTime, 5), addMinutes(lastTurnTime, 20)];
-        const nextTickTime = getNextTickTime(lastTurnTime, turnTermMinutes);
-        const expectedRunTimeMs = Math.min(nextTickTime.getTime(), generalTurnQueue[0]!.getTime());
+        const expectedRunTimeMs = addMinutes(lastTurnTime, 30).getTime();
         const checkpoint = {
             turnTime: lastTurnTime.toISOString(),
             generalId: 101,
@@ -358,12 +357,11 @@ describe('TurnDaemonLifecycle', () => {
         await loop;
     });
 
-    it('runs scheduled turn when tick boundary arrives before queue front', async () => {
+    it('catches up through the observed clock when tick boundary precedes the queue front', async () => {
         const turnTermMinutes = 10;
         const lastTurnTime = new Date(2026, 0, 2, 2, 0, 0, 0);
         const generalTurnQueue = [addMinutes(lastTurnTime, 15), addMinutes(lastTurnTime, 30)];
-        const nextTickTime = getNextTickTime(lastTurnTime, turnTermMinutes);
-        const expectedRunTimeMs = Math.min(nextTickTime.getTime(), generalTurnQueue[0]!.getTime());
+        const expectedRunTimeMs = addMinutes(lastTurnTime, 30).getTime();
         const checkpoint = {
             turnTime: lastTurnTime.toISOString(),
             generalId: 102,

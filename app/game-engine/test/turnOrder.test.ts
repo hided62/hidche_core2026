@@ -150,13 +150,23 @@ describe('InMemoryTurnProcessor ordering', () => {
             },
         });
 
-        await processor.run(addMinutes(baseTime, 30), {
+        const budget = {
             budgetMs: 1000,
             maxGenerals: 10,
             catchUpCap: 1,
-        });
+        };
 
-        expect(executed).toEqual([2, 3, 1]);
+        const boundaryResult = await processor.run(addMinutes(baseTime, 10), budget);
+        expect(boundaryResult.processedTurns).toBe(1);
+        expect(executed).toEqual([]);
+
+        const tiedGeneralResult = await processor.run(new Date(addMinutes(baseTime, 10).getTime() + 1), budget);
+        expect(tiedGeneralResult.processedTurns).toBe(0);
+        expect(executed).toEqual([2, 3]);
+
+        await processor.run(addMinutes(baseTime, 30), budget);
+
+        expect(executed).toEqual([2, 3, 1, 2, 3]);
         expect(world.getNextGeneralId()).toBe(4);
         expect(world.getNextGeneralId()).toBe(5);
         expect(world.getState().meta).toMatchObject({ lastGeneralId: 5 });

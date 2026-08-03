@@ -11,7 +11,19 @@ export const clampMin = (value: number, min: number): number => (value < min ? m
 
 export const clampMax = (value: number, max: number): number => (value > max ? max : value);
 
-export const round = (value: number): number => Math.round(value);
+// PHP's round() compensates for small binary floating-point drift around a
+// half boundary and rounds halves away from zero. War state is persisted to
+// integer columns through legacy Util::round(), so Math.round() is not enough:
+// e.g. accumulated siege damage can produce 4159.499999999999, which PHP
+// rounds to 4160 while Math.round() returns 4159.
+export const round = (value: number): number => {
+    if (!Number.isFinite(value)) {
+        return Math.round(value);
+    }
+
+    const corrected = value + Math.sign(value) * Number.EPSILON * Math.max(1, Math.abs(value));
+    return corrected < 0 ? Math.ceil(corrected - 0.5) : Math.floor(corrected + 0.5);
+};
 
 export const getMetaNumber = (meta: Record<string, TriggerValue>, key: string, fallback = 0): number => {
     const value = meta[key];

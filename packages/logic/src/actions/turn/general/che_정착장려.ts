@@ -39,6 +39,7 @@ const CONFIG: InvestmentConfig = {
     frontDebuff: 1,
     useCityTrust: false,
     scaleSuccessByTrust: false,
+    costMultiplier: 2,
 };
 
 export class ActionDefinition<
@@ -49,11 +50,7 @@ export class ActionDefinition<
     private readonly command: CommandResolver<TriggerState>;
 
     constructor(env: TurnCommandEnv) {
-        this.command = new CommandResolver(
-            env.generalActionModules ?? [],
-            { ...env, develCost: env.develCost * 2 },
-            CONFIG
-        );
+        this.command = new CommandResolver(env.generalActionModules ?? [], env, CONFIG);
     }
 
     parseArgs(_raw: unknown): SettlementArgs | null {

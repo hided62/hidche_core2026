@@ -166,6 +166,64 @@ const buildGeneral = (strength: number): General => ({
 });
 
 describe('war triggers', () => {
+    it('normalizes accumulated dexterity to the PHP SQL float precision', () => {
+        const general = buildGeneral(80);
+        general.meta.dex4 = 14_677.199999999997;
+        const wizard = new WarCrewType({
+            ...buildUnitSet().crewTypes![0]!,
+            id: 104,
+            armType: 4,
+            name: '귀병',
+        });
+        const unit = new WarUnitGeneral(
+            new RandUtil(new ConstantRNG(0)),
+            buildConfig(),
+            general,
+            buildCity(),
+            buildNation(),
+            true,
+            wizard,
+            new ActionLogger({ generalId: 1, nationId: 1 }),
+            new WarActionPipeline([])
+        );
+
+        unit.addDex(wizard, 2047);
+
+        expect(general.meta.dex4).toBe(16_519.5);
+    });
+
+    it('preserves the legacy fractional morale gain after a win', () => {
+        const general = buildGeneral(80);
+        general.atmos = 105;
+        const crewType = new WarCrewType(buildUnitSet().crewTypes![0]!);
+        const unit = new WarUnitGeneral(
+            new RandUtil(new ConstantRNG(0)),
+            buildConfig(),
+            general,
+            buildCity(),
+            buildNation(),
+            true,
+            crewType,
+            new ActionLogger({ generalId: 1, nationId: 1 }),
+            new WarActionPipeline([])
+        );
+        const defenderCity = new WarUnitCity(
+            new RandUtil(new ConstantRNG(0)),
+            buildConfig(),
+            { ...buildCity(), nationId: 2 },
+            { ...buildNation(), id: 2 },
+            new WarCrewType(buildUnitSet().crewTypes![1]!),
+            new ActionLogger({ generalId: 0, nationId: 2 }),
+            200,
+            180
+        );
+        unit.setOppose(defenderCity);
+
+        unit.addWin();
+
+        expect(general.atmos).toBeCloseTo(115.5, 12);
+    });
+
     it('updates the legacy experience level and applies item experience modifiers immediately', () => {
         const general = buildGeneral(80);
         general.experience = 90;
@@ -222,6 +280,28 @@ describe('war triggers', () => {
 
         unit.addDex(siegeCrew, 100);
         expect(general.meta.dex5).toBe(5090);
+    });
+
+    it('consumes one accumulated stat-exp threshold when a battle finishes', () => {
+        const general = buildGeneral(80);
+        general.meta.intel_exp = 30;
+        const crewType = new WarCrewType(buildUnitSet().crewTypes![0]!);
+        const unit = new WarUnitGeneral(
+            new RandUtil(new ConstantRNG(0)),
+            buildConfig(),
+            general,
+            buildCity(),
+            buildNation(),
+            true,
+            crewType,
+            new ActionLogger({ generalId: 1, nationId: 1 }),
+            new WarActionPipeline([])
+        );
+
+        unit.finishBattle();
+
+        expect(general.stats.intelligence).toBe(71);
+        expect(general.meta.intel_exp).toBe(0);
     });
 
     it('activates and applies critical damage', async () => {
@@ -325,6 +405,30 @@ describe('war triggers', () => {
         expect(cityUnit.addConflict()).toBe(true);
         expect(city.conflict).toEqual({ 1: 1.05, 2: 1 });
         expect(city.meta.conflict_order).toEqual([1, 2]);
+    });
+
+    it('uses the legacy virtual rice reserve for a neutral defender', () => {
+        const events: string[] = [];
+        const city = { ...buildCity(), nationId: 0 };
+
+        resolveWarBattle({
+            rng: new RandUtil(new ConstantRNG(0)),
+            unitSet: buildUnitSet(),
+            config: buildConfig(),
+            time: { year: 200, month: 1, startYear: 180 },
+            attacker: {
+                general: buildGeneral(80),
+                city: buildCity(),
+                nation: buildNation(),
+            },
+            defenders: [],
+            defenderCity: city,
+            defenderNation: null,
+            trace: (event) => events.push(event.event),
+        });
+
+        expect(events).not.toContain('supply_retreat');
+        expect(events).toContain('phase_damage');
     });
 });
 

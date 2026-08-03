@@ -6,6 +6,7 @@ import {
 } from '@sammo-ts/logic/world/unitSet.js';
 import { buildWarConfig } from '@sammo-ts/logic/actions/turn/actionContextHelpers.js';
 import type { CrewTypeDefinition, General, WarArmTypes } from '@sammo-ts/logic';
+import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js';
 
 import type { GeneralAI } from '../core.js';
 import { asRecord, readMetaNumber, roundTo } from '../../aiUtils.js';
@@ -40,26 +41,46 @@ const getRequiredTech = (crewType: CrewTypeDefinition): number | null => {
 };
 
 export const do징병 = (ai: GeneralAI) => {
+    const traceEnabled = (process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []).includes(String(ai.general.id));
+    const trace = (stage: string, values: Record<string, unknown> = {}) => {
+        if (traceEnabled) {
+            process.stdout.write(
+                `AI_RECRUIT_TRACE ${JSON.stringify({ generalId: ai.general.id, stage, ...values })}\n`
+            );
+        }
+    };
     const city = ai.city;
     const nation = ai.nation;
     if (!city || !nation || !ai.unitSet || !ai.map) {
+        trace('missing-context');
         return null;
     }
     if ([0, 1].includes(ai.dipState)) {
+        trace('diplomacy', { dipState: ai.dipState });
         return null;
     }
     if (!(ai.genType & t통솔장)) {
+        trace('general-type', { genType: ai.genType });
         return null;
     }
     if (ai.general.crew >= ai.nationPolicy.minWarCrew) {
+        trace('existing-crew', { crew: ai.general.crew, minWarCrew: ai.nationPolicy.minWarCrew });
         return null;
     }
 
     const generalMeta = asRecord(ai.general.meta);
     const fullLeadership = readMetaNumber(generalMeta, 'fullLeadership', ai.general.stats.leadership);
+    trace('population-policy', {
+        population: city.population,
+        populationMax: city.populationMax,
+        safeRatio: ai.nationPolicy.safeRecruitCityPopulationRatio,
+        minPopulation: ai.nationPolicy.minNpcRecruitCityPopulation,
+        canLimitRecruit: ai.generalPolicy.can('한계징병'),
+    });
     if (!ai.generalPolicy.can('한계징병')) {
         const remainPop = city.population - ai.nationPolicy.minNpcRecruitCityPopulation - fullLeadership * 100;
         if (remainPop <= 0) {
+            trace('population-floor', { remainPop, fullLeadership });
             return null;
         }
         const maxPop = city.populationMax - ai.nationPolicy.minNpcRecruitCityPopulation;
@@ -67,6 +88,7 @@ export const do징병 = (ai: GeneralAI) => {
             city.population / city.populationMax < ai.nationPolicy.safeRecruitCityPopulationRatio &&
             ai.rng.nextBool(remainPop / Math.max(1, maxPop))
         ) {
+            trace('population-random', { remainPop, maxPop, fullLeadership });
             return null;
         }
     }
@@ -82,10 +104,22 @@ export const do징병 = (ai: GeneralAI) => {
     ) {
         forcedArmType = 0;
     }
-    const armType =
-        forcedArmType > 0
-            ? forcedArmType
-            : ai.rng.choiceUsingWeightPair(buildRecruitArmTypeWeights(ai.general, warConfig.armTypes));
+    const armTypeWeights = forcedArmType > 0 ? [] : buildRecruitArmTypeWeights(ai.general, warConfig.armTypes);
+    let armTypeDraw: number | null = null;
+    const armType = forcedArmType > 0
+        ? forcedArmType
+        : traceEnabled
+          ? (() => {
+                armTypeDraw = ai.rng.nextFloat1();
+                let cursor = armTypeDraw * armTypeWeights.reduce((sum, [, weight]) => sum + Math.max(0, weight), 0);
+                for (const [candidate, weight] of armTypeWeights) {
+                    if (cursor <= weight) return candidate;
+                    cursor -= Math.max(0, weight);
+                }
+                return armTypeWeights.at(-1)![0];
+            })()
+          : ai.rng.choiceUsingWeightPair(armTypeWeights);
+    trace('arm-type', { forcedArmType, armType, armTypeDraw, armTypeWeights });
 
     const candidates = (ai.unitSet?.crewTypes ?? [])
         .filter((crew) => crew.armType === armType)
@@ -100,11 +134,17 @@ export const do징병 = (ai: GeneralAI) => {
             })
         );
     if (candidates.length === 0) {
+        trace('no-crew-type', { armType });
         return null;
     }
     let picked = ai.rng.choiceUsingWeightPair(
         candidates.map((crew) => [crew, getCrewTypePickScore(crew, tech, warConfig.armPerPhase)])
     );
+    trace('crew-type', {
+        armType,
+        candidates: candidates.map((crew) => [crew.id, getCrewTypePickScore(crew, tech, warConfig.armPerPhase)]),
+        picked: picked.id,
+    });
     if (ai.generalPolicy.can('고급병종')) {
         const currentCrewType = findCrewTypeById(ai.unitSet, ai.general.crewTypeId);
         if (
@@ -130,7 +170,39 @@ export const do징병 = (ai: GeneralAI) => {
     const crewTypeId = picked.id;
 
     let crewAmount = crewAmountBase;
-    const goldCost = (picked.cost * getTechCost(tech) * crewAmount) / 100;
+    const rawGoldCost = (picked.cost * getTechCost(tech) * crewAmount) / 100;
+    // Ref asks the concrete che_징병 command for getCost() before deciding
+    // whether to halve the requested crew. That path includes personality,
+    // traits, items, and the final integer rounding; using the raw unit price
+    // makes che_출세 (+20% cost) recruit a full stack incorrectly.
+    const actionPipeline = new GeneralActionPipeline(ai.commandEnv.generalActionModules ?? []);
+    const goldCost = Math.round(
+        actionPipeline.onCalcDomestic(
+            {
+                general: ai.general,
+                nation,
+                ...(ai.worldRef
+                    ? {
+                          worldView: {
+                              listGenerals: () => ai.worldRef!.listGenerals(),
+                              listGeneralsByCity: (cityId: number) =>
+                                  ai.worldRef!.listGenerals().filter((candidate) => candidate.cityId === cityId),
+                              listNations: () => ai.worldRef!.listNations(),
+                          },
+                      }
+                    : {}),
+                time: {
+                    year: ai.world.currentYear,
+                    month: ai.world.currentMonth,
+                    startYear: ai.startYear,
+                },
+            },
+            '징병',
+            'cost',
+            rawGoldCost,
+            { armType: picked.armType }
+        )
+    );
     const killCrew = readMetaNumber(generalMeta, 'rank_killcrew', readMetaNumber(generalMeta, 'killcrew', 0));
     const deathCrew = readMetaNumber(generalMeta, 'rank_deathcrew', readMetaNumber(generalMeta, 'deathcrew', 0));
     const expectedCrewLoss = Math.floor((crewAmount * killCrew * 1.2) / Math.max(deathCrew, 1));
@@ -139,6 +211,7 @@ export const do징병 = (ai: GeneralAI) => {
     const remainingGold = ai.general.gold - fullLeadership * 3;
     const remainingRice = ai.general.rice - fullLeadership * 4;
     if (remainingGold <= 0 || remainingRice <= 0) {
+        trace('reserve-floor', { remainingGold, remainingRice, fullLeadership });
         return null;
     }
 
@@ -156,8 +229,18 @@ export const do징병 = (ai: GeneralAI) => {
     }
 
     if (!ai.generalPolicy.can('한계징병') && remainingRice * 1.1 <= riceCost) {
+        trace('rice-cost', { remainingGold, remainingRice, goldCost, riceCost, crewAmount, crewTypeId });
         return null;
     }
 
-    return ai.buildGeneralCandidate('che_징병', { crewType: crewTypeId, amount: crewAmount }, '징병');
+    const result = ai.buildGeneralCandidate('che_징병', { crewType: crewTypeId, amount: crewAmount }, '징병');
+    trace(result ? 'selected' : 'constraint', {
+        remainingGold,
+        remainingRice,
+        goldCost,
+        riceCost,
+        crewAmount,
+        crewTypeId,
+    });
+    return result;
 };

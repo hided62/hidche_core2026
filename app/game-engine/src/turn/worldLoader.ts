@@ -389,18 +389,28 @@ export const loadTurnWorldFromDatabase = async (options: TurnWorldLoaderOptions)
             inheritanceByUser.set(row.userId, bucket);
         }
         const accessByGeneral = new Map(accessRows.map((row) => [row.generalId, row]));
-        const generals = generalRows.map((row) =>
-            mapGeneralRow(
-                row,
-                ranksByGeneral.get(row.id) ?? [],
-                row.userId ? (inheritanceByUser.get(row.userId) ?? []) : [],
-                accessByGeneral.get(row.id)
+        // MariaDB legacy scans these tables in their primary-key order. Prisma
+        // findMany() does not promise an order, and Map insertion order can
+        // otherwise leak into monthly RNG and AI candidate traversal.
+        const generals = generalRows
+            .map((row) =>
+                mapGeneralRow(
+                    row,
+                    ranksByGeneral.get(row.id) ?? [],
+                    row.userId ? (inheritanceByUser.get(row.userId) ?? []) : [],
+                    accessByGeneral.get(row.id)
+                )
             )
-        );
-        const cities = cityRows.map(mapCityRow);
-        const nations = nationRows.map(mapNationRow);
-        const diplomacy = diplomacyRows.map(mapDiplomacyRow);
-        const troops = troopRows.map(mapTroopRow);
+            .sort((left, right) => left.id - right.id);
+        const cities = cityRows.map(mapCityRow).sort((left, right) => left.id - right.id);
+        const nations = nationRows.map(mapNationRow).sort((left, right) => left.id - right.id);
+        const diplomacy = diplomacyRows
+            .map(mapDiplomacyRow)
+            .sort(
+                (left, right) =>
+                    left.fromNationId - right.fromNationId || left.toNationId - right.toNationId
+            );
+        const troops = troopRows.map(mapTroopRow).sort((left, right) => left.id - right.id);
 
         const worldConfig = asRecord(worldState.config);
         const scenarioConfig = mapScenarioConfig(worldState.config);

@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { City, Nation, NationTraitModule } from '@sammo-ts/logic';
 
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
-import { createProcessSemiAnnualHandler } from '../src/turn/monthlySemiAnnualAction.js';
+import {
+    createProcessSemiAnnualHandler,
+    storeLegacySemiAnnualTrust,
+} from '../src/turn/monthlySemiAnnualAction.js';
 import type { TurnEvent, TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 
 const buildCity = (id: number, patch: Partial<City> = {}): City => ({
@@ -151,6 +154,11 @@ const environment = {
 };
 
 describe('ProcessSemiAnnual monthly action', () => {
+    it('stores the adjusted trust at the MariaDB FLOAT boundary', () => {
+        expect(storeLegacySemiAnnualTrust(88.30675 + 10)).toBe(Math.fround(98.30675));
+        expect(storeLegacySemiAnnualTrust(88.30675 + 10)).not.toBe(98.30675);
+    });
+
     it('preserves the global popIncrease order, neutral double decay, supplied filtering, and nation trait', async () => {
         const { world, handler } = buildHarness({
             configConst: { basePopIncreaseAmount: 15_000 },
@@ -239,6 +247,17 @@ describe('ProcessSemiAnnual monthly action', () => {
             wall: 991,
             meta: { trust: 55, dead: 0 },
         });
+    });
+
+    it('rounds decimal half boundaries like MariaDB ROUND', async () => {
+        const { world, handler } = buildHarness({
+            cities: [buildCity(1, { defence: 2_000, wall: 2_000 })],
+            nations: [buildNation(1, { meta: { rate: 15 } })],
+        });
+
+        await handler(['gold'], environment, event);
+
+        expect(world.getCityById(1)).toMatchObject({ defence: 2_030, wall: 2_030 });
     });
 
     it('applies strict legacy resource thresholds to generals and nations for either resource', async () => {

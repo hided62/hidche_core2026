@@ -17,6 +17,7 @@ import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js'
 import type { GeneralTurnCommandSpec } from './index.js';
 import { clamp } from 'es-toolkit';
 import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js';
+import { applyLegacyInjury, finalizeLegacyStat } from './legacyGeneralStat.js';
 
 export interface BoostMoraleArgs {}
 
@@ -85,8 +86,10 @@ export class ActionDefinition<
                 ? this.env.maxAtmosByCommand
                 : DEFAULT_MAX_ATMOS;
         const delta = this.env.atmosDelta && this.env.atmosDelta > 0 ? this.env.atmosDelta : DEFAULT_ATMOS_DELTA;
-        const leadership = this.pipeline.onCalcStat(context, 'leadership', general.stats.leadership);
-        const score = Math.round((leadership * 100 * delta) / general.crew);
+        const leadership = finalizeLegacyStat(
+            this.pipeline.onCalcStat(context, 'leadership', applyLegacyInjury(general.stats.leadership, general.injury))
+        );
+        const score = Math.round(((leadership * 100) / general.crew) * delta);
         const nextAtmos = clamp(general.atmos + score, 0, maxAtmos);
         const applied = nextAtmos - general.atmos;
         const costGold = this.env.costGold ?? Math.round(general.crew / 100);
@@ -95,15 +98,20 @@ export class ActionDefinition<
         general.atmos = nextAtmos;
         general.train = trainSideEffect;
         general.gold = Math.max(0, general.gold - costGold);
-        general.experience += 100;
-        general.dedication += 70;
+        general.experience += this.pipeline.onCalcStat(context, 'experience', 100);
+        general.dedication += this.pipeline.onCalcStat(context, 'dedication', 70);
         const leadershipExp = typeof general.meta.leadership_exp === 'number' ? general.meta.leadership_exp : 0;
         general.meta.leadership_exp = leadershipExp + 1;
         const crewType = this.env.unitSet?.crewTypes?.find((entry) => entry.id === general.crewTypeId);
         if (crewType) {
-            const dexKey = `dex${crewType.armType}`;
-            const dex = typeof general.meta[dexKey] === 'number' ? general.meta[dexKey] : 0;
-            general.meta[dexKey] = dex + applied;
+            const armType = crewType.armType === 0 ? 5 : crewType.armType;
+            if (armType >= 0) {
+                const dexKey = `dex${armType}`;
+                const dex = typeof general.meta[dexKey] === 'number' ? general.meta[dexKey] : 0;
+                const typeMultiplier = armType === 4 || armType === 5 ? 0.9 : 1;
+                general.meta[dexKey] =
+                    dex + this.pipeline.onCalcStat(context, 'addDex', applied * typeMultiplier, { armType });
+            }
         }
 
         context.addLog(`사기치가 <C>${applied}</> 상승했습니다.`);

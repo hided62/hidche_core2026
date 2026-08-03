@@ -158,6 +158,8 @@ export interface GeneralSeed {
     npcType: number;
     text: string | null;
     crewTypeId: number;
+    experience?: number;
+    dedication?: number;
     meta: Record<string, unknown>;
 }
 

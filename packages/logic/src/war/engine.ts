@@ -1,6 +1,6 @@
 import { JosaUtil, LiteHashDRBG, RandUtil } from '@sammo-ts/common';
 
-import type { City, General, GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
+import type { City, GeneralTriggerState } from '@sammo-ts/logic/domain/entities.js';
 import { compileCrewTypeCatalog, isCrewTypeWarActionRouter } from '@sammo-ts/logic/crewType/catalog.js';
 import { ActionLogger } from '@sammo-ts/logic/logging/actionLogger.js';
 import { LogFormat } from '@sammo-ts/logic/logging/types.js';
@@ -19,10 +19,7 @@ import type {
 import { getMetaNumber } from './utils.js';
 import { WarUnitCity, WarUnitGeneral, type WarUnit } from './units.js';
 
-const META_FULL_LEADERSHIP = 'fullLeadership';
-const META_FULL_STRENGTH = 'fullStrength';
-const META_FULL_INTELLIGENCE = 'fullIntelligence';
-const META_DEFENCE_TRAIN = 'defenceTrain';
+const META_DEFENCE_TRAIN = 'defence_train';
 
 const defaultLoggerFactory = (options: { generalId?: number; nationId?: number }): ActionLogger =>
     new ActionLogger(options);
@@ -101,18 +98,6 @@ const buildBattlePhaseTriggers = (unit: WarUnit, registry: WarTriggerRegistry): 
     return caller;
 };
 
-const resolveFullStats = (
-    general: General
-): {
-    leadership: number;
-    strength: number;
-    intelligence: number;
-} => ({
-    leadership: getMetaNumber(general.meta, META_FULL_LEADERSHIP, general.stats.leadership),
-    strength: getMetaNumber(general.meta, META_FULL_STRENGTH, general.stats.strength),
-    intelligence: getMetaNumber(general.meta, META_FULL_INTELLIGENCE, general.stats.intelligence),
-});
-
 const isSupplyCity = (city: City): boolean => {
     const supply = city.meta.supply;
     if (typeof supply === 'boolean') {
@@ -153,9 +138,17 @@ export const computeBattleOrder = <TriggerState extends GeneralTriggerState>(
         return 0;
     }
 
-    const realStat = general.stats.leadership + general.stats.strength + general.stats.intelligence;
-    const fullStats = resolveFullStats(general);
-    const fullStat = fullStats.leadership + fullStats.strength + fullStats.intelligence;
+    // Ref calls General::getLeadership/Strength/Intel() for every defender at
+    // battle time. That applies injury, stat cross-adjustment, officer/items/
+    // traits and integer conversion through the defender's action pipeline.
+    const realStat =
+        defender.getComputedStat('leadership', general.stats.leadership) +
+        defender.getComputedStat('strength', general.stats.strength) +
+        defender.getComputedStat('intelligence', general.stats.intelligence);
+    const fullStat =
+        defender.getComputedStat('leadership', general.stats.leadership, { withInjury: false }) +
+        defender.getComputedStat('strength', general.stats.strength, { withInjury: false }) +
+        defender.getComputedStat('intelligence', general.stats.intelligence, { withInjury: false });
     const totalStat = (realStat + fullStat) / 2;
 
     const totalCrew = (general.crew / 1_000_000) * Math.pow(general.train * general.atmos, 1.5);
@@ -330,6 +323,12 @@ export const resolveWarBattle = <TriggerState extends GeneralTriggerState = Gene
         defenderUnits.push(cityUnit);
     }
 
+    const summarizeDefenderOrder = (unit: WarUnit<TriggerState>) => ({
+        id: unit instanceof WarUnitGeneral ? unit.getGeneral().id : 0,
+        order: computeBattleOrder<TriggerState>(unit, attackerUnit),
+    });
+    const defenderOrderBeforeSort = defenderUnits.map(summarizeDefenderOrder);
+
     defenderUnits.sort(
         (lhs, rhs) =>
             computeBattleOrder<TriggerState>(rhs, attackerUnit) - computeBattleOrder<TriggerState>(lhs, attackerUnit)
@@ -373,6 +372,10 @@ export const resolveWarBattle = <TriggerState extends GeneralTriggerState = Gene
             details,
         });
     };
+    emitTrace('defender_order', defender, {
+        before: defenderOrderBeforeSort,
+        after: defenderUnits.map(summarizeDefenderOrder),
+    });
     emitTrace('battle_start', defender, { seed: input.seed ?? '' });
 
     const attackerNationName = (attackerUnit.getNationVar('name') as string | null) ?? 'UNKNOWN';
@@ -399,7 +402,10 @@ export const resolveWarBattle = <TriggerState extends GeneralTriggerState = Gene
             defender = cityUnit;
             cityUnit.setSiege();
 
-            const defenderRice = input.defenderNation?.rice ?? 0;
+            // Ref builds a virtual neutral nation with 10,000 rice. Treating a
+            // neutral city's missing Nation row as zero skips the entire siege
+            // through the supply-retreat branch and changes every later war.
+            const defenderRice = input.defenderNation?.rice ?? 10_000;
             if (isSupplyCity(input.defenderCity) && defenderRice <= 0) {
                 attackerUnit.setOppose(defender);
                 defender.setOppose(attackerUnit);

@@ -153,7 +153,7 @@ const resolveKillturnFromDeathYear = (
     if (!Number.isFinite(deathYear) || deathYear <= 0) {
         return fallback;
     }
-    const diff = (deathYear - currentYear) * 12 + (deathMonth - currentMonth);
+    const diff = (deathYear - currentYear) * 12 + (deathMonth - 1) + currentMonth - 1;
     return Math.max(diff, 0);
 };
 
@@ -209,18 +209,6 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
     const hiddenSeed =
         integrationSeed && integrationSeed.length > 0 ? integrationSeed : randomBytes(16).toString('hex');
 
-    const { seed, warnings } = buildScenarioBootstrap({
-        scenario: scenarioDefinition,
-        map,
-        unitSet,
-        options: {
-            includeNeutralNationInSeed: options.includeNeutralNationInSeed ?? true,
-            hiddenSeed,
-        },
-    });
-    seed.cities = applyInitialChangeCityEvents(seed.cities, seed.initialEvents);
-
-    const connector = createGamePostgresConnector({ url: options.databaseUrl });
     const now = options.now ?? new Date();
     const tickSeconds =
         install?.turnTermMinutes !== undefined
@@ -229,6 +217,22 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
     const turnTermMinutes = Math.max(1, Math.round(tickSeconds / 60));
     const sync = install?.sync ?? false;
     const startState = resolveStartState(scenario.startYear ?? null, now, turnTermMinutes, sync);
+
+    const { seed, warnings } = buildScenarioBootstrap({
+        scenario: scenarioDefinition,
+        map,
+        unitSet,
+        options: {
+            includeNeutralNationInSeed: options.includeNeutralNationInSeed ?? true,
+            hiddenSeed,
+            initialYear: startState.currentYear,
+            initialMonth: startState.currentMonth,
+            turnTermMinutes,
+        },
+    });
+    seed.cities = applyInitialChangeCityEvents(seed.cities, seed.initialEvents);
+
+    const connector = createGamePostgresConnector({ url: options.databaseUrl });
     const generalGold = options.defaultGeneralGold ?? DEFAULT_GENERAL_GOLD;
     const generalRice = options.defaultGeneralRice ?? DEFAULT_GENERAL_RICE;
 
@@ -257,7 +261,15 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
     const worldMeta: Record<string, unknown> = {
         scenarioId: options.scenarioId,
         scenarioMeta: seed.scenarioMeta,
+        // ResetHelper persists the actual pre-opening calendar separately from
+        // scenario.startyear. NPC wandering-nation AI and founding constraints
+        // derive their opening-month gates from these values.
+        initYear: startState.currentYear,
+        initMonth: startState.currentMonth,
         genius: Math.max(0, Math.floor(asNumber(scenarioConst.defaultMaxGenius, 5))),
+        // Ref seeds game_env.develcost before the first general turn. The
+        // monthly pre-handler recalculates the same value at each boundary.
+        develcost: (startState.currentYear - (scenario.startYear ?? startState.currentYear) + 10) * 2,
         starttime: formatDateTime(startState.startTime),
         turntime: formatDateTime(now),
         opentime: formatDateTime(now),
@@ -493,6 +505,8 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
                             leadership: general.stats.leadership,
                             strength: general.stats.strength,
                             intel: general.stats.intelligence,
+                            experience: general.experience ?? 0,
+                            dedication: general.dedication ?? 0,
                             officerLevel: general.officerLevel,
                             gold: generalGold,
                             rice: generalRice,
@@ -501,9 +515,17 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
                             weaponCode: general.weapon ?? 'None',
                             bookCode: general.book ?? 'None',
                             itemCode: general.item ?? 'None',
-                            turnTime: now,
-                            age: resolveGeneralAge(scenario.startYear ?? null, general.birthYear),
-                            startAge: resolveGeneralAge(scenario.startYear ?? null, general.birthYear),
+                            turnTime: new Date(
+                                now.getTime() +
+                                    Math.floor(
+                                        (typeof general.meta.initialTurnOffsetMicros === 'number'
+                                            ? general.meta.initialTurnOffsetMicros
+                                            : 0) / 1_000
+                                    )
+                            ),
+                            age: resolveGeneralAge(startState.currentYear, general.birthYear),
+                            // Legacy GeneralBuilder leaves startage at the schema default on install.
+                            startAge: 20,
                             personalCode: general.personality ?? 'None',
                             specialCode: general.special ?? 'None',
                             special2Code: general.specialWar ?? 'None',

@@ -3,6 +3,7 @@ import { LogCategory, LogFormat, LogScope, type City, type MapDefinition, type N
 
 import { createIncomeHandler } from '../src/turn/incomeHandler.js';
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
+import { calculateNpcNationFinance } from '../src/turn/npcTaxHandler.js';
 import {
     createNewYearHandler,
     createNoticeToHistoryLogHandler,
@@ -10,6 +11,7 @@ import {
     createResetOfficerLockHandler,
 } from '../src/turn/monthlyCoreEventAction.js';
 import { createMonthlyEventHandler, type MonthlyEventActionHandler } from '../src/turn/monthlyEventHandler.js';
+import { buildCommandEnv } from '../src/turn/reservedTurnCommands.js';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 
 const map: MapDefinition = {
@@ -317,5 +319,149 @@ describe('core monthly event actions at the real month boundary', () => {
                 prev_income_gold: 105,
             },
         });
+    });
+
+    it('keeps fractional income for the legacy salary payout ratio', async () => {
+        const nation = buildNation();
+        nation.gold = 0;
+        nation.meta = { ...nation.meta, rate: 15, rate_tmp: 15, bill: 100 };
+        const world = buildWorld(
+            [
+                {
+                    id: 4,
+                    targetCode: 'month',
+                    priority: 1,
+                    condition: true,
+                    action: [['ProcessIncome', 'gold']],
+                    meta: {},
+                },
+            ],
+            (getWorld) => {
+                const incomeHandler = createIncomeHandler({
+                    getWorld,
+                    scenarioConfig: {
+                        stat: {
+                            total: 300,
+                            min: 10,
+                            max: 100,
+                            npcTotal: 150,
+                            npcMax: 50,
+                            npcMin: 10,
+                            chiefMin: 70,
+                        },
+                        iconPath: '',
+                        map: {},
+                        const: { baseGold: 0, baseRice: 0 },
+                        environment: { mapName: map.id, unitSet: 'default' },
+                    },
+                    nationTraits: new Map(),
+                });
+                return new Map([['ProcessIncome', createProcessIncomeActionHandler(incomeHandler)]]);
+            },
+            {
+                currentMonth: 12,
+                generals: [buildGeneral(1, 1, 3)],
+                nations: [nation],
+                cities: [buildCity()],
+            }
+        );
+
+        await world.advanceMonth(new Date('0191-01-01T00:00:00.000Z'));
+
+        expect(world.getNationById(1)?.meta.prev_income_gold).toBe(157.5);
+    });
+
+    it('uses the Ref default nation resource floors when scenario const omits them', async () => {
+        const nation = buildNation();
+        nation.rice = 0;
+        const general = buildGeneral(1, 1, 3);
+        const world = buildWorld(
+            [
+                {
+                    id: 5,
+                    targetCode: 'month',
+                    priority: 1,
+                    condition: true,
+                    action: [['ProcessIncome', 'rice']],
+                    meta: {},
+                },
+            ],
+            (getWorld) => {
+                const incomeHandler = createIncomeHandler({
+                    getWorld,
+                    scenarioConfig: {
+                        stat: {
+                            total: 300,
+                            min: 10,
+                            max: 100,
+                            npcTotal: 150,
+                            npcMax: 50,
+                            npcMin: 10,
+                            chiefMin: 70,
+                        },
+                        iconPath: '',
+                        map: {},
+                        const: {},
+                        environment: { mapName: map.id, unitSet: 'default' },
+                    },
+                    nationTraits: new Map(),
+                });
+                return new Map([['ProcessIncome', createProcessIncomeActionHandler(incomeHandler)]]);
+            },
+            {
+                currentMonth: 6,
+                generals: [general],
+                nations: [nation],
+                cities: [buildCity()],
+            }
+        );
+
+        await world.advanceMonth(new Date('0190-07-01T00:00:00.000Z'));
+
+        expect(world.getNationById(1)?.rice).toBe(2_000);
+        expect(world.getGeneralById(1)?.rice).toBe(general.rice);
+    });
+
+    it('excludes the NPC ruler stipend when choosing the nation bill like Ref', () => {
+        const config: TurnWorldSnapshot['scenarioConfig'] = {
+            stat: { total: 300, min: 10, max: 100, npcTotal: 150, npcMax: 50, npcMin: 10, chiefMin: 70 },
+            iconPath: '',
+            map: {},
+            const: { baseGold: 0, baseRice: 0 },
+            environment: { mapName: map.id, unitSet: 'default' },
+        };
+        const buildFinanceWorld = (chiefDedication: number) => {
+            const chief = buildGeneral(1, 1, 3);
+            chief.npcState = 2;
+            chief.officerLevel = 12;
+            chief.dedication = chiefDedication;
+            const subordinate = buildGeneral(2, 1, 3);
+            subordinate.npcState = 2;
+            return buildWorld([], () => new Map(), {
+                currentMonth: 12,
+                generals: [chief, subordinate],
+                nations: [buildNation()],
+                cities: [buildCity()],
+            });
+        };
+        const options = { scenarioConfig: config, commandEnv: buildCommandEnv(config) };
+        const lowChiefWorld = buildFinanceWorld(1);
+        const highChiefWorld = buildFinanceWorld(100_000);
+
+        const lowChiefBill = calculateNpcNationFinance(
+            lowChiefWorld,
+            lowChiefWorld.getNationById(1)!,
+            12,
+            options
+        )?.bill;
+        const highChiefBill = calculateNpcNationFinance(
+            highChiefWorld,
+            highChiefWorld.getNationById(1)!,
+            12,
+            options
+        )?.bill;
+
+        expect(lowChiefBill).toBeTypeOf('number');
+        expect(highChiefBill).toBe(lowChiefBill);
     });
 });

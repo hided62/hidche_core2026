@@ -25,6 +25,7 @@ export interface WarEngineConfig {
     maxTrainByWar: number;
     maxAtmosByWar: number;
     maxGeneralStat?: number;
+    statUpgradeLimit?: number;
     castleCrewTypeId: number;
     armTypes: WarArmTypes;
 }
@@ -138,6 +139,16 @@ export interface WarAftermathConfig {
     baseGold: number;
     baseRice: number;
     castleCrewTypeId: number;
+    /** Legacy admin join mode. Ruined-nation scout/join draws are skipped in onlyRandom mode. */
+    joinMode?: 'full' | 'onlyRandom';
+    /** Probability that an eligible ruined NPC reserves a future appointment. */
+    joinRuinedNpcProbability?: number;
+}
+
+export interface RuinedNpcJoinPlan {
+    generalId: number;
+    destNationId: number;
+    joinTurn: number;
 }
 
 export interface WarAftermathTechContext {
@@ -162,6 +173,7 @@ export interface ConquerCityOutcome<TriggerState extends GeneralTriggerState = G
     nations: Nation[];
     cities: City[];
     generals: General<TriggerState>[];
+    ruinedNpcJoinPlans: RuinedNpcJoinPlan[];
 }
 
 export interface WarAftermathInput<TriggerState extends GeneralTriggerState = GeneralTriggerState> {

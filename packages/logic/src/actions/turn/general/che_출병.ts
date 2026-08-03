@@ -33,10 +33,12 @@ import { resolveWarBattle } from '@sammo-ts/logic/war/engine.js';
 import type { WarActionModule } from '@sammo-ts/logic/war/actions.js';
 import type { NationTraitModule } from '@sammo-ts/logic/actionModules/traits/nation/index.js';
 import type { GeneralActionModule } from '@sammo-ts/logic/actionModules/general.js';
-import { increaseMetaNumber, simpleSerialize } from '@sammo-ts/logic/war/utils.js';
+import { GeneralActionPipeline } from '@sammo-ts/logic/actionModules/general.js';
+import { simpleSerialize } from '@sammo-ts/logic/war/utils.js';
 import type { MapDefinition, UnitSetDefinition } from '@sammo-ts/logic/world/types.js';
 import type { ActionContextBuilder } from '@sammo-ts/logic/actions/turn/actionContext.js';
 import { tryApplyUniqueLottery } from '@sammo-ts/logic/rewards/uniqueLottery.js';
+import { buildNationFrontStatePatches } from '../../../diplomacy/frontState.js';
 import { formatDestCityConstraintFailure } from '../constraintFailure.js';
 import {
     buildWarAftermathConfig,
@@ -55,7 +57,7 @@ export interface DispatchResolveContext<
     generals: General<TriggerState>[];
     unitSet: UnitSetDefinition;
     map?: MapDefinition;
-    diplomacy?: Array<{ fromNationId: number; toNationId: number; state: number }>;
+    diplomacy?: Array<{ fromNationId: number; toNationId: number; state: number; term: number }>;
     time: WarTimeContext;
     seedBase: string;
     warConfig: WarEngineConfig;
@@ -172,22 +174,18 @@ const pickCandidateCity = (
     if (minDist === undefined) {
         return null;
     }
-    const candidates: Array<[number, number]> = [];
     for (const dist of distances) {
         if (dist > minDist + 1) {
             break;
         }
-        for (const entry of distanceList.get(dist) ?? []) {
-            if (entry[1] !== attackerNationId) {
-                candidates.push(entry);
-            }
+        const candidates = (distanceList.get(dist) ?? []).filter(([, nationId]) => nationId !== attackerNationId);
+        if (candidates.length > 0) {
+            // Ref breaks at the first distance layer containing an enemy. It
+            // only considers minDist + 1 when the minDist layer has none.
+            // RandUtil::choice() still consumes nextInt(0) for one candidate.
+            const [cityId] = pickLegacyChoice(candidates);
+            return { cityId, isEnemy: true, minDist };
         }
-    }
-    if (candidates.length > 0) {
-        // Legacy RandUtil::choice() consumes nextInt(0) even when there is a
-        // single candidate. Keep that observable RNG step for seed parity.
-        const [cityId] = pickLegacyChoice(candidates);
-        return { cityId, isEnemy: true, minDist };
     }
     const fallback = distanceList.get(minDist) ?? [];
     const friendly = fallback.filter(([, nationId]) => nationId === attackerNationId);
@@ -257,6 +255,7 @@ export class ActionDefinition<
     private readonly warModules: ReadonlyArray<WarActionModule<TriggerState>>;
     private readonly nationTraitModules: Map<string, NationTraitModule>;
     private readonly generalModules: ReadonlyArray<GeneralActionModule<TriggerState>>;
+    private readonly generalPipeline: GeneralActionPipeline<TriggerState>;
 
     constructor(
         modules: ReadonlyArray<WarActionModule<TriggerState> | null | undefined> = [],
@@ -266,6 +265,7 @@ export class ActionDefinition<
         this.warModules = modules.filter(Boolean) as ReadonlyArray<WarActionModule<TriggerState>>;
         this.nationTraitModules = new Map(nationTraitModules.map((module) => [module.key, module]));
         this.generalModules = generalModules.filter(Boolean) as ReadonlyArray<GeneralActionModule<TriggerState>>;
+        this.generalPipeline = new GeneralActionPipeline(this.generalModules);
     }
 
     parseArgs(raw: unknown): DispatchArgs | null {
@@ -416,7 +416,16 @@ export class ActionDefinition<
 
         const armType = resolveCrewTypeArm(unitSet, context.general.crewTypeId);
         if (armType !== null) {
-            increaseMetaNumber(context.general.meta, `dex${armType}`, context.general.crew / 100);
+            const typeMultiplier = armType === 4 || armType === 5 ? 0.9 : 1;
+            const amount = this.generalPipeline.onCalcStat(
+                context,
+                'addDex',
+                (context.general.crew / 100) * typeMultiplier,
+                { armType }
+            );
+            const dexKey = `dex${armType}`;
+            const currentDex = context.general.meta[dexKey];
+            context.general.meta[dexKey] = (typeof currentDex === 'number' ? currentDex : 0) + amount;
         }
 
         const cities = context.cities.map(cloneCity);
@@ -441,6 +450,10 @@ export class ActionDefinition<
                 general.crew > 0 &&
                 (unitSet.crewTypes?.some((crewType) => crewType.id === general.crewTypeId) ?? false)
         );
+        const traceGeneralIds = new Set(process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []);
+        const shouldTraceWar =
+            traceGeneralIds.has(String(context.general.id)) ||
+            defenderGenerals.some((general) => traceGeneralIds.has(String(general.id)));
 
         const battle = resolveWarBattle({
             seed,
@@ -461,6 +474,15 @@ export class ActionDefinition<
             })),
             defenderCity,
             defenderNation,
+            ...(shouldTraceWar
+                ? {
+                      trace: (event) => {
+                          process.stdout.write(
+                              `AI_WAR_TRACE ${JSON.stringify({ generalId: context.general.id, event })}\n`
+                          );
+                      },
+                  }
+                : {}),
         });
 
         const aftermath = resolveWarAftermath({
@@ -485,6 +507,36 @@ export class ActionDefinition<
                 );
             },
         });
+
+        // Ref ConquerCity() recalculates the fronts of every nation around the
+        // captured city immediately. Later generals in the same monthly due
+        // list therefore observe those refreshed values when choosing whether
+        // to deploy. Preserve that ordering before snapshotting city effects.
+        let frontStatePatches: Array<{ id: number; frontState: number }> = [];
+        if (battle.conquered && context.map && context.diplomacy) {
+            const connections = new Map(
+                context.map.cities.map((city) => [city.id, city.connections ?? []] as const)
+            );
+            const nearbyCityIds = new Set([defenderCity.id, ...(connections.get(defenderCity.id) ?? [])]);
+            const nearbyNationIds = new Set<number>([aftermath.conquest?.conquerNationId ?? attackerNation.id]);
+            for (const city of cities) {
+                if (nearbyCityIds.has(city.id) && city.nationId > 0) {
+                    nearbyNationIds.add(city.nationId);
+                }
+            }
+            frontStatePatches = buildNationFrontStatePatches({
+                cities,
+                diplomacy: context.diplomacy,
+                connections,
+                nationIds: [...nearbyNationIds],
+            });
+            for (const patch of frontStatePatches) {
+                const city = cities.find((candidate) => candidate.id === patch.id);
+                if (city) {
+                    city.frontState = patch.frontState;
+                }
+            }
+        }
 
         const effects: Array<GeneralActionEffect<TriggerState>> = [];
 
@@ -541,6 +593,9 @@ export class ActionDefinition<
         for (const [id, patch] of cityPatches) {
             effects.push(createCityPatchEffect(patch, id));
         }
+        for (const patch of frontStatePatches) {
+            effects.push(createCityPatchEffect({ frontState: patch.frontState }, patch.id));
+        }
         for (const [id, patch] of nationPatches) {
             effects.push(createNationPatchEffect(patch, id));
         }
@@ -555,7 +610,12 @@ export class ActionDefinition<
 
         tryApplyUniqueLottery(context, { acquireType: '아이템', reason: ACTION_NAME });
 
-        return { effects };
+        return {
+            effects,
+            ...(aftermath.conquest?.ruinedNpcJoinPlans.length
+                ? { reservedGeneralTurnPlans: aftermath.conquest.ruinedNpcJoinPlans }
+                : {}),
+        };
     }
 }
 
@@ -576,6 +636,8 @@ export const actionContextBuilder: ActionContextBuilder = (base, options) => {
     const diplomacy = options.worldRef.listDiplomacy();
     const warConfig = buildWarConfig(options.scenarioConfig, options.unitSet);
     const aftermathConfig = buildWarAftermathConfig(options.scenarioConfig, warConfig.castleCrewTypeId);
+    const joinModeRaw = options.world.meta?.join_mode ?? options.world.meta?.joinMode;
+    aftermathConfig.joinMode = joinModeRaw === 'onlyRandom' ? 'onlyRandom' : 'full';
     return {
         ...base,
         destCity,

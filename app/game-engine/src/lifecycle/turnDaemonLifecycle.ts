@@ -167,7 +167,11 @@ export class TurnDaemonLifecycle {
             const nowMs = this.clock.nowMs();
             const nextTurnMs = nextRunTime.getTime();
             if (nowMs >= nextTurnMs) {
-                await this.runOnce({ reason: 'schedule', targetTime: nextRunTime });
+                // Ref checkDelay() executes every turn due at the observed
+                // wall-clock time in one snapshot. Using only the oldest due
+                // timestamp lets generals created by that batch run before a
+                // monthly boundary, although Ref defers them to the next pass.
+                await this.runOnce({ reason: 'schedule', targetTime: new Date(nowMs) });
                 continue;
             }
 
@@ -195,9 +199,10 @@ export class TurnDaemonLifecycle {
         const lastTurnTime = new Date(this.status.lastTurnTime);
         const nextGeneralTurnTime = await this.stateStore.loadNextGeneralTurnTime();
         const nextTickTime = this.getNextTickTime(lastTurnTime);
-        // 가장 빠른 장수 턴과 현재 틱 경계 중 먼저 오는 시각을 선택한다.
+        // 같은 시각이면 Ref처럼 월 경계를 먼저 처리한다. 해당 장수는 월
+        // 처리 직후 다음 daemon pass에서 과거 due turn으로 실행된다.
         const nextTurnTime =
-            nextGeneralTurnTime && nextGeneralTurnTime.getTime() <= nextTickTime.getTime()
+            nextGeneralTurnTime && nextGeneralTurnTime.getTime() < nextTickTime.getTime()
                 ? nextGeneralTurnTime
                 : nextTickTime;
 

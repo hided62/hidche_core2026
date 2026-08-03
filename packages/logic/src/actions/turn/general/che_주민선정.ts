@@ -23,6 +23,7 @@ import {
 } from './che_상업투자.js';
 import { JosaUtil } from '@sammo-ts/common';
 import { clamp } from 'es-toolkit';
+import { readLegacyCityTrust, storeLegacyCityTrust } from './legacyCityTrust.js';
 
 export interface TrustActionArgs {}
 
@@ -40,16 +41,13 @@ const CONFIG: InvestmentConfig = {
     useCityTrust: false,
     scaleSuccessByTrust: false,
     roundCriticalScore: false,
+    costMultiplier: 2,
 };
 
 const readTrust = (city: City): number => {
     const trust = city.meta.trust;
-    return typeof trust === 'number' && Number.isFinite(trust) ? trust : DEFAULT_TRUST;
+    return typeof trust === 'number' && Number.isFinite(trust) ? readLegacyCityTrust(trust) : DEFAULT_TRUST;
 };
-
-// 레거시 city.trust는 MariaDB FLOAT이며 다음 명령에서 6자리 유효숫자로
-// 재조회된다. 같은 턴의 후속 명령도 그 저장 경계를 보도록 정규화한다.
-const toLegacyStoredTrust = (value: number): number => Number(Math.fround(value).toPrecision(6));
 
 const remainCityTrust = (): Constraint => ({
     name: 'remainCityTrust',
@@ -57,9 +55,7 @@ const remainCityTrust = (): Constraint => ({
     test: (ctx, view) => {
         const city = ctx.cityId !== undefined ? (view.get({ kind: 'city', id: ctx.cityId }) as City | null) : null;
         if (!city) return { kind: 'deny', reason: '도시 정보가 없습니다.' };
-        return readTrust(city) >= 100
-            ? { kind: 'deny', reason: '주민 선정은 충분합니다.' }
-            : { kind: 'allow' };
+        return readTrust(city) >= 100 ? { kind: 'deny', reason: '주민 선정은 충분합니다.' } : { kind: 'allow' };
     },
 });
 
@@ -71,11 +67,7 @@ export class ActionDefinition<
     private readonly command: CommandResolver<TriggerState>;
 
     constructor(env: TurnCommandEnv) {
-        this.command = new CommandResolver(
-            env.generalActionModules ?? [],
-            { ...env, develCost: env.develCost * 2 },
-            CONFIG
-        );
+        this.command = new CommandResolver(env.generalActionModules ?? [], env, CONFIG);
     }
 
     parseArgs(_raw: unknown): TrustActionArgs | null {
@@ -113,7 +105,7 @@ export class ActionDefinition<
         const trustDelta = result.score / 10;
         context.city.meta = {
             ...context.city.meta,
-            trust: toLegacyStoredTrust(clamp(readTrust(context.city) + trustDelta, 0, 100)),
+            trust: storeLegacyCityTrust(clamp(readTrust(context.city) + trustDelta, 0, 100)),
         };
         context.general.rice = Math.max(0, context.general.rice - result.costGold);
         context.general.experience += result.exp;

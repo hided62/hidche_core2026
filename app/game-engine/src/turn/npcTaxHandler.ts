@@ -1,6 +1,24 @@
+import { asRecord } from '@sammo-ts/common';
+import {
+    createIncomeActionContext,
+    getGoldIncome,
+    getOutcome,
+    getRiceIncome,
+    getWallIncome,
+    getWarGoldIncome,
+    type City,
+    type CityIncomeSource,
+    type Nation,
+    type NationIncomeContext,
+    type NationTraitModule,
+    type ScenarioConfig,
+    type TurnCommandEnv,
+    type UnitSetDefinition,
+} from '@sammo-ts/logic';
+
 import type { TurnCalendarContext, TurnCalendarHandler, InMemoryTurnWorld } from './inMemoryWorld.js';
-import type { City, Nation } from '@sammo-ts/logic';
-import { joinYearMonth, readNumber } from './ai/aiUtils.js';
+import { readNumber } from './ai/aiUtils.js';
+import { AutorunNationPolicy } from './ai/policies.js';
 
 const calcNationDevelopedRate = (cities: City[]): { pop: number; all: number } => {
     if (cities.length === 0) {
@@ -51,15 +69,129 @@ const resolveNpcTaxRate = (cities: City[]): number => {
 
 const shouldUpdateRate = (month: number): boolean => month === 6 || month === 12;
 
-const isNpcMonarchNation = (nation: Nation, world: InMemoryTurnWorld): boolean => {
-    if (!nation.capitalCityId || !nation.chiefGeneralId) {
-        return false;
+const toIncomeCity = (city: City): CityIncomeSource => ({
+    id: city.id,
+    population: city.population,
+    populationMax: city.populationMax,
+    agriculture: city.agriculture,
+    agricultureMax: city.agricultureMax,
+    commerce: city.commerce,
+    commerceMax: city.commerceMax,
+    security: city.security,
+    securityMax: city.securityMax,
+    trust: readNumber(asRecord(city.meta).trust, 50),
+    supplyState: city.supplyState,
+    defence: city.defence,
+    defenceMax: city.defenceMax,
+    wall: city.wall,
+    wallMax: city.wallMax,
+    meta: asRecord(city.meta),
+});
+
+const buildOfficerCounts = (world: InMemoryTurnWorld, nationId: number): Map<number, number> => {
+    const result = new Map<number, number>();
+    for (const general of world.listGenerals()) {
+        if (general.nationId !== nationId || general.officerLevel < 2 || general.officerLevel > 4) continue;
+        const officerCity = readNumber(asRecord(general.meta).officer_city, 0);
+        if (officerCity > 0 && general.cityId === officerCity) {
+            result.set(officerCity, (result.get(officerCity) ?? 0) + 1);
+        }
     }
-    const chief = world.getGeneralById(nation.chiefGeneralId);
-    return Boolean(chief && chief.npcState >= 2);
+    return result;
 };
 
-export const createNpcTaxHandler = (options: { getWorld: () => InMemoryTurnWorld | null }): TurnCalendarHandler => {
+const clampBill = (value: number): number => Math.max(20, Math.min(200, Math.trunc(value)));
+
+const resolveNpcMonarch = (nation: Nation, world: InMemoryTurnWorld) => {
+    const chief = nation.chiefGeneralId
+        ? world.getGeneralById(nation.chiefGeneralId)
+        : world
+              .listGenerals()
+              .find((general) => general.nationId === nation.id && general.officerLevel === 12) ?? null;
+    return chief && chief.npcState >= 2 ? chief : null;
+};
+
+type NpcFinanceOptions = {
+    commandEnv?: TurnCommandEnv;
+    scenarioConfig?: ScenarioConfig;
+    unitSet?: UnitSetDefinition;
+    nationTraits?: ReadonlyMap<string, NationTraitModule>;
+};
+
+export const calculateNpcNationFinance = (
+    world: InMemoryTurnWorld,
+    nation: Nation,
+    currentMonth: number,
+    options: NpcFinanceOptions
+): Nation['meta'] | null => {
+    if (!shouldUpdateRate(currentMonth)) {
+        return null;
+    }
+    const chief = resolveNpcMonarch(nation, world);
+    if (!chief) return null;
+    const cities = world.listCities();
+    const rawNationCities = cities.filter((city) => city.nationId === nation.id && city.supplyState > 0);
+    const rate = resolveNpcTaxRate(rawNationCities);
+    // Ref chooses the default rate during the ruler turn even when a newly
+    // founded nation has not supplied its first city yet.  In that state it
+    // leaves the existing bill untouched because there is no income basis.
+    if (rawNationCities.length === 0) {
+        return { ...nation.meta, rate };
+    }
+    if (!options.commandEnv || !options.scenarioConfig) {
+        return { ...nation.meta, rate };
+    }
+    const trait = options.nationTraits?.get(nation.typeCode);
+    const actionContext = createIncomeActionContext(nation);
+    const incomeContext: NationIncomeContext = {
+        rate,
+        ...(trait?.onCalcNationalIncome
+            ? { modifyIncome: (type, amount) => trait.onCalcNationalIncome!(actionContext, type, amount) }
+            : {}),
+    };
+    const nationCities = rawNationCities.map(toIncomeCity);
+    const officerCounts = buildOfficerCounts(world, nation.id);
+    const generals = world
+        .listGenerals()
+        // Ref's GeneralAI::$nationGenerals is built with `no != current ruler`.
+        // chooseGoldBillRate therefore omits the ruler's own stipend from the
+        // outcome used to choose bill, despite a dead local append that looks
+        // as if it intended to include the ruler.
+        .filter((general) => general.nationId === nation.id && general.id !== chief.id && general.npcState !== 5);
+    const outcome = Math.max(1, getOutcome(100, generals));
+    const policy = new AutorunNationPolicy({
+        general: chief,
+        aiOptions: null,
+        nationPolicy: asRecord(nation.meta).npc_nation_policy as Record<string, unknown> | null,
+        serverPolicy: asRecord(world.getState().meta).npc_nation_policy as Record<string, unknown> | null,
+        nation,
+        env: options.commandEnv,
+        scenarioConfig: options.scenarioConfig,
+        ...(options.unitSet ? { unitSet: options.unitSet } : {}),
+    });
+    const income =
+        currentMonth === 12
+            ? getGoldIncome(incomeContext, nationCities, officerCounts, nation.capitalCityId, nation.level) +
+              getWarGoldIncome(incomeContext, nationCities)
+            : getRiceIncome(incomeContext, nationCities, officerCounts, nation.capitalCityId, nation.level) +
+              getWallIncome(incomeContext, nationCities, officerCounts, nation.capitalCityId, nation.level);
+    const currentResource = currentMonth === 12 ? nation.gold : nation.rice;
+    const requiredResource = currentMonth === 12 ? policy.reqNationGold : policy.reqNationRice;
+    let bill = Math.trunc((income / outcome) * 90);
+    if (currentResource + income - outcome > requiredResource * 2) {
+        const moreBill = ((currentResource + income - requiredResource * 2) / outcome) * 80;
+        if (moreBill > bill) bill = Math.trunc((moreBill + bill) / 2);
+    }
+    return { ...nation.meta, rate, bill: clampBill(bill) };
+};
+
+export const createNpcTaxHandler = (options: {
+    getWorld: () => InMemoryTurnWorld | null;
+    commandEnv?: TurnCommandEnv;
+    scenarioConfig?: ScenarioConfig;
+    unitSet?: UnitSetDefinition;
+    nationTraits?: ReadonlyMap<string, NationTraitModule>;
+}): TurnCalendarHandler => {
     return {
         onMonthChanged: (context: TurnCalendarContext) => {
             if (!shouldUpdateRate(context.currentMonth)) {
@@ -69,30 +201,9 @@ export const createNpcTaxHandler = (options: { getWorld: () => InMemoryTurnWorld
             if (!world) {
                 return;
             }
-            const worldState = world.getState();
-            const meta = worldState.meta ?? {};
-            const initYear = readNumber(meta.initYear, NaN);
-            const initMonth = readNumber(meta.initMonth, NaN);
-            const hasInit = Number.isFinite(initYear) && Number.isFinite(initMonth);
-            const monthsSinceStart = hasInit
-                ? joinYearMonth(context.currentYear, context.currentMonth) - joinYearMonth(initYear, initMonth)
-                : null;
-            const cities = world.listCities();
             for (const nation of world.listNations()) {
-                if (!isNpcMonarchNation(nation, world)) {
-                    continue;
-                }
-                const nationCities = cities.filter((city) => city.nationId === nation.id && city.supplyState > 0);
-                let rate = resolveNpcTaxRate(nationCities);
-                if (monthsSinceStart !== null && monthsSinceStart <= 4) {
-                    rate = Math.min(rate, 10);
-                }
-                world.updateNation(nation.id, {
-                    meta: {
-                        ...nation.meta,
-                        rate,
-                    },
-                });
+                const nextMeta = calculateNpcNationFinance(world, nation, context.currentMonth, options);
+                if (nextMeta) world.updateNation(nation.id, { meta: nextMeta });
             }
         },
     };

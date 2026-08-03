@@ -7,8 +7,18 @@ import { commandSpec as recruitSpec } from '../../src/actions/turn/general/che_�
 import { commandSpec as trainSpec } from '../../src/actions/turn/general/che_훈련.js';
 import { commandSpec as atmosSpec } from '../../src/actions/turn/general/che_사기진작.js';
 import type { TurnCommandEnv } from '../../src/actions/turn/commandEnv.js';
+import { createRefOrderedActionStack } from '../../src/actionModules/bundle.js';
+import type { GeneralActionModule } from '../../src/actionModules/general.js';
+import { applyLegacyInjury, finalizeLegacyStat } from '../../src/actions/turn/general/legacyGeneralStat.js';
 
 describe('Troop Management Scenario', () => {
+    it('applies injury before action stat modifiers and floors like Ref General::getLeadership()', () => {
+        const injured = applyLegacyInjury(62, 3);
+        expect(injured).toBeCloseTo(60.14, 12);
+        expect(finalizeLegacyStat(injured * 2)).toBe(120);
+        expect(Math.round(((120 * 100) / 6076) * 30)).toBe(59);
+    });
+
     it('should successfully draft troops, then train and boost morale', async () => {
         // 1. Setup World
         const mockNation: Nation = {
@@ -130,6 +140,29 @@ describe('Troop Management Scenario', () => {
             baseGold: 1000,
             baseRice: 1000,
             maxResourceActionAmount: 1000,
+            ...(snapshot.unitSet ? { unitSet: snapshot.unitSet } : {}),
+            generalActionModules: (() => {
+                const noOp = {};
+                return createRefOrderedActionStack({
+                    nation: noOp,
+                    officer: noOp,
+                    domestic: noOp,
+                    war: noOp,
+                    personality: {
+                        eventHandlers: {},
+                        onCalcStat: (_context, statName, value) => {
+                            if (typeof value !== 'number') return value;
+                            if (statName === 'experience') return value * 0.9;
+                            if (statName === 'addDex') return value * 0.5;
+                            return value;
+                        },
+                    } satisfies GeneralActionModule,
+                    crewType: null,
+                    inheritance: noOp,
+                    scenario: null,
+                    items: [],
+                });
+            })(),
         };
 
         // 2. Draft Troops
@@ -145,8 +178,20 @@ describe('Troop Management Scenario', () => {
 
         const generalAfterDraft = world.getGeneral(1)!;
         expect(generalAfterDraft.crew).toBe(1000);
+        // Ref's General::addExperience() applies personality/item stat modules
+        // after rounding the crew-based base reward. Dedication is routed
+        // through the same pipeline but remains unchanged in this fixture.
+        expect(generalAfterDraft.experience).toBe(109);
+        expect(generalAfterDraft.dedication).toBe(110);
         // General::addDex(): 보병(armType 1)은 징병 인원 / 100만큼 숙련도가 오른다.
-        expect(generalAfterDraft.meta.dex1).toBe(10);
+        expect(generalAfterDraft.meta.dex1).toBe(5);
+        // Ref che_징병 stores aux.armType and its AI keeps that category on
+        // later recruitment decisions.
+        expect(generalAfterDraft.meta.armType).toBe(1);
+        // 훈련/사기진작의 실제 증가분과 addDex 파이프라인을 관찰할 여유를 만든다.
+        world.snapshot.generals = world.snapshot.generals.map((general) =>
+            general.id === generalAfterDraft.id ? { ...general, train: 80, atmos: 80 } : general
+        );
 
         // 3. Train
         const trainDef = trainSpec.createDefinition(systemEnv);
@@ -162,6 +207,10 @@ describe('Troop Management Scenario', () => {
         const generalAfterTrain = world.getGeneral(1)!;
         // 레거시 훈련식: round(통솔 * 100 * trainDelta / 병력), 상한까지 적용.
         expect(generalAfterTrain.train).toBe(100);
+        // General::addExperience()/addDedication()/addDex()와 동일하게 모듈 보정을 거친다.
+        expect(generalAfterTrain.experience).toBe(199);
+        expect(generalAfterTrain.dedication).toBe(180);
+        expect(generalAfterTrain.meta.dex1).toBe(15);
 
         // 4. Boost Morale
         const atmosDef = atmosSpec.createDefinition(systemEnv);
@@ -177,5 +226,8 @@ describe('Troop Management Scenario', () => {
         const generalAfterAtmos = world.getGeneral(1)!;
         // 레거시 사기진작식: round(통솔 * 100 / 병력 * atmosDelta), 명령 상한까지 적용.
         expect(generalAfterAtmos.atmos).toBe(100);
+        expect(generalAfterAtmos.experience).toBe(289);
+        expect(generalAfterAtmos.dedication).toBe(250);
+        expect(generalAfterAtmos.meta.dex1).toBe(25);
     });
 });

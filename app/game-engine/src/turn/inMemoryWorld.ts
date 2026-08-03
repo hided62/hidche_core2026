@@ -233,14 +233,75 @@ const mergeTriggerState = (
     meta: { ...base.meta, ...(patch.meta ?? {}) },
 });
 
-const applyGeneralPatch = (base: TurnGeneral, patch: Partial<TurnGeneral>): TurnGeneral => ({
-    ...base,
-    ...patch,
-    stats: patch.stats ? mergeStats(base.stats, patch.stats) : base.stats,
-    role: patch.role ? mergeRole(base.role, patch.role) : base.role,
-    triggerState: patch.triggerState ? mergeTriggerState(base.triggerState, patch.triggerState) : base.triggerState,
-    meta: patch.meta ? { ...base.meta, ...patch.meta } : base.meta,
+const toLegacyDatabaseInt = (value: number): number => {
+    if (!Number.isFinite(value)) return 0;
+    return value >= 0 ? Math.floor(value + 0.5) : Math.ceil(value - 0.5);
+};
+
+const LEGACY_INTEGER_GENERAL_META_KEYS = [
+    'leadership_exp',
+    'strength_exp',
+    'intel_exp',
+    'dex1',
+    'dex2',
+    'dex3',
+    'dex4',
+    'dex5',
+    'explevel',
+    'dedlevel',
+    'killturn',
+    'myset',
+] as const;
+
+const normalizeGeneralMetaDatabaseIntegers = (meta: TurnGeneral['meta']): TurnGeneral['meta'] => {
+    const normalized = { ...meta };
+    for (const key of LEGACY_INTEGER_GENERAL_META_KEYS) {
+        const value = normalized[key];
+        if (typeof value === 'number') {
+            normalized[key] = toLegacyDatabaseInt(value);
+        }
+    }
+    return normalized;
+};
+
+// Ref writes these values to MariaDB integer columns after every general turn.
+// Keeping fractional action results in memory until the monthly flush changes
+// later aggregation (notably nation power), even if the eventual DB rows look
+// identical after they are rounded.
+const normalizeGeneralDatabaseIntegers = (general: TurnGeneral): TurnGeneral => ({
+    ...general,
+    nationId: toLegacyDatabaseInt(general.nationId),
+    cityId: toLegacyDatabaseInt(general.cityId),
+    troopId: toLegacyDatabaseInt(general.troopId),
+    stats: {
+        leadership: toLegacyDatabaseInt(general.stats.leadership),
+        strength: toLegacyDatabaseInt(general.stats.strength),
+        intelligence: toLegacyDatabaseInt(general.stats.intelligence),
+    },
+    experience: toLegacyDatabaseInt(general.experience),
+    dedication: toLegacyDatabaseInt(general.dedication),
+    officerLevel: toLegacyDatabaseInt(general.officerLevel),
+    injury: toLegacyDatabaseInt(general.injury),
+    gold: toLegacyDatabaseInt(general.gold),
+    rice: toLegacyDatabaseInt(general.rice),
+    crew: toLegacyDatabaseInt(general.crew),
+    crewTypeId: toLegacyDatabaseInt(general.crewTypeId),
+    train: toLegacyDatabaseInt(general.train),
+    atmos: toLegacyDatabaseInt(general.atmos),
+    age: toLegacyDatabaseInt(general.age),
+    npcState: toLegacyDatabaseInt(general.npcState),
+    meta: normalizeGeneralMetaDatabaseIntegers(general.meta),
 });
+
+const applyGeneralPatch = (base: TurnGeneral, patch: Partial<TurnGeneral>): TurnGeneral =>
+    normalizeGeneralDatabaseIntegers({
+        ...base,
+        ...patch,
+        stats: patch.stats ? mergeStats(base.stats, patch.stats) : base.stats,
+        role: patch.role ? mergeRole(base.role, patch.role) : base.role,
+        triggerState: patch.triggerState ? mergeTriggerState(base.triggerState, patch.triggerState) : base.triggerState,
+        meta: patch.meta ? { ...base.meta, ...patch.meta } : base.meta,
+    });
 
 const applyCityPatch = (base: City, patch: Partial<City>): City => ({
     ...base,
@@ -690,7 +751,7 @@ export class InMemoryTurnWorld {
         }
         const worldKillturn = resolveWorldKillturn(this.state.meta);
         const normalized = normalizeGeneralTurnTime({ ...general }, this.state.lastTurnTime);
-        const ensured = ensureGeneralKillturn(normalized, worldKillturn);
+        const ensured = normalizeGeneralDatabaseIntegers(ensureGeneralKillturn(normalized, worldKillturn));
         this.generals.set(general.id, ensured);
         this.dirtyGeneralIds.add(general.id);
         this.createdGeneralIds.add(general.id);
@@ -994,10 +1055,10 @@ export class InMemoryTurnWorld {
 
         const nextTurnAt = result.nextTurnAt ?? getNextTurnAt(currentGeneral.turnTime, this.schedule);
         if (!result.deleted?.general) {
-            const nextGeneral = {
+            const nextGeneral = normalizeGeneralDatabaseIntegers({
                 ...(result.general ?? currentGeneral),
                 turnTime: nextTurnAt,
-            };
+            });
             this.generals.set(nextGeneral.id, nextGeneral);
             this.dirtyGeneralIds.add(nextGeneral.id);
         }
@@ -1067,7 +1128,7 @@ export class InMemoryTurnWorld {
                 }
                 const worldKillturn = resolveWorldKillturn(this.state.meta);
                 const normalized = normalizeGeneralTurnTime({ ...createdGeneral }, this.state.lastTurnTime);
-                const ensured = ensureGeneralKillturn(normalized, worldKillturn);
+                const ensured = normalizeGeneralDatabaseIntegers(ensureGeneralKillturn(normalized, worldKillturn));
                 this.generals.set(createdGeneral.id, ensured);
                 this.dirtyGeneralIds.add(createdGeneral.id);
                 this.createdGeneralIds.add(createdGeneral.id);

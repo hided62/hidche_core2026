@@ -10,6 +10,7 @@ import type {
     ScenarioConfig,
     ScenarioMeta,
     Troop,
+    GeneralTurnCommandKey,
     TurnCommandProfile,
     TurnCommandEnv,
     UnitSetDefinition,
@@ -58,6 +59,7 @@ import { buildFrontStatePatches } from './frontStateHandler.js';
 import { buildActionContext } from './reservedTurnActionContext.js';
 import { GeneralAI, shouldUseAi } from './ai/generalAi.js';
 import type { AiReservedTurnProvider } from './ai/types.js';
+import { withCanonicalArgumentAliases } from './ai/aiUtils.js';
 import { rankMetaKey } from './rankData.js';
 import {
     hasScenarioStaticEventHandler,
@@ -66,6 +68,7 @@ import {
 } from './scenarioStaticEvents.js';
 
 const DEFAULT_ACTION = '휴식';
+const AI_INTERNAL_GENERAL_ACTION_KEYS = ['che_NPC능동'] as const satisfies readonly GeneralTurnCommandKey[];
 
 const LEGACY_STAT_CHANGE_GENERAL_ACTIONS = new Set([
     'che_소집해제',
@@ -96,6 +99,12 @@ const LEGACY_STAT_CHANGE_GENERAL_ACTIONS = new Set([
     'che_첩보',
     'che_임관',
     'che_상업투자',
+    // These legacy classes inherit che_상업투자::run(), including its
+    // unconditional checkStatChange() tail.
+    'che_농지개간',
+    'che_수비강화',
+    'che_성벽보수',
+    'che_치안강화',
     'che_장비매매',
     'che_장수대상임관',
     'che_징병',
@@ -682,21 +691,6 @@ class WorldStateView implements StateView {
 
 const extractArgsRecord = (value: unknown): Record<string, unknown> => asRecord(value);
 
-const withCanonicalArgumentAliases = (args: Record<string, unknown>): Record<string, unknown> => {
-    const normalized = { ...args };
-    for (const [legacyKey, canonicalKey] of [
-        ['destCityID', 'destCityId'],
-        ['destNationID', 'destNationId'],
-        ['destGeneralID', 'destGeneralId'],
-        ['destTroopID', 'destTroopId'],
-    ] as const) {
-        if (normalized[canonicalKey] === undefined && normalized[legacyKey] !== undefined) {
-            normalized[canonicalKey] = normalized[legacyKey];
-        }
-    }
-    return normalized;
-};
-
 const buildConstraintContext = (
     general: TurnGeneral,
     city: City | undefined,
@@ -737,6 +731,11 @@ export const createReservedTurnHandler = async (options: {
     commandEnv?: TurnCommandEnv;
     commandRngFactory?: (input: { kind: 'nation' | 'general'; actionKey: string; seed: string }) => RandUtil;
     getAdditionalOccupiedUniqueItemKeys?: () => Iterable<string | null | undefined>;
+    calculateNpcNationFinance?: (
+        world: InMemoryTurnWorld,
+        nation: Nation,
+        currentMonth: number
+    ) => Nation['meta'] | null;
     onActionResolved?: (payload: {
         kind: 'nation' | 'general';
         generalId: number;
@@ -774,6 +773,17 @@ export const createReservedTurnHandler = async (options: {
     };
     const generalModuleLoader = new GeneralTurnCommandLoader();
     const nationModuleLoader = new NationTurnCommandLoader();
+    // NPC AI emits a few engine-internal commands that are intentionally not
+    // exposed by the scenario's player command profile. Keep their definitions
+    // available to AI resolution without adding them to the public profile.
+    for (const key of AI_INTERNAL_GENERAL_ACTION_KEYS) {
+        const module = await generalModuleLoader.load(key);
+        if (!generalDefinitions.has(key)) {
+            generalDefinitions.set(key, module.commandSpec.createDefinition(env));
+        }
+        seenActionKeys.add(key);
+        applyActionContextBuilder(module);
+    }
     for (const key of commandProfile.general) {
         if (seenActionKeys.has(key)) {
             continue;
@@ -830,6 +840,9 @@ export const createReservedTurnHandler = async (options: {
 
     return {
         execute(context): GeneralTurnResult {
+            // Legacy reads the current game_env.develcost for every command.
+            // Scenario const is only a fallback; the value changes with year.
+            env.develCost = readMetaNumber(asRecord(context.world.meta), 'develcost', env.develCost);
             const worldRef = options.getWorld();
             const worldOverlay = worldRef ? createWorldOverlay(worldRef) : null;
             const worldView = worldOverlay?.view ?? worldRef;
@@ -1034,6 +1047,12 @@ export const createReservedTurnHandler = async (options: {
                     specificContext = baseContext;
                 }
                 const actionContext = specificContext ?? baseContext;
+                if ((process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []).includes(String(currentGeneral.id))) {
+                    const tracedContext = actionContext as ActionContextBase & { destCity?: City; destGeneral?: TurnGeneral };
+                    process.stdout.write(
+                        `AI_ACTION_INPUT_TRACE ${JSON.stringify({ generalId: currentGeneral.id, kind, actionKey, actionArgs, destCityId: tracedContext.destCity?.id, destGeneralId: tracedContext.destGeneral?.id })}\n`
+                    );
+                }
                 const executionDefinition = definition as unknown as {
                     getPreReqTurn?: (context: ActionContextBase, args: unknown) => number;
                     getPostReqTurn?: (context: ActionContextBase, args: unknown) => number;
@@ -1115,8 +1134,28 @@ export const createReservedTurnHandler = async (options: {
                     },
                     actionArgs
                 );
+                if (
+                    (process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []).includes(String(currentGeneral.id)) &&
+                    resolution.patches
+                ) {
+                    process.stdout.write(
+                        `AI_ACTION_PATCH_TRACE ${JSON.stringify({ generalId: currentGeneral.id, kind, actionKey, patches: resolution.patches })}\n`
+                    );
+                }
                 for (const troopId of resolution.deletedTroopIds ?? []) {
                     commandDeletedTroopIds.add(troopId);
+                }
+                for (const plan of resolution.reservedGeneralTurnPlans ?? []) {
+                    for (let turnIdx = 0; turnIdx < plan.joinTurn; turnIdx += 1) {
+                        options.reservedTurns.setGeneralTurn(plan.generalId, turnIdx, {
+                            action: 'che_견문',
+                            args: {},
+                        });
+                    }
+                    options.reservedTurns.setGeneralTurn(plan.generalId, plan.joinTurn, {
+                        action: 'che_임관',
+                        args: { destNationId: plan.destNationId },
+                    });
                 }
 
                 currentGeneral = resolution.general as TurnGeneral;
@@ -1559,6 +1598,7 @@ export const createReservedTurnHandler = async (options: {
             }
 
             let hasReservedTurn = false;
+            let sharedAi: GeneralAI | undefined;
             if (!isBlocked && currentNation && currentGeneral.officerLevel >= 5) {
                 let nationCommand = options.reservedTurns.getNationTurn(
                     currentNation.id,
@@ -1570,7 +1610,7 @@ export const createReservedTurnHandler = async (options: {
                 }
                 let nationAiState: ReturnType<GeneralAI['getDebugState']> | undefined;
                 if (worldView && shouldUseAi(currentGeneral, context.world)) {
-                    const ai = new GeneralAI({
+                    sharedAi = new GeneralAI({
                         general: currentGeneral,
                         city: currentCity,
                         nation: currentNation,
@@ -1587,13 +1627,66 @@ export const createReservedTurnHandler = async (options: {
                         generalFallback,
                         nationFallback,
                     });
+                    const ai = sharedAi;
                     const candidate = ai.chooseNationTurn(nationCommand);
                     if (candidate) {
+                        if (
+                            (process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []).includes(
+                                String(currentGeneral.id)
+                            )
+                        ) {
+                            process.stdout.write(
+                                `AI_NATION_CANDIDATE_TRACE ${JSON.stringify({ generalId: currentGeneral.id, candidate })}\n`
+                            );
+                        }
                         nationCommand = { action: candidate.action, args: candidate.args };
+                    }
+                    const promotion = ai.consumePromotionPatches();
+                    for (const entry of promotion.generals) {
+                        const promotedGeneral = worldOverlay?.view.getGeneralById(entry.generalId);
+                        const patch = {
+                            officerLevel: entry.officerLevel,
+                            ...(promotedGeneral
+                                ? { meta: { ...promotedGeneral.meta, officer_city: entry.officerCity } }
+                                : {}),
+                        };
+                        patches.generals.push({ id: entry.generalId, patch });
+                        worldOverlay?.applyGeneralPatch(entry.generalId, patch);
+                        if (entry.generalId === currentGeneral.id) {
+                            currentGeneral = applyGeneralPatch(currentGeneral, patch);
+                        }
+                    }
+                    if (promotion.nationMeta && currentNation) {
+                        currentNation = { ...currentNation, meta: promotion.nationMeta as Nation['meta'] };
+                        worldOverlay?.applyNationPatch(currentNation.id, { meta: currentNation.meta });
+                    }
+                    if (currentNation && currentGeneral.officerLevel === 12 && options.calculateNpcNationFinance) {
+                        const baseWorld = options.getWorld();
+                        const financeMeta = baseWorld
+                            ? options.calculateNpcNationFinance(baseWorld, currentNation, context.world.currentMonth)
+                            : null;
+                        if (financeMeta) {
+                            currentNation = { ...currentNation, meta: financeMeta as Nation['meta'] };
+                            worldOverlay?.applyNationPatch(currentNation.id, { meta: currentNation.meta });
+                        }
                     }
                     nationAiState = ai.getDebugState();
                 }
                 const nationResult = runAction('nation', nationDefinitions, nationFallback, nationCommand, false);
+                if (
+                    worldView &&
+                    (process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []).includes(String(currentGeneral.id))
+                ) {
+                    process.stdout.write(
+                        `AI_DIPLOMACY_TRACE ${JSON.stringify({
+                            generalId: currentGeneral.id,
+                            stage: 'after-nation-action',
+                            entries: worldView
+                                .listDiplomacy()
+                                .filter((entry) => entry.fromNationId === currentGeneral.nationId && entry.state <= 1),
+                        })}\n`
+                    );
+                }
                 options.onActionResolved?.({
                     kind: 'nation',
                     generalId: currentGeneral.id,
@@ -1618,29 +1711,43 @@ export const createReservedTurnHandler = async (options: {
             let generalAiState: ReturnType<GeneralAI['getDebugState']> | undefined;
             let generalAutorunMode = false;
             if (!isBlocked && worldView && shouldUseAi(currentGeneral, context.world)) {
-                const ai = new GeneralAI({
-                    general: currentGeneral,
-                    city: currentCity,
-                    nation: currentNation,
-                    world: context.world,
-                    worldRef: worldView,
-                    reservedTurnProvider,
-                    scenarioConfig: options.scenarioConfig,
-                    scenarioMeta: options.scenarioMeta,
-                    map: options.map,
-                    unitSet: options.unitSet,
-                    commandEnv: env,
-                    generalDefinitions,
-                    nationDefinitions,
-                    generalFallback,
-                    nationFallback,
-                });
+                const ai =
+                    sharedAi ??
+                    new GeneralAI({
+                        general: currentGeneral,
+                        city: currentCity,
+                        nation: currentNation,
+                        world: context.world,
+                        worldRef: worldView,
+                        reservedTurnProvider,
+                        scenarioConfig: options.scenarioConfig,
+                        scenarioMeta: options.scenarioMeta,
+                        map: options.map,
+                        unitSet: options.unitSet,
+                        commandEnv: env,
+                        generalDefinitions,
+                        nationDefinitions,
+                        generalFallback,
+                        nationFallback,
+                    });
                 const candidate = ai.chooseGeneralTurn(generalCommand);
                 if (candidate) {
                     generalAutorunMode =
                         candidate.action !== generalCommand.action ||
                         JSON.stringify(candidate.args ?? {}) !== JSON.stringify(generalCommand.args ?? {});
                     generalCommand = { action: candidate.action, args: candidate.args };
+                }
+                const aiMetaPatch = ai.consumePersistentGeneralMetaPatch();
+                if (Object.keys(aiMetaPatch.set).length > 0 || aiMetaPatch.unset.length > 0) {
+                    const nextMeta = { ...currentGeneral.meta } as Record<string, unknown>;
+                    for (const key of aiMetaPatch.unset) {
+                        delete nextMeta[key];
+                    }
+                    currentGeneral = {
+                        ...currentGeneral,
+                        meta: { ...nextMeta, ...aiMetaPatch.set } as TurnGeneral['meta'],
+                    };
+                    worldOverlay?.syncGeneral(currentGeneral);
                 }
                 generalAiState = ai.getDebugState();
             }
@@ -1853,6 +1960,12 @@ export const createReservedTurnHandler = async (options: {
                     flags: {},
                 },
             };
+
+            if ((process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []).includes(String(currentGeneral.id))) {
+                process.stdout.write(
+                    `AI_GENERAL_PRE_APPLY_TRACE ${JSON.stringify({ engine: 'core', generalId: currentGeneral.id, stats: currentGeneral.stats, experience: currentGeneral.experience, dedication: currentGeneral.dedication, meta: { leadership_exp: currentGeneral.meta.leadership_exp, strength_exp: currentGeneral.meta.strength_exp, intel_exp: currentGeneral.meta.intel_exp, dex1: currentGeneral.meta.dex1, dex2: currentGeneral.meta.dex2, dex3: currentGeneral.meta.dex3, dex4: currentGeneral.meta.dex4, dex5: currentGeneral.meta.dex5 } })}\n`
+                );
+            }
 
             const result: GeneralTurnResult = {
                 general: currentGeneral,

@@ -10,6 +10,7 @@ import { createGeneralTriggerContext } from '../src/triggers/general.js';
 import {
     createTraitCatalog,
     createTraitModules,
+    loadEventDomesticTraitModules,
     loadDomesticTraitModules,
     loadWarTraitModules,
 } from '../src/actionModules/traits/index.js';
@@ -249,6 +250,40 @@ describe('trait modules', () => {
         expect(general.injury).toBe(0);
         expect(patient.injury).toBe(0);
         expect(general.triggerState.flags['pre.치료']).toBe(true);
+    });
+
+    it('assigns event-의술 healing draws in legacy general-id order', async () => {
+        const eventDomestic = await loadEventDomesticTraitModules(['che_event_의술']);
+        const registry = createTraitCatalog({ domestic: eventDomestic });
+        const traitModules = createTraitModules(registry);
+        const pipeline = new GeneralActionPipeline(traitModules.general);
+        const healer = buildGeneral({
+            id: 818,
+            role: {
+                personality: null,
+                specialDomestic: 'che_event_의술',
+                specialWar: null,
+                items: { horse: null, weapon: null, book: null, item: null },
+            },
+        });
+        const lowerIdPatient = buildGeneral({ id: 444, name: 'Lower', injury: 12 });
+        const higherIdPatient = buildGeneral({ id: 775, name: 'Higher', injury: 30 });
+        const worldView = {
+            listGeneralsByCity: (_cityId: number) => [healer, higherIdPatient, lowerIdPatient],
+            listGenerals: () => [healer, higherIdPatient, lowerIdPatient],
+        };
+        let draw = 0;
+        const rng: RandomGenerator = {
+            nextFloat1: () => 0,
+            nextBool: () => draw++ === 0,
+            nextInt: (minInclusive: number, _maxExclusive: number) => minInclusive,
+        };
+        const triggerContext = createGeneralTriggerContext({ general: healer, rng, worldView });
+
+        pipeline.getPreTurnExecuteTriggerList({ general: healer, worldView }).fire(triggerContext, {});
+
+        expect(lowerIdPatient.injury).toBe(0);
+        expect(higherIdPatient.injury).toBe(30);
     });
 
     it('activates 의술 battle trigger and reduces damage', async () => {

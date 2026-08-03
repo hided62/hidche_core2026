@@ -43,8 +43,8 @@ export class ActionDefinition<
         const crewUp = this.pipeline.onCalcDomestic(context, '징집인구', 'score', general.crew);
         general.crew = 0;
         city.population += Math.trunc(crewUp);
-        general.experience += 70;
-        general.dedication += 100;
+        general.experience += this.pipeline.onCalcStat(context, 'experience', 70);
+        general.dedication += this.pipeline.onCalcStat(context, 'dedication', 100);
 
         context.addLog(`병사들을 <R>소집해제</>하였습니다.`);
 
