@@ -61,4 +61,17 @@ describe('GameClock', () => {
         expect(Number.isNaN(projected.getTime())).toBe(false);
         expect(clock.dateToTick(projected)).toBe(tick);
     });
+
+    it('truncates sub-millisecond projections like Ref GameClock', () => {
+        const clock = new GameClock({
+            baseTime,
+            tick: 0,
+            mode: 'manual',
+            wallAnchor: baseTime,
+            turnSeconds: 600,
+        });
+
+        expect(clock.tickToDate(14_115_919).toISOString()).toBe('2042-01-01T00:03:55.265Z');
+        expect(clock.tickToDate(-1).toISOString()).toBe('2041-12-31T23:59:59.999Z');
+    });
 });

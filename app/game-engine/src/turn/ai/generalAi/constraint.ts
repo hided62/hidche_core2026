@@ -27,6 +27,10 @@ export const resolveConstraintEnv = (
         month: world.currentMonth,
         startYear,
         relYear,
+        // Ref asks each concrete command for its full constraints while the AI
+        // is still choosing a command. Cost-bearing commands therefore need
+        // the current yearly game_env.develcost at this boundary as well.
+        develCost: env.develCost,
         openingPartYear: env.openingPartYear,
         minAvailableRecruitPop: env.minAvailableRecruitPop,
         ...(Number.isFinite(killturn) ? { killturn } : {}),

@@ -1,18 +1,19 @@
-import { GeneralActionPipeline } from '@sammo-ts/logic';
 import { findCrewTypeById, getTechCost } from '@sammo-ts/logic/world/unitSet.js';
+import { CommandResolver as RecruitmentCommandResolver } from '@sammo-ts/logic/actions/turn/general/che_징병.js';
 
 import type { GeneralAI } from '../core.js';
 import { asRecord, readMetaNumber, valueFit } from '../../aiUtils.js';
 
 export const do금쌀구매 = (ai: GeneralAI) => {
-    const traceEnabled = (process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []).includes(String(ai.general.id));
+    const traceEnabled = [
+        ...(process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []),
+        ...(process.env.GUI_PARITY_CORE_TRACE_GENERAL_IDS?.split(',') ?? []),
+    ].includes(String(ai.general.id));
     const trace = (stage: string, values: Record<string, unknown> = {}) => {
         if (!traceEnabled) {
             return;
         }
-        process.stderr.write(
-            `AI_ECONOMY_TRACE ${JSON.stringify({ generalId: ai.general.id, stage, ...values })}\n`
-        );
+        process.stderr.write(`AI_ECONOMY_TRACE ${JSON.stringify({ generalId: ai.general.id, stage, ...values })}\n`);
     };
     const city = ai.city;
     if (!city) {
@@ -55,35 +56,26 @@ export const do금쌀구매 = (ai: GeneralAI) => {
     const tech = readMetaNumber(asRecord(ai.nation?.meta ?? {}), 'tech', 0);
     const fullLeadership = readMetaNumber(generalMeta, 'fullLeadership', ai.general.stats.leadership);
     const crewAmount = fullLeadership * 100;
-    const rawGoldCost = crewType ? (crewType.cost * getTechCost(tech) * crewAmount) / 100 : 0;
-    const actionPipeline = new GeneralActionPipeline(ai.commandEnv.generalActionModules ?? []);
-    const goldCost = Math.round(
-        actionPipeline.onCalcDomestic(
-            {
-                general: ai.general,
-                nation: ai.nation ?? undefined,
-                ...(ai.worldRef
-                    ? {
-                          worldView: {
-                              listGenerals: () => ai.worldRef!.listGenerals(),
-                              listGeneralsByCity: (cityId: number) =>
-                                  ai.worldRef!.listGenerals().filter((candidate) => candidate.cityId === cityId),
-                              listNations: () => ai.worldRef!.listNations(),
-                          },
-                      }
-                    : {}),
-                time: {
-                    year: ai.world.currentYear,
-                    month: ai.world.currentMonth,
-                    startYear: ai.startYear,
-                },
-            },
-            '징병',
-            'cost',
-            rawGoldCost,
-            { armType: crewType?.armType ?? 0 }
-        ) * (ai.generalPolicy.can('모병') ? 2 : 1)
-    );
+    const recruitContext = {
+        general: ai.general,
+        nation: ai.nation ?? undefined,
+        ...(ai.worldRef
+            ? {
+                  worldView: {
+                      listGenerals: () => ai.worldRef!.listGenerals(),
+                      listGeneralsByCity: (cityId: number) =>
+                          ai.worldRef!.listGenerals().filter((candidate) => candidate.cityId === cityId),
+                      listNations: () => ai.worldRef!.listNations(),
+                  },
+              }
+            : {}),
+        time: { year: ai.world.currentYear, month: ai.world.currentMonth, startYear: ai.startYear },
+    };
+    const recruitment = new RecruitmentCommandResolver(ai.commandEnv.generalActionModules ?? [], ai.commandEnv);
+    const goldCost = crewType
+        ? recruitment.getCost(recruitContext, crewType.id, crewAmount, crewType).gold *
+          (ai.generalPolicy.can('모병') ? 2 : 1)
+        : 0;
     const riceCost = crewType ? (crewType.rice * getTechCost(tech) * crewAmount) / 100 : 0;
     trace('recruit-cost', {
         crewTypeId: crewType?.id ?? null,
@@ -145,7 +137,9 @@ export const do금쌀구매 = (ai: GeneralAI) => {
             ai.aiConst.maxResourceActionAmount
         );
         if (amount >= ai.nationPolicy.minimumResourceActionAmount) {
-            return ai.buildGeneralCandidate('che_군량매매', { buyRice: false, amount }, '금쌀구매');
+            const result = ai.buildGeneralCandidate('che_군량매매', { buyRice: false, amount }, '금쌀구매');
+            trace('sell', { amount, minimumResourceActionAmount: ai.nationPolicy.minimumResourceActionAmount, result });
+            return result;
         }
     }
 

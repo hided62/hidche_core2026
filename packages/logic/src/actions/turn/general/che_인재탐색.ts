@@ -105,11 +105,8 @@ export const normalizeLegacyGeneratedDex = (
 ): [number, number, number, number, number] =>
     values.map((value) => Math.trunc(value)) as [number, number, number, number, number];
 
-export const resolveLegacySpecialityAge = (
-    retirementYear: number,
-    age: number,
-    divisor: number
-): number => Math.round((retirementYear - age) / divisor) + age;
+export const resolveLegacySpecialityAge = (retirementYear: number, age: number, divisor: number): number =>
+    Math.round((retirementYear - age) / divisor) + age;
 
 const addMetaValue = (
     meta: Record<string, TriggerValue>,
@@ -450,20 +447,14 @@ export class ActionResolver<
         const meta: GeneralMeta = {
             killturn,
             npcType: NPC_TYPE,
+            explevel: 0,
+            dedlevel: 1,
             crewTypeId: this.env.defaultCrewTypeId,
             affinity,
             birthYear,
             deathYear,
-            specage: resolveLegacySpecialityAge(
-                context.retirementYear,
-                age,
-                12
-            ),
-            specage2: resolveLegacySpecialityAge(
-                context.retirementYear,
-                age,
-                6
-            ),
+            specage: resolveLegacySpecialityAge(context.retirementYear, age, 12),
+            specage2: resolveLegacySpecialityAge(context.retirementYear, age, 6),
             dex1: dex[0],
             dex2: dex[1],
             dex3: dex[2],

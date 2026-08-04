@@ -8,6 +8,7 @@ import {
     getOutcome,
     getRiceIncome,
     getWallIncome,
+    readLegacyCityTrust,
     type CityIncomeSource,
     type Nation,
     type NationIncomeContext,
@@ -44,9 +45,13 @@ const resolveOfficerCity = (meta: Record<string, unknown>): number => {
     return asNumber(meta.officer_city, 0);
 };
 
+export const resolveLegacyIncomeCityTrust = (trust: number): number => readLegacyCityTrust(trust);
+
 const resolveCityTrust = (meta: Record<string, unknown>): number => {
     const trust = asNumber(meta.trust, 50);
-    return trust;
+    // Income is calculated in PHP after PDO exposes MariaDB FLOAT using a
+    // six-significant-digit decimal representation.
+    return resolveLegacyIncomeCityTrust(trust);
 };
 
 const toIncomeCity = (city: ReturnType<InMemoryTurnWorld['listCities']>[number]): CityIncomeSource => ({

@@ -83,41 +83,41 @@ const buildWorld = (hiddenSeed = 'monthly-speciality-fixture') => {
         environment: { mapName: 'test', unitSet: 'default' },
     };
     const domesticGeneral = buildGeneral({
-            id: 1,
-            name: '내정대상',
-            nationId: 1,
-            stats: [40, 45, 80],
-            specialDomestic: null,
-            specialWar: 'che_신산',
-            meta: { specage: 30, specage2: 99, prev_types_special: ['che_경작'] },
-        });
+        id: 1,
+        name: '내정대상',
+        nationId: 1,
+        stats: [40, 45, 80],
+        specialDomestic: null,
+        specialWar: 'che_신산',
+        meta: { specage: 30, specage2: 99, prev_types_special: ['che_경작'] },
+    });
     const warGeneral = buildGeneral({
-            id: 2,
-            name: '전투대상',
-            nationId: 1,
-            stats: [80, 75, 40],
-            specialDomestic: 'che_인덕',
-            specialWar: null,
-            meta: {
-                specage: 99,
-                specage2: 30,
-                prev_types_special2: ['che_돌격'],
-                dex1: 200,
-                dex2: 10,
-                dex3: 10,
-                dex4: 10,
-                dex5: 10,
-            },
-        });
+        id: 2,
+        name: '전투대상',
+        nationId: 1,
+        stats: [80, 75, 40],
+        specialDomestic: 'che_인덕',
+        specialWar: null,
+        meta: {
+            specage: 99,
+            specage2: 30,
+            prev_types_special2: ['che_돌격'],
+            dex1: 200,
+            dex2: 10,
+            dex3: 10,
+            dex4: 10,
+            dex5: 10,
+        },
+    });
     const inheritedGeneral = buildGeneral({
-            id: 3,
-            name: '계승대상',
-            nationId: 2,
-            stats: [50, 50, 50],
-            specialDomestic: 'che_경작',
-            specialWar: null,
-            meta: { specage: 99, specage2: 30, inheritSpecificSpecialWar: 'che_의술', marker: 3 },
-        });
+        id: 3,
+        name: '계승대상',
+        nationId: 2,
+        stats: [50, 50, 50],
+        specialDomestic: 'che_경작',
+        specialWar: null,
+        meta: { specage: 99, specage2: 30, inheritSpecificSpecialWar: 'che_의술', marker: 3 },
+    });
     // The isolated Aria fixture scans eligible war rows as 3, 2 because the
     // legacy query has no ORDER BY. Preserve that input order in this trace.
     const generals = [domesticGeneral, inheritedGeneral, warGeneral];
@@ -179,11 +179,7 @@ describe('monthly speciality and betrayal actions', () => {
 
     it('does nothing before the three-year opening period ends', async () => {
         const world = buildWorld();
-        await createAssignGeneralSpecialityHandler({ getWorld: () => world })(
-            [],
-            { ...environment, year: 192 },
-            event
-        );
+        await createAssignGeneralSpecialityHandler({ getWorld: () => world })([], { ...environment, year: 192 }, event);
         expect(world.peekDirtyState().generals).toEqual([]);
         expect(world.peekDirtyState().logs).toEqual([]);
     });
@@ -201,6 +197,59 @@ describe('monthly speciality and betrayal actions', () => {
 
         expect(world.getGeneralById(1)?.role.specialDomestic).not.toBeNull();
         expect(world.getGeneralById(1)?.role.specialWar).not.toBeNull();
+    });
+
+    it('persists creation scan order for speciality RNG across a reload', async () => {
+        const world = buildWorld();
+        const laterId = buildGeneral({
+            id: 5,
+            name: '먼저생성',
+            nationId: 0,
+            stats: [55, 55, 55],
+            specialDomestic: null,
+            specialWar: 'che_신산',
+            meta: { specage: 30, specage2: 99 },
+        });
+        const earlierId = buildGeneral({
+            id: 4,
+            name: '나중생성',
+            nationId: 0,
+            stats: [55, 55, 55],
+            specialDomestic: null,
+            specialWar: 'che_신산',
+            meta: { specage: 30, specage2: 99 },
+        });
+        expect(world.addGeneral(laterId)).toBe(true);
+        expect(world.addGeneral(earlierId)).toBe(true);
+
+        const persisted = world.listGenerals().sort((left, right) => left.id - right.id);
+        expect(persisted.find((general) => general.id === 5)?.meta.legacyScanOrder).toBeLessThan(
+            persisted.find((general) => general.id === 4)?.meta.legacyScanOrder as number
+        );
+
+        const reloaded = new InMemoryTurnWorld(
+            world.getState(),
+            {
+                scenarioConfig: world.getScenarioConfig(),
+                map: { id: 'test', name: 'test', cities: [] },
+                generals: persisted,
+                cities: [],
+                nations: [],
+                troops: [],
+                diplomacy: [],
+                events: [event],
+                initialEvents: [],
+            },
+            { schedule: { entries: [{ startMinute: 0, tickMinutes: 10 }] } }
+        );
+        await createAssignGeneralSpecialityHandler({ getWorld: () => reloaded })([], environment, event);
+
+        expect(
+            reloaded
+                .peekDirtyState()
+                .logs.filter((log) => log.category === LogCategory.HISTORY)
+                .map((log) => log.generalId)
+        ).toEqual([1, 5, 4, 3, 2]);
     });
 
     it('applies the two default scenario betrayal steps only to values within each threshold', async () => {

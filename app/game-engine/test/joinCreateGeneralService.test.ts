@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { buildJoinCreateGeneralSeed, cutJoinTurnTime } from '../src/turn/joinCreateGeneralService.js';
 
 describe('generic join legacy time contracts', () => {
-    it('builds the Ref MakeGeneral seed from the Seoul whole-second timestamp', () => {
-        expect(buildJoinCreateGeneralSeed('seed', 42, new Date('2026-07-30T23:59:58.987Z'))).toBe(
-            'str(4,seed)|str(11,MakeGeneral)|int(42)|str(19,2026-07-31 08:59:58)'
+    it('builds the Ref MakeGeneral seed from the logical game tick', () => {
+        expect(buildJoinCreateGeneralSeed('seed', 42, 72_000_000)).toBe(
+            'str(4,seed)|str(11,MakeGeneral)|int(42)|int(72000000)'
         );
     });
 

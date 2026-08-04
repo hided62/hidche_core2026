@@ -82,6 +82,15 @@ export interface ScenarioSeedResult {
 
 const asJson = (value: unknown): InputJsonValue => value as InputJsonValue;
 
+export const calculateInitialTurnTick = (
+    clock: GameClock,
+    baseTick: number,
+    initialTurnOffsetMicros: number
+): number => {
+    const offsetTicks = Math.floor((initialTurnOffsetMicros * clock.ticksPerSecond) / 1_000_000);
+    return clock.addTicks(baseTick, offsetTicks);
+};
+
 const formatDateTime = (date: Date): string => {
     const pad = (value: number): string => String(value).padStart(2, '0');
     return [
@@ -277,6 +286,9 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
         initYear: startState.currentYear,
         initMonth: startState.currentMonth,
         genius: Math.max(0, Math.floor(asNumber(scenarioConst.defaultMaxGenius, 5))),
+        // Ref ResetHelper keeps the active-user expiry horizon in game_env.
+        // User commands refresh to this value unless they are running in AI mode.
+        killturn: install?.npcMode === 1 ? Math.trunc(4800 / turnTermMinutes / 3) : 4800 / turnTermMinutes,
         // Ref seeds game_env.develcost before the first general turn. The
         // monthly pre-handler recalculates the same value at each boundary.
         develcost: (startState.currentYear - (scenario.startYear ?? startState.currentYear) + 10) * 2,
@@ -539,15 +551,12 @@ export const seedScenarioToDatabase = async (options: ScenarioSeedOptions): Prom
                                     )
                             ),
                             turnTick: BigInt(
-                                initialClock.dateToTick(
-                                    new Date(
-                                        now.getTime() +
-                                            Math.floor(
-                                                (typeof general.meta.initialTurnOffsetMicros === 'number'
-                                                    ? general.meta.initialTurnOffsetMicros
-                                                    : 0) / 1_000
-                                            )
-                                    )
+                                calculateInitialTurnTick(
+                                    initialClock,
+                                    initialClockTick,
+                                    typeof general.meta.initialTurnOffsetMicros === 'number'
+                                        ? general.meta.initialTurnOffsetMicros
+                                        : 0
                                 )
                             ),
                             age: resolveGeneralAge(startState.currentYear, general.birthYear),

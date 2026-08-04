@@ -55,12 +55,8 @@ const readRuntimeNumber = (world: InMemoryTurnWorld, key: string, fallback: numb
     return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 };
 
-const buildSpecialityAge = (
-    retirementYear: number,
-    age: number,
-    relativeYear: number,
-    divisor: number
-): number => Math.max(Math.round((retirementYear - age) / divisor - relativeYear / 2), 3) + age;
+const buildSpecialityAge = (retirementYear: number, age: number, relativeYear: number, divisor: number): number =>
+    Math.max(Math.round((retirementYear - age) / divisor - relativeYear / 2), 3) + age;
 
 const resolveSpecialityAge = (
     general: TurnGeneral,
@@ -124,9 +120,7 @@ const resolveTrait = (modules: readonly TraitModule[], key: string, label: strin
 export const createAssignGeneralSpecialityHandler = (options: {
     getWorld: () => InMemoryTurnWorld | null;
 }): MonthlyEventActionHandler => {
-    let modulePromise:
-        | Promise<{ domesticModules: TraitModule[]; warModules: TraitModule[] }>
-        | undefined;
+    let modulePromise: Promise<{ domesticModules: TraitModule[]; warModules: TraitModule[] }> | undefined;
     const loadModules = () => {
         modulePromise ??= Promise.all([
             loadDomesticTraitModules([...LEGACY_DOMESTIC_SELECTION_KEYS]),
@@ -143,7 +137,12 @@ export const createAssignGeneralSpecialityHandler = (options: {
         const { domesticModules, warModules } = await loadModules();
         const rng = new RandUtil(
             new LiteHashDRBG(
-                simpleSerialize(resolveHiddenSeed(world), 'assignGeneralSpeciality', environment.year, environment.month)
+                simpleSerialize(
+                    resolveHiddenSeed(world),
+                    'assignGeneralSpeciality',
+                    environment.year,
+                    environment.month
+                )
             )
         );
         const defaultDomestic = normalizeCode(world.getScenarioConfig().const.defaultSpecialDomestic);
@@ -152,7 +151,11 @@ export const createAssignGeneralSpecialityHandler = (options: {
         const scenarioStat = world.getScenarioConfig().stat;
         // ref SQL에 ORDER BY가 없으므로 loader가 보존한 DB scan 순서를 두
         // domestic/war pass에서 그대로 재사용한다.
-        const generals = world.listGenerals();
+        const generals = world.listGenerals().sort((left, right) => {
+            const leftOrder = readFiniteNumber(left.meta, ['legacyScanOrder']) ?? left.id;
+            const rightOrder = readFiniteNumber(right.meta, ['legacyScanOrder']) ?? right.id;
+            return leftOrder - rightOrder;
+        });
 
         for (const general of generals) {
             if (

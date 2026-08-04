@@ -521,13 +521,11 @@ describe('legacy NPC AI final-decision parity', () => {
                 rice: 10_000,
                 meta: { killturn: 100, fullLeadership: 70, rank_killcrew: 0, rank_deathcrew: 1 },
             },
-            generalActionModules: singleActionModuleStack(
-                {
-                    eventHandlers: {},
-                    onCalcDomestic: (_context, turnType, varType, value) =>
-                        turnType === '징병' && varType === 'cost' ? value * 1.2 : value,
-                }
-            ),
+            generalActionModules: singleActionModuleStack({
+                eventHandlers: {},
+                onCalcDomestic: (_context, turnType, varType, value) =>
+                    turnType === '징병' && varType === 'cost' ? value * 1.2 : value,
+            }),
             rng: makeRng([], [0, 0]),
         });
 
@@ -695,6 +693,17 @@ describe('legacy NPC AI final-decision parity', () => {
         crewType.cost = 9;
         crewType.rice = 9;
 
+        expect(do금쌀구매(ai)).toBeNull();
+    });
+
+    it('uses only the additional same-type crew when estimating the recruit gold reserve', () => {
+        const ai = makeAi({
+            general: { gold: 500, rice: 3000, crew: 6900, crewTypeId: 1 },
+            disabledPolicyActions: ['상인무시'],
+        });
+
+        // A full 7,000-person estimate would make this branch sell rice. Ref's
+        // recruitment calculator prices only the remaining 100 people.
         expect(do금쌀구매(ai)).toBeNull();
     });
 
@@ -936,13 +945,11 @@ describe('legacy NPC AI final-decision parity', () => {
             dipState: 4,
             rng,
             generals: [baseGeneral(), specialist],
-            generalActionModules: singleActionModuleStack(
-                {
-                    eventHandlers: {},
-                    onCalcDomestic: (context, turnType, varType, value) =>
-                        context.general.id === 2 && turnType === '징집인구' && varType === 'score' ? 0 : value,
-                }
-            ),
+            generalActionModules: singleActionModuleStack({
+                eventHandlers: {},
+                onCalcDomestic: (context, turnType, varType, value) =>
+                    context.general.id === 2 && turnType === '징집인구' && varType === 'score' ? 0 : value,
+            }),
         });
         ai.frontCities = { 1: { ...baseCity(), frontState: 3, dev: 1, important: 1 } };
         ai.supplyCities = {
@@ -993,5 +1000,33 @@ describe('legacy NPC AI final-decision parity', () => {
         ai.npcCivilGenerals = {};
         ai.npcWarGenerals = { 2: warGeneral };
         expect(doNPC몰수(ai)?.action).toBe('che_몰수');
+    });
+
+    it('carries the Ref gold sort order into equal-rice NPC seizure candidates', () => {
+        const rng = makeRng();
+        const ai = makeAi({ nation: { gold: 1_000, rice: 1_000 }, rng });
+        ai.nationPolicy.reqNationGold = 10_000;
+        ai.nationPolicy.reqNationRice = 10_000;
+        ai.nationPolicy.reqNpcWarGold = 1_000;
+        ai.nationPolicy.reqNpcWarRice = 1_000;
+        const candidate = (id: number, gold: number) => ({
+            ...baseGeneral(),
+            id,
+            gold,
+            rice: 5_000,
+            meta: { killturn: 100, fullLeadership: 70 },
+        });
+        ai.npcCivilGenerals = {};
+        ai.npcWarGenerals = {
+            77: candidate(77, 4_000),
+            534: candidate(534, 5_000),
+        };
+
+        expect(doNPC몰수(ai)?.action).toBe('che_몰수');
+        const riceCandidates = (rng.weightedPairs[0] ?? [])
+            .map(([args]) => args as { isGold: boolean; destGeneralId: number })
+            .filter((args) => !args.isGold)
+            .map((args) => args.destGeneralId);
+        expect(riceCandidates).toEqual([534, 77]);
     });
 });
