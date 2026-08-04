@@ -509,11 +509,9 @@ onMounted(() => {
 }
 .legacy-auction-page.resource-page {
     height: 689px;
-    overflow: hidden;
 }
 .legacy-auction-page.unique-page {
     height: 378px;
-    overflow: hidden;
 }
 .legacy-auction-page.bg0 {
     background-color: transparent;

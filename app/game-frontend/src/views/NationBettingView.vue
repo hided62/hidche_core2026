@@ -454,7 +454,6 @@ onMounted(() => {
     font-family: Pretendard, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic';
     font-size: 14px;
     line-height: 1.5;
-    overflow-x: hidden;
 }
 
 .nation-betting-page.legacy-bg0 {

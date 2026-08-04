@@ -648,10 +648,19 @@ onBeforeUnmount(() => {
     line-height: 1.3;
 }
 
+/*
+ * Ref's diplomacy tables are not collapsed and carry an outset-style frame:
+ * gray on the top and left edges, black on the right and bottom.
+ */
 .legacy-layout-table {
     width: 1000px;
     margin: 0 auto;
-    border-collapse: collapse;
+    border-collapse: separate;
+    border-spacing: 0;
+    border-top: 1px solid gray;
+    border-left: 1px solid gray;
+    border-right: 1px solid #000;
+    border-bottom: 1px solid #000;
     background-color: transparent;
 }
 

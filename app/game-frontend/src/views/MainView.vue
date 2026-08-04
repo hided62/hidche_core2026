@@ -716,17 +716,28 @@ button {
     margin-top: 31px;
 }
 
+/*
+ * Ref renders these dashboard controls with the Lumen navigation family: no top
+ * border, 1px sides and a 4px bottom edge that shortens on hover and press
+ * while the control moves down.
+ */
 .desktop-action-controls .game-shell__action {
-    border: 1px solid transparent;
+    border-color: #004f28;
+    border-style: solid;
+    border-width: 0 1px 4px;
     background: #006b36;
     color: #fff;
 }
 
 .desktop-action-controls .game-shell__action:hover {
+    margin-top: 1px;
+    border-bottom-width: 3px;
     background: #00582c;
 }
 
 .desktop-action-controls .game-shell__action:active {
+    margin-top: 2px;
+    border-bottom-width: 2px;
     background: #005128;
 }
 

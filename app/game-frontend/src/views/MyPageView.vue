@@ -629,7 +629,6 @@ onMounted(() => {
     font-family: var(--sammo-font-sans);
     font-size: 14px;
     line-height: 1.3;
-    overflow: hidden;
 }
 .my-page-mobile-scroll-spacer {
     display: none;
