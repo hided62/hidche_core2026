@@ -199,6 +199,9 @@ const specialNameMap = computed(() => {
     }
     return map;
 });
+const selectedSpecialWarInfo = computed(
+    () => status.value?.availableSpecialWar.find((entry) => entry.key === nextSpecialKey.value)?.info ?? ''
+);
 
 const buffCost = (key: BuffKey, target: number): number => {
     const points = status.value?.inheritConst.inheritBuffPoints ?? [0, 0, 0, 0, 0, 0];
@@ -493,7 +496,11 @@ onMounted(() => {
                             </select>
                         </div>
                         <small
-                            >{{ specialNameMap.get(nextSpecialKey) }} 특기를 다음에 얻도록 지정합니다.<br /><b
+                            ><span v-if="selectedSpecialWarInfo" class="special-description">{{
+                                selectedSpecialWarInfo
+                            }}</span
+                            ><br v-if="selectedSpecialWarInfo" />{{ specialNameMap.get(nextSpecialKey) }} 특기를 다음에
+                            얻도록 지정합니다.<br /><b
                                 >필요 포인트: {{ status.inheritConst.inheritSpecificSpecialPoint }}</b
                             ></small
                         >

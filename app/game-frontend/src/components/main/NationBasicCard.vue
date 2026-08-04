@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import SkeletonLines from '../ui/SkeletonLines.vue';
+import { legacyNationTextColor } from '../../utils/legacyNationColor';
 
 interface NationInfo {
     id: number;
@@ -26,46 +27,50 @@ const props = defineProps<{
         </div>
         <div v-else-if="!props.nation" class="empty">국가 정보를 불러오지 못했습니다.</div>
         <div v-else class="nation-body">
-            <div class="title">
-                <span class="color" :style="{ backgroundColor: props.nation.color }" />
+            <div
+                class="title"
+                :style="{ backgroundColor: props.nation.color, color: legacyNationTextColor(props.nation.color) }"
+            >
                 {{ props.nation.name }} (Lv {{ props.nation.level }})
             </div>
             <div class="grid">
-                <div>국고 {{ props.nation.gold }}</div>
-                <div>국량 {{ props.nation.rice }}</div>
-                <div>기술 {{ props.nation.tech }}</div>
-                <div>체제 {{ props.nation.typeCode }}</div>
-                <div>수도 {{ props.nation.capitalCityId ?? '-' }}</div>
+                <span>국고</span><strong>{{ props.nation.gold.toLocaleString() }}</strong> <span>국량</span
+                ><strong>{{ props.nation.rice.toLocaleString() }}</strong> <span>기술</span
+                ><strong>{{ props.nation.tech.toLocaleString() }}</strong> <span>체제</span
+                ><strong>{{ props.nation.typeCode }}</strong> <span>수도</span
+                ><strong>{{ props.nation.capitalCityId ?? '-' }}</strong> <span>국가 등급</span
+                ><strong>{{ props.nation.level }}</strong>
             </div>
         </div>
     </div>
 </template>
 
 <style scoped>
-.nation-card {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
 .title {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+    min-height: 24px;
+    padding: 2px 6px;
+    text-align: center;
     font-weight: 600;
 }
-
-.color {
-    width: 14px;
-    height: 14px;
-    border: 1px solid rgba(232, 221, 196, 0.6);
-}
-
 .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
-    gap: 6px;
-    font-size: 0.85rem;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    font-size: 12px;
+}
+.grid > * {
+    min-height: 23px;
+    box-sizing: border-box;
+    border-right: 1px solid #666;
+    border-bottom: 1px solid #666;
+    padding: 2px 5px;
+}
+.grid > span {
+    background: rgb(20 75 42 / 70%);
+    text-align: center;
+}
+.grid > strong {
+    text-align: right;
+    font-weight: 400;
 }
 
 .empty {

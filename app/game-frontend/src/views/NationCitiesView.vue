@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { getNpcColor } from '../utils/npcColor';
+import { legacyNationTextColor } from '../utils/legacyNationColor';
 import { cityLevelMap, regionMap } from '../utils/nationFormat';
 import { trpc } from '../utils/trpc';
 
@@ -149,7 +150,14 @@ onMounted(async () => {
         >
             <tbody>
                 <tr>
-                    <td colspan="10" class="city-title" :style="{ backgroundColor: data?.nation.color }">
+                    <td
+                        colspan="10"
+                        class="city-title"
+                        :style="{
+                            backgroundColor: data?.nation.color,
+                            color: legacyNationTextColor(data?.nation.color ?? '#000000'),
+                        }"
+                    >
                         【 {{ regionMap[city.region] }} | {{ cityLevelMap[city.level] }} 】
                         <span :class="{ capital: city.id === data?.nation.capitalCityId }">{{
                             city.id === data?.nation.capitalCityId ? `[${city.name}]` : city.name

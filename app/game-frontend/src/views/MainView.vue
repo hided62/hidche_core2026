@@ -65,6 +65,18 @@ const nationAccess = computed(() => ({
 }));
 const nationColor = computed(() => nation.value?.color ?? '#000000');
 const voteActive = computed(() => Boolean(frontStatus.value?.latestVote));
+const formatRecord = (entry: { text: string; createdAt?: string | Date }, appendTime = false): string => {
+    if (!appendTime || /\d{2}:\d{2}\s*$/u.test(entry.text)) return formatLog(entry.text);
+    const parsed = entry.createdAt ? new Date(entry.createdAt) : null;
+    if (!parsed || Number.isNaN(parsed.getTime())) return formatLog(entry.text);
+    const time = new Intl.DateTimeFormat('ko-KR', {
+        timeZone: 'Asia/Seoul',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+    }).format(parsed);
+    return formatLog(`${entry.text} ${time}`);
+};
 
 let surveyNoticeTimer: ReturnType<typeof setTimeout> | null = null;
 watch(surveyNotice, (notice) => {
@@ -151,7 +163,9 @@ watch(
                 >
                     실시간 동기화: {{ realtimeLabel }}
                 </button>
-                <button class="game-shell__action game-shell__action--navigation" type="button" @click="loadMainData">갱 신</button>
+                <button class="game-shell__action game-shell__action--navigation" type="button" @click="loadMainData">
+                    갱 신
+                </button>
                 <button class="game-shell__action" type="button" @click="moveLobby">로비로</button>
             </div>
         </header>
@@ -241,7 +255,7 @@ watch(
                             v-for="entry in globalRecords"
                             :key="entry.id"
                             class="record-line"
-                            v-html="formatLog(entry.text)"
+                            v-html="formatRecord(entry)"
                         />
                         <div v-if="globalRecords.length === 0" class="record-empty">기록이 없습니다.</div>
                     </div>
@@ -255,7 +269,7 @@ watch(
                             v-for="entry in generalRecords"
                             :key="entry.id"
                             class="record-line"
-                            v-html="formatLog(entry.text)"
+                            v-html="formatRecord(entry, true)"
                         />
                         <div v-if="generalRecords.length === 0" class="record-empty">기록이 없습니다.</div>
                     </div>
@@ -269,7 +283,7 @@ watch(
                             v-for="entry in worldHistory"
                             :key="entry.id"
                             class="record-line"
-                            v-html="formatLog(entry.text)"
+                            v-html="formatRecord(entry)"
                         />
                         <div v-if="worldHistory.length === 0" class="record-empty">기록이 없습니다.</div>
                     </div>
@@ -350,7 +364,7 @@ watch(
                             v-for="entry in globalRecords"
                             :key="entry.id"
                             class="record-line"
-                            v-html="formatLog(entry.text)"
+                            v-html="formatRecord(entry)"
                         />
                         <div v-if="globalRecords.length === 0" class="record-empty">기록이 없습니다.</div>
                     </div>
@@ -364,7 +378,7 @@ watch(
                             v-for="entry in generalRecords"
                             :key="entry.id"
                             class="record-line"
-                            v-html="formatLog(entry.text)"
+                            v-html="formatRecord(entry, true)"
                         />
                         <div v-if="generalRecords.length === 0" class="record-empty">기록이 없습니다.</div>
                     </div>
@@ -378,7 +392,7 @@ watch(
                             v-for="entry in worldHistory"
                             :key="entry.id"
                             class="record-line"
-                            v-html="formatLog(entry.text)"
+                            v-html="formatRecord(entry)"
                         />
                         <div v-if="worldHistory.length === 0" class="record-empty">기록이 없습니다.</div>
                     </div>
@@ -624,7 +638,6 @@ button {
 
 .desktop-message-panel {
     grid-column: 1 / -1;
-    height: 1377.5px;
 }
 
 .common-menu-middle {
@@ -652,6 +665,11 @@ button {
     overflow: hidden;
     overflow-wrap: normal;
     white-space: nowrap;
+}
+
+.record-line :deep(.hidden_but_copyable) {
+    color: transparent !important;
+    font-size: 0;
 }
 
 .record-empty {

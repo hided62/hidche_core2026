@@ -36,8 +36,9 @@ defineProps<{
 
 <style scoped>
 .front-status {
-    width: calc(100% + 48px);
-    margin-left: -24px;
+    box-sizing: border-box;
+    width: 100%;
+    margin-left: 0;
     background-color: #302016;
     background-image: var(--sammo-texture-walnut);
     color: #fff;
