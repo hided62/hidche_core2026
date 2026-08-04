@@ -116,7 +116,7 @@ const LEGACY_STAT_CHANGE_GENERAL_ACTIONS = new Set([
     'che_전투태세',
 ]);
 
-const applyLegacyGeneralProgression = (
+export const applyLegacyGeneralProgression = (
     general: TurnGeneral,
     previousGeneral: TurnGeneral,
     actionKey: string,
@@ -140,7 +140,13 @@ const applyLegacyGeneralProgression = (
     // 등급을 강제 재계산한다. 반대로 은퇴의 rebirth()와 선양의
     // multiplyVar('experience')는 수치를 줄이면서도 기존 등급을 그대로 둔다.
     const forceRefreshLevel = actionKey === 'che_하야';
-    const preserveLevel = actionKey === 'che_은퇴' || actionKey === 'che_선양';
+    // Battle units update levels before finishBattle() rounds the legacy INT
+    // columns. che_출병 must retain that pre-round result just like Ref.
+    const preserveLevel =
+        actionKey === 'che_은퇴' ||
+        actionKey === 'che_선양' ||
+        actionKey === 'che_출병' ||
+        actionKey === 'che_물자조달';
     if (!preserveLevel && (forceRefreshLevel || general.experience !== previousGeneral.experience)) {
         const previousExpLevel = readMetaNumber(previousGeneral.meta, 'explevel', 0);
         const actionResolvedExpLevel = readMetaNumber(general.meta, 'explevel', previousExpLevel);
@@ -1048,7 +1054,10 @@ export const createReservedTurnHandler = async (options: {
                 }
                 const actionContext = specificContext ?? baseContext;
                 if ((process.env.CORE_AI_TRACE_GENERAL_IDS?.split(',') ?? []).includes(String(currentGeneral.id))) {
-                    const tracedContext = actionContext as ActionContextBase & { destCity?: City; destGeneral?: TurnGeneral };
+                    const tracedContext = actionContext as ActionContextBase & {
+                        destCity?: City;
+                        destGeneral?: TurnGeneral;
+                    };
                     process.stdout.write(
                         `AI_ACTION_INPUT_TRACE ${JSON.stringify({ generalId: currentGeneral.id, kind, actionKey, actionArgs, destCityId: tracedContext.destCity?.id, destGeneralId: tracedContext.destGeneral?.id })}\n`
                     );

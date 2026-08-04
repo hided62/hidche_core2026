@@ -175,9 +175,16 @@ describe('scenario bootstrap', () => {
             specialDomestic: 'che_event_돌격',
             specialWar: null,
         });
-        expect(result.snapshot.generals[0]?.meta).toMatchObject({ specage: 25, specage2: 30 });
+        expect(result.snapshot.generals[0]?.meta).toMatchObject({
+            explevel: 0,
+            dedlevel: 1,
+            specage: 25,
+            specage2: 30,
+        });
         expect(result.seed.generals[0]?.meta).toMatchObject({
             deathMonth: expect.any(Number),
+            explevel: 0,
+            dedlevel: 1,
             specage: 25,
             specage2: 30,
         });

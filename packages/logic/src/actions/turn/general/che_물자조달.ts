@@ -27,6 +27,14 @@ const ACTION_KEY = 'che_물자조달';
 
 export const roundLegacyAccumulatedInteger = (current: number, delta: number): number => Math.round(current + delta);
 
+export const resolveLegacyExperienceLevel = (experience: number): number =>
+    Math.max(
+        0,
+        Math.min(255, experience < 1_000 ? Math.trunc(experience / 100) : Math.trunc(Math.sqrt(experience / 10)))
+    );
+export const resolveLegacyDedicationLevel = (dedication: number): number =>
+    Math.max(0, Math.min(30, Math.ceil(Math.sqrt(dedication) / 10)));
+
 export class ActionResolver<
     TriggerState extends GeneralTriggerState = GeneralTriggerState,
 > implements GeneralActionResolver<TriggerState, ProcureArgs> {
@@ -107,8 +115,10 @@ export class ActionResolver<
         // the delta separately changes cancellation cases such as
         // 4554 + (45 * 0.7 / 3): the delta is 10.499999999999998, while the
         // accumulated binary value is exactly 4564.5 and persists as 4565.
-        const nextExp = roundLegacyAccumulatedInteger(general.experience, exp);
-        const nextDed = roundLegacyAccumulatedInteger(general.dedication, ded);
+        const rawNextExp = general.experience + exp;
+        const rawNextDed = general.dedication + ded;
+        const nextExp = Math.round(rawNextExp);
+        const nextDed = Math.round(rawNextDed);
 
         let appliedScore = score;
         if (context.city && [1, 3].includes(context.city.frontState)) {
@@ -167,6 +177,8 @@ export class ActionResolver<
                         dedication: nextDed,
                         meta: {
                             ...general.meta,
+                            explevel: resolveLegacyExperienceLevel(rawNextExp),
+                            dedlevel: resolveLegacyDedicationLevel(rawNextDed),
                             [statKey]:
                                 (typeof general.meta[statKey] === 'number' ? (general.meta[statKey] as number) : 0) + 1,
                         },

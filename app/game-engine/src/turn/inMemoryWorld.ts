@@ -402,6 +402,7 @@ export class InMemoryTurnWorld {
     private readonly dirtyTroopIds = new Set<number>();
     private readonly dirtyDiplomacyKeys = new Set<string>();
     private readonly createdGeneralIds = new Set<number>();
+    private nextLegacyGeneralScanOrder = 0;
     private readonly createdNationIds = new Set<number>();
     private readonly createdTroopIds = new Set<number>();
     private readonly createdDiplomacyKeys = new Set<string>();
@@ -476,7 +477,16 @@ export class InMemoryTurnWorld {
             const normalized = this.normalizeGeneralClock(
                 normalizeGeneralTurnTime({ ...general }, this.state.lastTurnTime)
             );
-            const ensured = ensureGeneralKillturn(normalized, worldKillturn);
+            const existingOrder = normalized.meta.legacyScanOrder;
+            const scanOrder =
+                typeof existingOrder === 'number' && Number.isFinite(existingOrder)
+                    ? existingOrder
+                    : this.nextLegacyGeneralScanOrder;
+            this.nextLegacyGeneralScanOrder = Math.max(this.nextLegacyGeneralScanOrder, scanOrder + 1);
+            const ensured = ensureGeneralKillturn(
+                { ...normalized, meta: { ...normalized.meta, legacyScanOrder: scanOrder } },
+                worldKillturn
+            );
             this.generals.set(general.id, ensured);
         }
         for (const city of snapshot.cities) {
@@ -876,7 +886,13 @@ export class InMemoryTurnWorld {
         const normalized = this.normalizeGeneralClock(
             normalizeGeneralTurnTime({ ...general }, this.state.lastTurnTime)
         );
-        const ensured = normalizeGeneralDatabaseIntegers(ensureGeneralKillturn(normalized, worldKillturn));
+        const scanOrder = this.nextLegacyGeneralScanOrder++;
+        const ensured = normalizeGeneralDatabaseIntegers(
+            ensureGeneralKillturn(
+                { ...normalized, meta: { ...normalized.meta, legacyScanOrder: scanOrder } },
+                worldKillturn
+            )
+        );
         this.generals.set(general.id, ensured);
         this.dirtyGeneralIds.add(general.id);
         this.createdGeneralIds.add(general.id);

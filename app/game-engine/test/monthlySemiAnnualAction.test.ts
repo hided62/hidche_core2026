@@ -2,10 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { City, Nation, NationTraitModule } from '@sammo-ts/logic';
 
 import { InMemoryTurnWorld } from '../src/turn/inMemoryWorld.js';
-import {
-    createProcessSemiAnnualHandler,
-    storeLegacySemiAnnualTrust,
-} from '../src/turn/monthlySemiAnnualAction.js';
+import { createProcessSemiAnnualHandler, storeLegacySemiAnnualTrust } from '../src/turn/monthlySemiAnnualAction.js';
 import type { TurnEvent, TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 
 const buildCity = (id: number, patch: Partial<City> = {}): City => ({

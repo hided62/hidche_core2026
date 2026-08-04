@@ -239,7 +239,10 @@ describeDb('scenario database seed', () => {
             expect(config.tournamentTrig).toBe(false);
 
             const meta = (worldState.meta ?? {}) as Record<string, unknown>;
-            expect(meta.develcost).toBe((worldState.currentYear - (scenario.startYear ?? worldState.currentYear) + 10) * 2);
+            expect(meta.develcost).toBe(
+                (worldState.currentYear - (scenario.startYear ?? worldState.currentYear) + 10) * 2
+            );
+            expect(meta.killturn).toBe(80);
             const autorun = (meta.autorun_user ?? {}) as Record<string, unknown>;
             const autorunOptions = (autorun.options ?? {}) as Record<string, unknown>;
             expect(autorunOptions.develop).toBe(true);

@@ -19,9 +19,9 @@ const requireSafeTick = (tick: number): number => {
 };
 
 const tickOffsetMilliseconds = (tick: number, ticksPerSecond: number): number => {
-    const wholeSeconds = Math.trunc(tick / ticksPerSecond);
+    const wholeSeconds = Math.floor(tick / ticksPerSecond);
     const remainingTicks = tick - wholeSeconds * ticksPerSecond;
-    const milliseconds = wholeSeconds * 1_000 + Math.round((remainingTicks * 1_000) / ticksPerSecond);
+    const milliseconds = wholeSeconds * 1_000 + Math.floor((remainingTicks * 1_000) / ticksPerSecond);
     if (!Number.isSafeInteger(milliseconds)) {
         throw new Error(`Game tick offset is outside the safe millisecond range: ${milliseconds}`);
     }
@@ -119,7 +119,7 @@ export class GameClock {
         const wholeSeconds = Math.trunc(milliseconds / 1_000);
         const remainingMilliseconds = milliseconds - wholeSeconds * 1_000;
         return requireSafeTick(
-            wholeSeconds * this.ticksPerSecond + Math.round((remainingMilliseconds * this.ticksPerSecond) / 1_000)
+            wholeSeconds * this.ticksPerSecond + Math.trunc((remainingMilliseconds * this.ticksPerSecond) / 1_000)
         );
     }
 }

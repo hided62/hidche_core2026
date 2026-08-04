@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { TurnSchedule } from '@sammo-ts/logic/turn/calendar.js';
 import type { TurnGeneral, TurnWorldSnapshot, TurnWorldState } from '../src/turn/types.js';
 import { createTurnTestHarness } from './helpers/turnTestHarness.js';
+import { applyLegacyGeneralProgression } from '../src/turn/reservedTurnHandler.js';
 
 const start = new Date('0200-01-01T00:00:00.000Z');
 const schedule: TurnSchedule = { entries: [{ startMinute: 0, tickMinutes: 10 }] };
@@ -152,6 +153,29 @@ const makeState = (): TurnWorldState => ({
 });
 
 describe('legacy general-turn execution contract', () => {
+    it('preserves the battle-computed level across legacy INT rounding', () => {
+        const previous = makeGeneral({
+            experience: 6_700,
+            dedication: 5_800,
+            meta: { killturn: 24, explevel: 25, dedlevel: 8 },
+        });
+        const roundedAfterBattle = makeGeneral({
+            experience: 6_760,
+            dedication: 5_871,
+            meta: { killturn: 24, explevel: 25, dedlevel: 8 },
+        });
+
+        const resolved = applyLegacyGeneralProgression(
+            roundedAfterBattle,
+            previous,
+            'che_출병',
+            { maxStatLevel: 255, maxDedicationLevel: 30 } as never,
+            []
+        );
+
+        expect(resolved.meta).toMatchObject({ explevel: 25, dedlevel: 8 });
+    });
+
     it('quantizes integer general columns at each in-memory DB mutation boundary', async () => {
         const harness = await createTurnTestHarness({
             snapshot: makeSnapshot(makeGeneral()),

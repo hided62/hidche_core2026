@@ -21,7 +21,11 @@ export const round = (value: number): number => {
         return Math.round(value);
     }
 
-    const corrected = value + Math.sign(value) * Number.EPSILON * Math.max(1, Math.abs(value));
+    // PHP 8.3's round() uses a wider half-boundary fuzz than one JavaScript
+    // ulp at four-digit battle totals. Accumulating several fractional battle
+    // rewards can land about three ulps below .5 (for example
+    // 8719.4999999999945), which PHP still rounds upward.
+    const corrected = value + Math.sign(value) * Number.EPSILON * Math.max(1, Math.abs(value)) * 4;
     return corrected < 0 ? Math.ceil(corrected - 0.5) : Math.floor(corrected + 0.5);
 };
 

@@ -51,12 +51,7 @@ const getFullLeadership = (ai: GeneralAI, general: TurnGeneral): number => {
     return Math.max(0, Math.min(general.stats.leadership + officerBonus, maxStat));
 };
 
-const getCrewGoldCost = (
-    ai: GeneralAI,
-    general: TurnGeneral,
-    baseMultiplier: number,
-    finalMultiplier = 1
-): number => {
+const getCrewGoldCost = (ai: GeneralAI, general: TurnGeneral, baseMultiplier: number, finalMultiplier = 1): number => {
     const crewType = findCrewTypeById(ai.unitSet, general.crewTypeId ?? ai.commandEnv.defaultCrewTypeId);
     const tech = readMetaNumber(asRecord(ai.nation?.meta), 'tech', 0);
     // Ref evaluates costWithTech() first, including its `/ 100`, and then
@@ -64,16 +59,15 @@ const getCrewGoldCost = (
     // Keeping that operation order is observable at exact resource boundaries
     // (for example 3036 versus 3036.0000000000005).
     return (
-        ((((crewType?.cost ?? 0) * getTechCost(tech) * getFullLeadership(ai, general)) / 100) * 100 *
-            baseMultiplier) *
+        (((crewType?.cost ?? 0) * getTechCost(tech) * getFullLeadership(ai, general)) / 100) *
+        100 *
+        baseMultiplier *
         finalMultiplier
     );
 };
 
-const sortedByResource = (generals: Record<number, TurnGeneral>, resource: ResourceName, descending = false) =>
-    Object.values(generals).sort((lhs, rhs) =>
-        descending ? rhs[resource] - lhs[resource] : lhs[resource] - rhs[resource]
-    );
+const sortByResource = (generals: TurnGeneral[], resource: ResourceName, descending = false) =>
+    generals.sort((lhs, rhs) => (descending ? rhs[resource] - lhs[resource] : lhs[resource] - rhs[resource]));
 
 const canUseGeneral = (general: TurnGeneral): boolean =>
     readRequiredMetaNumber(asRecord(general.meta), 'killturn', `generalId=${general.id}`) > 5;
@@ -88,9 +82,10 @@ export const do유저장긴급포상 = (ai: GeneralAI) => {
         ['gold', ai.nationPolicy.reqHumanWarUrgentGold],
         ['rice', ai.nationPolicy.reqHumanWarUrgentRice],
     ];
+    const userWarGenerals = Object.values(ai.userWarGenerals);
 
     for (const [resKey, minimum] of resourceMap) {
-        const generals = sortedByResource(ai.userWarGenerals, resKey);
+        const generals = sortByResource(userWarGenerals, resKey);
         for (const [index, general] of generals.entries()) {
             if (general[resKey] >= minimum) {
                 break;
@@ -112,7 +107,10 @@ export const do유저장긴급포상 = (ai: GeneralAI) => {
                 continue;
             }
             amount = clampLegacy(amount, 100, ai.maxResourceActionAmount);
-            candidates.push([{ destGeneralId: general.id, amount, isGold: resKey === 'gold' }, generals.length - index]);
+            candidates.push([
+                { destGeneralId: general.id, amount, isGold: resKey === 'gold' },
+                generals.length - index,
+            ]);
         }
     }
 
@@ -139,12 +137,13 @@ export const do유저장포상 = (ai: GeneralAI) => {
             ai.nationPolicy.reqHumanDevelRice,
         ],
     ];
+    const userGenerals = Object.values(ai.userGenerals);
 
     for (const [resKey, nationMinimum, warMinimum, civilMinimum] of resourceMap) {
         if (nation[resKey] < nationMinimum) {
             continue;
         }
-        const generals = sortedByResource(ai.userGenerals, resKey);
+        const generals = sortByResource(userGenerals, resKey);
         for (const [index, general] of generals.entries()) {
             if (general[resKey] >= warMinimum) {
                 break;
@@ -171,7 +170,10 @@ export const do유저장포상 = (ai: GeneralAI) => {
                 continue;
             }
             amount = clampLegacy(amount, 100, ai.maxResourceActionAmount);
-            candidates.push([{ destGeneralId: general.id, amount, isGold: resKey === 'gold' }, generals.length - index]);
+            candidates.push([
+                { destGeneralId: general.id, amount, isGold: resKey === 'gold' },
+                generals.length - index,
+            ]);
         }
     }
 
@@ -188,12 +190,13 @@ export const doNPC긴급포상 = (ai: GeneralAI) => {
         ['gold', ai.nationPolicy.reqNationGold, ai.nationPolicy.reqNpcWarGold / 2],
         ['rice', ai.nationPolicy.reqNationRice, ai.nationPolicy.reqNpcWarRice / 2],
     ];
+    const npcWarGenerals = Object.values(ai.npcWarGenerals);
 
     for (const [resKey, nationMinimum, minimum] of resourceMap) {
         if (nation[resKey] < nationMinimum) {
             continue;
         }
-        const generals = sortedByResource(ai.npcWarGenerals, resKey);
+        const generals = sortByResource(npcWarGenerals, resKey);
         for (const [index, general] of generals.entries()) {
             if (general[resKey] >= minimum) {
                 break;
@@ -215,7 +218,10 @@ export const doNPC긴급포상 = (ai: GeneralAI) => {
                 continue;
             }
             amount = clampLegacy(amount, 100, ai.maxResourceActionAmount);
-            candidates.push([{ destGeneralId: general.id, amount, isGold: resKey === 'gold' }, generals.length - index]);
+            candidates.push([
+                { destGeneralId: general.id, amount, isGold: resKey === 'gold' },
+                generals.length - index,
+            ]);
         }
     }
 
@@ -232,13 +238,15 @@ export const doNPC포상 = (ai: GeneralAI) => {
         ['gold', ai.nationPolicy.reqNationGold, ai.nationPolicy.reqNpcWarGold, ai.nationPolicy.reqNpcDevelGold],
         ['rice', ai.nationPolicy.reqNationRice, ai.nationPolicy.reqNpcWarRice, ai.nationPolicy.reqNpcDevelRice],
     ];
+    const npcWarGenerals = Object.values(ai.npcWarGenerals);
+    const npcCivilGenerals = Object.values(ai.npcCivilGenerals);
 
     for (const [resKey, nationMinimum, warMinimum, civilMinimum] of resourceMap) {
         if (nation[resKey] < nationMinimum) {
             continue;
         }
-        const warGenerals = sortedByResource(ai.npcWarGenerals, resKey);
-        const civilGenerals = sortedByResource(ai.npcCivilGenerals, resKey);
+        const warGenerals = sortByResource(npcWarGenerals, resKey);
+        const civilGenerals = sortByResource(npcCivilGenerals, resKey);
         const weightBase = Math.max(warGenerals.length, civilGenerals.length);
         for (const [index, general] of warGenerals.entries()) {
             if (general[resKey] >= warMinimum) {
@@ -308,9 +316,11 @@ export const doNPC몰수 = (ai: GeneralAI) => {
         ['gold', ai.nationPolicy.reqNationGold, ai.nationPolicy.reqNpcWarGold, ai.nationPolicy.reqNpcDevelGold],
         ['rice', ai.nationPolicy.reqNationRice, ai.nationPolicy.reqNpcWarRice, ai.nationPolicy.reqNpcDevelRice],
     ];
+    const npcWarGenerals = Object.values(ai.npcWarGenerals);
+    const npcCivilGenerals = Object.values(ai.npcCivilGenerals);
 
     for (const [resKey, nationMinimum, warMinimum, civilMinimum] of resourceMap) {
-        for (const general of sortedByResource(ai.npcCivilGenerals, resKey, true)) {
+        for (const general of sortByResource(npcCivilGenerals, resKey, true)) {
             if (general[resKey] <= civilMinimum * 1.5) {
                 break;
             }
@@ -326,7 +336,7 @@ export const doNPC몰수 = (ai: GeneralAI) => {
             continue;
         }
         const takeSmallAmount = nation[resKey] >= nationMinimum;
-        for (const general of sortedByResource(ai.npcWarGenerals, resKey, true)) {
+        for (const general of sortByResource(npcWarGenerals, resKey, true)) {
             if (general[resKey] <= warMinimum * (takeSmallAmount ? 2 : 1)) {
                 break;
             }

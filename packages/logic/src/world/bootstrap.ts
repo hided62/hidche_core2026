@@ -519,6 +519,8 @@ const buildGeneralSeeds = (
             source: contextLabel,
             deathMonth,
             initialTurnOffsetMicros,
+            explevel: 0,
+            dedlevel: 1,
             // Ref's GeneralBuilder derives speciality ages from the scenario
             // opening year even when installation stores a pre-opening age.
             specage: resolveBootstrapSpecialityAge(scenario.startYear, birthYear, retirementYear, 12),
@@ -588,6 +590,8 @@ const buildGeneralSeeds = (
             ),
             deathMonth,
             npcType,
+            explevel: 0,
+            dedlevel: 1,
             crewTypeId: defaultCrewTypeId,
             specage: resolveBootstrapSpecialityAge(scenario.startYear, birthYear, retirementYear, 12),
             specage2: resolveBootstrapSpecialityAge(scenario.startYear, birthYear, retirementYear, 6),

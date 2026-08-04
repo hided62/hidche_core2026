@@ -87,6 +87,8 @@ export interface CommerceInvestmentResult {
 export interface CommerceInvestmentArgs {}
 
 const DEFAULT_TRUST = 50;
+export const resolveLegacyDomesticTrust = (trust: number | null | undefined, fallback = DEFAULT_TRUST): number =>
+    Math.max(trust ?? fallback, DEFAULT_TRUST);
 const DEFAULT_FRONT_STATES = [1, 3];
 const DEFAULT_CONFIG: InvestmentConfig = {
     key: 'che_상업투자',
@@ -188,7 +190,7 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
     }
 
     calcBaseScore(context: DomesticActionContext<TriggerState>, rng: RandomGenerator): number {
-        const trust = getMetaNumber(context.city.meta, 'trust') ?? this.env.defaultTrust ?? DEFAULT_TRUST;
+        const trust = resolveLegacyDomesticTrust(getMetaNumber(context.city.meta, 'trust'), this.env.defaultTrust);
 
         const injuryMultiplier = (100 - context.general.injury) / 100;
         const rawStats = {
@@ -220,8 +222,9 @@ export class CommandResolver<TriggerState extends GeneralTriggerState = GeneralT
 
     resolve(context: DomesticActionContext<TriggerState>, rng: RandomGenerator): CommerceInvestmentResult {
         const { gold: costGold, rice: costRice } = this.getCost(context);
-        const trust = getMetaNumber(context.city.meta, 'trust') ?? this.env.defaultTrust ?? DEFAULT_TRUST;
-        let score = clamp(this.calcBaseScore(context, rng), 1, Number.MAX_SAFE_INTEGER);
+        const trust = resolveLegacyDomesticTrust(getMetaNumber(context.city.meta, 'trust'), this.env.defaultTrust);
+        const calculatedBaseScore = this.calcBaseScore(context, rng);
+        let score = clamp(calculatedBaseScore, 1, Number.MAX_SAFE_INTEGER);
 
         const ratio =
             this.env.getCriticalRatio?.(context, this.config.statKey) ??

@@ -157,19 +157,11 @@ const readHiddenSeed = (worldState: WorldStateRow): string | number => {
     return fail('INTERNAL_SERVER_ERROR', '장수 생성 비밀 seed가 설정되지 않았습니다.');
 };
 
-const formatLegacySeedTime = (value: Date): string => {
-    const pad = (part: number): string => String(part).padStart(2, '0');
-    const koreaTime = new Date(value.getTime() + LEGACY_TIMEZONE_OFFSET_MS);
-    return `${koreaTime.getUTCFullYear()}-${pad(koreaTime.getUTCMonth() + 1)}-${pad(
-        koreaTime.getUTCDate()
-    )} ${pad(koreaTime.getUTCHours())}:${pad(koreaTime.getUTCMinutes())}:${pad(koreaTime.getUTCSeconds())}`;
-};
-
 export const buildJoinCreateGeneralSeed = (
     hiddenSeed: string | number,
     ownerIdentity: string | number,
-    acceptedAt: Date
-): string => simpleSerialize(hiddenSeed, 'MakeGeneral', ownerIdentity, formatLegacySeedTime(acceptedAt));
+    acceptedTick: number
+): string => simpleSerialize(hiddenSeed, 'MakeGeneral', ownerIdentity, acceptedTick);
 
 const lockJoinMutation = async (db: DatabaseClient, userId: string): Promise<void> => {
     await db.$executeRaw(GamePrisma.sql`SELECT pg_advisory_xact_lock(hashtextextended(${`join-create:${userId}`}, 0))`);
@@ -611,7 +603,9 @@ export const createGeneralFromJoin = async (options: {
 
     const hiddenSeed = readHiddenSeed(worldState);
     const rng = new RandUtil(
-        new LiteHashDRBG(buildJoinCreateGeneralSeed(hiddenSeed, input.seedOwnerIdentity, acceptedAt))
+        new LiteHashDRBG(
+            buildJoinCreateGeneralSeed(hiddenSeed, input.seedOwnerIdentity, world.dateToGameTick(acceptedAt))
+        )
     );
     const worldMeta = asRecord(worldState.meta);
     const currentGenius = Math.max(

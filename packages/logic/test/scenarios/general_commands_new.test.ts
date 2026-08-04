@@ -6,6 +6,8 @@ import type { WorldSnapshot } from '../../src/world/types.js';
 import {
     commandSpec as procureSpec,
     roundLegacyAccumulatedInteger,
+    resolveLegacyDedicationLevel,
+    resolveLegacyExperienceLevel,
 } from '../../src/actions/turn/general/che_물자조달.js';
 import { commandSpec as donateSpec } from '../../src/actions/turn/general/che_헌납.js';
 import { commandSpec as moveSpec } from '../../src/actions/turn/general/che_이동.js';
@@ -37,11 +39,9 @@ import {
     readLegacyStoredTech,
     toLegacyStoredTech,
 } from '../../src/actions/turn/general/che_기술연구.js';
-import {
-    readLegacyCityTrust,
-    storeLegacyCityTrust,
-} from '../../src/actions/turn/general/legacyCityTrust.js';
+import { readLegacyCityTrust, storeLegacyCityTrust } from '../../src/actions/turn/general/legacyCityTrust.js';
 import { roundLegacyRecruitCost } from '../../src/actions/turn/general/che_징병.js';
+import { resolveLegacyDomesticTrust } from '../../src/actions/turn/general/che_상업투자.js';
 
 describe('General Commands New Scenario', () => {
     it('truncates generated NPC dex like GeneralBuilder integer arguments', () => {
@@ -53,6 +53,14 @@ describe('General Commands New Scenario', () => {
         expect(delta).toBe(10.499999999999998);
         expect(Math.round(delta)).toBe(10);
         expect(roundLegacyAccumulatedInteger(4554, delta)).toBe(4565);
+    });
+
+    it('calculates procurement levels before MariaDB rounds the INT columns', () => {
+        expect(Math.round(5_759.5)).toBe(5_760);
+        expect(resolveLegacyExperienceLevel(5_759.5)).toBe(23);
+        expect(Math.round(6_249.5)).toBe(6_250);
+        expect(resolveLegacyExperienceLevel(6_249.5)).toBe(24);
+        expect(resolveLegacyDedicationLevel(6_400.4)).toBe(9);
     });
 
     it('persists generated NPC speciality ages from the legacy creation date', () => {
@@ -84,6 +92,12 @@ describe('General Commands New Scenario', () => {
         expect(cavalryCost).toBe(885.4999999999999);
         expect(Math.round(cavalryCost)).toBe(885);
         expect(roundLegacyRecruitCost(cavalryCost)).toBe(886);
+    });
+
+    it('uses the legacy minimum trust for domestic calculations', () => {
+        expect(resolveLegacyDomesticTrust(44.5321)).toBe(50);
+        expect(resolveLegacyDomesticTrust(80)).toBe(80);
+        expect(resolveLegacyDomesticTrust(null)).toBe(50);
     });
 
     // 1. Setup Environment
