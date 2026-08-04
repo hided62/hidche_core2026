@@ -152,8 +152,13 @@ onMounted(async () => {
     position: relative;
     width: 100%;
     height: 32px;
-    text-align: center;
+    text-align: left;
     background-image: var(--sammo-texture-walnut);
+}
+
+.legacy-title > strong {
+    display: block;
+    text-align: center;
 }
 .legacy-title strong {
     font-size: 24px;
@@ -209,7 +214,8 @@ onMounted(async () => {
     transform-origin: top;
 }
 .matrix th {
-    font-weight: 400;
+    padding: 1px;
+    font-weight: 700;
 }
 .matrix .vertical {
     writing-mode: vertical-rl;
@@ -303,7 +309,8 @@ onMounted(async () => {
     width: 15%;
 }
 .footer {
-    box-sizing: content-box;
+    box-sizing: border-box;
+    text-align: left;
     height: 35.5px;
     margin-top: 0;
     padding: 20px 0 0;

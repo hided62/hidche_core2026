@@ -222,7 +222,6 @@ onMounted(load);
     max-width: 1000px;
     height: 100vh;
     margin: 0 auto;
-    overflow: hidden;
     font: 14px/21px var(--sammo-font-sans);
     color: #fff;
     background-color: transparent;
@@ -238,7 +237,7 @@ onMounted(load);
     justify-content: center;
     background-color: transparent;
     background-image: var(--sammo-texture-walnut);
-    border-bottom: 1px solid #42484a;
+    /* Ref's `.back_bar` has no bottom rule; the grid below draws its own. */
     font-size: 14px;
 }
 .top-bar strong {

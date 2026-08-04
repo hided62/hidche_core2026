@@ -259,10 +259,11 @@ select {
 .summary th {
     width: 120px;
 }
+/* Ref collapses this list table; `separate` shifted every row by the spacing. */
 .list {
     width: 974px;
     margin: 0 auto;
-    border-collapse: separate;
+    border-collapse: collapse;
     table-layout: auto;
 }
 .list th,

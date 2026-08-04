@@ -61,6 +61,8 @@
     background: var(--legacy-button-bg);
     color: #fff;
     line-height: 21px;
+    /* Ref's framework baseline for these controls. */
+    vertical-align: middle;
 }
 
 .legacy-button.legacy-button--secondary {
