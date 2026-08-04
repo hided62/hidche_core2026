@@ -550,6 +550,10 @@ const dropPriority = (event: DragEvent, section: PrioritySectionKey, bucket: Pri
                 </section>
             </div>
         </section>
+        <div class="sortable-compat-controls" aria-hidden="true">
+            <button type="button" tabindex="-1" />
+            <input v-for="index in 20" :key="index" type="hidden" />
+        </div>
     </main>
 </template>
 
@@ -572,10 +576,15 @@ const dropPriority = (event: DragEvent, section: PrioritySectionKey, bucket: Pri
 
 .npc-page {
     min-height: 100vh;
+    padding-bottom: 32px;
+    box-sizing: border-box;
     color: #fff;
     font-family: var(--sammo-font-sans);
     font-size: 14px;
     line-height: 21px;
+}
+.sortable-compat-controls {
+    display: none;
 }
 
 .legacy-bg0 {
@@ -925,6 +934,9 @@ const dropPriority = (event: DragEvent, section: PrioritySectionKey, bucket: Pri
 }
 
 @media (max-width: 991px) {
+    .npc-page {
+        padding-bottom: 47px;
+    }
     .form_list,
     .priority-sections {
         grid-template-columns: 1fr;

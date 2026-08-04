@@ -6,6 +6,7 @@ import SkeletonLines from '../components/ui/SkeletonLines.vue';
 import { trpc } from '../utils/trpc';
 import { getNpcColor } from '../utils/npcColor';
 import { formatLog } from '../utils/formatLog';
+import { resolveGeneralIconUrl } from '../utils/generalIcon';
 
 type BattleCenterResponse = Awaited<ReturnType<typeof trpc.nation.getBattleCenter.query>>;
 type GeneralEntry = BattleCenterResponse['generals'][number];
@@ -134,6 +135,8 @@ const formatGeneralLabel = (general: GeneralEntry): string => {
     return `${name} (${time})`;
 };
 
+const generalImageUrl = (general: GeneralEntry): string => resolveGeneralIconUrl(general);
+
 let logRequestId = 0;
 
 const loadLogs = async (generalId: number) => {
@@ -151,10 +154,13 @@ const loadLogs = async (generalId: number) => {
             return;
         }
         for (const response of responses) {
-            const formatted = response.logs.map((entry) => ({
-                id: entry.id,
-                html: formatLog(entry.text),
-            }));
+            const formatted = response.logs.map((entry) => {
+                const eventTime = response.type === 'generalAction' ? ` ${entry.createdAt.slice(-8, -3)}` : '';
+                return {
+                    id: entry.id,
+                    html: formatLog(`${entry.text}${eventTime}`),
+                };
+            });
             logs[response.type] = formatted;
         }
     } catch (err) {
@@ -223,9 +229,13 @@ onMounted(() => {
 <template>
     <main class="ref-shell battle-page">
         <header class="battle-top legacy-bg0">
-            <RouterLink class="battle-nav" to="/">창 닫기</RouterLink>
+            <RouterLink v-slot="{ navigate }" custom to="/">
+                <button class="battle-nav" type="button" @click="navigate">창 닫기</button>
+            </RouterLink>
             <button class="battle-nav" @click="loadBattleCenter">갱신</button>
-            <h1>감찰부</h1><div></div><div></div>
+            <h1>감찰부</h1>
+            <div></div>
+            <div></div>
         </header>
 
         <div v-if="error" class="ref-feedback ref-feedback--error" role="alert">{{ error }}</div>
@@ -260,6 +270,12 @@ onMounted(() => {
                         <div class="battle-general-name">
                             {{ selectedGeneral.name }} (관직 {{ selectedGeneral.officerLevel }})
                         </div>
+                        <span
+                            class="battle-general-portrait"
+                            role="img"
+                            :aria-label="`${selectedGeneral.name} 초상`"
+                            :style="{ backgroundImage: `url(${generalImageUrl(selectedGeneral)})` }"
+                        />
                         <div class="battle-general-grid">
                             <span>통솔</span><strong>{{ selectedGeneral.stats.leadership }}</strong> <span>무력</span
                             ><strong>{{ selectedGeneral.stats.strength }}</strong> <span>지력</span
@@ -273,6 +289,21 @@ onMounted(() => {
                             ><strong>{{ selectedGeneral.experience }}</strong> <span>공헌</span
                             ><strong>{{ selectedGeneral.dedication }}</strong> <span>전투</span
                             ><strong>{{ selectedGeneral.warnum }}회</strong>
+                        </div>
+                        <div class="battle-general-extra">
+                            <span>명성</span><strong>{{ selectedGeneral.experience.toLocaleString('ko-KR') }}</strong>
+                            <span>계급</span><strong>{{ selectedGeneral.dedication.toLocaleString('ko-KR') }}</strong>
+                            <span>나이</span><strong>{{ selectedGeneral.age }}세</strong> <span>병종</span
+                            ><strong>{{ selectedGeneral.crewTypeId }}</strong> <span>승리</span
+                            ><strong>{{ selectedGeneral.battleStats.kills }}</strong> <span>패배</span
+                            ><strong>{{ selectedGeneral.battleStats.deaths }}</strong> <span>사살</span
+                            ><strong>{{ selectedGeneral.battleStats.killCrew.toLocaleString('ko-KR') }}</strong>
+                            <span>피살</span
+                            ><strong>{{ selectedGeneral.battleStats.deathCrew.toLocaleString('ko-KR') }}</strong>
+                            <span>전투 특기</span><strong>{{ selectedGeneral.traits.specialWar }}</strong>
+                            <span>내정 특기</span><strong>{{ selectedGeneral.traits.specialDomestic }}</strong>
+                            <span>성격</span><strong>{{ selectedGeneral.traits.personal }}</strong> <span>숙련도</span
+                            ><strong>{{ selectedGeneral.battleStats.dex.join(' / ') }}</strong>
                         </div>
                     </div>
                     <div v-if="selectedGeneral" class="general-meta">
@@ -298,6 +329,11 @@ onMounted(() => {
                 </PanelCard>
             </div>
         </section>
+        <footer class="battle-footer legacy-bg0">
+            <RouterLink v-slot="{ navigate }" custom to="/">
+                <button class="battle-nav" type="button" @click="navigate">창 닫기</button>
+            </RouterLink>
+        </footer>
     </main>
 </template>
 
@@ -340,8 +376,18 @@ onMounted(() => {
 
 .battle-general-card {
     min-height: 292px;
+    position: relative;
     background-color: #172a52;
     background-image: var(--sammo-texture-blue);
+}
+
+.battle-general-portrait {
+    display: block;
+    width: 64px;
+    height: 80px;
+    float: left;
+    background-position: center;
+    background-size: cover;
 }
 
 .battle-general-name {
@@ -357,6 +403,33 @@ onMounted(() => {
 .battle-general-grid {
     display: grid;
     grid-template-columns: repeat(6, 1fr);
+}
+
+.battle-general-extra {
+    clear: both;
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+}
+
+.battle-general-extra > * {
+    min-height: 24px;
+    box-sizing: border-box;
+    border-right: 1px solid #777;
+    border-bottom: 1px solid #777;
+    padding: 2px 5px;
+}
+
+.battle-general-extra > span {
+    background-color: rgb(20 75 42 / 70%);
+    text-align: center;
+}
+
+.battle-general-extra > strong {
+    overflow: hidden;
+    font-weight: 500;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .battle-general-grid > * {
@@ -474,6 +547,8 @@ onMounted(() => {
     margin: 0 auto;
     padding: 0;
     gap: 0;
+    height: 1268px;
+    overflow: hidden;
 }
 .battle-top {
     height: 32px;
@@ -501,8 +576,19 @@ onMounted(() => {
     font-weight: 700;
     text-decoration: none;
 }
+.battle-footer {
+    padding-top: 20px;
+}
+.battle-footer .battle-nav {
+    width: 60px;
+}
 @media (max-width: 991px) {
-    .battle-page { width: 500px; }
-    .battle-top { grid-template-columns: 89px 89px 1fr 0 0; }
+    .battle-page {
+        width: 500px;
+        height: 1411px;
+    }
+    .battle-top {
+        grid-template-columns: 89px 89px 1fr 0 0;
+    }
 }
 </style>

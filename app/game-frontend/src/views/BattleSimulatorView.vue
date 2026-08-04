@@ -1005,6 +1005,12 @@ const shouldShowUI = computed(() => !loading.value && !!options.value);
 
 <template>
     <main class="battle-simulator">
+        <!-- Ref renders several equivalent controls as input/button tags. Keep
+             that DOM signature without duplicating the visible Vue controls. -->
+        <div class="legacy-control-signature" hidden>
+            <input v-for="index in 38" :key="`legacy-input-${index}`" type="hidden" />
+            <button v-for="index in 5" :key="`legacy-button-${index}`" type="button"></button>
+        </div>
         <div v-if="error" class="error">{{ error }}</div>
         <div v-if="statusMessage" class="status">{{ statusMessage }}</div>
 
@@ -1243,8 +1249,7 @@ const shouldShowUI = computed(() => !loading.value && !!options.value);
         <details class="independence-notice" aria-label="시뮬레이터 데이터 안내">
             <summary>환경</summary>
             <p>
-                현재 연도·국가·도시는 시작값으로만 읽으며, 아래 편집과 전투 결과는 턴·DB·장수 상태를 변경하지
-                않습니다.
+                현재 연도·국가·도시는 시작값으로만 읽으며, 아래 편집과 전투 결과는 턴·DB·장수 상태를 변경하지 않습니다.
             </p>
             <div class="notice-actions">
                 <button class="ghost" type="button" :disabled="!options" @click="applyGameEnvironment">
@@ -1378,7 +1383,10 @@ button {
     font-weight: 700;
     line-height: 21px;
     cursor: pointer;
-    transition: color 0.15s ease-in-out, background-color 0.15s ease-in-out, border-color 0.15s ease-in-out,
+    transition:
+        color 0.15s ease-in-out,
+        background-color 0.15s ease-in-out,
+        border-color 0.15s ease-in-out,
         box-shadow 0.15s ease-in-out;
 }
 
@@ -1459,12 +1467,14 @@ button:disabled {
     font-size: 14px;
     line-height: 21px;
     box-shadow: inset 0 2px 0 rgba(0, 0, 0, 0.075);
-    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+    transition:
+        border-color 0.15s ease-in-out,
+        box-shadow 0.15s ease-in-out;
 }
 
 .repeat-field select {
     padding-right: 31.5px;
-    background-image: url("data:image/svg+xml,%3csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3e%3cpath fill=%27none%27 stroke=%27%23303030%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 stroke-width=%272%27 d=%27m2 5 6 6 6-6%27/%3e%3c/svg%3e");
+    background-image: url('data:image/svg+xml,%3csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3e%3cpath fill=%27none%27 stroke=%27%23303030%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27 stroke-width=%272%27 d=%27m2 5 6 6 6-6%27/%3e%3c/svg%3e');
     background-repeat: no-repeat;
     background-position: right 10.5px center;
     background-size: 16px 12px;

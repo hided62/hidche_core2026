@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { trpc } from '../utils/trpc';
 
@@ -8,6 +9,7 @@ type TrafficData = Awaited<ReturnType<typeof trpc.public.getTraffic.query>>;
 const data = ref<TrafficData | null>(null);
 const loading = ref(false);
 const errorMessage = ref('');
+const router = useRouter();
 
 const getErrorMessage = (error: unknown): string => {
     if (error instanceof Error) {
@@ -73,7 +75,7 @@ onMounted(() => {
                 <tr>
                     <td>
                         트 래 픽 정 보<br />
-                        <RouterLink class="legacy-close" to="/">돌아가기</RouterLink>
+                        <button class="legacy-close" type="button" @click="router.push('/')">돌아가기</button>
                     </td>
                 </tr>
             </tbody>
@@ -82,61 +84,91 @@ onMounted(() => {
         <div v-if="errorMessage" class="traffic-error" role="alert">{{ errorMessage }}</div>
         <div v-if="loading && !data" class="traffic-loading">불러오는 중...</div>
 
-        <section v-if="data" class="chart-layout">
-            <table class="legacy-table chart-table legacy-bg0">
-                <thead>
-                    <tr>
-                        <th colspan="4" class="legacy-bg2 chart-title">접 속 량</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr v-for="(entry, index) in refreshRows" :key="`${entry.date}-${index}`" class="chart-row">
-                        <td class="period">{{ entry.year }}년 {{ entry.month }}월</td>
-                        <td class="time legacy-bg2">{{ timeLabel(entry.date) }}</td>
-                        <td class="separator legacy-bg1"></td>
-                        <td class="bar-cell">
-                            <div
-                                v-if="entry.width > 0"
-                                class="big-bar"
-                                :style="{ width: `${entry.width}%`, backgroundColor: trafficColor(entry.width) }"
-                            >
-                                <span v-if="entry.width >= 10">{{ entry.value }}</span>
-                            </div>
-                            <span v-if="entry.width < 10" class="out-bar">{{ entry.value }}</span>
-                        </td>
-                    </tr>
-                    <tr><td colspan="4" class="legacy-bg1 spacer"></td></tr>
-                    <tr><td colspan="4" class="record">최고기록: {{ data.maxRefresh }}</td></tr>
-                </tbody>
-            </table>
+        <table v-if="data" class="chart-layout-table">
+            <tbody>
+                <tr>
+                    <td>
+                        <table class="legacy-table chart-table legacy-bg0">
+                            <thead>
+                                <tr>
+                                    <th colspan="4" class="legacy-bg2 chart-title">접 속 량</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr
+                                    v-for="(entry, index) in refreshRows"
+                                    :key="`${entry.date}-${index}`"
+                                    class="chart-row"
+                                >
+                                    <td class="period">{{ entry.year }}년 {{ entry.month }}월</td>
+                                    <td class="time legacy-bg2">{{ timeLabel(entry.date) }}</td>
+                                    <td class="separator legacy-bg1"></td>
+                                    <td class="bar-cell">
+                                        <div
+                                            v-if="entry.width > 0"
+                                            class="big-bar"
+                                            :style="{
+                                                width: `${entry.width}%`,
+                                                backgroundColor: trafficColor(entry.width),
+                                            }"
+                                        >
+                                            <span v-if="entry.width >= 10">{{ entry.value }}</span>
+                                        </div>
+                                        <span v-if="entry.width < 10" class="out-bar">{{ entry.value }}</span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td colspan="4" class="legacy-bg1 spacer"></td>
+                                </tr>
+                                <tr>
+                                    <td colspan="4" class="record">최고기록: {{ data.maxRefresh }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </td>
 
-            <table class="legacy-table chart-table legacy-bg0">
-                <thead>
-                    <tr>
-                        <th colspan="4" class="legacy-bg2 chart-title">접 속 자</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr v-for="(entry, index) in onlineRows" :key="`${entry.date}-${index}`" class="chart-row">
-                        <td class="period">{{ entry.year }}년 {{ entry.month }}월</td>
-                        <td class="time legacy-bg2">{{ timeLabel(entry.date) }}</td>
-                        <td class="separator legacy-bg1"></td>
-                        <td class="bar-cell">
-                            <div
-                                v-if="entry.width > 0"
-                                class="big-bar"
-                                :style="{ width: `${entry.width}%`, backgroundColor: trafficColor(entry.width) }"
-                            >
-                                <span v-if="entry.width >= 10">{{ entry.value }}</span>
-                            </div>
-                            <span v-if="entry.width < 10" class="out-bar">{{ entry.value }}</span>
-                        </td>
-                    </tr>
-                    <tr><td colspan="4" class="legacy-bg1 spacer"></td></tr>
-                    <tr><td colspan="4" class="record">최고기록: {{ data.maxOnline }}</td></tr>
-                </tbody>
-            </table>
-        </section>
+                    <td>
+                        <table class="legacy-table chart-table legacy-bg0">
+                            <thead>
+                                <tr>
+                                    <th colspan="4" class="legacy-bg2 chart-title">접 속 자</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr
+                                    v-for="(entry, index) in onlineRows"
+                                    :key="`${entry.date}-${index}`"
+                                    class="chart-row"
+                                >
+                                    <td class="period">{{ entry.year }}년 {{ entry.month }}월</td>
+                                    <td class="time legacy-bg2">{{ timeLabel(entry.date) }}</td>
+                                    <td class="separator legacy-bg1"></td>
+                                    <td class="bar-cell">
+                                        <div
+                                            v-if="entry.width > 0"
+                                            class="big-bar"
+                                            :style="{
+                                                width: `${entry.width}%`,
+                                                backgroundColor: trafficColor(entry.width),
+                                            }"
+                                        >
+                                            <span v-if="entry.width >= 10">{{ entry.value }}</span>
+                                        </div>
+                                        <span v-if="entry.width < 10" class="out-bar">{{ entry.value }}</span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td colspan="4" class="legacy-bg1 spacer"></td>
+                                </tr>
+                                <tr>
+                                    <td colspan="4" class="record">최고기록: {{ data.maxOnline }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
 
         <table v-if="data" class="legacy-table suspect-table legacy-bg0">
             <thead>
@@ -155,7 +187,8 @@ onMounted(() => {
                             :style="{
                                 width: `${Math.round((entry.refresh / Math.max(1, data.suspects[0]?.refresh ?? 1)) * 1_000) / 10}%`,
                                 backgroundColor: trafficColor(
-                                    Math.round((entry.refresh / Math.max(1, data.suspects[0]?.refresh ?? 1)) * 1_000) / 10
+                                    Math.round((entry.refresh / Math.max(1, data.suspects[0]?.refresh ?? 1)) * 1_000) /
+                                        10
                                 ),
                             }"
                         ></div>
@@ -166,8 +199,16 @@ onMounted(() => {
 
         <table class="legacy-table footer-table legacy-bg0">
             <tbody>
-                <tr><td><RouterLink class="legacy-close" to="/">돌아가기</RouterLink></td></tr>
-                <tr><td class="banner">SAMMO</td></tr>
+                <tr>
+                    <td><button class="legacy-close" type="button" @click="router.push('/')">돌아가기</button></td>
+                </tr>
+                <tr>
+                    <td class="banner">
+                        삼국지 모의전투 PHP HiDCHe - unknown / KOEI의 이미지를 사용, 응용하였습니다 / 제작 :
+                        HideD(hided62@gmail.com) /
+                        <a href="https://sam.hided.net/wiki/hidche/credit" target="_blank" rel="noreferrer">Credit</a>
+                    </td>
+                </tr>
             </tbody>
         </table>
     </main>
@@ -230,13 +271,16 @@ onMounted(() => {
     height: 54px;
 }
 
-.chart-layout {
+.chart-layout-table {
     width: 1016px;
-    display: flex;
-    gap: 26px;
-    align-items: flex-start;
-    box-sizing: border-box;
-    padding: 0 12px;
+    margin: 0 auto;
+    border-spacing: 2px;
+}
+.chart-layout-table > tbody > tr > td:first-child {
+    text-align: left;
+}
+.chart-layout-table > tbody > tr > td:last-child {
+    text-align: right;
 }
 
 .chart-table {
@@ -320,6 +364,10 @@ onMounted(() => {
 
 .banner {
     height: 24px;
+}
+.banner a {
+    color: #fff;
+    text-decoration: underline;
 }
 
 .legacy-close {

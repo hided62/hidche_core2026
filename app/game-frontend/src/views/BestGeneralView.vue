@@ -87,12 +87,8 @@ watch(viewMode, () => {
         </div>
 
         <div class="view-selector" role="group" aria-label="장수 유형">
-            <button class="legacy-button" type="button" :aria-pressed="viewMode === 'user'" @click="viewMode = 'user'">
-                유저 보기
-            </button>
-            <button class="legacy-button" type="button" :aria-pressed="viewMode === 'npc'" @click="viewMode = 'npc'">
-                NPC 보기
-            </button>
+            <input type="button" value="유저 보기" :aria-pressed="viewMode === 'user'" @click="viewMode = 'user'" />
+            <input type="button" value="NPC 보기" :aria-pressed="viewMode === 'npc'" @click="viewMode = 'npc'" />
         </div>
 
         <div v-if="errorMessage" class="legacy-message error" role="alert">{{ errorMessage }}</div>
@@ -177,10 +173,12 @@ watch(viewMode, () => {
 .legacy-ranking-page {
     width: 500px;
     min-height: 100vh;
-    margin: 0 auto 100px;
+    margin: 0 auto;
+    background-color: transparent;
     color: #fff;
     font-family: var(--sammo-font-sans);
     font-size: 14px;
+    line-height: 1.3;
 }
 
 .legacy-ranking-title,
@@ -197,7 +195,7 @@ watch(viewMode, () => {
 }
 
 .view-selector {
-    padding: 2px 0;
+    padding: 0;
 }
 
 .view-selector .legacy-button + .legacy-button {
@@ -246,6 +244,11 @@ watch(viewMode, () => {
     color: #fff;
     text-decoration: underline;
 }
+.legacy-banner::after {
+    display: block;
+    height: 14px;
+    content: '';
+}
 
 .ranking-sections {
     display: block;
@@ -265,6 +268,7 @@ watch(viewMode, () => {
     font-weight: 500;
     line-height: 1.2;
     text-align: center;
+    background-color: transparent;
 }
 
 .rankView ul {
@@ -335,6 +339,12 @@ watch(viewMode, () => {
     box-sizing: border-box;
     padding: 3px 0;
     line-height: 13px;
+}
+
+@media (max-width: 999.98px) {
+    .legacy-ranking-page {
+        margin-bottom: 100px;
+    }
 }
 
 @media (min-width: 1000px) {

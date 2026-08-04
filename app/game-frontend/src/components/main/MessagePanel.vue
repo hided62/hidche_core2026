@@ -426,6 +426,7 @@ const forwardResponse = (messageId: number, response: boolean) => {
     }
 
     .MessageList {
+        height: 650px;
         overflow-y: auto;
     }
 }

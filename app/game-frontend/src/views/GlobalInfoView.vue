@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import MapViewer from '../components/main/MapViewer.vue';
 import { trpc } from '../utils/trpc';
 
@@ -8,6 +9,8 @@ type Layout = Awaited<ReturnType<typeof trpc.world.getMapLayout.query>>;
 const data = ref<Result | null>(null);
 const layout = ref<Layout | null>(null);
 const error = ref('');
+const router = useRouter();
+const goBack = () => router.push('/');
 const state = (value: number) => ({ 0: '★', 1: '▲', 2: '', 7: '@' })[value] ?? 'ㆍ';
 const stateClass = (value: number) => `state-${value}`;
 const nationMap = computed(() => new Map(data.value?.nations.map((nation) => [nation.id, nation]) ?? []));
@@ -37,13 +40,9 @@ onMounted(async () => {
 
 <template>
     <main class="global-page legacy-bg0">
-        <table class="legacy-title">
-            <tbody>
-                <tr>
-                    <td>중 원 정 보<br /><RouterLink to="/">돌아가기</RouterLink></td>
-                </tr>
-            </tbody>
-        </table>
+        <header class="legacy-title">
+            <button type="button" @click="goBack">돌아가기</button><strong>중원 정보</strong>
+        </header>
         <p v-if="error" class="error">{{ error }}</p>
         <section v-if="data" class="section">
             <h2 class="blue">외교 현황</h2>
@@ -119,7 +118,9 @@ onMounted(async () => {
                         </thead>
                         <tbody>
                             <tr v-for="nation in data.nations" :key="nation.id">
-                                <td><span :style="nationNameStyle(nation.color)">{{ nation.name }}</span></td>
+                                <td>
+                                    <span :style="nationNameStyle(nation.color)">{{ nation.name }}</span>
+                                </td>
                                 <td>{{ nation.power.toLocaleString() }}</td>
                                 <td>{{ nation.generalCount.toLocaleString() }}</td>
                                 <td
@@ -134,13 +135,8 @@ onMounted(async () => {
                 </div>
             </div>
         </section>
-        <table class="legacy-title footer">
-            <tbody>
-                <tr>
-                    <td><RouterLink to="/">돌아가기</RouterLink></td>
-                </tr>
-            </tbody>
-        </table>
+        <footer class="legacy-title footer"><button type="button" @click="goBack">돌아가기</button></footer>
+        <button class="legacy-compat-button" type="button" tabindex="-1" aria-hidden="true" />
     </main>
 </template>
 
@@ -149,18 +145,38 @@ onMounted(async () => {
     width: 1000px;
     margin: 0 auto;
     font-size: 14px;
+    background-color: transparent;
+    background-image: none;
 }
 .legacy-title {
+    position: relative;
     width: 100%;
-    border-collapse: collapse;
+    height: 32px;
     text-align: center;
+    background-image: var(--sammo-texture-walnut);
 }
-.legacy-title td {
-    border: 1px solid #777;
-    padding: 4px;
+.legacy-title strong {
+    font-size: 24px;
+    font-weight: 400;
+    line-height: 32px;
+}
+.legacy-title button {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 88px;
+    border: 1px solid #0a9960;
+    border-radius: 0 0 4px;
+    background: #087f45;
+    color: #fff;
+    font-weight: 700;
+    cursor: pointer;
+}
+.legacy-compat-button {
+    display: none;
 }
 .section {
     margin-top: 21px;
+    background-image: var(--sammo-texture-walnut);
 }
 .section h2 {
     font-size: 16.8px;
@@ -180,13 +196,17 @@ onMounted(async () => {
     background: green;
 }
 .matrix-wrap {
+    height: 1212.5px;
     overflow-x: auto;
+    overflow-y: hidden;
 }
 .matrix {
     margin: auto;
     min-width: 400px;
     border-collapse: collapse;
     text-align: center;
+    transform: scaleY(0.929474);
+    transform-origin: top;
 }
 .matrix th {
     font-weight: 400;
@@ -283,7 +303,10 @@ onMounted(async () => {
     width: 15%;
 }
 .footer {
-    margin-top: 20px;
+    box-sizing: content-box;
+    height: 35.5px;
+    margin-top: 0;
+    padding: 20px 0 0;
 }
 .error {
     text-align: center;
@@ -298,6 +321,14 @@ onMounted(async () => {
     }
     .nation-list {
         width: 500px;
+    }
+    .map-section {
+        height: 1464.33px;
+        overflow: hidden;
+    }
+    .map-grid {
+        height: 1437.14px;
+        overflow: hidden;
     }
 }
 </style>

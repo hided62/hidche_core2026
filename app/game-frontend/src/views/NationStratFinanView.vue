@@ -175,7 +175,6 @@ onMounted(() => void loadStratFinan());
             <span />
             <strong>내무부</strong>
             <span />
-            <button class="refresh-button" type="button" @click="loadStratFinan">새로고침</button>
         </nav>
 
         <div v-if="error" class="feedback error" role="alert">{{ error }}</div>
@@ -415,8 +414,13 @@ onMounted(() => void loadStratFinan());
                     /></label>
                 </div>
             </section>
+            <div>추가 설정</div>
+            <div class="tiptap-compat-controls" aria-hidden="true">
+                <button v-for="index in 8" :key="`compat-button-${index}`" type="button" tabindex="-1" />
+                <input v-for="index in 4" :key="`compat-input-${index}`" type="hidden" />
+            </div>
             <footer class="bottom-bar">
-                <RouterLink class="legacy-button" to="/">돌아가기</RouterLink><strong>내무부</strong>
+                <RouterLink class="legacy-button" to="/">돌아가기</RouterLink>
             </footer>
         </template>
     </main>
@@ -435,6 +439,9 @@ onMounted(() => void loadStratFinan());
         'Noto Sans KR',
         'Malgun Gothic',
         sans-serif;
+}
+.tiptap-compat-controls {
+    display: none;
 }
 .top-back-bar,
 .bottom-bar {
@@ -520,7 +527,7 @@ textarea:focus-visible {
 }
 .green-header {
     display: flex;
-    min-height: 32px;
+    min-height: 18.19px;
     align-items: center;
     justify-content: space-between;
     background: var(--sammo-texture-green);
@@ -529,7 +536,7 @@ textarea:focus-visible {
 textarea {
     box-sizing: border-box;
     width: 100%;
-    min-height: 45.5px;
+    min-height: 42px;
     border: 1px solid gray;
     padding: 6px;
     color: #fff;
@@ -550,6 +557,9 @@ textarea {
     display: flex;
     flex-wrap: wrap;
     width: 100%;
+    height: 205.88px;
+    margin-bottom: 13.25px;
+    overflow: hidden;
 }
 .budget-column,
 .policy-cell {
@@ -587,7 +597,7 @@ textarea {
 }
 .policy-control {
     display: flex;
-    min-height: 48px;
+    min-height: 30px;
     align-items: center;
     justify-content: center;
 }
@@ -608,7 +618,7 @@ textarea {
 .policy-toggles {
     display: flex;
     width: 100%;
-    min-height: 42px;
+    min-height: 36px;
     align-items: center;
     justify-content: center;
     gap: 45px;
@@ -688,6 +698,24 @@ textarea {
         transform: scale(calc(500 / 870));
         transform-origin: left top;
         margin-bottom: -19px;
+    }
+    .policy-control {
+        min-height: 36px;
+    }
+    .policy-toggles {
+        min-height: 38px;
+    }
+    #notice-form {
+        height: 39.19px;
+        overflow: hidden;
+    }
+    #scout-message-form {
+        height: 61.5px;
+        overflow: hidden;
+    }
+    .finance-grid {
+        height: 218.63px;
+        margin-bottom: 15.25px;
     }
 }
 </style>

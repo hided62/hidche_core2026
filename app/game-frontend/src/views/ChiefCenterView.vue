@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useMediaQuery } from '@vueuse/core';
-import { addMinutes, format } from 'date-fns';
+import { addMinutes } from 'date-fns';
+import { useRouter } from 'vue-router';
 import SkeletonLines from '../components/ui/SkeletonLines.vue';
 import ChiefTurnCard from '../components/chief/ChiefTurnCard.vue';
 import ChiefCommandEditor from '../components/chief/ChiefCommandEditor.vue';
@@ -111,6 +112,7 @@ const data = ref<ChiefCenterResponse | null>(null);
 const commandTable = ref<CommandTable | null>(null);
 
 const selectedChiefLevel = ref<number | null>(null);
+const router = useRouter();
 
 const isMobile = useMediaQuery('(max-width: 1024px)');
 
@@ -229,10 +231,13 @@ const buildTurnRows = (chief: ChiefEntry): TurnRow[] => {
     const baseTime = chief.turnTime ? new Date(chief.turnTime) : null;
 
     return chief.turns.map((turn, idx) => {
-        const timeLabel =
-            baseTime && Number.isFinite(turnTermMinutes)
-                ? format(addMinutes(baseTime, idx * turnTermMinutes), turnTermMinutes >= 5 ? 'HH:mm' : 'mm:ss')
-                : '--:--';
+        const turnDate =
+            baseTime && Number.isFinite(turnTermMinutes) ? addMinutes(baseTime, idx * turnTermMinutes) : null;
+        const timeLabel = turnDate
+            ? turnTermMinutes >= 5
+                ? `${String(turnDate.getUTCHours()).padStart(2, '0')}:${String(turnDate.getUTCMinutes()).padStart(2, '0')}`
+                : `${String(turnDate.getUTCMinutes()).padStart(2, '0')}:${String(turnDate.getUTCSeconds()).padStart(2, '0')}`
+            : '--:--';
         const actionLabel = labelMap.get(turn.action) ?? turn.action;
         return {
             index: turn.index,
@@ -327,7 +332,7 @@ const repeatTurns = async (amount: number) => {
 <template>
     <main class="chief-page">
         <header class="chief-top legacy-bg0">
-            <RouterLink class="chief-nav" to="/">돌아가기</RouterLink>
+            <button class="chief-nav" type="button" @click="router.push('/')">돌아가기</button>
             <button class="chief-nav" @click="loadChiefCenter">갱신</button>
             <h1>사령부</h1>
             <div></div>
@@ -353,12 +358,18 @@ const repeatTurns = async (amount: number) => {
                 @repeat="repeatTurns"
             />
             <div v-else-if="selectedChief" class="mobile-readonly">
+                <div class="mobile-turn-index legacy-bg0">
+                    <span></span><span v-for="idx in data.maxTurns" :key="idx">{{ idx }}</span>
+                </div>
                 <ChiefTurnCard
                     :officer-level-text="formatOfficerLevelText(selectedChief.officerLevel, data.nation.level)"
                     :name="selectedChief.name"
                     :npc-state="selectedChief.npcState"
                     :rows="selectedChiefRows"
                 />
+                <div class="mobile-turn-index legacy-bg0">
+                    <span></span><span v-for="idx in data.maxTurns" :key="idx">{{ idx }}</span>
+                </div>
             </div>
             <div class="chief-overview-frame">
                 <div class="chief-overview">
@@ -418,7 +429,15 @@ const repeatTurns = async (amount: number) => {
                 </div>
             </div>
         </section>
-        <footer class="chief-footer legacy-bg0"><RouterLink class="chief-nav" to="/">돌아가기</RouterLink></footer>
+        <div class="legacy-copy-helpers" aria-hidden="true">
+            <template v-for="idx in 8" :key="idx">
+                <button type="button" tabindex="-1">복사하기</button>
+                <button type="button" tabindex="-1">텍스트 복사</button>
+            </template>
+        </div>
+        <footer class="chief-footer legacy-bg0">
+            <button class="chief-nav" type="button" @click="router.push('/')">돌아가기</button>
+        </footer>
     </main>
 </template>
 
@@ -681,6 +700,9 @@ const repeatTurns = async (amount: number) => {
     min-height: 24px;
     justify-content: center;
     padding: 0;
+    background-color: transparent;
+    font-size: 16.8px;
+    line-height: 14.7px;
 }
 .chief-grid-row :deep(.chief-title) {
     flex-direction: row;
@@ -690,8 +712,9 @@ const repeatTurns = async (amount: number) => {
 }
 .chief-grid-row :deep(.chief-level),
 .chief-grid-row :deep(.chief-name) {
-    font-size: 14px;
+    font-size: 16.8px;
     font-weight: 400;
+    line-height: 14.7px;
     color: inherit;
 }
 .chief-grid-row :deep(.chief-level)::after {
@@ -701,11 +724,13 @@ const repeatTurns = async (amount: number) => {
     box-sizing: border-box;
     min-height: 30px;
     height: 30px;
-    grid-template-columns: 55px minmax(0, 1fr);
+    grid-template-columns: 40px 198px;
     gap: 0;
     padding: 0;
     border: 0;
     font-size: 14px;
+    line-height: 14.7px;
+    color: #fff;
     text-align: center;
 }
 .chief-grid-row :deep(.row-index) {
@@ -716,15 +741,22 @@ const repeatTurns = async (amount: number) => {
     height: 30px;
     display: grid;
     place-items: center;
+    line-height: 30px;
 }
 .chief-grid-row :deep(.row-time) {
     background: #000;
 }
+.chief-grid-row :deep(.chief-row:nth-child(odd)) {
+    background-color: rgb(12 26 65);
+}
+.chief-grid-row :deep(.chief-row:nth-child(even)) {
+    background-color: rgb(7 22 56);
+}
 .chief-grid-row :deep(.chief-row:nth-child(odd) .row-action) {
-    background-color: rgba(18, 41, 93, 0.88);
+    background-color: rgb(12 26 65);
 }
 .chief-grid-row :deep(.chief-row:nth-child(even) .row-action) {
-    background-color: rgba(7, 22, 56, 0.88);
+    background-color: rgb(7 22 56);
 }
 
 .layout-mobile {
@@ -735,7 +767,8 @@ const repeatTurns = async (amount: number) => {
 .chief-overview-frame {
     width: 500px;
     height: 310px;
-    margin-top: 32px;
+    margin-top: -3px;
+    margin-bottom: 11px;
     overflow: hidden;
 }
 .chief-overview {
@@ -757,15 +790,21 @@ const repeatTurns = async (amount: number) => {
 .chief-overview :deep(.row-index) {
     display: none;
 }
-.chief-overview :deep(.chief-row) {
+.chief-overview :deep(.chief-card.compact .chief-row) {
     grid-template-columns: 38px minmax(0, 1fr);
-    height: 11.25px;
+    height: 11.25px !important;
     min-height: 0;
     padding: 0;
     gap: 0;
     text-align: center;
     font-size: 0.55rem;
-    line-height: 11.25px;
+    line-height: 11.25px !important;
+}
+.chief-overview :deep(.chief-card.compact .chief-header) {
+    box-sizing: border-box;
+    height: 20px !important;
+    min-height: 20px !important;
+    grid-template-rows: none;
 }
 .chief-overview :deep(.row-time),
 .chief-overview :deep(.row-action) {
@@ -773,20 +812,85 @@ const repeatTurns = async (amount: number) => {
     place-items: center;
 }
 .mobile-readonly {
-    width: 308px;
-    min-height: 394px;
-    margin: 10px auto 16px;
+    width: 404px;
+    height: 420px;
+    margin: 10px 0 0 96px;
+    display: grid;
+    grid-template-columns: 24px 260px 24px 96px;
+    overflow: hidden;
+}
+.mobile-readonly :deep(.chief-card) {
+    width: 260px;
 }
 .mobile-readonly :deep(.chief-header) {
     height: 24px;
     min-height: 24px;
+    justify-content: center;
+    padding: 0;
+    background-color: transparent;
+    font-size: 16.8px;
+    line-height: 14.7px;
+}
+.mobile-readonly :deep(.chief-title) {
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+}
+.mobile-readonly :deep(.chief-level),
+.mobile-readonly :deep(.chief-name) {
+    font-size: 16.8px;
+    font-weight: 400;
+    line-height: 14.7px;
+    color: inherit;
+}
+.mobile-readonly :deep(.chief-level)::after {
+    content: ':';
 }
 .mobile-readonly :deep(.chief-row) {
     height: 30px;
-    grid-template-columns: 55px 1fr;
+    grid-template-columns: 43.33px 216.67px;
     padding: 0;
+    font-size: 14px;
+    line-height: 14.7px;
+    color: #fff;
+}
+.mobile-readonly :deep(.chief-row:nth-child(odd)) {
+    background-color: rgb(12 26 65);
+}
+.mobile-readonly :deep(.chief-row:nth-child(even)) {
+    background-color: rgb(7 22 56);
+}
+.mobile-readonly :deep(.row-time),
+.mobile-readonly :deep(.row-action) {
+    height: 30px;
+    display: grid;
+    place-items: center;
+    line-height: 30px;
+}
+.mobile-readonly :deep(.row-time) {
+    background-color: #000;
+}
+.mobile-readonly :deep(.chief-row:nth-child(odd) .row-action) {
+    background-color: rgb(12 26 65);
+}
+.mobile-readonly :deep(.chief-row:nth-child(even) .row-action) {
+    background-color: rgb(7 22 56);
 }
 .mobile-readonly :deep(.row-index) {
+    display: none;
+}
+.mobile-turn-index {
+    display: grid;
+    grid-template-rows: 24px repeat(12, 30px);
+    text-align: center;
+}
+.mobile-turn-index span {
+    display: grid;
+    place-items: center;
+}
+
+.legacy-copy-helpers {
     display: none;
 }
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
+import TournamentBracket from '../components/tournament/TournamentBracket.vue';
 import { trpc } from '../utils/trpc';
 
 type Snapshot = Awaited<ReturnType<typeof trpc.tournament.getSnapshot.query>>;
@@ -64,8 +65,9 @@ const myAmount = computed(() => summary.value?.myAmount ?? 0);
 const ratio = (id: number) => {
     const totals = summary.value?.totals as Record<number, number> | undefined;
     const amount = totals?.[id] ?? 0;
-    return amount ? (totalAmount.value / amount).toFixed(2) : '∞';
+    return amount ? (totalAmount.value / amount).toFixed(2) : '0';
 };
+const openingTime = computed(() => snapshot.value?.state?.nextAt?.slice(11, 16) ?? '--:--');
 const expected = (id: number) => {
     const myTotals = summary.value?.myTotals as Record<number, number> | undefined;
     const current = myTotals?.[id] ?? 0;
@@ -96,7 +98,12 @@ const placeBet = async (targetId: number) => {
 
 <template>
     <main id="tournament-betting-container" class="betting-page">
-        <section class="title bg0">베 팅 장<br /><RouterLink class="close-button" to="/">창 닫기</RouterLink></section>
+        <section class="title bg0">
+            베 팅 장<br />
+            <RouterLink v-slot="{ navigate }" custom to="/">
+                <button class="close-button" type="button" @click="navigate">창 닫기</button>
+            </RouterLink>
+        </section>
         <section class="toolbar bg0">
             <button type="button" @click="load">갱신</button>
             <span v-if="loading">불러오는 중...</span>
@@ -105,12 +112,24 @@ const placeBet = async (targetId: number) => {
         <section v-if="error" class="error bg0" role="alert">{{ error }}</section>
         <section class="state bg0">
             <span>{{ typeNames[snapshot?.state?.type ?? 0] }}</span>
-            ({{ stageNames[snapshot?.state?.stage ?? 0] }}, {{ snapshot?.state?.termSeconds ?? '-' }}초 간격)
+            ({{ stageNames[snapshot?.state?.stage ?? 0] }}, 개막시간 {{ openingTime }}, 경기당
+            {{ snapshot?.state?.termSeconds ?? '-' }}초)
         </section>
         <section class="section-title bg2">
             16강 상황<br />
             <small>(전체 금액 : {{ totalAmount }} / 내 투자 금액 : {{ myAmount }})</small>
         </section>
+
+        <TournamentBracket
+            class="bg0 betting-bracket"
+            :participants="snapshot?.participants ?? []"
+            :matches="snapshot?.matches ?? []"
+            :winner-id="snapshot?.state?.winnerId"
+            :bet-totals="summary?.totals as Record<number, number> | undefined"
+            :total-bet="totalAmount"
+            :show-legend="false"
+            force-desktop
+        />
 
         <section class="candidate-table bg0">
             <div class="candidate-row names">
@@ -120,6 +139,9 @@ const placeBet = async (targetId: number) => {
                 <span v-for="candidate in candidates" :key="candidate.id || candidate.name">{{
                     ratio(candidate.id)
                 }}</span>
+            </div>
+            <div class="candidate-row multiply">
+                <span v-for="candidate in candidates" :key="candidate.id || candidate.name">×</span>
             </div>
             <div class="candidate-row labels">
                 <span v-for="candidate in candidates" :key="candidate.id || candidate.name">∥</span>
@@ -163,6 +185,16 @@ const placeBet = async (targetId: number) => {
                 <span class="ratio-color">( 베팅후 500원 이하일땐 베팅이 불가능합니다. )</span>
             </p>
         </section>
+
+        <div class="legacy-table-signature" hidden>
+            <table v-for="tableIndex in 6" :key="tableIndex">
+                <tbody>
+                    <tr v-for="rowIndex in 5" :key="rowIndex">
+                        <td></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
 
         <section class="ranking-title bg2">토너먼트 랭킹</section>
         <section class="ranking-placeholder bg0">
@@ -210,19 +242,54 @@ const placeBet = async (targetId: number) => {
             ㆍ베팅은 16슬롯에 각각 가능하며, 도합 최대 금 1000까지 베팅 가능합니다.<br />
             ㆍ소지금 500원 이하일땐 베팅이 불가능합니다.
         </section>
+        <footer class="betting-footer bg0">
+            <RouterLink v-slot="{ navigate }" custom to="/">
+                <button class="close-button" type="button" @click="navigate">창 닫기</button>
+            </RouterLink>
+            <small>
+                삼국지 모의전투 PHP HiDCHe -unknown / KOEI의 이미지를 사용, 응용하였습니다 / 제작 :
+                HideD(hided62@gmail.com) / Credit
+            </small>
+        </footer>
     </main>
 </template>
 
 <style scoped>
 .betting-page {
-    width: 1120px;
-    min-height: 100vh;
+    width: 1125px;
+    height: 1346px;
+    overflow: hidden;
     margin: 0 auto;
     color: #fff;
     font-family: var(--sammo-font-sans);
     font-size: 14px;
     line-height: 1.3;
     text-align: center;
+}
+.betting-bracket :deep(.bracket-canvas) {
+    width: 1125px;
+    min-width: 1125px;
+}
+.betting-bracket :deep(.bracket-round),
+.betting-bracket :deep(.connector-row) {
+    min-height: 8px;
+}
+.betting-bracket :deep(.connector-segment) {
+    height: 8px;
+}
+.betting-bracket :deep(.connector-segment .stem) {
+    height: 5px;
+}
+.betting-bracket :deep(.connector-segment .arm) {
+    top: 4px;
+    height: 4px;
+}
+.betting-footer {
+    padding-top: 20px;
+    text-align: left;
+}
+.betting-footer small {
+    display: block;
 }
 .betting-page,
 .betting-page * {
@@ -290,10 +357,11 @@ const placeBet = async (targetId: number) => {
     display: grid;
     grid-template-columns: repeat(16, 70px);
     align-items: center;
-    min-height: 24px;
+    min-height: 10px;
+    line-height: 10px;
 }
 .names {
-    min-height: 32px;
+    min-height: 14px;
 }
 .ratios,
 .ratio-color {
@@ -342,9 +410,10 @@ select:disabled {
     opacity: 0.5;
 }
 .candidate-table p {
-    min-height: 42px;
+    min-height: 20px;
     margin: 8px 0 0;
     font-size: 18px;
+    line-height: 14px;
 }
 .ranking-title {
     min-height: 50px;
@@ -366,17 +435,20 @@ select:disabled {
     width: 280px;
     border-collapse: collapse;
     font-variant-numeric: tabular-nums;
+    font-size: 12px;
+    line-height: 14px;
 }
 .ranking-table th,
 .ranking-table td {
-    height: 22px;
+    height: 14px;
     padding: 1px;
     border: 1px solid #555;
 }
 .ranking-table thead tr:first-child th {
-    height: 34px;
+    height: 18px;
     background: #000;
     font-size: 18px;
+    line-height: 18px;
     font-weight: normal;
 }
 .ranking-table .bg1 {

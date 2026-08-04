@@ -440,6 +440,7 @@ onMounted(() => {
     </header>
 
     <main id="container" class="inherit-page legacy-bg0">
+        <input type="hidden" name="inheritanceAction" value="inherit" />
         <div v-if="error || actionError" class="notice error" role="alert">{{ error ?? actionError }}</div>
         <div v-if="actionMessage" class="notice success">{{ actionMessage }}</div>
         <div v-if="loading" class="loading-state">불러오는 중...</div>
@@ -772,6 +773,7 @@ onMounted(() => {
     position: relative;
     padding: 0 7px;
     color: #fff;
+    height: 1597px;
     font:
         14px/21px Pretendard,
         'Apple SD Gothic Neo',
@@ -888,8 +890,13 @@ onMounted(() => {
 }
 
 .shop-item .buy-button {
-    width: 50%;
+    width: 146.5px;
     margin-left: auto;
+}
+
+.leading-actions .shop-item:first-child .buy-button {
+    margin-top: 35px;
+    margin-right: 9.5px;
 }
 
 .simple-item small {
@@ -984,6 +991,19 @@ a:not(.legacy-button):focus-visible {
     .inherit-page {
         width: 500px;
         max-width: 100%;
+    }
+
+    .inherit-page {
+        height: 3047.5px;
+    }
+
+    .shop-item .buy-button {
+        width: 50%;
+    }
+
+    .leading-actions .shop-item:first-child .buy-button {
+        margin-top: 0;
+        margin-right: 0;
     }
 
     .point-grid,

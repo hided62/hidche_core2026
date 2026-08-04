@@ -102,7 +102,11 @@ const generalImage = (general: General): string => resolveGeneralIconUrl(general
         <table class="legacy-table legacy-bg0">
             <tbody>
                 <tr>
-                    <td>도 시 정 보<br /><RouterLink class="back-link" to="/">돌아가기</RouterLink></td>
+                    <td>
+                        도 시 정 보<br /><button class="back-link" type="button" @click="router.push('/')">
+                            돌아가기
+                        </button>
+                    </td>
                 </tr>
             </tbody>
         </table>
@@ -136,7 +140,7 @@ const generalImage = (general: General): string => resolveGeneralIconUrl(general
             <table class="legacy-table legacy-bg0 back-row">
                 <tbody>
                     <tr>
-                        <td><RouterLink class="back-link" to="/">돌아가기</RouterLink></td>
+                        <td><button class="back-link" type="button" @click="router.push('/')">돌아가기</button></td>
                     </tr>
                 </tbody>
             </table>
@@ -313,7 +317,14 @@ const generalImage = (general: General): string => resolveGeneralIconUrl(general
         <table class="legacy-table legacy-bg0 footer">
             <tbody>
                 <tr>
-                    <td><RouterLink class="back-link" to="/">돌아가기</RouterLink></td>
+                    <td><button class="back-link" type="button" @click="router.push('/')">돌아가기</button></td>
+                </tr>
+                <tr>
+                    <td class="legacy-banner">
+                        삼국지 모의전투 PHP HiDCHe - unknown / KOEI의 이미지를 사용, 응용하였습니다 / 제작 :
+                        HideD(hided62@gmail.com) /
+                        <a href="https://sam.hided.net/wiki/hidche/credit" target="_blank" rel="noreferrer">Credit</a>
+                    </td>
                 </tr>
             </tbody>
         </table>
@@ -323,7 +334,7 @@ const generalImage = (general: General): string => resolveGeneralIconUrl(general
 <style scoped>
 .city-page {
     width: 1000px;
-    margin: 8px auto 0;
+    margin: 0 auto;
     font-family: 'Times New Roman', serif;
     font-size: 16px;
     line-height: normal;
@@ -371,6 +382,17 @@ const generalImage = (general: General): string => resolveGeneralIconUrl(general
     margin-top: 0;
     table-layout: fixed;
 }
+.stats,
+.generals {
+    border-collapse: collapse;
+    border-spacing: 0;
+}
+.stats td,
+.stats th,
+.generals td,
+.generals th {
+    border: 1px solid gray;
+}
 .label-col {
     width: 48px;
 }
@@ -389,7 +411,11 @@ const generalImage = (general: General): string => resolveGeneralIconUrl(general
     text-align: center;
 }
 .stats {
-    height: 136px;
+    height: auto;
+}
+.stats td,
+.stats th {
+    white-space: nowrap;
 }
 .general-names {
     text-align: left !important;
@@ -398,7 +424,7 @@ const generalImage = (general: General): string => resolveGeneralIconUrl(general
     color: gray;
 }
 .generals {
-    width: 1024px;
+    width: 1000px;
     margin: 18px 0 0 50%;
     table-layout: fixed;
     transform: translateX(-50%);
@@ -412,7 +438,7 @@ const generalImage = (general: General): string => resolveGeneralIconUrl(general
     padding: 0 !important;
 }
 .generals tbody tr {
-    height: 72px;
+    height: 64px;
 }
 .general-icon {
     display: block;
@@ -434,7 +460,7 @@ const generalImage = (general: General): string => resolveGeneralIconUrl(general
     color: cyan;
 }
 .footer {
-    margin-top: 14px;
+    margin-top: 0;
 }
 .back-link {
     display: inline-block;
@@ -455,6 +481,10 @@ const generalImage = (general: General): string => resolveGeneralIconUrl(general
     background: #5c636a;
     color: #fff;
 }
+.legacy-banner a {
+    color: #fff;
+    text-decoration: underline;
+}
 .error {
     text-align: center;
     color: #ff7373;
@@ -462,6 +492,7 @@ const generalImage = (general: General): string => resolveGeneralIconUrl(general
 @media (max-width: 700px) {
     .city-page {
         width: 1000px;
+        margin-top: 8px;
         transform-origin: top left;
     }
 }

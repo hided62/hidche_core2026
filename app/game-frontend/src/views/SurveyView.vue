@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { trpc } from '../utils/trpc';
 
@@ -23,6 +24,7 @@ const myComment = ref('');
 const newVoteTitle = ref('');
 const newVoteOptionsText = ref('');
 const newVoteMultipleOptions = ref(1);
+const router = useRouter();
 
 const getErrorMessage = (error: unknown): string => {
     if (error instanceof Error) {
@@ -213,7 +215,9 @@ onMounted(() => {
 <template>
     <main id="container" class="pageVote bg0">
         <header class="back_bar bg0">
-            <RouterLink class="legacy-button legacy-button--navigation back_btn" to="/">창 닫기</RouterLink>
+            <button class="legacy-button legacy-button--navigation back_btn" type="button" @click="router.push('/')">
+                창 닫기
+            </button>
             <button
                 class="legacy-button legacy-button--navigation reload_btn"
                 type="button"
@@ -414,7 +418,9 @@ onMounted(() => {
         </div>
 
         <footer class="bottom_bar bg0">
-            <RouterLink class="legacy-button legacy-button--navigation back_btn" to="/">창 닫기</RouterLink>
+            <button class="legacy-button legacy-button--navigation back_btn" type="button" @click="router.push('/')">
+                창 닫기
+            </button>
         </footer>
     </main>
 </template>

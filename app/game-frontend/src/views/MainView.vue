@@ -14,6 +14,8 @@ import RecordPanel from '../components/main/RecordPanel.vue';
 import MainFrontStatus from '../components/main/MainFrontStatus.vue';
 import MainGlobalMenu from '../components/main/MainGlobalMenu.vue';
 import MainNationMenu from '../components/main/MainNationMenu.vue';
+import MainMobileBottomBar from '../components/main/MainMobileBottomBar.vue';
+import type { QuickNavigationItem } from '../components/main/mainNavigation';
 import { formatLog } from '../utils/formatLog';
 import { useSessionStore } from '../stores/session';
 import { useMainDashboardStore } from '../stores/mainDashboard';
@@ -110,6 +112,10 @@ const moveLobby = () => {
     window.location.replace(import.meta.env.VITE_GATEWAY_WEB_URL?.trim() || '/gateway/');
 };
 
+const moveQuick = (item: QuickNavigationItem) => {
+    document.querySelector(item.selector)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
+
 watch(
     () => [session.isReady, session.hasGeneral],
     ([ready, hasGeneral]) => {
@@ -127,8 +133,14 @@ watch(
 
         <header class="game-shell__header">
             <div>
-                <h1 class="game-shell__title">전장 현황</h1>
-                <p class="game-shell__subtitle">{{ statusLine }}</p>
+                <h1 class="game-shell__title">
+                    {{ isMobile ? '전장 현황' : lobbyInfo?.scenarioTitle || '전장 현황' }}
+                </h1>
+                <p class="game-shell__subtitle">
+                    {{
+                        !isMobile && lobbyInfo?.scenarioTitle ? `${lobbyInfo.scenarioTitle} ${statusLine}` : statusLine
+                    }}
+                </p>
             </div>
             <div class="game-shell__actions desktop-action-controls">
                 <button
@@ -406,8 +418,18 @@ watch(
             :npc-mode="npcMode"
             :vote-active="voteActive"
         />
-
     </main>
+    <div v-if="isMobile" class="main-mobile-bottom-spacer" aria-hidden="true"></div>
+    <MainMobileBottomBar
+        v-if="isMobile"
+        :access="nationAccess"
+        :tournament-stage="tournamentStage"
+        :nation-color="nationColor"
+        :npc-mode="npcMode"
+        @refresh="loadMainData"
+        @lobby="moveLobby"
+        @quick="moveQuick"
+    />
 </template>
 
 <style scoped>
@@ -599,6 +621,7 @@ button {
 
 .desktop-message-panel {
     grid-column: 1 / -1;
+    height: 1377.5px;
 }
 
 .common-menu-middle {
@@ -623,7 +646,9 @@ button {
 }
 
 .record-line {
-    overflow-wrap: anywhere;
+    overflow: hidden;
+    overflow-wrap: normal;
+    white-space: nowrap;
 }
 
 .record-empty {
@@ -711,6 +736,10 @@ button {
 }
 
 @media (max-width: 939.98px) {
+    .main-mobile-bottom-spacer {
+        height: 45px;
+    }
+
     .main-page {
         width: 502px;
         min-height: 3688px;
@@ -732,7 +761,14 @@ button {
     }
 
     .layout-mobile [data-main-target='world-history'] {
-        min-height: 380px;
+        height: 359px;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .mobile-message-panel {
+        height: 1394.5px;
+        margin-bottom: -10px;
     }
 }
 

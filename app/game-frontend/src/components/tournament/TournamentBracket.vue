@@ -14,6 +14,8 @@ const props = defineProps<{
     winnerId?: number;
     betTotals?: Record<number, number>;
     totalBet: number;
+    forceDesktop?: boolean;
+    showLegend?: boolean;
 }>();
 
 const bracket = computed(() => buildTournamentBracket(props.participants, props.matches, props.winnerId));
@@ -68,7 +70,18 @@ const odds = (id: number | null) => {
 </script>
 
 <template>
-    <section class="tournament-bracket" aria-label="토너먼트 대진표" tabindex="0">
+    <section
+        class="tournament-bracket"
+        :class="{ 'force-desktop': forceDesktop }"
+        aria-label="토너먼트 대진표"
+        tabindex="0"
+    >
+        <span class="legacy-connector-text">
+            ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┻━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+            ┏━━━━━━━━━━━━━━━━━━┻━━━━━━━━━━━━━━━━━━┓ ┏━━━━━━━━━━━━━━━━━━┻━━━━━━━━━━━━━━━━━━┓ ┏━━━━━━━━━┻━━━━━━━━━┓
+            ┏━━━━━━━━━┻━━━━━━━━━┓ ┏━━━━━━━━━┻━━━━━━━━━┓ ┏━━━━━━━━━┻━━━━━━━━━┓ ┏━━━━┻━━━━┓ ┏━━━━┻━━━━┓ ┏━━━━┻━━━━┓
+            ┏━━━━┻━━━━┓ ┏━━━━┻━━━━┓ ┏━━━━┻━━━━┓ ┏━━━━┻━━━━┓ ┏━━━━┻━━━━┓
+        </span>
         <div class="bracket-canvas">
             <div class="bracket-round bracket-champion" style="--slot-count: 1">
                 <span
@@ -176,7 +189,9 @@ const odds = (id: number | null) => {
                 </span>
             </template>
         </div>
-        <p>배당률이 낮을수록 베팅된 금액이 많고 유저들이 우승후보로 많이 선택한 장수입니다.</p>
+        <p v-if="showLegend !== false">
+            배당률이 낮을수록 베팅된 금액이 많고 유저들이 우승후보로 많이 선택한 장수입니다.
+        </p>
     </section>
 </template>
 
@@ -185,6 +200,14 @@ const odds = (id: number | null) => {
     overflow-x: auto;
     padding: 10px 0;
     scrollbar-color: #777 #24140e;
+}
+.legacy-connector-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
 }
 .bracket-canvas {
     width: 2000px;
@@ -307,6 +330,17 @@ const odds = (id: number | null) => {
     }
     .mobile-bracket {
         display: block;
+    }
+    .tournament-bracket.force-desktop {
+        width: auto;
+        max-width: none;
+        overflow-x: auto;
+    }
+    .tournament-bracket.force-desktop .bracket-canvas {
+        display: block;
+    }
+    .tournament-bracket.force-desktop .mobile-bracket {
+        display: none;
     }
 }
 </style>

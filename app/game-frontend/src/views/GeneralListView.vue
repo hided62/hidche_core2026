@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { resolveGeneralIconUrl, useDefaultGeneralIcon } from '../utils/generalIcon';
 import { formatOfficerLevelText } from '../utils/nationFormat';
@@ -32,6 +33,7 @@ const sort = ref<SortKey>(9);
 const generals = ref<General[]>([]);
 const loading = ref(false);
 const error = ref('');
+const router = useRouter();
 
 const loadDirectory = async () => {
     loading.value = true;
@@ -59,7 +61,11 @@ onMounted(() => {
         <table class="directory-table title-table legacy-bg0">
             <tbody>
                 <tr>
-                    <td>장 수 일 람<br /><RouterLink class="legacy-button" to="/">창 닫기</RouterLink></td>
+                    <td>
+                        장 수 일 람<br /><button class="legacy-button" type="button" @click="router.push('/')">
+                            창 닫기
+                        </button>
+                    </td>
                 </tr>
                 <tr>
                     <td>
@@ -70,7 +76,7 @@ onMounted(() => {
                                     {{ option.label }}
                                 </option>
                             </select>
-                            <button type="submit">정렬하기</button>
+                            <input type="submit" value="정렬하기" />
                         </form>
                     </td>
                 </tr>
@@ -190,7 +196,7 @@ onMounted(() => {
         <table class="directory-table title-table legacy-bg0">
             <tbody>
                 <tr>
-                    <td><RouterLink class="legacy-button" to="/">창 닫기</RouterLink></td>
+                    <td><button class="legacy-button" type="button" @click="router.push('/')">창 닫기</button></td>
                 </tr>
                 <tr>
                     <td><small>삼국지 모의전투 HiDCHe</small></td>
