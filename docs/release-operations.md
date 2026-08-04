@@ -38,6 +38,9 @@ profile 범위 권한과 별개인 전역 `admin.releases.manage` 권한이 필�
 - Runtime process는 10초 이전의 불안정 종료에 대해 최대 5회, 2초 간격으로만
   자동 재시작합니다. Readiness는 예상 process 수가 정확하고 모든 restart count가
   0일 때만 성공합니다.
+- Root와 server package의 `tsdown`은 0.22.14 계열로 통일합니다. Docker runtime의
+  Node heap/Rayon 상한을 상속한 동일 toolchain으로 초기 Gateway와 profile
+  worktree를 빌드하여 구형 Rolldown의 과도한 native thread 생성을 피합니다.
 - migration 이후 이전 애플리케이션으로 돌아갈 때 schema 하위 호환성이
   유지됩니다.
 
